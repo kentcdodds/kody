@@ -4,10 +4,8 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { packageOwnedJobDeleteErrorMessage } from '#worker/jobs/job-retention.ts'
 
 const mockModule = vi.hoisted(() => ({
-	deleteJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
 	listRunRecords: vi.fn(),
@@ -17,7 +15,6 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({
-	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
 	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
 }))
 
@@ -43,7 +40,6 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
-const { jobDeleteCapability } = await import('./job-delete.ts')
 const { jobGetCapability } = await import('./job-get.ts')
 const { jobListCapability } = await import('./job-list.ts')
 const { jobRunNowCapability } = await import('./job-run-now.ts')
@@ -76,7 +72,6 @@ function job(overrides: Record<string, unknown> = {}) {
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: '2026-04-20T10:00:00.000Z',
 		updatedAt: '2026-04-20T10:05:00.000Z',
@@ -113,13 +108,12 @@ function updateBody(body: Record<string, unknown>) {
 			timezone: undefined,
 			enabled: undefined,
 			killSwitchEnabled: undefined,
-			preserved: undefined,
 			...body,
 		},
 	}
 }
 
-test('jobUpdate and jobDelete require authentication and mutate existing jobs for the signed-in user', async () => {
+test('jobUpdate and jobRunNow require authentication and jobUpdate mutates existing jobs for the signed-in user', async () => {
 	const unauthenticated = {
 		env,
 		callerContext: createMcpCallerContext({
@@ -127,11 +121,7 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 			baseUrl: 'https://example.com',
 		}),
 	}
-	for (const capability of [
-		jobUpdateCapability,
-		jobDeleteCapability,
-		jobRunNowCapability,
-	]) {
+	for (const capability of [jobUpdateCapability, jobRunNowCapability]) {
 		await expect(
 			capability.handler(
 				{ id: 'job-123', enabled: false } as never,
@@ -140,7 +130,6 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 		).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	}
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
-	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 
 	mockModule.updateJob.mockResolvedValue(
@@ -171,7 +160,6 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 	const result = await jobUpdateCapability.handler(
 		{
 			id: 'job-123',
-			name: 'Nightly cleanup v2',
 			params: { room: 'office' },
 			schedule: { type: 'cron', expression: '0 3 * * *' },
 			timezone: 'America/Denver',
@@ -185,7 +173,6 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 		callerContext,
 		body: {
 			id: 'job-123',
-			name: 'Nightly cleanup v2',
 			params: { room: 'office' },
 			schedule: { type: 'cron', expression: '0 3 * * *' },
 			timezone: 'America/Denver',
@@ -204,7 +191,6 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 		timezone: 'America/Denver',
 		enabled: false,
 		kill_switch_enabled: true,
-		preserved: false,
 		expires_at: null,
 		expired: false,
 		created_at: '2026-04-20T10:00:00.000Z',
@@ -251,26 +237,16 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 			{ id: 'job-123', enabled: false, code: 'export default async () => 1' },
 			'Job code cannot be changed via jobUpdate.',
 		],
+		[
+			{ id: 'job-123', name: 'Nightly cleanup v2' },
+			'Job name cannot be changed via jobUpdate.',
+		],
 	] as const) {
 		await expect(
 			jobUpdateCapability.handler(input as never, ctx),
 		).rejects.toThrow(message)
 	}
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
-
-	mockModule.deleteJob.mockResolvedValue({ id: 'job-123', deleted: true })
-	await expect(
-		jobDeleteCapability.handler({ id: 'job-123' }, ctx),
-	).resolves.toEqual({ job_id: 'job-123', deleted: true })
-	expect(mockModule.deleteJob).toHaveBeenCalledWith({
-		env,
-		userId: ownerIdFromStored('user-123'),
-		jobId: 'job-123',
-	})
-	await expect(
-		jobDeleteCapability.handler({ id: 'package-job:pkg-1:nightly' }, ctx),
-	).rejects.toThrow(packageOwnedJobDeleteErrorMessage)
-	expect(mockModule.deleteJob).toHaveBeenCalledTimes(1)
 })
 
 test('jobUpdate accepts interval and cron schedule replacements and round-trips expires_at', async () => {
@@ -296,13 +272,11 @@ test('jobUpdate accepts interval and cron schedule replacements and round-trips 
 			{
 				input: {
 					id: 'job-cron',
-					name: 'Weekly digest',
 					schedule: { type: 'cron', expression: '0 9 * * 1' },
 					timezone: 'America/Denver',
 				},
 				body: {
 					id: 'job-cron',
-					name: 'Weekly digest',
 					schedule: { type: 'cron', expression: '0 9 * * 1' },
 					timezone: 'America/Denver',
 				},

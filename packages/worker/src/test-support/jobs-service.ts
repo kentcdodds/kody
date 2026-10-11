@@ -11,7 +11,6 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
-import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { syncPackageJobsForPackage } from '#worker/jobs/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { computeNextRunAt, toJobView } from '#worker/jobs/schedule.ts'
@@ -701,14 +700,13 @@ export function createDatabase(
 									timezone: params[9],
 									enabled: params[10],
 									kill_switch_enabled: params[11],
-									preserved: params[12],
-									expires_at: params[13],
-									caller_context_json: params[14],
-									created_at: params[15],
-									updated_at: params[16],
-									last_run_at: params[17],
-									last_run_status: params[18],
-									next_run_at: params[19],
+									expires_at: params[12],
+									caller_context_json: params[13],
+									created_at: params[14],
+									updated_at: params[15],
+									last_run_at: params[16],
+									last_run_status: params[17],
+									next_run_at: params[18],
 								}
 								upsert(
 									'jobs',
@@ -785,12 +783,12 @@ export function createDatabase(
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[17] &&
-										existing['user_id'] === params[18],
+										existing['id'] === params[16] &&
+										existing['user_id'] === params[17],
 								)
 								const row = {
-									id: params[17],
-									user_id: params[18],
+									id: params[16],
+									user_id: params[17],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -801,14 +799,13 @@ export function createDatabase(
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									preserved: params[10],
-									expires_at: params[11],
-									caller_context_json: params[12],
-									updated_at: params[13],
-									last_run_at: params[14],
-									last_run_status: params[15],
-									next_run_at: params[16],
-									created_at: existingJob?.['created_at'] ?? params[13],
+									expires_at: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									next_run_at: params[15],
+									created_at: existingJob?.['created_at'] ?? params[12],
 								}
 								upsert(
 									'jobs',
@@ -1200,7 +1197,11 @@ export function createBaseCallerContext() {
 	)
 }
 
-export async function insertLeftoverJob(input: {
+/**
+ * A package job as `syncPackageJobsForPackage` writes it: the row points at a
+ * published package source whose package.json declares the job.
+ */
+export async function insertPackageJob(input: {
 	env: Env
 	callerContext: PersistedJobCallerContext
 	/** Org that owns the job; defaults to the caller's personal org. */
@@ -1212,13 +1213,14 @@ export async function insertLeftoverJob(input: {
 		params?: Record<string, unknown>
 		timezone?: string | null
 		enabled?: boolean
-		sourceId?: string | null
-		publishedCommit?: string | null
+		publishedCommit?: string
 	}
 }) {
 	const now = new Date().toISOString()
-	const jobId = crypto.randomUUID()
-	const sourceId = input.body.sourceId ?? `job-${jobId}`
+	const suffix = crypto.randomUUID().slice(0, 8)
+	const packageId = `pkg-${suffix}`
+	const sourceId = `package-source-${suffix}`
+	const jobId = buildPackageJobId(packageId, input.body.name)
 	const publishedCommit = input.body.publishedCommit ?? 'published-commit-1'
 	const timezone = input.body.timezone ?? 'UTC'
 	const ownerId =
@@ -1236,7 +1238,6 @@ export async function insertLeftoverJob(input: {
 		timezone,
 		enabled: input.body.enabled ?? true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: now,
 		updatedAt: now,
@@ -1248,25 +1249,30 @@ export async function insertLeftoverJob(input: {
 		successCount: 0,
 		errorCount: 0,
 	}
-	if (input.body.sourceId == null) {
-		const jobView = toJobView(job)
-		await insertPublishedEntitySource({
-			db: input.env.APP_DB as ReturnType<typeof createDatabase>,
-			env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
-			userId: ownerId,
-			sourceId,
-			entityKind: 'job',
-			entityId: jobId,
-			publishedCommit,
-			files: input.env.BUNDLE_ARTIFACTS_KV
-				? buildJobSourceFiles({
-						job: jobView,
-						moduleSource:
-							input.body.code ?? 'export default async () => ({ ok: true })',
-					})
-				: undefined,
-		})
-	}
+	await insertPublishedEntitySource({
+		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+		env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
+		userId: ownerId,
+		sourceId,
+		entityKind: 'package',
+		entityId: packageId,
+		publishedCommit,
+		manifestPath: 'package.json',
+		files: input.env.BUNDLE_ARTIFACTS_KV
+			? {
+					'package.json': createPackageJobManifestText({
+						packageName: `@owner/${packageId}`,
+						kodyId: packageId,
+						description: 'Package job fixture',
+						jobName: input.body.name,
+						schedule: input.body.schedule,
+						exportPath: './src/job.ts',
+					}),
+					'src/job.ts':
+						input.body.code ?? 'export default async () => ({ ok: true })',
+				}
+			: undefined,
+	})
 	await jobsData(input.env).insertJob({
 		userId: ownerId,
 		job,

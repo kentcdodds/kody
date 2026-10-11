@@ -1,5 +1,4 @@
 import {
-	ownerIdFromStored,
 	personIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
@@ -10,7 +9,6 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import * as runRecords from '#worker/run-records/service.ts'
 import {
-	deleteJob,
 	getJob,
 	getJobInspection,
 	inspectJobsForUser,
@@ -19,10 +17,9 @@ import {
 	updateJob,
 } from './service.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { packageOwnedJobDeleteErrorMessage } from './job-retention.ts'
+import { jobsData } from './jobs-data.ts'
 import { buildPackageJobId } from './package-job-id.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
-import { type RepoSessionRow } from '#worker/repo/types.ts'
 import {
 	repoMockModule,
 	jobManagerMockModule,
@@ -33,7 +30,7 @@ import {
 	createBundleArtifactsKv,
 	insertPublishedEntitySource,
 	createBaseCallerContext,
-	insertLeftoverJob,
+	insertPackageJob,
 	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 
@@ -87,7 +84,6 @@ afterEach(() => {
 })
 
 const every15m = { type: 'interval', every: '15m' } as const
-const codeErrorMessage = 'Job code cannot be changed via jobUpdate.'
 
 function setup(bindings: Partial<Env> = {}) {
 	const env = createJobServiceTestEnv({
@@ -105,14 +101,10 @@ function insertJob(
 	name: string,
 	schedule: JobRecord['schedule'] = every15m,
 ) {
-	return insertLeftoverJob({
+	return insertPackageJob({
 		env,
 		callerContext,
-		body: {
-			name,
-			code: 'export default async () => ({ ok: true })',
-			schedule,
-		},
+		body: { name, schedule },
 	})
 }
 
@@ -122,33 +114,7 @@ async function expectCallerError(promise: Promise<unknown>, message: string) {
 	expect(error).toMatchObject({ message })
 }
 
-function createRepoSessionRow(input: {
-	id: string
-	userId: string
-	sourceId: string
-}): RepoSessionRow {
-	return {
-		id: input.id,
-		user_id: ownerIdFromStored(input.userId),
-		source_id: input.sourceId,
-		source_repo_id: 'source-repo-1',
-		session_branch: `sessions/${input.id}`,
-		source_branch: 'main',
-		base_commit: 'published-commit-1',
-		source_root: '/',
-		conversation_id: null,
-		status: 'active',
-		expires_at: null,
-		last_checkpoint_at: null,
-		last_checkpoint_commit: null,
-		last_check_run_id: null,
-		last_check_tree_hash: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	}
-}
-
-test('updateJob and deleteJob sync the job manager alarm', async () => {
+test('updateJob syncs the job manager alarm without republishing the package source', async () => {
 	const { env, callerContext, userId } = setup({
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
@@ -162,50 +128,23 @@ test('updateJob and deleteJob sync the job manager alarm', async () => {
 		expect(job.schedule).toEqual(schedule)
 		expect(job.storageId).toBe(`job:${job.id}`)
 	}
-	const leftover = await insertJob(env, callerContext, 'Sync on update')
+	const job = await insertJob(env, callerContext, 'sync-on-update')
 
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+	repoMockModule.syncArtifactSourceSnapshot.mockClear()
 	await updateJob({
 		env,
 		callerContext,
-		body: { id: leftover.id, schedule: { type: 'interval', every: '30m' } },
+		body: { id: job.id, schedule: { type: 'interval', every: '30m' } },
 	})
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId,
 	})
-
-	jobManagerMockModule.syncJobManagerAlarm.mockClear()
-	repoMockModule.listRepoSessionsBySource.mockResolvedValueOnce([
-		createRepoSessionRow({
-			id: 'session-1',
-			userId,
-			sourceId: leftover.sourceId,
-		}),
-	])
-	repoMockModule.cleanupArtifactReposForSource.mockResolvedValueOnce({
-		deleted: 1,
-		artifactAccessUnavailable: false,
-	})
-	await deleteJob({ env, userId: personalOrgId(userId), jobId: leftover.id })
-
-	expect(repoMockModule.cleanupArtifactReposForSource).toHaveBeenCalledWith({
-		env,
-		userId,
-		sourceId: leftover.sourceId,
-	})
-	expect(repoMockModule.deleteRepoSessionsBySourceForUser).toHaveBeenCalledWith(
-		env,
-		{ userId, sourceId: leftover.sourceId },
-	)
-	expect(repoMockModule.cleanupSessionBranch).not.toHaveBeenCalled()
-	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId,
-	})
+	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
-test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
+test('updateJob rejects another user trying to mutate a job by id', async () => {
 	const { env, callerContext, userId } = setup()
 	const created = await insertJob(env, callerContext, 'Owner job')
 	const otherCallerContext = withCallerUser(
@@ -235,14 +174,6 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 		}),
 		notFound,
 	)
-	await expectCallerError(
-		deleteJob({
-			env,
-			userId: ownerIdFromStored('user-999'),
-			jobId: created.id,
-		}),
-		notFound,
-	)
 	const inspection = await getJobInspection({
 		env,
 		userId: personalOrgId(userId),
@@ -269,12 +200,11 @@ test('missing job ids throw McpCallerError from get/inspect/run-now', async () =
 
 test('updateJob clears params, updates timezone, and disables a job', async () => {
 	const { env, callerContext } = setup()
-	const created = await insertLeftoverJob({
+	const created = await insertPackageJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Mutable job',
-			code: 'export default async () => ({ ok: true })',
+			name: 'mutable-job',
 			params: { room: 'office' },
 			schedule: { type: 'cron', expression: '0 9 * * 1' },
 			timezone: 'UTC',
@@ -295,10 +225,34 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	expect(updated.params).toBeUndefined()
 	expect(updated.timezone).toBe('America/Denver')
 	expect(updated.enabled).toBe(false)
-	await expectCallerError(
-		updateJob({ env, callerContext, body: { id: created.id, code: '   ' } }),
-		codeErrorMessage,
-	)
+})
+
+test('updateJob fails loudly on a job row that is not a package job', async () => {
+	const { env, callerContext, userId } = setup()
+	const created = await insertJob(env, callerContext, 'not-a-package-job')
+	const ownerId = personalOrgId(userId)
+	const packageRow = await jobsData(env).getJobById({
+		userId: ownerId,
+		jobId: created.id,
+	})
+	if (!packageRow) throw new Error('Expected the inserted job row.')
+	await jobsData(env).insertJob({
+		userId: ownerId,
+		job: {
+			...packageRow.record,
+			id: 'legacy-job-id',
+			storageId: 'job:legacy-job-id',
+		},
+		callerContextJson: JSON.stringify(callerContext),
+	})
+
+	await expect(
+		updateJob({
+			env,
+			callerContext,
+			body: { id: 'legacy-job-id', enabled: false },
+		}),
+	).rejects.toThrow('Job "legacy-job-id" is not a package job (ADR 0032).')
 })
 
 test('updateJob updates package-owned job metadata without force-publishing the package source', async () => {
@@ -359,45 +313,7 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	})
 	expect(updated.schedule).toEqual({ type: 'cron', expression: '0 8 * * *' })
 	expect(updated.params).toEqual({ date: '2026-08-18' })
-	const identityErrorMessage =
-		'Package-owned jobs cannot change name or published source via jobUpdate. Change the job entry in the package repo and publish the package.'
-	for (const [body, message] of [
-		[{ code: 'export default async () => ({ ok: true })' }, codeErrorMessage],
-		[{ name: 'renamed-daily-prompt' }, identityErrorMessage],
-		[{ publishedCommit: 'attacker-chosen-commit' }, identityErrorMessage],
-	] as const) {
-		await expectCallerError(
-			updateJob({ env, callerContext, body: { id: jobId, ...body } }),
-			message,
-		)
-	}
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
-
-	// Leftover jobs still republish their source on metadata edits.
-	const leftover = await insertJob(env, callerContext, 'Leftover job fixture')
-	repoMockModule.syncArtifactSourceSnapshot.mockClear()
-	await updateJob({
-		env,
-		callerContext,
-		body: { id: leftover.id, schedule: { type: 'interval', every: '30m' } },
-	})
-	expect(repoMockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
-	await expectCallerError(
-		updateJob({
-			env,
-			callerContext,
-			body: {
-				id: leftover.id,
-				code: 'export default async () => ({ ok: true, rewritten: true })',
-			},
-		}),
-		codeErrorMessage,
-	)
-
-	await expectCallerError(
-		deleteJob({ env, userId: personalOrgId(userId), jobId }),
-		packageOwnedJobDeleteErrorMessage,
-	)
 	expect(
 		await getJobInspection({ env, userId: personalOrgId(userId), jobId }),
 	).toMatchObject({
@@ -517,44 +433,39 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	expect(inspected.alarm).toEqual({ ...alarm, storedUserId: 'user-123' })
 	expect(inspected).not.toHaveProperty('source')
 
-	const publishKodyJob = (
-		job: { id: string; sourceId: string },
-		entrypoint: string,
-		files: Record<string, string> = {},
-	) =>
-		insertPublishedEntitySource({
-			db: env.APP_DB as ReturnType<typeof createDatabase>,
-			env,
-			userId,
-			sourceId: job.sourceId,
-			entityId: job.id,
-			publishedCommit: 'published-commit-2',
-			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Inspect source job',
-					description: 'Job source fixture',
-					entrypoint,
-				}),
-				...files,
-			},
-		})
-	const inspectCode = (jobId: string, inspectEnv = env) =>
+	const inspectCode = (jobId: string) =>
 		getJobInspection({
-			env: inspectEnv,
+			env,
 			userId: personalOrgId(userId),
 			jobId,
 			includeCode: true,
 		})
+	const rewriteSnapshotFiles = async (
+		job: { sourceId: string; publishedCommit: string | null },
+		rewrite: (files: Record<string, string>) => Record<string, string>,
+	) => {
+		const key = buildPublishedSourceSnapshotKvKey({
+			sourceId: job.sourceId,
+			publishedCommit: job.publishedCommit ?? '',
+		})
+		const snapshot = (await env.BUNDLE_ARTIFACTS_KV.get(key, 'json')) as {
+			files: Record<string, string>
+		}
+		await env.BUNDLE_ARTIFACTS_KV.put(
+			key,
+			JSON.stringify({ ...snapshot, files: rewrite(snapshot.files) }),
+		)
+	}
 
 	const code =
 		'export default async function main() { return { custom: true } }'
-	await publishKodyJob(created, 'src/custom-job.ts', {
-		'src/custom-job.ts': code,
+	const customJob = await insertPackageJob({
+		env,
+		callerContext,
+		body: { name: 'custom-job', schedule: every15m, code },
 	})
-	expect((await inspectCode(created.id)).source).toEqual({
-		entrypoint: 'src/custom-job.ts',
+	expect((await inspectCode(customJob.id)).source).toEqual({
+		entrypoint: 'src/job.ts',
 		code,
 		error: null,
 	})
@@ -562,58 +473,32 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	const missingEntrypointJob = await insertJob(
 		env,
 		callerContext,
-		'Missing source job',
+		'missing-entrypoint-job',
 	)
-	await publishKodyJob(missingEntrypointJob, 'src/missing-job.ts')
+	await rewriteSnapshotFiles(missingEntrypointJob, (files) => ({
+		'package.json': files['package.json'] ?? '',
+	}))
 	const missingEntrypoint = await inspectCode(missingEntrypointJob.id)
 	expect(missingEntrypoint.job.id).toBe(missingEntrypointJob.id)
 	expect(missingEntrypoint.source).toEqual({
-		entrypoint: 'src/missing-job.ts',
+		entrypoint: 'src/job.ts',
 		code: null,
-		error: 'Job entrypoint "src/missing-job.ts" was not found.',
+		error: 'Job entrypoint "src/job.ts" was not found.',
 	})
 
-	const bundleKv = createBundleArtifactsKv()
-	const manifestEnv = createJobServiceTestEnv({
-		APP_DB: createDatabase(),
-		BUNDLE_ARTIFACTS_KV: bundleKv,
-	})
 	const missingManifestJob = await insertJob(
-		manifestEnv,
+		env,
 		callerContext,
-		'Missing manifest job',
+		'missing-manifest-job',
 	)
-	await insertPublishedEntitySource({
-		db: manifestEnv.APP_DB as ReturnType<typeof createDatabase>,
-		env: manifestEnv,
-		userId,
-		sourceId: missingManifestJob.sourceId,
-		entityId: missingManifestJob.id,
-		publishedCommit: 'published-commit-2',
-	})
-	await bundleKv.put(
-		buildPublishedSourceSnapshotKvKey({
-			sourceId: missingManifestJob.sourceId,
-			publishedCommit: 'published-commit-2',
-		}),
-		JSON.stringify({
-			version: 1,
-			sourceId: missingManifestJob.sourceId,
-			repoId: `job-${missingManifestJob.id}`,
-			entityKind: 'job',
-			entityId: missingManifestJob.id,
-			publishedCommit: 'published-commit-2',
-			manifestPath: 'kody.json',
-			sourceRoot: '/',
-			files: { 'src/job.ts': 'export default async () => ({ ok: true })' },
-			createdAt: '2026-04-16T00:00:00.000Z',
-		}),
-	)
-	const missingManifest = await inspectCode(missingManifestJob.id, manifestEnv)
+	await rewriteSnapshotFiles(missingManifestJob, (files) => ({
+		'src/job.ts': files['src/job.ts'] ?? '',
+	}))
+	const missingManifest = await inspectCode(missingManifestJob.id)
 	expect(missingManifest.job.id).toBe(missingManifestJob.id)
 	expect(missingManifest.source).toEqual({
 		entrypoint: null,
 		code: null,
-		error: 'Job manifest "kody.json" was not found.',
+		error: 'Job manifest "package.json" was not found.',
 	})
 })

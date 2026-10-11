@@ -24,7 +24,7 @@ import {
 	createDatabase,
 	createJobServiceTestEnv,
 	insertPublishedEntitySource,
-	insertLeftoverJob,
+	insertPackageJob,
 	syncSinglePackageJob,
 	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
@@ -313,7 +313,6 @@ test('package job sync preflights the full addition set without partial inserts'
 			timezone: 'UTC',
 			enabled: 1,
 			kill_switch_enabled: 0,
-			preserved: 0,
 			expires_at: null,
 			caller_context_json: JSON.stringify(
 				createPlanUserCallerContext({ userId, email }),
@@ -448,13 +447,12 @@ test('free and public Standard plans reject new or changed schedules faster than
 	expect(await listJobRowsByUserId(env.APP_DB, userId)).toEqual(before)
 
 	const callerContext = createPlanUserCallerContext({ userId, email })
-	const grandfathered = await insertLeftoverJob({
+	const grandfathered = await insertPackageJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Legacy five-minute poller',
+			name: 'five-minute-poller',
 			schedule: { type: 'interval', every: '5m' },
-			sourceId: 'legacy-5m-source',
 		},
 	})
 	const updateGrandfathered = (body: Record<string, unknown>) =>
@@ -502,11 +500,11 @@ test('syncPackageJobsForPackage enforces scheduled job entitlements for plan use
 	})
 	const freeLimit = planLimits.free.maxScheduledJobs
 	for (let index = 0; index < freeLimit; index += 1) {
-		await insertLeftoverJob({
+		await insertPackageJob({
 			env: plannedEnv,
 			callerContext: plannedCallerContext,
 			body: {
-				name: `Quota job ${index}`,
+				name: `quota-job-${index}`,
 				schedule: { type: 'interval', every: '15m' },
 			},
 		})

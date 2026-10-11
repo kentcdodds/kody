@@ -235,20 +235,30 @@ async function seedTeamOrg(t: Awaited<ReturnType<typeof setup>>) {
 	})
 	t.jobsByOrg.set(t.teamOrgId, [
 		{
-			id: 'job-member',
+			id: 'package-job:pkg-mail:member',
 			name: 'digest',
 			creatorUserId: t.memberId,
 			active: true,
 		},
 		{
-			id: 'job-left',
+			id: 'package-job:pkg-mail:left',
 			name: 'cleanup',
 			creatorUserId: t.leaverId,
 			active: true,
 		},
-		{ id: 'job-legacy', name: 'legacy', creatorUserId: null, active: true },
+		{
+			id: 'package-job:pkg-mail:legacy',
+			name: 'legacy',
+			creatorUserId: null,
+			active: true,
+		},
 		// Disabled or kill-switched: it does not run today.
-		{ id: 'job-off', name: 'paused', creatorUserId: t.memberId, active: false },
+		{
+			id: 'package-job:pkg-mail:off',
+			name: 'paused',
+			creatorUserId: t.memberId,
+			active: false,
+		},
 	])
 	await t.addWebhookEndpoint({
 		orgId: t.teamOrgId,
@@ -318,10 +328,31 @@ test('dry-run plans one enablement per trigger for a real member and writes noth
 		item.unsignedWebhook,
 	])
 	expect(summary).toEqual([
-		['cron', 'job-member', 'digest', t.memberId, 'creator', false],
+		[
+			'cron',
+			'package-job:pkg-mail:member',
+			'digest',
+			t.memberId,
+			'creator',
+			false,
+		],
 		// The creator left the org; the earliest Owner takes it, never the org.
-		['cron', 'job-left', 'cleanup', t.ownerId, 'earliest_owner', false],
-		['cron', 'job-legacy', 'legacy', t.ownerId, 'earliest_owner', false],
+		[
+			'cron',
+			'package-job:pkg-mail:left',
+			'cleanup',
+			t.ownerId,
+			'earliest_owner',
+			false,
+		],
+		[
+			'cron',
+			'package-job:pkg-mail:legacy',
+			'legacy',
+			t.ownerId,
+			'earliest_owner',
+			false,
+		],
 		['webhook', 'wh-github', 'github', t.memberId, 'creator', true],
 		['webhook', 'wh-linear', 'linear', t.memberId, 'creator', false],
 		['webhook', 'wh-stripe', 'stripe', t.ownerId, 'creator', false],
@@ -439,7 +470,8 @@ test('a team org must be notified before apply, and each member is emailed their
 		rows.every((row) => row.state === 'on' && row.origin === 'migrated'),
 	).toBe(true)
 	expect(
-		rows.find((row) => row.instanceId === 'job-member')?.enablerUserId,
+		rows.find((row) => row.instanceId === 'package-job:pkg-mail:member')
+			?.enablerUserId,
 	).toBe(t.memberId)
 	expect(
 		await getEnablementOrgMigration({ db: t.db, orgId: t.teamOrgId }),
@@ -472,7 +504,12 @@ test('a personal org migrates without a notice, and existing enablements are not
 		manifest: { subscriptions: { 'job.run.failed': { handler: './a.ts' } } },
 	})
 	t.jobsByOrg.set(t.personalOrgId, [
-		{ id: 'job-own', name: 'own', creatorUserId: null, active: true },
+		{
+			id: 'package-job:pkg-mail:own',
+			name: 'own',
+			creatorUserId: null,
+			active: true,
+		},
 	])
 
 	consoleWarn.mockImplementation(() => {})
@@ -501,7 +538,7 @@ test('a personal org migrates without a notice, and existing enablements are not
 			`INSERT INTO enablements (
 				id, org_id, trigger_kind, trigger_name, instance_id, enabler_user_id,
 				state, origin, enabled_at, updated_at
-			) VALUES ('e-1', ?, 'cron', 'own', 'job-own', ?, 'on', 'migrated', ?, ?)`,
+			) VALUES ('e-1', ?, 'cron', 'own', 'package-job:pkg-mail:own', ?, 'on', 'migrated', ?, ?)`,
 		)
 		.bind(t.personalOrgId, t.ownerId, now, now)
 		.run()
@@ -528,7 +565,7 @@ test('a personal org migrates without a notice, and existing enablements are not
 	expect(
 		rows.map((row) => [row.triggerKind, row.instanceId, row.state]),
 	).toEqual([
-		['cron', 'job-own', 'paused'],
+		['cron', 'package-job:pkg-mail:own', 'paused'],
 		['subscription', 'pkg-own', 'on'],
 	])
 })
@@ -585,7 +622,12 @@ test('paging walks every live org in id order, skipping migrated and deleted one
 test('an org with no live Owner is skipped instead of falling back to a system owner', async () => {
 	const t = await setup()
 	t.jobsByOrg.set(t.teamOrgId, [
-		{ id: 'job-1', name: 'digest', creatorUserId: t.memberId, active: true },
+		{
+			id: 'package-job:pkg-mail:1',
+			name: 'digest',
+			creatorUserId: t.memberId,
+			active: true,
+		},
 	])
 	await t.db
 		.prepare(
@@ -605,6 +647,30 @@ test('an org with no live Owner is skipped instead of falling back to a system o
 		skipReason: 'no_owner',
 		planned: [],
 	})
+})
+
+test('a non-package job stops the backfill instead of planning an enablement', async () => {
+	const t = await setup()
+	t.jobsByOrg.set(t.teamOrgId, [
+		{
+			id: '5da99bf3-fa85-4a86-809d-d0c95828c261',
+			name: 'unattached',
+			creatorUserId: t.memberId,
+			active: true,
+		},
+	])
+	await expect(
+		runEnablementBackfill({
+			db: t.db,
+			mode: 'dry-run',
+			deps: t.deps,
+			orgIds: [t.teamOrgId],
+		}),
+	).rejects.toThrow(
+		'Job "5da99bf3-fa85-4a86-809d-d0c95828c261" in org "' +
+			t.teamOrgId +
+			'" is not a package job (ADR 0032).',
+	)
 })
 
 test('the notice names each item', () => {
@@ -631,8 +697,18 @@ test('the notice names each item', () => {
 test('a rerun after a rename or a turned-off personal row keeps one migrated row per trigger', async () => {
 	const t = await setup()
 	t.jobsByOrg.set(t.personalOrgId, [
-		{ id: 'job-a', name: 'renamed', creatorUserId: null, active: true },
-		{ id: 'job-b', name: 'nightly', creatorUserId: null, active: true },
+		{
+			id: 'package-job:pkg-mail:a',
+			name: 'renamed',
+			creatorUserId: null,
+			active: true,
+		},
+		{
+			id: 'package-job:pkg-mail:b',
+			name: 'nightly',
+			creatorUserId: null,
+			active: true,
+		},
 	])
 	// An earlier partial apply wrote job-a under its old name.
 	await t.db
@@ -640,7 +716,7 @@ test('a rerun after a rename or a turned-off personal row keeps one migrated row
 			`INSERT INTO enablements (
 				id, org_id, trigger_kind, trigger_name, instance_id, enabler_user_id,
 				state, origin, enabled_at, updated_at
-			) VALUES ('e-a', ?, 'cron', 'old-name', 'job-a', ?, 'on', 'migrated', ?, ?)`,
+			) VALUES ('e-a', ?, 'cron', 'old-name', 'package-job:pkg-mail:a', ?, 'on', 'migrated', ?, ?)`,
 		)
 		.bind(t.personalOrgId, t.ownerId, now, now)
 		.run()
@@ -650,7 +726,7 @@ test('a rerun after a rename or a turned-off personal row keeps one migrated row
 			`INSERT INTO enablements (
 				id, org_id, trigger_kind, trigger_name, instance_id, enabler_user_id,
 				state, origin, enabled_at, disabled_at, updated_at
-			) VALUES ('e-b', ?, 'cron', 'nightly', 'job-b', ?, 'off', 'enabled', ?, ?, ?)`,
+			) VALUES ('e-b', ?, 'cron', 'nightly', 'package-job:pkg-mail:b', ?, 'off', 'enabled', ?, ?, ?)`,
 		)
 		.bind(t.personalOrgId, t.ownerId, now, now, now)
 		.run()
@@ -662,7 +738,7 @@ test('a rerun after a rename or a turned-off personal row keeps one migrated row
 		orgIds: [t.personalOrgId],
 	})
 	expect(report.orgs[0]?.planned.map((item) => item.instanceId)).toEqual([
-		'job-b',
+		'package-job:pkg-mail:b',
 	])
 	const migrated = await t.db
 		.prepare(
@@ -673,8 +749,8 @@ test('a rerun after a rename or a turned-off personal row keeps one migrated row
 		.bind(t.personalOrgId)
 		.all<{ instance_id: string }>()
 	expect(migrated.results.map((row) => row.instance_id)).toEqual([
-		'job-a',
-		'job-b',
+		'package-job:pkg-mail:a',
+		'package-job:pkg-mail:b',
 	])
 })
 
@@ -705,13 +781,13 @@ test('the unique migrated index makes an overlapping apply a no-op', async () =>
 		id: 'e-1',
 		triggerKind: 'cron',
 		triggerName: 'a',
-		instanceId: 'job-a',
+		instanceId: 'package-job:pkg-mail:a',
 	})
 	await insert({
 		id: 'e-2',
 		triggerKind: 'cron',
 		triggerName: 'renamed',
-		instanceId: 'job-a',
+		instanceId: 'package-job:pkg-mail:a',
 	})
 	await insert({
 		id: 'e-3',
@@ -864,7 +940,7 @@ test('apply refuses items added after the notice until their enabler is told', a
 	expect(t.notices).toHaveLength(2)
 
 	t.jobsByOrg.get(t.teamOrgId)!.push({
-		id: 'job-new',
+		id: 'package-job:pkg-mail:new',
 		name: 'weekly',
 		creatorUserId: t.memberId,
 		active: true,
@@ -912,7 +988,7 @@ test('apply refuses items added after the notice until their enabler is told', a
 	expect(applied.orgs[0]?.outcome).toBe('migrated')
 	expect(
 		(await listEnablementsForOrg({ db: t.db, orgId: t.teamOrgId })).some(
-			(row) => row.instanceId === 'job-new',
+			(row) => row.instanceId === 'package-job:pkg-mail:new',
 		),
 	).toBe(true)
 })

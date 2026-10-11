@@ -1,6 +1,5 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
-import { jobDeleteCapability } from './job-delete.ts'
 import { jobGetCapability } from './job-get.ts'
 import { jobListCapability } from './job-list.ts'
 import { jobRunNowCapability } from './job-run-now.ts'
@@ -18,7 +17,6 @@ export const jobsDomain = defineDomain({
 		'interval',
 		'cron',
 		'update',
-		'delete',
 		'disable',
 		'enable',
 		'background',
@@ -34,7 +32,6 @@ export const jobsDomain = defineDomain({
 		jobListCapability,
 		jobGetCapability,
 		jobUpdateCapability,
-		jobDeleteCapability,
 		jobRunNowCapability,
 		workflowListCapability,
 		workflowCancelCapability,
