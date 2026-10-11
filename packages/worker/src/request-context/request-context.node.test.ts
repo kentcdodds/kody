@@ -181,12 +181,28 @@ test('downstream runs keep the starter role instead of the org identity Owner ro
 	})
 	expect(otherOrg.membership).toBeNull()
 
-	// Lineage persisted before it carried membership keeps today's behavior.
+	// Lineage persisted before it carried membership never takes the org
+	// identity's Owner role for someone else.
 	const { membership: _membership, ...legacy } = parsed!
 	expect(
 		deriveRequestContext({
 			user,
 			source: { kind: 'inherited', lineage: parseRequestLineage(legacy)! },
+		}).membership,
+	).toBeNull()
+
+	// A personal org's owner still runs as Owner from legacy lineage.
+	const ownerRun = deriveRequestContext({ user, source: { kind: 'mcp-oauth' } })
+	const { membership: _ownerMembership, ...legacyOwner } = JSON.parse(
+		JSON.stringify(requestLineage(ownerRun)),
+	) as Record<string, unknown>
+	expect(
+		deriveRequestContext({
+			user,
+			source: {
+				kind: 'inherited',
+				lineage: parseRequestLineage(legacyOwner)!,
+			},
 		}).membership,
 	).toEqual({ role: 'owner' })
 	expect(
