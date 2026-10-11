@@ -323,12 +323,26 @@ export function defaultLegacyJobRetireDeps(input: {
 			try {
 				await deleteLegacyJob(env, job)
 			} catch (error) {
-				// Once the legacy row is gone the package job is the only copy left.
+				// deleteJob removes the legacy source before the row, so roll back only
+				// while the legacy job is still whole; otherwise the package job is the
+				// only runnable copy.
 				const legacyRow = await jobsData(env).getJobById({
 					userId: owner.orgId,
 					jobId: record.id,
 				})
-				if (legacyRow) return await rollBackMove(error)
+				const legacySource = legacyRow
+					? await getEntitySourceByIdForUser(env.APP_DB, {
+							id: record.sourceId,
+							userId: orgId,
+						})
+					: null
+				if (legacyRow && legacySource) return await rollBackMove(error)
+				if (legacyRow) {
+					throw new Error(
+						`Job "${record.id}" moved to "${moved.jobId}" but its legacy row survived without a source; retry it with a delete decision.`,
+						{ cause: error },
+					)
+				}
 				throw error
 			}
 			return moved
