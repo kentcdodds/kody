@@ -487,26 +487,31 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									: undefined,
 							})
 						: undefined
-				if (claimWorkerDay) {
-					await admitHostedExecuteCall({
-						env,
-						ownerId: storageOwnerId,
-						email: entitlementEmail,
-						repeatKey: await executeRepeatKey({
-							credential: callerContext.request?.credential ?? null,
-							actorUserId:
-								callerContext.request?.actor?.userId ??
-								callerContext.user?.userId ??
-								null,
-							conversationId,
-							code,
-							invoke,
-							params,
-						}),
-					})
-				}
+				// Admission is a UserMeter round trip that only gates work below it,
+				// so let it overlap the registry read; nothing that writes, retrieves
+				// memories, or runs sandbox code proceeds until it has admitted.
+				const admissionPromise = claimWorkerDay
+					? admitHostedExecuteCall({
+							env,
+							ownerId: storageOwnerId,
+							email: entitlementEmail,
+							repeatKey: await executeRepeatKey({
+								credential: callerContext.request?.credential ?? null,
+								actorUserId:
+									callerContext.request?.actor?.userId ??
+									callerContext.user?.userId ??
+									null,
+								conversationId,
+								code,
+								invoke,
+								params,
+							}),
+						})
+					: null
+				void admissionPromise?.catch(() => {})
 
 				if (normalizedIdempotencyKey && storageOwnerId) {
+					await admissionPromise
 					const claim = await claimRunRecord({
 						env,
 						userId: storageOwnerId,
@@ -534,15 +539,18 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const [registry, surfacedMemories] = await Promise.all([
+				// Only the pure registry read overlaps admission. Memory retrievers
+				// can run package code, so they start after the call is admitted.
+				const [registry] = await Promise.all([
 					registryPromise,
-					surfaceToolMemories({
-						env,
-						callerContext,
-						conversationId: resolvedConversationId,
-						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-					}),
+					admissionPromise,
 				])
+				const surfacedMemories = await surfaceToolMemories({
+					env,
+					callerContext,
+					conversationId: resolvedConversationId,
+					retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+				})
 				const registeredCapabilityCount = Object.keys(
 					registry.capabilityHandlers,
 				).length
