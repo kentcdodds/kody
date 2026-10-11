@@ -429,8 +429,10 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
+		apiAvailable: false,
 		inputTypeDefinition: expect.stringContaining('GithubCreateIssueInput'),
 	})
+	expect(identifierDetail.markdown).toContain('execute-only')
 	expect(identifierDetail.structured).not.toHaveProperty('inputSchema')
 	expect(identifierDetail.structured).not.toHaveProperty('outputSchema')
 	const identifierExecution = await executeCapabilityExample(
@@ -455,6 +457,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	expect(bracketMatch).toMatchObject({
 		type: 'capability',
 		entityRef: 'capability:foo-bar',
+		apiAvailable: false,
 	})
 	const bracketDetail = capabilityDetail({
 		name: 'foo-bar',
