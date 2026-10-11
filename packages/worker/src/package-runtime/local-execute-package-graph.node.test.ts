@@ -497,36 +497,28 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				controller.close()
 			},
 		})
-		const secretFetch = __kodyGatewayFetch('https://api.example.com/post', {
+		await __kodyGatewayFetch('https://api.example.com/post', {
 			method: 'POST',
 			body: secretStream,
 		})
-		await expect(secretFetch).resolves.toBeInstanceOf(Response)
 		expect(gatewayCalls).toHaveLength(0)
-		const secretBody = (ambientCalls.at(-1)?.init as RequestInit).body
-		await expect(
-			new Response(secretBody as ReadableStream).arrayBuffer(),
-		).rejects.toThrow(/streaming body/)
+		expect(
+			new TextDecoder().decode(
+				await new Response(
+					(ambientCalls.at(-1)?.init as RequestInit).body as ReadableStream,
+				).arrayBuffer(),
+			),
+		).toBe('before-{{secret:demoToken}}-after')
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
-		const splitSecret = new ReadableStream({
-			start(controller) {
-				controller.enqueue(new TextEncoder().encode('{{sec'))
-				controller.enqueue(new TextEncoder().encode('ret:demoToken}}'))
-				controller.close()
-			},
-		})
+		const bodySecretText = '{"note":"{{secret:demoToken|scope=user}}"}'
 		await __kodyGatewayFetch('https://api.example.com/post', {
 			method: 'POST',
-			body: splitSecret,
+			body: bodySecretText,
 		})
-		await expect(
-			new Response(
-				(ambientCalls.at(-1)?.init as RequestInit).body as ReadableStream,
-			).arrayBuffer(),
-		).rejects.toThrow(/streaming body/)
 		expect(gatewayCalls).toHaveLength(0)
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(bodySecretText)
 
 		const ambientBeforeHeaderSecret = ambientCalls.length
 		await expect(
@@ -723,25 +715,30 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		})
 
-		const namedForm = new FormData()
-		namedForm.set('{{secret:demoToken|scope=user}}', 'field-value')
-		await expect(
-			__kodyGatewayFetch('https://api.example.com/upload', {
-				method: 'POST',
-				body: namedForm,
-			}),
-		).rejects.toThrow(/FormData bodies with secret placeholders/)
+		gatewayCalls.length = 0
+		ambientCalls.length = 0
+		const placeholderForm = new FormData()
+		placeholderForm.set('{{secret:demoToken|scope=user}}', 'field-value')
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'POST',
+			body: placeholderForm,
+		})
+		expect(gatewayCalls).toHaveLength(0)
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(placeholderForm)
 
+		ambientCalls.length = 0
 		const requestForm = new FormData()
 		requestForm.set('note', '{{secret:demoToken|scope=user}}')
-		await expect(
-			__kodyGatewayFetch(
-				new Request('https://api.example.com/upload', {
-					method: 'POST',
-					body: requestForm,
-				}),
-			),
-		).rejects.toThrow(/FormData bodies with secret placeholders/)
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/upload', {
+				method: 'POST',
+				body: requestForm,
+			}),
+		)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(await (ambientCalls[0]?.input as Request).text()).toContain(
+			'{{secret:demoToken|scope=user}}',
+		)
 	} finally {
 		globalThis.fetch = originalFetch
 	}

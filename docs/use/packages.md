@@ -174,6 +174,9 @@ the slot name; the org decides which credential fills it.
   or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
   keep the header-only, HTTPS, and item-website rules. Anything else is refused
   before the credential resolves, with an error naming the slot and the rule.
+- There is no body placement. The request body is forwarded verbatim, so the
+  gateway never substitutes a slot placeholder there (a login password, a
+  form-encoded token exchange).
 
 ### npm dependencies
 

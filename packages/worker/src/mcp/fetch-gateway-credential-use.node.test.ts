@@ -366,7 +366,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	)
 })
 
-test('leak: a declared package credential is refused outside its placement, in the URL or body, or over plain HTTP, before it resolves', async () => {
+test('leak: a declared package credential is refused outside its placement, in the URL, or over plain HTTP, before it resolves', async () => {
 	const db = await createOrgDb()
 	const ownerStableId = testStableUserIdFromEmail('owner-p@example.com')
 	const ownerId = ownerIdFromStored(ownerStableId)
@@ -549,19 +549,12 @@ test('leak: a declared package credential is refused outside its placement, in t
 		'Slot "GOOGLE" of @ownerp/mailer has kind "oauth", but {{secret:GOOGLE}} needs a slot of kind "secret".',
 	)
 
-	// Outside every header: URL, query, and body.
+	// Outside every header: URL and query.
 	expect(
 		await refusal(
 			'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
 		),
 	).toContain('Secret "RESEND_API_KEY" is in the request URL.')
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
-		}),
-	).toContain('Secret "RESEND_API_KEY" is in the request body.')
 
 	// Plain HTTP, even in the declared header.
 	expect(

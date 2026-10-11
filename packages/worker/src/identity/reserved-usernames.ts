@@ -253,8 +253,33 @@ const reservedUsernames = new Set<string>(builtInReservedUsernameList)
  * Username charset separators already present on reserved tokens or DNS-safe
  * labels. Hyphen is the only claimable separator; underscore appears on a few
  * legacy mailbox locals in this list. Do not add other strip rules.
+ *
+ * `adminHandleGet` compacts stored handles with this same set. Adding a
+ * character here changes both reserved-name checks and that admin lookup.
  */
-const reservedUsernameSeparators = /[-_]/g
+export const reservedUsernameSeparatorCharacters = ['-', '_'] as const
+
+function reservedUsernameSeparatorPatternSource(
+	character: (typeof reservedUsernameSeparatorCharacters)[number],
+) {
+	switch (character) {
+		case '-':
+			return '\\-'
+		case '_':
+			return '_'
+		default: {
+			const unexpected: never = character
+			throw new Error(`Unsupported reserved-username separator: ${unexpected}`)
+		}
+	}
+}
+
+const reservedUsernameSeparators = new RegExp(
+	reservedUsernameSeparatorCharacters
+		.map((character) => reservedUsernameSeparatorPatternSource(character))
+		.join('|'),
+	'g',
+)
 
 /** Substring match only for compact reserved tokens this long or longer. */
 const reservedUsernameSubstringMinLength = 4
@@ -318,7 +343,8 @@ export function normalizeReservedUsername(username: string) {
 	return username.trim().toLowerCase()
 }
 
-function compactReservedUsername(username: string) {
+/** Lowercase, trim, and strip `reservedUsernameSeparatorCharacters`. */
+export function compactReservedUsername(username: string) {
 	return normalizeReservedUsername(username).replace(
 		reservedUsernameSeparators,
 		'',
