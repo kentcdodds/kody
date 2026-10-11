@@ -118,7 +118,8 @@ function redactHeaders(headers: Headers, values: ReadonlyArray<string>) {
  * `response` with every `values` entry redacted from its URL, headers, and
  * body. The body length can change, so `content-length` is dropped, except on
  * range responses: there each value is masked byte for byte so
- * `content-range` and `content-length` stay true.
+ * `content-range` and `content-length` stay true. A WebSocket upgrade keeps
+ * its socket; messages on it are not redacted.
  */
 export function redactEchoedSecrets(
 	response: Response,
@@ -137,6 +138,8 @@ export function redactEchoedSecrets(
 			status: response.status,
 			statusText: redactText(response.statusText, distinct),
 			headers,
+			webSocket: response.webSocket,
+			cf: response.cf,
 		},
 	)
 	return withLanding(redacted, {
