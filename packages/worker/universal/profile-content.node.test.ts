@@ -301,3 +301,13 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
 })
+
+test('execute-only package rows render the name without a package page link', async () => {
+	const html = await render({
+		packages: [{ ...unpublishedPackage, canOpenDetail: false }],
+		isSelf: true,
+	})
+	expect(html).toContain(testId('profile-package-name-nolink'))
+	expect(html).toContain('notes')
+	expect(html).not.toContain('href="/@kody/notes"')
+})
