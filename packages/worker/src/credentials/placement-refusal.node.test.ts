@@ -53,6 +53,6 @@ test('the webhook error names the code and slot and nothing else', () => {
 	expect(buildCredentialPlacementRefusedWebhookError(null)).toEqual({
 		code: 'credential_placement_refused',
 		message:
-			'The package tried to send a credential somewhere other than a declared request header, so Kody refused the request. The package owner needs to update the package.',
+			'The package tried to send a credential outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.',
 	})
 })

@@ -48,7 +48,7 @@ export function buildCredentialPlacementRefusedWebhookError(
 	const slotPhrase = slot ? ` (slot "${slot}")` : ''
 	return {
 		code: credentialPlacementRefusedCode,
-		message: `The package tried to send a credential${slotPhrase} somewhere other than a declared request header, so Kody refused the request. The package owner needs to update the package.`,
+		message: `The package tried to send a credential${slotPhrase} outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.`,
 		...(slot ? { slot } : {}),
 	}
 }

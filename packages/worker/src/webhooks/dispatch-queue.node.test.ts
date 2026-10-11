@@ -300,6 +300,34 @@ test('queue retries pre-execution conflict codes and records failed invokes with
 	expect(recorded.startedAt).not.toBe(recorded.receivedAt)
 })
 
+test('queue records credential_placement_refused for an ack delivery the fetch gateway refused', async () => {
+	mocks.dispatchWebhookInvocation.mockResolvedValueOnce({
+		status: 500,
+		body: {
+			ok: false,
+			error: {
+				code: 'execution_failed',
+				message:
+					'Secret "token" is in the request URL. (credential_placement_refused, slot "token")',
+			},
+		},
+	})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+	const refused = createQueueMessage('refused', createMessage())
+
+	await handleWebhookDispatchQueue(createBatch([refused]), {} as Env)
+
+	expect(queueOutcome(refused)).toEqual(acked)
+	expect(mocks.recordWebhookDelivery).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			outcome: 'failed',
+			httpStatus: 502,
+			error: 'credential_placement_refused',
+			invocationErrorCode: 'credential_placement_refused',
+		}),
+	)
+})
+
 test('webhook queue parser rejects malformed isolation and delivery fields', () => {
 	const message = createMessage()
 	const accepted: Array<WebhookDispatchQueueMessage> = [

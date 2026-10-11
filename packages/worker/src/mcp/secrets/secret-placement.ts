@@ -177,13 +177,16 @@ function referencesIn(value: string): PlacedReference[] {
 }
 
 /** The slot a reference names; vault references name a provider, not a slot. */
+/**
+ * The one slot a refusal is about. A Basic Auth pair names two slots, so a
+ * refusal of the whole pair names neither; per-slot checks pass their own.
+ */
 function slotOf(reference: PlacedReference) {
 	switch (reference.kind) {
 		case 'secret':
 		case 'integration-token':
 			return reference.name
 		case 'secret-basic':
-			return reference.usernameName
 		case 'provider-secret':
 			return null
 		default: {
@@ -261,6 +264,7 @@ function assertDeclaredSlotPlacement(input: {
 		if (loadError) {
 			throw new SecretPlacementError(
 				`Slot "${slotName}" of ${policy.packageName} is invalid in its published package.json, so the fetch gateway does not substitute it:\n${loadError}\nFix the slot and publish again.`,
+				slotName,
 			)
 		}
 		throw new SecretPlacementError(

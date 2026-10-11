@@ -709,7 +709,7 @@ test('a sync webhook whose package was refused for credential placement returns 
 		error: {
 			code: 'credential_placement_refused',
 			message:
-				'The package tried to send a credential (slot "clerkReviewUserId") somewhere other than a declared request header, so Kody refused the request. The package owner needs to update the package.',
+				'The package tried to send a credential (slot "clerkReviewUserId") outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.',
 			slot: 'clerkReviewUserId',
 		},
 	})
