@@ -22,6 +22,7 @@ import { mismatchedPackageScopeMessage } from '#worker/package-registry/package-
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { insertRepoSession } from '#worker/repo/repo-sessions.ts'
+import { insertUserRepo } from '#worker/repo/user-repos.ts'
 import { type RepoSessionInfoResult } from '#worker/repo/types.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
@@ -29,6 +30,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { repoListCapability } from './repo-list.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
 import { repoListSessionsCapability } from './repo-list-sessions.ts'
 import { repoReadFileCapability } from './repo-read-file.ts'
@@ -127,6 +129,39 @@ async function insertPackage(
 		})
 	}
 	return { packageId, sourceId }
+}
+
+async function insertPlainRepo(
+	db: D1Database,
+	input: { ownerId: string; name: string },
+) {
+	const repoId = crypto.randomUUID()
+	const sourceId = crypto.randomUUID()
+	const now = '2026-10-11T00:00:00.000Z'
+	await insertUserRepo(db, {
+		id: repoId,
+		user_id: ownerIdFromStored(input.ownerId),
+		name: input.name,
+		description: null,
+		created_at: now,
+		updated_at: now,
+	})
+	await insertEntitySource(db, {
+		id: sourceId,
+		user_id: ownerIdFromStored(input.ownerId),
+		entity_kind: 'repo',
+		entity_id: repoId,
+		repo_id: `repo-${repoId}`,
+		published_commit: null,
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: now,
+		updated_at: now,
+	})
+	return { repoId, sourceId }
 }
 
 /**
@@ -413,6 +448,36 @@ test('repoOpenSession counts active sessions against the bound org', async () =>
 	expect(isEntitlementLimitError(denied)).toBe(true)
 })
 
+test('plain repos list and open in the bound team org', async () => {
+	const { db, boundToTeam, kentId, teamOrgId } = await setup()
+	await insertPlainRepo(db, { ownerId: kentId, name: 'notes' })
+	const teamRepo = await insertPlainRepo(db, {
+		ownerId: teamOrgId,
+		name: 'notes',
+	})
+
+	const listed = await repoListCapability.handler({}, boundToTeam)
+	expect(listed.repos.map((repo) => repo.repo_id)).toEqual([teamRepo.repoId])
+
+	const opened = await repoOpenSessionCapability.handler(
+		{ target: { kind: 'repo', name: 'notes' } },
+		boundToTeam,
+	)
+	expect(opened.resolved_target).toEqual(
+		expect.objectContaining({
+			kind: 'repo',
+			source_id: teamRepo.sourceId,
+			repo_id: teamRepo.repoId,
+		}),
+	)
+	expect(repoSessionDo.openSession).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			sourceId: teamRepo.sourceId,
+			userId: teamOrgId,
+		}),
+	)
+})
+
 test('team-org repo sessions are readable only by members who may read the package', async () => {
 	const { db, audit, kentId, teamOrgId, team, boundToTeam, context } =
 		await setup()
@@ -442,6 +507,22 @@ test('team-org repo sessions are readable only by members who may read the packa
 		createdByUserId: kentId,
 		audit,
 	})
+	const executeOnly = await insertPackage(db, {
+		ownerId: teamOrgId,
+		scope: 'rocket-co',
+		leaf: 'runner',
+	})
+	await upsertGrant({
+		db,
+		orgId: teamOrgId,
+		resourceType: 'package',
+		resourceId: executeOnly.packageId,
+		subject: { type: 'user', id: memberId },
+		preset: null,
+		permissions: ['package:execute'],
+		createdByUserId: kentId,
+		audit,
+	})
 	const member = context({
 		personId: memberId,
 		username: 'member',
@@ -454,6 +535,10 @@ test('team-org repo sessions are readable only by members who may read the packa
 	)
 	const billingSession = await repoOpenSessionCapability.handler(
 		{ source_id: other.sourceId },
+		boundToTeam,
+	)
+	const executeOnlySession = await repoOpenSessionCapability.handler(
+		{ source_id: executeOnly.sourceId },
 		boundToTeam,
 	)
 	repoSessionDo.readFile.mockImplementation(
@@ -491,6 +576,6 @@ test('team-org repo sessions are readable only by members who may read the packa
 		boundToTeam,
 	)
 	expect(listedByOwner.sessions.map((session) => session.id).sort()).toEqual(
-		[githubSession.id, billingSession.id].sort(),
+		[githubSession.id, billingSession.id, executeOnlySession.id].sort(),
 	)
 })

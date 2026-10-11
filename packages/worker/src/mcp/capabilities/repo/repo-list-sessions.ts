@@ -7,7 +7,7 @@ import {
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	canSeeResource,
+	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
@@ -111,13 +111,14 @@ export const repoListSessionsCapability = defineDomainCapability(
 				if (
 					!source ||
 					(source.entity_kind === 'package' &&
-						!canSeeResource(
+						!checkPermission(
 							access,
+							'package:read',
 							packageResource({
 								id: source.entity_id,
 								userId: source.user_id,
 							}),
-						))
+						).allowed)
 				) {
 					continue
 				}
