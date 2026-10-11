@@ -2,8 +2,8 @@
 id: organizations
 title: Organizations
 summary:
-  Personal vs team orgs, permanent slugs, free-org limits, and where seats and
-  resource ceilings apply.
+  Personal vs team orgs, who automation runs as, the org-wide execute pool,
+  connecting one client to several orgs, free-org limits, and paid seats.
 category: platform
 audience: agents
 ---
@@ -11,20 +11,96 @@ audience: agents
 # Organizations
 
 Every signed-in person has a **personal** (signup) organization. You can also
-create **team** organizations. Resources (packages, secrets, jobs, …) belong to
-one org. Handles are permanent: `@slug` does not rename.
+create **team** organizations. Resources (packages, secrets, jobs, and so on)
+belong to one org. Handles are permanent: `@slug` does not rename.
+
+The org is the billing and data boundary: its resources, usage, limits, and bill
+stay inside it. Inside an org, grants control access. Owners hold everything,
+Members hold the org basics (`org:read`, `member:read`, `team:read`,
+`search:read`) plus what they are granted, and an outside collaborator holds
+only their grants. See [Share a package](/docs/package-sharing) for presets and
+grants.
 
 ## Personal vs team
 
-|                    | Personal                                              | Team                                                                                                                                      |
-| ------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Created            | At signup (slug = username)                           | `orgCreate` or Create organization                                                                                                        |
-| Members / teams    | No — create a team org to invite people or group them | Yes                                                                                                                                       |
-| Package grants     | `accessGrant` / grant invites                         | Same, plus the Grants web page                                                                                                            |
-| Resource web pages | Secrets, jobs, packages, connections, …               | Every resource page reads the org. Connections shows your agents approved for that org; Repositories shows the org's packages you can see |
+|                    | Personal                                             | Team                                                                                                                                      |
+| ------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Created            | At signup (slug = username)                          | `orgCreate` or Create organization                                                                                                        |
+| Members / teams    | No. Create a team org to invite people or group them | Yes                                                                                                                                       |
+| Package grants     | `accessGrant` / grant invites                        | Same, plus the Grants web page                                                                                                            |
+| Resource web pages | Secrets, jobs, packages, connections, and the rest   | Every resource page reads the org. Connections shows your agents approved for that org; Repositories shows the org's packages you can see |
 
 Switch orgs in the header, or pick the org at MCP consent. One connection binds
 one org.
+
+## Automation runs as the person who turned it on
+
+A scheduled job, subscription, or webhook runs only after a person turns it on
+for themselves with `enablementEnable` (minting a webhook URL turns it on for
+the minter). That person is the **enabler**, and every run acts as them:
+
+- The run has the enabler's live access in the org, checked on every run. It can
+  do only what the enabler could do by hand at that moment, never more.
+- Credentials resolve only when the enabler holds Use on them.
+- If the enabler loses access (leaves the org, loses `package:execute`, or loses
+  Use on a credential the run needs), the enablement pauses and its events are
+  dropped. It resumes by itself once access is back. A run never falls back to
+  another person or to Owner.
+- Usage counts against the org that owns the trigger, and the run is audited to
+  the enabler.
+
+Publishing a package never turns anything on, and nobody can enable a trigger
+for someone else. `enablementList` shows your enablements (an Owner can list the
+whole org's). `enablementDisable` turns one off; its enabler or an Owner may do
+that.
+
+Example: Bea is a Member of `@acme` with Use on `@acme/digest`. She turns on its
+nightly job. Each night it runs as Bea, with Bea's grants. It cannot change
+roles or read a secret Bea has no Use on. If an Owner removes Bea from `@acme`,
+the job pauses until someone else turns it on for themselves.
+
+## Execute limits: one org-wide pool
+
+Hosted execute limits (unique execute workers per day and per week) are one pool
+per org, not per person:
+
+- **Free**: one pool for the whole org (see the table below).
+- **Pro**: the pool is the per-seat include times paid seats, so it grows with
+  every Owner and Member. Funded credits carry it further, up to a ceiling that
+  also scales with seats.
+- The runaway brake (execute calls started per minute) is also per org: 300 for
+  each Owner and Member, at least 300, on every plan.
+
+A connection draws from the pool of the org it is bound to:
+
+- A **Member** connected to `@acme` draws from acme's pool and is one of acme's
+  seats.
+- A **grant-only collaborator** connected to the owning org draws from that
+  org's pool too, but is not a seat and does not grow the pool.
+- Work in a person's personal org draws from that personal org's own pool.
+
+Example: Jesse holds Use on `@acme/bot` and is not a member. Connected as
+`@acme`, his runs count against acme's execute pool, credits, and budgets.
+Nothing is charged to Jesse's personal plan, and acme's seat count does not
+change.
+
+## Connect one client to two orgs
+
+A connection binds exactly one org at consent
+([ADR 0064](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/contributing/decisions/0064-oauth-org-binding.md)).
+To use two orgs from the same client, add Kody twice, once per org, with
+`?org=<slug>` on the MCP URL:
+
+```text
+https://kody.codes/mcp?org=ada
+https://kody.codes/mcp?org=ada-work
+```
+
+Each entry runs its own consent with that org selected, gets its own grant, and
+acts only in that org. The slug must be an org you can access, and a slug that
+disagrees with the one picked at consent is refused. Without `?org=`, consent
+picks your only org or asks you to choose. For the CLI, use
+`kody login --org <slug>`.
 
 ## Free team org limits
 
@@ -33,12 +109,12 @@ A new team org starts on the **same Free plan** as a personal org
 
 | Limit                                   | Free                                                                                      |
 | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Free orgs you **own** (personal counts) | **2** — so one free team org beside personal                                              |
+| Free orgs you **own** (personal counts) | **2**, so one free team org beside personal                                               |
 | Seats                                   | No seat charge on Free. Paid Pro seats are Owners + Members only ($12/seat/mo or $120/yr) |
 | Saved packages                          | 10                                                                                        |
 | Repos                                   | 20                                                                                        |
 | Scheduled jobs                          | 5 (fastest interval 15 minutes)                                                           |
-| Execute / day · week                    | 150 · 400                                                                                 |
+| Execute (unique workers) / day · week   | 150 · 400                                                                                 |
 | Outbound fetches / day · week           | 1,000 · 2,500                                                                             |
 | Job runs / day                          | 500                                                                                       |
 | Automation invocations / day            | 1,000                                                                                     |
@@ -49,7 +125,7 @@ A new team org starts on the **same Free plan** as a personal org
 
 Credits: Free has no prepaid debit wallet. New accounts get a $5 welcome grant
 held until the account is **credit-eligible Pro** (purchasable Pro subscription,
-or admin credit eligibility on an effective Pro plan — not every paid price is
+or admin credit eligibility on an effective Pro plan; not every paid price is
 eligible). Until then the balance is held and not spent.
 
 Example: Ada owns `@ada` (personal, Free) and creates `@ada-work` (team, Free).
@@ -58,6 +134,6 @@ until one is paid or deleted.
 
 ## Paid seats
 
-When an org is Pro, each live Owner and Member is a seat. Billing-only members
-and outside collaborators are not seats. See
-[Share a package](/docs/package-sharing) for grants vs membership.
+When an org is Pro, each live Owner and Member is a seat, and each seat grows
+the org's execute pool. Billing-only members and outside collaborators are not
+seats. See [Share a package](/docs/package-sharing) for grants vs membership.
