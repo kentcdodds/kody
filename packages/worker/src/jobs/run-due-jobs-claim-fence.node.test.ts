@@ -26,6 +26,10 @@ const listArchivedJobArtifactsDueBefore = vi.fn<
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
+vi.mock('#worker/enablements/run-gate.ts', () => ({
+	planEnablementRuns: async () => ({ mode: 'legacy' }),
+}))
+
 vi.mock('#worker/account/deletion-state.ts', () => ({
 	withAccountWriteLease: (...args: Array<unknown>) =>
 		withAccountWriteLease(...(args as [never])),

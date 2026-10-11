@@ -38,6 +38,7 @@ import {
 	buildMarkEnablementOrgMigratedStatement,
 	listEnablementsForOrg,
 	listPendingEnablementOrgMigrations,
+	loadEarliestLiveOwnerId,
 	markEnablementOrgNotified,
 	type EnablementOrgMigration,
 } from './repo.ts'
@@ -174,22 +175,6 @@ export function defaultEnablementBackfillDeps(input: {
 	}
 }
 
-async function loadEarliestOwner(db: D1Database, orgId: string) {
-	const row = await db
-		.prepare(
-			`SELECT m.user_id AS user_id
-			 FROM org_memberships m
-			 INNER JOIN users u ON u.stable_user_id = m.user_id
-			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at IS NULL
-			   AND u.deleted_at IS NULL AND u.deleting_at IS NULL
-			 ORDER BY m.created_at, m.user_id
-			 LIMIT 1`,
-		)
-		.bind(orgId)
-		.first<{ user_id: string }>()
-	return row?.user_id ?? null
-}
-
 async function loadLiveMemberIds(db: D1Database, orgId: string) {
 	const result = await db
 		.prepare(
@@ -275,7 +260,7 @@ export async function planOrgEnablements(input: {
 	orgId: string
 	deps: Pick<EnablementBackfillDeps, 'listJobs' | 'loadManifest'>
 }): Promise<OrgPlan> {
-	const earliestOwner = await loadEarliestOwner(input.db, input.orgId)
+	const earliestOwner = await loadEarliestLiveOwnerId(input.db, input.orgId)
 	if (!earliestOwner) return { ok: false, reason: 'no_owner' }
 	const members = await loadLiveMemberIds(input.db, input.orgId)
 	const enablerFor = (creator: string | null) =>

@@ -407,6 +407,10 @@ export async function markEnablementOrgNotified(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+/**
+ * Mark an org as moved to enablements. Writes nothing when the org row does
+ * not exist, so org creation can batch it after a guarded org insert.
+ */
 export function buildMarkEnablementOrgMigratedStatement(input: {
 	db: D1Database
 	orgId: string
@@ -416,12 +420,34 @@ export function buildMarkEnablementOrgMigratedStatement(input: {
 		.prepare(
 			`INSERT INTO enablement_org_migrations (
 				org_id, state, migrated_at, updated_at
-			) VALUES (?, 'migrated', ?, ?)
+			)
+			SELECT ?, 'migrated', ?, ?
+			WHERE EXISTS (SELECT 1 FROM orgs WHERE id = ?)
 			ON CONFLICT (org_id) DO UPDATE SET
 				state = 'migrated',
 				migrated_at = excluded.migrated_at,
 				updated_at = excluded.updated_at
 			WHERE enablement_org_migrations.state <> 'migrated'`,
 		)
-		.bind(input.orgId, input.now, input.now)
+		.bind(input.orgId, input.now, input.now, input.orgId)
+}
+
+/**
+ * The org's earliest current Owner with a live account: the enabler when an
+ * item has no live creator. There is no system owner.
+ */
+export async function loadEarliestLiveOwnerId(db: D1Database, orgId: string) {
+	const row = await db
+		.prepare(
+			`SELECT m.user_id AS user_id
+			 FROM org_memberships m
+			 INNER JOIN users u ON u.stable_user_id = m.user_id
+			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at IS NULL
+			   AND u.deleted_at IS NULL AND u.deleting_at IS NULL
+			 ORDER BY m.created_at, m.user_id
+			 LIMIT 1`,
+		)
+		.bind(orgId)
+		.first<{ user_id: string }>()
+	return row?.user_id ?? null
 }

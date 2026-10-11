@@ -5,7 +5,10 @@ import {
 	type BudgetSpendAttributionInclude,
 } from '#universal/budget-spend-attribution.ts'
 import { creditDebitMeters, type CreditDebitMeter } from '#universal/credits.ts'
-import { type RequestSource } from '#worker/request-context/request-context.ts'
+import {
+	backgroundRunBilledActor,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { type TransactionalEmailEnv } from '#app/email/sender-config.ts'
 import { sendBudgetHitEmail } from '#worker/billing/org-budget-hit-emails.ts'
 import {
@@ -164,21 +167,23 @@ export function shouldMutateBudgetMtdForMonth(
 	return month === current
 }
 
-/** Map scheduled/automation job runs to org budget gate context. */
+/**
+ * Map a background run (job, webhook, subscription) to its org budget gate
+ * context. Enablement runs and inherited runs bill their person; legacy
+ * Automation bills the org's automation budget.
+ */
 export function orgBudgetForJobExecution(input: {
 	orgId: OwnerId
 	orgSlug: string | null
 	source: RequestSource
 }): OrgBudgetGateContext {
-	if (input.source.kind === 'inherited') {
-		const actor = input.source.lineage.actor
-		if (actor?.userId) {
-			return {
-				orgId: input.orgId,
-				orgSlug: input.orgSlug,
-				actorUserId: actor.userId,
-				actorUsername: actor.username ?? null,
-			}
+	const actor = backgroundRunBilledActor(input.source)
+	if (actor?.userId) {
+		return {
+			orgId: input.orgId,
+			orgSlug: input.orgSlug,
+			actorUserId: actor.userId,
+			actorUsername: actor.username ?? null,
 		}
 	}
 	const automationSource =

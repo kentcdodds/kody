@@ -25,6 +25,7 @@ import {
 	isEntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
+import { backgroundRunBilledActor } from '#worker/request-context/request-context.ts'
 import {
 	automationInvocationsPerDayResource,
 	shouldConsumeAutomationInvocationEntitlement,
@@ -184,18 +185,26 @@ export async function runSavedPackageModuleOnce(
 							: input.actor.request.kind === 'inbound-email'
 								? 'email'
 								: 'event'
+				const billedActor = backgroundRunBilledActor(input.actor.request)
 				await consumeDailyEntitlement({
 					db: input.env.APP_DB,
 					env: input.env,
 					userId: input.actor.orgId,
 					email: user.email,
 					resource: automationInvocationsPerDayResource,
-					orgBudget: {
-						orgId: input.actor.orgId,
-						orgSlug,
-						automationSource,
-						actorUserId: null,
-					},
+					orgBudget: billedActor
+						? {
+								orgId: input.actor.orgId,
+								orgSlug,
+								actorUserId: billedActor.userId,
+								actorUsername: billedActor.username,
+							}
+						: {
+								orgId: input.actor.orgId,
+								orgSlug,
+								automationSource,
+								actorUserId: null,
+							},
 				})
 			} catch (error) {
 				if (
