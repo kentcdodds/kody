@@ -3,6 +3,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	classifyMergeability,
 	githubRateLimitMaxWaitMs,
+	githubRateLimitWaitBudgetMs,
 	isGithubRateLimitError,
 	main,
 	mergeConflictCheckName,
@@ -169,7 +170,7 @@ test('a compare failure still writes the head check', async () => {
 	})
 	expect(code).toBe(0)
 	expect(github.bodies('POST', 'head_sha')).toEqual([headSha])
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 })
 
 test('a pull request whose head is the default-branch tip does not write a check', async () => {
@@ -205,26 +206,22 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	expect(code).toBe(0)
 	expect(github.calls.map((call) => call.method)).toEqual([
 		'GET',
-		'POST',
 		'GET',
-		'PATCH',
+		'POST',
 	])
 	expect(github.calls[0]?.url).toContain(`/compare/${baseSha}...${headSha}`)
-	expect(github.calls[1]?.body).toMatchObject({
-		name: mergeConflictCheckName,
-		head_sha: headSha,
-		status: 'in_progress',
-		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
-	})
-	expect(github.calls[2]?.url).toBe(
+	expect(github.calls[1]?.url).toBe(
 		'https://api.github.com/repos/kentcdodds/kody/pulls/2483',
 	)
-	expect(github.calls[3]?.body).toMatchObject({
+	expect(github.calls[2]?.body).toMatchObject({
+		name: mergeConflictCheckName,
+		head_sha: headSha,
 		status: 'completed',
 		conclusion: 'failure',
+		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
 		output: { title: 'Conflicts with main' },
 	})
-	expect(github.calls[1]?.authorization).toBe('Bearer test-token')
+	expect(github.calls[2]?.authorization).toBe('Bearer test-token')
 })
 
 test('a mergeable pull request completes the check successfully', async () => {
@@ -245,7 +242,8 @@ test('a mergeable pull request completes the check successfully', async () => {
 		delayMs: 1,
 	})
 	expect(code).toBe(0)
-	expect(github.calls[4]?.body).toMatchObject({
+	expect(github.calls[3]?.body).toMatchObject({
+		status: 'completed',
 		conclusion: 'success',
 		output: { title: 'No conflicts with main' },
 	})
@@ -283,7 +281,7 @@ test('a failed check creation still fails the process', async () => {
 		},
 	})
 	expect(code).toBe(1)
-	expect(methods).toEqual(['GET', 'POST'])
+	expect(methods).toEqual(['GET', 'GET', 'POST'])
 	expect(loggedErrors()).toContain('failed (500)')
 	expect(loggedErrors()).not.toContain('test-token')
 })
@@ -342,7 +340,7 @@ test('a base-branch push skips an open pull request whose head is already on the
 	expect(code).toBe(0)
 	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
 	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 })
 
 test('a base-branch push skips an open pull request whose head is the default-branch tip', async () => {
@@ -366,7 +364,7 @@ test('a base-branch push skips an open pull request whose head is the default-br
 	expect(code).toBe(0)
 	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
 	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 })
 
 test('a base-branch push refreshes every open pull request head check', async () => {
@@ -395,7 +393,7 @@ test('a base-branch push refreshes every open pull request head check', async ()
 	expect(github.bodies('POST', 'head_sha').sort()).toEqual(
 		[cleanSha, headSha].sort(),
 	)
-	expect(github.bodies('PATCH', 'conclusion').sort()).toEqual([
+	expect(github.bodies('POST', 'conclusion').sort()).toEqual([
 		'failure',
 		'success',
 	])
@@ -426,7 +424,7 @@ test('a base-branch push does not publish a cached result for the previous tip',
 	expect(
 		github.calls.filter((call) => call.url.endsWith('/pulls/7')),
 	).toHaveLength(2)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['failure'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['failure'])
 })
 
 test('an open pull request scan fails closed when the list is unreadable', async () => {
@@ -461,7 +459,7 @@ test('a rate-limited pull request read retries and still publishes', async () =>
 	})
 	expect(code).toBe(0)
 	expect(sleeps[0]).toBe(2_000)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 	expect(
 		github.calls.filter((call) => call.url.endsWith('/pulls/12')),
 	).toHaveLength(2)
@@ -489,7 +487,7 @@ test('a rate limit that cannot reset in time does not fail the job', async () =>
 	})
 	expect(code).toBe(0)
 	expect(sleeps.every((ms) => ms <= githubRateLimitMaxWaitMs)).toBe(true)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['cancelled'])
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
 	expect(loggedErrors().toLowerCase()).toContain('rate limit')
 	expect(isGithubRateLimitError(new Error(loggedErrors()))).toBe(true)
 })
@@ -512,7 +510,7 @@ test('a rate-limited compare does not write a check or fail the job', async () =
 	})
 	expect(code).toBe(0)
 	expect(github.bodies('POST', 'head_sha')).toEqual([])
-	expect(github.bodies('PATCH', 'conclusion')).toEqual([])
+	expect(github.bodies('POST', 'conclusion')).toEqual([])
 })
 
 test('a rate-limited check creation does not fail the process', async () => {
@@ -532,7 +530,6 @@ test('a rate-limited check creation does not fail the process', async () => {
 		sleep: () => Promise.resolve(),
 	})
 	expect(code).toBe(0)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual([])
 })
 
 test('a rate-limited open-pulls list does not fail the default-branch job', async () => {
@@ -575,10 +572,37 @@ test('a rate-limited open-pulls scan does not fail the default-branch job', asyn
 		sleep: () => Promise.resolve(),
 	})
 	expect(code).toBe(0)
-	expect(github.bodies('PATCH', 'conclusion').sort()).toEqual([
-		'cancelled',
-		'cancelled',
-	])
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+})
+
+test('a scan shares one rate-limit wait budget so retries cannot exceed the job timeout', async () => {
+	const sleeps: Array<number> = []
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: headSha } },
+			{ number: 8, head: { sha: 'b'.repeat(40) } },
+			{ number: 9, head: { sha: 'f'.repeat(40) } },
+		],
+		pulls: {},
+		rateLimit: { compare: 12, retryAfterSeconds: 60 },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 1,
+		sleep: (ms) => {
+			sleeps.push(ms)
+			return Promise.resolve()
+		},
+	})
+	expect(code).toBe(0)
+	expect(sleeps.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(
+		githubRateLimitWaitBudgetMs,
+	)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
 })
 
 function mergeability(input: {
