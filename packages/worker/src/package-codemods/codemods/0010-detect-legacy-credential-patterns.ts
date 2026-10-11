@@ -61,7 +61,7 @@ export const legacyCredentialPatternMessages: Record<
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in anywhere in a request to a host the secret allows, over HTTPS.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in a header, the URL path or query, or a non-multipart text body of an HTTPS request to a host the secret allows.',
 }
 
 export function legacyCredentialPatternFromMessage(
