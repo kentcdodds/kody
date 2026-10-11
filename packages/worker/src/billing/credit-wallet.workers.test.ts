@@ -520,6 +520,11 @@ test('debits charge only usage above the include, are idempotent, and never back
 	await topUp(userId, 500)
 	await debit()
 	expect(await balance(userId)).toBe(5_000_000)
+	// Empty-wallet progress settled against the same 350 Pro include, so only
+	// usage after the top-up is charged.
+	await setRollup(userId, 910)
+	await debit()
+	expect(await balance(userId)).toBe(5_000_000 - 10 * 4_000)
 })
 
 test('include → credits → stop: an empty Pro wallet runs free within the include and stops past it', async () => {

@@ -19,6 +19,7 @@ npm run control-kody -- request GET /account/waiting.json
 npm run control-kody -- request GET /@user-me/-/waiting --dump --contains 'Waiting'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'
 npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
@@ -61,6 +62,15 @@ URL when the form is rejected. Avatar upload is the multipart route:
 
 ```bash
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
+```
+
+Org-owned `/account/<section>.json` routes bind the org from a same-origin
+`Referer` and fall back to the personal org without one. Pass it with repeatable
+`--header 'Name: value'` (not `Cookie` or `Content-Type`); session handling is
+unchanged, and `preview --request` specs accept the same flag:
+
+```bash
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'
 ```
 
 `browse` reuses the seed cookie from `.tmp/control-kody-cookie` (after `login`

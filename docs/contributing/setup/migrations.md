@@ -19,7 +19,11 @@ in [Seed test account](./seeding.md).
   `tools/ci/rewrite-renamed-preview-migrations.ts` (sha256 match) before preview
   `d1 migrations apply`; see
   [PR preview deployments](./preview-deploys.md#migration-renumber-race-on-an-existing-preview-d1)
-  for the reset-preview-D1 fallback when rewrite is unsafe.
+  for the reset-preview-D1 fallback when rewrite is unsafe. Local state dirs
+  (`.wrangler/state`, `.wrangler/state/e2e`) are not rewritten:
+  `tools/check-stale-local-migrations.ts` runs before each local apply and fails
+  when `d1_migrations` records a filename that is no longer on disk, naming the
+  stale file and the `rm -rf <state dir>` reset to run before retrying.
 - Do not edit migration files that have already landed in `main` and been
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should

@@ -31,14 +31,16 @@ carries that authority. Access rules are covered in
 `packageSecrets.get(alias)` (and `kody.packageSecretGet`) return the **raw
 value** only when `alias` is a
 [`kody.credentials`](./packages.md#credential-slots-kodycredentials) secret slot
-that declares `"raw": true`, and only after grant checks succeed. The consent
-page tells the owner that the package can read that raw value, and Kody tracks
-the value so it is redacted from run output and logs. Any other alias fails with
-guidance: a secret slot without `raw` should send its value with a
-`{{secret:<slot>}}` placeholder in its declared header instead, OAuth and MCP
-slots are never handed to package code, and `kody.secretMounts` aliases no
-longer resolve through `get`. `packageSecrets.has(alias)` still reports presence
-for any secret slot or mount without reading the value.
+that declares `"raw": true`, only after grant checks succeed, and only when Kody
+runs the package's code itself (local execute gets an error). The consent page
+tells the owner that the package can read that raw value and send it to any
+host, not just the secret's allowed hosts, and Kody tracks the value so it is
+redacted from run output and logs. Any other alias fails with guidance: a secret
+slot without `raw` should send its value with a `{{secret:<slot>}}` placeholder
+in its declared header instead, OAuth and MCP slots are never handed to package
+code, and `kody.secretMounts` aliases no longer resolve through `get`.
+`packageSecrets.has(alias)` still reports presence for any secret slot or mount
+without reading the value.
 
 A secret-aware `fetch` sends a placeholder's value only to an **approved** host.
 If that host echoes the value back, the gateway redacts it from the response
@@ -78,6 +80,16 @@ error names the credential and the rule. A package that declares
 further: each placeholder must name one of its slots and sit in that slot's
 declared `placement` header, matching its template (oauth slots default to
 `Authorization: Bearer {value}`).
+
+If the remote echoes a substituted value back, in a response header, status
+text, the final URL after redirects, or anywhere in the body, the gateway
+replaces it with `[REDACTED SECRET]` before your code reads the response, the
+same way run output is redacted. A Basic Auth header is redacted whole and as
+its encoded credential. Because the body can change length, `content-length` is
+dropped from those responses. Range responses (`206` or `content-range`) are
+masked with `*` byte for byte instead, so their offsets stay true. A WebSocket
+upgrade keeps its socket and redacted headers, but messages on the socket are
+not redacted.
 
 External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 `secret/`). Canonical 1Password form is

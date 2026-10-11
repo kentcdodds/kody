@@ -942,7 +942,7 @@ an override exists.
 - **Monthly keys** (`unique_worker_days_per_month`,
   `durable_object_rows_read_per_month`) move only the $0 stop threshold in
   `resolvePastIncludeStop`. Debits still use the plan include
-  (`computeMonthlyOverageForDebit`), so:
+  (`computeMonthlyOverage`), so:
   - With a funded wallet, every unit past the plan include is debited exactly as
     without an override.
   - With an empty wallet, usage between the plan include and the override runs

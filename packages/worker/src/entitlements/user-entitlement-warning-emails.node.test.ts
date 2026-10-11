@@ -28,7 +28,6 @@ const {
 	sendEntitlementWarningNow,
 	sendUserEntitlementWarningEmails,
 	userEntitlementWarningDailyClaimTtlSeconds,
-	userEntitlementWarningDailyKvKey,
 	userEntitlementWarningKvKey,
 	userEntitlementWarningStockClaimTtlSeconds,
 	userEntitlementWarningSweepLimit,
@@ -377,7 +376,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 })
 
-test('user entitlement warning infra edges: missing bindings, leftover claims, TTL refresh, KV fail-open', async () => {
+test('user entitlement warning infra edges: missing bindings, TTL refresh, KV fail-open', async () => {
 	setConsumption(row('execute_unique_workers_per_day', 200, 250))
 	const noKv = await sendAt(
 		createEnv({ users: [freeUser('user@example.com')] }),
@@ -392,47 +391,6 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		} as unknown as Env,
 	})
 	expect(noConfig).toEqual({ status: 'skipped', reason: 'no_email_config' })
-
-	// A leftover daily "reached" claim from two days ago does not suppress
-	// today's crossings.
-	const absorbNow = new Date('2026-08-24T03:00:00.000Z')
-	const twoDaysAgo = new Date(absorbNow.getTime() - 2 * 24 * 60 * 60 * 1000)
-	const absorb = createKv()
-	absorb.store.set(
-		userEntitlementWarningDailyKvKey({
-			userId: stableUserId,
-			kind: 'reached',
-			day: utcDayKey(twoDaysAgo),
-		}),
-		String(twoDaysAgo.getTime()),
-	)
-	const absorbEnv = createEnv({
-		users: [freeUser('maciek@example.com')],
-		kv: absorb.kv,
-	})
-	setConsumption(
-		row('saved_packages', 10, 10),
-		row('execute_unique_workers_per_day', 250, 250),
-	)
-	expect(await sendAt(absorbEnv, absorbNow.toISOString())).toEqual(
-		notified(1, 1),
-	)
-	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	for (const key of [
-		instanceKey('reached', 'saved_packages'),
-		instanceKey('approaching', 'saved_packages'),
-		instanceKey('reached', 'execute_unique_workers_per_day', absorbNow),
-	]) {
-		expect(absorb.store.get(key)).toBe(String(absorbNow.getTime()))
-	}
-	setConsumption(
-		row('saved_packages', 10, 10),
-		row('execute_unique_workers_per_day', 0, 250),
-	)
-	expect(await sendAt(absorbEnv, '2026-08-25T01:00:00.000Z')).toEqual({
-		status: 'no_warnings',
-	})
-	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
 	// Staying over a stock limit refreshes only the stock claims' TTL.
 	const ttl = createKv()

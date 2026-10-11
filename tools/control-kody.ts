@@ -67,6 +67,7 @@ import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
 	applySessionRequestBody,
+	applySessionRequestHeaders,
 	parseSessionRequest,
 	previewSeedEmail,
 	previewSeedPassword,
@@ -132,12 +133,15 @@ const usageLines = [
 	'test. Example: browse --origin <preview> --path /@user/pkg --record',
 	'',
 	'request spec is METHOD /path [status] [json-body] [--form name=value]...',
-	'[--multipart]. Separate arguments are joined, so',
+	"[--multipart] [--header 'Name: value']... Separate arguments are joined, so",
 	'POST /path 400 \'{"action":"add"}\' sends JSON and',
 	'POST /account/organizations/new --form slug=x-org --form displayName=X',
 	'sends application/x-www-form-urlencoded. --multipart sends',
 	'multipart/form-data; a --form value starting with @ is a file path',
 	'(POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png).',
+	'Repeat --header for extra headers (not Cookie or Content-Type). Org-bound',
+	'/account/<section>.json routes bind the org from a same-origin Referer:',
+	"GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'.",
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists. --email keys the',
@@ -426,6 +430,14 @@ function parseSharedFlags(
 					throw new ControlKodyError(`Unknown flag ${arg}`)
 				}
 				positional.push('--multipart')
+				break
+			}
+			case '--header': {
+				if (!flags.requestSpec) {
+					throw new ControlKodyError(`Unknown flag ${arg}`)
+				}
+				positional.push('--header', requireValue(argv[index + 1], '--header'))
+				index += 1
 				break
 			}
 			case '--package-name': {
@@ -785,6 +797,7 @@ export async function requestAsSession(input: {
 		Accept: 'application/json, text/html',
 		'User-Agent': controlKodyUserAgent,
 	}
+	applySessionRequestHeaders(input.spec, headers)
 	if (input.cookieHeader) headers.Cookie = input.cookieHeader
 	const response = await fetchImpl(`${input.origin}${input.spec.path}`, {
 		method: input.spec.method,
@@ -1085,7 +1098,7 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'request': {
 			if (!options.request) {
 				throw new ControlKodyError(
-					'request needs METHOD /path [status] [json-body] [--form name=value]... [--multipart]. Example: request GET /account/waiting.json',
+					"request needs METHOD /path [status] [json-body] [--form name=value]... [--multipart] [--header 'Name: value']... Example: request GET /account/waiting.json",
 				)
 			}
 			const origin = await resolveOrigin(options)
@@ -1206,6 +1219,7 @@ async function runCommand(options: ControlKodyOptions) {
 					expectedStatus: null,
 					body: null,
 					form: null,
+					headers: [],
 					dump: false,
 					contains: [],
 				},

@@ -42,12 +42,15 @@ const usageLines = [
 	'  --request <spec>    Authenticated HTTP as the seed user (repeatable).',
 	'                      Spec: METHOD /path [status] [json-body]',
 	'                            [--form name=value]... [--multipart]',
+	"                            [--header 'Name: value']...",
 	'                            [--dump] [--contains <text>]',
 	'                      Default success is any 2xx. JSON is the default',
 	'                      body. Repeat --form for application/x-www-form-urlencoded.',
 	'                      Add --multipart for multipart/form-data; a value',
-	'                      that starts with @ is a file path. Redirects stay',
-	'                      manual, and --contains also sees Location.',
+	'                      that starts with @ is a file path. Repeat --header',
+	'                      for extra request headers (not Cookie or',
+	'                      Content-Type). Redirects stay manual, and',
+	'                      --contains also sees Location.',
 	'                      Examples:',
 	'                      POST /account/secrets.json {"action":"save",...}',
 	'                      POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org',
@@ -96,12 +99,18 @@ export type SessionRequestForm = {
 	fields: Array<SessionFormField>
 }
 
+export type SessionRequestHeader = {
+	name: string
+	value: string
+}
+
 export type SessionRequestSpec = {
 	method: HttpMethod
 	path: string
 	expectedStatus: number | null
 	body: unknown | null
 	form: SessionRequestForm | null
+	headers: Array<SessionRequestHeader>
 	dump: boolean
 	contains: Array<string>
 }
@@ -365,9 +374,15 @@ function isHttpMethod(value: string): value is HttpMethod {
 }
 
 const sessionRequestSpecUsage =
-	'METHOD /path [status] [json-body] [--form name=value]... [--multipart] [--dump] [--contains <text>]'
+	"METHOD /path [status] [json-body] [--form name=value]... [--multipart] [--header 'Name: value']... [--dump] [--contains <text>]"
 
-const specFlags = ['--dump', '--contains', '--form', '--multipart'] as const
+const specFlags = [
+	'--dump',
+	'--contains',
+	'--form',
+	'--multipart',
+	'--header',
+] as const
 
 type SpecFlagMatch = {
 	flag: (typeof specFlags)[number]
@@ -418,7 +433,10 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 	const rest = match[3] ?? ''
 	const flags = findSpecFlags(rest)
 	const head = rest.slice(0, flags[0]?.start ?? rest.length).trim()
-	const { dump, contains, form } = parseSessionRequestFlags(rest, flags)
+	const { dump, contains, form, headers } = parseSessionRequestFlags(
+		rest,
+		flags,
+	)
 	const headMatch = /^(?:(\d{3})(?:\s+|$))?([\s\S]*)$/.exec(head)
 	const methodName = match[1].toUpperCase()
 	if (!isHttpMethod(methodName)) {
@@ -465,8 +483,27 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 		expectedStatus,
 		body,
 		form,
+		headers,
 		dump,
 		contains,
+	}
+}
+
+/**
+ * Spec headers replace same-named defaults (header names are
+ * case-insensitive). Cookie comes from the session and Content-Type from the
+ * body, so the spec parser rejects both.
+ */
+export function applySessionRequestHeaders(
+	spec: Pick<SessionRequestSpec, 'headers'>,
+	headers: Record<string, string>,
+) {
+	for (const header of spec.headers) {
+		const lower = header.name.toLowerCase()
+		for (const existing of Object.keys(headers)) {
+			if (existing.toLowerCase() === lower) delete headers[existing]
+		}
+		headers[header.name] = header.value
 	}
 }
 
@@ -543,6 +580,7 @@ function parseSessionRequestFlags(
 	let multipart = false
 	const contains: Array<string> = []
 	const fields: Array<SessionFormField> = []
+	const headers: Array<SessionRequestHeader> = []
 	for (const [index, { flag, end }] of flags.entries()) {
 		const value = text.slice(end, flags[index + 1]?.start).trim()
 		if (flag === '--dump' || flag === '--multipart') {
@@ -558,6 +596,19 @@ function parseSessionRequestFlags(
 		const raw = unquoteSpecValue(value)
 		if (flag === '--form') {
 			fields.push(parseSessionFormField(raw))
+			continue
+		}
+		if (flag === '--header') {
+			const header = parseSessionRequestHeader(raw)
+			const duplicate = headers.find(
+				(existing) => existing.name.toLowerCase() === header.name.toLowerCase(),
+			)
+			if (duplicate) {
+				throw new PreviewManualTestError(
+					`--request --header ${header.name} is set more than once.`,
+				)
+			}
+			headers.push(header)
 			continue
 		}
 		if (raw.length === 0) {
@@ -580,7 +631,30 @@ function parseSessionRequestFlags(
 		fields.length === 0
 			? null
 			: { encoding: multipart ? 'multipart' : 'urlencoded', fields }
-	return { dump, contains, form }
+	return { dump, contains, form, headers }
+}
+
+const httpHeaderNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+const sessionManagedHeaders: Record<string, string> = {
+	cookie: 'the session cookie comes from --cookie-file / --email',
+	'content-type': 'Content-Type comes from the JSON body or --form fields',
+}
+
+function parseSessionRequestHeader(raw: string): SessionRequestHeader {
+	const separator = raw.indexOf(':')
+	const name = separator === -1 ? '' : raw.slice(0, separator).trim()
+	if (!httpHeaderNamePattern.test(name)) {
+		throw new PreviewManualTestError(
+			`--request --header expects 'Name: value' (got ${JSON.stringify(raw)}).`,
+		)
+	}
+	const managed = sessionManagedHeaders[name.toLowerCase()]
+	if (managed) {
+		throw new PreviewManualTestError(
+			`--request --header cannot set ${name}: ${managed}.`,
+		)
+	}
+	return { name, value: raw.slice(separator + 1).trim() }
 }
 
 function parseSessionFormField(raw: string): SessionFormField {
@@ -1889,6 +1963,7 @@ async function runAuthenticatedSessionRequest(
 		Cookie: cookieHeader,
 		Accept: spec.path.includes('.json') ? 'application/json' : '*/*',
 	}
+	applySessionRequestHeaders(spec, headers)
 	const init: RequestInit = {
 		method: spec.method,
 		headers,

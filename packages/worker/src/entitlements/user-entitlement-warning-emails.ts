@@ -68,8 +68,6 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
-export const userEntitlementWarningDailyKvKeyPrefix =
-	'entitlement-warning-user:v2'
 export const userEntitlementWarningSweepLimit = 100
 export const userEntitlementWarningActiveSweepLimit = 80
 export const userEntitlementWarningStockSweepLimit = 40
@@ -155,14 +153,6 @@ export function userEntitlementWarningKvKey(input: {
 		return `${base}:${input.month}`
 	}
 	return base
-}
-
-export function userEntitlementWarningDailyKvKey(input: {
-	userId: string
-	kind: UserEntitlementWarningKind
-	day: string
-}) {
-	return `${userEntitlementWarningDailyKvKeyPrefix}:${input.userId}:${input.kind}:${input.day}`
 }
 
 export async function sendUserEntitlementWarningEmails(input: {
@@ -292,21 +282,6 @@ async function warnOneUserIfNeeded(input: {
 			}),
 		])
 	}
-
-	await absorbDailyClaims({
-		kv,
-		userId: input.user.stable_user_id,
-		kind: 'reached',
-		warnings: reached,
-		now: input.now,
-	})
-	await absorbDailyClaims({
-		kv,
-		userId: input.user.stable_user_id,
-		kind: 'approaching',
-		warnings: approaching,
-		now: input.now,
-	})
 
 	const newReached = await unclaimedWarnings({
 		kv,
@@ -470,61 +445,6 @@ async function sendThresholdEmailIfNeeded(input: {
 		now: input.now,
 	})
 	return true
-}
-
-async function absorbDailyClaims(input: {
-	kv: KVNamespace
-	userId: string
-	kind: UserEntitlementWarningKind
-	warnings: Array<UserEntitlementWarning>
-	now: Date
-}) {
-	if (input.warnings.length === 0) return
-	const today = utcDayKey(input.now)
-	const todayClaimed = await input.kv.get(
-		userEntitlementWarningDailyKvKey({
-			userId: input.userId,
-			kind: input.kind,
-			day: today,
-		}),
-	)
-	if (todayClaimed) {
-		await claimWarningInstance({
-			kv: input.kv,
-			userId: input.userId,
-			kind: input.kind,
-			warnings: input.warnings,
-			now: input.now,
-		})
-		return
-	}
-
-	let priorDayClaimed = false
-	for (const day of recentUtcDayKeys(input.now)) {
-		if (day === today) continue
-		const dailyKey = userEntitlementWarningDailyKvKey({
-			userId: input.userId,
-			kind: input.kind,
-			day,
-		})
-		if (await input.kv.get(dailyKey)) {
-			priorDayClaimed = true
-			break
-		}
-	}
-	if (!priorDayClaimed) return
-
-	const stockWarnings = input.warnings.filter(
-		(warning) => !isDailyEntitlementResource(warning.resource),
-	)
-	if (stockWarnings.length === 0) return
-	await claimWarningInstance({
-		kv: input.kv,
-		userId: input.userId,
-		kind: input.kind,
-		warnings: stockWarnings,
-		now: input.now,
-	})
 }
 
 async function unclaimedWarnings(input: {
