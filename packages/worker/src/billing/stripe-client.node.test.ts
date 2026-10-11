@@ -24,6 +24,7 @@ import {
 	listCreditNotesForInvoice,
 	listPaidInvoicesForSubscription,
 	listSubscriptions,
+	mergeStripeObjectMetadata,
 	StripeApiError,
 	subscriptionSeatQuantity,
 	updateSubscriptionItemQuantity,
@@ -186,6 +187,55 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		).toEqual({
 			'discounts[0][promotion_code]': 'promo_agency_1',
 			allow_promotion_codes: null,
+		})
+	}
+
+	{
+		using fetchMock = fetchReturning(
+			jsonResponse({
+				id: 'cs_meta',
+				url: 'https://checkout.stripe.com/c/pay/cs_meta',
+			}),
+		)
+		await createCheckoutSession(env, {
+			...checkoutInput,
+			metadata: {
+				kody_org_id: 'org-acme',
+				kody_stable_user_id: 'org-acme',
+				kody_plan: 'pro',
+			},
+		})
+		expect(
+			formFields(fetchMock.mock.calls[0]?.[1], [
+				'metadata[kody_org_id]',
+				'metadata[kody_stable_user_id]',
+				'metadata[kody_plan]',
+				'subscription_data[metadata][kody_org_id]',
+				'subscription_data[metadata][kody_stable_user_id]',
+				'subscription_data[metadata][kody_plan]',
+			]),
+		).toEqual({
+			'metadata[kody_org_id]': 'org-acme',
+			'metadata[kody_stable_user_id]': 'org-acme',
+			'metadata[kody_plan]': 'pro',
+			'subscription_data[metadata][kody_org_id]': 'org-acme',
+			'subscription_data[metadata][kody_stable_user_id]': 'org-acme',
+			'subscription_data[metadata][kody_plan]': 'pro',
+		})
+	}
+
+	{
+		using fetchMock = fetchReturning(jsonResponse({ id: 'cus_1' }))
+		await mergeStripeObjectMetadata(env, {
+			object: 'customers',
+			id: 'cus_1',
+			metadata: { kody_org_id: 'org-acme' },
+		})
+		const [url, init] = fetchMock.mock.calls[0]!
+		expect(url).toBe('https://api.stripe.com/v1/customers/cus_1')
+		expect(init?.method).toBe('POST')
+		expect(formFields(init, ['metadata[kody_org_id]'])).toEqual({
+			'metadata[kody_org_id]': 'org-acme',
 		})
 	}
 

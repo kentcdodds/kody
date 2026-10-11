@@ -647,6 +647,68 @@ test('refreshStripePlanForOrg defers until the org has a linked Stripe customer'
 	})
 })
 
+test('checkout link replay skips Stripe subscription refresh when already linked', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const member = await seedUser('link-replay', { plan: 'free' })
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-replay-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, 'owner', ?)`,
+	)
+		.bind(teamOrgId, member.stableUserId, now.toISOString())
+		.run()
+	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
+	let subscriptionListCalls = 0
+	using _fetch = stubFetch((url) => {
+		if (url.includes('/v1/checkout/sessions/')) {
+			return jsonResponse({
+				id: 'cs_replay',
+				customer: 'cus_replay',
+				client_reference_id: orgLinkReference,
+			})
+		}
+		if (url.includes('/v1/subscriptions')) {
+			subscriptionListCalls += 1
+			return jsonResponse(subscriptionList('sub_replay', 'active'))
+		}
+		return jsonResponse({ error: 'unexpected stripe path' }, 500)
+	})
+
+	const first = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now,
+	})
+	expect(first.stripePlan).toBe('pro')
+	expect(subscriptionListCalls).toBe(1)
+
+	const second = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now: new Date(now.getTime() + 1000),
+	})
+	expect(second.stripePlan).toBe('pro')
+	expect(second.creditsEligible).toBe(true)
+	// Webhook-then-success: second pass must not list subscriptions again.
+	expect(subscriptionListCalls).toBe(1)
+})
+
 test('a completed checkout with promo metadata records the claim for that person once', async () => {
 	await ensureOrgsTestSchema(env.APP_DB)
 	const member = await seedUser('promo-member', { plan: 'free' })

@@ -620,6 +620,32 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 		throw error
 	}
 
+	// Success redirect often races the webhook. When the customer is already
+	// linked and stripe_plan is set, skip a second Stripe subscriptions list
+	// (the ~10s wait after Checkout redirects home).
+	if (existingCustomerId === customerId) {
+		const linked = await input.env.APP_DB.prepare(
+			`SELECT stripe_plan, stripe_price_id, stripe_credits_eligible
+			 FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+		)
+			.bind(orgId)
+			.first<{
+				stripe_plan: string | null
+				stripe_price_id: string | null
+				stripe_credits_eligible: number | null
+			}>()
+		if (linked?.stripe_plan) {
+			return {
+				stripePlan: parseStripePlanName(linked.stripe_plan),
+				creditsEligible: linked.stripe_credits_eligible === 1,
+				stripeInterval: null,
+				stripePriceId: linked.stripe_price_id,
+				cancelAt: null,
+				subscriptionStatus: null,
+			}
+		}
+	}
+
 	return await refreshAfterCheckoutLink({
 		env: input.env,
 		orgId,
