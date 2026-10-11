@@ -183,9 +183,8 @@ the slot name; the org decides which credential fills it.
   keep the header-only, HTTPS, and item-website rules. Anything else is refused
   before the credential resolves, with an error naming the slot and the rule.
 - There is no body placement. The request body is forwarded verbatim and never
-  resolves a placeholder, so an API that takes a credential in the body (a login
-  password, a form-encoded token exchange) uses a `raw` slot and builds the body
-  from `packageSecrets.get(NAME)`.
+  resolves a placeholder, so a slot cannot be sent in a body (a login password,
+  a form-encoded token exchange).
 
 ### npm dependencies
 
