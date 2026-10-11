@@ -110,13 +110,11 @@ as secrets. Keep readable identifiers and defaults out of the secret store.
 
 Saved secrets are referenced by **placeholder**, never by plaintext. Inside
 `execute` (and package code), put `{{secret:name}}` — or
-`{{secret:name|scope=user}}` to pin a scope — in a request header of an outbound
-`fetch`. Kody resolves the placeholder for **approved** hosts over HTTPS only,
-and refuses one in the URL, query string, or body. A body is never a
-substitution site. An API that authenticates only with a credential in the body
-(a login password, a form-encoded token exchange) cannot be smoke-tested or
-built with placeholders; the gateway has no body substitution. For the usual
-header case:
+`{{secret:name|scope=user}}` to pin a scope — anywhere in an outbound `fetch`: a
+header, the URL path or query, or a JSON, form-encoded, or text body. Kody fills
+the placeholder for **approved** hosts over HTTPS only, and refuses the request
+otherwise. An API that takes a credential in the body (a login password, a
+form-encoded token exchange) works the same way. For the usual header case:
 
 ```ts
 const response = await fetch('https://api.example.com/v1/me', {
@@ -142,7 +140,8 @@ Rules:
   placeholder to a third party, set the `x-kody-secret-resolution: off` header
   on that `fetch` (the gateway strips it and skips resolution for that request).
   For a body that only quotes the syntax next to a real header credential, use
-  `x-kody-secret-resolution: headers-only`.
+  `x-kody-secret-resolution: headers-only`, which fills headers and sends the
+  URL and body as written.
 - For Basic Auth derived from two secrets, use `secretHeaders.basic(...)` from
   `kody:runtime` (see the secrets usage docs).
 

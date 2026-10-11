@@ -124,11 +124,10 @@ hard-code a previous `@{username}` scope need updates from their owners.
 ### Credential slots (`kody.credentials`)
 
 `kody.credentials` names each credential the package needs. Publish validates
-the block, and the fetch gateway uses it to decide where each credential may be
-sent. A slot does not pick the credential: `{{secret:NAME}}` reads the secret
-stored as `NAME` and `{{integration-token:NAME}}` the integration named `NAME`,
-with the same package access rules as a package without slots. Name each slot
-after the secret or integration the code already references, and keep those
+the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
+secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
+`NAME`, with the same package access rules as a package without slots. Name each
+slot after the secret or integration the code already references, and keep those
 references as they are. There is no way yet for an org to choose which
 credential fills a slot; see
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
@@ -150,11 +149,7 @@ for the switch to assignments.
 			"RESEND_API_KEY": {
 				"kind": "secret",
 				"provider": "resend",
-				"description": "Resend API key that sends the digest email.",
-				"placement": {
-					"header": "Authorization",
-					"template": "Bearer {value}"
-				}
+				"description": "Resend API key that sends the digest email."
 			}
 		}
 	}
@@ -166,28 +161,16 @@ for the switch to assignments.
 - `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
   `description` says what the slot is for. `multiple: true` means the package
   picks among several accounts.
-- `placement` is the one request header the value may be sent in. `template` is
-  the whole header value with `{value}` where the credential goes; without it
-  the header value is the credential. Secret slots must declare `placement`.
-  OAuth slots default to
-  `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
-  no placement.
 - Publish rejects any other key or a missing field and names the slot. If a
-  later rule rejects a slot in a version that is already published, only that
-  slot stops working: the fetch gateway refuses it with the validation error
-  until you fix it and publish again. The other slots keep working.
-- Once a package declares `kody.credentials`, the fetch gateway substitutes only
-  its slots: `{{secret:NAME}}` names a secret slot and
-  `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's
-  `placement` header and match its template exactly, over HTTPS. A Basic Auth
-  pair (`secretHeaders.basic` over two secret slots) goes in both slots' header
-  as `Basic {{secret-basic:…}}`, so those slots declare template `Basic {value}`
-  or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
-  keep the header-only, HTTPS, and item-website rules. Anything else is refused
-  before the credential resolves, with an error naming the slot and the rule.
-- There is no body placement. The gateway never substitutes a slot placeholder
-  into a request body (a login password, a form-encoded token exchange), and it
-  refuses a body that holds one rather than send it unsubstituted.
+  later rule rejects a slot in a version that is already published, the package
+  still loads with its other slots.
+- Slots take no `placement`. Publish rejects one with a message to remove it;
+  versions published while it was required load with it ignored. The fetch
+  gateway fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a
+  request (a header, the URL path or query, or a text body) when the request is
+  HTTPS and its host is one the secret or integration allows, the same as for a
+  package without slots. See
+  [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
 To see which old-style credential references a package still has, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
@@ -407,31 +390,6 @@ to `kody.packageSecretGet` / `Has`. See
 Repo checks fail when package source imports ambient `storage` from
 `kody:runtime` (type-only imports and `.d.ts` files are exempt). Use
 `packageStorage()` instead. Ad hoc execute has no scratch SQLite helper.
-
-### Secret placeholders belong in request headers
-
-Publish fails when package source puts a `{{secret:…}}`, `{{secret-basic:…}}`,
-`{{integration-token:…}}`, or vault placeholder where the fetch gateway refuses
-it: the URL of `fetch`, `new Request`, or `new URL`, or a request body (a
-`body:` value, including `JSON.stringify` inside it, or `URLSearchParams` /
-`FormData` input). Module constants read at those sites count, including ones
-imported from another package module. A string no request uses, such as an
-exported example URL, does not. The failure names the file, line, and slot, for
-example `"src/index.ts" line 12 puts slot "apiToken" in the request body`. Move
-a credential into the header its
-[`kody.credentials`](#credential-slots-kodycredentials) slot declares. A value
-that is not a credential, such as an account id, belongs in params or package
-storage, not a secret. A fetch that quotes the syntax on purpose sets
-`x-kody-secret-resolution: headers-only` (body) or `off` (everything) in its
-headers and is not reported. When the request options are not a literal object,
-a module that mentions that header anywhere is not reported. Prose such as
-`{{secret:<name>}}` never counts.
-
-Packages published before this check keep running, and their requests are still
-refused at run time. `packageGet` lists each one under `warnings` (code
-`secret_placeholder_outside_header`) until a fixed version is published.
-Community installs and platform codemods skip the check so existing listings
-stay forkable and migratable.
 
 ## Package apps
 

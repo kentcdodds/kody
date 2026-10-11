@@ -747,7 +747,7 @@ test('a sync webhook whose package was refused for credential placement returns 
 			error: {
 				code: 'execution_failed',
 				message:
-					'Error: Secret "clerkReviewUserId" is in the request body. The fetch gateway never substitutes a secret into a request body. (credential_placement_refused, slot "clerkReviewUserId")',
+					'Error: Secret "clerkReviewUserId" cannot be sent to host "api.example.com" over plain HTTP. The fetch gateway fills secrets only over HTTPS. Use an https:// URL. (credential_placement_refused, slot "clerkReviewUserId")',
 				details: { stack: 'at reviewTicket (index.ts:12:3)' },
 			},
 			logs: ['upstream https://api.clerk.com/v1/users'],
@@ -764,7 +764,7 @@ test('a sync webhook whose package was refused for credential placement returns 
 		error: {
 			code: 'credential_placement_refused',
 			message:
-				'The package tried to send a credential (slot "clerkReviewUserId") outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.',
+				'The package tried to send a credential (slot "clerkReviewUserId") to a host the credential does not allow, over plain HTTP, or in the URL host, so Kody refused the request. The package owner or the credential\'s owner needs to fix it.',
 			slot: 'clerkReviewUserId',
 		},
 	})
