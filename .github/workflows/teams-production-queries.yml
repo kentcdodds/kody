@@ -63,11 +63,13 @@ jobs:
           fi
           if [ "$TARGET" = "production" ]; then
             # Approved production runners (Kent + Cloud Agent gh user for
-            # credential-exposure follow-through without waiting on Kent).
+            # credential-exposure follow-through without waiting on Kent +
+            # kody-bot, because Cloud Agent gh cannot dispatch workflows and
+            # agents dispatch through @kentcdodds/github as kody-bot).
             case "$ACTOR" in
-              kentcdodds|cursor) ;;
+              kentcdodds|cursor|kody-bot) ;;
               *)
-                echo "Production queries run as an approved actor only (kentcdodds or cursor); got $ACTOR." >&2
+                echo "Production queries run as an approved actor only (kentcdodds, cursor, or kody-bot); got $ACTOR." >&2
                 exit 1
                 ;;
             esac

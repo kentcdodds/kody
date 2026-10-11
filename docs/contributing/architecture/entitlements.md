@@ -435,6 +435,14 @@ observes:
   every call, including warm repeats the plan cap does not, and is a safety net
   rather than a plan limit (busiest production org-minute over the 30 days to
   2026-10-10: 64 calls).
+- **Execute usage in every response**: every signed-in hosted execute response
+  carries `structuredContent.usage`: `unit` (unique execute workers) and `day`
+  (plus `week` when the plan has a weekly window) with `used`, `limit`,
+  `remaining`, and `resetsAt` (next UTC midnight / next UTC Monday). It comes
+  from the worker claim when one ran (repeats included) and from a meter read
+  for calls refused or failed before load, or for runs that crossed UTC
+  midnight. It is best effort: when that meter read fails, the field is omitted
+  and the call still returns.
 - **Execute loop brake**: the same `admitExecuteCall` also refuses a connection
   that starts the identical call (same code or invoke target and same canonical
   params) more than `identicalExecuteCallsPerWindow` (20) times in a rolling
@@ -612,11 +620,16 @@ instead of one RPC per resource:
   (one claim for every resource in that kind's bucket). A `v2` key from a prior
   UTC day claims stock limits only, so a `*_per_day` midnight reset can mail.
   Candidate selection is the top ~80 accounts by current-month event count plus
-  high package/secret stock, capped at 100. Operator crossing events run even
-  when user warning sends fail. The same hourly lane also evaluates the
-  usage-state campaign. Users near stock caps enter `LimitAware` and stay
-  campaign-silent so these entitlement warnings remain the entitlement nudge.
-  See [Usage metering](./usage-metering.md#usage-campaign).
+  high package/secret stock, capped at 100. The hosted execute cap does not wait
+  for the sweep: the worker claim that lands exactly on 80% or 100% of the daily
+  limit (`executeDailyWarningCrossing`) calls `sendEntitlementWarningNow` in
+  `waitUntil`, which mails the org's billing recipients and writes the same
+  instance claim, so the sweep skips it (and the immediate send skips a crossing
+  the sweep already mailed). Operator crossing events run even when user warning
+  sends fail. The same hourly lane also evaluates the usage-state campaign.
+  Users near stock caps enter `LimitAware` and stay campaign-silent so these
+  entitlement warnings remain the entitlement nudge. See
+  [Usage metering](./usage-metering.md#usage-campaign).
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere

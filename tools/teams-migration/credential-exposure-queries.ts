@@ -7,6 +7,7 @@
  * - secret / integration (MCP servers are integration resources) audit rows
  *   where the actor was not an org owner and not a granted subject for that
  *   resource (user grant or team grant membership)
+ * - the credential grant id mapping (credential-grant-id-queries.ts)
  *
  * Saved packages' implicit self-authored access is intentionally left as-is;
  * the credentials redesign series removes it. The full `resolveCredential`
@@ -37,6 +38,17 @@ import {
 	type QueryTarget,
 } from './production-queries.ts'
 import { buildPreviewResourceNames } from '../ci/preview-resources.ts'
+import {
+	classifyCredentialGrant,
+	classifyNameKeyedCredential,
+	countBy,
+	credentialGrantsByIdSql,
+	grantInviteTotalsSql,
+	grantTotalsSql,
+	nameKeyedCredentialGrantsSql,
+	nameKeyedCredentialInvitesSql,
+	type NameKeyedOutcome,
+} from './credential-grant-id-queries.ts'
 
 /** Orgs with more than one live member (personal org alone is always 1). */
 export const multiMemberOrgsSql = `SELECT o.id AS org_id, o.slug AS slug,
@@ -116,8 +128,109 @@ export const liveTeamMembersSql = `SELECT team_id, user_id
 FROM team_members
 WHERE deleted_at IS NULL`
 
+type NameKeyedRow = Record<string, unknown> & {
+	resource_type: string
+	org_secret_matches: number
+	scoped_secret_matches: number
+	vault_door_matches: number
+	integration_matches: number
+	mcp_server_matches: number
+}
+
+type CredentialGrantRow = Record<string, unknown> & {
+	grant_state: string
+	secret_matches: number
+	vault_matches: number
+	integration_matches: number
+	mcp_server_matches: number
+}
+
+/**
+ * Before/after evidence for moving credential grants to stable ids. Name-keyed
+ * rows carry candidate counts so an orphan or ambiguous grant is visible
+ * before the migration runs (and aborts on it).
+ */
+export type CredentialGrantIdReport = {
+	grantTotals: Array<Record<string, unknown>>
+	grantInviteTotals: Array<Record<string, unknown>>
+	nameKeyedGrants: {
+		count: number
+		byOutcome: Partial<Record<NameKeyedOutcome, number>>
+		rows: Array<Record<string, unknown> & { outcome: NameKeyedOutcome }>
+	}
+	nameKeyedInvites: {
+		count: number
+		byOutcome: Partial<Record<NameKeyedOutcome, number>>
+		rows: Array<Record<string, unknown> & { outcome: NameKeyedOutcome }>
+	}
+	credentialGrants:
+		| {
+				status: 'ok'
+				count: number
+				live: number
+				byOutcome: Record<string, number>
+				rows: Array<Record<string, unknown>>
+		  }
+		| { status: 'not-migrated'; error: string }
+}
+
+export async function runCredentialGrantIdQueries(input: {
+	client: CloudflareClient
+	appUuid: string
+}): Promise<CredentialGrantIdReport> {
+	const query = <Row>(sql: string) =>
+		readOnlyD1Query<Row>(input.client, input.appUuid, sql)
+	const grantTotals = await query<Record<string, unknown>>(grantTotalsSql)
+	const grantInviteTotals =
+		await query<Record<string, unknown>>(grantInviteTotalsSql)
+	const nameKeyedGrants = (
+		await query<NameKeyedRow>(nameKeyedCredentialGrantsSql)
+	).map((row) => ({
+		...row,
+		outcome: classifyNameKeyedCredential(row.resource_type, row),
+	}))
+	const nameKeyedInvites = (
+		await query<NameKeyedRow>(nameKeyedCredentialInvitesSql)
+	).map((row) => ({
+		...row,
+		outcome: classifyNameKeyedCredential(row.resource_type, row),
+	}))
+	let credentialGrants: CredentialGrantIdReport['credentialGrants']
+	try {
+		const rows = (await query<CredentialGrantRow>(credentialGrantsByIdSql)).map(
+			(row) => ({ ...row, outcome: classifyCredentialGrant(row) }),
+		)
+		credentialGrants = {
+			status: 'ok',
+			count: rows.length,
+			live: rows.filter((row) => row.grant_state === 'live').length,
+			byOutcome: countBy(rows, (row) => row.outcome),
+			rows,
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (!/no such column/i.test(message)) throw error
+		credentialGrants = { status: 'not-migrated', error: message }
+	}
+	return {
+		grantTotals,
+		grantInviteTotals,
+		nameKeyedGrants: {
+			count: nameKeyedGrants.length,
+			byOutcome: countBy(nameKeyedGrants, (row) => row.outcome),
+			rows: nameKeyedGrants,
+		},
+		nameKeyedInvites: {
+			count: nameKeyedInvites.length,
+			byOutcome: countBy(nameKeyedInvites, (row) => row.outcome),
+			rows: nameKeyedInvites,
+		},
+		credentialGrants,
+	}
+}
+
 export type CredentialExposureReport = {
-	version: 2
+	version: 3
 	target: string
 	ranAt: string
 	/**
@@ -142,6 +255,7 @@ export type CredentialExposureReport = {
 		error: string | null
 		note: string
 	}
+	credentialGrantIds: CredentialGrantIdReport
 	notes: Array<string>
 }
 
@@ -297,8 +411,13 @@ export async function runCredentialExposureQueries(input: {
 		}
 	}
 
+	const credentialGrantIds = await runCredentialGrantIdQueries({
+		client: input.client,
+		appUuid,
+	})
+
 	return {
-		version: 2,
+		version: 3,
 		target:
 			input.target.kind === 'production'
 				? 'production'
@@ -326,6 +445,7 @@ export async function runCredentialExposureQueries(input: {
 			error: auditError,
 			note: auditNote,
 		},
+		credentialGrantIds,
 		notes: [
 			'Saved packages keep implicit self-authored credential access; the credentials redesign series removes it.',
 			'The full resolveCredential(orgId, actor, packageStamp?) choke point is the first PR of the credentials redesign series, not a separate GitHub issue.',

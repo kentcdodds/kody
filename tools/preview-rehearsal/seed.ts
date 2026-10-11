@@ -48,7 +48,10 @@ export async function callCapability<T = Record<string, unknown>>(
 	input: Record<string, unknown> = {},
 ) {
 	try {
-		return (await session.execute(capabilityModule, { capability, input })) as T
+		return (await session.execute(capabilityModule, {
+			capability,
+			input,
+		})) as T
 	} catch (error) {
 		throw new Error(
 			`${capability} as ${session.email} failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -86,6 +89,79 @@ export const integrationProofModule = (echoUrl: string) =>
 		'\treturn { status: response.status, bearerSent: Boolean(body?.sha256?.authorization) }',
 		'}',
 	].join('\n')
+
+const integrationIdentityModule = (echoUrl: string) =>
+	[
+		"import { createAuthenticatedFetch } from 'kody:runtime'",
+		'export default async function main() {',
+		`\tconst authedFetch = await createAuthenticatedFetch(${JSON.stringify(integrationName)})`,
+		`\tconst response = await authedFetch(${JSON.stringify(echoUrl)})`,
+		'\tconst body = await response.json()',
+		'\treturn { status: response.status, authorizationSha256: body?.sha256?.authorization ?? null }',
+		'}',
+	].join('\n')
+
+/**
+ * The grantee (carol, bound to alice's org) uses alice's user secret and
+ * integration as ad-hoc code, which needs her per-credential Use grants.
+ * Every rehearsal user has a secret and an integration with the same names,
+ * so each proof must match the owner's own hash taken alongside it: a grant
+ * that stops working, or resolves to another user's credential, throws.
+ * Integration tokens refresh hourly, so only the match is returned. The seed
+ * also passes the owner's seeded secret hash; the snapshot diffs the owner's
+ * own secret proof instead.
+ */
+export async function credentialGranteeProofs(input: {
+	grantee: RehearsalSession
+	owner: RehearsalSession
+	echoUrl: string
+	ownerSecretSha256?: string | null
+}) {
+	const run = async (session: RehearsalSession, code: string, label: string) =>
+		readRecord(await session.execute(code), label)
+	const secret = await run(
+		input.grantee,
+		userSecretProofModule(input.echoUrl),
+		'grantee secret proof',
+	)
+	const ownerSecret = await run(
+		input.owner,
+		userSecretProofModule(input.echoUrl),
+		'owner secret proof',
+	)
+	const integration = await run(
+		input.grantee,
+		integrationIdentityModule(input.echoUrl),
+		'grantee integration proof',
+	)
+	const ownerIntegration = await run(
+		input.owner,
+		integrationIdentityModule(input.echoUrl),
+		'owner integration proof',
+	)
+	const proofs = {
+		secretMatchesOwner:
+			typeof ownerSecret.sha256 === 'string' &&
+			secret.sha256 === ownerSecret.sha256 &&
+			(input.ownerSecretSha256 === undefined ||
+				ownerSecret.sha256 === input.ownerSecretSha256),
+		integrationMatchesOwner:
+			typeof ownerIntegration.authorizationSha256 === 'string' &&
+			integration.authorizationSha256 === ownerIntegration.authorizationSha256,
+	}
+	if (!proofs.secretMatchesOwner || !proofs.integrationMatchesOwner) {
+		throw new Error(
+			`carol could not use alice's secret and integration through her Use grants: ${JSON.stringify(
+				{
+					...proofs,
+					secretStatus: secret.status,
+					integrationStatus: integration.status,
+				},
+			)}`,
+		)
+	}
+	return proofs
+}
 
 function randomSecretValue() {
 	return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
@@ -719,7 +795,7 @@ export async function seedRehearsal(
 		tokens.set('admin', await mintTokens(admin, input.origins, 'admin'))
 
 		log(
-			'Grants: alice grants carol Use on her package, carol invites alice (pending)...',
+			'Grants: alice grants carol Use on her package, secret, and integration; carol invites alice (pending)...',
 		)
 		const alice = personSessions.get('alice')
 		const carolSession = personSessions.get('carol')
@@ -750,6 +826,24 @@ export async function seedRehearsal(
 				`carol could not run alice's package: ${JSON.stringify(granteeRun)}`,
 			)
 		}
+		for (const [resourceType, resourceId] of [
+			['secret', userSecretName],
+			['integration', integrationName],
+		] as const) {
+			await callCapability(alice, 'accessGrant', {
+				resource_type: resourceType,
+				resource_id: resourceId,
+				subject_type: 'user',
+				username: rehearsalUser('carol').username,
+				preset: 'use',
+			})
+		}
+		await credentialGranteeProofs({
+			grantee: carolInAliceOrg,
+			owner: alice,
+			echoUrl: `${input.origins.mockCloudflare}/__mocks/rehearsal/echo`,
+			ownerSecretSha256: alicePackage?.userSecretSha256 ?? null,
+		})
 		const pending = await callCapability(carolSession, 'inviteCreate', {
 			kind: 'grant',
 			username: rehearsalUser('alice').username,

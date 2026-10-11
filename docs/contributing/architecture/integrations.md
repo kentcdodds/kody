@@ -172,17 +172,21 @@ token persists clear that snapshot and dispatch `integration.auth.succeeded`.
 Sequential classified attempts each emit; the platform does not coalesce those
 repeats. Concurrent in-flight refreshes of the same connection share one
 provider POST, persist, and event so a 401 stampede cannot rotate the refresh
-token out from under itself. Provider HTTP 5xx and token endpoint timeouts
-persist `provider_unavailable` for Integrations / `integrationGet` without
-emitting failed and without a Waiting card. Missing connections do not write or
-emit failed. Both payloads are metadata-first (connection name, lane, account
-label, description, scopes, connect/refresh timestamps, and for failed: reason,
-optional provider error fields, trusted `reconnect_url` and `account_url`; for
-succeeded: `source` and trusted `account_url`) and never include token or secret
-values. When `account_label` is an email, `reconnect_url` includes `loginHint`
-so the provider account chooser can preselect it. A successful Google refresh
-that still has no `account_label` persists `userinfo.email` onto the connection.
-See [Package subscriptions](../../guides/package-subscriptions.md).
+token out from under itself. Within an isolate they share one promise; across
+isolates a lease on `user_integrations` (claimed by compare-and-swap on
+`token_refreshed_at`) admits one refresher, and the others return the token it
+stored without calling the provider. Provider HTTP 5xx and token endpoint
+timeouts persist `provider_unavailable` for Integrations / `integrationGet`
+without emitting failed and without a Waiting card. Missing connections do not
+write or emit failed. Both payloads are metadata-first (connection name, lane,
+account label, description, scopes, connect/refresh timestamps, and for failed:
+reason, optional provider error fields, trusted `reconnect_url` and
+`account_url`; for succeeded: `source` and trusted `account_url`) and never
+include token or secret values. When `account_label` is an email,
+`reconnect_url` includes `loginHint` so the provider account chooser can
+preselect it. A successful Google refresh that still has no `account_label`
+persists `userinfo.email` onto the connection. See
+[Package subscriptions](../../guides/package-subscriptions.md).
 
 On 401, `createAuthenticatedFetch` calls `integrationTokenRefresh` then retries
 with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens never

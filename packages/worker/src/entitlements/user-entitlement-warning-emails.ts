@@ -34,6 +34,8 @@ import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { sendToOrgBillingRecipients } from '#worker/billing/org-billing-emails.ts'
 
+export { type UserEntitlementWarningKind }
+
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
 	.join(', ')
@@ -58,6 +60,11 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * month-qualified stock claims so a July crossing does not suppress August.
  * The call to action is `/account/credits` (add credits, or switch to Pro
  * first on Free and retired plans).
+ *
+ * The hosted execute cap does not wait for the sweep: the call that crosses
+ * 80% or 100% of the daily limit mails through
+ * {@link sendEntitlementWarningNow} on the same claims, and the sweep only
+ * backstops a crossing that send missed.
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
@@ -89,7 +96,7 @@ export type UserWarningResource =
 	| EntitlementResource
 	| ComputeOverageWarningResource
 
-type WarningResource = {
+export type UserEntitlementWarning = {
 	resource: UserWarningResource
 	label: string
 	current: number
@@ -235,8 +242,8 @@ async function warnOneUserIfNeeded(input: {
 			now: input.now,
 		}),
 	])
-	const approaching: Array<WarningResource> = []
-	const reached: Array<WarningResource> = []
+	const approaching: Array<UserEntitlementWarning> = []
+	const reached: Array<UserEntitlementWarning> = []
 	for (const item of [...consumption, ...computeWarnings]) {
 		if (item.percentOfLimit == null) continue
 		const warning = {
@@ -338,7 +345,7 @@ async function warnOneUserIfNeeded(input: {
 			env: input.env,
 			kv,
 			emailConfig: input.emailConfig,
-			user: input.user,
+			ownerId: input.user.stable_user_id,
 			kind,
 			warnings,
 			now: input.now,
@@ -351,13 +358,49 @@ async function warnOneUserIfNeeded(input: {
 	return { emailsSent, warnedResources }
 }
 
+/**
+ * Mail one entitlement crossing the moment a counted call crosses it rather
+ * than on the next hourly sweep. Shares the sweep's per-window instance
+ * claims, so whichever side sends first wins and the other skips.
+ */
+export async function sendEntitlementWarningNow(input: {
+	env: Env
+	ownerId: OwnerId
+	kind: UserEntitlementWarningKind
+	warning: UserEntitlementWarning
+	now?: Date
+}): Promise<boolean> {
+	const now = input.now ?? new Date()
+	const kv = input.env.BUNDLE_ARTIFACTS_KV
+	if (!kv) return false
+	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
+	if (!emailConfig) return false
+	const pending = await unclaimedWarnings({
+		kv,
+		userId: input.ownerId,
+		kind: input.kind,
+		warnings: [input.warning],
+		now,
+	})
+	if (pending.length === 0) return false
+	return await sendThresholdEmailIfNeeded({
+		env: input.env,
+		kv,
+		emailConfig,
+		ownerId: input.ownerId,
+		kind: input.kind,
+		warnings: pending,
+		now,
+	})
+}
+
 async function sendThresholdEmailIfNeeded(input: {
 	env: Env
 	kv: KVNamespace
 	emailConfig: { appBaseUrl: string; fromEmail: string }
-	user: WarningCandidate
+	ownerId: string
 	kind: UserEntitlementWarningKind
-	warnings: Array<WarningResource>
+	warnings: Array<UserEntitlementWarning>
 	now: Date
 }): Promise<boolean> {
 	if (input.warnings.length === 0) return false
@@ -382,7 +425,7 @@ async function sendThresholdEmailIfNeeded(input: {
 	try {
 		await sendToOrgBillingRecipients({
 			db: input.env.APP_DB,
-			orgId: input.user.stable_user_id,
+			orgId: input.ownerId,
 			sendOne: async (recipient) => {
 				let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
 				try {
@@ -421,7 +464,7 @@ async function sendThresholdEmailIfNeeded(input: {
 
 	await claimWarningInstance({
 		kv: input.kv,
-		userId: input.user.stable_user_id,
+		userId: input.ownerId,
 		kind: input.kind,
 		warnings: input.warnings,
 		now: input.now,
@@ -433,7 +476,7 @@ async function absorbDailyClaims(input: {
 	kv: KVNamespace
 	userId: string
 	kind: UserEntitlementWarningKind
-	warnings: Array<WarningResource>
+	warnings: Array<UserEntitlementWarning>
 	now: Date
 }) {
 	if (input.warnings.length === 0) return
@@ -488,10 +531,10 @@ async function unclaimedWarnings(input: {
 	kv: KVNamespace
 	userId: string
 	kind: UserEntitlementWarningKind
-	warnings: Array<WarningResource>
+	warnings: Array<UserEntitlementWarning>
 	now: Date
 }) {
-	const next: Array<WarningResource> = []
+	const next: Array<UserEntitlementWarning> = []
 	for (const warning of input.warnings) {
 		const claimed = await input.kv.get(
 			warningInstanceKey({
@@ -511,7 +554,7 @@ async function claimWarningInstance(input: {
 	kv: KVNamespace
 	userId: string
 	kind: UserEntitlementWarningKind
-	warnings: Array<WarningResource>
+	warnings: Array<UserEntitlementWarning>
 	now: Date
 }) {
 	const claimedAt = String(input.now.getTime())
@@ -542,10 +585,10 @@ async function refreshStillOverStockClaims(input: {
 	kv: KVNamespace
 	userId: string
 	now: Date
-	reached: Array<WarningResource>
-	approaching: Array<WarningResource>
-	newReached: Array<WarningResource>
-	newApproaching: Array<WarningResource>
+	reached: Array<UserEntitlementWarning>
+	approaching: Array<UserEntitlementWarning>
+	newReached: Array<UserEntitlementWarning>
+	newApproaching: Array<UserEntitlementWarning>
 }) {
 	const claimedAt = String(input.now.getTime())
 	const newReachedResources = new Set(
@@ -683,7 +726,7 @@ async function readComputeOverageWarnings(input: {
 	stableUserId: string
 	entitlement: UserEntitlement
 	now: Date
-}): Promise<Array<WarningResource>> {
+}): Promise<Array<UserEntitlementWarning>> {
 	if (!computeIncludeWarningPutsAccessAtRisk(input.entitlement.creditWallet)) {
 		return []
 	}

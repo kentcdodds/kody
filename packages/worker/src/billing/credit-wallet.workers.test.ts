@@ -14,6 +14,7 @@ import {
 	consumeExecuteUniqueWorkerDay,
 	getUserEntitlement,
 	readDailyEntitlementResourceUsage,
+	readExecuteUniqueWorkerUsage,
 	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import {
@@ -407,6 +408,15 @@ test('a 3-seat Pro org shares one 1,500/day pool; at $0 it keeps the include and
 	expect(
 		await limitsFor(org, ['execute_unique_workers_per_day', 'saved_packages']),
 	).toEqual([1_500, 10_000])
+	expect(
+		await readExecuteUniqueWorkerUsage({
+			db: env.APP_DB,
+			env,
+			userId: ownerIdFromStored(org.stableUserId),
+			email: org.email,
+			now,
+		}),
+	).toMatchObject({ used: 0, limit: 1_500, weekLimit: 3_600 })
 
 	await consumeTimes(org, 'execute_unique_workers_per_day', 1_500)
 	const denied = await catchError(

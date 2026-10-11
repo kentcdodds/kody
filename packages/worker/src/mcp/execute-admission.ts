@@ -2,8 +2,18 @@ import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestCredential } from '@kody-internal/shared/request-context.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
+import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import {
+	sendEntitlementWarningNow,
+	userEntitlementApproachingThreshold,
+	type UserEntitlementWarningKind,
+} from '#worker/entitlements/user-entitlement-warning-emails.ts'
+import { entitlementResourceLabels } from '#universal/plans.ts'
 import { type OrgBudgetGateContext } from '#worker/entitlements/budget-gate.ts'
-import { consumeExecuteUniqueWorkerDay } from '#worker/entitlements/service.ts'
+import {
+	consumeExecuteUniqueWorkerDay,
+	type ExecuteUniqueWorkerUsage,
+} from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type ClaimWorkerDay } from './executor.ts'
@@ -146,13 +156,17 @@ export async function admitHostedExecuteCall(input: {
 /**
  * Capped claim for the top-level hosted execute worker: one
  * `execute_unique_workers_per_day` unit per new worker per UTC day, and the
- * matching `dynamic_worker_day` usage event.
+ * matching `dynamic_worker_day` usage event. Reports the counts after every
+ * claim (repeats included) through `onUsage`, and mails the 80% / 100%
+ * warning from the claim that crosses it.
  */
 export function createExecuteWorkerDayClaim(input: {
 	env: Env
 	ownerId: OwnerId
 	email: string | null | undefined
 	orgBudget?: OrgBudgetGateContext
+	onUsage?: (claimed: ClaimedExecuteUsage) => void
+	waitUntil?: (promise: Promise<unknown>) => void
 }): ClaimWorkerDay {
 	return async (workerId, attribution) => {
 		const now = new Date()
@@ -165,6 +179,7 @@ export function createExecuteWorkerDayClaim(input: {
 			now,
 			orgBudget: input.orgBudget,
 		})
+		input.onUsage?.({ usage, claimedAt: now })
 		if (usage.created) {
 			await recordUsage(input.env, {
 				userId: input.ownerId,
@@ -175,7 +190,106 @@ export function createExecuteWorkerDayClaim(input: {
 				surface: 'execute',
 				...attribution,
 			})
+			const crossing = executeDailyWarningCrossing(usage)
+			if (crossing) {
+				const send = sendEntitlementWarningNow({
+					env: input.env,
+					ownerId: input.ownerId,
+					kind: crossing,
+					warning: {
+						resource: executeUsageResource,
+						label: entitlementResourceLabels[executeUsageResource],
+						current: usage.used,
+						limit: usage.limit,
+						percentOfLimit: usage.used / usage.limit,
+					},
+					now,
+				}).catch((error: unknown) => {
+					console.warn('execute-entitlement-warning-send-failed', error)
+				})
+				if (input.waitUntil) input.waitUntil(send)
+				else void send
+			}
 		}
 		return { created: usage.created }
+	}
+}
+
+const executeUsageResource = 'execute_unique_workers_per_day' as const
+
+/**
+ * The claim that lands exactly on 80% or 100% of the daily limit is the
+ * crossing: the counter only moves one unit per new worker, so each window
+ * crosses each threshold on exactly one call.
+ */
+export function executeDailyWarningCrossing(
+	usage: Pick<ExecuteUniqueWorkerUsage, 'used' | 'limit'>,
+): UserEntitlementWarningKind | null {
+	if (usage.limit <= 0) return null
+	if (usage.used === usage.limit) return 'reached'
+	if (
+		usage.used === Math.ceil(usage.limit * userEntitlementApproachingThreshold)
+	) {
+		return 'approaching'
+	}
+	return null
+}
+
+export type ClaimedExecuteUsage = {
+	usage: ExecuteUniqueWorkerUsage
+	claimedAt: Date
+}
+
+/**
+ * The claim's counts while they still describe the current window. A run
+ * that crosses UTC midnight (or a Monday) would pair yesterday's counts with
+ * tomorrow's reset, so the caller re-reads instead.
+ */
+export function claimedUsageForNow(
+	claimed: ClaimedExecuteUsage | null,
+	now: Date,
+): ExecuteUniqueWorkerUsage | null {
+	if (!claimed) return null
+	return utcDayKey(claimed.claimedAt) === utcDayKey(now) ? claimed.usage : null
+}
+
+export type ExecuteUsageWindow = {
+	used: number
+	limit: number
+	remaining: number
+	resetsAt: string
+}
+
+export type ExecuteUsageReport = {
+	unit: string
+	day: ExecuteUsageWindow
+	week?: ExecuteUsageWindow
+}
+
+const dayMs = 24 * 60 * 60 * 1000
+
+/** Remaining hosted execute allowance for every execute response. */
+export function buildExecuteUsageReport(
+	usage: ExecuteUniqueWorkerUsage,
+	now: Date,
+): ExecuteUsageReport {
+	const window = (used: number, limit: number, resetsAtMs: number) => ({
+		used,
+		limit,
+		remaining: Math.max(0, limit - used),
+		resetsAt: new Date(resetsAtMs).toISOString(),
+	})
+	const nextDayMs = Date.parse(`${utcDayKey(now)}T00:00:00.000Z`) + dayMs
+	const nextWeekMs =
+		Date.parse(`${utcWeekStart(now)}T00:00:00.000Z`) + 7 * dayMs
+	return {
+		unit: entitlementResourceLabels[executeUsageResource].replace(
+			/ per day$/,
+			'',
+		),
+		day: window(usage.used, usage.limit, nextDayMs),
+		...(usage.weekLimit !== null
+			? { week: window(usage.weekUsed ?? 0, usage.weekLimit, nextWeekMs) }
+			: {}),
 	}
 }

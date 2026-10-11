@@ -29,6 +29,7 @@ import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import {
 	executeCallsPerMinutePerOrg,
 	identicalExecuteCallsPerWindow,
+	type ExecuteUsageReport,
 } from '#mcp/execute-admission.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -233,6 +234,7 @@ type ExecuteResponse = {
 			used?: number
 			remaining?: number
 		}
+		usage?: ExecuteUsageReport
 	}
 	isError: boolean
 }
@@ -1057,6 +1059,23 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 		conversationId: 'conv-entitlement-quota',
 	})
 	expect(lastUnit.isError).toBe(false)
+	const quotaWeekLimit = planLimits.free.maxExecuteUniqueWorkersPerWeek!
+	const atLimitUsage = {
+		unit: 'unique execute workers',
+		day: {
+			used: quotaLimit,
+			limit: quotaLimit,
+			remaining: 0,
+			resetsAt: expect.stringMatching(/T00:00:00\.000Z$/),
+		},
+		week: {
+			used: quotaLimit,
+			limit: quotaWeekLimit,
+			remaining: quotaWeekLimit - quotaLimit,
+			resetsAt: expect.stringMatching(/T00:00:00\.000Z$/),
+		},
+	}
+	expect(lastUnit.structuredContent.usage).toEqual(atLimitUsage)
 	runWorker('kody-worker-a')
 	const repeatAtLimit = await quotaHandler({
 		code: okCode,
@@ -1064,6 +1083,7 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 		conversationId: 'conv-entitlement-quota',
 	})
 	expect(repeatAtLimit.isError).toBe(false)
+	expect(repeatAtLimit.structuredContent.usage).toEqual(atLimitUsage)
 	runWorker('kody-worker-b')
 	const quotaDenied = await quotaHandler({
 		code: shouldNotRunCode,
@@ -1071,6 +1091,7 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	})
 	expect(sandboxLoads).toEqual(['kody-worker-a', 'kody-worker-a'])
 	expect(quotaDenied.isError).toBe(true)
+	expect(quotaDenied.structuredContent.usage).toEqual(atLimitUsage)
 	const quotaEntitlement = {
 		code: entitlementLimitErrorCode,
 		resource: 'execute_unique_workers_per_day',

@@ -94,14 +94,14 @@ still refuses to write into a non-empty roster.
 <details>
 <summary>What the seed creates (§12.2)</summary>
 
-| Who        | How                                                                       | Holds                                                                                                          |
-| ---------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `rh-admin` | Seed SQL path (`buildSeedUserSql`, legacy `sha256(email)` id), site admin | Runs every admin step                                                                                          |
-| `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, $25 grant                                                                  |
-| `rh-bob`   | Seed SQL path (legacy id)                                                 | Owner of `@rh-org`; published there                                                                            |
-| `rh-carol` | `adminUserCreate` + setup link (random id), Pro                           | Ran alice's package through her `use` grant (bound to alice's org); pending grant invite to alice; auto-refill |
-| `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing                                                                                         |
-| `@rh-org`  | `orgCreate` by bob (an ordinary org, no `users` row)                      | Public (listed), private, and hidden packages                                                                  |
+| Who        | How                                                                       | Holds                                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rh-admin` | Seed SQL path (`buildSeedUserSql`, legacy `sha256(email)` id), site admin | Runs every admin step                                                                                                                                          |
+| `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, $25 grant                                                                                                                  |
+| `rh-bob`   | Seed SQL path (legacy id)                                                 | Owner of `@rh-org`; published there                                                                                                                            |
+| `rh-carol` | `adminUserCreate` + setup link (random id), Pro                           | Ran alice's package, and used alice's user secret and integration, through her `use` grants (bound to alice's org); pending grant invite to alice; auto-refill |
+| `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing                                                                                                                                         |
+| `@rh-org`  | `orgCreate` by bob (an ordinary org, no `users` row)                      | Public (listed), private, and hidden packages                                                                                                                  |
 
 Each of alice, bob, carol, and dave has: a package with an inline app, a
 recurring and a one-off job (the recurring one run once), a webhook with a
@@ -126,10 +126,12 @@ response, jobs with `next_run_at`, webhooks, secret names plus a fresh
 decryption proof for both secrets, integrations plus an authenticated call, top
 results for four fixed memory searches, access grants (`accessList`), token ids
 and scopes, and usage. As bob, bound to `@rh-org`: the org's packages and
-grants, which only load while his Owner membership is live. As the admin: each
-user's account record and wallet (balance, plan, eligibility). One derived
-check, `packages.ownedByOneOrg`, fails when a package id shows up in more than
-one owner's package list, so nothing is injected from another account (the old
+grants, which only load while his Owner membership is live. As carol, bound to
+alice's org: proofs that she can still use alice's user secret (same hash as
+alice's) and integration through her Use grants. As the admin: each user's
+account record and wallet (balance, plan, eligibility). One derived check,
+`packages.ownedByOneOrg`, fails when a package id shows up in more than one
+owner's package list, so nothing is injected from another account (the old
 platform-account lane).
 
 Every read is a required check. A failed check is written into the snapshot and

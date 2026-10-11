@@ -19,11 +19,13 @@ import {
 	consumeExecuteUniqueWorkerDay,
 	getCachedUserEntitlement,
 	readDailyEntitlementResourceUsage,
+	readExecuteUniqueWorkerUsage,
 } from '#worker/entitlements/service.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { adminOrgLimitOverridesSetCapability } from '#mcp/capabilities/admin/admin-org-limit-overrides-set.ts'
 import { adminOrgLimitsGetCapability } from '#mcp/capabilities/admin/admin-org-limits-get.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { buildExecuteUsageReport } from '#mcp/execute-admission.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -258,6 +260,36 @@ test('a cache warmed in another isolate still sees the override: counted checks 
 	).toEqual([])
 	await sendEmails(org, 2)
 	expect(await sentToday(org)).toBe(freeSendsPerDay + 2)
+})
+
+test('the execute usage readout reads overrides live, like the counted check', async () => {
+	const org = await seedOrg({ label: 'override-execute-readout' })
+	const context = { userId: org.stableUserId, email: org.email }
+	await getCachedUserEntitlement(env.APP_DB, context)
+	await env.APP_DB.prepare(
+		`INSERT INTO org_limit_overrides (
+			org_id, limit_key, limit_value, reason, expires_at, set_by_user_id,
+			created_at, updated_at
+		) VALUES (?, 'execute_unique_workers_per_day', 400, 'other isolate', NULL, ?, ?, ?)`,
+	)
+		.bind(org.stableUserId, adminId, now.toISOString(), now.toISOString())
+		.run()
+	const usage = await readExecuteUniqueWorkerUsage({
+		db: env.APP_DB,
+		env,
+		userId: ownerIdFromStored(org.stableUserId),
+		email: org.email,
+		now,
+	})
+	// Execute responses build structuredContent.usage from this readout, so
+	// limit and remaining must be the effective override, not the plan cap.
+	expect(usage).toMatchObject({ used: 0, limit: 400 })
+	expect(buildExecuteUsageReport(usage, now).day).toEqual({
+		used: 0,
+		limit: 400,
+		remaining: 400,
+		resetsAt: '2026-10-11T00:00:00.000Z',
+	})
 })
 
 test('unlimited lifts the cap; removing it restores the plan cap', async () => {

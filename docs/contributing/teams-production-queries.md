@@ -2,16 +2,18 @@
 
 The workflow seals two read-only reports. `report.sealed.json` counts OAuth
 grants (with and without `orgId`) and live Stripe subscriptions.
-`credential-exposure.sealed.json` counts multi-member orgs, outside grants, and
-non-owner / non-granted secret or integration audit rows. Counts and ids only.
-Production runs are `kentcdodds` or the approved Cloud Agent actor (`cursor`).
+`credential-exposure.sealed.json` counts multi-member orgs, outside grants,
+non-owner / non-granted secret or integration audit rows, and the credential
+grant id mapping. Counts and ids only. Production runs are `kentcdodds`, the
+Cloud Agent actor (`cursor`), or `kody-bot` (Cloud Agent `gh` cannot dispatch
+workflows, so agents dispatch through `@kentcdodds/github` as kody-bot).
 
 The report no longer queries `package_share_grants`, `package_scope_grants`, or
 `users.account_type`. Those tables and column are absent from the schema.
 
 ## Run
 
-From `main`, as an approved actor (`kentcdodds` or `cursor`):
+From `main`, as an approved actor (`kentcdodds`, `cursor`, or `kody-bot`):
 
 ```bash
 mkdir -p ~/.kody-queries
@@ -26,9 +28,9 @@ node tools/preview-rehearsal/seal.ts open --private-key ~/.kody-queries/key --in
 
 The workflow (`.github/workflows/teams-production-queries.yml`) runs only from
 `main`, because the CI Cloudflare token reaches production for every target. It
-refuses production unless the actor is `kentcdodds` or `cursor` and `confirm`
-matches. To approve another runner, add their GitHub login to the workflow's
-check step in a reviewed PR.
+refuses production unless the actor is approved and `confirm` matches. To
+approve another runner, add their GitHub login to the workflow's check step in a
+reviewed PR.
 
 The report leaves CI only sealed to the recipient key, and the public run
 summary has no counts: Actions artifacts and logs on this repo are
@@ -69,12 +71,23 @@ means the §7.2 seat mapping does not cover it yet.
 
 `credential-exposure.sealed.json` answers:
 
-| Question                                                                   | Source                                                                                              | Report field                       |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Orgs with more than one live member, or any outside grant                  | APP_DB `orgs` / `org_memberships` / `grants`                                                        | `orgsWithExposureSurface`          |
-| Multi-member org rows                                                      | APP_DB                                                                                              | `multiMemberOrgs`                  |
-| Outside grants (subject not a live member)                                 | APP_DB `grants`                                                                                     | `outsideGrants`                    |
-| Secret / integration (MCP) audit where actor ≠ owner and ≠ granted subject | AUDIT_DB `org_audit_events` + APP_DB owners / grants / `team_members` (JS filter; DBs are separate) | `nonOwnerOrGrantedCredentialAudit` |
+| Question                                                                   | Source                                                                                              | Report field                          |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Orgs with more than one live member, or any outside grant                  | APP_DB `orgs` / `org_memberships` / `grants`                                                        | `orgsWithExposureSurface`             |
+| Multi-member org rows                                                      | APP_DB                                                                                              | `multiMemberOrgs`                     |
+| Outside grants (subject not a live member)                                 | APP_DB `grants`                                                                                     | `outsideGrants`                       |
+| Secret / integration (MCP) audit where actor ≠ owner and ≠ granted subject | AUDIT_DB `org_audit_events` + APP_DB owners / grants / `team_members` (JS filter; DBs are separate) | `nonOwnerOrGrantedCredentialAudit`    |
+| Grant and grant-invite totals by resource type and state                   | APP_DB `grants` / `grant_permissions` / `invites`                                                   | `credentialGrantIds.grantTotals`      |
+| Does every name-keyed credential grant map to exactly one credential row?  | APP_DB `grants` / `invites` against secrets, vault bindings, integrations, MCP servers              | `credentialGrantIds.nameKeyed*`       |
+| Does every id-keyed `credential` grant resolve to exactly one row?         | APP_DB `grants` by credential id (`not-migrated` before the id columns exist)                       | `credentialGrantIds.credentialGrants` |
+
+`credentialGrantIds` is the before/after evidence for the stable credential id
+migration. Each name-keyed row has an `outcome`: `mapped`, `orphan` (no
+credential carries the name), `ambiguous` (more than one credential row carries
+the name), `shared-with-vault` (the secret is also a vault door key, so the name
+grant covered vault use too), or `also-scoped` (a package or session secret in
+the org shares the name, so the name grant covered it too). The migration aborts
+on anything but `mapped`.
 
 Ambient placeholder expansion did not write `org_audit_events` historically, so
 the audit section is a capability-surface check when rows exist. MCP servers

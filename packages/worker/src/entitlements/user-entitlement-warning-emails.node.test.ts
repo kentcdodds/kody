@@ -25,13 +25,14 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 
 const {
 	listUsersForEntitlementWarningSweep,
+	sendEntitlementWarningNow,
 	sendUserEntitlementWarningEmails,
 	userEntitlementWarningDailyClaimTtlSeconds,
 	userEntitlementWarningDailyKvKey,
 	userEntitlementWarningKvKey,
 	userEntitlementWarningStockClaimTtlSeconds,
 	userEntitlementWarningSweepLimit,
-} = await import('#app/user-entitlement-warning-emails.ts')
+} = await import('#worker/entitlements/user-entitlement-warning-emails.ts')
 
 const stableUserId = ownerIdFromStored('a').repeat(64)
 
@@ -668,4 +669,34 @@ test('compute warning sweep ranks Worker compute and Rows read separately and re
 	expect(
 		capped.some((user) => user.email === 'compute-reserved@example.com'),
 	).toBe(true)
+})
+
+test('an immediate execute warning mails once and the hourly sweep then skips the same crossing', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { kv, store } = createKv()
+	const env = createEnv({ users: [freeUser('jelias@example.com')], kv })
+	const warning = row('execute_unique_workers_per_day', 120, 150)
+	sendCloudflareEmail.mockClear()
+	const sendNow = () =>
+		sendEntitlementWarningNow({
+			env,
+			ownerId: ownerIdFromStored(stableUserId),
+			kind: 'approaching',
+			warning,
+			now,
+		})
+	expect(await sendNow()).toBe(true)
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	expect(
+		store.has(
+			instanceKey('approaching', 'execute_unique_workers_per_day', now),
+		),
+	).toBe(true)
+	expect(await sendNow()).toBe(false)
+
+	setConsumption(warning)
+	expect(await sendAt(env, now.toISOString())).toEqual({
+		status: 'no_warnings',
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 })

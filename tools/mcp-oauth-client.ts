@@ -377,7 +377,7 @@ export async function connectAppMcpClient(
 export async function connectStatelessMcpClient(
 	origin: string,
 	headers: Record<string, string>,
-	options: { name?: string; version?: string } = {},
+	options: { name?: string; version?: string; fetch?: typeof fetch } = {},
 ) {
 	const client = new ModernClient(
 		{
@@ -389,6 +389,7 @@ export async function connectStatelessMcpClient(
 	const transport = new ModernStreamableHTTPClientTransport(
 		new URL('/mcp', origin),
 		{
+			...(options.fetch ? { fetch: options.fetch } : {}),
 			requestInit: {
 				headers,
 			},
