@@ -70,8 +70,8 @@ wrote during that fetch) so the next cron can skip the synthetic.
   attribution, credential) every request source derives, and lineage for runs
   started by other runs.
 - [Authorization](./authorization.md): the one org access check (`authorize`),
-  what every surface declares, and site-admin RBAC with its `any`-access
-  exception to per-user isolation.
+  what every surface declares, enablements (who a trigger runs as), and
+  site-admin RBAC with its `any`-access exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`free`, `standard`, `pro`,
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared

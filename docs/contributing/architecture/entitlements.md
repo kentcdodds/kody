@@ -182,9 +182,7 @@ retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
-Gmail-dot email collapse, no shared Stripe customer, and no platform-type
-`users` row as referrer (those rows have no person behind them;
-[#3084](https://github.com/kentcdodds/kody/issues/3084)). An unverified party
+Gmail-dot email collapse, and no shared Stripe customer. An unverified party
 holds the qualifying invoice id on the pending row; email verification retries
 the grant. `/@<slug>/-/billing` shows the share link and simple referrer status.
 
@@ -440,8 +438,7 @@ observes:
   free or one-seat orgs), resolved through `resolveEntitlementLimit` so admin
   overrides raise it like other caps. It counts every call, including warm
   repeats the plan cap does not, and is a safety net rather than a billed quota
-  (busiest production org-minute over the 30 days to 2026-10-10: 64 calls). The
-  identical-call loop brake (20 / 60s per connection) is unchanged.
+  (busiest production org-minute over the 30 days to 2026-10-10: 64 calls).
 - **Execute usage in every response**: every signed-in hosted execute response
   carries `structuredContent.usage`: `unit` (unique execute workers) and `day`
   (plus `week` when the plan has a weekly window) with `used`, `limit`,
@@ -839,11 +836,11 @@ Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
 `standard` and `partner` to `pro` (plan and Stripe plan columns, and the
 since-dropped `invites.plan`) and rebuilds both CHECK constraints for `free`,
 `standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` introduced the
-entitlement ladder (`public` | `legacy`, default `public`; now on `orgs`) and
+entitlement ladder (`public` | `legacy`, default `public`; stored on `orgs`) and
 backfilled `legacy` for then-active Stripe Standard/Pro subscribers and manual
-Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
-on `orgs`) for the granting Stripe price so a later refresh can drop `legacy` on
-a subscription change.
+Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id`
+(stored on `orgs`) for the granting Stripe price so a later refresh can drop
+`legacy` on a subscription change.
 
 ## Assigning plans
 
@@ -937,7 +934,7 @@ execute `entitlement` metadata (`limit`, `remaining`) report the effective
 limit. `'unlimited'` displays as "Unlimited". Nothing user-facing mentions that
 an override exists.
 
-**Credits and billing are unchanged.** Overrides change caps, never prices:
+Overrides change caps, never prices:
 
 - **Daily and weekly keys** raise the rate cap only. A purchasable-Pro org with
   `creditWallet: 'empty'` is still stopped past a monthly compute include

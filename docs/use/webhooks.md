@@ -547,8 +547,8 @@ rejected with the same generic 401 as a bad HMAC.
 
 ### Default signature in orgs on enablements
 
-In an org moved to enablements, every webhook verifies a signature. When the
-manifest declares no `verification`, Kody checks `X-Kody-Signature` against the
+In an org on enablements, every webhook verifies a signature. When the manifest
+declares no `verification`, Kody checks `X-Kody-Signature` against the
 endpoint's own signing secret, generated at mint or at migration:
 
 ```json
@@ -631,9 +631,10 @@ Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 replays the stored result. On `sync`, a different payload is **409**
 `idempotency_mismatch` and an in-progress key is **409**
 `invocation_in_progress`. `ack` still returns **202** after enqueue; the
-consumer records the ledger outcome. In a legacy org this works without HMAC and
-the URL secret is the credential. In an org moved to enablements the caller must
-also send the [default signature](#default-signature-in-orgs-on-enablements).
+consumer records the ledger outcome. Without a migrated enablement row this
+works without HMAC and the URL secret is the credential. In an org on
+enablements the caller must also send the
+[default signature](#default-signature-in-orgs-on-enablements).
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor
