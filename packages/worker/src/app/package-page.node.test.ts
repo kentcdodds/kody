@@ -138,6 +138,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
+		viewerCanManage: false,
 		listing: { listing: { id: 'listing-1' } },
 		ownerPackage: null,
 	})
@@ -148,6 +149,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		ownerPackage: { id: 'pkg-1' },
 		listing: null,
 		ownerProfilePublic: true,
@@ -191,6 +193,7 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
+		viewerCanManage: false,
 		listing: { listing: { id: 'listing-1' } },
 	})
 

@@ -172,8 +172,10 @@ export type CommunityDetailLoaderData = {
 	listing: PublicCommunityListing | null
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
-	/** True when the signed-in viewer owns this listing. */
+	/** True when the signed-in viewer may open the private package view. */
 	viewerIsOwner: boolean
+	/** True when the signed-in viewer may change the package (settings, publish). */
+	viewerCanManage: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
@@ -212,6 +214,7 @@ export type PackageFilesLoaderData = {
 	username?: string
 	kodyId?: string
 	viewerIsOwner?: boolean
+	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
 	iconUrl?: string | null
@@ -245,6 +248,7 @@ type CommunityDetailShellLoaderData = {
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
 }

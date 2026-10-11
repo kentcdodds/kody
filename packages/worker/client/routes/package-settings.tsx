@@ -82,7 +82,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				!response.ok ||
 				!payload?.ok ||
 				!payload.ownerPackage ||
-				!payload.viewerIsOwner
+				!payload.viewerCanManage
 			) {
 				return { kind: 'not-found' }
 			}
@@ -225,6 +225,7 @@ export function PackageSettingsRoute(handle: Handle) {
 							isPrivate,
 							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
+							viewerCanManage: true,
 							active: 'settings',
 							filesHref: getPackageTreeHref({
 								username: chromeUsername,

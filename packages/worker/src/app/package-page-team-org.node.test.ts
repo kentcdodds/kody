@@ -122,12 +122,14 @@ test('team package pages open for viewers who can read the package in the team o
 		username: 'acme',
 		kodyId: 'secret',
 		viewerIsOwner: true,
+		viewerCanManage: false,
 		ownerUserId: teamId,
 		ownerPackage: { id: 'pkg-secret', name: '@acme/secret' },
 	})
 	await expect(loadAs(env, memberId, 'shared')).resolves.toMatchObject({
 		kind: 'page',
 		viewerIsOwner: true,
+		viewerCanManage: false,
 		ownerPackage: { id: 'pkg-shared' },
 	})
 })

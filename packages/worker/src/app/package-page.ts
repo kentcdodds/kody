@@ -3,6 +3,7 @@ import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { viewerCanReadSavedPackage } from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
 	memoizePerRequest,
@@ -27,7 +28,14 @@ export type PackagePageAccess =
 			kodyId: string
 			listing: CommunityDetailLoaderData | null
 			ownerPackage: AccountPackageDetail | null
+			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
+			/**
+			 * The viewer may change the package (settings, publish). The account
+			 * package APIs act on the caller's own org, so only packages that org
+			 * owns are manageable here.
+			 */
+			viewerCanManage: boolean
 			loggedIn: boolean
 			invocationUrlOrigin: string
 			ownerUserId: string
@@ -210,6 +218,10 @@ async function loadPackagePageUncached(input: {
 			listing,
 			ownerPackage,
 			viewerIsOwner: true,
+			viewerCanManage:
+				user != null &&
+				ownerIdFromCaller({ request: user.request, user: user.mcpUser }) ===
+					target.userId,
 			loggedIn: true,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
@@ -231,6 +243,7 @@ async function loadPackagePageUncached(input: {
 			listing,
 			ownerPackage: null,
 			viewerIsOwner: false,
+			viewerCanManage: false,
 			loggedIn: Boolean(user),
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
