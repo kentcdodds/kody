@@ -285,11 +285,44 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
 	// Manage stays on the personal org (Workspace + Billing), not the
-	// collaborator org.
+	// collaborator org — packages on a grant-only org 404.
 	expect(collaborator).toContain('>Manage @ada<')
 	expect(collaborator).toContain('href="/@ada/-/packages"')
 	expect(collaborator).toContain('>Workspace<')
 	expect(collaborator).not.toContain('>Manage @acme<')
+	expect(collaborator).not.toContain('href="/@acme/-/packages"')
+
+	const collaboratorOnOrg = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@acme/-/connections',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: null,
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+		}),
+	)
+	// URL org is collaborator-only: Manage still names the personal workspace.
+	expect(collaboratorOnOrg).toContain('>Manage @ada<')
+	expect(collaboratorOnOrg).toContain('href="/@ada/-/packages"')
+	expect(collaboratorOnOrg).not.toContain('>Manage @acme<')
+	expect(collaboratorOnOrg).not.toContain('href="/@acme/-/packages"')
 
 	const billing = await renderToString(
 		jsx(SiteHeader, {

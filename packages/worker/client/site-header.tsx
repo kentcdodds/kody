@@ -362,13 +362,22 @@ function OrgSwitcher(
 				: orgRowsFromSession
 		// Prefer the team org in context so Settings/Members/… stay one click
 		// away from account pages. Fall back to last-used / first team org.
-		// Personal-only sessions get Workspace (rail entry) plus Billing.
+		// Without a team membership, Manage uses a packages-capable org only
+		// (personal, or a member/billing role) — never a grant-only
+		// collaborator, whose packages URL 404s.
 		const manageOrg = manageOrganization(
 			organizations,
 			current,
 			handle.props.lastUsedOrganization,
 		)
-		const manageIdentity = manageOrg ? orgIdentity(manageOrg, viewer) : null
+		const manageFallbackOrg =
+			current && (current.personal || current.role !== null)
+				? current
+				: (organizations.find((org) => org.personal) ?? null)
+		const manageTarget = manageOrg ?? manageFallbackOrg
+		const manageIdentity = manageTarget
+			? orgIdentity(manageTarget, viewer)
+			: null
 		const manageItems = manageOrg
 			? [
 					workspaceLandingItem(manageOrg.slug),
@@ -377,13 +386,13 @@ function OrgSwitcher(
 						role: manageOrg.role,
 					}),
 				]
-			: current
+			: manageFallbackOrg
 				? [
-						workspaceLandingItem(current.slug),
-						...(orgRoleManagesBilling(current.role)
+						workspaceLandingItem(manageFallbackOrg.slug),
+						...(orgRoleManagesBilling(manageFallbackOrg.role)
 							? [
 									{
-										href: orgBillingPath(current.slug),
+										href: orgBillingPath(manageFallbackOrg.slug),
 										label: 'Billing',
 										icon: 'wallet' as const,
 									},

@@ -412,10 +412,20 @@ export function ProfileRoute(handle: Handle) {
 			)
 		}
 
+		const personalOrgSlug = readyShell?.isSelf
+			? (readAppSession(handle)?.session?.organizations?.find(
+					(org) => org.personal,
+				)?.slug ?? readyShell.username)
+			: null
+
 		return (
 			<section mix={css(pageCss)} data-testid="profile-page">
 				<div mix={css(layoutCss)}>
-					{readyShell ? renderProfileIdentity(readyShell) : null}
+					{readyShell
+						? renderProfileIdentity(readyShell, {
+								workspaceOrgSlug: personalOrgSlug,
+							})
+						: null}
 
 					<div mix={css(mainCss)}>
 						<h2 mix={css(packagesHeadingCss)}>Repositories</h2>

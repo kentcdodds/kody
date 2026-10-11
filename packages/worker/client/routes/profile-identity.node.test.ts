@@ -37,6 +37,18 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(ownHtml).not.toContain('data-testid="profile-private-badge"')
 	expect(ownHtml).not.toContain('Log out')
 
+	// After a username rename the profile handle can diverge from the
+	// immutable personal org slug; Workspace must follow the org.
+	const renamedHtml = await renderToString(
+		renderProfileIdentity(
+			{ ...publicSelf, username: 'jane-new' },
+			{ workspaceOrgSlug: 'jane' },
+		),
+	)
+	expect(renamedHtml).toContain('@jane-new')
+	expect(renamedHtml).toContain('href="/@jane/-/packages"')
+	expect(renamedHtml).not.toContain('href="/@jane-new/-/packages"')
+
 	const privateHtml = await renderToString(
 		renderProfileIdentity({
 			...publicSelf,

@@ -19,7 +19,18 @@ import { UserAvatar } from '#universal/user-avatar.tsx'
 
 const profilePagePath = (username: string) => routes.profile.href({ username })
 
-export function renderProfileIdentity(shell: ProfileShellLoaderData) {
+export function renderProfileIdentity(
+	shell: ProfileShellLoaderData,
+	options?: {
+		/**
+		 * Personal organization slug for the Workspace link. After a username
+		 * rename the profile handle can diverge from the immutable signup org
+		 * slug; callers should pass the session's personal org when known.
+		 */
+		workspaceOrgSlug?: string | null
+	},
+) {
+	const workspaceSlug = options?.workspaceOrgSlug?.trim() || shell.username
 	return (
 		<header mix={css(identityCss)} data-testid="profile-identity">
 			<div mix={css(avatarWrapCss)}>
@@ -56,7 +67,7 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 				{shell.isSelf ? (
 					<div mix={css(actionsCss)} data-testid="profile-actions">
 						<a
-							href={workspaceLandingItem(shell.username).href}
+							href={workspaceLandingItem(workspaceSlug).href}
 							data-testid="profile-workspace"
 							mix={css(getGhostButtonCss())}
 						>
