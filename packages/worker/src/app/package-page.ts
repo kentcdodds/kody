@@ -194,6 +194,10 @@ async function loadPackagePageUncached(input: {
 	})
 
 	if (viewerIsOwner && target.savedPackage) {
+		const viewerCanManage =
+			user != null &&
+			ownerIdFromCaller({ request: user.request, user: user.mcpUser }) ===
+				target.userId
 		const [listing, ownerPackage] = await Promise.all([
 			target.listingId
 				? loadCommunityDetailData(input.env, input.request, target.listingId)
@@ -202,7 +206,9 @@ async function loadPackagePageUncached(input: {
 				env: input.env,
 				requestUrl: input.request.url,
 				userId: target.userId,
-				username: target.username,
+				...(viewerCanManage
+					? { creditAttributionUsername: target.username }
+					: {}),
 				packageId: target.savedPackage.id,
 			}),
 		])
@@ -218,10 +224,7 @@ async function loadPackagePageUncached(input: {
 			listing,
 			ownerPackage,
 			viewerIsOwner: true,
-			viewerCanManage:
-				user != null &&
-				ownerIdFromCaller({ request: user.request, user: user.mcpUser }) ===
-					target.userId,
+			viewerCanManage,
 			loggedIn: true,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,

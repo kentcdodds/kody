@@ -6,12 +6,27 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
+	packageDetailInputs: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mocks.readAuthenticatedAppUser(...args),
 }))
+
+vi.mock('#app/account-packages-data.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#app/account-packages-data.ts')>()
+	return {
+		...actual,
+		loadAccountPackageDetail: (
+			input: Parameters<typeof actual.loadAccountPackageDetail>[0],
+		) => {
+			mocks.packageDetailInputs.push(input)
+			return actual.loadAccountPackageDetail(input)
+		},
+	}
+})
 
 const { loadPackagePage } = await import('./package-page.ts')
 
@@ -132,6 +147,11 @@ test('team package pages open for viewers who can read the package in the team o
 		viewerCanManage: false,
 		ownerPackage: { id: 'pkg-shared' },
 	})
+	// Credit attribution is the owning org's billing data.
+	expect(mocks.packageDetailInputs).not.toHaveLength(0)
+	for (const input of mocks.packageDetailInputs) {
+		expect(input).not.toHaveProperty('creditAttributionUsername')
+	}
 })
 
 test('team package pages 404 for execute-only members, outsiders, and visitors', async () => {

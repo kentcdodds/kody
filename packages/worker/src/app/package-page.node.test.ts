@@ -154,6 +154,9 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 		listing: null,
 		ownerProfilePublic: true,
 	})
+	expect(mockModule.loadAccountPackageDetail).toHaveBeenCalledWith(
+		expect.objectContaining({ creditAttributionUsername: 'owner' }),
+	)
 
 	// Unlisted renames only redirect the owner; listed renames redirect anyone.
 	resolvesTo('redirect', { kodyId: 'renamed' })
