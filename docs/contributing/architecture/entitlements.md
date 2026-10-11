@@ -440,7 +440,9 @@ observes:
   (plus `week` when the plan has a weekly window) with `used`, `limit`,
   `remaining`, and `resetsAt` (next UTC midnight / next UTC Monday). It comes
   from the worker claim when one ran (repeats included) and from a meter read
-  for calls refused or failed before load.
+  for calls refused or failed before load, or for runs that crossed UTC
+  midnight. It is best effort: when that meter read fails, the field is omitted
+  and the call still returns.
 - **Execute loop brake**: the same `admitExecuteCall` also refuses a connection
   that starts the identical call (same code or invoke target and same canonical
   params) more than `identicalExecuteCallsPerWindow` (20) times in a rolling
