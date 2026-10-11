@@ -17,8 +17,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./ledger.ts', () => ({
 	getPackageCodemodRunById: async (_db: D1Database, runId: string) =>
-		runId === 'run-1'
-			? { id: 'run-1', codemodId: '0010-detect-legacy-credential-patterns' }
+		runId === 'run-1' || runId === 'run-apply'
+			? {
+					id: runId,
+					codemodId: '0010-detect-legacy-credential-patterns',
+					mode: runId === 'run-1' ? 'scan' : 'apply',
+				}
 			: null,
 	listPackageCodemodRunItems: async (
 		_db: D1Database,
@@ -206,6 +210,7 @@ test('dry run lists flagged owners and previews the email without sending or cla
 			packageOwnerNoticeKvKey({
 				noticeId: '2026-10-body-placeholders',
 				ownerId: 'alice',
+				recipientUserId: 'alice',
 			}),
 		),
 	).toBeNull()
@@ -244,6 +249,7 @@ test('send emails every verified org owner once per notice and claims the owner'
 			packageOwnerNoticeKvKey({
 				noticeId: '2026-10-body-placeholders',
 				ownerId: 'org-acme',
+				recipientUserId: 'bob',
 			}),
 		),
 	).not.toBeNull()
@@ -278,9 +284,96 @@ test('a failed send leaves the owner unclaimed so a retry can deliver', async ()
 			packageOwnerNoticeKvKey({
 				noticeId: '2026-10-body-placeholders',
 				ownerId: 'alice',
+				recipientUserId: 'alice',
 			}),
 		),
 	).toBeNull()
+})
+
+test('a partial delivery retries only the recipients that failed', async () => {
+	const { env } = await createEnv()
+	mocks.items = [item('01', 'org-acme', '@acme/billing', [bodyFinding])]
+	mocks.sendCloudflareEmail.mockImplementation(
+		async (_config: unknown, message: { to: string }) =>
+			message.to === 'bob@example.com'
+				? { ok: false, error: 'rejected' }
+				: { ok: true },
+	)
+	consoleWarn.mockImplementation(() => {})
+	const input = {
+		env,
+		runId: 'run-1',
+		noticeId: '2026-10-body-placeholders',
+		content,
+		dryRun: false,
+	}
+
+	const first = await runPackageOwnerNotice(input)
+	expect(first.owners[0]).toMatchObject({
+		status: 'send_failed',
+		recipientCount: 1,
+	})
+
+	mocks.sendCloudflareEmail.mockReset()
+	mocks.sendCloudflareEmail.mockResolvedValue({ ok: true })
+	const second = await runPackageOwnerNotice(input)
+	expect(second.owners[0]).toMatchObject({ status: 'sent', recipientCount: 1 })
+	expect(
+		mocks.sendCloudflareEmail.mock.calls.map(
+			([, message]) => (message as { to: string }).to,
+		),
+	).toEqual(['bob@example.com'])
+
+	const third = await runPackageOwnerNotice(input)
+	expect(third.owners[0]?.status).toBe('already_sent')
+})
+
+test('a scan of exactly the read cap is noticed, and one more item is refused', async () => {
+	const { env } = await createEnv()
+	const fill = (count: number) =>
+		Array.from({ length: count }, (_, index) =>
+			item(String(index).padStart(6, '0'), 'alice', `@alice/p${index}`, [
+				otherFinding,
+			]),
+		)
+	mocks.items = fill(10_000)
+	const base = {
+		env,
+		runId: 'run-1',
+		noticeId: '2026-10-body-placeholders',
+		content,
+		dryRun: true,
+	}
+	await expect(runPackageOwnerNotice(base)).resolves.toMatchObject({
+		summary: { would_send: 1 },
+	})
+	mocks.items = fill(10_001)
+	await expect(runPackageOwnerNotice(base)).rejects.toThrow(
+		/more than 10000 items/,
+	)
+})
+
+test('an empty finding filter selects nothing, and only scan runs can send a notice', async () => {
+	const { env } = await createEnv()
+	const base = {
+		env,
+		runId: 'run-1',
+		noticeId: '2026-10-body-placeholders',
+		content,
+		dryRun: true,
+	}
+	await expect(
+		runPackageOwnerNotice({ ...base, findingMessages: [] }),
+	).resolves.toMatchObject({ owners: [], nextCursor: null })
+	await expect(
+		runPackageOwnerNotice({ ...base, runId: 'run-apply' }),
+	).rejects.toThrow(/has mode "apply"\. Send a notice from a scan run/)
+	await expect(
+		runPackageOwnerNotice({
+			...base,
+			content: { ...content, effectiveAt: ' ' },
+		}),
+	).rejects.toThrow(/effectiveAt is required/)
 })
 
 test('owners page by cursor in id order', async () => {

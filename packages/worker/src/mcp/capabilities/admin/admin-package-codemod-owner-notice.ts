@@ -48,13 +48,14 @@ const inputSchema = z.object({
 		.describe('The change the owner makes to their package.'),
 	effectiveAt: z
 		.string()
+		.min(1)
 		.max(100)
-		.optional()
 		.describe(
 			'When enforcement starts, in words (for example "June 1, 2027").',
 		),
 	findingMessages: z
 		.array(z.string().min(1))
+		.min(1)
 		.max(20)
 		.optional()
 		.describe(
@@ -133,7 +134,7 @@ export const adminPackageCodemodOwnerNoticeCapability = defineDomainCapability(
 								subject: args.subject,
 								whatBreaks: args.whatBreaks,
 								howToFix: args.howToFix,
-								effectiveAt: args.effectiveAt ?? null,
+								effectiveAt: args.effectiveAt,
 							},
 							findingMessages: args.findingMessages ?? null,
 							dryRun: args.dryRun,

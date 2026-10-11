@@ -581,10 +581,11 @@ See [Cleanup after migrations](./cleanup-after-migrations.md).
 ### Owner notice
 
 `adminPackageCodemodOwnerNotice` emails the owners of every package a scan run
-flagged. Pass the scan `runId`, a stable `noticeId` (for example
-`2026-10-body-placeholders`), a `subject`, `whatBreaks`, `howToFix`, and
-optionally `effectiveAt` and `findingMessages` (exact finding messages to
-include; omit for every finding in the run).
+flagged. Pass the scan `runId` (dry-run, apply, and revert runs are refused), a
+stable `noticeId` (for example `2026-10-body-placeholders`), a `subject`,
+`whatBreaks`, `howToFix`, `effectiveAt` (when the rule takes effect, in words),
+and optionally `findingMessages` (exact finding messages to include; omit for
+every finding in the run).
 
 - **Dry run by default.** `dryRun` defaults to `true`. It lists each owner with
   their flagged packages and a status, and renders a preview of the first email.
@@ -592,16 +593,18 @@ include; omit for every finding in the run).
 - **Recipients.** Every `owner` of the owning org with a verified email. A
   personal org with no membership rows goes to the user whose id is the org id.
   Owners with no verified address report `no_recipients`.
-- **Once per notice.** A KV claim
-  (`package-owner-notice:v1:<noticeId>:<ownerId>`, 180 days) is written only
-  after at least one email is delivered, so re-running a notice skips owners
-  already reached (`already_sent`) and retries owners whose send failed
-  (`send_failed`).
+- **Once per notice and recipient.** A KV claim
+  (`package-owner-notice:v1:<noticeId>:<ownerId>:<userId>`, 180 days) is written
+  after each successful send. A re-run skips delivered recipients
+  (`already_sent` once all are reached) and retries the rest (`send_failed`
+  until then). KV has no atomic claim, so run one notice from one place at a
+  time.
 - **Content.** The email names up to 25 affected packages with a link to each
   and its findings, then the fix. Never put secret values, internal hostnames,
   or other owners' data in `whatBreaks` or `howToFix`.
 - **Paging.** Owners are processed in id order, `limit` (default 20, max 50) per
-  call. Pass `nextCursor` back until it is `null`.
+  call. Pass `nextCursor` back until it is `null`. A scan with more than 10,000
+  items is refused; filter the scan first.
 
 ## Revert
 

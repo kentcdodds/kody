@@ -10,8 +10,8 @@ import {
 
 /**
  * Owner notice before a breaking gateway or credential rule change: email the
- * owners of every package a codemod scan flagged, once per notice and owning
- * org, naming each affected package, what breaks, and how to fix it.
+ * owners of every package a codemod scan flagged, once per notice and
+ * recipient, naming each affected package, what breaks, and how to fix it.
  */
 
 export const packageOwnerNoticeKvKeyPrefix = 'package-owner-notice:v1'
@@ -27,8 +27,9 @@ const maxPackagesListed = 25
 export function packageOwnerNoticeKvKey(input: {
 	noticeId: string
 	ownerId: string
+	recipientUserId: string
 }) {
-	return `${packageOwnerNoticeKvKeyPrefix}:${input.noticeId}:${input.ownerId}`
+	return `${packageOwnerNoticeKvKeyPrefix}:${input.noticeId}:${input.ownerId}:${input.recipientUserId}`
 }
 
 export type PackageOwnerNoticeStatus =
@@ -70,7 +71,7 @@ export type PackageOwnerNoticeContent = {
 	/** The change the owner makes to their package. */
 	howToFix: string
 	/** When the rule starts being enforced, in words (for example "June 1, 2027"). */
-	effectiveAt?: string | null
+	effectiveAt: string
 }
 
 export class PackageOwnerNoticeError extends Error {}
@@ -124,7 +125,7 @@ async function loadFlaggedPackagesByOwner(input: {
 	const byOwner = new Map<string, Array<PackageOwnerNoticePackage>>()
 	let afterId: string | null = null
 	let read = 0
-	while (read < maxRunItemsRead) {
+	while (read <= maxRunItemsRead) {
 		const items: Array<PackageCodemodRunItemRecord> =
 			await listPackageCodemodRunItems(input.db, {
 				runId: input.runId,
@@ -152,7 +153,7 @@ async function loadFlaggedPackagesByOwner(input: {
 		}
 		if (items.length < runItemsPageSize) break
 	}
-	if (read >= maxRunItemsRead) {
+	if (read > maxRunItemsRead) {
 		throw new PackageOwnerNoticeError(
 			`Run has more than ${maxRunItemsRead} items; filter the scan before sending a notice.`,
 		)
@@ -174,7 +175,7 @@ export function buildPackageOwnerNoticeEmail(input: {
 		).toString()
 		return `${pkg.kodyId} (${url}): ${pkg.findings.join(' ')}`
 	})
-	const effectiveAt = input.content.effectiveAt?.trim()
+	const effectiveAt = input.content.effectiveAt.trim()
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: input.content.subject,
@@ -227,6 +228,16 @@ export async function runPackageOwnerNotice(input: {
 	if (!run) {
 		throw new PackageOwnerNoticeError(`Codemod run ${input.runId} not found.`)
 	}
+	if (run.mode !== 'scan') {
+		throw new PackageOwnerNoticeError(
+			`Codemod run ${run.id} has mode "${run.mode}". Send a notice from a scan run (adminPackageCodemodScan).`,
+		)
+	}
+	if (!input.content.effectiveAt.trim()) {
+		throw new PackageOwnerNoticeError(
+			'effectiveAt is required so owners know when the rule takes effect.',
+		)
+	}
 	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!emailConfig) {
@@ -243,9 +254,8 @@ export async function runPackageOwnerNotice(input: {
 	const byOwner = await loadFlaggedPackagesByOwner({
 		db: input.env.APP_DB,
 		runId: run.id,
-		findingMessages: input.findingMessages?.length
-			? new Set(input.findingMessages)
-			: null,
+		findingMessages:
+			input.findingMessages == null ? null : new Set(input.findingMessages),
 	})
 	const limit = Math.min(
 		Math.max(input.limit ?? packageOwnerNoticeDefaultLimit, 1),
@@ -290,6 +300,11 @@ export async function runPackageOwnerNotice(input: {
 	}
 }
 
+/**
+ * Claims are per recipient and written after that recipient's send succeeds,
+ * so a re-run skips delivered recipients and retries failed ones. KV has no
+ * atomic claim, so run one notice from one place at a time.
+ */
 async function noticeOneOwner(input: {
 	env: Env
 	kv: KVNamespace | undefined
@@ -301,16 +316,22 @@ async function noticeOneOwner(input: {
 	dryRun: boolean
 	onPreview: (email: { subject: string; text: string }) => void
 }): Promise<{ status: PackageOwnerNoticeStatus; recipientCount: number }> {
-	const key = packageOwnerNoticeKvKey({
-		noticeId: input.noticeId,
-		ownerId: input.ownerId,
-	})
-	if (input.kv && (await input.kv.get(key))) {
-		return { status: 'already_sent', recipientCount: 0 }
-	}
 	const recipients = await loadOwnerRecipients(input.env.APP_DB, input.ownerId)
 	if (recipients.length === 0) {
 		return { status: 'no_recipients', recipientCount: 0 }
+	}
+	const pending: Array<Recipient & { key: string }> = []
+	for (const recipient of recipients) {
+		const key = packageOwnerNoticeKvKey({
+			noticeId: input.noticeId,
+			ownerId: input.ownerId,
+			recipientUserId: recipient.userId,
+		})
+		if (input.kv && (await input.kv.get(key))) continue
+		pending.push({ ...recipient, key })
+	}
+	if (pending.length === 0) {
+		return { status: 'already_sent', recipientCount: 0 }
 	}
 	const email = buildPackageOwnerNoticeEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
@@ -319,11 +340,11 @@ async function noticeOneOwner(input: {
 	})
 	if (input.dryRun) {
 		input.onPreview(email)
-		return { status: 'would_send', recipientCount: recipients.length }
+		return { status: 'would_send', recipientCount: pending.length }
 	}
 
 	let delivered = 0
-	for (const recipient of recipients) {
+	for (const recipient of pending) {
 		try {
 			const result = await sendCloudflareEmail(
 				{
@@ -339,14 +360,18 @@ async function noticeOneOwner(input: {
 					text: email.text,
 				},
 			)
-			if (result.ok) delivered += 1
-			else {
+			if (!result.ok) {
 				console.warn('package-owner-notice-send-skipped', {
 					noticeId: input.noticeId,
 					ownerId: input.ownerId,
 					reason: result.error ?? 'unconfigured',
 				})
+				continue
 			}
+			delivered += 1
+			await input.kv?.put(recipient.key, String(Date.now()), {
+				expirationTtl: packageOwnerNoticeClaimTtlSeconds,
+			})
 		} catch (error) {
 			console.warn('package-owner-notice-send-failed', {
 				noticeId: input.noticeId,
@@ -355,11 +380,8 @@ async function noticeOneOwner(input: {
 			})
 		}
 	}
-	if (delivered === 0) {
-		return { status: 'send_failed', recipientCount: recipients.length }
+	return {
+		status: delivered === pending.length ? 'sent' : 'send_failed',
+		recipientCount: delivered,
 	}
-	await input.kv?.put(key, String(Date.now()), {
-		expirationTtl: packageOwnerNoticeClaimTtlSeconds,
-	})
-	return { status: 'sent', recipientCount: delivered }
 }
