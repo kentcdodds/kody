@@ -27,7 +27,6 @@ import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-
 import {
 	disableEnablement,
 	getEnablementById,
-	getEnablementOrgMigration,
 	insertEnablement,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
@@ -189,12 +188,9 @@ export async function enableTriggerForCaller(input: {
 			`Webhook "${trigger.triggerName}" is already on for another person. Each webhook URL runs as one enabler.`,
 		)
 	}
-	// A migrated org checks X-Kody-Signature on unsigned webhooks, so a URL
-	// that never got a signing secret (disabled at migration) gets one now.
-	if (
-		trigger.unsignedWebhookEndpointId &&
-		(await getEnablementOrgMigration({ db, orgId })).state === 'migrated'
-	) {
+	// Inbound delivery checks X-Kody-Signature on unsigned webhooks, so a URL
+	// that never got a signing secret gets one now.
+	if (trigger.unsignedWebhookEndpointId) {
 		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
 			env: input.env,
 			userId: orgId,
@@ -235,8 +231,8 @@ export async function enableTriggerForCaller(input: {
 }
 
 /**
- * Minting a webhook URL turns it on for the minter in an org moved to
- * enablements, unless it already has an enabler. A minter without
+ * Minting a webhook URL turns it on for the minter, unless it already has an
+ * enabler. A minter without
  * `package:execute` gets the URL and no enablement.
  */
 export async function ensureWebhookEnablementForMinter(input: {
@@ -250,8 +246,6 @@ export async function ensureWebhookEnablementForMinter(input: {
 	if (!actor) return null
 	const db = input.env.APP_DB
 	const orgId = input.savedPackage.userId
-	const migration = await getEnablementOrgMigration({ db, orgId })
-	if (migration.state !== 'migrated') return null
 	const [existing] = await listEnablementsForInstance({
 		db,
 		orgId,

@@ -325,8 +325,9 @@ export async function deliverPackageEventWithToolFactories(input: {
 }
 
 /**
- * Messages enqueued before they carried lineage run as Automation, which has
- * no actor and so can only narrow what the emitter could do.
+ * Messages enqueued before they carried lineage have no person behind them.
+ * They reach every enablement of the topic, like a platform event, and each
+ * runs as its own enabler.
  */
 function packageEventRequestSource(
 	message: PackageEventsDispatchQueueMessage,
@@ -490,7 +491,7 @@ type SubscriptionInvocationInput = {
 }
 
 /**
- * Who a subscription event may reach in an org moved to enablements:
+ * Who a subscription event may reach:
  * `{ onlyEnablerId }` narrows to one person, `null` reaches nobody.
  *
  * - An event raised by a run (and the smoke test) reaches only the run's
@@ -561,8 +562,8 @@ function isSuccessfulInvocation(response: PackageInvocationResponse) {
 }
 
 /**
- * Invoke one package subscription handler. In an org moved to enablements it
- * runs once per on enablement in scope, each as its enabler with its own
+ * Invoke one package subscription handler. It runs once per on enablement in
+ * scope, each as its enabler with its own
  * idempotency key; with none, the event is dropped (the smoke test gets a
  * 409 telling the caller to turn the subscription on for themselves).
  * Returns the first failed run's response, else the last run's.
@@ -601,9 +602,6 @@ export async function invokePackageSubscriptionWithToolFactories(
 		onlyEnablerId: scope?.onlyEnablerId,
 		audience: input.audience,
 	})
-	if (plan.mode === 'legacy') {
-		return await invokeSubscriptionOnce(input, input.request, idempotencyKey)
-	}
 	const runs = scope ? plan.runs : []
 	if (runs.length === 0) {
 		if (synthetic) {

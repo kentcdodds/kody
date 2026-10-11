@@ -39,7 +39,7 @@ export type EffectivePermissions = {
 	orgId: OwnerId
 	/** Org-level permissions (role basics + grants on the org resource). */
 	permissions: ReadonlySet<OrgPermission>
-	/** True when the actor is an Owner (or Automation acting for the org). */
+	/** True when the actor is an Owner. */
 	isOwner: boolean
 	/** Per-resource grants keyed by `${type}:${id}`. */
 	resourcePermissions: ReadonlyMap<string, ReadonlySet<OrgPermission>>

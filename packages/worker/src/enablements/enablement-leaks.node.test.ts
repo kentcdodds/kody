@@ -47,6 +47,8 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
+import { orgMemberUpdateCapability } from '#mcp/capabilities/access/org-members.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import { getEnablementById, insertEnablement } from './repo.ts'
@@ -123,6 +125,12 @@ type SandboxRun = {
 		getAttachment: (attachmentId: string) => Promise<unknown>
 	}
 }
+
+/** What the saved package does when it runs, given the run's caller context. */
+type PackageCode = (
+	callerContext: McpCallerContext,
+	packageId: string,
+) => Promise<unknown>
 
 async function insertAccount(
 	db: D1Database,
@@ -314,6 +322,8 @@ async function setup() {
 				storageContext: { sessionId: null, appId: packageId, packageId },
 			},
 		})
+	let packageCode: PackageCode = (callerContext, packageId) =>
+		resolveTeamToken(callerContext.request, packageId)
 	mocks.runBundledModuleWithRegistry.mockImplementation(
 		async (
 			_env: Env,
@@ -334,7 +344,7 @@ async function setup() {
 			}
 			runs.push(run)
 			try {
-				await resolveTeamToken(callerContext.request, packageId)
+				await packageCode(callerContext, packageId)
 				return { result: { ok: true }, logs: [] }
 			} catch (error) {
 				run.error = error
@@ -517,6 +527,9 @@ async function setup() {
 		removeFromOrg,
 		resolveTeamToken,
 		auditRows,
+		setPackageCode: (code: PackageCode) => {
+			packageCode = code
+		},
 	}
 }
 
@@ -635,7 +648,6 @@ test("a member's cron job runs as its enabler and cannot use an org credential t
 			packageId: 'pkg-shared',
 			trigger: { kind: 'cron', instanceId: jobId },
 		})
-		if (plan.mode !== 'enablements') throw new Error('Expected enablements.')
 		const outcomes = []
 		for (const run of plan.runs) {
 			const request = deriveRequestContext({
@@ -829,7 +841,6 @@ test('turning a trigger on again keeps one enablement per person', async () => {
 			instanceId: buildPackageJobId('pkg-shared', jobName),
 		},
 	})
-	if (plan.mode !== 'enablements') throw new Error('Expected enablements.')
 	expect(plan.runs.map((run) => String(run.enabler.userId)).sort()).toEqual(
 		[t.people.bea.userId, t.people.cy.userId].map(String).sort(),
 	)
@@ -961,4 +972,104 @@ test("a run as a member reads org mail only with that member's email:read", asyn
 		.getMessage('message-missing')
 		.catch((error: unknown) => error)
 	expect(ownerError).not.toMatchObject({ name: 'AuthorizationError' })
+})
+
+test('a member cannot make themselves Owner through a job or webhook in a package they saved', async () => {
+	const t = await setup()
+	consoleInfo.mockImplementation(() => {})
+	const promoteBea = (callerContext: McpCallerContext) =>
+		orgMemberUpdateCapability.handler(
+			{ username: 'bea', role: 'owner' },
+			{ env: t.env, callerContext },
+		)
+	t.setPackageCode(promoteBea)
+	const beasRole = async () =>
+		(
+			await t.db
+				.prepare(
+					`SELECT role FROM org_memberships
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(t.orgId, t.people.bea.userId)
+				.first<{ role: string }>()
+		)?.role
+	const jobId = buildPackageJobId('pkg-shared', jobName)
+	const orgBinding = { org: { id: t.orgId, slug: 'quillworks' } }
+	const tick = async () => {
+		const plan = await planEnablementRuns({
+			env: t.env,
+			orgId: t.orgId,
+			packageId: 'pkg-shared',
+			trigger: { kind: 'cron', instanceId: jobId },
+		})
+		return await Promise.all(
+			plan.runs.map((run) => {
+				const callerContext = createMcpCallerContext({
+					baseUrl: 'https://kody.example',
+					user: {
+						...run.enabler,
+						email: `${run.enabler.username}@acme.example`,
+						displayName: run.enabler.username ?? '',
+					},
+					source: { kind: 'schedule', jobId, enablement: run },
+					orgBinding: { ...orgBinding, role: run.role },
+				})
+				return promoteBea(callerContext).then(
+					() => ({ request: callerContext.request, error: null }),
+					(error: unknown) => ({ request: callerContext.request, error }),
+				)
+			}),
+		)
+	}
+
+	// Saved but turned on by nobody: neither trigger runs.
+	expect(await tick()).toEqual([])
+	expect((await t.deliverWebhook('endpoint-bea')).status).toBe(409)
+	expect(t.runs).toEqual([])
+
+	// Turned on by Bea: both run as Bea, with only Bea's access.
+	await t.enable('bea', 'cron', jobName)
+	await t.enableWebhook('bea', 'endpoint-bea')
+	const [cronRun, ...otherCronRuns] = await tick()
+	expect(otherCronRuns).toEqual([])
+	expect(cronRun).toMatchObject({
+		request: { actor: { userId: t.people.bea.userId } },
+		error: { name: 'AuthorizationError', permission: 'member:write' },
+	})
+	await t.deliverWebhook('endpoint-bea')
+	expect(t.runs).toHaveLength(1)
+	expect(t.runs[0]).toMatchObject({
+		request: { actor: { userId: t.people.bea.userId } },
+		error: { name: 'AuthorizationError', permission: 'member:write' },
+	})
+	expect(await beasRole()).toBe('member')
+
+	// A scheduled request that names no enabler holds no permissions at all.
+	const nobody = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user: {
+			userId: personIdFromStored(t.orgId as string),
+			username: 'quillworks',
+			email: 'team@acme.example',
+			displayName: 'Acme',
+		},
+		source: { kind: 'schedule', jobId },
+		orgBinding: { ...orgBinding, role: 'owner' },
+	})
+	expect(nobody.request?.actor).toBeNull()
+	await expect(promoteBea(nobody)).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'member:write',
+	})
+	expect(await beasRole()).toBe('member')
+
+	// The same package turned on by Owner acts with Owner's access.
+	await t.enable('owner', 'cron', jobName)
+	const outcomes = await tick()
+	expect(
+		outcomes.find(
+			(outcome) => outcome.request?.actor?.userId === t.people.owner.userId,
+		),
+	).toMatchObject({ error: null })
+	expect(await beasRole()).toBe('owner')
 })

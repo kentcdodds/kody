@@ -184,8 +184,6 @@ async function setupOwner(
 	input: {
 		verification?: boolean | 'package-owned' | 'secret-name'
 		legacySecretValue?: string
-		/** The org is on enablements, so undeclared verification is the default. */
-		migrated?: boolean
 	} = {},
 ) {
 	const verificationMode =
@@ -250,15 +248,6 @@ async function setupOwner(
 		stableUserId: userId,
 		username: 'owner',
 	})
-	if (input.migrated) {
-		await db
-			.prepare(
-				`INSERT INTO enablement_org_migrations (org_id, state, migrated_at, updated_at)
-				 VALUES (?, 'migrated', ?, ?)`,
-			)
-			.bind(userId, '2026-10-11T00:00:00.000Z', '2026-10-11T00:00:00.000Z')
-			.run()
-	}
 	if (legacyMintHmac) {
 		secretMocks.resolveSecret.mockResolvedValue({
 			found: true,
@@ -449,10 +438,6 @@ test('webhookUrlApply rejects invalid destinations before fetch', async () => {
 				secretName: 'hooksToken',
 			},
 			/Authorization/,
-		],
-		[
-			githubHooksHttpDestination({ includeWebhookSecret: true }),
-			/no verification declaration/,
 		],
 	]
 	for (const [destination, message] of cases) {
@@ -662,10 +647,8 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
 })
 
-test('webhookUrlApply injects the default signing secret in an org on enablements', async () => {
-	const { db, env, handle, userId, apply } = await setupOwner({
-		migrated: true,
-	})
+test('webhookUrlApply injects the default signing secret when the manifest declares no verification', async () => {
+	const { db, env, handle, userId, apply } = await setupOwner()
 	mockIntegration()
 	const endpointId = parseWebhookUrlHandle(handle)!
 	const row = await db

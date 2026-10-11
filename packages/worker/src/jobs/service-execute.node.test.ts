@@ -7,7 +7,6 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
-import * as enablementsRepo from '#worker/enablements/repo.ts'
 import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
@@ -923,7 +922,7 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 	})
 })
 
-test('runJobNow in an org on enablements refuses a run that has no person', async () => {
+test('runJobNow refuses a run that has no person', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const { env } = createExecuteEnv()
 	mockRepoPersistence()
@@ -937,9 +936,6 @@ test('runJobNow in an org on enablements refuses a run that has no person', asyn
 			schedule: onceSchedule,
 		},
 	})
-	using migration = vi
-		.spyOn(enablementsRepo, 'getEnablementOrgMigration')
-		.mockResolvedValue({ state: 'migrated' } as never)
 	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
 	const actorless = {
 		...callerContext,
@@ -962,7 +958,13 @@ test('runJobNow in an org on enablements refuses a run that has no person', asyn
 			callerContext: actorless as never,
 		}),
 	).rejects.toThrow('can only be run now by a signed-in person')
-	expect(migration).toHaveBeenCalled()
+	await expect(
+		runJobNow({
+			env,
+			userId: personalOrgId(callerContext.user.userId),
+			jobId: jobView.id,
+		}),
+	).rejects.toThrow('can only be run now by a signed-in person')
 	expect(executeSpy).not.toHaveBeenCalled()
 })
 

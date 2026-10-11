@@ -5,6 +5,7 @@ import { exportRunRecords } from '#worker/run-records/service.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
 	assignAdminRole,
+	enableSubscriptionForOwner,
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
 	seedAccount,
@@ -112,6 +113,13 @@ async function seedSubscribedPackage(input: {
 		.bind(sourceId, input.userId, packageId, now, now)
 		.run()
 
+	const enablement = await enableSubscriptionForOwner({
+		db: env.APP_DB,
+		userId: input.userId,
+		packageId,
+		topic: platformFeedbackSubmittedTopic,
+	})
+
 	const manifest = {
 		name: `@${input.scope}/${kodyId}`,
 		exports: {
@@ -208,7 +216,7 @@ export default async function main(input = {}) {
 			now,
 		)
 		.run()
-	return { packageId }
+	return { packageId, enablementId: enablement.id }
 }
 
 // Package subscription dispatch boots the real Worker Loader sandbox, which
@@ -340,7 +348,7 @@ test(
 					exportName: `subscription:${platformFeedbackSubmittedTopic}`,
 					topic: platformFeedbackSubmittedTopic,
 					source: 'platform-feedback',
-					idempotencyKey: `platform-feedback:${dispatchFeedback.id}:${adminPackage.packageId}:${platformFeedbackSubmittedTopic}`,
+					idempotencyKey: `platform-feedback:${dispatchFeedback.id}:${adminPackage.packageId}:${platformFeedbackSubmittedTopic}:enablement:${adminPackage.enablementId}`,
 				})
 				const responseJson = invocation?.responseJson
 				if (!responseJson) {

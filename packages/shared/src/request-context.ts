@@ -55,11 +55,14 @@ export type RequestCredential = {
 
 export type RequestContext = {
 	org: RequestOrg
-	/** Null only for Automation (webhook, schedule, email, event). */
+	/**
+	 * Null only for a trigger event with no enablement, which holds no
+	 * permissions and runs nothing.
+	 */
 	actor: RequestActor | null
 	attribution: RequestAttribution
 	credential: RequestCredential
-	/** Null for Automation and for outside collaborators. */
+	/** Null for a request with no person and for outside collaborators. */
 	membership: { role: OrgRole } | null
 }
 
