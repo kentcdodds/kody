@@ -200,17 +200,42 @@ function literalText(node: AstNode) {
 		.join('${}')
 }
 
+function isWithinHeaders(node: AstNode, ancestors: ReadonlyArray<AstNode>) {
+	let child = node
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const parent = ancestors[index]!
+		if (
+			parent.type === 'ObjectProperty' &&
+			parent.computed !== true &&
+			parent.value === child &&
+			getNodeName(parent.key) === 'headers'
+		) {
+			return true
+		}
+		if (
+			parent.type === 'NewExpression' &&
+			getNodeName(parent.callee) === 'Headers'
+		) {
+			return true
+		}
+		child = parent
+	}
+	return false
+}
+
 /**
  * True only when the literal provably lands in a request URL, query, or body:
  * a URL-shaped string, a `body` property, the URL argument of `fetch`,
  * `new Request`, or `new URL`, or `JSON.stringify` / `URLSearchParams` /
- * `FormData` input. A `headers` property or `new Headers` stops the search.
+ * `FormData` input. Anything under a `headers` property or `new Headers` is a
+ * header, so the count stays a floor.
  */
 function literalIsOutsideHeader(
 	node: AstNode,
 	text: string,
 	ancestors: ReadonlyArray<AstNode>,
 ) {
+	if (isWithinHeaders(node, ancestors)) return false
 	if (/^\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(text)) return true
 	let child = node
 	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
@@ -218,11 +243,10 @@ function literalIsOutsideHeader(
 		if (
 			parent.type === 'ObjectProperty' &&
 			parent.computed !== true &&
-			parent.value === child
+			parent.value === child &&
+			getNodeName(parent.key) === 'body'
 		) {
-			const key = getNodeName(parent.key)
-			if (key === 'headers') return false
-			if (key === 'body') return true
+			return true
 		}
 		if (
 			parent.type === 'CallExpression' ||
@@ -241,7 +265,6 @@ function literalIsOutsideHeader(
 		}
 		if (parent.type === 'NewExpression') {
 			const constructorName = getNodeName(parent.callee)
-			if (constructorName === 'Headers') return false
 			if (
 				(constructorName === 'Request' || constructorName === 'URL') &&
 				parent.arguments?.[0] === child

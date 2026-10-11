@@ -245,6 +245,8 @@ test('0010 flags placeholders the gateway placement rule refuses', () => {
 		"new Headers({ 'x-api-key': '{{secret:S}}' })",
 		"fetch('https://x.test', { headers: { a: 'b' }, body: 'plain' })",
 		"const auth = 'Bearer {{secret:S}}'",
+		"fetch('https://x.test', { headers: { Referer: 'https://auth.test/{{secret:S}}' } })",
+		"fetch('https://x.test', { headers: { 'x-meta': JSON.stringify({ t: '{{secret:S}}' }) } })",
 	]
 	for (const statement of headerOrUnknown) {
 		expect(
