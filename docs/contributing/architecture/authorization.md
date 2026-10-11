@@ -211,7 +211,8 @@ checks it in the same dispatch path as `authorizeSurface`:
 - `requiresLivePerson: true` is checked before any other gate.
 - A predicate `(args, ctx) => boolean` is checked after the input parses, for
   capabilities where only some inputs qualify. `accessGrant` and `accessRevoke`
-  use it for org grants that carry `member:*` or `billing:*` permissions.
+  use it for org grants that carry `member:*` or `billing:*` permissions, or
+  that replace or revoke a grant that does.
 
 `isLivePersonRequest` (`packages/worker/src/authorization/authorize.ts`) is the
 one definition of a live person: an actor plus a credential kind of `session`,

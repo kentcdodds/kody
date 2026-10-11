@@ -574,6 +574,7 @@ test('member and billing grant changes need a live person; other grants do not',
 		},
 	})
 	const subjectId = testStableUserIdFromEmail('subject-live@example.com')
+	const otherSubjectId = testStableUserIdFromEmail('other-live@example.com')
 	const memberGrant = {
 		resource_type: 'org' as const,
 		resource_id: org.id,
@@ -592,11 +593,20 @@ test('member and billing grant changes need a live person; other grants do not',
 		memberGrant as never,
 		live,
 	)
+	await expect(
+		accessGrantCapability.handler(
+			{ ...memberGrant, permissions: ['team:read'] } as never,
+			scheduled,
+		),
+	).rejects.toMatchObject({
+		name: 'LivePersonRequiredError',
+		capabilityName: 'accessGrant',
+	})
 
 	const teamRead = await accessGrantCapability.handler(
 		{
 			...memberGrant,
-			subject_id: testStableUserIdFromEmail('other-live@example.com'),
+			subject_id: otherSubjectId,
 			permissions: ['team:read'],
 		} as never,
 		scheduled,
@@ -604,7 +614,12 @@ test('member and billing grant changes need a live person; other grants do not',
 	expect(teamRead.grant.permissions).toEqual(['team:read'])
 
 	const orgPreset = accessGrantCapability.handler(
-		{ ...memberGrant, permissions: undefined, preset: 'manage' } as never,
+		{
+			...memberGrant,
+			subject_id: otherSubjectId,
+			permissions: undefined,
+			preset: 'manage',
+		} as never,
 		scheduled,
 	)
 	await expect(orgPreset).rejects.toThrow(
