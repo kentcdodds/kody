@@ -1,9 +1,13 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test } from 'vitest'
 import { legacyCredentialPatternMessages } from '../packages/worker/src/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
 import {
 	buildCredentialPatternReport,
 	collectScanItems,
 	formatCredentialPatternReport,
+	readScanItems,
 } from './credential-pattern-report.ts'
 
 const message = legacyCredentialPatternMessages
@@ -93,6 +97,46 @@ test('the report counts packages and files per pattern, per org, and per package
 		'| org-a | pkg-1 | calendar | detected | 2 | 0 | 0 | 0 | 1 | 0 | 0 |',
 	)
 	expect(markdown).toContain('Findings with an unknown message: 1.')
+})
+
+test('every scan file and directory on the command line is read, in order', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'credential-report-'))
+	try {
+		const stepsDir = path.join(dir, 'steps')
+		await mkdir(stepsDir)
+		await writeFile(
+			path.join(stepsDir, 'step-2.json'),
+			JSON.stringify(steps[1]),
+		)
+		await writeFile(
+			path.join(stepsDir, 'step-10.json'),
+			JSON.stringify({
+				items: [{ ...steps[1]!.items[0], status: 'clean', findings: [] }],
+			}),
+		)
+		await writeFile(path.join(stepsDir, 'notes.txt'), 'not a scan')
+		const firstStep = path.join(dir, 'step-1.json')
+		await writeFile(firstStep, JSON.stringify(steps[0]))
+
+		const report = buildCredentialPatternReport(
+			await readScanItems([firstStep, stepsDir]),
+		)
+		expect(report.packagesScanned).toBe(4)
+		expect(report.packages.map((row) => row.packageId)).toEqual(['pkg-1'])
+		expect(report.statusCounts).toEqual({
+			detected: 1,
+			clean: 2,
+			skipped_unpublished: 1,
+		})
+
+		const emptyDir = path.join(dir, 'empty')
+		await mkdir(emptyDir)
+		await expect(readScanItems([emptyDir])).rejects.toThrow(
+			`No .json scan files in ${emptyDir}`,
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
 })
 
 test('a rescanned package counts once, using its latest item', () => {
