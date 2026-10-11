@@ -139,11 +139,25 @@ export function redactEchoedSecrets(
 			headers,
 		},
 	)
-	// The constructor cannot set these, and callers read `url` to see where a
-	// fetch landed (a redirect can carry the value in it).
-	Object.defineProperties(redacted, {
-		url: { value: redactText(response.url, distinct) },
-		redirected: { value: response.redirected },
+	return withLanding(redacted, {
+		url: redactText(response.url, distinct),
+		redirected: response.redirected,
 	})
-	return redacted
+}
+
+/**
+ * The Response constructor cannot set `url` or `redirected`, and callers read
+ * `url` to see where a fetch landed (a redirect can carry the value in it).
+ * `clone()` copies only the internal slots, so it reapplies them too.
+ */
+function withLanding(
+	response: Response,
+	landing: { url: string; redirected: boolean },
+): Response {
+	const clone = response.clone.bind(response)
+	return Object.defineProperties(response, {
+		url: { value: landing.url },
+		redirected: { value: landing.redirected },
+		clone: { value: () => withLanding(clone(), landing) },
+	})
 }

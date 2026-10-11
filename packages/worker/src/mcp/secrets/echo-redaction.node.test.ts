@@ -98,6 +98,11 @@ test('redactEchoedSecrets redacts headers, set-cookie, and status text and keeps
 	const landed = redactEchoedSecrets(redirectedTo, ['tok-123'])
 	expect(landed.url).toBe('https://api.test/landing?token=[REDACTED SECRET]')
 	expect(landed.redirected).toBe(true)
+	const landedCopy = landed.clone().clone()
+	expect(landedCopy.url).toBe(landed.url)
+	expect(landedCopy.redirected).toBe(true)
+	expect(await landedCopy.text()).toBe('ok')
+	expect(await landed.text()).toBe('ok')
 
 	const untouched = new Response('ok')
 	expect(redactEchoedSecrets(untouched, [])).toBe(untouched)
