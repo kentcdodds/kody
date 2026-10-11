@@ -27,6 +27,10 @@ export function findStaleAppliedMigrations(input: {
 	return input.appliedNames.filter((name) => !onDisk.has(name)).sort()
 }
 
+function shellQuote(value: string) {
+	return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 export function formatStaleLocalMigrationsError(input: {
 	binding: string
 	migrationsDir: string
@@ -38,7 +42,7 @@ export function formatStaleLocalMigrationsError(input: {
 		...input.stale.map((name) => `  ${name}`),
 		'A renamed or deleted migration keeps its old name in d1_migrations, so applying would run the same SQL again under the new name.',
 		'Reset the local state (this deletes all local data in that directory), then rerun the same command:',
-		`  rm -rf ${input.persistTo}`,
+		`  rm -rf -- ${shellQuote(input.persistTo)}`,
 	].join('\n')
 }
 

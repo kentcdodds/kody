@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,7 +9,8 @@ const repoRoot = path.resolve(import.meta.dirname, '..')
 const wranglerEnv = { ...process.env, CLOUDFLARE_ENV: 'test' }
 
 async function createLocalD1Fixture() {
-	const directory = await mkdtemp(path.join(os.tmpdir(), 'kody-stale-local-'))
+	// A space and an apostrophe prove the printed reset command is shell-safe.
+	const directory = await mkdtemp(path.join(os.tmpdir(), "kody stale's-"))
 	const migrationsDir = path.join(directory, 'migrations')
 	const persistTo = path.join(directory, 'state')
 	const configPath = path.join(directory, 'wrangler.json')
@@ -108,7 +110,10 @@ test('a renamed migration fails the local check with the stale name and reset st
 	expect(stale.stderr).toContain(
 		`Local APP_DB state in ${fixture.persistTo} records migrations that no longer exist in ${fixture.migrationsDir}:\n  0002-widget-color.sql\n`,
 	)
-	expect(stale.stderr).toContain(`  rm -rf ${fixture.persistTo}`)
+	const resetCommand = /^ {2}(rm -rf -- .+)$/m.exec(stale.stderr)?.[1]
+	expect(resetCommand).toBe(
+		`rm -rf -- '${fixture.persistTo.replaceAll("'", `'\\''`)}'`,
+	)
 
 	const reapplied = applyMigrations(fixture)
 	expect(reapplied.status).not.toBe(0)
@@ -116,7 +121,10 @@ test('a renamed migration fails the local check with the stale name and reset st
 		'duplicate column name',
 	)
 
-	await rm(fixture.persistTo, { recursive: true, force: true })
+	const ranReset = spawnSync('sh', ['-c', resetCommand!], { encoding: 'utf8' })
+	expect(ranReset).toMatchObject({ status: 0 })
+	expect(existsSync(fixture.persistTo)).toBe(false)
+	expect(existsSync(fixture.migrationsDir)).toBe(true)
 	const reset = runStaleCheck(fixture)
 	expect(reset).toMatchObject({ status: 0 })
 }, 120_000)

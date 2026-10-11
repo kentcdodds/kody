@@ -72,6 +72,7 @@ from `--code-file`. Example for `secret_entries` metadata (name only, never the
 value):
 
 ```bash
+mkdir -p .tmp
 cat > .tmp/export-secret-entries.ts <<'EOF'
 import { kody } from 'kody:runtime'
 export default async function main() {
