@@ -114,6 +114,7 @@ function mockSecret(value: string, host = 'api.github.com') {
 		found: true,
 		value,
 		allowedHosts: [host],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
 }
@@ -253,6 +254,7 @@ async function setupOwner(
 			found: true,
 			value: legacyMintHmac,
 			allowedHosts: [],
+			allowedPackages: ['pkg-1'],
 			scope: 'user',
 		})
 	}
@@ -717,6 +719,7 @@ test('webhookUrlApply still requires host Allow for destination.secretName Beare
 		found: true,
 		value: 'tok_unapproved',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
 

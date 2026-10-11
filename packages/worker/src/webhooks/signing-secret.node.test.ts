@@ -22,6 +22,7 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 		found: true,
 		value: 'legacy-secret-store-value',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})),
 }))

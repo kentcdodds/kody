@@ -190,6 +190,25 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS community_forks (
+				id TEXT PRIMARY KEY NOT NULL,
+				listing_id TEXT NOT NULL,
+				forker_user_id TEXT NOT NULL,
+				origin_commit TEXT NOT NULL,
+				forked_package_id TEXT NOT NULL,
+				forked_source_id TEXT NOT NULL,
+				target_kody_id TEXT NOT NULL,
+				listing_name TEXT,
+				listing_kody_id TEXT,
+				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+				adopted_at TEXT,
+				adoption_note TEXT,
+				actor TEXT
+			)`,
+		)
+		.run()
 	await ensureSoftDeleteTestColumns(db)
 }
 
@@ -273,6 +292,7 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 		'package_slug_redirects',
 		'package_kody_id_redirects',
 		'enablements',
+		'community_forks',
 	]) {
 		await env.APP_DB.prepare(`DELETE FROM ${table}`).run()
 	}
@@ -586,6 +606,41 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		},
 	})
 	expect(await statusOf('sentry')).toBe(404)
+})
+
+test('a webhook cannot verify with a secret its package may not read (#3245)', async () => {
+	const userId = await setupOwnerWithWebhooks(['sentry'])
+	await useNamedSecret('sentry')
+	declareWebhook({ name: 'sentry', verification: githubVerification })
+	mocks.resolveSecret.mockResolvedValue({
+		...secretLookup(hmacSecret),
+		allowedPackages: ['pkg-other'],
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO community_forks (
+			id, listing_id, forker_user_id, origin_commit, forked_package_id,
+			forked_source_id, target_kody_id
+		) VALUES ('fork-1', 'listing-1', ?, 'origin', 'pkg-1', 'src-1', 'sentry-bridge')`,
+	)
+		.bind(userId)
+		.run()
+	const body = JSON.stringify({ event: 'push' })
+	const signed = {
+		body,
+		headers: { 'x-hub-signature-256': await sign(body) },
+	}
+
+	expect(await statusOf('sentry', signed)).toBe(401)
+	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+
+	await env.APP_DB.prepare(
+		`UPDATE community_forks SET adopted_at = ? WHERE id = 'fork-1'`,
+	)
+		.bind(new Date().toISOString())
+		.run()
+	expect(await statusOf('sentry', signed)).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
 })
 
 test('webhook ingress follows a package slug redirect after a rename', async () => {

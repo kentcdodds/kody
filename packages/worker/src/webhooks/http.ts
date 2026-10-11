@@ -18,6 +18,7 @@ import {
 	readCredentialPlacementRefusalFromInvocationBody,
 } from '#worker/credentials/placement-refusal.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
@@ -354,8 +355,11 @@ async function resolveWebhookChallengeSecret(input: {
 		packageStamp: attestedPackageStamp(input.packageId),
 		baseUrl: input.baseUrl,
 		credential: { use: 'webhook-secret', name: input.secretName },
+	}).catch((error: unknown) => {
+		if (error instanceof PackageSecretAccessDeniedError) return null
+		throw error
 	})
-	if (!resolved.found || !resolved.value) return null
+	if (!resolved?.found || !resolved.value) return null
 	return resolved.value
 }
 
