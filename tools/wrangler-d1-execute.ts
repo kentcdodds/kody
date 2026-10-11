@@ -5,7 +5,7 @@ import { workerEnvFileRelativePath } from './local-d1-persist.ts'
 
 const outputTruncateLimit = 2_000
 
-export type WranglerD1Mode = '--local' | '--remote'
+type WranglerD1Mode = '--local' | '--remote'
 
 export type WranglerD1SpawnInput = {
 	execPath: string
@@ -20,9 +20,7 @@ export type WranglerD1SpawnResult = {
 	stderr: string
 }
 
-export type WranglerD1Spawn = (
-	input: WranglerD1SpawnInput,
-) => WranglerD1SpawnResult
+type WranglerD1Spawn = (input: WranglerD1SpawnInput) => WranglerD1SpawnResult
 
 /**
  * Target flags for one `wrangler d1` invocation. Callers pin `--local` or
