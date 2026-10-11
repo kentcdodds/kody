@@ -30,14 +30,15 @@ carries that authority. Access rules are covered in
 
 `packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
 `{{secret:…}}` placeholder** after mount and grant checks succeed — never
-decrypted plaintext. Put that string in a secret-aware `fetch` request header
-(the gateway refuses it in the URL or body), or pass it to `secretHeaders.basic`
-/ `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
-platform use sites resolve it. Package and execute JavaScript never receive
-plaintext from `get`. A secret-aware `fetch` may send the value to an
-**approved** host. If that host echoes the value back, the gateway redacts it
-from the response (see [Placeholders in `fetch`](#placeholders-in-fetch)); treat
-response bodies as untrusted all the same.
+decrypted plaintext. Put that string anywhere in a secret-aware `fetch` request
+(see [Placeholders in `fetch`](#placeholders-in-fetch)), or pass it to
+`secretHeaders.basic` / `kody.secretJwtSign` (both accept saved secret names
+**or** opaque refs). Only platform use sites resolve it. Package and execute
+JavaScript never receive plaintext from `get`. A secret-aware `fetch` may send
+the value to an **approved** host. If that host echoes the value back, the
+gateway redacts it from the response (see
+[Placeholders in `fetch`](#placeholders-in-fetch)); treat response bodies as
+untrusted all the same.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
@@ -76,7 +77,10 @@ that names the credential and the host; the gateway never sends a placeholder it
 would fill unfilled. A placeholder in the URL host or user info is always
 refused, so filling one can never change where a request goes. In a JSON body
 each value is JSON-escaped; in a form-encoded body or query string each value is
-form-encoded.
+form-encoded, and the other keys and values keep their bytes as written. In the
+URL path each value is encoded as segment data, so a `/`, `?`, or `#` in it
+cannot change the route. A placeholder encoded with `encodeURIComponent` is
+found too.
 
 `multipart/*` bodies (file uploads) and bodies that are not UTF-8 text are
 forwarded byte for byte and never filled, so a placeholder there reaches the
