@@ -707,9 +707,11 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	const sessionUserId = testStableUserIdFromEmail('user@example.com')
 	expect(sessionCompletion.mock.lastCall?.[0].props).toMatchObject({
 		orgId: sessionUserId,
+		personId: sessionUserId,
 	})
 	expect(sessionCompletion.mock.lastCall?.[0].metadata).toMatchObject({
 		orgId: sessionUserId,
+		personId: sessionUserId,
 	})
 
 	const defaultScopeCompletion = completingWith(

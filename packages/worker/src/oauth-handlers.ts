@@ -85,8 +85,8 @@ import {
 } from '#universal/org-binding/url.ts'
 import { isOrgAuthorizeError } from '#worker/orgs/authorize-error.ts'
 import {
+	grantBindingFields,
 	grantMatchesConsentOrg,
-	orgGrantFields,
 } from '#worker/orgs/oauth-grant.ts'
 import {
 	readOrgSlugFromForm,
@@ -1306,7 +1306,10 @@ async function tryHandleSilentOidcAuthorize(
 		)
 	}
 	const profileFields = connectionProfileGrantFields(connectionProfileName)
-	const orgFields = orgGrantFields(authorizeOrg.orgId)
+	const bindingFields = grantBindingFields({
+		orgId: authorizeOrg.orgId,
+		personId: approvedUserId,
+	})
 	const { redirectTo: providerRedirectTo } =
 		await helpers.completeAuthorization({
 			request: authRequest,
@@ -1315,7 +1318,7 @@ async function tryHandleSilentOidcAuthorize(
 				email: approvedEmail,
 				clientId: authRequest.clientId,
 				...profileFields.metadata,
-				...orgFields.metadata,
+				...bindingFields.metadata,
 			},
 			scope: resolvedScopes,
 			props: {
@@ -1326,7 +1329,7 @@ async function tryHandleSilentOidcAuthorize(
 				authTime,
 				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
 				...profileFields.props,
-				...orgFields.props,
+				...bindingFields.props,
 			},
 		})
 	const redirectTo = stampClientAuthorizationRedirect(
@@ -1776,7 +1779,10 @@ export async function handleAuthorizeRequest(
 			throw error
 		}
 		const profileFields = connectionProfileGrantFields(connectionProfileName)
-		const orgFields = orgGrantFields(authorizeOrg.orgId)
+		const bindingFields = grantBindingFields({
+			orgId: authorizeOrg.orgId,
+			personId: userId,
+		})
 		const { redirectTo: providerRedirectTo } =
 			await helpers.completeAuthorization({
 				request: authRequest,
@@ -1785,7 +1791,7 @@ export async function handleAuthorizeRequest(
 					email: approvedEmail,
 					clientId: authRequest.clientId,
 					...profileFields.metadata,
-					...orgFields.metadata,
+					...bindingFields.metadata,
 				},
 				scope: resolvedScopes,
 				props: {
@@ -1796,7 +1802,7 @@ export async function handleAuthorizeRequest(
 					authTime,
 					...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
 					...profileFields.props,
-					...orgFields.props,
+					...bindingFields.props,
 				},
 			})
 		const redirectTo = stampClientAuthorizationRedirect(
