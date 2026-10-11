@@ -50,10 +50,13 @@ and warnings. It never returns row values.
 Apply refuses when the plan has any of these:
 
 - Clashes: the target already has a package, repo, secret, value, integration,
-  OAuth app, MCP server, or webhook with the same identity.
+  OAuth app, MCP server, or webhook with the same identity. Clashes also cover a
+  server id already registered in the target's McpClientHub, and a target
+  StorageRunner that already holds data.
 - Blockers: legacy (non-package) jobs, resource grants naming source-org
-  subjects, trigger enablements by someone outside the target org, or an
-  integration whose OAuth app is not live.
+  subjects, trigger enablements by someone outside the target org, an
+  integration whose OAuth app is not live, or an MCP server with no connection
+  in the source hub.
 - Orphans, unless `skipOrphans: true`.
 
 Both orgs must be live (not deleting, deleted, or suspended), and they must
@@ -64,11 +67,17 @@ differ.
 An orphan is a row whose parent no longer exists, such as an `entity_sources`
 row for a deleted package or a webhook endpoint whose package is gone. With
 `skipOrphans: true` the transfer does not move orphans; it cleans them up in the
-source org instead. Orphan webhooks and community listings are soft-deleted and
-other orphan rows deleted in the same D1 batch. After commit, orphan sources are
-deleted with their Artifacts repos, and orphan storage buckets are cleared on
-their StorageRunner and then deleted, like package delete. A soft-deleted bucket
-would keep its `(user_id, storage_id)` key and block a later transfer back.
+source org instead:
+
+- Soft-deleted in the D1 batch: webhook endpoints, community listings, secret
+  and value buckets, and secret-provider bindings.
+- Deleted in the D1 batch: published bundle artifacts, Artifacts push
+  subscriptions, community forks, memory conversation suppressions,
+  secret-provider grants, and package kody-id and slug redirects.
+- Cleaned up after commit: sources are deleted with their Artifacts repos.
+  Storage buckets are cleared on their StorageRunner and then deleted, like
+  package delete. A soft-deleted bucket would keep its `(user_id, storage_id)`
+  key and block a later transfer back.
 
 ## Apply
 
@@ -83,10 +92,12 @@ refuse. Then, in order:
 2. Write a backup of every affected row (ciphertext included) to the
    `OPERATOR_BACKUPS` R2 bucket. Apply fails closed when the binding is missing.
 3. Copy OAuth app logos under the target owner.
-4. Copy StorageRunner SQL for every moved package, job, and storage bucket, and
-   verify row counts per table.
-5. Move McpClientHub connections (tokens included) from the source hub to the
-   target hub.
+4. Copy every moved package, job, and storage bucket's StorageRunner. KV values
+   travel by structured clone, so Dates, Maps, and typed arrays survive. Then
+   verify KV entry counts and SQL row counts per table.
+5. Copy McpClientHub servers (tokens included) from the source hub into the
+   target hub without connecting them. An import that fails removes what it
+   wrote.
 6. Re-point package jobs in the jobs worker.
 7. Commit every APP_DB change in one D1 batch, with an
    `org.resources_transferred_out` / `org.resources_transferred_in` audit event
@@ -96,12 +107,14 @@ If any step before the batch commits fails, completed steps are undone in
 reverse order. If an undo step also fails, the error names it and the backup key
 so an operator can finish by hand.
 
-After commit, best-effort cleanup runs: source storage and hub servers are
-cleared, old logos deleted, orphans cleaned, repo sessions on moved sources
-discarded, package, memory, and job vectors reindexed under the target, and the
-retriever, skills, subscription, invoke-contract, and community caches
-refreshed. Failures there come back as `post_commit_warnings`, and `leftovers`
-counts any rows still pointing at the source.
+After commit, best-effort cleanup runs: source storage is cleared, each moved
+MCP server is removed from the source hub and only then connected in the target
+hub (so only one hub can refresh its OAuth tokens), old logos are deleted,
+orphans cleaned, repo sessions on moved sources discarded, package, memory, and
+job vectors reindexed under the target, and the retriever, skills, subscription,
+invoke-contract, and community caches refreshed. Failures there come back as
+`post_commit_warnings`, and `leftovers` counts any rows still pointing at the
+source.
 
 The result has the dry-run summary plus `backup_key`, `storage_copies`,
 `leftovers`, and `post_commit_warnings`.
@@ -124,9 +137,11 @@ Account deletion and org hard purge delete every backup that names the owner as
 source or target. Account export skips them because the owner already exports
 the same rows from D1.
 
-McpClientHub connections move DO to DO in memory and are not in the backup. If
-an undo runs after the target hub imported a connection, the upstream may
-already have rotated its refresh token; reconnect that server if it fails.
+McpClientHub connections move DO to DO in memory and are not in the backup. The
+target hub does not dial a moved server until after commit, so an undo never
+follows a refresh by the target. The source stays connected until after commit;
+if it refreshes a rotating token during apply, the target's copy is stale and
+that server needs reconnecting.
 
 ## Production runbook
 

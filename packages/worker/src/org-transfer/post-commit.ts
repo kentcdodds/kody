@@ -67,9 +67,15 @@ export async function runOrgTransferPostCommit(input: {
 		)
 	}
 	const sourceHub = mcpClientHubTransferStub({ env, userId: fromId })
+	const targetHub = mcpClientHubTransferStub({ env, userId: toId })
+	// Close the source connection before dialing the target, so only one hub
+	// can refresh (and rotate) the server's OAuth tokens.
 	for (const row of plan.moves.mcp_server_settings) {
 		await step(`remove source MCP server ${String(row['name'])}`, () =>
 			sourceHub.removeServer({ serverId: String(row['id']) }),
+		)
+		await step(`connect MCP server ${String(row['name'])}`, () =>
+			targetHub.connectTransferredServer({ serverId: String(row['id']) }),
 		)
 	}
 	for (const copy of plan.logoCopies) {

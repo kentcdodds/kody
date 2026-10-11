@@ -30,16 +30,20 @@ export type McpHubServerTransfer = {
 }
 
 export type McpHubServerImportResult =
-	| { ok: true; connection: McpHubConnectResult }
+	| { ok: true }
 	| { ok: false; reason: 'already_registered' | 'foreign_storage_key' }
 
 export type McpClientHubTransferStub = {
+	listServerIdsForTransfer(): Promise<Array<string>>
 	exportServerForTransfer(input: {
 		serverId: string
 	}): Promise<McpHubServerTransfer | null>
 	importServerForTransfer(
 		input: McpHubServerTransfer,
 	): Promise<McpHubServerImportResult>
+	connectTransferredServer(input: {
+		serverId: string
+	}): Promise<McpHubConnectResult>
 	removeServer(input: { serverId: string }): Promise<void>
 }
 

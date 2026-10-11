@@ -9,6 +9,7 @@
 import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { jobsData, type JobsDataEnv } from '#worker/jobs/jobs-data.ts'
+import { mcpClientHubTransferStub } from '#worker/mcp-client/hub-transfer.ts'
 
 export type OrgTransferRow = Record<string, unknown> & { __rowid: number }
 
@@ -71,6 +72,8 @@ export type OrgTransferSnapshot = {
 	/** person id → role, for live memberships of the target org. */
 	targetMembers: Map<string, string>
 	enablementStates: { from: string | null; to: string | null }
+	/** Server ids registered in each org's McpClientHub. */
+	hubServerIds: { from: Set<string>; to: Set<string> }
 }
 
 async function readOwnerRows(input: {
@@ -139,26 +142,40 @@ async function readEnablementState(db: D1Database, orgId: string) {
 }
 
 export async function loadOrgTransferSnapshot(input: {
-	env: JobsDataEnv & { APP_DB: D1Database }
+	env: JobsDataEnv & Pick<Env, 'APP_DB' | 'MCP_CLIENT_HUB'>
 	from: OrgTransferOrg
 	to: OrgTransferOrg
 }): Promise<OrgTransferSnapshot> {
 	const db = input.env.APP_DB
-	const [source, target, sourceJobs, members, fromState, toState] =
-		await Promise.all([
-			readOrgTransferTableRows(db, input.from.id),
-			readOrgTransferTableRows(db, input.to.id),
-			jobsData(input.env).listJobsForUser({ userId: input.from.id }),
-			db
-				.prepare(
-					`SELECT user_id, role FROM org_memberships
+	const hubServerIds = (userId: OwnerId) =>
+		mcpClientHubTransferStub({ env: input.env, userId })
+			.listServerIdsForTransfer()
+			.then((ids) => new Set(ids))
+	const [
+		source,
+		target,
+		sourceJobs,
+		members,
+		fromState,
+		toState,
+		fromHub,
+		toHub,
+	] = await Promise.all([
+		readOrgTransferTableRows(db, input.from.id),
+		readOrgTransferTableRows(db, input.to.id),
+		jobsData(input.env).listJobsForUser({ userId: input.from.id }),
+		db
+			.prepare(
+				`SELECT user_id, role FROM org_memberships
 					 WHERE org_id = ? AND deleted_at IS NULL`,
-				)
-				.bind(input.to.id)
-				.all<{ user_id: string; role: string }>(),
-			readEnablementState(db, input.from.id),
-			readEnablementState(db, input.to.id),
-		])
+			)
+			.bind(input.to.id)
+			.all<{ user_id: string; role: string }>(),
+		readEnablementState(db, input.from.id),
+		readEnablementState(db, input.to.id),
+		hubServerIds(input.from.id),
+		hubServerIds(input.to.id),
+	])
 	return {
 		from: input.from,
 		to: input.to,
@@ -169,5 +186,6 @@ export async function loadOrgTransferSnapshot(input: {
 			(members.results ?? []).map((row) => [row.user_id, row.role]),
 		),
 		enablementStates: { from: fromState, to: toState },
+		hubServerIds: { from: fromHub, to: toHub },
 	}
 }

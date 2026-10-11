@@ -13,7 +13,10 @@ import {
 } from './plan.ts'
 import { type OrgTransferSealedColumns } from './reencrypt.ts'
 import { type OrgTransferSnapshot, type OrgTransferOrg } from './snapshot.ts'
-import { type StorageCopyResult } from './storage-copy.ts'
+import {
+	OrgTransferStorageNotEmptyError,
+	type StorageCopyResult,
+} from './storage-copy.ts'
 import { type OrgTransferSummary, summarizeOrgTransferPlan } from './report.ts'
 
 export type OrgTransferMode = 'dry-run' | 'apply'
@@ -42,6 +45,11 @@ export type OrgTransferEffects = {
 	}): Promise<void>
 	copyLogo(copy: OrgTransferLogoCopy): Promise<void>
 	deleteLogo(key: string): Promise<void>
+	isStorageEmpty(input: {
+		userId: OwnerId
+		storageId: string
+	}): Promise<boolean>
+	/** Throws `OrgTransferStorageNotEmptyError` before writing to a full target. */
 	copyStorage(input: {
 		fromUserId: OwnerId
 		toUserId: OwnerId
@@ -114,6 +122,31 @@ async function resolveOrg(db: D1Database, orgId: string, role: string) {
 	return { id: row.id as OwnerId, slug: row.slug }
 }
 
+/** Target StorageRunners that already hold data become clashes. */
+async function addStorageClashes(
+	effects: OrgTransferEffects,
+	plan: OrgTransferPlan,
+) {
+	const full = await Promise.all(
+		plan.storageCopies.map(async (copy) =>
+			(await effects.isStorageEmpty({
+				userId: plan.to.id,
+				storageId: copy.storageId,
+			}))
+				? null
+				: copy.storageId,
+		),
+	)
+	for (const storageId of full) {
+		if (storageId) {
+			plan.clashes.push(
+				`storage: ${storageId} already holds data in @${plan.to.slug}`,
+			)
+		}
+	}
+	return plan
+}
+
 function refusalFor(plan: OrgTransferPlan, skipOrphans: boolean) {
 	const reasons = [...plan.clashes, ...plan.blockers]
 	if (plan.orphans.length > 0 && !skipOrphans) {
@@ -161,7 +194,10 @@ export async function runOrgResourceTransfer(input: {
 	const to = await resolveOrg(db, input.toOrgId, 'target')
 
 	if (input.mode === 'dry-run') {
-		const plan = planOrgTransfer(await effects.loadSnapshot({ from, to }))
+		const plan = await addStorageClashes(
+			effects,
+			planOrgTransfer(await effects.loadSnapshot({ from, to })),
+		)
 		return {
 			mode: 'dry-run',
 			applied: false,
@@ -192,7 +228,10 @@ async function applyUnderLease(input: {
 	now: () => Date
 }): Promise<OrgTransferResult> {
 	const { db, effects, from, to } = input
-	const plan = planOrgTransfer(await effects.loadSnapshot({ from, to }))
+	const plan = await addStorageClashes(
+		effects,
+		planOrgTransfer(await effects.loadSnapshot({ from, to })),
+	)
 	const refusal = refusalFor(plan, input.skipOrphans)
 	if (refusal.length > 0) {
 		throw new OrgTransferRefusedError(
@@ -228,19 +267,28 @@ async function applyUnderLease(input: {
 			})
 		}
 		for (const copy of plan.storageCopies) {
-			// Register first: a copy that fails half way still leaves rows.
-			compensations.push({
+			const clearTarget: Compensation = {
 				label: `storage ${copy.storageId}`,
 				run: () =>
 					effects.clearStorage({ userId: to.id, storageId: copy.storageId }),
-			})
-			storage.push(
-				await effects.copyStorage({
-					fromUserId: from.id,
-					toUserId: to.id,
-					storageId: copy.storageId,
-				}),
-			)
+			}
+			try {
+				storage.push(
+					await effects.copyStorage({
+						fromUserId: from.id,
+						toUserId: to.id,
+						storageId: copy.storageId,
+					}),
+				)
+			} catch (error) {
+				// A copy that fails half way leaves rows to clear; a refused full
+				// target was never written and must keep its data.
+				if (!(error instanceof OrgTransferStorageNotEmptyError)) {
+					compensations.push(clearTarget)
+				}
+				throw error
+			}
+			compensations.push(clearTarget)
 		}
 		for (const row of plan.moves.mcp_server_settings) {
 			const serverId = String(row['id'])
@@ -248,7 +296,11 @@ async function applyUnderLease(input: {
 				userId: from.id,
 				serverId,
 			})
-			if (!transfer) continue
+			if (!transfer) {
+				throw new Error(
+					`MCP server ${String(row['name'])} has no connection in @${from.slug}'s hub.`,
+				)
+			}
 			const imported = await effects.importMcpServer({
 				userId: to.id,
 				transfer,
@@ -331,10 +383,16 @@ async function applyUnderLease(input: {
 		throw error
 	}
 
-	const after = await effects.afterCommit({
-		plan,
-		cleanupOrphans: input.skipOrphans,
-	})
+	// The move is durable now: an unexpected failure here must still return
+	// the committed result and backup key.
+	const after = await effects
+		.afterCommit({ plan, cleanupOrphans: input.skipOrphans })
+		.catch((error: unknown) => ({
+			leftovers: {},
+			warnings: [
+				`post-commit: ${error instanceof Error ? error.message : String(error)}`,
+			],
+		}))
 	return {
 		mode: 'apply',
 		applied: true,

@@ -33,6 +33,19 @@ async function isEmpty(stub: StorageRunnerTransferStub) {
 	return kv.entries.length === 0 && schema.length === 0
 }
 
+/** Thrown before any write, so the caller must not clear the target. */
+export class OrgTransferStorageNotEmptyError extends Error {
+	override readonly name = 'OrgTransferStorageNotEmptyError'
+}
+
+export async function isOwnerStorageEmpty(input: {
+	env: StorageEnv
+	userId: OwnerId
+	storageId: string
+}) {
+	return await isEmpty(storageRunnerTransferStub(input))
+}
+
 function sameCounts(
 	left: Record<string, number>,
 	right: Record<string, number>,
@@ -63,7 +76,9 @@ export async function copyOwnerStorage(input: {
 		storageId: input.storageId,
 	})
 	if (!(await isEmpty(target))) {
-		throw new Error(`Target storage ${input.storageId} is not empty.`)
+		throw new OrgTransferStorageNotEmptyError(
+			`Target storage ${input.storageId} is not empty.`,
+		)
 	}
 
 	// KV first: the first replace page clears the whole object, SQL included.
@@ -72,13 +87,9 @@ export async function copyOwnerStorage(input: {
 	do {
 		const page = await source.exportStorage({ pageSize, startAfter })
 		if (page.entries.length > 0) {
-			await target.importStorage({
-				mode: 'replace',
+			await target.importStorageValues({
 				replacePage: kvEntries === 0 ? 'first' : 'continue',
-				entries: page.entries.map((entry) => ({
-					key: entry.key,
-					valueJson: JSON.stringify(entry.value),
-				})),
+				entries: page.entries,
 			})
 			kvEntries += page.entries.length
 		}

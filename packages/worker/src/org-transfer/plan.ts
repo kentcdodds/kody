@@ -340,6 +340,19 @@ export function planOrgTransfer(
 	clashIf('mcp_server_settings', moves.mcp_server_settings, ['name'], (row) =>
 		text(row, 'name'),
 	)
+	for (const row of moves.mcp_server_settings) {
+		const serverId = text(row, 'id')
+		if (!snapshot.hubServerIds.from.has(serverId)) {
+			blockers.push(
+				`MCP server ${text(row, 'name')} has no connection in @${from.slug}'s hub; reconnect or remove it first.`,
+			)
+		}
+		if (snapshot.hubServerIds.to.has(serverId)) {
+			clashes.push(
+				`mcp_server_settings: server id of ${text(row, 'name')} is already registered in @${to.slug}'s hub`,
+			)
+		}
+	}
 	moves.mcp_user_server_instructions =
 		source.mcp_user_server_instructions.filter(isLiveRow)
 	if (
@@ -654,7 +667,10 @@ export function planOrgTransfer(
 		bucketMerges,
 		bucketBindings,
 		derivedDeletes: {
-			saved_package_search_index_debt: source.saved_package_search_index_debt,
+			saved_package_search_index_debt:
+				source.saved_package_search_index_debt.filter((row) =>
+					packageIds.has(text(row, 'package_id')),
+				),
 			vector_embed_fingerprints: source.vector_embed_fingerprints.filter(
 				(row) => movedVectorIds.has(text(row, 'vector_id')),
 			),

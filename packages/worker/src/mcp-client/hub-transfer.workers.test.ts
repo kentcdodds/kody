@@ -48,11 +48,12 @@ test('a server moves between hubs with its stored OAuth state', async () => {
 		[tokenKey, mcpOAuthRefreshTokenStorageKey(serverId)].sort(),
 	)
 
-	const imported = await to.importServerForTransfer(exported!)
-	expect(imported).toMatchObject({
-		ok: true,
-		connection: { serverId, state: 'authenticating' },
-	})
+	expect(await to.listServerIdsForTransfer()).toEqual([])
+	expect(await to.importServerForTransfer(exported!)).toEqual({ ok: true })
+	expect(await to.listServerIdsForTransfer()).toEqual([serverId])
+	await expect(
+		to.connectTransferredServer({ serverId }),
+	).resolves.toMatchObject({ serverId, state: 'authenticating' })
 	await runInDurableObject(hubFor(toUserId), async (_instance, state) => {
 		expect(await state.storage.get(tokenKey)).toEqual({
 			access_token: 'tok',

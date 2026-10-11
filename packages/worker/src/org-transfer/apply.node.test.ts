@@ -35,12 +35,23 @@ import {
 } from './apply.ts'
 import { resealOrgTransferSecrets } from './reencrypt.ts'
 import { loadOrgTransferSnapshot } from './snapshot.ts'
+import { OrgTransferStorageNotEmptyError } from './storage-copy.ts'
 
 const jobsMock = vi.hoisted(() => ({ jobs: [] as Array<unknown> }))
 
 vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	jobsData: () => ({
 		listJobsForUser: async () => jobsMock.jobs,
+	}),
+}))
+
+const hubMock = vi.hoisted(() => ({
+	serverIds: {} as Record<string, Array<string>>,
+}))
+
+vi.mock('#worker/mcp-client/hub-transfer.ts', () => ({
+	mcpClientHubTransferStub: ({ userId }: { userId: string }) => ({
+		listServerIdsForTransfer: async () => hubMock.serverIds[userId] ?? [],
 	}),
 }))
 
@@ -65,6 +76,7 @@ const plaintexts = {
 
 beforeEach(() => {
 	jobsMock.jobs = []
+	hubMock.serverIds = { [src]: ['server-1'] }
 })
 
 async function seed() {
@@ -271,6 +283,7 @@ function createEffects(input: {
 		deleteLogo: async (key) => {
 			calls.push(`deleteLogo:${key}`)
 		},
+		isStorageEmpty: async () => true,
 		copyStorage: async ({ storageId }) => {
 			calls.push(`copyStorage:${storageId}`)
 			return { storageId, kvEntries: 2, sqlRows: { notes: 3 } }
@@ -295,10 +308,7 @@ function createEffects(input: {
 		},
 		importMcpServer: async ({ userId, transfer }) => {
 			calls.push(`importMcp:${userId}:${transfer.row.id}`)
-			return {
-				ok: true,
-				connection: { id: transfer.row.id } as never,
-			}
+			return { ok: true }
 		},
 		removeMcpServer: async ({ userId, serverId }) => {
 			calls.push(`removeMcp:${userId}:${serverId}`)
@@ -770,6 +780,159 @@ test('a storage copy failure part way stops before any later step', async () => 
 	expect(calls.some((call) => call.startsWith('importMcp'))).toBe(false)
 	expect(calls).toContain(`clearStorage:${dst}:package:${pkgA}`)
 	expect(calls).toContain(`deleteLogo:user-oauth-app-logos/${dst}/myapp.png`)
+})
+
+test('a target storage that already holds data is a clash and is never cleared', async () => {
+	const { db } = await seed()
+	const fullTarget = `package:${pkgB}`
+	const isStorageEmpty = async ({ storageId }: { storageId: string }) =>
+		storageId !== fullTarget
+
+	const dryRun = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
+			db,
+			calls: [],
+			backups: [],
+			overrides: { isStorageEmpty },
+		}),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'dry-run',
+		skipOrphans: true,
+	})
+	expect(dryRun.summary.clashes).toEqual([
+		`storage: ${fullTarget} already holds data in @haveman`,
+	])
+
+	const calls: Calls = []
+	await expect(
+		runOrgResourceTransfer({
+			db,
+			effects: createEffects({
+				db,
+				calls,
+				backups: [],
+				overrides: { isStorageEmpty },
+			}),
+			actorUserId: 'person-admin',
+			fromOrgId: src,
+			toOrgId: dst,
+			mode: 'apply',
+			skipOrphans: true,
+		}),
+	).rejects.toThrow(OrgTransferRefusedError)
+	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
+
+	// Filled between the check and the copy: the copy refuses before writing,
+	// so only the copies that did write are undone.
+	const raceCalls: Calls = []
+	await expect(
+		runOrgResourceTransfer({
+			db,
+			effects: createEffects({
+				db,
+				calls: raceCalls,
+				backups: [],
+				overrides: {
+					copyStorage: async ({ storageId }) => {
+						raceCalls.push(`copyStorage:${storageId}`)
+						if (storageId === fullTarget) {
+							throw new OrgTransferStorageNotEmptyError(
+								`Target storage ${storageId} is not empty.`,
+							)
+						}
+						return { storageId, kvEntries: 0, sqlRows: {} }
+					},
+				},
+			}),
+			actorUserId: 'person-admin',
+			fromOrgId: src,
+			toOrgId: dst,
+			mode: 'apply',
+			skipOrphans: true,
+		}),
+	).rejects.toThrow(OrgTransferStorageNotEmptyError)
+	expect(raceCalls).toContain(`clearStorage:${dst}:package:${pkgA}`)
+	expect(raceCalls).not.toContain(`clearStorage:${dst}:${fullTarget}`)
+})
+
+test('MCP servers missing from the source hub block and ids taken in the target hub clash', async () => {
+	const { db } = await seed()
+	hubMock.serverIds = { [dst]: ['server-1'] }
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'dry-run',
+		skipOrphans: true,
+	})
+	expect(result.summary.blockers).toContain(
+		"MCP server linear has no connection in @bradhave's hub; reconnect or remove it first.",
+	)
+	expect(result.summary.clashes).toContain(
+		"mcp_server_settings: server id of linear is already registered in @haveman's hub",
+	)
+})
+
+test('a post-commit failure still returns the committed result and backup key', async () => {
+	const { sqlite, db } = await seed()
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
+			db,
+			calls: [],
+			backups: [],
+			overrides: {
+				afterCommit: async () => {
+					throw new Error('hub stub exploded')
+				},
+			},
+		}),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(result.applied).toBe(true)
+	expect(result.backupKey).not.toBeNull()
+	expect(result.postCommitWarnings).toEqual(['post-commit: hub stub exploded'])
+	expect(
+		sqlite.prepare(`SELECT DISTINCT user_id FROM saved_packages`).all(),
+	).toEqual([{ user_id: dst }])
+})
+
+test('apply clears search-index debt only for the packages it moves', async () => {
+	const { sqlite, db } = await seed()
+	for (const packageId of [pkgA, 'debt-of-another-package']) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_package_search_index_debt (package_id, user_id, embed_text, created_at, updated_at)
+				 VALUES (?, ?, 'text', ?, ?)`,
+			)
+			.run(packageId, src, now, now)
+	}
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(result.applied).toBe(true)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT package_id, user_id FROM saved_package_search_index_debt`,
+			)
+			.all(),
+	).toEqual([{ package_id: 'debt-of-another-package', user_id: src }])
 })
 
 test('a ciphertext that does not open fails with a generic message before any write', async () => {

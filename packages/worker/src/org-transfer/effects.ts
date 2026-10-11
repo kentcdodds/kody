@@ -16,7 +16,11 @@ import { writeOrgTransferBackup } from './backup.ts'
 import { runOrgTransferPostCommit } from './post-commit.ts'
 import { resealOrgTransferSecrets } from './reencrypt.ts'
 import { loadOrgTransferSnapshot } from './snapshot.ts'
-import { clearOwnerStorage, copyOwnerStorage } from './storage-copy.ts'
+import {
+	clearOwnerStorage,
+	copyOwnerStorage,
+	isOwnerStorageEmpty,
+} from './storage-copy.ts'
 
 export function defaultOrgTransferEffects(input: {
 	env: Env
@@ -50,6 +54,8 @@ export function defaultOrgTransferEffects(input: {
 			})
 		},
 		deleteLogo: (key) => env.COMMUNITY_ASSETS.delete(key),
+		isStorageEmpty: ({ userId, storageId }) =>
+			isOwnerStorageEmpty({ env, userId, storageId }),
 		copyStorage: (copy) => copyOwnerStorage({ env, ...copy }),
 		clearStorage: ({ userId, storageId }) =>
 			clearOwnerStorage({ env, userId, storageId }),

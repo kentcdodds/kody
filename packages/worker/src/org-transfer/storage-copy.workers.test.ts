@@ -3,8 +3,15 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { clearStorageBucketRegistrationDedupeForTests } from '#worker/storage-buckets/service.ts'
-import { storageRunnerRpc } from '#worker/storage-runner.ts'
-import { clearOwnerStorage, copyOwnerStorage } from './storage-copy.ts'
+import {
+	storageRunnerRpc,
+	storageRunnerTransferStub,
+} from '#worker/storage-runner.ts'
+import {
+	clearOwnerStorage,
+	copyOwnerStorage,
+	OrgTransferStorageNotEmptyError,
+} from './storage-copy.ts'
 
 async function seedSource() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
@@ -81,15 +88,50 @@ test('copyOwnerStorage copies KV pages and SQL tables and verifies counts', asyn
 	).resolves.toMatchObject({ rows: [{ updated: 1 }] })
 })
 
+test('copyOwnerStorage keeps structured-clone values that JSON would flatten', async () => {
+	const { fromUserId, toUserId, storageId } = await seedSource()
+	const when = new Date('2026-01-02T03:04:05.000Z')
+	await storageRunnerTransferStub({
+		env,
+		userId: fromUserId,
+		storageId,
+	}).importStorageValues({
+		replacePage: 'continue',
+		entries: [
+			{ key: 'when', value: when },
+			{ key: 'tags', value: new Map([['a', 1]]) },
+			{ key: 'bytes', value: new Uint8Array([1, 2, 3]) },
+		],
+	})
+	await copyOwnerStorage({ env, fromUserId, toUserId, storageId })
+	const target = storageRunnerRpc({ env, userId: toUserId, storageId })
+	const copiedWhen = (await target.getValue({ key: 'when' })).value
+	expect(copiedWhen).toBeInstanceOf(Date)
+	expect((copiedWhen as Date).toISOString()).toBe(when.toISOString())
+	expect((await target.getValue({ key: 'tags' })).value).toEqual(
+		new Map([['a', 1]]),
+	)
+	expect((await target.getValue({ key: 'bytes' })).value).toEqual(
+		new Uint8Array([1, 2, 3]),
+	)
+})
+
 test('copyOwnerStorage refuses a target that already holds data', async () => {
 	const { fromUserId, toUserId, storageId } = await seedSource()
 	await storageRunnerRpc({ env, userId: toUserId, storageId }).setValue({
 		key: 'existing',
 		value: true,
 	})
+	const copy = copyOwnerStorage({ env, fromUserId, toUserId, storageId })
+	await expect(copy).rejects.toThrow(
+		`Target storage ${storageId} is not empty.`,
+	)
+	await expect(copy).rejects.toBeInstanceOf(OrgTransferStorageNotEmptyError)
 	await expect(
-		copyOwnerStorage({ env, fromUserId, toUserId, storageId }),
-	).rejects.toThrow(`Target storage ${storageId} is not empty.`)
+		storageRunnerRpc({ env, userId: toUserId, storageId }).getValue({
+			key: 'existing',
+		}),
+	).resolves.toMatchObject({ value: true })
 })
 
 test('clearOwnerStorage empties the copy so a retry can start over', async () => {

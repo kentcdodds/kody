@@ -183,6 +183,57 @@ export async function applyImportStoragePage(
 			throw new Error(`Unsupported importStorage mode: ${String(exhaustive)}`)
 		}
 	}
+	return await applyReplaceStoragePage(storage, {
+		replacePage: input.replacePage,
+		entries: input.entries.map((entry) => ({
+			key: entry.key,
+			read: () => {
+				try {
+					return JSON.parse(entry.valueJson) as unknown
+				} catch {
+					throw new Error(
+						`importStorage received invalid valueJson for key ${normalizeStorageKey(entry.key)}`,
+					)
+				}
+			},
+		})),
+	})
+}
+
+/**
+ * Same replace protocol as {@link applyImportStoragePage}, but values arrive
+ * already structured-cloned over RPC, so Dates, Maps, typed arrays, and other
+ * cloneable values survive (JSON would flatten them).
+ */
+export async function applyImportStorageValuesPage(
+	storage: {
+		deleteAll: () => Promise<void> | void
+		put: (key: string, value: unknown) => Promise<void> | void
+	},
+	input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; value: unknown }>
+	},
+): Promise<{ ok: true; written: number; cleared: boolean }> {
+	return await applyReplaceStoragePage(storage, {
+		replacePage: input.replacePage,
+		entries: input.entries.map((entry) => ({
+			key: entry.key,
+			read: () => entry.value,
+		})),
+	})
+}
+
+async function applyReplaceStoragePage(
+	storage: {
+		deleteAll: () => Promise<void> | void
+		put: (key: string, value: unknown) => Promise<void> | void
+	},
+	input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; read: () => unknown }>
+	},
+): Promise<{ ok: true; written: number; cleared: boolean }> {
 	let cleared = false
 	switch (input.replacePage) {
 		case 'first': {
@@ -202,13 +253,7 @@ export async function applyImportStoragePage(
 	let written = 0
 	for (const entry of input.entries) {
 		const key = normalizeStorageKey(entry.key)
-		let value: unknown
-		try {
-			value = JSON.parse(entry.valueJson) as unknown
-		} catch {
-			throw new Error(`importStorage received invalid valueJson for key ${key}`)
-		}
-		await storage.put(key, value)
+		await storage.put(key, entry.read())
 		written += 1
 	}
 	return { ok: true, written, cleared }
@@ -680,6 +725,18 @@ class StorageRunnerBase extends DurableObject<Env> {
 		return await applyImportStoragePage(this.ctx.storage, input)
 	}
 
+	/** Owner-to-owner copy counterpart of {@link exportStorage}; lossless. */
+	async importStorageValues(input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; value: unknown }>
+	}): Promise<{
+		ok: true
+		written: number
+		cleared: boolean
+	}> {
+		return await applyImportStorageValuesPage(this.ctx.storage, input)
+	}
+
 	private readonly sqlExec: StorageSqlExec = (query, ...params) =>
 		this.ctx.storage.sql.exec<Record<string, DumpSqlValue>>(query, ...params)
 
@@ -749,10 +806,9 @@ export type StorageRunnerTransferStub = {
 		pageSize?: number
 		startAfter?: string | null
 	}) => Promise<StorageExportResult>
-	importStorage: (payload: {
-		mode: 'replace'
+	importStorageValues: (payload: {
 		replacePage: 'first' | 'continue'
-		entries: Array<{ key: string; valueJson: string }>
+		entries: Array<{ key: string; value: unknown }>
 	}) => Promise<{ ok: true; written: number; cleared: boolean }>
 	clearStorage: () => Promise<StorageClearResult>
 	exportSqlSchema: () => Promise<Array<StorageSqlSchemaObject>>
