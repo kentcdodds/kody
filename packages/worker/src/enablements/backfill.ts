@@ -360,15 +360,15 @@ export async function planOrgEnablements(input: {
 	}
 
 	for (const job of await input.deps.listJobs(input.orgId)) {
-		if (!job.active) {
-			inactive += 1
-			continue
-		}
 		const packageId = packageIdFromJobId(job.id)
 		if (!packageId) {
 			throw new Error(
 				`Job "${job.id}" in org "${input.orgId}" is not a package job (ADR 0032).`,
 			)
+		}
+		if (!job.active) {
+			inactive += 1
+			continue
 		}
 		add({
 			triggerKind: 'cron',

@@ -649,29 +649,32 @@ test('an org with no live Owner is skipped instead of falling back to a system o
 	})
 })
 
-test('a non-package job stops the backfill instead of planning an enablement', async () => {
-	const t = await setup()
-	t.jobsByOrg.set(t.teamOrgId, [
-		{
-			id: '5da99bf3-fa85-4a86-809d-d0c95828c261',
-			name: 'unattached',
-			creatorUserId: t.memberId,
-			active: true,
-		},
-	])
-	await expect(
-		runEnablementBackfill({
-			db: t.db,
-			mode: 'dry-run',
-			deps: t.deps,
-			orgIds: [t.teamOrgId],
-		}),
-	).rejects.toThrow(
-		'Job "5da99bf3-fa85-4a86-809d-d0c95828c261" in org "' +
-			t.teamOrgId +
-			'" is not a package job (ADR 0032).',
-	)
-})
+test.each([true, false])(
+	'a non-package job (active: %s) stops the backfill instead of planning an enablement',
+	async (active) => {
+		const t = await setup()
+		t.jobsByOrg.set(t.teamOrgId, [
+			{
+				id: '5da99bf3-fa85-4a86-809d-d0c95828c261',
+				name: 'unattached',
+				creatorUserId: t.memberId,
+				active,
+			},
+		])
+		await expect(
+			runEnablementBackfill({
+				db: t.db,
+				mode: 'dry-run',
+				deps: t.deps,
+				orgIds: [t.teamOrgId],
+			}),
+		).rejects.toThrow(
+			'Job "5da99bf3-fa85-4a86-809d-d0c95828c261" in org "' +
+				t.teamOrgId +
+				'" is not a package job (ADR 0032).',
+		)
+	},
+)
 
 test('the notice names each item', () => {
 	const notice = buildEnablementNotice({
@@ -807,7 +810,10 @@ test('the unique migrated index makes an overlapping apply a no-op', async () =>
 		triggerName: 'email.received',
 		instanceId: 'pkg-a',
 	})
-	const rows = await listEnablementsForOrg({ db: t.db, orgId: t.personalOrgId })
+	const rows = await listEnablementsForOrg({
+		db: t.db,
+		orgId: t.personalOrgId,
+	})
 	expect(rows.map((row) => row.id).sort()).toEqual(['e-1', 'e-3', 'e-5'])
 })
 
