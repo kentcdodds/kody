@@ -26,7 +26,28 @@ import {
 	liveFreeOwnedOrgCountSql,
 } from '#worker/orgs/billing.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { recordOrgAuditEvent, type OrgAuditWriter } from './org-audit.ts'
+import {
+	commitOrgAuditOutbox,
+	orgAuditOutboxInsertStatement,
+	planOrgAuditOutbox,
+	recordOrgAuditEvent,
+	type OrgAuditOutboxEvent,
+	type OrgAuditWriter,
+} from './org-audit.ts'
+
+async function runAccessBatchWithAudit(input: {
+	db: D1Database
+	audit: OrgAuditWriter
+	statements: Array<{ run(): Promise<unknown> }>
+	event: OrgAuditOutboxEvent
+}) {
+	const plan = planOrgAuditOutbox(input.audit, input.event)
+	await runBatch(input.db, [
+		...input.statements,
+		orgAuditOutboxInsertStatement(input.db, plan),
+	])
+	await commitOrgAuditOutbox(input.audit, plan)
+}
 
 export type GrantSubject =
 	| { type: 'user'; id: string }
@@ -110,32 +131,36 @@ export async function createTeam(input: {
 	if (!slug) throw new Error('Team slug is required.')
 	const id = crypto.randomUUID()
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
-		input.db
-			.prepare(
-				`INSERT INTO teams (
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`INSERT INTO teams (
 					id, org_id, slug, name, description, parent_team_id,
 					created_by_user_id, created_at, updated_at
 				) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-			)
-			.bind(
-				id,
-				input.orgId,
-				slug,
-				input.name.trim() || slug,
-				input.description?.trim() || null,
-				input.createdByUserId,
-				now,
-				now,
-			),
-		bumpAccessEpochStatement(input.db, input.orgId),
-	])
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'team.created',
-		resourceType: 'team',
-		resourceId: id,
-		details: { slug },
+				)
+				.bind(
+					id,
+					input.orgId,
+					slug,
+					input.name.trim() || slug,
+					input.description?.trim() || null,
+					input.createdByUserId,
+					now,
+					now,
+				),
+			bumpAccessEpochStatement(input.db, input.orgId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'team.created',
+			resourceType: 'team',
+			resourceId: id,
+			details: { slug },
+		},
 	})
 	return { id, slug }
 }
@@ -174,7 +199,7 @@ export async function addTeamMember(input: {
 		.bind(input.teamId, input.userId)
 		.first<{ ok: number }>()
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
+	const memberStatements = [
 		input.db
 			.prepare(
 				`INSERT INTO team_members (team_id, user_id, added_by_user_id, created_at)
@@ -186,14 +211,22 @@ export async function addTeamMember(input: {
 			)
 			.bind(input.teamId, input.userId, input.addedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
-	])
-	if (alreadyLive) return
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'team.member_added',
-		resourceType: 'team',
-		resourceId: input.teamId,
-		targetUserId: input.userId,
+	]
+	if (alreadyLive) {
+		await runBatch(input.db, memberStatements)
+		return
+	}
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: memberStatements,
+		event: {
+			orgId: input.orgId,
+			action: 'team.member_added',
+			resourceType: 'team',
+			resourceId: input.teamId,
+			targetUserId: input.userId,
+		},
 	})
 }
 
@@ -319,19 +352,23 @@ export async function upsertGrant(input: {
 		)
 	}
 	statements.push(bumpAccessEpochStatement(input.db, input.orgId))
-	await runBatch(input.db, statements)
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: existing ? 'grant.updated' : 'grant.created',
-		resourceType: input.resourceType,
-		resourceId: input.resourceId,
-		targetUserId: input.subject.type === 'user' ? input.subject.id : null,
-		details: {
-			grantId,
-			subjectType: input.subject.type,
-			subjectId: input.subject.id,
-			preset: input.preset,
-			permissions,
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements,
+		event: {
+			orgId: input.orgId,
+			action: existing ? 'grant.updated' : 'grant.created',
+			resourceType: input.resourceType,
+			resourceId: input.resourceId,
+			targetUserId: input.subject.type === 'user' ? input.subject.id : null,
+			details: {
+				grantId,
+				subjectType: input.subject.type,
+				subjectId: input.subject.id,
+				preset: input.preset,
+				permissions,
+			},
 		},
 	})
 	return { id: grantId, permissions }
@@ -359,26 +396,31 @@ export async function softDeleteGrant(input: {
 			subject_id: string
 		}>()
 	if (!existing) throw new Error('Grant was not found in this org.')
-	await runBatch(input.db, [
-		input.db
-			.prepare(
-				`UPDATE grants
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE grants
 				 SET deleted_at = ?, updated_at = ?
 				 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(now, now, input.grantId, input.orgId),
-		bumpAccessEpochStatement(input.db, input.orgId),
-	])
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'grant.revoked',
-		resourceType: existing.resource_type,
-		resourceId: existing.resource_id,
-		targetUserId: existing.subject_type === 'user' ? existing.subject_id : null,
-		details: {
-			grantId: input.grantId,
-			subjectType: existing.subject_type,
-			subjectId: existing.subject_id,
+				)
+				.bind(now, now, input.grantId, input.orgId),
+			bumpAccessEpochStatement(input.db, input.orgId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'grant.revoked',
+			resourceType: existing.resource_type,
+			resourceId: existing.resource_id,
+			targetUserId:
+				existing.subject_type === 'user' ? existing.subject_id : null,
+			details: {
+				grantId: input.grantId,
+				subjectType: existing.subject_type,
+				subjectId: existing.subject_id,
+			},
 		},
 	})
 }
@@ -727,7 +769,7 @@ export async function addOrgMember(input: {
 		.bind(input.orgId, input.userId)
 		.first<{ ok: number }>()
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
+	const membershipStatements = [
 		input.db
 			.prepare(
 				`INSERT INTO org_memberships (
@@ -743,13 +785,21 @@ export async function addOrgMember(input: {
 			)
 			.bind(input.orgId, input.userId, input.role, input.invitedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
-	])
-	if (alreadyLive) return
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'member.added',
-		targetUserId: input.userId,
-		details: { role: input.role },
+	]
+	if (alreadyLive) {
+		await runBatch(input.db, membershipStatements)
+		return
+	}
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: membershipStatements,
+		event: {
+			orgId: input.orgId,
+			action: 'member.added',
+			targetUserId: input.userId,
+			details: { role: input.role },
+		},
 	})
 }
 

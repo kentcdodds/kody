@@ -126,6 +126,7 @@ async function ensureOrgAuditTable() {
 async function adminAudit(): Promise<OrgAuditWriter> {
 	await ensureOrgAuditTable()
 	return {
+		appDb: env.APP_DB,
 		db: env.APP_DB,
 		actorUserId: adminId,
 		actorUsername: 'rate-brake-admin',
