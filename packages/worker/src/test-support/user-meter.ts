@@ -7,9 +7,11 @@ import {
 } from '#worker/entitlements/execute-admission-windows.ts'
 import {
 	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from '#universal/plans.ts'
+import {
 	userMeterDailyCounterRetentionDays,
 	userMeterMirrorUpdatedAtToken,
-	type DailyEntitlementResource,
 	type UserMeterDailyTrendCounterRow,
 	type UserMeterDailyTrendUniqueWorkerDayRow,
 	type UserMeterDeletionStateExport,

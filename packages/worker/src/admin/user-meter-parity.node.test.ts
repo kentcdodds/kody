@@ -5,7 +5,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { dailyEntitlementResources } from '#worker/entitlements/user-meter-do.ts'
+import { dailyEntitlementResources } from '#universal/plans.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'

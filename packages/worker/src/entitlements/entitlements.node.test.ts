@@ -17,9 +17,12 @@ import {
 import { buildEntitlementHowToReduce } from './resource-visibility.ts'
 import {
 	creditsUnlockedResources,
+	entitlementResources,
+	entitlementResourceWindows,
 	legacyPlanLimits,
 	parseStripePlanName,
 	planLimits,
+	type DailyEntitlementResource,
 } from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
@@ -41,7 +44,6 @@ import {
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
-import { type DailyEntitlementResource } from './user-meter-do.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type TestUser = {
@@ -278,7 +280,10 @@ test('entitlement limit messages always identify a known plan name', () => {
 		plan: 'max' as const,
 		limit: 100,
 		current: 100,
-		upgradeHint: buildEntitlementUpgradeHint('concurrent_workflows', 'max'),
+		upgradeHint: buildEntitlementUpgradeHint({
+			resource: 'concurrent_workflows',
+			plan: 'max',
+		}),
 	}
 	const message = buildEntitlementLimitMessage(details)
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
@@ -291,10 +296,11 @@ test('entitlement limit messages always identify a known plan name', () => {
 		limit: 400,
 		current: 400,
 		window: 'week' as const,
-		upgradeHint: buildEntitlementUpgradeHint(
-			'execute_unique_workers_per_day',
-			'free',
-		),
+		upgradeHint: buildEntitlementUpgradeHint({
+			resource: 'execute_unique_workers_per_day',
+			plan: 'free',
+			window: 'week',
+		}),
 	}
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
@@ -312,28 +318,40 @@ test('entitlement limit messages always identify a known plan name', () => {
 })
 
 test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrades', () => {
+	const now = new Date('2026-10-10T22:34:00.000Z')
 	expect(
-		buildEntitlementUpgradeHint(
-			'execute_unique_workers_per_day',
-			'pro',
-			'empty',
-		),
+		buildEntitlementUpgradeHint({
+			resource: 'execute_unique_workers_per_day',
+			plan: 'pro',
+			creditWallet: 'empty',
+			now,
+		}),
 	).toBe(
-		'Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
+		'This daily limit resets at 00:00 UTC, in 1h 26m. Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'pro', 'empty')).toBe(
 		'Run fewer jobs today, space them out, or add credits at /account/usage#credits to keep going past your include.',
 	)
 	for (const resource of creditsUnlockedResources) {
-		expect(buildEntitlementUpgradeHint(resource, 'pro', 'empty')).toMatch(
-			/add credits at \/account\/usage#credits to keep going past your include\.$/,
+		expect(
+			buildEntitlementUpgradeHint({
+				resource,
+				plan: 'pro',
+				creditWallet: 'empty',
+			}),
+		).toMatch(
+			/add credits at \/account\/usage#credits to keep going past your include\.$/i,
 		)
 	}
 	// Free stays hard-capped: the next step is Pro, not credits.
 	expect(
-		buildEntitlementUpgradeHint('execute_unique_workers_per_day', 'free'),
+		buildEntitlementUpgradeHint({
+			resource: 'execute_unique_workers_per_day',
+			plan: 'free',
+			now,
+		}),
 	).toBe(
-		'Rerun code you already ran today and vary params; repeats are free, or upgrade your plan at /@<slug>/-/billing.',
+		'This daily limit resets at 00:00 UTC, in 1h 26m. Rerun code you already ran today and vary params; repeats are free, or upgrade your plan at /@<slug>/-/billing.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'free')).toBe(
 		'Run fewer jobs today, space them out, or upgrade your plan.',
@@ -341,10 +359,10 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	// Retired and gift/referral Pro have no wallet: Pro with credits runs past
 	// its include.
 	for (const plan of ['standard', 'pro'] as const) {
-		const hint = buildEntitlementUpgradeHint(
-			'execute_unique_workers_per_day',
+		const hint = buildEntitlementUpgradeHint({
+			resource: 'execute_unique_workers_per_day',
 			plan,
-		)
+		})
 		expect(hint).toMatch(
 			/Pro with prepaid credits at \/account\/usage#credits runs past its include\.$/,
 		)
@@ -355,10 +373,15 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 		['pro', 'funded'],
 		['max', 'none'],
 	] as const) {
-		const hint = buildEntitlementUpgradeHint(
-			'execute_unique_workers_per_day',
+		const hint = buildEntitlementUpgradeHint({
+			resource: 'execute_unique_workers_per_day',
 			plan,
-			wallet,
+			creditWallet: wallet,
+			window: 'week',
+			now,
+		})
+		expect(hint).toBe(
+			'This weekly limit resets Monday 00:00 UTC, in 1d 1h. Rerun code you already ran today and vary params; repeats are free.',
 		)
 		expect(hint).not.toMatch(/credits|upgrade/i)
 		expect(
@@ -380,17 +403,58 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	}
 	// Stock is on the Pro subscription (not a credits unlock); only Free
 	// gets a billing upgrade offer.
-	expect(buildEntitlementUpgradeHint('saved_packages', 'free')).toMatch(
-		/\/@<slug>\/-\/billing/,
-	)
+	expect(
+		buildEntitlementUpgradeHint({ resource: 'saved_packages', plan: 'free' }),
+	).toMatch(/\/@<slug>\/-\/billing/)
 	for (const plan of ['standard', 'pro', 'max'] as const) {
-		expect(buildEntitlementUpgradeHint('saved_packages', plan)).not.toMatch(
-			/upgrade|credits/i,
+		expect(
+			buildEntitlementUpgradeHint({ resource: 'saved_packages', plan }),
+		).not.toMatch(/upgrade|credits/i)
+	}
+	expect(
+		buildEntitlementUpgradeHint({
+			resource: 'saved_packages',
+			plan: 'pro',
+			creditWallet: 'empty',
+		}),
+	).not.toMatch(/credits/i)
+})
+
+test('denial hints follow each resource window: daily meters reset, only standing counts say remove', () => {
+	const now = new Date('2026-10-10T23:59:30.000Z')
+	for (const resource of entitlementResources) {
+		const hint = buildEntitlementUpgradeHint({ resource, plan: 'max', now })
+		const window = entitlementResourceWindows[resource]
+		expect(
+			hint.startsWith('This daily limit resets at 00:00 UTC, in 1m.'),
+		).toBe(window === 'utc_day')
+		expect(hint.startsWith('Remove or finish existing')).toBe(
+			window === 'standing',
 		)
 	}
 	expect(
-		buildEntitlementUpgradeHint('saved_packages', 'pro', 'empty'),
-	).not.toMatch(/credits/i)
+		buildEntitlementUpgradeHint({
+			resource: 'outbound_fetches_per_day',
+			plan: 'max',
+			now,
+		}),
+	).toBe('This daily limit resets at 00:00 UTC, in 1m.')
+	expect(
+		buildEntitlementUpgradeHint({
+			resource: 'outbound_fetches_per_day',
+			plan: 'free',
+			window: 'week',
+			now: new Date('2026-10-07T12:00:00.000Z'),
+		}),
+	).toBe(
+		'This weekly limit resets Monday 00:00 UTC, in 4d 12h. Upgrade your plan at /@<slug>/-/billing.',
+	)
+	expect(
+		buildEntitlementUpgradeHint({
+			resource: 'email_message_bytes',
+			plan: 'max',
+		}),
+	).toBe('Use fewer bytes per email message.')
 })
 
 test('job interval floor messages parse back to known plan and interval', () => {

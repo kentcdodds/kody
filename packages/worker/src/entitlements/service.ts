@@ -8,6 +8,7 @@ import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { resolvePastIncludeStop } from '#universal/compute-overage.ts'
 import {
 	isCreditsUnlockedResource,
+	isDailyEntitlementResource,
 	isLimitOverrideResource,
 	isPastIncludeStopResource,
 	parseEntitlementLadder,
@@ -17,6 +18,7 @@ import {
 	resolveEffectivePlan,
 	resolveEntitlementLimit,
 	resolveWeeklyEntitlementLimit,
+	type DailyEntitlementResource,
 	type EntitlementResource,
 	type PlanName,
 	type UserEntitlement,
@@ -47,11 +49,7 @@ import {
 	type OrgBudgetGateContext,
 } from './budget-gate.ts'
 import { readActiveOrgLimitOverrides } from './limit-overrides.ts'
-import {
-	isDailyEntitlementResource,
-	type DailyEntitlementResource,
-	type UserMeterUsageSnapshotResult,
-} from './user-meter-do.ts'
+import { type UserMeterUsageSnapshotResult } from './user-meter-do.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -1496,12 +1494,12 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					plan,
 					limit,
 					current,
-					upgradeHint: buildEntitlementUpgradeHint(
-						'storage_bytes',
+					upgradeHint: buildEntitlementUpgradeHint({
+						resource: 'storage_bytes',
 						plan,
-						entitlement.creditWallet,
-						await entitlementBillingPath(input.db, input.userId),
-					),
+						creditWallet: entitlement.creditWallet,
+						billingPath: await entitlementBillingPath(input.db, input.userId),
+					}),
 				})
 			}
 			// Real user with no DO row: zero-initialize, then retry. The
@@ -1519,12 +1517,12 @@ export async function assertWithinStorageBytesEntitlement(input: {
 				plan,
 				limit,
 				current: result.bytes,
-				upgradeHint: buildEntitlementUpgradeHint(
-					'storage_bytes',
+				upgradeHint: buildEntitlementUpgradeHint({
+					resource: 'storage_bytes',
 					plan,
-					entitlement.creditWallet,
-					await entitlementBillingPath(input.db, input.userId),
-				),
+					creditWallet: entitlement.creditWallet,
+					billingPath: await entitlementBillingPath(input.db, input.userId),
+				}),
 			})
 		}
 
@@ -1595,12 +1593,13 @@ export async function assertWithinEntitlement(
 			plan,
 			limit,
 			current,
-			upgradeHint: buildEntitlementUpgradeHint(
-				input.resource,
+			upgradeHint: buildEntitlementUpgradeHint({
+				resource: input.resource,
 				plan,
-				entitlement.creditWallet,
+				creditWallet: entitlement.creditWallet,
 				billingPath,
-			),
+				now,
+			}),
 		})
 	}
 }
@@ -1762,6 +1761,7 @@ export async function consumeExecuteUniqueWorkerDay(input: {
 
 type DailyEntitlementWindow = {
 	entitlement: UserEntitlement
+	now: Date
 	day: string
 	updatedAt: string
 	limit: number
@@ -1814,6 +1814,7 @@ async function resolveDailyEntitlementWindow(input: {
 	const weekLimit = resolveWeeklyEntitlementLimit(entitlement, resource, now)
 	return {
 		entitlement,
+		now,
 		day: utcDayKey(now),
 		updatedAt: now.toISOString(),
 		limit,
@@ -1858,14 +1859,17 @@ async function throwDailyEntitlementDenial(input: {
 	window: DailyEntitlementWindow
 	result: { count: number; deniedWindow?: 'day' | 'week'; weekCount?: number }
 }): Promise<never> {
-	const { entitlement, limit, weekLimit } = input.window
+	const { entitlement, now, limit, weekLimit } = input.window
 	const billingPath = await entitlementBillingPath(input.db, input.userId)
-	const upgradeHint = buildEntitlementUpgradeHint(
-		input.resource,
-		entitlement.plan,
-		entitlement.creditWallet,
-		billingPath,
-	)
+	const upgradeHint = (window: 'day' | 'week') =>
+		buildEntitlementUpgradeHint({
+			resource: input.resource,
+			plan: entitlement.plan,
+			creditWallet: entitlement.creditWallet,
+			billingPath,
+			window,
+			now,
+		})
 	if (input.result.deniedWindow === 'week' && weekLimit !== null) {
 		throw new EntitlementLimitError({
 			resource: input.resource,
@@ -1873,7 +1877,7 @@ async function throwDailyEntitlementDenial(input: {
 			limit: weekLimit,
 			current: input.result.weekCount ?? 0,
 			window: 'week',
-			upgradeHint,
+			upgradeHint: upgradeHint('week'),
 		})
 	}
 	throw new EntitlementLimitError({
@@ -1881,7 +1885,7 @@ async function throwDailyEntitlementDenial(input: {
 		plan: entitlement.plan,
 		limit,
 		current: input.result.count,
-		upgradeHint,
+		upgradeHint: upgradeHint('day'),
 	})
 }
 

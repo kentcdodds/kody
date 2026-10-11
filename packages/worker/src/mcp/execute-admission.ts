@@ -2,7 +2,11 @@ import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestCredential } from '@kody-internal/shared/request-context.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
-import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import {
+	nextUtcDayStart,
+	nextUtcWeekStart,
+	utcDayKey,
+} from '@kody-internal/shared/date-keys.ts'
 import {
 	sendEntitlementWarningNow,
 	userEntitlementApproachingThreshold,
@@ -285,30 +289,31 @@ export type ExecuteUsageReport = {
 	week?: ExecuteUsageWindow
 }
 
-const dayMs = 24 * 60 * 60 * 1000
-
 /** Remaining hosted execute allowance for every execute response. */
 export function buildExecuteUsageReport(
 	usage: ExecuteUniqueWorkerUsage,
 	now: Date,
 ): ExecuteUsageReport {
-	const window = (used: number, limit: number, resetsAtMs: number) => ({
+	const window = (used: number, limit: number, resetsAt: Date) => ({
 		used,
 		limit,
 		remaining: Math.max(0, limit - used),
-		resetsAt: new Date(resetsAtMs).toISOString(),
+		resetsAt: resetsAt.toISOString(),
 	})
-	const nextDayMs = Date.parse(`${utcDayKey(now)}T00:00:00.000Z`) + dayMs
-	const nextWeekMs =
-		Date.parse(`${utcWeekStart(now)}T00:00:00.000Z`) + 7 * dayMs
 	return {
 		unit: entitlementResourceLabels[executeUsageResource].replace(
 			/ per day$/,
 			'',
 		),
-		day: window(usage.used, usage.limit, nextDayMs),
+		day: window(usage.used, usage.limit, nextUtcDayStart(now)),
 		...(usage.weekLimit !== null
-			? { week: window(usage.weekUsed ?? 0, usage.weekLimit, nextWeekMs) }
+			? {
+					week: window(
+						usage.weekUsed ?? 0,
+						usage.weekLimit,
+						nextUtcWeekStart(now),
+					),
+				}
 			: {}),
 	}
 }

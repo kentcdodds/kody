@@ -13,7 +13,7 @@ import {
 	type EntitlementLimitErrorDetails,
 	type JobIntervalFloorErrorDetails,
 } from '#worker/entitlements/errors.ts'
-import { isDailyEntitlementResource } from '#worker/entitlements/user-meter-do.ts'
+import { isDailyEntitlementResource } from '#universal/plans.ts'
 
 /**
  * Focused, machine-readable entitlement fields for MCP tool structured

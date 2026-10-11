@@ -1037,12 +1037,26 @@ include a self-serve billing offer only when `hasHigherPublicPlan(plan)` is true
 credit-extended), so stock denials are reduce-only there. The job interval floor
 hint is always reduce-only (Free and Pro share 15 minutes).
 
+The hint also follows the resource's window in `entitlementResourceWindows`
+(`universal/plans.ts`), the one list of how each resource counts. `utc_day`
+meters say they reset at 00:00 UTC and how long that is from now (weekly
+execute/outbound denials say Monday 00:00 UTC). Only `standing` counts get
+"remove or finish existing", and `per_item` caps say to use fewer per request.
+`dailyEntitlementResources` is derived from that map.
+
 Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 unique execute workers
-> per day and you currently have 500. Rerun code you already ran today and vary
-> params; repeats are free, or add credits at /account/usage#credits to keep
-> going past your include.
+> per day and you currently have 500. This daily limit resets at 00:00 UTC, in
+> 1h 26m. Rerun code you already ran today and vary params; repeats are free, or
+> add credits at /account/usage#credits to keep going past your include.
+
+Daily outbound fetch example (purchasable Pro with a funded wallet at the
+ceiling):
+
+> Plan limit reached: your "pro" plan allows at most 80000 outbound fetches per
+> day and you currently have 80000. This daily limit resets at 00:00 UTC, in 1h
+> 26m.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 

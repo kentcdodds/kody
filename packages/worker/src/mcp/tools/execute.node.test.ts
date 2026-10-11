@@ -763,10 +763,10 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 	})
 
 	const quotaLimit = planLimits.free.maxExecuteUniqueWorkersPerDay
-	const quotaHint = buildEntitlementUpgradeHint(
-		'execute_unique_workers_per_day',
-		'free',
-	)
+	const quotaHint = buildEntitlementUpgradeHint({
+		resource: 'execute_unique_workers_per_day',
+		plan: 'free',
+	})
 	const quotaMessage = buildEntitlementLimitMessage({
 		code: entitlementLimitErrorCode,
 		resource: 'execute_unique_workers_per_day',
@@ -877,10 +877,10 @@ test('execute tool releases a keyed claim when a usage denial stops the load', a
 			plan: 'free',
 			limit: 150,
 			current: 150,
-			upgradeHint: buildEntitlementUpgradeHint(
-				'execute_unique_workers_per_day',
-				'free',
-			),
+			upgradeHint: buildEntitlementUpgradeHint({
+				resource: 'execute_unique_workers_per_day',
+				plan: 'free',
+			}),
 		}),
 		new ComputeOverageLimitError({
 			resource: 'unique_worker_days',
@@ -988,7 +988,10 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 
 	heartbeatMock.scheduleFleetExecuteLastSuccess.mockClear()
 	const stockLimit = planLimits.free.maxSavedPackages
-	const stockHint = buildEntitlementUpgradeHint('saved_packages', 'free')
+	const stockHint = buildEntitlementUpgradeHint({
+		resource: 'saved_packages',
+		plan: 'free',
+	})
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',
@@ -1026,10 +1029,6 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	const quotaEmail = 'quota-metadata@example.com'
 	const quotaUserId = testStableUserIdFromEmail(quotaEmail)
 	const quotaLimit = planLimits.free.maxExecuteUniqueWorkersPerDay
-	const quotaHint = buildEntitlementUpgradeHint(
-		'execute_unique_workers_per_day',
-		'free',
-	)
 	await userMeter.seed({
 		userId: quotaUserId,
 		resource: 'execute_unique_workers_per_day',
@@ -1092,6 +1091,13 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	expect(sandboxLoads).toEqual(['kody-worker-a', 'kody-worker-a'])
 	expect(quotaDenied.isError).toBe(true)
 	expect(quotaDenied.structuredContent.usage).toEqual(atLimitUsage)
+	const quotaHint = quotaDenied.structuredContent.entitlement?.upgradeHint
+	if (quotaHint === undefined) {
+		throw new Error('Expected an entitlement upgrade hint on quota denial')
+	}
+	expect(quotaHint).toMatch(
+		/^This daily limit resets at 00:00 UTC, in (\d+h )?\d+m\. Rerun code you already ran today and vary params; repeats are free, or upgrade your plan at \/@[^/]+\/-\/billing\.$/,
+	)
 	const quotaEntitlement = {
 		code: entitlementLimitErrorCode,
 		resource: 'execute_unique_workers_per_day',

@@ -1,7 +1,9 @@
 import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
+	dailyEntitlementResources,
 	entitlementResourceLabels,
+	isDailyEntitlementResource,
 	limitForResource,
 	resolveEntitlementLimits,
 	weeklyLimitForResource,
@@ -20,10 +22,6 @@ import {
 	readCurrentEntitlementResourceUsage,
 	readUserMeterEntitlementUsageSnapshot,
 } from './service.ts'
-import {
-	dailyEntitlementResources,
-	isDailyEntitlementResource,
-} from './user-meter-do.ts'
 import { listUserStorageBucketEstimates } from '#worker/storage-buckets/service.ts'
 
 export const entitlementUsageWarningThreshold = 0.8
