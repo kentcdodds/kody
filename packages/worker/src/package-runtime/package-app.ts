@@ -1760,6 +1760,7 @@ function resolvePackageAppManifest(input: {
 		content: packageJsonContent,
 		manifestPath:
 			input.source?.manifest_path ?? input.savedPackage.manifestPath,
+		mode: 'published',
 	})
 }
 

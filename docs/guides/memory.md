@@ -28,13 +28,18 @@ The written loop is [How Kody works](./how-kody-works.md).
 
 ## What a memory is for
 
-Memories hold information worth carrying between conversations and between
-agents:
+Use memory sparingly, for facts that need to travel between agents and don’t
+have a better home. Put repeatable behavior in package code, with typed inputs
+and documented defaults. A reply utility can quote the thread automatically; a
+release-summary package can put breaking changes first and include source links.
+Neither needs a separate memory for the agent to remember each time.
 
-- who you are and how you like things done (`preference`, `profile`)
+Useful memory examples include:
+
+- who you are (`profile`)
 - names, ids, and handles you keep re-typing (`identifier`)
 - people and relationships that give tasks context (`relationship`)
-- how a recurring piece of work should go (`workflow`, `project`)
+- project nicknames or background facts not recorded elsewhere (`project`)
 
 Categories are freeform strings; those are suggestions, not a closed list.
 
@@ -42,13 +47,14 @@ Categories are freeform strings; those are suggestions, not a closed list.
 
 Kody has a home for each kind of state, and memory is only one of them:
 
-| State                                  | Home                                  |
-| -------------------------------------- | ------------------------------------- |
-| A durable fact or preference about you | **Memory**                            |
-| A credential                           | [Secrets](./secrets.md)               |
-| A cursor, checkpoint, or runtime knob  | `packageStorage()` inside the package |
-| Versioned configuration                | The package repository                |
-| An OAuth login                         | An integration                        |
+| State                                 | Home                                  |
+| ------------------------------------- | ------------------------------------- |
+| A durable fact without a better home  | **Memory**                            |
+| Repeatable behavior and task defaults | Package code and documentation        |
+| A credential                          | [Secrets](./secrets.md)               |
+| A cursor, checkpoint, or runtime knob | `packageStorage()` inside the package |
+| Versioned configuration               | The package repository                |
+| An OAuth login                        | An integration                        |
 
 If the fact is about a package's job rather than about you, it does not belong
 in memory. Choosing among MCP server instructions, package docs, export JSDoc,

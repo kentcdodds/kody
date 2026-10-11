@@ -4,20 +4,17 @@ import { sharedMemory } from '#universal/acquisition/sharedMemory.ts'
 
 const agents = {
 	'Claude Code': {
-		task: 'Write the release summary for this pull request.',
-		action: 'Preparing a release summary',
-		result: 'Breaking changes first. Source links attached to each change.',
+		task: 'Which project do I call Maple?',
+		result: 'Maple is your nickname for the customer portal project.',
 	},
 	Cursor: {
-		task: 'Turn these merged changes into release notes.',
-		action: 'Writing release notes in a new editor',
-		result: 'The same release preference, retrieved from your Kody account.',
+		task: 'What does Maple refer to?',
+		result:
+			'Your customer portal project, according to the fact you saved in Kody.',
 	},
 	Codex: {
-		task: 'Review this release summary against my preferences.',
-		action: 'Checking the handoff',
-		result:
-			'Check for breaking changes at the top and a source link for each change.',
+		task: 'Remind me which project Maple is.',
+		result: 'Maple refers to your customer portal project.',
 	},
 } as const
 
@@ -34,12 +31,13 @@ export function SharedMemoryPage(handle: Handle) {
 						<h1>{sharedMemory.title}</h1>
 						<div class="memory-lead">
 							<p>
-								You shouldn’t have to explain your preferences to every agent.
+								Give repeatable work a package. Save the leftover facts in
+								memory.
 							</p>
 							<p>
-								Save the facts you want to carry between tools in Kody. Your
-								connected agents can retrieve them without carrying over an
-								entire conversation.
+								Keep task behavior in code, with typed inputs and documented
+								defaults. Use memory for facts that don’t have a better home,
+								like a project nickname your other agents should recognize.
 							</p>
 							<a class="memory-button" href="/onboarding">
 								Connect your agents <span aria-hidden="true">↗</span>
@@ -54,13 +52,12 @@ export function SharedMemoryPage(handle: Handle) {
 								<strong>Your Kody memory</strong>
 							</div>
 							<div class="memory-paper">
-								<span class="memory-paper-label">Release summaries</span>
+								<span class="memory-paper-label">Project nickname</span>
 								<p>
-									Include source links.
+									“Maple” is my nickname for
 									<br />
-									List breaking changes first.
+									the customer portal project.
 								</p>
-								<div class="memory-paper-foot">A fact you chose to save</div>
 							</div>
 							<p class="memory-account">
 								Available to agents connected to the same Kody account.
@@ -96,13 +93,9 @@ export function SharedMemoryPage(handle: Handle) {
 									<span aria-hidden="true">↳</span>
 									<div>
 										<strong>Relevant memory from Kody</strong>
-										<p>
-											Release summaries: include source links and list breaking
-											changes first.
-										</p>
+										<p>Maple is the customer portal project.</p>
 									</div>
 								</div>
-								<h2>{example.action}</h2>
 								<p class="memory-answer">{example.result}</p>
 							</div>
 						</div>
@@ -114,24 +107,28 @@ export function SharedMemoryPage(handle: Handle) {
 
 					<section class="memory-boundaries">
 						<div>
-							<h2>Keep your preferences with you.</h2>
+							<h2>Choose the right home for context.</h2>
 							<p>
-								Save a preference in Kody so your other agents can find it. Keep
-								repository instructions, chats, and credentials where they
-								belong.
+								Want every release summary to include source links and put
+								breaking changes first? Build that into the release-summary
+								package so it happens whenever you run it.
 							</p>
 							<a href="/docs/memory">Read how Kody memory works ↗</a>
 							<p>
-								Your preferences can shape the work, too. Kody puts memory
-								alongside your connected services and reusable workflows, so
-								your agents can find the context they need.
+								A reply utility can quote the thread automatically. A weather
+								utility can have a documented default location. Neither needs an
+								agent to remember a separate instruction each time.
 							</p>
 						</div>
 						<dl class="memory-context-list">
+							<dt>In package code and documentation</dt>
+							<dd>
+								Repeatable steps, output rules, typed inputs, and task defaults.
+							</dd>
 							<dt>In your Kody memory</dt>
 							<dd>
-								Writing preferences, project nicknames, and context your other
-								agents should be able to find.
+								Facts that don’t already belong in a package or another system,
+								like a project nickname or how you know someone.
 							</dd>
 							<dt>In your repository or client</dt>
 							<dd>
@@ -178,18 +175,17 @@ export function SharedMemoryPage(handle: Handle) {
 				<div class="memory-wrap">
 					<section class="memory-try" id="try-it">
 						<div>
-							<h2>Save a preference, then try another agent.</h2>
+							<h2>Save a fact, then try another agent.</h2>
 							<ol>
 								<li>Connect two agents to your Kody account.</li>
 								<li>Give the first agent this prompt.</li>
 								<li>
-									Ask the second to find your release-summary preference and use
-									it.
+									Ask the second to retrieve the project nickname you saved.
 								</li>
 							</ol>
 							<p>
-								Change the preference and verify it again, or delete the test
-								memory when you’re done.
+								Change the fact and verify it again, or delete the test memory
+								when you’re done.
 							</p>
 							<a href="/onboarding">Set up your Kody account ↗</a>
 						</div>
@@ -304,10 +300,6 @@ const memoryCss = {
 		lineHeight: 1.45,
 		padding: '20px 0',
 	},
-	'& .memory-paper-foot': {
-		fontSize: '12px',
-		color: 'light-dark(#667052, var(--color-text-muted))',
-	},
 	'& .memory-account': {
 		fontSize: '13px',
 		lineHeight: 1.6,
@@ -359,11 +351,6 @@ const memoryCss = {
 		fontSize: '13px',
 		lineHeight: 1.6,
 		marginTop: '5px',
-	},
-	'& .memory-conversation h2': {
-		fontSize: '21px',
-		lineHeight: 1.3,
-		marginBottom: '8px',
 	},
 	'& .memory-answer': { fontSize: '15px', lineHeight: 1.65 },
 	'& .memory-caption': {

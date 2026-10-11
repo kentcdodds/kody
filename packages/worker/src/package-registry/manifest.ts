@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	authoredPackageJsonSchema,
+	packageCredentialsSchema,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
 	type PackageExportTarget,
@@ -117,6 +118,9 @@ export function parseAuthoredPackageJson(input: {
 		manifestPath: input.manifestPath ?? packageManifestPath,
 		mode: input.mode ?? 'authoring',
 	})
+	if (input.mode === 'published') {
+		dropUnvalidatedPublishedCredentials(parsed)
+	}
 	const result = authoredPackageJsonSchema.safeParse(parsed)
 	if (!result.success) {
 		const formatted = z.prettifyError(result.error)
@@ -203,6 +207,22 @@ function assertNoRetiredKodyFields(input: {
 		throw new Error(
 			`Invalid ${input.manifestPath}:\n${retiredPackageAppRuntimeMessage}`,
 		)
+	}
+}
+
+/**
+ * Publishes before `kody.credentials` existed stripped the key unvalidated, so
+ * an old snapshot can carry any shape there. It was never honored; loading it
+ * must not brick the package. Publish (`authoring`) still rejects it.
+ */
+function dropUnvalidatedPublishedCredentials(parsed: unknown) {
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+	const kody = (parsed as { kody?: unknown }).kody
+	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) return
+	const record = kody as Record<string, unknown>
+	if (!('credentials' in record)) return
+	if (!packageCredentialsSchema.safeParse(record.credentials).success) {
+		delete record.credentials
 	}
 }
 

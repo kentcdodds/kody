@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/component'
 import { readAppSession } from '#client/app-session-context.tsx'
@@ -26,6 +27,7 @@ import {
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import { isUnlimitedLimit } from '#universal/plans.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	type AccountEmailDestinationsLoaderData,
@@ -58,6 +60,10 @@ import {
 
 export { accountEmailRouteLoader }
 
+function formatEmailLimit(limit: number) {
+	return isUnlimitedLimit(limit) ? 'Unlimited' : String(limit)
+}
+
 export function AccountEmailRoute(handle: Handle) {
 	let data: AccountEmailLoaderData | null = null
 	let message: string | null = null
@@ -81,6 +87,7 @@ export function AccountEmailRoute(handle: Handle) {
 			const response = await fetch(buildEmailApiRequestUrl(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				referrer: orgAccountApiReferrer(href),
 				signal,
 			})
 			if (response.status === 401) return routeDataRedirect('/login')
@@ -381,9 +388,9 @@ export function AccountEmailRoute(handle: Handle) {
 										Plan {data.usage.plan}: {data.usage.stored_messages.count}/
 										{data.usage.stored_messages.limit} stored ·{' '}
 										{data.usage.receives_today.count}/
-										{data.usage.receives_today.limit} received today ·{' '}
-										{data.usage.sends_today.count}/
-										{data.usage.sends_today.limit} sent today
+										{formatEmailLimit(data.usage.receives_today.limit)} received
+										today · {data.usage.sends_today.count}/
+										{formatEmailLimit(data.usage.sends_today.limit)} sent today
 									</p>
 								) : null}
 							</div>

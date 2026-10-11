@@ -1,5 +1,10 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import {
+	EntitlementLimitError,
+	isEntitlementLimitError,
+} from '#worker/entitlements/errors.ts'
 import {
 	alreadyDispatchedWorkflowStatusExclusion,
 	buildCallerScopedIdempotencyKey,
@@ -409,30 +414,35 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 })
 
-test('runWithDurableEscalation never throws and reports structured failures', async () => {
+test('runWithDurableEscalation never throws and preserves original failures', async () => {
+	const checksError = new Error('checks blew up')
 	await expect(
 		escalate({
 			idempotencyParts: ['publish', 'pkg-1', 'fail'],
 			budgetMs: 5_000,
 			run: async () => {
-				throw new Error('checks blew up')
+				throw checksError
 			},
 		}),
-	).resolves.toEqual({ kind: 'failed', error: 'checks blew up' })
-	await expect(
-		escalate({
-			idempotencyParts: ['   ', ''],
-			budgetMs: undefined,
-			run: async () => ({ ok: true }),
-		}),
-	).resolves.toEqual({
-		kind: 'failed',
-		error: 'Durable escalation requires at least one idempotency part.',
+	).resolves.toEqual({ kind: 'failed', error: checksError })
+	const emptyParts = await escalate({
+		idempotencyParts: ['   ', ''],
+		budgetMs: undefined,
+		run: async () => ({ ok: true }),
 	})
-
-	mockModule.createDynamicCallableWorkflow.mockRejectedValue(
-		new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.'),
+	expect(emptyParts).toEqual({
+		kind: 'failed',
+		error: expect.any(Error),
+	})
+	if (emptyParts.kind !== 'failed') {
+		throw new Error('expected failed')
+	}
+	expect(getErrorMessage(emptyParts.error)).toBe(
+		'Durable escalation requires at least one idempotency part.',
 	)
+
+	const dispatchError = new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
+	mockModule.createDynamicCallableWorkflow.mockRejectedValue(dispatchError)
 	await expect(
 		escalate({
 			idempotencyParts: ['publish', 'pkg-1', 'dispatch-fail'],
@@ -440,8 +450,32 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 		}),
 	).resolves.toEqual({
 		kind: 'failed',
-		error: 'Missing DYNAMIC_CALLABLE_WORKFLOWS binding.',
+		error: dispatchError,
 	})
+
+	const entitlementError = new EntitlementLimitError({
+		resource: 'concurrent_workflows',
+		plan: 'pro',
+		limit: 5,
+		current: 5,
+		upgradeHint:
+			'Wait for a run to finish, or upgrade your plan at /@<slug>/-/billing.',
+	})
+	const entitlementOutcome = await escalate({
+		idempotencyParts: ['publish', 'pkg-1', 'entitlement'],
+		budgetMs: 5_000,
+		run: async () => {
+			throw entitlementError
+		},
+	})
+	expect(entitlementOutcome).toEqual({
+		kind: 'failed',
+		error: entitlementError,
+	})
+	if (entitlementOutcome.kind !== 'failed') {
+		throw new Error('expected failed')
+	}
+	expect(isEntitlementLimitError(entitlementOutcome.error)).toBe(true)
 })
 
 test('budget exhaustion releases a dead terminal key and re-dispatches once', async () => {

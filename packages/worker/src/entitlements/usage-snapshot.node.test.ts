@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { legacyPlanLimits, planLimits } from '#universal/plans.ts'
+import {
+	legacyPlanLimits,
+	planLimits,
+	unlimitedLimit,
+	type UserEntitlement,
+} from '#universal/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
@@ -102,16 +107,23 @@ function readSnapshot(
 	db: D1Database,
 	env: unknown,
 	usageUserId: string,
-	options: { plan?: 'free' | 'standard'; ladder?: 'public' | 'legacy' } = {},
+	options: {
+		plan?: 'free' | 'standard'
+		ladder?: 'public' | 'legacy'
+		limitOverrides?: UserEntitlement['limitOverrides']
+	} = {},
 	at: Date | undefined = now,
 ) {
 	return readEntitlementUsageSnapshot({
 		db,
 		env: env as Env,
 		usageUserId: ownerIdFromStored(usageUserId),
-		plan: options.plan ?? 'free',
-		ladder: options.ladder ?? 'public',
-		creditWallet: 'none',
+		entitlement: {
+			plan: options.plan ?? 'free',
+			ladder: options.ladder ?? 'public',
+			creditWallet: 'none',
+			limitOverrides: options.limitOverrides,
+		},
 		now: at,
 	})
 }
@@ -185,6 +197,30 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 		planLimits.standard.maxExecuteUniqueWorkersPerWeek,
 	)
 	expect(legacyExecute?.week).toBeUndefined()
+})
+
+test('readEntitlementUsageSnapshot shows effective limits with active overrides applied', async () => {
+	const { stableUserId, db } = createUsageTestDb({
+		email: 'override-usage@example.com',
+	})
+	const env = withUsageEnv({ APP_DB: db })
+	const snapshot = await readSnapshot(db, env, stableUserId, {
+		limitOverrides: [
+			{ key: 'outbound_fetches_per_day', value: 1_000_000, expiresAt: null },
+			{ key: 'outbound_fetches_per_week', value: 'unlimited', expiresAt: null },
+			{
+				key: 'email_sends_per_day',
+				value: 500,
+				expiresAt: new Date(now.getTime() - 1).toISOString(),
+			},
+		],
+	})
+	const outbound = resource(snapshot, 'outbound_fetches_per_day')
+	expect(outbound?.limit).toBe(1_000_000)
+	expect(outbound?.week?.limit).toBe(unlimitedLimit)
+	expect(resource(snapshot, 'email_sends_per_day')?.limit).toBe(
+		planLimits.free.maxEmailSendsPerDay,
+	)
 })
 
 test('readEntitlementUsageSnapshot uses one UserMeter RPC for daily, weekly, and storage', async () => {

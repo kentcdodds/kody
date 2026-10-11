@@ -1,6 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
@@ -36,7 +35,12 @@ export type DurableEscalationHandle = {
 export type DurableEscalationOutcome<T> =
 	| { kind: 'completed'; value: T }
 	| { kind: 'dispatched'; handle: DurableEscalationHandle }
-	| { kind: 'failed'; error: string }
+	/**
+	 * Preserve the original thrown value (including EntitlementLimitError) so
+	 * callers can rethrow without stripping the cause chain that toApiError
+	 * needs for entitlement_limit. Do not stringify here.
+	 */
+	| { kind: 'failed'; error: unknown }
 
 /**
  * Workflow projection statuses that mean a durable dispatch is already underway.
@@ -205,7 +209,7 @@ export async function runWithDurableEscalation<T>(input: {
 	} catch (error) {
 		return {
 			kind: 'failed',
-			error: getErrorMessage(error),
+			error,
 		}
 	}
 
@@ -277,7 +281,7 @@ export async function runWithDurableEscalation<T>(input: {
 				} else {
 					return {
 						kind: 'failed',
-						error: getErrorMessage(raced.error),
+						error: raced.error,
 					}
 				}
 			}
@@ -292,7 +296,7 @@ export async function runWithDurableEscalation<T>(input: {
 			if (settled?.kind === 'rejected' && !controller.signal.aborted) {
 				return {
 					kind: 'failed',
-					error: getErrorMessage(settled.error),
+					error: settled.error,
 				}
 			}
 			// Inline work may still be running. We dispatch anyway rather than
@@ -340,7 +344,9 @@ export async function runWithDurableEscalation<T>(input: {
 			if (isDeadTerminalWorkflowStatus(workflow.status)) {
 				return {
 					kind: 'failed',
-					error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and could not be re-dispatched after releasing its idempotency key.`,
+					error: new Error(
+						`A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and could not be re-dispatched after releasing its idempotency key.`,
+					),
 				}
 			}
 		}
@@ -351,7 +357,7 @@ export async function runWithDurableEscalation<T>(input: {
 	} catch (error) {
 		return {
 			kind: 'failed',
-			error: getErrorMessage(error),
+			error,
 		}
 	}
 }

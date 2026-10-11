@@ -1,3 +1,7 @@
+import {
+	listPublicWebsitePages,
+	listPublicBlogPages,
+} from '#app/public-content.ts'
 import { type Action } from 'remix/router'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
@@ -91,10 +95,19 @@ export function buildDocsIndexMarkdown(baseUrl: string): string {
 	return lines.join('\n')
 }
 
-/**
- * `/llms.txt` (also `/docs/llms.txt`): the llmstxt.org-style index — one
- * line per doc with its markdown twin and summary.
- */
+function publicContentLinks(
+	baseUrl: string,
+	pages: ReturnType<typeof listPublicWebsitePages>,
+) {
+	const singleLine = (text: string) => text.replace(/\s+/g, ' ').trim()
+	const label = (text: string) => singleLine(text).replace(/[\\[\]]/g, '\\$&')
+	return pages.map(
+		(page) =>
+			`- [${label(page.title)}](${baseUrl}${page.path}): ${singleLine(page.description)}`,
+	)
+}
+
+/** Docs, public website pages, and blog posts share their source metadata. */
 export function buildLlmsTxt(baseUrl: string): string {
 	const lines = [
 		'# Kody',
@@ -105,15 +118,18 @@ export function buildLlmsTxt(baseUrl: string): string {
 		'> you are offline — and every other agent you connect reuses the same',
 		'> home.',
 		'',
-		`Start with [What is Kody?](${baseUrl}/docs.md). Every doc below is`,
+		`Start with [What is Kody?](${baseUrl}/docs.md). Each documentation link below is`,
 		'plain markdown; the same content is available to connected agents as',
 		'`search({ entity: "guide:{id}" })`.',
 		'',
 		...buildDocsIndexSections(baseUrl),
-		'## Optional',
+		'## Website',
 		'',
-		`- [Blog](${baseUrl}/blog): essays on owning your automations`,
-		`- [Connect your agent (machine-readable)](${baseUrl}/auth.md): OAuth and MCP endpoint details`,
+		...publicContentLinks(baseUrl, listPublicWebsitePages()),
+		'',
+		'## Blog posts',
+		'',
+		...publicContentLinks(baseUrl, listPublicBlogPages()),
 		'',
 	]
 	return lines.join('\n')

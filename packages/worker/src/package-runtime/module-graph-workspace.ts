@@ -61,7 +61,10 @@ export function readRootPackage(sourceFiles: Record<string, string>) {
 	if (!packageJson) return null
 	try {
 		return {
-			manifest: parseAuthoredPackageJson({ content: packageJson }),
+			manifest: parseAuthoredPackageJson({
+				content: packageJson,
+				mode: 'published',
+			}),
 			prefix: rootSourcePrefix,
 		}
 	} catch {

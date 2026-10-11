@@ -34,6 +34,7 @@ import {
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
 import { AdminUserCreditsPanel } from './admin-users-credits.tsx'
+import { AdminOrgLimitsPanel } from './admin-users-limits.tsx'
 import { AdminUserDestinationPanel } from './admin-users-destination-panel.tsx'
 import {
 	costVsPayFootnote,
@@ -448,6 +449,10 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 				key={selectedUser.stableUserId}
 				stableUserId={selectedUser.stableUserId}
 				onGranted={props.onCreditsGranted}
+			/>
+			<AdminOrgLimitsPanel
+				key={`limits-${selectedUser.stableUserId}`}
+				orgId={selectedUser.stableUserId}
 			/>
 			<AccountManagementPanel
 				title="Moderation"

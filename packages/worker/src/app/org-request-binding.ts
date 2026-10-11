@@ -1,8 +1,9 @@
-import { jsonResponse } from '#worker/json-response.ts'
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
 	orgOwnedAccountApiSection,
+	orgOwnedSectionForPath,
 	orgSlugFromOrgOwnedPath,
+	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
 
 export type RequestOrgResolution = OrgBinding | 'personal' | 'denied'
@@ -28,19 +29,53 @@ export function loadRequestOrgResolution(
 }
 
 /**
- * 404 for an org-owned `/account/<section>.json` call whose Referer names an
- * org this person cannot use, otherwise null. `readAuthenticatedAppUser` falls
- * back to the signup org for a denied org, so a stale team page would
- * otherwise read or write the personal org.
+ * Why `/@slug/-/<section>` is closed to this person, or null when it is open.
  */
-export async function deniedOrgAccountApiResponse(
+export function orgSectionDenial(
+	resolution: RequestOrgResolution,
+	section: OrgOwnedAccountSection,
+): string | null {
+	if (resolution === 'denied' || resolution === 'personal') {
+		return 'Organization unavailable'
+	}
+	// A grant without a membership is not access to the whole workspace.
+	// Connections only lists the viewer's own agents bound to this org, which
+	// is how a collaborator starts using what was shared with them.
+	if (resolution.role == null && section !== 'connections') {
+		return 'Organization resources unavailable'
+	}
+	return null
+}
+
+/** URLs whose org comes from the path or, for account JSON, the Referer. */
+export function isOrgBoundPath(pathname: string): boolean {
+	return (
+		orgOwnedAccountApiSection(pathname) !== null ||
+		orgSlugFromPageUrl(pathname) !== null
+	)
+}
+
+/**
+ * True when this request names an org the person cannot use: an `/@slug/-/…`
+ * URL for an org they neither belong to nor hold a grant in, or a section URL
+ * (page, its JSON, or org-owned `/account/<section>.json` via Referer) that
+ * {@link orgSectionDenial} closes to them. `readAuthenticatedAppUser` falls
+ * back to the signup org for a denied org, so these requests must stop before
+ * any handler runs. Billing and management URLs only need the org; their
+ * handlers check the permission.
+ */
+export async function isOrgRequestDenied(
 	request: Request,
 	env: Env,
 	personId: string,
-): Promise<Response | null> {
+): Promise<boolean> {
+	const pathname = new URL(request.url).pathname
+	if (!isOrgBoundPath(pathname)) return false
 	const resolution = await loadRequestOrgResolution(request, env, personId)
-	if (resolution !== 'denied') return null
-	return jsonResponse({ ok: false, error: 'Organization not found.' }, 404)
+	if (resolution === 'denied') return true
+	if (resolution === 'personal') return false
+	const section = orgOwnedSectionForPath(pathname)
+	return section !== null && orgSectionDenial(resolution, section) !== null
 }
 
 function orgSlugFromPageUrl(pathname: string): string | null {

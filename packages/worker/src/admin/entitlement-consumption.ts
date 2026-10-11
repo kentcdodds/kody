@@ -1,10 +1,8 @@
 import {
 	entitlementResourceLabels,
-	resolvePlanLimit,
-	type CreditWalletState,
-	type EntitlementLadder,
+	resolveEntitlementLimit,
 	type EntitlementResource,
-	type PlanName,
+	type UserEntitlement,
 } from '#universal/plans.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
@@ -43,21 +41,14 @@ export const entitlementWarningThreshold = 0.8
 export async function readAdminEntitlementConsumption(input: {
 	env: Env
 	usageUserId: OwnerId
-	plan: PlanName
-	ladder: EntitlementLadder
-	creditWallet: CreditWalletState
-	/** Paid seats pooling the rate limits (`UserEntitlement.seats`). */
-	seats?: number
+	/** Effective entitlement: plan, seat pool, and limit overrides. */
+	entitlement: UserEntitlement
 	now: Date
 	/**
 	 * Base-plan entitlement for `email_receives_per_day` when it differs from
 	 * the effective plan (gift / referral overlays).
 	 */
-	inboundReceive?: {
-		plan: PlanName
-		ladder: EntitlementLadder
-		creditWallet: CreditWalletState
-	}
+	inboundReceive?: UserEntitlement
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
 		adminEntitlementResources.map(async (resource) => {
@@ -71,17 +62,11 @@ export async function readAdminEntitlementConsumption(input: {
 			const limitEntitlement =
 				resource === 'email_receives_per_day' && input.inboundReceive
 					? input.inboundReceive
-					: {
-							plan: input.plan,
-							ladder: input.ladder,
-							creditWallet: input.creditWallet,
-						}
-			const limit = resolvePlanLimit(
-				limitEntitlement.plan,
+					: input.entitlement
+			const limit = resolveEntitlementLimit(
+				limitEntitlement,
 				resource,
-				limitEntitlement.ladder,
-				limitEntitlement.creditWallet,
-				input.seats,
+				input.now,
 			)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {

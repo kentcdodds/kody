@@ -41,10 +41,10 @@ export function isConnectionUsageEventType(
 }
 
 /**
- * The unit the hosted execute cap counts. Execute calls today; switch to
- * `workerLoads` when the cap moves to unique Dynamic Worker loads.
+ * The unit the hosted execute cap counts (`execute_unique_workers_per_day`):
+ * one `dynamic_worker_day` per new worker per UTC day.
  */
-export const executeCapCountKey: ConnectionUsageCountKey = 'executeCalls'
+export const executeCapCountKey: ConnectionUsageCountKey = 'workerLoads'
 
 type ConnectionUsageCounts = Record<ConnectionUsageCountKey, number>
 

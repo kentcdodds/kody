@@ -25,7 +25,7 @@ export const landingHomePrimitives = [
 	{
 		id: 'memory',
 		word: 'memory',
-		body: 'Facts and context your agents can search later, across hosts. You stop re-explaining the same project every session.',
+		body: 'Facts without a better home, like project nicknames or personal context, that your connected agents can retrieve.',
 	},
 	{
 		id: 'secrets',
@@ -35,7 +35,7 @@ export const landingHomePrimitives = [
 	{
 		id: 'packages',
 		word: 'packages',
-		body: 'Durable software you own. An agent writes it once; any connected agent can run it.',
+		body: 'Reusable code with typed inputs and documented defaults. Keep how a task gets done in the package, ready for any connected agent to run.',
 	},
 	{
 		id: 'triggers',

@@ -1,14 +1,22 @@
 import { expect, test } from 'vitest'
 import {
+	applyLimitOverrides,
 	formatDurableObjectRowsRead,
+	isLimitOverrideResource,
+	limitOverrideKeys,
+	parseLimitOverrideKey,
 	parseEntitlementLadder,
 	planLimits,
 	proCreditsPlanLimits,
 	resolveCreditWalletState,
 	resolveEntitlementLadderAfterPaidAccessChange,
+	resolveEntitlementLimit,
+	resolveWeeklyEntitlementLimit,
 	resolvePlanLimit,
 	resolvePlanLimits,
 	resolveWeeklyPlanLimit,
+	unlimitedLimit,
+	type UserEntitlement,
 } from './plans.ts'
 
 type LimitArgs = Parameters<typeof resolvePlanLimit>
@@ -320,4 +328,91 @@ test('purchasable Pro rates pool across paid seats; funded ceilings scale with s
 	expect(resolvePlanLimits('pro', 'public', 'empty', Number.NaN)).toEqual(
 		proCreditsPlanLimits,
 	)
+})
+
+test('limit overrides only raise caps, skip expired entries, and never add a missing weekly window', () => {
+	const now = new Date('2026-10-10T12:00:00.000Z')
+	const pro: UserEntitlement = {
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'funded',
+		seats: 1,
+	}
+	const legacy: UserEntitlement = {
+		plan: 'standard',
+		ladder: 'legacy',
+		creditWallet: 'none',
+	}
+	const withOverrides = (
+		entitlement: UserEntitlement,
+		limitOverrides: UserEntitlement['limitOverrides'],
+	): UserEntitlement => ({ ...entitlement, limitOverrides })
+
+	expect(resolveEntitlementLimit(pro, 'outbound_fetches_per_day', now)).toBe(
+		resolvePlanLimit('pro', 'outbound_fetches_per_day', 'public', 'funded', 1),
+	)
+	const raised = withOverrides(pro, [
+		{ key: 'outbound_fetches_per_day', value: 1_000_000, expiresAt: null },
+		{ key: 'outbound_fetches_per_week', value: 'unlimited', expiresAt: null },
+		{ key: 'job_runs_per_day', value: 1, expiresAt: null },
+		{
+			key: 'automation_invocations_per_day',
+			value: 9_000_000,
+			expiresAt: '2026-10-10T11:59:59.999Z',
+		},
+		{
+			key: 'email_sends_per_day',
+			value: 9_000,
+			expiresAt: '2026-10-11T00:00:00.000Z',
+		},
+	])
+	expect([
+		resolveEntitlementLimit(raised, 'outbound_fetches_per_day', now),
+		resolveWeeklyEntitlementLimit(raised, 'outbound_fetches_per_day', now),
+		resolveEntitlementLimit(raised, 'job_runs_per_day', now),
+		resolveEntitlementLimit(raised, 'automation_invocations_per_day', now),
+		resolveEntitlementLimit(raised, 'email_sends_per_day', now),
+	]).toEqual([
+		1_000_000,
+		unlimitedLimit,
+		resolvePlanLimit('pro', 'job_runs_per_day', 'public', 'funded', 1),
+		resolvePlanLimit(
+			'pro',
+			'automation_invocations_per_day',
+			'public',
+			'funded',
+			1,
+		),
+		9_000,
+	])
+
+	// Legacy ladders have no weekly windows; an override does not add one.
+	const legacyLimits = resolvePlanLimits('standard', 'legacy', 'none')
+	expect(legacyLimits.maxOutboundFetchesPerWeek).toBeNull()
+	expect(
+		applyLimitOverrides(
+			legacyLimits,
+			[{ key: 'outbound_fetches_per_week', value: 5, expiresAt: null }],
+			now,
+		).maxOutboundFetchesPerWeek,
+	).toBeNull()
+	expect(
+		resolveWeeklyEntitlementLimit(
+			withOverrides(legacy, [
+				{ key: 'outbound_fetches_per_week', value: 5, expiresAt: null },
+			]),
+			'outbound_fetches_per_day',
+			now,
+		),
+	).toBeNull()
+})
+
+test('limit override keys parse strictly and map to overridable resources', () => {
+	expect(limitOverrideKeys.map(parseLimitOverrideKey)).toEqual(
+		limitOverrideKeys,
+	)
+	expect(parseLimitOverrideKey('saved_packages')).toBeNull()
+	expect(parseLimitOverrideKey(undefined)).toBeNull()
+	expect(isLimitOverrideResource('outbound_fetches_per_day')).toBe(true)
+	expect(isLimitOverrideResource('saved_packages')).toBe(false)
 })

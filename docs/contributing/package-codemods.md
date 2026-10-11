@@ -327,6 +327,58 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 `mcpServers`). Input field names, usage-metric event types, Codex TOML
 `[mcp_servers.kody]`, and SQL `cf_agents_mcp_servers` stay snake_case.
 
+### `0010-detect-legacy-credential-patterns`
+
+This detect-only codemod measures which packages still reference credentials the
+old way, ahead of `kody.credentials` slots (see
+[Credential slots](../use/packages.md#credential-slots-kodycredentials)).
+`transform` writes nothing; dry-run and apply return the findings as
+`needs_manual`. Run it with `adminPackageCodemodScan`.
+
+It scans JavaScript and TypeScript modules and the root `package.json`. Each
+finding message starts with one fixed pattern label:
+
+| Label                  | Matches                                                                                                                                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `literal secret`       | A complete `{{secret:…}}`, `{{secret-basic:…}}`, `{{secret/provider:…}}`, or `{{integration-token:…}}` placeholder, or a string literal passed to `createAuthenticatedFetch`, `packageSecrets.get`, `secretHeaders.basic`, or similar helpers |
+| `computed secret`      | A secret placeholder built at runtime, or a secret helper called with a non-literal name                                                                                                                                                      |
+| `computed integration` | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                       |
+| `kody.mcp`             | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                       |
+| `\|scope=`             | A `\|scope=` placeholder suffix, or a `scope` option on a secret helper                                                                                                                                                                       |
+| `secretMounts`         | `package.json#kody.secretMounts`                                                                                                                                                                                                              |
+| `webhook secretName`   | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                          |
+
+Helpers are matched by name, comments are ignored, and an unparseable module
+falls back to a text match. This module yields `literal secret`,
+`computed secret`, `computed integration`, `kody.mcp`, and `|scope=` for
+`index.ts`:
+
+```ts
+import { createAuthenticatedFetch, kody } from 'kody:runtime'
+
+export default async function digest(input: { account: string; key: string }) {
+	const google = await createAuthenticatedFetch(input.account)
+	await kody.mcp.linear.list_issues({})
+	return fetch('https://api.example.com', {
+		headers: {
+			'x-api-key': `{{secret:${input.key}}}`,
+			authorization: 'Bearer {{secret:EXAMPLE_TOKEN|scope=package}}',
+		},
+	}).then(() => google('https://www.googleapis.com/calendar/v3/users/me'))
+}
+```
+
+Save every scan step result as one JSON array, then print the report:
+
+```bash
+node tools/credential-pattern-report.ts scan-steps.json
+```
+
+It counts packages and files per pattern, per org, and per package, plus
+`skipped_unpublished` and `skipped_drift`. The org and package tables name
+private packages. Keep them out of public issues; public issues get the pattern
+counts only.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in

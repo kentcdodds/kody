@@ -37,7 +37,8 @@ const tools = [
 	{
 		key: 'sharedMemory',
 		title: 'Shared memory',
-		detail: 'Keep your preferences with you when you switch agents.',
+		detail:
+			'Carry useful facts between agents when they don’t have a better home.',
 	},
 	{
 		key: 'mcpGateway',

@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -44,6 +45,7 @@ async function loadSecretProviders(
 	const response = await fetch(apiUrlForHref(href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) {
@@ -66,6 +68,7 @@ export async function accountSecretProvidersRouteLoader(
 	const response = await fetch(apiUrlForHref(url.pathname + url.search), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(url.href),
 		signal,
 	})
 	if (response.status === 401) {

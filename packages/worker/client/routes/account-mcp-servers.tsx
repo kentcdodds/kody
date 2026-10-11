@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -68,12 +69,13 @@ function getDataLatchKey(_href: string) {
 }
 
 export async function accountMcpServersRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const response = await fetch(accountMcpServersApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(url.href),
 		signal,
 	})
 	if (response.status === 401) {
@@ -107,10 +109,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 	const serversData = createRouteData({
 		key: 'accountMcpServers',
 		locationKey: getDataLatchKey,
-		async load(_href, signal) {
+		async load(href, signal) {
 			const response = await fetch(accountMcpServersApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				referrer: orgAccountApiReferrer(href),
 				signal,
 			})
 			if (response.status === 401) return routeDataRedirect('/login')

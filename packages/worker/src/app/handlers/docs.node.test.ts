@@ -1,3 +1,8 @@
+import { listPublicSitemapEntries } from '#app/agent-discovery.ts'
+import {
+	listPublicWebsitePages,
+	listPublicBlogPages,
+} from '#app/public-content.ts'
 import { expect, test, vi } from 'vitest'
 import { highlightSnippetKey } from '#universal/highlighted-code.ts'
 import { howKodyWorksPackageFiles } from '#universal/how-kody-works-transcript.ts'
@@ -17,6 +22,7 @@ import {
 	createDocsConnectMarkdownHandler,
 	createDocsMarkdownHandler,
 	createLlmsTxtHandler,
+	createDocsLlmsTxtHandler,
 } from './docs.tsx'
 import { resolveLegacyGuidesLocation } from './legacy-guides-redirect.ts'
 
@@ -414,4 +420,35 @@ test('admin-only docs 404 for anonymous viewers and stay out of public subscript
 	expect(
 		adminIndexPayload.sections.some((section) => section.id === 'admin'),
 	).toBe(true)
+})
+
+test('AI discovery covers every sitemap URL and shares website and blog metadata', async () => {
+	const response = await call(createLlmsTxtHandler, '/llms.txt')
+	const body = await response.text()
+	const alias = await call(createDocsLlmsTxtHandler, '/docs/llms.txt')
+	expect(await alias.text()).toBe(body)
+	const links = [...body.matchAll(/\]\(https:\/\/kody\.example([^)]*)\)/g)].map(
+		(match) => match[1],
+	)
+	for (const entry of listPublicSitemapEntries()) {
+		const path =
+			entry.path.startsWith('/docs/') && entry.path !== '/docs/connect'
+				? `${entry.path}.md`
+				: entry.path
+		expect(links).toContain(path)
+	}
+	for (const page of [...listPublicWebsitePages(), ...listPublicBlogPages()]) {
+		expect(body).toContain(page.description.replace(/\s+/g, ' ').trim())
+	}
+	for (const path of [
+		'/login',
+		'/signup',
+		'/reset-password',
+		'/docs/admin-events.md',
+	]) {
+		expect(links).not.toContain(path)
+	}
+	expect(
+		new Set(listPublicSitemapEntries().map((entry) => entry.path)).size,
+	).toBe(listPublicSitemapEntries().length)
 })

@@ -1,6 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { accountJobsRouteLoader } from '#client/routes/account-jobs-shared.ts'
 import { accountSecretsRouteLoader } from '#client/routes/account-secrets-shared.ts'
+import { orgAccountClientLoaders } from '#client/routes/org-account-routes.tsx'
+import { orgOwnedAccountApiSection } from '#universal/org-pages.ts'
 
 afterEach(() => {
 	vi.unstubAllGlobals()
@@ -47,6 +49,51 @@ test('the jobs loader names the destination org page as referrer', async () => {
 			referrer: 'https://kody.test/@acme/-/jobs',
 		}),
 	)
+})
+
+// Every org route loader, from the client route table: each org-owned
+// `/account/<section>.json` load names the destination page, so a new section
+// cannot bind the org being left.
+test('every org route loader names the destination org page as referrer', async () => {
+	const fetchMock = stubBrowser({ ok: true })
+	const sectionsLoaded = new Set<string>()
+	const wrongReferrers: Array<string> = []
+	for (const [pattern, loader] of Object.entries(orgAccountClientLoaders)) {
+		if (!pattern.startsWith('/@:orgSlug/-/')) continue
+		const destination = `https://kody.test${pattern
+			.replace(/\(.*?\)/g, '')
+			.replace(':orgSlug', 'acme')
+			.replace(/:\w+/g, 'x')}?q=1`
+		fetchMock.mockClear()
+		await loader(new URL(destination), new AbortController().signal).catch(
+			() => null,
+		)
+		for (const [input, init] of fetchMock.mock.calls) {
+			const path = new URL(String(input), 'https://kody.test').pathname
+			const section = orgOwnedAccountApiSection(path)
+			if (!section) continue
+			sectionsLoaded.add(section)
+			if (init?.referrer !== destination) {
+				wrongReferrers.push(`${pattern} → ${path}: ${init?.referrer}`)
+			}
+		}
+	}
+	expect(wrongReferrers).toEqual([])
+	expect([...sectionsLoaded].sort()).toEqual([
+		'activity',
+		'connections',
+		'email',
+		'integrations',
+		'jobs',
+		'mcp-servers',
+		'memories',
+		'secret-providers',
+		'secrets',
+		'values',
+		'waiting',
+		'webhooks',
+		'workflows',
+	])
 })
 
 test('a denied org is an error, and a signed-out load goes to login', async () => {

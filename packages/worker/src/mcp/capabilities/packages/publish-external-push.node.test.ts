@@ -493,6 +493,27 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		manifest: {},
 		run_id: expect.any(String),
 	})
+
+	setupDefaultMocks({
+		head: 'commit-old',
+		publish: alreadyPublishedOld,
+		targets: [moduleTarget],
+	})
+	mockModule.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
+		new Error('No matching default export for import "default"'),
+	)
+	expect(await publish()).toEqual({
+		status: 'checks_failed',
+		failed_checks: [
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringMatching(/bundle artifact rebuild failed/i),
+			}),
+		],
+		manifest: null,
+		run_id: expect.any(String),
+	})
 })
 
 test('force publish passes destructive confirmation through and refuses without allow_force', async () => {

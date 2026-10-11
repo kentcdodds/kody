@@ -8,6 +8,12 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import { createAccountConnectedAgents } from '#client/routes/account-connected-agents-panel.tsx'
 import {
+	ConnectionUsageDetails,
+	ConnectionUsageSummaryPanel,
+	fetchConnectionUsage,
+	type ConnectionUsageState,
+} from '#client/routes/account-connection-usage-panel.tsx'
+import {
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
@@ -68,11 +74,60 @@ export async function accountConnectionsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const result = await fetchConnectedAgents(url.href, signal)
+	const [result, usage] = await Promise.all([
+		fetchConnectedAgents(url.href, signal),
+		viewShowsUsage(readView(url.href))
+			? loadUsageWithinBudget(url.href, signal)
+			: null,
+	])
 	if (result.kind === 'unauthorized') {
 		return routeLoaderRedirect('/login')
 	}
-	return { accountConnectedAgents: result.payload }
+	return {
+		accountConnectedAgents: result.payload,
+		...(usage?.kind === 'ok' ? { accountConnectionUsage: usage.payload } : {}),
+	}
+}
+
+/**
+ * Usage is a secondary panel. The loader waits for it only briefly so a slow
+ * usage request never holds the Connections navigation; after a miss or a
+ * failure the route data fallback fetches it once the page commits.
+ */
+const loaderUsageBudgetMs = 1500
+
+async function loadUsageWithinBudget(href: string, signal: AbortSignal) {
+	const controller = new AbortController()
+	const abort = () => controller.abort()
+	signal.addEventListener('abort', abort, { once: true })
+	const timer = setTimeout(abort, loaderUsageBudgetMs)
+	try {
+		return await fetchConnectionUsage(href, controller.signal)
+	} catch {
+		return null
+	} finally {
+		clearTimeout(timer)
+		signal.removeEventListener('abort', abort)
+	}
+}
+
+function viewShowsUsage(view: AccountConnectionsView | null) {
+	return view?.kind === 'list' || view?.kind === 'usage'
+}
+
+/**
+ * Every view reads one usage payload per organization; only the list and
+ * usage views ask.
+ */
+function connectionUsageLatchKey(href: string) {
+	return `${connectionsLatchKey(href)}/usage`
+}
+
+function readUsageFocus(href: string) {
+	return (
+		new URL(href, 'http://localhost').searchParams.get('connection')?.trim() ||
+		null
+	)
 }
 
 /**
@@ -121,6 +176,29 @@ export function AccountConnectionsRoute(handle: Handle) {
 		},
 	})
 
+	const usageData = createRouteData({
+		key: 'accountConnectionUsage',
+		locationKey: connectionUsageLatchKey,
+		async load(href, signal) {
+			const result = await fetchConnectionUsage(href, signal)
+			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
+			return result.payload
+		},
+	})
+
+	function readUsageState(currentHref: string): ConnectionUsageState {
+		const usage = usageData.read(handle, currentHref)
+		// Stale data belongs to another org (the latch key is per org).
+		if (usage.data && !usage.stale) return { kind: 'ready', usage: usage.data }
+		if (usage.kind === 'error') {
+			return {
+				kind: 'error',
+				message: usage.error?.message ?? 'Unable to load connection usage.',
+			}
+		}
+		return { kind: 'loading' }
+	}
+
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
 		connectedAgents.applyPayload(payload)
 		mcpServerUrl = payload.mcpServerUrl
@@ -140,6 +218,7 @@ export function AccountConnectionsRoute(handle: Handle) {
 			appliedError = snapshot.error
 			message = snapshot.error.message
 		}
+		const usage = viewShowsUsage(view) ? readUsageState(currentHref) : null
 		const pending = snapshot.kind === 'pending'
 		const status: AccountStatus =
 			snapshot.kind === 'error'
@@ -173,6 +252,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 							connectedAgents,
 							mcpServerUrl,
 							connectionProfiles,
+							usage,
+							usageFocus: readUsageFocus(currentHref),
 							pathname: new URL(currentHref, 'http://localhost').pathname,
 						})
 					: null}
@@ -198,6 +279,8 @@ function renderReadyView(input: {
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
 	mcpServerUrl: string
 	connectionProfiles: ReturnType<typeof createConnectionProfiles>
+	usage: ConnectionUsageState | null
+	usageFocus: string | null
 	pathname: string
 }) {
 	if (input.view === null) {
@@ -224,6 +307,13 @@ function renderReadyView(input: {
 							</a>
 						),
 					})}
+					{input.usage ? (
+						<ConnectionUsageSummaryPanel
+							state={input.usage}
+							agents={input.connectedAgents.listAgents()}
+							pathname={input.pathname}
+						/>
+					) : null}
 					{renderMcpUrlPanel({ mcpServerUrl: input.mcpServerUrl })}
 					{input.connectionProfiles.render({
 						agents: input.connectedAgents.listAgents(),
@@ -246,6 +336,18 @@ function renderReadyView(input: {
 								mcpServerUrl: input.mcpServerUrl,
 								pathname: input.pathname,
 							})}
+				</>
+			)
+		case 'usage':
+			return (
+				<>
+					{renderBackToConnections(input.pathname)}
+					<ConnectionUsageDetails
+						state={input.usage ?? { kind: 'loading' }}
+						agents={input.connectedAgents.listAgents()}
+						pathname={input.pathname}
+						focus={input.usageFocus}
+					/>
 				</>
 			)
 		default: {

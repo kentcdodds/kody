@@ -77,6 +77,7 @@ export async function resolvePublishedJobSource(input: {
 	const manifest = parseAuthoredPackageJson({
 		content: manifestContent,
 		manifestPath,
+		mode: 'published',
 	})
 	const jobDefinition = manifest.kody.jobs?.[input.job.name]
 	if (!jobDefinition) {

@@ -9,7 +9,6 @@ import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
 	resolveEffectivePlan,
-	type CreditWalletState,
 	type EntitlementLadder,
 	type PlanName,
 	type UserEntitlement,
@@ -82,13 +81,7 @@ const entitlementSweepConcurrency = 4
 function inboundReceiveAgainstBasePlan(
 	row: Pick<UserEntitlementRow, 'plan' | 'stripe_plan' | 'entitlement_ladder'>,
 	effective: UserEntitlement,
-):
-	| {
-			plan: PlanName
-			ladder: EntitlementLadder
-			creditWallet: CreditWalletState
-	  }
-	| undefined {
+): UserEntitlement | undefined {
 	const basePlan = resolveEffectivePlan(
 		parseStoredPlanName(row.plan),
 		row.stripe_plan,
@@ -98,6 +91,7 @@ function inboundReceiveAgainstBasePlan(
 		plan: basePlan,
 		ladder: parseEntitlementLadder(row.entitlement_ladder),
 		creditWallet: 'none',
+		limitOverrides: effective.limitOverrides,
 	}
 }
 
@@ -232,14 +226,11 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 				row: user,
 				now: input.now,
 			})
-			const { plan, ladder, creditWallet, seats } = effective
+			const { plan, ladder } = effective
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
-				plan,
-				ladder,
-				creditWallet,
-				seats,
+				entitlement: effective,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, effective),
 			})
@@ -528,10 +519,7 @@ async function buildEntitlementPressurePanel(input: {
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
-				plan,
-				ladder: entitlement.ladder,
-				creditWallet: entitlement.creditWallet,
-				seats: entitlement.seats,
+				entitlement,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, entitlement),
 			})

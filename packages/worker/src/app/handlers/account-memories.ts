@@ -54,7 +54,8 @@ export function createAccountMemoriesHandler(env: Env) {
 }
 
 /**
- * GET /account/memories-export.json for the signed-in user only.
+ * GET /account/memories-export.json for the org whose Memories page sent it
+ * (Referer), else the signed-in user's signup org.
  * Follows the page Include deleted toggle: active and archived by default;
  * deleted rows only when that control is on.
  */

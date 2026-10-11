@@ -173,6 +173,9 @@ const stubEnv = {
 						async first() {
 							return null
 						},
+						async all() {
+							return { results: [] }
+						},
 					}
 				},
 			}

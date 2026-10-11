@@ -120,6 +120,7 @@ import {
 	createOrgBillingSuccessHandler,
 } from '#app/handlers/org-billing.ts'
 import { createAdminUserCreditsApiHandler } from '#app/handlers/admin-user-credits.ts'
+import { createAdminOrgLimitsApiHandler } from '#app/handlers/admin-org-limits.ts'
 import {
 	createAccountCreditsHandler,
 	createAccountCreditsSettingsApiHandler,
@@ -283,6 +284,7 @@ import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
+import { createOrgBindingGuardMiddleware } from '#app/org-binding-guard-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 import {
@@ -331,6 +333,7 @@ export function createAppRouter(env: Env) {
 		middleware: [
 			remixCrossOriginProtection,
 			createReferralCookieMiddleware(),
+			createOrgBindingGuardMiddleware(env),
 			createAccountWriteLeaseMiddleware(env),
 		],
 		async defaultHandler({ request }) {
@@ -558,6 +561,8 @@ export function createAppRouter(env: Env) {
 			adminUserUsageApi: createAdminUserUsageApiHandler(env),
 			adminUserCreditsApi: createAdminUserCreditsApiHandler(env),
 			adminUserCreditsApiPost: createAdminUserCreditsApiHandler(env),
+			adminOrgLimitsApi: createAdminOrgLimitsApiHandler(env),
+			adminOrgLimitsApiPost: createAdminOrgLimitsApiHandler(env),
 			adminInsights: createAdminInsightsHandler(env),
 			adminInsightsApi: createAdminInsightsApiHandler(env),
 			adminPlatformFeedback: createAdminPlatformFeedbackHandler(env),

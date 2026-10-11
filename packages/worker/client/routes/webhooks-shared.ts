@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
@@ -117,10 +118,11 @@ export function webhookFailureMessage(intent: WebhookIntent) {
 	}
 }
 
-export async function fetchAccountWebhooks(signal: AbortSignal) {
+export async function fetchAccountWebhooks(href: string, signal: AbortSignal) {
 	const response = await fetch(accountWebhooksApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) return { kind: 'unauthorized' as const }
@@ -132,10 +134,10 @@ export async function fetchAccountWebhooks(signal: AbortSignal) {
 }
 
 export async function accountWebhooksRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const result = await fetchAccountWebhooks(signal)
+	const result = await fetchAccountWebhooks(url.href, signal)
 	if (result.kind === 'unauthorized') {
 		return routeLoaderRedirect('/login')
 	}

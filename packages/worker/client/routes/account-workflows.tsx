@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -117,6 +118,7 @@ export async function accountWorkflowsRouteLoader(
 	const response = await fetch(buildWorkflowsApiRequestUrl(href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) {
@@ -234,6 +236,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 			const response = await fetch(buildWorkflowsApiRequestUrl(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				referrer: orgAccountApiReferrer(href),
 				signal,
 			})
 			if (response.status === 401) return routeDataRedirect('/login')

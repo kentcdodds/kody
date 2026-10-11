@@ -307,9 +307,9 @@ function OrgSwitcher(
 					const selected = entry.org.slug === currentSlug
 					return {
 						key: entry.org.slug,
-						// Packages and connected agents still belong to the person, so
-						// a team org opens its home instead of that section. Billing
-						// stays on the section only for roles that manage it.
+						// A team org keeps the current section, repositories and
+						// connections included. Pages without an org section open
+						// Settings, as does Billing for roles that do not manage it.
 						href: teamOrgSwitchHref({
 							pathname: handle.props.currentPathname,
 							slug: entry.org.slug,

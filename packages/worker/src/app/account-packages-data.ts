@@ -299,6 +299,7 @@ async function loadPackageCreditAttributionRow(input: {
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
 			creditWallet: entitlement.creditWallet,
+			limitOverrides: entitlement.limitOverrides,
 			now,
 		})
 		const breakdown = await loadCreditAttributionBreakdown({

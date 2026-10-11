@@ -553,6 +553,15 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'set_by_user_id',
 		value: 'deleted-user',
 	},
+	// Overrides the deleted admin set stay on the org for audit; only the
+	// admin id is anonymized.
+	{
+		kind: 'replace_user_column',
+		table: 'org_limit_overrides',
+		matchColumn: 'set_by_user_id',
+		setColumn: 'set_by_user_id',
+		value: 'deleted-user',
+	},
 	{
 		kind: 'replace_user_column',
 		table: 'orgs',
@@ -947,6 +956,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
 	org_memberships: ['invited_by_user_id'],
 	org_user_budgets: ['set_by_user_id'],
+	org_limit_overrides: ['set_by_user_id'],
 	orgs: ['created_by_user_id'],
 	teams: ['created_by_user_id'],
 	team_members: ['added_by_user_id'],

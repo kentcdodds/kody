@@ -37,7 +37,7 @@ export const composioAlternatives = {
 		{
 			title: 'Keep the workflow with the connection',
 			paragraphs: [
-				'Kody gives your agent a place to save the code it builds, the progress it needs, and the preferences that shape the result.',
+				'Kody gives your agent a place to save the code it builds, the progress it needs, and the documented defaults that shape the result.',
 				'Use the saved package from another connected agent or give it a schedule. You can keep improving the same workflow as your needs change.',
 			],
 		},

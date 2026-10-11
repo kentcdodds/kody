@@ -14,7 +14,7 @@ export const automation = {
 			title: 'Where code and AI fit in a workflow',
 			paragraphs: [
 				'These examples use sample data, nothing runs in your accounts. A release digest can collect GitHub releases with code, ask a model to explain their impact on a project, then format a preview. Keep processed release IDs in package storage and check source links before posting.',
-				'Inbox triage can collect matching Gmail messages, ask a model to draft a response using the thread and your preferences, and save a draft for review. Keep thread and draft IDs so a repeated run doesn’t create another draft. You choose whether to send.',
+				'Inbox triage can collect matching Gmail messages, ask a model to draft a response using the thread and the package’s reply settings, and save a draft for review. Keep thread and draft IDs so a repeated run doesn’t create another draft. You choose whether to send.',
 				'A weekly report can fetch data and calculate changes with code, ask a model to investigate notable differences, and save the report and its checkpoint. Keep the reporting window and previous snapshot. Verify the explanation against source data before acting.',
 			],
 		},
@@ -68,7 +68,7 @@ export const automation = {
 		{
 			title: 'State belongs with the thing that uses it',
 			paragraphs: [
-				'Use memory for preferences and facts that should follow you between agents. Use package storage for checkpoints and job state. Use integrations and secrets for authentication. Keeping those separate makes the workflow easier to inspect and change.',
+				'Put repeatable steps and task defaults in package code and documentation. Use memory sparingly for facts without a better home. Use package storage for checkpoints and job state. Use integrations and secrets for authentication. Keeping those separate makes the workflow easier to inspect and change.',
 			],
 		},
 		{

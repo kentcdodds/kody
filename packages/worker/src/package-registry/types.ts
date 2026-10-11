@@ -107,6 +107,42 @@ export type PackageSecretMountDefinition = z.infer<
 	typeof packageSecretMountDefinitionSchema
 >
 
+export const packageCredentialKindValues = ['secret', 'oauth', 'mcp'] as const
+export type PackageCredentialKind = (typeof packageCredentialKindValues)[number]
+
+/**
+ * Slot names land inside `{{secret:NAME}}`-style placeholders, so they use the
+ * placeholder name characters. `@` and `/` stay out: `@me/NAME` and
+ * `{{secret/provider:ref}}` are reference grammar, not names.
+ */
+export const packageCredentialSlotNamePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
+
+export const packageCredentialSlotSchema = z.strictObject({
+	kind: z.enum(packageCredentialKindValues),
+	/** Free-form provider label (for example `google` or `1password`). */
+	provider: z.string().trim().min(1).max(64),
+	/** The package picks among several assigned accounts with `{ account }`. */
+	multiple: z.boolean().optional(),
+	/** Shown when someone assigns a credential to this slot. */
+	description: z.string().trim().min(1).max(500),
+})
+
+export type PackageCredentialSlot = z.infer<typeof packageCredentialSlotSchema>
+
+export const packageCredentialsSchema = z
+	.record(z.string(), packageCredentialSlotSchema)
+	.superRefine((slots, ctx) => {
+		for (const name of Object.keys(slots)) {
+			if (packageCredentialSlotNamePattern.test(name)) continue
+			ctx.addIssue({
+				code: 'custom',
+				path: [name],
+				message:
+					'Credential slot names start with a letter and use letters, numbers, dots, underscores, or hyphens (max 64).',
+			})
+		}
+	})
+
 export const packageSubscriptionDefinitionSchema = z.object({
 	handler: z.string().min(1),
 	description: z.string().min(1).optional(),
@@ -586,6 +622,7 @@ export const authoredPackageKodySchema = z.object({
 	category: z.enum(communityPackageCategories).optional(),
 	searchText: z.string().min(1).optional(),
 	dependencies: kodyPackageDependenciesSchema.optional(),
+	credentials: packageCredentialsSchema.optional(),
 	secretMounts: z
 		.record(z.string().min(1), packageSecretMountDefinitionSchema)
 		.optional(),

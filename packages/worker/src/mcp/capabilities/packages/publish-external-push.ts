@@ -649,24 +649,44 @@ async function runExternalPublishAttempt(input: {
 						? `Already published after ${publishMs}ms — snapshot changed, rebuilding artifacts…`
 						: `Already published after ${publishMs}ms — confirming artifacts match this commit…`,
 				})
-				const { durationMs: rebuildMs } = await timePublishExternalPushPhase(
-					{
-						phase: 'rebuild',
-						sourceId: input.source.id,
-						publishedCommit,
-					},
-					async () => {
-						await rebuildPublishedPackageArtifactsViaRepoSession({
-							env: input.env,
-							rpcSessionId: sessionId,
+				const { durationMs: rebuildMs, value: rebuildOutcome } =
+					await timePublishExternalPushPhase(
+						{
+							phase: 'rebuild',
 							sourceId: input.source.id,
-							userId: input.ownerUserId,
 							publishedCommit,
-							baseUrl: input.baseUrl,
-							...(forceRebuild ? { force: true } : {}),
-						})
-					},
-				)
+						},
+						async () => {
+							try {
+								await rebuildPublishedPackageArtifactsViaRepoSession({
+									env: input.env,
+									rpcSessionId: sessionId,
+									sourceId: input.source.id,
+									userId: input.ownerUserId,
+									publishedCommit,
+									baseUrl: input.baseUrl,
+									...(forceRebuild ? { force: true } : {}),
+								})
+								return { ok: true as const }
+							} catch (error) {
+								if (isTransientDurableObjectResetError(error)) {
+									throw error
+								}
+								return {
+									ok: false as const,
+									failedCheck: bundleCheckFailedFromRebuildError(error),
+								}
+							}
+						},
+					)
+				if (!rebuildOutcome.ok) {
+					return {
+						status: 'checks_failed' as const,
+						failed_checks: [rebuildOutcome.failedCheck],
+						manifest: null,
+						run_id: crypto.randomUUID(),
+					}
+				}
 				const { durationMs: dependentsMs, value: alreadyPublishedExtras } =
 					await timePublishExternalPushPhase(
 						{
@@ -1002,7 +1022,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 						phase_timings: withPublishAttemptTotalMs({}, escalateStartedAt),
 					}
 				case 'failed':
-					throw new Error(outcome.error)
+					// Preserve typed errors (EntitlementLimitError, …) for toApiError.
+					if (outcome.error instanceof Error) throw outcome.error
+					throw new Error(getErrorMessage(outcome.error))
 				default: {
 					const exhaustive: never = outcome
 					throw new Error(

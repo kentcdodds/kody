@@ -47,8 +47,8 @@ export function AccountWebhooksRoute(handle: Handle) {
 	const webhooksData = createRouteData({
 		key: 'accountWebhooks',
 		locationKey: getWebhooksDataLatchKey,
-		async load(_href, signal) {
-			const result = await fetchAccountWebhooks(signal)
+		async load(href, signal) {
+			const result = await fetchAccountWebhooks(href, signal)
 			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
 			return result.payload
 		},

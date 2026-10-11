@@ -27,17 +27,13 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 		readAdminEntitlementConsumption({
 			env,
 			usageUserId: ownerIdFromStored('grant'),
-			plan: 'standard',
-			ladder: 'public',
-			creditWallet: 'none',
+			entitlement: { plan: 'standard', ladder: 'public', creditWallet: 'none' },
 			now,
 		}),
 		readAdminEntitlementConsumption({
 			env,
 			usageUserId: ownerIdFromStored('grant'),
-			plan: 'standard',
-			ladder: 'legacy',
-			creditWallet: 'none',
+			entitlement: { plan: 'standard', ladder: 'legacy', creditWallet: 'none' },
 			now,
 		}),
 	])
@@ -63,15 +59,9 @@ test('readAdminEntitlementConsumption scores inbound receives against an optiona
 	const consumption = await readAdminEntitlementConsumption({
 		env,
 		usageUserId: ownerIdFromStored('gifted'),
-		plan: 'pro',
-		ladder: 'public',
-		creditWallet: 'none',
+		entitlement: { plan: 'pro', ladder: 'public', creditWallet: 'none' },
 		now,
-		inboundReceive: {
-			plan: 'free',
-			ladder: 'public',
-			creditWallet: 'none',
-		},
+		inboundReceive: { plan: 'free', ladder: 'public', creditWallet: 'none' },
 	})
 	const receives = consumption.find(
 		(item) => item.resource === 'email_receives_per_day',

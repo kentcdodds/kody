@@ -5,7 +5,7 @@ import {
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { resolvePlanLimit } from '#universal/plans.ts'
+import { resolveEntitlementLimit } from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -286,6 +286,7 @@ export async function handleInboundEmail(
 			})
 			const account = {
 				email: identity.email,
+				entitlement: accountEntitlement,
 				plan: accountEntitlement.plan,
 				ladder: accountEntitlement.ladder,
 				creditWallet: accountEntitlement.creditWallet,
@@ -415,11 +416,9 @@ export async function handleInboundEmail(
 				env,
 				userId,
 			})
-			const keepCap = resolvePlanLimit(
-				account.plan,
+			const keepCap = resolveEntitlementLimit(
+				account.entitlement,
 				'email_message_bytes',
-				account.ladder,
-				account.creditWallet,
 			)
 			let prepared
 			try {
@@ -516,11 +515,9 @@ export async function handleInboundEmail(
 								ownerId: userId,
 							}),
 					})
-					const receiveLimit = resolvePlanLimit(
-						account.plan,
+					const receiveLimit = resolveEntitlementLimit(
+						account.entitlement,
 						'email_receives_per_day',
-						account.ladder,
-						account.creditWallet,
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
@@ -572,11 +569,9 @@ export async function handleInboundEmail(
 					const chargeResult = await authority.charge({
 						delivery: chargeCandidate,
 						plan: account.plan,
-						limit: resolvePlanLimit(
-							account.plan,
+						limit: resolveEntitlementLimit(
+							account.entitlement,
 							'email_receives_per_day',
-							account.ladder,
-							account.creditWallet,
 						),
 						now: quotaNow,
 					})

@@ -113,6 +113,7 @@ function createFleetDb(input: {
 							has('sum(total_duration_ms)', 'user_id in'),
 							byUser(input.runtimeByUser, 'total_duration_ms'),
 						],
+						[has('from org_limit_overrides'), []],
 					]
 					const route = routes.find(([matches]) => matches)
 					if (!route) throw new Error(`Unsupported fleet query: ${query}`)
@@ -166,8 +167,8 @@ function consumptionCalls() {
 	return entitlementMocks.readAdminEntitlementConsumption.mock.calls.map(
 		([input]) => ({
 			usageUserId: input.usageUserId,
-			plan: input.plan,
-			ladder: input.ladder,
+			plan: input.entitlement.plan,
+			ladder: input.entitlement.ladder,
 			inboundReceivePlan: input.inboundReceive?.plan ?? null,
 		}),
 	)
@@ -394,7 +395,7 @@ test('fleet entitlement pressure scores legacy Standard against the legacy outbo
 				'outbound_fetches_per_day',
 				'outbound fetches / day',
 				outboundCurrent,
-				input.ladder === 'legacy'
+				input.entitlement.ladder === 'legacy'
 					? legacyStandardOutboundLimit
 					: publicStandardOutboundLimit,
 			),
@@ -489,8 +490,10 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
 		async (input) => {
 			const packageLimit =
-				input.plan === 'free' ? freePackageLimit : publicProPackageLimit
-			const receivePlan = input.inboundReceive?.plan ?? input.plan
+				input.entitlement.plan === 'free'
+					? freePackageLimit
+					: publicProPackageLimit
+			const receivePlan = input.inboundReceive?.plan ?? input.entitlement.plan
 			const receiveLimit =
 				receivePlan === 'free' ? freeReceiveLimit : publicProReceiveLimit
 			return [

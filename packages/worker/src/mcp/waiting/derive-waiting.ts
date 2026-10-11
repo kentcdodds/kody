@@ -453,10 +453,7 @@ async function collectEntitlementCaps(
 			db: env.APP_DB,
 			env,
 			usageUserId: user.stableUserId,
-			plan: entitlement.plan,
-			ladder: entitlement.ladder,
-			creditWallet: entitlement.creditWallet,
-			seats: entitlement.seats,
+			entitlement,
 			now,
 		})
 		return snapshot.resources

@@ -46,7 +46,7 @@ export function ComposioAlternativesPage(handle: Handle) {
 						<p>Give your agents more than a connection.</p>
 						<p class="lead">
 							Connect your accounts, build useful tools with your agent, and
-							keep the code, preferences, and schedules together in Kody.
+							keep the code, task defaults, and schedules together in Kody.
 						</p>
 						<a href="#ownership">See how it works ↓</a>
 					</div>

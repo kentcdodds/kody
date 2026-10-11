@@ -230,8 +230,8 @@ export function GmailPage(handle: Handle) {
 						</p>
 						<p>
 							Keep processing progress in package storage so the next run knows
-							which messages it already handled. Use memory for preferences, and
-							package storage to track which emails you’ve handled.
+							which messages it already handled. Build reply rules, such as
+							quoting the thread, into the package and document its defaults.
 						</p>
 					</div>
 					<a href="/use-cases/scheduled-workflows">

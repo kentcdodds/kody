@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import {
 	type AccountIntegrationListItem,
 	type AccountIntegrationsLoaderData,
@@ -225,6 +226,7 @@ export async function accountIntegrationsRouteLoader(
 	const response = await fetch(buildIntegrationsApiHref(url.toString()), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(url.href),
 		signal,
 	})
 	if (response.status === 401) {

@@ -160,8 +160,31 @@ export async function ensureUsersTestSchema(input: {
 		// earlier suite sharing this database.
 	}
 	await ensureCreditWalletsTestTable(input.db)
+	await ensureOrgLimitOverridesTestTable(input.db)
 	await ensureOrgsTestSchema(input.db)
 	await ensureSoftDeleteTestColumns(input.db)
+}
+
+/**
+ * Mirrors `org_limit_overrides` from `0103-org-limit-overrides.sql`. Every
+ * entitlement resolution reads it, so it is created with `users`.
+ */
+export async function ensureOrgLimitOverridesTestTable(db: D1Database) {
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS org_limit_overrides (
+	org_id TEXT NOT NULL,
+	limit_key TEXT NOT NULL,
+	limit_value INTEGER CHECK (limit_value IS NULL OR limit_value >= 0),
+	reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+	expires_at TEXT,
+	set_by_user_id TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	PRIMARY KEY (org_id, limit_key)
+)`,
+		)
+		.run()
 }
 
 /**

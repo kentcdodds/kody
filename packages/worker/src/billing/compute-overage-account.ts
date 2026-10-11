@@ -7,11 +7,13 @@ import {
 	computeOverageWarningResourceLabels,
 	isCustomerFacingComputeMeter,
 	resolveComputeIncludeCreditsStatus,
+	resolvePastIncludeStopLimits,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
 	type CreditWalletState,
 	type EntitlementLadder,
+	type LimitOverride,
 	type PlanName,
 } from '#universal/plans.ts'
 import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
@@ -37,6 +39,7 @@ export async function readAccountComputeOverage(input: {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
+	limitOverrides?: ReadonlyArray<LimitOverride>
 	now: Date
 }): Promise<AccountUsageComputeOverage> {
 	const month = utcMonthKey(input.now)
@@ -52,19 +55,26 @@ export async function readAccountComputeOverage(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
+	// An empty wallet is never debited, so its include is where runs stop
+	// (raised by a monthly override); a funded wallet pays past the plan
+	// include.
+	const stopAt =
+		input.creditWallet === 'empty' ? resolvePastIncludeStopLimits(input) : null
 	// Both debit meters are customer-facing (Worker compute + Rows read).
 	const meters = [
 		toComputeMeter({
 			resource: 'unique_worker_days',
 			current: usage.uniqueWorkerDays,
-			include: overage.includedUniqueWorkerDays,
+			include: stopAt?.unique_worker_days ?? overage.includedUniqueWorkerDays,
 			plan: input.plan,
 			creditWallet: input.creditWallet,
 		}),
 		toComputeMeter({
 			resource: 'durable_object_rows_read',
 			current: usage.durableObjectRowsRead,
-			include: overage.includedDurableObjectRowsRead,
+			include:
+				stopAt?.durable_object_rows_read ??
+				overage.includedDurableObjectRowsRead,
 			plan: input.plan,
 			creditWallet: input.creditWallet,
 		}),

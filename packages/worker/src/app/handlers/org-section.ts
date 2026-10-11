@@ -12,7 +12,7 @@ import {
 import { loadOrgRepositoriesData } from '#app/org-repositories-data.ts'
 import {
 	loadRequestOrgResolution,
-	type RequestOrgResolution,
+	orgSectionDenial,
 } from '#app/org-request-binding.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createAccountActivityHandler } from '#app/handlers/account-activity.ts'
@@ -129,25 +129,6 @@ function sectionParams(
 			return exhaustive
 		}
 	}
-}
-
-/**
- * Why `/@slug/-/<section>` is closed to this person, or null when it is open.
- */
-export function orgSectionDenial(
-	resolution: RequestOrgResolution,
-	section: OrgOwnedAccountSection,
-): string | null {
-	if (resolution === 'denied' || resolution === 'personal') {
-		return 'Organization unavailable'
-	}
-	// A grant without a membership is not access to the whole workspace.
-	// Connections only lists the viewer's own agents bound to this org, which
-	// is how a collaborator starts using what was shared with them.
-	if (resolution.role == null && section !== 'connections') {
-		return 'Organization resources unavailable'
-	}
-	return null
 }
 
 /** Team-org packages are org-owned. The signup org keeps the person's profile list. */

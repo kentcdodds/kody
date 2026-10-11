@@ -5,6 +5,8 @@ import { adminCommunityActivityListCapability } from './admin-community-activity
 import { adminCreditEligibilitySetCapability } from './admin-credit-eligibility-set.ts'
 import { adminCreditGrantCapability } from './admin-credit-grant.ts'
 import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
+import { adminOrgLimitOverridesSetCapability } from './admin-org-limit-overrides-set.ts'
+import { adminOrgLimitsGetCapability } from './admin-org-limits-get.ts'
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
@@ -48,6 +50,7 @@ import { adminReservedUsernameListCapability } from './admin-reserved-username-l
 import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
 import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-account-purge-run.ts'
 import { adminSoftDeletePurgeRunCapability } from './admin-soft-delete-purge-run.ts'
+import { adminPublishedImportableArtifactBackfillCapability } from './admin-published-importable-artifact-backfill.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -86,10 +89,14 @@ export const adminDomain = defineDomain({
 		'retention',
 		'unverified account purge',
 		'soft delete purge',
+		'published importable artifact backfill',
+		'missing artifacts',
 		'reserved username',
 		'credits',
 		'credit grant',
 		'credit eligibility',
+		'limit overrides',
+		'org limits',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -117,11 +124,14 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodDryRunCapability,
 		adminPackageCodemodApplyCapability,
 		adminPackageCodemodRevertCapability,
+		adminPublishedImportableArtifactBackfillCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
 		adminCreditWalletGetCapability,
 		adminCreditGrantCapability,
 		adminCreditEligibilitySetCapability,
+		adminOrgLimitsGetCapability,
+		adminOrgLimitOverridesSetCapability,
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,

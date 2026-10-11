@@ -2,13 +2,12 @@ import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	entitlementResourceLabels,
-	isWeeklyComputeWindowResource,
-	resolvePlanLimit,
-	resolveWeeklyPlanLimit,
-	type CreditWalletState,
-	type EntitlementLadder,
+	limitForResource,
+	resolveEntitlementLimits,
+	weeklyLimitForResource,
 	type EntitlementResource,
 	type PlanName,
+	type UserEntitlement,
 } from '#universal/plans.ts'
 import {
 	accountUsageEntitlementResources,
@@ -24,7 +23,6 @@ import {
 import {
 	dailyEntitlementResources,
 	isDailyEntitlementResource,
-	type DailyEntitlementResource,
 } from './user-meter-do.ts'
 import { listUserStorageBucketEstimates } from '#worker/storage-buckets/service.ts'
 
@@ -70,24 +68,15 @@ export async function readEntitlementUsageSnapshot(input: {
 	db: D1Database
 	env: Env
 	usageUserId: OwnerId
-	plan: PlanName
-	ladder: EntitlementLadder
-	creditWallet: CreditWalletState
-	/** Paid seats pooling the rate limits; see `UserEntitlement.seats`. */
-	seats?: number
+	/** Effective entitlement: plan, seat pool, and limit overrides. */
+	entitlement: UserEntitlement
 	now?: Date
 }): Promise<EntitlementUsageSnapshot> {
 	const now = input.now ?? new Date()
+	const { entitlement } = input
+	const limits = resolveEntitlementLimits(entitlement, now)
 	const weeklyResources = accountUsageDailyMeterResources.filter(
-		(resource) =>
-			isWeeklyComputeWindowResource(resource) &&
-			resolveWeeklyPlanLimit(
-				input.plan,
-				resource,
-				input.ladder,
-				input.creditWallet,
-				input.seats,
-			) !== null,
+		(resource) => weeklyLimitForResource(limits, resource) !== null,
 	)
 	const nonMeterResources = accountUsageEntitlementResources.filter(
 		(resource) =>
@@ -144,20 +133,12 @@ export async function readEntitlementUsageSnapshot(input: {
 			nonMeterByResource,
 		})
 		const week = resolveSnapshotWeekWindow({
-			resource,
-			plan: input.plan,
-			ladder: input.ladder,
-			creditWallet: input.creditWallet,
-			seats: input.seats,
-			weeklyCounts: meterCounts.weekly,
+			limit: weeklyLimitForResource(limits, resource),
+			current: isDailyEntitlementResource(resource)
+				? (meterCounts.weekly[resource] ?? 0)
+				: 0,
 		})
-		const limit = resolvePlanLimit(
-			input.plan,
-			resource,
-			input.ladder,
-			input.creditWallet,
-			input.seats,
-		)
+		const limit = limitForResource(limits, resource)
 		// per_unit_max compares one candidate value (no accumulating
 		// usage) and a zero limit means the plan has no allowance, so a
 		// current/limit ratio is meaningless for both.
@@ -175,8 +156,8 @@ export async function readEntitlementUsageSnapshot(input: {
 			whatCounts: visibility.whatCounts,
 			howToReduce: buildEntitlementHowToReduce(
 				resource,
-				input.plan,
-				input.creditWallet,
+				entitlement.plan,
+				entitlement.creditWallet,
 			),
 			current,
 			limit,
@@ -186,7 +167,7 @@ export async function readEntitlementUsageSnapshot(input: {
 		}
 	})
 	return {
-		plan: input.plan,
+		plan: entitlement.plan,
 		today: utcDayKey(now),
 		weekStart: utcWeekStart(now),
 		resources,
@@ -212,23 +193,11 @@ function resolveSnapshotCurrent(input: {
 }
 
 function resolveSnapshotWeekWindow(input: {
-	resource: EntitlementResource
-	plan: PlanName
-	ladder: EntitlementLadder
-	creditWallet: CreditWalletState
-	seats?: number
-	weeklyCounts: Partial<Record<DailyEntitlementResource, number>>
+	limit: number | null
+	current: number
 }): EntitlementUsageWeekWindow | undefined {
-	if (!isWeeklyComputeWindowResource(input.resource)) return undefined
-	const limit = resolveWeeklyPlanLimit(
-		input.plan,
-		input.resource,
-		input.ladder,
-		input.creditWallet,
-		input.seats,
-	)
+	const { limit, current } = input
 	if (limit === null) return undefined
-	const current = input.weeklyCounts[input.resource] ?? 0
 	const percentOfLimit = limit === 0 ? null : current / limit
 	return {
 		current,

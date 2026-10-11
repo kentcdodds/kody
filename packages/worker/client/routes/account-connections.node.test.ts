@@ -527,3 +527,51 @@ test('the connections loader names the destination org page as referrer', async 
 		vi.unstubAllGlobals()
 	}
 })
+
+test('the connections loader binds usage to the destination org, skips it on Add connection, and never waits long for it', async () => {
+	vi.stubGlobal('window', { location: { origin: 'https://kody.test' } })
+	const agentsPayload = { ok: true, agents: [], mcpServerUrl: '' }
+	const fetchMock = vi.fn(
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input) === '/account/connection-usage.json') {
+				// Never answers until aborted, like a stalled usage request.
+				return new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('Aborted', 'AbortError')),
+					)
+				})
+			}
+			return new Response(JSON.stringify(agentsPayload), {
+				headers: { 'Content-Type': 'application/json' },
+			})
+		},
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	vi.useFakeTimers()
+	try {
+		const listLoad = accountConnectionsRouteLoader(
+			new URL('https://kody.test/@acme/-/connections'),
+			new AbortController().signal,
+		)
+		await vi.advanceTimersByTimeAsync(1500)
+		expect(await listLoad).toEqual({ accountConnectedAgents: agentsPayload })
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/account/connection-usage.json',
+			expect.objectContaining({
+				referrer: 'https://kody.test/@acme/-/connections',
+			}),
+		)
+
+		fetchMock.mockClear()
+		await accountConnectionsRouteLoader(
+			new URL('https://kody.test/@acme/-/connections/new'),
+			new AbortController().signal,
+		)
+		expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+			'/account/connected-agents.json',
+		])
+	} finally {
+		vi.useRealTimers()
+		vi.unstubAllGlobals()
+	}
+})

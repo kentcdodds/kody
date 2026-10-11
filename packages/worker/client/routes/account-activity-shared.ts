@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -223,6 +224,7 @@ export async function accountActivityRouteLoader(
 	const response = await fetch(buildActivityApiRequestUrl(href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) {

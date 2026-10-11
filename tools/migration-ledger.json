@@ -411,6 +411,10 @@
 		{
 			"filename": "0102-usage-connection-daily.sql",
 			"sha256": "370322c201b9e5592d0f1e05d74331024e716e442dea01eb61971d080475520f"
+		},
+		{
+			"filename": "0103-org-limit-overrides.sql",
+			"sha256": "859514295b13c7b019566fc4323cb12027168849c8c16b1e4128ebd3249ba181"
 		}
 	]
 }

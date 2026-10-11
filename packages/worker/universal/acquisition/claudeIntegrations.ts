@@ -3,7 +3,7 @@ import { type AcquisitionPage } from './types.ts'
 
 export const claudeIntegrations = {
 	...acquisitionPageMeta.claudeIntegrations,
-	lead: 'Give Claude access to your connected accounts, saved tools, and preferences through Kody. Build a workflow in one conversation, then use it again from Claude or another connected agent.',
+	lead: 'Give Claude access to your connected accounts, saved tools, and useful facts through Kody. Build a workflow in one conversation, then use it again from Claude or another connected agent.',
 	flow: [
 		'Connect Claude to Kody',
 		'Connect the services you need',
@@ -44,7 +44,7 @@ export const claudeIntegrations = {
 		{
 			title: 'Keep the result of the conversation',
 			paragraphs: [
-				'If you repeat the same steps each week, save them in a package. If you repeat the same preference across agents, save it as a memory. If you need the operation to run later, declare a job or use a workflow.',
+				'Save repeated steps and task defaults in a documented package. Use memory only for facts that don’t fit in the package or another system. If you need the operation to run later, declare a job or use a workflow.',
 				'You can start in Claude and continue from another connected agent using the same Kody account. This carries the saved resources, not the full conversation history or every client-specific feature.',
 			],
 		},
@@ -54,7 +54,7 @@ export const claudeIntegrations = {
 			steps: [
 				'Pick a read-only operation, such as finding releases for a repository or inspecting a selected service resource.',
 				'Connect the required account and run the operation. Check which account it used and what came back.',
-				'Save useful code as a package, or a preference you’ll use again as a memory.',
+				'Save useful code and its defaults in a package so another agent can run the same workflow.',
 				'Connect a second agent to the same account and verify it can find the saved resource.',
 			],
 		},
@@ -62,7 +62,7 @@ export const claudeIntegrations = {
 			title: 'Give Claude a workflow it can use again',
 			paragraphs: [
 				'Look up an email, turn a group of messages into a report, or build a tool around a task you repeat. Kody keeps the useful code so your agents can run it again.',
-				'Start with Gmail, a custom tool, or a preference you want Claude to remember. Add more as you need them.',
+				'Start with Gmail, a custom tool, or a useful fact that isn’t stored elsewhere. Add more as you need them.',
 			],
 		},
 	],

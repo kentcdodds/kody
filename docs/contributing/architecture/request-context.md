@@ -86,10 +86,17 @@ id, so those keys do not move. Package import lookup, account resource pages,
 secrets, jobs, and execute usage go through that function. A same-origin
 `/account/<section>.json` fetch from an org page binds that org via Referer.
 Route loaders run before the client router commits the URL, so they pass the
-destination page as `referrer` (`orgAccountApiReferrer`). When the Referer names
-an org the person cannot use, the handler returns 404
-(`deniedOrgAccountApiResponse`) instead of the signup-org fallback in
-`readAuthenticatedAppUser`.
+destination page as `referrer` (`orgAccountApiReferrer`).
+
+Every org-bound request passes the router-wide org binding guard
+(`packages/worker/src/app/org-binding-guard-middleware.ts`) before its handler.
+When the `/@slug/-/…` URL or the account JSON Referer names an org the person
+cannot use, or a section `orgSectionDenial` closes to them, the guard returns
+404 instead of the signup-org fallback in `readAuthenticatedAppUser`. Handlers
+do not opt in. `org-binding-guard-middleware.node.test.ts` walks the route
+table, so a new `/@:orgSlug/-/…` route or an `/account/<section>.json` route
+named after an org section fails until the guard covers it or the route is
+listed as person-scoped with a reason.
 
 ## What to read when changing it
 

@@ -19,9 +19,11 @@ import {
 	type CreditDebitMeter,
 } from './credits.ts'
 import {
+	applyLimitOverrides,
 	creditsUnlockedResources,
 	type CreditWalletState,
 	type EntitlementLadder,
+	type LimitOverride,
 	type PlanName,
 	resolvePlanLimits,
 } from './plans.ts'
@@ -213,6 +215,12 @@ export type PastIncludeStop = {
  * wallet, or `null` when nothing is stopped. Only `empty` stops: a funded
  * wallet pays past the include, and plans without a wallet keep their hard
  * rate caps instead. Worker compute wins when both meters are past.
+ *
+ * The stop fires past the include, or past an admin override of that
+ * monthly cap when one is set (`unique_worker_days_per_month`,
+ * `durable_object_rows_read_per_month`). Overrides move only the stop:
+ * debits always settle against the plan include
+ * ({@link computeMonthlyOverageForDebit}).
  */
 export function resolvePastIncludeStop(input: {
 	plan: PlanName
@@ -220,24 +228,51 @@ export function resolvePastIncludeStop(input: {
 	creditWallet: CreditWalletState
 	uniqueWorkerDays: number
 	durableObjectRowsRead: number
+	limitOverrides?: ReadonlyArray<LimitOverride>
+	now?: Date
 }): PastIncludeStop | null {
 	if (input.creditWallet !== 'empty') return null
-	const overage = computeMonthlyOverage(input)
-	if (overage.billableUniqueWorkerDays > 0) {
+	const stopAt = resolvePastIncludeStopLimits(input)
+	const uniqueWorkerDays = nonNegativeInteger(input.uniqueWorkerDays)
+	if (uniqueWorkerDays > stopAt.unique_worker_days) {
 		return {
 			resource: 'unique_worker_days',
-			limit: overage.includedUniqueWorkerDays,
-			current: nonNegativeInteger(input.uniqueWorkerDays),
+			limit: stopAt.unique_worker_days,
+			current: uniqueWorkerDays,
 		}
 	}
-	if (overage.billableDurableObjectRowsRead > 0) {
+	const durableObjectRowsRead = nonNegativeInteger(input.durableObjectRowsRead)
+	if (durableObjectRowsRead > stopAt.durable_object_rows_read) {
 		return {
 			resource: 'durable_object_rows_read',
-			limit: overage.includedDurableObjectRowsRead,
-			current: nonNegativeInteger(input.durableObjectRowsRead),
+			limit: stopAt.durable_object_rows_read,
+			current: durableObjectRowsRead,
 		}
 	}
 	return null
+}
+
+/**
+ * Where an empty wallet stops: the plan include, or a higher admin override
+ * of that monthly cap. Stop warnings and alarms compare against this so they
+ * never report runs as stopped while the override still admits them.
+ */
+export function resolvePastIncludeStopLimits(input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	limitOverrides?: ReadonlyArray<LimitOverride>
+	now?: Date
+}): Record<ComputeOverageWarningResource, number> {
+	const stopAt = applyLimitOverrides(
+		resolvePlanLimits(input.plan, input.ladder, input.creditWallet),
+		input.limitOverrides,
+		input.now,
+	)
+	return {
+		unique_worker_days: stopAt.maxUniqueWorkerDaysPerMonth,
+		durable_object_rows_read: stopAt.maxDurableObjectRowsReadPerMonth,
+	}
 }
 
 export function computeOverageIncludePercent(

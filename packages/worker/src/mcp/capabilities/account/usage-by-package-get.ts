@@ -109,6 +109,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
 					creditWallet: entitlement.creditWallet,
+					limitOverrides: entitlement.limitOverrides,
 					now,
 				}),
 				resolvePublicUsername({

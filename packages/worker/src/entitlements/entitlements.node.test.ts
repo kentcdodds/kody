@@ -162,9 +162,17 @@ function createEntitlementsTestDb(
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
-					queries.push({ sql: query, params })
+					if (!query.includes('FROM org_limit_overrides')) {
+						queries.push({ sql: query, params })
+					}
 					return {
 						first: async () => first(query, params),
+						async all() {
+							if (query.includes('FROM org_limit_overrides')) {
+								return { results: [] }
+							}
+							throw new Error(`Unsupported all query: ${query}`)
+						},
 						async run() {
 							throw new Error(`Unsupported run query: ${query}`)
 						},
@@ -550,6 +558,7 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 					}
 					return { plan: 'pro', stripe_plan: null }
 				},
+				all: async () => ({ results: [] }),
 			}),
 		}),
 	} as unknown as D1Database
@@ -1189,11 +1198,13 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 		plan: 'standard',
 		ladder: 'legacy',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	expect(await getCachedUserEntitlement(db, context(publicUser!))).toEqual({
 		plan: 'standard',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 
 	const legacyLimit = legacyPlanLimits.standard.maxExecuteUniqueWorkersPerDay
