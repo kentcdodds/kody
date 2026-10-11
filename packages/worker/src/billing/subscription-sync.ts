@@ -32,13 +32,25 @@ import {
 	BillingNotConfiguredError,
 	getCheckoutSession,
 	listSubscriptions,
+	mergeStripeObjectMetadata,
 	StripeApiError,
 } from './stripe-client.ts'
 import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
 import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
-import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
+import {
+	buildOrgBillingMetadata,
+	resolveOrgIdFromStripeMetadata,
+} from './org-stripe-metadata.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+
+/**
+ * Success often races `checkout.session.completed`. When the webhook already
+ * linked and refreshed within this window, skip a second Stripe
+ * `listSubscriptions`. Older `stripe_plan` values (canceled-then-resubscribe)
+ * must still refresh.
+ */
+const checkoutLinkReplayFreshMs = 5 * 60 * 1000
 
 export class BillingLinkError extends Error {
 	readonly code:
@@ -620,12 +632,35 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 		throw error
 	}
 
-	// Success redirect often races the webhook. When the customer is already
-	// linked and stripe_plan is set, skip a second Stripe subscriptions list
-	// (the ~10s wait after Checkout redirects home).
+	// ADR 0065: Customers created by Checkout start without org metadata.
+	// Stamp after link so Stripe objects match the session/subscription keys.
+	// Best-effort: a metadata failure must not undo the D1 customer link.
+	try {
+		await mergeStripeObjectMetadata(input.env, {
+			object: 'customers',
+			id: customerId,
+			metadata: {
+				...buildOrgBillingMetadata(orgId),
+				...(session.metadata?.kody_plan?.trim()
+					? { kody_plan: session.metadata.kody_plan.trim() }
+					: {}),
+			},
+		})
+	} catch (error) {
+		console.warn('billing_link_customer_metadata_failed', {
+			orgId,
+			customerId,
+			error: error instanceof Error ? error.message : String(error),
+		})
+	}
+
+	// Success redirect often races the webhook. Skip a second subscriptions
+	// list only when this looks like that race (same customer, plan refreshed
+	// moments ago) — not when a previously linked customer buys again.
 	if (existingCustomerId === customerId) {
 		const linked = await input.env.APP_DB.prepare(
-			`SELECT stripe_plan, stripe_price_id, stripe_credits_eligible
+			`SELECT stripe_plan, stripe_price_id, stripe_credits_eligible,
+			        stripe_plan_refreshed_at
 			 FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 		)
 			.bind(orgId)
@@ -633,8 +668,16 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 				stripe_plan: string | null
 				stripe_price_id: string | null
 				stripe_credits_eligible: number | null
+				stripe_plan_refreshed_at: string | null
 			}>()
-		if (linked?.stripe_plan) {
+		const refreshedAtMs = linked?.stripe_plan_refreshed_at
+			? Date.parse(linked.stripe_plan_refreshed_at)
+			: Number.NaN
+		const freshlyRefreshed =
+			Number.isFinite(refreshedAtMs) &&
+			now.getTime() - refreshedAtMs >= 0 &&
+			now.getTime() - refreshedAtMs <= checkoutLinkReplayFreshMs
+		if (linked?.stripe_plan && freshlyRefreshed) {
 			return {
 				stripePlan: parseStripePlanName(linked.stripe_plan),
 				creditsEligible: linked.stripe_credits_eligible === 1,

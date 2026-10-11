@@ -6,8 +6,10 @@ import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
 import { readCreditWallet } from './credit-wallet.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 const webhookSecret = 'whsec_test_workers_secret'
 const now = new Date('2026-07-25T12:00:00.000Z')
@@ -139,9 +141,16 @@ function subscriptionList(id: string, status: string, item = {}) {
 	}
 }
 
-function stubFetch(handler: (url: string) => Response | Promise<Response>) {
-	const fetchStub = vi.fn(async (request: RequestInfo | URL) =>
-		handler(String(request)),
+function stubFetch(
+	handler: (
+		url: string,
+		init?: RequestInit,
+		request?: RequestInfo | URL,
+	) => Response | Promise<Response>,
+) {
+	const fetchStub = vi.fn(
+		async (request: RequestInfo | URL, init?: RequestInit) =>
+			handler(String(request), init, request),
 	)
 	vi.stubGlobal('fetch', fetchStub)
 	return Object.assign(fetchStub, {
@@ -153,9 +162,15 @@ function stubStripeFetch(input: {
 	checkout?: unknown
 	subscriptions: unknown
 }) {
-	return stubFetch((url) => {
+	return stubFetch((url, init) => {
 		if (url.includes('/v1/checkout/sessions/')) {
 			return jsonResponse(input.checkout)
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_metadata' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(input.subscriptions)
@@ -591,6 +606,48 @@ test('checkout.session.completed for a credit top-up credits the wallet once and
 			String(request).includes('/v1/subscriptions'),
 		),
 	).toBe(false)
+})
+
+test('subscription.updated with team org metadata defers until the customer is linked', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-unlinked-wh-${crypto.randomUUID()}@example.com`,
+	)
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	// No Stripe listSubscriptions: refresh must not run before checkout link.
+	using _fetch = noFetch('unlinked team subscription.updated')
+	const result = await deliver({
+		id: `evt_team_meta_${crypto.randomUUID()}`,
+		type: 'customer.subscription.updated',
+		data: {
+			object: {
+				id: 'sub_team_meta',
+				customer: 'cus_team_meta',
+				status: 'active',
+				metadata: {
+					kody_org_id: ownerIdFromStored(teamOrgId),
+					kody_stable_user_id: ownerIdFromStored(teamOrgId),
+				},
+			},
+		},
+	})
+	expect(result).toEqual({ status: 200, body: { ok: true } })
+	const org = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id, stripe_plan FROM orgs WHERE id = ?`,
+	)
+		.bind(teamOrgId)
+		.first<{ stripe_customer_id: string | null; stripe_plan: string | null }>()
+	expect(org).toEqual({ stripe_customer_id: null, stripe_plan: null })
 })
 
 test('checkout.session.expired releases a reserved promo claim but never a finalized one', async () => {

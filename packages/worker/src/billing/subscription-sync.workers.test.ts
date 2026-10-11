@@ -130,9 +130,16 @@ function stubStripeFetch(input: {
 	subscriptions?: unknown
 	subscriptionsStatus?: number
 }) {
-	return stubFetch((url) => {
+	return stubFetch((url, init) => {
 		if (url.includes('/v1/checkout/sessions/')) {
 			return jsonResponse(input.checkout)
+		}
+		// Checkout link stamps customer metadata in waitUntil after D1 link.
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_metadata' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(
@@ -360,6 +367,12 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 				customer: 'cus_discord_pro',
 				client_reference_id: user.linkReference,
 			})
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_discord_pro' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(subscriptionList('sub_discord_pro', 'active'))
@@ -673,13 +686,20 @@ test('checkout link replay skips Stripe subscription refresh when already linked
 		.run()
 	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
 	let subscriptionListCalls = 0
-	using _fetch = stubFetch((url) => {
+	using _fetch = stubFetch((url, init) => {
 		if (url.includes('/v1/checkout/sessions/')) {
 			return jsonResponse({
 				id: 'cs_replay',
 				customer: 'cus_replay',
 				client_reference_id: orgLinkReference,
+				metadata: { kody_plan: 'pro' },
 			})
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_replay' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			subscriptionListCalls += 1
@@ -707,6 +727,22 @@ test('checkout link replay skips Stripe subscription refresh when already linked
 	expect(second.creditsEligible).toBe(true)
 	// Webhook-then-success: second pass must not list subscriptions again.
 	expect(subscriptionListCalls).toBe(1)
+
+	// Stale stripe_plan_refreshed_at (canceled-then-resubscribe) must refresh.
+	await env.APP_DB.prepare(
+		`UPDATE orgs SET stripe_plan = 'standard',
+		 stripe_plan_refreshed_at = ? WHERE id = ?`,
+	)
+		.bind(new Date(now.getTime() - 60 * 60 * 1000).toISOString(), teamOrgId)
+		.run()
+	const third = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now: new Date(now.getTime() + 2000),
+	})
+	expect(third.stripePlan).toBe('pro')
+	expect(subscriptionListCalls).toBe(2)
 })
 
 test('a completed checkout with promo metadata records the claim for that person once', async () => {

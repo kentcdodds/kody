@@ -271,11 +271,23 @@ async function handleCustomerSubscriptionChange(input: {
 			result = { userId: user.id, orgId: orgOrUserHint, resolved }
 		} else {
 			const org = await input.env.APP_DB.prepare(
-				`SELECT id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+				`SELECT id, stripe_customer_id FROM orgs
+				 WHERE id = ? AND deleted_at IS NULL`,
 			)
 				.bind(orgOrUserHint)
-				.first<{ id: OwnerId }>()
+				.first<{ id: OwnerId; stripe_customer_id: string | null }>()
 			if (org?.id) {
+				// Subscription objects may carry kody_org_id before
+				// checkout.session.completed links stripe_customer_id. Refreshing
+				// an unlinked team org throws and Stripe retries forever; defer
+				// to the checkout link webhook instead.
+				if (org.stripe_customer_id !== customerId) {
+					console.info('stripe_webhook_subscription_org_not_linked_yet', {
+						orgId: org.id,
+						customerId,
+					})
+					return
+				}
 				const resolved = await refreshStripePlanForOrg({
 					env: input.env,
 					orgId: org.id,
