@@ -519,6 +519,11 @@ async function resolvePackageSecretMount(
 		access: credential.access,
 	})
 	subject.resourceKey = mount.name
+	if (credential.access === 'raw' && input.packageStamp?.kind !== 'attested') {
+		throw new PackageSecretRawAccessError(
+			`packageSecrets.get reads raw slot "${credential.alias}" of ${packageInfo.savedPackage.name} only when Kody runs the package's code itself. Local execute (--local) names the package from the client, which Kody cannot verify, so the raw value is not returned there. Run the package with cloud execute, or send the value with {{secret:${credential.alias}}} in a header through the fetch gateway.`,
+		)
+	}
 	await authorizeActorUse(
 		input,
 		'secret:use',

@@ -23,7 +23,7 @@ import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { attestedPackageStamp } from './package-stamp.ts'
+import { attestedPackageStamp, claimedPackageStamp } from './package-stamp.ts'
 import { resolveCredential } from './resolve-credential.ts'
 
 vi.mock('cloudflare:workers', async (importOriginal) => ({
@@ -149,12 +149,16 @@ async function setup() {
 			storageId: null,
 		},
 	})
-	const read = (alias: string, access: 'raw' | 'presence') =>
+	const read = (
+		alias: string,
+		access: 'raw' | 'presence',
+		stamp: typeof attestedPackageStamp = attestedPackageStamp,
+	) =>
 		resolveCredential({
 			env,
 			orgId,
 			actor: request,
-			packageStamp: attestedPackageStamp(packageId),
+			packageStamp: stamp(packageId),
 			baseUrl: 'https://example.com',
 			credential: {
 				use: 'package-secret-mount',
@@ -214,4 +218,22 @@ test('leak: packageSecrets.get without a raw slot fails with guidance and reads 
 			value: null,
 		})
 	}
+})
+
+test('leak: a claimed package stamp never reads a raw slot', async () => {
+	const t = await setup()
+	const resolveSecret = vi.spyOn(secretService, 'resolveSecret')
+	const error = await t.read('RAW_KEY', 'raw', claimedPackageStamp).then(
+		() => null,
+		(cause: unknown) => cause,
+	)
+	expect(error).toBeInstanceOf(PackageSecretRawAccessError)
+	expect((error as Error).message).toMatch(
+		/raw slot "RAW_KEY" of @owner\/signer only when Kody runs the package's code itself\. Local execute \(--local\)/,
+	)
+	expect((error as Error).message).not.toContain(values.RAW_KEY)
+	expect(resolveSecret).not.toHaveBeenCalled()
+	await expect(
+		t.read('RAW_KEY', 'presence', claimedPackageStamp),
+	).resolves.toMatchObject({ value: null })
 })

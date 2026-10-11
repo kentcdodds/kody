@@ -251,7 +251,7 @@ function approvalHosts(approvalCard: ApprovalView) {
  * One consent line per secret: where the package may send it and, for a raw
  * slot, its own line saying the package can read the value itself.
  */
-export function renderPackageCredentialConsent(props: {
+function renderPackageCredentialConsent(props: {
 	packageLabel: string
 	names: ReadonlyArray<string>
 	credentials: ReadonlyArray<PackageCredentialConsent> | undefined

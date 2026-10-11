@@ -167,9 +167,11 @@ the slot name; the org decides which credential fills it.
 - `raw: true` (secret slots only) lets the package's own code read the value
   with `packageSecrets.get(NAME)`. The consent page adds a line saying the
   package can read the raw value, and Kody redacts that value from run output.
-  Without `raw`, `packageSecrets.get` fails with guidance; send the value with a
-  `{{secret:<slot>}}` header placeholder instead. `packageSecrets.has` works for
-  any secret slot.
+  The value is returned only when Kody runs the package's code itself; local
+  execute (`--local`) names the package from the client, so it gets an error
+  instead. Without `raw`, `packageSecrets.get` fails with guidance; send the
+  value with a `{{secret:<slot>}}` header placeholder instead.
+  `packageSecrets.has` works for any secret slot.
 - Publish rejects any other key or a missing field and names the slot.
 - Once a package declares `kody.credentials`, the fetch gateway substitutes only
   its slots: `{{secret:NAME}}` names a secret slot and
