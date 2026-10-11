@@ -506,6 +506,9 @@ export const clientRoutes = {
 	[routePattern(routes.resetPassword)]: (
 		<LazyAuthRoute render={(m) => <m.ResetPasswordRoute />} />
 	),
+	[routePattern(routes.orgInviteJoin)]: (
+		<LazyAuthRoute render={(m) => <m.OrgInviteJoinRoute />} />
+	),
 	[routePattern(routes.verify)]: (
 		<LazyAuthRoute render={(m) => <m.VerifyRoute />} />
 	),

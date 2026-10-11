@@ -237,6 +237,12 @@ export const routes = route({
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
 	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
 	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgMembersInviteLinksPost: post('/@:orgSlug/-/members/invite-links.json'),
+	orgMembersInviteLinksRevokePost: post(
+		'/@:orgSlug/-/members/invite-links-revoke.json',
+	),
+	orgInviteJoin: get('/join/:token'),
+	orgInviteJoinPost: post('/join/:token'),
 	orgTeams: get('/@:orgSlug/-/teams'),
 	orgTeamsApi: get('/@:orgSlug/-/teams.json'),
 	orgTeamsCreatePost: post('/@:orgSlug/-/teams/create.json'),

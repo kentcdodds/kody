@@ -21,6 +21,15 @@ import {
 	updateOrgMemberRole,
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import {
+	createOrgInviteLink,
+	generateInviteLinkToken,
+	hashInviteLinkToken,
+	isInviteLinkRole,
+	listActiveOrgInviteLinks,
+	revokeOrgInviteLink,
+	type ListedInviteLink,
+} from '#worker/orgs/invite-links.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
@@ -36,13 +45,14 @@ import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import {
+	type OrgInviteLinkView,
 	type OrgInviteView,
 	type OrgMemberView,
 	type OrgMembersLoaderData,
 } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { orgRoleLabel } from '#universal/org-pages.ts'
-import { type routes } from '#universal/routes.ts'
+import { routes } from '#universal/routes.ts'
 
 const orgRoleValues = ['owner', 'member', 'billing'] as const
 
@@ -125,6 +135,38 @@ function toInviteView(invite: ListedOrgInvite): OrgInviteView {
 	}
 }
 
+function toInviteLinkView(link: ListedInviteLink): OrgInviteLinkView {
+	return {
+		id: link.id,
+		role: link.role,
+		roleLabel: orgRoleLabel(link.role),
+		allowedEmailDomains: link.allowedEmailDomains,
+		maxUses: link.maxUses,
+		useCount: link.useCount,
+		expiresAt: link.expiresAt,
+		createdAt: link.createdAt,
+		createdByUsername: link.createdByUsername,
+		createdByDisplayName: link.createdByDisplayName,
+	}
+}
+
+function parseDomainList(value: unknown): Array<string> | null {
+	if (value == null) return []
+	if (typeof value === 'string') {
+		return value
+			.split(/[\s,]+/)
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0)
+	}
+	if (Array.isArray(value)) {
+		return value
+			.filter((entry): entry is string => typeof entry === 'string')
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0)
+	}
+	return null
+}
+
 async function loadOrgMembersData(input: {
 	env: Env
 	user: Parameters<typeof orgHasPermission>[1]
@@ -135,10 +177,13 @@ async function loadOrgMembersData(input: {
 	const canManage =
 		!input.org.personal &&
 		(await orgHasPermission(input.env, input.user, 'member:write'))
-	const [members, invites] = await Promise.all([
+	const [members, invites, inviteLinks] = await Promise.all([
 		listOrgMembers(input.env.APP_DB, input.org.id),
 		canManage
 			? listPendingOrgInvites(input.env.APP_DB, input.org.id)
+			: Promise.resolve([]),
+		canManage
+			? listActiveOrgInviteLinks(input.env.APP_DB, input.org.id)
 			: Promise.resolve([]),
 	])
 	return {
@@ -146,6 +191,7 @@ async function loadOrgMembersData(input: {
 		org: input.org,
 		members: members.map(toMemberView),
 		invites: invites.map(toInviteView),
+		inviteLinks: inviteLinks.map(toInviteLinkView),
 		canManage,
 	}
 }
@@ -501,4 +547,195 @@ export function createOrgMembersInvitePostHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.orgMembersInvitePost>
+}
+
+export function createOrgMembersInviteLinksPostHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			const access = await resolveOrgManagementAccess({
+				request,
+				env,
+				user,
+				permission: 'member:write',
+			})
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
+			const body = await readJsonObject(request)
+			if (body?.role !== undefined && !isInviteLinkRole(body.role)) {
+				if (body.role === 'owner') {
+					return jsonResponse(
+						{
+							ok: false,
+							error: 'Invite links cannot grant the Owner role.',
+						},
+						400,
+					)
+				}
+				return jsonResponse({ ok: false, error: 'Choose a valid role.' }, 400)
+			}
+			const role = isInviteLinkRole(body?.role) ? body.role : 'member'
+			const domains = parseDomainList(
+				body?.allowedEmailDomains ?? body?.domains ?? body?.allowedDomains,
+			)
+			if (domains == null) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Allowed email domains must be a list or string.',
+					},
+					400,
+				)
+			}
+			let maxUses: number | null = null
+			if (
+				body?.maxUses !== undefined &&
+				body?.maxUses !== null &&
+				body?.maxUses !== ''
+			) {
+				const parsed =
+					typeof body.maxUses === 'number'
+						? body.maxUses
+						: typeof body.maxUses === 'string'
+							? Number(body.maxUses)
+							: NaN
+				if (!Number.isInteger(parsed) || parsed < 1) {
+					return jsonResponse(
+						{ ok: false, error: 'Max uses must be a positive integer.' },
+						400,
+					)
+				}
+				maxUses = parsed
+			}
+			let expiresAt: string | undefined
+			if (typeof body?.expiresAt === 'string' && body.expiresAt.trim()) {
+				const parsed = Date.parse(body.expiresAt)
+				if (Number.isNaN(parsed)) {
+					return jsonResponse(
+						{ ok: false, error: 'Enter a valid expiry date.' },
+						400,
+					)
+				}
+				expiresAt = new Date(parsed).toISOString()
+			} else if (
+				body?.expiresInDays !== undefined &&
+				body?.expiresInDays !== null &&
+				body?.expiresInDays !== ''
+			) {
+				const days =
+					typeof body.expiresInDays === 'number'
+						? body.expiresInDays
+						: typeof body.expiresInDays === 'string'
+							? Number(body.expiresInDays)
+							: NaN
+				if (!Number.isFinite(days) || days <= 0) {
+					return jsonResponse(
+						{ ok: false, error: 'Expiry days must be a positive number.' },
+						400,
+					)
+				}
+				expiresAt = new Date(
+					Date.now() + days * 24 * 60 * 60 * 1000,
+				).toISOString()
+			}
+			const token = generateInviteLinkToken()
+			const tokenHash = await hashInviteLinkToken(token)
+			try {
+				const created = await createOrgInviteLink({
+					db: env.APP_DB,
+					orgId: access.org.id,
+					role,
+					createdByUserId: user.mcpUser.userId,
+					tokenHash,
+					allowedEmailDomains: domains,
+					maxUses,
+					expiresAt,
+					audit: orgAuditWriterFromRequest(env, user.request),
+				})
+				const payload = await loadOrgMembersData({
+					env,
+					user,
+					org: access.org,
+				})
+				const origin = new URL(request.url).origin
+				const path = routes.orgInviteJoin.href({ token })
+				return jsonResponse({
+					...payload,
+					inviteLink: {
+						id: created.id,
+						expiresAt: created.expiresAt,
+						maxUses: created.maxUses,
+						allowedEmailDomains: created.allowedEmailDomains,
+						role,
+						url: `${origin}${path}`,
+						token,
+					},
+				})
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Unable to create that invite link.'
+				return jsonResponse({ ok: false, error: message }, 400)
+			}
+		},
+	} satisfies Action<typeof routes.orgMembersInviteLinksPost>
+}
+
+export function createOrgMembersInviteLinksRevokePostHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			const access = await resolveOrgManagementAccess({
+				request,
+				env,
+				user,
+				permission: 'member:write',
+			})
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
+			const body = await readJsonObject(request)
+			const linkId =
+				typeof body?.linkId === 'string'
+					? body.linkId.trim()
+					: typeof body?.id === 'string'
+						? body.id.trim()
+						: ''
+			if (!linkId) {
+				return jsonResponse(
+					{ ok: false, error: 'An invite link is required.' },
+					400,
+				)
+			}
+			try {
+				await revokeOrgInviteLink({
+					db: env.APP_DB,
+					orgId: access.org.id,
+					linkId,
+					audit: orgAuditWriterFromRequest(env, user.request),
+				})
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Unable to revoke that invite link.'
+				return jsonResponse({ ok: false, error: message }, 400)
+			}
+			return jsonResponse(
+				await loadOrgMembersData({ env, user, org: access.org }),
+			)
+		},
+	} satisfies Action<typeof routes.orgMembersInviteLinksRevokePost>
 }

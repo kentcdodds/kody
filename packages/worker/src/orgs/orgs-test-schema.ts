@@ -152,6 +152,7 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+<<<<<<< HEAD
 			`CREATE TABLE IF NOT EXISTS enablement_org_migrations (
 				org_id TEXT PRIMARY KEY,
 				state TEXT NOT NULL,
@@ -183,6 +184,21 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				enabled_at TEXT NOT NULL,
 				disabled_at TEXT,
 				updated_at TEXT NOT NULL
+=======
+			`CREATE TABLE IF NOT EXISTS org_invite_links (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				token_hash TEXT NOT NULL UNIQUE,
+				role TEXT NOT NULL,
+				allowed_email_domains_json TEXT,
+				max_uses INTEGER,
+				use_count INTEGER NOT NULL DEFAULT 0,
+				status TEXT NOT NULL,
+				created_by_user_id TEXT NOT NULL,
+				expires_at TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				revoked_at TEXT
+>>>>>>> f8c2a4d35 (Add shareable org invite links for team onboarding)
 			)`,
 		)
 		.run()

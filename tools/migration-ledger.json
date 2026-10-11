@@ -423,6 +423,10 @@
 		{
 			"filename": "0106-enablements.sql",
 			"sha256": "22c9123eb9817ce37a05f5dcaf51c14db0dea81caa1b3848a71d576120df1439"
+		},
+		{
+			"filename": "0107-org-invite-links.sql",
+			"sha256": "58754aac15e6ab5bad8dc331db897855830da2568fea557519e38338f9fa9fd3"
 		}
 	]
 }
