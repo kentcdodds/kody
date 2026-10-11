@@ -88,25 +88,35 @@ export async function logOrgAuditEvent(input: LogOrgAuditEventInput) {
 	)
 }
 
-export async function redactOrgAuditActorIdsForDeletedUser(input: {
-	env: Env
-	userId: string
-}) {
-	const db = auditDatabaseFromEnvOrThrow(input.env)
+async function redactOrgAuditEventsActorIds(
+	auditDb: D1Database,
+	userId: string,
+) {
 	await runD1WithRetry(() =>
-		db
+		auditDb
 			.prepare(
 				`UPDATE org_audit_events
 				SET actor_user_id = 'deleted-user'
 				WHERE actor_user_id = ?`,
 			)
-			.bind(input.userId)
+			.bind(userId)
 			.run(),
 	)
+}
+
+export async function redactOrgAuditActorIdsForDeletedUser(input: {
+	env: Env
+	userId: string
+}) {
+	const db = auditDatabaseFromEnvOrThrow(input.env)
+	// Outbox first so a concurrent drain re-read picks up deleted-user.
 	await redactOrgAuditOutboxActorIdsForDeletedUser({
 		appDb: input.env.APP_DB,
 		userId: input.userId,
 	})
+	await redactOrgAuditEventsActorIds(db, input.userId)
+	// Catch a drain that delivered a pre-redaction payload mid-purge.
+	await redactOrgAuditEventsActorIds(db, input.userId)
 }
 
 export type { OrgAuditWriter } from './org-audit-outbox.ts'

@@ -166,14 +166,22 @@ async function deleteOrgAuditOutboxRow(appDb: D1Database, outboxId: string) {
 
 /**
  * Inserts into AUDIT_DB and removes the outbox row. Returns false when AUDIT_DB
- * is unavailable so a scheduled drain can retry.
+ * is unavailable so a scheduled drain can retry. Re-reads the outbox payload
+ * before insert so a concurrent user-purge redaction is not lost.
  */
 export async function tryDeliverOrgAuditOutboxPlan(
 	writer: OrgAuditWriter,
 	plan: OrgAuditOutboxPlan,
 ): Promise<boolean> {
 	try {
-		const delivery = await deliverOrgAuditOutboxPayload(writer.db, plan.payload)
+		const live = await writer.appDb
+			.prepare(`SELECT payload_json FROM org_audit_outbox WHERE id = ?`)
+			.bind(plan.outboxId)
+			.first<{ payload_json: string }>()
+		if (!live) return true
+		const payload =
+			parseOrgAuditOutboxPayload(live.payload_json) ?? plan.payload
+		const delivery = await deliverOrgAuditOutboxPayload(writer.db, payload)
 		if (delivery === 'inserted' || delivery === 'already_exists') {
 			await deleteOrgAuditOutboxRow(writer.appDb, plan.outboxId)
 			return true
