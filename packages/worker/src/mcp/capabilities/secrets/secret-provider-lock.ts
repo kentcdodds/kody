@@ -14,6 +14,7 @@ import {
 	createSecretProviderGrantRequiresWebsiteMessage,
 } from '#mcp/secrets/secret-providers/errors.ts'
 import { inspectSecretProviderPackageGrant } from '#mcp/secrets/secret-providers/service.ts'
+import { authorizeSecretOrgWide } from './authorize-secret.ts'
 
 const outputSchema = z.object({
 	provider: z.string(),
@@ -63,6 +64,7 @@ export const secretProviderLockCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeSecretOrgWide(ctx, 'secret:use')
 			try {
 				const state = await inspectSecretProviderPackageGrant({
 					env: ctx.env,

@@ -5,6 +5,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { listBoundSecretProviders } from '#mcp/secrets/secret-providers/service.ts'
+import { authorizeSecretOrgWide } from './authorize-secret.ts'
 
 export const secretProviderListCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
@@ -30,6 +31,7 @@ export const secretProviderListCapability = defineDomainCapability(
 		}),
 		async handler(_args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeSecretOrgWide(ctx, 'secret:use')
 			const bindings = await listBoundSecretProviders({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
