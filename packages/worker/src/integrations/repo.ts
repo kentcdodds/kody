@@ -555,16 +555,20 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 	accessTokenEncrypted: string
 	refreshTokenEncrypted: string | null
 	refreshPolicy: IntegrationRefreshPolicy
-}): Promise<void> {
+	/** When set, the write only lands while this refresh lease is still held. */
+	refreshLeaseId?: string
+}): Promise<{ written: boolean }> {
 	const now = new Date().toISOString()
-	await input.db
+	const leaseFence =
+		input.refreshLeaseId === undefined ? '' : ' AND token_refresh_lease_id = ?'
+	const result = await input.db
 		.prepare(
 			`UPDATE user_integrations
 			SET access_token_encrypted = ?,
 				refresh_token_encrypted = COALESCE(?, refresh_token_encrypted),
 				refresh_policy = ?,
 				updated_at = ?
-			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
+			WHERE user_id = ? AND name = ?${leaseFence}${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.accessTokenEncrypted,
@@ -573,8 +577,10 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 			now,
 			input.userId,
 			input.name,
+			...(input.refreshLeaseId === undefined ? [] : [input.refreshLeaseId]),
 		)
 		.run()
+	return { written: result.meta.changes > 0 }
 }
 
 export async function getOauthAppClientSecretCiphertext(input: {
@@ -760,13 +766,16 @@ export type IntegrationTokenRefreshLeaseClaim =
 	| { status: 'claimed' }
 	| { status: 'held' }
 	| { status: 'refreshed'; tokenRefreshedAt: string }
+	| { status: 'stale' }
 	| { status: 'missing' }
 
 /**
  * Claims the per-connection refresh lease only while `token_refreshed_at` still
  * matches what the caller observed and no unexpired lease is held. When the
  * claim fails, the re-read tells the caller whether another writer already
- * refreshed (use the stored token) or still holds the lease (wait).
+ * refreshed (use the stored token), the connection was replaced since the
+ * caller read it (`stale`: re-read and start over), or a lease is still held
+ * (wait).
  */
 export async function claimIntegrationTokenRefreshLease(input: {
 	db: D1Database
@@ -811,13 +820,11 @@ export async function claimIntegrationTokenRefreshLease(input: {
 		.bind(input.userId, input.name)
 		.first<{ token_refreshed_at: string | null }>()
 	if (!row) return { status: 'missing' }
-	if (
-		row.token_refreshed_at !== null &&
-		row.token_refreshed_at !== input.expectedTokenRefreshedAt
-	) {
-		return { status: 'refreshed', tokenRefreshedAt: row.token_refreshed_at }
+	if (row.token_refreshed_at === input.expectedTokenRefreshedAt) {
+		return { status: 'held' }
 	}
-	return { status: 'held' }
+	if (row.token_refreshed_at === null) return { status: 'stale' }
+	return { status: 'refreshed', tokenRefreshedAt: row.token_refreshed_at }
 }
 
 export async function releaseIntegrationTokenRefreshLease(input: {

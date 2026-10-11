@@ -36,6 +36,11 @@ export async function persistIntegrationTokens(input: {
 	 * it; a successful refresh passes `required`.
 	 */
 	refreshPolicy: IntegrationRefreshPolicy
+	/**
+	 * Host-side refresh passes its lease so a holder whose lease expired cannot
+	 * overwrite tokens a newer refresher already rotated.
+	 */
+	refreshLeaseId?: string
 }): Promise<void> {
 	const context = userIntegrationCredentialContext(input.userId, input.name)
 	const accessTokenEncrypted = await encryptUserOauthAccessToken(
@@ -47,14 +52,22 @@ export async function persistIntegrationTokens(input: {
 	const refreshTokenEncrypted = refreshToken
 		? await encryptUserOauthRefreshToken(input.env, refreshToken, context)
 		: null
-	await updateIntegrationCredentialCiphertexts({
+	const { written } = await updateIntegrationCredentialCiphertexts({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		name: input.name,
 		accessTokenEncrypted,
 		refreshTokenEncrypted,
 		refreshPolicy: input.refreshPolicy,
+		...(input.refreshLeaseId === undefined
+			? {}
+			: { refreshLeaseId: input.refreshLeaseId }),
 	})
+	if (input.refreshLeaseId !== undefined && !written) {
+		throw new Error(
+			`Token refresh lease for integration "${input.name}" expired before its tokens were saved.`,
+		)
+	}
 	try {
 		await clearIntegrationAuthFailure({
 			db: input.env.APP_DB,

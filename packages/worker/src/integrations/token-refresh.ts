@@ -482,6 +482,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 			refreshTokenRotated: false,
 		}
 	}
+	if (lease.status === 'stale') return refreshIntegrationTokensOrThrow(input)
 	try {
 		return await exchangeRefreshTokenWithLease({
 			input,
@@ -490,6 +491,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 			fail,
 			clientId,
 			reconnectPath,
+			leaseId: lease.leaseId,
 		})
 	} finally {
 		await releaseIntegrationTokenRefreshLease({
@@ -501,8 +503,8 @@ async function refreshIntegrationTokensOrThrow(input: {
 	}
 }
 
-// Must outlast the 30s provider POST below so a live holder never loses its
-// lease mid-refresh; an expired lease only frees a crashed holder's claim.
+// Outlasts the 30s provider POST so a live holder keeps its lease; if a holder
+// still overruns it, the lease-fenced token write refuses its stale tokens.
 const tokenRefreshLeaseMs = 60_000
 const tokenRefreshLeasePollMs = 250
 
@@ -521,6 +523,7 @@ async function acquireTokenRefreshLease(input: {
 }): Promise<
 	| { status: 'claimed'; leaseId: string }
 	| { status: 'refreshed'; tokenRefreshedAt: string }
+	| { status: 'stale' }
 > {
 	const leaseId = crypto.randomUUID()
 	const deadline = Date.now() + tokenRefreshLeaseMs * 2
@@ -538,6 +541,7 @@ async function acquireTokenRefreshLease(input: {
 			case 'claimed':
 				return { status: 'claimed', leaseId }
 			case 'refreshed':
+			case 'stale':
 				return claim
 			case 'missing':
 				throw callerRefreshError(`Integration "${input.name}" was not found.`, {
@@ -568,6 +572,7 @@ async function exchangeRefreshTokenWithLease({
 	fail,
 	clientId,
 	reconnectPath,
+	leaseId,
 }: {
 	input: {
 		env: Env
@@ -588,6 +593,7 @@ async function exchangeRefreshTokenWithLease({
 	) => IntegrationTokenRefreshCallerError
 	clientId: string
 	reconnectPath: string
+	leaseId: string
 }): Promise<IntegrationTokenRefreshResult> {
 	const { app, connection } = joined
 	const refreshToken = await resolveIntegrationRefreshToken({
@@ -737,6 +743,7 @@ async function exchangeRefreshTokenWithLease({
 			? (payload.refresh_token as string)
 			: null,
 		refreshPolicy: 'required',
+		refreshLeaseId: leaseId,
 	})
 
 	const refreshedAt = new Date().toISOString()

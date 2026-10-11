@@ -2,7 +2,10 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
-import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import {
+	createD1FromSqlite,
+	type CreateD1FromSqliteOptions,
+} from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
 	persistIntegrationTokens,
@@ -43,11 +46,11 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const failedEvents = mocks.dispatchIntegrationAuthFailedSubscriptionEvents
 const succeededEvents = mocks.dispatchIntegrationAuthSucceededSubscriptionEvents
 
-function createHarness() {
+function createHarness(d1Options: CreateD1FromSqliteOptions = {}) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const env = {
-		APP_DB: createD1FromSqlite(sqlite),
+		APP_DB: createD1FromSqlite(sqlite, d1Options),
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
 	} as Env
@@ -508,14 +511,8 @@ test('in-flight refreshes of the same connection share one provider POST and one
 })
 
 test('concurrent refreshes from separate isolates make one rotating provider call and keep the newest refresh token', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const queries: Array<string> = []
-	const env = {
-		APP_DB: createD1FromSqlite(sqlite, { queries }),
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	} as Env
+	const { env } = createHarness({ queries })
 	const userId = ownerIdFromStored('user-cross-isolate-refresh')
 	const tokens = { env, userId, name: 'github' }
 	await seedPlatformConnection(env, userId, 'github')
@@ -539,9 +536,7 @@ test('concurrent refreshes from separate isolates make one rotating provider cal
 		})
 	})
 	vi.stubGlobal('fetch', fetchMock)
-	const leaseClaims = () =>
-		queries.filter((query) => query.includes('SET token_refresh_lease_id = ?'))
-			.length
+	const leaseClaims = () => countLeaseClaims(queries)
 	try {
 		const first = refreshIntegrationTokens(tokens)
 		await expect.poll(() => fetchMock.mock.calls.length).toBe(1)
@@ -581,6 +576,100 @@ test('concurrent refreshes from separate isolates make one rotating provider cal
 		)
 		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
 			'rotated-refresh-token-2',
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+function countLeaseClaims(queries: Array<string>) {
+	return queries.filter((query) =>
+		query.includes('SET token_refresh_lease_id = ?'),
+	).length
+}
+
+test('a refresher whose lease was taken over cannot overwrite the stored tokens', async () => {
+	const { sqlite, env } = createHarness()
+	const userId = ownerIdFromStored('user-lease-fence')
+	const tokens = { env, userId, name: 'github' }
+	await seedPlatformConnection(env, userId, 'github')
+	const fetchMock = vi.fn(async () => {
+		sqlite
+			.prepare(
+				`UPDATE user_integrations
+				SET token_refresh_lease_id = 'newer-holder'
+				WHERE user_id = ? AND name = 'github'`,
+			)
+			.run(userId)
+		return jsonResponse({
+			access_token: 'late-access-token',
+			refresh_token: 'late-refresh-token',
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(refreshIntegrationTokens(tokens)).rejects.toThrow(
+			'expired before its tokens were saved',
+		)
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
+			'current-refresh-token',
+		)
+		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+			'stale-access-token',
+		)
+		expect(
+			sqlite
+				.prepare(
+					`SELECT token_refresh_lease_id FROM user_integrations
+					WHERE user_id = ? AND name = 'github'`,
+				)
+				.get(userId),
+		).toEqual({ token_refresh_lease_id: 'newer-holder' })
+		expect(succeededEvents).not.toHaveBeenCalled()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('a waiter whose connection was replaced mid-wait re-reads it and refreshes instead of stalling', async () => {
+	const queries: Array<string> = []
+	const { sqlite, env } = createHarness({ queries })
+	const userId = ownerIdFromStored('user-lease-replaced')
+	const tokens = { env, userId, name: 'github' }
+	await seedPlatformConnection(env, userId, 'github')
+	sqlite
+		.prepare(
+			`UPDATE user_integrations
+			SET token_refreshed_at = '2026-01-01T00:00:00.000Z',
+				token_refresh_lease_id = 'old-connection-holder',
+				token_refresh_lease_expires_at = '2999-01-01T00:00:00.000Z'
+			WHERE user_id = ? AND name = 'github'`,
+		)
+		.run(userId)
+	const fetchMock = stubTokenEndpoint({
+		access_token: 'fresh-access-token',
+		refresh_token: 'rotated-refresh-token',
+	})
+	try {
+		const refresh = refreshIntegrationTokens(tokens)
+		await expect.poll(() => countLeaseClaims(queries)).toBe(1)
+		sqlite
+			.prepare(
+				`UPDATE user_integrations
+				SET token_refreshed_at = NULL,
+					token_refresh_lease_id = NULL,
+					token_refresh_lease_expires_at = NULL
+				WHERE user_id = ? AND name = 'github'`,
+			)
+			.run(userId)
+		await expect(refresh).resolves.toMatchObject({
+			refreshed: true,
+			refreshTokenRotated: true,
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
+			'rotated-refresh-token',
 		)
 	} finally {
 		vi.unstubAllGlobals()
