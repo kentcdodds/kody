@@ -16,6 +16,10 @@ export const legacyCredentialPatterns = [
 	'|scope=',
 	'secretMounts',
 	'webhook secretName',
+	'secret outside header',
+	'plain http',
+	'packageSecrets.get',
+	'missing placement',
 ] as const
 
 export type LegacyCredentialPattern = (typeof legacyCredentialPatterns)[number]
@@ -42,6 +46,14 @@ export const legacyCredentialPatternMessages: Record<
 		'secretMounts: declares kody.secretMounts. Replace each mount with a kody.credentials slot.',
 	'webhook secretName':
 		'webhook secretName: a webhook names its signing secret with secretName. Declare that secret as a kody.credentials slot.',
+	'secret outside header':
+		'secret outside header: puts a secret placeholder in a request URL, query, or body. The fetch gateway substitutes secrets only into the header a kody.credentials slot declares.',
+	'plain http':
+		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
+	'packageSecrets.get':
+		'packageSecrets.get: reads a secret through packageSecrets.get. The ref it returns works only in the header its slot declares; reading the value itself needs a raw slot.',
+	'missing placement':
+		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
 }
 
 export function legacyCredentialPatternFromMessage(
@@ -144,8 +156,13 @@ function getNodeName(node: AstNode | null | undefined) {
 	return null
 }
 
-function walkAst(node: AstNode, visit: (node: AstNode) => void) {
-	visit(node)
+function walkAst(
+	node: AstNode,
+	visit: (node: AstNode, ancestors: ReadonlyArray<AstNode>) => void,
+	ancestors: Array<AstNode> = [],
+) {
+	visit(node, ancestors)
+	ancestors.push(node)
 	for (const [key, value] of Object.entries(node)) {
 		if (
 			key === 'loc' ||
@@ -160,15 +177,103 @@ function walkAst(node: AstNode, visit: (node: AstNode) => void) {
 		if (Array.isArray(value)) {
 			for (const child of value) {
 				if (child && typeof child === 'object' && 'type' in child) {
-					walkAst(child as AstNode, visit)
+					walkAst(child as AstNode, visit, ancestors)
 				}
 			}
 			continue
 		}
 		if (value && typeof value === 'object' && 'type' in value) {
-			walkAst(value as AstNode, visit)
+			walkAst(value as AstNode, visit, ancestors)
 		}
 	}
+	ancestors.pop()
+}
+
+function literalText(node: AstNode) {
+	if (node.type === 'StringLiteral') return getNodeName(node)
+	if (node.type !== 'TemplateLiteral') return null
+	return (node.quasis ?? [])
+		.map((quasi) => {
+			const value = quasi.value as { cooked?: string | null; raw?: string }
+			return value.cooked ?? value.raw ?? ''
+		})
+		.join('${}')
+}
+
+/**
+ * True only when the literal provably lands in a request URL, query, or body:
+ * a URL-shaped string, a `body` property, the URL argument of `fetch`,
+ * `new Request`, or `new URL`, or `JSON.stringify` / `URLSearchParams` /
+ * `FormData` input. A `headers` property or `new Headers` stops the search.
+ */
+function literalIsOutsideHeader(
+	node: AstNode,
+	text: string,
+	ancestors: ReadonlyArray<AstNode>,
+) {
+	if (/^\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(text)) return true
+	let child = node
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const parent = ancestors[index]!
+		if (
+			parent.type === 'ObjectProperty' &&
+			parent.computed !== true &&
+			parent.value === child
+		) {
+			const key = getNodeName(parent.key)
+			if (key === 'headers') return false
+			if (key === 'body') return true
+		}
+		if (
+			parent.type === 'CallExpression' ||
+			parent.type === 'OptionalCallExpression'
+		) {
+			const calleeName = getCalleeName(parent.callee)
+			if (calleeName === 'fetch' && parent.arguments?.[0] === child) {
+				return true
+			}
+			if (
+				calleeName === 'stringify' &&
+				getCalleeObjectName(parent.callee) === 'JSON'
+			) {
+				return true
+			}
+		}
+		if (parent.type === 'NewExpression') {
+			const constructorName = getNodeName(parent.callee)
+			if (constructorName === 'Headers') return false
+			if (
+				(constructorName === 'Request' || constructorName === 'URL') &&
+				parent.arguments?.[0] === child
+			) {
+				return true
+			}
+			if (
+				constructorName === 'URLSearchParams' ||
+				constructorName === 'FormData'
+			) {
+				return true
+			}
+		}
+		child = parent
+	}
+	return false
+}
+
+function isPlainHttpUrl(text: string) {
+	return /^\s*http:\/\//i.test(text)
+}
+
+function isRequestUrlArgument(node: AstNode, parent: AstNode | undefined) {
+	if (!parent || parent.arguments?.[0] !== node) return false
+	if (parent.type === 'NewExpression') {
+		return getNodeName(parent.callee) === 'Request'
+	}
+	return (
+		(parent.type === 'CallExpression' ||
+			parent.type === 'OptionalCallExpression') &&
+		getCalleeName(parent.callee) === 'fetch'
+	)
 }
 
 function classifyStringPiece(
@@ -308,11 +413,33 @@ function detectInParsedModule(
 ) {
 	const body = parsed.program?.body ?? []
 	const aliases = collectKodyAliases(body)
-	walkAst(parsed, (node) => {
+	let usesPlaceholder = false
+	let fetchesPlainHttp = false
+	const classifyLiteral = (
+		node: AstNode,
+		ancestors: ReadonlyArray<AstNode>,
+	) => {
+		const text = literalText(node)
+		if (text == null) return
+		if (isPlainHttpUrl(text) && isRequestUrlArgument(node, ancestors.at(-1))) {
+			fetchesPlainHttp = true
+		}
+		if (!new RegExp(placeholderOpenerPattern.source).test(text)) return
+		usesPlaceholder = true
+		if (literalIsOutsideHeader(node, text, ancestors)) {
+			add('secret outside header')
+		}
+	}
+	walkAst(parsed, (node, ancestors) => {
 		switch (node.type) {
 			case 'StringLiteral': {
 				const value = getNodeName(node)
 				if (value) classifyStringPiece(value, add)
+				classifyLiteral(node, ancestors)
+				return
+			}
+			case 'TemplateLiteral': {
+				classifyLiteral(node, ancestors)
 				return
 			}
 			case 'TemplateElement': {
@@ -345,10 +472,12 @@ function detectInParsedModule(
 					objectName === 'packageSecrets' &&
 					packageSecretsMethods.has(calleeName)
 				) {
+					if (calleeName === 'get') add('packageSecrets.get')
 					if (firstArgument)
 						classifyNameExpression(firstArgument, 'secret', add)
 					return
 				}
+				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
 				const fieldSpec = nameFieldCallees[calleeName]
 				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, add)
@@ -358,6 +487,7 @@ function detectInParsedModule(
 				return
 		}
 	})
+	if (usesPlaceholder && fetchesPlainHttp) add('plain http')
 }
 
 /** Unparseable modules fall back to text: weaker, but never silent. */
@@ -371,6 +501,13 @@ function detectInUnparsedModule(
 		for (const match of source.matchAll(pattern)) {
 			add(match[1] ? 'literal secret' : computedPattern(kind))
 		}
+	}
+	if (
+		/\bpackageSecrets\s*(?:\?\.|\.)\s*get\s*\(|\bpackageSecretGet\s*\(/.test(
+			source,
+		)
+	) {
+		add('packageSecrets.get')
 	}
 	for (const [callee, spec] of Object.entries(nameFieldCallees)) {
 		const call =
@@ -426,6 +563,15 @@ function detectInManifest(
 	if (Array.isArray(kody.webhooks) && kody.webhooks.some(webhookNamesSecret)) {
 		add('webhook secretName')
 	}
+	if (
+		isPlainObject(kody.credentials) &&
+		Object.values(kody.credentials).some(
+			(slot) =>
+				isPlainObject(slot) && slot.kind === 'secret' && slot.placement == null,
+		)
+	) {
+		add('missing placement')
+	}
 }
 
 function detectLegacyCredentialPatterns(
@@ -476,7 +622,7 @@ function transformLegacyCredentialPatterns(
 export const detectLegacyCredentialPatternsCodemod: PackageCodemod = {
 	id: detectLegacyCredentialPatternsCodemodId,
 	description:
-		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots.',
+		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots, and code the fetch gateway secret rules refuse (placeholders outside headers, plain http, packageSecrets.get, secret slots without placement).',
 	detect: detectLegacyCredentialPatterns,
 	transform: transformLegacyCredentialPatterns,
 }

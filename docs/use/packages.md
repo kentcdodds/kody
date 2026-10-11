@@ -142,7 +142,11 @@ the slot name; the org decides which credential fills it.
 			"RESEND_API_KEY": {
 				"kind": "secret",
 				"provider": "resend",
-				"description": "Resend API key that sends the digest email."
+				"description": "Resend API key that sends the digest email.",
+				"placement": {
+					"header": "Authorization",
+					"template": "Bearer {value}"
+				}
 			}
 		}
 	}
@@ -154,6 +158,12 @@ the slot name; the org decides which credential fills it.
 - `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
   `description` says what the slot is for. `multiple: true` means the package
   picks among several accounts.
+- `placement` is the one request header the value may be sent in. `template` is
+  the whole header value with `{value}` where the credential goes; without it
+  the header value is the credential. Secret slots must declare `placement`.
+  OAuth slots default to
+  `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
+  no placement.
 - Publish rejects any other key or a missing field and names the slot.
 - Declaring slots does not change how credentials resolve. Package code keeps
   using its secret, integration, and MCP references.

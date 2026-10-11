@@ -45,8 +45,52 @@ test('the kody.credentials example in docs/use/packages.md publishes', () => {
 			kind: 'secret',
 			provider: 'resend',
 			description: 'Resend API key that sends the digest email.',
+			placement: { header: 'Authorization', template: 'Bearer {value}' },
 		},
 	})
+})
+
+test('publish requires placement on secret slots and validates it', () => {
+	const secret = { kind: 'secret', provider: 'acme', description: 'x' }
+	expect(publishError({ KEY: secret })).toMatch(
+		/Secret slots declare placement[\s\S]*kody\.credentials\.KEY\.placement/,
+	)
+	expect(
+		publishError({ KEY: { ...secret, placement: { header: 'bad header' } } }),
+	).toMatch(/valid HTTP header name[\s\S]*kody\.credentials\.KEY\.placement/)
+	expect(
+		publishError({
+			KEY: { ...secret, placement: { header: 'X-Kody-Secret-Resolution' } },
+		}),
+	).toContain('x-kody-* headers are reserved')
+	for (const template of ['Bearer', '{value} {value}', 'a\n{value}']) {
+		expect(
+			publishError({
+				KEY: { ...secret, placement: { header: 'Authorization', template } },
+			}),
+		).toContain('contains {value} exactly once')
+	}
+	expect(
+		publishError({
+			LINEAR: {
+				kind: 'mcp',
+				provider: 'linear',
+				description: 'x',
+				placement: { header: 'Authorization' },
+			},
+		}),
+	).toContain('mcp slots never send their value')
+
+	const manifest = parseAuthoredPackageJson({
+		content: manifestWithCredentials({
+			KEY: { ...secret, placement: { header: 'x-api-key' } },
+			GOOGLE: { kind: 'oauth', provider: 'google', description: 'x' },
+		}),
+	})
+	expect(manifest.kody.credentials?.KEY?.placement).toEqual({
+		header: 'x-api-key',
+	})
+	expect(manifest.kody.credentials?.GOOGLE?.placement).toBeUndefined()
 })
 
 test('publish rejects invalid kody.credentials slots and names the slot', () => {
