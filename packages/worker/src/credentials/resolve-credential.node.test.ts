@@ -27,7 +27,12 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
-import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
+import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
+import {
+	saveSecret,
+	setSecretAllowedHosts,
+	setSecretAllowedPackages,
+} from '#mcp/secrets/service.ts'
 import {
 	attestedPackageStamp,
 	claimedPackageStamp,
@@ -399,6 +404,96 @@ test('a trigger with no enablement holds nothing; webhook verification still res
 		packageStampKind: 'attested',
 		packageId: t.packageId,
 	})
+})
+
+test('a webhook reads only a secret its own package may read (#3245)', async () => {
+	const t = await setup()
+	const forkId = crypto.randomUUID()
+	await insertSavedPackage(
+		t.db,
+		{
+			id: forkId,
+			user_id: t.orgId,
+			name: '@owner/forked',
+			kody_id: 'forked',
+			description: 'an unadopted community fork',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-${forkId}`,
+			has_app: 0,
+			has_skills: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		null,
+		{ stamp: false },
+	)
+	await t.db
+		.prepare(
+			`INSERT INTO community_forks (
+				id, listing_id, forker_user_id, origin_commit, forked_package_id,
+				forked_source_id, target_kody_id, created_at
+			) VALUES (?, ?, ?, 'origin', ?, ?, 'forked', ?)`,
+		)
+		.bind(
+			`fork-${forkId}`,
+			'listing-1',
+			t.orgId,
+			forkId,
+			`source-${forkId}`,
+			now,
+		)
+		.run()
+	await setSecretAllowedPackages({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedPackages: [t.packageId],
+	})
+	const webhookRead = (input: {
+		actor: ReturnType<typeof t.personRequest> | null
+		packageId: string | null
+	}) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: input.actor,
+			packageStamp: input.packageId
+				? attestedPackageStamp(input.packageId)
+				: null,
+			baseUrl: 'https://example.com',
+			credential: { use: 'webhook-secret', name: 'orgToken' },
+		})
+	const owner = () => t.personRequest(t.ownerStableId, 'owner', 'owner')
+
+	// Signature verification at ingress has no person, so the package check is
+	// the only gate there; an Owner applying a delivery is held to it too.
+	expect(
+		await denial(webhookRead({ actor: null, packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: owner(), packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: null, packageId: null })),
+	).toBeInstanceOf(Error)
+	await expect(
+		webhookRead({ actor: null, packageId: t.packageId }),
+	).resolves.toMatchObject({ found: true, value: secretValue })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => row.result)).toEqual([
+		'denied',
+		'denied',
+		'failure',
+		'success',
+	])
+	for (const row of rows) {
+		expect(row.details_json ?? '').not.toContain(secretValue)
+	}
 })
 
 test('a package app in a team org acts as its visitor, never as the org itself; a deleted org is denied', async () => {

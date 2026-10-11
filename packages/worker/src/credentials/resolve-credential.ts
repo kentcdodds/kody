@@ -589,16 +589,30 @@ async function resolveWebhookSecret(
 		'secret:use',
 		secretResource(input.orgId, credential.name),
 	)
-	return await resolveSecret({
+	// Every webhook belongs to a package, and the read is limited to secrets
+	// that package may read, like placeholder and mount reads.
+	const packageId = input.packageStamp?.packageId
+	if (!packageId) {
+		throw new Error('Webhook secrets resolve only for the webhook package.')
+	}
+	const storageContext = { sessionId: null, appId: null, packageId }
+	const resolved = await resolveSecret({
 		env: input.env,
 		userId: input.orgId,
 		name: credential.name,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageStamp?.packageId ?? null,
-		},
+		storageContext,
 	})
+	if (!resolved.found || typeof resolved.value !== 'string') return resolved
+	await assertPackageCanAccessResolvedSecret({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.orgId,
+		storageContext,
+		authorityPackageId: packageId,
+		secretName: credential.name,
+		resolved,
+	})
+	return resolved
 }
 
 async function resolveVaultSecret(

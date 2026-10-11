@@ -31,6 +31,7 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 		found: true,
 		value: 'legacy-sentry-webhook-secret',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})),
 }))
