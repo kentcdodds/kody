@@ -677,26 +677,59 @@ test('a rerun after a rename or a turned-off personal row keeps one migrated row
 
 test('the unique migrated index makes an overlapping apply a no-op', async () => {
 	const t = await setup()
-	// Two applies that both planned before either wrote insert the same row.
-	for (const id of ['e-1', 'e-2']) {
-		await buildInsertEnablementStatement({
+	// Two applies that both planned before either wrote insert the same
+	// trigger, even when a rename between their reads changed the name.
+	const insert = (input: {
+		id: string
+		triggerKind: 'cron' | 'subscription'
+		triggerName: string
+		instanceId: string
+	}) =>
+		buildInsertEnablementStatement({
 			db: t.db,
 			enablement: {
-				id,
+				...input,
 				orgId: t.personalOrgId,
-				packageId: null,
-				triggerKind: 'cron',
-				triggerName: 'a',
-				instanceId: 'job-a',
+				packageId:
+					input.triggerKind === 'subscription' ? input.instanceId : null,
 				enablerUserId: t.ownerId,
 				origin: 'migrated',
 			},
 			now,
 			ignoreConflicts: true,
 		}).statement.run()
-	}
+	await insert({
+		id: 'e-1',
+		triggerKind: 'cron',
+		triggerName: 'a',
+		instanceId: 'job-a',
+	})
+	await insert({
+		id: 'e-2',
+		triggerKind: 'cron',
+		triggerName: 'renamed',
+		instanceId: 'job-a',
+	})
+	await insert({
+		id: 'e-3',
+		triggerKind: 'subscription',
+		triggerName: 'job.run.failed',
+		instanceId: 'pkg-a',
+	})
+	await insert({
+		id: 'e-4',
+		triggerKind: 'subscription',
+		triggerName: 'job.run.failed',
+		instanceId: 'pkg-a',
+	})
+	await insert({
+		id: 'e-5',
+		triggerKind: 'subscription',
+		triggerName: 'email.received',
+		instanceId: 'pkg-a',
+	})
 	const rows = await listEnablementsForOrg({ db: t.db, orgId: t.personalOrgId })
-	expect(rows.map((row) => row.id)).toEqual(['e-1'])
+	expect(rows.map((row) => row.id).sort()).toEqual(['e-1', 'e-3', 'e-5'])
 })
 
 test('a never-published package does not block its org, but a failed manifest read does', async () => {

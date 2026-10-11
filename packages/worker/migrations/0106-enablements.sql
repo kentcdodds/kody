@@ -46,9 +46,16 @@ CREATE INDEX IF NOT EXISTS enablements_enabler
 	WHERE state <> 'off';
 
 -- The auto-enable step writes exactly one migrated row per trigger instance,
--- so an overlapping or retried run cannot add a second one.
+-- so an overlapping or retried run cannot add a second one. A cron job or
+-- webhook is its instance id alone (a rename keeps the instance); a
+-- subscription is its package plus topic.
 CREATE UNIQUE INDEX IF NOT EXISTS enablements_migrated_instance
-	ON enablements (org_id, trigger_kind, instance_id, trigger_name)
+	ON enablements (
+		org_id,
+		trigger_kind,
+		instance_id,
+		(CASE WHEN trigger_kind = 'subscription' THEN trigger_name ELSE '' END)
+	)
 	WHERE origin = 'migrated';
 
 -- Per-org migration to enablements. Only an org whose row is `migrated` runs
