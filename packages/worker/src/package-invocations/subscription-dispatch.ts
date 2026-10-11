@@ -494,7 +494,8 @@ type SubscriptionInvocationInput = {
  * `{ onlyEnablerId }` narrows to one person, `null` reaches nobody.
  *
  * - An event raised by a run (and the smoke test) reaches only the run's
- *   person. A member-sent email reaches only the sender.
+ *   person, and nobody when the run had no person. A member-sent email
+ *   reaches only the sender.
  * - Mail from a verified non-member reaches the inbox owner: the person in a
  *   personal org, else the org's earliest current Owner.
  * - Platform topics reach every enablement, narrowed by the audience rule.
@@ -506,8 +507,10 @@ async function subscriptionEnablerScope(input: {
 }): Promise<{ onlyEnablerId: string | null } | null> {
 	const { request } = input
 	switch (request.kind) {
-		case 'inherited':
-			return { onlyEnablerId: request.lineage.actor?.userId ?? null }
+		case 'inherited': {
+			const actorId = request.lineage.actor?.userId
+			return actorId ? { onlyEnablerId: actorId } : null
+		}
 		case 'inbound-email': {
 			if (request.sender.kind === 'member') {
 				return { onlyEnablerId: request.sender.actor.userId }
@@ -516,7 +519,10 @@ async function subscriptionEnablerScope(input: {
 			return owner ? { onlyEnablerId: owner } : null
 		}
 		case 'schedule':
-		case 'webhook':
+		case 'webhook': {
+			const enablerId = request.enablement?.enabler.userId
+			return enablerId ? { onlyEnablerId: enablerId } : null
+		}
 		case 'platform-event':
 			return {
 				onlyEnablerId: request.enablement?.enabler.userId ?? null,
