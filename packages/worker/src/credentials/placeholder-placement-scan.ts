@@ -420,6 +420,12 @@ function scopeStatements(node: AstNode): Array<AstNode> {
 			(part): part is AstNode => part != null,
 		)
 	}
+	// Every case of a switch shares one block scope.
+	if (node.type === 'SwitchStatement') {
+		return ((node.cases ?? []) as Array<AstNode>).flatMap(
+			(switchCase) => (switchCase.consequent ?? []) as Array<AstNode>,
+		)
+	}
 	if (
 		node.type === 'BlockStatement' ||
 		node.type === 'Program' ||

@@ -176,7 +176,7 @@ export async function cast() {
 	])
 })
 
-test('request bindings resolve to the lexical declaration, including loops, outer scopes, and sibling blocks', () => {
+test('request bindings resolve to the lexical declaration, including loops, outer scopes, sibling blocks, and switch cases', () => {
 	const findings = findSecretPlaceholdersOutsideHeaders({
 		'src/index.ts': `const TOKEN = '{{secret:loopToken}}'
 const init = {
@@ -203,6 +203,19 @@ export function siblings(flag: boolean) {
 		return fetch('https://api.example.com/c', { method: 'POST', body: note })
 	}
 }
+export async function byMode(mode: string) {
+	const init = { method: 'POST', body: 'Configure {{secret:outerUnused}}' }
+	switch (mode) {
+		case 'a':
+			const init = {
+				method: 'POST',
+				body: JSON.stringify({ id: '{{secret:switchOptions}}' }),
+			}
+			return fetch('https://api.example.com/d', init)
+		default:
+			return new Response(init.body)
+	}
+}
 `,
 	})
 	expect(findings).toEqual([
@@ -210,5 +223,6 @@ export function siblings(flag: boolean) {
 		{ path: 'src/index.ts', line: 6, slot: 'outerBody', location: 'body' },
 		{ path: 'src/index.ts', line: 9, slot: 'loopToken', location: 'body' },
 		{ path: 'src/index.ts', line: 12, slot: 'loopToken', location: 'body' },
+		{ path: 'src/index.ts', line: 32, slot: 'switchOptions', location: 'body' },
 	])
 })
