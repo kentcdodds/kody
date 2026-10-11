@@ -1,4 +1,8 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -68,12 +72,14 @@ export async function deriveWaitingItems(input: {
 }
 
 /**
- * Same queue as `deriveWaitingItems`, looked up by MCP `stable_user_id`.
+ * Same queue as `deriveWaitingItems`, for an MCP caller: the person's queue in
+ * the org their connection is bound to (their personal org when unbound).
  * Fail-open: missing user or a probe blip returns no items.
  */
 export async function deriveWaitingItemsForStableUser(input: {
 	env: WaitingEnv
-	stableUserId: OwnerId
+	personId: PersonId
+	orgId?: OwnerId | null
 	email: string
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -82,16 +88,18 @@ export async function deriveWaitingItemsForStableUser(input: {
 		const userRow = await input.env.APP_DB.prepare(
 			`SELECT id, username, email_verified_at FROM users WHERE stable_user_id = ? ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
-			.bind(input.stableUserId)
+			.bind(input.personId)
 			.first<{
 				id: number
 				username: string
 				email_verified_at: string | null
 			}>()
 		if (!userRow) return []
+		const actorStableUserId = personalOrgId(input.personId)
+		const orgId = input.orgId ?? actorStableUserId
 		let orgSlug = userRow.username?.trim() ?? ''
 		try {
-			const org = await getOrgById(input.env.APP_DB, input.stableUserId)
+			const org = await getOrgById(input.env.APP_DB, orgId)
 			const slug = org?.slug?.trim()
 			if (slug) orgSlug = slug
 		} catch {
@@ -101,7 +109,8 @@ export async function deriveWaitingItemsForStableUser(input: {
 			env: input.env,
 			user: {
 				userId: userRow.id,
-				stableUserId: input.stableUserId,
+				stableUserId: orgId,
+				actorStableUserId,
 				email: input.email,
 				username: userRow.username,
 				emailVerified: Boolean(userRow.email_verified_at),

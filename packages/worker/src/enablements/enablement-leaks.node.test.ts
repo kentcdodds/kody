@@ -52,7 +52,10 @@ import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
 import { orgMemberUpdateCapability } from '#mcp/capabilities/access/org-members.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
-import { collectWaitingSignals } from '#mcp/waiting/derive-waiting.ts'
+import {
+	collectWaitingSignals,
+	deriveWaitingItemsForStableUser,
+} from '#mcp/waiting/derive-waiting.ts'
 import { buildWaitingItems } from '#universal/waiting.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import { getEnablementById, insertEnablement } from './repo.ts'
@@ -651,9 +654,25 @@ test("a member's paused email subscription waits on that member's own list, not 
 		[],
 	)
 
+	// Agents read the same queue for the org their connection is bound to.
+	const mcpWaitingIds = async (orgId: OwnerId | null) =>
+		(
+			await deriveWaitingItemsForStableUser({
+				env: t.env,
+				personId: t.people.bea.userId,
+				orgId,
+				email: 'bea@acme.example',
+			})
+		)
+			.filter((item) => item.kind === 'enablement-paused')
+			.map((item) => item.id)
+	expect(await mcpWaitingIds(t.orgId)).toEqual([`enablement-paused:${beas.id}`])
+	expect(await mcpWaitingIds(null)).toEqual([])
+
 	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
 	await t.sendEmail('bea@acme.example')
 	expect(await waitingIds('bea')).toEqual([])
+	expect(await mcpWaitingIds(t.orgId)).toEqual([])
 })
 
 test("a member's webhook runs as its enabler, never as Owner, and a paused one answers 409", async () => {

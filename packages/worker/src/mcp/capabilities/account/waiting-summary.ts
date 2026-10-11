@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -59,7 +58,8 @@ export const waitingSummaryCapability = defineDomainCapability(
 			const origin = ctx.callerContext.baseUrl.replace(/\/+$/, '')
 			const items = await deriveWaitingItemsForStableUser({
 				env: ctx.env,
-				stableUserId: personalOrgId(user.userId),
+				personId: user.userId,
+				orgId: ctx.callerContext.request?.org.id ?? null,
 				email: user.email,
 				waitUntil: ctx.waitUntil,
 			})
