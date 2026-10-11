@@ -242,8 +242,9 @@ export type UserEntitlement = {
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
 	/**
-	 * Paid seats (live owners + members, at least 1) for purchasable Pro;
-	 * the rate pool is this many per-seat includes. Absent means one seat.
+	 * Live paid seats (owners + members, at least 1). Scales the execute
+	 * runaway brake on every plan and the credits rate pool when the org is
+	 * wallet-eligible. Absent means one seat.
 	 */
 	seats?: number
 	/**

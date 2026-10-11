@@ -230,6 +230,7 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 			plan: 'pro',
 			ladder: 'public',
 			creditWallet: 'none',
+			seats: 1,
 			limitOverrides: [],
 		})
 	}

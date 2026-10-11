@@ -134,6 +134,24 @@ async function adminAudit(): Promise<OrgAuditWriter> {
 	}
 }
 
+test('a free multi-seat org scales the runaway brake from getUserEntitlement', async () => {
+	const org = await seedOrg({ label: 'rate-brake-free-seats' })
+	await addSeat(org)
+	await addSeat(org)
+	const entitlement = await getCachedUserEntitlement(env.APP_DB, {
+		userId: org.stableUserId,
+		email: org.email,
+	})
+	expect(entitlement).toMatchObject({
+		plan: 'free',
+		creditWallet: 'none',
+		seats: 3,
+	})
+	expect(
+		resolveEntitlementLimit(entitlement, 'execute_calls_per_minute', now),
+	).toBe(900)
+})
+
 test('a 3-seat Pro org admits 900 execute calls per minute and refuses the 901st', async () => {
 	const { org } = await seedThreeSeatPro('rate-brake-three-seat')
 	const entitlement = await getCachedUserEntitlement(env.APP_DB, {

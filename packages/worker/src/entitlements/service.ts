@@ -227,10 +227,11 @@ export async function resolveBaseUserEntitlement(input: {
 }
 
 /**
- * Full {@link UserEntitlement} for a `users` row. Reads the wallet balance
- * only for wallet-eligible Pro accounts, so every other account costs no
- * extra query. Pass {@link balanceMicroUsd} when the caller already loaded
- * the wallet (for example `/account/usage`) so the balance is not read twice.
+ * Full {@link UserEntitlement} for a `users` row. Always attaches live seats
+ * (runaway brake scales on every plan). Reads the wallet balance only for
+ * wallet-eligible Pro accounts. Pass {@link balanceMicroUsd} when the caller
+ * already loaded the wallet (for example `/account/usage`) so the balance is
+ * not read twice.
  */
 export async function resolveUserEntitlementFromRow(input: {
 	db: D1Database
@@ -244,16 +245,19 @@ export async function resolveUserEntitlementFromRow(input: {
 		input.row,
 		input.now,
 	)
+	// Seats always attach: the execute runaway brake is seats × 300 on every
+	// plan, and admin / resolveEntitlementLimit display must match admit.
 	if (!creditsEligible) {
+		const [seats, limitOverrides] = await Promise.all([
+			readPaidSeats(input.db, input.stableUserId),
+			readActiveOrgLimitOverrides(input.db, input.stableUserId, input.now),
+		])
 		return {
 			plan,
 			ladder,
 			creditWallet: 'none',
-			limitOverrides: await readActiveOrgLimitOverrides(
-				input.db,
-				input.stableUserId,
-				input.now,
-			),
+			seats,
+			limitOverrides,
 		}
 	}
 	const [balanceMicroUsd, seats, limitOverrides] = await Promise.all([
