@@ -7,12 +7,14 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { runRepoChecks } from '#worker/repo/checks.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
 	buildLegacyJobNotice,
 	buildMovedJobPackageFiles,
+	replaceAmbientStorageImport,
 	runLegacyJobRetire,
 	type LegacyJob,
 	type LegacyJobDecision,
@@ -572,6 +574,80 @@ test('moved package files declare the job and drop kody.json', () => {
 			enabled: true,
 		},
 	})
+})
+
+test('moved package files swap ambient storage for packageStorage and pass publish checks', async () => {
+	const files = buildMovedJobPackageFiles({
+		ownerScope: 'alice',
+		packageKodyId: 'health-watch',
+		description: 'Checks the demo site every 15 minutes.',
+		jobName: 'Health watch',
+		entryPoint: 'src/job.ts',
+		manifestPath: 'kody.json',
+		schedule: { type: 'interval', every: '15m' },
+		timezone: 'UTC',
+		enabled: true,
+		sourceFiles: {
+			'kody.json': '{"kind":"job","entrypoint":"src/job.ts"}',
+			'src/job.ts': [
+				"import { kody, storage } from 'kody:runtime';",
+				'',
+				'export default async function main(params = {}) {',
+				"  const res = await fetch(params.url || 'https://example.com/health');",
+				"  const prev = (storage ? await storage.get('state') : null) || { fails: 0 };",
+				'  if (!res.ok) prev.fails += 1;',
+				"  if (prev.fails === 2) await kody.email_send({ subject: 'down', text: 'down' });",
+				"  if (storage) await storage.set('state', prev);",
+				'  return { healthy: res.ok };',
+				'}',
+				'',
+			].join('\n'),
+		},
+	})
+	expect(files['src/job.ts']).toContain(
+		"import { kody, packageStorage } from 'kody:runtime';",
+	)
+	expect(files['src/job.ts']).toContain(
+		'get: (...args) => packageStorage().get(...args),',
+	)
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files[path] ?? null
+			},
+			async glob() {
+				return Object.keys(files).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		requirePackageDocs: true,
+	})
+	expect(result.results.filter((check) => !check.ok)).toEqual([])
+})
+
+test('replaceAmbientStorageImport keeps aliases and leaves other imports alone', () => {
+	expect(
+		replaceAmbientStorageImport(
+			'import { storage as kv } from "kody:runtime"\nawait kv.get("a")\n',
+		),
+	).toBe(
+		[
+			'import { packageStorage } from "kody:runtime";',
+			'const kv = {',
+			'\tget: (...args) => packageStorage().get(...args),',
+			'\tset: (...args) => packageStorage().set(...args),',
+			'\tlist: (...args) => packageStorage().list(...args),',
+			'\tdelete: (...args) => packageStorage().delete(...args),',
+			'\tclear: (...args) => packageStorage().clear(...args),',
+			'\tsql: (...args) => packageStorage().sql(...args),',
+			'};',
+			'await kv.get("a")',
+			'',
+		].join('\n'),
+	)
+	const untouched = "import { kody } from 'kody:runtime'\nexport default 1\n"
+	expect(replaceAmbientStorageImport(untouched)).toBe(untouched)
 })
 
 test('moved package files refuse a source that already has package.json or lacks the entry', () => {

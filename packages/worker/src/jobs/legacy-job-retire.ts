@@ -15,6 +15,7 @@ import { formatScheduleSummary } from '@kody-internal/shared/jobs/schedule.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { redactEmailRecipient } from '#worker/audit-log.ts'
 import { loadEarliestLiveOwnerId } from '#worker/enablements/repo.ts'
+import { collectAmbientStorageImportFiles } from '#worker/repo/checks.ts'
 import { kodyPackageIdPattern } from '#worker/package-registry/types.ts'
 import { type JobRecord, type JobSchedule } from './types.ts'
 
@@ -261,7 +262,14 @@ export function buildMovedJobPackageFiles(input: {
 	}
 	const files: Record<string, string> = {}
 	for (const [path, content] of Object.entries(input.sourceFiles)) {
-		if (path !== manifestPath) files[path] = content
+		if (path !== manifestPath)
+			files[path] = replaceAmbientStorageImport(content)
+	}
+	const stillAmbient = collectAmbientStorageImportFiles(files)
+	if (stillAmbient.length > 0) {
+		throw new McpCallerError(
+			`Legacy job "${input.jobName}" uses ambient storage in a form the move cannot rewrite: ${stillAmbient.join(', ')}.`,
+		)
 	}
 	files['package.json'] = `${JSON.stringify(packageJson, null, '\t')}\n`
 	if (!files['README.md']?.trim()) {
@@ -290,6 +298,45 @@ export function buildMovedJobPackageFiles(input: {
 	}
 	return files
 }
+
+const kodyRuntimeNamedImportPattern =
+	/import\s*\{([^}]*)\}\s*from\s*(['"])kody:runtime\2[ \t]*;?/g
+
+/**
+ * Package code cannot import the ambient `storage` binding; `packageStorage()`
+ * has the same get/set/list/delete surface over the package bucket.
+ */
+export function replaceAmbientStorageImport(source: string): string {
+	return source.replace(
+		kodyRuntimeNamedImportPattern,
+		(statement, specifierList: string, quote: string) => {
+			const specifiers = specifierList
+				.split(',')
+				.map((specifier) => specifier.trim())
+				.filter(Boolean)
+			const storageSpecifier = specifiers.find((specifier) =>
+				/^storage(\s+as\s+[A-Za-z_$][\w$]*)?$/.test(specifier),
+			)
+			if (!storageSpecifier) return statement
+			const localName =
+				/\s+as\s+([A-Za-z_$][\w$]*)$/.exec(storageSpecifier)?.[1] ?? 'storage'
+			const kept = specifiers.filter(
+				(specifier) => specifier !== storageSpecifier,
+			)
+			if (!kept.includes('packageStorage')) kept.push('packageStorage')
+			const methods = storageMethodNames
+				.map(
+					(name) =>
+						`\t${name}: (...args) => packageStorage().${name}(...args),`,
+				)
+				.join('\n')
+			return `import { ${kept.join(', ')} } from ${quote}kody:runtime${quote};\nconst ${localName} = {\n${methods}\n};`
+		},
+	)
+}
+
+// Resolved per call: packageStorage() reads the run's package context.
+const storageMethodNames = ['get', 'set', 'list', 'delete', 'clear', 'sql']
 
 async function loadOwner(
 	db: D1Database,

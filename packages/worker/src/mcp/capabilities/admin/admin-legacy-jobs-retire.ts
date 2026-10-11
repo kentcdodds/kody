@@ -33,6 +33,7 @@ import {
 	getEntitySourceByEntity,
 	getEntitySourceByIdForUser,
 } from '#worker/repo/entity-sources.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -295,7 +296,7 @@ export function defaultLegacyJobRetireDeps(input: {
 					env,
 					orgId: owner.orgId,
 					fromStorageId: record.storageId,
-					toStorageId: packageJob.record.storageId,
+					toStorageId: buildPackageStorageId(packageId),
 				})
 				for (const enablement of legacyEnablements) {
 					const inserted = await insertEnablement({
