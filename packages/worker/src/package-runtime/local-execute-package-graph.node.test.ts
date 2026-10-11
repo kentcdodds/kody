@@ -513,8 +513,33 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
 		const bodySecretText = '{"note":"{{secret:demoToken|scope=user}}"}'
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/post', {
+				method: 'POST',
+				body: bodySecretText,
+			}),
+		).rejects.toThrow(
+			/^Secret "demoToken" is in the request body\. The fetch gateway never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream\./,
+		)
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/post', {
+				method: 'POST',
+				body: new URLSearchParams({ token: '{{secret:demoToken}}' }),
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
+		await expect(
+			__kodyGatewayFetch(
+				new Request('https://api.example.com/post', {
+					method: 'POST',
+					body: '{{integration-token:github}}',
+				}),
+			),
+		).rejects.toThrow(/^Integration token "github" is in the request body\./)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(0)
 		await __kodyGatewayFetch('https://api.example.com/post', {
 			method: 'POST',
+			headers: { 'x-kody-secret-resolution': 'headers-only' },
 			body: bodySecretText,
 		})
 		expect(gatewayCalls).toHaveLength(0)
@@ -719,8 +744,15 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		const placeholderForm = new FormData()
 		placeholderForm.set('{{secret:demoToken|scope=user}}', 'field-value')
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/upload', {
+				method: 'POST',
+				body: placeholderForm,
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
 		await __kodyGatewayFetch('https://api.example.com/upload', {
 			method: 'POST',
+			headers: { 'x-kody-secret-resolution': 'headers-only' },
 			body: placeholderForm,
 		})
 		expect(gatewayCalls).toHaveLength(0)
@@ -729,9 +761,18 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		const requestForm = new FormData()
 		requestForm.set('note', '{{secret:demoToken|scope=user}}')
+		await expect(
+			__kodyGatewayFetch(
+				new Request('https://api.example.com/upload', {
+					method: 'POST',
+					body: requestForm,
+				}),
+			),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
 		await __kodyGatewayFetch(
 			new Request('https://api.example.com/upload', {
 				method: 'POST',
+				headers: { 'x-kody-secret-resolution': 'headers-only' },
 				body: requestForm,
 			}),
 		)

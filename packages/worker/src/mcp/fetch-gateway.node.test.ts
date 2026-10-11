@@ -230,7 +230,7 @@ test('fetch gateway refuses placeholders in the URL path or query before resolvi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
 	const urlRule =
-		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL or query, and sends the body verbatim\./
+		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL, query, or body\./
 
 	// Request serialization percent-encodes `{` / `}` in the path.
 	const pathRequest = new Request(
@@ -254,57 +254,109 @@ test('fetch gateway refuses placeholders in the URL path or query before resolvi
 	expect(resolveSpy).not.toHaveBeenCalled()
 })
 
-test('fetch gateway sends placeholder text in a body verbatim, even for an existing secret approved for the host', async () => {
+test('fetch gateway refuses a body that holds a placeholder instead of sending it unsubstituted', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
 	const credentialSpy = vi.spyOn(credentialResolution, 'resolveCredential')
-	const issueBody = JSON.stringify({
-		title: 'Placeholder docs',
-		body: 'Use {{secret:githubToken|scope=user}} or {{secret:githubToken}} in a header.',
-	})
 	const bodies = [
-		{ contentType: 'application/json', body: issueBody },
+		{
+			contentType: 'application/json',
+			body: JSON.stringify({ userId: '{{secret:clerkReviewUserId}}' }),
+			refusal: /^Secret "clerkReviewUserId" is in the request body\./,
+		},
 		{
 			contentType: 'application/x-www-form-urlencoded',
 			body: new URLSearchParams({
 				grant_type: 'refresh_token',
 				refresh_token: '{{secret:githubToken|scope=user}}',
 			}).toString(),
+			refusal: /^Secret "githubToken" is in the request body\./,
 		},
 		{
 			contentType: 'text/plain',
-			body: '{{secret-basic:username=githubToken,password=githubToken}} {{integration-token:github}} {{secret/onepassword:op://vault/item/field}}',
+			body: '{{secret-basic:username=githubUser,password=githubToken}}',
+			refusal:
+				/^Basic auth secret pair "githubUser" \/ "githubToken" is in the request body\./,
+		},
+		{
+			contentType: 'text/plain',
+			body: 'token={{integration-token:github}}',
+			refusal: /^Integration token "github" is in the request body\./,
+		},
+		{
+			contentType: 'text/plain',
+			body: '{{secret/onepassword:op://vault/item/field}}',
+			refusal: /^Vault secret from "onepassword" is in the request body\./,
 		},
 	]
-	for (const { contentType, body } of bodies) {
-		const sent = await expand(
-			new Request('https://api.example.com/repos/o/r/issues', {
+	for (const { contentType, body, refusal } of bodies) {
+		const request = () =>
+			new Request('https://api.example.com/v1/reviews', {
 				method: 'POST',
-				headers: { 'Content-Type': contentType },
+				headers: {
+					Authorization: 'Bearer {{secret:githubToken|scope=user}}',
+					'Content-Type': contentType,
+				},
 				body,
-			}),
+			})
+		await expect(expand(request())).rejects.toThrow(refusal)
+		await expect(expand(request())).rejects.toThrow(
+			/never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream\..*x-kody-secret-resolution: headers-only/,
 		)
-		expect(await sent.text()).toBe(body)
+		await expect(expand(request())).rejects.toBeInstanceOf(
+			secretPlacement.SecretPlacementError,
+		)
 	}
 	expect(credentialSpy).not.toHaveBeenCalled()
 	expect(resolveSpy).not.toHaveBeenCalled()
+})
 
-	// A header placeholder still resolves; the same text in the body does not.
+test('fetch gateway sends a body that quotes placeholder syntax verbatim when the caller opts in with headers-only', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const issueBody = JSON.stringify({
+		title: 'Placeholder docs',
+		body: 'Use {{secret:githubToken|scope=user}} or {{secret:githubToken}} in a header.',
+	})
 	const sent = await expand(
 		new Request('https://api.example.com/repos/o/r/issues', {
 			method: 'POST',
 			headers: {
 				Authorization: 'Bearer {{secret:githubToken|scope=user}}',
 				'Content-Type': 'application/json',
+				[secretResolutionHeaderName]: 'headers-only',
 			},
 			body: issueBody,
 		}),
 	)
 	expect(sent.headers.get('Authorization')).toBe('Bearer secret-value')
+	expect(sent.headers.get(secretResolutionHeaderName)).toBeNull()
 	const sentBody = await sent.text()
 	expect(sentBody).toBe(issueBody)
 	expect(sentBody).not.toContain('secret-value')
+	expect(resolveSpy).toHaveBeenCalledTimes(1)
+
+	// headers-only never opens the URL: a URL placeholder is still refused.
+	await expect(
+		expand(
+			new Request('https://api.example.com/v1?key={{secret:githubToken}}', {
+				headers: { [secretResolutionHeaderName]: 'headers-only' },
+			}),
+		),
+	).rejects.toThrow(/^Secret "githubToken" is in the request URL\./)
+})
+
+test('fetch gateway refuses a form-encoded placeholder in the URL query', async () => {
+	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
+	const url = new URL('https://api.example.com/v1')
+	url.search = new URLSearchParams({ key: '{{secret:queryToken}}' }).toString()
+	expect(url.href).toContain('%7B%7Bsecret%3AqueryToken%7D%7D')
+	await expect(expand(new Request(url))).rejects.toThrow(
+		/^Secret "queryToken" is in the request URL\./,
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
 })
 
 test('fetch gateway bulk host approval uses the secret scope, not the package runtime context', async () => {
@@ -597,12 +649,14 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 	const discordMultipart = (
 		contentBoundary: string,
 		body: Uint8Array<ArrayBuffer>,
+		extraHeaders: Record<string, string> = {},
 	) =>
 		new Request('https://discord.com/api/channels/1/messages', {
 			method: 'POST',
 			headers: {
 				Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
 				'Content-Type': `multipart/form-data; boundary=${contentBoundary}`,
+				...extraHeaders,
 			},
 			body,
 		})
@@ -616,8 +670,9 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		multipartBody,
 	)
 
-	// Text multipart parts that mention placeholders are forwarded unchanged;
-	// only the header placeholder resolves.
+	// Text multipart parts that quote placeholders are refused by default and
+	// forwarded unchanged with headers-only; only the header placeholder
+	// resolves.
 	const textBoundary = '----KodyDiscordBoundaryTest'
 	const payloadJson = JSON.stringify({
 		content: 'Feedback mentioned {{secret:BraveSearch}} in the docs.',
@@ -653,8 +708,14 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 					allowedPackages: [],
 				},
 	)
+	await expect(
+		expand(discordMultipart(textBoundary, textMultipartBody)),
+	).rejects.toThrow(/^Secret "BraveSearch" is in the request body\./)
+	expect(resolveSpy).not.toHaveBeenCalled()
 	const transformedTextMultipart = await expand(
-		discordMultipart(textBoundary, textMultipartBody),
+		discordMultipart(textBoundary, textMultipartBody, {
+			[secretResolutionHeaderName]: 'headers-only',
+		}),
 	)
 	expect(transformedTextMultipart.headers.get('Authorization')).toBe(
 		'Bot secret-value',
@@ -667,8 +728,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		expect.objectContaining({ name: 'discordBotToken' }),
 	)
 
-	// BOM-prefixed JSON, binary bodies with placeholder-looking bytes, and
-	// opt-out binary bodies pass through byte-for-byte without resolution.
+	// BOM-prefixed JSON and opt-out bodies pass through byte-for-byte without
+	// resolution. Placeholder bytes inside a binary body are still refused.
 	resolveSpy.mockClear()
 	resolveSpy.mockResolvedValue(
 		userSecret('secret-value', ['discord.com', 'example.com']),
@@ -691,10 +752,19 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		encoder.encode('{{secret:name|scope=user}}'),
 		new Uint8Array([0xfe]),
 	)
+	await expect(
+		bodyBytes(
+			new Request('https://example.com/upload', {
+				method: 'PUT',
+				body: binaryPlaceholderBody,
+			}),
+		),
+	).rejects.toThrow(/^Secret "name" is in the request body\./)
 	expect(
 		await bodyBytes(
 			new Request('https://example.com/upload', {
 				method: 'PUT',
+				headers: { [secretResolutionHeaderName]: 'off' },
 				body: binaryPlaceholderBody,
 			}),
 		),

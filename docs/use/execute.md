@@ -415,9 +415,9 @@ outbound request.
 See [Secrets and host approval](./secrets-and-values.md) for placeholders, host
 approval, **`kody.secretList`** / **`secretSet`**, and the rules for mentioning
 placeholder syntax without resolving it (the inert `{{secret:<name>}}` form and
-the `x-kody-secret-resolution: off` header). Treat placeholder syntax as
-operational wiring, not prose — never place a resolvable **`{{secret:...}}`**
-token into content shown to users or sent to third parties.
+the `x-kody-secret-resolution: off` and `headers-only` headers). Treat
+placeholder syntax as operational wiring, not prose — never place a resolvable
+**`{{secret:...}}`** token into content shown to users or sent to third parties.
 
 ## Named state
 
