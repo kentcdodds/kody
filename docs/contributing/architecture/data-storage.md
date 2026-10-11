@@ -1181,6 +1181,8 @@ script owns no Durable Object classes.
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
+- `OPERATOR_BACKUPS` (R2, operator rollback snapshots such as org resource
+  transfer backups)
 - `REPO_SESSION_BLOBS` (R2, ephemeral RepoSession Workspace spill; not a DR
   canonical store)
 - `MCP_OBJECT` (Durable Objects; class hosted on the platform worker)
@@ -1632,6 +1634,13 @@ App-owned R2 keys are:
   `REPO_SESSION_BLOBS`. Account deletion prefix-purges via each session Durable
   Object. This scratch is excluded from the `r2_object` account-export section;
   canonical repo bytes stay in Artifacts.
+
+- `org-resource-transfers/{fromOrgId}/{toOrgId}/{stamp}-{uuid}.json` in
+  `OPERATOR_BACKUPS` — rollback snapshot written by
+  [org resource transfer](../org-resource-transfer.md) apply. Encrypted columns
+  stay sealed. Account deletion and org hard purge delete every backup naming
+  the owner as source or target; account export skips it because the same rows
+  export from D1.
 
 New R2 key prefixes must add corresponding account-deletion coverage or a
 deliberate retention note, same as KV. Exportable registered R2 surfaces

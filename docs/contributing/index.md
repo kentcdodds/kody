@@ -105,6 +105,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Production backup and disaster recovery](./disaster-recovery.md)
 - [Production rollback](./rollback.md)
 - Ops runbook: [account write-lease repair](./account-write-lease-repair.md)
+- Ops runbook: [org resource transfer](./org-resource-transfer.md)
 
 ## Architecture
 

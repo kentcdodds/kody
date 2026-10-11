@@ -402,6 +402,28 @@ It counts packages and files per pattern, per org, and per package, plus
 private packages. Keep them out of public issues; public issues get the pattern
 counts only.
 
+### `0011-owner-scope-follows-registry`
+
+This codemod runs after an [org resource transfer](./org-resource-transfer.md).
+The transfer renames each package to the new org's scope in the registry, but
+package sources still name the old scope. When the scope of the `package.json`
+`name` differs from the scope of the registry name (`context.packageName`), the
+codemod replaces every `@<oldScope>/` with `@<newScope>/` in every file. That
+covers the manifest name, `kody.dependencies` keys, `kody:@oldScope/...`
+imports, and docs.
+
+- A match must be followed by `/`, so `@oldScopeish/x`, a bare `@oldScope`
+  handle, and email addresses are left alone. It shares
+  `rewriteScopedReferences` with the community fork self-reference rewrite.
+- Every package in the old scope moved together, so references to sibling
+  packages are rewritten too.
+- Packages whose scope already matches, unscoped names, and unparseable or
+  missing manifests are clean. The codemod is idempotent.
+
+Once the transfer has committed, run `adminPackageCodemodDryRun`, then
+`adminPackageCodemodApply`, with `userIds` set to the new org id.
+`adminPackageCodemodRevert` undoes it like any other codemod.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
