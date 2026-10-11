@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	adoptCommunityFork: vi.fn(),
 	inspectCommunityForkAdoption: vi.fn(),
 	getSavedPackageById: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	authorize: vi.fn(),
 }))
 
@@ -23,6 +24,8 @@ vi.mock('#worker/community/service.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mocks.getSavedPackageById(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mocks.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
@@ -82,15 +85,27 @@ const unadoptedState = {
 	adoptedAt: null,
 }
 
+const savedPackage = {
+	id: 'pkg-1',
+	userId: ownerIdFromStored('user-alice'),
+	name: '@alice/demo-fork',
+	kodyId: 'demo-fork',
+}
+
 function mockAdoptLookup(packageId = 'pkg-1') {
-	mocks.inspectCommunityForkAdoption.mockResolvedValue(unadoptedState)
 	mocks.getSavedPackageById.mockResolvedValue({
+		...savedPackage,
 		id: packageId,
-		userId: ownerIdFromStored('user-alice'),
-		name: '@alice/demo-fork',
-		kodyId: 'demo-fork',
+	})
+	mocks.resolveSavedPackageRef.mockResolvedValue({
+		...savedPackage,
+		id: packageId,
 	})
 	mocks.authorize.mockResolvedValue(undefined)
+	mocks.inspectCommunityForkAdoption.mockResolvedValue({
+		...unadoptedState,
+		packageId,
+	})
 }
 
 test('communityForkAdopt returns a website adoption link and never adopts', async () => {
@@ -114,14 +129,23 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 		approval_url:
 			'https://example.com/@alice/demo-fork/settings#community-fork-adoption',
 	})
+	expect(mocks.getSavedPackageById).toHaveBeenCalledWith(expect.anything(), {
+		userId: ownerIdFromStored('user-alice'),
+		packageId: 'pkg-1',
+	})
+	expect(mocks.authorize).toHaveBeenCalled()
 	expect(mocks.inspectCommunityForkAdoption).toHaveBeenCalledWith({
 		env: expect.anything(),
 		userId: ownerIdFromStored('user-alice'),
 		packageId: 'pkg-1',
-		kodyId: undefined,
 	})
-	expect(mocks.authorize).toHaveBeenCalled()
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
+	const authorizeOrder = mocks.authorize.mock.invocationCallOrder[0]
+	const inspectOrder =
+		mocks.inspectCommunityForkAdoption.mock.invocationCallOrder[0]
+	expect(authorizeOrder).toBeDefined()
+	expect(inspectOrder).toBeDefined()
+	expect(authorizeOrder!).toBeLessThan(inspectOrder!)
 
 	mocks.inspectCommunityForkAdoption.mockResolvedValueOnce({
 		...unadoptedState,
@@ -137,6 +161,7 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 		kody_id: 'demo-fork',
 		adopted_at: '2026-07-21T12:00:00.000Z',
 	})
+	expect(mocks.resolveSavedPackageRef).toHaveBeenCalled()
 
 	mocks.inspectCommunityForkAdoption.mockRejectedValueOnce(
 		new CommunityActionError(

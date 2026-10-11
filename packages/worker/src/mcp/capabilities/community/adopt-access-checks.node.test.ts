@@ -26,11 +26,17 @@ const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
 async function insertPackage(
 	db: D1Database,
-	input: { ownerId: string; scope: string; leaf: string },
+	input: {
+		ownerId: string
+		scope: string
+		leaf: string
+		communityFork?: boolean
+	},
 ) {
 	const packageId = crypto.randomUUID()
 	const sourceId = crypto.randomUUID()
 	const now = '2026-10-11T00:00:00.000Z'
+	const communityFork = input.communityFork !== false
 	await insertSavedPackage(
 		db,
 		{
@@ -65,17 +71,19 @@ async function insertPackage(
 		created_at: now,
 		updated_at: now,
 	})
-	await insertCommunityFork(db, {
-		id: crypto.randomUUID(),
-		listing_id: `listing-${input.leaf}`,
-		forker_user_id: ownerIdFromStored(input.ownerId),
-		origin_commit: 'commit-origin',
-		forked_package_id: packageId,
-		forked_source_id: sourceId,
-		target_kody_id: input.leaf,
-		listing_name: `@upstream/${input.leaf}`,
-		listing_kody_id: input.leaf,
-	})
+	if (communityFork) {
+		await insertCommunityFork(db, {
+			id: crypto.randomUUID(),
+			listing_id: `listing-${input.leaf}`,
+			forker_user_id: ownerIdFromStored(input.ownerId),
+			origin_commit: 'commit-origin',
+			forked_package_id: packageId,
+			forked_source_id: sourceId,
+			target_kody_id: input.leaf,
+			listing_name: `@upstream/${input.leaf}`,
+			listing_kody_id: input.leaf,
+		})
+	}
 	return packageId
 }
 
@@ -200,4 +208,90 @@ test('team member with Use on package A can adopt-inspect A in the bound org and
 			communityForkAdoptCapability.handler({ package_id: b }, ctx),
 		),
 	).toBeInstanceOf(AuthorizationError)
+})
+
+test('denied adopt probes do not leak self-authored vs forked vs kodyId', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	const env = { APP_DB: db } as unknown as Env
+	const seedPerson = async (username: string) => {
+		const id = testStableUserIdFromEmail(`${username}@example.com`)
+		sqlite
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, stable_user_id)
+				 VALUES (?, ?, 'hash', ?)`,
+			)
+			.run(username, `${username}@example.com`, id)
+		await provisionPersonalOrgForSqliteUser(sqlite, {
+			stableUserId: id,
+			username,
+		})
+		return id
+	}
+	const kentId = await seedPerson('kentcdodds')
+	const memberId = await seedPerson('teammate')
+	const audit = createTestOrgAuditWriter({ actorUserId: kentId })
+	const teamOrg = await createOrg({
+		db,
+		env: {} as Env,
+		slug: 'rocket-co',
+		createdByUserId: kentId,
+		audit,
+	})
+	const teamOrgId = teamOrg.id as string
+	const granted = await insertPackage(db, {
+		ownerId: teamOrgId,
+		scope: 'rocket-co',
+		leaf: 'alpha',
+	})
+	const forkedDenied = await insertPackage(db, {
+		ownerId: teamOrgId,
+		scope: 'rocket-co',
+		leaf: 'secret-fork',
+	})
+	const selfAuthoredDenied = await insertPackage(db, {
+		ownerId: teamOrgId,
+		scope: 'rocket-co',
+		leaf: 'secret-self',
+		communityFork: false,
+	})
+	await addOrgMember({
+		db,
+		orgId: teamOrgId,
+		userId: memberId,
+		role: 'member',
+		invitedByUserId: kentId,
+		audit,
+	})
+	await upsertGrant({
+		db,
+		orgId: teamOrgId,
+		resourceType: 'package',
+		resourceId: granted,
+		subject: { type: 'user', id: memberId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: kentId,
+		audit,
+	})
+	const ctx = context(env, {
+		personId: memberId,
+		username: 'teammate',
+		org: { id: teamOrgId, slug: 'rocket-co', role: 'member' },
+	})
+
+	const forkedError = await rejection(
+		communityForkAdoptCapability.handler({ package_id: forkedDenied }, ctx),
+	)
+	const selfError = await rejection(
+		communityForkAdoptCapability.handler(
+			{ package_id: selfAuthoredDenied },
+			ctx,
+		),
+	)
+	expect(forkedError).toBeInstanceOf(AuthorizationError)
+	expect(selfError).toBeInstanceOf(AuthorizationError)
+	expect(String(forkedError)).not.toMatch(/secret-fork|self-authored|listing/i)
+	expect(String(selfError)).not.toMatch(/secret-self|self-authored|listing/i)
 })

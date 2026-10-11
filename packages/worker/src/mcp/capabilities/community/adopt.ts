@@ -1,6 +1,8 @@
 import { z } from 'zod'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { inspectCommunityForkAdoption } from '#worker/community/service.ts'
 import {
+	normalizePackageNameInput,
 	packageIdLookupDescription,
 	packageNameLookupDescription,
 } from '#worker/package-registry/package-name.ts'
@@ -13,7 +15,10 @@ import {
 } from '#mcp/capabilities/meta/require-user.ts'
 import { buildCommunityForkAdoptionHref } from '#universal/community-fork-adoption.ts'
 import { authorize, packageResource } from '#worker/authorization/authorize.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageById,
+	resolveSavedPackageRef,
+} from '#worker/package-registry/repo.ts'
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 
 const communityForkAdoptPackageRuntimeErrorMessage =
@@ -88,26 +93,54 @@ export const communityForkAdoptCapability = defineDomainCapability(
 				user,
 				request: requireMcpRequest(ctx.callerContext),
 			})
-			const state = await inspectCommunityForkAdoption({
-				env: ctx.env,
-				userId: owner.ownerUserId,
-				packageId: args.package_id,
-				kodyId: args.kody_id,
-			})
-			const saved = await getSavedPackageById(ctx.env.APP_DB, {
-				userId: owner.ownerUserId,
-				packageId: state.packageId,
-			})
-			if (!saved) {
+			const packageIdCount =
+				(args.package_id !== undefined ? 1 : 0) +
+				(args.kody_id !== undefined ? 1 : 0)
+			if (packageIdCount !== 1) {
 				throw new McpCallerError(
-					`Saved package "${state.packageId}" was not found.`,
+					'Provide exactly one of `package_id` or the package name leaf.',
 				)
+			}
+			let requestedKodyId: string | undefined
+			if (args.kody_id !== undefined) {
+				try {
+					requestedKodyId = normalizePackageNameInput({
+						value: args.kody_id,
+						ownerScope: owner.ownerScope,
+						action: 'resolve',
+					})
+				} catch (error) {
+					throw new McpCallerError(getErrorMessage(error), { cause: error })
+				}
+			}
+			// Authorize before inspect so missing / self-authored / forked
+			// packages do not leak distinct errors or kodyIds to teammates who
+			// only have Use on another package in the bound org.
+			const saved =
+				args.package_id !== undefined
+					? await getSavedPackageById(ctx.env.APP_DB, {
+							userId: owner.ownerUserId,
+							packageId: args.package_id,
+						})
+					: await resolveSavedPackageRef(ctx.env.APP_DB, {
+							userId: owner.ownerUserId,
+							match: 'slug',
+							ref: requestedKodyId ?? '',
+						})
+			if (!saved) {
+				const missingId = args.package_id ?? args.kody_id
+				throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 			}
 			await authorize(
 				{ env: ctx.env, request: ctx.callerContext.request },
 				'package:read',
 				packageResource(saved),
 			)
+			const state = await inspectCommunityForkAdoption({
+				env: ctx.env,
+				userId: owner.ownerUserId,
+				packageId: saved.id,
+			})
 			const approvalUrl = new URL(
 				buildCommunityForkAdoptionHref({
 					username: state.ownerScope,
