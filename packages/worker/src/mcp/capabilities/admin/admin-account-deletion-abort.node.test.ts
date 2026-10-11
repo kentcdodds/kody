@@ -5,6 +5,7 @@ import {
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -135,7 +136,10 @@ test('adminAccountDeletionAbort fails closed for an unknown user', async () => {
 			},
 			ctx,
 		),
-	).rejects.toThrow('User not found.')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError && error.message === 'User not found.',
+	)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'adminAccountDeletionAbort',

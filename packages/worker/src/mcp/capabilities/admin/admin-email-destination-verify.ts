@@ -3,6 +3,7 @@ import {
 	AdminEmailDestinationVerificationError,
 	markAdminEmailDestinationVerified,
 } from '#worker/email/destination-verification-admin.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -87,8 +88,9 @@ export const adminEmailDestinationVerifyCapability = defineDomainCapability(
 							destination: toEmailDestination(result.destination),
 						}
 					} catch (error) {
+						// Missing user/destination and invalid email are caller-clearable.
 						if (error instanceof AdminEmailDestinationVerificationError) {
-							throw new Error(error.message)
+							throw new McpCallerError(error.message, { cause: error })
 						}
 						throw error
 					}

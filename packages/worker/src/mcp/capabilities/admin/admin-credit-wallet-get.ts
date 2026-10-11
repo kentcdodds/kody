@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { loadAdminCreditWallet } from '#worker/admin/credit-grants.ts'
@@ -30,7 +31,8 @@ export const adminCreditWalletGetCapability = defineDomainCapability(
 						email: args.email,
 						username: args.username,
 					})
-					if (!wallet) throw new Error('User not found.')
+					// Missing target is caller-supplied; keep off Sentry via McpCallerError.
+					if (!wallet) throw new McpCallerError('User not found.')
 					const { ok: _ok, ...rest } = wallet
 					return rest
 				},

@@ -4,6 +4,7 @@ import {
 	markAdminUserEmailVerified,
 	mintAdminEmailVerificationUrl,
 } from '#worker/identity/email-verification-admin.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -95,8 +96,9 @@ export const adminUserVerifyCapability = defineDomainCapability(
 							expiresAt: minted.expiresAt,
 						}
 					} catch (error) {
+						// Missing users / already-verified are caller-clearable.
 						if (error instanceof AdminEmailVerificationError) {
-							throw new Error(error.message)
+							throw new McpCallerError(error.message, { cause: error })
 						}
 						throw error
 					}

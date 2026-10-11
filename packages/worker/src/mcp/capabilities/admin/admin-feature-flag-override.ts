@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -111,7 +112,7 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 							userId: target.dbUserId,
 						})
 						if (!cleared) {
-							throw new Error(
+							throw new McpCallerError(
 								`No override exists for feature flag "${key}" and stableUserId ${target.stableUserId}.`,
 							)
 						}
