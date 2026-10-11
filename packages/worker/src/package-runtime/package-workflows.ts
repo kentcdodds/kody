@@ -16,6 +16,7 @@ import {
 import { NonRetryableError } from 'cloudflare:workflows'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
 import {
 	parseRequestLineage,
@@ -200,15 +201,12 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 		delay: '30 seconds',
 		backoff: 'exponential',
 	},
-	timeout: '5 minutes',
+	// One minute over `backgroundExecutorTimeoutMs`, the sandbox budget for
+	// workflow-invoked exports and inline code, so the step records the
+	// sandbox's own timeout and run-record finish instead of being cut by the
+	// engine mid-write.
+	timeout: '6 minutes',
 }
-
-/**
- * Sandbox budget for workflow-invoked package exports / inline code.
- * Kept under the Cloudflare Workflow step timeout (`5 minutes`) so status
- * bookkeeping still has headroom after the sandbox returns.
- */
-export const workflowExecutorTimeoutMs = 270_000
 
 type DynamicCallableWorkflowStep = {
 	do(
@@ -1608,8 +1606,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		try {
 			// Ephemeral + raised timeout: Workflow step.do already caches
 			// successful results. Keyed invoke would replay a sandbox timeout
-			// on retry (~ms) instead of re-executing; the default 90s export
-			// cap is also below the 5-minute step window.
+			// on retry (~ms) instead of re-executing. The background budget
+			// replaces the 90s interactive export cap.
 			const response = await invokePackageExport({
 				env: this.env,
 				baseUrl: getAppBaseUrl({
@@ -1631,7 +1629,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					topic: payload.workflowName,
 				},
 				ephemeral: true,
-				executorTimeoutMs: workflowExecutorTimeoutMs,
+				executorTimeoutMs: backgroundExecutorTimeoutMs,
 			})
 			if (
 				readWorkflowInvocationErrorCode(response) === accountSuspendedErrorCode
@@ -1717,7 +1715,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				payload.params,
 				{
 					packageContext: payload.packageContext,
-					executorTimeoutMs: workflowExecutorTimeoutMs,
+					executorTimeoutMs: backgroundExecutorTimeoutMs,
 					runSurface: 'workflow',
 				},
 			)

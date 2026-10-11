@@ -163,6 +163,21 @@ errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
 
+### Time limits
+
+Sandbox budgets are the same on every plan:
+
+| Run                                                                     | Budget                       |
+| ----------------------------------------------------------------------- | ---------------------------- |
+| MCP / ad-hoc execute, package export HTTP invokes, `sync` webhooks      | ~90s                         |
+| Jobs (scheduled and `jobRunNow`, including package exports they import) | 5 minutes                    |
+| Ack (queued) webhook deliveries                                         | 5 minutes                    |
+| Each workflow step                                                      | 5 minutes                    |
+| `execute --local`                                                       | none (fetch deadlines apply) |
+
+A `sync` webhook's HTTP response stops waiting after 30s. Work that does not fit
+the interactive budget goes in a workflow or a job.
+
 ### Recovering from MCP client timeouts
 
 A timeout means the MCP client stopped waiting. Kody aborts that inbound

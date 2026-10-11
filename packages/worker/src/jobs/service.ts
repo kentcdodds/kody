@@ -20,6 +20,7 @@ import {
 } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import {
 	abandonRunRecord,
@@ -523,6 +524,7 @@ async function executePublishedJobArtifact(input: {
 		input.job.params,
 		{
 			...(packageContext ? { packageContext } : {}),
+			executorTimeoutMs: backgroundExecutorTimeoutMs,
 			runRecord,
 			runRecordHandle: input.runRecordHandle,
 			...packageRuntimeTools,

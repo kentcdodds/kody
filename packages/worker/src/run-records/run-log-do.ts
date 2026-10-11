@@ -1514,6 +1514,9 @@ class RunLogBase extends DurableObject<Env> {
 		const shortLivedCutoff = new Date(
 			nowMs - runRecordStaleRunningTtlMsForSurface('execute'),
 		).toISOString()
+		const backgroundCutoff = new Date(
+			nowMs - runRecordStaleRunningTtlMsForSurface('webhook'),
+		).toISOString()
 		const jobCutoff = new Date(
 			nowMs - runRecordStaleRunningTtlMsForSurface('job'),
 		).toISOString()
@@ -1529,14 +1532,16 @@ class RunLogBase extends DurableObject<Env> {
 			'reconcileStaleRunning',
 			`SELECT id, started_at, surface, idempotency_key FROM runs
 			WHERE status = 'running' AND (
-				(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
+				(surface IN ('execute', 'export', 'retriever', 'subscription', 'app_fetch', 'app_realtime')
 					AND started_at < ?)
+				OR (surface = 'webhook' AND started_at < ?)
 				OR (surface = 'job' AND started_at < ?)
 				OR (surface = 'workflow' AND started_at < ?)
 			)
 			ORDER BY started_at ASC
 			LIMIT ?`,
 			shortLivedCutoff,
+			backgroundCutoff,
 			jobCutoff,
 			longLivedCutoff,
 			maxStaleRunningReconcilesPerPass,

@@ -278,10 +278,12 @@ package settings.
   same code in Activity. The owner sees the full error in Activity.
 
 Background delivery retries keep the same idempotency key, so a transient
-platform persistence failure does not duplicate a completed export. Package
-exports still have the normal execution limit (about 90 seconds); packages that
-exceed it receive an explicit timeout failure and should split or checkpoint
-their work.
+platform persistence failure does not duplicate a completed export. Ack (queued)
+deliveries run the export with a 5-minute budget on every plan. `sync`
+deliveries keep the interactive ~90-second budget, and the HTTP response stops
+waiting after 30 seconds. Exports that exceed their budget receive an explicit
+timeout failure and should split or checkpoint their work, or hand long work to
+a [workflow](./workflows.md).
 
 ## Subscription challenges
 

@@ -587,6 +587,9 @@ Recurring schedules belong on a saved package:
 - Package config (secrets and manifest mounts) stays keyed by the saved package
   id
 - Shared durable data goes through `packageStorage()`
+- Each run, including `jobRunNow`, gets a 5-minute sandbox budget on every plan,
+  including package exports the job imports. Outbound `fetch` keeps its own
+  5-minute deadline and 60s idle timeout
 
 Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see

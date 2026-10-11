@@ -38,6 +38,7 @@ import {
 	runRecordRetentionDays,
 	runRecordRetentionEmptyBackoffMinMs,
 	runRecordRetentionEveryNFinishes,
+	runRecordStaleRunningTtlMsBackground,
 	runRecordStaleRunningTtlMsJob,
 	runRecordStaleRunningTtlMsShortLived,
 	type RunRecordContext,
@@ -45,6 +46,7 @@ import {
 	type RunRecordHandle,
 	type RunSurface,
 } from './types.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 
 type SeedRun = {
 	id: string
@@ -831,6 +833,35 @@ test('cap and stale retention journey', async () => {
 			status: 'error',
 			errorName: runRecordPlatformInterruptedErrorName,
 			surface: 'execute',
+		})
+	}
+
+	// --- a webhook run inside the 5-minute background budget is not stale ---
+	{
+		const userId = uniqueUserId('stale-webhook-heal')
+		await seedRuns(userId, [
+			{
+				id: 'live-webhook',
+				status: 'running',
+				startedAt: iso(Date.now() - backgroundExecutorTimeoutMs),
+				surface: 'webhook',
+			},
+			{
+				id: 'stale-webhook',
+				status: 'running',
+				startedAt: iso(
+					Date.now() - runRecordStaleRunningTtlMsBackground - 1_000,
+				),
+				surface: 'webhook',
+			},
+		])
+		expect((await getRun(userId, 'live-webhook'))?.run).toMatchObject({
+			status: 'running',
+		})
+		expect((await getRun(userId, 'stale-webhook'))?.run).toMatchObject({
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+			surface: 'webhook',
 		})
 	}
 

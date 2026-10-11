@@ -7,6 +7,7 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
@@ -379,6 +380,10 @@ test('interactive-origin leftover jobs run in the background with writable stora
 			packageInvokeTools: expect.anything(),
 		}),
 	)
+	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+		executorTimeoutMs: backgroundExecutorTimeoutMs,
+	})
+	expect(backgroundExecutorTimeoutMs).toBe(300_000)
 })
 
 test('leftover kody.json jobs execute the bundled published entry with job run-record context', async () => {

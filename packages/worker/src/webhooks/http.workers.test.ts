@@ -778,6 +778,10 @@ test('a sync webhook whose package was refused for credential placement returns 
 	)
 	expect(failed?.metadata).toMatchObject({ httpStatus: 502 })
 	expect(failed?.errorMessage).toBe('credential_placement_refused')
+	// Sync deliveries keep the interactive sandbox budget.
+	expect(mocks.invokePackageExport.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+		'executorTimeoutMs',
+	)
 })
 
 test('webhook ingress rejects suspended owners before any dispatch', async () => {

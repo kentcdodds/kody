@@ -164,6 +164,9 @@ test('ack webhook work outlives the old waitUntil window and persists a terminal
 			result: { handled: true },
 		}),
 	)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(
+		expect.objectContaining({ executorTimeoutMs: 300_000 }),
+	)
 	vi.useRealTimers()
 })
 

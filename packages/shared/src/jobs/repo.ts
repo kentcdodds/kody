@@ -498,8 +498,8 @@ export async function getNextRunnableJobRow(
 }
 
 /**
- * Scheduled executions use a ten-minute lease, comfortably above the
- * sandbox's default 90-second maximum runtime. A single conditional D1 write
+ * Scheduled executions use a ten-minute lease, twice the 5-minute job
+ * sandbox budget (`backgroundExecutorTimeoutMs`). A single conditional D1 write
  * is the ownership boundary; reading due rows alone never grants ownership.
  */
 export const jobExecutionLeaseMs = 10 * 60 * 1_000
