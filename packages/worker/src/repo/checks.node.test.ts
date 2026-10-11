@@ -927,6 +927,49 @@ export default async function main() {
 	}
 })
 
+test('runRepoChecks refuses secret placeholders outside a header with the file, line, and slot, except for install and codemods', async () => {
+	const misplaced = `export default async function main() {
+	return await fetch('https://api.example.com/reviews', {
+		method: 'POST',
+		headers: { Authorization: 'Bearer {{secret:apiToken}}' },
+		body: JSON.stringify({ reviewer: '{{secret:clerkReviewUserId}}' }),
+	})
+}
+`
+	const { result } = await runChecks(
+		packageFiles(manifest('misplaced-placeholder'), {
+			'src/index.ts': misplaced,
+		}),
+	)
+	const lint = findCheck(result, 'lint')
+	expect(result.ok).toBe(false)
+	expect(lint?.ok).toBe(false)
+	expect(lint?.message).toContain(
+		'"src/index.ts" line 5 puts slot "clerkReviewUserId" in the request body',
+	)
+	expect(lint?.message).not.toContain('apiToken"')
+	expect(lint?.message).toContain('belongs in params or package storage')
+
+	const { result: installResult } = await runChecks(
+		packageFiles(manifest('misplaced-install'), { 'src/index.ts': misplaced }),
+		{ requirePackageDocs: false },
+	)
+	expect(findCheck(installResult, 'lint')?.ok).toBe(true)
+
+	const { result: headerOnly } = await runChecks(
+		packageFiles(manifest('header-placeholder'), {
+			'src/index.ts': `export default async function main() {
+	return await fetch('https://api.example.com/reviews', {
+		headers: { Authorization: 'Bearer {{secret:apiToken}}' },
+		body: JSON.stringify({ hint: 'write {{secret:<name>}} to reference one' }),
+	})
+}
+`,
+		}),
+	)
+	expect(findCheck(headerOnly, 'lint')?.ok).toBe(true)
+})
+
 test('heavy check phases run in throwaway isolates when the env has the bindings', async () => {
 	const targets = ['index', 'a', 'b', 'c', 'd', 'e']
 	const files = packageFiles(

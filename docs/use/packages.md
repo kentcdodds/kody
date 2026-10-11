@@ -399,6 +399,26 @@ Repo checks fail when package source imports ambient `storage` from
 `kody:runtime` (type-only imports and `.d.ts` files are exempt). Use
 `packageStorage()` instead. Ad hoc execute has no scratch SQLite helper.
 
+### Secret placeholders belong in request headers
+
+Publish fails when package source puts a `{{secret:…}}`, `{{secret-basic:…}}`,
+`{{integration-token:…}}`, or vault placeholder where the fetch gateway refuses
+it: a request URL, a query string, or a request body (`body:`, `JSON.stringify`,
+`URLSearchParams`, `FormData`). The failure names the file, line, and slot, for
+example `"src/index.ts" line 12 puts slot "apiToken" in the request body`. Move
+a credential into the header its
+[`kody.credentials`](#credential-slots-kodycredentials) slot declares. A value
+that is not a credential, such as an account id, belongs in params or package
+storage, not a secret. A module that quotes the syntax on purpose sets
+`x-kody-secret-resolution: headers-only` on that fetch and is not reported.
+Prose such as `{{secret:<name>}}` never counts.
+
+Packages published before this check keep running, and their requests are still
+refused at run time. `packageGet` lists each one under `warnings` (code
+`secret_placeholder_outside_header`) until a fixed version is published.
+Community installs and platform codemods skip the check so existing listings
+stay forkable and migratable.
+
 ## Package apps
 
 A package app is optional.
