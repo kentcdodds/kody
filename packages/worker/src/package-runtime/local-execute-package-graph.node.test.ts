@@ -833,6 +833,17 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		expect(gatewayCalls).toHaveLength(0)
 		const forwardedForm = ambientCalls[0]?.input as Request
 		expect(forwardedForm.headers.has('x-kody-secret-resolution')).toBe(false)
+
+		ambientCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/get', {
+				headers: { 'x-kody-secret-resolution': 'off' },
+			}),
+		)
+		const forwardedGet = ambientCalls[0]?.input as Request
+		expect(forwardedGet).toBeInstanceOf(Request)
+		expect(forwardedGet.url).toBe('https://api.example.com/get')
+		expect(forwardedGet.headers.has('x-kody-secret-resolution')).toBe(false)
 		expect(await forwardedForm.text()).toContain(
 			'{{secret:demoToken|scope=user}}',
 		)

@@ -662,6 +662,9 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			merged = new Request(merged, {
 				headers: __kodyWithoutSecretResolutionHeader(merged.headers),
 			});
+			// The caller's Request still carries the header, so only the
+			// stripped copy may be forwarded.
+			reuseOriginal = false;
 		}
 		url = merged.url;
 		method = merged.method;
