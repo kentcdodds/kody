@@ -638,10 +638,19 @@ export async function deleteJobEntitySource(input: {
 	userId: OwnerId
 	source: EntitySourceRow
 }) {
-	const { source } = input
-	if (source.entity_kind !== 'job') {
-		throw new Error(`Source ${source.id} is not a job source.`)
+	if (input.source.entity_kind !== 'job') {
+		throw new Error(`Source ${input.source.id} is not a job source.`)
 	}
+	await deleteEntitySourceWithArtifacts(input)
+}
+
+/** Deletes an entity source no live entity references, with its repo and artifacts. */
+export async function deleteEntitySourceWithArtifacts(input: {
+	env: Env
+	userId: OwnerId
+	source: EntitySourceRow
+}) {
+	const { source } = input
 	const artifactCleanup = await cleanupArtifactReposForSource({
 		env: input.env,
 		userId: input.userId,

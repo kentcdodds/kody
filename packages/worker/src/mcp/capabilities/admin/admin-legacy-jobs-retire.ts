@@ -24,8 +24,15 @@ import {
 	buildPackageJobId,
 	packageIdFromJobId,
 } from '#worker/jobs/package-job-id.ts'
-import { deleteJob, deleteJobEntitySource } from '#worker/jobs/service.ts'
-import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySourceWithArtifacts,
+	deleteJob,
+	deleteJobEntitySource,
+} from '#worker/jobs/service.ts'
+import {
+	getEntitySourceByEntity,
+	getEntitySourceByIdForUser,
+} from '#worker/repo/entity-sources.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -321,6 +328,19 @@ export function defaultLegacyJobRetireDeps(input: {
 						packageId,
 						actorUserId,
 					})
+					// A publish that failed before insertSavedPackage leaves only the source.
+					const leftoverSource = await getEntitySourceByEntity(env.APP_DB, {
+						userId: orgId,
+						entityKind: 'package',
+						entityId: packageId,
+					})
+					if (leftoverSource) {
+						await deleteEntitySourceWithArtifacts({
+							env,
+							userId: orgId,
+							source: leftoverSource,
+						})
+					}
 				} catch (rollbackError) {
 					throw new AggregateError(
 						[error, rollbackError],
