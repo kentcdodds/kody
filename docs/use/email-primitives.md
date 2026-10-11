@@ -259,12 +259,12 @@ Before any subscription runs, Kody checks the sender of mail to an org's inbox:
 
 - **Org member.** The From address is the verified account email of a current
   member of the inbox's org, and the message authenticated that address (DMARC
-  `pass`, or SPF or DKIM `pass` with the envelope sender on the From domain).
-  The run acts as that member with their own role. Only packages the member can
-  run (`package:execute`) receive the event, and every credential the run
-  resolves is checked and audited under that member. If the member lost access
-  to the org, the credential is denied when the run reads it and the run fails.
-  It never retries with another identity or credential.
+  `pass`, or SPF `pass` with the envelope sender on the From domain; a DKIM
+  `pass` alone is not enough). The run acts as that member with their own role.
+  Only packages the member can run (`package:execute`) receive the event, and
+  every credential the run resolves is checked and audited under that member. If
+  the member lost access to the org, the credential is denied when the run reads
+  it and the run fails. It never retries with another identity or credential.
 - **Verified non-member** (receipts, notifications, outside collaborators,
   people who left the org). Mail that passes the authentication check above runs
   as the org that owns the inbox, as it always has.

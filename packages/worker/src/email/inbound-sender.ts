@@ -29,9 +29,10 @@ function addressDomain(address: string | null) {
 
 /**
  * A member identity needs the From address itself authenticated. DMARC pass
- * already requires alignment with the From domain. Without it, SPF or DKIM
- * pass only counts when the envelope sender shares the From domain, since a
- * DKIM signature for an unrelated domain says nothing about who wrote From.
+ * already requires alignment with the From domain. Without it, only SPF pass
+ * on an envelope sender in the From domain counts. A DKIM pass alone does not:
+ * the signing domain is not parsed, so it may belong to anyone, and the
+ * envelope sender is attacker-chosen unless SPF vouches for it.
  */
 function authenticatesFromAddress(input: {
 	verdict: EmailAuthVerdict
@@ -40,6 +41,7 @@ function authenticatesFromAddress(input: {
 }) {
 	if (!input.verdict.authenticated) return false
 	if (input.verdict.dmarc === 'pass') return true
+	if (input.verdict.spf !== 'pass') return false
 	const envelopeDomain = addressDomain(
 		input.envelopeFrom ? normalizeEmailAddress(input.envelopeFrom) : null,
 	)

@@ -521,6 +521,15 @@ test('leak test 8: an unverified sender or a spoofed member address runs nothing
 			},
 		},
 		{
+			label:
+				'member address, unaligned DKIM pass with a forged member envelope',
+			email: {
+				from: 'bea@acme.example',
+				envelopeFrom: 'bea@acme.example',
+				authResults: 'mx; spf=fail; dkim=pass',
+			},
+		},
+		{
 			label: 'member address that failed DMARC',
 			email: {
 				from: 'bea@acme.example',
@@ -621,6 +630,18 @@ test('classification reads live account state for the inbox org', async () => {
 		actor: { userId: t.beaId },
 		role: 'member',
 	})
+	// Without DMARC, SPF pass for an envelope in the From domain is aligned.
+	await expect(
+		classifyInboundEmailSender({
+			db: t.db,
+			orgId: t.orgId,
+			message: {
+				fromAddress: 'bea@acme.example',
+				envelopeFrom: 'bounce@acme.example',
+				authResults: 'mx; spf=pass; dkim=none',
+			},
+		}),
+	).resolves.toMatchObject({ kind: 'member', actor: { userId: t.beaId } })
 	// Bea is the Owner of her personal org, so mail to its inbox is hers too.
 	await expect(
 		classify('bea@acme.example', ownerIdFromStored(t.beaId)),
