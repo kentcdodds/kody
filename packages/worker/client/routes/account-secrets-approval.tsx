@@ -285,13 +285,15 @@ function renderPackageCredentialConsent(props: {
 							</span>
 						) : null}
 						{credential?.raw ? (
-							<span
+							<div
 								mix={css(getAccentCalloutCss({ accentColor: colors.danger }))}
 								data-testid="package-credential-raw"
 							>
-								<strong>{props.packageLabel}</strong> can read the raw value of{' '}
-								<code>{name}</code>, not just send it in a request.
-							</span>
+								<p mix={css({ margin: 0 })}>
+									<strong>{props.packageLabel}</strong> can read the raw value
+									of <code>{name}</code>, not just send it in a request.
+								</p>
+							</div>
 						) : null}
 					</li>
 				)
