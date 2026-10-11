@@ -19,6 +19,20 @@ import {
 } from '@kody-internal/shared/request-context.ts'
 
 /**
+ * Who a verified inbound email runs as (`classifyInboundEmailSender`).
+ * Unverified mail never reaches a request source: it runs nothing.
+ *
+ * - `member`: the sender is a verified account email of a current member of
+ *   the inbox's org, and the message authenticated. The member is the actor,
+ *   with their own role.
+ * - `inbox-owner`: a verified non-member (receipts, notifications). Runs as
+ *   the org that owns the inbox, as Automation.
+ */
+export type InboundEmailSender =
+	| { kind: 'member'; actor: RequestActor; role: OrgRole }
+	| { kind: 'inbox-owner' }
+
+/**
  * How a request reached Kody. Every place that builds a caller context names
  * its source, and `deriveRequestContext` turns it into the one shape
  * `authorize` reads.
@@ -31,7 +45,7 @@ export type RequestSource =
 	| { kind: 'package-app' }
 	| { kind: 'schedule'; jobId: string }
 	| { kind: 'webhook'; sourceId: string }
-	| { kind: 'inbound-email'; sourceId: string }
+	| { kind: 'inbound-email'; sourceId: string; sender: InboundEmailSender }
 	| { kind: 'platform-event'; sourceId: string }
 	/** Nested invokes, workflow steps, package events, sealed providers. */
 	| { kind: 'inherited'; lineage: RequestLineage }
@@ -185,14 +199,34 @@ export function deriveRequestContext(input: {
 				credentialKind: 'webhook',
 				profileName,
 			})
-		case 'inbound-email':
-			return automation({
+		case 'inbound-email': {
+			const request = automation({
 				binding,
 				source: 'email',
 				sourceId: source.sourceId,
 				credentialKind: 'inbound-email',
 				profileName,
 			})
+			const { sender } = source
+			switch (sender.kind) {
+				case 'inbox-owner':
+					return request
+				case 'member':
+					// Attribution stays Automation: the org is billed for email runs
+					// until enablements move billing to the enabler.
+					return {
+						...request,
+						actor: sender.actor,
+						membership: { role: sender.role },
+					}
+				default: {
+					const exhaustive: never = sender
+					throw new Error(
+						`Unhandled inbound email sender: ${String(exhaustive)}`,
+					)
+				}
+			}
+		}
 		case 'platform-event':
 			return automation({
 				binding,

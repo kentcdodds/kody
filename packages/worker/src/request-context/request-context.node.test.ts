@@ -73,7 +73,15 @@ test('automation sources have no actor and no membership', () => {
 	const cases = [
 		[{ kind: 'schedule', jobId: 'job-1' }, 'schedule', 'schedule'],
 		[{ kind: 'webhook', sourceId: 'wh-1' }, 'webhook', 'webhook'],
-		[{ kind: 'inbound-email', sourceId: 'inbox-1' }, 'email', 'inbound-email'],
+		[
+			{
+				kind: 'inbound-email',
+				sourceId: 'inbox-1',
+				sender: { kind: 'inbox-owner' },
+			},
+			'email',
+			'inbound-email',
+		],
 		[{ kind: 'platform-event', sourceId: 'repo' }, 'event', 'platform-event'],
 	] as const
 	for (const [source, automationSource, credentialKind] of cases) {
@@ -112,6 +120,35 @@ test('inherited runs keep the starter lineage and re-resolve the org', () => {
 	expect(emitted.actor).toBeNull()
 	expect(emitted.membership).toBeNull()
 	expect(emitted.attribution).toEqual(automation.attribution)
+})
+
+test('a verified member sender is the actor of an inbound email run, still billed as Automation', () => {
+	const memberId = personIdFromStored('b'.repeat(64))
+	const request = deriveRequestContext({
+		user,
+		source: {
+			kind: 'inbound-email',
+			sourceId: 'inbox-1',
+			sender: {
+				kind: 'member',
+				actor: { userId: memberId, username: 'bea' },
+				role: 'member',
+			},
+		},
+	})
+	expect(request).toEqual({
+		org: { id: stableId, slug: 'ada' },
+		actor: { userId: memberId, username: 'bea' },
+		attribution: { kind: 'automation', source: 'email', sourceId: 'inbox-1' },
+		credential: {
+			kind: 'inbound-email',
+			id: 'inbox-1',
+			orgId: stableId,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'member' },
+	})
 })
 
 test('downstream runs keep the starter role instead of the org identity Owner role', () => {

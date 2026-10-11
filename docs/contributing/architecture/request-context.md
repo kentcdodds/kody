@@ -47,11 +47,17 @@ it is. The browser equivalent is `AuthenticatedAppUser.request`
 | Package app HTTP, realtime, bridge    | `package-app`                            | Person    |
 | Scheduled job                         | `schedule` (job id)                      | none      |
 | Webhook delivery                      | `webhook` (endpoint id)                  | none      |
-| Inbound email subscription            | `inbound-email` (inbox id)               | none      |
+| Inbound email subscription            | `inbound-email` (inbox id, sender)       | Sender\*  |
 | Platform topic subscription           | `platform-event` (source label)          | none      |
 | Nested invoke, run-now, workflow step | `inherited` (the starting run's lineage) | Inherited |
 | Emitted package event, retriever      | `inherited`                              | Inherited |
 | Sealed secret provider                | `inherited`                              | Inherited |
+
+\* `classifyInboundEmailSender` (`packages/worker/src/email/inbound-sender.ts`)
+sets `sender`. A verified org member is the actor with their own role; any other
+verified sender is `inbox-owner` (Automation, no actor). Attribution stays
+Automation (`email`) either way, so the inbox's org is billed. Unverified mail
+never builds a source: it runs nothing.
 
 `inherited` carries a `RequestLineage` (actor, attribution, credential,
 membership). Membership is the starter's role in its own org, so a downstream

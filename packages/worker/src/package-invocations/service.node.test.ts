@@ -686,7 +686,11 @@ test('invokePackageSubscription uses the normal capability registry with package
 			params,
 			idempotencyKey: `email:${messageId}:pkg-1:email.message.received`,
 			source: 'email',
-			request: { kind: 'inbound-email', sourceId: 'inbox-1' },
+			request: {
+				kind: 'inbound-email',
+				sourceId: 'inbox-1',
+				sender: { kind: 'inbox-owner' },
+			},
 		})
 
 	expect((await deliver('message-123')).status).toBe(200)

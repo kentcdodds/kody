@@ -100,7 +100,11 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		actor: {
 			sourceId: 'internal:email-subscriptions',
 			orgId: ownerIdFromStored(userId),
-			request: { kind: 'inbound-email', sourceId: 'inbox-1' },
+			request: {
+				kind: 'inbound-email',
+				sourceId: 'inbox-1',
+				sender: { kind: 'inbox-owner' },
+			},
 		},
 		savedPackage: {
 			id: 'package-1',
