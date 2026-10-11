@@ -1423,10 +1423,11 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expectHtml(packageApproval.html, [
 		'data-testid="package-credential-consent"',
 		'Sent only to oauth2.googleapis.com.',
-		'Not sent to any host until you allow one on this secret.',
+		'Header placeholders resolve for no host until you allow one on this secret.',
 		'data-testid="package-credential-raw"',
-		'can read the raw value',
+		'and send it to any host, not just the',
 	])
+	expect(packageApproval.html).not.toContain('Not sent to any host')
 	expect(
 		packageApproval.html.match(/data-testid="package-credential-raw"/g),
 	).toHaveLength(1)
