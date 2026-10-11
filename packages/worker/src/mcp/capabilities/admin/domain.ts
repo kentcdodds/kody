@@ -8,6 +8,7 @@ import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
 import { adminOrgLimitOverridesSetCapability } from './admin-org-limit-overrides-set.ts'
 import { adminOrgLimitsGetCapability } from './admin-org-limits-get.ts'
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
+import { adminEnablementsMigrateCapability } from './admin-enablements-migrate.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
@@ -150,5 +151,6 @@ export const adminDomain = defineDomain({
 		adminPlatformFeedbackUpdateCapability,
 		adminCommunityActivityListCapability,
 		adminCommunityOrphanForksCleanupCapability,
+		adminEnablementsMigrateCapability,
 	],
 })

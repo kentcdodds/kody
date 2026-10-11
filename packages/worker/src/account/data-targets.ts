@@ -415,6 +415,13 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'created_by_user_id',
 		value: 'deleted-user',
 	},
+	// A deleted person's enablements end with them in every org; the org purge
+	// removes their personal org's rows.
+	{
+		kind: 'user_columns',
+		table: 'enablements',
+		columns: ['enabler_user_id'],
+	},
 	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
 	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{

@@ -419,6 +419,10 @@
 		{
 			"filename": "0104-integration-token-refresh-lease.sql",
 			"sha256": "59d142b21ded2b22006ee16797e7db3dbdb8d832a68aa0b39b4d47cd0bba466b"
+		},
+		{
+			"filename": "0105-enablements.sql",
+			"sha256": "262a1d0e60c1880a83dd40ba8ec0eef45734e6d29406d7b2be19a6a827cc1949"
 		}
 	]
 }
