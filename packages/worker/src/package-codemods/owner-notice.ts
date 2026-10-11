@@ -38,6 +38,8 @@ export type PackageOwnerNoticeStatus =
 	| 'already_sent'
 	| 'no_recipients'
 	| 'send_failed'
+	/** Delivered, but a claim write failed, so a re-run may email again. */
+	| 'claim_failed'
 
 export type PackageOwnerNoticePackage = {
 	packageId: string
@@ -233,6 +235,11 @@ export async function runPackageOwnerNotice(input: {
 			`Codemod run ${run.id} has mode "${run.mode}". Send a notice from a scan run (adminPackageCodemodScan).`,
 		)
 	}
+	if (!input.dryRun && run.status !== 'completed') {
+		throw new PackageOwnerNoticeError(
+			`Codemod run ${run.id} is ${run.status}. Send a notice only from a completed scan; a dry run can preview a scan in progress.`,
+		)
+	}
 	if (!input.content.effectiveAt.trim()) {
 		throw new PackageOwnerNoticeError(
 			'effectiveAt is required so owners know when the rule takes effect.',
@@ -344,6 +351,7 @@ async function noticeOneOwner(input: {
 	}
 
 	let delivered = 0
+	let claimFailures = 0
 	for (const recipient of pending) {
 		try {
 			const result = await sendCloudflareEmail(
@@ -369,11 +377,21 @@ async function noticeOneOwner(input: {
 				continue
 			}
 			delivered += 1
+		} catch (error) {
+			console.warn('package-owner-notice-send-failed', {
+				noticeId: input.noticeId,
+				ownerId: input.ownerId,
+				error,
+			})
+			continue
+		}
+		try {
 			await input.kv?.put(recipient.key, String(Date.now()), {
 				expirationTtl: packageOwnerNoticeClaimTtlSeconds,
 			})
 		} catch (error) {
-			console.warn('package-owner-notice-send-failed', {
+			claimFailures += 1
+			console.warn('package-owner-notice-claim-failed', {
 				noticeId: input.noticeId,
 				ownerId: input.ownerId,
 				error,
@@ -381,7 +399,12 @@ async function noticeOneOwner(input: {
 		}
 	}
 	return {
-		status: delivered === pending.length ? 'sent' : 'send_failed',
+		status:
+			delivered < pending.length
+				? 'send_failed'
+				: claimFailures > 0
+					? 'claim_failed'
+					: 'sent',
 		recipientCount: delivered,
 	}
 }

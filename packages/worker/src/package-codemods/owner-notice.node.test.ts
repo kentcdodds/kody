@@ -17,11 +17,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./ledger.ts', () => ({
 	getPackageCodemodRunById: async (_db: D1Database, runId: string) =>
-		runId === 'run-1' || runId === 'run-apply'
+		runId === 'run-1' || runId === 'run-apply' || runId === 'run-running'
 			? {
 					id: runId,
 					codemodId: '0010-detect-legacy-credential-patterns',
-					mode: runId === 'run-1' ? 'scan' : 'apply',
+					mode: runId === 'run-apply' ? 'apply' : 'scan',
+					status: runId === 'run-running' ? 'running' : 'completed',
 				}
 			: null,
 	listPackageCodemodRunItems: async (
@@ -326,6 +327,53 @@ test('a partial delivery retries only the recipients that failed', async () => {
 
 	const third = await runPackageOwnerNotice(input)
 	expect(third.owners[0]?.status).toBe('already_sent')
+})
+
+test('a scan still running can be previewed but not sent', async () => {
+	const { env } = await createEnv()
+	mocks.items = [
+		{
+			...item('01', 'alice', '@alice/tuckabox', [bodyFinding]),
+			runId: 'run-running',
+		},
+	]
+	const base = {
+		env,
+		runId: 'run-running',
+		noticeId: '2026-10-body-placeholders',
+		content,
+	}
+	await expect(
+		runPackageOwnerNotice({ ...base, dryRun: true }),
+	).resolves.toMatchObject({ summary: { would_send: 1 } })
+	await expect(
+		runPackageOwnerNotice({ ...base, dryRun: false }),
+	).rejects.toThrow(/is running\. Send a notice only from a completed scan/)
+	expect(mocks.sendCloudflareEmail).not.toHaveBeenCalled()
+})
+
+test('a delivered email whose claim write fails reports claim_failed', async () => {
+	const { env, kv } = await createEnv()
+	mocks.items = [item('01', 'alice', '@alice/tuckabox', [bodyFinding])]
+	vi.spyOn(kv, 'put').mockRejectedValueOnce(new Error('kv down'))
+	consoleWarn.mockImplementation(() => {})
+
+	const result = await runPackageOwnerNotice({
+		env,
+		runId: 'run-1',
+		noticeId: '2026-10-body-placeholders',
+		content,
+		dryRun: false,
+	})
+
+	expect(result.owners[0]).toMatchObject({
+		status: 'claim_failed',
+		recipientCount: 1,
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-owner-notice-claim-failed',
+		expect.objectContaining({ ownerId: 'alice' }),
+	)
 })
 
 test('a scan of exactly the read cap is noticed, and one more item is refused', async () => {

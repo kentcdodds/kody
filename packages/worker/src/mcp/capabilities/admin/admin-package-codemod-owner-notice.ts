@@ -19,6 +19,7 @@ const statusSchema = z.enum([
 	'already_sent',
 	'no_recipients',
 	'send_failed',
+	'claim_failed',
 ])
 
 const inputSchema = z.object({

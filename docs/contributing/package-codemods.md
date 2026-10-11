@@ -581,11 +581,14 @@ See [Cleanup after migrations](./cleanup-after-migrations.md).
 ### Owner notice
 
 `adminPackageCodemodOwnerNotice` emails the owners of every package a scan run
-flagged. Pass the scan `runId` (dry-run, apply, and revert runs are refused), a
-stable `noticeId` (for example `2026-10-body-placeholders`), a `subject`,
-`whatBreaks`, `howToFix`, `effectiveAt` (when the rule takes effect, in words),
-and optionally `findingMessages` (exact finding messages to include; omit for
-every finding in the run).
+flagged. Run a fresh scan after fleet apply, so owners whose packages the
+codemod already fixed are not warned, and pass that scan's `runId`. Dry-run,
+apply, and revert runs are refused, and a scan still running can be previewed
+but not sent. Also pass a stable `noticeId` (for example
+`2026-10-body-placeholders`), a `subject`, `whatBreaks`, `howToFix`,
+`effectiveAt` (when the rule takes effect, in words), and optionally
+`findingMessages` (exact finding messages to include; omit for every finding in
+the run).
 
 - **Dry run by default.** `dryRun` defaults to `true`. It lists each owner with
   their flagged packages and a status, and renders a preview of the first email.
@@ -597,8 +600,9 @@ every finding in the run).
   (`package-owner-notice:v1:<noticeId>:<ownerId>:<userId>`, 180 days) is written
   after each successful send. A re-run skips delivered recipients
   (`already_sent` once all are reached) and retries the rest (`send_failed`
-  until then). KV has no atomic claim, so run one notice from one place at a
-  time.
+  until then). `claim_failed` means the email went out but its claim did not
+  save, so a re-run may send it again. KV has no atomic claim, so run one notice
+  from one place at a time.
 - **Content.** The email names up to 25 affected packages with a link to each
   and its findings, then the fix. Never put secret values, internal hostnames,
   or other owners' data in `whatBreaks` or `howToFix`.
