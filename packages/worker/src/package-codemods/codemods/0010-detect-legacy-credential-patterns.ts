@@ -47,7 +47,7 @@ export const legacyCredentialPatternMessages: Record<
 	'webhook secretName':
 		'webhook secretName: a webhook names its signing secret with secretName. Declare that secret as a kody.credentials slot.',
 	'secret outside header':
-		'secret outside header: puts a secret placeholder in a request URL, query, or body. The fetch gateway substitutes secrets only into the header a kody.credentials slot declares.',
+		'secret outside header: puts a secret placeholder in a request URL, query, or body. The fetch gateway substitutes secrets only into the header a kody.credentials slot declares: it refuses a URL placeholder and sends a body verbatim. Move it to that header, or read a raw slot for a body credential.',
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':

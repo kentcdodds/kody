@@ -112,7 +112,8 @@ Saved secrets are referenced by **placeholder**, never by plaintext. Inside
 `execute` (and package code), put `{{secret:name}}` — or
 `{{secret:name|scope=user}}` to pin a scope — in a request header of an outbound
 `fetch`. Kody resolves the placeholder for **approved** hosts over HTTPS only,
-and refuses one in the URL, query string, or body:
+and refuses one in the URL or query string. Placeholder text in the body is sent
+verbatim, never resolved:
 
 ```ts
 const response = await fetch('https://api.example.com/v1/me', {

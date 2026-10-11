@@ -50,8 +50,9 @@ boundary, on the final serialized request, and only for hosts you approved.
 
 - **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` in a request
   header of an outbound HTTPS `fetch` resolves when the request leaves Kody. One
-  in the URL, query string, or body, or on plain `http://`, is refused. External
-  providers use the same boundary; see
+  in the URL or query string, or on plain `http://`, is refused. The body is
+  sent verbatim and never resolves; a credential the API wants in the body needs
+  a `raw` slot. External providers use the same boundary; see
   [Custom secret providers](./secret-providers.md). This is not general string
   interpolation; it works only in secret-aware `fetch`.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,

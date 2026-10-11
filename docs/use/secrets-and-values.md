@@ -73,9 +73,12 @@ Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in a **request header**. The host
 resolves them for **approved** destinations over **HTTPS** only.
 
-The fetch gateway refuses, before anything resolves, a placeholder in the URL,
-query string, or body, and any placeholder on a plain `http://` request. The
-error names the credential and the rule. A package that declares
+The request body is data, never a substitution site: the gateway forwards it
+byte for byte, so placeholder text in a body (an issue that documents the
+syntax, a form field, a stream) reaches the remote exactly as written. The
+gateway refuses, before anything resolves, a placeholder in the URL or query
+string, and any placeholder on a plain `http://` request. The error names the
+credential and the rule. A package that declares
 [`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
 further: each placeholder must name one of its slots and sit in that slot's
 declared `placement` header, matching its template (oauth slots default to
@@ -157,13 +160,15 @@ algorithms:
 
 ## Mentioning placeholders without resolving them
 
-The gateway scans the **final serialized request** (URL, headers, and
-non-multipart body), so a literal placeholder assembled by any means, including
-string concatenation, resolves in a header and is refused in the URL or body.
-`multipart/*` bodies are opaque: placeholders inside a part are forwarded as
-literal text (put credentials in headers). Do **not** place resolvable
-placeholder tokens into user-visible or third-party-visible content such as
-issue bodies, comments, prompts, logs, or returned strings.
+The gateway scans the **final serialized URL and headers**, so a literal
+placeholder assembled by any means, including string concatenation, resolves in
+a header and is refused in the URL. The body is never scanned or substituted:
+placeholder text there is sent verbatim. An API that wants a credential in the
+body (a form-encoded token exchange, a login password) needs a
+[raw slot](./packages.md#credential-slots-kodycredentials) instead. Even so,
+avoid placing resolvable placeholder tokens into user-visible or
+third-party-visible content such as issue bodies, comments, prompts, logs, or
+returned strings: that text may later be copied into a header.
 
 - To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.
   Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so
@@ -174,9 +179,9 @@ issue bodies, comments, prompts, logs, or returned strings.
   **`x-kody-secret-resolution: off`** header on that **`fetch`**. The gateway
   strips the header and skips all placeholder resolution for that one request.
   Only the calling code can set headers, so data flowing through a URL or body
-  can never disable resolution. Use this sparingly: the delivered text is still
-  one resolution step away from the real secret if it later flows back through a
-  secret-aware **`fetch`**.
+  can never disable resolution. Bodies need no opt-out: they never resolve. Use
+  this sparingly: the delivered text is still one resolution step away from the
+  real secret if it later flows back through a secret-aware **`fetch`**.
 
 ## Host approval
 
