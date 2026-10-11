@@ -5,6 +5,7 @@ import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { requireMcpRequest, requireMcpUser } from './require-user.ts'
 
@@ -45,8 +46,14 @@ export const metaGetCurrentUserCapability = defineDomainCapability(
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			const runtimeUser = requireMcpUser(ctx.callerContext)
 			const request = requireMcpRequest(ctx.callerContext)
+			// Runs that execute as the org identity on a person's behalf (member
+			// inbound email, inherited runs) report the acting person.
+			const user =
+				request.actor && request.actor.userId !== runtimeUser.userId
+					? await resolveBackgroundMcpUser(ctx.env.APP_DB, request.actor.userId)
+					: runtimeUser
 			const username =
 				request.actor?.username ??
 				(await getMcpUserPackageScope(ctx.env.APP_DB, user))
