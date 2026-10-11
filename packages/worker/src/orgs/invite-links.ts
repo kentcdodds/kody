@@ -60,6 +60,7 @@ export type InviteLinkRedeemBlockReason =
 	| 'personal_org'
 	| 'domain'
 	| 'unverified_email'
+	| 'inviter_gone'
 
 type InviteLinkRow = {
 	id: string
@@ -90,15 +91,33 @@ export async function hashInviteLinkToken(token: string) {
 
 function parseAllowedDomains(value: string | null): Array<string> {
 	if (!value) return []
+	let parsed: unknown
 	try {
-		const parsed = JSON.parse(value) as unknown
-		if (!Array.isArray(parsed)) return []
-		return parsed
-			.filter((entry): entry is string => typeof entry === 'string')
-			.map((entry) => entry.trim().toLowerCase())
-			.filter((entry) => entry.length > 0)
+		parsed = JSON.parse(value) as unknown
 	} catch {
-		return []
+		throw new Error('Invite link domain rules are invalid.')
+	}
+	if (!Array.isArray(parsed)) {
+		throw new Error('Invite link domain rules are invalid.')
+	}
+	const domains: Array<string> = []
+	for (const entry of parsed) {
+		if (typeof entry !== 'string') {
+			throw new Error('Invite link domain rules are invalid.')
+		}
+		const trimmed = entry.trim().toLowerCase()
+		if (trimmed.length > 0) domains.push(trimmed)
+	}
+	return domains
+}
+
+function readAllowedDomainsOrBlock(
+	value: string | null,
+): { ok: true; domains: Array<string> } | { ok: false } {
+	try {
+		return { ok: true, domains: parseAllowedDomains(value) }
+	} catch {
+		return { ok: false }
 	}
 }
 
@@ -125,12 +144,13 @@ function rowToStored(row: InviteLinkRow): StoredInviteLink {
 	if (row.status !== 'active' && row.status !== 'revoked') {
 		throw new Error(`Invite link ${row.id} has status ${row.status}.`)
 	}
+	const domains = readAllowedDomainsOrBlock(row.allowed_email_domains_json)
 	return {
 		id: row.id,
 		orgId: row.org_id,
 		tokenHash: row.token_hash,
 		role: row.role,
-		allowedEmailDomains: parseAllowedDomains(row.allowed_email_domains_json),
+		allowedEmailDomains: domains.ok ? domains.domains : [],
 		maxUses: row.max_uses,
 		useCount: row.use_count,
 		status: row.status,
@@ -139,6 +159,10 @@ function rowToStored(row: InviteLinkRow): StoredInviteLink {
 		createdAt: row.created_at,
 		revokedAt: row.revoked_at,
 	}
+}
+
+function rowDomainsBlocked(row: InviteLinkRow) {
+	return !readAllowedDomainsOrBlock(row.allowed_email_domains_json).ok
 }
 
 export type InviteLinkAvailabilityReason = Extract<
@@ -252,7 +276,9 @@ export async function getInviteLinkByTokenHash(
 		)
 		.bind(tokenHash)
 		.first<InviteLinkRow>()
-	return row ? rowToStored(row) : null
+	if (!row) return null
+	if (rowDomainsBlocked(row)) return null
+	return rowToStored(row)
 }
 
 export async function getInviteLinkById(input: {
@@ -319,13 +345,13 @@ export async function listActiveOrgInviteLinks(
 		}>()
 	return (rows.results ?? []).flatMap((row) => {
 		if (row.role !== 'member' && row.role !== 'billing') return []
+		const domains = readAllowedDomainsOrBlock(row.allowed_email_domains_json)
+		if (!domains.ok) return []
 		return [
 			{
 				id: row.id,
 				role: row.role,
-				allowedEmailDomains: parseAllowedDomains(
-					row.allowed_email_domains_json,
-				),
+				allowedEmailDomains: domains.domains,
 				maxUses: row.max_uses,
 				useCount: row.use_count,
 				expiresAt: row.expires_at,
@@ -367,9 +393,29 @@ export async function revokeOrgInviteLink(input: {
 async function claimInviteLinkUse(input: {
 	db: D1Database
 	linkId: string
+	userId: string
 	nowIso: string
-}) {
-	const result = await input.db
+}): Promise<'claimed' | 'already' | 'unavailable'> {
+	const existing = await input.db
+		.prepare(
+			`SELECT 1 AS ok FROM org_invite_link_redemptions
+			 WHERE link_id = ? AND user_id = ?`,
+		)
+		.bind(input.linkId, input.userId)
+		.first<{ ok: number }>()
+	if (existing) return 'already'
+
+	const insert = await input.db
+		.prepare(
+			`INSERT OR IGNORE INTO org_invite_link_redemptions (
+				link_id, user_id, created_at
+			) VALUES (?, ?, ?)`,
+		)
+		.bind(input.linkId, input.userId, input.nowIso)
+		.run()
+	if ((insert.meta?.changes ?? 0) === 0) return 'already'
+
+	const bumped = await input.db
 		.prepare(
 			`UPDATE org_invite_links
 			 SET use_count = use_count + 1
@@ -380,7 +426,33 @@ async function claimInviteLinkUse(input: {
 		)
 		.bind(input.linkId, input.nowIso)
 		.run()
-	return (result.meta?.changes ?? 0) > 0
+	if ((bumped.meta?.changes ?? 0) === 0) {
+		await input.db
+			.prepare(
+				`DELETE FROM org_invite_link_redemptions
+				 WHERE link_id = ? AND user_id = ?`,
+			)
+			.bind(input.linkId, input.userId)
+			.run()
+		return 'unavailable'
+	}
+	return 'claimed'
+}
+
+async function assertInviteLinkCreatorStillValid(
+	db: D1Database,
+	link: StoredInviteLink,
+) {
+	const creator = await db
+		.prepare(
+			`SELECT role FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(link.orgId, link.createdByUserId)
+		.first<{ role: string }>()
+	if (!creator) {
+		throw new Error('inviter_gone')
+	}
 }
 
 function seatRole(role: OrgRole) {
@@ -425,6 +497,15 @@ export async function redeemOrgInviteLink(input: {
 			error: inviteLinkBlockMessage('org_inactive'),
 		}
 	}
+	try {
+		await assertInviteLinkCreatorStillValid(input.db, input.link)
+	} catch {
+		return {
+			ok: false,
+			reason: 'inviter_gone',
+			error: inviteLinkBlockMessage('inviter_gone'),
+		}
+	}
 	if (input.link.allowedEmailDomains.length > 0) {
 		if (!input.user.emailVerified) {
 			return {
@@ -466,9 +547,18 @@ export async function redeemOrgInviteLink(input: {
 	const claimed = await claimInviteLinkUse({
 		db: input.db,
 		linkId: input.link.id,
+		userId: input.user.userId,
 		nowIso,
 	})
-	if (!claimed) {
+	if (claimed === 'already') {
+		return {
+			ok: true,
+			alreadyMember: true,
+			role: input.link.role,
+			orgId: input.link.orgId,
+		}
+	}
+	if (claimed === 'unavailable') {
 		const refreshed = await getInviteLinkByTokenHash(
 			input.db,
 			input.link.tokenHash,
@@ -538,6 +628,8 @@ export function inviteLinkBlockMessage(
 			return 'Your verified email domain is not allowed for this invite link.'
 		case 'unverified_email':
 			return 'Verify your email address before joining with this invite link.'
+		case 'inviter_gone':
+			return 'This invite link is no longer valid because the creator no longer has access.'
 		default: {
 			const exhaustive: never = reason
 			return exhaustive

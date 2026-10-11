@@ -595,6 +595,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'created_by_user_id',
 		value: 'deleted-user',
 	},
+	{ kind: 'user_id', table: 'org_invite_link_redemptions' },
 	{
 		kind: 'replace_user_column',
 		table: 'teams',
@@ -932,6 +933,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	api_tokens: ['token_hash'],
 	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
+	org_invite_links: ['token_hash'],
 	mcp_event_subscriptions: ['secret_encrypted', 'previous_secret_encrypted'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],

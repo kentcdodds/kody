@@ -1,5 +1,4 @@
 import { type Action } from 'remix/router'
-import { redirectToLogin } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getRequestIp } from '#worker/audit-log.ts'
@@ -112,6 +111,11 @@ async function loadJoinPageData(input: {
 	}
 }
 
+function wantsJson(request: Request) {
+	const accept = request.headers.get('Accept') ?? ''
+	return accept.includes('application/json')
+}
+
 export function createOrgInviteJoinHandler(env: Env) {
 	return {
 		middleware: [],
@@ -119,6 +123,9 @@ export function createOrgInviteJoinHandler(env: Env) {
 			const token =
 				typeof params.token === 'string' ? params.token : String(params.token)
 			const data = await loadJoinPageData({ env, request, token })
+			if (wantsJson(request)) {
+				return jsonResponse({ orgInviteJoin: data }, data.ok ? 200 : 400)
+			}
 			return renderAppPage({
 				request,
 				env,
@@ -140,7 +147,7 @@ export function createOrgInviteJoinPostHandler(env: Env) {
 				typeof params.token === 'string' ? params.token : String(params.token)
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
-				return redirectToLogin(request)
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
 			const rateKey = joinRateLimitKey(request, token)
 			const limited = await checkRateLimit(
@@ -160,7 +167,6 @@ export function createOrgInviteJoinPostHandler(env: Env) {
 			const tokenHash = await hashInviteLinkToken(token.trim())
 			const link = await getInviteLinkByTokenHash(env.APP_DB, tokenHash)
 			if (!link) {
-				await releaseRateLimit(env.APP_DB, rateKey)
 				return jsonResponse(
 					{
 						ok: false,

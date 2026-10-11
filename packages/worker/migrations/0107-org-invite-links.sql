@@ -19,3 +19,14 @@ CREATE TABLE org_invite_links (
 
 CREATE INDEX org_invite_links_org_status_idx
 	ON org_invite_links (org_id, status, expires_at);
+
+-- One redemption per person per link so concurrent joins cannot burn uses.
+CREATE TABLE org_invite_link_redemptions (
+	link_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (link_id, user_id)
+);
+
+CREATE INDEX org_invite_link_redemptions_user_idx
+	ON org_invite_link_redemptions (user_id);

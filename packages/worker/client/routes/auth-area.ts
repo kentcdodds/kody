@@ -1,6 +1,9 @@
 export { LoginRoute } from './login.tsx'
 export { authProvidersRouteLoader } from './login-shared.ts'
-export { OrgInviteJoinRoute } from './org-invite-join.tsx'
+export {
+	OrgInviteJoinRoute,
+	orgInviteJoinRouteLoader,
+} from './org-invite-join.tsx'
 export {
 	PendingVerificationRoute,
 	pendingVerificationRouteLoader,

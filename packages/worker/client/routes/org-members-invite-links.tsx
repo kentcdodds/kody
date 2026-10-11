@@ -48,7 +48,7 @@ export function createOrgMembersInviteLinks(
 		} | null>
 		revokeLink: (linkId: string) => Promise<void>
 		onMessage: (message: string, tone: 'info' | 'error') => void
-		onBeforeMutate: () => void
+		onBeforeMutate?: () => void
 	},
 ) {
 	let inviteLinkRole: (typeof inviteLinkRoles)[number] = 'member'
@@ -63,7 +63,7 @@ export function createOrgMembersInviteLinks(
 		event.preventDefault()
 		creatingLink = true
 		copiedLinkUrl = null
-		options.onBeforeMutate()
+		options.onBeforeMutate?.()
 		handle.update()
 		try {
 			const maxUsesRaw = inviteLinkMaxUses.trim()
@@ -102,11 +102,10 @@ export function createOrgMembersInviteLinks(
 
 	async function revokeInviteLink(linkId: string) {
 		revokingLinkId = linkId
-		options.onBeforeMutate()
+		copiedLinkUrl = null
 		handle.update()
 		try {
 			await options.revokeLink(linkId)
-			if (copiedLinkUrl?.includes(linkId)) copiedLinkUrl = null
 			options.onMessage('Invite link revoked.', 'info')
 		} catch (error) {
 			options.onMessage(

@@ -159,6 +159,9 @@ function parseDomainList(value: unknown): Array<string> | null {
 			.filter((entry) => entry.length > 0)
 	}
 	if (Array.isArray(value)) {
+		if (value.some((entry) => entry != null && typeof entry !== 'string')) {
+			return null
+		}
 		return value
 			.filter((entry): entry is string => typeof entry === 'string')
 			.map((entry) => entry.trim())
@@ -166,6 +169,8 @@ function parseDomainList(value: unknown): Array<string> | null {
 	}
 	return null
 }
+
+const MAX_INVITE_LINK_EXPIRY_DAYS = 365
 
 async function loadOrgMembersData(input: {
 	env: Env
@@ -634,9 +639,16 @@ export function createOrgMembersInviteLinksPostHandler(env: Env) {
 						: typeof body.expiresInDays === 'string'
 							? Number(body.expiresInDays)
 							: NaN
-				if (!Number.isFinite(days) || days <= 0) {
+				if (
+					!Number.isFinite(days) ||
+					days <= 0 ||
+					days > MAX_INVITE_LINK_EXPIRY_DAYS
+				) {
 					return jsonResponse(
-						{ ok: false, error: 'Expiry days must be a positive number.' },
+						{
+							ok: false,
+							error: `Expiry days must be between 1 and ${MAX_INVITE_LINK_EXPIRY_DAYS}.`,
+						},
 						400,
 					)
 				}

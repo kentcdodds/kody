@@ -131,7 +131,6 @@ export function OrgMembersRoute(handle: Handle) {
 		},
 		onBeforeMutate: () => {
 			message = null
-			invitePrompt = null
 		},
 	})
 

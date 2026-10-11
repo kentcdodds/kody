@@ -1,6 +1,9 @@
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
-import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteData } from '#client/route-data.tsx'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import { type OrgInviteJoinLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
@@ -21,10 +24,71 @@ function orgLabel(data: Extract<OrgInviteJoinLoaderData, { ok: true }>) {
 	return data.org.displayName?.trim() || data.org.slug
 }
 
+function tokenFromHref(href: string) {
+	const match = /^\/join\/([^/?#]+)/.exec(
+		new URL(href, 'http://localhost').pathname,
+	)
+	return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
+async function fetchJoin(
+	token: string,
+	signal: AbortSignal,
+): Promise<OrgInviteJoinLoaderData> {
+	const response = await fetch(routes.orgInviteJoin.href({ token }), {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	const payload = (await response.json().catch(() => null)) as {
+		orgInviteJoin?: OrgInviteJoinLoaderData
+	} | null
+	if (!payload?.orgInviteJoin) {
+		return {
+			ok: false,
+			error: 'Unable to load this invite link.',
+			reason: 'invalid',
+		}
+	}
+	return payload.orgInviteJoin
+}
+
+export async function orgInviteJoinRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const token = tokenFromHref(url.pathname)
+	if (!token) {
+		return {
+			orgInviteJoin: {
+				ok: false,
+				error: 'Invite link token is required.',
+				reason: 'missing',
+			} satisfies OrgInviteJoinLoaderData,
+		}
+	}
+	return { orgInviteJoin: await fetchJoin(token, signal) }
+}
+
 export function OrgInviteJoinRoute(handle: Handle) {
 	let joining = false
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
+
+	const joinData = createRouteData({
+		key: 'orgInviteJoin',
+		async load(href, signal) {
+			const token = tokenFromHref(href)
+			if (!token) {
+				return {
+					ok: false,
+					error: 'Invite link token is required.',
+					reason: 'missing',
+				} satisfies OrgInviteJoinLoaderData
+			}
+			return await fetchJoin(token, signal)
+		},
+	})
 
 	async function join(token: string) {
 		joining = true
@@ -35,14 +99,9 @@ export function OrgInviteJoinRoute(handle: Handle) {
 				method: 'POST',
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				redirect: 'manual',
 			})
-			const payload = (await response.json().catch(() => null)) as {
-				ok?: boolean
-				error?: string
-				alreadyMember?: boolean
-				redirectTo?: string
-			} | null
-			if (response.status === 401) {
+			if (response.status === 401 || response.type === 'opaqueredirect') {
 				window.location.assign(
 					`/login?redirectTo=${encodeURIComponent(
 						routes.orgInviteJoin.href({ token }),
@@ -50,6 +109,12 @@ export function OrgInviteJoinRoute(handle: Handle) {
 				)
 				return
 			}
+			const payload = (await response.json().catch(() => null)) as {
+				ok?: boolean
+				error?: string
+				alreadyMember?: boolean
+				redirectTo?: string
+			} | null
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to join this organization.')
 			}
@@ -71,9 +136,11 @@ export function OrgInviteJoinRoute(handle: Handle) {
 	}
 
 	return () => {
-		const context = handle.context.get(AppLoaderDataProvider)
+		const href = readCurrentRouterHref(handle)
+		tryConsumeRouteLoaderData(handle, 'orgInviteJoin', href)
+		const snapshot = joinData.read(handle, href)
 		const data =
-			context.loaderData?.orgInviteJoin ??
+			snapshot.data ??
 			({
 				ok: false,
 				error: 'Open an invite link to join an organization.',
