@@ -13,11 +13,10 @@
  * tools/ci/rewrite-renamed-preview-migrations.ts instead.
  */
 
-import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import path from 'node:path'
-import { workerEnvFileRelativePath } from './local-d1-persist.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
+import { executeWranglerD1 } from './wrangler-d1-execute.ts'
 
 export function findStaleAppliedMigrations(input: {
 	appliedNames: ReadonlyArray<string>
@@ -95,46 +94,13 @@ export function parseArgs(argv: ReadonlyArray<string>): CliOptions {
 }
 
 function queryNames(options: CliOptions, sql: string): Array<string> {
-	const nodeArguments: Array<string> = []
-	if (existsSync(workerEnvFileRelativePath)) {
-		nodeArguments.push(`--env-file=${workerEnvFileRelativePath}`)
-	}
-	nodeArguments.push(
-		'./wrangler-env.ts',
-		'd1',
-		'execute',
-		options.binding,
-		'--local',
-		'--persist-to',
-		options.persistTo,
-		...(options.config ? ['--config', options.config] : []),
-		'--json',
-		'--command',
+	const rows = executeWranglerD1({
+		binding: options.binding,
 		sql,
-	)
-	const result = spawnSync(process.execPath, nodeArguments, {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-		// Wrangler emits --json results through its logger; an ambient
-		// WRANGLER_LOG above "log" silences them.
-		env: { ...process.env, WRANGLER_LOG: 'log' },
-		maxBuffer: 16 * 1024 * 1024,
+		mode: '--local',
+		persistTo: options.persistTo,
+		...(options.config ? { config: options.config } : {}),
 	})
-	if (result.status !== 0) {
-		throw new Error(
-			`wrangler d1 execute ${options.binding} failed (exit ${String(result.status)}) for: ${sql}\n${result.stdout}\n${result.stderr}`,
-		)
-	}
-	const parsed: unknown = JSON.parse(result.stdout)
-	const rows = Array.isArray(parsed)
-		? (parsed[0] as { results?: Array<{ name?: unknown }> } | undefined)
-				?.results
-		: undefined
-	if (!rows) {
-		throw new Error(
-			`Unexpected wrangler d1 execute --json output for ${options.binding}: ${result.stdout}`,
-		)
-	}
 	return rows.map((row) => String(row.name))
 }
 
