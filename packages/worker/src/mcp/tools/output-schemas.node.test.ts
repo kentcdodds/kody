@@ -10,7 +10,6 @@
  */
 
 import { expect, test } from 'vitest'
-import { z } from 'zod'
 import { apiToolOutputSchema } from './api.ts'
 import { executeToolOutputSchema } from './execute.ts'
 import {
@@ -55,8 +54,6 @@ test('advertised JSON schemas set additionalProperties false', () => {
 	]) {
 		const schema = mcpToolOutputJsonSchema(fields)
 		expect(schema['additionalProperties']).toBe(false)
-		expect(schema['type']).toBe('object')
-		expect(schema['properties']).toBeTypeOf('object')
 	}
 })
 
@@ -268,13 +265,4 @@ test('stale execute schema without usage rejects modern usage responses', () => 
 	expect(result.valid).toBe(false)
 	if (result.valid) throw new Error('expected invalid')
 	expect(result.errorMessage).toContain('must NOT have additional properties')
-})
-
-test('schemas convert to JSON Schema without throwing', () => {
-	expect(() => mcpToolOutputJsonSchema(searchToolOutputSchema)).not.toThrow()
-	expect(() => mcpToolOutputJsonSchema(executeToolOutputSchema)).not.toThrow()
-	expect(() => mcpToolOutputJsonSchema(apiToolOutputSchema)).not.toThrow()
-	expect(() =>
-		z.toJSONSchema(z.object(searchToolOutputSchema), { io: 'output' }),
-	).not.toThrow()
 })

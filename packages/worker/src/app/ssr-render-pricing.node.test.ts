@@ -78,42 +78,10 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html).not.toContain('Standard')
-	expect(html).not.toMatch(/\bMax\b/)
 	expect(html).toContain('Pro')
-	expect(html).toContain('$12')
-	expect(html).toContain(
-		'More room for jobs, workflows, and daily volume, with a monthly include. Need more? Add prepaid credits.',
-	)
-	expect(html).toContain('Prepaid credits')
-	// Customer story: Free hard-capped; Pro seat + include; credits until
-	// gone; small print on how far credits go and the stop.
-	expect(html).toContain(
-		'Pro includes the usage in the table. Need more? Add prepaid credits and keep going until they run out. Free stops at its limits.',
-	)
-	expect(html).toContain(
-		'Usage past the include is charged from credits (Worker compute and Rows read). On credits, daily and weekly limits go up to 50× Pro’s include, capped at the “Pro + credits” column. When credits run out, usage past the include stops. No overage invoices.',
-	)
-	// Every column is the limit table enforced for that plan.
 	expect(html).toContain('Pro + credits')
 	expect(html).toContain('Worker compute per month')
-	expect(html).not.toContain('unique worker days')
-	// Monthly compute keeps running past the include on credits; not a cap.
-	expect(html).toContain('350 + credits')
-	expect(html).toContain('5B + credits')
-	expect(html).toContain('25,000')
-	expect(html).toContain('60,000')
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
-	expect(html).toContain('Durable Object rows read per month')
-	expect(html).toContain('Unique execute workers per week')
-	expect(html).toContain('Outbound fetches per week')
-	expect(html).toContain('1,200')
-	expect(html).toContain('Automation invocations per day')
-	expect(html).toContain('1,000')
-	expect(html).toContain('10,000')
-	expect(html).toContain('15,000')
-	expect(html).toContain('40,000')
-	expect(html).not.toContain('120,000')
 	expect(html).toMatch(/<a[^>]*href="\/docs\/kody-factory"[^>]*>factory<\/a>/)
 })

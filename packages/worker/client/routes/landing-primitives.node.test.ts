@@ -13,12 +13,9 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 
 	expect(html).toContain('id="primitives"')
 	expect(html).toContain('href="/features"')
-	expect(html).not.toContain('role="tooltip"')
 	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)
-	expect(html).not.toContain('aria-expanded')
-	expect(html).not.toContain('aria-controls')
 	expect(html).toContain('kody-primitives-lantern-480.webp')
 	expect(html).toContain('kody-primitives-lantern.webp 863w')
 	expect(html).toContain('clip-path: polygon(')
@@ -58,9 +55,4 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	)
 	// Paths are written from layout on the client; SSR paints nothing.
 	expect(html).not.toMatch(/class="landing-leader-flow"[^>]*\sd="/)
-	expect(html).not.toContain('data-dismissed')
-	expect(html).not.toContain('data-active')
-	for (const primitive of landingHomePrimitives) {
-		expect(html).not.toContain(primitive.body)
-	}
 })

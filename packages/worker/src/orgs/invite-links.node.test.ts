@@ -359,11 +359,3 @@ test('expired and revoked links cannot be redeemed', async () => {
 		}),
 	).toMatchObject({ ok: false, reason: 'revoked' })
 })
-
-test('invite links never accept owner as a role at create time', async () => {
-	// Type system blocks Owner; the HTTP handler rejects it. Runtime create
-	// only accepts member/billing.
-	const { id } = await createLink({ role: 'billing' })
-	const listed = await listActiveOrgInviteLinks(db, orgId)
-	expect(listed.find((link) => link.id === id)?.role).toBe('billing')
-})

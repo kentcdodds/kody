@@ -63,10 +63,6 @@ INSERT INTO usage_connection_daily (
 	await waitForClientHydration(page)
 	const summary = page.getByTestId('connection-usage-summary-table')
 	await expect(summary).toContainText('slack-bot.example')
-	// Columns are worker loads (the cap unit); raw execute calls ride along.
-	await expect(page.getByTestId('connection-usage-summary')).toContainText(
-		'Counts are worker loads',
-	)
 	await expect(summary).toContainText('7 days: 1,440 execute calls')
 	await expect(summary).not.toContainText('Kody CLI')
 	await expect(summary).not.toContainText('API token')

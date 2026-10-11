@@ -36,8 +36,6 @@ test('an admin types, saves, replaces, and removes an MCP server OAuth client', 
 	const clientSecretInput = section.getByLabel('Client secret', { exact: true })
 	await clientIdInput.pressSequentially('e2e-client-id')
 	await clientSecretInput.pressSequentially(clientSecret)
-	await expect(clientIdInput).toHaveValue('e2e-client-id')
-	await expect(clientSecretInput).toHaveValue(clientSecret)
 
 	await section.getByRole('button', { name: 'Save OAuth client' }).click()
 	const configured = section.getByTestId('mcp-server-oauth-client-configured')

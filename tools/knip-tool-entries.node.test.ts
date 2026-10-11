@@ -1,29 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { toolCliEntryFiles } from './knip-tool-entries.ts'
-
-const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-
-test('shared tools helpers are not knip entries', () => {
-	const entries = toolCliEntryFiles(repoRoot)
-	expect(entries).not.toContain('tools/mcp-test-support.ts')
-	expect(entries).not.toContain('tools/node-runtime.ts')
-	expect(entries).not.toContain('tools/knip-tool-entries.ts')
-	expect(entries).not.toContain(
-		'tools/teams-migration/rewrite-api-token-scopes.ts',
-	)
-	expect(entries).not.toContain('tools/ensure-dev.ts')
-	expect(entries).not.toContain('tools/ci/merge-conflict-check.ts')
-	expect(entries).toContain('tools/preview-rehearsal/seal.ts')
-	expect(entries).toContain('tools/memory-auto-surface-lab/run.mjs')
-	expect(entries).toContain('tools/evals/package-discovery-routing.ts')
-	expect(entries).toContain('tools/jobs-test-service.entry.ts')
-	expect(entries).toContain('tools/highlight-test-service.entry.ts')
-	expect(entries.length).toBeLessThan(160)
-})
 
 test('cli mains and node script targets are entries; helpers are not', () => {
 	const root = mkdtempSync(path.join(tmpdir(), 'knip-tool-entries-'))

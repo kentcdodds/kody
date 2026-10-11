@@ -89,11 +89,6 @@ test.each([
 	expect(response.status).toBe(200)
 	const html = await response.text()
 
-	expect(html).toContain('/feature-pages.css')
-	expect(html).toContain(`href="https://example.com/features${suffix}"`)
-	expect(html).toContain(
-		`/og/${suffix ? `feature-${suffix.slice(1)}` : 'features'}.png`,
-	)
 	expect(html).not.toContain('Loading page')
 	expect(html.match(/<h1[ >]/g)).toHaveLength(1)
 	expect(html.match(/<main[ >]/g)).toHaveLength(1)

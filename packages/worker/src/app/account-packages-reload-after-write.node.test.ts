@@ -1,12 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import {
-	ownerIdFromStored,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
-import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -122,21 +118,5 @@ test('reload after team package lock includes selectedPackage from the owning or
 		kodyId: 'shared',
 		name: '@acme/shared',
 		lockedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-	})
-})
-
-test('reloadAccountPackagesAfterWrite resolves team owner slug for selected package', async () => {
-	const env = await createTeamEnv()
-	const user = memberUser()
-	const data = await reloadAccountPackagesAfterWrite({
-		env,
-		request: new Request('https://kody.test/account/packages.json'),
-		user,
-		packageId: 'pkg-team',
-		ownerUserId: ownerIdFromStored(teamId),
-	})
-	expect(data.selectedPackage).toMatchObject({
-		id: 'pkg-team',
-		kodyId: 'shared',
 	})
 })

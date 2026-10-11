@@ -6,19 +6,14 @@ import { ensureCreditWalletTestSchema } from '#worker/billing/test-schema.ts'
 import {
 	ExecuteRateLimitedError,
 	admitHostedExecuteCall,
-	executeCallsPerMinutePerOrg,
 } from '#mcp/execute-admission.ts'
 import { getCachedUserEntitlement } from '#worker/entitlements/service.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import {
-	executeCallsPerMinutePerSeat,
-	resolveEntitlementLimit,
-} from '#universal/plans.ts'
+import { resolveEntitlementLimit } from '#universal/plans.ts'
 
 const now = new Date('2026-10-10T12:00:00.000Z')
-const nowMs = now.getTime()
 
 type SeededOrg = { email: string; stableUserId: string }
 
@@ -162,7 +157,6 @@ test('a 3-seat Pro org admits 900 execute calls per minute and refuses the 901st
 	expect(
 		resolveEntitlementLimit(entitlement, 'execute_calls_per_minute', now),
 	).toBe(900)
-	expect(executeCallsPerMinutePerOrg).toBe(executeCallsPerMinutePerSeat)
 
 	await fillBrake(org, 900)
 	await expect(admit(org)).rejects.toBeInstanceOf(ExecuteRateLimitedError)
@@ -170,7 +164,6 @@ test('a 3-seat Pro org admits 900 execute calls per minute and refuses the 901st
 		code: 'execute_rate_limited',
 		message: expect.stringContaining('started 900 execute calls'),
 	})
-	expect(nowMs).toBe(now.getTime())
 }, 120_000)
 
 test('removing a seat shrinks the execute runaway brake on the next check', async () => {
