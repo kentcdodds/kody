@@ -68,6 +68,7 @@ import {
 import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
+	shaEqualsOrUniquePrefix,
 	applySessionRequestBody,
 	applySessionRequestHeaders,
 	parseSessionRequest,
@@ -882,11 +883,124 @@ export function isGitAncestor(
 	}
 }
 
+export type HealthCommitInfo = {
+	parents: ReadonlyArray<string>
+	message: string
+}
+
+const mergeHeadMessagePattern = /^Merge\s+([0-9a-f]{7,40})\s+into\b/i
+
+/** Preview merge commits name the PR head in `Merge <head> into <base>`. */
+export function mergeCommitMessageNamesHead(
+	message: string,
+	expectedSha: string,
+) {
+	const firstLine = message.trim().split(/\r?\n/, 1)[0] ?? ''
+	const named = firstLine.match(mergeHeadMessagePattern)?.[1]
+	if (!named) return false
+	return (
+		shaEqualsOrUniquePrefix(named, expectedSha) ||
+		shaEqualsOrUniquePrefix(expectedSha, named)
+	)
+}
+
+export function readLocalHealthCommitInfo(
+	sha: string,
+	options: {
+		execFile?: (
+			file: string,
+			args: ReadonlyArray<string>,
+			options: ExecFileSyncOptions,
+		) => string
+		cwd?: string
+	} = {},
+): HealthCommitInfo | null {
+	const execFile =
+		options.execFile ??
+		((file, args, execOptions) =>
+			execFileSync(file, args, execOptions).toString())
+	try {
+		const output = execFile('git', ['log', '-1', '--format=%P%x00%s', sha], {
+			cwd: options.cwd ?? process.cwd(),
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		})
+		const [parents, message] = output.split('\0')
+		return {
+			parents: (parents ?? '')
+				.trim()
+				.split(/\s+/)
+				.filter((parent) => parent.length > 0),
+			message: (message ?? '').trim(),
+		}
+	} catch {
+		return null
+	}
+}
+
+export function readGithubHealthCommitInfo(
+	sha: string,
+	options: {
+		execFile?: (
+			file: string,
+			args: ReadonlyArray<string>,
+			options: ExecFileSyncOptions,
+		) => string
+	} = {},
+): HealthCommitInfo | null {
+	const execFile =
+		options.execFile ??
+		((file, args, execOptions) =>
+			execFileSync(file, args, execOptions).toString())
+	try {
+		const repo = JSON.parse(
+			execFile('gh', ['repo', 'view', '--json', 'nameWithOwner'], {
+				encoding: 'utf8',
+				stdio: ['ignore', 'pipe', 'ignore'],
+				timeout: 10_000,
+			}),
+		) as { nameWithOwner?: string }
+		const nameWithOwner = repo.nameWithOwner?.trim()
+		if (!nameWithOwner) return null
+		const commit = JSON.parse(
+			execFile('gh', ['api', `repos/${nameWithOwner}/commits/${sha}`], {
+				encoding: 'utf8',
+				stdio: ['ignore', 'pipe', 'ignore'],
+				timeout: 10_000,
+			}),
+		) as {
+			parents?: Array<{ sha?: string }>
+			commit?: { message?: string }
+		}
+		return {
+			parents: (commit.parents ?? [])
+				.map((parent) => parent.sha)
+				.filter((parentSha): parentSha is string => Boolean(parentSha)),
+			message: commit.commit?.message ?? '',
+		}
+	} catch {
+		return null
+	}
+}
+
+export function loadHealthCommitInfo(
+	sha: string,
+	options: {
+		readLocal?: (sha: string) => HealthCommitInfo | null
+		readGithub?: (sha: string) => HealthCommitInfo | null
+	} = {},
+): HealthCommitInfo | null {
+	const readLocal = options.readLocal ?? readLocalHealthCommitInfo
+	const readGithub = options.readGithub ?? readGithubHealthCommitInfo
+	return readLocal(sha) ?? readGithub(sha)
+}
+
 export async function readHealth(input: {
 	origin: string
 	expectedSha: string | null
 	fetchImpl?: typeof fetch
 	isAncestor?: (ancestor: string, descendant: string) => boolean
+	loadCommitInfo?: (sha: string) => HealthCommitInfo | null
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const response = await fetchImpl(healthUrlForOrigin(input.origin), {
@@ -911,6 +1025,27 @@ export async function readHealth(input: {
 				ok: true,
 				commitSha: evaluated.commitSha,
 				detail: `ok, commitSha ${evaluated.commitSha} (descendant of ${input.expectedSha})`,
+			}
+		} else {
+			const loadCommitInfo = input.loadCommitInfo ?? loadHealthCommitInfo
+			const info = loadCommitInfo(evaluated.commitSha)
+			if (info) {
+				const withParents = evaluateAppHealth(
+					body,
+					input.expectedSha,
+					info.parents,
+				)
+				if (withParents.ok) {
+					evaluated = withParents
+				} else if (
+					mergeCommitMessageNamesHead(info.message, input.expectedSha)
+				) {
+					evaluated = {
+						ok: true,
+						commitSha: evaluated.commitSha,
+						detail: `ok, commitSha ${evaluated.commitSha} (merge of ${input.expectedSha})`,
+					}
+				}
 			}
 		}
 	}
