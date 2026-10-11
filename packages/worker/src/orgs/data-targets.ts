@@ -96,6 +96,7 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'enablement_org_migrations' },
 	{ kind: 'org_id', table: 'org_memberships' },
 	{ kind: 'org_id', table: 'invites' },
+	{ kind: 'org_id', table: 'org_invite_links' },
 	{ kind: 'org_id', table: 'access_cache' },
 	{ kind: 'org_id', table: 'handles' },
 ]

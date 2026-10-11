@@ -590,6 +590,13 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{
 		kind: 'replace_user_column',
+		table: 'org_invite_links',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
 		table: 'teams',
 		matchColumn: 'created_by_user_id',
 		setColumn: 'created_by_user_id',
@@ -961,6 +968,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
 	grants: ['created_by_user_id'],
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
+	org_invite_links: ['created_by_user_id'],
 	org_memberships: ['invited_by_user_id'],
 	org_user_budgets: ['set_by_user_id'],
 	org_limit_overrides: ['set_by_user_id'],
