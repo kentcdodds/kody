@@ -1,9 +1,11 @@
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as Authorize from '#worker/authorization/authorize.ts'
 
 const mocks = vi.hoisted(() => ({
 	listPackages: vi.fn(),
@@ -12,7 +14,25 @@ const mocks = vi.hoisted(() => ({
 	listSecrets: vi.fn(),
 	listIntegrations: vi.fn(),
 	listServerRefs: vi.fn(),
+	access: null as Authorize.EffectivePermissions | null,
 }))
+
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof Authorize>()
+	return {
+		...actual,
+		computeEffectivePermissions: (
+			input: Parameters<typeof actual.computeEffectivePermissions>[0],
+		) =>
+			mocks.access
+				? Promise.resolve(mocks.access)
+				: actual.computeEffectivePermissions(input),
+		runWithRequestPermissions: <T>(
+			ctx: Parameters<typeof actual.runWithRequestPermissions>[0],
+			run: () => Promise<T>,
+		) => (mocks.access ? run() : actual.runWithRequestPermissions(ctx, run)),
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
@@ -59,7 +79,17 @@ function savedPackage(id: string, userId: string) {
 }
 
 beforeEach(() => {
-	for (const mock of Object.values(mocks)) mock.mockReset()
+	mocks.access = null
+	for (const mock of [
+		mocks.listPackages,
+		mocks.buildRows,
+		mocks.getRegistry,
+		mocks.listSecrets,
+		mocks.listIntegrations,
+		mocks.listServerRefs,
+	]) {
+		mock.mockReset()
+	}
 	mocks.getRegistry.mockResolvedValue({ capabilities: [], mcpServers: [] })
 	mocks.listSecrets.mockResolvedValue([])
 	mocks.listIntegrations.mockResolvedValue([])
@@ -132,4 +162,50 @@ test('a personal connection still lists the person own packages', async () => {
 		userId: ownerIdFromStored('user-1'),
 	})
 	expect(result.packageRows.map((row) => row.record.id)).toEqual(['person-pkg'])
+})
+
+test('a grant-only collaborator sees only granted secrets and integrations', async () => {
+	mocks.access = {
+		orgId: ownerIdFromStored('org-1'),
+		isOwner: false,
+		permissions: new Set<OrgPermission>(['search:read']),
+		resourcePermissions: new Map<string, ReadonlySet<OrgPermission>>([
+			['secret:granted-secret', new Set(['secret:use'])],
+			['integration:github', new Set(['integration:use'])],
+		]),
+		credentialScopes: null,
+		profileGrants: null,
+	}
+	mocks.listSecrets.mockResolvedValue([
+		{ name: 'granted-secret' },
+		{ name: 'other-secret' },
+	])
+	mocks.listIntegrations.mockResolvedValue([
+		{ connection: { name: 'github' } },
+		{ connection: { name: 'linear' } },
+	])
+	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://kody.example',
+		user: {
+			userId: personIdFromStored('guest-1'),
+			email: 'guest@example.com',
+			displayName: 'Guest',
+		},
+		orgBinding: {
+			org: { id: ownerIdFromStored('org-1'), slug: 'acme' },
+			role: null,
+		},
+	})
+	const result = await loadSearchRowsAndRegistry({
+		env,
+		callerContext,
+		userId: ownerIdFromStored('org-1'),
+	})
+	expect(result.userSecretRows.map((row) => row.name)).toEqual([
+		'granted-secret',
+	])
+	expect(result.userIntegrationRows.map((row) => row.connection.name)).toEqual([
+		'github',
+	])
 })

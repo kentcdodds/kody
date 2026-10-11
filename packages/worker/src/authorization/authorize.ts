@@ -328,6 +328,122 @@ export function canSeeResource(
 }
 
 /**
+ * Which rows of one resource type a list, search, or history may return for
+ * `permission`. Owners and org-level holders see every row; anyone else sees
+ * only resources they hold a grant on. The surface check passes on a single
+ * resource grant, so a list that skips this returns the whole org.
+ */
+export type ResourceListScope =
+	| { kind: 'all' }
+	| { kind: 'granted'; ids: ReadonlySet<string> }
+
+function holdsOrgWide(access: EffectivePermissions, permission: OrgPermission) {
+	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
+		return false
+	}
+	return access.isOwner || access.permissions.has(permission)
+}
+
+export function resourceListScope(
+	access: EffectivePermissions,
+	permission: OrgPermission,
+	resourceType: OrgResourceType,
+): ResourceListScope {
+	const ids = new Set<string>()
+	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
+		return { kind: 'granted', ids }
+	}
+	if (holdsOrgWide(access, permission)) return { kind: 'all' }
+	const prefix = `${resourceType}:`
+	for (const [key, granted] of access.resourcePermissions) {
+		if (key.startsWith(prefix) && granted.has(permission)) {
+			ids.add(key.slice(prefix.length))
+		}
+	}
+	return { kind: 'granted', ids }
+}
+
+export function listScopeIncludes(scope: ResourceListScope, id: string) {
+	return scope.kind === 'all' || scope.ids.has(id)
+}
+
+/**
+ * Search visibility for non-package resources: a row shows when the request
+ * holds any of `permissions` on it (org-wide or by grant).
+ */
+export function resourceVisibility(
+	access: EffectivePermissions,
+	resourceType: OrgResourceType,
+	permissions: ReadonlyArray<OrgPermission>,
+): (id: string) => boolean {
+	const scopes = permissions.map((permission) =>
+		resourceListScope(access, permission, resourceType),
+	)
+	return (id) => scopes.some((scope) => listScopeIncludes(scope, id))
+}
+
+function requireRequest(
+	ctx: { request: RequestContext | null },
+	permission: OrgPermission,
+): RequestContext {
+	if (ctx.request) return ctx.request
+	throw new AuthorizationError({
+		code: 'unauthenticated',
+		permission,
+		orgId: null,
+		resource: null,
+		message: denialMessage('unauthenticated', permission, undefined),
+	})
+}
+
+export async function loadResourceListScope(
+	ctx: { env: Env; request: RequestContext | null },
+	permission: OrgPermission,
+	resourceType: OrgResourceType,
+): Promise<ResourceListScope> {
+	const request = requireRequest(ctx, permission)
+	const access = await computeEffectivePermissions({ env: ctx.env, request })
+	return resourceListScope(access, permission, resourceType)
+}
+
+/**
+ * For surfaces that read or change org-wide state of a resource type (run
+ * history, workflow runs, bulk triage): a grant on one resource is not enough.
+ */
+export async function authorizeOrgWide(
+	ctx: { env: Env; request: RequestContext | null },
+	permission: OrgPermission,
+): Promise<void> {
+	const request = requireRequest(ctx, permission)
+	const access = await computeEffectivePermissions({ env: ctx.env, request })
+	if (holdsOrgWide(access, permission)) return
+	const code: AuthorizationDenialCode =
+		access.credentialScopes && !access.credentialScopes.has(permission)
+			? 'credential_scope'
+			: 'missing_permission'
+	throw new AuthorizationError({
+		code,
+		permission,
+		orgId: access.orgId,
+		resource: null,
+		message:
+			code === 'credential_scope'
+				? denialMessage(code, permission, undefined)
+				: `Missing ${permission} across this org. A grant on one resource does not cover org-wide reads. An org Owner can grant it.`,
+	})
+}
+
+/** A resource in the request's own org, keyed the way grants store it. */
+export function orgResource(
+	request: RequestContext,
+	type: OrgResourceType,
+	id: string,
+	label?: string,
+): OrgResource {
+	return { type, id, orgId: request.org.id, label }
+}
+
+/**
  * The org resource for a saved package, bound to the org that owns it
  * (`saved_packages.user_id`). A package from another org is denied with
  * `wrong_org`.

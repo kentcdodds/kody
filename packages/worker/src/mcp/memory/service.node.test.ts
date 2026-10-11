@@ -348,6 +348,7 @@ test('memory service upserts, verifies, soft deletes, and validates source uris'
 
 	const verify = await verifyMemoryCandidate({
 		...base,
+		scope: { kind: 'all' },
 		candidate: {
 			subject: 'Editor theme preference',
 			summary: 'User likes dark mode in editing interfaces.',
@@ -439,6 +440,7 @@ test('memory search returns mutable user-owned ids and upsert rejects unknown id
 
 	const search = await searchMemoryRecords({
 		...base,
+		scope: { kind: 'all' },
 		query: 'mutable memory id mutation calls',
 	})
 	expect(search.matches).toHaveLength(1)
@@ -474,6 +476,39 @@ test('memory search returns mutable user-owned ids and upsert rejects unknown id
 	)
 })
 
+test('memory search with a granted scope ranks only granted memories', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+	const base = { env: runtimeEnv, userId: ownerIdFromStored('user-123') }
+	const created = []
+	for (const label of ['alpha', 'beta', 'gamma']) {
+		created.push(
+			await upsertMemory({
+				...base,
+				subject: `Release checklist ${label}`,
+				summary: `Release checklist notes for ${label}.`,
+				verificationReference: `verify-${label}`,
+			}),
+		)
+	}
+	const grantedId = created[1]!.memory.id
+
+	const scoped = await searchMemoryRecords({
+		...base,
+		scope: { kind: 'granted', ids: new Set([grantedId]) },
+		query: 'release checklist',
+		limit: 5,
+	})
+	expect(scoped.matches.map((match) => match.id)).toEqual([grantedId])
+
+	const none = await searchMemoryRecords({
+		...base,
+		scope: { kind: 'granted', ids: new Set() },
+		query: 'release checklist',
+	})
+	expect(none.matches).toEqual([])
+})
+
 test('memory surfacing suppresses repeated memories per conversation', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
@@ -489,6 +524,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 	const surface = (conversationId: string) =>
 		surfaceRelevantMemories({
 			env: runtimeEnv,
+			scope: { kind: 'all' },
 			userId: ownerIdFromStored('user-123'),
 			query,
 			conversationId,
@@ -508,6 +544,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 
 	const search = await searchMemoryRecords({
 		env: runtimeEnv,
+		scope: { kind: 'all' },
 		userId: ownerIdFromStored('user-123'),
 		query,
 		conversationId: 'conv-123',
@@ -619,6 +656,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const result = await searchMemoryRecords({
 		env: runtimeEnv,
+		scope: { kind: 'all' },
 		userId: ownerIdFromStored('user-123'),
 		query: 'deployment window',
 		limit: 5,

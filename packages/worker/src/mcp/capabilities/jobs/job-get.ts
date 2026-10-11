@@ -11,6 +11,7 @@ import {
 	formatJobRecentRunFromRecord,
 	jobGetInputSchema,
 	jobGetOutputSchema,
+	authorizeJob,
 	resolveJobGetId,
 } from './shared.ts'
 
@@ -39,6 +40,12 @@ export const jobGetCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
 			const jobId = resolveJobGetId(args)
+			await authorizeJob({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				permission: 'job:read',
+				jobId,
+			})
 			const inspection = await getJobInspection({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),

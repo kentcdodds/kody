@@ -1,8 +1,16 @@
+import {
+	authorizeOrgWide,
+	listScopeIncludes,
+	loadResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getRunRecord } from '#worker/run-records/service.ts'
 import {
@@ -61,6 +69,15 @@ export const runGetCapability = defineDomainCapability(
 			})
 			if (!result) {
 				throw new McpCallerError(`Run "${args.run_id}" was not found.`)
+			}
+			const auth = {
+				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
+			}
+			const scope = await loadResourceListScope(auth, 'job:read', 'job')
+			const jobId = result.run.jobId
+			if (!jobId || !listScopeIncludes(scope, jobId)) {
+				await authorizeOrgWide(auth, 'job:read')
 			}
 			return {
 				run: formatRunRecord(result.run),

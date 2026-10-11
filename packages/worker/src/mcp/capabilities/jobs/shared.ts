@@ -1,7 +1,12 @@
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import { authorize, orgResource } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	isPackageOwnedJobId,
@@ -581,12 +586,33 @@ export function resolveJobUpdateBody(
 	}
 }
 
+/** Every single-job surface checks the job itself, not only the surface. */
+export async function authorizeJob(input: {
+	env: Env
+	callerContext: CapabilityContext['callerContext']
+	permission: Extract<OrgPermission, `job:${string}`>
+	jobId: string
+}) {
+	const request = requireMcpRequest(input.callerContext)
+	await authorize(
+		{ env: input.env, request },
+		input.permission,
+		orgResource(request, 'job', input.jobId),
+	)
+}
+
 export async function runJobNowFromArgs(input: {
 	env: Env
 	callerContext: CapabilityContext['callerContext']
 	args: JobRunNowCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:execute',
+		jobId: input.args.id,
+	})
 	const { runJobNowViaManager } = await import('#worker/jobs/manager-client.ts')
 	const result = await runJobNowViaManager({
 		env: input.env,
@@ -603,6 +629,12 @@ export async function updateJobFromArgs(input: {
 	args: JobUpdateCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:write',
+		jobId: input.args.id,
+	})
 	const { updateJob } = await import('#worker/jobs/service.ts')
 	const updated = await updateJob({
 		env: input.env,
@@ -625,6 +657,12 @@ export async function deleteJobFromArgs(input: {
 	args: JobDeleteCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:delete',
+		jobId: input.args.id,
+	})
 	if (isPackageOwnedJobId(input.args.id)) {
 		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
 	}
