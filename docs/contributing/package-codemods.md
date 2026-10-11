@@ -428,6 +428,9 @@ Once the transfer has committed, run `adminPackageCodemodDryRun`, then
 old scope back in the sources, so the next scan detects the package again.
 Reverting a package whose `kody:@oldScope/...` dependencies no longer exist
 under the old scope fails the publish checks and leaves the package applied.
+Re-applying after a revert can report `dry_run_new_failures` for a package
+whose sibling dependency is still registered under the old scope. Run apply
+again once the sibling is applied.
 
 ## Engine
 
