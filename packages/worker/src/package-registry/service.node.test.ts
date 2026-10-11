@@ -825,7 +825,7 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	)
 })
 
-test('deleteSavedPackageProjection keeps the package row when clearStorage fails', async () => {
+test('deleteSavedPackageProjection aborts before source cleanup when clearStorage fails', async () => {
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	const storageBuckets = [
@@ -835,6 +835,13 @@ test('deleteSavedPackageProjection keeps the package row when clearStorage fails
 	]
 	const env = createEnv('user-1', { storageBuckets })
 	mockPackageRow(uuidPackageId)
+	mockModule.listJobRowsByUserId.mockResolvedValue([
+		{
+			id: `package-job:${uuidPackageId}:event-runner`,
+			source_id: 'source-1',
+			storage_id: jobStorageId,
+		},
+	])
 	mockModule.clearStorage.mockImplementation(async () => {
 		const call = mockModule.storageRunnerRpc.mock.calls.at(-1)?.[0] as
 			| { storageId: string }
@@ -850,6 +857,9 @@ test('deleteSavedPackageProjection keeps the package row when clearStorage fails
 	)
 
 	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunityForksForPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteJobRow).not.toHaveBeenCalled()
 	expect(mockModule.deleteAllAppScopedValues).not.toHaveBeenCalled()
 	expect(storageBuckets.map((row) => row.storageId)).toEqual([facetStorageId])
 	expect(consoleWarn).toHaveBeenCalledWith(
