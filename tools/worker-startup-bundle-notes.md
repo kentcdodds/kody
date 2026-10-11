@@ -415,3 +415,9 @@ raised again.
   5_224_171 measurement, 16_175 over the 5_226_000 ceiling) and runtime
   3_791_764 (+18_020 over 3_773_744, 16_764 over the 3_775_000 ceiling).
   Reviewed ceilings platform 5_244_000 and runtime 3_793_500.
+- Org resource transfer (`adminOrgResourceTransfer`, `org-transfer/`, codemod
+  `0011`) adds platform +42_788 (5_296_799 → 5_339_587) and runtime +40_776
+  (4_000_556 → 4_041_332) over main `763ceeba1`, which was already over both
+  ceilings. The engine sits in the lazily evaluated admin capability domain, so
+  it adds bytes, not startup CPU. Ceilings unchanged; main's existing overage
+  issues track the reset.
