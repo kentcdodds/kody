@@ -700,6 +700,79 @@ export async function deleteJobRow(
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function transferJobRowsOwner(input: {
+	db: D1Database
+	fromUserId: string
+	toUserId: string
+	jobs: Array<{ jobId: string; callerContextJson: string }>
+	updatedAt: string
+}): Promise<{ transferred: number }> {
+	if (input.jobs.length === 0) return { transferred: 0 }
+	const jobIds = input.jobs.map((job) => job.jobId)
+	const { results } = await input.db
+		.prepare(
+			`SELECT id, caller_context_json, updated_at, claim_token
+			 FROM jobs
+			 WHERE user_id = ? AND deleted_at IS NULL
+			   AND id IN (SELECT value FROM json_each(?))`,
+		)
+		.bind(input.fromUserId, JSON.stringify(jobIds))
+		.all<{
+			id: string
+			caller_context_json: string
+			updated_at: string
+			claim_token: string | null
+		}>()
+	const current = new Map((results ?? []).map((row) => [row.id, row]))
+	for (const jobId of jobIds) {
+		const row = current.get(jobId)
+		if (!row) throw new Error(`Job ${jobId} is not a live job of the source.`)
+		if (row.claim_token) throw new Error(`Job ${jobId} is running; retry.`)
+	}
+	const statement = (
+		jobId: string,
+		owner: { from: string; to: string },
+		callerContextJson: string,
+		updatedAt: string,
+	) =>
+		input.db
+			.prepare(
+				`UPDATE jobs
+				 SET user_id = ?, caller_context_json = ?, updated_at = ?
+				 WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND claim_token IS NULL`,
+			)
+			.bind(owner.to, callerContextJson, updatedAt, jobId, owner.from)
+	const batchResults = await input.db.batch(
+		input.jobs.map((job) =>
+			statement(
+				job.jobId,
+				{ from: input.fromUserId, to: input.toUserId },
+				job.callerContextJson,
+				input.updatedAt,
+			),
+		),
+	)
+	const moved = input.jobs.filter(
+		(_, index) => (batchResults[index]?.meta.changes ?? 0) > 0,
+	)
+	if (moved.length === input.jobs.length) {
+		return { transferred: moved.length }
+	}
+	// A job was claimed between the check and the batch: put the rest back.
+	await input.db.batch(
+		moved.map((job) => {
+			const original = current.get(job.jobId)!
+			return statement(
+				job.jobId,
+				{ from: input.toUserId, to: input.fromUserId },
+				original.caller_context_json,
+				original.updated_at,
+			)
+		}),
+	)
+	throw new Error('A job changed during the transfer; nothing moved. Retry.')
+}
+
 /**
  * Auto-disable enabled jobs whose expires_at has passed. Expiry stops
  * scheduling; retention still ages disabled ad-hoc jobs separately from

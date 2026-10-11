@@ -216,6 +216,15 @@ export class JobsService
 		return jobsStore(this.env).restoreJobsForUser(input)
 	}
 
+	async transferJobsOwner(input: {
+		fromUserId: string
+		toUserId: string
+		jobs: Array<{ jobId: string; callerContextJson: string }>
+		updatedAt: string
+	}): Promise<{ transferred: number }> {
+		return jobsStore(this.env).transferJobsOwner(input)
+	}
+
 	async syncAlarm(input: {
 		userId: OwnerId
 	}): Promise<{ ok: true; userId: string; nextRunAt: string | null }> {
