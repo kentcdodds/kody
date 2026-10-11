@@ -16,7 +16,6 @@ import {
 	type DynamicWorkerUsageTailProps,
 } from '#worker/usage/dynamic-worker-cpu.ts'
 import {
-	outboundFetchTimeoutMsForExecutor,
 	retrieverOutboundFetchDeniedMessage,
 	type FetchGatewayProps,
 } from '#mcp/fetch-gateway.ts'
@@ -643,7 +642,6 @@ export function createExecuteExecutor(input: {
 			: (input.timeoutMs ?? 90_000)
 	const gatewayProps = {
 		...input.gatewayProps,
-		outboundFetchTimeoutMs: outboundFetchTimeoutMsForExecutor(timeout),
 		allowOutboundFetch,
 	}
 	return createStableDynamicWorkerExecutor({

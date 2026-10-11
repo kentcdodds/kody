@@ -6,8 +6,10 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
+	outboundFetchTimeoutMs,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
+import { outboundFetchIdleTimeoutMs } from '#mcp/outbound-fetch-deadline.ts'
 import {
 	parseHostApprovalRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
@@ -1370,50 +1372,43 @@ test('leak: a secret filled into the body or URL is redacted from echoes in ever
 	)
 })
 
-test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {
-	const createHungFetch = () =>
-		vi.fn(
-			(request: Request) =>
-				new Promise<Response>((_resolve, reject) => {
-					request.signal.addEventListener(
-						'abort',
-						() => {
-							reject(
-								request.signal.reason ??
-									new DOMException('The operation was aborted.', 'AbortError'),
-							)
-						},
-						{ once: true },
-					)
-				}),
-		)
-	const isAbortOrTimeout = (error: unknown) => {
-		const name =
-			error && typeof error === 'object' && 'name' in error
-				? String(error.name)
-				: ''
-		return name === 'TimeoutError' || name === 'AbortError'
-	}
+test('fetch gateway deadline is five minutes on every surface', () => {
+	expect(outboundFetchTimeoutMs).toBe(300_000)
+	expect(outboundFetchIdleTimeoutMs).toBe(60_000)
+})
 
-	for (const [extra, maxElapsedMs] of [
-		[{ timeoutMs: 40 }, 500],
-		[{ props: { ...props, outboundFetchTimeoutMs: 40 } }, Infinity],
-	] as const) {
-		const hungFetch = createHungFetch()
-		const startedAtMs = Date.now()
-		await expect(
-			executeGatewayFetch({
-				env,
-				props,
-				request: new Request('https://example.com/slow'),
-				globalFetch: hungFetch as unknown as typeof fetch,
-				...extra,
+test('fetch gateway aborts a hung outbound fetch before headers at the overall deadline', async () => {
+	const hungFetch = vi.fn(
+		(request: Request) =>
+			new Promise<Response>((_resolve, reject) => {
+				request.signal.addEventListener(
+					'abort',
+					() => {
+						reject(
+							request.signal.reason ??
+								new DOMException('The operation was aborted.', 'AbortError'),
+						)
+					},
+					{ once: true },
+				)
 			}),
-		).rejects.toSatisfy(isAbortOrTimeout)
-		expect(Date.now() - startedAtMs).toBeLessThan(maxElapsedMs)
-		expect(hungFetch).toHaveBeenCalledTimes(1)
-		expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
-	}
+	)
+	const startedAtMs = Date.now()
+	await expect(
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://example.com/slow'),
+			globalFetch: hungFetch as unknown as typeof fetch,
+			timeoutMs: 40,
+		}),
+	).rejects.toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch exceeded its 40ms overall deadline.',
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
+	expect(hungFetch).toHaveBeenCalledTimes(1)
+	expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
 })
 
 function createTimedBodyFetch(steps: ReadonlyArray<{ afterMs: number }>) {
@@ -1550,54 +1545,83 @@ test('fetch gateway stops a slow drip at the overall deadline', async () => {
 	})
 })
 
-test('fetch gateway meters an abandoned body once, at the overall deadline or at headers when unbounded', async () => {
-	const recordUsageSpy = vi
-		.spyOn(usageModule, 'recordUsage')
-		.mockResolvedValue(undefined)
-	const abandon = async (timeoutMs: number | null) => {
-		const { fetchStub, upstreamCancel } = createTimedBodyFetch([
-			{ afterMs: 0 },
-			forever,
-		])
+test('fetch gateway default deadlines let steady chunks stream past a minute and stop at five minutes', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		const { fetchStub, upstreamCancel } = createTimedBodyFetch(
+			Array.from({ length: 20 }, () => ({ afterMs: 30_000 })),
+		)
 		const response = await executeGatewayFetch({
 			env,
 			props,
-			request: new Request('https://api.example.com/status-only'),
+			request: new Request('https://api.example.com/ai-stream'),
 			globalFetch: fetchStub as unknown as typeof fetch,
-			timeoutMs,
-			idleTimeoutMs: 20,
 		})
-		expect(response.status).toBe(200)
-		return { upstreamCancel }
+		const reader = response.body!.getReader()
+		const decoder = new TextDecoder()
+		let received = ''
+		const reading = (async () => {
+			try {
+				for (;;) {
+					const { done, value } = await reader.read()
+					if (done) return null
+					received += decoder.decode(value)
+				}
+			} catch (caught) {
+				return caught
+			}
+		})()
+		await vi.advanceTimersByTimeAsync(outboundFetchTimeoutMs - 1_000)
+		expect(received).toContain('chunk-9;')
+		await vi.advanceTimersByTimeAsync(2_000)
+		expect(await reading).toMatchObject({
+			name: 'TimeoutError',
+			message: 'Outbound fetch exceeded its 300s overall deadline.',
+		})
+		expect(received).not.toContain('chunk-11;')
+		expect(upstreamCancel).toHaveBeenCalled()
+	} finally {
+		vi.useRealTimers()
 	}
-
-	const bounded = await abandon(80)
-	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
-	const boundedUsage = recordUsageSpy.mock.calls[0]?.[1]
-	expect(boundedUsage).toMatchObject({ outcome: 'success' })
-	expect(boundedUsage?.durationMs).toBeGreaterThanOrEqual(70)
-	expect(bounded.upstreamCancel).toHaveBeenCalled()
-	recordUsageSpy.mockClear()
-
-	await abandon(null)
-	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
-	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
-		outcome: 'success',
-	})
 })
 
-test('fetch gateway forwards a caller abort after headers when deadlines are disabled', async () => {
+test('fetch gateway meters an abandoned body once, at the overall deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+		{ afterMs: 0 },
+		forever,
+	])
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/status-only'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 80,
+		idleTimeoutMs: 20,
+	})
+	expect(response.status).toBe(200)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const usage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(usage).toMatchObject({ outcome: 'success' })
+	expect(usage?.durationMs).toBeGreaterThanOrEqual(70)
+	expect(upstreamCancel).toHaveBeenCalled()
+})
+
+test('fetch gateway forwards a caller abort after headers', async () => {
 	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
 	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, forever])
 	const caller = new AbortController()
 	const response = await executeGatewayFetch({
 		env,
 		props,
-		request: new Request('https://api.example.com/unbounded', {
+		request: new Request('https://api.example.com/caller-abort', {
 			signal: caller.signal,
 		}),
 		globalFetch: fetchStub as unknown as typeof fetch,
-		timeoutMs: null,
+		timeoutMs: 5_000,
 	})
 	expect(response.status).toBe(200)
 	const outboundSignal = (

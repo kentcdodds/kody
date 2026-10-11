@@ -433,7 +433,7 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	}
 })
 
-test('createExecuteExecutor aligns worker compatibility and gives the fetch gateway a deadline under the sandbox budget', async () => {
+test('createExecuteExecutor aligns worker compatibility and leaves the fetch deadline to the gateway', async () => {
 	const readWorkerOptions = async (timeoutMs?: number | null) => {
 		const fakeLoader = createFakeWorkerLoader()
 		await runExecutor({
@@ -446,15 +446,13 @@ test('createExecuteExecutor aligns worker compatibility and gives the fetch gate
 	expect(await readWorkerOptions()).toMatchObject(
 		createDynamicWorkerCompatibilityOptions(),
 	)
-	for (const [timeoutMs, outboundFetchTimeoutMs] of [
-		[undefined, 60_000],
-		[270_000, 240_000],
-		[null, 240_000],
-	] as const) {
+	for (const timeoutMs of [undefined, 300_000, null]) {
 		const workerOptions = await readWorkerOptions(timeoutMs)
-		expect(
-			(workerOptions?.globalOutbound as { props?: unknown } | undefined)?.props,
-		).toMatchObject({ outboundFetchTimeoutMs })
+		const gatewayProps = (
+			workerOptions?.globalOutbound as { props?: object } | undefined
+		)?.props
+		expect(gatewayProps).toMatchObject({ allowOutboundFetch: true })
+		expect(gatewayProps).not.toHaveProperty('outboundFetchTimeoutMs')
 	}
 })
 

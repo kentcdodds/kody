@@ -161,9 +161,10 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					{count.format(freeLimits.maxExecuteUniqueWorkersPerDay)} unique
 					execute workers per day (
 					{count.format(freeLimits.maxExecuteUniqueWorkersPerWeek ?? 0)} this
-					week), and the rest of the entitlements on Pricing. Free stops at
-					those caps. Pro adds a larger monthly include, plus prepaid credits
-					when you need more.
+					week), and the rest of the entitlements on Pricing. Free stops at its
+					execute caps and other hard limits. Monthly Worker compute on Free is
+					a guideline that never charges you or stops runs. Pro adds a larger
+					monthly include, plus prepaid credits when you need more.
 				</p>
 				<p>
 					<a href={routes.pricing.href()}>Plans and pricing</a>

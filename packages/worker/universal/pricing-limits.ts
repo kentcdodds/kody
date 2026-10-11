@@ -16,6 +16,11 @@ export type PricingLimitColumn = {
 	 * so their value is an include, not a ceiling.
 	 */
 	chargesPastInclude?: true
+	/**
+	 * Monthly compute meters are informational (no wallet): they never
+	 * charge or stop runs, so their value is a guideline, not a cap.
+	 */
+	monthlyIncludeIsGuideline?: true
 }
 
 /**
@@ -24,7 +29,13 @@ export type PricingLimitColumn = {
  * the ceiling a funded credit wallet runs up to.
  */
 export const pricingLimitColumns: ReadonlyArray<PricingLimitColumn> = [
-	{ id: 'free', plan: 'Free', price: '$0', limits: planLimits.free },
+	{
+		id: 'free',
+		plan: 'Free',
+		price: '$0',
+		limits: planLimits.free,
+		monthlyIncludeIsGuideline: true,
+	},
 	{
 		id: 'pro',
 		plan: 'Pro',

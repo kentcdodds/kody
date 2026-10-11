@@ -1,4 +1,8 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -17,6 +21,8 @@ import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { listEnablementsForOrg } from '#worker/enablements/repo.ts'
+import { type EnablementRecord } from '#worker/enablements/types.ts'
 import { readOfficialDiscordMembershipForUser } from '#worker/discord/guild-membership.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
@@ -30,6 +36,7 @@ import {
 	type WaitingIntegrationAuthSignal,
 	type WaitingItem,
 	type WaitingMcpServerSignal,
+	type WaitingPausedEnablementSignal,
 	type WaitingSignals,
 } from '#universal/waiting.ts'
 
@@ -65,12 +72,14 @@ export async function deriveWaitingItems(input: {
 }
 
 /**
- * Same queue as `deriveWaitingItems`, looked up by MCP `stable_user_id`.
+ * Same queue as `deriveWaitingItems`, for an MCP caller: the person's queue in
+ * the org their connection is bound to (their personal org when unbound).
  * Fail-open: missing user or a probe blip returns no items.
  */
 export async function deriveWaitingItemsForStableUser(input: {
 	env: WaitingEnv
-	stableUserId: OwnerId
+	personId: PersonId
+	orgId?: OwnerId | null
 	email: string
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -79,16 +88,18 @@ export async function deriveWaitingItemsForStableUser(input: {
 		const userRow = await input.env.APP_DB.prepare(
 			`SELECT id, username, email_verified_at FROM users WHERE stable_user_id = ? ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
-			.bind(input.stableUserId)
+			.bind(input.personId)
 			.first<{
 				id: number
 				username: string
 				email_verified_at: string | null
 			}>()
 		if (!userRow) return []
+		const actorStableUserId = personalOrgId(input.personId)
+		const orgId = input.orgId ?? actorStableUserId
 		let orgSlug = userRow.username?.trim() ?? ''
 		try {
-			const org = await getOrgById(input.env.APP_DB, input.stableUserId)
+			const org = await getOrgById(input.env.APP_DB, orgId)
 			const slug = org?.slug?.trim()
 			if (slug) orgSlug = slug
 		} catch {
@@ -98,7 +109,8 @@ export async function deriveWaitingItemsForStableUser(input: {
 			env: input.env,
 			user: {
 				userId: userRow.id,
-				stableUserId: input.stableUserId,
+				stableUserId: orgId,
+				actorStableUserId,
 				email: input.email,
 				username: userRow.username,
 				emailVerified: Boolean(userRow.email_verified_at),
@@ -135,6 +147,7 @@ export async function collectWaitingSignals(input: {
 		firstMemory,
 		firstJob,
 		discordJoined,
+		enablementsProbe,
 	] = await Promise.all([
 		readOnboardingChecklistDismissed({
 			env,
@@ -165,6 +178,14 @@ export async function collectWaitingSignals(input: {
 			env,
 			userId: user.userId,
 		}),
+		// The viewer's own enablements in this org, never another member's.
+		probe(() =>
+			listEnablementsForOrg({
+				db: env.APP_DB,
+				orgId: user.stableUserId,
+				enablerUserId: user.actorStableUserId ?? user.stableUserId,
+			}),
+		),
 	])
 
 	// A failed package probe leaves both inputs unknown so the checklist
@@ -199,6 +220,12 @@ export async function collectWaitingSignals(input: {
 		mcpServers,
 		integrationAuth: integrationsProbe.ok
 			? reconnectableIntegrationAuth(integrationsProbe.value)
+			: [],
+		pausedEnablements: enablementsProbe.ok
+			? pausedEnablementSignals(
+					enablementsProbe.value,
+					packagesProbe.ok ? packagesProbe.value : [],
+				)
 			: [],
 		expiredSecrets: secretsProbe.ok
 			? expiredUserSecrets(secretsProbe.value)
@@ -327,6 +354,29 @@ function reconnectableIntegrationAuth(
 		})
 	}
 	return items
+}
+
+function pausedEnablementSignals(
+	enablements: Array<EnablementRecord>,
+	packages: Array<{ id: string; name: string }>,
+): Array<WaitingPausedEnablementSignal> {
+	const packageNames = new Map(packages.map((pkg) => [pkg.id, pkg.name]))
+	const signals: Array<WaitingPausedEnablementSignal> = []
+	for (const enablement of enablements) {
+		if (!enablement.pause) continue
+		signals.push({
+			id: enablement.id,
+			triggerKind: enablement.triggerKind,
+			triggerName: enablement.triggerName,
+			packageName: enablement.packageId
+				? (packageNames.get(enablement.packageId) ?? null)
+				: null,
+			reason: enablement.pause.reason,
+			resourceType: enablement.pause.resourceType,
+			resourceId: enablement.pause.resourceId,
+		})
+	}
+	return signals
 }
 
 function expiredUserSecrets(

@@ -148,18 +148,19 @@ several capabilities or package exports, branch on results, and return the final
 structured result. Split into multiple **execute** calls only when you need new
 user input, confirmation, or a result that changes the plan.
 
-Plain **execute** has a hard timeout (~90s by default). Sandbox outbound `fetch`
-is capped at 60s overall (30s under that budget), counted from the request until
-the response body ends, unless the caller passes a tighter `AbortSignal`. A
-response that stops sending bytes for 60s is also aborted, so a streamed
-response keeps going while bytes arrive, up to the overall cap. Long calls, such
-as streamed AI-provider completions that can run past a minute, belong in a
-workflow today: workflow sandboxes allow ~4 minutes per fetch. For multi-step or
-long-running work (>~60s, batch sweeps, migrations, polling loops, long streamed
-responses), use one **execute** call to submit
-`workflows.create({ code, params })`, then inspect progress with
-`workflowRunList` instead of chaining many MCP tool calls. Sandbox timeout
-errors state the enforced budget (for example
+Plain **execute** has a hard timeout (~90s by default). Each sandbox outbound
+`fetch` has a 5-minute overall deadline on every surface, counted from the
+request until the response body ends, unless the caller passes a tighter
+`AbortSignal`. A response that stops sending bytes for 60s is also aborted, so a
+streamed response keeps going while bytes arrive, up to the overall deadline.
+The run budget still applies on top, so inside a 90s execute a fetch stops at
+90s. Long calls, such as streamed AI-provider completions that can run past a
+minute, belong in a workflow, or in `execute --local`
+([local execute](../guides/local-execute.md)). For multi-step or long-running
+work (>~60s, batch sweeps, migrations, polling loops, long streamed responses),
+use one **execute** call to submit `workflows.create({ code, params })`, then
+inspect progress with `workflowRunList` instead of chaining many MCP tool calls.
+Sandbox timeout errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
 
