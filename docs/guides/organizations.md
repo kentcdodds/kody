@@ -18,8 +18,8 @@ The org is the billing and data boundary: its resources, usage, limits, and bill
 stay inside it. Inside an org, grants control access. Owners hold everything,
 Members hold the org basics (`org:read`, `member:read`, `team:read`,
 `search:read`) plus what they are granted, and an outside collaborator holds
-only their grants. See [Share a package](/docs/package-sharing) for presets and
-grants.
+catalog search (`search:read`) plus their grants. See
+[Share a package](/docs/package-sharing) for presets and grants.
 
 ## Personal vs team
 
@@ -36,8 +36,12 @@ one org.
 ## Automation runs as the person who turned it on
 
 A scheduled job, subscription, or webhook runs only after a person turns it on
-for themselves with `enablementEnable` (minting a webhook URL turns it on for
-the minter). That person is the **enabler**, and every run acts as them:
+for themselves with `enablementEnable`. Minting a webhook URL also turns it on
+for the minter when the URL has no enabler yet and the minter holds
+`package:execute`; a webhook URL runs as one enabler. Triggers that were already
+running when enablements arrived were turned on for their creator, or the
+earliest Owner if the creator had left. That person is the **enabler**, and
+every run acts as them:
 
 - The run has the enabler's live access in the org, checked on every run. It can
   do only what the enabler could do by hand at that moment, never more.
