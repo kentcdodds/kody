@@ -134,6 +134,21 @@ test('polling prefers a computed state on the expected base tip, then falls back
 	)
 })
 
+test('a pull request whose head is the default-branch tip does not write a check', async () => {
+	const methods: Array<string> = []
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha: baseSha,
+		fetchImpl: (request, init) => {
+			methods.push(`${init?.method ?? 'GET'} ${String(request)}`)
+			return Promise.resolve(new Response('unused', { status: 500 }))
+		},
+	})
+	expect(code).toBe(0)
+	expect(methods).toEqual([])
+})
+
 test('a dirty pull request fails a check on the head SHA', async () => {
 	const github = fakeGithub({
 		pulls: {
@@ -262,6 +277,30 @@ test('main fails closed for a bad head SHA, an unknown mode, or a scan without a
 	} finally {
 		process.exitCode = previousExitCode
 	}
+})
+
+test('a base-branch push skips an open pull request whose head is the default-branch tip', async () => {
+	const uniqueSha = 'b'.repeat(40)
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: baseSha } },
+			{ number: 8, head: { sha: uniqueSha } },
+		],
+		pulls: {
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+	})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
+	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
+	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
 })
 
 test('a base-branch push refreshes every open pull request head check', async () => {

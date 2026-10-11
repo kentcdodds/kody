@@ -12,8 +12,10 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * a cached result can be replaced by a later calculation. GitHub often
  * keeps `base.sha` at the merge-base for a behind pull request and never
  * stores the new tip; after the poll a published non-pending state is used
- * instead of failing closed. It does not check out or execute pull request
- * code, and it does not run Validate.
+ * instead of failing closed. A head SHA that is still the default-branch tip
+ * is skipped: writing that check would land on main (bots often open a pull
+ * request before the first unique commit). It does not check out or execute
+ * pull request code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -162,6 +164,12 @@ export async function reportMergeConflictCheck(input: {
 	maxAttempts?: number
 	delayMs?: number
 }): Promise<number> {
+	if (sameSha(input.headSha, input.expectedBaseSha)) {
+		console.log(
+			`Skipping ${mergeConflictCheckName}: pull request head is the default-branch tip.`,
+		)
+		return 0
+	}
 	const fetchImpl = input.fetchImpl ?? fetch
 	const { owner, repo } = parseRepository(input.repository)
 	const client = createGithubClient({
