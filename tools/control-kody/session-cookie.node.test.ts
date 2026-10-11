@@ -3,6 +3,7 @@ import {
 	cookieHeaderForOrigin,
 	formatCookieFile,
 	looksLikeLoginHtml,
+	mcpAuthForOrg,
 	sessionForOrigin,
 	shouldRefreshSession,
 } from './session-cookie.ts'
@@ -74,6 +75,70 @@ test('cookie files persist OAuth client and bearer token for MCP reuse', () => {
 	expect(
 		sessionForOrigin(file, 'https://kody-pr-9.example', 'other@x.com'),
 	).toBe(null)
+})
+
+test('OAuth cache is keyed by org so a different --org does not reuse the token', () => {
+	const oauth = {
+		clientId: 'client-1',
+		clientSecret: 'secret-1',
+		redirectUri: 'http://127.0.0.1/oauth/callback',
+		accessToken: 'token-team',
+	}
+	const origin = 'https://kody-pr-9.example'
+	const email = 'me@kentcdodds.com'
+	const team = formatCookieFile(
+		origin,
+		'kody_session=preview',
+		email,
+		oauth,
+		'@X-Org',
+	)
+	expect(team).toContain('# org=x-org')
+	expect(sessionForOrigin(team, origin, email, 'x-org')).toMatchObject({
+		org: 'x-org',
+		oauth,
+	})
+	expect(sessionForOrigin(team, origin, email, '@x-org')?.oauth).toEqual(oauth)
+	expect(sessionForOrigin(team, origin, email, 'other-org')).toBe(null)
+	expect(sessionForOrigin(team, origin, email, null)).toBe(null)
+	// request and browse still reuse the login cookie across orgs
+	expect(cookieHeaderForOrigin(team, origin, email)).toBe(
+		'kody_session=preview',
+	)
+
+	const personal = formatCookieFile(origin, 'kody_session=preview', email, {
+		...oauth,
+		accessToken: 'token-personal',
+	})
+	expect(personal).not.toContain('# org=')
+	expect(
+		sessionForOrigin(personal, origin, email, null)?.oauth?.accessToken,
+	).toBe('token-personal')
+	expect(sessionForOrigin(personal, origin, email, 'x-org')).toBe(null)
+
+	expect(mcpAuthForOrg(team, origin, email, 'x-org')).toEqual({
+		cookieHeader: 'kody_session=preview',
+		oauth,
+		orgSlug: 'x-org',
+	})
+	expect(mcpAuthForOrg(team, origin, email, 'other-org')).toEqual({
+		cookieHeader: 'kody_session=preview',
+		orgSlug: 'other-org',
+	})
+	expect(mcpAuthForOrg(team, origin, email, null)).toEqual({
+		cookieHeader: 'kody_session=preview',
+	})
+	expect(mcpAuthForOrg(personal, origin, email, null)).toEqual({
+		cookieHeader: 'kody_session=preview',
+		oauth: { ...oauth, accessToken: 'token-personal' },
+	})
+	expect(mcpAuthForOrg(personal, origin, email, '@X-Org')).toEqual({
+		cookieHeader: 'kody_session=preview',
+		orgSlug: 'x-org',
+	})
+	expect(mcpAuthForOrg(null, origin, email, 'x-org')).toEqual({
+		orgSlug: 'x-org',
+	})
 })
 
 test('login HTML on an account path refreshes the session', () => {

@@ -160,18 +160,10 @@ the slot name; the org decides which credential fills it.
   picks among several accounts.
 - `placement` is the one request header the value may be sent in. `template` is
   the whole header value with `{value}` where the credential goes; without it
-  the header value is the credential. Secret slots must declare `placement`
-  unless they are `raw`. OAuth slots default to
+  the header value is the credential. Secret slots must declare `placement`.
+  OAuth slots default to
   `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
   no placement.
-- `raw: true` (secret slots only) lets the package's own code read the value
-  with `packageSecrets.get(NAME)`. The consent page adds a line saying the
-  package can read the raw value, and Kody redacts that value from run output.
-  The value is returned only when Kody runs the package's code itself; local
-  execute (`--local`) names the package from the client, so it gets an error
-  instead. Without `raw`, `packageSecrets.get` fails with guidance; send the
-  value with a `{{secret:<slot>}}` header placeholder instead.
-  `packageSecrets.has` works for any secret slot.
 - Publish rejects any other key or a missing field and names the slot.
 - Once a package declares `kody.credentials`, the fetch gateway substitutes only
   its slots: `{{secret:NAME}}` names a secret slot and
@@ -182,6 +174,9 @@ the slot name; the org decides which credential fills it.
   or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
   keep the header-only, HTTPS, and item-website rules. Anything else is refused
   before the credential resolves, with an error naming the slot and the rule.
+- There is no body placement. The request body is forwarded verbatim, so the
+  gateway never substitutes a slot placeholder there (a login password, a
+  form-encoded token exchange).
 
 ### npm dependencies
 

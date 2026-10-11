@@ -55,6 +55,7 @@ const run: PackageWebhookListItem = {
 
 const secretUrl =
 	'https://kody.example/@jane/webhooks/raycast/list-commands/s3cr3t-url-secret'
+const signingSecret = 'generated-signing-secret'
 
 function listPayload(
 	webhooks: Array<PackageWebhookListItem>,
@@ -109,6 +110,7 @@ const renderCard = (webhook: PackageWebhookListItem) =>
 		renderPackageWebhookCard({
 			webhook,
 			revealedUrl: null,
+			signingSecret: null,
 			isMutating: false,
 			rotateCheck: createDoubleCheck(stubHandle),
 			disableCheck: createDoubleCheck(stubHandle),
@@ -138,6 +140,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 					id: listCommands.id,
 					handle: listCommandsState.handle ?? '',
 					url: secretUrl,
+					signingSecret,
 				},
 			}
 			return { status: 200, body: payload }
@@ -160,6 +163,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 					id: listCommands.id,
 					handle: listCommandsState.handle!,
 					url: secretUrl,
+					signingSecret: null,
 				},
 			}
 			return { status: 200, body: payload }
@@ -214,6 +218,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		'aria-label="Hide URL for raycast/list-commands"',
 	)
 	expect(mintedHtml).not.toContain('data-testid="package-webhook-mint"')
+	expect(mintedHtml).not.toContain('package-webhook-signing-secret')
 	// The other card is untouched: still hidden until its own reveal.
 	expect(mintedHtml).toContain('aria-label="Reveal URL for raycast/run"')
 	expect(
@@ -235,10 +240,16 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		intent: 'reveal',
 		webhookName: 'list-commands',
 	})
-	expect(await render()).toContain(secretUrl)
+	// An org on enablements also gets the signing secret deliveries must use.
+	const revealedHtml = await render()
+	expect(revealedHtml).toContain(secretUrl)
+	expect(revealedHtml).toContain('data-testid="package-webhook-signing-secret"')
+	expect(revealedHtml).toContain(signingSecret)
+	expect(revealedHtml).toContain('Copy signing secret')
 	await controller.ensureLoaded({ username: 'jane', kodyId: 'other' })
 	const otherHtml = await render({ username: 'jane', kodyId: 'other' })
 	expect(otherHtml).not.toContain(secretUrl)
+	expect(otherHtml).not.toContain(signingSecret)
 	expect(otherHtml).not.toContain('id="webhook-list-commands"')
 })
 

@@ -3,6 +3,8 @@ import {
 	buildPackageAppPath,
 	buildPackageAppSubdomainPath,
 	buildPackagePagePath,
+	dnsSafeUsernamePattern,
+	dnsSafeUsernamePatternSource,
 } from './public-urls.ts'
 
 test('saved-package pages and hosted package-app mounts use different paths', () => {
@@ -25,4 +27,19 @@ test('saved-package pages and hosted package-app mounts use different paths', ()
 	expect(
 		buildPackageAppSubdomainPath({ kodyId: 'hn-pulse', restPath: '/report' }),
 	).toBe('/packages/hn-pulse/report')
+})
+
+test('dns-safe handle source is the anchored pattern without a second copy', () => {
+	expect(`^${dnsSafeUsernamePatternSource}$`).toBe(
+		dnsSafeUsernamePattern.source,
+	)
+	expect(dnsSafeUsernamePattern.test('ab')).toBe(false)
+	expect(dnsSafeUsernamePattern.test('abc')).toBe(true)
+	expect(dnsSafeUsernamePattern.test('a-b')).toBe(true)
+	expect(dnsSafeUsernamePattern.test('a'.repeat(32))).toBe(true)
+	expect(dnsSafeUsernamePattern.test('a'.repeat(33))).toBe(false)
+	expect(dnsSafeUsernamePattern.test('-ab')).toBe(false)
+	expect(dnsSafeUsernamePattern.test('ab-')).toBe(false)
+	expect(dnsSafeUsernamePattern.test('Ab1')).toBe(false)
+	expect(dnsSafeUsernamePattern.test('a_b')).toBe(false)
 })

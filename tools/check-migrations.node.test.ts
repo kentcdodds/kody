@@ -14,12 +14,14 @@ import {
 	collectMigrationFilenameReferences,
 	expectedMigrationBaselineSha256,
 	formatMigrationPrefix,
+	formatOpenPullRequestMigrationAdvisory,
 	getMaxMigrationPrefix,
 	getNextMigrationPrefix,
 	hashMigrationContent,
 	isPlaceholderMigrationFilename,
 	parseMigrationFilename,
 	readMigrationLedger,
+	suggestFreeMigrationPrefix,
 	resolveTrustedMigrationBase,
 	type MigrationLedger,
 	type MigrationLedgerEntry,
@@ -383,6 +385,9 @@ test(
 					GITHUB_BASE_REF: '',
 					GITHUB_REF_NAME: 'main',
 					MIGRATION_VALIDATION_BASE: '',
+					GH_TOKEN: '',
+					GITHUB_TOKEN: '',
+					GITHUB_REPOSITORY: '',
 				},
 			})
 			expect(result.status).toBe(1)
@@ -391,6 +396,7 @@ test(
 				'Historical ledger entries cannot be edited',
 			)
 			expect(result.stderr).toContain('differs from trusted history')
+			expect(result.stderr).not.toContain('prefix scan')
 		} finally {
 			await rm(tempRoot, { recursive: true, force: true })
 		}
@@ -536,4 +542,115 @@ test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and 
 		expectErrorsMention(result.errors, mentions)
 		expect(result.errors.join('\n')).not.toMatch(/grandfathered/i)
 	}
+})
+
+test('the next free prefix skips open-PR claims and still allows gaps', () => {
+	expect(
+		suggestFreeMigrationPrefix({
+			nextPrefix: '0098',
+			claimedPrefixes: [],
+		}),
+	).toBe('0098')
+	expect(
+		suggestFreeMigrationPrefix({
+			nextPrefix: '0098',
+			claimedPrefixes: ['0097', '0098', '0100', 'not-a-prefix'],
+		}),
+	).toBe('0099')
+	expect(
+		suggestFreeMigrationPrefix({ nextPrefix: '98', claimedPrefixes: [] }),
+	).toBeNull()
+	expect(
+		suggestFreeMigrationPrefix({
+			nextPrefix: '9999',
+			claimedPrefixes: ['9999'],
+		}),
+	).toBeNull()
+	expect(
+		formatOpenPullRequestMigrationAdvisory({
+			migrationsDir: 'packages/worker/migrations',
+			localFilenames: ['9999-final.sql'],
+			localNextPrefix: '10000',
+			scan: { status: 'ok', claims: [] },
+		}),
+	).toEqual({
+		suggestedPrefix: '10000',
+		lines: [],
+		warning:
+			'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+	})
+
+	const migrationsDir = 'packages/worker/migrations'
+	const localFilenames = ['0001-squashed-init.sql', '0097-already.sql']
+	expect(
+		formatOpenPullRequestMigrationAdvisory({
+			migrationsDir,
+			localFilenames,
+			localNextPrefix: '0098',
+			scan: { status: 'skipped', reason: 'no-token' },
+		}),
+	).toEqual({ suggestedPrefix: '0098', lines: [], warning: null })
+	expect(
+		formatOpenPullRequestMigrationAdvisory({
+			migrationsDir,
+			localFilenames,
+			localNextPrefix: '0098',
+			scan: { status: 'skipped', reason: 'no-repository' },
+		}).warning,
+	).toBeNull()
+
+	const unauthorized = formatOpenPullRequestMigrationAdvisory({
+		migrationsDir,
+		localFilenames,
+		localNextPrefix: '0098',
+		scan: {
+			status: 'skipped',
+			reason: 'unauthorized',
+			detail: 'GitHub API GET /repos/kentcdodds/kody/pulls failed (401)',
+		},
+	})
+	expect(unauthorized.suggestedPrefix).toBe('0098')
+	expect(unauthorized.lines).toEqual([])
+	expect(unauthorized.warning).toContain('failed (401)')
+
+	const claimed = formatOpenPullRequestMigrationAdvisory({
+		migrationsDir,
+		localFilenames,
+		localNextPrefix: '0098',
+		scan: {
+			status: 'ok',
+			claims: [
+				{
+					number: 3220,
+					filenames: [
+						`${migrationsDir}/0098-usage.sql`,
+						`${migrationsDir}/0097-Bad.sql`,
+					],
+				},
+				{
+					number: 3219,
+					filenames: [`${migrationsDir}/0097-contract.sql`],
+				},
+				{
+					number: 3242,
+					filenames: [`${migrationsDir}/0097-oauth.sql`],
+				},
+				{
+					number: 3238,
+					filenames: [`${migrationsDir}/0100-daily.sql`],
+				},
+			],
+		},
+	})
+	expect(claimed.warning).toBeNull()
+	expect(claimed.suggestedPrefix).toBe('0099')
+	expect(claimed.lines).toEqual([
+		`Open pull requests claim migration prefixes in ${migrationsDir}:`,
+		'  0097: #3219, #3242',
+		'  0098: #3220',
+		'  0100: #3238',
+		'This checkout uses prefixes also claimed by open pull requests:',
+		'  0097: #3219, #3242',
+		'Next prefix free of this checkout and those claims: 0099.',
+	])
 })

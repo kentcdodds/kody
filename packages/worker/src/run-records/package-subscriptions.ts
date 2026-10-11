@@ -7,6 +7,7 @@ import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
+import { type EnablementAudience } from '#worker/enablements/run-gate.ts'
 import { type RunLogRowInput } from './run-log-do.ts'
 
 export const runErrorRecordedTopic = 'run.error.recorded'
@@ -102,6 +103,16 @@ async function loadMatchingRunErrorSubscriptions(input: {
 }
 
 /**
+ * A run error reaches enablers who can see the run's package or job. An ad
+ * hoc run has neither, so only Owners receive it.
+ */
+function runErrorAudience(run: RunLogRowInput): EnablementAudience {
+	if (run.packageId) return { resource: { type: 'package', id: run.packageId } }
+	if (run.jobId) return { resource: { type: 'job', id: run.jobId } }
+	return { resource: null }
+}
+
+/**
  * Fan a persisted terminal error run record out to the owning user's packages
  * that declare `run.error.recorded`. Best-effort: discovery and invocation
  * infrastructure failures are logged, never thrown — the observed run path
@@ -167,6 +178,7 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 						}),
 						source: 'run-records',
 						request: { kind: 'platform-event', sourceId: 'run-records' },
+						audience: runErrorAudience(input.run),
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

@@ -18,13 +18,6 @@ export type ApprovalView = {
 	currentAllowedHosts: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
-	packageCredentials?: Array<PackageCredentialConsent>
-}
-
-export type PackageCredentialConsent = {
-	name: string
-	allowedHosts: Array<string>
-	raw: boolean
 }
 
 export function approvalRequestedHosts(approval: ApprovalView) {

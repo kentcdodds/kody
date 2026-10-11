@@ -694,14 +694,15 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	vi.spyOn(registryModule, 'getCapabilityRegistryForContext').mockResolvedValue(
 		emptyRegistry,
 	)
-	const mountedValue = 'discord-bot-token-value'
+	const mountedRef =
+		'{{secret:discordBotTokenKentPersonalAutomation|scope=user}}'
 	const resolveMountedSpy = vi
 		.spyOn(credentialDoor, 'resolveCredential')
 		.mockImplementation(async ({ credential }) => {
 			if (credential.use !== 'package-secret-mount') {
 				throw new Error(`Unexpected credential use: ${credential.use}`)
 			}
-			const { alias, access } = credential
+			const { alias } = credential
 			if (alias === 'missing-token') {
 				throw new PackageSecretMountError(
 					'Secret "missing-token" was not found.',
@@ -710,7 +711,7 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 			return {
 				alias,
 				name: 'discordBotTokenKentPersonalAutomation',
-				value: access === 'raw' ? mountedValue : null,
+				ref: mountedRef,
 				scope: 'user',
 				packageId: 'package-123',
 				kodyId: 'discord-gateway',
@@ -753,7 +754,7 @@ export default async function run() {
 	]) {
 		resolveMountedSpy.mockClear()
 		await expect(packageSecretGet(args)).resolves.toEqual({
-			value: mountedValue,
+			value: mountedRef,
 		})
 		expect(resolveMountedSpy).toHaveBeenCalledExactlyOnceWith({
 			env,
@@ -764,7 +765,6 @@ export default async function run() {
 			credential: {
 				use: 'package-secret-mount',
 				alias: 'token',
-				access: 'raw',
 				callerContext,
 			},
 		})

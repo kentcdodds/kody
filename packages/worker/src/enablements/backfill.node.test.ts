@@ -75,6 +75,11 @@ async function setup() {
 		.prepare(`SELECT id FROM orgs WHERE slug = 'zeta-co'`)
 		.first<{ id: string }>()
 	const teamOrgId = ownerIdFromStored(teamOrg!.id)
+	// New team orgs start on enablements; this one predates the migration.
+	await db
+		.prepare(`DELETE FROM enablement_org_migrations WHERE org_id = ?`)
+		.bind(teamOrgId)
+		.run()
 	await db
 		.prepare(
 			`INSERT INTO org_memberships (org_id, user_id, role, created_at)

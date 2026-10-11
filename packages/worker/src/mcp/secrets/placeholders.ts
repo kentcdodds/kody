@@ -32,8 +32,8 @@ export type ReferencedProviderSecret = {
  * (`%7B` / `%7D`). `new Request('https://host/bot{{secret:name}}/me')`
  * therefore stores `bot%7B%7Bsecret:name%7D%7D` on `request.url`, and
  * the literal `{{secret:...}}` regex never matches. Restore those
- * delimiters so path placeholders parse and replace the same as
- * headers, bodies, and query strings (where `{` / `}` stay unencoded).
+ * delimiters so the gateway sees and refuses a placeholder in the path
+ * the same as one in the query string (where `{` / `}` stay unencoded).
  */
 export function decodeSecretPlaceholderDelimiters(value: string) {
 	return value.replaceAll(/%7B/gi, '{').replaceAll(/%7D/gi, '}')
@@ -78,26 +78,6 @@ export function parseBasicAuthSecretPlaceholders(value: string) {
 	return placeholders
 }
 
-export function parseSecretPlaceholdersFromFormUrlEncoded(value: string) {
-	const secrets: Array<ReferencedSecret> = []
-	for (const [key, entryValue] of new URLSearchParams(value)) {
-		secrets.push(...parseSecretPlaceholders(key))
-		secrets.push(...parseSecretPlaceholders(entryValue))
-	}
-	return secrets
-}
-
-export function parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(
-	value: string,
-) {
-	const placeholders: Array<ReferencedBasicAuthSecretPlaceholder> = []
-	for (const [key, entryValue] of new URLSearchParams(value)) {
-		placeholders.push(...parseBasicAuthSecretPlaceholders(key))
-		placeholders.push(...parseBasicAuthSecretPlaceholders(entryValue))
-	}
-	return placeholders
-}
-
 export function parseProviderSecretPlaceholders(value: string) {
 	const secrets: Array<ReferencedProviderSecret> = []
 	for (const match of value.matchAll(providerSecretPlaceholderRegex)) {
@@ -105,17 +85,6 @@ export function parseProviderSecretPlaceholders(value: string) {
 		const ref = match[2]?.trim()
 		if (!provider || !ref) continue
 		secrets.push({ provider, ref, placeholder: match[0] })
-	}
-	return secrets
-}
-
-export function parseProviderSecretPlaceholdersFromFormUrlEncoded(
-	value: string,
-) {
-	const secrets: Array<ReferencedProviderSecret> = []
-	for (const [key, entryValue] of new URLSearchParams(value)) {
-		secrets.push(...parseProviderSecretPlaceholders(key))
-		secrets.push(...parseProviderSecretPlaceholders(entryValue))
 	}
 	return secrets
 }
@@ -131,17 +100,6 @@ export function parseIntegrationTokenPlaceholders(value: string) {
 	for (const match of value.matchAll(integrationTokenPlaceholderRegex)) {
 		const name = match[1]?.trim()
 		if (name) names.push(name)
-	}
-	return names
-}
-
-export function parseIntegrationTokenPlaceholdersFromFormUrlEncoded(
-	value: string,
-) {
-	const names: Array<string> = []
-	for (const [key, entryValue] of new URLSearchParams(value)) {
-		names.push(...parseIntegrationTokenPlaceholders(key))
-		names.push(...parseIntegrationTokenPlaceholders(entryValue))
 	}
 	return names
 }
@@ -189,8 +147,9 @@ export function replaceSecretPlaceholders(
 
 /**
  * Accept a bare saved-secret name or a single opaque `{{secret:…}}`
- * placeholder. Derived ops (secretHeaders.basic, secretJwtSign) use this so
- * package JS can pass either form without ever seeing plaintext.
+ * placeholder (as returned by packageSecrets.get). Derived ops
+ * (secretHeaders.basic, secretJwtSign) use this so package JS can pass
+ * either form without ever seeing plaintext.
  */
 export function parseSecretNameOrPlaceholder(
 	value: string,
