@@ -521,24 +521,46 @@ export function buildPastDueEmail(input: {
 	})
 }
 
+export type UserErrorRateEmailRun = {
+	/** Package name, or the run's display name when it has no package. */
+	label: string
+	error: string
+	runUrl: string
+}
+
 export function buildUserErrorRateEmail(input: {
 	appBaseUrl: string
 	activityUrl: string
 	supportUrl: string
 	errorCount: number
 	eventCount: number
+	failingRuns?: Array<UserErrorRateEmailRun>
 }) {
 	const percent =
 		input.eventCount > 0
 			? Math.round((input.errorCount / input.eventCount) * 100)
 			: 0
+	const failingRuns = input.failingRuns ?? []
+	const firstLabel = failingRuns[0]?.label
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Your Kody runs are erroring more than usual',
-		preheader: 'A look at the failures, and where to get help.',
+		preheader: firstLabel
+			? `${firstLabel} is among the failures. Here is what went wrong.`
+			: 'A look at the failures, and where to get help.',
 		heading: 'A few runs need attention',
 		body: [
 			`This month Kody recorded ${input.errorCount.toLocaleString('en-US')} errors across ${input.eventCount.toLocaleString('en-US')} runs (${percent}%).`,
+			...(failingRuns.length > 0
+				? [
+						failingRuns.length === 1
+							? 'The most recent open failure:'
+							: 'The most recent open failures:',
+						...failingRuns.map(
+							(run) => `${run.label} failed: ${run.error} (run: ${run.runUrl})`,
+						),
+					]
+				: []),
 			'Review the activity log, or contact support if you need help sorting out the failures.',
 		],
 		action: { label: 'Review account activity', url: input.activityUrl },

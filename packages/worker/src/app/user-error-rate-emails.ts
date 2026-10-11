@@ -1,9 +1,16 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { buildUserErrorRateEmail } from '#app/email/messages.ts'
+import {
+	buildUserErrorRateEmail,
+	type UserErrorRateEmailRun,
+} from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { routes } from '#universal/routes.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
+import { listRunRecords } from '#worker/run-records/service.ts'
+import { type RunRecord } from '#worker/run-records/types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
@@ -16,6 +23,9 @@ export const userErrorRateEmailClaimTtlSeconds = 40 * 24 * 60 * 60
 export const userErrorRateMinErrors = 5
 export const userErrorRateMinPercent = 0.2
 export const userErrorRateAbsoluteErrors = 10
+export const userErrorRateEmailMaxRuns = 3
+const userErrorRateEmailRunScanLimit = 50
+const userErrorRateEmailErrorMaxLength = 240
 
 export function userErrorRateEmailKvKey(input: {
 	userId: string
@@ -112,6 +122,79 @@ export async function sendUserErrorRateEmails(input: {
 	return { status: 'notified', emailedUsers }
 }
 
+/**
+ * Most recent open error per package (or per run name when the run has no
+ * package), so the email names what is failing instead of only a count. A
+ * lookup failure degrades to the count-only email rather than skipping it.
+ */
+async function loadFailingRuns(input: {
+	env: Env
+	appBaseUrl: string
+	userId: string
+	month: string
+}): Promise<Array<UserErrorRateEmailRun>> {
+	let runs: Array<RunRecord>
+	try {
+		const page = await listRunRecords({
+			env: input.env,
+			userId: ownerIdFromStored(input.userId),
+			filter: {
+				status: 'error',
+				since: `${input.month}-01T00:00:00.000Z`,
+				errorTriage: 'open',
+			},
+			limit: userErrorRateEmailRunScanLimit,
+		})
+		runs = page.runs
+	} catch (error) {
+		console.warn('user-error-rate-email-runs-failed', error)
+		return []
+	}
+
+	const seen = new Set<string>()
+	const picked: Array<RunRecord> = []
+	for (const run of runs) {
+		const key = run.packageId ? `package:${run.packageId}` : `name:${run.name}`
+		if (seen.has(key)) continue
+		seen.add(key)
+		picked.push(run)
+		if (picked.length >= userErrorRateEmailMaxRuns) break
+	}
+
+	return await Promise.all(
+		picked.map(async (run) => ({
+			label: await failingRunLabel({ env: input.env, run }),
+			error: summarizeRunError(run),
+			runUrl: new URL(
+				`/account/activity/${encodeURIComponent(run.id)}`,
+				input.appBaseUrl,
+			).toString(),
+		})),
+	)
+}
+
+async function failingRunLabel(input: { env: Env; run: RunRecord }) {
+	if (input.run.packageId) {
+		try {
+			const saved = await getSavedPackageByIdInAnyOrg(
+				input.env.APP_DB,
+				input.run.packageId,
+			)
+			if (saved) return `Package ${saved.name}`
+		} catch (error) {
+			console.warn('user-error-rate-email-package-lookup-failed', error)
+		}
+	}
+	return input.run.name?.trim() || 'A run'
+}
+
+export function summarizeRunError(run: Pick<RunRecord, 'errorMessage'>) {
+	const firstLine = run.errorMessage?.split('\n', 1)[0]?.trim() ?? ''
+	if (!firstLine) return 'No error message was recorded.'
+	if (firstLine.length <= userErrorRateEmailErrorMaxLength) return firstLine
+	return `${firstLine.slice(0, userErrorRateEmailErrorMaxLength - 1).trimEnd()}…`
+}
+
 async function sendOneUserErrorRateEmail(input: {
 	env: Env
 	emailConfig: { appBaseUrl: string; fromEmail: string }
@@ -140,6 +223,12 @@ async function sendOneUserErrorRateEmail(input: {
 		supportUrl,
 		errorCount: input.user.error_count,
 		eventCount: input.user.event_count,
+		failingRuns: await loadFailingRuns({
+			env: input.env,
+			appBaseUrl: input.emailConfig.appBaseUrl,
+			userId: input.user.stable_user_id,
+			month: input.month,
+		}),
 	})
 
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
