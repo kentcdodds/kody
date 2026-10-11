@@ -67,8 +67,13 @@ export type RequestContext = {
  * The parts of a request context a downstream run inherits from the run
  * that started it (nested invokes, workflow steps, emitted package events,
  * sealed secret providers). The org is always re-resolved, never inherited.
+ *
+ * `membership` is the starter's role in `credential.orgId`. Downstream runs
+ * execute as the org's own identity, whose role is Owner, so without it a
+ * Member actor would inherit Owner. Lineage written before it existed omits
+ * it and keeps the role of the identity the run uses.
  */
 export type RequestLineage = Pick<
 	RequestContext,
 	'actor' | 'attribution' | 'credential'
->
+> & { membership?: RequestContext['membership'] }

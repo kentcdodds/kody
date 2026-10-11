@@ -307,8 +307,9 @@ export function PricingRoute(handle: Handle) {
 						In an organization, daily and weekly limits are one shared pool for
 						everyone. Each paid seat adds the Pro unique execute workers,
 						outbound fetches, job runs, and automation invocations (and their
-						&ldquo;Pro + credits&rdquo; caps) to the pool. Credits come from one
-						organization wallet.
+						&ldquo;Pro + credits&rdquo; caps) to the pool, and raises the
+						execute runaway brake (300 calls per minute per seat). Credits come
+						from one organization wallet.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Unique execute workers and outbound fetches count per day and per

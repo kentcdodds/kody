@@ -171,6 +171,7 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 				scopes: null,
 				profileName: null,
 			},
+			membership: { role: 'owner' },
 		},
 	})
 	// Queued delivery never invokes subscribers inside the emitting request.

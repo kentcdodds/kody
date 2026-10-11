@@ -573,10 +573,16 @@ Authentication-Results (DMARC fail, or SPF fail/softfail without DKIM pass →
 quarantine; missing header fails open). Accepted user mail dispatches
 `email.message.received`; quarantined user mail dispatches
 `email.message.quarantined` instead. Quarantined operator system-inbox mail is
-stored but suppresses `email.system-message.received`. Successful
-reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
-correspondence. Reclassification never retroactively fires subscription events.
-Users manage rules via `email_sender_rule_*` (200-rule cap), reclassify via
+stored but suppresses `email.system-message.received`. Before user-inbox
+dispatch, `classifyInboundEmailSender` decides who the run acts as: a verified,
+authenticated account email of a current org member runs as that member (only
+packages they hold `package:execute` on, credentials checked and audited under
+them at resolve time), any other sender that passes the auth verdict runs as the
+inbox's org, and failed auth or a spoofed member address runs nothing and logs
+`inbound-email-sender-unverified`. Successful reserved-sender sends fan
+`email.system-message.sent` (admin-only) with the sent correspondence.
+Reclassification never retroactively fires subscription events. Users manage
+rules via `email_sender_rule_*` (200-rule cap), reclassify via
 `emailMessageClassify` or `/@<slug>/-/email`, and delete stored messages via
 `emailMessageDelete` or the delete action on `/@<slug>/-/email`; operators use
 `admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare
@@ -623,7 +629,8 @@ blast radius:
   and egress per org per UTC day, with public-ladder weekly hard caps on the
   same meters (Monday–Sunday; whichever window hits first blocks). Warm repeats
   are bounded separately by a per-org execute runaway brake (300 calls per
-  minute). See [`architecture/entitlements.md`](./architecture/entitlements.md).
+  minute per paid seat, raised by admin overrides). See
+  [`architecture/entitlements.md`](./architecture/entitlements.md).
 
 ## Accepted residual risks and out-of-scope items
 

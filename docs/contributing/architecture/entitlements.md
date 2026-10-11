@@ -431,10 +431,13 @@ observes:
   jobs.
 - **Execute runaway brake**: before any claim, bundle, or sandbox work, the tool
   calls `UserMeter.admitExecuteCall`, an in-memory per-org counter that refuses
-  past `executeCallsPerMinutePerOrg` (300) calls in a UTC minute. It counts
-  every call, including warm repeats the plan cap does not, and is a safety net
-  rather than a plan limit (busiest production org-minute over the 30 days to
-  2026-10-10: 64 calls).
+  past the effective `execute_calls_per_minute` limit. The base is
+  `executeCallsPerMinutePerSeat` (300) times live paid seats (minimum 300 for
+  free or one-seat orgs), resolved through `resolveEntitlementLimit` so admin
+  overrides raise it like other caps. It counts every call, including warm
+  repeats the plan cap does not, and is a safety net rather than a billed quota
+  (busiest production org-minute over the 30 days to 2026-10-10: 64 calls). The
+  identical-call loop brake (20 / 60s per connection) is unchanged.
 - **Execute usage in every response**: every signed-in hosted execute response
   carries `structuredContent.usage`: `unit` (unique execute workers) and `day`
   (plus `week` when the plan has a weekly window) with `used`, `limit`,
@@ -876,10 +879,11 @@ its plan. Nothing in code names an org; overrides are data.
 `execute_unique_workers_per_week`, `outbound_fetches_per_day`,
 `outbound_fetches_per_week`, `job_runs_per_day`,
 `automation_invocations_per_day`, `email_sends_per_day`,
-`email_receives_per_day`, `unique_worker_days_per_month`, and
-`durable_object_rows_read_per_month`. Each override is a whole number or
-`'unlimited'` (`unlimitedLimit`, `Number.MAX_SAFE_INTEGER`), an optional
-`expires_at`, a required reason, and the admin who set it.
+`email_receives_per_day`, `unique_worker_days_per_month`,
+`durable_object_rows_read_per_month`, and `execute_calls_per_minute`. Each
+override is a whole number or `'unlimited'` (`unlimitedLimit`,
+`Number.MAX_SAFE_INTEGER`), an optional `expires_at`, a required reason, and the
+admin who set it.
 
 **Storage:** D1 `org_limit_overrides` (`0103-org-limit-overrides.sql`), primary
 key `(org_id, limit_key)`, `limit_value` NULL for unlimited. It is the only

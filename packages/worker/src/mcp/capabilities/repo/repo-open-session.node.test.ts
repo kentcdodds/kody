@@ -78,6 +78,9 @@ function createEntitlementsDatabase(user: {
 									? { plan: user.plan }
 									: null
 							}
+							if (query.includes('FROM org_memberships')) {
+								return { count: 1 }
+							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async all() {

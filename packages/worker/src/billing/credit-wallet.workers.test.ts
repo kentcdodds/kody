@@ -700,6 +700,7 @@ test('plans without a wallet are never stopped past the monthly include, and ret
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	for (const resource of pastIncludeStopped) await consume(gift, resource)
@@ -737,6 +738,7 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	await setRollup(userId, 600)
@@ -769,6 +771,7 @@ test('gift overlay with no prior wallet row is not skipped by debit and is not b
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	expect(
@@ -1339,6 +1342,7 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 })

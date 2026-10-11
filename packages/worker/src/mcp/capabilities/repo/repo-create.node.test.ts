@@ -61,6 +61,9 @@ function createDatabase(
 									)
 								return (user ? { plan: user['plan'] } : null) as T | null
 							}
+							if (query.includes('FROM org_memberships')) {
+								return { count: 1 } as T
+							}
 							if (
 								query.includes('FROM user_repos') &&
 								query.includes('COUNT')

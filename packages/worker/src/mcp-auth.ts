@@ -8,7 +8,7 @@ import {
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { auditDatabaseFromEnv, getRequestIp } from '#worker/audit-log.ts'
-import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
+import { buildMcpUserContextWithOrgBindingFromGrantProps } from './mcp-auth-user-context.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -24,7 +24,6 @@ import {
 	toMcpCallerContextWire,
 	type McpServerProps,
 } from './mcp/context.ts'
-import { loadOrgBindingFromGrantProps } from '#worker/orgs/grant-binding.ts'
 import type * as StatelessLane from './mcp/stateless-lane.ts'
 import {
 	classifyMcpProtocolRequest,
@@ -331,6 +330,22 @@ let statelessLaneMemo: Promise<typeof StatelessLane> | null = null
 
 // The stateless lane pulls in the MCP server SDK; load it on the first MCP
 // request instead of during Worker startup (see startup-budget.md).
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+// Capture an eagerly started promise so an early return above never leaves an
+// unhandled rejection, and rethrow at the point the result is consumed.
+function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+	return promise.then(
+		(value) => ({ ok: true as const, value }),
+		(error: unknown) => ({ ok: false as const, error }),
+	)
+}
+
+function unsettle<T>(settled: Settled<T>): T {
+	if (settled.ok) return settled.value
+	throw settled.error
+}
+
 function loadStatelessLane() {
 	statelessLaneMemo ??= import('./mcp/stateless-lane.ts').catch(
 		(error: unknown) => {
@@ -431,7 +446,18 @@ export async function handleMcpRequest({
 	}
 
 	const grantProps = tokenSummary.grant.props ?? null
-	const authContext = await buildMcpUserContextFromGrantProps(env, grantProps)
+	// The user row and the grant's org binding are read in one D1 batch (one
+	// transaction, one round trip) and the provider-lane token re-unwrap
+	// overlaps that read; every gate below still runs in the same order.
+	const providerHelpers = providerAuth ? (env as OAuthEnv).OAUTH_PROVIDER : null
+	const providerTokenPromise =
+		providerHelpers && accessToken
+			? settle(providerHelpers.unwrapToken(accessToken))
+			: null
+	const authContext = await buildMcpUserContextWithOrgBindingFromGrantProps(
+		env,
+		grantProps,
+	)
 
 	// Fail-closed email verification gate: every MCP request must map to an
 	// account whose email is verified. Tokens without an identifiable user
@@ -441,8 +467,8 @@ export async function handleMcpRequest({
 		await recordRejection('unidentified_grant')
 		return createEmailVerificationRequiredResponse(origin)
 	}
-	const { user: mcpUser } = authContext
-	if (!authContext.emailVerified) {
+	const { user: mcpUser } = authContext.context
+	if (!authContext.context.emailVerified) {
 		await recordRejection('email_unverified', mcpUser.email)
 		return createEmailVerificationRequiredResponse(origin)
 	}
@@ -451,7 +477,7 @@ export async function handleMcpRequest({
 	// suspended account keeps its OAuth grants (stateless tokens cannot be
 	// revoked individually) but every MCP request is rejected until an
 	// admin clears the suspension.
-	if (authContext.suspended) {
+	if (authContext.context.suspended) {
 		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
 	}
@@ -461,15 +487,14 @@ export async function handleMcpRequest({
 	// the same way browser cookies die — hosts then refresh, the revoked grant
 	// fails, and they start a new OAuth flow.
 	let tokenCreatedAtMs = tokenSummary.createdAt * 1000
-	if (providerAuth && accessToken) {
-		const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-		const unwrapped = helpers ? await helpers.unwrapToken(accessToken) : null
+	if (providerTokenPromise) {
+		const unwrapped = unsettle(await providerTokenPromise)
 		if (unwrapped) tokenCreatedAtMs = unwrapped.createdAt * 1000
 	}
 	if (
 		isCredentialInvalidatedByStoredPasswordChange({
 			issuedAtMs: tokenCreatedAtMs,
-			storedPasswordChangedAt: authContext.passwordChangedAt,
+			storedPasswordChangedAt: authContext.context.passwordChangedAt,
 		})
 	) {
 		await recordRejection('password_changed', mcpUser.email)
@@ -478,11 +503,7 @@ export async function handleMcpRequest({
 
 	const connectionProfileName =
 		readConnectionProfileNameFromGrantProps(grantProps)
-	const orgBinding = await loadOrgBindingFromGrantProps({
-		db: env.APP_DB,
-		personId: mcpUser.userId,
-		grantProps,
-	})
+	const { orgBinding } = authContext
 	if (!orgBinding) {
 		await recordRejection('denied', mcpUser.email)
 		return createUnauthorizedResponse(origin, 'invalid_token')
