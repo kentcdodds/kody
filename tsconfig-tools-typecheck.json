@@ -26,6 +26,7 @@
 		"./playwright.config.ts",
 		"./wrangler-env.ts",
 		"./cli.ts",
+		"./knip.ts",
 		"./vitest*.ts",
 		"./e2e/**/*.ts",
 		"./tools/**/*.ts",

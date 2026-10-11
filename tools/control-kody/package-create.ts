@@ -11,7 +11,7 @@ import {
 	type FetchLike,
 } from '../mcp-oauth-client.ts'
 
-export const kodyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const kodyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const scopedPackageNamePattern =
 	/^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i
 export const headAheadFileName = 'preview-head-ahead.txt'
@@ -69,7 +69,7 @@ export type PackageCreateReport = {
 	oauth?: AppMcpOAuthSession
 }
 
-export type PackageCreateCallToolOptions = {
+type PackageCreateCallToolOptions = {
 	timeout?: number
 	resetTimeoutOnProgress?: boolean
 	maxTotalTimeout?: number

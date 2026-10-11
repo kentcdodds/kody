@@ -93,7 +93,7 @@ FROM grants g
 WHERE g.resource_type = 'credential'
 ORDER BY g.org_id, g.id`
 
-export const credentialGrantIdSql = [
+const credentialGrantIdSql = [
 	grantTotalsSql,
 	grantInviteTotalsSql,
 	nameKeyedCredentialGrantsSql,
