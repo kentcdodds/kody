@@ -46,7 +46,6 @@ import {
 	createOutboundFetchDeadline,
 	outboundFetchIdleTimeoutMs,
 	type OutboundFetchDeadline,
-	type OutboundFetchDeadlineOutcome,
 } from '#mcp/outbound-fetch-deadline.ts'
 import {
 	assertSecretPlacement,
@@ -305,17 +304,15 @@ export async function executeGatewayFetch(input: {
 		const { userId } = input.props
 		if (input.props.allowOutboundFetch !== false && userId) {
 			const meteredResponse = response
-			// Metered when the body ends so a streamed response reports its
-			// full duration, not time to headers.
-			const finished: Promise<OutboundFetchDeadlineOutcome> =
-				deadline?.done ?? Promise.resolve('error')
-			const usagePromise = finished.then((outcome) =>
+			// Outcome is settled at headers; duration waits for the body so a
+			// streamed response reports how long it stayed open.
+			const usagePromise = (deadline?.done ?? Promise.resolve()).then(() =>
 				recordUsage(input.env, {
 					userId,
 					eventType: 'outbound_fetch',
 					entityId: meteredEntityId,
 					durationMs: Date.now() - startedAtMs,
-					outcome,
+					outcome: meteredResponse ? 'success' : 'error',
 					...usageAttributionFieldsFromRequest(input.props.request),
 					...(meteredResponse
 						? readResponseContentLengthBytes(meteredResponse)

@@ -177,3 +177,26 @@ test('workerd: gateway streams a progressing body and aborts a stalled one at th
 		'Outbound fetch response stalled: no bytes for 80ms.',
 	)
 }, 30_000)
+
+test('workerd: gateway passes a WebSocket upgrade response through untouched', async () => {
+	const pair = new WebSocketPair()
+	const upgrade = new Response(null, { status: 101, webSocket: pair[0] })
+	const response = await executeGatewayFetch({
+		env,
+		props: {
+			baseUrl: 'https://kody.example.com',
+			userId: null,
+			email: null,
+			request: null,
+			storageContext: null,
+		},
+		request: new Request('https://api.example.net/socket', {
+			headers: { Upgrade: 'websocket' },
+		}),
+		globalFetch: (async () => upgrade) as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 80,
+	})
+	expect(response.status).toBe(101)
+	expect(response.webSocket).toBe(pair[0])
+}, 30_000)

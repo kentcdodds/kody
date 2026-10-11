@@ -8,8 +8,6 @@ import { withLanding } from '#mcp/secrets/echo-redaction.ts'
  */
 export const outboundFetchIdleTimeoutMs = 60_000
 
-export type OutboundFetchDeadlineOutcome = 'success' | 'error'
-
 export type OutboundFetchDeadline = {
 	/** Aborts the outbound request on the overall or idle deadline. */
 	signal: AbortSignal
@@ -20,8 +18,12 @@ export type OutboundFetchDeadline = {
 	track(response: Response): Response
 	/** Settles the deadline for a fetch that failed before a response. */
 	fail(): void
-	/** Settles once the body ended, errored, was cancelled, or timed out. */
-	done: Promise<OutboundFetchDeadlineOutcome>
+	/**
+	 * Resolves once the body ended, errored, was cancelled, or timed out.
+	 * Without an overall deadline nothing bounds an abandoned body, so it
+	 * resolves at headers instead.
+	 */
+	done: Promise<void>
 }
 
 /**
@@ -36,8 +38,8 @@ export function createOutboundFetchDeadline(input: {
 }): OutboundFetchDeadline {
 	const controller = new AbortController()
 	const { signal } = controller
-	let resolveDone: (outcome: OutboundFetchDeadlineOutcome) => void = () => {}
-	const done = new Promise<OutboundFetchDeadlineOutcome>((resolve) => {
+	let resolveDone: () => void = () => {}
+	const done = new Promise<void>((resolve) => {
 		resolveDone = resolve
 	})
 	let settled = false
@@ -47,13 +49,13 @@ export function createOutboundFetchDeadline(input: {
 		controller.abort(new DOMException(message, 'TimeoutError'))
 	}
 	const forwardCallerAbort = () => controller.abort(input.callerSignal?.reason)
-	const finish = (outcome: OutboundFetchDeadlineOutcome) => {
+	const finish = () => {
 		if (settled) return
 		settled = true
 		clearTimeout(totalTimer)
 		clearTimeout(idleTimer)
 		input.callerSignal?.removeEventListener('abort', forwardCallerAbort)
-		resolveDone(outcome)
+		resolveDone()
 	}
 
 	if (input.callerSignal?.aborted) {
@@ -77,11 +79,11 @@ export function createOutboundFetchDeadline(input: {
 	return {
 		signal,
 		done,
-		fail: () => finish('error'),
+		fail: finish,
 		track(response) {
 			const upstream = response.body
-			if (!upstream || settled) {
-				finish(signal.aborted ? 'error' : 'success')
+			if (!upstream || response.webSocket || totalMs === null || settled) {
+				finish()
 				return response
 			}
 			const reader = upstream.getReader()
@@ -95,7 +97,7 @@ export function createOutboundFetchDeadline(input: {
 					// Already closed or errored.
 				}
 				reader.cancel(signal.reason).catch(() => {})
-				finish('error')
+				finish()
 			}
 			const body = new ReadableStream<Uint8Array>({
 				start(streamController) {
@@ -104,15 +106,13 @@ export function createOutboundFetchDeadline(input: {
 					else signal.addEventListener('abort', onAbort, { once: true })
 				},
 				async pull(streamController) {
-					if (totalMs !== null) {
-						idleTimer = setTimeout(
-							() =>
-								abortWithTimeout(
-									`Outbound fetch response stalled: no bytes for ${formatSeconds(input.idleMs)}.`,
-								),
-							Math.max(1, input.idleMs),
-						)
-					}
+					idleTimer = setTimeout(
+						() =>
+							abortWithTimeout(
+								`Outbound fetch response stalled: no bytes for ${formatSeconds(input.idleMs)}.`,
+							),
+						Math.max(1, input.idleMs),
+					)
 					let chunk: ReadableStreamReadResult<Uint8Array>
 					try {
 						chunk = await reader.read()
@@ -120,7 +120,7 @@ export function createOutboundFetchDeadline(input: {
 						clearTimeout(idleTimer)
 						if (!signal.aborted) {
 							streamController.error(error)
-							finish('error')
+							finish()
 						}
 						return
 					}
@@ -129,14 +129,14 @@ export function createOutboundFetchDeadline(input: {
 					if (chunk.done) {
 						streamController.close()
 						signal.removeEventListener('abort', onAbort)
-						finish('success')
+						finish()
 						return
 					}
 					streamController.enqueue(chunk.value)
 				},
 				cancel(reason) {
 					signal.removeEventListener('abort', onAbort)
-					finish('success')
+					finish()
 					return reader.cancel(reason)
 				},
 			})

@@ -1498,7 +1498,10 @@ test('fetch gateway aborts a silent hang after headers at the idle deadline', as
 	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
 	expect(upstreamCancel).toHaveBeenCalled()
 	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
-	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({ outcome: 'error' })
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
 })
 
 test('fetch gateway stops a slow drip at the overall deadline', async () => {
@@ -1541,7 +1544,46 @@ test('fetch gateway stops a slow drip at the overall deadline', async () => {
 	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
 	expect(upstreamCancel).toHaveBeenCalled()
 	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
-	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({ outcome: 'error' })
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
+})
+
+test('fetch gateway meters an abandoned body once, at the overall deadline or at headers when unbounded', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const abandon = async (timeoutMs: number | null) => {
+		const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+			{ afterMs: 0 },
+			forever,
+		])
+		const response = await executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://api.example.com/status-only'),
+			globalFetch: fetchStub as unknown as typeof fetch,
+			timeoutMs,
+			idleTimeoutMs: 20,
+		})
+		expect(response.status).toBe(200)
+		return { upstreamCancel }
+	}
+
+	const bounded = await abandon(80)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const boundedUsage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(boundedUsage).toMatchObject({ outcome: 'success' })
+	expect(boundedUsage?.durationMs).toBeGreaterThanOrEqual(70)
+	expect(bounded.upstreamCancel).toHaveBeenCalled()
+	recordUsageSpy.mockClear()
+
+	await abandon(null)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
 })
 
 test('fetch gateway idle deadline ignores time the consumer spends not reading', async () => {
