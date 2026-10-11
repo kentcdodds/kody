@@ -53,7 +53,10 @@ it is. The browser equivalent is `AuthenticatedAppUser.request`
 | Emitted package event, retriever      | `inherited`                              | Inherited |
 | Sealed secret provider                | `inherited`                              | Inherited |
 
-`inherited` carries a `RequestLineage` (actor, attribution, credential). The org
+`inherited` carries a `RequestLineage` (actor, attribution, credential,
+membership). Membership is the starter's role in its own org, so a downstream
+run that executes as the org's identity does not lift a Member to Owner; lineage
+written before membership existed keeps the role of the run's identity. The org
 is never inherited; it is re-resolved for the identity the run uses. Lineage
 crosses durable boundaries as JSON: workflow payloads (`lineage`, kept out of
 instance-id hashing), package event queue messages (`lineage`), and the jobs

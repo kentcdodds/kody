@@ -211,8 +211,7 @@ export function deriveRequestContext(input: {
 					...lineage.credential,
 					profileName: lineage.credential.profileName ?? profileName,
 				},
-				membership:
-					lineage.actor && binding.role ? { role: binding.role } : null,
+				membership: inheritedMembership(lineage, binding),
 			}
 		}
 		default: {
@@ -222,12 +221,29 @@ export function deriveRequestContext(input: {
 	}
 }
 
+/**
+ * The starter's role carries over only within the org it was held in. Legacy
+ * lineage without `membership` keeps the role of the identity the run uses.
+ */
+function inheritedMembership(
+	lineage: RequestLineage,
+	binding: RequestOrgBinding,
+): RequestContext['membership'] {
+	if (!lineage.actor) return null
+	if (lineage.membership === undefined) {
+		return binding.role ? { role: binding.role } : null
+	}
+	if (String(lineage.credential.orgId) !== String(binding.org.id)) return null
+	return lineage.membership
+}
+
 /** What a downstream run started by `request` inherits from it. */
 export function requestLineage(request: RequestContext): RequestLineage {
 	return {
 		actor: request.actor,
 		attribution: request.attribution,
 		credential: request.credential,
+		membership: request.membership,
 	}
 }
 
@@ -278,6 +294,27 @@ function parseAttribution(value: unknown): RequestAttribution | null {
 	return null
 }
 
+const orgRoles: ReadonlySet<string> = new Set<OrgRole>([
+	'owner',
+	'member',
+	'billing',
+])
+
+/** `undefined` means malformed; `null` is a valid "no membership". */
+function parseMembership(
+	value: unknown,
+): RequestContext['membership'] | undefined {
+	if (value === null) return null
+	if (
+		isRecord(value) &&
+		typeof value.role === 'string' &&
+		orgRoles.has(value.role)
+	) {
+		return { role: value.role as OrgRole }
+	}
+	return undefined
+}
+
 /**
  * Read a lineage persisted across a durable boundary (workflow payloads,
  * queue messages). Returns null for anything malformed; the caller fails
@@ -314,9 +351,16 @@ export function parseRequestLineage(value: unknown): RequestLineage | null {
 			username: readNullableString(actorValue.username),
 		}
 	}
+	let membership: RequestLineage['membership']
+	if ('membership' in value) {
+		const parsedMembership = parseMembership(value.membership)
+		if (parsedMembership === undefined) return null
+		membership = parsedMembership
+	}
 	return {
 		actor,
 		attribution,
+		...(membership === undefined ? {} : { membership }),
 		credential: {
 			kind: credential.kind as RequestCredentialKind,
 			id: readNullableString(credential.id),

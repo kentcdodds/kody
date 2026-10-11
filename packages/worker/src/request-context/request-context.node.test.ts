@@ -114,6 +114,49 @@ test('inherited runs keep the starter lineage and re-resolve the org', () => {
 	expect(emitted.attribution).toEqual(automation.attribution)
 })
 
+test('downstream runs keep the starter role instead of the org identity Owner role', () => {
+	// A Member of the org `user` owns starts a run; downstream runs execute as
+	// `user`, the org's own identity, whose role is Owner.
+	const memberRun = deriveRequestContext({
+		user: { userId: personIdFromStored('b'.repeat(64)), username: 'bea' },
+		source: { kind: 'mcp-oauth' },
+		orgBinding: {
+			org: { id: ownerIdFromStored(stableId), slug: 'ada' },
+			role: 'member',
+		},
+	})
+	const lineage = JSON.parse(
+		JSON.stringify(requestLineage(memberRun)),
+	) as unknown
+	const parsed = parseRequestLineage(lineage)
+	expect(parsed?.membership).toEqual({ role: 'member' })
+	const emitted = deriveRequestContext({
+		user,
+		source: { kind: 'inherited', lineage: parsed! },
+	})
+	expect(emitted.actor).toEqual(memberRun.actor)
+	expect(emitted.membership).toEqual({ role: 'member' })
+
+	// The role was held in the starter's org only.
+	const otherOrg = deriveRequestContext({
+		user: { userId: personIdFromStored('c'.repeat(64)), username: 'cy' },
+		source: { kind: 'inherited', lineage: parsed! },
+	})
+	expect(otherOrg.membership).toBeNull()
+
+	// Lineage persisted before it carried membership keeps today's behavior.
+	const { membership: _membership, ...legacy } = parsed!
+	expect(
+		deriveRequestContext({
+			user,
+			source: { kind: 'inherited', lineage: parseRequestLineage(legacy)! },
+		}).membership,
+	).toEqual({ role: 'owner' })
+	expect(
+		parseRequestLineage({ ...legacy, membership: { role: 'admin' } }),
+	).toBeNull()
+})
+
 test('every source keeps the connection profile it was reached through', () => {
 	const job = deriveRequestContext({
 		user,
@@ -143,7 +186,10 @@ test('every source keeps the connection profile it was reached through', () => {
 			profileName: 'work',
 		}).credential.profileName,
 	).toBe('starter')
-	const unprofiled = deriveRequestContext({ user, source: { kind: 'session' } })
+	const unprofiled = deriveRequestContext({
+		user,
+		source: { kind: 'session' },
+	})
 	expect(
 		deriveRequestContext({
 			user,
