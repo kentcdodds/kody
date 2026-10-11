@@ -80,7 +80,9 @@ function resolveSrcUrls(src: string, base: string): string {
 
 function fontFaceKey(face: FontFaceLike): string {
 	return [
-		face.family,
+		// Chrome quotes family on JS-created FontFaces but not CSS-connected
+		// ones; normalize so twins and CSS faces share a key.
+		stripQuotes(face.family),
 		face.style,
 		face.weight,
 		face.stretch,

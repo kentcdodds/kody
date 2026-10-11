@@ -5,7 +5,14 @@ import {
 } from './pin-css-font-faces.ts'
 
 class FakeFontFace {
-	family: string
+	private _family = ''
+	protected quoteFamily = false
+	get family(): string {
+		return this.quoteFamily ? `"${this._family}"` : this._family
+	}
+	set family(value: string) {
+		this._family = value
+	}
 	source: string
 	style: string
 	weight: string
@@ -33,6 +40,19 @@ class FakeFontFace {
 		this.loads += 1
 		this.status = 'loaded'
 		return this
+	}
+}
+
+// Chrome reports `family` quoted on JS-created FontFaces but unquoted on
+// CSS-connected ones; twins built through this class mimic that.
+class ChromeQuotingFontFace extends FakeFontFace {
+	constructor(
+		family: string,
+		source: string,
+		descriptors: Record<string, string> = {},
+	) {
+		super(family, source, descriptors)
+		this.quoteFamily = true
 	}
 }
 
@@ -193,6 +213,34 @@ test('skips sheets whose cssRules getter throws', async () => {
 			baseURI: 'https://kody.codes/',
 			fonts: fonts as never,
 			styleSheets: [throwingSheet, goodSheet] as never,
+		},
+	}
+
+	pinCssFontFaces(host)
+	await vi.waitFor(() => expect(twinFaces(fonts)).toHaveLength(1))
+})
+
+test('pins when Chrome reports the twin family quoted but the CSS face unquoted', async () => {
+	const cssFace = new FakeFontFace('QuotedFamily', 'url("q.woff2")')
+	cssFace.status = 'loaded'
+	const fonts = new FakeFontFaceSet()
+	fonts.add(cssFace)
+	const host: PinCssFontFacesHost = {
+		FontFace: ChromeQuotingFontFace,
+		document: {
+			baseURI: 'https://kody.codes/',
+			fonts: fonts as never,
+			styleSheets: [
+				{
+					href: null,
+					cssRules: [
+						fontFaceRule({
+							'font-family': 'QuotedFamily',
+							src: 'url(q.woff2)',
+						}),
+					],
+				},
+			] as never,
 		},
 	}
 
