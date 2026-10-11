@@ -271,6 +271,13 @@ function readWorkflowInvocationErrorCode(response: {
 	return typeof code === 'string' && code.trim() ? code : null
 }
 
+function readWorkflowInvocationLogs(body: Record<string, unknown>) {
+	const logs = body['logs']
+	return Array.isArray(logs)
+		? logs.filter((line): line is string => typeof line === 'string')
+		: undefined
+}
+
 // Sandbox throws are HTTP 500 `execution_failed`; client mistakes are 4xx.
 // Known infrastructure codes and other 5xx/unexpected statuses stay plain Errors.
 function isPackageWorkflowUserCodeFailure(response: {
@@ -1605,6 +1612,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				this.ctx.waitUntil(promise)
 			},
 		})
+		let logs: Array<string> | undefined
 		try {
 			// Ephemeral + raised timeout: Workflow step.do already caches
 			// successful results. Keyed invoke would replay a sandbox timeout
@@ -1633,6 +1641,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				ephemeral: true,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 			})
+			logs = readWorkflowInvocationLogs(response.body)
 			if (
 				readWorkflowInvocationErrorCode(response) === accountSuspendedErrorCode
 			) {
@@ -1649,6 +1658,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				env: this.env,
 				handle: runHandle,
 				status: 'success',
+				logs,
+				result: response.body['result'],
 			})
 			return result
 		} catch (error) {
@@ -1656,6 +1667,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				env: this.env,
 				handle: runHandle,
 				status: 'error',
+				logs,
 				error,
 			})
 			throw error
@@ -1728,13 +1740,15 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				}
 				throw new UserCodeError(getErrorMessage(result.error))
 			}
+			const value = toJsonSafeValue(result.result) as JsonValue
 			await finishRunRecord({
 				env: this.env,
 				handle: runHandle,
 				status: 'success',
 				logs,
+				result: value,
 			})
-			return toJsonSafeValue(result.result) as JsonValue
+			return value
 		} catch (error) {
 			await finishRunRecord({
 				env: this.env,

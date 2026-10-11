@@ -163,6 +163,15 @@ errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
 
+### Long calls: start a workflow and check back
+
+For work that may outlast one MCP call, return the `id` from `workflows.create`
+and end the call. In a later call, read the result with
+`kody.runList({ workflow_id: id, error_triage: 'all' })`: the newest run's
+`status` says whether it finished, and a successful run's `metadata.result`
+holds the workflow's return value (capped at 4 KiB). See
+[Start a workflow and check back](./workflows.md#start-a-workflow-and-check-back).
+
 ### Recovering from MCP client timeouts
 
 A timeout means the MCP client stopped waiting. Kody aborts that inbound

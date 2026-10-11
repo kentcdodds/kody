@@ -541,7 +541,7 @@ test('package and inline workflows each record exactly one workflow run with wor
 	})
 	invocationMocks.invokePackageExport.mockResolvedValueOnce({
 		status: 200,
-		body: { result: { ok: true } },
+		body: { result: { ok: true, source: 'package' }, logs: ['[log] pkg'] },
 	})
 	await packageRun.run()
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
@@ -562,7 +562,11 @@ test('package and inline workflows each record exactly one workflow run with wor
 	)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({ status: 'success' }),
+		expect.objectContaining({
+			status: 'success',
+			logs: ['[log] pkg'],
+			result: { ok: true, source: 'package' },
+		}),
 	)
 	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -579,8 +583,8 @@ test('package and inline workflows each record exactly one workflow run with wor
 		idempotencyKey: 'inline-single-run-record',
 	})
 	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
+		result: { ok: true, source: 'inline' },
+		logs: ['[log] inline'],
 	})
 	await inlineRun.run()
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
@@ -596,7 +600,11 @@ test('package and inline workflows each record exactly one workflow run with wor
 	)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({ status: 'success' }),
+		expect.objectContaining({
+			status: 'success',
+			logs: ['[log] inline'],
+			result: { ok: true, source: 'inline' },
+		}),
 	)
 })
 

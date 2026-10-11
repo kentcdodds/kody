@@ -262,6 +262,8 @@ export type RunRecordFilter = {
 	status?: RunStatus | null
 	packageId?: string | null
 	jobId?: string | null
+	/** Workflow run id (`dynwf-…` / `pkgwf-…`) from `workflows.create`. */
+	workflowId?: string | null
 	/** Exact match on the run's display `name` (e.g. webhook or job name). */
 	name?: string | null
 	/** ISO 8601 lower bound on `startedAt`, inclusive. */

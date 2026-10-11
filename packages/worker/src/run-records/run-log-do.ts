@@ -299,6 +299,7 @@ type ListRunsInput = {
 	status?: RunStatus | null
 	packageId?: string | null
 	jobId?: string | null
+	workflowId?: string | null
 	name?: string | null
 	since?: string | null
 	errorTriage?: RunErrorTriageFilter | null
@@ -3179,6 +3180,10 @@ class RunLogBase extends DurableObject<Env> {
 		if (input.jobId) {
 			clauses.push('r.job_id = ?')
 			params.push(input.jobId)
+		}
+		if (input.workflowId) {
+			clauses.push('r.workflow_id = ?')
+			params.push(input.workflowId)
 		}
 		if (input.name) {
 			clauses.push('r.name = ?')
