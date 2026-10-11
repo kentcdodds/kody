@@ -4,6 +4,7 @@ import {
 	isNxRemoteCacheDegradableFailure,
 	isNxRemoteCacheRejected,
 	isNxRemoteCacheTransportFailure,
+	nxRunReportedTaskFailure,
 	nxTasksSucceededDespiteRemoteCacheFailure,
 	runNxWithRemoteCacheFallback,
 	spawnNx,
@@ -89,6 +90,14 @@ test('isNxRemoteCacheTransportFailure requires the Nx request error and cache pa
 	expect(
 		nxTasksSucceededDespiteRemoteCacheFailure(cacheRejectedBeforeTasks),
 	).toBe(false)
+	const mixedFailure = `${cacheRejectedAfterTasks}\nFailed tasks:\n\n- other:typecheck\n`
+	expect(nxRunReportedTaskFailure(mixedFailure)).toBe(true)
+	expect(nxTasksSucceededDespiteRemoteCacheFailure(mixedFailure)).toBe(false)
+	expect(
+		nxRunReportedTaskFailure(
+			'Tasks stopped before they finished:\n\n- worker:typecheck',
+		),
+	).toBe(true)
 })
 
 test('runNxWithRemoteCacheFallback treats a post-success cache transport flake as success', async () => {
@@ -473,6 +482,66 @@ test('runNxWithRemoteCacheFallback still fails a real task error when the cache 
 	})
 	expect(result.status).toBe(1)
 	expect(attempts).toEqual([1])
+})
+
+test('runNxWithRemoteCacheFallback keeps a failed exit when another target failed beside the cache error', async () => {
+	const attempts: Array<number> = []
+	const logs: Array<string> = []
+	const result = await runNxWithRemoteCacheFallback({
+		args: ['run-many', '-t', 'typecheck'],
+		env: {
+			NX_SELF_HOSTED_REMOTE_CACHE_SERVER: remoteCacheServer,
+			NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'stale-token',
+		},
+		log: (line) => {
+			logs.push(line)
+		},
+		probe: usableProbe,
+		run: () => {
+			attempts.push(attempts.length + 1)
+			return {
+				status: 1,
+				output: `${cacheRejectedAfterTasks}\n NX   Running target typecheck for 2 projects failed\n\nFailed tasks:\n\n- other:typecheck\n`,
+				errorMessage: '',
+			}
+		},
+	})
+	expect(result.status).toBe(1)
+	expect(attempts).toEqual([1])
+	expect(logs.join('\n')).not.toMatch(/treating the run as successful/)
+})
+
+test('runNxWithRemoteCacheFallback reports the post-run write probe when the token changes mid-run', async () => {
+	let probes = 0
+	const logs: Array<string> = []
+	const result = await runNxWithRemoteCacheFallback({
+		args: ['run-many', '-t', 'typecheck'],
+		env: {
+			NX_SELF_HOSTED_REMOTE_CACHE_SERVER: remoteCacheServer,
+			NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'write-token',
+		},
+		log: (line) => {
+			logs.push(line)
+		},
+		probe: async ({ server }) => {
+			probes += 1
+			return {
+				server,
+				health: 'ok' as const,
+				read: 'ok' as const,
+				write: probes === 1 ? ('ok' as const) : ('read-only' as const),
+			}
+		},
+		run: () => ({
+			status: 0,
+			output:
+				'\n NX   Successfully ran target typecheck for 9 projects\n\nCache:             0/12 hit (0%)\n',
+			errorMessage: '',
+		}),
+	})
+	expect(result.status).toBe(0)
+	expect(probes).toBe(2)
+	expect(logs).toEqual([expect.stringMatching(/READ-ONLY: PUT returned 403/)])
 })
 
 test('runNxWithRemoteCacheFallback does not degrade a task failure that only mentions 401', async () => {

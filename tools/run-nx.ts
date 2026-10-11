@@ -36,13 +36,29 @@ export function isNxRemoteCacheTransportFailure(output: string) {
  * the same rejection once the 401 body is exactly `text/plain`. A task that
  * merely mentions 401 or "unauthorized" does not match.
  */
-export function isNxRemoteCacheRejected(output: string) {
-	const plain = output.replace(
+function stripNxAnsi(output: string) {
+	return output.replace(
 		new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, 'g'),
 		'',
 	)
+}
+
+export function isNxRemoteCacheRejected(output: string) {
+	const plain = stripNxAnsi(output)
 	if (plain.includes('Misconfigured remote cache endpoint:')) return true
 	return /(?:^|\n)[ \t]*NX[ \t]+Unauthorized:/.test(plain)
+}
+
+/**
+ * Nx prints these only when the invocation did not fully succeed. A task's
+ * own logs can still contain `Successfully ran target`.
+ */
+export function nxRunReportedTaskFailure(output: string) {
+	const plain = stripNxAnsi(output)
+	return (
+		plain.includes('Failed tasks:') ||
+		plain.includes('Tasks stopped before they finished:')
+	)
 }
 
 export function isNxRemoteCacheDegradableFailure(output: string) {
@@ -54,7 +70,8 @@ export function isNxRemoteCacheDegradableFailure(output: string) {
 export function nxTasksSucceededDespiteRemoteCacheFailure(output: string) {
 	return (
 		isNxRemoteCacheDegradableFailure(output) &&
-		output.includes('Successfully ran target')
+		output.includes('Successfully ran target') &&
+		!nxRunReportedTaskFailure(output)
 	)
 }
 
@@ -193,12 +210,13 @@ export async function reportNxRemoteCache(input: {
 		)
 		return
 	}
-	const probe: NxRemoteCacheProbe =
-		input.knownProbe ??
-		(await (input.probe ?? probeNxRemoteCache)({
-			server,
-			token: input.env[nxRemoteCacheTokenEnv] ?? '',
-		}))
+	// Probe again after a run that used the remote cache. The pre-run result
+	// can be stale if the write token is rotated while the tasks are running,
+	// and Nx stays silent when a PUT is rejected.
+	const probe: NxRemoteCacheProbe = await (input.probe ?? probeNxRemoteCache)({
+		server,
+		token: input.env[nxRemoteCacheTokenEnv] ?? '',
+	})
 	input.log(
 		`${formatNxRemoteCacheProbe(probe)} ${nxCacheSummaryLine(input.output)}`,
 	)
@@ -292,7 +310,9 @@ async function runNxOnce(input: {
 
 	const combined = `${first.output} ${first.errorMessage}`
 	const kind = nxRemoteCacheFailureKind(combined)
-	if (!kind) return { result: first, remote: 'used' }
+	if (!kind || nxRunReportedTaskFailure(combined)) {
+		return { result: first, remote: 'used' }
+	}
 
 	if (nxTasksSucceededDespiteRemoteCacheFailure(combined)) {
 		log(remoteCacheDegradeMessage(kind, 'after-success'))
