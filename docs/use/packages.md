@@ -131,7 +131,8 @@ slot after the secret or integration the code already references, and keep those
 references as they are. There is no way yet for an org to choose which
 credential fills a slot; see
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-for the switch to assignments.
+for the planned switch to scoped credential clients
+([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
 {
