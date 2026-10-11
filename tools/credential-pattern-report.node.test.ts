@@ -115,6 +115,7 @@ test('every scan file and directory on the command line is read, in order', asyn
 			}),
 		)
 		await writeFile(path.join(stepsDir, 'notes.txt'), 'not a scan')
+		await mkdir(path.join(stepsDir, 'archive.json'))
 		const firstStep = path.join(dir, 'step-1.json')
 		await writeFile(firstStep, JSON.stringify(steps[0]))
 

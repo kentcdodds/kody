@@ -209,8 +209,9 @@ export function formatCredentialPatternReport(report: CredentialPatternReport) {
 
 async function expandScanPaths(inputPath: string): Promise<Array<string>> {
 	if (!(await stat(inputPath)).isDirectory()) return [inputPath]
-	const names = (await readdir(inputPath))
-		.filter((name) => name.endsWith('.json'))
+	const names = (await readdir(inputPath, { withFileTypes: true }))
+		.filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+		.map((entry) => entry.name)
 		.sort((left, right) => left.localeCompare(right, 'en', { numeric: true }))
 	return names.map((name) => path.join(inputPath, name))
 }
