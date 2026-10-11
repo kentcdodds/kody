@@ -1,7 +1,7 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { viewerCanSeeSavedPackage } from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
@@ -114,14 +114,20 @@ async function loadPackagePageUncached(input: {
 	])
 	if (!target) return { kind: 'not_found' }
 
-	const viewerUserId = user?.mcpUser.userId ?? null
+	const viewer = user?.mcpUser ?? null
 
 	if (target.kind === 'redirect') {
-		const viewerOwnsRedirect =
-			viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 		// A listing move is public. An unlisted rename must not leak the new
-		// pair: only the owner is sent to the current URL.
-		if (!target.listingId && !viewerOwnsRedirect) {
+		// pair: only viewers who can see the package are sent to the current URL.
+		if (
+			!target.listingId &&
+			!(await viewerCanSeeSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId: target.userId,
+				packageId: target.packageId,
+			}))
+		) {
 			return { kind: 'not_found' }
 		}
 		const listingKodyId = target.listingKodyId
@@ -139,8 +145,14 @@ async function loadPackagePageUncached(input: {
 		}
 	}
 
-	const viewerIsOwner =
-		viewerUserId != null && personalOrgId(viewerUserId) === target.userId
+	const viewerIsOwner = target.savedPackage
+		? await viewerCanSeeSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId: target.userId,
+				packageId: target.savedPackage.id,
+			})
+		: false
 	const listingKodyId = target.listingKodyId
 	const savedKodyId = target.savedPackage?.kodyId ?? null
 	if (listingKodyId && savedKodyId && !sameKodyId(listingKodyId, savedKodyId)) {

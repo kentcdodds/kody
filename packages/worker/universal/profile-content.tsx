@@ -63,11 +63,6 @@ export type ProfileContentProps = {
 	queryAppliedByLoader?: boolean
 	/** Filter links stay on this page instead of the public profile. */
 	basePath?: string
-	/**
-	 * False renders names without a package page link or fork button and hides
-	 * the community activity feed, which links to the same username-owned pages.
-	 */
-	packageLinks?: boolean
 }
 
 function renderForkIcon() {
@@ -384,7 +379,6 @@ function renderProfilePackagesEmptyCopy(input: {
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	return () => {
 		const { profile, packages, activity, query, isSelf } = handle.props
-		const packageLinks = handle.props.packageLinks !== false
 		const filters: ProfilePackageFilters = {
 			query: query ?? '',
 			visibility: handle.props.visibility ?? 'all',
@@ -432,14 +426,13 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 									username: profile.username,
 									kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
 								})
-								const listingHref =
-									packageLinks && pkg.communityListingId
-										? getCommunityListingHref({
-												listingId: pkg.communityListingId,
-												ownerUsername: profile.username,
-												kodyId: pkg.communityListingKodyId,
-											})
-										: null
+								const listingHref = pkg.communityListingId
+									? getCommunityListingHref({
+											listingId: pkg.communityListingId,
+											ownerUsername: profile.username,
+											kodyId: pkg.communityListingKodyId,
+										})
+									: null
 								return (
 									<li key={pkg.kodyId} mix={css(cardCss)}>
 										<div mix={css(packageHeadingCss)}>
@@ -461,13 +454,9 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 													</a>
 												) : null}
 												<h3 mix={css(packageNameCss)}>
-													{packageLinks ? (
-														<a href={packageHref} mix={css(packageNameLinkCss)}>
-															{renderCommunityListingName(pkg.name)}
-														</a>
-													) : (
-														renderCommunityListingName(pkg.name)
-													)}
+													<a href={packageHref} mix={css(packageNameLinkCss)}>
+														{renderCommunityListingName(pkg.name)}
+													</a>
 												</h3>
 												{renderProfilePackageSignifiers(pkg)}
 											</div>
@@ -494,55 +483,53 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					)}
 				</section>
 
-				{packageLinks ? (
-					<section mix={css(activitySectionCss)} data-testid="profile-activity">
-						<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
-						<p mix={css(mutedCss)} data-testid="profile-activity-hint">
-							Community publishes and forks. Editing a repository without
-							republishing it does not appear here.
-						</p>
-						{activity.length === 0 ? (
-							<p mix={css(descriptionCss)}>No public activity yet.</p>
-						) : (
-							<ul mix={css(activityListCss)}>
-								{activity.map((item) => (
-									<li
-										key={`${item.type}:${item.listingId}:${item.createdAt}`}
-										mix={css(activityItemCss)}
-									>
-										<span mix={css(activityActorCss)}>
-											<UserAvatar
-												displayName={item.actorDisplayName}
-												avatarUrl={item.actorAvatarUrl}
-												size={32}
-											/>
-											<span>
-												{communityActivityVerb(item.type)}{' '}
-												<a
-													href={getCommunityListingHref({
-														listingId: item.listingId,
-														listingName: item.listingName,
-														kodyId: item.listingKodyId,
-													})}
-													mix={css(mutedLinkCss)}
-												>
-													{item.listingName}
-												</a>
-											</span>
+				<section mix={css(activitySectionCss)} data-testid="profile-activity">
+					<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
+					<p mix={css(mutedCss)} data-testid="profile-activity-hint">
+						Community publishes and forks. Editing a repository without
+						republishing it does not appear here.
+					</p>
+					{activity.length === 0 ? (
+						<p mix={css(descriptionCss)}>No public activity yet.</p>
+					) : (
+						<ul mix={css(activityListCss)}>
+							{activity.map((item) => (
+								<li
+									key={`${item.type}:${item.listingId}:${item.createdAt}`}
+									mix={css(activityItemCss)}
+								>
+									<span mix={css(activityActorCss)}>
+										<UserAvatar
+											displayName={item.actorDisplayName}
+											avatarUrl={item.actorAvatarUrl}
+											size={32}
+										/>
+										<span>
+											{communityActivityVerb(item.type)}{' '}
+											<a
+												href={getCommunityListingHref({
+													listingId: item.listingId,
+													listingName: item.listingName,
+													kodyId: item.listingKodyId,
+												})}
+												mix={css(mutedLinkCss)}
+											>
+												{item.listingName}
+											</a>
 										</span>
-										<time
-											dateTime={item.createdAt}
-											mix={css(mutedCss)}
-											title={item.createdAt}
-										>
-											{formatCommunityActivityDate(item.createdAt)}
-										</time>
-									</li>
-								))}
-							</ul>
-						)}
-					</section>
-				) : null}
+									</span>
+									<time
+										dateTime={item.createdAt}
+										mix={css(mutedCss)}
+										title={item.createdAt}
+									>
+										{formatCommunityActivityDate(item.createdAt)}
+									</time>
+								</li>
+							))}
+						</ul>
+					)}
+				</section>
 			</div>
 		)
 	}

@@ -868,12 +868,10 @@ export async function loadAccessiblePackageFileRaw(input: {
 	}
 
 	if (!page.ownerPackage) return { kind: 'not-found' }
-	const user = await readAuthenticatedAppUser(input.request, input.env)
-	if (!user) return { kind: 'unauthorized' }
 	return loadAccountPackageFileRaw({
 		env: input.env,
 		request: input.request,
-		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
+		userId: page.ownerUserId,
 		username: page.username,
 		packageId: page.ownerPackage.id,
 		selectedPath: input.selectedPath,

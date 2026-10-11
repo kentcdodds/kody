@@ -1,5 +1,8 @@
+import { DatabaseSync } from 'node:sqlite'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const mockModule = vi.hoisted(() => ({
 	resolvePackagePageUrl: vi.fn(),
@@ -38,8 +41,29 @@ vi.mock('#worker/community/profile-repo.ts', () => ({
 
 const { loadPackagePage } = await import('./package-page.ts')
 
+function createEnv() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const now = '2026-01-01T00:00:00.000Z'
+	for (const personId of ['owner-1', 'guest-1']) {
+		sqlite
+			.prepare(
+				`INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+			)
+			.run(personId, personId, personId, now, now)
+		sqlite
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'owner', ?)`,
+			)
+			.run(personId, personId, now)
+	}
+	return { APP_DB: createD1FromSqlite(sqlite) } as unknown as Env
+}
+
 const request = new Request('https://example.com/@owner/notes')
-const env = {} as Env
+const env = createEnv()
 const ownerUser = {
 	username: 'owner',
 	mcpUser: { userId: ownerIdFromStored('owner-1') },
@@ -62,7 +86,7 @@ function resolvesTo(
 		listingId: null,
 		...(kind === 'package'
 			? { savedPackage: { id: 'pkg-1', hidden: false, isPrivate: false } }
-			: {}),
+			: { packageId: 'pkg-1' }),
 		...overrides,
 	})
 }

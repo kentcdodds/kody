@@ -267,8 +267,6 @@ export type ProfileLoaderData = {
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
-	/** False when rows have no package page to open (team-org repositories). */
-	packageLinks?: boolean
 }
 
 /** Package list + activity for `/@username`. Chips and search (`q`) apply client-side. */
@@ -276,7 +274,6 @@ export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
 	activity: Array<PublicCommunityActivityItem>
-	packageLinks?: boolean
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -315,7 +312,6 @@ export function toProfileListLoaderData(
 		profile: data.profile,
 		packages: data.packages,
 		activity: data.activity,
-		...(data.packageLinks === false ? { packageLinks: false } : {}),
 	}
 }
 

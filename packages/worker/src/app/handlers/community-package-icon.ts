@@ -1,6 +1,6 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { viewerCanSeeSavedPackage } from '#app/package-viewer-access.ts'
 import {
 	identityIconNotFound,
 	ownerIdentityIconCacheControl,
@@ -31,9 +31,6 @@ export function createCommunityPackageIconHandler(env: Env) {
 				return identityIconNotFound()
 			}
 
-			const viewerUserId = user?.mcpUser.userId ?? null
-			const viewerIsOwner =
-				viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 			const listing = target.listingId
 				? await getCommunityListingById(env.APP_DB, {
 						listingId: target.listingId,
@@ -42,7 +39,15 @@ export function createCommunityPackageIconHandler(env: Env) {
 				: null
 			const guestVisible =
 				Boolean(listing) || isGuestVisiblePackage(target.savedPackage)
-			if (!viewerIsOwner && !guestVisible) {
+			if (
+				!guestVisible &&
+				!(await viewerCanSeeSavedPackage({
+					env,
+					viewer: user?.mcpUser ?? null,
+					ownerId: target.userId,
+					packageId: target.savedPackage.id,
+				}))
+			) {
 				return identityIconNotFound()
 			}
 
