@@ -38,6 +38,22 @@ per-resource Use when resolving org credentials. This record builds on both.
 
 ## Decision
 
+In short:
+
+- A credential owns its hosts and how its value is placed (header, basic, or
+  query; never the body). Code never decides where a value goes.
+- Code reaches a credential only through a scoped `credential(key)` client.
+  Placeholders, slots as grants, assignments, saved bindings, and package
+  allowlists go away.
+- The actor's Use plus `package:execute` is the only authority. Package stamps
+  grant nothing.
+- Callers pick among candidates with a call map; triggers store the pick in an
+  enablement. Zero or several candidates is a structured error, never a default.
+- The old lane is removed right after the fleet codemod if a rescan finds no old
+  patterns, otherwise when the rest convert, or at T+90 at the latest.
+
+The sections below are the full specification.
+
 ### Primitives
 
 There are four:
@@ -340,9 +356,11 @@ work anywhere in the org. `|scope=user` becomes a plain reference;
 `|scope=session` is deleted.
 
 **Old lane removal (Kent, 2026-10-11):** right after the codemod runs at T,
-rescan every package. If no old patterns remain, remove the old lane at once:
-publish rejects placeholders, `secretMounts`, `packageSecrets`, `|scope=`, and
-webhook `secretName` (which becomes a need key); the gateway stops parsing
+rescan every package. The rescan counts every placeholder reference, including
+ones that match a declared key (the codemod 0010 detector skips those, so its
+clean result is not enough). If no old patterns remain, remove the old lane at
+once: publish rejects placeholders, `secretMounts`, `packageSecrets`, `|scope=`,
+and webhook `secretName` (which becomes a need key); the gateway stops parsing
 placeholders; and the `x-kody-secret-resolution` header, package allowlists,
 usage modes, provider grants, by-name `accessGrant` / `accessRevoke`, lock
 capabilities, the attested and claimed authority split (stamps remain for
