@@ -236,7 +236,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}
 			await stampFirstSavedPackage(
 				ctx.env.APP_DB,
-				{ stableUserId: owner.ownerUserId, at: now },
+				{ stableUserId: owner.actorUserId, at: now },
 				ctx.env,
 			)
 			// Best-effort projections after the publish committed: a vector or
