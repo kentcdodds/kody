@@ -2,7 +2,10 @@ import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
+import {
+	deleteSavedPackageProjection,
+	PackageStorageCleanupError,
+} from '#worker/package-registry/service.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 
@@ -55,6 +58,9 @@ export async function handleAccountPackageDeleteAction(input: {
 	} catch (error) {
 		if (error instanceof CommunityActionError) {
 			return jsonResponse({ ok: false, error: error.message }, 400)
+		}
+		if (error instanceof PackageStorageCleanupError) {
+			return jsonResponse({ ok: false, error: error.message }, 409)
 		}
 		throw error
 	}

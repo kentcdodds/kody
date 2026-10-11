@@ -17,6 +17,25 @@ export function buildPackageStorageId(packageId: string) {
 }
 
 /**
+ * Package id from the canonical `package:<id>` StorageRunner bucket form only.
+ * Returns null for plain UUIDs, facet buckets, and package job buckets — those
+ * are not proof of a saved-package bucket, so a missing `saved_packages` row
+ * must not deny them.
+ */
+export function packageIdFromCanonicalPackageStorageId(
+	storageId: string,
+): string | null {
+	const id = storageId.trim()
+	if (!id.startsWith('package:')) return null
+	try {
+		const decoded = decodeURIComponent(id.slice('package:'.length)).trim()
+		return decoded.length > 0 ? decoded : null
+	} catch {
+		return null
+	}
+}
+
+/**
  * Best-effort package id from a StorageRunner storage id when the bucket is
  * package-owned. Returns null for execute/job/unknown buckets — those stay
  * Ad hoc on customer cost attribution rather than guessing.
@@ -24,14 +43,8 @@ export function buildPackageStorageId(packageId: string) {
 export function packageIdFromStorageId(storageId: string): string | null {
 	const id = storageId.trim()
 	if (!id) return null
-	if (id.startsWith('package:')) {
-		try {
-			const decoded = decodeURIComponent(id.slice('package:'.length)).trim()
-			return decoded.length > 0 ? decoded : null
-		} catch {
-			return null
-		}
-	}
+	const canonical = packageIdFromCanonicalPackageStorageId(id)
+	if (canonical) return canonical
 	if (savedPackageIdUuidPattern.test(id)) return id
 	const uuidPrefix = id.match(
 		/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?::|$)/i,

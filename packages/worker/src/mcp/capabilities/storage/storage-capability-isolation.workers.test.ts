@@ -93,8 +93,25 @@ test('storage capabilities keep a package out of another package bucket', async 
 		victimRunner.sqlQuery({ query: 'select count(*) as rows from secrets' }),
 	).resolves.toMatchObject({ rows: [{ rows: 1 }] })
 
-	// The caller still reaches its own bucket by id.
+	// The caller still reaches its own bucket by id when the package row exists.
 	const ownBucket = buildPackageStorageId(attackerPackageId)
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, has_skills, hidden, is_private, created_at, updated_at
+		) VALUES (?, ?, ?, ?, '', '[]', null, ?, 0, 0, 0, 1, ?, ?)`,
+	)
+		.bind(
+			attackerPackageId,
+			ownerIdFromStored(userId),
+			'@worker/attacker',
+			'attacker',
+			`source-${attackerPackageId}`,
+			now,
+			now,
+		)
+		.run()
 	await storageRunnerRpc({
 		env,
 		userId: ownerIdFromStored(userId),

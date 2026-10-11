@@ -5,6 +5,9 @@ import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { adoptCommunityFork } from '#worker/community/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -23,19 +26,38 @@ export async function handleAccountPackageAdoptAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
+	}
 	try {
+		await authorizePackageWrite(
+			{ env: input.env, request: input.user.request },
+			{
+				id: savedPackage.id,
+				userId: savedPackage.userId,
+				label: savedPackage.name,
+			},
+		)
 		await adoptCommunityFork({
 			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
+			userId,
 			packageId,
 			reviewSummary: readTrimmedStringOrEmpty(input.body, 'reviewNote'),
 		})
 	} catch (error) {
 		if (error instanceof CommunityActionError) {
 			return jsonResponse({ ok: false, error: error.message }, 400)
+		}
+		if (error instanceof McpCallerError) {
+			return jsonResponse({ ok: false, error: error.message }, 403)
 		}
 		throw error
 	}

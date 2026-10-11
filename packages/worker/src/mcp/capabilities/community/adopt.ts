@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { inspectCommunityForkAdoption } from '#worker/community/service.ts'
 import {
@@ -8,8 +7,14 @@ import {
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { buildCommunityForkAdoptionHref } from '#universal/community-fork-adoption.ts'
+import { authorize, packageResource } from '#worker/authorization/authorize.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 
 const communityForkAdoptPackageRuntimeErrorMessage =
 	'communityForkAdopt is unavailable from package runtime contexts. Call it from an interactive MCP agent after reviewing the fork source.'
@@ -38,7 +43,7 @@ export const communityForkAdoptCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityForkAdopt',
-		orgPermission: 'package:create',
+		orgPermission: 'package:read',
 		description:
 			'Return a website adoption URL for a community-forked package. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). This capability never adopts: only the account owner can adopt, signed in on the package settings page, after reviewing the source. Send the approval_url to the user and wait; never treat this call as adoption.',
 		keywords: [
@@ -79,12 +84,30 @@ export const communityForkAdoptCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			assertDirectMcpCaller(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(ctx.env, {
+				user,
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const state = await inspectCommunityForkAdoption({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: owner.ownerUserId,
 				packageId: args.package_id,
 				kodyId: args.kody_id,
 			})
+			const saved = await getSavedPackageById(ctx.env.APP_DB, {
+				userId: owner.ownerUserId,
+				packageId: state.packageId,
+			})
+			if (!saved) {
+				throw new McpCallerError(
+					`Saved package "${state.packageId}" was not found.`,
+				)
+			}
+			await authorize(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				'package:read',
+				packageResource(saved),
+			)
 			const approvalUrl = new URL(
 				buildCommunityForkAdoptionHref({
 					username: state.ownerScope,

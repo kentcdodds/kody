@@ -1,6 +1,17 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { isPackageOwnedStorageId } from '#worker/storage-ids.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import {
+	isPackageOwnedStorageId,
+	packageIdFromCanonicalPackageStorageId,
+	packageIdFromStorageId,
+} from '#worker/storage-ids.ts'
 
 export function createStorageBucketAccessDeniedMessage(input: {
 	capabilityName: string
@@ -54,4 +65,46 @@ export function authorizeCapabilityStorageId(input: {
 			storageId,
 		}),
 	)
+}
+
+/**
+ * Per-package ACL for account-scoped storage capabilities once
+ * `authorizeCapabilityStorageId` has accepted the id.
+ *
+ * Exact `package:<id>` buckets require a live saved-package row (and the named
+ * permission on it). Plain UUID / facet / package-job forms still use
+ * `packageIdFromStorageId` as a best-effort mapper: when a row exists, check
+ * the permission; when it does not, leave the bucket reachable so non-package
+ * UUID buckets keep working.
+ */
+export async function authorizePackageBucketAccess(input: {
+	env: Env
+	callerContext: McpCallerContext
+	storageId: string
+	permission: 'package:read' | 'package:write'
+}) {
+	const packageId = packageIdFromStorageId(input.storageId)
+	if (!packageId) return
+	const ownerId = ownerIdFromCaller(input.callerContext)
+	const saved = await getSavedPackageById(input.env.APP_DB, {
+		userId: ownerId,
+		packageId,
+	})
+	if (!saved) {
+		if (packageIdFromCanonicalPackageStorageId(input.storageId)) {
+			throw new McpCallerError(
+				`Saved package for storage bucket "${input.storageId}" was not found.`,
+			)
+		}
+		return
+	}
+	const authorizeCtx = {
+		env: input.env,
+		request: input.callerContext.request,
+	}
+	if (input.permission === 'package:read') {
+		await authorize(authorizeCtx, 'package:read', packageResource(saved))
+		return
+	}
+	await authorizePackageWrite(authorizeCtx, saved)
 }

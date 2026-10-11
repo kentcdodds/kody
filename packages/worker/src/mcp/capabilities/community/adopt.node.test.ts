@@ -9,6 +9,8 @@ import { CommunityActionError } from '#worker/community/errors.ts'
 const mocks = vi.hoisted(() => ({
 	adoptCommunityFork: vi.fn(),
 	inspectCommunityForkAdoption: vi.fn(),
+	getSavedPackageById: vi.fn(),
+	authorize: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -17,6 +19,19 @@ vi.mock('#worker/community/service.ts', () => ({
 	inspectCommunityForkAdoption: (...args: Array<unknown>) =>
 		mocks.inspectCommunityForkAdoption(...args),
 }))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mocks.getSavedPackageById(...args),
+}))
+
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		authorize: (...args: Array<unknown>) => mocks.authorize(...args),
+	}
+})
 
 const { communityForkAdoptCapability } = await import('./adopt.ts')
 
@@ -67,8 +82,19 @@ const unadoptedState = {
 	adoptedAt: null,
 }
 
-test('communityForkAdopt returns a website adoption link and never adopts', async () => {
+function mockAdoptLookup(packageId = 'pkg-1') {
 	mocks.inspectCommunityForkAdoption.mockResolvedValue(unadoptedState)
+	mocks.getSavedPackageById.mockResolvedValue({
+		id: packageId,
+		userId: ownerIdFromStored('user-alice'),
+		name: '@alice/demo-fork',
+		kodyId: 'demo-fork',
+	})
+	mocks.authorize.mockResolvedValue(undefined)
+}
+
+test('communityForkAdopt returns a website adoption link and never adopts', async () => {
+	mockAdoptLookup()
 
 	await expect(
 		communityForkAdoptCapability.handler(
@@ -94,6 +120,7 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 		packageId: 'pkg-1',
 		kodyId: undefined,
 	})
+	expect(mocks.authorize).toHaveBeenCalled()
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
 
 	mocks.inspectCommunityForkAdoption.mockResolvedValueOnce({

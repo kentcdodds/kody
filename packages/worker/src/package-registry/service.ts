@@ -79,6 +79,20 @@ import {
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
+const packageStorageClearAttempts = 3
+
+export class PackageStorageCleanupError extends Error {
+	readonly failedStorageIds: ReadonlyArray<string>
+
+	constructor(failedStorageIds: ReadonlyArray<string>) {
+		super(
+			`Package storage cleanup failed for ${failedStorageIds.length} bucket(s); the package was not deleted. Retry after storage is reachable.`,
+		)
+		this.name = 'PackageStorageCleanupError'
+		this.failedStorageIds = failedStorageIds
+	}
+}
+
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
 	packageId: string
@@ -175,25 +189,33 @@ export async function clearPackageOwnedStorageBucket(input: {
 	storageId: string
 }): Promise<boolean> {
 	let storageCleared = false
-	try {
-		await storageRunnerRpc({
-			env: input.env,
-			userId: input.userId,
-			storageId: input.storageId,
-		}).clearStorage()
-		storageCleared = true
-	} catch (error) {
+	let lastClearError: unknown
+	for (let attempt = 1; attempt <= packageStorageClearAttempts; attempt++) {
+		try {
+			await storageRunnerRpc({
+				env: input.env,
+				userId: input.userId,
+				storageId: input.storageId,
+			}).clearStorage()
+			storageCleared = true
+			break
+		} catch (error) {
+			lastClearError = error
+		}
+	}
+	if (!storageCleared) {
 		console.warn(
 			JSON.stringify({
 				message: 'package storage clear failed',
 				userId: input.userId,
 				packageId: input.packageId,
 				storageId: input.storageId,
-				error: getErrorMessage(error),
+				attempts: packageStorageClearAttempts,
+				error: getErrorMessage(lastClearError),
 			}),
 		)
+		return false
 	}
-	if (!storageCleared) return false
 	try {
 		await input.env.APP_DB.prepare(
 			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
@@ -724,13 +746,20 @@ export async function deleteSavedPackageProjection(input: {
 					}),
 				)
 			}
+			const failedStorageIds: Array<string> = []
 			for (const storageId of packageOwnedStorageIds) {
-				await clearPackageOwnedStorageBucket({
+				const cleared = await clearPackageOwnedStorageBucket({
 					env: input.env,
 					userId: input.userId,
 					packageId: input.packageId,
 					storageId,
 				})
+				if (!cleared) failedStorageIds.push(storageId)
+			}
+			if (failedStorageIds.length > 0) {
+				// Keep the saved_packages row so account-scoped storageExport /
+				// storageQuery still require package ACL on package:<id> buckets.
+				throw new PackageStorageCleanupError(failedStorageIds)
 			}
 			await deleteAllPackageScopedSecrets({
 				env: input.env,

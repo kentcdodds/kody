@@ -825,7 +825,7 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	)
 })
 
-test('deleteSavedPackageProjection keeps inventory when clearStorage fails and continues delete', async () => {
+test('deleteSavedPackageProjection keeps the package row when clearStorage fails', async () => {
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	const storageBuckets = [
@@ -845,15 +845,12 @@ test('deleteSavedPackageProjection keeps inventory when clearStorage fails and c
 		return { ok: true as const }
 	})
 
-	await deletePackage(env, uuidPackageId)
-
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
-		userId: ownerIdFromStored('user-1'),
-		packageId: uuidPackageId,
-	})
-	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith(
-		appScopedCleanup(env, uuidPackageId),
+	await expect(deletePackage(env, uuidPackageId)).rejects.toThrow(
+		/Package storage cleanup failed/,
 	)
+
+	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteAllAppScopedValues).not.toHaveBeenCalled()
 	expect(storageBuckets.map((row) => row.storageId)).toEqual([facetStorageId])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('"message":"package storage clear failed"'),
