@@ -168,9 +168,12 @@ the slot name; the org decides which credential fills it.
 - Once a package declares `kody.credentials`, the fetch gateway substitutes only
   its slots: `{{secret:NAME}}` names a secret slot and
   `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's
-  `placement` header and match its template, over HTTPS. Anything else is
-  refused before the credential resolves, with an error naming the slot and the
-  rule.
+  `placement` header and match its template exactly, over HTTPS. A Basic Auth
+  pair (`secretHeaders.basic` over two secret slots) goes in both slots' header
+  as `Basic {{secret-basic:…}}`, so those slots declare template `Basic {value}`
+  or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
+  keep the header-only, HTTPS, and item-website rules. Anything else is refused
+  before the credential resolves, with an error naming the slot and the rule.
 
 ### npm dependencies
 

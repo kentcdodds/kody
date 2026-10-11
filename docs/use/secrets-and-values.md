@@ -30,12 +30,13 @@ carries that authority. Access rules are covered in
 
 `packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
 `{{secret:…}}` placeholder** after mount and grant checks succeed — never
-decrypted plaintext. Put that string in a secret-aware `fetch` header/URL/body,
-or pass it to `secretHeaders.basic` / `kody.secretJwtSign` (both accept saved
-secret names **or** opaque refs). Only platform use sites resolve it. Package
-and execute JavaScript never receive plaintext from `get`. A secret-aware
-`fetch` may send the value to an **approved** host; that host's response is not
-redacted for echoed credentials — treat response bodies as untrusted.
+decrypted plaintext. Put that string in a secret-aware `fetch` request header
+(the gateway refuses it in the URL or body), or pass it to `secretHeaders.basic`
+/ `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
+platform use sites resolve it. Package and execute JavaScript never receive
+plaintext from `get`. A secret-aware `fetch` may send the value to an
+**approved** host; that host's response is not redacted for echoed credentials —
+treat response bodies as untrusted.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
