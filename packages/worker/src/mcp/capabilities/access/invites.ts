@@ -50,7 +50,7 @@ import {
 	authorizeGrantTarget,
 	generateInviteToken,
 	grantPresetSchema,
-	grantResourceTypeSchema,
+	grantTargetTypeSchema,
 	hashInviteToken,
 	inviteAcceptPrompt,
 	inviteSchema,
@@ -62,6 +62,7 @@ import {
 	requireOrgPermission,
 	requirePresetOrPermissions,
 	resolveAuthorizedGrantPermissions,
+	resolveGrantTarget,
 	rethrowAccessError,
 } from './shared.ts'
 
@@ -366,7 +367,7 @@ export const inviteCreateCapability = defineDomainCapability(
 			username: z.string().min(1).optional(),
 			role: orgRoleSchema.optional(),
 			team_ids: z.array(z.string().min(1)).optional(),
-			resource_type: grantResourceTypeSchema.optional(),
+			resource_type: grantTargetTypeSchema.optional(),
 			resource_id: z.string().min(1).optional(),
 			preset: grantPresetSchema.optional(),
 			permissions: z.array(z.string().min(1)).optional(),
@@ -442,18 +443,22 @@ export const inviteCreateCapability = defineDomainCapability(
 							preset: args.preset,
 							permissions,
 						})
+						const target = await resolveGrantTarget(ctx, {
+							type: args.resource_type,
+							id: args.resource_id,
+						})
 						const scoped = await authorizeGrantTarget(
 							ctx,
-							args.resource_type,
-							args.resource_id,
+							target.resourceType,
+							target.resourceId,
 						)
 						const resolved = await resolveAuthorizedGrantPermissions(ctx, {
 							family: scoped.family,
 							preset: args.preset,
 							permissions,
 						})
-						resourceType = args.resource_type
-						resourceId = args.resource_id
+						resourceType = target.resourceType
+						resourceId = target.resourceId
 						preset = args.preset ?? null
 						if (preset) {
 							permissions = null

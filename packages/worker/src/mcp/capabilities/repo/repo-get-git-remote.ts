@@ -1,4 +1,4 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { authorize } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -67,6 +67,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
 			if (args.scope === 'write') {
 				await authorize(
 					{ env: ctx.env, request: ctx.callerContext.request },
@@ -76,7 +77,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: personalOrgId(user.userId),
+				userId: ownerId,
 				args,
 			})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)

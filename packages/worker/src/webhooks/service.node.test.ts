@@ -2,7 +2,9 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
+	decryptWebhookHmacSecret,
 	decryptWebhookUrlSecret,
+	userWebhookHmacSecretContext,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -24,14 +26,24 @@ import {
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-vi.mock('#mcp/secrets/service.ts', () => ({
-	resolveSecret: vi.fn(async () => ({
+vi.mock('#mcp/secrets/service.ts', () => {
+	const resolveSecret = vi.fn(async (_input: unknown) => ({
 		found: true,
+		credentialId: 'cred-legacy-webhook-secret',
 		value: 'legacy-sentry-webhook-secret',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
-	})),
-}))
+	}))
+	return {
+		resolveSecret,
+		findSecretForUse: vi.fn(async (input: unknown) => {
+			const resolved = await resolveSecret(input)
+			const { value: _value, ...found } = resolved
+			return { found, readValue: async () => resolved }
+		}),
+	}
+})
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 	resolveSavedPackage: vi.fn(
@@ -54,23 +66,25 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: vi.fn(async () => [
-		{
-			id: 'pkg-1',
-			userId: ownerIdFromStored('will-set'),
-			name: '@owner/sentry-bridge',
-			kodyId: 'sentry-bridge',
-			description: 'Sentry bridge',
-			tags: [],
-			searchText: null,
-			sourceId: 'src-1',
-			hasApp: false,
-			hidden: false,
-			isPrivate: true,
-			createdAt: '2026-07-24T00:00:00.000Z',
-			updatedAt: '2026-07-24T00:00:00.000Z',
-		},
-	]),
+	listSavedPackagesByUserId: vi.fn(
+		async (_db: unknown, input: { userId: string }) => [
+			{
+				id: 'pkg-1',
+				userId: ownerIdFromStored(input.userId),
+				name: '@owner/sentry-bridge',
+				kodyId: 'sentry-bridge',
+				description: 'Sentry bridge',
+				tags: [],
+				searchText: null,
+				sourceId: 'src-1',
+				hasApp: false,
+				hidden: false,
+				isPrivate: true,
+				createdAt: '2026-07-24T00:00:00.000Z',
+				updatedAt: '2026-07-24T00:00:00.000Z',
+			},
+		],
+	),
 	resolveSavedPackageRef: vi.fn(),
 }))
 
@@ -147,6 +161,7 @@ async function setupOwner(email: string, username: string) {
 		list: (forUserId = userId) =>
 			listWebhooksForUser({
 				env,
+				request: sessionRequestContext(forUserId),
 				baseUrl: 'https://heykody.dev',
 				userId: ownerIdFromStored(forUserId),
 			}),
@@ -207,6 +222,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const revealed = await reveal({ handle: minted.handle })
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
+	expect(revealed.signingSecret).toBeNull()
 	// The account UI addresses a webhook by package + name rather than by
 	// handle; both paths resolve the same minted URL.
 	expect(await reveal(sentryHook)).toMatchObject({
@@ -430,6 +446,64 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(second).not.toHaveProperty('url')
 })
 
+test('reveal shows the generated signing secret only when the manifest declares no verification', async () => {
+	const owner = await setupOwner('signer@example.com', 'signer')
+	const { env, userId } = owner
+	const sentryManifest = vi
+		.mocked(loadPackageManifestBySourceId)
+		.getMockImplementation()!
+	const unsignedManifest = async () => ({
+		manifest: {
+			name: '@owner/sentry-bridge',
+			exports: { './handle-sentry-webhook': './src/handle-sentry-webhook.ts' },
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+					},
+				],
+			},
+		},
+	})
+	vi.mocked(loadPackageManifestBySourceId).mockImplementation(
+		unsignedManifest as never,
+	)
+	const reveal = () =>
+		revealWebhookUrlForWebsite({
+			env,
+			userId: ownerIdFromStored(userId),
+			username: 'signer',
+			target: sentryHook,
+		})
+	try {
+		const minted = await owner.mint()
+		const endpointId = parseWebhookUrlHandle(minted.handle)!
+		const stored = await owner.readEndpoint<{
+			hmac_secret_encrypted: string | null
+		}>(endpointId, 'hmac_secret_encrypted')
+		expect(stored?.hmac_secret_encrypted).toBeTruthy()
+		const signingSecret = (await reveal()).signingSecret
+		expect(signingSecret).toEqual(
+			await decryptWebhookHmacSecret(
+				env,
+				stored!.hmac_secret_encrypted!,
+				userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId),
+			),
+		)
+		await owner.rotate()
+		expect((await reveal()).signingSecret).toBe(signingSecret)
+
+		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
+		expect((await reveal()).signingSecret).toBeNull()
+	} finally {
+		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
+	}
+})
+
 test('listing webhooks loads package manifests concurrently', async () => {
 	const userId = testStableUserIdFromEmail('many@example.com')
 	const { env } = createEnv()
@@ -479,6 +553,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 
 	const listed = await listWebhooksForUser({
 		env,
+		request: sessionRequestContext(userId),
 		baseUrl: 'https://heykody.dev',
 		userId: ownerIdFromStored(userId),
 	})

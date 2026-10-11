@@ -2,6 +2,9 @@ import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	classifyMergeability,
+	githubRateLimitMaxWaitMs,
+	githubRateLimitWaitBudgetMs,
+	isGithubRateLimitError,
 	main,
 	mergeConflictCheckName,
 	pollMergeability,
@@ -134,6 +137,57 @@ test('polling prefers a computed state on the expected base tip, then falls back
 	)
 })
 
+test('a pull request whose head is already on the base does not write a check', async () => {
+	const oldMain = 'e'.repeat(40)
+	const github = fakeGithub({
+		pulls: {},
+		compareAheadBy: { [oldMain]: 0 },
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha: oldMain,
+		fetchImpl: github.fetchImpl,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+	expect(github.calls.some((call) => call.url.includes('/compare/'))).toBe(true)
+})
+
+test('a compare failure still writes the head check', async () => {
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		failCompare: true,
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([headSha])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
+})
+
+test('a pull request whose head is the default-branch tip does not write a check', async () => {
+	const methods: Array<string> = []
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha: baseSha,
+		fetchImpl: (request, init) => {
+			methods.push(`${init?.method ?? 'GET'} ${String(request)}`)
+			return Promise.resolve(new Response('unused', { status: 500 }))
+		},
+	})
+	expect(code).toBe(0)
+	expect(methods).toEqual([])
+})
+
 test('a dirty pull request fails a check on the head SHA', async () => {
 	const github = fakeGithub({
 		pulls: {
@@ -151,25 +205,23 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	})
 	expect(code).toBe(0)
 	expect(github.calls.map((call) => call.method)).toEqual([
-		'POST',
 		'GET',
-		'PATCH',
+		'GET',
+		'POST',
 	])
-	expect(github.calls[0]?.body).toMatchObject({
-		name: mergeConflictCheckName,
-		head_sha: headSha,
-		status: 'in_progress',
-		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
-	})
+	expect(github.calls[0]?.url).toContain(`/compare/${baseSha}...${headSha}`)
 	expect(github.calls[1]?.url).toBe(
 		'https://api.github.com/repos/kentcdodds/kody/pulls/2483',
 	)
 	expect(github.calls[2]?.body).toMatchObject({
+		name: mergeConflictCheckName,
+		head_sha: headSha,
 		status: 'completed',
 		conclusion: 'failure',
+		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
 		output: { title: 'Conflicts with main' },
 	})
-	expect(github.calls[0]?.authorization).toBe('Bearer test-token')
+	expect(github.calls[2]?.authorization).toBe('Bearer test-token')
 })
 
 test('a mergeable pull request completes the check successfully', async () => {
@@ -191,6 +243,7 @@ test('a mergeable pull request completes the check successfully', async () => {
 	})
 	expect(code).toBe(0)
 	expect(github.calls[3]?.body).toMatchObject({
+		status: 'completed',
 		conclusion: 'success',
 		output: { title: 'No conflicts with main' },
 	})
@@ -228,7 +281,7 @@ test('a failed check creation still fails the process', async () => {
 		},
 	})
 	expect(code).toBe(1)
-	expect(methods).toEqual(['POST'])
+	expect(methods).toEqual(['GET', 'GET', 'POST'])
 	expect(loggedErrors()).toContain('failed (500)')
 	expect(loggedErrors()).not.toContain('test-token')
 })
@@ -264,6 +317,56 @@ test('main fails closed for a bad head SHA, an unknown mode, or a scan without a
 	}
 })
 
+test('a base-branch push skips an open pull request whose head is already on the base', async () => {
+	const oldMain = 'e'.repeat(40)
+	const uniqueSha = 'b'.repeat(40)
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: oldMain } },
+			{ number: 8, head: { sha: uniqueSha } },
+		],
+		pulls: {
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		compareAheadBy: { [oldMain]: 0 },
+	})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
+	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
+})
+
+test('a base-branch push skips an open pull request whose head is the default-branch tip', async () => {
+	const uniqueSha = 'b'.repeat(40)
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: baseSha } },
+			{ number: 8, head: { sha: uniqueSha } },
+		],
+		pulls: {
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+	})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
+	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
+})
+
 test('a base-branch push refreshes every open pull request head check', async () => {
 	const cleanSha = 'b'.repeat(40)
 	const github = fakeGithub({
@@ -290,7 +393,7 @@ test('a base-branch push refreshes every open pull request head check', async ()
 	expect(github.bodies('POST', 'head_sha').sort()).toEqual(
 		[cleanSha, headSha].sort(),
 	)
-	expect(github.bodies('PATCH', 'conclusion').sort()).toEqual([
+	expect(github.bodies('POST', 'conclusion').sort()).toEqual([
 		'failure',
 		'success',
 	])
@@ -321,7 +424,7 @@ test('a base-branch push does not publish a cached result for the previous tip',
 	expect(
 		github.calls.filter((call) => call.url.endsWith('/pulls/7')),
 	).toHaveLength(2)
-	expect(github.bodies('PATCH', 'conclusion')).toEqual(['failure'])
+	expect(github.bodies('POST', 'conclusion')).toEqual(['failure'])
 })
 
 test('an open pull request scan fails closed when the list is unreadable', async () => {
@@ -333,6 +436,173 @@ test('an open pull request scan fails closed when the list is unreadable', async
 			maxAttempts: 1,
 		}),
 	).rejects.toThrow('Open pull request list was not an array')
+})
+
+test('a rate-limited pull request read retries and still publishes', async () => {
+	const sleeps: Array<number> = []
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		rateLimit: { pulls: 1, retryAfterSeconds: 2 },
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		sleep: (ms) => {
+			sleeps.push(ms)
+			return Promise.resolve()
+		},
+	})
+	expect(code).toBe(0)
+	expect(sleeps[0]).toBe(2_000)
+	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
+	expect(
+		github.calls.filter((call) => call.url.endsWith('/pulls/12')),
+	).toHaveLength(2)
+})
+
+test('a rate limit that cannot reset in time does not fail the job', async () => {
+	const sleeps: Array<number> = []
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		rateLimit: { pulls: 3, resetFarFuture: true },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		sleep: (ms) => {
+			sleeps.push(ms)
+			return Promise.resolve()
+		},
+	})
+	expect(code).toBe(0)
+	expect(sleeps.every((ms) => ms <= githubRateLimitMaxWaitMs)).toBe(true)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+	expect(loggedErrors().toLowerCase()).toContain('rate limit')
+	expect(isGithubRateLimitError(new Error(loggedErrors()))).toBe(true)
+})
+
+test('a rate-limited compare does not write a check or fail the job', async () => {
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		rateLimit: { compare: 3, resetFarFuture: true },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		sleep: () => Promise.resolve(),
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+	expect(github.bodies('POST', 'conclusion')).toEqual([])
+})
+
+test('a rate-limited check creation does not fail the process', async () => {
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		rateLimit: { checks: 3, resetFarFuture: true },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		sleep: () => Promise.resolve(),
+	})
+	expect(code).toBe(0)
+})
+
+test('a rate-limited open-pulls list does not fail the default-branch job', async () => {
+	const github = fakeGithub({
+		openPulls: [{ number: 7, head: { sha: headSha } }],
+		pulls: {},
+		rateLimit: { list: 3, resetFarFuture: true },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		sleep: () => Promise.resolve(),
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+})
+
+test('a rate-limited open-pulls scan does not fail the default-branch job', async () => {
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: headSha } },
+			{ number: 8, head: { sha: 'b'.repeat(40) } },
+		],
+		pulls: {
+			7: [pull({ mergeable: true, mergeable_state: 'clean' })],
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		rateLimit: { pulls: 8, resetFarFuture: true },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+		sleep: () => Promise.resolve(),
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+})
+
+test('a scan shares one rate-limit wait budget so retries cannot exceed the job timeout', async () => {
+	const sleeps: Array<number> = []
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: headSha } },
+			{ number: 8, head: { sha: 'b'.repeat(40) } },
+			{ number: 9, head: { sha: 'f'.repeat(40) } },
+		],
+		pulls: {},
+		rateLimit: { compare: 12, retryAfterSeconds: 60 },
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 1,
+		sleep: (ms) => {
+			sleeps.push(ms)
+			return Promise.resolve()
+		},
+	})
+	expect(code).toBe(0)
+	expect(sleeps.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(
+		githubRateLimitWaitBudgetMs,
+	)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
 })
 
 function mergeability(input: {
@@ -367,6 +637,35 @@ function loggedErrors() {
 	return consoleError.mock.calls.map((call) => String(call[0])).join('\n')
 }
 
+function rateLimitResponse(
+	rateLimit:
+		| {
+				retryAfterSeconds?: number
+				resetFarFuture?: boolean
+		  }
+		| undefined,
+) {
+	const headers = new Headers({ 'content-type': 'application/json' })
+	if (rateLimit?.retryAfterSeconds !== undefined) {
+		headers.set('retry-after', String(rateLimit.retryAfterSeconds))
+	}
+	if (rateLimit?.resetFarFuture) {
+		headers.set(
+			'x-ratelimit-reset',
+			String(
+				Math.floor((Date.now() + githubRateLimitMaxWaitMs + 60_000) / 1000),
+			),
+		)
+	}
+	return new Response(
+		JSON.stringify({
+			message: 'API rate limit exceeded for installation.',
+			documentation_url: 'https://docs.github.com/rest',
+		}),
+		{ status: 403, headers },
+	)
+}
+
 type RecordedCall = {
 	method: string
 	url: string
@@ -378,8 +677,24 @@ type RecordedCall = {
 function fakeGithub(input: {
 	pulls: Record<number, Array<ReturnType<typeof pull>>>
 	openPulls?: Array<{ number: number; head: { sha: string } }>
+	compareAheadBy?: Record<string, number>
+	failCompare?: boolean
 	failPulls?: boolean
+	rateLimit?: {
+		pulls?: number
+		compare?: number
+		checks?: number
+		list?: number
+		retryAfterSeconds?: number
+		resetFarFuture?: boolean
+	}
 }) {
+	const remaining = {
+		pulls: input.rateLimit?.pulls ?? 0,
+		compare: input.rateLimit?.compare ?? 0,
+		checks: input.rateLimit?.checks ?? 0,
+		list: input.rateLimit?.list ?? 0,
+	}
 	const calls: Array<RecordedCall> = []
 	const fetchImpl: typeof fetch = (request, init) => {
 		const url = String(request)
@@ -391,10 +706,35 @@ function fakeGithub(input: {
 			body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
 		})
 		if (url.includes('/pulls?')) {
+			if (remaining.list > 0) {
+				remaining.list -= 1
+				return Promise.resolve(rateLimitResponse(input.rateLimit))
+			}
 			return Promise.resolve(Response.json(input.openPulls ?? []))
+		}
+		if (url.includes('/compare/')) {
+			if (remaining.compare > 0) {
+				remaining.compare -= 1
+				return Promise.resolve(rateLimitResponse(input.rateLimit))
+			}
+			if (input.failCompare) {
+				return Promise.resolve(new Response('unavailable', { status: 503 }))
+			}
+			const comparedHead = url.split('...').at(-1) ?? ''
+			const aheadBy = input.compareAheadBy?.[comparedHead] ?? 1
+			return Promise.resolve(
+				Response.json({
+					ahead_by: aheadBy,
+					status: aheadBy === 0 ? 'behind' : 'ahead',
+				}),
+			)
 		}
 		const pullNumber = /\/pulls\/(\d+)$/.exec(url)?.[1]
 		if (pullNumber) {
+			if (remaining.pulls > 0) {
+				remaining.pulls -= 1
+				return Promise.resolve(rateLimitResponse(input.rateLimit))
+			}
 			if (input.failPulls) {
 				return Promise.resolve(new Response('unavailable', { status: 503 }))
 			}
@@ -405,6 +745,10 @@ function fakeGithub(input: {
 			)
 		}
 		if (method === 'POST' && url.endsWith('/check-runs')) {
+			if (remaining.checks > 0) {
+				remaining.checks -= 1
+				return Promise.resolve(rateLimitResponse(input.rateLimit))
+			}
 			return Promise.resolve(Response.json({ id: calls.length }))
 		}
 		if (method === 'PATCH') {

@@ -11,6 +11,10 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const { mockModule, pickMocks } = vi.hoisted(() => {
@@ -154,6 +158,7 @@ function createEnv(
 		storageBuckets?: Array<StorageBucket>
 		users?: Array<{ email: string; plan: string | null }>
 		savedPackageCount?: number
+		failStorageInventory?: boolean
 	},
 ) {
 	// Projection refresh asserts finite storage bytes (default/missing plan →
@@ -165,6 +170,7 @@ function createEnv(
 			userId,
 			storageBuckets: options?.storageBuckets,
 			savedPackageCount: options?.savedPackageCount,
+			failStorageInventory: options?.failStorageInventory,
 		}),
 		USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
 	} as Env
@@ -821,7 +827,7 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	)
 })
 
-test('deleteSavedPackageProjection keeps inventory when clearStorage fails and continues delete', async () => {
+test('deleteSavedPackageProjection aborts before source cleanup when clearStorage fails', async () => {
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	const storageBuckets = [
@@ -831,6 +837,13 @@ test('deleteSavedPackageProjection keeps inventory when clearStorage fails and c
 	]
 	const env = createEnv('user-1', { storageBuckets })
 	mockPackageRow(uuidPackageId)
+	mockModule.listJobRowsByUserId.mockResolvedValue([
+		{
+			id: `package-job:${uuidPackageId}:event-runner`,
+			source_id: 'source-1',
+			storage_id: jobStorageId,
+		},
+	])
 	mockModule.clearStorage.mockImplementation(async () => {
 		const call = mockModule.storageRunnerRpc.mock.calls.at(-1)?.[0] as
 			| { storageId: string }
@@ -841,18 +854,39 @@ test('deleteSavedPackageProjection keeps inventory when clearStorage fails and c
 		return { ok: true as const }
 	})
 
-	await deletePackage(env, uuidPackageId)
-
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
-		userId: ownerIdFromStored('user-1'),
-		packageId: uuidPackageId,
-	})
-	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith(
-		appScopedCleanup(env, uuidPackageId),
+	await expect(deletePackage(env, uuidPackageId)).rejects.toThrow(
+		/Package storage cleanup failed/,
 	)
+
+	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunityForksForPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteJobRow).not.toHaveBeenCalled()
+	expect(mockModule.deleteAllAppScopedValues).not.toHaveBeenCalled()
 	expect(storageBuckets.map((row) => row.storageId)).toEqual([facetStorageId])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('"message":"package storage clear failed"'),
+	)
+})
+
+test('deleteSavedPackageProjection aborts when storage inventory lookup fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setupDefaultMocks()
+	const env = createEnv('user-1', { failStorageInventory: true })
+	mockPackageRow(uuidPackageId)
+
+	await expect(deletePackage(env, uuidPackageId)).rejects.toThrow(
+		/Package storage cleanup failed/,
+	)
+
+	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunityForksForPackage).not.toHaveBeenCalled()
+	expect(mockModule.clearStorage).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'"message":"package storage inventory lookup failed"',
+		),
 	)
 })
 
@@ -955,6 +989,7 @@ function createEntitlementsDatabase(input: {
 	savedPackageCount?: number
 	userId: string
 	storageBuckets?: Array<{ userId: string; storageId: string }>
+	failStorageInventory?: boolean
 }) {
 	const users = input.users ?? []
 	const savedPackageCount = input.savedPackageCount ?? 0
@@ -1044,6 +1079,9 @@ function createEntitlementsDatabase(input: {
 							) {
 								return { count: savedPackageCount } as T
 							}
+							if (isLiveSeatCountQuery(query)) {
+								return mockLiveSeatCountRow() as T
+							}
 							const storageByteTables = [
 								'email_attachments',
 								'email_messages',
@@ -1073,6 +1111,9 @@ function createEntitlementsDatabase(input: {
 								query.includes('SELECT storage_id AS storageId') &&
 								query.includes('WHERE user_id = ?')
 							) {
+								if (input.failStorageInventory) {
+									throw new Error('storage inventory unavailable')
+								}
 								const userId = String(params[0])
 								const results = storageBuckets
 									.filter((row) => row.userId === userId)

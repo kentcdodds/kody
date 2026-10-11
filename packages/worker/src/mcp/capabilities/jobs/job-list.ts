@@ -1,7 +1,14 @@
+import {
+	listScopeIncludes,
+	loadResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
 import {
@@ -33,15 +40,19 @@ export const jobListCapability = defineDomainCapability(
 		outputSchema: jobListOutputSchema,
 		async handler(_args, ctx) {
 			requireMcpUser(ctx.callerContext)
-			const inspection = await inspectJobsForUser({
-				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-			})
+			const request = requireMcpRequest(ctx.callerContext)
+			const [inspection, scope] = await Promise.all([
+				inspectJobsForUser({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+				}),
+				loadResourceListScope({ env: ctx.env, request }, 'job:read', 'job'),
+			])
 			return {
-				jobs: inspection.jobs.map((job) =>
-					buildJobInspectionOutput(job, { recentRuns: [] }),
-				),
-				alarm: buildJobManagerDebugOutput(inspection.alarm),
+				jobs: inspection.jobs
+					.filter((job) => listScopeIncludes(scope, job.id))
+					.map((job) => buildJobInspectionOutput(job, { recentRuns: [] })),
+				alarm: buildJobManagerDebugOutput(inspection.alarm, scope),
 			}
 		},
 	},

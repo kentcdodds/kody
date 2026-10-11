@@ -1,7 +1,13 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	viewerCanDeleteSavedPackage,
+	viewerCanManageSavedPackage,
+	viewerCanPublishSavedPackage,
+	viewerCanReadSavedPackage,
+	viewerIsSavedPackageOrgOwner,
+} from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
@@ -27,7 +33,14 @@ export type PackagePageAccess =
 			kodyId: string
 			listing: CommunityDetailLoaderData | null
 			ownerPackage: AccountPackageDetail | null
+			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
+			/** The viewer may change the package (settings, publish). */
+			viewerCanManage: boolean
+			viewerCanPublish: boolean
+			viewerCanDelete: boolean
+			/** May adopt a community fork (org owner only; widens secret access). */
+			viewerCanAdoptCommunityFork: boolean
 			loggedIn: boolean
 			invocationUrlOrigin: string
 			ownerUserId: string
@@ -114,14 +127,20 @@ async function loadPackagePageUncached(input: {
 	])
 	if (!target) return { kind: 'not_found' }
 
-	const viewerUserId = user?.mcpUser.userId ?? null
+	const viewer = user?.mcpUser ?? null
 
 	if (target.kind === 'redirect') {
-		const viewerOwnsRedirect =
-			viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 		// A listing move is public. An unlisted rename must not leak the new
-		// pair: only the owner is sent to the current URL.
-		if (!target.listingId && !viewerOwnsRedirect) {
+		// pair: only viewers who can see the package are sent to the current URL.
+		if (
+			!target.listingId &&
+			!(await viewerCanReadSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId: target.userId,
+				packageId: target.packageId,
+			}))
+		) {
 			return { kind: 'not_found' }
 		}
 		const listingKodyId = target.listingKodyId
@@ -139,8 +158,14 @@ async function loadPackagePageUncached(input: {
 		}
 	}
 
-	const viewerIsOwner =
-		viewerUserId != null && personalOrgId(viewerUserId) === target.userId
+	const viewerIsOwner = target.savedPackage
+		? await viewerCanReadSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId: target.userId,
+				packageId: target.savedPackage.id,
+			})
+		: false
 	const listingKodyId = target.listingKodyId
 	const savedKodyId = target.savedPackage?.kodyId ?? null
 	if (listingKodyId && savedKodyId && !sameKodyId(listingKodyId, savedKodyId)) {
@@ -174,6 +199,38 @@ async function loadPackagePageUncached(input: {
 	})
 
 	if (viewerIsOwner && target.savedPackage) {
+		const packageId = target.savedPackage.id
+		const ownerId = target.userId
+		const [
+			viewerCanManage,
+			viewerCanPublish,
+			viewerCanDelete,
+			viewerCanAdoptCommunityFork,
+		] = await Promise.all([
+			viewerCanManageSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanPublishSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanDeleteSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerIsSavedPackageOrgOwner({
+				env: input.env,
+				viewer,
+				ownerId,
+			}),
+		])
 		const [listing, ownerPackage] = await Promise.all([
 			target.listingId
 				? loadCommunityDetailData(input.env, input.request, target.listingId)
@@ -182,7 +239,9 @@ async function loadPackagePageUncached(input: {
 				env: input.env,
 				requestUrl: input.request.url,
 				userId: target.userId,
-				username: target.username,
+				...(viewerCanManage
+					? { creditAttributionUsername: target.username }
+					: {}),
 				packageId: target.savedPackage.id,
 			}),
 		])
@@ -198,6 +257,10 @@ async function loadPackagePageUncached(input: {
 			listing,
 			ownerPackage,
 			viewerIsOwner: true,
+			viewerCanManage,
+			viewerCanPublish,
+			viewerCanDelete,
+			viewerCanAdoptCommunityFork,
 			loggedIn: true,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
@@ -219,6 +282,10 @@ async function loadPackagePageUncached(input: {
 			listing,
 			ownerPackage: null,
 			viewerIsOwner: false,
+			viewerCanManage: false,
+			viewerCanPublish: false,
+			viewerCanDelete: false,
+			viewerCanAdoptCommunityFork: false,
 			loggedIn: Boolean(user),
 			invocationUrlOrigin,
 			ownerUserId: target.userId,

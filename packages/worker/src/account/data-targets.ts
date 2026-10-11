@@ -415,6 +415,13 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'created_by_user_id',
 		value: 'deleted-user',
 	},
+	// A deleted person's enablements end with them in every org; the org purge
+	// removes their personal org's rows.
+	{
+		kind: 'user_columns',
+		table: 'enablements',
+		columns: ['enabler_user_id'],
+	},
 	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
 	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{
@@ -581,6 +588,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'invites',
 		columns: ['invited_by_user_id', 'accepted_by_user_id'],
 	},
+	{
+		kind: 'replace_user_column',
+		table: 'org_invite_links',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'org_invite_link_redemptions' },
 	{
 		kind: 'replace_user_column',
 		table: 'teams',
@@ -918,6 +933,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	api_tokens: ['token_hash'],
 	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
+	org_invite_links: ['token_hash'],
 	mcp_event_subscriptions: ['secret_encrypted', 'previous_secret_encrypted'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
@@ -954,6 +970,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
 	grants: ['created_by_user_id'],
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
+	org_invite_links: ['created_by_user_id'],
 	org_memberships: ['invited_by_user_id'],
 	org_user_budgets: ['set_by_user_id'],
 	org_limit_overrides: ['set_by_user_id'],

@@ -5,6 +5,7 @@ import {
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
@@ -36,6 +37,7 @@ import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { adminUserVerifyCapability } from './admin-user-verify.ts'
 import { adminEmailDestinationVerifyCapability } from './admin-email-destination-verify.ts'
+import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
 import { addEmailNotificationDestination } from '#worker/email/destinations.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -600,7 +602,10 @@ test('adminUserUpdate sets plan, maps null clear to free, and rejects unknown us
 			{ email: 'missing@example.com', plan: 'pro' },
 			t.ctx,
 		),
-	).rejects.toThrow('User not found.')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError && error.message === 'User not found.',
+	)
 	await expect(
 		adminUserUpdateCapability.handler(
 			{ id: 1, plan: 'enterprise' } as never,
@@ -620,6 +625,27 @@ test('adminUserUpdate sets plan, maps null clear to free, and rejects unknown us
 		},
 		{
 			action: 'adminUserUpdate',
+			result: 'failure',
+			reason: 'User not found.',
+		},
+	])
+})
+
+test('adminCreditWalletGet rejects unknown users as McpCallerError with audit failure', async () => {
+	const t = createAdminCapabilityTest([admin, jane])
+
+	await expect(
+		adminCreditWalletGetCapability.handler(
+			{ email: 'missing@example.com' },
+			t.ctx,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError && error.message === 'User not found.',
+	)
+	expect(t.auditEvents()).toEqual([
+		{
+			action: 'adminCreditWalletGet',
 			result: 'failure',
 			reason: 'User not found.',
 		},
@@ -687,7 +713,20 @@ test('adminUserVerify marks verified and mints a one-time url with audit metadat
 			{ email: 'jane@example.com', action: 'mint_verify_url' },
 			t.ctx,
 		),
-	).rejects.toThrow('Email is already verified.')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Email is already verified.',
+	)
+	await expect(
+		adminUserVerifyCapability.handler(
+			{ email: 'missing@example.com', action: 'mark_verified' },
+			t.ctx,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError && error.message === 'User not found.',
+	)
 	expect(t.auditEvents()).toEqual([
 		{
 			action: 'adminUserVerify',
@@ -703,6 +742,11 @@ test('adminUserVerify marks verified and mints a one-time url with audit metadat
 			action: 'adminUserVerify',
 			result: 'failure',
 			reason: 'Email is already verified.',
+		},
+		{
+			action: 'adminUserVerify',
+			result: 'failure',
+			reason: 'User not found.',
 		},
 	])
 })

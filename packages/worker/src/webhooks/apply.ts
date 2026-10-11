@@ -17,7 +17,10 @@ import {
 	collectWebhookCredentialSecrets,
 	redactWebhookCredentials,
 } from './redact.ts'
-import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
+import {
+	defaultWebhookVerification,
+	resolveWebhookHmacSigningSecret,
+} from './signing-secret.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 export const webhookUrlApplyHttpMethods = [
@@ -740,7 +743,10 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		savedPackage: input.savedPackage,
 		webhookName: input.webhookName,
 	})
-	if (!declared?.verification) {
+	const verification = declared
+		? (declared.verification ?? defaultWebhookVerification)
+		: null
+	if (!verification) {
 		throw new McpCallerError(
 			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification declaration.`,
 		)
@@ -749,7 +755,7 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		env: input.env,
 		userId: input.userId,
 		endpoint: input.endpoint,
-		verification: declared.verification,
+		verification,
 	})
 }
 

@@ -554,6 +554,7 @@ export const repoCheckResultSchema = z.object({
 		'bundle',
 		'typecheck',
 		'lint',
+		'credentials',
 		'smoke',
 	]),
 	ok: z.boolean(),

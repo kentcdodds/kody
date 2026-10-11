@@ -13,8 +13,8 @@ export type CloudflareClient = {
 	sleep?: (ms: number) => Promise<void>
 }
 
-export const rehearsalDatabaseRoles = ['app', 'audit', 'jobs'] as const
-export type RehearsalDatabaseRole = (typeof rehearsalDatabaseRoles)[number]
+const rehearsalDatabaseRoles = ['app', 'audit', 'jobs'] as const
+type RehearsalDatabaseRole = (typeof rehearsalDatabaseRoles)[number]
 
 export type RehearsalDatabase = {
 	role: RehearsalDatabaseRole
@@ -22,9 +22,9 @@ export type RehearsalDatabase = {
 	uuid: string
 }
 
-export type D1TableCount = { table: string; rows: number }
+type D1TableCount = { table: string; rows: number }
 
-export type D1DatabaseSnapshot = RehearsalDatabase & {
+type D1DatabaseSnapshot = RehearsalDatabase & {
 	bookmark: string
 	tables: Array<D1TableCount>
 }
@@ -55,7 +55,7 @@ export function assertRehearsalWorkerName(workerName: string) {
 	return workerName
 }
 
-export function rehearsalDatabaseNames(workerName: string) {
+function rehearsalDatabaseNames(workerName: string) {
 	assertRehearsalWorkerName(workerName)
 	const names = buildPreviewResourceNames(workerName)
 	const byRole: Record<RehearsalDatabaseRole, string> = {
@@ -169,7 +169,7 @@ function quoteIdentifier(name: string) {
 const d1CompoundSelectLimit = 5
 
 /** Row counts for every user table (SQLite and Cloudflare internals skipped). */
-export async function countD1Tables(
+async function countD1Tables(
 	client: CloudflareClient,
 	uuid: string,
 ): Promise<Array<D1TableCount>> {
@@ -209,7 +209,7 @@ export async function getD1Bookmark(client: CloudflareClient, uuid: string) {
 	return bookmark
 }
 
-export async function restoreD1Bookmark(
+async function restoreD1Bookmark(
 	client: CloudflareClient,
 	database: RehearsalDatabase,
 	bookmark: string,

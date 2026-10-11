@@ -7,6 +7,7 @@ import {
 } from '#app/handlers/account-webhooks.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { type AccountWebhooksLoaderData } from '#universal/loader-data.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -63,7 +64,13 @@ const savedPackages = [
 ]
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: vi.fn(async () => savedPackages),
+	listSavedPackagesByUserId: vi.fn(
+		async (_db: unknown, input: { userId: string }) =>
+			savedPackages.map((entry) => ({
+				...entry,
+				userId: ownerIdFromStored(input.userId),
+			})),
+	),
 	resolveSavedPackageRef: vi.fn(),
 }))
 
@@ -156,6 +163,7 @@ test('account webhooks page embeds every package’s declared webhooks (never a 
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
 		...owner,
 		mcpUser: { userId },
+		request: sessionRequestContext(userId),
 	})
 	mockModule.renderAppPage.mockImplementation(async () => new Response('ok'))
 
@@ -194,6 +202,7 @@ test('account webhooks API lists across packages and is read-only: mutations bel
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		...owner,
 		mcpUser: { userId },
+		request: sessionRequestContext(userId),
 	})
 	const handler = createAccountWebhooksApiHandler(createEnv())
 	const apiUrl = 'https://kody.example/account/webhooks.json'

@@ -1,7 +1,7 @@
 /**
  * Stable credential ids. Every org credential row carries an `id`: secret
  * entries, OAuth integrations, and vault bindings get theirs from the
- * database on insert (migration 0105), and an MCP server's row id is its
+ * database on insert (migration 0110), and an MCP server's row id is its
  * credential id. Grants on credentials are keyed by this id under the one
  * `credential` resource type, so renaming a credential keeps its grants and
  * a deleted then recreated name starts with none.
@@ -153,6 +153,77 @@ export async function listOrgCredentialsByIds(
 		}
 	}
 	return credentials
+}
+
+/**
+ * Old lane: `secret` and `integration` name a credential by its name, as
+ * placeholders do. By-name grant targets resolve to the credential id once,
+ * at grant time; an enablement paused on a credential that did not exist
+ * yet resolves its name on each check. They are removed together with
+ * secret placeholders when the old credential lane is removed.
+ */
+export const legacyNamedCredentialTargets = [
+	'secret',
+	'integration',
+] as const satisfies ReadonlyArray<CredentialPermissionFamily>
+
+export type LegacyNamedCredentialTarget =
+	(typeof legacyNamedCredentialTargets)[number]
+
+export function isLegacyNamedCredentialTarget(
+	value: unknown,
+): value is LegacyNamedCredentialTarget {
+	return (legacyNamedCredentialTargets as ReadonlyArray<unknown>).includes(
+		value,
+	)
+}
+
+/**
+ * The credential id an old-lane name names: a user-scope secret, or an
+ * integration (an OAuth connection, else an MCP server) by its stored name.
+ * Null when nothing live has that name.
+ */
+export async function findCredentialIdByLegacyName(
+	db: D1Database,
+	orgId: string,
+	target: { type: LegacyNamedCredentialTarget; name: string },
+): Promise<string | null> {
+	switch (target.type) {
+		case 'secret': {
+			const row = await db
+				.prepare(
+					`SELECT e.id AS id FROM secret_entries e
+					JOIN secret_buckets b ON b.id = e.bucket_id
+					WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+						AND e.name = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL`,
+				)
+				.bind(orgId, target.name)
+				.first<{ id: string }>()
+			return row?.id ?? null
+		}
+		case 'integration': {
+			const integration = await db
+				.prepare(
+					`SELECT id FROM user_integrations
+					WHERE user_id = ? AND name = ? AND deleted_at IS NULL`,
+				)
+				.bind(orgId, target.name)
+				.first<{ id: string }>()
+			if (integration) return integration.id
+			const server = await db
+				.prepare(
+					`SELECT id FROM mcp_server_settings
+					WHERE user_id = ? AND name = ? AND deleted_at IS NULL`,
+				)
+				.bind(orgId, target.name)
+				.first<{ id: string }>()
+			return server?.id ?? null
+		}
+		default: {
+			const exhaustive: never = target.type
+			throw new Error(`Unhandled legacy grant target: ${String(exhaustive)}`)
+		}
+	}
 }
 
 export async function getOrgCredential(

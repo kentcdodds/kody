@@ -63,7 +63,7 @@ export function repoRelativePath(filename, cwd = processCwd()) {
 	return filename.replaceAll('\\', '/')
 }
 
-export function indexToLoc(source, index) {
+function indexToLoc(source, index) {
 	let line = 1
 	let column = 0
 	for (let offset = 0; offset < index; offset += 1) {
@@ -167,7 +167,7 @@ function lineNumberAt(source, index) {
 	return source.slice(0, index).split('\n').length
 }
 
-export function findContainCalls(content) {
+function findContainCalls(content) {
 	const calls = []
 	for (const [kind, pattern] of [
 		['absent', absenceMatcherPattern],
@@ -301,7 +301,7 @@ function collectScannedFiles(cwd, relativeRoot = '') {
 	return matches
 }
 
-export function listTautologicalAbsencePaths(cwd = processCwd()) {
+function listTautologicalAbsencePaths(cwd = processCwd()) {
 	return [...new Set(collectScannedFiles(cwd))].sort()
 }
 

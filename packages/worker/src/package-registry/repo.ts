@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -147,7 +150,7 @@ export async function insertSavedPackage(
 		updated_at?: string
 	},
 	telemetry?: OnboardingFunnelEnv | null,
-	options?: { stamp?: boolean },
+	options?: { stamp?: boolean; actorUserId?: PersonId },
 ) {
 	const now = new Date().toISOString()
 	await db
@@ -178,7 +181,7 @@ export async function insertSavedPackage(
 	await stampFirstSavedPackage(
 		db,
 		{
-			stableUserId: row.user_id,
+			stableUserId: options?.actorUserId ?? row.user_id,
 			at: row.created_at ?? now,
 		},
 		telemetry,
@@ -330,6 +333,25 @@ export async function getSavedPackageById(
 			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.packageId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageRow(row) : null
+}
+
+/**
+ * A live saved package by id in whichever org owns it. Only for facts that
+ * belong to the package itself (its manifest), never for access decisions.
+ */
+export async function getSavedPackageByIdInAnyOrg(
+	db: D1Database,
+	packageId: string,
+): Promise<SavedPackageRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageSelectColumns}
+			FROM saved_packages
+			WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(packageId)
 		.first<Record<string, unknown>>()
 	return row ? mapSavedPackageRow(row) : null
 }

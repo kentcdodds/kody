@@ -183,6 +183,27 @@ test('a resource grant lets a member act on that resource only', () => {
 	).toBe(false)
 })
 
+test('a credential denial names the credential by family and name, not by id', () => {
+	const memberAccess = access({ isOwner: false, permissions: new Set() })
+	const credential = (label: string): OrgResource => ({
+		type: 'credential',
+		id: 'cred-1',
+		orgId: ownerIdFromStored('org-1'),
+		label,
+	})
+	expect(
+		denial(checkPermission(memberAccess, 'secret:use', credential('apiKey')))
+			.message,
+	).toBe('Missing secret:use on secret apiKey. An org Owner can grant it.')
+	expect(
+		denial(
+			checkPermission(memberAccess, 'integration:use', credential('google')),
+		).message,
+	).toBe(
+		'Missing integration:use on integration google. An org Owner can grant it.',
+	)
+})
+
 test('a resource in another org is denied before permissions are read', () => {
 	const error = denial(
 		checkPermission(

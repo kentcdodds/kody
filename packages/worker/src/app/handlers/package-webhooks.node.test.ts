@@ -48,7 +48,11 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: vi.fn(async () => [savedPackage]),
+	listSavedPackagesByUserId: vi.fn(
+		async (_db: unknown, input: { userId: string }) => [
+			{ ...savedPackage, userId: ownerIdFromStored(input.userId) },
+		],
+	),
 	resolveSavedPackageRef: vi.fn(),
 }))
 
@@ -121,6 +125,27 @@ async function setup(sessionUsername = 'owner') {
 		);
 		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
 		ON webhook_endpoints(user_id, package_id, webhook_name);
+		CREATE TABLE enablements (
+			id TEXT PRIMARY KEY NOT NULL,
+			org_id TEXT NOT NULL,
+			package_id TEXT,
+			trigger_kind TEXT NOT NULL,
+			trigger_name TEXT NOT NULL,
+			instance_id TEXT NOT NULL,
+			enabler_user_id TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'on',
+			paused_reason TEXT,
+			paused_permission TEXT,
+			paused_resource_type TEXT,
+			paused_resource_id TEXT,
+			paused_credential_id TEXT,
+			paused_at TEXT,
+			credential_mapping_json TEXT,
+			origin TEXT NOT NULL,
+			enabled_at TEXT NOT NULL,
+			disabled_at TEXT,
+			updated_at TEXT NOT NULL
+		);
 	`)
 	const db = createD1FromSqlite(sqlite)
 	const handler = createCommunityPackageWebhooksApiHandler({

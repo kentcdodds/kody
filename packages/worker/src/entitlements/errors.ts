@@ -8,7 +8,12 @@ import {
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
+	nextUtcDayStart,
+	nextUtcWeekStart,
+} from '@kody-internal/shared/date-keys.ts'
+import {
 	entitlementResourceLabels,
+	entitlementResourceWindows,
 	formatMinJobInterval,
 	hasHigherPublicPlan,
 	isCreditsUnlockedResource,
@@ -17,6 +22,7 @@ import {
 	parsePlanName,
 	weeklyEntitlementResourceLabel,
 	type EntitlementResource,
+	type EntitlementResourceWindow,
 	type PlanName,
 	type WeeklyComputeWindowResource,
 } from '#universal/plans.ts'
@@ -67,25 +73,109 @@ export function entitlementCreditsOffer(
 }
 
 /**
- * Next step appended to every entitlement denial. Stock is on the
- * purchasable Pro subscription, so it only offers an upgrade on Free.
+ * Next step appended to every entitlement denial, derived from the
+ * resource's window: metered windows say when they reset, standing counts
+ * say what to remove. Stock is on the purchasable Pro subscription, so it
+ * only offers an upgrade on Free.
  */
-export function buildEntitlementUpgradeHint(
+export function buildEntitlementUpgradeHint(input: {
+	resource: EntitlementResource
+	plan: PlanName
+	creditWallet?: CreditWalletState
+	billingPath?: string
+	/** Which hard window blocked a `utc_day` resource. Defaults to `day`. */
+	window?: EntitlementLimitWindow
+	now?: Date
+}) {
+	const resourceWindow = entitlementResourceWindows[input.resource]
+	const reset = buildWindowResetSentence({
+		resourceWindow,
+		deniedWindow: input.window ?? 'day',
+		now: input.now ?? new Date(),
+	})
+	const creditsOffer = entitlementCreditsOffer(
+		input.resource,
+		input.plan,
+		input.creditWallet ?? 'none',
+	)
+	const upgradeOffer = hasHigherPublicPlan(input.plan)
+		? `upgrade your plan at ${input.billingPath ?? '/@<slug>/-/billing'}`
+		: null
+	const actions = [
+		reduceGuidance(input.resource, resourceWindow),
+		creditsOffer ?? upgradeOffer,
+	].filter((action) => action !== null)
+	const actionSentence =
+		actions.length > 0 ? capitalizeSentence(actions.join(', or ')) : null
+	return [reset, actionSentence].filter((part) => part !== null).join(' ')
+}
+
+function reduceGuidance(
 	resource: EntitlementResource,
-	plan: PlanName,
-	creditWallet: CreditWalletState = 'none',
-	billingPath = '/@<slug>/-/billing',
-) {
-	const reduceGuidance =
-		resource === 'execute_unique_workers_per_day'
-			? 'Rerun code you already ran today and vary params; repeats are free.'
-			: `Remove or finish existing ${entitlementResourceLabels[resource]} you no longer need.`
-	const creditsOffer = entitlementCreditsOffer(resource, plan, creditWallet)
-	if (creditsOffer) {
-		return `${reduceGuidance.slice(0, -1)}, or ${creditsOffer}.`
+	resourceWindow: EntitlementResourceWindow,
+): string | null {
+	switch (resourceWindow) {
+		case 'standing':
+			return `Remove or finish existing ${entitlementResourceLabels[resource]} you no longer need`
+		case 'per_item':
+			return `Use fewer ${entitlementResourceLabels[resource]}`
+		case 'utc_day':
+			return resource === 'execute_unique_workers_per_day'
+				? 'Rerun code you already ran today and vary params; repeats are free'
+				: null
+		case 'utc_minute':
+			return null
+		default: {
+			const exhaustive: never = resourceWindow
+			throw new Error(`Unknown resource window: ${String(exhaustive)}`)
+		}
 	}
-	if (!hasHigherPublicPlan(plan)) return reduceGuidance
-	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at ${billingPath}.`
+}
+
+function buildWindowResetSentence(input: {
+	resourceWindow: EntitlementResourceWindow
+	deniedWindow: EntitlementLimitWindow
+	now: Date
+}): string | null {
+	switch (input.resourceWindow) {
+		case 'utc_day': {
+			if (input.deniedWindow === 'week') {
+				const resetAt = nextUtcWeekStart(input.now)
+				return `This weekly limit resets Monday 00:00 UTC, in ${formatTimeUntil(input.now, resetAt)}.`
+			}
+			const resetAt = nextUtcDayStart(input.now)
+			return `This daily limit resets at 00:00 UTC, in ${formatTimeUntil(input.now, resetAt)}.`
+		}
+		case 'utc_minute':
+			return 'This limit resets when the next minute starts.'
+		case 'standing':
+		case 'per_item':
+			return null
+		default: {
+			const exhaustive: never = input.resourceWindow
+			throw new Error(`Unknown resource window: ${String(exhaustive)}`)
+		}
+	}
+}
+
+const minuteMs = 60 * 1000
+
+/** Compact countdown such as `45m`, `1h 26m`, or `2d 5h 3m` (rounded up). */
+function formatTimeUntil(now: Date, resetAt: Date) {
+	const totalMinutes = Math.max(
+		1,
+		Math.ceil((resetAt.getTime() - now.getTime()) / minuteMs),
+	)
+	const days = Math.floor(totalMinutes / (24 * 60))
+	const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+	const minutes = totalMinutes % 60
+	if (days > 0) return `${days}d ${hours}h ${minutes}m`
+	if (hours > 0) return `${hours}h ${minutes}m`
+	return `${minutes}m`
+}
+
+function capitalizeSentence(text: string) {
+	return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`
 }
 
 /**

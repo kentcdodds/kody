@@ -13,7 +13,7 @@ import { build } from 'esbuild'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const outDir = path.join(repoRoot, '.tmp/highlight-test-service')
 
-export const highlightTestServiceScriptPath = path.join(outDir, 'index.mjs')
+const highlightTestServiceScriptPath = path.join(outDir, 'index.mjs')
 
 export async function buildHighlightTestService() {
 	await mkdir(outDir, { recursive: true })

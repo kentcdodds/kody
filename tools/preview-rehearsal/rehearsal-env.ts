@@ -9,7 +9,7 @@ import {
  * id shapes: seed-path users get the legacy `sha256(email)` stable id, while
  * admin-created and self-signup users get random ids.
  */
-export type RehearsalUserOrigin = 'seed-sql' | 'admin-create' | 'signup'
+type RehearsalUserOrigin = 'seed-sql' | 'admin-create' | 'signup'
 
 export type RehearsalUser = {
 	role: 'admin' | 'alice' | 'bob' | 'carol' | 'dave'
@@ -83,9 +83,6 @@ export const rehearsalOrg = {
 	displayName: string
 	owner: RehearsalUser['role']
 }
-
-/** Fixture user `preview.yml` reseeds on every deploy; excluded from diffs. */
-export const previewFixtureEmail = 'me@kentcdodds.com'
 
 export function rehearsalUser(role: RehearsalUser['role']) {
 	const user = rehearsalUsers.find((entry) => entry.role === role)

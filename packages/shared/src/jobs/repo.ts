@@ -498,9 +498,11 @@ export async function getNextRunnableJobRow(
 }
 
 /**
- * Scheduled executions use a ten-minute lease, comfortably above the
- * sandbox's default 90-second maximum runtime. A single conditional D1 write
- * is the ownership boundary; reading due rows alone never grants ownership.
+ * Scheduled executions use a ten-minute lease, twice the 5-minute job
+ * sandbox budget (`backgroundExecutorTimeoutMs`), renewed before each further
+ * enablement run of the same tick ({@link renewClaimedJobRow}). A single
+ * conditional D1 write is the ownership boundary; reading due rows alone never
+ * grants ownership.
  */
 export const jobExecutionLeaseMs = 10 * 60 * 1_000
 
@@ -551,6 +553,31 @@ export async function claimJobRow(input: {
 		)
 		.first<Record<string, unknown>>()
 	return result ? mapRow(result) : null
+}
+
+/**
+ * Pushes a held claim's lease to `now + jobExecutionLeaseMs` before the next
+ * run of a multi-enablement tick, so each run starts with the full lease.
+ * Returns false when the claim was lost (token no longer matches).
+ */
+export async function renewClaimedJobRow(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	claimToken: string
+	nowMs: number
+}): Promise<boolean> {
+	const leaseExpiresAt = new Date(
+		input.nowMs + jobExecutionLeaseMs,
+	).toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET lease_expires_at = ?
+			WHERE id = ? AND user_id = ? AND claim_token = ?`,
+		)
+		.bind(leaseExpiresAt, input.jobId, input.userId, input.claimToken)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function finalizeClaimedJobRow(input: {

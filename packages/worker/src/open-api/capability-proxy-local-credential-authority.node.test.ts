@@ -24,6 +24,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { runCapabilityProxyGatewayFetch } from './capability-proxy-gateway-fetch.ts'
 
@@ -119,6 +120,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
 		userSecret('org-secret-value', ['example.com']),
 	)
+	lookupSecretsThroughResolveSecret()
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',

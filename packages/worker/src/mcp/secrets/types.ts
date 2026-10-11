@@ -47,6 +47,6 @@ export type ListedSecret = SecretMetadata & { credentialId: string }
 export type SecretSearchRow = Pick<
 	SecretMetadata,
 	'name' | 'scope' | 'description' | 'packageId' | 'updatedAt'
->
+> & { credentialId: string }
 
 export type { StorageContext }

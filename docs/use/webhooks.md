@@ -267,13 +267,23 @@ package settings.
   consumer + export time (ingress receive time is kept as metadata). Failed
   deliveries keep diagnostic logs — including when the export never reached user
   code.
-- `sync`: waits for the export JSON result (**502** on failure).
+- `sync`: waits for the export JSON result (**502** on failure). The failure
+  body is `{ "ok": false, "error": { "code", "message" } }` and never carries
+  package internals. `code` is `invocation_failed` unless the fetch gateway
+  refused the package's request because a credential placeholder was bound for a
+  host the credential does not allow, went over plain HTTP, or sat in the URL
+  host or user info: then it is `credential_placement_refused`. When the refusal
+  concerns one named slot, `error.slot` carries that slot name (never a value);
+  a Basic Auth pair or a vault reference omits it. Ack deliveries record the
+  same code in Activity. The owner sees the full error in Activity.
 
 Background delivery retries keep the same idempotency key, so a transient
-platform persistence failure does not duplicate a completed export. Package
-exports still have the normal execution limit (about 90 seconds); packages that
-exceed it receive an explicit timeout failure and should split or checkpoint
-their work.
+platform persistence failure does not duplicate a completed export. Ack (queued)
+deliveries run the export with a 5-minute budget on every plan. `sync`
+deliveries keep the interactive ~90-second budget, and the HTTP response stops
+waiting after 30 seconds. Exports that exceed their budget receive an explicit
+timeout failure and should split or checkpoint their work, or hand long work to
+a [workflow](./workflows.md).
 
 ## Subscription challenges
 
@@ -545,6 +555,29 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
+### Default signature in orgs on enablements
+
+In an org on enablements, every webhook verifies a signature. When the manifest
+declares no `verification`, Kody checks `X-Kody-Signature` against the
+endpoint's own signing secret, generated at mint or at migration:
+
+```json
+{
+	"type": "hmac-sha256",
+	"header": "x-kody-signature",
+	"encoding": "hex",
+	"prefix": "sha256="
+}
+```
+
+The sender signs the raw body with HMAC-SHA256 and sends
+`X-Kody-Signature: sha256=<hex>`. Reveal the URL in the package settings
+Webhooks section to copy the signing secret next to it; only the owner sees it
+there, and it is shown only when this default scheme applies. Rotating the URL
+keeps the secret. A missing or bad signature gets the same generic 401 and runs
+nothing. The webhook runs as its enabler, the person who turned it on; with no
+`on` enablement the delivery answers 409 `enablement_not_on`.
+
 ## Synthetic smoke test
 
 After mint, smoke-test the bound export from **interactive MCP** with
@@ -608,8 +641,10 @@ Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 replays the stored result. On `sync`, a different payload is **409**
 `idempotency_mismatch` and an in-progress key is **409**
 `invocation_in_progress`. `ack` still returns **202** after enqueue; the
-consumer records the ledger outcome. This works without HMAC — the URL secret is
-the credential.
+consumer records the ledger outcome. Without a migrated enablement row this
+works without HMAC and the URL secret is the credential. In an org on
+enablements the caller must also send the
+[default signature](#default-signature-in-orgs-on-enablements).
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor

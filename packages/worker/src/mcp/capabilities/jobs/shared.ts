@@ -1,7 +1,17 @@
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import {
+	authorize,
+	listScopeIncludes,
+	orgResource,
+	type ResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	isPackageOwnedJobId,
@@ -540,14 +550,24 @@ export function buildJobInspectionOutput(
 	}
 }
 
-export function buildJobManagerDebugOutput(state: JobManagerDebugState) {
+/**
+ * The scheduler's next job is org-wide state. Its id and timing are shown only
+ * when that job is within the caller's read scope.
+ */
+export function buildJobManagerDebugOutput(
+	state: JobManagerDebugState,
+	scope: ResourceListScope,
+) {
+	const nextJobVisible =
+		state.nextRunnableJobId == null ||
+		listScopeIncludes(scope, state.nextRunnableJobId)
 	return {
 		binding_available: state.bindingAvailable,
 		status: state.status,
 		stored_user_id: state.storedUserId,
-		alarm_scheduled_for: state.alarmScheduledFor,
-		next_runnable_job_id: state.nextRunnableJobId,
-		next_runnable_run_at: state.nextRunnableRunAt,
+		alarm_scheduled_for: nextJobVisible ? state.alarmScheduledFor : null,
+		next_runnable_job_id: nextJobVisible ? state.nextRunnableJobId : null,
+		next_runnable_run_at: nextJobVisible ? state.nextRunnableRunAt : null,
 		alarm_in_sync: state.alarmInSync,
 	}
 }
@@ -581,12 +601,33 @@ export function resolveJobUpdateBody(
 	}
 }
 
+/** Every single-job surface checks the job itself, not only the surface. */
+export async function authorizeJob(input: {
+	env: Env
+	callerContext: CapabilityContext['callerContext']
+	permission: Extract<OrgPermission, `job:${string}`>
+	jobId: string
+}) {
+	const request = requireMcpRequest(input.callerContext)
+	await authorize(
+		{ env: input.env, request },
+		input.permission,
+		orgResource(request, 'job', input.jobId),
+	)
+}
+
 export async function runJobNowFromArgs(input: {
 	env: Env
 	callerContext: CapabilityContext['callerContext']
 	args: JobRunNowCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:execute',
+		jobId: input.args.id,
+	})
 	const { runJobNowViaManager } = await import('#worker/jobs/manager-client.ts')
 	const result = await runJobNowViaManager({
 		env: input.env,
@@ -603,6 +644,12 @@ export async function updateJobFromArgs(input: {
 	args: JobUpdateCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:write',
+		jobId: input.args.id,
+	})
 	const { updateJob } = await import('#worker/jobs/service.ts')
 	const updated = await updateJob({
 		env: input.env,
@@ -625,6 +672,12 @@ export async function deleteJobFromArgs(input: {
 	args: JobDeleteCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:delete',
+		jobId: input.args.id,
+	})
 	if (isPackageOwnedJobId(input.args.id)) {
 		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
 	}

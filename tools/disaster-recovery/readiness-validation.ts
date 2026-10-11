@@ -3,7 +3,7 @@ import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { type ResourceIdentity } from './readiness-contracts.ts'
 
 export const sha256Pattern = /^[a-f0-9]{64}$/
-export const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 export const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const base64Pattern =

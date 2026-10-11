@@ -81,6 +81,20 @@ const fanOutMocks = vi.hoisted(() => ({
 
 vi.mock('#mcp/events/fan-out.ts', () => fanOutMocks)
 
+// Every trigger runs as its enabler; here the personal org's own person.
+vi.mock('#worker/enablements/run-gate.ts', () => ({
+	planEnablementRuns: async (input: { orgId: string }) => ({
+		runs: [
+			{
+				id: `enablement-${input.orgId}`,
+				enabler: { userId: input.orgId, username: 'owner' },
+				role: 'owner',
+			},
+		],
+		skipped: [],
+	}),
+}))
+
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
 		userId,
@@ -171,6 +185,7 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 				scopes: null,
 				profileName: null,
 			},
+			membership: { role: 'owner' },
 		},
 	})
 	// Queued delivery never invokes subscribers inside the emitting request.

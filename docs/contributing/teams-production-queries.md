@@ -81,7 +81,7 @@ means the §7.2 seat mapping does not cover it yet.
 | Does every `credential` grant resolve to exactly one credential row?  | APP_DB `grants` by credential id against secrets, vault bindings, integrations, MCP servers         | `credentialGrantIds.credentialGrants` |
 
 The report is version 4. Credential grants are keyed by stable credential id
-(migration `0105-credential-ids-and-grants.sql`), so the totals have no `secret`
+(migration `0110-credential-ids-and-grants.sql`), so the totals have no `secret`
 or `integration` rows. Each credential grant row has an `outcome`: `resolved`,
 `orphan` (its credential was deleted since), or `ambiguous`. The migration's own
 before and after counts were checked inside the migration, which aborts on any

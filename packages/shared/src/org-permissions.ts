@@ -37,6 +37,22 @@ export type OrgGrantResourceType =
 
 const orgResourceTypes = Object.keys(resourceActions) as Array<OrgResourceType>
 
+export function isOrgResourceType(value: unknown): value is OrgResourceType {
+	return (
+		typeof value === 'string' &&
+		(orgResourceTypes as ReadonlyArray<string>).includes(value)
+	)
+}
+
+export function isOrgGrantResourceType(
+	value: unknown,
+): value is OrgGrantResourceType {
+	if (value === 'credential') return true
+	return (
+		isOrgResourceType(value) && value !== 'secret' && value !== 'integration'
+	)
+}
+
 type ResourcePermission = {
 	[Type in OrgResourceType]: `${Type}:${(typeof resourceActions)[Type][number]}`
 }[OrgResourceType]

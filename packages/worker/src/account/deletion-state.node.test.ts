@@ -480,8 +480,7 @@ test('long write callback does not retain a UserMeter RPC stub', async () => {
 		await expect(operation).resolves.toBe('finished')
 		expect(meter.calls).toEqual([
 			{ stubId: 1, method: 'acquireWriteLease' },
-			{ stubId: 2, method: 'assertWriteLeaseHeld' },
-			{ stubId: 3, method: 'releaseWriteLease' },
+			{ stubId: 2, method: 'releaseWriteLease' },
 		])
 	} finally {
 		vi.useRealTimers()

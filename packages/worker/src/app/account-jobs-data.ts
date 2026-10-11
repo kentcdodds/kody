@@ -232,7 +232,7 @@ async function toDetail(input: {
 }
 
 function toAlarm(state: JobManagerDebugState): AccountJobsAlarm {
-	const debug = buildJobManagerDebugOutput(state)
+	const debug = buildJobManagerDebugOutput(state, { kind: 'all' })
 	return {
 		bindingAvailable: debug.binding_available,
 		status: debug.status,

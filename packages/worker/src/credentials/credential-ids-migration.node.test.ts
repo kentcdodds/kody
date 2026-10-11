@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const migrationFileName = '0105-credential-ids-and-grants.sql'
+const migrationFileName = '0110-credential-ids-and-grants.sql'
 const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
@@ -97,7 +97,7 @@ function idOf(sqlite: DatabaseSync, sql: string) {
 	return row.id
 }
 
-test('0105 gives credential rows ids and moves name-keyed grants and invites onto them', () => {
+test('0110 gives credential rows ids and moves name-keyed grants and invites onto them', () => {
 	const sqlite = databaseBeforeMigration()
 	insertGrant(sqlite, {
 		id: 'grant-secret',
@@ -223,7 +223,7 @@ test('0105 gives credential rows ids and moves name-keyed grants and invites ont
 	).toThrow(/CHECK constraint failed/)
 })
 
-test('0105 fails loudly on a grant whose name maps to no org credential', () => {
+test('0110 fails loudly on a grant whose name maps to no org credential', () => {
 	const sqlite = databaseBeforeMigration()
 	// Package-scoped secrets were never what a secret grant named.
 	insertGrant(sqlite, {
@@ -236,7 +236,7 @@ test('0105 fails loudly on a grant whose name maps to no org credential', () => 
 	expect(() => runMigration(sqlite)).toThrow(/CHECK constraint failed/)
 })
 
-test('0105 fails loudly on a grant invite whose name maps to no credential', () => {
+test('0110 fails loudly on a grant invite whose name maps to no credential', () => {
 	const sqlite = databaseBeforeMigration()
 	insertInvite(sqlite, {
 		id: 'invite-orphan',
@@ -246,7 +246,7 @@ test('0105 fails loudly on a grant invite whose name maps to no credential', () 
 	expect(() => runMigration(sqlite)).toThrow(/CHECK constraint failed/)
 })
 
-test('0105 fails loudly when an integration name is both an integration and an MCP server', () => {
+test('0110 fails loudly when an integration name is both an integration and an MCP server', () => {
 	const sqlite = databaseBeforeMigration()
 	sqlite.exec(`
 		INSERT INTO mcp_server_settings (id, user_id, name, url)
@@ -261,7 +261,7 @@ test('0105 fails loudly when an integration name is both an integration and an M
 	expect(() => runMigration(sqlite)).toThrow(/CHECK constraint failed/)
 })
 
-test('0105 fails loudly on a secret grant that names a vault door key', () => {
+test('0110 fails loudly on a secret grant that names a vault door key', () => {
 	const sqlite = databaseBeforeMigration()
 	insertGrant(sqlite, {
 		id: 'grant-door',
@@ -272,7 +272,7 @@ test('0105 fails loudly on a secret grant that names a vault door key', () => {
 	expect(() => runMigration(sqlite)).toThrow(/CHECK constraint failed/)
 })
 
-test('0105 fails loudly when a secret grant or invite name is also a package secret', () => {
+test('0110 fails loudly when a secret grant or invite name is also a package secret', () => {
 	for (const insert of [
 		(sqlite: DatabaseSync) =>
 			insertGrant(sqlite, {

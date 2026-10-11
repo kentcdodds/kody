@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -7,6 +8,7 @@ import {
 	creditAdminGrantNoteMaxLength,
 } from '#universal/credits.ts'
 import {
+	AdminCreditGrantError,
 	formatAdminCreditGrantAuditReason,
 	grantAdminCreditsToUser,
 } from '#worker/admin/credit-grants.ts'
@@ -57,20 +59,29 @@ export const adminCreditGrantCapability = defineDomainCapability(
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'adminCreditGrant',
-				async () =>
-					grantAdminCreditsToUser({
-						env: ctx.env,
-						target: {
-							stableUserId: args.stableUserId,
-							email: args.email,
-							username: args.username,
-						},
-						grantedBy: { stableUserId: admin.userId, email: admin.email },
-						amountCents: args.amountCents,
-						note: args.note,
-						path: '/mcp',
-						audit: false,
-					}),
+				async () => {
+					try {
+						return await grantAdminCreditsToUser({
+							env: ctx.env,
+							target: {
+								stableUserId: args.stableUserId,
+								email: args.email,
+								username: args.username,
+							},
+							grantedBy: { stableUserId: admin.userId, email: admin.email },
+							amountCents: args.amountCents,
+							note: args.note,
+							path: '/mcp',
+							audit: false,
+						})
+					} catch (error) {
+						// Missing targets and bad grant input are caller-clearable.
+						if (error instanceof AdminCreditGrantError) {
+							throw new McpCallerError(error.message, { cause: error })
+						}
+						throw error
+					}
+				},
 				{
 					successReason: (result) =>
 						formatAdminCreditGrantAuditReason({

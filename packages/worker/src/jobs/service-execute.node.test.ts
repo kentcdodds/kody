@@ -7,6 +7,7 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
@@ -379,6 +380,10 @@ test('interactive-origin leftover jobs run in the background with writable stora
 			packageInvokeTools: expect.anything(),
 		}),
 	)
+	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+		executorTimeoutMs: backgroundExecutorTimeoutMs,
+	})
+	expect(backgroundExecutorTimeoutMs).toBe(300_000)
 })
 
 test('leftover kody.json jobs execute the bundled published entry with job run-record context', async () => {
@@ -920,6 +925,52 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 		error: 'user code failed',
 		logs: [],
 	})
+})
+
+test('runJobNow refuses a run that has no person', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { env } = createExecuteEnv()
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Runs as nobody',
+			code: 'export default async () => ({ ok: true })',
+			schedule: onceSchedule,
+		},
+	})
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const actorless = {
+		...callerContext,
+		request: {
+			...callerContext.request!,
+			actor: null,
+			attribution: {
+				kind: 'automation' as const,
+				source: 'schedule' as const,
+				sourceId: jobView.id,
+			},
+		},
+	}
+
+	await expect(
+		runJobNow({
+			env,
+			userId: personalOrgId(callerContext.user.userId),
+			jobId: jobView.id,
+			callerContext: actorless as never,
+		}),
+	).rejects.toThrow('can only be run now by a signed-in person')
+	await expect(
+		runJobNow({
+			env,
+			userId: personalOrgId(callerContext.user.userId),
+			jobId: jobView.id,
+		}),
+	).rejects.toThrow('can only be run now by a signed-in person')
+	expect(executeSpy).not.toHaveBeenCalled()
 })
 
 test('runJobNow retains once jobs for retention cleanup instead of deleting them', async () => {

@@ -137,6 +137,7 @@ export function PackageFilesExplorer(
 						isPrivate: data.isPrivate ?? false,
 						isListed: data.isListed === true,
 						viewerIsOwner: data.viewerIsOwner ?? false,
+						viewerCanManage: data.viewerCanManage ?? false,
 						active: 'files',
 						filesHref: data.filesBasePath,
 						description: data.description,

@@ -17,14 +17,24 @@ import {
 } from './signing-secret.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
-vi.mock('#mcp/secrets/service.ts', () => ({
-	resolveSecret: vi.fn(async () => ({
+vi.mock('#mcp/secrets/service.ts', () => {
+	const resolveSecret = vi.fn(async (_input: unknown) => ({
 		found: true,
+		credentialId: 'cred-legacy-webhook-secret',
 		value: 'legacy-secret-store-value',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
-	})),
-}))
+	}))
+	return {
+		resolveSecret,
+		findSecretForUse: vi.fn(async (input: unknown) => {
+			const resolved = await resolveSecret(input)
+			const { value: _value, ...found } = resolved
+			return { found, readValue: async () => resolved }
+		}),
+	}
+})
 
 const { resolveSecret } = await import('#mcp/secrets/service.ts')
 

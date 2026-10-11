@@ -30,6 +30,7 @@ import { aggregateConnectionUsageDaily } from '#worker/usage/connection-usage-ro
 import { aggregateCreditAttributionDaily } from '#worker/usage/credit-attribution.ts'
 import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
 import { runCreditDebits } from '#worker/billing/credit-debits.ts'
+import { drainOrgAuditOutbox } from '#worker/orgs/org-audit-outbox.ts'
 
 export {
 	isScheduledLaneName,
@@ -102,6 +103,11 @@ export async function runScheduledLane(input: {
 			const stub = input.env.OAUTH_PURGE_COORDINATOR.get(id)
 			return stub.run({ scheduledAt: input.scheduledAt.getTime() })
 		}
+		case 'org_audit_outbox':
+			return drainOrgAuditOutbox({
+				env: input.env,
+				now: input.scheduledAt,
+			})
 		case 'retention':
 			return pruneRetention({ env: input.env, now: input.scheduledAt })
 		case 'unverified_account_purge':

@@ -85,5 +85,11 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		env,
 		packagePath,
 		owner,
+		// Only a person's own personal-org apps serve here, so they are its Owner.
+		visitor: {
+			userId: user.mcpUser.userId,
+			username: user.username,
+			role: 'owner',
+		},
 	})
 }

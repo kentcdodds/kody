@@ -24,6 +24,7 @@ import {
 	executeInvokeMutualExclusionMessage,
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
+import type * as MemoryToolContextModule from './memory-tool-context.ts'
 import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import {
@@ -43,6 +44,7 @@ vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
+	surfaceToolMemories: vi.fn(),
 	createPackageEventTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(
 		async (
@@ -94,6 +96,19 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
 		mockModule.runModuleWithRegistry(...args),
 }))
+
+vi.mock('./memory-tool-context.ts', async () => {
+	const actual = await vi.importActual<typeof MemoryToolContextModule>(
+		'./memory-tool-context.ts',
+	)
+	mockModule.surfaceToolMemories.mockImplementation(actual.surfaceToolMemories)
+	return {
+		...actual,
+		surfaceToolMemories: (
+			...args: Parameters<typeof MemoryToolContextModule.surfaceToolMemories>
+		) => mockModule.surfaceToolMemories(...args),
+	}
+})
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
 	getCapabilityRegistryForContext: (
@@ -201,6 +216,7 @@ type ExecuteInput = {
 	responseLimit?: number
 	conversationId?: string
 	idempotencyKey?: string
+	memoryContext?: { task?: string; query?: string }
 }
 
 type ExecuteResponse = {
@@ -763,10 +779,10 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 	})
 
 	const quotaLimit = planLimits.free.maxExecuteUniqueWorkersPerDay
-	const quotaHint = buildEntitlementUpgradeHint(
-		'execute_unique_workers_per_day',
-		'free',
-	)
+	const quotaHint = buildEntitlementUpgradeHint({
+		resource: 'execute_unique_workers_per_day',
+		plan: 'free',
+	})
 	const quotaMessage = buildEntitlementLimitMessage({
 		code: entitlementLimitErrorCode,
 		resource: 'execute_unique_workers_per_day',
@@ -877,10 +893,10 @@ test('execute tool releases a keyed claim when a usage denial stops the load', a
 			plan: 'free',
 			limit: 150,
 			current: 150,
-			upgradeHint: buildEntitlementUpgradeHint(
-				'execute_unique_workers_per_day',
-				'free',
-			),
+			upgradeHint: buildEntitlementUpgradeHint({
+				resource: 'execute_unique_workers_per_day',
+				plan: 'free',
+			}),
 		}),
 		new ComputeOverageLimitError({
 			resource: 'unique_worker_days',
@@ -988,7 +1004,10 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 
 	heartbeatMock.scheduleFleetExecuteLastSuccess.mockClear()
 	const stockLimit = planLimits.free.maxSavedPackages
-	const stockHint = buildEntitlementUpgradeHint('saved_packages', 'free')
+	const stockHint = buildEntitlementUpgradeHint({
+		resource: 'saved_packages',
+		plan: 'free',
+	})
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',
@@ -1026,10 +1045,6 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	const quotaEmail = 'quota-metadata@example.com'
 	const quotaUserId = testStableUserIdFromEmail(quotaEmail)
 	const quotaLimit = planLimits.free.maxExecuteUniqueWorkersPerDay
-	const quotaHint = buildEntitlementUpgradeHint(
-		'execute_unique_workers_per_day',
-		'free',
-	)
 	await userMeter.seed({
 		userId: quotaUserId,
 		resource: 'execute_unique_workers_per_day',
@@ -1092,6 +1107,13 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	expect(sandboxLoads).toEqual(['kody-worker-a', 'kody-worker-a'])
 	expect(quotaDenied.isError).toBe(true)
 	expect(quotaDenied.structuredContent.usage).toEqual(atLimitUsage)
+	const quotaHint = quotaDenied.structuredContent.entitlement?.upgradeHint
+	if (quotaHint === undefined) {
+		throw new Error('Expected an entitlement upgrade hint on quota denial')
+	}
+	expect(quotaHint).toMatch(
+		/^This daily limit resets at 00:00 UTC, in (\d+h )?\d+m\. Rerun code you already ran today and vary params; repeats are free, or upgrade your plan at \/@[^/]+\/-\/billing\.$/,
+	)
 	const quotaEntitlement = {
 		code: entitlementLimitErrorCode,
 		resource: 'execute_unique_workers_per_day',
@@ -1133,11 +1155,16 @@ test('execute tool refuses past the per-minute runaway limit before any run work
 		baseUrl: 'https://example.com',
 		user: { userId, email },
 	})
+	mockModule.surfaceToolMemories.mockClear()
 	const refused = await handler({
 		code: shouldNotRunCode,
 		conversationId: 'conv-execute-rate',
+		memoryContext: { task: 'recall what the user asked for last time' },
 	})
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	// Memory retrievers can run package code, so a refused call never starts
+	// them.
+	expect(mockModule.surfaceToolMemories).not.toHaveBeenCalled()
 	expect(refused.isError).toBe(true)
 	expect(refused.structuredContent.error).toMatch(
 		new RegExp(

@@ -46,6 +46,9 @@ export function PackageSettingsRoute(handle: Handle) {
 	let listingId: string | null = null
 	let defaultBranch: string | null = null
 	let ownerProfilePublic = true
+	let viewerCanPublish = false
+	let viewerCanDelete = false
+	let viewerCanAdoptCommunityFork = false
 	let ownerDetailsMessage: string | null = null
 	/** Payload last applied to the closure state above. */
 	let appliedShell: PackageSettingsShell | null = null
@@ -82,7 +85,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				!response.ok ||
 				!payload?.ok ||
 				!payload.ownerPackage ||
-				!payload.viewerIsOwner
+				!payload.viewerCanManage
 			) {
 				return { kind: 'not-found' }
 			}
@@ -98,6 +101,10 @@ export function PackageSettingsRoute(handle: Handle) {
 				listingId: payload.listing?.id ?? null,
 				defaultBranch: payload.listing?.defaultBranch ?? null,
 				ownerProfilePublic: payload.ownerProfilePublic,
+				viewerCanPublish: payload.viewerCanPublish === true,
+				viewerCanDelete: payload.viewerCanDelete === true,
+				viewerCanAdoptCommunityFork:
+					payload.viewerCanAdoptCommunityFork === true,
 			}
 		},
 	})
@@ -169,6 +176,10 @@ export function PackageSettingsRoute(handle: Handle) {
 					if (snapshot.data.ownerProfilePublic !== undefined) {
 						ownerProfilePublic = snapshot.data.ownerProfilePublic
 					}
+					viewerCanPublish = snapshot.data.viewerCanPublish
+					viewerCanDelete = snapshot.data.viewerCanDelete
+					viewerCanAdoptCommunityFork =
+						snapshot.data.viewerCanAdoptCommunityFork
 					ownerDetailsMessage = null
 					break
 				case 'unauthorized':
@@ -225,6 +236,7 @@ export function PackageSettingsRoute(handle: Handle) {
 							isPrivate,
 							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
+							viewerCanManage: true,
 							active: 'settings',
 							filesHref: getPackageTreeHref({
 								username: chromeUsername,
@@ -251,6 +263,9 @@ export function PackageSettingsRoute(handle: Handle) {
 							ownerPackage,
 							lockInFlight: lockInFlight.has(ownerPackage.id),
 							ownerDetailsMessage,
+							viewerCanPublish,
+							viewerCanDelete,
+							viewerCanAdoptCommunityFork,
 							onToggleLock: () => void togglePackageLock(),
 							onPackagesPayload: (payload) => {
 								const selected = payload.selectedPackage

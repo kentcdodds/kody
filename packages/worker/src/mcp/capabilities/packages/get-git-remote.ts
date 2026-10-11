@@ -4,6 +4,7 @@ import {
 	authorize,
 	authorizePackageWrite,
 	denyProfileBoundPackageCreate,
+	packageResource,
 } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -165,14 +166,15 @@ export const getGitRemoteCapability = defineDomainCapability(
 					},
 				})
 			// denyProfileBoundPackageCreate above stops a profile-bound credential
-			// before the stub exists. An existing package with write scope must
-			// list profile write.
-			if (args.scope === 'write' && !created) {
-				await authorizePackageWrite(authorizeCtx, {
-					id: packageId,
-					userId,
-					label: name,
-				})
+			// before the stub exists. An existing package needs the scope's
+			// permission on that package, not just somewhere in the org.
+			if (!created) {
+				const pkg = { id: packageId, userId, label: name }
+				if (args.scope === 'write') {
+					await authorizePackageWrite(authorizeCtx, pkg)
+				} else {
+					await authorize(authorizeCtx, 'package:read', packageResource(pkg))
+				}
 			}
 			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,

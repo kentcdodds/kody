@@ -46,10 +46,46 @@ export function resolveLocalMigrationPersistArguments(
 	return ['--persist-to', resolveLocalD1PersistPath({ env })]
 }
 
-function applyCommand(
-	binding: string,
+/**
+ * Wrangler config `migrations_dir` for each local binding, resolved from the
+ * repo root. The stale-name check compares `d1_migrations` against these.
+ */
+const localMigrationTargets = [
+	{
+		binding: 'APP_DB',
+		migrationsDir: 'packages/worker/migrations',
+		configArguments: [],
+	},
+	{
+		binding: 'AUDIT_DB',
+		migrationsDir: 'packages/worker/audit-migrations',
+		configArguments: [],
+	},
+	{
+		binding: 'JOBS_DB',
+		migrationsDir: 'packages/jobs-worker/migrations',
+		configArguments: ['--config', jobsWorkerWranglerConfigPath],
+	},
+] as const
+
+function staleCheckCommand(
+	target: (typeof localMigrationTargets)[number],
 	persistArguments: ReadonlyArray<string>,
-	extra: ReadonlyArray<string> = [],
+) {
+	return [
+		'tools/check-stale-local-migrations.ts',
+		'--binding',
+		target.binding,
+		'--migrations-dir',
+		target.migrationsDir,
+		...target.configArguments,
+		...persistArguments,
+	]
+}
+
+function applyCommand(
+	target: (typeof localMigrationTargets)[number],
+	persistArguments: ReadonlyArray<string>,
 ) {
 	return [
 		workerEnvFileArgument,
@@ -57,9 +93,9 @@ function applyCommand(
 		'd1',
 		'migrations',
 		'apply',
-		binding,
+		target.binding,
 		'--local',
-		...extra,
+		...target.configArguments,
 		...persistArguments,
 	]
 }
@@ -67,9 +103,11 @@ function applyCommand(
 /**
  * APP_DB, AUDIT_DB, and JOBS_DB migrations for one local persist directory.
  * Bookkeeping reset stays APP_DB-only; it rewrites pre-squash `d1_migrations`
- * rows before the regular apply. `0090-teams-credential-org-binding.sql`
- * rewrites API token scopes in SQL; `tools/teams-migration/rewrite-api-token-scopes.ts`
- * can re-run the same map for local repair.
+ * rows before the regular apply. Each apply is preceded by
+ * `check-stale-local-migrations.ts`, which fails when the state records a
+ * migration name that is no longer on disk (a renamed or deleted file).
+ * `0090-teams-credential-org-binding.sql` rewrites API token scopes in SQL.
+ * The same map lives in `packages/worker/src/api-tokens/legacy-scope-rewrite.ts`.
  */
 export function buildLocalMigrationCommands(input: {
 	argv: ReadonlyArray<string>
@@ -81,11 +119,9 @@ export function buildLocalMigrationCommands(input: {
 	)
 	return [
 		['tools/ci/reset-migration-bookkeeping.ts', '--local', ...persistArguments],
-		applyCommand('APP_DB', persistArguments),
-		applyCommand('AUDIT_DB', persistArguments),
-		applyCommand('JOBS_DB', persistArguments, [
-			'--config',
-			jobsWorkerWranglerConfigPath,
+		...localMigrationTargets.flatMap((target) => [
+			staleCheckCommand(target, persistArguments),
+			applyCommand(target, persistArguments),
 		]),
 	]
 }

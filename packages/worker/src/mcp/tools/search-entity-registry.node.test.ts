@@ -124,6 +124,7 @@ test('descriptor seam follows registry order and preserves integration affinity'
 			],
 			userSecretRows: [
 				{
+					credentialId: 'cred-weather_api_key',
 					name: 'weather_api_key',
 					description: 'Weather API key',
 					scope: 'user',

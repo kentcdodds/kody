@@ -190,6 +190,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		authArea,
 		(m) => m.authProvidersRouteLoader,
 	),
+	[routePattern(routes.orgInviteJoin)]: lazyRouteLoader(
+		authArea,
+		(m) => m.orgInviteJoinRouteLoader,
+	),
 	[oauthPaths.authorize]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.oauthAuthorizeRouteLoader,
@@ -505,6 +509,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.resetPassword)]: (
 		<LazyAuthRoute render={(m) => <m.ResetPasswordRoute />} />
+	),
+	[routePattern(routes.orgInviteJoin)]: (
+		<LazyAuthRoute render={(m) => <m.OrgInviteJoinRoute />} />
 	),
 	[routePattern(routes.verify)]: (
 		<LazyAuthRoute render={(m) => <m.VerifyRoute />} />

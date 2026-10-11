@@ -105,17 +105,37 @@ export async function createStubSavedPackage(input: {
 		// off Sentry even if the packageGetGitRemote schema max is bypassed.
 		throw new McpCallerError(getErrorMessage(error), { cause: error })
 	}
-	const files = buildStubPackageFiles({ name, kodyId, description })
+	return await createSavedPackageFromFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		owner: input.owner,
+		files: buildStubPackageFiles({ name, kodyId, description }),
+	})
+}
+
+/**
+ * Publish `files` as a new private saved package owned by `owner`, then
+ * refresh its projection (which syncs any `kody.jobs` into job rows).
+ */
+export async function createSavedPackageFromFiles(input: {
+	env: Env
+	baseUrl: string
+	owner: PackageOwnerContext
+	files: Record<string, string>
+	/** Lets a caller that rolls back on failure know the id before publish. */
+	packageId?: string
+}) {
+	const { files } = input
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
-		throw new Error('Stub package files are missing package.json.')
+		throw new Error('Package files are missing package.json.')
 	}
 	const manifest = parseAuthoredPackageJson({
 		content: packageJsonContent,
 		manifestPath: 'package.json',
 		expectedPackageScope: input.owner.ownerScope,
 	})
-	const packageId = crypto.randomUUID()
+	const packageId = input.packageId ?? crypto.randomUUID()
 	const ensuredSource = await ensureEntitySource({
 		db: input.env.APP_DB,
 		env: input.env,
@@ -146,7 +166,7 @@ export async function createStubSavedPackage(input: {
 			tags_json: JSON.stringify(manifest.kody.tags ?? []),
 			search_text: manifest.kody.searchText ?? null,
 			source_id: ensuredSource.id,
-			has_app: 0,
+			has_app: manifest.kody.app ? 1 : 0,
 			has_skills: 0,
 			hidden: 0,
 			is_private: 1,
@@ -154,6 +174,7 @@ export async function createStubSavedPackage(input: {
 			updated_at: now,
 		},
 		input.env,
+		{ actorUserId: input.owner.actorUserId },
 	)
 	await upsertSavedPackageVector(input.env, {
 		packageId,
@@ -164,6 +185,7 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.owner.ownerUserId,
+		actorUserId: input.owner.actorUserId,
 		userEmail: packageOwnerEntitlementEmail(input.owner),
 		packageId,
 		sourceId: ensuredSource.id,

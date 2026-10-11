@@ -73,6 +73,8 @@ async function loadAutomaticMemories(input: {
 	const result = await searchMemoryRecords({
 		env: input.env,
 		userId: input.userId,
+		// Auto-surface reads only the person's own personal org, which they own.
+		scope: { kind: 'all' },
 		storageContext: {
 			sessionId: input.callerContext.storageContext?.sessionId ?? null,
 			appId: input.callerContext.storageContext?.appId ?? null,

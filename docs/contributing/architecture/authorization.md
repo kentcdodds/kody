@@ -52,12 +52,14 @@ synchronous, for callers that already hold the compiled permissions.
    `package:write`, `package:delete`, and `package:publish` handlers call
    `authorizePackageWrite` once the saved package row is known. Those
    permissions map to the profile `write` action, so a profile that lists only
-   `read` cannot mutate, delete, or publish that package. A profile-bound
-   credential cannot create a saved package: `denyProfileBoundPackageCreate`
-   runs from `packageSave` and `packageGetGitRemote` when the package does not
-   exist yet, and from `communityFork` and `repoPromoteToPackage`. Plain repo
-   create stays an org-level `package:create` check. A profile names existing
-   packages only.
+   `read` cannot mutate, delete, or publish that package. Handlers that read or
+   execute one saved package call `authorize` with `package:read` or
+   `package:execute` on `packageResource` (profile `read` and `execute`), and
+   lists filter rows with `checkPermission`. A profile-bound credential cannot
+   create a saved package: `denyProfileBoundPackageCreate` runs from
+   `packageSave` and `packageGetGitRemote` when the package does not exist yet,
+   and from `communityFork` and `repoPromoteToPackage`. Plain repo create stays
+   an org-level `package:create` check. A profile names existing packages only.
 
 A surface check without a resource (capability `orgPermission`, Open API
 `x-kody-permission`) passes when the permission is held at org level **or on any
@@ -75,14 +77,14 @@ Profiles and the signed-in step are the other denials that can fire.
 1. re-checks that the acting person still has access to `orgId` (live
    membership, team, or outside-collaborator grant; org active), once per
    request context;
-2. calls `authorize` with `secret:use` or `integration:use` on the `credential`
-   resource of the row that resolved, by its stable credential id, unless the
-   package stamp is `attested` (hosted bundler provenance, package apps,
-   webhooks). Ad hoc code (no stamp) and `claimed` stamps (CLI `--local`
-   CapabilityProxy) always need Use; a claimed stamp is checked for
-   `package:execute` only and is never secret authority. A name with no
-   credential is checked against a target no grant names, so a non-holder gets a
-   denial rather than a not-found;
+2. looks up the credential the name resolves to without reading its value, then
+   calls `authorize` with `secret:use` or `integration:use` on its `credential`
+   resource, by its stable credential id, for every package stamp. A `claimed`
+   stamp (CLI `--local` CapabilityProxy) is checked for `package:execute` only
+   and is never secret authority. A name with no credential is checked against a
+   target no grant names, so a non-holder gets a denial rather than a not-found.
+   Denial messages name the credential by family and name (`secret apiKey`),
+   never by id;
 3. applies the package rules (allowlists, usageMode, provider grants), then
    reads storage;
 4. schedules one `credential.resolve` row in `org_audit_events` per resolution
@@ -103,10 +105,80 @@ own credential: Use on its door-key secret is not Use on the vault.
 `secretList`, `integrationList`, `mcpServerList`, and `secretProviderList`
 return the ids that `accessGrant` takes.
 
+`accessGrant`, `accessList`, and grant invites still accept `secret` and
+`integration` targets by name. That is the old lane: the name resolves to the
+credential id once, at grant time, and the grant is stored under `credential`; a
+name that matches no credential is refused. The by-name targets are removed
+together with secret placeholders when the old credential lane is removed.
+
 `credential-storage-boundary.node.test.ts` fails if credential storage is read
 outside the door. Credential storage keys use `ownerIdFromCaller` (org id), not
 the acting person. Automation is Owner. See
 [ADR 0021](../decisions/0021-publish-gated-package-composition.md).
+
+### Enablements
+
+Everything that runs on its own (cron jobs, subscriptions including inbound
+email, webhooks) is an enablement (`packages/worker/src/enablements/`,
+credentials plan v4 section 3.3). Each `enablements` row is one person's (the
+enabler's) switch for one trigger instance: the job id, the subscribing package
+id plus topic, or the webhook endpoint id. Its state is `on`, `paused` (with the
+cause), or `off`. One person may hold several enablements of the same trigger.
+
+`enablement_org_migrations` records which path an org uses. An org without a
+`migrated` row runs triggers as Automation, as Owner. The admin capability
+`adminEnablementsMigrate` writes one enablement per existing job, webhook, and
+subscription for a real member (the creator if still a member, else the earliest
+Owner), generates a signing secret for unsigned webhooks, and for team orgs
+first emails each member which enablements will bill them. Only triggers that
+run today migrate: disabled or kill-switched jobs, disabled webhook URLs, and
+URLs whose webhook is no longer declared are counted and left off.
+`notice_plan_json` records what each member's notice listed, so a retried
+`notify` emails nobody twice, and `apply` migrates a team org only when every
+planned item was in a notice to its enabler. A unique index allows one migrated
+row per trigger instance. New team orgs start `migrated`. Personal orgs use the
+Automation path (their only person is the Owner) until `adminEnablementsMigrate`
+backfills them.
+
+In a migrated org, `planEnablementRuns` (`enablements/run-gate.ts`) is the one
+gate every trigger passes:
+
+- A trigger runs once per `on` enablement, as its enabler. The request context
+  has the enabler as actor, `attribution.kind: 'user'`, the enablement id as
+  credential id, and the enabler's live role as membership. Billing, usage, and
+  audit go to the enabler (`backgroundRunBilledActor`); ad hoc execute bills the
+  caller.
+- Before each run the gate re-reads the enabler: a live account, still in the
+  org, and `package:execute` on the package. A failure pauses the enablement
+  (`org_access` or `package_access`) and drops the event.
+- `resolveCredential` pauses an enablement run that lacks Use on an org
+  credential (`credential_access`), even for an attested package stamp. The
+  pause keeps the credential's family and name (what the waiting queue and
+  `enablementList` show) and its id in `paused_credential_id`, which the resume
+  check uses. A pause on a name that matched no credential has no id and
+  resolves the name on each check (old lane).
+- The next event checks again and resumes a paused enablement once access is
+  back. There is never a fallback to another person, credential, or Owner.
+- No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook
+  answers 409 `enablement_not_on`, and a subscription event is dropped.
+
+Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
+
+- Events raised by a run reach only that run's enabler, and nobody when the run
+  had no person. Webhook-raised events follow, since the webhook run has its
+  enabler as actor.
+- Member-sent email reaches only the sender. Mail from a verified non-member
+  reaches the earliest live Owner.
+- Org-wide platform events (integrations, forks, run errors) reach enablers who
+  can see the resource the event is about (`enablerCanSee`). Run errors with no
+  package or job reach Owners only.
+
+People turn triggers on for themselves with `enablementEnable` and off with
+`enablementDisable` (the enabler or an Owner); `enablementList` lists them.
+Publishing never turns anything on. Minting a webhook URL turns it on for the
+minter when they hold `package:execute` and nobody else has. Webhooks in a
+migrated org always verify a signature: the declared `verification`, else
+`X-Kody-Signature` over the body with the endpoint's own signing secret.
 
 ### Checking many resources
 

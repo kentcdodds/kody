@@ -2,6 +2,7 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { toPublicProfilePackageItem } from '#app/community-public.ts'
 import {
 	canSeeResource,
+	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
@@ -24,8 +25,7 @@ function readOptionalLimit(raw: string | null) {
  * Repositories owned by a team org (`saved_packages.user_id = org.id`), for
  * `/@slug/-/packages`. Each row is shown only when the viewer can see that
  * package (`canSeeResource`): Owners see everything, other members see what
- * their grants and teams give them. Team packages have no `/@slug/<kody-id>`
- * page yet, so rows do not link to one.
+ * their grants and teams give them.
  */
 export async function loadOrgRepositoriesData(input: {
 	env: Env
@@ -87,13 +87,28 @@ export async function loadOrgRepositoriesData(input: {
 			publicPackageCount: visible.filter((pkg) => !pkg.isPrivate).length,
 			listingCount: visible.filter((pkg) => pkg.communityListingId).length,
 		},
-		packages: visible.map((pkg) =>
-			toPublicProfilePackageItem(pkg, { includeOwnerVisibility: true }),
-		),
-		activity: [],
+		packages: visible.map((pkg) => {
+			const resource = packageResource({
+				id: pkg.packageId,
+				userId: orgId,
+				label: pkg.name,
+			})
+			// List visibility is broader than the package page (read|execute|write).
+			// Only link when the viewer can open the page (`package:read`).
+			const canOpenDetail = checkPermission(
+				access,
+				'package:read',
+				resource,
+			).allowed
+			return toPublicProfilePackageItem(pkg, {
+				includeOwnerVisibility: true,
+				username: slug,
+				canOpenDetail,
+			})
+		}),
+		activity: null,
 		query: query || null,
 		isSelf: true,
 		loggedIn: true,
-		packageLinks: false,
 	}
 }

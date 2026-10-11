@@ -26,7 +26,9 @@ import {
 import {
 	credentialPermissionFamily,
 	credentialResource,
+	findCredentialIdByLegacyName,
 	getOrgCredential,
+	legacyNamedCredentialTargets,
 } from '#worker/credentials/credential-ids.ts'
 import {
 	getUsernameFormatValidationError,
@@ -45,6 +47,42 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const grantPresetSchema = z.enum(grantPresets)
 
 export const grantResourceTypeSchema = z.enum(grantResourceTypes)
+
+export const grantTargetTypeSchema = z.enum([
+	...grantResourceTypes,
+	...legacyNamedCredentialTargets,
+])
+
+type GrantTargetType = z.infer<typeof grantTargetTypeSchema>
+
+/**
+ * Resolves an old-lane by-name credential target to its credential id, so
+ * the grant is stored under `credential`.
+ */
+export async function resolveGrantTarget(
+	ctx: CapabilityContext,
+	target: { type: GrantTargetType; id: string },
+): Promise<{ resourceType: GrantResourceType; resourceId: string }> {
+	switch (target.type) {
+		case 'secret':
+		case 'integration': {
+			const request = requireMcpRequest(ctx.callerContext)
+			const credentialId = await findCredentialIdByLegacyName(
+				ctx.env.APP_DB,
+				request.org.id,
+				{ type: target.type, name: target.id },
+			)
+			if (!credentialId) {
+				throw new McpCallerError(
+					`No ${target.type} named "${target.id}" in this organization. Pass resource_type credential with the credential_id from secretList, integrationList, mcpServerList, or secretProviderList.`,
+				)
+			}
+			return { resourceType: 'credential', resourceId: credentialId }
+		}
+		default:
+			return { resourceType: target.type, resourceId: target.id }
+	}
+}
 
 export const orgRoleSchema = z.enum(['owner', 'member', 'billing'])
 

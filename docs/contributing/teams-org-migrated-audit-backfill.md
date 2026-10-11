@@ -49,9 +49,10 @@ gh workflow run teams-org-migrated-audit-backfill.yml --ref main \
 preview. The script refuses any other name, so a preview target cannot resolve
 to the production databases `kody` and `kody-audit`.
 
-Production, from `main`, as `kentcdodds`. Dry-run and apply both need the
-confirm phrase. To approve another runner, add their GitHub login to the
-workflow check in a reviewed PR.
+Production, from `main`, as `kentcdodds` or `kody-bot` (agents dispatch through
+`@kentcdodds/github` as `kody-bot`). Dry-run and apply both need the confirm
+phrase. To approve another runner, add their GitHub login to the workflow check
+in a reviewed PR.
 
 ```bash
 gh workflow run teams-org-migrated-audit-backfill.yml --ref main \

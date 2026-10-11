@@ -1,5 +1,6 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import { loadWritableAccountSavedPackage } from '#app/account-package-write-access.ts'
+import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadPublicTreeFiles } from '#app/package-files-data.ts'
 import { buildPublishCommitDiff } from '#app/package-publish-diff.ts'
@@ -13,10 +14,7 @@ import {
 	isGitCommitSha,
 	isSavedPackageLocked,
 } from '#worker/package-registry/package-publish-lock.ts'
-import {
-	getSavedPackageById,
-	setSavedPackageLockedAt,
-} from '#worker/package-registry/repo.ts'
+import { setSavedPackageLockedAt } from '#worker/package-registry/repo.ts'
 import { readArtifactTreeAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -34,22 +32,21 @@ export async function loadAccountPackageApprovePublishData(input: {
 }): Promise<
 	AccountPackageApprovePublishLoaderData | { ok: false; error: string }
 > {
-	const userId = ownerIdFromCaller({
-		request: input.user.request,
-		user: input.user.mcpUser,
-	})
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId,
+	const resolved = await loadWritableAccountSavedPackage({
+		env: input.env,
+		user: input.user,
 		packageId: input.packageId,
+		permission: 'package:write',
 	})
-	if (!savedPackage) {
+	if (!resolved.ok) {
 		return { ok: false, error: 'Package not found.' }
 	}
+	const { savedPackage, ownerUserId } = resolved.package
 	const source = await getEntitySourceById(
 		input.env.APP_DB,
 		savedPackage.sourceId,
 	)
-	if (!source || source.user_id !== userId) {
+	if (!source || source.user_id !== ownerUserId) {
 		return { ok: false, error: 'Package source not found.' }
 	}
 	const requestUrl = new URL(input.request.url)
@@ -92,6 +89,12 @@ export async function loadAccountPackageApprovePublishData(input: {
 			])
 	const unpublishedCompare = publishedCommit != null && !publishedFiles.resolved
 	const pendingMissing = !pendingFiles.resolved
+	const ownerBinding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.user.mcpUser.userId,
+		ownerUserId,
+	)
+	const ownerUsername = ownerBinding?.org.slug ?? input.user.username
 	return {
 		ok: true,
 		email: input.user.email,
@@ -106,11 +109,11 @@ export async function loadAccountPackageApprovePublishData(input: {
 		pendingCommit,
 		alreadyPublished,
 		filesHref: getPackageTreeHref({
-			username: input.user.username,
+			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
 		}),
 		packageHref: routes.communityPackage.href({
-			username: input.user.username,
+			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
 		}),
 		diff:
@@ -171,31 +174,29 @@ export async function handleAccountPackagePublishLockAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
-	const userId = ownerIdFromCaller({
-		request: input.user.request,
-		user: input.user.mcpUser,
-	})
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId,
+	const resolved = await loadWritableAccountSavedPackage({
+		env: input.env,
+		user: input.user,
 		packageId,
+		permission: 'package:write',
 	})
-	if (!savedPackage) {
-		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
-	}
+	if (!resolved.ok) return resolved.response
+	const { savedPackage, ownerUserId } = resolved.package
 
 	if (action === 'lock' || action === 'unlock') {
 		if (action === 'lock' && isSavedPackageLocked(savedPackage.lockedAt)) {
 			return jsonResponse(
-				await loadAccountPackagesData({
+				await reloadAccountPackagesAfterWrite({
 					env: input.env,
 					request: input.request,
 					user: input.user,
-					pathPackageId: packageId,
+					packageId,
+					ownerUserId,
 				}),
 			)
 		}
 		const changed = await setSavedPackageLockedAt(input.env.APP_DB, {
-			userId,
+			userId: ownerUserId,
 			packageId,
 			lockedAt: action === 'lock' ? new Date().toISOString() : null,
 		})
@@ -203,11 +204,12 @@ export async function handleAccountPackagePublishLockAction(input: {
 			return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
 		}
 		return jsonResponse(
-			await loadAccountPackagesData({
+			await reloadAccountPackagesAfterWrite({
 				env: input.env,
 				request: input.request,
 				user: input.user,
-				pathPackageId: packageId,
+				packageId,
+				ownerUserId,
 			}),
 		)
 	}
@@ -227,7 +229,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		input.env.APP_DB,
 		savedPackage.sourceId,
 	)
-	if (!source || source.user_id !== userId) {
+	if (!source || source.user_id !== ownerUserId) {
 		return jsonResponse({ ok: false, error: 'Package source not found.' }, 404)
 	}
 	const sessionId = `approve-publish-${savedPackage.id}`
@@ -237,7 +239,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 	).publishFromExternalRef({
 		sessionId,
 		sourceId: source.id,
-		userId,
+		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
 		baseUrl: getAppBaseUrl({
@@ -250,11 +252,12 @@ export async function handleAccountPackagePublishLockAction(input: {
 		case 'published':
 		case 'already_published':
 			return jsonResponse(
-				await loadAccountPackagesData({
+				await reloadAccountPackagesAfterWrite({
 					env: input.env,
 					request: input.request,
 					user: input.user,
-					pathPackageId: packageId,
+					packageId,
+					ownerUserId,
 				}),
 			)
 		case 'checks_failed':

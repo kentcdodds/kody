@@ -139,6 +139,16 @@ test('management paths name settings and members under the /- separator', () => 
 		slug: 'acme',
 		section: 'members',
 	})
+	expect(parseOrgManagementPath('/@acme/-/members/invite-links.json')).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
+	expect(
+		parseOrgManagementPath('/@acme/-/members/invite-links-revoke.json'),
+	).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
 	expect(parseOrgManagementPath('/@acme/-/teams')).toEqual({
 		slug: 'acme',
 		section: 'teams',

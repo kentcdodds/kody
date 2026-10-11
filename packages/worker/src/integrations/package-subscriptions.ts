@@ -1,4 +1,6 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { findIntegrationCredentialId } from '#worker/integrations/credentials.ts'
 import { readSignupOrgSlugOrNull } from '#worker/orgs/signup-org-slug.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
@@ -169,6 +171,11 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
+	const credentialId = await findIntegrationCredentialId({
+		env: input.env,
+		userId: ownerIdFromStored(input.userId),
+		name: input.integrationName,
+	})
 	const { subscriptions, discoveryErrors } =
 		await loadMatchingAuthSubscriptions({
 			env: input.env,
@@ -193,6 +200,11 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 						}),
 						source: 'integrations',
 						request: { kind: 'platform-event', sourceId: 'integrations' },
+						audience: {
+							resource: credentialId
+								? { type: 'credential', id: credentialId }
+								: null,
+						},
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

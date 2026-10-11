@@ -341,7 +341,7 @@ test('$0 Pro keeps 500 execute/day and stops at 501 with a top-up message; funde
 		current: 500,
 	})
 	expect(denied.message).toBe(
-		'Plan limit reached: your "pro" plan allows at most 500 unique execute workers per day and you currently have 500. Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
+		'Plan limit reached: your "pro" plan allows at most 500 unique execute workers per day and you currently have 500. This daily limit resets at 00:00 UTC, in 12h 0m. Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
 	)
 
 	const funded = await seedPro('credits-funded-daily')
@@ -520,6 +520,11 @@ test('debits charge only usage above the include, are idempotent, and never back
 	await topUp(userId, 500)
 	await debit()
 	expect(await balance(userId)).toBe(5_000_000)
+	// Empty-wallet progress settled against the same 350 Pro include, so only
+	// usage after the top-up is charged.
+	await setRollup(userId, 910)
+	await debit()
+	expect(await balance(userId)).toBe(5_000_000 - 10 * 4_000)
 })
 
 test('include → credits → stop: an empty Pro wallet runs free within the include and stops past it', async () => {
@@ -700,6 +705,7 @@ test('plans without a wallet are never stopped past the monthly include, and ret
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	for (const resource of pastIncludeStopped) await consume(gift, resource)
@@ -737,6 +743,7 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	await setRollup(userId, 600)
@@ -769,6 +776,7 @@ test('gift overlay with no prior wallet row is not skipped by debit and is not b
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	expect(
@@ -1339,6 +1347,7 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 })

@@ -172,8 +172,10 @@ export type CommunityDetailLoaderData = {
 	listing: PublicCommunityListing | null
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
-	/** True when the signed-in viewer owns this listing. */
+	/** True when the signed-in viewer may open the private package view. */
 	viewerIsOwner: boolean
+	/** True when the signed-in viewer may change the package (settings, publish). */
+	viewerCanManage: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
@@ -212,6 +214,7 @@ export type PackageFilesLoaderData = {
 	username?: string
 	kodyId?: string
 	viewerIsOwner?: boolean
+	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
 	iconUrl?: string | null
@@ -245,6 +248,10 @@ type CommunityDetailShellLoaderData = {
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
+	viewerCanPublish?: boolean
+	viewerCanDelete?: boolean
+	viewerCanAdoptCommunityFork?: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
 }
@@ -263,20 +270,18 @@ export type ProfileLoaderData = {
 	ok: true
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	/** Null when the profile has no activity source (e.g. team org repositories). */
+	activity: Array<PublicCommunityActivityItem> | null
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
-	/** False when rows have no package page to open (team-org repositories). */
-	packageLinks?: boolean
 }
 
 /** Package list + activity for `/@username`. Chips and search (`q`) apply client-side. */
 export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
-	packageLinks?: boolean
+	activity: Array<PublicCommunityActivityItem> | null
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -315,7 +320,6 @@ export function toProfileListLoaderData(
 		profile: data.profile,
 		packages: data.packages,
 		activity: data.activity,
-		...(data.packageLinks === false ? { packageLinks: false } : {}),
 	}
 }
 
@@ -1254,13 +1258,54 @@ export type OrgInviteView = {
 	expiresAt: string
 }
 
+export type OrgInviteLinkView = {
+	id: string
+	role: 'member' | 'billing'
+	roleLabel: string
+	allowedEmailDomains: Array<string>
+	maxUses: number | null
+	useCount: number
+	expiresAt: string
+	createdAt: string
+	createdByUsername: string | null
+	createdByDisplayName: string | null
+}
+
 export type OrgMembersLoaderData = {
 	ok: true
 	org: OrgManagementOrg
 	members: Array<OrgMemberView>
 	invites: Array<OrgInviteView>
+	inviteLinks: Array<OrgInviteLinkView>
 	canManage: boolean
 }
+
+export type OrgInviteJoinLoaderData =
+	| {
+			ok: true
+			token: string
+			org: {
+				slug: string
+				displayName: string | null
+				avatarUrl: string | null
+			}
+			role: 'member' | 'billing'
+			roleLabel: string
+			alreadyMember: boolean
+			authenticated: boolean
+	  }
+	| {
+			ok: false
+			error: string
+			reason:
+				| 'missing'
+				| 'invalid'
+				| 'revoked'
+				| 'expired'
+				| 'exhausted'
+				| 'org_inactive'
+				| 'personal_org'
+	  }
 
 export type OrgTeamMemberView = {
 	userId: string
@@ -1630,6 +1675,8 @@ export type PackageWebhookRevealedUrl = {
 	id: string
 	handle: string
 	url: string
+	/** Set when deliveries must carry `X-Kody-Signature` with this secret. */
+	signingSecret: string | null
 }
 
 export type PackageWebhooksActionPayload = PackageWebhooksLoaderData & {
@@ -2563,6 +2610,7 @@ export type AppLoaderData = {
 	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
 	orgSettings?: OrgSettingsLoaderData
 	orgMembers?: OrgMembersLoaderData
+	orgInviteJoin?: OrgInviteJoinLoaderData
 	orgTeams?: OrgTeamsLoaderData
 	orgGrants?: OrgGrantsLoaderData
 	orgCollaborators?: OrgCollaboratorsLoaderData

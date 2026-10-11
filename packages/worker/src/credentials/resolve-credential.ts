@@ -9,20 +9,20 @@
  * 1. checks that the acting person still has access to the org (live
  *    membership, team, or outside-collaborator grant, org not deleted or
  *    suspended), so access that ended without a cascade cannot resolve;
- * 2. requires the actor's Use on the credential's stable id unless the
- *    package stamp is attested (see `PackageStamp`). The id is the one of the
- *    row that resolved, so a renamed credential keeps its grants and a
- *    deleted then recreated name starts with none. A value read before the
- *    check never leaves the door on denial;
+ * 2. requires the actor's Use on the credential's stable id, whatever the
+ *    package stamp. The id comes from a metadata read (no decrypt), so a
+ *    renamed credential keeps its grants and a deleted then recreated name
+ *    starts with none. A trigger acts as its enabler, so it needs the
+ *    enabler's own Use, and a denial pauses that enablement;
  * 3. applies the package rules for that use (secret allowlists, integration
  *    and MCP usage modes, vault provider grants), then reads storage;
  * 4. schedules exactly one `credential.resolve` org audit row for every
  *    outcome (success, not found, denied, failed), for every kind of actor.
  *    The row never holds the credential value.
  *
- * Automation (a request with no acting person) acts as Owner, as today.
- * Platform paths with no request at all (webhook ingress) pass an attested
- * package stamp.
+ * A request with no acting person holds no permissions. The only path with
+ * no request at all is webhook ingress verifying a signature, which passes an
+ * attested package stamp.
  */
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
@@ -46,7 +46,9 @@ import {
 } from '#worker/integrations/token-refresh.ts'
 import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
-import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { pauseEnablementOnDenial } from '#worker/enablements/pause-on-denial.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { enablementIdOf } from '#worker/request-context/request-context.ts'
 import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import {
@@ -70,7 +72,11 @@ import {
 	resolveProviderSecret,
 } from '#mcp/secrets/secret-providers/service.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
-import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import {
+	findSecretForUse,
+	type FoundSecret,
+	type ResolvedSecret,
+} from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -111,6 +117,11 @@ export type CredentialTarget =
 			use: 'package-secret-mount'
 			alias: string
 			callerContext: McpCallerContext
+			/**
+			 * `.has` uses `presence`: find the row and run package-access
+			 * without decrypting. `.get` keeps the default `value` path.
+			 */
+			access?: 'presence' | 'value'
 	  }
 	/**
 	 * Webhook `verification.secretName`, challenge `secretName`, and the apply
@@ -212,6 +223,15 @@ export async function resolveCredential<T extends CredentialTarget>(
 		result = await resolveTarget(input, input.credential, subject)
 	} catch (error) {
 		audit(credentialResolutionOutcomeForError(error))
+		const enablementId = enablementIdOf(input.actor)
+		if (enablementId && error instanceof AuthorizationError) {
+			await pauseEnablementOnDenial({
+				db: input.env.APP_DB,
+				orgId: input.orgId,
+				enablementId,
+				error,
+			})
+		}
 		throw error
 	}
 	audit(
@@ -228,6 +248,13 @@ type AnyResolvedCredential =
 function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 	switch (credential.use) {
 		case 'secret':
+			return {
+				use: credential.use,
+				resourceType: 'secret',
+				name: credential.name,
+				credentialId: null,
+				details: { host: credential.requestHost ?? null },
+			}
 		case 'webhook-secret':
 			return {
 				use: credential.use,
@@ -242,7 +269,10 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 				resourceType: 'secret',
 				name: credential.alias,
 				credentialId: null,
-				details: { mountAlias: credential.alias },
+				details: {
+					mountAlias: credential.alias,
+					access: credential.access ?? 'value',
+				},
 			}
 		case 'provider-secret':
 			return {
@@ -251,8 +281,16 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 				// Validated inside the audited resolve; building the subject must not throw.
 				name: credential.provider.trim().toLowerCase(),
 				credentialId: null,
+				details: { host: credential.requestHost ?? null },
 			}
 		case 'integration-token':
+			return {
+				use: credential.use,
+				resourceType: 'integration',
+				name: credential.name,
+				credentialId: null,
+				details: { host: credential.requestHost ?? null },
+			}
 		case 'integration-refresh':
 			return {
 				use: credential.use,
@@ -266,6 +304,7 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 				resourceType: 'mcp-server',
 				name: credential.serverName,
 				credentialId: credential.serverId,
+				details: { serverId: credential.serverId },
 			}
 		default: {
 			const exhaustive: never = credential
@@ -376,16 +415,12 @@ async function assertActorHasOrgAccess(
 	let check = orgAccessByRequest.get(request)
 	if (!check) {
 		check = (async () => {
-			// Package apps run as the org's own account (actor id = org id), which
-			// has no membership row in a team org; only the org's status applies.
 			const hasAccess =
-				String(person.userId) === String(input.orgId)
-					? await isOrgActive(input.env.APP_DB, input.orgId)
-					: (await loadOrgBindingForOrg(
-							input.env.APP_DB,
-							person.userId,
-							input.orgId,
-						)) !== null
+				(await loadOrgBindingForOrg(
+					input.env.APP_DB,
+					person.userId,
+					input.orgId,
+				)) !== null
 			if (hasAccess) return
 			throw new AuthorizationError({
 				code: 'wrong_org',
@@ -408,28 +443,29 @@ async function assertActorHasOrgAccess(
 }
 
 /**
- * Ad-hoc code and claimed package stamps need Use on the concrete credential,
- * by its stable id. A credential that was not found is checked against a
- * target no grant names, so a non-holder sees a denial rather than learning
- * whether the name exists. Attested package runs use package rules as the
- * grant (ADR 0021, amended).
+ * Every run needs its person's Use on the concrete credential, by its stable
+ * id, saved package or not: package rules (allowed packages, integration
+ * usage mode) only narrow it further. A trigger resolves an org credential
+ * only while its enabler has Use on it. A credential that was not found is
+ * checked against a target no grant names, so a non-holder sees a denial
+ * rather than learning whether the name exists.
  */
 async function authorizeActorUse(
 	input: ResolveCredentialInput<CredentialTarget>,
 	subject: CredentialAuditSubject,
 	credentialId: string | null,
+	label: string = subject.name,
 ) {
 	subject.credentialId = credentialId
-	if (input.packageStamp?.kind === 'attested') return
+	// Webhook ingress verifies a signature before any run exists; the secret
+	// never reaches package code.
+	if (!input.actor && input.credential.use === 'webhook-secret') return
 	await authorize(
 		{ env: input.env, request: input.actor },
 		permissionForUse(input.credential.use),
 		credentialId
-			? credentialResource(input.orgId, {
-					id: credentialId,
-					name: subject.name,
-				})
-			: missingCredentialResource(input.orgId, subject.name),
+			? credentialResource(input.orgId, { id: credentialId, name: label })
+			: missingCredentialResource(input.orgId, label),
 	)
 }
 
@@ -438,14 +474,15 @@ async function resolvePlaceholderSecret(
 	credential: Extract<CredentialTarget, { use: 'secret' }>,
 	subject: CredentialAuditSubject,
 ): Promise<ResolvedSecret> {
-	const resolved = await resolveSecret({
+	const lookup = await findSecretForUse({
 		env: input.env,
 		userId: input.orgId,
 		name: credential.name,
 		scope: credential.scope,
 		storageContext: credential.storageContext,
 	})
-	await authorizeActorUse(input, subject, resolved.credentialId)
+	await authorizeActorUse(input, subject, lookup.found.credentialId)
+	const resolved = await lookup.readValue()
 	if (!resolved.found || typeof resolved.value !== 'string') return resolved
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
@@ -506,26 +543,13 @@ async function resolvePackageSecretMount(
 		packageId,
 		storageId: callerContext.storageContext?.storageId ?? null,
 	}
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.orgId,
-		name: mount.name,
-		scope: mount.scope,
+	const resolved = await resolveMountedSecretMetadata({
+		input,
+		subject,
+		mount,
 		storageContext,
+		access: credential.access ?? 'value',
 	})
-	await authorizeActorUse(input, subject, resolved.credentialId)
-	if (!resolved.found || typeof resolved.value !== 'string') {
-		throw new PackageSecretMissingError(
-			await createUnresolvedSecretMessage({
-				env: input.env,
-				userId: input.orgId,
-				name: mount.name,
-				scope: mount.scope,
-				storageContext,
-				baseUrl: input.baseUrl,
-			}),
-		)
-	}
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -549,22 +573,82 @@ async function resolvePackageSecretMount(
 	}
 }
 
+async function resolveMountedSecretMetadata(input: {
+	input: ResolveCredentialInput<CredentialTarget>
+	subject: CredentialAuditSubject
+	mount: { name: string; scope?: SecretScope }
+	storageContext: StorageContext
+	access: 'presence' | 'value'
+}): Promise<FoundSecret> {
+	const lookup = {
+		env: input.input.env,
+		userId: input.input.orgId,
+		name: input.mount.name,
+		scope: input.mount.scope,
+		storageContext: input.storageContext,
+	}
+	const missing = async () =>
+		new PackageSecretMissingError(
+			await createUnresolvedSecretMessage({
+				env: input.input.env,
+				userId: input.input.orgId,
+				name: input.mount.name,
+				scope: input.mount.scope,
+				storageContext: input.storageContext,
+				baseUrl: input.input.baseUrl,
+			}),
+		)
+	const found = await findSecretForUse(lookup)
+	await authorizeActorUse(input.input, input.subject, found.found.credentialId)
+	switch (input.access) {
+		case 'presence': {
+			if (!found.found.found) throw await missing()
+			return found.found
+		}
+		case 'value': {
+			const resolved = await found.readValue()
+			if (!resolved.found || typeof resolved.value !== 'string') {
+				throw await missing()
+			}
+			return resolved
+		}
+		default: {
+			const exhaustive: never = input.access
+			throw new Error(`Unhandled package secret access: ${String(exhaustive)}`)
+		}
+	}
+}
+
 async function resolveWebhookSecret(
 	input: ResolveCredentialInput<CredentialTarget>,
 	credential: Extract<CredentialTarget, { use: 'webhook-secret' }>,
 	subject: CredentialAuditSubject,
 ): Promise<ResolvedSecret> {
-	const resolved = await resolveSecret({
+	// Every webhook belongs to a package, and the read is limited to secrets
+	// that package may read, like placeholder and mount reads.
+	const packageId = input.packageStamp?.packageId
+	if (!packageId) {
+		throw new Error('Webhook secrets resolve only for the webhook package.')
+	}
+	const storageContext = { sessionId: null, appId: null, packageId }
+	const lookup = await findSecretForUse({
 		env: input.env,
 		userId: input.orgId,
 		name: credential.name,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageStamp?.packageId ?? null,
-		},
+		storageContext,
 	})
-	await authorizeActorUse(input, subject, resolved.credentialId)
+	await authorizeActorUse(input, subject, lookup.found.credentialId)
+	const resolved = await lookup.readValue()
+	if (!resolved.found || typeof resolved.value !== 'string') return resolved
+	await assertPackageCanAccessResolvedSecret({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.orgId,
+		storageContext,
+		authorityPackageId: packageId,
+		secretName: credential.name,
+		resolved,
+	})
 	return resolved
 }
 
@@ -584,7 +668,12 @@ async function resolveVaultSecret(
 	// The binding is the credential: Use on it before any decrypt or provider
 	// invoke. A missing binding fails inside resolveProviderSecret.
 	if (binding) {
-		await authorizeActorUse(input, subject, binding.credentialId)
+		await authorizeActorUse(
+			input,
+			subject,
+			binding.credentialId,
+			binding.doorSecretName,
+		)
 	}
 	const resolved = await resolveProviderSecret({
 		env: input.env,
@@ -623,12 +712,15 @@ async function resolveIntegrationToken(
 	credential: Extract<CredentialTarget, { use: 'integration-token' }>,
 	subject: CredentialAuditSubject,
 ): Promise<string | null> {
-	const resolved = await resolveIntegrationAccessToken({
-		env: input.env,
-		userId: input.orgId,
-		name: credential.name,
-	})
-	await authorizeActorUse(input, subject, resolved?.credentialId ?? null)
+	await authorizeActorUse(
+		input,
+		subject,
+		await findIntegrationCredentialId({
+			env: input.env,
+			userId: input.orgId,
+			name: credential.name,
+		}),
+	)
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -637,8 +729,9 @@ async function resolveIntegrationToken(
 		packageId: input.packageStamp?.packageId ?? null,
 		packageKodyId: credential.packageKodyId,
 	})
-	const token = resolved?.accessToken ?? null
-	if (token && credential.requestHost) {
+	// The host is checked before the token resolves, so a refused host never
+	// triggers a refresh.
+	if (credential.requestHost) {
 		const joined = await getJoinedIntegration({
 			env: input.env,
 			userId: input.orgId,
@@ -658,7 +751,12 @@ async function resolveIntegrationToken(
 			credential.requestHost,
 		)
 	}
-	return token
+	const resolved = await resolveIntegrationAccessToken({
+		env: input.env,
+		userId: input.orgId,
+		name: credential.name,
+	})
+	return resolved?.accessToken ?? null
 }
 
 async function refreshIntegration(

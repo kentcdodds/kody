@@ -3,10 +3,14 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { type DailyEntitlementResource } from '#worker/entitlements/user-meter-do.ts'
+import { type DailyEntitlementResource } from '#universal/plans.ts'
 import { type RepoSessionRow } from '#worker/repo/types.ts'
 import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -84,6 +88,9 @@ function createAdminUserUsageTestDb(input: {
 
 	function countForQuery(normalizedQuery: string, userId: string) {
 		const counts = resourceCounts[userId] ?? {}
+		if (isLiveSeatCountQuery(normalizedQuery)) {
+			return mockLiveSeatCountRow().count
+		}
 		if (normalizedQuery.includes('from saved_packages')) {
 			return counts.saved_packages ?? 0
 		}

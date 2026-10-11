@@ -212,9 +212,9 @@ function readStringAt(value: unknown, path: Array<string>, label: string) {
 	return current
 }
 
-export type SeedLog = (line: string) => void
+type SeedLog = (line: string) => void
 
-export type SeededPerson = {
+type SeededPerson = {
 	role: RehearsalUser['role']
 	email: string
 	username: string

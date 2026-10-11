@@ -1,4 +1,5 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import type * as InfrastructureCodes from '#worker/package-invocations/infrastructure-codes.ts'
@@ -167,6 +168,7 @@ function mockPackage(
 function dispatch(input: Partial<DispatchInput>) {
 	return dispatchSyntheticWebhookForUser({
 		env: { APP_DB: {} } as Env,
+		requestContext: sessionRequestContext('user-1'),
 		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		kodyId: 'demo',

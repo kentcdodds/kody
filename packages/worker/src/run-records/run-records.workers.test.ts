@@ -38,6 +38,7 @@ import {
 	runRecordRetentionDays,
 	runRecordRetentionEmptyBackoffMinMs,
 	runRecordRetentionEveryNFinishes,
+	runRecordStaleRunningTtlMsBackground,
 	runRecordStaleRunningTtlMsJob,
 	runRecordStaleRunningTtlMsShortLived,
 	type RunRecordContext,
@@ -45,6 +46,7 @@ import {
 	type RunRecordHandle,
 	type RunSurface,
 } from './types.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 
 type SeedRun = {
 	id: string
@@ -430,6 +432,32 @@ test('listRunRecords filters by surface/status/jobId/name and paginates with cur
 		listed.push([filter, page.runs.map((run) => run.id)])
 	}
 	expect(listed).toEqual(cases)
+
+	const workflowUserId = uniqueUserId('list-workflow-filter')
+	await finishOk(workflowUserId, 'run-other-workflow', {
+		surface: 'workflow',
+		workflowId: 'dynwf-other',
+	})
+	await finishRunRecord({
+		env,
+		handle: handleFor(workflowUserId, 'run-workflow', {
+			surface: 'workflow',
+			workflowId: 'dynwf-check-back',
+		}),
+		status: 'success',
+		result: { answer: 42 },
+	})
+	const workflowPage = await listRuns(workflowUserId, {
+		workflowId: 'dynwf-check-back',
+	})
+	expect(workflowPage.runs).toEqual([
+		expect.objectContaining({
+			id: 'run-workflow',
+			workflowId: 'dynwf-check-back',
+			status: 'success',
+			metadata: expect.objectContaining({ result: { answer: 42 } }),
+		}),
+	])
 
 	const pages: Array<Array<string>> = []
 	let cursor: string | null = null
@@ -831,6 +859,35 @@ test('cap and stale retention journey', async () => {
 			status: 'error',
 			errorName: runRecordPlatformInterruptedErrorName,
 			surface: 'execute',
+		})
+	}
+
+	// --- a webhook run inside the 5-minute background budget is not stale ---
+	{
+		const userId = uniqueUserId('stale-webhook-heal')
+		await seedRuns(userId, [
+			{
+				id: 'live-webhook',
+				status: 'running',
+				startedAt: iso(Date.now() - backgroundExecutorTimeoutMs),
+				surface: 'webhook',
+			},
+			{
+				id: 'stale-webhook',
+				status: 'running',
+				startedAt: iso(
+					Date.now() - runRecordStaleRunningTtlMsBackground - 1_000,
+				),
+				surface: 'webhook',
+			},
+		])
+		expect((await getRun(userId, 'live-webhook'))?.run).toMatchObject({
+			status: 'running',
+		})
+		expect((await getRun(userId, 'stale-webhook'))?.run).toMatchObject({
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+			surface: 'webhook',
 		})
 	}
 

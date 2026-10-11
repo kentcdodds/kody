@@ -55,11 +55,14 @@ export type RequestCredential = {
 
 export type RequestContext = {
 	org: RequestOrg
-	/** Null only for Automation (webhook, schedule, email, event). */
+	/**
+	 * Null only for a trigger event with no enablement, which holds no
+	 * permissions and runs nothing.
+	 */
 	actor: RequestActor | null
 	attribution: RequestAttribution
 	credential: RequestCredential
-	/** Null for Automation and for outside collaborators. */
+	/** Null for a request with no person and for outside collaborators. */
 	membership: { role: OrgRole } | null
 }
 
@@ -67,8 +70,13 @@ export type RequestContext = {
  * The parts of a request context a downstream run inherits from the run
  * that started it (nested invokes, workflow steps, emitted package events,
  * sealed secret providers). The org is always re-resolved, never inherited.
+ *
+ * `membership` is the starter's role in `credential.orgId`. Downstream runs
+ * execute as the org's own identity, whose role is Owner, so without it a
+ * Member actor would inherit Owner. Lineage written before it existed omits
+ * it and keeps the role of the identity the run uses.
  */
 export type RequestLineage = Pick<
 	RequestContext,
 	'actor' | 'attribution' | 'credential'
->
+> & { membership?: RequestContext['membership'] }

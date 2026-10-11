@@ -8,11 +8,14 @@ import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
 import { adminOrgLimitOverridesSetCapability } from './admin-org-limit-overrides-set.ts'
 import { adminOrgLimitsGetCapability } from './admin-org-limits-get.ts'
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
+import { adminEnablementsMigrateCapability } from './admin-enablements-migrate.ts'
+import { adminLegacyJobsRetireCapability } from './admin-legacy-jobs-retire.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
+import { adminPackageCodemodOwnerNoticeCapability } from './admin-package-codemod-owner-notice.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
 import { adminPackageCodemodScanCapability } from './admin-package-codemod-scan.ts'
 import { adminPlatformOauthAppDeleteCapability } from './admin-platform-oauth-app-delete.ts'
@@ -33,6 +36,7 @@ import { adminSystemEmailSenderRuleDeleteCapability } from './admin-system-email
 import { adminSystemEmailSenderRuleListCapability } from './admin-system-email-sender-rule-list.ts'
 import { adminSystemEmailSenderRuleSetCapability } from './admin-system-email-sender-rule-set.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
+import { adminHandleGetCapability } from './admin-handle-get.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
@@ -92,6 +96,8 @@ export const adminDomain = defineDomain({
 		'published importable artifact backfill',
 		'missing artifacts',
 		'reserved username',
+		'handle',
+		'org slug',
 		'credits',
 		'credit grant',
 		'credit eligibility',
@@ -101,6 +107,7 @@ export const adminDomain = defineDomain({
 	capabilities: [
 		adminUserListCapability,
 		adminUserGetCapability,
+		adminHandleGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
 		adminUserVerifyCapability,
@@ -124,6 +131,7 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodDryRunCapability,
 		adminPackageCodemodApplyCapability,
 		adminPackageCodemodRevertCapability,
+		adminPackageCodemodOwnerNoticeCapability,
 		adminPublishedImportableArtifactBackfillCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
@@ -150,5 +158,7 @@ export const adminDomain = defineDomain({
 		adminPlatformFeedbackUpdateCapability,
 		adminCommunityActivityListCapability,
 		adminCommunityOrphanForksCleanupCapability,
+		adminEnablementsMigrateCapability,
+		adminLegacyJobsRetireCapability,
 	],
 })

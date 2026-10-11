@@ -294,7 +294,10 @@ export function PricingRoute(handle: Handle) {
 					</h3>
 					<p mix={css(limitsFootnoteCss)} data-credits-story>
 						Pro includes the usage in the table. Need more? Add prepaid credits
-						and keep going until they run out. Free stops at its limits.
+						and keep going until they run out. Free stops at its execute caps
+						and other hard limits (fetches, job runs, email, and storage). On
+						Free, monthly Worker compute and Rows read are guidelines: they
+						never charge you or stop runs.
 					</p>
 					<p mix={css(limitsFootnoteCss)} data-credits-small-print>
 						Usage past the include is charged from credits (Worker compute and
@@ -307,8 +310,9 @@ export function PricingRoute(handle: Handle) {
 						In an organization, daily and weekly limits are one shared pool for
 						everyone. Each paid seat adds the Pro unique execute workers,
 						outbound fetches, job runs, and automation invocations (and their
-						&ldquo;Pro + credits&rdquo; caps) to the pool. Credits come from one
-						organization wallet.
+						&ldquo;Pro + credits&rdquo; caps) to the pool, and raises the
+						execute runaway brake (300 calls per minute per seat). Credits come
+						from one organization wallet.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Unique execute workers and outbound fetches count per day and per
@@ -370,7 +374,13 @@ function renderLimitCell(row: LimitRow, column: PricingLimitColumn) {
 	if (value == null) {
 		return <td>—</td>
 	}
-	const cell = row.format ? row.format(value) : { text: count.format(value) }
+	const formatted = row.format
+		? row.format(value)
+		: { text: count.format(value) }
+	const isGuideline = row.chargedPastInclude && column.monthlyIncludeIsGuideline
+	const cell = isGuideline
+		? { text: `${formatted.text} guideline`, muted: true }
+		: formatted
 	const text =
 		row.chargedPastInclude && column.chargesPastInclude
 			? `${cell.text} + credits`

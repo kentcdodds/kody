@@ -117,68 +117,19 @@ export type PackageCredentialKind = (typeof packageCredentialKindValues)[number]
  */
 export const packageCredentialSlotNamePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
 
-/** RFC 9110 field-name characters. */
-const httpHeaderNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+export const retiredCredentialPlacementMessage =
+	'kody.credentials slots take no placement: the fetch gateway fills a credential anywhere in a request (a header, the URL path or query, or the body) to a host the credential allows, over HTTPS. Remove placement.'
 
-const credentialPlacementValueToken = '{value}'
-
-/**
- * The one request header a credential value may be sent in. `template` is the
- * whole header value with `{value}` where the credential goes, for example
- * `Bearer {value}`. Without a template the header value is the credential.
- */
-export const packageCredentialPlacementSchema = z.strictObject({
-	header: z
-		.string()
-		.trim()
-		.min(1)
-		.max(128)
-		.regex(httpHeaderNamePattern, 'Use a valid HTTP header name.')
-		.refine(
-			(header) => !header.toLowerCase().startsWith('x-kody-'),
-			'x-kody-* headers are reserved for Kody.',
-		),
-	template: z
-		.string()
-		.max(256)
-		.refine(
-			(template) =>
-				template.split(credentialPlacementValueToken).length === 2 &&
-				!/[\r\n]/.test(template),
-			'The template is one line and contains {value} exactly once.',
-		)
-		.optional(),
+export const packageCredentialSlotSchema = z.strictObject({
+	kind: z.enum(packageCredentialKindValues),
+	/** Free-form provider label (for example `google` or `1password`). */
+	provider: z.string().trim().min(1).max(64),
+	/** The package picks among several assigned accounts with `{ account }`. */
+	multiple: z.boolean().optional(),
+	/** Shown when someone assigns a credential to this slot. */
+	description: z.string().trim().min(1).max(500),
+	placement: z.never({ error: retiredCredentialPlacementMessage }).optional(),
 })
-
-export const packageCredentialSlotSchema = z
-	.strictObject({
-		kind: z.enum(packageCredentialKindValues),
-		/** Free-form provider label (for example `google` or `1password`). */
-		provider: z.string().trim().min(1).max(64),
-		/** The package picks among several assigned accounts with `{ account }`. */
-		multiple: z.boolean().optional(),
-		/** Shown when someone assigns a credential to this slot. */
-		description: z.string().trim().min(1).max(500),
-		/**
-		 * Where the fetch gateway may substitute the value. Required on secret
-		 * slots; oauth slots default to `Authorization: Bearer {value}`; mcp
-		 * slots never take one.
-		 */
-		placement: packageCredentialPlacementSchema.optional(),
-	})
-	.superRefine((slot, ctx) => {
-		if (slot.kind === 'mcp' && slot.placement) {
-			ctx.addIssue({
-				code: 'custom',
-				path: ['placement'],
-				message:
-					'mcp slots never send their value in a request, so they take no placement.',
-			})
-		}
-	})
-
-export const secretSlotPlacementRequiredMessage =
-	'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }.'
 
 export type PackageCredentialSlot = z.infer<typeof packageCredentialSlotSchema>
 
@@ -702,6 +653,13 @@ export type AuthoredPackageKody = Omit<
 	'id'
 > & {
 	id: string
+	/**
+	 * Published snapshot load only: `kody.credentials` slots that fail today's
+	 * slot schema, by name, with the validation message. They are left out of
+	 * `credentials` and every use of one fails with this message. Never read
+	 * from package.json.
+	 */
+	invalidCredentialSlots?: Record<string, string>
 }
 
 export const authoredPackageJsonSchema = z.object({

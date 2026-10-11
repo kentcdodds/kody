@@ -27,6 +27,10 @@ export type CommunityDetailApiPayload = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
+	viewerCanPublish?: boolean
+	viewerCanDelete?: boolean
+	viewerCanAdoptCommunityFork?: boolean
 	forkPrompt: string
 	viewerInstall: ViewerListingInstall | null
 	readmeContent: string | null
@@ -199,6 +203,9 @@ export type PackageSettingsShell =
 			defaultBranch: string | null
 			/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 			ownerProfilePublic?: boolean
+			viewerCanPublish: boolean
+			viewerCanDelete: boolean
+			viewerCanAdoptCommunityFork: boolean
 	  }
 
 export function toPackageSettingsShell(
@@ -210,7 +217,7 @@ export function toPackageSettingsShell(
 		const exhaustive: never = routeData
 		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
 	}
-	if (!routeData.ownerPackage || !routeData.viewerIsOwner) return null
+	if (!routeData.ownerPackage || !routeData.viewerCanManage) return null
 	return {
 		kind: 'owner',
 		ownerPackage: routeData.ownerPackage,
@@ -220,6 +227,9 @@ export function toPackageSettingsShell(
 		listingId: routeData.listingId,
 		defaultBranch: routeData.defaultBranch ?? null,
 		ownerProfilePublic: routeData.ownerProfilePublic,
+		viewerCanPublish: routeData.viewerCanPublish === true,
+		viewerCanDelete: routeData.viewerCanDelete === true,
+		viewerCanAdoptCommunityFork: routeData.viewerCanAdoptCommunityFork === true,
 	}
 }
 
@@ -303,7 +313,7 @@ export async function communityDetailRouteLoader(
 		throw new Error('Unable to load public package.')
 	}
 	if (getPackageSettingsPageRef(url.pathname)) {
-		if (!payload.viewerIsOwner || !payload.ownerPackage) {
+		if (!payload.viewerCanManage || !payload.ownerPackage) {
 			throw new Error('Catalog entry not found.')
 		}
 	}
@@ -325,6 +335,10 @@ export async function communityDetailRouteLoader(
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,
 			viewerIsOwner: payload.viewerIsOwner,
+			viewerCanManage: payload.viewerCanManage,
+			viewerCanPublish: payload.viewerCanPublish === true,
+			viewerCanDelete: payload.viewerCanDelete === true,
+			viewerCanAdoptCommunityFork: payload.viewerCanAdoptCommunityFork === true,
 			trusted: payload.listing?.trusted ?? false,
 			featured: payload.listing?.featured ?? false,
 			readmeContent:

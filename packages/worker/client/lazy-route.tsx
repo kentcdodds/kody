@@ -375,6 +375,7 @@ registerPreloadPatterns(
 		routePattern(routes.verifyEmailClaimRelease),
 		routePattern(routes.verifyEmailDestination),
 		routePattern(routes.unsubscribeTips),
+		routePattern(routes.orgInviteJoin),
 	],
 	{ name: 'auth-area', load: authArea.load, getCached: authArea.getCached },
 )

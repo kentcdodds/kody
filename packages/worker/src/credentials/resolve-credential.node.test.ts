@@ -27,10 +27,12 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
+import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import {
 	deleteSecret,
 	saveSecret,
 	setSecretAllowedHosts,
+	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import {
 	attestedPackageStamp,
@@ -257,6 +259,7 @@ test('owner resolves an ad-hoc secret; the door schedules exactly one audit row 
 		ownerKind: 'org',
 		packageStampKind: 'none',
 		packageId: null,
+		host: null,
 	})
 	expect(JSON.stringify(rows)).not.toContain(secretValue)
 
@@ -301,22 +304,21 @@ test('ad-hoc use without secret:use is denied and audited as denied (#3169)', as
 	})
 })
 
-test('a claimed package stamp never skips Use; the attested stamp for the same package does (#3210)', async () => {
+test('no package stamp skips the person’s Use, claimed or attested (#3210)', async () => {
 	const t = await setup()
 	const member = t.personRequest(t.memberId, 'member', 'member')
 
-	const forged = await denial(
-		t.resolveSecretAs(member, claimedPackageStamp(t.packageId)),
-	)
-	expect(forged).toBeInstanceOf(AuthorizationError)
-	expect(forged).toMatchObject({ code: 'missing_permission' })
-
-	await expect(
-		t.resolveSecretAs(member, attestedPackageStamp(t.packageId)),
-	).resolves.toMatchObject({ found: true })
+	for (const stamp of [
+		claimedPackageStamp(t.packageId),
+		attestedPackageStamp(t.packageId),
+	]) {
+		const error = await denial(t.resolveSecretAs(member, stamp))
+		expect(error).toBeInstanceOf(AuthorizationError)
+		expect(error).toMatchObject({ code: 'missing_permission' })
+	}
 
 	const rows = await t.auditRows()
-	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(rows.map((row) => row.result)).toEqual(['denied', 'denied'])
 	expect(details(rows[0])).toMatchObject({
 		packageStampKind: 'claimed',
 		packageId: t.packageId,
@@ -330,12 +332,13 @@ test('a claimed package stamp never skips Use; the attested stamp for the same p
 test('a removed member is denied at resolve time even with a stale request context', async () => {
 	const t = await setup()
 	const attested = attestedPackageStamp(t.packageId)
-	await expect(
+	const beforeRemoval = await denial(
 		t.resolveSecretAs(
 			t.personRequest(t.memberId, 'member', 'member'),
 			attested,
 		),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(beforeRemoval).toMatchObject({ code: 'missing_permission' })
 
 	// Only the membership row ends: the door re-reads access itself instead
 	// of relying on the removal cascade or the role baked into the request.
@@ -361,7 +364,7 @@ test('a removed member is denied at resolve time even with a stale request conte
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual([
-		'success',
+		'denied',
 		'denied',
 		'denied',
 		'success',
@@ -369,14 +372,14 @@ test('a removed member is denied at resolve time even with a stale request conte
 	expect(details(rows[1])).toMatchObject({ reason: 'wrong_org' })
 })
 
-test('automation and platform resolutions keep today’s rules and are audited', async () => {
+test('a trigger with no enablement holds nothing; webhook verification still resolves', async () => {
 	const t = await setup()
 	const schedule = deriveRequestContext({
 		user: { userId: personIdFromStored(t.ownerStableId), username: 'owner' },
 		source: { kind: 'schedule', jobId: 'job-1' },
 		orgBinding: { org: { id: t.orgId, slug: 'owner' }, role: 'owner' },
 	})
-	await expect(
+	const noPerson = await denial(
 		resolveCredential({
 			env: t.env,
 			orgId: t.orgId,
@@ -388,7 +391,8 @@ test('automation and platform resolutions keep today’s rules and are audited',
 				storageContext: { sessionId: null, appId: null, packageId: null },
 			},
 		}),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(noPerson).toMatchObject({ code: 'missing_permission' })
 	await expect(
 		resolveCredential({
 			env: t.env,
@@ -406,7 +410,7 @@ test('automation and platform resolutions keep today’s rules and are audited',
 		actor_user_id: null,
 		credential_kind: 'schedule',
 		credential_id: 'job-1',
-		result: 'success',
+		result: 'denied',
 	})
 	expect(details(rows[0])).toMatchObject({
 		use: 'secret',
@@ -422,7 +426,97 @@ test('automation and platform resolutions keep today’s rules and are audited',
 	})
 })
 
-test('a package app in a team org acts as the org’s own account; a deleted org is denied', async () => {
+test('a webhook reads only a secret its own package may read (#3245)', async () => {
+	const t = await setup()
+	const forkId = crypto.randomUUID()
+	await insertSavedPackage(
+		t.db,
+		{
+			id: forkId,
+			user_id: t.orgId,
+			name: '@owner/forked',
+			kody_id: 'forked',
+			description: 'an unadopted community fork',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-${forkId}`,
+			has_app: 0,
+			has_skills: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		null,
+		{ stamp: false },
+	)
+	await t.db
+		.prepare(
+			`INSERT INTO community_forks (
+				id, listing_id, forker_user_id, origin_commit, forked_package_id,
+				forked_source_id, target_kody_id, created_at
+			) VALUES (?, ?, ?, 'origin', ?, ?, 'forked', ?)`,
+		)
+		.bind(
+			`fork-${forkId}`,
+			'listing-1',
+			t.orgId,
+			forkId,
+			`source-${forkId}`,
+			now,
+		)
+		.run()
+	await setSecretAllowedPackages({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedPackages: [t.packageId],
+	})
+	const webhookRead = (input: {
+		actor: ReturnType<typeof t.personRequest> | null
+		packageId: string | null
+	}) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: input.actor,
+			packageStamp: input.packageId
+				? attestedPackageStamp(input.packageId)
+				: null,
+			baseUrl: 'https://example.com',
+			credential: { use: 'webhook-secret', name: 'orgToken' },
+		})
+	const owner = () => t.personRequest(t.ownerStableId, 'owner', 'owner')
+
+	// Signature verification at ingress has no person, so the package check is
+	// the only gate there; an Owner applying a delivery is held to it too.
+	expect(
+		await denial(webhookRead({ actor: null, packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: owner(), packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: null, packageId: null })),
+	).toBeInstanceOf(Error)
+	await expect(
+		webhookRead({ actor: null, packageId: t.packageId }),
+	).resolves.toMatchObject({ found: true, value: secretValue })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => row.result)).toEqual([
+		'denied',
+		'denied',
+		'failure',
+		'success',
+	])
+	for (const row of rows) {
+		expect(row.details_json ?? '').not.toContain(secretValue)
+	}
+})
+
+test('a package app in a team org acts as its visitor, never as the org itself; a deleted org is denied', async () => {
 	const t = await setup()
 	const created = await createOrganization(
 		t.db,
@@ -454,18 +548,23 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		name: 'teamToken',
 		value: secretValue,
 	})
-	// What `PackageAppRuntimeBridge` builds: the org id as the request user.
-	const packageAppRequest = () =>
+	// What `PackageAppRuntimeBridge` builds for its Owner visitor.
+	const visitorRequest = () =>
 		deriveRequestContext({
-			user: { userId: personIdFromStored(teamOrg!.id) },
+			user: { userId: personIdFromStored(t.ownerStableId) },
 			source: { kind: 'package-app' },
 			orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
 		})
-	const resolve = () =>
+	const orgAsActor = deriveRequestContext({
+		user: { userId: personIdFromStored(teamOrg!.id) },
+		source: { kind: 'package-app' },
+		orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
+	})
+	const resolve = (actor = visitorRequest()) =>
 		resolveCredential({
 			env: t.env,
 			orgId: teamOrgId,
-			actor: packageAppRequest(),
+			actor,
 			packageStamp: attestedPackageStamp(teamPackageId),
 			baseUrl: 'https://example.com',
 			credential: {
@@ -480,6 +579,10 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		})
 
 	await expect(resolve()).resolves.toMatchObject({ value: secretValue })
+	// The org's own id is no person and has no membership in it.
+	await expect(resolve(orgAsActor)).rejects.toMatchObject({
+		code: 'wrong_org',
+	})
 	await t.db
 		.prepare(`UPDATE orgs SET deleted_at = ? WHERE id = ?`)
 		.bind(now, teamOrgId)
@@ -489,6 +592,7 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 	const rows = await t.auditRows()
 	expect(rows.map((row) => [row.org_id, row.result])).toEqual([
 		[teamOrgId, 'success'],
+		[teamOrgId, 'denied'],
 		[teamOrgId, 'denied'],
 	])
 })
@@ -547,9 +651,16 @@ test('a host the secret is not approved for is an audited denial, not a success'
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	const credentialId = await t.secretIdOf('orgToken')
+	expect(rows.map((row) => row.resource_id)).toEqual([
+		credentialId,
+		credentialId,
+	])
 	expect(details(rows[0])).toMatchObject({
 		reason: 'SecretHostNotApprovedError',
+		host: 'evil.example',
 	})
+	expect(details(rows[1])).toMatchObject({ host: 'api.example.com' })
 	expect(JSON.stringify(rows)).not.toContain(secretValue)
 })
 

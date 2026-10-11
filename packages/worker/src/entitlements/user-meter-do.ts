@@ -15,26 +15,10 @@ import {
 	type ExecuteCallMinuteWindow,
 	type ExecuteRepeatInput,
 } from './execute-admission-windows.ts'
-import { type EntitlementResource } from '#universal/plans.ts'
-
-/** Daily rate-style resources stored in the per-user UserMeter (UTC day keys). */
-export const dailyEntitlementResources = [
-	'email_sends_per_day',
-	'email_receives_per_day',
-	'execute_unique_workers_per_day',
-	'outbound_fetches_per_day',
-	'job_runs_per_day',
-	'automation_invocations_per_day',
-] as const satisfies ReadonlyArray<EntitlementResource>
-
-export type DailyEntitlementResource =
-	(typeof dailyEntitlementResources)[number]
-
-export function isDailyEntitlementResource(
-	resource: string,
-): resource is DailyEntitlementResource {
-	return (dailyEntitlementResources as ReadonlyArray<string>).includes(resource)
-}
+import {
+	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from '#universal/plans.ts'
 
 /**
  * Retention window for UserMeter daily rows (`daily_counters`,
@@ -46,7 +30,9 @@ export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 14
+const userMeterSchemaVersion = 15
+// How long a completed release is remembered for reset-retry idempotency.
+const writeLeaseReleaseMemoryMs = 60 * 60 * 1000
 /** Singleton row id for monthly org budget spend (schema v13). */
 const budgetSpendStateRowId = 1
 const utcMonthKeyPattern = /^\d{4}-\d{2}$/
@@ -679,6 +665,12 @@ class UserMeterBase extends DurableObject<Env> {
 				holder TEXT NOT NULL,
 				acquired_at TEXT NOT NULL,
 				pending_repair_id TEXT
+			)
+		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS account_write_lease_releases (
+				token TEXT PRIMARY KEY NOT NULL,
+				released_at TEXT NOT NULL
 			)
 		`)
 		if (version != null && version < 7) {
@@ -1912,16 +1904,42 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/** Authoritative lease release. */
+	/**
+	 * Authoritative lease release. `released` doubles as the post-write held
+	 * proof, so a release is remembered briefly: a reset retry whose first
+	 * attempt already deleted the row still reports `released: true`, while a
+	 * lease removed by repair or purge still reports `false`.
+	 */
 	async releaseWriteLease(input: {
 		token: string
 	}): Promise<UserMeterReleaseWriteLeaseResult> {
 		const token = assertWriteLeaseToken(input.token)
+		const nowMs = Date.now()
+		this.ctx.storage.sql.exec(
+			`DELETE FROM account_write_lease_releases WHERE released_at < ?`,
+			new Date(nowMs - writeLeaseReleaseMemoryMs).toISOString(),
+		)
 		const cursor = this.ctx.storage.sql.exec(
 			`DELETE FROM account_write_leases WHERE token = ?`,
 			token,
 		)
-		return { released: cursor.rowsWritten > 0 }
+		if (cursor.rowsWritten > 0) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO account_write_lease_releases (token, released_at)
+				VALUES (?, ?)
+				ON CONFLICT(token) DO UPDATE SET released_at = excluded.released_at`,
+				token,
+				new Date(nowMs).toISOString(),
+			)
+			return { released: true }
+		}
+		const remembered = this.ctx.storage.sql
+			.exec(
+				`SELECT 1 AS present FROM account_write_lease_releases WHERE token = ?`,
+				token,
+			)
+			.toArray()
+		return { released: remembered.length > 0 }
 	}
 
 	/** Post-write held check; pending repair still counts as held. */

@@ -229,7 +229,7 @@ test('switching orgs from Secrets loads the destination org, not the one you lef
 	await expect(page.getByText('personalOnlySecret')).toHaveCount(0)
 })
 
-test('a client navigation into another org section loads it with the destination page as Referer', async ({
+test('the switcher keeps each org section and loads it with the destination page as Referer', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -237,11 +237,12 @@ test('a client navigation into another org section loads it with the destination
 	test.setTimeout(process.env.CI ? 120_000 : 90_000)
 	const runId = Date.now()
 	const user = await seedE2eUser({
-		email: `org-switch-sections-${runId}@example.com`,
-		username: `org-switch-sections-${runId}`,
+		email: `org-sections-${runId}@example.com`,
+		username: `org-sections-${runId}`,
 		password: 'org-switch-sections-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto('/account/organizations/new')
 	await waitForClientHydration(page)
 	await page.getByLabel('Name').fill(`Sections ${runId}`)
@@ -252,8 +253,8 @@ test('a client navigation into another org section loads it with the destination
 	await page.getByRole('button', { name: 'Yes, create organization' }).click()
 	await expect(page).toHaveURL(new RegExp(`/@sections-${runId}$`))
 
-	// The switcher sends these sections to team Settings, so follow an in-app
-	// link instead. The router still runs the loader before it commits the URL.
+	// The switcher keeps the section. The router runs the loader before it
+	// commits the URL, so the fetch must still name the team page.
 	for (const section of [
 		'memories',
 		'workflows',
@@ -269,14 +270,10 @@ test('a client navigation into another org section loads it with the destination
 				new URL(request.url()).pathname === `/account/${section}.json` &&
 				request.method() === 'GET',
 		)
-		await page.evaluate((href) => {
-			const link = document.createElement('a')
-			link.href = href
-			link.textContent = 'Team section'
-			link.dataset.testid = 'team-section-link'
-			document.querySelector('main')?.appendChild(link)
-		}, destination)
-		await page.getByTestId('team-section-link').click()
+		const { panel } = await openSwitcher(page)
+		const teamRow = panel.getByTestId(`org-switcher-sections-${runId}`)
+		await expect(teamRow).toHaveAttribute('href', destination)
+		await teamRow.click()
 		await expect(page).toHaveURL(new RegExp(`${destination}$`))
 		expect((await teamLoad).headers()['referer']).toMatch(
 			new RegExp(`${destination}$`),

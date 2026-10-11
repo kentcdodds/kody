@@ -2,16 +2,25 @@ import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestCredential } from '@kody-internal/shared/request-context.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
-import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import {
+	nextUtcDayStart,
+	nextUtcWeekStart,
+	utcDayKey,
+} from '@kody-internal/shared/date-keys.ts'
 import {
 	sendEntitlementWarningNow,
 	userEntitlementApproachingThreshold,
 	type UserEntitlementWarningKind,
 } from '#worker/entitlements/user-entitlement-warning-emails.ts'
-import { entitlementResourceLabels } from '#universal/plans.ts'
+import {
+	entitlementResourceLabels,
+	executeCallsPerMinutePerSeat,
+	resolveEntitlementLimit,
+} from '#universal/plans.ts'
 import { type OrgBudgetGateContext } from '#worker/entitlements/budget-gate.ts'
 import {
 	consumeExecuteUniqueWorkerDay,
+	resolveLiveEntitlementForResource,
 	type ExecuteUniqueWorkerUsage,
 } from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
@@ -19,14 +28,14 @@ import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type ClaimWorkerDay } from './executor.ts'
 
 /**
- * Hosted execute calls one org may start per minute, counting every call
- * (repeats, failures, warm workers). A runaway safety net, not a plan
- * limit: production's busiest org-minute over the 30 days to 2026-10-10
- * was 64 calls, so 300 (about 5×, 5 calls per second sustained) never
- * touches real work while still bounding a fan-out storm that only hits
+ * Per-seat base for the hosted execute runaway brake. The org limit is
+ * seats × this (min one seat), then admin overrides may raise it via
+ * {@link resolveEntitlementLimit}. Production's busiest org-minute over
+ * the 30 days to 2026-10-10 was 64 calls, so 300 (about 5×) never touches
+ * real one-seat work while still bounding a fan-out storm that only hits
  * warm workers and so never reaches the unique-worker cap.
  */
-export const executeCallsPerMinutePerOrg = 300
+export const executeCallsPerMinutePerOrg = executeCallsPerMinutePerSeat
 
 export const executeRateLimitedErrorCode = 'execute_rate_limited' as const
 
@@ -115,15 +124,29 @@ export function executeAdmissionStructuredContent(error: unknown) {
 export async function admitHostedExecuteCall(input: {
 	env: Env
 	ownerId: OwnerId
+	email: string | null | undefined
 	repeatKey?: string
 	now?: Date
 }): Promise<void> {
+	const now = input.now ?? new Date()
+	const entitlement = await resolveLiveEntitlementForResource({
+		db: input.env.APP_DB,
+		userId: input.ownerId,
+		email: input.email,
+		resource: 'execute_calls_per_minute',
+		now,
+	})
+	const limitPerMinute = resolveEntitlementLimit(
+		entitlement,
+		'execute_calls_per_minute',
+		now,
+	)
 	const admission = await userMeterRpc({
 		env: input.env,
 		userId: input.ownerId,
 	}).admitExecuteCall({
-		nowMs: (input.now ?? new Date()).getTime(),
-		limitPerMinute: executeCallsPerMinutePerOrg,
+		nowMs: now.getTime(),
+		limitPerMinute,
 		...(input.repeatKey
 			? {
 					repeat: {
@@ -138,7 +161,7 @@ export async function admitHostedExecuteCall(input: {
 	switch (admission.reason) {
 		case 'rate':
 			throw new ExecuteRateLimitedError({
-				limitPerMinute: executeCallsPerMinutePerOrg,
+				limitPerMinute,
 				retryAfterMs: admission.retryAfterMs,
 			})
 		case 'repeat':
@@ -266,30 +289,31 @@ export type ExecuteUsageReport = {
 	week?: ExecuteUsageWindow
 }
 
-const dayMs = 24 * 60 * 60 * 1000
-
 /** Remaining hosted execute allowance for every execute response. */
 export function buildExecuteUsageReport(
 	usage: ExecuteUniqueWorkerUsage,
 	now: Date,
 ): ExecuteUsageReport {
-	const window = (used: number, limit: number, resetsAtMs: number) => ({
+	const window = (used: number, limit: number, resetsAt: Date) => ({
 		used,
 		limit,
 		remaining: Math.max(0, limit - used),
-		resetsAt: new Date(resetsAtMs).toISOString(),
+		resetsAt: resetsAt.toISOString(),
 	})
-	const nextDayMs = Date.parse(`${utcDayKey(now)}T00:00:00.000Z`) + dayMs
-	const nextWeekMs =
-		Date.parse(`${utcWeekStart(now)}T00:00:00.000Z`) + 7 * dayMs
 	return {
 		unit: entitlementResourceLabels[executeUsageResource].replace(
 			/ per day$/,
 			'',
 		),
-		day: window(usage.used, usage.limit, nextDayMs),
+		day: window(usage.used, usage.limit, nextUtcDayStart(now)),
 		...(usage.weekLimit !== null
-			? { week: window(usage.weekUsed ?? 0, usage.weekLimit, nextWeekMs) }
+			? {
+					week: window(
+						usage.weekUsed ?? 0,
+						usage.weekLimit,
+						nextUtcWeekStart(now),
+					),
+				}
 			: {}),
 	}
 }

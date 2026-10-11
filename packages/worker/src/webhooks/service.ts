@@ -2,13 +2,24 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
+import {
 	decryptWebhookUrlSecret,
 	encryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+	checkPermission,
+	computeEffectivePermissions,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
@@ -42,7 +53,11 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import { resolveHmacCiphertextForMint } from './signing-secret.ts'
+import {
+	defaultWebhookVerification,
+	resolveHmacCiphertextForMint,
+	resolveWebhookHmacSigningSecret,
+} from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
@@ -195,16 +210,27 @@ async function loadDeclaredWebhook(input: {
 	return declared
 }
 
+/** Declared webhooks on the owner's packages that the caller may read. */
 export async function listWebhooksForUser(input: {
 	env: Env
+	request: RequestContext
 	baseUrl: string
 	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
-	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: input.request,
 	})
+	const packages = (
+		await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.userId,
+		})
+	).filter(
+		(entry) =>
+			checkPermission(access, 'package:read', packageResource(entry)).allowed,
+	)
 	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
 	const filteredPackages = packageFilter
 		? packages.filter(
@@ -319,6 +345,8 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
+	const verification = declared.verification ?? defaultWebhookVerification
+
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
 	const existing = await getWebhookEndpointByKey({
@@ -342,7 +370,7 @@ export async function mintWebhookUrlForUser(input: {
 			userId: input.userId,
 			endpointId,
 			packageId: savedPackage.id,
-			verification: declared.verification,
+			verification,
 			existingHmacEncrypted: existing?.hmacSecretEncrypted,
 		})
 		try {
@@ -379,6 +407,13 @@ export async function mintWebhookUrlForUser(input: {
 	if (!stored) {
 		throw new Error('Unable to persist webhook URL secret.')
 	}
+	await ensureWebhookEnablementForMinter({
+		env: input.env,
+		request: input.request,
+		savedPackage,
+		endpointId: stored.id,
+		webhookName,
+	})
 
 	return {
 		packageId: savedPackage.id,
@@ -658,7 +693,43 @@ export async function revealWebhookUrlForWebsite(input: {
 		handle: formatWebhookUrlHandle(resolved.endpoint.id),
 		urlHost: resolved.urlHost,
 		url: resolved.url,
+		signingSecret: await revealDefaultSigningSecret({
+			env: input.env,
+			userId: input.userId,
+			baseUrl: resolved.baseUrl,
+			endpoint: resolved.endpoint,
+			savedPackage: resolved.savedPackage,
+		}),
 	}
+}
+
+/**
+ * The generated `X-Kody-Signature` secret, revealed only when it is the one
+ * inbound delivery checks: the manifest declares no verification of its
+ * own. Provider-issued secrets stay hidden.
+ */
+async function revealDefaultSigningSecret(input: {
+	env: Env
+	userId: OwnerId
+	baseUrl: string
+	endpoint: WebhookEndpointRecord
+	savedPackage: SavedPackageRecord
+}): Promise<string | null> {
+	if (!input.endpoint.hmacSecretEncrypted) return null
+	const declared = await loadDeclaredWebhook({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		savedPackage: input.savedPackage,
+		webhookName: input.endpoint.webhookName,
+	}).catch(() => null)
+	if (!declared || declared.verification) return null
+	return resolveWebhookHmacSigningSecret({
+		env: input.env,
+		userId: input.endpoint.userId,
+		endpoint: input.endpoint,
+		verification: defaultWebhookVerification,
+	})
 }
 
 export type SyntheticWebhookRequestFixture = {
@@ -690,6 +761,7 @@ export type SyntheticWebhookDispatchResult = {
  */
 export async function dispatchSyntheticWebhookForUser(input: {
 	env: Env
+	requestContext: RequestContext
 	userId: OwnerId
 	baseUrl: string
 	packageId?: string
@@ -715,6 +787,11 @@ export async function dispatchSyntheticWebhookForUser(input: {
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
+	await authorize(
+		{ env: input.env, request: input.requestContext },
+		'package:execute',
+		packageResource(savedPackage),
+	)
 	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -937,13 +1014,20 @@ export async function dispatchSyntheticWebhookForUser(input: {
 					| Record<string, unknown>
 					| undefined)
 			: undefined
+	const placementRefused = Boolean(
+		readCredentialPlacementRefusalFromInvocationBody(response.body),
+	)
 	return await finish({
 		status: response.status,
 		outcome: 'failed',
-		error: `invocation_status_${response.status}`,
+		error: placementRefused
+			? credentialPlacementRefusedCode
+			: `invocation_status_${response.status}`,
 		result,
 		errorBody: {
-			code: String(errorRecord?.['code'] ?? 'invocation_failed'),
+			code: placementRefused
+				? credentialPlacementRefusedCode
+				: String(errorRecord?.['code'] ?? 'invocation_failed'),
 			message: String(
 				errorRecord?.['message'] ??
 					`Webhook export invocation failed with HTTP ${response.status}.`,

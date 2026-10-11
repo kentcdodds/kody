@@ -68,6 +68,18 @@ function createEnv() {
 		insertPermission.run(grantId, 'package:read')
 		insertPermission.run(grantId, 'package:execute')
 	}
+	// Execute-only: listed via canSeeResource, but the package page needs read.
+	insertPackage.run('pkg-run', teamId, '@acme/run', 'run', 'src-4')
+	insertGrant.run(
+		'grant-member-run',
+		teamId,
+		'pkg-run',
+		memberId,
+		ownerId,
+		now,
+		now,
+	)
+	insertPermission.run('grant-member-run', 'package:execute')
 	return {
 		APP_DB: createD1FromSqlite(sqlite),
 		JOBS: undefined,
@@ -92,8 +104,12 @@ async function listAs(env: Env, personId: string, search = '') {
 		body: (await response.json()) as {
 			ok: boolean
 			error?: string
-			packages?: Array<{ kodyId: string; isPrivate?: boolean }>
-			packageLinks?: boolean
+			activity?: Array<unknown> | null
+			packages?: Array<{
+				kodyId: string
+				isPrivate?: boolean
+				canOpenDetail?: boolean
+			}>
 			profile?: { username: string; displayName: string }
 		},
 	}
@@ -108,20 +124,32 @@ test('team repositories list what each member role can see', async () => {
 		username: 'acme',
 		displayName: 'Acme',
 	})
-	expect(owner.body.packageLinks).toBe(false)
+	expect(owner.body.activity).toBeNull()
 	expect(owner.body.packages?.map((pkg) => pkg.kodyId).sort()).toEqual([
+		'run',
 		'secret',
 		'shared',
 	])
+	expect(owner.body.packages?.every((pkg) => pkg.canOpenDetail !== false)).toBe(
+		true,
+	)
 
 	const member = await listAs(env, memberId)
 	expect(member.status).toBe(200)
-	expect(member.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['shared'])
+	expect(
+		member.body.packages?.map((pkg) => ({
+			kodyId: pkg.kodyId,
+			canOpenDetail: pkg.canOpenDetail,
+		})),
+	).toEqual([
+		{ kodyId: 'run', canOpenDetail: false },
+		{ kodyId: 'shared', canOpenDetail: undefined },
+	])
 
 	// The newest org package is one the member cannot see. The cap applies
 	// after the visibility filter, so it does not crowd out theirs.
 	const capped = await listAs(env, memberId, '?limit=1')
-	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['shared'])
+	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['run'])
 	const ownerCapped = await listAs(env, ownerId, '?limit=1')
 	expect(ownerCapped.body.packages?.map((pkg) => pkg.kodyId)).toEqual([
 		'secret',

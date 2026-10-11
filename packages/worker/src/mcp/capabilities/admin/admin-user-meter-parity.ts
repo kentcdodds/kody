@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { loadAdminUserMeterParityReport } from '#worker/admin/user-meter-parity.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
-import { dailyEntitlementResources } from '#worker/entitlements/user-meter-do.ts'
+import { dailyEntitlementResources } from '#universal/plans.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

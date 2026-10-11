@@ -421,8 +421,20 @@
 			"sha256": "59d142b21ded2b22006ee16797e7db3dbdb8d832a68aa0b39b4d47cd0bba466b"
 		},
 		{
-			"filename": "0105-credential-ids-and-grants.sql",
-			"sha256": "654863a2308b9045d38b364ab226586f584c8e3a1a3a6584f140e2f2af45f9d6"
+			"filename": "0106-enablements.sql",
+			"sha256": "22c9123eb9817ce37a05f5dcaf51c14db0dea81caa1b3848a71d576120df1439"
+		},
+		{
+			"filename": "0108-org-invite-links.sql",
+			"sha256": "47f191f271b8cb24ce1eca21f1c2ec116b9399f2e8db97a348a9f4ba72426ba1"
+		},
+		{
+			"filename": "0109-org-audit-outbox.sql",
+			"sha256": "7aa9ed97631a0162e7251b08f95ef64f6f0b67694fd52414761c7623a66cec3c"
+		},
+		{
+			"filename": "0110-credential-ids-and-grants.sql",
+			"sha256": "bfd319f9e3f530930cea060c6abfe740d8cac6143ea7b462974dc3d1153b682a"
 		}
 	]
 }

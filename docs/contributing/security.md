@@ -550,9 +550,22 @@ guarded by a bearer secret comparison.
   backup SQL, manifests, or repository files.
 - Outbound secret use goes through the fetch gateway
   (`packages/worker/src/mcp/fetch-gateway.ts`), which is deny-by-default: a
-  secret placeholder is only substituted for a host the user explicitly approved
-  in the account UI. Policy writes (allowed hosts/capabilities/packages) are
-  only reachable through the authenticated account UI.
+  credential placeholder is filled only for a host the credential allows (a
+  secret's hosts the user approved in the account UI, an integration's
+  `requiredHosts` and `apiBaseUrl` host, a vault item's websites) and only over
+  HTTPS. It may sit in a header, the URL path or query, or a text body (JSON
+  values are JSON-escaped, form values form-encoded); multipart and non-UTF-8
+  bodies are forwarded byte for byte. A placeholder on plain HTTP, in the URL
+  host or user info, or bound for a host the credential does not allow is
+  refused before anything resolves
+  (`packages/worker/src/mcp/secrets/secret-placement.ts` and the credential
+  door), so none is sent unfilled. The values are redacted from echoes in the
+  response (also URL-, form-, and JSON-encoded) and from fetch errors.
+  `x-kody-secret-resolution: headers-only` fills headers only, for a body that
+  quotes the syntax; `off` skips resolution entirely. The control header is
+  stripped before the request leaves, on both the gateway and local native fetch
+  paths. Policy writes (allowed hosts/capabilities/ packages) are only reachable
+  through the authenticated account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.
 - The DR control-plane Admin UI is protected by Cloudflare Access plus in-worker
@@ -570,10 +583,16 @@ Authentication-Results (DMARC fail, or SPF fail/softfail without DKIM pass →
 quarantine; missing header fails open). Accepted user mail dispatches
 `email.message.received`; quarantined user mail dispatches
 `email.message.quarantined` instead. Quarantined operator system-inbox mail is
-stored but suppresses `email.system-message.received`. Successful
-reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
-correspondence. Reclassification never retroactively fires subscription events.
-Users manage rules via `email_sender_rule_*` (200-rule cap), reclassify via
+stored but suppresses `email.system-message.received`. Before user-inbox
+dispatch, `classifyInboundEmailSender` decides who the run acts as: a verified,
+authenticated account email of a current org member runs as that member (only
+packages they hold `package:execute` on, credentials checked and audited under
+them at resolve time), any other sender that passes the auth verdict runs as the
+inbox's org, and failed auth or a spoofed member address runs nothing and logs
+`inbound-email-sender-unverified`. Successful reserved-sender sends fan
+`email.system-message.sent` (admin-only) with the sent correspondence.
+Reclassification never retroactively fires subscription events. Users manage
+rules via `email_sender_rule_*` (200-rule cap), reclassify via
 `emailMessageClassify` or `/@<slug>/-/email`, and delete stored messages via
 `emailMessageDelete` or the delete action on `/@<slug>/-/email`; operators use
 `admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare
@@ -620,7 +639,8 @@ blast radius:
   and egress per org per UTC day, with public-ladder weekly hard caps on the
   same meters (Monday–Sunday; whichever window hits first blocks). Warm repeats
   are bounded separately by a per-org execute runaway brake (300 calls per
-  minute). See [`architecture/entitlements.md`](./architecture/entitlements.md).
+  minute per paid seat, raised by admin overrides). See
+  [`architecture/entitlements.md`](./architecture/entitlements.md).
 
 ## Accepted residual risks and out-of-scope items
 
@@ -702,8 +722,9 @@ change to these decisions here so future agents do not relitigate them.
   admin-gated write paths). The concrete cross-user blast includes
   `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
   users' published package trees), and the same unattended path can call other
-  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`, and
-  `adminSystemEmailSend`. Installing an untrusted package on an admin account
+  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`,
+  `adminSystemEmailSend`, and `adminPackageCodemodOwnerNotice` (emails package
+  owners fleet-wide). Installing an untrusted package on an admin account
   therefore carries that blast radius. This is accepted residual, not a silent
   interactive-only mutation gate. Deferred alternatives include gating admin
   mutations on `executionOrigin: 'interactive'`, and/or separate service

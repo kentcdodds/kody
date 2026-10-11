@@ -164,6 +164,7 @@ function createMockDb(options: MockDbOptions = {}) {
 		const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 		let boundParams: Array<unknown> = []
 		const statement = {
+			query,
 			bind(...params: Array<unknown>) {
 				boundParams = params
 				return statement
@@ -274,9 +275,20 @@ function createMockDb(options: MockDbOptions = {}) {
 	}
 	return {
 		prepare: (query: string) => statementFor(query),
-		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+		async batch(
+			statements: Array<{
+				query: string
+				run: () => Promise<unknown>
+				first: () => Promise<unknown>
+			}>,
+		) {
 			const results = []
 			for (const statement of statements) {
+				if (statement.query.trimStart().toLowerCase().startsWith('select')) {
+					const row = await statement.first()
+					results.push({ results: row == null ? [] : [row], meta: {} })
+					continue
+				}
 				results.push(await statement.run())
 			}
 			return results
@@ -949,11 +961,7 @@ test('mcp write lease is scoped to mutating tools/call and still rejects deletin
 	).toEqual([])
 
 	const transport = countingFetchMcp('legacy-ok')
-	const leaseRpcs = [
-		'acquireWriteLease',
-		'assertWriteLeaseHeld',
-		'releaseWriteLease',
-	]
+	const leaseRpcs = ['acquireWriteLease', 'releaseWriteLease']
 	for (const [call, expectedLeaseRpcs] of [
 		[listCall, []],
 		[searchCall, []],

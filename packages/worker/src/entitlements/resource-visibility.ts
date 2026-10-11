@@ -169,6 +169,14 @@ export const entitlementResourceVisibility: Record<
 		howToReduce: 'Trigger fewer webhooks or package invocations today.',
 		upgradeOffer: ', or upgrade your plan.',
 	},
+	execute_calls_per_minute: {
+		group: 'daily',
+		kind: 'counter',
+		whatCounts:
+			'Hosted execute calls started in the last UTC minute (repeats and failures included). A runaway safety net, not a billed quota; seats raise the org limit.',
+		howToReduce:
+			'Slow down or stop a looping agent; change code or params so calls are not identical.',
+	},
 }
 
 /**

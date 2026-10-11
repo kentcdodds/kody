@@ -1,3 +1,4 @@
+import { listScopeIncludes } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -7,6 +8,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { packageHasImplicitUserSecretReadAccess } from '#mcp/secrets/package-access.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
+import { loadSecretListScope } from './authorize-secret.ts'
 import { listedSecretSchema, toListedSecretCapabilityOutput } from './shared.ts'
 
 export const secretListCapability = defineDomainCapability(
@@ -35,7 +37,8 @@ export const secretListCapability = defineDomainCapability(
 			requireMcpUser(ctx.callerContext)
 			const packageId =
 				ctx.callerContext.storageContext?.packageId?.trim() || null
-			const secrets = await listSecrets({
+			const listScope = await loadSecretListScope(ctx, 'secret:use')
+			const listed = await listSecrets({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
 				scope: args.scope ?? null,
@@ -46,6 +49,9 @@ export const secretListCapability = defineDomainCapability(
 					storageId: ctx.callerContext.storageContext?.storageId ?? null,
 				},
 			})
+			const secrets = listed.filter((secret) =>
+				listScopeIncludes(listScope, secret.credentialId),
+			)
 			const implicitReadAccess =
 				packageId == null
 					? true

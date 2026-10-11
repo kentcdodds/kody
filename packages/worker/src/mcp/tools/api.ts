@@ -11,6 +11,7 @@ import { callerContextFields, logMcpEvent } from '#mcp/observability.ts'
 import { createApiInvocationContext } from '#worker/open-api/context.ts'
 import { ApiError, toApiError } from '#worker/open-api/errors.ts'
 import type * as OpenApiInvoke from '#worker/open-api/invoke.ts'
+import { type StructuredContentFromFields } from './mcp-tool-output.ts'
 import { buildKodyToolIcons } from './tool-icons.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 
@@ -31,10 +32,10 @@ function loadOpenApiInvoke() {
 export const apiToolDescription = [
 	'Call one Kody API operation directly: no sandbox, no execute quota. Same operations as the HTTP API at https://api.kody.codes/openapi.json.',
 	'',
-	'- `operationId`: a Kody capability name from `search` (e.g. `packageList`, `secretSet`, `jobRunNow`) or a token operation (`tokenCreate`, `tokenList`, `tokenGet`, `tokenRotate`, `tokenRevoke`).',
+	'- `operationId`: an Open API operation id from https://api.kody.codes/openapi.json (for example `packageList`, `secretSet`, `jobRunNow`, or token ops `tokenCreate` / `tokenList` / `tokenGet` / `tokenRotate` / `tokenRevoke`). Many match `search` capability names, but not every search capability is on the Open API — capability detail says when a capability is execute-only (for example `webhookSyntheticDispatch` and admin capabilities).',
 	'- `params`: the operation input as one flat object (the same fields `search` shows for the capability; HTTP path, query, and body fields together).',
 	'',
-	'Use `execute` instead when you need to compose several calls, transform results, or fetch external URLs.',
+	'Use `execute` instead when you need to compose several calls, transform results, fetch external URLs, or call an execute-only capability.',
 	'',
 	'Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available. Agents already on this MCP session: call `cliCredentialBootstrap` with `lifetime: "short"` (single-task) or `"long"` (returns a one-shot `kody_bc_…` code + `cli_command` that includes lifetime flags, never a `kody_at_…`), run that CLI command, then `npx @kodycodes/cli execute --local --code \'…\'` — no second interactive OAuth and no `tokenCreate`. Interactive humans: `kody login` then `--local`. Mint `tokenCreate` only for CI/headless without an MCP session (include a required lifetime; set `KODY_API_TOKEN` in the environment, never paste into chat). If `--local` cannot run, use Open API / MCP `api` or fix the environment. See https://kody.codes/docs/local-execute and https://kody.codes/docs/open-api.',
 ].join('\n')
@@ -46,6 +47,11 @@ export const apiToolAnnotations = {
 	openWorldHint: true,
 } satisfies ToolAnnotations
 
+/**
+ * Advertised MCP output schema for the api tool's `structuredContent`
+ * envelope. Single source of truth for tools/list JSON Schema and
+ * {@link ApiToolStructuredContent} — keep every emitted top-level key here.
+ */
 export const apiToolOutputSchema = {
 	operationId: z.string().describe('The operation that ran.'),
 	result: z
@@ -66,6 +72,10 @@ export const apiToolOutputSchema = {
 		.describe('True when the result was truncated to fit the response limit.'),
 	note: z.string().optional().describe('Explains a truncated result.'),
 }
+
+export type ApiToolStructuredContent = StructuredContentFromFields<
+	typeof apiToolOutputSchema
+>
 
 /** Register the MCP `api` tool for signed-in callers. */
 export async function registerApiTool(agent: McpRegistrationAgent) {

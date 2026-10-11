@@ -12,6 +12,10 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: (...args: Array<unknown>) => mocks.repoSessionRpc(...args),
 }))
 
+vi.mock('./authorize-repo-session-package.ts', () => ({
+	authorizeRepoSessionPackageRead: async () => undefined,
+}))
+
 const { repoSearchCapability } = await import('./repo-search.ts')
 
 function createContext() {

@@ -148,6 +148,7 @@ async function renderCommunityListingPage(input: {
 				username: detail.username,
 				kodyId: detail.listing.kodyId,
 				viewerIsOwner: detail.viewerIsOwner,
+				viewerCanManage: detail.viewerCanManage,
 				isPrivate: false,
 				invocationUrlOrigin: detail.invocationUrlOrigin,
 			},
@@ -347,6 +348,10 @@ export function createCommunityPackageHandler(env: Env) {
 							username: page.username,
 							kodyId: page.kodyId,
 							viewerIsOwner: page.viewerIsOwner,
+							viewerCanManage: page.viewerCanManage,
+							viewerCanPublish: page.viewerCanPublish,
+							viewerCanDelete: page.viewerCanDelete,
+							viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 							isPrivate: packagePageIsPrivate(page),
 							invocationUrlOrigin: page.invocationUrlOrigin,
 						},
@@ -418,6 +423,10 @@ export function createCommunityPackageHandler(env: Env) {
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
+						viewerCanManage: page.viewerCanManage,
+						viewerCanPublish: page.viewerCanPublish,
+						viewerCanDelete: page.viewerCanDelete,
+						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 						isPrivate: packagePageIsPrivate(page),
 						invocationUrlOrigin: page.invocationUrlOrigin,
 					},
@@ -560,6 +569,10 @@ export function createCommunityPackageApiHandler(env: Env) {
 					listing: page.listing?.listing ?? null,
 					ownerProfilePublic: page.ownerProfilePublic,
 					viewerIsOwner: page.viewerIsOwner,
+					viewerCanManage: page.viewerCanManage,
+					viewerCanPublish: page.viewerCanPublish,
+					viewerCanDelete: page.viewerCanDelete,
+					viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 					loggedIn: page.loggedIn,
 					viewerIsAdmin: page.listing?.viewerIsAdmin ?? false,
 					forkPrompt: page.listing?.forkPrompt ?? '',
@@ -609,7 +622,7 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 			if (page.kind === 'unauthorized') {
 				return renderPackageUnauthorizedPage({ request, env })
 			}
-			if (!page.viewerIsOwner || !page.ownerPackage) {
+			if (!page.viewerCanManage || !page.ownerPackage) {
 				return renderPackageNotFoundPage({ request, env })
 			}
 
@@ -638,6 +651,10 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: true,
+						viewerCanManage: true,
+						viewerCanPublish: page.viewerCanPublish,
+						viewerCanDelete: page.viewerCanDelete,
+						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 						isPrivate: page.ownerPackage.isPrivate,
 						invocationUrlOrigin: page.invocationUrlOrigin,
 					},

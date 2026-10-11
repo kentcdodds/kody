@@ -21,7 +21,9 @@ export const credentialResolveAuditAction = 'credential.resolve'
 /**
  * Which credential a resolution is for. The row's resource id is the stable
  * credential id once the door finds the credential (null when it does not);
- * the name the caller asked for goes in the details.
+ * the name the caller asked for goes in the details. Fetch uses record
+ * `details.host`, the host the value is sent to, so a review can compare
+ * declared and used hosts.
  */
 export type CredentialAuditSubject = {
 	use: string

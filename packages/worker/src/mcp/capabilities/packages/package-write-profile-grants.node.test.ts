@@ -5,7 +5,7 @@ import {
 import { expect, test, vi } from 'vitest'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { authorizeRepoSessionPackageWrite } from '#mcp/capabilities/repo/authorize-repo-session-package-write.ts'
+import { authorizeRepoSessionPackageWrite } from '#mcp/capabilities/repo/authorize-repo-session-package.ts'
 
 const mocks = vi.hoisted(() => ({
 	resolveConnectionProfileGrants: vi.fn(),

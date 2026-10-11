@@ -1,4 +1,8 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { type EnablementRun } from '#worker/request-context/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
@@ -19,12 +23,29 @@ const listDueJobRows = vi.fn()
 const claimJobRow = vi.fn()
 const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
+const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
 const listArchivedJobArtifactsDueBefore = vi.fn<
 	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
 >(async () => [])
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
+
+const enablementRun: EnablementRun = {
+	id: 'enablement-fenced',
+	enabler: { userId: personIdFromStored('user-fenced'), username: 'fenced' },
+	role: 'owner',
+}
+const planEnablementRuns = vi.fn(
+	async (): Promise<{ runs: Array<EnablementRun>; skipped: [] }> => ({
+		runs: [enablementRun],
+		skipped: [],
+	}),
+)
+
+vi.mock('#worker/enablements/run-gate.ts', () => ({
+	planEnablementRuns: () => planEnablementRuns(),
+}))
 
 vi.mock('#worker/account/deletion-state.ts', () => ({
 	withAccountWriteLease: (...args: Array<unknown>) =>
@@ -45,6 +66,8 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 			finalizeClaimedJobRow(...(args as [never])),
 		retryClaimedJobRow: (...args: Array<unknown>) =>
 			retryClaimedJobRow(...(args as [never])),
+		renewClaimedJobRow: (...args: Array<unknown>) =>
+			renewClaimedJobRow(...(args as [never])),
 	}
 })
 
@@ -350,4 +373,98 @@ test('scheduled package job claims carry package identity and the published sour
 			nextRunAt: '2026-07-30T19:00:05.000Z',
 		}),
 	)
+})
+
+test('a scheduled slot with no enablement on records no run and does not use up a once job', async () => {
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
+	claimRunRecord.mockClear()
+	finalizeClaimedJobRow.mockReset()
+	retryClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	retryClaimedJobRow.mockResolvedValue(true)
+	const skipped = {
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 0,
+		jobOutcomes: [],
+	}
+
+	const recurring = createJobRecord({ id: 'job-recurring-skip' })
+	seedDueClaim(recurring)
+	await expect(runDue(recurring.userId)).resolves.toEqual(skipped)
+	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
+	const finalized = finalizeClaimedJobRow.mock.calls[0]?.[0] as {
+		job: JobRecord
+	}
+	expect(finalized.job).toMatchObject({
+		enabled: true,
+		nextRunAt: '2026-07-30T20:00:00.000Z',
+	})
+	expect(finalized.job.lastRunAt).toBeUndefined()
+	expect(finalized.job.lastRunStatus).toBeUndefined()
+	expect(retryClaimedJobRow).not.toHaveBeenCalled()
+
+	finalizeClaimedJobRow.mockClear()
+	const once = createJobRecord({
+		id: 'job-once-skip',
+		schedule: { type: 'once', runAt: '2026-07-30T19:00:00.000Z' },
+	})
+	seedDueClaim(once)
+	await expect(runDue(once.userId)).resolves.toEqual(skipped)
+	expect(finalizeClaimedJobRow).not.toHaveBeenCalled()
+	expect(retryClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jobId: once.id,
+			nextRunAt: '2026-07-30T19:00:05.000Z',
+		}),
+	)
+	expect(claimRunRecord).not.toHaveBeenCalled()
+})
+
+test('each further enablement run renews the shared claim and stops once it is lost', async () => {
+	const secondEnablement: EnablementRun = {
+		...enablementRun,
+		id: 'enablement-second',
+	}
+	const record = createJobRecord({ id: 'job-multi-enablement' })
+	const row = seedDueClaim(record)
+	claimRunRecord.mockReset()
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(record, row, {
+			packageId: null,
+			kodyId: null,
+			publishedCommit: null,
+		}),
+	)
+	finalizeClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	const twoRuns = {
+		runs: [enablementRun, secondEnablement],
+		skipped: [] as [],
+	}
+
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(true)
+	await runDue(record.userId)
+	const [claimInput] = claimJobRow.mock.lastCall as [{ claimToken: string }]
+	const claimToken = claimInput.claimToken
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(renewClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: record.userId,
+			jobId: record.id,
+			claimToken,
+			nowMs: expect.any(Number),
+		}),
+	)
+	expect(claimRunRecord).toHaveBeenCalledTimes(2)
+
+	renewClaimedJobRow.mockReset()
+	claimRunRecord.mockClear()
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(false)
+	await runDue(record.userId)
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(claimRunRecord).toHaveBeenCalledOnce()
 })

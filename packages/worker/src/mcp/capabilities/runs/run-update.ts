@@ -1,8 +1,12 @@
+import { authorizeOrgWide } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { updateRunErrorTriage } from '#worker/run-records/service.ts'
 import {
@@ -59,6 +63,10 @@ export const runUpdateCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeOrgWide(
+				{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
+				'job:write',
+			)
 			const errorTriage = args.triage === 'open' ? null : args.triage
 			const outcome = await updateRunErrorTriage({
 				env: ctx.env,

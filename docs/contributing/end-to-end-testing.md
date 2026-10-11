@@ -169,4 +169,4 @@ If `packages/worker/.env` is missing, the E2E server startup path copies
 
 These tests are executed by the `validate` gate, alongside `format:check`,
 `lint`, `typecheck`, unit tests, and the MCP E2E suite. `validate` is read-only;
-use `npm run validate:fix` for `format` + `lint:fix`.
+use `npm run validate:fix` for `lint:fix` then `format`.

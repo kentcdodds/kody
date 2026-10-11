@@ -146,3 +146,18 @@ test('handleRequest skips Sentry when SSR already reported the failure', async (
 	expect(response.status).toBe(500)
 	expect(captureException).not.toHaveBeenCalled()
 })
+
+test('removed blog posts are a 404 with no redirect', async () => {
+	const response = await handleRequest(
+		new Request('https://example.com/blog/kody-vs-executor', {
+			redirect: 'manual',
+		}),
+		createEnv(),
+	)
+
+	expect(response.status).toBe(404)
+	expect(response.headers.get('location')).toBeNull()
+	await expect(response.text()).resolves.toContain(
+		'data-testid="not-found-page"',
+	)
+})

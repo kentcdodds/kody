@@ -1,5 +1,8 @@
+import { DatabaseSync } from 'node:sqlite'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createCommunityPackageIconHandler } from './community-package-icon.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -55,8 +58,32 @@ const publicPackage = {
 	isPrivate: false,
 }
 
+function createEnv() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const now = '2026-01-01T00:00:00.000Z'
+	const insertOrg = sqlite.prepare(
+		`INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+	)
+	const insertMembership = sqlite.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, ?, ?)`,
+	)
+	for (const personId of ['owner-1', 'other-1']) {
+		insertOrg.run(personId, personId, personId, now, now)
+		insertMembership.run(personId, personId, 'owner', now)
+	}
+	insertOrg.run('org-acme', 'acme', 'Acme', now, now)
+	insertMembership.run('org-acme', 'owner-1', 'owner', now)
+	insertMembership.run('org-acme', 'other-1', 'member', now)
+	return { APP_DB: createD1FromSqlite(sqlite) } as unknown as Env
+}
+
+const env = createEnv()
+
 function callHandler(iconCommit = 'pub-1') {
-	const handler = createCommunityPackageIconHandler({ APP_DB: {} } as Env)
+	const handler = createCommunityPackageIconHandler(env)
 	return handler.handler({
 		request: new Request(`https://example.com/@kent/notes/icon/${iconCommit}`),
 		params: { username: 'kent', kodyId: 'notes', iconCommit },
@@ -121,6 +148,7 @@ test('private package identity icons use a private cache for the owner and 404 f
 		}),
 	)
 
+	// A member without a grant on the package cannot see it.
 	mocks.serveIdentityIcon.mockClear()
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
 		mcpUser: { userId: ownerIdFromStored('other-1') },
@@ -151,4 +179,36 @@ test('package identity icon rejects stale commits and hidden private packages', 
 	})
 	mocks.getEntitySourceById.mockResolvedValue(source)
 	expect((await callHandler('old-commit')).status).toBe(404)
+})
+
+test('private team package icons follow what the viewer can see in the team org', async () => {
+	const teamPackage = { ...publicPackage, isPrivate: true }
+	mocks.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'acme',
+		kodyId: 'notes',
+		userId: ownerIdFromStored('org-acme'),
+		savedPackage: teamPackage,
+		listingId: null,
+	})
+	mocks.getEntitySourceById.mockResolvedValue({
+		...source,
+		user_id: ownerIdFromStored('org-acme'),
+	})
+	mocks.serveIdentityIcon.mockResolvedValue(
+		new Response('icon', { status: 200 }),
+	)
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: ownerIdFromStored('owner-1') },
+	})
+	expect((await callHandler()).status).toBe(200)
+
+	// A member without a grant on the package cannot see it.
+	mocks.serveIdentityIcon.mockClear()
+	mocks.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: ownerIdFromStored('other-1') },
+	})
+	expect((await callHandler()).status).toBe(404)
+	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
 })

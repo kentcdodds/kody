@@ -713,6 +713,47 @@ export async function findSecret(
 	}
 }
 
+/**
+ * One lookup for `resolveCredential`: the metadata it authorizes on, and a
+ * `readValue` that decrypts only when the door calls it after authorizing.
+ */
+export async function findSecretForUse(input: ResolveSecretInput): Promise<{
+	found: FoundSecret
+	readValue: () => Promise<ResolvedSecret>
+}> {
+	const found = await findSecretEntry(input)
+	if (!found) {
+		const missing: ResolvedSecret = {
+			found: false,
+			credentialId: null,
+			value: null,
+			scope: null,
+			allowedHosts: [],
+			allowedPackages: [],
+		}
+		const { value: _value, ...metadata } = missing
+		return { found: metadata, readValue: async () => missing }
+	}
+	const metadata: FoundSecret = {
+		found: true,
+		credentialId: found.entry.id,
+		scope: found.scope,
+		allowedHosts: parseAllowedHosts(found.entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(found.entry.allowed_packages),
+	}
+	return {
+		found: metadata,
+		readValue: async () => ({
+			...metadata,
+			value: await decryptSecretValue(
+				input.env,
+				found.entry.encrypted_value,
+				userSecretContext(input.userId),
+			),
+		}),
+	}
+}
+
 export async function resolveSecret(
 	input: ResolveSecretInput,
 ): Promise<ResolvedSecret> {
@@ -849,6 +890,7 @@ export async function listUserSecretsForSearch(input: {
 	return rows
 		.filter((row) => !isReservedSecretName(row.name))
 		.map((row) => ({
+			credentialId: row.id,
 			name: row.name,
 			scope: row.scope,
 			description: row.description,

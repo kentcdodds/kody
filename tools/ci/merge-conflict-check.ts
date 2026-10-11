@@ -12,8 +12,19 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * a cached result can be replaced by a later calculation. GitHub often
  * keeps `base.sha` at the merge-base for a behind pull request and never
  * stores the new tip; after the poll a published non-pending state is used
- * instead of failing closed. It does not check out or execute pull request
- * code, and it does not run Validate.
+ * instead of failing closed. A head with no commits ahead of the expected
+ * base is skipped (the current tip, or an ancestor of it): writing that
+ * check would land on a default-branch SHA. Bots often open a pull request
+ * before the first unique commit, and main can move on before they push.
+ * A compare miss (fork head, flake) still writes the check so a unique
+ * pull request is not skipped. A GitHub API rate limit during a
+ * default-branch run does not fail this job: the run is recorded on that
+ * SHA, and a red job would mark main failed. The head check is written
+ * only after mergeability is known, so a quota miss cannot leave an
+ * in-progress check on the pull request. Rate-limit waits share one
+ * budget for the scan so retries cannot exceed the job timeout. The next
+ * pull request update or base push reruns the check. It does not check
+ * out or execute pull request code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -22,6 +33,10 @@ export const mergeConflictPollDelayMs = 3_000
 const openPullRequestPageSize = 100
 const openPullRequestMaxPages = 20
 const openPullRequestScanConcurrency = 4
+export const githubRateLimitMaxRetries = 2
+export const githubRateLimitMaxWaitMs = 90_000
+export const githubRateLimitWaitBudgetMs = 90_000
+const githubRateLimitDefaultWaitMs = 10_000
 
 const githubApiVersion = '2022-11-28'
 const safeBaseRefPattern = /^[A-Za-z0-9._/-]+$/
@@ -51,6 +66,11 @@ type MergeConflictCheckOutput = {
 }
 
 type FetchLike = typeof fetch
+
+export function isGithubRateLimitError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return isGithubRateLimitMessage(message)
+}
 
 export function classifyMergeability(input: {
 	mergeable: boolean | null
@@ -162,26 +182,53 @@ export async function reportMergeConflictCheck(input: {
 	maxAttempts?: number
 	delayMs?: number
 }): Promise<number> {
-	const fetchImpl = input.fetchImpl ?? fetch
+	const sleep = input.sleep ?? delay
 	const { owner, repo } = parseRepository(input.repository)
-	const client = createGithubClient({
-		token: input.token,
-		owner,
-		repo,
-		fetchImpl,
-		detailsUrl: input.detailsUrl,
-	})
-	let checkRunId: number | null = null
+	return await runMergeConflictCheck(
+		input,
+		createGithubClient({
+			token: input.token,
+			owner,
+			repo,
+			fetchImpl: input.fetchImpl ?? fetch,
+			detailsUrl: input.detailsUrl,
+			sleep,
+		}),
+		sleep,
+	)
+}
+
+async function runMergeConflictCheck(
+	input: {
+		pullNumber: number
+		headSha: string
+		expectedBaseSha: string
+		maxAttempts?: number
+		delayMs?: number
+	},
+	client: GithubClient,
+	sleep: (ms: number) => Promise<void>,
+): Promise<number> {
+	if (sameSha(input.headSha, input.expectedBaseSha)) {
+		console.log(
+			`Skipping ${mergeConflictCheckName}: pull request head is the default-branch tip.`,
+		)
+		return 0
+	}
 	try {
-		checkRunId = await client.openCheck(input.headSha)
+		if (
+			await headHasNoUniqueCommits(client, input.expectedBaseSha, input.headSha)
+		) {
+			return 0
+		}
 		const result = await pollMergeability({
 			read: () => client.readPullRequest(input.pullNumber),
-			sleep: input.sleep ?? delay,
+			sleep,
 			maxAttempts: input.maxAttempts ?? mergeConflictPollAttempts,
 			delayMs: input.delayMs ?? mergeConflictPollDelayMs,
 			expectedBaseSha: input.expectedBaseSha,
 		})
-		await client.completeCheck(checkRunId, result)
+		await client.publishCheck(input.headSha, result)
 		// This job is recorded on the default-branch SHA. Exit 0 after the
 		// head check is published so a conflict does not fail that commit.
 		// `gh pr checks` reads the head SHA check.
@@ -196,16 +243,20 @@ export async function reportMergeConflictCheck(input: {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		console.error(message)
-		if (checkRunId !== null) {
-			const published = await completeCheckAfterError(
-				client,
-				checkRunId,
-				message,
+		if (isGithubRateLimitError(error)) {
+			console.log(
+				`Deferred ${mergeConflictCheckName}: GitHub API rate limited.`,
 			)
-			if (published) {
-				console.log(`Check ${mergeConflictCheckName} failed.`)
-				return 0
-			}
+			return 0
+		}
+		const published = await publishCheckAfterError(
+			client,
+			input.headSha,
+			message,
+		)
+		if (published) {
+			console.log(`Check ${mergeConflictCheckName} failed.`)
+			return 0
 		}
 		return 1
 	}
@@ -224,6 +275,7 @@ export async function reportOpenPullRequestMergeConflicts(input: {
 	concurrency?: number
 }): Promise<number> {
 	const fetchImpl = input.fetchImpl ?? fetch
+	const sleep = input.sleep ?? delay
 	const { owner, repo } = parseRepository(input.repository)
 	const client = createGithubClient({
 		token: input.token,
@@ -231,26 +283,38 @@ export async function reportOpenPullRequestMergeConflicts(input: {
 		repo,
 		fetchImpl,
 		detailsUrl: input.detailsUrl,
+		sleep,
 	})
-	const pulls = await client.listOpenPullRequests(input.baseRef)
+	let pulls: Array<ListedPullRequest>
+	try {
+		pulls = await client.listOpenPullRequests(input.baseRef)
+	} catch (error) {
+		if (isGithubRateLimitError(error)) {
+			console.error(error instanceof Error ? error.message : String(error))
+			console.log(
+				`Deferred ${mergeConflictCheckName}: GitHub API rate limited.`,
+			)
+			return 0
+		}
+		throw error
+	}
 	const codes: Array<number> = []
 	await mapPool(
 		pulls,
 		input.concurrency ?? openPullRequestScanConcurrency,
 		async (pullRequest) => {
 			codes.push(
-				await reportMergeConflictCheck({
-					token: input.token,
-					repository: input.repository,
-					pullNumber: pullRequest.number,
-					headSha: pullRequest.headSha,
-					expectedBaseSha: input.expectedBaseSha,
-					detailsUrl: input.detailsUrl,
-					fetchImpl,
-					sleep: input.sleep,
-					maxAttempts: input.maxAttempts,
-					delayMs: input.delayMs,
-				}),
+				await runMergeConflictCheck(
+					{
+						pullNumber: pullRequest.number,
+						headSha: pullRequest.headSha,
+						expectedBaseSha: input.expectedBaseSha,
+						maxAttempts: input.maxAttempts,
+						delayMs: input.delayMs,
+					},
+					client,
+					sleep,
+				),
 			)
 		},
 	)
@@ -289,8 +353,9 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 			detailsUrl: workflowRunUrl(env),
 		})
 	} catch (error) {
-		console.error(error instanceof Error ? error.message : String(error))
-		process.exitCode = 1
+		const message = error instanceof Error ? error.message : String(error)
+		console.error(message)
+		process.exitCode = isGithubRateLimitError(error) ? 0 : 1
 	}
 }
 
@@ -367,6 +432,40 @@ function sameSha(left: string, right: string) {
 	return left.toLowerCase() === right.toLowerCase()
 }
 
+async function headHasNoUniqueCommits(
+	client: GithubClient,
+	expectedBaseSha: string,
+	headSha: string,
+) {
+	try {
+		const aheadBy = await client.compareAheadBy(expectedBaseSha, headSha)
+		if (aheadBy === 0) {
+			console.log(
+				`Skipping ${mergeConflictCheckName}: pull request head has no commits ahead of the base.`,
+			)
+			return true
+		}
+	} catch (error) {
+		if (isGithubRateLimitError(error)) throw error
+		const message = error instanceof Error ? error.message : String(error)
+		console.log(
+			`Continuing ${mergeConflictCheckName}: could not compare head to base (${message}).`,
+		)
+	}
+	return false
+}
+
+function parseAheadBy(payload: unknown) {
+	if (typeof payload !== 'object' || payload === null) {
+		throw new Error('Compare response was not an object')
+	}
+	const aheadBy = (payload as { ahead_by?: unknown }).ahead_by
+	if (typeof aheadBy !== 'number' || !Number.isFinite(aheadBy) || aheadBy < 0) {
+		throw new Error('Compare response is missing ahead_by')
+	}
+	return aheadBy
+}
+
 function requiredEnv(env: NodeJS.ProcessEnv, name: string) {
 	const value = env[name]
 	if (!value) throw new Error(`Missing ${name}`)
@@ -395,13 +494,10 @@ type ListedPullRequest = {
 }
 
 type GithubClient = {
-	openCheck: (headSha: string) => Promise<number>
+	compareAheadBy: (baseSha: string, headSha: string) => Promise<number>
 	readPullRequest: (pullNumber: number) => Promise<PullRequestMergeability>
 	listOpenPullRequests: (baseRef: string) => Promise<Array<ListedPullRequest>>
-	completeCheck: (
-		checkRunId: number,
-		result: ResolvedMergeability,
-	) => Promise<void>
+	publishCheck: (headSha: string, result: ResolvedMergeability) => Promise<void>
 }
 
 function createGithubClient(input: {
@@ -410,52 +506,72 @@ function createGithubClient(input: {
 	repo: string
 	fetchImpl: FetchLike
 	detailsUrl?: string
+	sleep?: (ms: number) => Promise<void>
 }): GithubClient {
 	const repoPath = `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}`
+	const sleep = input.sleep ?? delay
+	let pausedUntil = 0
+	let rateLimitWaitedMs = 0
 
 	async function github(method: string, path: string, body?: unknown) {
-		const response = await input.fetchImpl(`https://api.github.com${path}`, {
-			method,
-			headers: {
-				Accept: 'application/vnd.github+json',
-				Authorization: `Bearer ${input.token}`,
-				'Content-Type': 'application/json',
-				'User-Agent': 'kody-merge-conflict-check',
-				'X-GitHub-Api-Version': githubApiVersion,
-			},
-			body: body === undefined ? undefined : JSON.stringify(body),
-		})
-		const text = await response.text()
-		if (!response.ok) {
-			throw new Error(
-				`GitHub API ${method} ${path} failed (${String(response.status)}): ${text.slice(0, 500)}`,
-			)
-		}
-		if (!text) return null
-		try {
-			return JSON.parse(text) as unknown
-		} catch {
-			throw new Error(`GitHub API ${method} ${path} returned non-JSON`)
+		for (let attempt = 1; ; attempt += 1) {
+			const pauseMs = pausedUntil - Date.now()
+			if (pauseMs > 0) {
+				await sleep(pauseMs)
+				pausedUntil = Date.now()
+			}
+			const response = await input.fetchImpl(`https://api.github.com${path}`, {
+				method,
+				headers: {
+					Accept: 'application/vnd.github+json',
+					Authorization: `Bearer ${input.token}`,
+					'Content-Type': 'application/json',
+					'User-Agent': 'kody-merge-conflict-check',
+					'X-GitHub-Api-Version': githubApiVersion,
+				},
+				body: body === undefined ? undefined : JSON.stringify(body),
+			})
+			const text = await response.text()
+			if (
+				isGithubRateLimitResponse(response.status, text) &&
+				attempt <= githubRateLimitMaxRetries
+			) {
+				const waitMs = githubRateLimitWaitMs(response)
+				const remainingBudget = githubRateLimitWaitBudgetMs - rateLimitWaitedMs
+				if (
+					waitMs <= githubRateLimitMaxWaitMs &&
+					waitMs > 0 &&
+					waitMs <= remainingBudget
+				) {
+					console.log(
+						`GitHub API ${method} ${path} rate limited; retrying in ${String(waitMs)}ms.`,
+					)
+					rateLimitWaitedMs += waitMs
+					pausedUntil = Math.max(pausedUntil, Date.now() + waitMs)
+					continue
+				}
+			}
+			if (!response.ok) {
+				throw new Error(
+					githubApiErrorMessage(method, path, response.status, text),
+				)
+			}
+			if (!text) return null
+			try {
+				return JSON.parse(text) as unknown
+			} catch {
+				throw new Error(`GitHub API ${method} ${path} returned non-JSON`)
+			}
 		}
 	}
 
 	return {
-		async openCheck(headSha) {
-			const payload = await github('POST', `${repoPath}/check-runs`, {
-				name: mergeConflictCheckName,
-				head_sha: headSha,
-				status: 'in_progress',
-				started_at: new Date().toISOString(),
-				details_url: input.detailsUrl,
-				output: {
-					title: 'Checking mergeability',
-					summary: [
-						'Checking whether this pull request conflicts with its base branch.',
-						'GitHub skips Validate, Preview, and CLA when the merge commit cannot be built. This check fails in that case so the pull request is not treated as green.',
-					].join('\n\n'),
-				},
-			})
-			return readCheckRunId(payload)
+		async compareAheadBy(baseSha, headSha) {
+			const payload = await github(
+				'GET',
+				`${repoPath}/compare/${encodeURIComponent(baseSha)}...${encodeURIComponent(headSha)}`,
+			)
+			return parseAheadBy(payload)
 		},
 		async readPullRequest(pullNumber) {
 			const payload = await github(
@@ -479,12 +595,16 @@ function createGithubClient(input: {
 				`More than ${String(openPullRequestMaxPages * openPullRequestPageSize)} open pull requests target ${baseRef}`,
 			)
 		},
-		async completeCheck(checkRunId, result) {
+		async publishCheck(headSha, result) {
 			const output = describeMergeConflictCheck(result)
-			await github('PATCH', `${repoPath}/check-runs/${String(checkRunId)}`, {
+			const completedAt = new Date().toISOString()
+			await github('POST', `${repoPath}/check-runs`, {
+				name: mergeConflictCheckName,
+				head_sha: headSha,
 				status: 'completed',
 				conclusion: output.conclusion,
-				completed_at: new Date().toISOString(),
+				started_at: completedAt,
+				completed_at: completedAt,
 				details_url: input.detailsUrl,
 				output: {
 					title: output.title,
@@ -495,13 +615,13 @@ function createGithubClient(input: {
 	}
 }
 
-async function completeCheckAfterError(
+async function publishCheckAfterError(
 	client: GithubClient,
-	checkRunId: number,
+	headSha: string,
 	message: string,
 ) {
 	try {
-		await client.completeCheck(checkRunId, {
+		await client.publishCheck(headSha, {
 			kind: 'undetermined',
 			baseRef: '',
 			mergeableState: 'unknown',
@@ -515,16 +635,40 @@ async function completeCheckAfterError(
 	}
 }
 
-function readCheckRunId(payload: unknown) {
-	if (
-		typeof payload !== 'object' ||
-		payload === null ||
-		!('id' in payload) ||
-		typeof payload.id !== 'number'
-	) {
-		throw new Error('GitHub check run response did not include an id')
+function isGithubRateLimitMessage(message: string) {
+	return /failed \((403|429)\):/.test(message) && /rate limit/i.test(message)
+}
+
+function isGithubRateLimitResponse(status: number, body: string) {
+	return (status === 403 || status === 429) && /rate limit/i.test(body)
+}
+
+function githubRateLimitWaitMs(response: Response) {
+	const retryAfter = response.headers.get('retry-after')
+	if (retryAfter !== null) {
+		if (/^\d+$/.test(retryAfter)) return Number(retryAfter) * 1000
+		const until = Date.parse(retryAfter)
+		if (!Number.isNaN(until)) {
+			return Math.max(githubRateLimitDefaultWaitMs, until - Date.now())
+		}
 	}
-	return payload.id
+	const reset = response.headers.get('x-ratelimit-reset')
+	if (reset !== null && /^\d+$/.test(reset)) {
+		return Math.max(
+			githubRateLimitDefaultWaitMs,
+			Number(reset) * 1000 - Date.now(),
+		)
+	}
+	return githubRateLimitDefaultWaitMs
+}
+
+function githubApiErrorMessage(
+	method: string,
+	path: string,
+	status: number,
+	body: string,
+) {
+	return `GitHub API ${method} ${path} failed (${String(status)}): ${body.slice(0, 500)}`
 }
 
 async function mapPool<T>(

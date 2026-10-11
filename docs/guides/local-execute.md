@@ -93,6 +93,18 @@ CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
 ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
 on origin (or fail closed naming the secret) instead of sending them raw.
 
+A `fetch` that carries a placeholder runs on origin with the same 5-minute
+overall deadline as cloud fetches. The deadline starts when origin sends the
+request upstream, after it checks your quota and fills placeholders, and runs
+until the response body ends. The response is also aborted after 60s with no
+bytes. `--local` has no run cap, so a long streamed response, such as an AI
+completion, can finish. Origin buffers the whole response before returning it,
+so your code receives nothing until the body ends, and a body over 4 MiB fails.
+The CLI's own HTTP client also waits at most 5 minutes for origin's reply, so
+leave a few seconds of margin. Use cloud execute or a workflow for larger
+payloads. A `fetch` without placeholders goes straight from local workerd and is
+not subject to this deadline.
+
 ## Failure
 
 - Node is below 22, the CLI is missing, or the host cannot run workerd. Use

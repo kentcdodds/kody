@@ -123,8 +123,15 @@ hard-code a previous `@{username}` scope need updates from their owners.
 
 ### Credential slots (`kody.credentials`)
 
-`kody.credentials` names each credential the package needs. Package code uses
-the slot name; the org decides which credential fills it.
+`kody.credentials` names each credential the package needs. Publish validates
+the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
+secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
+`NAME`, with the same package access rules as a package without slots. Name each
+slot after the secret or integration the code already references, and keep those
+references as they are. There is no way yet for an org to choose which
+credential fills a slot; see
+[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
+for the switch to assignments.
 
 ```json
 {
@@ -142,11 +149,7 @@ the slot name; the org decides which credential fills it.
 			"RESEND_API_KEY": {
 				"kind": "secret",
 				"provider": "resend",
-				"description": "Resend API key that sends the digest email.",
-				"placement": {
-					"header": "Authorization",
-					"template": "Bearer {value}"
-				}
+				"description": "Resend API key that sends the digest email."
 			}
 		}
 	}
@@ -158,15 +161,25 @@ the slot name; the org decides which credential fills it.
 - `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
   `description` says what the slot is for. `multiple: true` means the package
   picks among several accounts.
-- `placement` is the one request header the value may be sent in. `template` is
-  the whole header value with `{value}` where the credential goes; without it
-  the header value is the credential. Secret slots must declare `placement`.
-  OAuth slots default to
-  `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
-  no placement.
-- Publish rejects any other key or a missing field and names the slot.
-- Declaring slots does not change how credentials resolve. Package code keeps
-  using its secret, integration, and MCP references.
+- Publish rejects any other key or a missing field and names the slot. If a
+  later rule rejects a slot in a version that is already published, the package
+  still loads with its other slots.
+- Slots take no `placement`. Publish rejects one with a message to remove it;
+  versions published while it was required load with it ignored. The fetch
+  gateway fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a
+  request (a header, the URL path or query, or a text body) when the request is
+  HTTPS and its host is one the secret or integration allows, the same as for a
+  package without slots. See
+  [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
+
+To see which old-style credential references a package still has, run
+`repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
+pattern labels it matches (for example `- src/index.ts: literal secret`),
+without credential names. `repoPublishSession` and `packageSave` repeat that
+list in their output, and `packagePublishExternalPush` includes the result in
+`checks`. It never fails a check or blocks a publish. The labels are described
+in
+[package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
 
 ### npm dependencies
 
@@ -574,6 +587,9 @@ Recurring schedules belong on a saved package:
 - Package config (secrets and manifest mounts) stays keyed by the saved package
   id
 - Shared durable data goes through `packageStorage()`
+- Each run, including `jobRunNow`, gets a 5-minute sandbox budget on every plan,
+  including package exports the job imports. Outbound `fetch` keeps its own
+  5-minute deadline and 60s idle timeout
 
 Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see

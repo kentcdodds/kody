@@ -1,4 +1,4 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -33,7 +33,7 @@ export const repoGetCapability = defineDomainCapability(
 		name: 'repoGet',
 		orgPermission: 'package:read',
 		description:
-			'Load one plain repo for the signed-in user, including live default-branch HEAD and progressive-disclosure hints when the tree is package-shaped.',
+			'Load one plain repo in the org this connection is bound to, including live default-branch HEAD and progressive-disclosure hints when the tree is package-shaped.',
 		keywords: ['repo', 'get', 'plain', 'head', 'package-shaped'],
 		readOnly: true,
 		idempotent: true,
@@ -55,10 +55,11 @@ export const repoGetCapability = defineDomainCapability(
 			notice: z.string().nullable(),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: personalOrgId(user.userId),
+				userId: ownerId,
 				args,
 			})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)

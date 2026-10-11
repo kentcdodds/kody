@@ -1,5 +1,11 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { invokePackageExport } from '#worker/package-invocations/service.ts'
+import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
+import { buildJsonErrorResponse } from '#worker/package-invocations/responses.ts'
+import {
+	invokePackageExport,
+	type PackageInvocationResponse,
+} from '#worker/package-invocations/service.ts'
+import { type EnablementRun } from '#worker/request-context/request-context.ts'
 import { recordRunRecord } from '#worker/run-records/service.ts'
 import { type RunRecordLogInput } from '#worker/run-records/types.ts'
 import {
@@ -121,7 +127,7 @@ export function buildWebhookDispatchFailureLogs(input: {
 	return logs
 }
 
-export async function dispatchWebhookInvocation(input: {
+type WebhookInvocationInput = {
 	env: Env
 	baseUrl?: string
 	endpoint: Pick<
@@ -134,7 +140,45 @@ export async function dispatchWebhookInvocation(input: {
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
 	idempotencyHashParams?: Record<string, unknown>
-}) {
+	/** Ack-queue deliveries pass the background budget; sync omits it. */
+	executorTimeoutMs?: number
+}
+
+/**
+ * Run a webhook's bound export as the endpoint's enabler. With no on
+ * enablement (paused, off, or never enabled) nothing runs and the delivery
+ * fails with 409 `enablement_not_on`.
+ */
+export async function dispatchWebhookInvocation(
+	input: WebhookInvocationInput,
+): Promise<PackageInvocationResponse> {
+	const plan = await planEnablementRuns({
+		env: input.env,
+		orgId: input.endpoint.userId,
+		packageId: input.endpoint.packageId,
+		trigger: { kind: 'webhook', instanceId: input.endpoint.id },
+	})
+	const [run] = plan.runs
+	if (!run) {
+		return buildJsonErrorResponse({
+			status: 409,
+			code: 'enablement_not_on',
+			message: `Webhook "${input.endpoint.webhookName}" has no on enablement, so nothing ran. Its enabler may have lost access (it resumes once access is back), or nobody has enabled it.`,
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+	return await invokeWebhookExport(
+		input,
+		run,
+		`${input.idempotencyKey}:enablement:${run.id}`,
+	)
+}
+
+async function invokeWebhookExport(
+	input: WebhookInvocationInput,
+	enablement: EnablementRun,
+	idempotencyKey: string,
+) {
 	return await invokePackageExport({
 		env: input.env,
 		baseUrl: input.baseUrl ?? getAppBaseUrl({ env: input.env }),
@@ -143,13 +187,17 @@ export async function dispatchWebhookInvocation(input: {
 			userId: input.endpoint.userId,
 			packageId: input.endpoint.packageId,
 			exportNames: [input.exportName],
-			request: { kind: 'webhook', sourceId: input.endpoint.id },
+			request: {
+				kind: 'webhook',
+				sourceId: input.endpoint.id,
+				enablement,
+			},
 		},
 		request: {
 			packageIdOrKodyId: input.endpoint.packageId,
 			exportName: input.exportName,
 			params: input.params,
-			idempotencyKey: input.idempotencyKey,
+			idempotencyKey,
 			...(input.idempotencyParamsHash === 'ignore'
 				? { idempotencyParamsHash: 'ignore' as const }
 				: {}),
@@ -159,5 +207,8 @@ export async function dispatchWebhookInvocation(input: {
 			source: 'webhook',
 			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 		},
+		...(input.executorTimeoutMs === undefined
+			? {}
+			: { executorTimeoutMs: input.executorTimeoutMs }),
 	})
 }

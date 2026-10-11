@@ -253,6 +253,31 @@ accepted mail fires `email.message.received`; quarantined mail fires
 `email.message.quarantined` instead. Later reclassification never retroactively
 dispatches either topic.
 
+## Who an inbound email runs as
+
+Before any subscription runs, Kody checks the sender of mail to an org's inbox:
+
+- **Org member.** The From address is the verified account email of a current
+  member of the inbox's org, and the message authenticated that address (DMARC
+  `pass`, or SPF `pass` with the envelope sender on the From domain; a DKIM
+  `pass` alone is not enough). The run acts as that member with their own role.
+  Only packages the member can run (`package:execute`) receive the event, and
+  every credential the run resolves is checked and audited under that member. If
+  the member lost access to the org, the credential is denied when the run reads
+  it and the run fails. It never retries with another identity or credential.
+- **Verified non-member** (receipts, notifications, outside collaborators,
+  people who left the org). Mail that passes the authentication check above runs
+  as the org that owns the inbox, as it always has.
+- **Unverified or spoofed.** Mail that failed authentication (DMARC `fail`, or
+  SPF `fail`/`softfail` without DKIM `pass`), mail with no From address, and
+  mail that claims a member address without authenticating it (or from a member
+  whose account email is unverified or whose account is suspended) runs nothing,
+  even when a sender `allow` rule accepted it. The message is still stored and
+  visible on `/@<slug>/-/email`, and the worker logs
+  `inbound-email-sender-unverified` with the reason.
+
+Email runs are still billed to the org that owns the inbox.
+
 ## `email.message.received` package subscription
 
 Accepted stored inbound email dispatches the package subscription topic

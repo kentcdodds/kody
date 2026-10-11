@@ -204,7 +204,8 @@ a shared D1 table:
 | Log lines per run          | 200                                             |
 | Text / JSON field budgets  | 16 KiB / 32 KiB truncated                       |
 | `metadata.result` snapshot | 4 KiB (`runRecordMaxResultSnapshotBytes`)       |
-| Stale `running` (short)    | ~3 minutes for execute/export/webhook/…         |
+| Stale `running` (short)    | ~3 minutes for execute/export/subscription/…    |
+| Stale `running` (webhook)  | ~10 minutes (2× the 5-minute background budget) |
 | Stale `running` (job)      | ~6 hours                                        |
 | Stale `running` (long)     | ~24 hours for service/workflow                  |
 

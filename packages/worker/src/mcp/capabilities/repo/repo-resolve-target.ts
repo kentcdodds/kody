@@ -46,7 +46,7 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 async function requirePackageTarget(input: {
 	db: D1Database
 	userId: OwnerId
-	ownerScope?: string
+	ownerScope: string
 	target: Extract<RepoTarget, { kind: 'package' }>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
 	const resolved = await resolveOwnedPackageSource({
@@ -112,7 +112,7 @@ async function requirePlainRepoTarget(input: {
 export async function resolveRepoSourceReference(input: {
 	db: D1Database
 	userId: OwnerId
-	ownerScope?: string
+	ownerScope: string
 	args: Pick<RepoOpenSessionInput, 'source_id' | 'target'>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
 	if (input.args.source_id) {

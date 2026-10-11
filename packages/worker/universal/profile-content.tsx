@@ -49,7 +49,8 @@ import {
 export type ProfileContentProps = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	/** Null omits the activity section (no feed source). An empty array still renders it. */
+	activity: Array<PublicCommunityActivityItem> | null
 	query: string | null
 	visibility?: ProfilePackageVisibilityFilter
 	listing?: ProfilePackageListingFilter
@@ -63,11 +64,6 @@ export type ProfileContentProps = {
 	queryAppliedByLoader?: boolean
 	/** Filter links stay on this page instead of the public profile. */
 	basePath?: string
-	/**
-	 * False renders names without a package page link or fork button and hides
-	 * the community activity feed, which links to the same username-owned pages.
-	 */
-	packageLinks?: boolean
 }
 
 function renderForkIcon() {
@@ -384,7 +380,6 @@ function renderProfilePackagesEmptyCopy(input: {
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	return () => {
 		const { profile, packages, activity, query, isSelf } = handle.props
-		const packageLinks = handle.props.packageLinks !== false
 		const filters: ProfilePackageFilters = {
 			query: query ?? '',
 			visibility: handle.props.visibility ?? 'all',
@@ -428,18 +423,20 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					) : (
 						<ul mix={css(packageListCss)}>
 							{visiblePackages.map((pkg) => {
-								const packageHref = routes.communityPackage.href({
-									username: profile.username,
-									kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
-								})
-								const listingHref =
-									packageLinks && pkg.communityListingId
-										? getCommunityListingHref({
-												listingId: pkg.communityListingId,
-												ownerUsername: profile.username,
-												kodyId: pkg.communityListingKodyId,
-											})
-										: null
+								const canOpenDetail = pkg.canOpenDetail !== false
+								const packageHref = canOpenDetail
+									? routes.communityPackage.href({
+											username: profile.username,
+											kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
+										})
+									: null
+								const listingHref = pkg.communityListingId
+									? getCommunityListingHref({
+											listingId: pkg.communityListingId,
+											ownerUsername: profile.username,
+											kodyId: pkg.communityListingKodyId,
+										})
+									: null
 								return (
 									<li key={pkg.kodyId} mix={css(cardCss)}>
 										<div mix={css(packageHeadingCss)}>
@@ -461,12 +458,14 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 													</a>
 												) : null}
 												<h3 mix={css(packageNameCss)}>
-													{packageLinks ? (
+													{packageHref ? (
 														<a href={packageHref} mix={css(packageNameLinkCss)}>
 															{renderCommunityListingName(pkg.name)}
 														</a>
 													) : (
-														renderCommunityListingName(pkg.name)
+														<span data-testid="profile-package-name-nolink">
+															{renderCommunityListingName(pkg.name)}
+														</span>
 													)}
 												</h3>
 												{renderProfilePackageSignifiers(pkg)}
@@ -494,7 +493,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					)}
 				</section>
 
-				{packageLinks ? (
+				{activity == null ? null : (
 					<section mix={css(activitySectionCss)} data-testid="profile-activity">
 						<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
 						<p mix={css(mutedCss)} data-testid="profile-activity-hint">
@@ -542,7 +541,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 							</ul>
 						)}
 					</section>
-				) : null}
+				)}
 			</div>
 		)
 	}

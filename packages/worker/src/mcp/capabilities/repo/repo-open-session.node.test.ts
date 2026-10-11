@@ -13,6 +13,10 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { cloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { repoOpenSessionInputSchema } from './repo-shared.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -77,6 +81,9 @@ function createEntitlementsDatabase(user: {
 									stableUserId === user.stable_user_id
 									? { plan: user.plan }
 									: null
+							}
+							if (isLiveSeatCountQuery(query)) {
+								return mockLiveSeatCountRow()
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},

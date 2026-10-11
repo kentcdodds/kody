@@ -262,6 +262,8 @@ export type RunRecordFilter = {
 	status?: RunStatus | null
 	packageId?: string | null
 	jobId?: string | null
+	/** Workflow run id (`dynwf-…` / `pkgwf-…`) from `workflows.create`. */
+	workflowId?: string | null
 	/** Exact match on the run's display `name` (e.g. webhook or job name). */
 	name?: string | null
 	/** ISO 8601 lower bound on `startedAt`, inclusive. */
@@ -337,6 +339,12 @@ export const runRecordStaleRunningTtlMs = 24 * 60 * 60 * 1000
  */
 export const runRecordStaleRunningTtlMsShortLived = 3 * 60 * 1000
 
+/**
+ * Webhook runs: ack-queue deliveries get the 5-minute background sandbox
+ * budget, so a legitimate run must not be reconciled before it can finish.
+ */
+export const runRecordStaleRunningTtlMsBackground = 10 * 60 * 1000
+
 /** Jobs can run longer than a single sandbox invoke; still bound the history row. */
 export const runRecordStaleRunningTtlMsJob = 6 * 60 * 60 * 1000
 
@@ -352,11 +360,12 @@ export function runRecordStaleRunningTtlMsForSurface(
 		case 'execute':
 		case 'export':
 		case 'retriever':
-		case 'webhook':
 		case 'subscription':
 		case 'app_fetch':
 		case 'app_realtime':
 			return runRecordStaleRunningTtlMsShortLived
+		case 'webhook':
+			return runRecordStaleRunningTtlMsBackground
 		case 'job':
 			return runRecordStaleRunningTtlMsJob
 		case 'workflow':

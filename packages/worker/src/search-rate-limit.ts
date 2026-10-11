@@ -16,7 +16,7 @@ export {
  * limits only stop DOW and runaway agent loops before embeddings / Jev burn.
  *
  * Tuned against sibling daily ladders (`maxExecuteUniqueWorkersPerDay` 150 → 25_000,
- * `maxOutboundFetchesPerDay` 1_000 → 80_000): search is cheaper than execute
+ * `maxOutboundFetchesPerDay` 1_000 → 750_000): search is cheaper than execute
  * but still pays Workers AI (~$0.0009/search with Jev → ~$22.50/day at the
  * max daily ceiling). Burst is doubled relative to the initial ship so agent
  * loops have headroom when Jev is on; daily stays the DOW/cost backstop.

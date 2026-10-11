@@ -1,4 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { html } from 'remix/html-template'
@@ -419,7 +420,8 @@ function attachPackageAppServerTiming(
 }
 
 /**
- * Serve a hosted package app for an already-authenticated owner.
+ * Serve a hosted package app for an already-authenticated owner, acting as
+ * the visitor.
  *
  * The owner is resolved by the caller because the package-app origin uses its
  * own host-scoped `kody_pkg_session` cookie, while the non-production inline
@@ -429,6 +431,7 @@ export async function servePackageAppRequest(input: {
 	request: Request
 	env: Env
 	owner: PackageAppServeOwner
+	visitor: RuntimePackageAppVisitor
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
 	/**
@@ -458,12 +461,13 @@ export async function servePackageAppRequest(input: {
 		return runtime.servePackageApp({
 			request: input.request,
 			owner: input.owner,
+			visitor: input.visitor,
 			packagePath: input.packagePath,
 			dispatch: input.dispatch,
 		})
 	}
 
-	const { request, env, owner, packagePath, dispatch } = input
+	const { request, env, owner, visitor, packagePath, dispatch } = input
 	const serverTiming = input.serverTiming ?? []
 	const requestUrl = new URL(request.url)
 	const { kodyId } = packagePath
@@ -683,12 +687,8 @@ export async function servePackageAppRequest(input: {
 			),
 			createPackageAppCallerContext({
 				baseUrl,
-				user: {
-					userId: owner.userId,
-					email: owner.email,
-					displayName: owner.displayName,
-					username: owner.username,
-				},
+				owner,
+				visitor,
 				packageId: savedPackage.id,
 			}),
 		])

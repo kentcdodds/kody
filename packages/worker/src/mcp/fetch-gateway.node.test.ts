@@ -1,20 +1,25 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
+	outboundFetchTimeoutMs,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
+import { outboundFetchIdleTimeoutMs } from '#mcp/outbound-fetch-deadline.ts'
 import {
 	parseHostApprovalRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
 } from '#mcp/secrets/errors.ts'
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
+import * as secretPlacement from '#mcp/secrets/secret-placement.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import * as credentialResolution from '#worker/credentials/resolve-credential.ts'
 import {
 	isActiveOrgQuery,
 	isOrgBindingMembershipQuery,
@@ -28,6 +33,7 @@ import * as integrationPackageAccess from '#worker/integrations/package-access.t
 import * as integrationService from '#worker/integrations/service.ts'
 import * as providerService from '#mcp/secrets/secret-providers/service.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -79,7 +85,9 @@ const props = {
 type GatewayProps = Parameters<typeof expandSecretPlaceholders>[0]['props']
 
 const expand = (request: Request, runProps: GatewayProps = props) =>
-	expandSecretPlaceholders({ request, props: runProps, env })
+	expandSecretPlaceholders({ request, props: runProps, env }).then(
+		({ request: expanded }) => expanded,
+	)
 
 function packageRunProps(
 	packageId: string,
@@ -181,6 +189,10 @@ const isPackageAccessRequiredFor = (packageName: string) => (error: unknown) =>
 	parsePackageAccessRequiredMessage(getErrorMessage(error))?.packageName ===
 	packageName
 
+beforeEach(() => {
+	lookupSecretsThroughResolveSecret()
+})
+
 test('fetch gateway blocks or expands secret placeholders based on host approval', async () => {
 	const createRequest = () =>
 		new Request('https://example.com/api', {
@@ -189,9 +201,7 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer {{secret:spotifyRefreshToken|scope=user}}',
 			},
-			body: JSON.stringify({
-				token: '{{secret:spotifyRefreshToken|scope=user}}',
-			}),
+			body: JSON.stringify({ query: 'me' }),
 		})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
@@ -213,74 +223,332 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	resolveSpy.mockResolvedValue(userSecret('secret-value', ['example.com']))
 	const transformed = await expand(createRequest())
 	expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
-	expect(await transformed.text()).toBe(
-		JSON.stringify({ token: 'secret-value' }),
+	expect(await transformed.text()).toBe(JSON.stringify({ query: 'me' }))
+})
+
+test('fetch gateway fills placeholders in the URL path and query on an allowed host', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async ({ name }) =>
+			userSecret(`${name}-value`, ['api.telegram.org', 'api.example.com']),
+		)
+
+	// Request serialization percent-encodes `{` / `}` in the path.
+	const pathRequest = new Request(
+		'https://api.telegram.org/bot{{secret:telegramBotToken|scope=user}}/getMe',
+	)
+	expect(pathRequest.url).toContain('%7B%7Bsecret:telegramBotToken')
+	expect((await expand(pathRequest)).url).toBe(
+		'https://api.telegram.org/bottelegramBotToken-value/getMe',
+	)
+
+	const literalQuery = await expand(
+		new Request(
+			'https://api.example.com/search?q=cats&key={{secret:queryToken|scope=user}}',
+		),
+	)
+	expect(new URL(literalQuery.url).searchParams.get('key')).toBe(
+		'queryToken-value',
+	)
+	expect(new URL(literalQuery.url).searchParams.get('q')).toBe('cats')
+
+	const builtUrl = new URL('https://api.example.com/v1')
+	builtUrl.search = new URLSearchParams({
+		key: '{{secret:queryToken}}',
+	}).toString()
+	expect(builtUrl.href).toContain('%7B%7Bsecret%3AqueryToken%7D%7D')
+	const built = await expand(new Request(builtUrl))
+	expect(new URL(built.url).searchParams.get('key')).toBe('queryToken-value')
+
+	// A URL without a placeholder is left exactly as written.
+	const plainUrl = 'https://api.example.com/a%20b?x=%7Bliteral%7D&y=1+2'
+	expect((await expand(new Request(plainUrl))).url).toBe(plainUrl)
+	expect(resolveSpy).toHaveBeenCalledTimes(3)
+})
+
+test('fetch gateway URL fill keeps routing and unrelated query bytes as written', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) =>
+			userSecret(name === 'routey' ? '../admin?x#y' : `${name}-value`, [
+				'api.example.com',
+			]),
+	)
+
+	const encodedPath = await expand(
+		new Request(
+			`https://api.example.com/v1/${encodeURIComponent('{{secret:pathToken|scope=user}}')}/me`,
+		),
+	)
+	expect(encodedPath.url).toBe('https://api.example.com/v1/pathToken-value/me')
+
+	const routey = await expand(
+		new Request('https://api.example.com/v1/users/{{secret:routey}}/me'),
+	)
+	expect(routey.url).toBe(
+		'https://api.example.com/v1/users/..%2Fadmin%3Fx%23y/me',
+	)
+
+	const signed = await expand(
+		new Request(
+			'https://api.example.com/v1?sig=a%20b&list=x+y&token={{secret:queryToken}}',
+		),
+	)
+	expect(signed.url).toBe(
+		'https://api.example.com/v1?sig=a%20b&list=x+y&token=queryToken-value',
 	)
 })
 
-test('fetch gateway expands secret placeholders in URL paths after Request serialization', async () => {
-	const telegramToken = '123456:AAHfakeTelegramToken'
-	const probeValue = '11111111-1111-4111-8111-111111111111'
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockImplementation(async ({ name }: { name: string }) =>
-			userSecret(name === 'telegramBotToken' ? telegramToken : probeValue, [
-				'api.telegram.org',
-				'api.notion.com',
+test('fetch gateway keeps byte bodies as bytes, adding no Content-Type', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('secret-value', ['api.example.com']),
+	)
+	const encoder = new TextEncoder()
+	const headerOnly = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			headers: { Authorization: 'Bearer {{secret:token}}' },
+			body: encoder.encode('abc'),
+		}),
+	)
+	expect(headerOnly.headers.get('content-type')).toBeNull()
+	expect(await headerOnly.text()).toBe('abc')
+
+	const filled = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			body: encoder.encode('token={{secret:token}}'),
+		}),
+	)
+	expect(filled.headers.get('content-type')).toBeNull()
+	expect(await filled.text()).toBe('token=secret-value')
+})
+
+test('fetch gateway fills placeholders in JSON, form, and text bodies on an allowed host', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) =>
+			userSecret(name === 'quoted' ? 'pa"ss\\word' : `${name}-value`, [
 				'api.example.com',
 			]),
-		)
-
-	const pathOnlyRequest = new Request(
-		'https://api.telegram.org/bot{{secret:telegramBotToken|scope=user}}/getMe',
 	)
-	expect(pathOnlyRequest.url).toContain(
-		'%7B%7Bsecret:telegramBotToken|scope=user%7D%7D',
-	)
-	expect((await expand(pathOnlyRequest)).url).toBe(
-		`https://api.telegram.org/bot${telegramToken}/getMe`,
-	)
-
-	const headerAndPathRequest = new Request(
-		'https://api.notion.com/v1/users/{{secret:kodyPathProbe|scope=user}}',
-		{ headers: { Authorization: 'Bearer {{secret:notionToken|scope=user}}' } },
-	)
-	expect(headerAndPathRequest.url).toContain(
-		'%7B%7Bsecret:kodyPathProbe|scope=user%7D%7D',
-	)
-	const headerAndPathTransformed = await expand(headerAndPathRequest)
-	expect(headerAndPathTransformed.url).toBe(
-		`https://api.notion.com/v1/users/${probeValue}`,
-	)
-	expect(headerAndPathTransformed.headers.get('Authorization')).toBe(
-		`Bearer ${probeValue}`,
-	)
-
-	const queryRequest = new Request(
-		'https://api.example.com/search?key={{secret:queryToken|scope=user}}',
-	)
-	expect(queryRequest.url).toContain('{{secret:queryToken|scope=user}}')
-	expect((await expand(queryRequest)).url).toBe(
-		`https://api.example.com/search?key=${probeValue}`,
-	)
-
-	resolveSpy.mockResolvedValue(userSecret(telegramToken, []))
-	expect(
-		await readHostApprovals(
-			expand(
-				new Request(
-					'https://api.telegram.org/bot{{secret:telegramBotToken}}/getMe',
-				),
-			),
-		),
-	).toEqual({
-		entries: [
-			expect.objectContaining({
-				secretName: 'telegramBotToken',
-				host: 'api.telegram.org',
+	const send = (contentType: string, body: string) =>
+		expand(
+			new Request('https://api.example.com/v1/session', {
+				method: 'POST',
+				headers: { 'Content-Type': contentType },
+				body,
 			}),
-		],
-		bulkApprovalUrl: null,
+		).then((request) => request.text())
+
+	const json = await send(
+		'application/json',
+		JSON.stringify({
+			identifier: '{{secret:handle}}',
+			password: '{{secret:quoted|scope=user}}',
+		}),
+	)
+	expect(JSON.parse(json)).toEqual({
+		identifier: 'handle-value',
+		password: 'pa"ss\\word',
+	})
+
+	const form = await send(
+		'application/x-www-form-urlencoded',
+		new URLSearchParams({
+			grant_type: 'refresh_token',
+			refresh_token: '{{secret:refreshToken|scope=user}}',
+			password: '{{secret:quoted}}',
+		}).toString(),
+	)
+	expect(Object.fromEntries(new URLSearchParams(form))).toEqual({
+		grant_type: 'refresh_token',
+		refresh_token: 'refreshToken-value',
+		password: 'pa"ss\\word',
+	})
+
+	expect(await send('text/plain', 'token={{secret:plain}};')).toBe(
+		'token=plain-value;',
+	)
+
+	// JSON.stringify bodies sent without a Content-Type arrive as text/plain.
+	const untypedJson = await send(
+		'text/plain;charset=UTF-8',
+		JSON.stringify({ password: '{{secret:quoted}}' }),
+	)
+	expect(JSON.parse(untypedJson)).toEqual({ password: 'pa"ss\\word' })
+
+	const sized = await expand(
+		new Request('https://api.example.com/v1/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'Content-Length': '30' },
+			body: '{"identifier":"{{secret:h}}"}',
+		}),
+	)
+	expect(sized.headers.get('content-length')).toBeNull()
+	expect(await sized.text()).toBe('{"identifier":"h-value"}')
+
+	// A body without a placeholder is forwarded byte for byte.
+	const untouched = '{"a": 1,   "b": "{literal}"}'
+	expect(await send('application/json', untouched)).toBe(untouched)
+})
+
+test('fetch gateway fills integration tokens in the body against the integration hosts', async () => {
+	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
+		async ({ credential }) => {
+			expect(credential).toMatchObject({
+				use: 'integration-token',
+				name: 'github',
+				requestHost: 'api.github.com',
+			})
+			return 'gho_value'
+		},
+	)
+	const sent = await expand(
+		new Request('https://api.github.com/graphql', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ token: '{{integration-token:github}}' }),
+		}),
+	)
+	expect(JSON.parse(await sent.text())).toEqual({ token: 'gho_value' })
+})
+
+test('fetch gateway headers-only fills headers and sends a body that quotes placeholder syntax verbatim', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const issueBody = JSON.stringify({
+		title: 'Placeholder docs',
+		body: 'Use {{secret:githubToken|scope=user}} or {{secret:githubToken}} in a header.',
+	})
+	const sent = await expand(
+		new Request(
+			'https://api.example.com/repos/o/r/issues?q={{secret:githubToken}}',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer {{secret:githubToken|scope=user}}',
+					'Content-Type': 'application/json',
+					[secretResolutionHeaderName]: 'headers-only',
+				},
+				body: issueBody,
+			},
+		),
+	)
+	expect(sent.headers.get('Authorization')).toBe('Bearer secret-value')
+	expect(sent.headers.get(secretResolutionHeaderName)).toBeNull()
+	expect(new URL(sent.url).searchParams.get('q')).toBe('{{secret:githubToken}}')
+	const sentBody = await sent.text()
+	expect(sentBody).toBe(issueBody)
+	expect(sentBody).not.toContain('secret-value')
+	expect(resolveSpy).toHaveBeenCalledTimes(1)
+})
+
+test('fetch gateway refuses a placeholder over plain HTTP, naming the slot and host, before resolving', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const credentialSpy = vi.spyOn(credentialResolution, 'resolveCredential')
+	const requests = [
+		() =>
+			new Request('http://api.example.com/v1', {
+				headers: { Authorization: 'Bearer {{secret:apiToken}}' },
+			}),
+		() => new Request('http://api.example.com/v1?key={{secret:apiToken}}'),
+		() =>
+			new Request('http://api.example.com/v1', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token: '{{secret:apiToken}}' }),
+			}),
+	]
+	for (const request of requests) {
+		await expect(expand(request())).rejects.toBeInstanceOf(
+			secretPlacement.SecretPlacementError,
+		)
+		await expect(expand(request())).rejects.toThrow(
+			/^Secret "apiToken" cannot be sent to host "api\.example\.com" over plain HTTP\. The fetch gateway fills secrets only over HTTPS\./,
+		)
+		await expect(expand(request())).rejects.toMatchObject({
+			code: 'credential_placement_refused',
+			slot: 'apiToken',
+			message: expect.stringMatching(
+				/\(credential_placement_refused, slot "apiToken"\)$/,
+			),
+		})
+	}
+	await expect(
+		expand(
+			new Request('http://api.example.com/v1', {
+				method: 'POST',
+				body: '{{integration-token:github}}',
+			}),
+		),
+	).rejects.toThrow(
+		/^Integration token "github" cannot be sent to host "api\.example\.com" over plain HTTP\./,
+	)
+	// Plain HTTP without a placeholder is just a fetch.
+	expect((await expand(new Request('http://api.example.com/v1'))).url).toBe(
+		'http://api.example.com/v1',
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
+	expect(credentialSpy).not.toHaveBeenCalled()
+})
+
+test('fetch gateway refuses a placeholder in the URL host or user info', async () => {
+	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
+	await expect(
+		expand(
+			createPathOnlyRequest('https://{{secret:user}}:pw@api.example.com/v1'),
+		),
+	).rejects.toThrow(
+		/^Secret "user" is in the host or user info of the request URL\./,
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
+})
+
+test('fetch gateway refuses a body placeholder on a host the secret does not allow, naming the slot and host', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('secret-value', ['bsky.social']),
+	)
+	const refused = expand(
+		new Request('https://evil.example/xrpc/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ password: '{{secret:appPassword}}' }),
+		}),
+	)
+	const error = await refused.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(secretPlacement.SecretPlacementError)
+	expect(error).toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'appPassword',
+	})
+	expect(parseHostApprovalRequiredBatchMessage(getErrorMessage(error))).toEqual(
+		{
+			entries: [
+				expect.objectContaining({
+					secretName: 'appPassword',
+					host: 'evil.example',
+				}),
+			],
+			bulkApprovalUrl: null,
+		},
+	)
+
+	vi.spyOn(credentialResolution, 'resolveCredential').mockRejectedValueOnce(
+		new IntegrationHostNotAllowedError('github', 'evil.example'),
+	)
+	await expect(
+		expand(
+			new Request('https://evil.example/v1', {
+				method: 'POST',
+				body: 'token={{integration-token:github}}',
+			}),
+		),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'github',
+		message: expect.stringContaining('evil.example'),
 	})
 })
 
@@ -473,7 +741,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		expect.objectContaining({ name: 'google', packageId: 'pkg-1' }),
 	)
 
-	// A host outside requiredHosts is refused.
+	// A host outside requiredHosts is refused before the token resolves.
 	joinedSpy.mockResolvedValue({
 		lane: 'user',
 		app: { apiBaseUrl: 'https://www.googleapis.com' },
@@ -485,7 +753,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		expand(integrationRequest('https://evil.example/steal')),
 	).rejects.toThrow('does not allow requests to host "evil.example"')
 
-	// A resolved token without a joined connection is refused.
+	// A token without a joined connection is refused.
 	joinedSpy.mockResolvedValue(null)
 	await expect(
 		expand(integrationRequest('https://evil.example/steal')),
@@ -497,7 +765,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 			name: 'google',
 		}),
 	)
-	expect(tokenSpy).toHaveBeenCalledTimes(4)
+	expect(tokenSpy).toHaveBeenCalledTimes(2)
 })
 
 test('opt-out header controls secret resolution and strips itself from forwarded requests', async () => {
@@ -577,12 +845,14 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 	const discordMultipart = (
 		contentBoundary: string,
 		body: Uint8Array<ArrayBuffer>,
+		extraHeaders: Record<string, string> = {},
 	) =>
 		new Request('https://discord.com/api/channels/1/messages', {
 			method: 'POST',
 			headers: {
 				Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
 				'Content-Type': `multipart/form-data; boundary=${contentBoundary}`,
+				...extraHeaders,
 			},
 			body,
 		})
@@ -596,8 +866,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		multipartBody,
 	)
 
-	// Text multipart parts that mention placeholders are forwarded unchanged;
-	// only the header placeholder resolves.
+	// Multipart bodies are opaque: text parts that quote placeholders are
+	// forwarded unchanged and only the header placeholder resolves.
 	const textBoundary = '----KodyDiscordBoundaryTest'
 	const payloadJson = JSON.stringify({
 		content: 'Feedback mentioned {{secret:BraveSearch}} in the docs.',
@@ -648,8 +918,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		expect.objectContaining({ name: 'discordBotToken' }),
 	)
 
-	// BOM-prefixed JSON, binary bodies with placeholder-looking bytes, and
-	// opt-out binary bodies pass through byte-for-byte without resolution.
+	// BOM-prefixed JSON, binary, and opt-out bodies pass through byte-for-byte
+	// without resolution.
 	resolveSpy.mockClear()
 	resolveSpy.mockResolvedValue(
 		userSecret('secret-value', ['discord.com', 'example.com']),
@@ -680,6 +950,15 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 			}),
 		),
 	).toEqual(binaryPlaceholderBody)
+	expect(
+		await bodyBytes(
+			new Request('https://example.com/upload', {
+				method: 'PUT',
+				headers: { [secretResolutionHeaderName]: 'off' },
+				body: binaryPlaceholderBody,
+			}),
+		),
+	).toEqual(binaryPlaceholderBody)
 	const optOutBinaryBody = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
 	expect(
 		await bodyBytes(
@@ -691,22 +970,6 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		),
 	).toEqual(optOutBinaryBody)
 	expect(resolveSpy).not.toHaveBeenCalled()
-
-	// Form bodies re-encode resolved values.
-	resolveSpy.mockResolvedValue(userSecret('secret value+/&=', ['example.com']))
-	const transformedForm = await expand(
-		new Request('https://example.com/api/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
-			}).toString(),
-		}),
-	)
-	expect(await transformedForm.text()).toBe(
-		'grant_type=refresh_token&refresh_token=secret+value%2B%2F%26%3D',
-	)
 })
 
 test('fetch gateway derives Basic Auth header and enforces host approval', async () => {
@@ -819,11 +1082,12 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		.mockResolvedValue(undefined)
 	const fetchStub = vi.fn()
 	const waitUntil = vi.fn()
-	const gatewayFetch = (
+	// Usage is recorded when the body ends, so drain it.
+	const gatewayFetch = async (
 		url: string,
 		extra: Partial<Parameters<typeof executeGatewayFetch>[0]> = {},
-	) =>
-		executeGatewayFetch({
+	) => {
+		const response = await executeGatewayFetch({
 			env,
 			props,
 			request: url.startsWith('/')
@@ -832,7 +1096,11 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 			globalFetch: fetchStub,
 			...extra,
 		})
-	const takeUsage = () => {
+		await response.arrayBuffer()
+		return response
+	}
+	const takeUsage = async () => {
+		await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalled())
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		const usage = recordUsageSpy.mock.calls[0]
 		recordUsageSpy.mockClear()
@@ -851,7 +1119,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(fetchStub).toHaveBeenCalledTimes(1)
 	// waitUntil: usage metering only
 	expect(waitUntil).toHaveBeenCalledTimes(1)
-	expect(takeUsage()).toEqual([
+	expect(await takeUsage()).toEqual([
 		env,
 		{
 			userId: ownerIdFromStored('user-123'),
@@ -866,8 +1134,11 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		},
 	])
 
-	const expectMeteredWithoutBytes = (entityId: string, outcome: string) => {
-		const usage = takeUsage()
+	const expectMeteredWithoutBytes = async (
+		entityId: string,
+		outcome: string,
+	) => {
+		const usage = await takeUsage()
 		expect(usage).toEqual([
 			env,
 			expect.objectContaining({
@@ -886,17 +1157,17 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		{ waitUntil },
 	)
 	expect(upstreamErrorResponse.status).toBe(502)
-	expectMeteredWithoutBytes('api.example.com', 'success')
+	await expectMeteredWithoutBytes('api.example.com', 'success')
 
 	fetchStub.mockResolvedValue(new Response('ok', { status: 200 }))
 	await gatewayFetch('https://api.example.com/no-length')
-	expectMeteredWithoutBytes('api.example.com', 'success')
+	await expectMeteredWithoutBytes('api.example.com', 'success')
 
 	fetchStub.mockRejectedValue(new Error('network failed'))
 	await expect(gatewayFetch('https://api.example.com/fail')).rejects.toThrow(
 		'network failed',
 	)
-	expectMeteredWithoutBytes('api.example.com', 'error')
+	await expectMeteredWithoutBytes('api.example.com', 'error')
 
 	await expect(
 		gatewayFetch('https://original.example.com/api', {
@@ -904,7 +1175,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		}),
 	).rejects.toThrow('Fetch gateway requires a non-empty baseUrl in props.')
 	expect(fetchStub).not.toHaveBeenCalled()
-	expectMeteredWithoutBytes('original.example.com', 'error')
+	await expectMeteredWithoutBytes('original.example.com', 'error')
 
 	// Error path with waitUntil available: metering is deferred, never blocks.
 	fetchStub.mockRejectedValue(new Error('network failed with waitUntil'))
@@ -913,7 +1184,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	).rejects.toThrow('network failed with waitUntil')
 	// waitUntil: usage metering only
 	expect(waitUntil).toHaveBeenCalledTimes(1)
-	expect(takeUsage()?.[1]).toMatchObject({
+	expect((await takeUsage())?.[1]).toMatchObject({
 		entityId: 'api.example.com',
 		outcome: 'error',
 	})
@@ -925,79 +1196,466 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(recordUsageSpy).not.toHaveBeenCalled()
 	fetchStub.mockClear()
 
-	// Metering never derives a hostname from expanded secret placeholders.
-	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
-		userSecret('resolved-secret-value', ['example.com']),
-	)
+	// Path-only URLs meter the baseUrl host they resolve against.
 	fetchStub.mockImplementation(async () => new Response('ok'))
-	const meterPathOnly = async (url: string) => {
-		await gatewayFetch(url)
-		expect(fetchStub).toHaveBeenCalledTimes(1)
-		const forwardedUrl = fetchStub.mock.calls[0]?.[0]?.url
-		return [forwardedUrl, takeUsage()?.[1]]
-	}
-	// Literal baseUrl host: safe to meter.
-	expect(await meterPathOnly('/api/status')).toEqual([
+	await gatewayFetch('/api/status')
+	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
 		'https://example.com/api/status',
-		expect.objectContaining({ entityId: 'example.com', outcome: 'success' }),
-	])
-	// Unparseable original URL containing a placeholder: the expanded host
-	// could contain secret material, so no hostname is metered.
-	expect((await meterPathOnly('/api?key={{secret:token}}'))[1]).toMatchObject({
-		entityId: '',
+	)
+	expect((await takeUsage())?.[1]).toMatchObject({
+		entityId: 'example.com',
 		outcome: 'success',
 	})
-	// Placeholder percent-encoded the way `Request.url` serializes `{` / `}`.
-	expect(await meterPathOnly('/bot%7B%7Bsecret:token%7D%7D/getMe')).toEqual([
-		'https://example.com/botresolved-secret-value/getMe',
-		expect.objectContaining({ entityId: '', outcome: 'success' }),
-	])
+	// A filled URL path meters only the host, never the secret.
+	fetchStub.mockClear()
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('tok_path_value', ['example.com']),
+	)
+	await gatewayFetch('/bot%7B%7Bsecret:token%7D%7D/getMe')
+	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
+		'https://example.com/bottok_path_value/getMe',
+	)
+	const pathUsage = (await takeUsage())?.[1]
+	expect(pathUsage).toMatchObject({
+		entityId: 'example.com',
+		outcome: 'success',
+	})
+	expect(JSON.stringify(pathUsage)).not.toContain('tok_path_value')
 })
 
-test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {
-	const createHungFetch = () =>
-		vi.fn(
-			(request: Request) =>
-				new Promise<Response>((_resolve, reject) => {
-					request.signal.addEventListener(
-						'abort',
-						() => {
-							reject(
-								request.signal.reason ??
-									new DOMException('The operation was aborted.', 'AbortError'),
-							)
-						},
-						{ once: true },
-					)
-				}),
+test('leak: a substituted secret the remote echoes back is redacted before the caller sees it', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const values: Record<string, string> = {
+		apiToken: 'sk_live_echo_123456',
+		clientId: 'client-id',
+		clientSecret: 'client-secret',
+	}
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }: { name: string }) =>
+			userSecret(values[name]!, ['api.example.com']),
+	)
+	const encoder = new TextEncoder()
+	const echoFetch = vi.fn(async (request: Request) => {
+		const authorization = request.headers.get('authorization') ?? ''
+		const credential = authorization.split(' ').at(-1)
+		const echoed = encoder.encode(
+			`{"you_sent":"${authorization}","credential":"${credential}"}`,
 		)
-	const isAbortOrTimeout = (error: unknown) => {
-		const name =
-			error && typeof error === 'object' && 'name' in error
-				? String(error.name)
-				: ''
-		return name === 'TimeoutError' || name === 'AbortError'
-	}
-
-	for (const [extra, maxElapsedMs] of [
-		[{ timeoutMs: 40 }, 500],
-		[{ props: { ...props, outboundFetchTimeoutMs: 40 } }, Infinity],
-	] as const) {
-		const hungFetch = createHungFetch()
-		const startedAtMs = Date.now()
-		await expect(
-			executeGatewayFetch({
-				env,
-				props,
-				request: new Request('https://example.com/slow'),
-				globalFetch: hungFetch as unknown as typeof fetch,
-				...extra,
+		const split = Math.floor(echoed.length / 2)
+		return new Response(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(echoed.subarray(0, split))
+					controller.enqueue(echoed.subarray(split))
+					controller.close()
+				},
 			}),
-		).rejects.toSatisfy(isAbortOrTimeout)
-		expect(Date.now() - startedAtMs).toBeLessThan(maxElapsedMs)
-		expect(hungFetch).toHaveBeenCalledTimes(1)
-		expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
+			{
+				headers: {
+					'content-length': String(echoed.length),
+					'x-echo': authorization,
+				},
+			},
+		)
+	})
+	const fetchWith = (authorization: string) =>
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://api.example.com/echo', {
+				headers: { Authorization: authorization },
+			}),
+			globalFetch: echoFetch as unknown as typeof fetch,
+		})
+
+	const bearer = await fetchWith('Bearer {{secret:apiToken}}')
+	expect(echoFetch.mock.calls[0]?.[0]?.headers.get('authorization')).toBe(
+		'Bearer sk_live_echo_123456',
+	)
+	expect(bearer.headers.get('x-echo')).toBe('Bearer [REDACTED SECRET]')
+	expect(bearer.headers.get('content-length')).toBeNull()
+	expect(await bearer.text()).toBe(
+		'{"you_sent":"Bearer [REDACTED SECRET]","credential":"[REDACTED SECRET]"}',
+	)
+
+	const basic = await fetchWith(
+		buildBasicAuthSecretPlaceholder({
+			usernameSecret: 'clientId',
+			passwordSecret: 'clientSecret',
+		}),
+	)
+	const basicBody = await basic.text()
+	expect(basicBody).toBe(
+		'{"you_sent":"[REDACTED SECRET]","credential":"[REDACTED SECRET]"}',
+	)
+	expect(basicBody).not.toContain(btoa('client-id:client-secret'))
+
+	// Without a substituted secret the response passes through untouched.
+	const plainResponse = new Response('sk_live_echo_123456')
+	const plain = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/echo'),
+		globalFetch: (async () => plainResponse) as unknown as typeof fetch,
+	})
+	expect(await plain.text()).toBe('sk_live_echo_123456')
+})
+
+test('leak: a secret filled into the body or URL is redacted from echoes in every encoding and from fetch errors', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const secret = 'app pass/"word"&1'
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret(secret, ['api.example.com']),
+	)
+	const sentBodies: Array<string> = []
+	const echoFetch = vi.fn(async (request: Request) => {
+		const body = await request.text()
+		sentBodies.push(body)
+		return new Response(`url=${request.url}\nbody=${body}`, {
+			headers: { 'x-echo-url': request.url, 'x-echo-body': body },
+		})
+	})
+	const send = (request: Request) =>
+		executeGatewayFetch({
+			env,
+			props,
+			request,
+			globalFetch: echoFetch as unknown as typeof fetch,
+		})
+
+	const json = await send(
+		new Request('https://api.example.com/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ password: '{{secret:appPassword}}' }),
+		}),
+	)
+	expect(JSON.parse(sentBodies[0]!)).toEqual({ password: secret })
+	expect(json.headers.get('x-echo-body')).toBe(
+		'{"password":"[REDACTED SECRET]"}',
+	)
+	expect(await json.text()).toBe(
+		'url=https://api.example.com/session\nbody={"password":"[REDACTED SECRET]"}',
+	)
+
+	const form = await send(
+		new Request('https://api.example.com/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: 'password={{secret:appPassword}}',
+		}),
+	)
+	const formEcho = await form.text()
+	expect(formEcho).toBe(
+		'url=https://api.example.com/token\nbody=password=[REDACTED SECRET]',
+	)
+
+	const query = await send(
+		new Request('https://api.example.com/q?key={{secret:appPassword}}'),
+	)
+	expect(query.headers.get('x-echo-url')).toBe(
+		'https://api.example.com/q?key=[REDACTED SECRET]',
+	)
+	expect(await query.text()).not.toContain('app')
+
+	const path = await send(
+		new Request('https://api.example.com/v1/{{secret:appPassword}}/me'),
+	)
+	expect(path.headers.get('x-echo-url')).toBe(
+		'https://api.example.com/v1/[REDACTED SECRET]/me',
+	)
+
+	const failing = executeGatewayFetch({
+		env,
+		props,
+		request: new Request(
+			'https://api.example.com/q?key={{secret:appPassword}}',
+		),
+		globalFetch: (async (request: Request) => {
+			throw new TypeError(`fetch failed for ${request.url}`)
+		}) as unknown as typeof fetch,
+	})
+	const error = await failing.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(Error)
+	expect((error as Error).name).toBe('TypeError')
+	expect((error as Error).message).toBe(
+		'fetch failed for https://api.example.com/q?key=[REDACTED SECRET]',
+	)
+})
+
+test('fetch gateway deadline is five minutes on every surface', () => {
+	expect(outboundFetchTimeoutMs).toBe(300_000)
+	expect(outboundFetchIdleTimeoutMs).toBe(60_000)
+})
+
+test('fetch gateway aborts a hung outbound fetch before headers at the overall deadline', async () => {
+	const hungFetch = vi.fn(
+		(request: Request) =>
+			new Promise<Response>((_resolve, reject) => {
+				request.signal.addEventListener(
+					'abort',
+					() => {
+						reject(
+							request.signal.reason ??
+								new DOMException('The operation was aborted.', 'AbortError'),
+						)
+					},
+					{ once: true },
+				)
+			}),
+	)
+	const startedAtMs = Date.now()
+	await expect(
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://example.com/slow'),
+			globalFetch: hungFetch as unknown as typeof fetch,
+			timeoutMs: 40,
+		}),
+	).rejects.toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch exceeded its 40ms overall deadline.',
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
+	expect(hungFetch).toHaveBeenCalledTimes(1)
+	expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
+})
+
+function createTimedBodyFetch(steps: ReadonlyArray<{ afterMs: number }>) {
+	const encoder = new TextEncoder()
+	const upstreamCancel = vi.fn()
+	let index = 0
+	const fetchStub = vi.fn(async () => {
+		const body = new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				const step = steps[index]
+				if (!step) {
+					controller.close()
+					return
+				}
+				index += 1
+				await new Promise((resolve) => {
+					if (Number.isFinite(step.afterMs)) setTimeout(resolve, step.afterMs)
+				})
+				controller.enqueue(encoder.encode(`chunk-${index};`))
+			},
+			cancel: upstreamCancel,
+		})
+		return new Response(body, { status: 200 })
+	})
+	return { fetchStub, upstreamCancel }
+}
+
+const forever = { afterMs: Infinity }
+
+test('fetch gateway idle deadline resets on every body chunk', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	// Six chunks 30ms apart: 180ms total, past the 100ms idle deadline.
+	const { fetchStub } = createTimedBodyFetch(
+		Array.from({ length: 6 }, () => ({ afterMs: 30 })),
+	)
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/stream'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 100,
+	})
+	expect(await response.text()).toBe(
+		'chunk-1;chunk-2;chunk-3;chunk-4;chunk-5;chunk-6;',
+	)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const usage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(usage).toMatchObject({ outcome: 'success' })
+	// Duration covers the streamed body, not just time to headers.
+	expect(usage?.durationMs).toBeGreaterThanOrEqual(150)
+})
+
+test('fetch gateway aborts a silent hang after headers at the idle deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+		{ afterMs: 0 },
+		forever,
+	])
+	const startedAtMs = Date.now()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/hang'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 60,
+	})
+	expect(response.status).toBe(200)
+	const error = await response.text().then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(error).toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch response stalled: no bytes for 60ms.',
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(upstreamCancel).toHaveBeenCalled()
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
+})
+
+test('fetch gateway stops a slow drip at the overall deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	// Every gap is under the idle deadline; only the overall cap can stop it.
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch(
+		Array.from({ length: 100 }, () => ({ afterMs: 20 })),
+	)
+	const startedAtMs = Date.now()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/drip'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 150,
+		idleTimeoutMs: 100,
+	})
+	const reader = response.body!.getReader()
+	const decoder = new TextDecoder()
+	let received = ''
+	const error = await (async () => {
+		try {
+			for (;;) {
+				const { done, value } = await reader.read()
+				if (done) return null
+				received += decoder.decode(value)
+			}
+		} catch (caught) {
+			return caught
+		}
+	})()
+	expect(error).toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch exceeded its 150ms overall deadline.',
+	})
+	expect(received).toContain('chunk-1;')
+	expect(received).not.toContain('chunk-100;')
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(upstreamCancel).toHaveBeenCalled()
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
+})
+
+test('fetch gateway default deadlines let steady chunks stream past a minute and stop at five minutes', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		const { fetchStub, upstreamCancel } = createTimedBodyFetch(
+			Array.from({ length: 20 }, () => ({ afterMs: 30_000 })),
+		)
+		const response = await executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://api.example.com/ai-stream'),
+			globalFetch: fetchStub as unknown as typeof fetch,
+		})
+		const reader = response.body!.getReader()
+		const decoder = new TextDecoder()
+		let received = ''
+		const reading = (async () => {
+			try {
+				for (;;) {
+					const { done, value } = await reader.read()
+					if (done) return null
+					received += decoder.decode(value)
+				}
+			} catch (caught) {
+				return caught
+			}
+		})()
+		await vi.advanceTimersByTimeAsync(outboundFetchTimeoutMs - 1_000)
+		expect(received).toContain('chunk-9;')
+		await vi.advanceTimersByTimeAsync(2_000)
+		expect(await reading).toMatchObject({
+			name: 'TimeoutError',
+			message: 'Outbound fetch exceeded its 300s overall deadline.',
+		})
+		expect(received).not.toContain('chunk-11;')
+		expect(upstreamCancel).toHaveBeenCalled()
+	} finally {
+		vi.useRealTimers()
 	}
+})
+
+test('fetch gateway meters an abandoned body once, at the overall deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+		{ afterMs: 0 },
+		forever,
+	])
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/status-only'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 80,
+		idleTimeoutMs: 20,
+	})
+	expect(response.status).toBe(200)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const usage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(usage).toMatchObject({ outcome: 'success' })
+	expect(usage?.durationMs).toBeGreaterThanOrEqual(70)
+	expect(upstreamCancel).toHaveBeenCalled()
+})
+
+test('fetch gateway forwards a caller abort after headers', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, forever])
+	const caller = new AbortController()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/caller-abort', {
+			signal: caller.signal,
+		}),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+	})
+	expect(response.status).toBe(200)
+	const outboundSignal = (
+		fetchStub.mock.calls as unknown as Array<[Request]>
+	)[0]?.[0]?.signal
+	expect(outboundSignal?.aborted).toBe(false)
+	caller.abort(new Error('caller went away'))
+	expect(outboundSignal?.aborted).toBe(true)
+})
+
+test('fetch gateway idle deadline ignores time the consumer spends not reading', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, { afterMs: 0 }])
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/buffered'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 40,
+	})
+	await new Promise((resolve) => setTimeout(resolve, 120))
+	expect(await response.text()).toBe('chunk-1;chunk-2;')
 })
 
 test('fetch gateway provider placeholders: normalize mixed case, deny wrong host and non-HTTPS without user secrets', async () => {
@@ -1025,6 +1683,11 @@ test('fetch gateway provider placeholders: normalize mixed case, deny wrong host
 	expect(resolveSpy).toHaveBeenCalledWith(
 		expect.objectContaining({ request: props.request }),
 	)
+	// A vault ref holds `/`, and it still fills as a single path span.
+	const inPath = await expand(
+		new Request(`https://app.example.com/v1/${canonical}/me`),
+	)
+	expect(inPath.url).toBe('https://app.example.com/v1/vault-password/me')
 
 	await expect(
 		expand(providerRequest('https://evil.example.com/login', canonical)),

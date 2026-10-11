@@ -13,7 +13,7 @@ function renderPackageRepoNav(input: {
 	username: string
 	kodyId: string
 	filesHref: string
-	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	active: PackageRepoNavActive
 }) {
 	const repoHref = routes.communityPackage.href({
@@ -46,7 +46,7 @@ function renderPackageRepoNav(input: {
 			>
 				Files
 			</a>
-			{input.viewerIsOwner ? (
+			{input.viewerCanManage ? (
 				<a
 					href={settingsHref}
 					aria-current={input.active === 'settings' ? 'page' : undefined}
@@ -66,6 +66,7 @@ export function renderPackageRepoChrome(input: {
 	isPrivate: boolean
 	isListed?: boolean
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	active: PackageRepoNavActive
 	filesHref: string
 	description?: string
@@ -148,7 +149,7 @@ export function renderPackageRepoChrome(input: {
 					username: input.username,
 					kodyId: input.kodyId,
 					filesHref: input.filesHref,
-					viewerIsOwner: input.viewerIsOwner,
+					viewerCanManage: input.viewerCanManage,
 					active: input.active,
 				})}
 			</div>

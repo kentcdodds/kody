@@ -15,8 +15,8 @@
   "description": "Your agents' cloud: the memory, keys, code, and automations your AI agent keeps, portable across every MCP host",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [
-      "oxfmt --no-error-on-unmatched-pattern",
-      "oxlint --fix"
+      "oxlint --fix",
+      "oxfmt --no-error-on-unmatched-pattern"
     ],
     "*.{json,jsonc,md,css,yml,yaml}": [
       "oxfmt --no-error-on-unmatched-pattern"
@@ -97,7 +97,7 @@
     "install:check": "node tools/check-installed-lockfile.ts",
     "prevalidate": "npm run install:check && node tools/build-worker-bundler-modules.ts && node tools/build-guide-catalog-modules.ts",
     "validate": "node tools/run-validate.ts",
-    "validate:fix": "npm run format && npm run lint:fix",
+    "validate:fix": "npm run lint:fix && npm run format",
     "test:e2e:ensure": "node tools/ensure-playwright-browser.ts",
     "test:e2e:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:run": "node tools/run-nx.ts run worker:test-e2e",

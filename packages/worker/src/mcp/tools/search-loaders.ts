@@ -14,6 +14,7 @@ import {
 	canSeeResource,
 	computeEffectivePermissions,
 	packageResource,
+	resourceVisibility,
 	runWithRequestPermissions,
 } from '#worker/authorization/authorize.ts'
 
@@ -76,6 +77,16 @@ export async function loadSearchRowsAndRegistry(input: {
 		: null
 	const reveal = (pkg: { id: string; userId: OwnerId }) =>
 		!access || canSeeResource(access, packageResource(pkg))
+	const revealSecret = access
+		? resourceVisibility(access, 'credential', ['secret:use', 'secret:write'])
+		: () => true
+	const revealIntegration = access
+		? resourceVisibility(access, 'credential', [
+				'integration:use',
+				'integration:read',
+				'integration:write',
+			])
+		: () => true
 	return await runWithRequestPermissions(
 		{ env: input.env, request },
 		async () => {
@@ -115,20 +126,24 @@ export async function loadSearchRowsAndRegistry(input: {
 						if (access?.profileGrants) return []
 						const userId = input.userId
 						if (!userId) return []
-						return listUserSecretsForSearch({
+						const secrets = await listUserSecretsForSearch({
 							env: input.env,
 							userId,
 						})
+						return secrets.filter((secret) => revealSecret(secret.credentialId))
 					},
 					loadUserValues: async () => [],
 					loadUserIntegrations: async () => {
 						if (access?.profileGrants) return []
 						const userId = input.userId
 						if (!userId) return []
-						return listJoinedIntegrations({
+						const integrations = await listJoinedIntegrations({
 							env: input.env,
 							userId,
 						})
+						return integrations.filter((entry) =>
+							revealIntegration(entry.connection.credentialId),
+						)
 					},
 				}),
 			])
@@ -144,7 +159,9 @@ export async function loadSearchRowsAndRegistry(input: {
 									userId: input.userId,
 									packageId: input.callerContext.storageContext?.packageId,
 								}).catch(() => [])
-							).map((ref) => ref.serverId),
+							)
+								.filter((ref) => revealIntegration(ref.serverId))
+								.map((ref) => ref.serverId),
 						),
 					)
 				: runtimeRegistry

@@ -385,3 +385,33 @@ raised again.
   import() in `builtin-domains.ts`, which defers startup CPU, and esbuild keeps
   the modules in this same entry. Local dry-run 5_118_387 against the previous
   5_106_000 budget (#3092). Reviewed ceiling 5_120_000.
+- Credentials, orgs, entitlements, and admin MCP work since that teams ceiling
+  (#3122, `02d71171e`) landed on the platform and runtime entries. A rebuild of
+  that SHA with this checker measures platform 5_064_015 and runtime 3_627_141.
+  The ledger's 5_118_387 for the same SHA does not reproduce here;
+  `packages/shared` grew only ~0.6 KB, so that gap is not the shared package.
+  Entry growth from that rebuild to `c225c1136` is platform +160_156 and runtime
+  +146_603, in code those entries already evaluate. esbuild keeps MCP capability
+  domains in the same entry (dynamic `import()` defers startup CPU only), and
+  the fetch gateway, package codemod registry, entitlements, and package runtime
+  are static. Largest clusters on both workers: MCP capabilities (admin
+  enablements migrate and importable-artifact backfill, secret placement, echo
+  redaction, org/access/repo updates, downstream MCP truncation) ~38–44 KB; orgs
+  (offboarding, soft-delete, repo) ~16 KB; enablements backfill ~15 KB;
+  `resolveCredential` plus placement and audit ~11 KB; codemod `0010` on the
+  existing codemod registry ~10 KB; entitlements (plans, limit overrides, meter,
+  execute admission on platform) ~11–15 KB; package runtime and
+  hub/email/integrations the rest. No one import is accidental or large enough
+  to remove without splitting that graph. Local dry-run matches CI on
+  `c225c1136`: platform 5_224_171 against the previous 5_120_000 budget, runtime
+  3_773_744 against the previous 3_722_000 budget (still the Zod-locale ceiling;
+  #3122 did not remeasure runtime). Reviewed ceilings platform 5_226_000 and
+  runtime 3_775_000.
+- Enablements run-as-enabler (#3334) merged to main after that measurement and
+  before the #3360 squash (`dd443918e`, parent `e3437fec5`). It sits on both
+  entries with subscription dispatch, jobs, request context, and webhook
+  delivery. `resolveCredential` shrank when raw credential slots reverted
+  (#3351). Local dry-run of `ff1a50c84`: platform 5_242_175 (+18_004 over the
+  5_224_171 measurement, 16_175 over the 5_226_000 ceiling) and runtime
+  3_791_764 (+18_020 over 3_773_744, 16_764 over the 3_775_000 ceiling).
+  Reviewed ceilings platform 5_244_000 and runtime 3_793_500.

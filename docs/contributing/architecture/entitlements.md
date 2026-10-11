@@ -182,9 +182,7 @@ retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
-Gmail-dot email collapse, no shared Stripe customer, and no platform-type
-`users` row as referrer (those rows have no person behind them;
-[#3084](https://github.com/kentcdodds/kody/issues/3084)). An unverified party
+Gmail-dot email collapse, and no shared Stripe customer. An unverified party
 holds the qualifying invoice id on the pending row; email verification retries
 the grant. `/@<slug>/-/billing` shows the share link and simple referrer status.
 
@@ -201,13 +199,15 @@ like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
-(`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
-`job_runs_per_day`, `concurrent_workflows`) are operator runaway caps sized from
-production usage with at least 2× busy-day headroom, and they still dominate
-every paid plan. `automation_invocations_per_day` on `max` is the public
-burst-friendly ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro
-automation stays at the job-matched values. All other resources use the ordinary
-`planLimits.max` numbers.
+(`execute_unique_workers_per_day`, `job_runs_per_day`, `concurrent_workflows`)
+are operator runaway caps sized from production usage with at least 2× busy-day
+headroom, and they still dominate every paid plan. `outbound_fetches_per_day` on
+`max` is instead 50× the purchasable Pro include (750,000), because it is also
+the per-seat credits ceiling and credits carry outbound fetches to 50× like
+execute. `automation_invocations_per_day` on `max` is the public burst-friendly
+ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays
+at the job-matched values. All other resources use the ordinary `planLimits.max`
+numbers.
 
 | Resource                         | Limit   |
 | -------------------------------- | ------- |
@@ -222,7 +222,7 @@ automation stays at the job-matched values. All other resources use the ordinary
 | `secrets`                        | 10,000  |
 | `storage_bytes`                  | 100 GiB |
 | `execute_unique_workers_per_day` | 25,000  |
-| `outbound_fetches_per_day`       | 80,000  |
+| `outbound_fetches_per_day`       | 750,000 |
 | `job_runs_per_day`               | 40,000  |
 | `automation_invocations_per_day` | 200,000 |
 
@@ -280,10 +280,12 @@ drops to Free limits.
 - **Credits ceiling.** With a positive balance, those fields
   (`unlockCreditsLimits`) can reach `creditsUnlockMultiplier` (50)× the pooled
   include, capped at the `max` daily ceilings × seats (per seat: execute 25,000
-  a day and 175,000 a week, outbound 80,000 / 560,000, job runs 40,000,
+  a day and 175,000 a week, outbound 750,000 / 5,250,000, job runs 40,000,
   automation 200,000; weekly is seven capped days). Whichever is lower wins: a
   funded 3-seat org gets 75,000 execute a day (both bounds agree) and 180,000 a
-  week (50 × 3,600; the 525,000 ceiling never binds for execute).
+  week (50 × 3,600; the 525,000 ceiling never binds for execute). Outbound works
+  the same way: the per-seat ceiling is 50× the 15,000 include, so a funded seat
+  runs to 750,000 fetches a day and 2,000,000 a week (50 × 40,000).
   `creditsCeilingScalesWithSeats` is the one switch for whether the ceiling
   grows with seats. At $0 `resolvePlanLimits` returns the pooled include (500
   execute/day and 1,200/week per seat), and every one of those fields stops at
@@ -431,10 +433,12 @@ observes:
   jobs.
 - **Execute runaway brake**: before any claim, bundle, or sandbox work, the tool
   calls `UserMeter.admitExecuteCall`, an in-memory per-org counter that refuses
-  past `executeCallsPerMinutePerOrg` (300) calls in a UTC minute. It counts
-  every call, including warm repeats the plan cap does not, and is a safety net
-  rather than a plan limit (busiest production org-minute over the 30 days to
-  2026-10-10: 64 calls).
+  past the effective `execute_calls_per_minute` limit. The base is
+  `executeCallsPerMinutePerSeat` (300) times live paid seats (minimum 300 for
+  free or one-seat orgs), resolved through `resolveEntitlementLimit` so admin
+  overrides raise it like other caps. It counts every call, including warm
+  repeats the plan cap does not, and is a safety net rather than a billed quota
+  (busiest production org-minute over the 30 days to 2026-10-10: 64 calls).
 - **Execute usage in every response**: every signed-in hosted execute response
   carries `structuredContent.usage`: `unit` (unique execute workers) and `day`
   (plus `week` when the plan has a weekly window) with `used`, `limit`,
@@ -832,11 +836,11 @@ Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
 `standard` and `partner` to `pro` (plan and Stripe plan columns, and the
 since-dropped `invites.plan`) and rebuilds both CHECK constraints for `free`,
 `standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` introduced the
-entitlement ladder (`public` | `legacy`, default `public`; now on `orgs`) and
+entitlement ladder (`public` | `legacy`, default `public`; stored on `orgs`) and
 backfilled `legacy` for then-active Stripe Standard/Pro subscribers and manual
-Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
-on `orgs`) for the granting Stripe price so a later refresh can drop `legacy` on
-a subscription change.
+Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id`
+(stored on `orgs`) for the granting Stripe price so a later refresh can drop
+`legacy` on a subscription change.
 
 ## Assigning plans
 
@@ -876,10 +880,11 @@ its plan. Nothing in code names an org; overrides are data.
 `execute_unique_workers_per_week`, `outbound_fetches_per_day`,
 `outbound_fetches_per_week`, `job_runs_per_day`,
 `automation_invocations_per_day`, `email_sends_per_day`,
-`email_receives_per_day`, `unique_worker_days_per_month`, and
-`durable_object_rows_read_per_month`. Each override is a whole number or
-`'unlimited'` (`unlimitedLimit`, `Number.MAX_SAFE_INTEGER`), an optional
-`expires_at`, a required reason, and the admin who set it.
+`email_receives_per_day`, `unique_worker_days_per_month`,
+`durable_object_rows_read_per_month`, and `execute_calls_per_minute`. Each
+override is a whole number or `'unlimited'` (`unlimitedLimit`,
+`Number.MAX_SAFE_INTEGER`), an optional `expires_at`, a required reason, and the
+admin who set it.
 
 **Storage:** D1 `org_limit_overrides` (`0103-org-limit-overrides.sql`), primary
 key `(org_id, limit_key)`, `limit_value` NULL for unlimited. It is the only
@@ -929,7 +934,7 @@ execute `entitlement` metadata (`limit`, `remaining`) report the effective
 limit. `'unlimited'` displays as "Unlimited". Nothing user-facing mentions that
 an override exists.
 
-**Credits and billing are unchanged.** Overrides change caps, never prices:
+Overrides change caps, never prices:
 
 - **Daily and weekly keys** raise the rate cap only. A purchasable-Pro org with
   `creditWallet: 'empty'` is still stopped past a monthly compute include
@@ -938,7 +943,7 @@ an override exists.
 - **Monthly keys** (`unique_worker_days_per_month`,
   `durable_object_rows_read_per_month`) move only the $0 stop threshold in
   `resolvePastIncludeStop`. Debits still use the plan include
-  (`computeMonthlyOverageForDebit`), so:
+  (`computeMonthlyOverage`), so:
   - With a funded wallet, every unit past the plan include is debited exactly as
     without an override.
   - With an empty wallet, usage between the plan include and the override runs
@@ -1033,12 +1038,26 @@ include a self-serve billing offer only when `hasHigherPublicPlan(plan)` is true
 credit-extended), so stock denials are reduce-only there. The job interval floor
 hint is always reduce-only (Free and Pro share 15 minutes).
 
+The hint also follows the resource's window in `entitlementResourceWindows`
+(`universal/plans.ts`), the one list of how each resource counts. `utc_day`
+meters say they reset at 00:00 UTC and how long that is from now (weekly
+execute/outbound denials say Monday 00:00 UTC). Only `standing` counts get
+"remove or finish existing", and `per_item` caps say to use fewer per request.
+`dailyEntitlementResources` is derived from that map.
+
 Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 unique execute workers
-> per day and you currently have 500. Rerun code you already ran today and vary
-> params; repeats are free, or add credits at /account/usage#credits to keep
-> going past your include.
+> per day and you currently have 500. This daily limit resets at 00:00 UTC, in
+> 1h 26m. Rerun code you already ran today and vary params; repeats are free, or
+> add credits at /account/usage#credits to keep going past your include.
+
+Daily outbound fetch example (purchasable Pro with a funded wallet at the
+ceiling):
+
+> Plan limit reached: your "pro" plan allows at most 750000 outbound fetches per
+> day and you currently have 750000. This daily limit resets at 00:00 UTC, in 1h
+> 26m.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
