@@ -1749,7 +1749,7 @@ async function executeClaimedScheduledJob(input: {
 	row: JobRow
 	scheduledFor: string
 	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<JobExecutionOutcome> {
+}): Promise<JobExecutionOutcome | null> {
 	const runs = await planScheduledJobRuns({
 		env: input.env,
 		job: input.row.record,
@@ -1760,19 +1760,7 @@ async function executeClaimedScheduledJob(input: {
 	}).catch((error: unknown) => {
 		throw markPreExecutionTransientError(error)
 	})
-	if (runs.length === 0) {
-		const now = new Date().toISOString()
-		return {
-			execution: {
-				ok: true,
-				result: { skipped: 'no_enablement_on' },
-				logs: [],
-			},
-			startedAt: now,
-			finishedAt: now,
-			durationMs: 0,
-		}
-	}
+	if (runs.length === 0) return null
 	let selected: JobExecutionOutcome | null = null
 	for (const run of runs) {
 		const outcome = await executeClaimedScheduledJobRun({ ...input, ...run })
@@ -1780,6 +1768,57 @@ async function executeClaimedScheduledJob(input: {
 	}
 	if (!selected) throw new Error('Expected at least one scheduled job run.')
 	return selected
+}
+
+/**
+ * Nothing is on for this slot, so no run is recorded. A recurring job skips
+ * to its next slot. A once job keeps its slot and retries with backoff, so it
+ * still fires after its enabler regains access.
+ */
+async function deferClaimedJobWithoutEnablement(input: {
+	env: Env
+	userId: OwnerId
+	row: JobRow
+	claimToken: string
+	now: Date
+}) {
+	const { row } = input
+	const store = jobsData(input.env)
+	const scheduledFor = row.claimed_scheduled_for
+	const settled =
+		row.record.schedule.type === 'once' || !scheduledFor
+			? await store.retryClaimedJob({
+					userId: input.userId,
+					jobId: row.id,
+					claimToken: input.claimToken,
+					nextRunAt: computeJobRetryAt({
+						now: input.now,
+						retryCount: row.retry_count,
+					}),
+				})
+			: await store.finalizeClaimedJob({
+					userId: input.userId,
+					job: {
+						...row.record,
+						updatedAt: input.now.toISOString(),
+						nextRunAt: computeNextRunAt({
+							schedule: row.record.schedule,
+							timezone: row.record.timezone,
+							from: input.now,
+						}),
+					},
+					claimToken: input.claimToken,
+					scheduledFor,
+				})
+	logJobSchedulerEvent({
+		event: settled
+			? 'scheduled_job_skipped'
+			: 'claim_lost_before_skip_transition',
+		userId: input.userId,
+		jobId: row.id,
+		scheduleType: row.record.schedule.type,
+		reason: settled ? 'no_enablement_on' : 'fenced_claim_superseded',
+	})
 }
 
 async function executeClaimedScheduledJobRun(input: {
@@ -1920,6 +1959,16 @@ export async function runDueJobsForUser(input: {
 						scheduledFor: row.claimed_scheduled_for,
 						waitUntil: input.waitUntil,
 					})
+					if (!outcome) {
+						await deferClaimedJobWithoutEnablement({
+							env: input.env,
+							userId: input.userId,
+							row,
+							claimToken,
+							now,
+						})
+						continue
+					}
 					const result = await processDueJobs({
 						jobs: [row.record],
 						now,

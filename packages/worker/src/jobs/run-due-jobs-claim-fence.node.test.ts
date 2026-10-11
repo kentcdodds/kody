@@ -26,8 +26,14 @@ const listArchivedJobArtifactsDueBefore = vi.fn<
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
+const planEnablementRuns = vi.fn(async () => ({
+	mode: 'legacy' as 'legacy' | 'enablements',
+	runs: [],
+	skipped: [],
+}))
+
 vi.mock('#worker/enablements/run-gate.ts', () => ({
-	planEnablementRuns: async () => ({ mode: 'legacy' }),
+	planEnablementRuns: () => planEnablementRuns(),
 }))
 
 vi.mock('#worker/account/deletion-state.ts', () => ({
@@ -354,4 +360,59 @@ test('scheduled package job claims carry package identity and the published sour
 			nextRunAt: '2026-07-30T19:00:05.000Z',
 		}),
 	)
+})
+
+test('a scheduled slot with no enablement on records no run and does not use up a once job', async () => {
+	planEnablementRuns.mockResolvedValue({
+		mode: 'enablements',
+		runs: [],
+		skipped: [],
+	})
+	claimRunRecord.mockClear()
+	finalizeClaimedJobRow.mockReset()
+	retryClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	retryClaimedJobRow.mockResolvedValue(true)
+	const skipped = {
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 0,
+		jobOutcomes: [],
+	}
+
+	const recurring = createJobRecord({ id: 'job-recurring-skip' })
+	seedDueClaim(recurring)
+	await expect(runDue(recurring.userId)).resolves.toEqual(skipped)
+	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
+	const finalized = finalizeClaimedJobRow.mock.calls[0]?.[0] as {
+		job: JobRecord
+	}
+	expect(finalized.job).toMatchObject({
+		enabled: true,
+		nextRunAt: '2026-07-30T20:00:00.000Z',
+	})
+	expect(finalized.job.lastRunAt).toBeUndefined()
+	expect(finalized.job.lastRunStatus).toBeUndefined()
+	expect(retryClaimedJobRow).not.toHaveBeenCalled()
+
+	finalizeClaimedJobRow.mockClear()
+	const once = createJobRecord({
+		id: 'job-once-skip',
+		schedule: { type: 'once', runAt: '2026-07-30T19:00:00.000Z' },
+	})
+	seedDueClaim(once)
+	await expect(runDue(once.userId)).resolves.toEqual(skipped)
+	expect(finalizeClaimedJobRow).not.toHaveBeenCalled()
+	expect(retryClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jobId: once.id,
+			nextRunAt: '2026-07-30T19:00:05.000Z',
+		}),
+	)
+	expect(claimRunRecord).not.toHaveBeenCalled()
+	planEnablementRuns.mockResolvedValue({
+		mode: 'legacy',
+		runs: [],
+		skipped: [],
+	})
 })
