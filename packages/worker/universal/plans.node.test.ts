@@ -318,9 +318,10 @@ test('purchasable Pro rates pool across paid seats; funded ceilings scale with s
 			3,
 		),
 	]).toEqual([3_600, 180_000, 3 * 560_000])
-	expect(resolvePlanLimits('free', 'public', 'none', 3)).toEqual(
-		planLimits.free,
-	)
+	expect(resolvePlanLimits('free', 'public', 'none', 3)).toEqual({
+		...planLimits.free,
+		maxExecuteCallsPerMinute: 900,
+	})
 	// Unknown or fractional seat counts never shrink the pool below one seat.
 	expect(resolvePlanLimits('pro', 'public', 'empty', 0)).toEqual(
 		proCreditsPlanLimits,
@@ -328,6 +329,13 @@ test('purchasable Pro rates pool across paid seats; funded ceilings scale with s
 	expect(resolvePlanLimits('pro', 'public', 'empty', Number.NaN)).toEqual(
 		proCreditsPlanLimits,
 	)
+	// Runaway brake: seats × 300 on every plan; not credits-unlocked.
+	expect([
+		resolvePlanLimit('free', 'execute_calls_per_minute'),
+		resolvePlanLimit('pro', 'execute_calls_per_minute', 'public', 'empty', 3),
+		resolvePlanLimit('pro', 'execute_calls_per_minute', 'public', 'funded', 3),
+		resolvePlanLimit('max', 'execute_calls_per_minute', 'public', 'none', 2),
+	]).toEqual([300, 900, 900, 600])
 })
 
 test('limit overrides only raise caps, skip expired entries, and never add a missing weekly window', () => {

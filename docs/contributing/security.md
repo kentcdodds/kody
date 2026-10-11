@@ -620,7 +620,8 @@ blast radius:
   and egress per org per UTC day, with public-ladder weekly hard caps on the
   same meters (Monday–Sunday; whichever window hits first blocks). Warm repeats
   are bounded separately by a per-org execute runaway brake (300 calls per
-  minute). See [`architecture/entitlements.md`](./architecture/entitlements.md).
+  minute per paid seat, raised by admin overrides). See
+  [`architecture/entitlements.md`](./architecture/entitlements.md).
 
 ## Accepted residual risks and out-of-scope items
 
