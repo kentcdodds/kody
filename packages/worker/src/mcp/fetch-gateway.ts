@@ -12,15 +12,10 @@ import {
 	buildSecretPlaceholder,
 	decodeSecretPlaceholderDelimiters,
 	parseBasicAuthSecretPlaceholders,
-	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
 	parseIntegrationTokenPlaceholders,
-	parseIntegrationTokenPlaceholdersFromFormUrlEncoded,
 	parseProviderSecretPlaceholders,
-	parseProviderSecretPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
-	parseSecretPlaceholdersFromFormUrlEncoded,
 	replaceSecretPlaceholders,
-	replaceSecretPlaceholdersInFormUrlEncoded,
 	type ReferencedBasicAuthSecretPlaceholder,
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
@@ -44,6 +39,10 @@ import {
 } from '#mcp/secrets/secret-providers/errors.ts'
 import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
+import {
+	assertSecretPlacement,
+	loadSecretPlacementPolicy,
+} from '#mcp/secrets/secret-placement.ts'
 import {
 	grantedSecretAuthorityPackageIdSet,
 	readSecretAuthorityHeader,
@@ -182,9 +181,6 @@ export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
 export const retrieverOutboundFetchDeniedMessage =
 	'Outbound fetch is not available in retriever runs.'
 
-export const providerSecretsRequireHttpsMessage =
-	'Provider secrets require an HTTPS request URL.'
-
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
@@ -315,11 +311,8 @@ export async function executeGatewayFetch(input: {
 }
 
 /**
- * Resolve the hostname to meter without ever leaking expanded secret values.
- * A hostname parsed from the original request URL is always literal (secret
- * placeholders contain `:`, which cannot appear in a parsed hostname). When
- * the original URL has no parseable host, the transformed URL's host is only
- * safe when no placeholder could have expanded into it.
+ * The hostname to meter. The gateway refuses placeholders in the URL, so the
+ * transformed URL never carries a secret and its host is safe to record.
  */
 function readMeteredRequestHostname(
 	originalUrl: string,
@@ -327,19 +320,7 @@ function readMeteredRequestHostname(
 ) {
 	const originalHostname = readRequestHostname(originalUrl)
 	if (originalHostname) return originalHostname
-	const urlForPlaceholderScan = decodeSecretPlaceholderDelimiters(originalUrl)
-	if (parseSecretPlaceholders(urlForPlaceholderScan).length > 0) return ''
-	if (parseProviderSecretPlaceholders(urlForPlaceholderScan).length > 0) {
-		return ''
-	}
-	if (parseIntegrationTokenPlaceholders(urlForPlaceholderScan).length > 0) {
-		return ''
-	}
-	if (parseBasicAuthSecretPlaceholders(urlForPlaceholderScan).length > 0) {
-		return ''
-	}
-	if (transformedUrl === null) return ''
-	return readRequestHostname(transformedUrl)
+	return transformedUrl === null ? '' : readRequestHostname(transformedUrl)
 }
 
 function readRequestHostname(url: string) {
@@ -404,45 +385,49 @@ export async function expandSecretPlaceholders(input: {
 			},
 		)
 	}
-	const requestUrl = decodeSecretPlaceholderDelimiters(input.request.url)
+	await assertSecretPlacement({
+		url: decodeSecretPlaceholderDelimiters(
+			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
+		),
+		headers,
+		body:
+			requestBody?.kind === 'text'
+				? {
+						text: requestBody.text,
+						formEncoded: isFormUrlEncodedRequest(headers),
+					}
+				: null,
+		loadPolicy: () =>
+			loadSecretPlacementPolicy({
+				env: input.env as Env,
+				baseUrl,
+				packageId: packageStamp?.packageId,
+				cacheKey: input.props.request,
+			}),
+	})
 	const resolvedSecrets: Array<{
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
 	const resolvedValues = new Map<string, string>()
-	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders([
-		...collectReferencedBasicAuthSecretPlaceholders([
-			requestUrl,
-			...Array.from(headers.values()),
-		]),
-		...collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
-			headers,
-			requestBody,
-		),
-	])
+	const headerValues = Array.from(headers.values())
+	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders(
+		headerValues.flatMap((value) => parseBasicAuthSecretPlaceholders(value)),
+	)
 	const referencedSecrets = dedupeReferencedSecrets([
-		...collectReferencedSecrets([requestUrl, ...Array.from(headers.values())]),
-		...collectReferencedSecretsFromRequestBody(headers, requestBody),
+		...headerValues.flatMap((value) => parseSecretPlaceholders(value)),
 		...basicAuthPlaceholders.flatMap((placeholder) => [
 			placeholder.username,
 			placeholder.password,
 		]),
 	])
-	const referencedIntegrationTokens = dedupeIntegrationTokenNames([
-		...collectReferencedIntegrationTokens([
-			requestUrl,
-			...Array.from(headers.values()),
-		]),
-		...collectReferencedIntegrationTokensFromRequestBody(headers, requestBody),
-	])
-	const referencedProviderSecrets = dedupeReferencedProviderSecrets([
-		...collectReferencedProviderSecrets([
-			requestUrl,
-			...Array.from(headers.values()),
-		]),
-		...collectReferencedProviderSecretsFromRequestBody(headers, requestBody),
-	])
+	const referencedIntegrationTokens = dedupeIntegrationTokenNames(
+		headerValues.flatMap((value) => parseIntegrationTokenPlaceholders(value)),
+	)
+	const referencedProviderSecrets = dedupeReferencedProviderSecrets(
+		headerValues.flatMap((value) => parseProviderSecretPlaceholders(value)),
+	)
 	const hasReferencedSecrets =
 		referencedSecrets.length > 0 ||
 		referencedIntegrationTokens.length > 0 ||
@@ -578,22 +563,13 @@ export async function expandSecretPlaceholders(input: {
 			replacements.set(renderedPlaceholder, authHeader)
 		}
 	}
-	let requestedHost = ''
+	const nextUrl = resolveRequestUrlForFetchGateway(input.request.url, baseUrl)
 	if (hasReferencedSecrets) {
-		const nextUrl = resolveRequestUrlForFetchGateway(
-			replaceSecretPlaceholders(requestUrl, replacements),
-			baseUrl,
-		)
-		requestedHost = readRequestedHost(nextUrl)
+		const requestedHost = readRequestedHost(nextUrl)
 		if (!requestedHost) {
 			throw new Error(
 				'Unable to resolve the request host after secret expansion.',
 			)
-		}
-		if (resolvedProviderSecrets.length > 0) {
-			if (new URL(nextUrl).protocol !== 'https:') {
-				throw new Error(providerSecretsRequireHttpsMessage)
-			}
 		}
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = collectHostApprovalEntries({
@@ -642,23 +618,9 @@ export async function expandSecretPlaceholders(input: {
 			}
 		}
 	}
-	const nextUrl = resolveRequestUrlForFetchGateway(
-		replaceSecretPlaceholders(requestUrl, replacements),
-		baseUrl,
-	)
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
-	const nextBody =
-		requestBody == null
-			? undefined
-			: requestBody.kind === 'binary'
-				? requestBody.bytes
-				: replaceSecretPlaceholdersInRequestBody(
-						headers,
-						requestBody.text,
-						replacements,
-					)
 	const nextRedirect =
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
@@ -666,7 +628,7 @@ export async function expandSecretPlaceholders(input: {
 	return new Request(nextUrl, {
 		method: input.request.method,
 		headers,
-		body: shouldSendBody(input.request.method) ? nextBody : undefined,
+		body: requestBodyInit(requestBody),
 		redirect: nextRedirect,
 		credentials: input.request.credentials,
 		mode: input.request.mode,
@@ -931,24 +893,6 @@ function assertProviderSecretHostsAllowed(input: {
 	}
 }
 
-function collectReferencedProviderSecrets(
-	values: Array<string | null | undefined>,
-) {
-	return values.flatMap((value) =>
-		value ? parseProviderSecretPlaceholders(value) : [],
-	)
-}
-
-function collectReferencedProviderSecretsFromRequestBody(
-	headers: Headers,
-	requestBody: GatewayRequestBody | null,
-) {
-	if (requestBody?.kind !== 'text' || !requestBody.text) return []
-	return isFormUrlEncodedRequest(headers)
-		? parseProviderSecretPlaceholdersFromFormUrlEncoded(requestBody.text)
-		: parseProviderSecretPlaceholders(requestBody.text)
-}
-
 function dedupeReferencedProviderSecrets(
 	referenced: Array<ReferencedProviderSecret>,
 ) {
@@ -959,64 +903,8 @@ function dedupeReferencedProviderSecrets(
 	return Array.from(deduped.values())
 }
 
-function collectReferencedSecrets(values: Array<string | null | undefined>) {
-	return dedupeReferencedSecrets(
-		values.flatMap((value) => (value ? parseSecretPlaceholders(value) : [])),
-	)
-}
-
-function collectReferencedBasicAuthSecretPlaceholders(
-	values: Array<string | null | undefined>,
-) {
-	return dedupeBasicAuthSecretPlaceholders(
-		values.flatMap((value) =>
-			value ? parseBasicAuthSecretPlaceholders(value) : [],
-		),
-	)
-}
-
-function collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
-	headers: Headers,
-	requestBody: GatewayRequestBody | null,
-) {
-	if (requestBody?.kind !== 'text' || !requestBody.text) return []
-	return isFormUrlEncodedRequest(headers)
-		? dedupeBasicAuthSecretPlaceholders(
-				parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(requestBody.text),
-			)
-		: collectReferencedBasicAuthSecretPlaceholders([requestBody.text])
-}
-
-function collectReferencedIntegrationTokens(values: Array<string>) {
-	return values.flatMap((value) =>
-		value ? parseIntegrationTokenPlaceholders(value) : [],
-	)
-}
-
-function collectReferencedIntegrationTokensFromRequestBody(
-	headers: Headers,
-	requestBody: GatewayRequestBody | null,
-) {
-	if (requestBody?.kind !== 'text' || !requestBody.text) return []
-	return isFormUrlEncodedRequest(headers)
-		? parseIntegrationTokenPlaceholdersFromFormUrlEncoded(requestBody.text)
-		: parseIntegrationTokenPlaceholders(requestBody.text)
-}
-
 function dedupeIntegrationTokenNames(names: Array<string>) {
 	return Array.from(new Set(names.filter((name) => name.trim().length > 0)))
-}
-
-function collectReferencedSecretsFromRequestBody(
-	headers: Headers,
-	requestBody: GatewayRequestBody | null,
-) {
-	if (requestBody?.kind !== 'text' || !requestBody.text) return []
-	return isFormUrlEncodedRequest(headers)
-		? dedupeReferencedSecrets(
-				parseSecretPlaceholdersFromFormUrlEncoded(requestBody.text),
-			)
-		: collectReferencedSecrets([requestBody.text])
 }
 
 function dedupeReferencedSecrets(referencedSecrets: Array<ReferencedSecret>) {
@@ -1040,16 +928,6 @@ function dedupeBasicAuthSecretPlaceholders(
 	return Array.from(deduped.values())
 }
 
-function replaceSecretPlaceholdersInRequestBody(
-	headers: Headers,
-	requestBody: string,
-	replacements: ReadonlyMap<string, string>,
-) {
-	return isFormUrlEncodedRequest(headers)
-		? replaceSecretPlaceholdersInFormUrlEncoded(requestBody, replacements)
-		: replaceSecretPlaceholders(requestBody, replacements)
-}
-
 function isFormUrlEncodedRequest(headers: Headers) {
 	const contentType = headers.get('Content-Type')?.toLowerCase() ?? ''
 	return contentType.startsWith('application/x-www-form-urlencoded')
@@ -1066,12 +944,11 @@ type GatewayRequestBody =
 
 /**
  * Read the outbound request body without corrupting binary payloads.
- * `multipart/*` is always opaque — a text-only Discord upload (JSON payload
+ * `multipart/*` is always opaque: a text-only Discord upload (JSON payload
  * plus a `.txt` attachment) is valid UTF-8, but scanning that blob would
- * resolve or throw on placeholders that appear in untrusted message content.
- * Other bodies that decode as valid UTF-8 keep the text pipeline (secret
- * placeholder scanning and replacement). Anything else passes through
- * byte-for-byte. URL and header placeholders still resolve in every case.
+ * refuse placeholders that appear in untrusted message content. Other bodies
+ * that decode as valid UTF-8 are scanned so a placeholder there is refused.
+ * Every body is forwarded unchanged.
  */
 async function readRequestBody(
 	request: Request,
@@ -1083,7 +960,7 @@ async function readRequestBody(
 	}
 	try {
 		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
-		// bodies round-trip byte-for-byte after placeholder expansion.
+		// bodies round-trip byte-for-byte.
 		const text = new TextDecoder('utf-8', {
 			fatal: true,
 			ignoreBOM: true,

@@ -12,8 +12,10 @@ vi.mock('#worker/identity/permissions-db.ts', () => ({
 		mockModule.getUserRolesAndPermissions(...args),
 }))
 
-const { buildMcpUserContextFromGrantProps } =
-	await import('./mcp-auth-user-context.ts')
+const {
+	buildMcpUserContextFromGrantProps,
+	buildMcpUserContextWithOrgBindingFromGrantProps,
+} = await import('./mcp-auth-user-context.ts')
 
 type GrantUserRow = {
 	id: number
@@ -268,4 +270,90 @@ test('authorization.md copies the stable_user_id lookup from this module', async
 	expect(doc).toContain('.bind(userId)')
 	expect(doc).toContain('getUserRolesAndPermissions')
 	expect(doc).not.toMatch(/grant's email/i)
+})
+
+test('buildMcpUserContextWithOrgBindingFromGrantProps reads the user row and org binding in one D1 batch', async () => {
+	mockModule.getUserRolesAndPermissions.mockResolvedValue({
+		roles: ['user'],
+		permissions: [],
+	})
+	const row = account(9, 'stable-member', 'member@example.com', 'member', {
+		email_verified_at: '2026-01-01T00:00:00.000Z',
+	})
+	const batches: Array<Array<string>> = []
+	function createBatchDb(options: {
+		membershipRow: unknown
+		grantRow: unknown
+	}) {
+		return {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return { sql }
+					},
+				}
+			},
+			async batch(statements: Array<{ sql: string }>) {
+				batches.push(statements.map((statement) => statement.sql))
+				return statements.map(({ sql }) => {
+					const normalized = sql.replace(/\s+/g, ' ').toLowerCase()
+					let result: unknown = null
+					if (normalized.includes('from users')) result = row
+					else if (normalized.includes('from org_memberships')) {
+						result = options.membershipRow
+					} else if (normalized.includes('exists (')) {
+						result = options.grantRow
+					}
+					return { results: result == null ? [] : [result], meta: {} }
+				})
+			},
+		} as unknown as D1Database
+	}
+	const grantProps = {
+		userId: ownerIdFromStored('stable-member'),
+		metadata: { orgId: ownerIdFromStored('org-team') },
+	} as GrantProps
+
+	const bound = await buildMcpUserContextWithOrgBindingFromGrantProps(
+		{
+			APP_DB: createBatchDb({
+				membershipRow: { org_id: 'org-team', org_slug: 'team', role: 'member' },
+				grantRow: null,
+			}),
+		} as Env,
+		grantProps,
+	)
+	expect(bound?.context.user.email).toBe('member@example.com')
+	expect(bound?.context.emailVerified).toBe(true)
+	expect(bound?.orgBinding).toEqual({
+		org: { id: ownerIdFromStored('org-team'), slug: 'team' },
+		role: 'member',
+	})
+	expect(batches).toHaveLength(1)
+	expect(batches[0]).toHaveLength(3)
+	expect(batches[0]?.[0]).toContain('FROM users')
+	expect(batches[0]?.[1]).toContain('FROM org_memberships')
+
+	// Membership gone in the same snapshot: no role is granted.
+	const unbound = await buildMcpUserContextWithOrgBindingFromGrantProps(
+		{ APP_DB: createBatchDb({ membershipRow: null, grantRow: null }) } as Env,
+		grantProps,
+	)
+	expect(unbound?.context.user.email).toBe('member@example.com')
+	expect(unbound?.orgBinding).toBeNull()
+
+	// A live grant without membership binds as an outside collaborator.
+	const collaborator = await buildMcpUserContextWithOrgBindingFromGrantProps(
+		{
+			APP_DB: createBatchDb({
+				membershipRow: null,
+				grantRow: { org_id: 'org-team', org_slug: 'team' },
+			}),
+		} as Env,
+		grantProps,
+	)
+	expect(collaborator?.orgBinding).toEqual({
+		org: { id: ownerIdFromStored('org-team'), slug: 'team' },
+		role: null,
+	})
 })

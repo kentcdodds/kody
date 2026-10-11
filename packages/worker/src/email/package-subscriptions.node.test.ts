@@ -29,6 +29,10 @@ vi.mock('./repo.ts', () => ({
 	listEmailAttachmentsForMessage: mocks.listEmailAttachmentsForMessage,
 }))
 
+vi.mock('./inbound-sender.ts', () => ({
+	classifyInboundEmailSender: async () => ({ kind: 'inbox-owner' }),
+}))
+
 vi.mock('./mailbox-internal-read.ts', () => ({
 	listInternalEmailAttachmentsForMessage:
 		mocks.listInternalEmailAttachmentsForMessage,
@@ -212,6 +216,11 @@ test('accepted inbound messages dispatch email.message.received with classificat
 			savedPackage,
 			topic: inboundEmailReceiptTopic,
 			idempotencyKey: `email:accepted-1:${savedPackage.id}:${inboundEmailReceiptTopic}`,
+			request: {
+				kind: 'inbound-email',
+				sourceId: 'inbox-1',
+				sender: { kind: 'inbox-owner' },
+			},
 			params: expect.objectContaining({
 				event: inboundEmailReceiptTopic,
 				message: expect.objectContaining({

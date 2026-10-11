@@ -223,9 +223,8 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to
 third-party APIs can use stored secrets via `{{secret:name}}` placeholders in
-URLs and headers where the MCP runtime supports them. Host allowlists and
-capability policies apply per secret. There are no GitHub-specific Worker
-environment variables.
+request headers over HTTPS. Host allowlists and capability policies apply per
+secret. There are no GitHub-specific Worker environment variables.
 
 ## Social login (GitHub / Google / X / Discord)
 

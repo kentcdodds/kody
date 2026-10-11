@@ -46,7 +46,9 @@ export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 14
+const userMeterSchemaVersion = 15
+// How long a completed release is remembered for reset-retry idempotency.
+const writeLeaseReleaseMemoryMs = 60 * 60 * 1000
 /** Singleton row id for monthly org budget spend (schema v13). */
 const budgetSpendStateRowId = 1
 const utcMonthKeyPattern = /^\d{4}-\d{2}$/
@@ -679,6 +681,12 @@ class UserMeterBase extends DurableObject<Env> {
 				holder TEXT NOT NULL,
 				acquired_at TEXT NOT NULL,
 				pending_repair_id TEXT
+			)
+		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS account_write_lease_releases (
+				token TEXT PRIMARY KEY NOT NULL,
+				released_at TEXT NOT NULL
 			)
 		`)
 		if (version != null && version < 7) {
@@ -1912,16 +1920,42 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/** Authoritative lease release. */
+	/**
+	 * Authoritative lease release. `released` doubles as the post-write held
+	 * proof, so a release is remembered briefly: a reset retry whose first
+	 * attempt already deleted the row still reports `released: true`, while a
+	 * lease removed by repair or purge still reports `false`.
+	 */
 	async releaseWriteLease(input: {
 		token: string
 	}): Promise<UserMeterReleaseWriteLeaseResult> {
 		const token = assertWriteLeaseToken(input.token)
+		const nowMs = Date.now()
+		this.ctx.storage.sql.exec(
+			`DELETE FROM account_write_lease_releases WHERE released_at < ?`,
+			new Date(nowMs - writeLeaseReleaseMemoryMs).toISOString(),
+		)
 		const cursor = this.ctx.storage.sql.exec(
 			`DELETE FROM account_write_leases WHERE token = ?`,
 			token,
 		)
-		return { released: cursor.rowsWritten > 0 }
+		if (cursor.rowsWritten > 0) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO account_write_lease_releases (token, released_at)
+				VALUES (?, ?)
+				ON CONFLICT(token) DO UPDATE SET released_at = excluded.released_at`,
+				token,
+				new Date(nowMs).toISOString(),
+			)
+			return { released: true }
+		}
+		const remembered = this.ctx.storage.sql
+			.exec(
+				`SELECT 1 AS present FROM account_write_lease_releases WHERE token = ?`,
+				token,
+			)
+			.toArray()
+		return { released: remembered.length > 0 }
 	}
 
 	/** Post-write held check; pending repair still counts as held. */

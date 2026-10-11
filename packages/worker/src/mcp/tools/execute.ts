@@ -491,6 +491,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					await admitHostedExecuteCall({
 						env,
 						ownerId: storageOwnerId,
+						email: entitlementEmail,
 						repeatKey: await executeRepeatKey({
 							credential: callerContext.request?.credential ?? null,
 							actorUserId:

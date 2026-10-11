@@ -94,6 +94,7 @@ test('first second-ecosystem grant gives 14-day Standard; later events and paid 
 			plan: 'free',
 			ladder: 'public',
 			creditWallet: 'none',
+			seats: 1,
 			limitOverrides: [],
 		})
 		expect(await evaluate(free, 2)).toEqual({
@@ -104,6 +105,7 @@ test('first second-ecosystem grant gives 14-day Standard; later events and paid 
 			plan: 'pro',
 			ladder: 'public',
 			creditWallet: 'none',
+			seats: 1,
 			limitOverrides: [],
 		})
 
@@ -145,6 +147,7 @@ test('first second-ecosystem grant gives 14-day Standard; later events and paid 
 				plan: stripePlan,
 				ladder: 'public',
 				creditWallet: 'none',
+				seats: 1,
 				limitOverrides: [],
 			})
 			expect((await evaluate(paid, 4)).outcome).toBe('already_granted')

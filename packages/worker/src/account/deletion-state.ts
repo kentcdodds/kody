@@ -486,45 +486,18 @@ export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: OwnerId,
 ) {
-	const row = await db
+	// One D1 round trip: the person row, its soft-deleted marker, and the org
+	// row (personal orgs reuse stable_user_id) are read together, then decided
+	// in the same order as before. A deleting/deleted personal org must block
+	// OwnerId writes even while the person row is still live, or leftover
+	// UserMeter heal would clear softDeleteOrg's fence.
+	// Pre-Teams test DBs may lack `orgs`; treat that as no org row.
+	const userStatement = db
 		.prepare(
 			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
-		.first<{ deleting_at: string | null }>()
-	if (row) {
-		if (row.deleting_at) throw new AccountDeletionInProgressError()
-		// Personal orgs reuse stable_user_id. A deleting/deleted personal org
-		// must block OwnerId writes even while the person row is still live,
-		// or leftover UserMeter heal would clear softDeleteOrg's fence.
-		// Pre-Teams test DBs may lack `orgs`; treat that as no personal-org fence.
-		try {
-			const personalOrg = await db
-				.prepare(
-					`SELECT deleting_at, deleted_at
-					FROM orgs
-					WHERE id = ?`,
-				)
-				.bind(stableUserId)
-				.first<{ deleting_at: string | null; deleted_at: string | null }>()
-			if (personalOrg && (personalOrg.deleted_at || personalOrg.deleting_at)) {
-				throw new AccountDeletionInProgressError()
-			}
-		} catch (error) {
-			if (
-				error instanceof AccountDeletionInProgressError ||
-				!(
-					error instanceof Error && /no such table:\s*orgs/i.test(error.message)
-				)
-			) {
-				throw error
-			}
-		}
-		return
-	}
-	// Soft-deleted persons still have a users row; do not treat them as team
-	// orgs via the live-org fallback below.
-	const softDeletedPerson = await db
+	const softDeletedPersonStatement = db
 		.prepare(
 			`SELECT 1 AS present
 			FROM users
@@ -532,27 +505,48 @@ export async function assertAccountWritableDb(
 			  AND deleted_at IS NOT NULL`,
 		)
 		.bind(stableUserId)
-		.first<{ present: number }>()
+	const orgStatement = db
+		.prepare(`SELECT deleting_at, deleted_at FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+
+	// The live-user and personal-org reads do not depend on each other, so
+	// issue them together; the soft-deleted-person check only matters when the
+	// live row is missing, so it stays on the rare path.
+	const [row, orgOutcome] = await Promise.all([
+		userStatement.first<{ deleting_at: string | null }>(),
+		orgStatement
+			.first<{ deleting_at: string | null; deleted_at: string | null }>()
+			.then(
+				(org) => ({ org, orgsTableMissing: false }),
+				(error: unknown) => {
+					if (
+						error instanceof Error &&
+						/no such table:\s*orgs/i.test(error.message)
+					) {
+						return { org: null, orgsTableMissing: true }
+					}
+					throw error
+				},
+			),
+	])
+	const { org, orgsTableMissing } = orgOutcome
+
+	if (row) {
+		if (row.deleting_at) throw new AccountDeletionInProgressError()
+		if (org && (org.deleted_at || org.deleting_at)) {
+			throw new AccountDeletionInProgressError()
+		}
+		return
+	}
+	// Soft-deleted persons still have a users row; do not treat them as team
+	// orgs via the live-org fallback below.
+	const softDeletedPerson = await softDeletedPersonStatement.first<{
+		present: number
+	}>()
 	if (softDeletedPerson) {
 		throw new AccountDeletionInProgressError()
 	}
-	try {
-		const org = await db
-			.prepare(
-				`SELECT deleting_at FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
-			)
-			.bind(stableUserId)
-			.first<{ deleting_at: string | null }>()
-		if (!org || org.deleting_at) {
-			throw new AccountDeletionInProgressError()
-		}
-	} catch (error) {
-		if (
-			error instanceof AccountDeletionInProgressError ||
-			!(error instanceof Error && /no such table:\s*orgs/i.test(error.message))
-		) {
-			throw error
-		}
+	if (orgsTableMissing || !org || org.deleted_at || org.deleting_at) {
 		throw new AccountDeletionInProgressError()
 	}
 }
@@ -689,25 +683,27 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 	if (!acquired.acquired) {
 		throw new AccountDeletionInProgressError()
 	}
-	try {
-		const result = await input.write()
-		const held = await runUserMeterRpc({
-			env: input.env,
-			stableUserId: lease.stableUserId,
-			operation: async (meter) =>
-				await meter.assertWriteLeaseHeld({ token: lease.token }),
-		})
-		if (!held.held) throw new AccountWriteLeaseLostError()
-		return result
-	} finally {
-		input.frame.active = false
+	// Releasing reports whether the lease row was still there, so one DO round
+	// trip both proves the lease was held for the whole write and releases it.
+	const release = async () =>
 		await runUserMeterRpc({
 			env: input.env,
 			stableUserId: lease.stableUserId,
 			operation: async (meter) =>
 				await meter.releaseWriteLease({ token: lease.token }),
 		})
+	let result: T
+	try {
+		result = await input.write()
+	} catch (error) {
+		input.frame.active = false
+		await release()
+		throw error
 	}
+	input.frame.active = false
+	const released = await release()
+	if (!released.released) throw new AccountWriteLeaseLostError()
+	return result
 }
 
 export async function listActiveAccountWriteLeases(

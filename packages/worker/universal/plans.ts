@@ -242,8 +242,9 @@ export type UserEntitlement = {
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
 	/**
-	 * Paid seats (live owners + members, at least 1) for purchasable Pro;
-	 * the rate pool is this many per-seat includes. Absent means one seat.
+	 * Live paid seats (owners + members, at least 1). Scales the execute
+	 * runaway brake on every plan and the credits rate pool when the org is
+	 * wallet-eligible. Absent means one seat.
 	 */
 	seats?: number
 	/**
@@ -343,6 +344,13 @@ export type PlanLimits = {
 	 */
 	maxAutomationInvocationsPerDay: number
 	/**
+	 * Hosted execute runaway brake: calls one org may start per UTC minute
+	 * (repeats and failures included). The table holds the per-seat base
+	 * ({@link executeCallsPerMinutePerSeat}); {@link resolvePlanLimits}
+	 * multiplies by paid seats. Not credits-unlocked.
+	 */
+	maxExecuteCallsPerMinute: number
+	/**
 	 * Fastest allowed recurring job interval on this plan. `0` means no extra
 	 * floor beyond the schedule itself. Enforced when a schedule is created
 	 * or changed — existing faster jobs are grandfathered.
@@ -383,9 +391,16 @@ export const entitlementResources = [
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
+	'execute_calls_per_minute',
 ] as const
 
 export type EntitlementResource = (typeof entitlementResources)[number]
+
+/**
+ * Per-seat base for the hosted execute runaway brake. The org limit is
+ * this times paid seats (at least one), then admin overrides may raise it.
+ */
+export const executeCallsPerMinutePerSeat = 300
 
 /** Human-readable resource labels used in the shared error message. */
 export const entitlementResourceLabels: Record<EntitlementResource, string> = {
@@ -404,6 +419,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	outbound_fetches_per_day: 'outbound fetches per day',
 	job_runs_per_day: 'job runs per day',
 	automation_invocations_per_day: 'automation invocations per day',
+	execute_calls_per_minute: 'execute calls per minute',
 }
 
 /**
@@ -480,6 +496,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxJobRunsPerDay: 500,
 		// Modestly above job runs (500).
 		maxAutomationInvocationsPerDay: 1_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 50,
 		maxDurableObjectRowsReadPerMonth: 500_000_000,
@@ -506,6 +523,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxJobRunsPerDay: 1_500,
 		// Burst-friendly above job runs (1_500).
 		maxAutomationInvocationsPerDay: 10_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -530,6 +548,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxJobRunsPerDay: 8_000,
 		// Burst-friendly above job runs (8_000).
 		maxAutomationInvocationsPerDay: 50_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 5 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -570,6 +589,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxJobRunsPerDay: 40_000,
 		// Burst-friendly above job runs (40_000).
 		maxAutomationInvocationsPerDay: 200_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 25_000,
 		// Dominates public Pro (20B). Operator cap only.
@@ -605,6 +625,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 10_000,
 		maxAutomationInvocationsPerDay: 10_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -627,6 +648,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 20_000,
 		maxAutomationInvocationsPerDay: 20_000,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -801,22 +823,31 @@ export function resolvePlanLimits(
 	creditWallet: CreditWalletState = 'none',
 	seats = 1,
 ): PlanLimits {
+	const paidSeats = normalizeSeats(seats)
+	let limits: PlanLimits
 	if (plan === 'pro' && creditWallet !== 'none') {
-		const paidSeats = normalizeSeats(seats)
 		if (paidSeats === 1) {
-			return creditWallet === 'funded'
-				? proCreditsUnlockedPlanLimits
-				: proCreditsPlanLimits
+			limits =
+				creditWallet === 'funded'
+					? proCreditsUnlockedPlanLimits
+					: proCreditsPlanLimits
+		} else {
+			const include = scaleIncludeBySeats(proCreditsPlanLimits, paidSeats)
+			limits =
+				creditWallet === 'funded'
+					? unlockCreditsLimits(include, paidSeats)
+					: include
 		}
-		const include = scaleIncludeBySeats(proCreditsPlanLimits, paidSeats)
-		return creditWallet === 'funded'
-			? unlockCreditsLimits(include, paidSeats)
-			: include
+	} else if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
+		limits = legacyPlanLimits[plan]
+	} else {
+		limits = planLimits[plan]
 	}
-	if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
-		return legacyPlanLimits[plan]
+	// Runaway brake: always seats × per-seat base (not credits-unlocked).
+	return {
+		...limits,
+		maxExecuteCallsPerMinute: executeCallsPerMinutePerSeat * paidSeats,
 	}
-	return planLimits[plan]
 }
 
 /**
@@ -904,6 +935,8 @@ export function limitForResource(
 			return limits.maxJobRunsPerDay
 		case 'automation_invocations_per_day':
 			return limits.maxAutomationInvocationsPerDay
+		case 'execute_calls_per_minute':
+			return limits.maxExecuteCallsPerMinute
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
@@ -1003,6 +1036,7 @@ export const limitOverrideKeys = [
 	'email_receives_per_day',
 	'unique_worker_days_per_month',
 	'durable_object_rows_read_per_month',
+	'execute_calls_per_minute',
 ] as const
 
 export type LimitOverrideKey = (typeof limitOverrideKeys)[number]
@@ -1025,6 +1059,7 @@ export const limitOverrideKeyLabels: Record<LimitOverrideKey, string> = {
 	email_receives_per_day: 'Email receives per day',
 	unique_worker_days_per_month: 'Worker compute per month (stop at $0)',
 	durable_object_rows_read_per_month: 'Rows read per month (stop at $0)',
+	execute_calls_per_minute: 'Execute calls per minute',
 }
 
 type LimitOverrideField =
@@ -1038,6 +1073,7 @@ type LimitOverrideField =
 	| 'maxEmailReceivesPerDay'
 	| 'maxUniqueWorkerDaysPerMonth'
 	| 'maxDurableObjectRowsReadPerMonth'
+	| 'maxExecuteCallsPerMinute'
 
 function limitOverrideField(key: LimitOverrideKey): LimitOverrideField {
 	switch (key) {
@@ -1061,6 +1097,8 @@ function limitOverrideField(key: LimitOverrideKey): LimitOverrideField {
 			return 'maxUniqueWorkerDaysPerMonth'
 		case 'durable_object_rows_read_per_month':
 			return 'maxDurableObjectRowsReadPerMonth'
+		case 'execute_calls_per_minute':
+			return 'maxExecuteCallsPerMinute'
 		default: {
 			const exhaustive: never = key
 			throw new Error(`Unknown limit override key: ${String(exhaustive)}`)

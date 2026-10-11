@@ -84,6 +84,9 @@ function createAdminUserUsageTestDb(input: {
 
 	function countForQuery(normalizedQuery: string, userId: string) {
 		const counts = resourceCounts[userId] ?? {}
+		if (normalizedQuery.includes('from org_memberships')) {
+			return 1
+		}
 		if (normalizedQuery.includes('from saved_packages')) {
 			return counts.saved_packages ?? 0
 		}

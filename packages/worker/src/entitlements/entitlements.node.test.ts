@@ -153,6 +153,10 @@ function createEntitlementsTestDb(
 			}
 			return byId(String(params[0])) ? { present: 1 } : null
 		}
+		// Live seat count for the runaway brake (personal fixture orgs = 1).
+		if (query.includes('FROM org_memberships')) {
+			return { count: 1 }
+		}
 		const table = countedTables.find((name) => query.includes(`FROM ${name}`))
 		if (table) return { count: counts[table] ?? 0 }
 		throw new Error(`Unsupported first query: ${query}`)
@@ -451,17 +455,19 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(
 		await getUserPlan(db, { userId, email: ' Planned@Example.com ' }),
 	).toBe('pro')
-	expect(queries.at(-1)?.sql).toMatch(
-		/u\.email = \? AND u\.stable_user_id = \?/,
-	)
-	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
+	const pairedPlanQuery = [...queries]
+		.reverse()
+		.find((entry) => /u\.email = \? AND u\.stable_user_id = \?/.test(entry.sql))
+	expect(pairedPlanQuery?.params).toEqual([plannedEmail, userId])
 
 	// Background contexts reverse-resolve valid stable ids when their persisted
 	// email is blank or missing.
 	for (const email of [null, undefined, '   ']) {
 		expect(await getUserPlan(db, { userId, email })).toBe('pro')
-		expect(queries.at(-1)?.sql).toMatch(/FROM orgs o WHERE o\.id = \?/)
-		expect(queries.at(-1)?.params).toEqual([userId])
+		const orgPlanQuery = [...queries]
+			.reverse()
+			.find((entry) => /FROM orgs o WHERE o\.id = \?/.test(entry.sql))
+		expect(orgPlanQuery?.params).toEqual([userId])
 	}
 
 	// Mismatched email/stable-id pairs fail closed without warning.
@@ -1198,12 +1204,14 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 		plan: 'standard',
 		ladder: 'legacy',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 	expect(await getCachedUserEntitlement(db, context(publicUser!))).toEqual({
 		plan: 'standard',
 		ladder: 'public',
 		creditWallet: 'none',
+		seats: 1,
 		limitOverrides: [],
 	})
 
