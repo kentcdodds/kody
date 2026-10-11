@@ -14,6 +14,7 @@ import {
 	accountRailOrgSlug,
 	isAccountNavItemActive,
 	isAccountRailPath,
+	workspaceLandingItem,
 	workspaceRailGroups,
 } from '#client/routes/account-rail.ts'
 import { type SessionInfo } from '#client/session.ts'
@@ -353,6 +354,15 @@ test('account rail holds only the person: profile, security, organizations, expe
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
+})
+
+test('workspace landing opens Repositories so the rail is one click away', () => {
+	expect(workspaceLandingItem('jane')).toEqual({
+		href: '/@jane/-/packages',
+		label: 'Workspace',
+		icon: 'box',
+	})
+	expect(workspaceLandingItem(null).href).toBe('/account')
 })
 
 test('workspace rail groups what the organization owns and keeps its slug in every link', () => {

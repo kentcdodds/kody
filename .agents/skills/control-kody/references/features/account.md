@@ -19,11 +19,14 @@ rails come from `account-rail.ts` and render through `AccountPageHeader` in
 rail collapses to a `<details>` menu.
 
 The site header has one avatar: the org switcher (`data-testid="org-switcher"`).
-Its popover lists orgs, then Manage links for the current team org (Settings,
-Members, Teams, Grants, Collaborators, Billing when the role allows), Create
-organization, an invites row when you have any, then a "Your account" group
-(Your profile, Account settings, Log out). Narrow viewports show the same rows
-in the menu panel.
+Its popover lists orgs, then a Manage group for the current team org (or the
+personal org when there is no team): **Workspace** first (lands on
+`/@<slug>/-/packages` and opens the workspace rail), then team Settings,
+Members, Teams, Grants, Collaborators, and Billing when the role allows
+(personal-only Manage is Workspace + Billing). Create organization, an invites
+row when you have any, then a "Your account" group (Your profile, Account
+settings, Log out). Narrow viewports show the same rows in the menu panel. Own
+profile (`/@<username>`) also links **Workspace** beside Edit profile.
 
 ## How to get there
 

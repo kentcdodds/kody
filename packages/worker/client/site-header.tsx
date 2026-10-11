@@ -2,7 +2,10 @@ import { FeaturesMenu } from '#client/features-menu.tsx'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
+import {
+	teamOrgManagementItems,
+	workspaceLandingItem,
+} from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
@@ -359,7 +362,7 @@ function OrgSwitcher(
 				: orgRowsFromSession
 		// Prefer the team org in context so Settings/Members/… stay one click
 		// away from account pages. Fall back to last-used / first team org.
-		// Personal-only sessions still get Billing for the signup org.
+		// Personal-only sessions get Workspace (rail entry) plus Billing.
 		const manageOrg = manageOrganization(
 			organizations,
 			current,
@@ -367,17 +370,25 @@ function OrgSwitcher(
 		)
 		const manageIdentity = manageOrg ? orgIdentity(manageOrg, viewer) : null
 		const manageItems = manageOrg
-			? teamOrgManagementItems({
-					orgSlug: manageOrg.slug,
-					role: manageOrg.role,
-				})
-			: current && orgRoleManagesBilling(current.role)
+			? [
+					workspaceLandingItem(manageOrg.slug),
+					...teamOrgManagementItems({
+						orgSlug: manageOrg.slug,
+						role: manageOrg.role,
+					}),
+				]
+			: current
 				? [
-						{
-							href: orgBillingPath(current.slug),
-							label: 'Billing',
-							icon: 'wallet' as const,
-						},
+						workspaceLandingItem(current.slug),
+						...(orgRoleManagesBilling(current.role)
+							? [
+									{
+										href: orgBillingPath(current.slug),
+										label: 'Billing',
+										icon: 'wallet' as const,
+									},
+								]
+							: []),
 					]
 				: []
 		const manageDetailHandle =

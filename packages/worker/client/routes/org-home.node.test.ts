@@ -11,6 +11,8 @@ test('org home lists every management section for a member', async () => {
 		}),
 	)
 	expect(html).toContain('data-testid="org-home-nav"')
+	expect(html).toContain('data-testid="org-home-nav-workspace"')
+	expect(html).toContain('>Workspace<')
 	expect(html).toContain('href="/@acme/-/settings"')
 	expect(html).toContain('href="/@acme/-/members"')
 	expect(html).toContain('href="/@acme/-/teams"')

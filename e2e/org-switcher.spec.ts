@@ -62,6 +62,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	const manageGroup = wide.panel.getByTestId('org-switcher-manage-group')
 	await expect(manageGroup).toBeVisible()
 	await expect(
+		manageGroup.getByRole('link', { name: 'Workspace' }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/packages`)
+	await expect(
 		manageGroup.getByRole('link', { name: 'Settings' }),
 	).toHaveAttribute('href', `/@pinned-${runId}/-/settings`)
 	await expect(
@@ -70,6 +73,10 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(
 		manageGroup.getByRole('link', { name: 'Teams' }),
 	).toHaveAttribute('href', `/@pinned-${runId}/-/teams`)
+	await expect(page.getByTestId('org-home-nav-workspace')).toHaveAttribute(
+		'href',
+		`/@pinned-${runId}/-/packages`,
+	)
 	// No invites waiting, so no Invites row; the person's own links follow.
 	await expect(wide.panel.getByTestId('org-switcher-invites')).toHaveCount(0)
 	const accountGroup = wide.panel.getByRole('group', { name: 'Your account' })

@@ -56,6 +56,8 @@ test('logged-in header has one menu: the organization, then your own links and L
 	)
 	expect(html).toContain('data-testid="org-switcher-manage-group"')
 	expect(html).toContain('>Manage @ada<')
+	expect(html).toContain('href="/@ada/-/packages"')
+	expect(html).toContain('>Workspace<')
 	expect(html).toContain('href="/@ada/-/billing"')
 	// The photo is drawn once on the trigger and once on the signup org row
 	// in each panel (desktop popover and phone menu), never as its own link.
@@ -133,6 +135,8 @@ test('org switcher lists the signup organization, then others with roles, then c
 	)
 	expect(menu).toContain('data-testid="org-switcher-manage-group"')
 	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/packages"')
+	expect(menu).toContain('>Workspace<')
 	expect(menu).toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/@acme/-/members"')
 	expect(menu).toContain('href="/@acme/-/teams"')
@@ -189,6 +193,8 @@ test('org switcher on team settings stays on the URL org when session lists only
 	// Synthesized current appears as its own row (session list was personal-only).
 	expect(menu).toContain('data-testid="org-switcher-acme"')
 	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/packages"')
+	expect(menu).toContain('>Workspace<')
 	expect(menu).toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/@acme/-/members"')
 	// Member-shaped synthesis: no Billing until the real role loads.
@@ -226,6 +232,8 @@ test('org switcher keeps Manage links for a team org on account pages', async ()
 	)
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/packages"')
+	expect(menu).toContain('>Workspace<')
 	expect(menu).toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/@acme/-/teams"')
 	expect(menu).toContain('href="/@acme/-/billing"')
@@ -276,8 +284,11 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	)
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	// Manage stays on the personal org (Billing), not the collaborator org.
+	// Manage stays on the personal org (Workspace + Billing), not the
+	// collaborator org.
 	expect(collaborator).toContain('>Manage @ada<')
+	expect(collaborator).toContain('href="/@ada/-/packages"')
+	expect(collaborator).toContain('>Workspace<')
 	expect(collaborator).not.toContain('>Manage @acme<')
 
 	const billing = await renderToString(

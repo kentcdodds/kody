@@ -116,6 +116,21 @@ function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 }
 
 /**
+ * Entry into an organization's workspace rail. Lands on Repositories (the
+ * first Build section) so Activity, Secrets, and the rest stay one click away
+ * on the existing `/@slug/-/<section>` rail — not a second navigation system.
+ */
+export function workspaceLandingItem(
+	orgSlug: string | null | undefined,
+): AccountRailItem {
+	return {
+		href: accountPackagesNavHref(orgSlug),
+		label: 'Workspace',
+		icon: 'box',
+	}
+}
+
+/**
  * Management links for a team (non-personal) organization. Same order as the
  * Organization rail: Settings, Members, Teams (owners/members), Grants,
  * Collaborators, Billing (owners/billing). Empty for collaborators (`role`

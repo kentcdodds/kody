@@ -1,6 +1,9 @@
 import { type RemixNode, css } from 'remix/component'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
-import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
+import {
+	teamOrgManagementItems,
+	workspaceLandingItem,
+} from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import {
 	orgBillingPath,
@@ -33,9 +36,13 @@ export function renderOrgHomeMain(input: {
 		orgSlug: input.slug,
 		role: input.role,
 	})
+	const homeItems =
+		manageItems.length > 0
+			? [workspaceLandingItem(input.slug), ...manageItems]
+			: []
 	return (
 		<div mix={css(mainCss)} data-testid="org-home">
-			{manageItems.length > 0 ? (
+			{homeItems.length > 0 ? (
 				<nav
 					aria-label={`${input.handle} sections`}
 					data-testid="org-home-nav"
@@ -43,7 +50,7 @@ export function renderOrgHomeMain(input: {
 				>
 					<p mix={css(navEyebrowCss)}>Organization</p>
 					<ul mix={css(navListCss)}>
-						{manageItems.map((item) => (
+						{homeItems.map((item) => (
 							<li key={item.href}>
 								<a
 									href={item.href}
