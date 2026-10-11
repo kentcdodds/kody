@@ -25,6 +25,7 @@ import {
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
 	refreshPackageJobRowIdentity,
+	renewClaimedJobRow,
 	restoreJobRowsForUser,
 	retryClaimedJobRow,
 	softDeleteJobRowsForUser,
@@ -76,6 +77,12 @@ export type JobsStore = {
 		nowMs: number
 		claimToken: string
 	}): Promise<JobRow | null>
+	renewClaimedJob(input: {
+		userId: string
+		jobId: string
+		claimToken: string
+		nowMs: number
+	}): Promise<boolean>
 	finalizeClaimedJob(input: {
 		userId: string
 		job: JobRecord
@@ -190,6 +197,7 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 				now: new Date(input.nowMs),
 				claimToken: input.claimToken,
 			}),
+		renewClaimedJob: (input) => renewClaimedJobRow({ db, ...input }),
 		finalizeClaimedJob: (input) => finalizeClaimedJobRow({ db, ...input }),
 		retryClaimedJob: (input) => retryClaimedJobRow({ db, ...input }),
 		refreshPackageJobIdentity: (input) =>

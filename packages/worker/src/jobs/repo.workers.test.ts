@@ -12,6 +12,7 @@ import {
 	listDueJobRows,
 	maxDueJobsPerAlarm,
 	refreshPackageJobRowIdentity,
+	renewClaimedJobRow,
 	retryClaimedJobRow,
 	updateJobRow,
 } from '@kody-internal/shared/jobs/repo.ts'
@@ -189,10 +190,24 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 	)
 	expect(nextWhileLeased?.schedulerWakeAt).toBe(winner?.lease_expires_at)
 
+	const renew = (claimToken: string, nowMs: number) =>
+		renewClaimedJobRow({ db: env.APP_DB, userId, jobId, claimToken, nowMs })
+	const renewedAtMs = now.valueOf() + jobExecutionLeaseMs / 2
+	expect(await renew('claim-stale', renewedAtMs)).toBe(false)
+	expect(await renew(winner?.claim_token ?? '', renewedAtMs)).toBe(true)
+	expect(
+		await claim(
+			userId,
+			jobId,
+			new Date(now.valueOf() + jobExecutionLeaseMs),
+			'claim-too-early',
+		),
+	).toBeNull()
+
 	const reclaimed = await claim(
 		userId,
 		jobId,
-		new Date(now.valueOf() + jobExecutionLeaseMs),
+		new Date(renewedAtMs + jobExecutionLeaseMs),
 		'claim-reclaimed',
 	)
 	expect(reclaimed?.claim_token).toBe('claim-reclaimed')

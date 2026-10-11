@@ -23,6 +23,7 @@ const listDueJobRows = vi.fn()
 const claimJobRow = vi.fn()
 const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
+const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
 const listArchivedJobArtifactsDueBefore = vi.fn<
 	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
@@ -65,6 +66,8 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 			finalizeClaimedJobRow(...(args as [never])),
 		retryClaimedJobRow: (...args: Array<unknown>) =>
 			retryClaimedJobRow(...(args as [never])),
+		renewClaimedJobRow: (...args: Array<unknown>) =>
+			renewClaimedJobRow(...(args as [never])),
 	}
 })
 
@@ -417,4 +420,51 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		}),
 	)
 	expect(claimRunRecord).not.toHaveBeenCalled()
+})
+
+test('each further enablement run renews the shared claim and stops once it is lost', async () => {
+	const secondEnablement: EnablementRun = {
+		...enablementRun,
+		id: 'enablement-second',
+	}
+	const record = createJobRecord({ id: 'job-multi-enablement' })
+	const row = seedDueClaim(record)
+	claimRunRecord.mockReset()
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(record, row, {
+			packageId: null,
+			kodyId: null,
+			publishedCommit: null,
+		}),
+	)
+	finalizeClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	const twoRuns = {
+		runs: [enablementRun, secondEnablement],
+		skipped: [] as [],
+	}
+
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(true)
+	await runDue(record.userId)
+	const [claimInput] = claimJobRow.mock.lastCall as [{ claimToken: string }]
+	const claimToken = claimInput.claimToken
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(renewClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: record.userId,
+			jobId: record.id,
+			claimToken,
+			nowMs: expect.any(Number),
+		}),
+	)
+	expect(claimRunRecord).toHaveBeenCalledTimes(2)
+
+	renewClaimedJobRow.mockReset()
+	claimRunRecord.mockClear()
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(false)
+	await runDue(record.userId)
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(claimRunRecord).toHaveBeenCalledOnce()
 })

@@ -1727,6 +1727,7 @@ async function planScheduledJobRuns(input: {
 async function executeClaimedScheduledJob(input: {
 	env: Env
 	row: JobRow
+	claimToken: string
 	scheduledFor: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<JobExecutionOutcome | null> {
@@ -1742,7 +1743,19 @@ async function executeClaimedScheduledJob(input: {
 	})
 	if (runs.length === 0) return null
 	let selected: JobExecutionOutcome | null = null
-	for (const run of runs) {
+	for (const [index, run] of runs.entries()) {
+		// Enablement runs share one claim, and several background-budget runs
+		// can outlast a single lease. Stop once another runner owns the slot;
+		// finalization is fenced on the same token.
+		if (index > 0) {
+			const renewed = await jobsData(input.env).renewClaimedJob({
+				userId: input.row.record.userId,
+				jobId: input.row.id,
+				claimToken: input.claimToken,
+				nowMs: Date.now(),
+			})
+			if (!renewed) break
+		}
 		const outcome = await executeClaimedScheduledJobRun({ ...input, ...run })
 		if (!selected || selected.execution.ok) selected = outcome
 	}
@@ -1936,6 +1949,7 @@ export async function runDueJobsForUser(input: {
 					const outcome = await executeClaimedScheduledJob({
 						env: input.env,
 						row,
+						claimToken,
 						scheduledFor: row.claimed_scheduled_for,
 						waitUntil: input.waitUntil,
 					})

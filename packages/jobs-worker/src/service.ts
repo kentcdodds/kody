@@ -88,6 +88,15 @@ export class JobsService
 		return jobsStore(this.env).claimJob(input)
 	}
 
+	async renewClaimedJob(input: {
+		userId: string
+		jobId: string
+		claimToken: string
+		nowMs: number
+	}): Promise<boolean> {
+		return jobsStore(this.env).renewClaimedJob(input)
+	}
+
 	async finalizeClaimedJob(input: {
 		userId: string
 		job: JobRecord
