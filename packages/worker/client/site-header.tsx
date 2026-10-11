@@ -365,14 +365,16 @@ function OrgSwitcher(
 		// Without a team membership, Manage uses a packages-capable org only
 		// (personal, or a member/billing role) — never a grant-only
 		// collaborator, whose packages URL 404s.
+		// Prefer listed (session) memberships only. A synthesized URL org is
+		// member-shaped for chrome, but may be grant-only — packages 404 then.
 		const manageOrg = manageOrganization(
 			organizations,
-			current,
+			listedCurrent,
 			handle.props.lastUsedOrganization,
 		)
 		const manageFallbackOrg =
-			current && (current.personal || current.role !== null)
-				? current
+			listedCurrent && (listedCurrent.personal || listedCurrent.role !== null)
+				? listedCurrent
 				: (organizations.find((org) => org.personal) ?? null)
 		const manageTarget = manageOrg ?? manageFallbackOrg
 		const manageIdentity = manageTarget

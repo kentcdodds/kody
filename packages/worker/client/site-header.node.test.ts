@@ -192,14 +192,17 @@ test('org switcher on team settings stays on the URL org when session lists only
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	// Synthesized current appears as its own row (session list was personal-only).
 	expect(menu).toContain('data-testid="org-switcher-acme"')
-	expect(menu).toContain('>Manage @acme<')
-	expect(menu).toContain('href="/@acme/-/packages"')
-	expect(menu).toContain('>Workspace<')
-	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/members"')
-	// Member-shaped synthesis: no Billing until the real role loads.
-	expect(menu).not.toContain('href="/@acme/-/billing"')
-	expect(menu).not.toContain('>Manage @ada<')
+	// Manage stays on the listed personal org — synthesized member role must
+	// not unlock Workspace/Settings for a possibly grant-only URL org.
+	expect(menu).toContain('>Manage @ada<')
+	expect(menu).not.toContain('>Manage @acme<')
+	const manage = menu.slice(
+		menu.indexOf('data-testid="org-switcher-manage-group"'),
+	)
+	expect(manage).toContain('href="/@ada/-/packages"')
+	expect(manage).toContain('>Workspace<')
+	expect(manage).not.toContain('href="/@acme/-/packages"')
+	expect(manage).not.toContain('href="/@acme/-/settings"')
 })
 
 test('org switcher keeps Manage links for a team org on account pages', async () => {
