@@ -476,6 +476,33 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
 		expect((ambientCalls[0]?.init as RequestInit).body).toBe('plain-text-body')
 
+		// A large upload without placeholders is scanned in place and sent as
+		// the caller's own body, not a buffered copy.
+		ambientCalls.length = 0
+		const largeUpload = new Blob(['x'.repeat(3 * 1024 * 1024)], {
+			type: 'application/octet-stream',
+		})
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'PUT',
+			body: largeUpload,
+		})
+		expect(gatewayCalls).toHaveLength(0)
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(largeUpload)
+
+		// A placeholder straddling a scan chunk boundary still hops.
+		const straddling = new TextEncoder().encode(
+			`${'x'.repeat(64 * 1024 - 5)}{{secret:demoToken}}`,
+		)
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'PUT',
+			body: straddling,
+		})
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'PUT',
+			body: new Blob([straddling]),
+		})
+		expect(gatewayCalls).toHaveLength(2)
+
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
 		const stream = new ReadableStream({

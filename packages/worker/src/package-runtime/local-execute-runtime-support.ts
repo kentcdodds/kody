@@ -416,20 +416,92 @@ function __kodyIsVerbatimBodyMode(resolutionMode) {
 // one hops through it. A multipart body is opaque to the gateway, so its
 // content never causes a hop. x-kody-secret-resolution: headers-only or off
 // sends the body as written.
-function __kodyBodyHasSecretPlaceholders(bytes, headers, resolutionMode) {
-	if (bytes == null || __kodyIsVerbatimBodyMode(resolutionMode)) return false;
+function __kodyBodyIsFillSite(headers, resolutionMode) {
+	if (__kodyIsVerbatimBodyMode(resolutionMode)) return false;
 	const contentType = Object.entries(headers ?? {}).find(
 		([key]) => key.toLowerCase() === "content-type",
 	)?.[1];
-	if (
+	return !__kodyIsMultipartType(contentType);
+}
+
+function __kodyIsMultipartType(contentType) {
+	return (
 		typeof contentType === "string" &&
 		contentType.toLowerCase().startsWith("multipart/")
-	) {
-		return false;
-	}
-	return __kodyHasPlaceholderText(
-		__kodyDecodePlaceholderPunctuation(new TextDecoder().decode(bytes)),
 	);
+}
+
+// A placeholder is short, so scanning overlapping windows finds one that
+// straddles a chunk boundary without holding a large body as text.
+const __kodyBodyScanOverlap = 8192;
+const __kodyBodyScanChunkBytes = 64 * 1024;
+
+function __kodyCreateBodyScanner() {
+	let tail = "";
+	return (bytes) => {
+		const text = tail + __kodyBytesToAscii(bytes);
+		tail = text.slice(-__kodyBodyScanOverlap);
+		return __kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(text));
+	};
+}
+
+function __kodyBytesHoldPlaceholder(bytes) {
+	const scan = __kodyCreateBodyScanner();
+	for (
+		let offset = 0;
+		offset < bytes.byteLength;
+		offset += __kodyBodyScanChunkBytes
+	) {
+		if (scan(bytes.subarray(offset, offset + __kodyBodyScanChunkBytes))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function __kodyStreamHoldsPlaceholder(stream) {
+	const reader = stream.getReader();
+	const scan = __kodyCreateBodyScanner();
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) return false;
+			if (scan(value instanceof Uint8Array ? value : new Uint8Array(value))) {
+				return true;
+			}
+		}
+	} finally {
+		// A cloned body is a tee branch, and cancelling one branch settles only
+		// after the other is cancelled too, so this must not be awaited.
+		reader.cancel().catch(() => {});
+	}
+}
+
+// Scans the caller's in-memory body where it is, so a large upload is not
+// copied just to decide the hop. Multipart (FormData, or a Blob typed
+// multipart) is opaque to the gateway, so it is never read.
+async function __kodyBodyValueHoldsPlaceholder(body) {
+	if (typeof body === "string") {
+		return __kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(body));
+	}
+	if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+		return __kodyHasPlaceholderText(
+			__kodyDecodePlaceholderPunctuation(body.toString()),
+		);
+	}
+	if (typeof Blob !== "undefined" && body instanceof Blob) {
+		if (__kodyIsMultipartType(body.type)) return false;
+		return await __kodyStreamHoldsPlaceholder(body.stream());
+	}
+	if (body instanceof ArrayBuffer) {
+		return __kodyBytesHoldPlaceholder(new Uint8Array(body));
+	}
+	if (ArrayBuffer.isView(body)) {
+		return __kodyBytesHoldPlaceholder(
+			new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
+		);
+	}
+	return false;
 }
 
 const __kodyStreamingPlaceholderLimit = 4096;
@@ -665,24 +737,20 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				}
 				streamingBody = __kodyStreamingBodyFor(body, resolutionMode);
 				reuseOriginal = false;
-			} else {
-				// String, bytes, URLSearchParams, Blob, and FormData bodies are in
-				// memory, so a copy is read to decide the hop. The copy carries the
-				// implicit Content-Type (and multipart boundary) a hop must keep.
+			} else if (
+				__kodyRequestHasSecretPlaceholders(url, headers) ||
+				(__kodyBodyIsFillSite(headers, resolutionMode) &&
+					(await __kodyBodyValueHoldsPlaceholder(body)))
+			) {
+				// The hop copy carries the implicit Content-Type (and multipart
+				// boundary) of a string, URLSearchParams, Blob, or FormData body.
 				// Keep the pre-Request url string so path {{secret:…}}
 				// placeholders are not percent-encoded by Request.
 				const encoded = new Request(url, { method, headers, body });
-				const encodedHeaders = Object.fromEntries(encoded.headers.entries());
-				const bytes = new Uint8Array(await encoded.arrayBuffer());
-				if (
-					__kodyRequestHasSecretPlaceholders(url, headers) ||
-					__kodyBodyHasSecretPlaceholders(bytes, encodedHeaders, resolutionMode)
-				) {
-					method = encoded.method;
-					headers = encodedHeaders;
-					bodyBytes = bytes;
-					reuseOriginal = false;
-				}
+				method = encoded.method;
+				headers = Object.fromEntries(encoded.headers.entries());
+				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
+				reuseOriginal = false;
 			}
 		}
 	} else {
@@ -714,16 +782,16 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				reuseOriginal = false;
 			} else {
 				// String, bytes, and URLSearchParams become streams inside a
-				// Request. A clone is read to decide the hop; otherwise the
-				// original Request is forwarded so cache, credentials, and
-				// redirect replay stay intact. Caller ReadableStream bodies are
-				// handled above.
-				const bytes = new Uint8Array(await merged.clone().arrayBuffer());
+				// Request. A clone is scanned chunk by chunk to decide the hop,
+				// and only a hop buffers the body. Otherwise the original Request
+				// is forwarded so cache, credentials, and redirect replay stay
+				// intact. Caller ReadableStream bodies are handled above.
 				if (
 					__kodyRequestHasSecretPlaceholders(url, headers) ||
-					__kodyBodyHasSecretPlaceholders(bytes, headers, resolutionMode)
+					(__kodyBodyIsFillSite(headers, resolutionMode) &&
+						(await __kodyStreamHoldsPlaceholder(merged.clone().body)))
 				) {
-					bodyBytes = bytes;
+					bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
 				}
 				reuseOriginal = false;
 				preservedRequest = merged;
