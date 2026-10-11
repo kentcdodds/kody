@@ -92,6 +92,23 @@ outside the door. Credential storage keys use `ownerIdFromCaller` (org id), not
 the acting person. Automation is Owner. See
 [ADR 0021](../decisions/0021-publish-gated-package-composition.md).
 
+### Enablements
+
+Everything that runs on its own (cron jobs, subscriptions including inbound
+email, webhooks) is moving to one primitive, the enablement
+(`packages/worker/src/enablements/`, credentials plan v4 section 3.3). Each
+`enablements` row is one person's (the enabler's) switch for one trigger
+instance: the job id, the subscribing package id plus topic, or the webhook
+endpoint id. Its state is `on`, `paused` (with the cause), or `off`. One person
+may hold several enablements of the same trigger.
+
+`enablement_org_migrations` records each org's move: an org runs its triggers
+the old way (Automation, as Owner) until its row is `migrated`. The admin
+capability `adminEnablementsMigrate` writes one enablement per existing job,
+webhook, and subscription for a real member (the creator if still a member, else
+the earliest Owner), generates a signing secret for unsigned webhooks, and for
+team orgs first emails each member which enablements will bill them.
+
 ### Checking many resources
 
 Lists, search, and background checks compile once and decide per resource:

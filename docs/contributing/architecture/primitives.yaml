@@ -351,6 +351,18 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: enablements
+    group: auth
+    name: Enablements
+    summary:
+      One per person per trigger (cron, subscription, webhook) that runs on its
+      own. Each run acts as, bills and audits its enabler, and pauses when the
+      enabler loses access.
+    code:
+      - packages/worker/src/enablements/
+    docs:
+      - docs/contributing/architecture/authorization.md
+
   - id: workflows
     group: assistant
     name: Workflows
