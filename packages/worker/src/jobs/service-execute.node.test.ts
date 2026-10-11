@@ -7,6 +7,7 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import * as enablementsRepo from '#worker/enablements/repo.ts'
 import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
@@ -920,6 +921,49 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 		error: 'user code failed',
 		logs: [],
 	})
+})
+
+test('runJobNow in an org on enablements refuses a run that has no person', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { env } = createExecuteEnv()
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Runs as nobody',
+			code: 'export default async () => ({ ok: true })',
+			schedule: onceSchedule,
+		},
+	})
+	using migration = vi
+		.spyOn(enablementsRepo, 'getEnablementOrgMigration')
+		.mockResolvedValue({ state: 'migrated' } as never)
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const actorless = {
+		...callerContext,
+		request: {
+			...callerContext.request!,
+			actor: null,
+			attribution: {
+				kind: 'automation' as const,
+				source: 'schedule' as const,
+				sourceId: jobView.id,
+			},
+		},
+	}
+
+	await expect(
+		runJobNow({
+			env,
+			userId: personalOrgId(callerContext.user.userId),
+			jobId: jobView.id,
+			callerContext: actorless as never,
+		}),
+	).rejects.toThrow('can only be run now by a signed-in person')
+	expect(migration).toHaveBeenCalled()
+	expect(executeSpy).not.toHaveBeenCalled()
 })
 
 test('runJobNow retains once jobs for retention cleanup instead of deleting them', async () => {

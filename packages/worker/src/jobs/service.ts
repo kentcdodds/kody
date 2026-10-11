@@ -1607,8 +1607,11 @@ export async function runJobNow(input: {
 			const source: RequestSource = input.callerContext
 				? runNowRequestSource(input.callerContext, row.record.id)
 				: { kind: 'schedule', jobId: row.record.id }
+			const runsAsNobody =
+				source.kind === 'schedule' ||
+				(source.kind === 'inherited' && !source.lineage.actor)
 			if (
-				source.kind === 'schedule' &&
+				runsAsNobody &&
 				(
 					await getEnablementOrgMigration({
 						db: input.env.APP_DB,

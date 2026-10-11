@@ -14,6 +14,7 @@ import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
+import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	listPackageWebhooks,
@@ -192,6 +193,19 @@ function rateLimitedResponse(retryAfterSeconds: number) {
 				'Retry-After': String(retryAfterSeconds),
 			},
 		},
+	)
+}
+
+function enablementNotOnResponse(webhookName: string) {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'enablement_not_on',
+				message: `Webhook "${webhookName}" has no on enablement, so nothing ran. Its enabler may have lost access (it resumes once access is back), or nobody has enabled it.`,
+			},
+		},
+		{ status: 409 },
 	)
 }
 
@@ -812,6 +826,28 @@ export async function handleWebhookIngressRequest(
 			: undefined
 
 	if (declared.responseMode === 'ack') {
+		// Ack mode answers before the queue consumer runs, so the sender learns
+		// here that nothing will run. The consumer checks again.
+		const plan = await planEnablementRuns({
+			env,
+			orgId: liveEndpoint.userId,
+			packageId: liveEndpoint.packageId,
+			trigger: { kind: 'webhook', instanceId: liveEndpoint.id },
+		})
+		if (plan.mode === 'enablements' && plan.runs.length === 0) {
+			await recordWebhookDelivery({
+				env,
+				endpoint: liveEndpoint,
+				kodyId: savedPackage.kodyId,
+				outcome: 'rejected',
+				httpStatus: 409,
+				error: 'enablement_not_on',
+				payloadBytes: bodyBytes.byteLength,
+				startedAt: receivedAt,
+				waitUntil,
+			})
+			return enablementNotOnResponse(liveEndpoint.webhookName)
+		}
 		let message = createWebhookDispatchQueueMessage({
 			endpoint: {
 				id: liveEndpoint.id,
