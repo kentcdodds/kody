@@ -28,10 +28,8 @@ import {
 } from '#worker/orgs/billing.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
-	commitOrgAuditOutbox,
-	orgAuditOutboxInsertStatement,
-	planOrgAuditOutbox,
 	recordOrgAuditEvent,
+	runAppDbBatchWithOrgAudit,
 	type OrgAuditOutboxEvent,
 	type OrgAuditWriter,
 } from './org-audit.ts'
@@ -42,12 +40,12 @@ async function runAccessBatchWithAudit(input: {
 	statements: Array<{ run(): Promise<unknown> }>
 	event: OrgAuditOutboxEvent
 }) {
-	const plan = planOrgAuditOutbox(input.audit, input.event)
-	await runBatch(input.db, [
-		...input.statements,
-		orgAuditOutboxInsertStatement(input.db, plan),
-	])
-	await commitOrgAuditOutbox(input.audit, plan)
+	await runAppDbBatchWithOrgAudit({
+		appDb: input.db,
+		audit: input.audit,
+		statements: input.statements,
+		event: input.event,
+	})
 }
 
 export type GrantSubject =
@@ -246,24 +244,35 @@ export async function removeTeamMember(input: {
 		.bind(input.teamId, input.orgId)
 		.first<{ id: string }>()
 	if (!team) throw new Error('Team was not found in this org.')
+	const liveMember = await input.db
+		.prepare(
+			`SELECT 1 AS ok FROM team_members
+			 WHERE team_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.teamId, input.userId)
+		.first<{ ok: number }>()
+	if (!liveMember) return
 	const now = new Date().toISOString()
-	const results = await runBatch(input.db, [
-		input.db
-			.prepare(
-				`UPDATE team_members
-				 SET deleted_at = ?
-				 WHERE team_id = ? AND user_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(now, input.teamId, input.userId),
-		bumpAccessEpochStatement(input.db, input.orgId),
-	])
-	if (!changesOf(results[0])) return
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'team.member_removed',
-		resourceType: 'team',
-		resourceId: input.teamId,
-		targetUserId: input.userId,
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE team_members
+					 SET deleted_at = ?
+					 WHERE team_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(now, input.teamId, input.userId),
+			bumpAccessEpochStatement(input.db, input.orgId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'team.member_removed',
+			resourceType: 'team',
+			resourceId: input.teamId,
+			targetUserId: input.userId,
+		},
 	})
 }
 
@@ -582,46 +591,51 @@ export async function createInvite(input: {
 	const expiresAt =
 		input.expiresAt ??
 		new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-	await input.db
-		.prepare(
-			`INSERT INTO invites (
-				id, org_id, kind, role, team_ids_json,
-				resource_type, resource_id, permissions_json, preset,
-				invitee_email, invitee_username, token_hash, status,
-				invited_by_user_id, expires_at, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-		)
-		.bind(
-			id,
-			input.orgId,
-			input.kind,
-			input.role ?? null,
-			input.teamIds ? JSON.stringify(input.teamIds) : null,
-			input.resourceType ?? null,
-			input.resourceId ?? null,
-			input.permissions ? JSON.stringify(input.permissions) : null,
-			input.preset ?? null,
-			input.inviteeEmail?.trim().toLowerCase() || null,
-			input.inviteeUsername
-				? normalizeUsername(input.inviteeUsername)?.toLowerCase() || null
-				: null,
-			input.tokenHash,
-			input.invitedByUserId,
-			expiresAt,
-			now,
-		)
-		.run()
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'invite.created',
-		resourceType: 'invite',
-		resourceId: id,
-		details: {
-			kind: input.kind,
-			role: input.role ?? null,
-			resourceType: input.resourceType ?? null,
-			resourceId: input.resourceId ?? null,
-			expiresAt,
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`INSERT INTO invites (
+					id, org_id, kind, role, team_ids_json,
+					resource_type, resource_id, permissions_json, preset,
+					invitee_email, invitee_username, token_hash, status,
+					invited_by_user_id, expires_at, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+				)
+				.bind(
+					id,
+					input.orgId,
+					input.kind,
+					input.role ?? null,
+					input.teamIds ? JSON.stringify(input.teamIds) : null,
+					input.resourceType ?? null,
+					input.resourceId ?? null,
+					input.permissions ? JSON.stringify(input.permissions) : null,
+					input.preset ?? null,
+					input.inviteeEmail?.trim().toLowerCase() || null,
+					input.inviteeUsername
+						? normalizeUsername(input.inviteeUsername)?.toLowerCase() || null
+						: null,
+					input.tokenHash,
+					input.invitedByUserId,
+					expiresAt,
+					now,
+				),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'invite.created',
+			resourceType: 'invite',
+			resourceId: id,
+			details: {
+				kind: input.kind,
+				role: input.role ?? null,
+				resourceType: input.resourceType ?? null,
+				resourceId: input.resourceId ?? null,
+				expiresAt,
+			},
 		},
 	})
 	return { id, expiresAt }
@@ -995,18 +1009,29 @@ export async function markInviteRevoked(input: {
 	inviteId: string
 	audit: OrgAuditWriter
 }) {
-	const changes = await setInviteStatus({
+	const pending = await input.db
+		.prepare(`SELECT 1 AS ok FROM invites WHERE id = ? AND status = 'pending'`)
+		.bind(input.inviteId)
+		.first<{ ok: number }>()
+	if (!pending) throw new Error('Only a pending invite can be revoked.')
+	await runAccessBatchWithAudit({
 		db: input.db,
-		inviteId: input.inviteId,
-		from: 'pending',
-		to: 'revoked',
-	})
-	if (!changes) throw new Error('Only a pending invite can be revoked.')
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'invite.revoked',
-		resourceType: 'invite',
-		resourceId: input.inviteId,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE invites
+					 SET status = 'revoked'
+					 WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(input.inviteId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'invite.revoked',
+			resourceType: 'invite',
+			resourceId: input.inviteId,
+		},
 	})
 }
 

@@ -5,6 +5,9 @@ import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 import {
 	commitOrgAuditOutbox,
 	enqueueOrgAuditOutbox,
+	orgAuditOutboxInsertStatement,
+	planOrgAuditOutbox,
+	redactOrgAuditOutboxActorIdsForDeletedUser,
 	type OrgAuditOutboxEvent,
 	type OrgAuditWriter,
 } from './org-audit-outbox.ts'
@@ -100,6 +103,10 @@ export async function redactOrgAuditActorIdsForDeletedUser(input: {
 			.bind(input.userId)
 			.run(),
 	)
+	await redactOrgAuditOutboxActorIdsForDeletedUser({
+		appDb: input.env.APP_DB,
+		userId: input.userId,
+	})
 }
 
 export type { OrgAuditWriter } from './org-audit-outbox.ts'
@@ -133,10 +140,37 @@ export function orgAuditWriterForPerson(
 }
 
 /**
- * Records an access change that has already committed to APP_DB. The outbox row
- * on APP_DB is durable; AUDIT_DB delivery is best-effort inline with scheduled
- * drain as backup. Outbox enqueue failures are reported loudly but never
- * rethrown.
+ * Commits an APP_DB mutation and its org audit outbox row in one batch, then
+ * delivers to AUDIT_DB inline (scheduled drain is backup).
+ */
+export async function runAppDbBatchWithOrgAudit(input: {
+	appDb: D1Database
+	audit: OrgAuditWriter
+	statements: Array<{ run(): Promise<unknown> }>
+	event: OrgAuditOutboxEvent
+}) {
+	const plan = planOrgAuditOutbox(input.audit, input.event)
+	if (typeof input.appDb.batch === 'function') {
+		await input.appDb.batch([
+			...input.statements,
+			orgAuditOutboxInsertStatement(input.appDb, plan),
+		] as Array<D1PreparedStatement>)
+	} else {
+		for (const statement of [
+			...input.statements,
+			orgAuditOutboxInsertStatement(input.appDb, plan),
+		]) {
+			await statement.run()
+		}
+	}
+	await commitOrgAuditOutbox(input.audit, plan)
+}
+
+/**
+ * Transitional: records audit after APP_DB already committed (member
+ * offboarding, invite acceptance, MCP server OAuth). Prefer
+ * `runAppDbBatchWithOrgAudit` for new access writes. Enqueue failures fail the
+ * request so audit is not silently lost.
  */
 export type {
 	OrgAuditOutboxEvent,
@@ -173,5 +207,6 @@ export async function recordOrgAuditEvent(
 			})
 			Sentry.captureException(error)
 		})
+		throw error
 	}
 }

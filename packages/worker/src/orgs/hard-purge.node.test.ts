@@ -171,6 +171,13 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		)
 		.bind(otherOrgId, ts)
 		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
+			 VALUES ('outbox-purge', ?, '{"id":"outbox-purge"}', ?)`,
+		)
+		.bind(orgId, ts)
+		.run()
 
 	await hardPurgeOrg({
 		env: { APP_DB: appDb, AUDIT_DB: auditDb } as Env,
@@ -195,6 +202,10 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 			'permissions',
 		],
 		[`SELECT COUNT(*) AS n FROM handles WHERE org_id = ?`, 'handles'],
+		[
+			`SELECT COUNT(*) AS n FROM org_audit_outbox WHERE org_id = ?`,
+			'audit_outbox',
+		],
 	] as const) {
 		const bindsId = sql.includes('?')
 		const row = await appDb

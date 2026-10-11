@@ -113,14 +113,16 @@ export function parseOrgAuditOutboxPayload(
 	}
 }
 
+export type OrgAuditOutboxDeliveryResult = 'inserted' | 'already_exists'
+
 export async function deliverOrgAuditOutboxPayload(
 	auditDb: D1Database,
 	payload: OrgAuditOutboxPayload,
-) {
-	await runD1WithRetry(() =>
+): Promise<OrgAuditOutboxDeliveryResult> {
+	const insert = await runD1WithRetry(() =>
 		auditDb
 			.prepare(
-				`INSERT INTO org_audit_events (
+				`INSERT OR IGNORE INTO org_audit_events (
 					id, org_id, actor_user_id, actor_username, credential_kind,
 					credential_id, action, resource_type, resource_id, target_user_id,
 					result, details_json, ip_hash, created_at
@@ -144,6 +146,13 @@ export async function deliverOrgAuditOutboxPayload(
 			)
 			.run(),
 	)
+	if ((insert.meta?.changes ?? 0) > 0) return 'inserted'
+	const existing = await auditDb
+		.prepare(`SELECT 1 AS ok FROM org_audit_events WHERE id = ?`)
+		.bind(payload.id)
+		.first<{ ok: number }>()
+	if (existing?.ok) return 'already_exists'
+	throw new Error(`org_audit_outbox_delivery_failed:${payload.id}`)
 }
 
 async function deleteOrgAuditOutboxRow(appDb: D1Database, outboxId: string) {
@@ -164,12 +173,31 @@ export async function tryDeliverOrgAuditOutboxPlan(
 	plan: OrgAuditOutboxPlan,
 ): Promise<boolean> {
 	try {
-		await deliverOrgAuditOutboxPayload(writer.db, plan.payload)
-		await deleteOrgAuditOutboxRow(writer.appDb, plan.outboxId)
-		return true
+		const delivery = await deliverOrgAuditOutboxPayload(writer.db, plan.payload)
+		if (delivery === 'inserted' || delivery === 'already_exists') {
+			await deleteOrgAuditOutboxRow(writer.appDb, plan.outboxId)
+			return true
+		}
+		return false
 	} catch {
 		return false
 	}
+}
+
+export async function redactOrgAuditOutboxActorIdsForDeletedUser(input: {
+	appDb: D1Database
+	userId: string
+}) {
+	await runD1WithRetry(() =>
+		input.appDb
+			.prepare(
+				`UPDATE org_audit_outbox
+				 SET payload_json = json_set(payload_json, '$.actorUserId', 'deleted-user')
+				 WHERE json_extract(payload_json, '$.actorUserId') = ?`,
+			)
+			.bind(input.userId)
+			.run(),
+	)
 }
 
 export async function enqueueOrgAuditOutbox(
