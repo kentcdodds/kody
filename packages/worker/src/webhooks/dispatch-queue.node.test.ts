@@ -308,7 +308,7 @@ test('queue records credential_placement_refused for an ack delivery the fetch g
 			error: {
 				code: 'execution_failed',
 				message:
-					'Secret "token" cannot be sent to host "api.example.com" over plain HTTP. (credential_placement_refused, slot "token")',
+					'Secret "token" is in the request URL. (credential_placement_refused, slot "token")',
 			},
 		},
 	})

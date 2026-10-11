@@ -304,6 +304,38 @@ test('getPackageCapability includes package-scoped secret metadata as FYI', asyn
 	})
 })
 
+test('getPackageCapability warns about published placeholders the fetch gateway refuses', async () => {
+	stubSavedPackage({ sourceListingId: null })
+	stubSource('@kentcdodds/discord-gateway', { '.': './src/index.ts' }, {})
+	expect((await getPackage()).warnings).toEqual([])
+
+	stubSource(
+		'@kentcdodds/discord-gateway',
+		{ '.': './src/index.ts' },
+		{
+			'src/index.ts': `export default async function run() {
+	return await fetch('https://api.example.com/tickets', {
+		method: 'POST',
+		body: JSON.stringify({ reviewer: '{{secret:clerkReviewUserId}}' }),
+	})
+}
+`,
+		},
+	)
+	const result = await getPackage()
+	expect(result.warnings).toEqual([
+		{
+			code: 'secret_placeholder_outside_header',
+			message: expect.stringContaining(
+				'"src/index.ts" line 4 puts slot "clerkReviewUserId" in the request body. The fetch gateway substitutes a secret only into a request header',
+			),
+			path: 'src/index.ts',
+			line: 4,
+			slot: 'clerkReviewUserId',
+		},
+	])
+})
+
 test('getPackageCapability omits fork-ahead from the agent payload', async () => {
 	stubSavedPackage({
 		originCommit: 'fork-tip',

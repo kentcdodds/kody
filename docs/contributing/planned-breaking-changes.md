@@ -45,7 +45,7 @@ codemod.
 A package that declares `kody.credentials` still resolves each reference by
 name: `{{secret:NAME}}` reads the secret stored as `NAME`, through the same
 package access rules as an undeclared package. Slots only drive publish
-validation
+validation and fetch gateway placement
 ([credential slots](../use/packages.md#credential-slots-kodycredentials)).
 
 Credentials plan v4 (section 3.3) makes an assignment the grant: an org assigns

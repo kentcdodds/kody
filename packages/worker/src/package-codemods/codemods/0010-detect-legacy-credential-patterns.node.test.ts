@@ -320,7 +320,7 @@ test('0010 resolves module-level string constants, including relative imports', 
 				'export const other = `{{secret:${OTHER}}}`',
 			].join('\n'),
 		})['src/a.ts'],
-	).toEqual(['literal secret', 'computed secret'])
+	).toEqual(['literal secret', 'computed secret', 'secret outside header'])
 })
 
 test('0010 ignores placeholder-shaped prose that names nothing', () => {
@@ -396,26 +396,33 @@ test('0010 falls back to text for unparseable modules', () => {
 	).toEqual(['literal secret'])
 })
 
-test('0010 does not flag where in a request a declared placeholder sits', () => {
-	const slots = manifest({
-		credentials: {
-			TOKEN: { kind: 'secret', provider: 'telegram', description: 'x' },
-			github: { kind: 'oauth', provider: 'github', description: 'x' },
-		},
-	})
-	for (const statement of [
+test('0010 flags placeholders the gateway placement rule refuses', () => {
+	const outside = [
 		"fetch('https://api.telegram.org/bot{{secret:TOKEN}}/getMe')",
-		'fetch(`https://x.test/search?key={{secret:TOKEN}}`)',
-		"fetch('https://x.test', { method: 'POST', body: 'client_secret={{secret:TOKEN}}' })",
-		"fetch('https://x.test', { body: JSON.stringify({ token: '{{secret:TOKEN}}' }) })",
+		'fetch(`https://x.test/search?key={{secret:KEY}}`)',
+		"new Request(base + '?key={{secret:KEY}}')",
+		"fetch('https://x.test', { method: 'POST', body: 'client_secret={{secret:S}}' })",
+		"fetch('https://x.test', { body: JSON.stringify({ token: '{{secret:S}}' }) })",
 		"new URLSearchParams({ token: '{{integration-token:github}}' })",
-	]) {
+		"const url = 'https://x.test/{{secret/1password:op://v/i/f}}'",
+	]
+	for (const statement of outside) {
 		expect(
-			patternsByPath({
-				'package.json': slots,
-				'index.ts': `export default async () => {\n\t${statement}\n}`,
-			}),
-		).toEqual({})
+			modulePatterns(`export default async () => {\n\t${statement}\n}`),
+		).toContain('secret outside header')
+	}
+	const headerOrUnknown = [
+		"fetch('https://x.test', { headers: { Authorization: 'Bearer {{secret:S}}' } })",
+		"new Headers({ 'x-api-key': '{{secret:S}}' })",
+		"fetch('https://x.test', { headers: { a: 'b' }, body: 'plain' })",
+		"const auth = 'Bearer {{secret:S}}'",
+		"fetch('https://x.test', { headers: { Referer: 'https://auth.test/{{secret:S}}' } })",
+		"fetch('https://x.test', { headers: { 'x-meta': JSON.stringify({ t: '{{secret:S}}' }) } })",
+	]
+	for (const statement of headerOrUnknown) {
+		expect(
+			modulePatterns(`export default async () => {\n\t${statement}\n}`),
+		).not.toContain('secret outside header')
 	}
 })
 
@@ -433,6 +440,33 @@ test('0010 flags plain http fetches in modules that use placeholders', () => {
 			"export default () => fetch('https://api.example.com/v1', { headers: { Authorization: 'Bearer {{secret:S}}' } })",
 		),
 	).not.toContain('plain http')
+})
+
+test('0010 flags secret slots without placement', () => {
+	expect(
+		patternsByPath({
+			'package.json': manifest({
+				credentials: {
+					KEY: { kind: 'secret', provider: 'acme', description: 'x' },
+					GOOGLE: { kind: 'oauth', provider: 'google', description: 'x' },
+				},
+			}),
+		}),
+	).toEqual({ 'package.json': ['missing placement'] })
+	expect(
+		patternsByPath({
+			'package.json': manifest({
+				credentials: {
+					KEY: {
+						kind: 'secret',
+						provider: 'acme',
+						description: 'x',
+						placement: { header: 'x-api-key' },
+					},
+				},
+			}),
+		}),
+	).toEqual({})
 })
 
 test('0010 transform writes nothing and returns the findings as needsManual', () => {

@@ -47,12 +47,11 @@ the value is shared with none of them.
 Code refers to a secret by name. Kody substitutes the value at the network
 boundary, on the final serialized request, and only for hosts you approved.
 
-- **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` anywhere in an
-  outbound HTTPS `fetch` (a header, the URL path or query, or a text body)
-  resolves when the request leaves Kody, if the host is one you approved for
-  that secret. On plain `http://` or an unapproved host the request is refused
-  with an error naming the secret and host; a placeholder is never sent
-  unfilled. External providers use the same boundary; see
+- **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` in a request
+  header of an outbound HTTPS `fetch` resolves when the request leaves Kody. One
+  in the URL, query string, or body, or on plain `http://`, is refused. The
+  gateway never substitutes into a body, and never sends one unsubstituted.
+  External providers use the same boundary; see
   [Custom secret providers](./secret-providers.md). This is not general string
   interpolation; it works only in secret-aware `fetch`.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,

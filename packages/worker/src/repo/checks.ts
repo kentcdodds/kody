@@ -1,5 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	describeMisplacedSecretPlaceholder,
+	findSecretPlaceholdersOutsideHeaders,
+	type MisplacedSecretPlaceholder,
+	misplacedSecretPlaceholderFix,
+} from '#worker/credentials/placeholder-placement-scan.ts'
+import {
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
 	listPackageRetrievers,
@@ -1231,6 +1237,26 @@ export function collectAmbientStorageImportFiles(
 	return filePaths.sort((left, right) => left.localeCompare(right))
 }
 
+const maxMisplacedSecretPlaceholdersReported = 5
+
+/**
+ * Credential placement lint rule (failing): the fetch gateway refuses a secret
+ * placeholder in a request URL, query, or body at run time, so publish refuses
+ * the code that provably puts one there instead of shipping a package whose
+ * requests all fail.
+ */
+export function formatMisplacedSecretPlaceholderFailure(
+	findings: Array<MisplacedSecretPlaceholder>,
+) {
+	if (findings.length === 0) return null
+	const shown = findings.slice(0, maxMisplacedSecretPlaceholdersReported)
+	const hiddenCount = findings.length - shown.length
+	const list =
+		shown.map(describeMisplacedSecretPlaceholder).join('; ') +
+		(hiddenCount > 0 ? ` (and ${hiddenCount} more)` : '')
+	return `Secret placeholders sit outside a request header: ${list}. ${misplacedSecretPlaceholderFix}`
+}
+
 /**
  * Storage prescription lint rule (failing): saved-package source must use
  * `packageStorage()` instead of the removed ambient `storage` binding.
@@ -1240,7 +1266,10 @@ export function collectAmbientStorageImportFiles(
  * This permanent publish guard keeps package code portable across every
  * package surface and points authors at the canonical package bucket.
  */
-function buildLintCheck(sourceFiles: Record<string, string>): {
+function buildLintCheck(
+	sourceFiles: Record<string, string>,
+	options: { refuseMisplacedSecretPlaceholders: boolean },
+): {
 	ok: boolean
 	message: string
 } {
@@ -1252,6 +1281,14 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 	)
 	if (removedUsageFailure) {
 		return { ok: false, message: removedUsageFailure }
+	}
+	const misplacedPlaceholderFailure = options.refuseMisplacedSecretPlaceholders
+		? formatMisplacedSecretPlaceholderFailure(
+				findSecretPlaceholdersOutsideHeaders(sourceFiles),
+			)
+		: null
+	if (misplacedPlaceholderFailure) {
+		return { ok: false, message: misplacedPlaceholderFailure }
 	}
 	const ambientStorageFiles = collectAmbientStorageImportFiles(sourceFiles)
 	if (ambientStorageFiles.length === 0) {
@@ -1443,8 +1480,10 @@ export async function runRepoChecks(input: {
 	deferBundleCheckToRebuild?: boolean
 	/**
 	 * Publish and `repoRunChecks` require non-empty root README.md +
-	 * AGENTS.md. Community install and platform codemods skip this so
-	 * existing listings stay forkable and migratable.
+	 * AGENTS.md and refuse secret placeholders outside request headers.
+	 * Community install and platform codemods skip both so existing listings
+	 * stay forkable and migratable; `packageGet` warns about the placeholders
+	 * instead.
 	 */
 	requirePackageDocs?: boolean
 }): Promise<RepoCheckRunResult> {
@@ -1612,7 +1651,9 @@ export async function runRepoChecks(input: {
 			sourceFiles,
 		})
 	}
-	const lintCheck = buildLintCheck(sourceFiles)
+	const lintCheck = buildLintCheck(sourceFiles, {
+		refuseMisplacedSecretPlaceholders: input.requirePackageDocs !== false,
+	})
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
