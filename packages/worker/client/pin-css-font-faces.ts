@@ -116,12 +116,18 @@ export function pinCssFontFaces(
 		? undefined
 		: (globalThis as unknown as PinCssFontFacesHost),
 ): void {
-	const FontFaceCtor = host?.FontFace
+	const FontFaceCtor: FontFaceConstructor | undefined = host?.FontFace
 	const doc = host?.document
 	if (typeof FontFaceCtor !== 'function' || !doc?.fonts) return
+	const Ctor: FontFaceConstructor = FontFaceCtor
 	const fonts = doc.fonts
 
-	const pending = new Map<string, FontFaceLike>()
+	type FaceInputs = {
+		family: string
+		src: string
+		descriptors: Record<string, string>
+	}
+	const pending = new Map<string, FaceInputs>()
 
 	for (const { rule, href } of cssFontFaceRules(doc)) {
 		const family = stripQuotes(rule.style.getPropertyValue('font-family'))
@@ -139,13 +145,15 @@ export function pinCssFontFaces(
 			const trimmed = value.trim()
 			if (trimmed) descriptors[key] = trimmed
 		}
-		const twin = new FontFaceCtor(
+		const inputs: FaceInputs = {
 			family,
-			resolveSrcUrls(src, href ?? doc.baseURI),
+			src: resolveSrcUrls(src, href ?? doc.baseURI),
 			descriptors,
-		)
-		const key = fontFaceKey(twin)
-		if (!pending.has(key) && !pinnedKeys.has(key)) pending.set(key, twin)
+		}
+		// A throwaway probe normalizes the key; it is never loaded or added.
+		const probe = new Ctor(inputs.family, inputs.src, inputs.descriptors)
+		const key = fontFaceKey(probe)
+		if (!pending.has(key) && !pinnedKeys.has(key)) pending.set(key, inputs)
 	}
 
 	function cssFaceStatus(key: string): string | undefined {
@@ -155,9 +163,12 @@ export function pinCssFontFaces(
 		return undefined
 	}
 
-	function pin(key: string, twin: FontFaceLike) {
+	function pin(key: string, inputs: FaceInputs) {
 		pinnedKeys.add(key)
 		pending.delete(key)
+		// A fresh FontFace each attempt: an errored face's load() replays the
+		// same rejection, so retrying the same instance could never recover.
+		const twin = new Ctor(inputs.family, inputs.src, inputs.descriptors)
 		twin
 			.load()
 			.then((loaded) => {
@@ -165,17 +176,17 @@ export function pinCssFontFaces(
 				fonts.add(loaded)
 			})
 			.catch(() => {
-				// Let a later loadingdone retry the pin.
+				// Let a later loadingdone retry the pin with a new FontFace.
 				pinnedKeys.delete(key)
-				pending.set(key, twin)
+				pending.set(key, inputs)
 			})
 	}
 
 	function tryPin(allowed: ReadonlySet<string>) {
-		for (const [key, twin] of pending) {
+		for (const [key, inputs] of pending) {
 			const status = cssFaceStatus(key)
 			if (status && allowed.has(status)) {
-				pin(key, twin)
+				pin(key, inputs)
 			}
 		}
 	}

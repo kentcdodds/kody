@@ -56,6 +56,29 @@ class ChromeQuotingFontFace extends FakeFontFace {
 	}
 }
 
+// The second instance constructed (the first twin after the probe) fails
+// load() permanently, like a real FontFace whose fetch errored.
+class FirstTwinFailsFontFace extends FakeFontFace {
+	static instances: Array<FirstTwinFailsFontFace> = []
+	private shouldFail: boolean
+	constructor(
+		family: string,
+		source: string,
+		descriptors: Record<string, string> = {},
+	) {
+		super(family, source, descriptors)
+		FirstTwinFailsFontFace.instances.push(this)
+		this.shouldFail = FirstTwinFailsFontFace.instances.length === 2
+	}
+	override async load(): Promise<FakeFontFace> {
+		if (this.shouldFail) {
+			this.status = 'error'
+			throw new Error('font fetch failed')
+		}
+		return super.load()
+	}
+}
+
 class FakeFontFaceSet extends Set<FakeFontFace> {
 	private listeners: Array<() => void> = []
 	addEventListener(_type: string, listener: () => void) {
@@ -218,6 +241,45 @@ test('skips sheets whose cssRules getter throws', async () => {
 
 	pinCssFontFaces(host)
 	await vi.waitFor(() => expect(twinFaces(fonts)).toHaveLength(1))
+})
+
+test('retries a failed pin with a fresh FontFace on the next loadingdone', async () => {
+	FirstTwinFailsFontFace.instances = []
+	const cssFace = new FakeFontFace('RetryFont', 'url("r.woff2")')
+	cssFace.status = 'unloaded'
+	const fonts = new FakeFontFaceSet()
+	fonts.add(cssFace)
+	const host: PinCssFontFacesHost = {
+		FontFace: FirstTwinFailsFontFace,
+		document: {
+			baseURI: 'https://kody.codes/',
+			fonts: fonts as never,
+			styleSheets: [
+				{
+					href: null,
+					cssRules: [
+						fontFaceRule({
+							'font-family': 'RetryFont',
+							src: 'url(r.woff2)',
+						}),
+					],
+				},
+			] as never,
+		},
+	}
+
+	pinCssFontFaces(host)
+	cssFace.status = 'loaded'
+	fonts.fireLoadingDone()
+	// Let the first twin's rejected load() settle so the key is re-pended.
+	await new Promise((resolve) => setTimeout(resolve, 10))
+	expect(FirstTwinFailsFontFace.instances[1]!.status).toBe('error')
+	expect(twinFaces(fonts)).toHaveLength(0)
+
+	fonts.fireLoadingDone()
+	await vi.waitFor(() => expect(twinFaces(fonts)).toHaveLength(1))
+	expect(twinFaces(fonts)[0]).toBe(FirstTwinFailsFontFace.instances[2])
+	expect(twinFaces(fonts)[0]).not.toBe(FirstTwinFailsFontFace.instances[1])
 })
 
 test('pins when Chrome reports the twin family quoted but the CSS face unquoted', async () => {
