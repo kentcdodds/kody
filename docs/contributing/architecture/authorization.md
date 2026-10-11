@@ -107,7 +107,45 @@ the old way (Automation, as Owner) until its row is `migrated`. The admin
 capability `adminEnablementsMigrate` writes one enablement per existing job,
 webhook, and subscription for a real member (the creator if still a member, else
 the earliest Owner), generates a signing secret for unsigned webhooks, and for
-team orgs first emails each member which enablements will bill them.
+team orgs first emails each member which enablements will bill them. Team orgs
+created after this change start `migrated`; personal orgs stay legacy until the
+backfill, which is safe because their only person is the Owner.
+
+In a migrated org, `planEnablementRuns` (`enablements/run-gate.ts`) is the one
+gate every trigger passes:
+
+- A trigger runs once per `on` enablement, as its enabler. The request context
+  has the enabler as actor, `attribution.kind: 'user'`, the enablement id as
+  credential id, and the enabler's live role as membership. Billing, usage, and
+  audit go to the enabler (`backgroundRunBilledActor`); ad hoc execute bills the
+  caller.
+- Before each run the gate re-reads the enabler: a live account, still in the
+  org, and `package:execute` on the package. A failure pauses the enablement
+  (`org_access` or `package_access`) and drops the event.
+- `resolveCredential` pauses an enablement run that lacks Use on an org
+  credential (`credential_access`), even for an attested package stamp.
+- The next event checks again and resumes a paused enablement once access is
+  back. There is never a fallback to another person, credential, or Owner.
+- No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook
+  answers 409 `enablement_not_on`, and a subscription event is dropped.
+
+Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
+
+- Events raised by a run reach only that run's enabler, and nobody when the run
+  had no person. Webhook-raised events follow, since the webhook run has its
+  enabler as actor.
+- Member-sent email reaches only the sender. Mail from a verified non-member
+  reaches the earliest live Owner.
+- Org-wide platform events (integrations, forks, run errors) reach enablers who
+  can see the resource the event is about (`enablerCanSee`). Run errors with no
+  package or job reach Owners only.
+
+People turn triggers on for themselves with `enablementEnable` and off with
+`enablementDisable` (the enabler or an Owner); `enablementList` lists them.
+Publishing never turns anything on. Minting a webhook URL turns it on for the
+minter when they hold `package:execute` and nobody else has. Webhooks in a
+migrated org always verify a signature: the declared `verification`, else
+`X-Kody-Signature` over the body with the endpoint's own signing secret.
 
 ### Checking many resources
 
