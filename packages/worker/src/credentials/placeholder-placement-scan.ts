@@ -334,44 +334,66 @@ function isWithinHeaders(node: AstNode, ancestors: ReadonlyArray<AstNode>) {
 
 export type PlaceholderLocation = 'url' | 'body' | 'url or body'
 
+function isBodyValue(parent: AstNode, child: AstNode) {
+	return (
+		parent.type === 'ObjectProperty' &&
+		parent.computed !== true &&
+		parent.value === child &&
+		getNodeName(parent.key) === 'body'
+	)
+}
+
+function isJsonStringifyCall(node: AstNode) {
+	return (
+		(node.type === 'CallExpression' ||
+			node.type === 'OptionalCallExpression') &&
+		getCalleeName(node.callee) === 'stringify' &&
+		getCalleeObjectName(node.callee) === 'JSON'
+	)
+}
+
 /**
- * Where a literal provably lands outside a header: a URL-shaped string or the
- * URL argument of `fetch`, `new Request`, or `new URL`; a `body` property or
- * `JSON.stringify` / `FormData` input; or `URLSearchParams` input (a query
- * string or a form body). Null for anything under a `headers` property or
- * `new Headers`, and for anything not provably outside one, so callers see a
- * floor rather than guesses.
+ * Where a string provably lands outside a header: the URL argument of
+ * `fetch`, `new Request`, or `new URL`; a `body` property or `FormData`
+ * input; or `URLSearchParams` input (a query string or a form body). A
+ * `body` ancestor wins over a nested `headers` key, which is payload data.
+ * Null for anything under a request's `headers` or `new Headers`, and for
+ * anything not provably outside one.
+ *
+ * `textShapeHints` also counts a URL-shaped string and any `JSON.stringify`
+ * input. Those are guesses: fine for a detect-only scan, too loose for a
+ * check that blocks publish.
  */
 export function literalLocationOutsideHeader(
 	node: AstNode,
 	text: string,
 	ancestors: ReadonlyArray<AstNode>,
+	options: { textShapeHints?: boolean } = {},
 ): PlaceholderLocation | null {
-	if (isWithinHeaders(node, ancestors)) return null
-	if (/^\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(text)) return 'url'
 	let child = node
 	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
 		const parent = ancestors[index]!
-		if (
-			parent.type === 'ObjectProperty' &&
-			parent.computed !== true &&
-			parent.value === child &&
-			getNodeName(parent.key) === 'body'
-		) {
-			return 'body'
-		}
+		if (isBodyValue(parent, child)) return 'body'
+		child = parent
+	}
+	if (isWithinHeaders(node, ancestors)) return null
+	if (options.textShapeHints && /^\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(text)) {
+		return 'url'
+	}
+	child = node
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const parent = ancestors[index]!
 		if (
 			parent.type === 'CallExpression' ||
 			parent.type === 'OptionalCallExpression'
 		) {
-			const calleeName = getCalleeName(parent.callee)
-			if (calleeName === 'fetch' && parent.arguments?.[0] === child) {
+			if (
+				getCalleeName(parent.callee) === 'fetch' &&
+				parent.arguments?.[0] === child
+			) {
 				return 'url'
 			}
-			if (
-				calleeName === 'stringify' &&
-				getCalleeObjectName(parent.callee) === 'JSON'
-			) {
+			if (options.textShapeHints && isJsonStringifyCall(parent)) {
 				return 'body'
 			}
 		}
@@ -492,12 +514,113 @@ export type MisplacedSecretPlaceholder = {
 	location: PlaceholderLocation
 }
 
-/**
- * Header that opts one fetch out of body refusal (`headers-only`) or all
- * resolution (`off`). A module that sets it is quoting placeholder syntax on
- * purpose, so its strings are not reported.
- */
+const secretResolutionHeaderName = 'x-kody-secret-resolution'
 const secretResolutionOptOutPattern = /x-kody-secret-resolution/i
+
+type ResolutionOptOut = 'off' | 'headers-only' | 'none' | 'unknown'
+
+function propertyValueNode(property: AstNode): AstNode | null {
+	const value = property.value
+	return value && typeof value === 'object' && 'type' in value
+		? (value as AstNode)
+		: null
+}
+
+/**
+ * The `x-kody-secret-resolution` mode the nearest enclosing `fetch` or
+ * `new Request` sets. `unknown` when there is no such call or its options or
+ * headers are not a literal object, so the caller falls back to whether the
+ * module mentions the header at all.
+ */
+function enclosingRequestOptOut(
+	ancestors: ReadonlyArray<AstNode>,
+): ResolutionOptOut {
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const node = ancestors[index]!
+		const isFetch =
+			(node.type === 'CallExpression' ||
+				node.type === 'OptionalCallExpression') &&
+			getCalleeName(node.callee) === 'fetch'
+		const isRequest =
+			node.type === 'NewExpression' && getNodeName(node.callee) === 'Request'
+		if (!isFetch && !isRequest) continue
+		const options = node.arguments?.[1]
+		if (!options) return 'none'
+		if (options.type !== 'ObjectExpression') return 'unknown'
+		let headers: AstNode | null = null
+		for (const property of options.properties ?? []) {
+			if (property.type !== 'ObjectProperty' || property.computed === true) {
+				return 'unknown'
+			}
+			if (getNodeName(property.key) === 'headers') {
+				headers = propertyValueNode(property)
+				if (!headers) return 'unknown'
+			}
+		}
+		if (!headers) return 'none'
+		if (headers.type !== 'ObjectExpression') return 'unknown'
+		for (const property of headers.properties ?? []) {
+			if (property.type !== 'ObjectProperty' || property.computed === true) {
+				return 'unknown'
+			}
+			if (
+				getNodeName(property.key)?.toLowerCase() !== secretResolutionHeaderName
+			) {
+				continue
+			}
+			const mode = getNodeName(propertyValueNode(property))
+				?.trim()
+				.toLowerCase()
+			if (mode === 'off' || mode === 'headers-only') return mode
+			return mode === 'on' ? 'none' : 'unknown'
+		}
+		return 'none'
+	}
+	return 'unknown'
+}
+
+function isOptedOut(input: {
+	location: PlaceholderLocation
+	ancestors: ReadonlyArray<AstNode>
+	moduleMentionsOptOut: boolean
+}) {
+	const optOut = enclosingRequestOptOut(input.ancestors)
+	switch (optOut) {
+		case 'off':
+			return true
+		case 'headers-only':
+			return input.location !== 'url'
+		case 'none':
+			return false
+		case 'unknown':
+			return input.moduleMentionsOptOut
+		default: {
+			const exhaustive: never = optOut
+			throw new Error(`Unhandled opt-out: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** An identifier read as a value, not a binding, key, or member name. */
+function isValueReference(node: AstNode, parent: AstNode | undefined) {
+	if (node.type !== 'Identifier' || !parent) return false
+	switch (parent.type) {
+		case 'VariableDeclarator':
+			return parent.id !== node
+		case 'ObjectProperty':
+			return parent.value === node
+		case 'MemberExpression':
+		case 'OptionalMemberExpression':
+			return parent.object === node || parent.computed === true
+		case 'ImportSpecifier':
+		case 'ImportDefaultSpecifier':
+		case 'ImportNamespaceSpecifier':
+		case 'ExportSpecifier':
+			return false
+		default:
+			return true
+	}
+}
 
 function placeholderSlot(placeholder: Placeholder) {
 	switch (placeholder.kind) {
@@ -516,9 +639,13 @@ function placeholderSlot(placeholder: Placeholder) {
 
 /**
  * Placeholders in package modules that the fetch gateway will refuse because
- * they provably sit in a URL, query, or body. Unparseable modules are skipped:
- * the bundle check reports them, and a text guess here would block publish on
- * a false positive.
+ * they provably sit in a request URL, query, or body, including module
+ * constants (local or imported) read at those sites. A fetch whose literal
+ * headers set `x-kody-secret-resolution` to `off` (or `headers-only`, for a
+ * body) is exempt; when the request options are not literal, a module that
+ * mentions that header is exempt. Unparseable modules are skipped: the bundle
+ * check reports them, and a text guess here would block publish on a false
+ * positive.
  */
 export function findSecretPlaceholdersOutsideHeaders(
 	files: Record<string, string>,
@@ -531,30 +658,53 @@ export function findSecretPlaceholdersOutsideHeaders(
 		}
 		parsedModules.set(path, parseModule(source))
 	}
+	if (![...parsedModules.keys()].some((path) => files[path]?.includes('{{'))) {
+		return []
+	}
 	const moduleConstants = createModuleConstantsReader(parsedModules)
 	const findings: Array<MisplacedSecretPlaceholder> = []
 	const seen = new Set<string>()
 	for (const [path, parsed] of parsedModules) {
-		if (!parsed || !files[path]?.includes('{{')) continue
-		if (secretResolutionOptOutPattern.test(files[path] ?? '')) continue
-		visitModuleStrings(
-			parsed,
-			moduleConstants(path),
-			({ node, text, ancestors }) => {
-				const placeholders = findPlaceholders(text)
-				if (placeholders.length === 0) return
-				const location = literalLocationOutsideHeader(node, text, ancestors)
-				if (!location) return
-				const line = node.loc?.start?.line ?? null
-				for (const placeholder of placeholders) {
-					const slot = placeholderSlot(placeholder)
-					const key = `${path}\u0000${line}\u0000${slot}\u0000${location}`
-					if (seen.has(key)) continue
-					seen.add(key)
-					findings.push({ path, line, slot, location })
-				}
-			},
+		if (!parsed) continue
+		const constants = moduleConstants(path)
+		const placeholderConstants = new Map(
+			[...constants].filter(([, value]) => findPlaceholders(value).length > 0),
 		)
+		if (!files[path]?.includes('{{') && placeholderConstants.size === 0) {
+			continue
+		}
+		const moduleMentionsOptOut = secretResolutionOptOutPattern.test(
+			files[path] ?? '',
+		)
+		const report = (
+			node: AstNode,
+			text: string,
+			ancestors: ReadonlyArray<AstNode>,
+		) => {
+			const placeholders = findPlaceholders(text)
+			if (placeholders.length === 0) return
+			const location = literalLocationOutsideHeader(node, text, ancestors)
+			if (!location) return
+			if (isOptedOut({ location, ancestors, moduleMentionsOptOut })) return
+			const line = node.loc?.start?.line ?? null
+			for (const placeholder of placeholders) {
+				const slot = placeholderSlot(placeholder)
+				const key = `${path}\u0000${line}\u0000${slot}\u0000${location}`
+				if (seen.has(key)) continue
+				seen.add(key)
+				findings.push({ path, line, slot, location })
+			}
+		}
+		visitModuleStrings(parsed, constants, ({ node, text, ancestors }) =>
+			report(node, text, ancestors),
+		)
+		if (placeholderConstants.size > 0) {
+			walkAst(parsed, (node, ancestors) => {
+				if (!isValueReference(node, ancestors.at(-1))) return
+				const value = placeholderConstants.get(getNodeName(node) ?? '')
+				if (value != null) report(node, value, ancestors)
+			})
+		}
 	}
 	return findings.sort(
 		(left, right) =>

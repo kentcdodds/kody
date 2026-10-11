@@ -403,15 +403,20 @@ Repo checks fail when package source imports ambient `storage` from
 
 Publish fails when package source puts a `{{secret:…}}`, `{{secret-basic:…}}`,
 `{{integration-token:…}}`, or vault placeholder where the fetch gateway refuses
-it: a request URL, a query string, or a request body (`body:`, `JSON.stringify`,
-`URLSearchParams`, `FormData`). The failure names the file, line, and slot, for
+it: the URL of `fetch`, `new Request`, or `new URL`, or a request body (a
+`body:` value, including `JSON.stringify` inside it, or `URLSearchParams` /
+`FormData` input). Module constants read at those sites count, including ones
+imported from another package module. A string no request uses, such as an
+exported example URL, does not. The failure names the file, line, and slot, for
 example `"src/index.ts" line 12 puts slot "apiToken" in the request body`. Move
 a credential into the header its
 [`kody.credentials`](#credential-slots-kodycredentials) slot declares. A value
 that is not a credential, such as an account id, belongs in params or package
-storage, not a secret. A module that quotes the syntax on purpose sets
-`x-kody-secret-resolution: headers-only` on that fetch and is not reported.
-Prose such as `{{secret:<name>}}` never counts.
+storage, not a secret. A fetch that quotes the syntax on purpose sets
+`x-kody-secret-resolution: headers-only` (body) or `off` (everything) in its
+headers and is not reported. When the request options are not a literal object,
+a module that mentions that header anywhere is not reported. Prose such as
+`{{secret:<name>}}` never counts.
 
 Packages published before this check keep running, and their requests are still
 refused at run time. `packageGet` lists each one under `warnings` (code

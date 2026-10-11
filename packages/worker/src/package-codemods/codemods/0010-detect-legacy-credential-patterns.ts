@@ -297,7 +297,11 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 			}
 			if (findPlaceholders(text).length === 0) return
 			usesPlaceholder = true
-			if (literalLocationOutsideHeader(node, text, ancestors)) {
+			if (
+				literalLocationOutsideHeader(node, text, ancestors, {
+					textShapeHints: true,
+				})
+			) {
 				add('secret outside header')
 			}
 		},

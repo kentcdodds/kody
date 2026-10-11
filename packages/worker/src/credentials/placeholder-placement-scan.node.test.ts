@@ -37,7 +37,7 @@ export default async function main(input: { id: string }) {
 			slot: 'clerkReviewUserId',
 			location: 'body',
 		},
-		{ path: 'src/index.ts', line: 11, slot: 'github', location: 'url or body' },
+		{ path: 'src/index.ts', line: 11, slot: 'github', location: 'body' },
 		{ path: 'src/index.ts', line: 14, slot: 'apiUser', location: 'body' },
 		{ path: 'src/index.ts', line: 17, slot: null, location: 'body' },
 	])
@@ -59,6 +59,54 @@ test('skips prose placeholders, opted-out modules, and unparseable modules', () 
 })`,
 			'src/broken.ts': `export default ( => fetch('https://x.test', { body: '{{secret:a}}' })`,
 			'README.md': `fetch('https://x.test', { body: '{{secret:a}}' })`,
+		}),
+	).toEqual([])
+})
+
+test('reads the opt-out per fetch, resolves constants at request sites, and ignores strings no request uses', () => {
+	const findings = findSecretPlaceholdersOutsideHeaders({
+		'src/tokens.ts': `export const QUERY_URL = 'https://api.example.com/?key={{secret:importedKey}}'`,
+		'src/index.ts': `import { QUERY_URL } from './tokens.ts'
+const BODY_TOKEN = '{{secret:bodyToken}}'
+export const example = 'https://api.example.com/?key={{secret:docsOnly}}'
+export const logged = JSON.stringify({ note: '{{secret:loggedOnly}}' })
+export default async function main(options: RequestInit) {
+	await fetch('https://docs.example.com', {
+		headers: { 'x-kody-secret-resolution': 'off' },
+		body: 'Docs: {{secret:quoted}}',
+	})
+	await fetch('https://api.example.com/?key={{secret:notOptedOut}}')
+	await fetch('https://api.example.com/forward', {
+		method: 'POST',
+		body: JSON.stringify({ headers: { Authorization: 'Bearer {{secret:payloadHeader}}' } }),
+	})
+	await fetch('https://api.example.com/const', { method: 'POST', body: BODY_TOKEN })
+	await fetch(QUERY_URL)
+	await fetch('https://api.example.com/headers-only', {
+		headers: { 'X-Kody-Secret-Resolution': 'headers-only' },
+		body: 'Docs: {{secret:quotedBody}}',
+	})
+	await fetch('https://api.example.com/v1', {
+		headers: { Authorization: 'Bearer {{secret:headerToken}}' },
+	})
+}
+`,
+	})
+	expect(findings).toEqual([
+		{ path: 'src/index.ts', line: 10, slot: 'notOptedOut', location: 'url' },
+		{ path: 'src/index.ts', line: 13, slot: 'payloadHeader', location: 'body' },
+		{ path: 'src/index.ts', line: 15, slot: 'bodyToken', location: 'body' },
+		{ path: 'src/index.ts', line: 16, slot: 'importedKey', location: 'url' },
+	])
+})
+
+test('a module that mentions the opt-out exempts requests whose options are not literal', () => {
+	expect(
+		findSecretPlaceholdersOutsideHeaders({
+			'src/index.ts': `const quoting = { 'x-kody-secret-resolution': 'off' }
+export default (init: RequestInit) =>
+	fetch('https://x.test', { ...init, headers: quoting, body: 'Docs: {{secret:a}}' })
+`,
 		}),
 	).toEqual([])
 })
