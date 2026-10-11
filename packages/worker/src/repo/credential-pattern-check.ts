@@ -3,6 +3,7 @@ import {
 	detectLegacyCredentialPatternsCodemodId,
 	legacyCredentialPatternFromMessage,
 } from '#worker/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
+import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
 const credentialPatternFindingsHeading = `Old-style credential references (${credentialPatternCheckLabel}, does not block publish):`
@@ -14,12 +15,11 @@ const credentialPatternFindingsHeading = `Old-style credential references (${cre
  */
 export function buildCredentialPatternCheck(
 	sourceFiles: Record<string, string>,
-	packageName: string,
 ): { kind: 'credentials'; ok: true; message: string } {
 	const patternsByPath = new Map<string, Array<string>>()
 	for (const finding of detectLegacyCredentialPatternsCodemod.detect(
 		sourceFiles,
-		{ packageName },
+		{ packageName: readPackageName(sourceFiles) },
 	)) {
 		const pattern = legacyCredentialPatternFromMessage(finding.message)
 		if (pattern == null) continue
@@ -45,6 +45,34 @@ export function buildCredentialPatternCheck(
 			'Each label is a pattern the move to kody.credentials slots replaces; see "Credential slots" in the packages docs.',
 		].join('\n'),
 	}
+}
+
+function readPackageName(sourceFiles: Record<string, string>) {
+	try {
+		const name: unknown = JSON.parse(sourceFiles['package.json'] ?? '').name
+		return typeof name === 'string' ? name : ''
+	} catch {
+		return ''
+	}
+}
+
+/**
+ * The findings for a published file set, or null when there are none. Repo
+ * paths are scoped to `sourceRoot` the way `runRepoChecks` reads them.
+ */
+export function credentialPatternNoticeForFiles(
+	files: Record<string, string>,
+	sourceRoot = '',
+) {
+	const root = normalizeRepoWorkspacePath(sourceRoot).replace(/\/+$/, '')
+	const scoped = root
+		? Object.fromEntries(
+				Object.entries(files)
+					.filter(([path]) => path.startsWith(`${root}/`))
+					.map(([path, content]) => [path.slice(root.length + 1), content]),
+			)
+		: files
+	return credentialPatternFindingsNotice([buildCredentialPatternCheck(scoped)])
 }
 
 /** The credentials check message when it found something, for publish output. */

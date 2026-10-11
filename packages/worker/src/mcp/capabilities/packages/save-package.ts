@@ -63,10 +63,7 @@ import {
 	packageSummarySchema,
 	pendingPackageSecretApprovalsSchema,
 } from './shared.ts'
-import {
-	buildCredentialPatternCheck,
-	credentialPatternFindingsNotice,
-} from '#worker/repo/credential-pattern-check.ts'
+import { credentialPatternNoticeForFiles } from '#worker/repo/credential-pattern-check.ts'
 
 function parseSavedPackageManifest(input: {
 	content: string
@@ -533,9 +530,11 @@ export const savePackageCapability = defineDomainCapability(
 								pendingSecretApprovals,
 							)
 						: null,
-					credentialPatternsNotice: credentialPatternFindingsNotice([
-						buildCredentialPatternCheck(files, saved.name),
-					]),
+					// An existing package keeps files this save omits, so scan the
+					// published set the projection loaded.
+					credentialPatternsNotice: credentialPatternNoticeForFiles(
+						refreshed.files ?? files,
+					),
 				}),
 			}
 		},

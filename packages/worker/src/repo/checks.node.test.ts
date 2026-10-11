@@ -35,7 +35,10 @@ import {
 	runRepoChecks,
 } from './checks.ts'
 import { withRequiredPackageDocs } from './checks-test-docs.ts'
-import { credentialPatternFindingsNotice } from './credential-pattern-check.ts'
+import {
+	credentialPatternFindingsNotice,
+	credentialPatternNoticeForFiles,
+} from './credential-pattern-check.ts'
 import {
 	createMalformedPackageSkillsFixtureFiles,
 	createPackageSkillsFixtureFiles,
@@ -1178,4 +1181,33 @@ test('runRepoChecks reports old-style credential references by path and pattern 
 			'No old-style credential references (codemod 0010-detect-legacy-credential-patterns).',
 	})
 	expect(credentialPatternFindingsNotice(clean.result.results)).toBeNull()
+
+	const { result: docsFailed } = await runChecks(
+		packageFiles(manifest('docs-fail-credentials'), {
+			'AGENTS.md': '',
+			'src/send.ts': "export const h = { a: '{{secret:OLD_KEY}}' }",
+		}),
+	)
+	expect(findCheck(docsFailed, 'docs')?.ok).toBe(false)
+	expect(findCheck(docsFailed, 'credentials')?.message).toContain(
+		'- src/send.ts: literal secret',
+	)
+})
+
+test('credentialPatternNoticeForFiles reads repo paths under the source root', () => {
+	const files = {
+		'packages/app/package.json': manifest('rooted', {
+			secretMounts: { t: { name: 'T' } },
+		}),
+		'packages/app/src/send.ts': "export const h = { a: '{{secret:T}}' }",
+		'other/src/x.ts': "export const h = { a: '{{secret:X}}' }",
+	}
+	const notice = credentialPatternNoticeForFiles(files, '/packages/app/')
+	expect(notice).toContain(
+		'- package.json: secretMounts\n- src/send.ts: literal secret\n',
+	)
+	expect(notice).not.toContain('other/')
+	expect(
+		credentialPatternNoticeForFiles({ 'package.json': manifest('clean') }),
+	).toBeNull()
 })

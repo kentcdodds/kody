@@ -709,3 +709,26 @@ test('packageSave responses list old-style credential references by path and pat
 	)
 	expect(result.next_steps).not.toContain('RESEND_KEY')
 })
+
+test('packageSave lists old-style references from the published files, not only the submitted ones', async () => {
+	const { save } = await setup({ plan: 'max' })
+	const submitted = buildPackageFiles('kept-file-package')
+	const refresh =
+		mockModule.refreshSavedPackageProjection.getMockImplementation()!
+	mockModule.refreshSavedPackageProjection.mockImplementationOnce(
+		async (input) => ({
+			...(await refresh(input)),
+			files: {
+				...Object.fromEntries(
+					submitted.map((file) => [file.path, file.content]),
+				),
+				'src/kept.ts': "export const h = { a: '{{secret:OLD_KEY}}' }\n",
+			},
+		}),
+	)
+
+	const result = await save({ files: submitted })
+
+	expect(result.next_steps).toContain('- src/kept.ts: literal secret')
+	expect(result.next_steps).not.toContain('OLD_KEY')
+})

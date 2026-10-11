@@ -73,7 +73,7 @@ import {
 	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
-import { credentialPatternFindingsNotice } from './credential-pattern-check.ts'
+import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -3223,6 +3223,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		// snapshot collected once above for the published source KV write.
 		const snapshotFiles = workspaceSnapshot.files
 		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		const credentialNotice =
+			source.entity_kind === 'package'
+				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
+				: null
+		const withCredentialNotice = (message: string) =>
+			credentialNotice ? `${message}\n\n${credentialNotice}` : message
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3251,7 +3257,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					currentPublishedCommit: source.published_commit,
 					packageId: lockedPackage.id,
 					packageName: lockedPackage.name,
-					message: error.message,
+					message: withCredentialNotice(error.message),
 				}
 			}
 		}
@@ -3307,17 +3313,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			},
 		})
 		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
-		const credentialNotice = credentialPatternFindingsNotice(
-			checkStatus.results,
-		)
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
-			message: [
+			message: withCredentialNotice(
 				`Published session ${sessionRow.id} to ${source.repo_id}.`,
-				...(credentialNotice ? [credentialNotice] : []),
-			].join('\n\n'),
+			),
 		}
 	}
 

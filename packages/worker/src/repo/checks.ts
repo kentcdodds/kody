@@ -1554,6 +1554,8 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
+	// Before any gate that returns early, so owners see it while fixing others.
+	results.push(buildCredentialPatternCheck(sourceFiles))
 	// Cheap static gates for the package-app browser surface run before the
 	// heavy phases so a misconfigured manifest fails fast with one message.
 	const packageAppSurfaceChecks = [
@@ -1900,8 +1902,6 @@ export async function runRepoChecks(input: {
 		ok: lintCheck.ok,
 		message: lintCheck.message,
 	})
-	results.push(buildCredentialPatternCheck(sourceFiles, manifest.name))
-
 	return toRepoCheckRunResult({
 		results,
 		manifest,
