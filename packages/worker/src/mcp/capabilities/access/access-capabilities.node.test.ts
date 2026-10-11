@@ -10,10 +10,17 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
-import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import {
+	deriveRequestContext,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { accessGrantCapability } from './access-grants.ts'
+import { LivePersonRequiredError } from '#worker/authorization/authorize.ts'
+import {
+	accessGrantCapability,
+	accessRevokeCapability,
+} from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
 import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
 import { teamCreateCapability } from './teams.ts'
@@ -34,6 +41,7 @@ function capabilityContext(input: {
 	username: string
 	org?: { id: string; slug: string; role: OrgRole | null }
 	auditDb?: D1Database
+	source?: RequestSource
 }) {
 	return {
 		env: {
@@ -41,7 +49,7 @@ function capabilityContext(input: {
 			AUDIT_DB: input.auditDb ?? createAuditTestDb(),
 		} as Env,
 		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
+			source: input.source ?? { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(input.userId),
@@ -524,4 +532,96 @@ test('org grants that hand out Owner-held permissions require an Owner', async (
 		delegate,
 	)
 	expect(teamRead.grant.permissions).toEqual(['team:read'])
+})
+
+test('member and billing grant changes need a live person; other grants do not', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner-live@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'liveowner',
+	})
+	const ownerIdentity = {
+		db,
+		userId: ownerId,
+		email: 'owner-live@example.com',
+		username: 'liveowner',
+	}
+	const created = await orgCreateCapability.handler(
+		{ slug: 'liveco' },
+		capabilityContext(ownerIdentity),
+	)
+	const org = {
+		id: created.org.id,
+		slug: created.org.slug,
+		role: 'owner' as const,
+	}
+	const live = capabilityContext({ ...ownerIdentity, org })
+	const scheduled = capabilityContext({
+		...ownerIdentity,
+		org,
+		source: {
+			kind: 'schedule',
+			jobId: 'job-1',
+			enablement: {
+				id: 'enablement-1',
+				enabler: {
+					userId: personIdFromStored(ownerId),
+					username: 'liveowner',
+				},
+				role: 'owner',
+			},
+		},
+	})
+	const subjectId = testStableUserIdFromEmail('subject-live@example.com')
+	const memberGrant = {
+		resource_type: 'org' as const,
+		resource_id: org.id,
+		subject_type: 'user' as const,
+		subject_id: subjectId,
+		permissions: ['member:read'],
+	}
+
+	await expect(
+		accessGrantCapability.handler(memberGrant as never, scheduled),
+	).rejects.toMatchObject({
+		name: 'LivePersonRequiredError',
+		capabilityName: 'accessGrant',
+	})
+	const granted = await accessGrantCapability.handler(
+		memberGrant as never,
+		live,
+	)
+
+	const teamRead = await accessGrantCapability.handler(
+		{
+			...memberGrant,
+			subject_id: testStableUserIdFromEmail('other-live@example.com'),
+			permissions: ['team:read'],
+		} as never,
+		scheduled,
+	)
+	expect(teamRead.grant.permissions).toEqual(['team:read'])
+
+	const orgPreset = accessGrantCapability.handler(
+		{ ...memberGrant, permissions: undefined, preset: 'manage' } as never,
+		scheduled,
+	)
+	await expect(orgPreset).rejects.toThrow(
+		'Grant presets do not apply to the org resource',
+	)
+	await expect(orgPreset).rejects.not.toBeInstanceOf(LivePersonRequiredError)
+
+	await expect(
+		accessRevokeCapability.handler({ grant_id: granted.grant.id }, scheduled),
+	).rejects.toMatchObject({
+		name: 'LivePersonRequiredError',
+		capabilityName: 'accessRevoke',
+	})
+	await expect(
+		accessRevokeCapability.handler({ grant_id: teamRead.grant.id }, scheduled),
+	).resolves.toMatchObject({ revoked: true })
+	await expect(
+		accessRevokeCapability.handler({ grant_id: granted.grant.id }, live),
+	).resolves.toMatchObject({ revoked: true })
 })

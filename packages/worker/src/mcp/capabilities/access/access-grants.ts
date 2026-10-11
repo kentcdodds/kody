@@ -80,7 +80,6 @@ export const accessGrantCapability = defineDomainCapability(
 		requiresLivePerson: (args) =>
 			grantChangesMemberOrBilling({
 				resourceType: args.resource_type,
-				preset: args.preset,
 				permissions: args.permissions,
 			}),
 		description:
