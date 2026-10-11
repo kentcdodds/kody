@@ -257,6 +257,10 @@
 					"binding": "REPO_SESSION_BLOBS",
 					"bucket_name": "kody-repo-session-blobs",
 				},
+				{
+					"binding": "OPERATOR_BACKUPS",
+					"bucket_name": "kody-operator-backups",
+				},
 			],
 			"queues": {
 				"producers": [
@@ -465,6 +469,10 @@
 				{
 					"binding": "REPO_SESSION_BLOBS",
 					"bucket_name": "kody-preview-repo-session-blobs",
+				},
+				{
+					"binding": "OPERATOR_BACKUPS",
+					"bucket_name": "kody-preview-operator-backups",
 				},
 			],
 			// Kept in lockstep with origin env.preview producers.
