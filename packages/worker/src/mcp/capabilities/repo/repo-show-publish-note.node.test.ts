@@ -43,6 +43,7 @@ function resetMocks() {
 	for (const fn of Object.values(mockModule)) {
 		fn.mockReset()
 	}
+	mockModule.getMcpUserPackageScope.mockResolvedValue('kent')
 }
 
 function createContext(userId = 'user-1') {
@@ -116,7 +117,6 @@ test('repoShowPublishNote reads notes by source or package identity and rejects 
 	expect(bySource.note?.publishedBy).toBe('repo_session')
 
 	resetMocks()
-	mockModule.getMcpUserPackageScope.mockResolvedValue('kent')
 	mockModule.resolveOwnedPackageSource.mockResolvedValue({
 		packageId: 'package-1',
 		kodyId: 'demo',

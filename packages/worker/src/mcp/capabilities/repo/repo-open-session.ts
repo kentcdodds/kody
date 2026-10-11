@@ -1,12 +1,18 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import {
+	packageOwnerEntitlementEmail,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import {
 	countActiveRepoSessions,
@@ -69,20 +75,14 @@ export const repoOpenSessionCapability = defineDomainCapability(
 		inputSchema: repoOpenSessionInputSchema,
 		outputSchema: repoOpenSessionOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = ctx.callerContext.user
-			if (!user) {
-				throw new McpCallerError(
-					'repoOpenSession requires an authenticated user.',
-				)
-			}
-
+			const owner = await resolvePackageOwnerContext(ctx.env, {
+				user: requireMcpUser(ctx.callerContext),
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const requested = await resolveRepoSourceReference({
 				db: ctx.env.APP_DB,
-				userId: personalOrgId(user.userId),
-				ownerScope:
-					args.target?.kind === 'package' && 'kody_id' in args.target
-						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
-						: undefined,
+				userId: owner.ownerUserId,
+				ownerScope: owner.ownerScope,
 				args,
 			})
 			if (requested.resolvedTarget.kind === 'package') {
@@ -99,7 +99,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				args.conversation_id == null
 					? null
 					: await getActiveRepoSessionByConversation(ctx.env, {
-							userId: personalOrgId(user.userId),
+							userId: owner.ownerUserId,
 							conversationId: args.conversation_id,
 						})
 			if (existingSession) {
@@ -113,7 +113,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					existingSession.id,
 				).getSessionInfo({
 					sessionId: existingSession.id,
-					userId: personalOrgId(user.userId),
+					userId: owner.ownerUserId,
 				})
 				return {
 					...session,
@@ -123,11 +123,10 @@ export const repoOpenSessionCapability = defineDomainCapability(
 
 			await assertWithinEntitlement({
 				db: ctx.env.APP_DB,
-				userId: personalOrgId(user.userId),
-				email: user.email,
+				userId: owner.ownerUserId,
+				email: packageOwnerEntitlementEmail(owner),
 				resource: 'repo_sessions',
-				getCurrent: () =>
-					countActiveRepoSessions(ctx.env, personalOrgId(user.userId)),
+				getCurrent: () => countActiveRepoSessions(ctx.env, owner.ownerUserId),
 			})
 
 			// Opaque Cloudflare platform internals (KODY-CLOUDFLARE-4H) are brief
@@ -142,7 +141,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					session = await repoSessionRpc(ctx.env, sessionId).openSession({
 						sessionId,
 						sourceId: requested.source.id,
-						userId: personalOrgId(user.userId),
+						userId: owner.ownerUserId,
 						baseUrl: ctx.callerContext.baseUrl,
 						conversationId: args.conversation_id ?? null,
 						sourceRoot: args.source_root ?? requested.source.source_root,
