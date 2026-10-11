@@ -148,6 +148,65 @@ test('published snapshots load when an old kody.credentials key predates the sch
 	})
 })
 
+test('published snapshots keep valid slots when one slot fails the slot schema, and name the bad slot', () => {
+	const google = { kind: 'oauth', provider: 'google', description: 'Google.' }
+	const linear = { kind: 'mcp', provider: 'linear', description: 'Linear.' }
+	const content = manifestWithCredentials({
+		GOOGLE: google,
+		KEY: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme API key.',
+			placement: { header: 'X-Kody-Key' },
+		},
+		LINEAR: { ...linear, futureRule: true },
+		'bad name': google,
+		toString: google,
+	})
+	for (const { kody } of [
+		parseAuthoredPackageJson({ content, mode: 'published' }),
+		readRootPackage({ 'package.json': content })!.manifest,
+	]) {
+		expect(kody.credentials).toEqual({ GOOGLE: google, toString: google })
+		expect(kody.invalidCredentialSlots).toEqual({
+			KEY: 'kody.credentials.KEY.placement.header: x-kody-* headers are reserved for Kody.',
+			LINEAR: 'kody.credentials.LINEAR: Unrecognized key: "futureRule"',
+			'bad name':
+				'kody.credentials.bad name: Credential slot names start with a letter and use letters, numbers, dots, underscores, or hyphens (max 64).',
+		})
+	}
+	expect(() => parseAuthoredPackageJson({ content })).toThrow(
+		/kody\.credentials\.KEY\.placement/,
+	)
+
+	const allInvalid = parseAuthoredPackageJson({
+		content: manifestWithCredentials({ LINEAR: { ...linear, futureRule: 1 } }),
+		mode: 'published',
+	})
+	expect(allInvalid.kody.credentials).toEqual({})
+	expect(Object.keys(allInvalid.kody.invalidCredentialSlots ?? {})).toEqual([
+		'LINEAR',
+	])
+})
+
+test('package.json cannot set invalidCredentialSlots', () => {
+	const content = JSON.stringify({
+		name: '@acme/demo',
+		exports: { '.': './index.ts' },
+		kody: {
+			description: 'Demo package.',
+			invalidCredentialSlots: { GOOGLE: 'forged' },
+		},
+	})
+	expect(
+		parseAuthoredPackageJson({ content }).kody.invalidCredentialSlots,
+	).toBeUndefined()
+	expect(
+		parseAuthoredPackageJson({ content, mode: 'published' }).kody
+			.invalidCredentialSlots,
+	).toBeUndefined()
+})
+
 test('published snapshots keep slots whose secret slot predates placement', () => {
 	const slots = {
 		KEY: { kind: 'secret', provider: 'acme', description: 'Acme API key.' },

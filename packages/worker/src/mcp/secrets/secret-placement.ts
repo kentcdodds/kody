@@ -49,6 +49,8 @@ export type SecretPlacementPolicy =
 			kind: 'declared'
 			packageName: string
 			slots: Readonly<Record<string, PackageCredentialSlot>>
+			/** Slots the published snapshot declares but that failed to load. */
+			invalidSlots?: Readonly<Record<string, string>>
 	  }
 
 const policyCache = new WeakMap<
@@ -99,9 +101,14 @@ async function readSecretPlacementPolicy(
 		userId: savedPackage.userId,
 		sourceId: savedPackage.sourceId,
 	})
-	const slots = loaded.manifest.kody.credentials
+	const { credentials: slots, invalidCredentialSlots } = loaded.manifest.kody
 	return slots
-		? { kind: 'declared', packageName: savedPackage.name, slots }
+		? {
+				kind: 'declared',
+				packageName: savedPackage.name,
+				slots,
+				invalidSlots: invalidCredentialSlots,
+			}
 		: { kind: 'undeclared' }
 }
 
@@ -213,8 +220,19 @@ function assertDeclaredSlotPlacement(input: {
 	use: 'slot' | 'basic'
 }) {
 	const { policy, slotName, headerName } = input
-	const slot = policy.slots[slotName]
+	const slot = Object.hasOwn(policy.slots, slotName)
+		? policy.slots[slotName]
+		: undefined
 	if (!slot) {
+		const loadError =
+			policy.invalidSlots && Object.hasOwn(policy.invalidSlots, slotName)
+				? policy.invalidSlots[slotName]
+				: undefined
+		if (loadError) {
+			throw new SecretPlacementError(
+				`Slot "${slotName}" of ${policy.packageName} is invalid in its published package.json, so the fetch gateway does not substitute it:\n${loadError}\nFix the slot and publish again.`,
+			)
+		}
 		throw new SecretPlacementError(
 			`"${slotName}" is not a kody.credentials slot of ${policy.packageName}. A package that declares kody.credentials substitutes only its declared slots. Declare "${slotName}" as a ${input.expectedKind} slot with the header it goes in.`,
 		)

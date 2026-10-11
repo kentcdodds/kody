@@ -164,7 +164,10 @@ the slot name; the org decides which credential fills it.
   OAuth slots default to
   `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
   no placement.
-- Publish rejects any other key or a missing field and names the slot.
+- Publish rejects any other key or a missing field and names the slot. If a
+  later rule rejects a slot in a version that is already published, only that
+  slot stops working: the fetch gateway refuses it with the validation error
+  until you fix it and publish again. The other slots keep working.
 - Once a package declares `kody.credentials`, the fetch gateway substitutes only
   its slots: `{{secret:NAME}}` names a secret slot and
   `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's

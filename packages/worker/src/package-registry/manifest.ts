@@ -119,9 +119,8 @@ export function parseAuthoredPackageJson(input: {
 		manifestPath: input.manifestPath ?? packageManifestPath,
 		mode: input.mode ?? 'authoring',
 	})
-	if (input.mode === 'published') {
-		dropUnvalidatedPublishedCredentials(parsed)
-	}
+	const invalidCredentialSlots =
+		input.mode === 'published' ? splitPublishedCredentials(parsed) : null
 	const result = authoredPackageJsonSchema.safeParse(parsed)
 	if (!result.success) {
 		const formatted = z.prettifyError(result.error)
@@ -144,6 +143,9 @@ export function parseAuthoredPackageJson(input: {
 	}
 	manifest.kody.id = expectedKodyId
 	const authored = manifest as AuthoredPackageJson
+	if (invalidCredentialSlots) {
+		authored.kody.invalidCredentialSlots = invalidCredentialSlots
+	}
 	if (input.expectedPackageScope !== undefined) {
 		assertAuthoredPackageJsonNameScope({
 			manifest: authored,
@@ -235,20 +237,58 @@ function assertNoRetiredKodyFields(input: {
 	}
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 /**
- * Publishes before `kody.credentials` existed stripped the key unvalidated, so
- * an old snapshot can carry any shape there. It was never honored; loading it
- * must not brick the package. Publish (`authoring`) still rejects it.
+ * Snapshot load must not brick a package, and must not let one slot that a
+ * later rule rejects take its valid siblings with it. Each slot is validated
+ * on its own: valid slots stay in `kody.credentials`, and invalid ones come
+ * back by name with their message so every use fails loudly. Publish
+ * (`authoring`) still rejects the whole manifest.
+ *
+ * Publishes before `kody.credentials` existed stripped the key unvalidated,
+ * so an old snapshot can carry any shape there (a string, an array, a map of
+ * strings). That was never honored, so a key with no object-shaped slot is
+ * dropped whole and the package stays undeclared.
  */
-function dropUnvalidatedPublishedCredentials(parsed: unknown) {
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-	const kody = (parsed as { kody?: unknown }).kody
-	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) return
-	const record = kody as Record<string, unknown>
-	if (!('credentials' in record)) return
-	if (!packageCredentialsSchema.safeParse(record.credentials).success) {
-		delete record.credentials
+function splitPublishedCredentials(
+	parsed: unknown,
+): Record<string, string> | null {
+	if (!isPlainRecord(parsed) || !isPlainRecord(parsed.kody)) return null
+	const kody = parsed.kody
+	if (!('credentials' in kody)) return null
+	const credentials = kody.credentials
+	if (
+		!isPlainRecord(credentials) ||
+		!Object.values(credentials).some(isPlainRecord)
+	) {
+		delete kody.credentials
+		return null
 	}
+	const valid: Array<[string, unknown]> = []
+	const invalid: Array<[string, string]> = []
+	for (const [name, slot] of Object.entries(credentials)) {
+		const result = packageCredentialsSchema.safeParse(
+			Object.fromEntries([[name, slot]]),
+		)
+		if (result.success) {
+			valid.push([name, slot])
+			continue
+		}
+		invalid.push([
+			name,
+			result.error.issues
+				.map(
+					(issue) =>
+						`${['kody.credentials', ...issue.path.map(String)].join('.')}: ${issue.message}`,
+				)
+				.join('\n'),
+		])
+	}
+	kody.credentials = Object.fromEntries(valid)
+	return invalid.length > 0 ? Object.fromEntries(invalid) : null
 }
 
 function assertPackageWebhooks(input: {
