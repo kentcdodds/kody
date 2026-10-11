@@ -77,8 +77,8 @@ The request body is data, never a substitution site: the gateway forwards it
 byte for byte, so placeholder text in a body (an issue that documents the
 syntax, a form field, a stream) reaches the remote exactly as written. The
 gateway refuses, before anything resolves, a placeholder in the URL or query
-string, and any placeholder on a plain `http://` request. The error names the
-credential and the rule. A package that declares
+string, and a URL or header placeholder on a plain `http://` request. The error
+names the credential and the rule. A package that declares
 [`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
 further: each placeholder must name one of its slots and sit in that slot's
 declared `placement` header, matching its template (oauth slots default to

@@ -113,7 +113,11 @@ Saved secrets are referenced by **placeholder**, never by plaintext. Inside
 `{{secret:name|scope=user}}` to pin a scope — in a request header of an outbound
 `fetch`. Kody resolves the placeholder for **approved** hosts over HTTPS only,
 and refuses one in the URL or query string. Placeholder text in the body is sent
-verbatim, never resolved:
+verbatim, never resolved. When the API authenticates with a credential in the
+body (a login password, a form-encoded token exchange), no placeholder recipe
+can smoke-test it from `execute`: publish a minimal package with a `raw` secret
+slot that builds the body from `packageSecrets.get(NAME)`, then smoke-test by
+importing that export from `execute`. For the usual header case:
 
 ```ts
 const response = await fetch('https://api.example.com/v1/me', {
