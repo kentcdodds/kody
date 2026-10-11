@@ -41,6 +41,12 @@ import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hos
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
 import { redactEchoedSecrets } from '#mcp/secrets/echo-redaction.ts'
 import {
+	createOutboundFetchDeadline,
+	outboundFetchIdleTimeoutMs,
+	type OutboundFetchDeadline,
+	type OutboundFetchDeadlineOutcome,
+} from '#mcp/outbound-fetch-deadline.ts'
+import {
 	assertNoBodyPlaceholder,
 	assertSecretPlacement,
 	loadSecretPlacementPolicy,
@@ -101,10 +107,12 @@ type FetchGatewayProps = {
 	 */
 	claimedPackageId?: string | null
 	/**
-	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
-	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
-	 * raise this so a single slow upstream can finish under their larger
-	 * budget. `null` disables the gateway timeout (caller signal only).
+	 * Per-sandbox overall outbound fetch deadline, from request start until
+	 * the response body ends. Execute keeps the 60s default (30s under the
+	 * 90s sandbox). Long-lived surfaces such as workflows raise this so a
+	 * single slow upstream can finish under their larger budget. A stalled
+	 * body also stops after {@link outboundFetchIdleTimeoutMs} without
+	 * bytes. `null` disables both deadlines (caller signal only).
 	 */
 	outboundFetchTimeoutMs?: number | null
 	/**
@@ -138,8 +146,8 @@ export type FetchGatewayEnv = Pick<
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
 /**
- * Default deadline for sandbox outbound `fetch` when the caller did not pass
- * a tighter `AbortSignal`. Kept 30s under the default execute sandbox budget
+ * Default overall deadline for sandbox outbound `fetch` (headers and body)
+ * when the caller did not pass a tighter `AbortSignal`. Kept 30s under the default execute sandbox budget
  * (90s) so a hung upstream cannot strand the whole evaluation past the host
  * deadline.
  */
@@ -208,19 +216,6 @@ function resolveOutboundFetchTimeoutMs(input: {
 	return defaultOutboundFetchTimeoutMs
 }
 
-function applyOutboundFetchTimeout(
-	request: Request,
-	timeoutMs: number,
-): Request {
-	const timeoutSignal = AbortSignal.timeout(timeoutMs)
-	const existing = request.signal
-	const signal =
-		existing && typeof AbortSignal.any === 'function'
-			? AbortSignal.any([existing, timeoutSignal])
-			: timeoutSignal
-	return new Request(request, { signal })
-}
-
 export async function executeGatewayFetch(input: {
 	env: FetchGatewayEnv
 	props: FetchGatewayProps
@@ -228,15 +223,17 @@ export async function executeGatewayFetch(input: {
 	globalFetch?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
-	 * Override the default outbound deadline. `null` disables the gateway
-	 * timeout (caller signal only). Tests use short values.
+	 * Override the default overall outbound deadline. `null` disables the
+	 * gateway deadlines (caller signal only). Tests use short values.
 	 */
 	timeoutMs?: number | null
+	/** Override {@link outboundFetchIdleTimeoutMs}. Tests use short values. */
+	idleTimeoutMs?: number
 }): Promise<Response> {
 	const globalFetch = input.globalFetch ?? fetch
 	const startedAtMs = Date.now()
-	let outcome: 'success' | 'error' = 'success'
 	let response: Response | undefined
+	let deadline: OutboundFetchDeadline | undefined
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
 	const timeoutMs = resolveOutboundFetchTimeoutMs({
 		timeoutMs: input.timeoutMs,
@@ -285,30 +282,42 @@ export async function executeGatewayFetch(input: {
 			input.request.url,
 			transformed.url,
 		)
-		const outbound =
-			timeoutMs == null
-				? transformed
-				: applyOutboundFetchTimeout(transformed, timeoutMs)
-		response = await globalFetch(outbound)
+		deadline = createOutboundFetchDeadline({
+			totalMs: timeoutMs,
+			idleMs: input.idleTimeoutMs ?? outboundFetchIdleTimeoutMs,
+			callerSignal: transformed.signal,
+		})
+		response = deadline.track(
+			await globalFetch(new Request(transformed, { signal: deadline.signal })),
+		)
 		return redactEchoedSecrets(response, substitutedValues)
 	} catch (error) {
-		outcome = 'error'
+		deadline?.fail()
 		throw error
 	} finally {
-		if (input.props.allowOutboundFetch !== false && input.props.userId) {
-			const usageEvent = {
-				userId: input.props.userId,
-				eventType: 'outbound_fetch' as const,
-				entityId: meteredEntityId,
-				durationMs: Date.now() - startedAtMs,
-				outcome,
-				...usageAttributionFieldsFromRequest(input.props.request),
-				...(response ? readResponseContentLengthBytes(response) : {}),
-			}
-			const usagePromise = recordUsage(input.env, usageEvent)
+		const { userId } = input.props
+		if (input.props.allowOutboundFetch !== false && userId) {
+			const meteredResponse = response
+			// Metered when the body ends so a streamed response reports its
+			// full duration, not time to headers.
+			const finished: Promise<OutboundFetchDeadlineOutcome> =
+				deadline?.done ?? Promise.resolve('error')
+			const usagePromise = finished.then((outcome) =>
+				recordUsage(input.env, {
+					userId,
+					eventType: 'outbound_fetch',
+					entityId: meteredEntityId,
+					durationMs: Date.now() - startedAtMs,
+					outcome,
+					...usageAttributionFieldsFromRequest(input.props.request),
+					...(meteredResponse
+						? readResponseContentLengthBytes(meteredResponse)
+						: {}),
+				}),
+			)
 			if (input.waitUntil) {
 				input.waitUntil(usagePromise)
-			} else {
+			} else if (!meteredResponse) {
 				await usagePromise
 			}
 		}

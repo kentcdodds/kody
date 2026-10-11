@@ -153,7 +153,7 @@ export function redactEchoedSecrets(
  * `url` to see where a fetch landed (a redirect can carry the value in it).
  * `clone()` copies only the internal slots, so it reapplies them too.
  */
-function withLanding(
+export function withLanding(
 	response: Response,
 	landing: { url: string; redirected: boolean },
 ): Response {
