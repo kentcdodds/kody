@@ -7,7 +7,8 @@ import path from 'node:path'
  * `isExecutedDirectly(import.meta.url)` in code, an argv main, a node shebang,
  * or an esbuild `*.entry.ts` bundle target. Comments do not count. package.json,
  * project.json, husky, and GitHub Actions `run` scripts are left to Knip's own
- * plugins so the same file is not listed twice.
+ * plugins so the same file is not listed twice. Workflow ownership uses
+ * executable `run` scripts, not descriptions or echoed command strings.
  */
 
 const toolExtensions = new Set(['.ts', '.js', '.mjs'])
@@ -64,84 +65,13 @@ function pluginOwnedToolPaths(repoRoot: string) {
 	for (const filePath of invocationSourceFiles(repoRoot)) {
 		const relativePath = toPosix(path.relative(repoRoot, filePath))
 		if (!isPluginOwnedSource(relativePath)) continue
-		const source = readFileSync(filePath, 'utf8')
-		const scanText = isGithubWorkflowSource(relativePath)
-			? stripQuotedShellStrings(githubWorkflowRunScripts(source))
-			: source
-		collectToolPaths(invoked, scanText, nodeToolInvocation)
+		const text = readFileSync(filePath, 'utf8')
+		const executable = relativePath.startsWith('.github/')
+			? workflowRunScripts(text).map(executableShell).join('\n')
+			: text
+		collectToolPaths(invoked, executable, nodeToolInvocation)
 	}
 	return invoked
-}
-
-/**
- * Knip's GitHub Actions plugin only treats `step.run` values as scripts, and
- * its bash parser does not treat `node tools/…` inside `echo` / description
- * strings as invocations. Mirror that so prose cannot mark a CLI as
- * plugin-owned.
- */
-function stripQuotedShellStrings(source: string) {
-	return source
-		.replace(/"(?:\\.|[^"\\])*"/g, '""')
-		.replace(/'(?:\\.|[^'\\])*'/g, "''")
-		.replace(/`(?:\\.|[^`\\])*`/g, '``')
-}
-
-function githubWorkflowRunScripts(source: string) {
-	const scripts: Array<string> = []
-	const lines = source.split('\n')
-	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index]
-		if (line === undefined) continue
-		const match = /^(?<indent>\s*)run:\s*(?<rest>.*)$/.exec(line)
-		const groups = match?.groups
-		const indentText = groups?.indent
-		const restText = groups?.rest
-		if (indentText === undefined || restText === undefined) continue
-		const indent = indentText.length
-		const trimmed = restText.trimEnd().trim()
-		if (trimmed === '' || trimmed.startsWith('|') || trimmed.startsWith('>')) {
-			const block: Array<string> = []
-			index += 1
-			while (index < lines.length) {
-				const blockLine = lines[index]
-				if (blockLine === undefined) break
-				if (blockLine.trim() === '') {
-					block.push(blockLine)
-					index += 1
-					continue
-				}
-				const leading = /^\s*/.exec(blockLine)?.[0].length ?? 0
-				if (leading <= indent) {
-					index -= 1
-					break
-				}
-				block.push(blockLine)
-				index += 1
-			}
-			scripts.push(block.join('\n'))
-			continue
-		}
-		scripts.push(unquoteScalar(trimmed))
-	}
-	return scripts.join('\n')
-}
-
-function unquoteScalar(value: string) {
-	if (
-		(value.startsWith('"') && value.endsWith('"')) ||
-		(value.startsWith("'") && value.endsWith("'"))
-	) {
-		return value.slice(1, -1)
-	}
-	return value
-}
-
-function isGithubWorkflowSource(relativePath: string) {
-	const name = path.posix.basename(relativePath)
-	return (
-		relativePath.startsWith('.github/') &&
-		(name.endsWith('.yml') || name.endsWith('.yaml'))
-	)
 }
 
 function extraToolPaths(repoRoot: string) {
@@ -168,7 +98,73 @@ function isPluginOwnedSource(relativePath: string) {
 	)
 }
 
+function workflowRunScripts(text: string) {
+	const scripts: Array<string> = []
+	const lines = text.split('\n')
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index] ?? ''
+		const inline = /^(\s*)(?:-\s+)?run:\s*(.*)$/.exec(line)
+		if (!inline) continue
+		const indent = inline[1]?.length ?? 0
+		const rest = (inline[2] ?? '').trim()
+		if (
+			rest === '' ||
+			rest === '|' ||
+			rest === '|-' ||
+			rest === '|+' ||
+			rest === '>' ||
+			rest === '>-' ||
+			rest === '>+'
+		) {
+			const block: Array<string> = []
+			let end = index
+			for (let next = index + 1; next < lines.length; next += 1) {
+				const blockLine = lines[next] ?? ''
+				if (blockLine.trim() === '') {
+					block.push('')
+					end = next
+					continue
+				}
+				const nextIndent = /^(\s*)/.exec(blockLine)?.[1]?.length ?? 0
+				if (nextIndent <= indent) break
+				block.push(blockLine.slice(nextIndent))
+				end = next
+			}
+			index = end
+			scripts.push(block.join('\n'))
+			continue
+		}
+		scripts.push(rest)
+	}
+	return scripts
+}
+
+function executableShell(text: string) {
+	const substitutions: Array<string> = []
+	const withoutSubstitutions = text.replace(
+		/\$\(([^)\n]*)\)/g,
+		(_match, inner: string) => {
+			substitutions.push(inner)
+			return ' '
+		},
+	)
+	return `${stripQuoted(withoutSubstitutions)}\n${substitutions.join('\n')}`
+}
+
+function stripQuoted(text: string) {
+	return text
+		.split('\n')
+		.map((line) =>
+			line
+				.replace(/`(?:\\.|[^`])*`/g, ' ')
+				.replace(/'(?:\\.|[^'])*'/g, ' ')
+				.replace(/"(?:\\.|[^"])*"/g, ' '),
+		)
+		.join('\n')
+}
+
 function collectToolPaths(invoked: Set<string>, text: string, pattern: RegExp) {
+	pattern.lastIndex = 0
 	for (const match of text.matchAll(pattern)) {
 		const relativePath = match[1]
 		if (relativePath) invoked.add(relativePath)

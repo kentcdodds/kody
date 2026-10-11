@@ -17,6 +17,7 @@ test('shared tools helpers are not knip entries', () => {
 	)
 	expect(entries).not.toContain('tools/ensure-dev.ts')
 	expect(entries).not.toContain('tools/ci/merge-conflict-check.ts')
+	expect(entries).toContain('tools/preview-rehearsal/seal.ts')
 	expect(entries).toContain('tools/memory-auto-surface-lab/run.mjs')
 	expect(entries).toContain('tools/evals/package-discovery-routing.ts')
 	expect(entries).toContain('tools/jobs-test-service.entry.ts')
@@ -41,33 +42,43 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 	writeFixture(
 		root,
 		'.github/workflows/ci.yml',
-		'run: node tools/ci/from-workflow.ts\n',
+		[
+			'on:',
+			'  workflow_dispatch:',
+			'    inputs:',
+			'      note:',
+			'        description: node tools/described.ts',
+			'jobs:',
+			'  ci:',
+			'    steps:',
+			'      - run: |',
+			'          echo "node tools/echoed.ts"',
+			'          info="$(node tools/substituted.ts)"',
+			'          node tools/ci/from-workflow.ts',
+			'',
+		].join('\n'),
 	)
 	writeFixture(
 		root,
-		'.github/workflows/docs.yml',
-		[
-			'name: docs',
-			'jobs:',
-			'  explain:',
-			'    steps:',
-			'      - run: echo "Open with node tools/mentioned.ts"',
-			'      - run: |',
-			'          echo "node tools/mentioned.ts keygen"',
-			'          true',
-			'      - run: node tools/ci/from-workflow.ts',
-		].join('\n'),
+		'tools/described.ts',
+		'if (isExecutedDirectly(import.meta.url)) {\n\tmain()\n}\n',
+	)
+	writeFixture(
+		root,
+		'tools/echoed.ts',
+		'if (isExecutedDirectly(import.meta.url)) {\n\tmain()\n}\n',
+	)
+	writeFixture(
+		root,
+		'tools/substituted.ts',
+		'if (isExecutedDirectly(import.meta.url)) {\n\tmain()\n}\n',
 	)
 	writeFixture(
 		root,
 		'tools/helper.ts',
 		'export function helper() {}\n// isExecutedDirectly(import.meta.url)\n// node tools/mentioned.ts\n',
 	)
-	writeFixture(
-		root,
-		'tools/mentioned.ts',
-		'if (isExecutedDirectly(import.meta.url)) {\n\tmain()\n}\n',
-	)
+	writeFixture(root, 'tools/mentioned.ts', 'export function mentioned() {}\n')
 	writeFixture(
 		root,
 		'tools/runtime.ts',
@@ -112,13 +123,15 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 	const entries = toolCliEntryFiles(root)
 	expect(entries).not.toContain('tools/from-script.ts')
 	expect(entries).not.toContain('tools/ci/from-workflow.ts')
+	expect(entries).not.toContain('tools/substituted.ts')
 	expect(entries).not.toContain('tools/repair.ts')
 	expect(entries).not.toContain('tools/helper.ts')
 	expect(entries).toEqual([
+		'tools/described.ts',
+		'tools/echoed.ts',
 		'tools/evals/score.ts',
 		'tools/lab/run.mjs',
 		'tools/main.ts',
-		'tools/mentioned.ts',
 		'tools/worker.entry.ts',
 	])
 })
