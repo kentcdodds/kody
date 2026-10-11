@@ -258,6 +258,63 @@ test('fetch gateway fills placeholders in the URL path and query on an allowed h
 	expect(resolveSpy).toHaveBeenCalledTimes(3)
 })
 
+test('fetch gateway URL fill keeps routing and unrelated query bytes as written', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) =>
+			userSecret(name === 'routey' ? '../admin?x#y' : `${name}-value`, [
+				'api.example.com',
+			]),
+	)
+
+	const encodedPath = await expand(
+		new Request(
+			`https://api.example.com/v1/${encodeURIComponent('{{secret:pathToken|scope=user}}')}/me`,
+		),
+	)
+	expect(encodedPath.url).toBe('https://api.example.com/v1/pathToken-value/me')
+
+	const routey = await expand(
+		new Request('https://api.example.com/v1/users/{{secret:routey}}/me'),
+	)
+	expect(routey.url).toBe(
+		'https://api.example.com/v1/users/..%2Fadmin%3Fx%23y/me',
+	)
+
+	const signed = await expand(
+		new Request(
+			'https://api.example.com/v1?sig=a%20b&list=x+y&token={{secret:queryToken}}',
+		),
+	)
+	expect(signed.url).toBe(
+		'https://api.example.com/v1?sig=a%20b&list=x+y&token=queryToken-value',
+	)
+})
+
+test('fetch gateway keeps byte bodies as bytes, adding no Content-Type', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('secret-value', ['api.example.com']),
+	)
+	const encoder = new TextEncoder()
+	const headerOnly = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			headers: { Authorization: 'Bearer {{secret:token}}' },
+			body: encoder.encode('abc'),
+		}),
+	)
+	expect(headerOnly.headers.get('content-type')).toBeNull()
+	expect(await headerOnly.text()).toBe('abc')
+
+	const filled = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			body: encoder.encode('token={{secret:token}}'),
+		}),
+	)
+	expect(filled.headers.get('content-type')).toBeNull()
+	expect(await filled.text()).toBe('token=secret-value')
+})
+
 test('fetch gateway fills placeholders in JSON, form, and text bodies on an allowed host', async () => {
 	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
 		async ({ name }) =>
@@ -1262,6 +1319,13 @@ test('leak: a secret filled into the body or URL is redacted from echoes in ever
 		'https://api.example.com/q?key=[REDACTED SECRET]',
 	)
 	expect(await query.text()).not.toContain('app')
+
+	const path = await send(
+		new Request('https://api.example.com/v1/{{secret:appPassword}}/me'),
+	)
+	expect(path.headers.get('x-echo-url')).toBe(
+		'https://api.example.com/v1/[REDACTED SECRET]/me',
+	)
 
 	const failing = executeGatewayFetch({
 		env,

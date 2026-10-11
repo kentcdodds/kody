@@ -5,6 +5,7 @@
  * `[REDACTED SECRET]` in response headers and in the body bytes.
  */
 import { redactedSecretText } from './execution-secret-redactor.ts'
+import { encodePathSegmentData } from './placeholders.ts'
 
 const encoder = new TextEncoder()
 
@@ -40,6 +41,7 @@ function echoedForms(values: Iterable<string>) {
 		[...values].flatMap((value) => [
 			value,
 			encodeURIComponent(value),
+			encodePathSegmentData(value),
 			new URLSearchParams([['', value]]).toString().slice(1),
 			JSON.stringify(value).slice(1, -1),
 		]),
@@ -165,19 +167,77 @@ export function redactEchoedSecrets(
 }
 
 /**
- * `error` with every `values` entry redacted from its message: a failed fetch
- * can name the URL it was sending, secret and all.
+ * `error` with every `values` entry redacted: a failed fetch can name the URL
+ * it was sending, secret and all, in its message, its stack, a field, or a
+ * `cause`. An error that mentions no value is returned as is. One that does is
+ * rebuilt from its redacted message, name, string `code`, and `cause` chain;
+ * its other fields are dropped.
  */
 export function redactEchoedSecretsInError(
 	error: unknown,
 	values: Iterable<string>,
 ): unknown {
-	if (!(error instanceof Error)) return error
-	const message = redactText(error.message, echoedForms(values))
-	if (message === error.message) return error
-	const redacted = new Error(message)
-	redacted.name = error.name
+	const forms = echoedForms(values)
+	if (forms.length === 0 || !mentionsAny(error, forms, 0)) return error
+	return rebuildRedacted(error, forms, 0)
+}
+
+const maxCauseDepth = 8
+
+function errorTexts(error: Error) {
+	const texts = [error.message, error.stack ?? '']
+	for (const value of Object.values(error)) {
+		if (typeof value === 'string') texts.push(value)
+	}
+	return texts
+}
+
+function mentionsAny(
+	value: unknown,
+	forms: ReadonlyArray<string>,
+	depth: number,
+): boolean {
+	if (depth > maxCauseDepth || value == null) return false
+	if (!(value instanceof Error)) {
+		const text = typeof value === 'string' ? value : safeStringify(value)
+		return forms.some((form) => text.includes(form))
+	}
+	return (
+		errorTexts(value).some((text) =>
+			forms.some((form) => text.includes(form)),
+		) || mentionsAny(value.cause, forms, depth + 1)
+	)
+}
+
+function rebuildRedacted(
+	value: unknown,
+	forms: ReadonlyArray<string>,
+	depth: number,
+): unknown {
+	if (depth > maxCauseDepth || value == null) return undefined
+	if (typeof value === 'string') return redactText(value, forms)
+	if (!(value instanceof Error)) {
+		return mentionsAny(value, forms, depth) ? undefined : value
+	}
+	const cause = rebuildRedacted(value.cause, forms, depth + 1)
+	const redacted = new Error(
+		redactText(value.message, forms),
+		cause === undefined ? undefined : { cause },
+	)
+	redacted.name = value.name
+	const code: unknown = Reflect.get(value, 'code')
+	if (typeof code === 'string') {
+		Object.assign(redacted, { code: redactText(code, forms) })
+	}
 	return redacted
+}
+
+function safeStringify(value: unknown) {
+	try {
+		return JSON.stringify(value) ?? String(value)
+	} catch {
+		return String(value)
+	}
 }
 
 /**

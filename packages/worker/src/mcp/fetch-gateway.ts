@@ -10,7 +10,7 @@ import {
 	buildIntegrationTokenPlaceholder,
 	buildProviderSecretPlaceholder,
 	buildSecretPlaceholder,
-	decodeSecretPlaceholderDelimiters,
+	decodeSecretPlaceholderPunctuation,
 	formUrlEncodedTexts,
 	parseBasicAuthSecretPlaceholders,
 	parseIntegrationTokenPlaceholders,
@@ -19,6 +19,7 @@ import {
 	replaceSecretPlaceholders,
 	replaceSecretPlaceholdersInFormUrlEncoded,
 	replaceSecretPlaceholdersInJson,
+	replaceSecretPlaceholdersInPath,
 	type ReferencedBasicAuthSecretPlaceholder,
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
@@ -835,7 +836,12 @@ function dedupeBasicAuthSecretPlaceholders(
 }
 
 type GatewayRequestBody =
-	| { kind: 'text'; text: string; format: 'form' | 'json' | 'text' }
+	| {
+			kind: 'text'
+			bytes: Uint8Array<ArrayBuffer>
+			text: string
+			format: 'form' | 'json' | 'text'
+	  }
 	| { kind: 'opaque'; bytes: Uint8Array<ArrayBuffer> }
 
 /**
@@ -858,7 +864,12 @@ async function readRequestBody(
 			fatal: true,
 			ignoreBOM: true,
 		}).decode(bytes)
-		return { kind: 'text', text, format: readTextBodyFormat(contentType) }
+		return {
+			kind: 'text',
+			bytes,
+			text,
+			format: readTextBodyFormat(contentType),
+		}
 	} catch {
 		return { kind: 'opaque', bytes }
 	}
@@ -874,9 +885,12 @@ function readTextBodyFormat(contentType: string) {
 		: 'text'
 }
 
+/**
+ * Always bytes: a string body would make the Request constructor add a
+ * `text/plain` Content-Type the caller never sent.
+ */
 function requestBodyInit(body: GatewayRequestBody | null) {
-	if (!body) return undefined
-	return body.kind === 'text' ? body.text : body.bytes
+	return body?.bytes
 }
 
 /** The text in the body a placeholder may sit in. */
@@ -900,15 +914,25 @@ function fillBodyPlaceholders(
 	replacements: ReadonlyMap<string, string>,
 ) {
 	if (body.kind === 'opaque') return body.bytes
-	switch (body.format) {
+	return new TextEncoder().encode(
+		fillBodyText(body.text, body.format, replacements),
+	)
+}
+
+function fillBodyText(
+	text: string,
+	format: 'form' | 'json' | 'text',
+	replacements: ReadonlyMap<string, string>,
+) {
+	switch (format) {
 		case 'form':
-			return replaceSecretPlaceholdersInFormUrlEncoded(body.text, replacements)
+			return replaceSecretPlaceholdersInFormUrlEncoded(text, replacements)
 		case 'json':
-			return replaceSecretPlaceholdersInJson(body.text, replacements)
+			return replaceSecretPlaceholdersInJson(text, replacements)
 		case 'text':
-			return replaceSecretPlaceholders(body.text, replacements)
+			return replaceSecretPlaceholders(text, replacements)
 		default: {
-			const exhaustive: never = body.format
+			const exhaustive: never = format
 			throw new Error(`Unhandled body format: ${String(exhaustive)}`)
 		}
 	}
@@ -917,27 +941,26 @@ function fillBodyPlaceholders(
 /** The URL path and each decoded query key and value. */
 function urlPlaceholderTexts(url: URL) {
 	return [
-		decodeSecretPlaceholderDelimiters(url.pathname),
+		decodeSecretPlaceholderPunctuation(url.pathname),
 		...formUrlEncodedTexts(url.search),
 	]
 }
 
 /**
- * `url` with placeholders filled in its path and query. A part without one is
- * left exactly as written.
+ * `url` with placeholders filled in its path and query. Only the components
+ * that hold one change.
  */
 function fillUrlPlaceholders(
 	url: URL,
 	replacements: ReadonlyMap<string, string>,
 ) {
 	const next = new URL(url)
-	const path = decodeSecretPlaceholderDelimiters(url.pathname)
-	if (holdsPlaceholder(path)) {
-		next.pathname = replaceSecretPlaceholders(path, replacements)
+	if (holdsPlaceholder(decodeSecretPlaceholderPunctuation(url.pathname))) {
+		next.pathname = replaceSecretPlaceholdersInPath(url.pathname, replacements)
 	}
 	if (formUrlEncodedTexts(url.search).some(holdsPlaceholder)) {
 		next.search = replaceSecretPlaceholdersInFormUrlEncoded(
-			url.search,
+			url.search.slice(1),
 			replacements,
 		)
 	}
