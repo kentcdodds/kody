@@ -87,8 +87,8 @@ function detectOwnerScope(
 }
 
 /**
- * After an org resource transfer the registry renames each package to the
- * new org's scope, but package sources still say `@oldScope/...` in
+ * After an org resource transfer the engine names each package in the new
+ * owner's scope, but package sources still say `@oldScope/...` in
  * `package.json`, `kody:@oldScope/...` imports, and docs. Every package in
  * the old scope moved together, so every `@oldScope/` reference is
  * rewritten to `@newScope/`.
