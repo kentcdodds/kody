@@ -1637,9 +1637,15 @@ export async function readExecuteUniqueWorkerUsage(input: {
 	const entitlement = await withLiveSeats({
 		db: input.db,
 		orgId: input.userId,
-		entitlement: await getCachedUserEntitlement(input.db, {
-			userId: input.userId,
-			email: input.email,
+		entitlement: await withLiveLimitOverrides({
+			db: input.db,
+			orgId: input.userId,
+			entitlement: getCachedUserEntitlement(input.db, {
+				userId: input.userId,
+				email: input.email,
+			}),
+			resource,
+			now,
 		}),
 		resource,
 	})
