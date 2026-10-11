@@ -10,6 +10,7 @@
  * - `apply` moves, deletes, then deletes orphan job sources, and refuses to
  *   run unless the caller confirms the owners were notified.
  */
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { formatScheduleSummary } from '@kody-internal/shared/jobs/schedule.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { redactEmailRecipient } from '#worker/audit-log.ts'
@@ -538,7 +539,7 @@ export async function runLegacyJobRetire(input: {
 					}
 				} catch (error) {
 					throw new Error(
-						`Legacy job ${decision.action} failed for "${row.job.record.id}"${describeDone(rows, deletedOrphans)}.`,
+						`Legacy job ${decision.action} failed for "${row.job.record.id}"${describeDone(rows, deletedOrphans)}: ${describeCause(error)}`,
 						{ cause: error },
 					)
 				}
@@ -549,7 +550,7 @@ export async function runLegacyJobRetire(input: {
 					deletedOrphans.push(source)
 				} catch (error) {
 					throw new Error(
-						`Orphan job source delete failed for "${source.sourceId}"${describeDone(rows, deletedOrphans)}.`,
+						`Orphan job source delete failed for "${source.sourceId}"${describeDone(rows, deletedOrphans)}: ${describeCause(error)}`,
 						{ cause: error },
 					)
 				}
@@ -587,4 +588,12 @@ function describeDone(
 		...deletedOrphans.map((source) => `deleted source ${source.sourceId}`),
 	]
 	return done.length > 0 ? ` after: ${done.join(', ')}` : ''
+}
+
+// MCP error responses keep only the top-level message, so the cause rides along in it.
+function describeCause(error: unknown): string {
+	if (error instanceof AggregateError) {
+		return `${error.message} (${error.errors.map(describeCause).join('; ')})`
+	}
+	return getErrorMessage(error)
 }

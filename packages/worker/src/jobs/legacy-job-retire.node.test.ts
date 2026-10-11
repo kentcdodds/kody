@@ -381,9 +381,35 @@ test('a failed move stops apply before any delete and names the failing row', as
 			},
 		},
 	})
-	await expect(run).rejects.toThrow('Legacy job move failed for "legacy-move".')
+	await expect(run).rejects.toThrow(
+		'Legacy job move failed for "legacy-move": repo check failed',
+	)
 	await expect(run).rejects.toMatchObject({ cause: failure })
 	expect(calls).toEqual([])
+})
+
+test('a failed move with a failed rollback names both errors', async () => {
+	const { db, deps, decisions } = await setup()
+	await expect(
+		runLegacyJobRetire({
+			db,
+			mode: 'apply',
+			decisions,
+			ownersNotified: true,
+			baseUrl,
+			deps: {
+				...deps,
+				async moveJob() {
+					throw new AggregateError(
+						[new Error('publish failed'), new Error('cleanup failed')],
+						'Rollback also failed.',
+					)
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Legacy job move failed for "legacy-move": Rollback also failed. (publish failed; cleanup failed)',
+	)
 })
 
 test('a failed delete lists the rows already done', async () => {
@@ -403,7 +429,7 @@ test('a failed delete lists the rows already done', async () => {
 			},
 		}),
 	).rejects.toThrow(
-		'Legacy job delete failed for "legacy-delete" after: moved legacy-move.',
+		'Legacy job delete failed for "legacy-delete" after: moved legacy-move: storage busy',
 	)
 })
 
@@ -424,7 +450,7 @@ test('a failed orphan source delete lists the jobs already retired', async () =>
 			},
 		}),
 	).rejects.toThrow(
-		'Orphan job source delete failed for "source-orphan" after: moved legacy-move, deleted legacy-delete.',
+		'Orphan job source delete failed for "source-orphan" after: moved legacy-move, deleted legacy-delete: artifact repo busy',
 	)
 })
 
