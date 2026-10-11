@@ -98,7 +98,6 @@ const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'value_buckets',
 	'value_entries',
 	'user_storage_buckets',
-	'agent_package_conversation_uses',
 	'webhook_endpoints',
 	'webhook_apply_destination_grants',
 	'webhook_apply_destination_pending',
@@ -539,20 +538,6 @@ export function planOrgTransfer(
 		['storage_id'],
 		(row) => `storage ${text(row, 'storage_id')}`,
 	)
-
-	for (const row of source.agent_package_conversation_uses) {
-		if (packageIds.has(text(row, 'package_id'))) {
-			moves.agent_package_conversation_uses.push(row)
-		} else {
-			orphan(
-				'agent_package_conversation_uses',
-				row,
-				text(row, 'package_id'),
-				'package no longer exists',
-				'delete',
-			)
-		}
-	}
 
 	// Webhooks.
 	for (const row of source.webhook_endpoints.filter(isLiveRow)) {

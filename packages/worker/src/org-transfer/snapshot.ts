@@ -34,7 +34,6 @@ export const orgTransferOwnerTables = {
 	secret_provider_grants: 'user_id',
 	value_buckets: 'user_id',
 	user_storage_buckets: 'user_id',
-	agent_package_conversation_uses: 'user_id',
 	webhook_endpoints: 'user_id',
 	webhook_apply_destination_grants: 'user_id',
 	webhook_apply_destination_pending: 'user_id',

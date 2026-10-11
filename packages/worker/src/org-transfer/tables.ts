@@ -73,9 +73,6 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	user_storage_buckets: move(
 		'Package and job buckets of moved packages re-pointed; StorageRunner data copied and verified.',
 	),
-	agent_package_conversation_uses: move(
-		'user_id re-pointed for moved packages.',
-	),
 	webhook_endpoints: move(
 		'user_id re-pointed; URL and HMAC secrets re-sealed (URL hash unchanged).',
 	),
@@ -100,6 +97,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	),
 	access_cache: keep('Compiled access; both orgs bump access_epoch.'),
 	account_write_lease_repairs: keep(personOwned),
+	agent_package_conversation_uses: keep(
+		'Usage history keyed by the acting person, not the package owner org.',
+	),
 	api_tokens: keep(personOwned),
 	billing_promo_claims: keep(usageHistory),
 	cli_credential_bootstrap_codes: keep(personOwned),

@@ -35,7 +35,6 @@ export const orgTransferRepointedTables = [
 	'secret_provider_grants',
 	'value_buckets',
 	'user_storage_buckets',
-	'agent_package_conversation_uses',
 	'webhook_apply_destination_grants',
 	'webhook_apply_destination_pending',
 	'package_kody_id_redirects',
