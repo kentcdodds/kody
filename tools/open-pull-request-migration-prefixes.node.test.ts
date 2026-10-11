@@ -26,6 +26,21 @@ test('github repository and token parsing stay free of credential material', () 
 	expect(
 		parseGithubRepository('https://github.com/kentcdodds/kody/pull/1'),
 	).toBeNull()
+	expect(
+		parseGithubRepository(
+			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody',
+		),
+	).toBe('kentcdodds/kody')
+	expect(
+		parseGithubRepository(
+			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody.git',
+		),
+	).toBe('kentcdodds/kody')
+	expect(
+		parseGithubRepository(
+			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody/pull/1',
+		),
+	).toBeNull()
 	expect(parseGithubRepository(secretUrl)).not.toContain('secret')
 })
 
@@ -219,12 +234,15 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 		token,
 		currentPullNumber: null,
 		fetchImpl: () =>
-			Promise.resolve(new Response('Bad credentials', { status: 401 })),
+			Promise.resolve(
+				new Response(`Bad credentials ${token}`, { status: 401 }),
+			),
 	})
 	expect(unauthorized.status).toBe('skipped')
 	if (unauthorized.status === 'skipped') {
 		expect(unauthorized.reason).toBe('unauthorized')
 		expect(unauthorized.detail).toContain('401')
+		expect(unauthorized.detail).toContain('[redacted]')
 		expect(unauthorized.detail).not.toContain(token)
 	}
 

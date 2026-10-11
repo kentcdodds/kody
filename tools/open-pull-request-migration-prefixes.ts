@@ -57,16 +57,31 @@ export function parseGithubRepository(remoteOrSlug: string): string | null {
 	}
 	try {
 		const parsed = new URL(trimmed)
-		if (parsed.hostname !== 'github.com') return null
-		const parts = parsed.pathname.split('/').filter((part) => part.length > 0)
-		const owner = parts[0]
-		const repo = parts[1]?.replace(/\.git$/, '')
-		if (!owner || !repo || parts.length !== 2) return null
-		const slug = `${owner}/${repo}`
-		return repositorySlugPattern.test(slug) ? slug : null
+		if (parsed.hostname === 'github.com') {
+			return repositorySlugFromPath(parsed.pathname, { exact: true })
+		}
+		// Proxy remotes keep the GitHub path after another host, for example
+		// https://git-manager.devin.ai/proxy/github.com/owner/repo.
+		const embedded =
+			/\/github\.com\/(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(
+				parsed.pathname,
+			)
+		return repositorySlug(embedded?.groups?.owner, embedded?.groups?.repo)
 	} catch {
 		return null
 	}
+}
+
+function repositorySlugFromPath(pathname: string, options: { exact: boolean }) {
+	const parts = pathname.split('/').filter((part) => part.length > 0)
+	if (options.exact && parts.length !== 2) return null
+	return repositorySlug(parts[0], parts[1])
+}
+
+function repositorySlug(owner: string | undefined, repo: string | undefined) {
+	if (!owner || !repo) return null
+	const slug = `${owner}/${repo.replace(/\.git$/, '')}`
+	return repositorySlugPattern.test(slug) ? slug : null
 }
 
 export async function scanOpenPullRequestMigrationPrefixes(input: {
@@ -123,24 +138,40 @@ export async function scanOpenPullRequestMigrationPrefixes(input: {
 			return {
 				status: 'skipped',
 				reason: 'unauthorized',
-				detail: error.message,
+				detail: redactToken(error.message, token),
 			}
 		}
 		const message = error instanceof Error ? error.message : String(error)
 		return {
 			status: 'skipped',
 			reason: 'error',
-			detail: message.slice(0, 500),
+			detail: redactToken(message, token).slice(0, 500),
 		}
 	}
 }
 
 function readRepository(env: NodeJS.ProcessEnv, cwd: string) {
 	const fromEnv = env.GITHUB_REPOSITORY?.trim()
-	if (fromEnv) return parseGithubRepository(fromEnv)
+	if (fromEnv) {
+		const parsed = parseGithubRepository(fromEnv)
+		if (parsed) return parsed
+	}
 	const remote = commandOutput(cwd, 'git', ['remote', 'get-url', 'origin'])
-	if (!remote) return null
-	return parseGithubRepository(remote)
+	if (remote) {
+		const parsed = parseGithubRepository(remote)
+		if (parsed) return parsed
+	}
+	// gh resolves the checkout even when origin is a proxy remote.
+	const fromGh = commandOutput(cwd, 'gh', [
+		'repo',
+		'view',
+		'--json',
+		'nameWithOwner',
+		'--jq',
+		'.nameWithOwner',
+	])
+	if (!fromGh) return null
+	return parseGithubRepository(fromGh)
 }
 
 function readToken(env: NodeJS.ProcessEnv, cwd: string) {
@@ -348,18 +379,19 @@ async function githubGet(input: {
 		const timedOut =
 			error instanceof Error &&
 			(error.name === 'TimeoutError' || error.name === 'AbortError')
-		throw new GithubRequestError(
-			timedOut
-				? 'GitHub migration prefix scan timed out.'
-				: `GitHub migration prefix scan failed: ${error instanceof Error ? error.message : String(error)}`,
-			'error',
-		)
+		const message = timedOut
+			? 'GitHub migration prefix scan timed out.'
+			: `GitHub migration prefix scan failed: ${error instanceof Error ? error.message : String(error)}`
+		throw new GithubRequestError(redactToken(message, input.token), 'error')
 	}
 	const text = await response.text()
 	const described = `${input.url.pathname}${input.url.search}`
 	if (!response.ok) {
 		throw new GithubRequestError(
-			`GitHub API GET ${described} failed (${String(response.status)}): ${text.slice(0, 200)}`,
+			redactToken(
+				`GitHub API GET ${described} failed (${String(response.status)}): ${text.slice(0, 200)}`,
+				input.token,
+			),
 			response.status === 401 || response.status === 403
 				? 'unauthorized'
 				: 'error',
@@ -374,6 +406,11 @@ async function githubGet(input: {
 			'error',
 		)
 	}
+}
+
+function redactToken(text: string, token: string) {
+	if (token.length < 8 || !text.includes(token)) return text
+	return text.split(token).join('[redacted]')
 }
 
 function parseOpenPullRequestPage(payload: unknown): Array<{ number: number }> {

@@ -557,15 +557,28 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 			claimedPrefixes: ['0097', '0098', '0100', 'not-a-prefix'],
 		}),
 	).toBe('0099')
-	expect(() =>
+	expect(
 		suggestFreeMigrationPrefix({ nextPrefix: '98', claimedPrefixes: [] }),
-	).toThrow('Invalid migration prefix')
-	expect(() =>
+	).toBeNull()
+	expect(
 		suggestFreeMigrationPrefix({
 			nextPrefix: '9999',
 			claimedPrefixes: ['9999'],
 		}),
-	).toThrow('No free 4-digit migration prefix')
+	).toBeNull()
+	expect(
+		formatOpenPullRequestMigrationAdvisory({
+			migrationsDir: 'packages/worker/migrations',
+			localFilenames: ['9999-final.sql'],
+			localNextPrefix: '10000',
+			scan: { status: 'ok', claims: [] },
+		}),
+	).toEqual({
+		suggestedPrefix: '10000',
+		lines: [],
+		warning:
+			'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+	})
 
 	const migrationsDir = 'packages/worker/migrations'
 	const localFilenames = ['0001-squashed-init.sql', '0097-already.sql']

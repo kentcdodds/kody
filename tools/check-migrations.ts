@@ -708,19 +708,15 @@ export async function checkMigrationsDirectory(
 export function suggestFreeMigrationPrefix(input: {
 	nextPrefix: string
 	claimedPrefixes: ReadonlyArray<string>
-}): string {
-	if (!/^\d{4}$/.test(input.nextPrefix)) {
-		throw new Error(`Invalid migration prefix ${input.nextPrefix}.`)
-	}
+}): string | null {
+	if (!/^\d{4}$/.test(input.nextPrefix)) return null
 	const claimed = new Set(
 		input.claimedPrefixes.filter((prefix) => /^\d{4}$/.test(prefix)),
 	)
 	let prefix = Number(input.nextPrefix)
 	while (claimed.has(formatMigrationPrefix(prefix))) {
 		prefix += 1
-		if (prefix > 9999) {
-			throw new Error('No free 4-digit migration prefix remains.')
-		}
+		if (prefix > 9999) return null
 	}
 	return formatMigrationPrefix(prefix)
 }
@@ -792,6 +788,14 @@ function claimedMigrationPrefixAdvisory(input: {
 		nextPrefix: input.localNextPrefix,
 		claimedPrefixes: claims.flatMap((claim) => claim.prefixes),
 	})
+	if (suggestedPrefix === null) {
+		return {
+			suggestedPrefix: input.localNextPrefix,
+			lines: [],
+			warning:
+				'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+		}
+	}
 	if (claims.length === 0) {
 		return { suggestedPrefix, lines: [], warning: null }
 	}
