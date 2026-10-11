@@ -267,7 +267,8 @@ export type ProfileLoaderData = {
 	ok: true
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	/** Null when the profile has no activity source (e.g. team org repositories). */
+	activity: Array<PublicCommunityActivityItem> | null
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
@@ -277,7 +278,7 @@ export type ProfileLoaderData = {
 export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	activity: Array<PublicCommunityActivityItem> | null
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -1254,13 +1255,54 @@ export type OrgInviteView = {
 	expiresAt: string
 }
 
+export type OrgInviteLinkView = {
+	id: string
+	role: 'member' | 'billing'
+	roleLabel: string
+	allowedEmailDomains: Array<string>
+	maxUses: number | null
+	useCount: number
+	expiresAt: string
+	createdAt: string
+	createdByUsername: string | null
+	createdByDisplayName: string | null
+}
+
 export type OrgMembersLoaderData = {
 	ok: true
 	org: OrgManagementOrg
 	members: Array<OrgMemberView>
 	invites: Array<OrgInviteView>
+	inviteLinks: Array<OrgInviteLinkView>
 	canManage: boolean
 }
+
+export type OrgInviteJoinLoaderData =
+	| {
+			ok: true
+			token: string
+			org: {
+				slug: string
+				displayName: string | null
+				avatarUrl: string | null
+			}
+			role: 'member' | 'billing'
+			roleLabel: string
+			alreadyMember: boolean
+			authenticated: boolean
+	  }
+	| {
+			ok: false
+			error: string
+			reason:
+				| 'missing'
+				| 'invalid'
+				| 'revoked'
+				| 'expired'
+				| 'exhausted'
+				| 'org_inactive'
+				| 'personal_org'
+	  }
 
 export type OrgTeamMemberView = {
 	userId: string
@@ -2565,6 +2607,7 @@ export type AppLoaderData = {
 	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
 	orgSettings?: OrgSettingsLoaderData
 	orgMembers?: OrgMembersLoaderData
+	orgInviteJoin?: OrgInviteJoinLoaderData
 	orgTeams?: OrgTeamsLoaderData
 	orgGrants?: OrgGrantsLoaderData
 	orgCollaborators?: OrgCollaboratorsLoaderData

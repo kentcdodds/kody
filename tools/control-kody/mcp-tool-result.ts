@@ -9,7 +9,7 @@ export type McpCallToolOptions = {
 	maxTotalTimeout?: number
 }
 
-export type McpCallTool = (
+type McpCallTool = (
 	params: {
 		name: string
 		arguments: Record<string, unknown>

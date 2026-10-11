@@ -66,7 +66,7 @@ function requireArgValue(value: string | undefined, flag: string) {
 	return value
 }
 
-export function normalizeAttributionSource(source: string) {
+function normalizeAttributionSource(source: string) {
 	return source
 		.replaceAll('\\', '/')
 		.replace(/^webpack:\/\//, '')

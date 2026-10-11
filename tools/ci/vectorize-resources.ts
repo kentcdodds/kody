@@ -10,7 +10,7 @@ import {
  * these silently returns no matches. Keep in sync with the metadata contracts
  * in docs/contributing/architecture/data-storage.md.
  */
-export const vectorizeMetadataIndexProperties = [
+const vectorizeMetadataIndexProperties = [
 	'kind',
 	'userId',
 	'status',
@@ -18,7 +18,7 @@ export const vectorizeMetadataIndexProperties = [
 	'domain',
 ] as const
 
-export const vectorizeIndexMetric = 'cosine'
+const vectorizeIndexMetric = 'cosine'
 
 type VectorizeIndexInfo = { name: string }
 

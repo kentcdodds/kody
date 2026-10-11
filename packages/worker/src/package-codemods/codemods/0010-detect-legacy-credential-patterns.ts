@@ -67,15 +67,90 @@ export function legacyCredentialPatternFromMessage(
 
 const packageManifestPath = 'package.json'
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+/**
+ * Package tests are not runtime code: their fixtures name credentials the
+ * package never resolves.
+ */
+const testFilePattern = /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$/
+
+type NameKind = 'secret' | 'integration'
+
+/** The kody.credentials slot kind a reference of each name kind resolves to. */
+const slotKindByNameKind: Record<NameKind, 'secret' | 'oauth'> = {
+	secret: 'secret',
+	integration: 'oauth',
+}
 
 const placeholderOpenerPattern =
 	/\{\{(secret-basic:|secret:|secret\/|integration-token:)/g
-const completePlaceholderPatterns: Record<string, RegExp> = {
-	'secret:': /\{\{secret:[a-zA-Z0-9._-]+(?:\|scope=[a-z]+)?\}\}/y,
-	'secret-basic:':
-		/\{\{secret-basic:username=[a-zA-Z0-9._-]+,password=[a-zA-Z0-9._-]+(?:\|scope=[a-z]+)?\}\}/y,
-	'secret/': /\{\{secret\/[a-zA-Z0-9._-]+:[^}]+\}\}/y,
-	'integration-token:': /\{\{integration-token:[a-zA-Z0-9._-]+\}\}/y,
+/** Capture groups are the names; a vault ref (`kind: null`) names no slot. */
+const completePlaceholderPatterns: Record<
+	string,
+	{ pattern: RegExp; kind: NameKind | null }
+> = {
+	'secret:': {
+		pattern: /\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=[a-z]+)?\}\}/y,
+		kind: 'secret',
+	},
+	'secret-basic:': {
+		pattern:
+			/\{\{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)(?:\|scope=[a-z]+)?\}\}/y,
+		kind: 'secret',
+	},
+	'secret/': { pattern: /\{\{secret\/[a-zA-Z0-9._-]+:[^}]+\}\}/y, kind: null },
+	'integration-token:': {
+		pattern: /\{\{integration-token:([a-zA-Z0-9._-]+)\}\}/y,
+		kind: 'integration',
+	},
+}
+/**
+ * Placeholder-shaped text that closes in the same string piece but names
+ * nothing, such as help or redaction text (`{{secret:<name>}}`). The gateway
+ * never substitutes it. `$`, quotes, and `+` stay out so the text fallback
+ * still sees `${name}` and concatenation as computed.
+ */
+const prosePlaceholderPattern =
+	/\{\{(?:secret-basic:|secret:|secret\/|integration-token:)[^}$'"`+]*\}\}/y
+
+type Placeholder =
+	| { kind: NameKind; names: Array<string> }
+	| { kind: 'vault' }
+	| { kind: 'computed'; nameKind: NameKind }
+
+function findPlaceholders(text: string) {
+	const placeholders: Array<Placeholder> = []
+	for (const match of text.matchAll(placeholderOpenerPattern)) {
+		const opener = match[1]!
+		const complete = completePlaceholderPatterns[opener]!
+		complete.pattern.lastIndex = match.index
+		const found = complete.pattern.exec(text)
+		if (found) {
+			placeholders.push(
+				complete.kind
+					? { kind: complete.kind, names: found.slice(1) }
+					: { kind: 'vault' },
+			)
+			continue
+		}
+		prosePlaceholderPattern.lastIndex = match.index
+		if (prosePlaceholderPattern.test(text)) continue
+		placeholders.push({
+			kind: 'computed',
+			nameKind: opener === 'integration-token:' ? 'integration' : 'secret',
+		})
+	}
+	return placeholders
+}
+
+type Scan = {
+	add: (pattern: LegacyCredentialPattern) => void
+	/**
+	 * A credential named by a known string. Not a finding when it names a
+	 * declared kody.credentials slot of the matching kind.
+	 */
+	named: (name: string, kind: NameKind) => void
+	/** Module-level string constants, declared or relatively imported. */
+	constants: ReadonlyMap<string, string>
 }
 /**
  * A literal scope, or `|scope=` followed by a computed value: the end of a
@@ -86,8 +161,6 @@ const scopeSuffixPattern =
 	/\|scope=(?:(?:session|package|user)\b|$|\$\{|['"`]\s*\+)/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
-
-type NameKind = 'secret' | 'integration'
 
 /** Group 1 captures the opening quote when the first argument is a literal. */
 const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
@@ -160,7 +233,170 @@ type AstNode = ModuleAstNode & {
 	specifiers?: Array<AstNode>
 	local?: AstNode
 	imported?: AstNode
+	exported?: AstNode
+	expression?: AstNode
+	left?: AstNode
+	right?: AstNode
+	operator?: unknown
+	declaration?: AstNode
+	declarations?: Array<AstNode>
 	program?: { body?: Array<AstNode> }
+}
+
+const transparentExpressionTypes = new Set([
+	'ParenthesizedExpression',
+	'TSAsExpression',
+	'TSSatisfiesExpression',
+	'TSNonNullExpression',
+	'TSTypeAssertion',
+])
+
+function unwrapExpression(node: AstNode | undefined) {
+	let current = node
+	while (current && transparentExpressionTypes.has(current.type)) {
+		current = current.expression
+	}
+	return current
+}
+
+function templateElementText(node: AstNode) {
+	const value = node.value as { cooked?: string | null; raw?: string }
+	return value.cooked ?? value.raw ?? ''
+}
+
+/** The string an expression always evaluates to, or null when computed. */
+function resolveStringExpression(
+	node: AstNode | undefined,
+	constants: ReadonlyMap<string, string>,
+): string | null {
+	const inner = unwrapExpression(node)
+	switch (inner?.type) {
+		case 'StringLiteral':
+			return typeof inner.value === 'string' ? inner.value : null
+		case 'Identifier':
+			return constants.get(getNodeName(inner) ?? '') ?? null
+		case 'TemplateLiteral': {
+			const quasis = inner.quasis ?? []
+			const expressions = inner.expressions ?? []
+			let text = ''
+			for (const [index, quasi] of quasis.entries()) {
+				text += templateElementText(quasi)
+				if (index >= expressions.length) continue
+				const value = resolveStringExpression(expressions[index], constants)
+				if (value == null) return null
+				text += value
+			}
+			return text
+		}
+		case 'BinaryExpression': {
+			if (inner.operator !== '+') return null
+			const left = resolveStringExpression(inner.left, constants)
+			if (left == null) return null
+			const right = resolveStringExpression(inner.right, constants)
+			return right == null ? null : left + right
+		}
+		default:
+			return null
+	}
+}
+
+/** `src/a.ts` + `../lib/names.js` → `lib/names.ts` when that file exists. */
+function resolveRelativeModulePath(
+	importer: string,
+	specifier: string,
+	modulePaths: ReadonlySet<string>,
+) {
+	if (!specifier.startsWith('./') && !specifier.startsWith('../')) return null
+	const segments = importer.split('/').slice(0, -1)
+	for (const part of specifier.split('/')) {
+		if (part === '' || part === '.') continue
+		if (part !== '..') segments.push(part)
+		else if (segments.pop() === undefined) return null
+	}
+	const base = segments.join('/')
+	const candidates = [
+		base,
+		base.replace(/\.([cm]?)js(x?)$/, '.$1ts$2'),
+		...['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.js'].map(
+			(suffix) => `${base}${suffix}`,
+		),
+	]
+	return candidates.find((candidate) => modulePaths.has(candidate)) ?? null
+}
+
+/**
+ * Top-level `const NAME = <string>` bindings of each module, plus names
+ * imported from relative modules that export one. Inner scopes that shadow
+ * a constant are not tracked.
+ */
+function createModuleConstantsReader(
+	parsedModules: ReadonlyMap<string, AstNode | null>,
+) {
+	const modulePaths = new Set(parsedModules.keys())
+	const cache = new Map<
+		string,
+		{ constants: Map<string, string>; exported: Map<string, string> }
+	>()
+	const read = (path: string) => {
+		const cached = cache.get(path)
+		if (cached) return cached
+		const result = {
+			constants: new Map<string, string>(),
+			exported: new Map<string, string>(),
+		}
+		// Set before reading imports so an import cycle ends at an empty map.
+		cache.set(path, result)
+		const body = parsedModules.get(path)?.program?.body ?? []
+		for (const node of body) {
+			if (node.type !== 'ImportDeclaration') continue
+			const source = getNodeName(node.source)
+			const target = source
+				? resolveRelativeModulePath(path, source, modulePaths)
+				: null
+			if (!target) continue
+			const { exported } = read(target)
+			for (const specifier of node.specifiers ?? []) {
+				if (specifier.type !== 'ImportSpecifier') continue
+				const value = exported.get(getNodeName(specifier.imported) ?? '')
+				const local = getNodeName(specifier.local)
+				if (value != null && local) result.constants.set(local, value)
+			}
+		}
+		const exportedNames = new Map<string, string>()
+		for (const node of body) {
+			const declaration =
+				node.type === 'ExportNamedDeclaration' ? node.declaration : node
+			if (
+				declaration?.type === 'VariableDeclaration' &&
+				declaration.kind === 'const'
+			) {
+				for (const declarator of declaration.declarations ?? []) {
+					if (declarator.id?.type !== 'Identifier') continue
+					const name = getNodeName(declarator.id)
+					const value = resolveStringExpression(
+						declarator.init,
+						result.constants,
+					)
+					if (!name || value == null) continue
+					result.constants.set(name, value)
+					if (declaration !== node) exportedNames.set(name, name)
+				}
+			}
+			if (node.type === 'ExportNamedDeclaration' && !node.source) {
+				for (const specifier of node.specifiers ?? []) {
+					const local = getNodeName(specifier.local)
+					const exported = getNodeName(specifier.exported)
+					if (local && exported) exportedNames.set(exported, local)
+				}
+			}
+		}
+		for (const [exported, local] of exportedNames) {
+			const value = result.constants.get(local)
+			if (value != null) result.exported.set(exported, value)
+		}
+		return result
+	}
+	return (path: string) => read(path).constants
 }
 
 function getNodeName(node: AstNode | null | undefined) {
@@ -206,12 +442,7 @@ function walkAst(
 function literalText(node: AstNode) {
 	if (node.type === 'StringLiteral') return getNodeName(node)
 	if (node.type !== 'TemplateLiteral') return null
-	return (node.quasis ?? [])
-		.map((quasi) => {
-			const value = quasi.value as { cooked?: string | null; raw?: string }
-			return value.cooked ?? value.raw ?? ''
-		})
-		.join('${}')
+	return (node.quasis ?? []).map(templateElementText).join('${}')
 }
 
 function isWithinHeaders(node: AstNode, ancestors: ReadonlyArray<AstNode>) {
@@ -313,43 +544,38 @@ function isRequestUrlArgument(node: AstNode, parent: AstNode | undefined) {
 	)
 }
 
-function classifyStringPiece(
-	text: string,
-	add: (pattern: LegacyCredentialPattern) => void,
-) {
-	if (scopeSuffixPattern.test(text)) add('|scope=')
-	for (const match of text.matchAll(placeholderOpenerPattern)) {
-		const opener = match[1]!
-		const complete = completePlaceholderPatterns[opener]!
-		complete.lastIndex = match.index
-		if (complete.test(text)) {
-			add('literal secret')
-		} else if (opener === 'integration-token:') {
-			add('computed integration')
-		} else {
-			add('computed secret')
+function classifyStringPiece(text: string, scan: Scan) {
+	if (scopeSuffixPattern.test(text)) scan.add('|scope=')
+	for (const placeholder of findPlaceholders(text)) {
+		switch (placeholder.kind) {
+			case 'secret':
+			case 'integration':
+				for (const name of placeholder.names) {
+					scan.named(name, placeholder.kind)
+				}
+				break
+			case 'vault':
+				scan.add('literal secret')
+				break
+			case 'computed':
+				scan.add(computedPattern(placeholder.nameKind))
+				break
+			default: {
+				const exhaustive: never = placeholder
+				throw new Error(`Unhandled placeholder: ${String(exhaustive)}`)
+			}
 		}
 	}
-}
-
-function isLiteralString(node: AstNode | undefined) {
-	if (!node) return false
-	if (node.type === 'StringLiteral') return true
-	return (
-		node.type === 'TemplateLiteral' && (node.expressions ?? []).length === 0
-	)
 }
 
 function classifyNameExpression(
 	node: AstNode | undefined,
 	kind: NameKind,
-	add: (pattern: LegacyCredentialPattern) => void,
+	scan: Scan,
 ) {
-	if (isLiteralString(node)) {
-		add('literal secret')
-		return
-	}
-	add(computedPattern(kind))
+	const name = resolveStringExpression(node, scan.constants)
+	if (name == null) scan.add(computedPattern(kind))
+	else scan.named(name, kind)
 }
 
 function computedPattern(kind: NameKind): LegacyCredentialPattern {
@@ -383,25 +609,25 @@ function getCalleeObjectName(callee: AstNode | undefined) {
 function classifyNamedFields(
 	argument: AstNode | undefined,
 	spec: (typeof nameFieldCallees)[string],
-	add: (pattern: LegacyCredentialPattern) => void,
+	scan: Scan,
 ) {
 	if (argument?.type !== 'ObjectExpression') {
-		if (argument) add(computedPattern(spec.kind))
+		if (argument) scan.add(computedPattern(spec.kind))
 		return
 	}
 	for (const property of argument.properties ?? []) {
 		if (property.type !== 'ObjectProperty' || property.computed === true) {
-			add(computedPattern(spec.kind))
+			scan.add(computedPattern(spec.kind))
 			continue
 		}
 		const key = getNodeName(property.key)
 		if (key == null) continue
 		if (spec.scopeFields.includes(key)) {
-			add('|scope=')
+			scan.add('|scope=')
 			continue
 		}
 		if (spec.fields.includes(key)) {
-			classifyNameExpression(property.value as AstNode, spec.kind, add)
+			classifyNameExpression(property.value as AstNode, spec.kind, scan)
 		}
 	}
 }
@@ -444,44 +670,62 @@ function isKodyMcpDestructure(node: AstNode, aliases: Set<string>) {
 	)
 }
 
-function detectInParsedModule(
-	parsed: AstNode,
-	add: (pattern: LegacyCredentialPattern) => void,
-) {
+/** A template or `+` chain with a non-literal part, so it may be computed. */
+function isCompositeString(node: AstNode) {
+	if (node.type === 'TemplateLiteral') {
+		return (node.expressions ?? []).length > 0
+	}
+	return node.type === 'BinaryExpression' && node.operator === '+'
+}
+
+function detectInParsedModule(parsed: AstNode, scan: Scan) {
+	const { add } = scan
 	const body = parsed.program?.body ?? []
 	const aliases = collectKodyAliases(body)
 	let usesPlaceholder = false
 	let fetchesPlainHttp = false
+	/** Pieces of a composite string already classified as one resolved string. */
+	const resolvedPieces = new WeakSet<AstNode>()
 	const classifyLiteral = (
 		node: AstNode,
+		text: string,
 		ancestors: ReadonlyArray<AstNode>,
 	) => {
-		const text = literalText(node)
-		if (text == null) return
 		if (isPlainHttpUrl(text) && isRequestUrlArgument(node, ancestors.at(-1))) {
 			fetchesPlainHttp = true
 		}
-		if (!new RegExp(placeholderOpenerPattern.source).test(text)) return
+		if (findPlaceholders(text).length === 0) return
 		usesPlaceholder = true
 		if (literalIsOutsideHeader(node, text, ancestors)) {
 			add('secret outside header')
 		}
 	}
 	walkAst(parsed, (node, ancestors) => {
+		if (resolvedPieces.has(node)) return
+		if (isCompositeString(node)) {
+			const resolved = resolveStringExpression(node, scan.constants)
+			if (resolved != null) {
+				walkAst(node, (piece) => resolvedPieces.add(piece))
+				classifyStringPiece(resolved, scan)
+				classifyLiteral(node, resolved, ancestors)
+				return
+			}
+		}
 		switch (node.type) {
 			case 'StringLiteral': {
 				const value = getNodeName(node)
-				if (value) classifyStringPiece(value, add)
-				classifyLiteral(node, ancestors)
+				if (value == null) return
+				classifyStringPiece(value, scan)
+				classifyLiteral(node, value, ancestors)
 				return
 			}
 			case 'TemplateLiteral': {
-				classifyLiteral(node, ancestors)
+				const text = literalText(node)
+				if (text != null) classifyLiteral(node, text, ancestors)
 				return
 			}
 			case 'TemplateElement': {
-				const value = node.value as { cooked?: string | null; raw?: string }
-				classifyStringPiece(value.cooked ?? value.raw ?? '', add)
+				classifyStringPiece(templateElementText(node), scan)
 				return
 			}
 			case 'VariableDeclarator': {
@@ -501,7 +745,7 @@ function detectInParsedModule(
 				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
 					if (firstArgument)
-						classifyNameExpression(firstArgument, nameKind, add)
+						classifyNameExpression(firstArgument, nameKind, scan)
 					return
 				}
 				const objectName = getCalleeObjectName(node.callee)
@@ -511,13 +755,13 @@ function detectInParsedModule(
 				) {
 					if (calleeName === 'get') add('packageSecrets.get')
 					if (firstArgument)
-						classifyNameExpression(firstArgument, 'secret', add)
+						classifyNameExpression(firstArgument, 'secret', scan)
 					return
 				}
 				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
 				const fieldSpec = ownEntry(nameFieldCallees, calleeName)
-				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, add)
+				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, scan)
 				return
 			}
 			default:
@@ -528,16 +772,24 @@ function detectInParsedModule(
 }
 
 /** Unparseable modules fall back to text: weaker, but never silent. */
-function detectInUnparsedModule(
-	source: string,
-	add: (pattern: LegacyCredentialPattern) => void,
-) {
-	classifyStringPiece(source, add)
+function detectInUnparsedModule(source: string, scan: Scan) {
+	const { add } = scan
+	/** The quoted name opened at `match`, or a computed finding. */
+	const classifyQuoted = (match: RegExpMatchArray, kind: NameKind) => {
+		const quote = match[1]
+		if (!quote) {
+			add(computedPattern(kind))
+			return
+		}
+		const start = match.index! + match[0].length
+		const end = source.indexOf(quote, start)
+		if (end === -1) add('literal secret')
+		else scan.named(source.slice(start, end), kind)
+	}
+	classifyStringPiece(source, scan)
 	if (textKodyMcpPattern.test(source)) add('kody.mcp')
 	for (const { pattern, kind } of textNameArgumentCalls) {
-		for (const match of source.matchAll(pattern)) {
-			add(match[1] ? 'literal secret' : computedPattern(kind))
-		}
+		for (const match of source.matchAll(pattern)) classifyQuoted(match, kind)
 	}
 	if (
 		/\bpackageSecrets\s*(?:\?\.|\.)\s*get\s*\(|\bpackageSecretGet\s*\(/.test(
@@ -558,7 +810,7 @@ function detectInUnparsedModule(
 				new RegExp(`\\b${field}\\s*:\\s*(['"\`])?`, 'g'),
 			)) {
 				namedField = true
-				add(match[1] ? 'literal secret' : computedPattern(spec.kind))
+				classifyQuoted(match, spec.kind)
 			}
 		}
 		if (!namedField) add(computedPattern(spec.kind))
@@ -611,25 +863,75 @@ function detectInManifest(
 	}
 }
 
+/** Declared kody.credentials slot names and their kinds. */
+function readDeclaredSlotKinds(manifestSource: string | undefined) {
+	const kinds = new Map<string, unknown>()
+	if (manifestSource == null) return kinds
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(manifestSource)
+	} catch {
+		return kinds
+	}
+	if (!isPlainObject(parsed) || !isPlainObject(parsed.kody)) return kinds
+	const credentials = parsed.kody.credentials
+	if (!isPlainObject(credentials)) return kinds
+	for (const [name, slot] of Object.entries(credentials)) {
+		if (isPlainObject(slot)) kinds.set(name, slot.kind)
+	}
+	return kinds
+}
+
+function parseModule(source: string) {
+	try {
+		return parseModuleSource(source) as unknown as AstNode
+	} catch {
+		return null
+	}
+}
+
 function detectLegacyCredentialPatterns(
 	files: Record<string, string>,
 ): Array<PackageCodemodFinding> {
 	const findings: Array<PackageCodemodFinding> = []
+	const manifestSource = Object.hasOwn(files, packageManifestPath)
+		? files[packageManifestPath]
+		: undefined
+	const slotKinds = readDeclaredSlotKinds(manifestSource)
+	const parsedModules = new Map<string, AstNode | null>()
+	for (const [path, source] of Object.entries(files)) {
+		if (typeof source !== 'string') continue
+		if (!scannableModuleFilePattern.test(path) || testFilePattern.test(path)) {
+			continue
+		}
+		parsedModules.set(path, parseModule(source))
+	}
+	const moduleConstants = createModuleConstantsReader(parsedModules)
 	for (const [path, source] of Object.entries(files)) {
 		if (typeof source !== 'string') continue
 		const patterns = new Set<LegacyCredentialPattern>()
 		const add = (pattern: LegacyCredentialPattern) => patterns.add(pattern)
+		const scan: Scan = {
+			add,
+			named: (name, kind) => {
+				if (slotKinds.get(name) !== slotKindByNameKind[kind]) {
+					add('literal secret')
+				}
+			},
+			constants: new Map(),
+		}
 		if (path === packageManifestPath) {
 			detectInManifest(source, add)
-		} else if (scannableModuleFilePattern.test(path)) {
-			let parsed: AstNode | null = null
-			try {
-				parsed = parseModuleSource(source) as unknown as AstNode
-			} catch {
-				parsed = null
+		} else if (parsedModules.has(path)) {
+			const parsed = parsedModules.get(path)
+			if (parsed) {
+				detectInParsedModule(parsed, {
+					...scan,
+					constants: moduleConstants(path),
+				})
+			} else {
+				detectInUnparsedModule(source, scan)
 			}
-			if (parsed) detectInParsedModule(parsed, add)
-			else detectInUnparsedModule(source, add)
 		}
 		for (const pattern of legacyCredentialPatterns) {
 			if (patterns.has(pattern)) {

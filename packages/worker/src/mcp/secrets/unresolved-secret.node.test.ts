@@ -9,6 +9,15 @@ import {
 const mockModule = vi.hoisted(() => ({
 	listSecretLocationsByNameForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
+	getOrgById: vi.fn(
+		async (..._args: Array<unknown>): Promise<{ slug: string } | null> => ({
+			slug: 'acme',
+		}),
+	),
+}))
+
+vi.mock('#worker/orgs/repo.ts', () => ({
+	getOrgById: (...args: Array<unknown>) => mockModule.getOrgById(...args),
 }))
 
 vi.mock('./repo.ts', async (importOriginal) => {
@@ -105,8 +114,23 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		packageId: null,
 	})
 	expect(pinnedPackageMiss).toContain(
-		'https://example.com/account/secrets/user/discordBotToken',
+		'https://example.com/@acme/-/secrets/user/discordBotToken',
 	)
+	expect(pinnedPackageMiss).not.toContain('/account/secrets')
+	expect(mockModule.getOrgById).toHaveBeenCalledWith(env.APP_DB, userId)
+
+	mockModule.getOrgById.mockResolvedValueOnce(null)
+	const noOrgMiss = await unresolved({
+		scope: 'package',
+		storageContext: noPackage,
+	})
+	expect(parseSecretScopeUnavailableMessage(noOrgMiss)).toEqual({
+		secretName,
+		scope: 'user',
+		packageName: null,
+		packageId: null,
+	})
+	expect(noOrgMiss).not.toContain('/secrets/')
 
 	const dottedSecretName = 'grokBotWake.71e7550e-746d-417f-b253-05165975ff69'
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([
@@ -124,10 +148,10 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		baseUrl: 'https://kody.codes',
 	})
 	expect(dottedMiss).toContain(
-		'https://kody.codes/account/secrets/user/grokBotWake%2E71e7550e-746d-417f-b253-05165975ff69',
+		'https://kody.codes/@acme/-/secrets/user/grokBotWake%2E71e7550e-746d-417f-b253-05165975ff69',
 	)
 	expect(dottedMiss).not.toContain(
-		'https://kody.codes/account/secrets/user/grokBotWake.71e7550e-746d-417f-b253-05165975ff69',
+		'https://kody.codes/@acme/-/secrets/user/grokBotWake.71e7550e-746d-417f-b253-05165975ff69',
 	)
 
 	mockModule.listSecretLocationsByNameForUser.mockRejectedValue(

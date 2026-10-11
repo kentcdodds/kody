@@ -89,6 +89,27 @@ export function buildSecretUsageUrl(input: {
 	})
 }
 
+/** The org secrets page for one stored secret, in any scope. */
+export function buildSecretEditorUrl(input: {
+	baseUrl: string
+	orgSlug: string
+	name: string
+	scope: SecretScope
+	packageId: string | null
+	sessionId: string | null
+}) {
+	return toOrgSecretPageUrl({
+		baseUrl: input.baseUrl,
+		accountPath: buildAccountSecretPath({
+			name: input.name,
+			scope: input.scope,
+			packageId: input.packageId,
+			sessionId: input.sessionId,
+		}),
+		orgSlug: input.orgSlug,
+	})
+}
+
 export function normalizeBulkPackageSecretApprovalNames(names: Array<string>) {
 	const normalized: Array<string> = []
 	const seen = new Set<string>()

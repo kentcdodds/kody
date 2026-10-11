@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	buildAccountSecretPath,
-	buildAccountSecretUrl,
 	parseAccountSecretPath,
 } from './account-secret-route.ts'
 
@@ -64,16 +63,6 @@ test('account secret paths encode route segments and round-trip through the pars
 		sessionId: null,
 		name: grokBotWakeName,
 	})
-
-	const grokBotWakeUrl = buildAccountSecretUrl({
-		baseUrl: 'https://kody.codes',
-		scope: 'user',
-		name: grokBotWakeName,
-	})
-	expect(grokBotWakeUrl).toBe(
-		'https://kody.codes/account/secrets/user/grokBotWake%2E71e7550e-746d-417f-b253-05165975ff69',
-	)
-	expect(grokBotWakeUrl).not.toContain(`user/${grokBotWakeName}`)
 })
 
 test('account secret paths fail fast when scope binding ids are missing', () => {

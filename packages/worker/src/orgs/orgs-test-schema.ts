@@ -188,6 +188,34 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS org_invite_links (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				token_hash TEXT NOT NULL UNIQUE,
+				role TEXT NOT NULL,
+				allowed_email_domains_json TEXT,
+				max_uses INTEGER,
+				use_count INTEGER NOT NULL DEFAULT 0,
+				status TEXT NOT NULL,
+				created_by_user_id TEXT NOT NULL,
+				expires_at TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				revoked_at TEXT
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS org_invite_link_redemptions (
+				link_id TEXT NOT NULL,
+				user_id TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (link_id, user_id)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS access_cache (
 				org_id TEXT NOT NULL,
 				user_id TEXT NOT NULL,

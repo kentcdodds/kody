@@ -104,12 +104,15 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/@:orgSlug/-/teams',
 			'/@:orgSlug/-/grants',
 			'/@:orgSlug/-/collaborators',
+			'/join/:token',
 		],
 		apis: [
 			'/account/profile.json',
 			'/account/organizations.json',
 			'/@:orgSlug/-/settings.json',
 			'/@:orgSlug/-/members.json',
+			'/@:orgSlug/-/members/invite-links.json',
+			'/@:orgSlug/-/members/invite-links-revoke.json',
 			'/@:orgSlug/-/teams.json',
 			'/@:orgSlug/-/grants.json',
 			'/@:orgSlug/-/collaborators.json',
@@ -353,7 +356,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 ]
 
 /** HTML prefixes that must stay mapped. JSON, assets, and well-known stay out. */
-export const requiredHtmlPrefixes = [
+const requiredHtmlPrefixes = [
 	'/login',
 	'/signup',
 	'/onboarding',
@@ -369,7 +372,7 @@ export const requiredHtmlPrefixes = [
 	'/docs',
 ] as const
 
-export function extractQuotedPaths(source: string) {
+function extractQuotedPaths(source: string) {
 	const paths = new Set<string>()
 	for (const match of source.matchAll(/['"`](\/[^'"`\s]*)['"`]/g)) {
 		const value = match[1]
@@ -378,7 +381,7 @@ export function extractQuotedPaths(source: string) {
 	return [...paths].toSorted()
 }
 
-export function isHtmlUserPath(routePath: string) {
+function isHtmlUserPath(routePath: string) {
 	if (routePath.startsWith('/.')) return false
 	if (routePath.startsWith('/integrations/')) return false
 	if (routePath.startsWith('/webhooks/')) return false
@@ -399,33 +402,30 @@ export function isHtmlUserPath(routePath: string) {
 	return true
 }
 
-export function featureCoversPath(feature: Feature, routePath: string) {
+function featureCoversPath(feature: Feature, routePath: string) {
 	return feature.paths.some((owned) => pathCoveredBy(owned, routePath))
 }
 
 /** Hub paths that must not swallow sibling Feature Map entries. */
-export const exactOnlyOwnedPaths = ['/', '/account'] as const
+const exactOnlyOwnedPaths = ['/', '/account'] as const
 
-export function isExactOnlyOwnedPath(owned: string) {
+function isExactOnlyOwnedPath(owned: string) {
 	return (exactOnlyOwnedPaths as ReadonlyArray<string>).includes(owned)
 }
 
-export function prefixMatches(prefix: string, routePath: string) {
+function prefixMatches(prefix: string, routePath: string) {
 	if (routePath === prefix) return true
 	if (prefix === '/') return routePath === '/'
 	return routePath.startsWith(`${prefix}/`)
 }
 
-export function pathCoveredBy(owned: string, routePath: string) {
+function pathCoveredBy(owned: string, routePath: string) {
 	if (routePath === owned) return true
 	if (isExactOnlyOwnedPath(owned)) return false
 	return routePath.startsWith(`${owned}/`)
 }
 
-export function catalogCoversPath(
-	catalog: ReadonlyArray<Feature>,
-	routePath: string,
-) {
+function catalogCoversPath(catalog: ReadonlyArray<Feature>, routePath: string) {
 	return catalog.some((feature) => featureCoversPath(feature, routePath))
 }
 

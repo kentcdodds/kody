@@ -48,7 +48,11 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: vi.fn(async () => [savedPackage]),
+	listSavedPackagesByUserId: vi.fn(
+		async (_db: unknown, input: { userId: string }) => [
+			{ ...savedPackage, userId: ownerIdFromStored(input.userId) },
+		],
+	),
 	resolveSavedPackageRef: vi.fn(),
 }))
 

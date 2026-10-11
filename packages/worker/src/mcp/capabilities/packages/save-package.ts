@@ -432,6 +432,7 @@ export const savePackageCapability = defineDomainCapability(
 							updated_at: now,
 						},
 						ctx.env,
+						{ actorUserId: owner.actorUserId },
 					)
 				} catch (error) {
 					const message = getErrorMessage(error)
@@ -466,6 +467,7 @@ export const savePackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				userEmail: packageOwnerEntitlementEmail(owner),
 				packageId,
 				sourceId: ensuredSource.id,

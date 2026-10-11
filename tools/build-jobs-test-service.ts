@@ -14,7 +14,7 @@ import { build } from 'esbuild'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const outDir = path.join(repoRoot, '.tmp/jobs-test-service')
 
-export const jobsTestServiceScriptPath = path.join(outDir, 'index.mjs')
+const jobsTestServiceScriptPath = path.join(outDir, 'index.mjs')
 
 export async function buildJobsTestService() {
 	await mkdir(outDir, { recursive: true })

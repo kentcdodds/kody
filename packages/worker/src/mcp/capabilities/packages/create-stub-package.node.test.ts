@@ -160,6 +160,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			is_private: 1,
 		}),
 		expect.anything(),
+		{ actorUserId: personIdFromStored('user-1') },
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
@@ -190,6 +191,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			name: '@acme/team-tool',
 		}),
 		expect.anything(),
+		{ actorUserId: personIdFromStored('actor-1') },
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 		expect.anything(),

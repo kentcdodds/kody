@@ -10,6 +10,7 @@ import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts
 import { clearStorageBucketRegistrationDedupeForTests } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
+import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/workers-seed.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { storageExportCapability } from './storage-export.ts'
 import { storageQueryCapability } from './storage-query.ts'
@@ -38,6 +39,7 @@ function createPackageCallerContext(input: {
 test('storage capabilities keep a package out of another package bucket', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 
 	const userId = `user-${crypto.randomUUID()}`

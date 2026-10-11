@@ -251,6 +251,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				packageId,
 				sourceId: source.id,
 			}).catch(() => undefined)

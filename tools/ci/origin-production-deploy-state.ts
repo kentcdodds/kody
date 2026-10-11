@@ -42,7 +42,7 @@ export type OriginFleetScriptNames = {
 	runtime: string
 }
 
-export const productionFleetScriptNames: OriginFleetScriptNames = {
+const productionFleetScriptNames: OriginFleetScriptNames = {
 	origin: productionOriginScriptName,
 	platform: productionPlatformScriptName,
 	runtime: productionRuntimeScriptName,
@@ -58,7 +58,7 @@ export function previewFleetScriptNames(
 	}
 }
 
-export type OriginProductionDeployMode = 'fresh' | 'steady' | 'ambiguous'
+type OriginProductionDeployMode = 'fresh' | 'steady' | 'ambiguous'
 
 export type DurableObjectNamespaceOwnership = {
 	script: string
@@ -366,7 +366,7 @@ function readNamespaceOwnership(
 	return { script, className }
 }
 
-export async function listCloudflareDurableObjectNamespaces(input: {
+async function listCloudflareDurableObjectNamespaces(input: {
 	accountId: string
 	apiToken: string
 	apiBaseUrl?: string
