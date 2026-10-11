@@ -19,20 +19,18 @@ export type OutboundFetchDeadline = {
 	/** Settles the deadline for a fetch that failed before a response. */
 	fail(): void
 	/**
-	 * Resolves once the body ended, errored, was cancelled, or timed out.
-	 * Without an overall deadline nothing bounds an abandoned body, so it
-	 * resolves at headers instead.
+	 * Resolves once the body ended, errored, was cancelled, or timed out. A
+	 * bodyless or upgrade response resolves at headers.
 	 */
 	done: Promise<void>
 }
 
 /**
  * One deadline for one gateway fetch: `totalMs` from start until the body
- * ends (headers included) plus an `idleMs` gap between body chunks. `null`
- * `totalMs` disables both timers so only `callerSignal` can abort.
+ * ends (headers included) plus an `idleMs` gap between body chunks.
  */
 export function createOutboundFetchDeadline(input: {
-	totalMs: number | null
+	totalMs: number
 	idleMs: number
 	callerSignal: AbortSignal | null
 }): OutboundFetchDeadline {
@@ -57,8 +55,8 @@ export function createOutboundFetchDeadline(input: {
 		resolveDone()
 	}
 
-	// Stays attached after `done`: an untracked body (no overall deadline,
-	// bodyless, or upgrade) still streams on `signal`.
+	// Stays attached after `done`: an untracked upgrade response still uses
+	// `signal`.
 	if (input.callerSignal?.aborted) {
 		forwardCallerAbort()
 	} else {
@@ -67,15 +65,13 @@ export function createOutboundFetchDeadline(input: {
 		})
 	}
 	const { totalMs } = input
-	if (totalMs !== null) {
-		totalTimer = setTimeout(
-			() =>
-				abortWithTimeout(
-					`Outbound fetch exceeded its ${formatSeconds(totalMs)} overall deadline.`,
-				),
-			Math.max(1, totalMs),
-		)
-	}
+	totalTimer = setTimeout(
+		() =>
+			abortWithTimeout(
+				`Outbound fetch exceeded its ${formatSeconds(totalMs)} overall deadline.`,
+			),
+		Math.max(1, totalMs),
+	)
 
 	return {
 		signal,
@@ -83,7 +79,7 @@ export function createOutboundFetchDeadline(input: {
 		fail: finish,
 		track(response) {
 			const upstream = response.body
-			if (!upstream || response.webSocket || totalMs === null || settled) {
+			if (!upstream || response.webSocket || settled) {
 				finish()
 				return response
 			}

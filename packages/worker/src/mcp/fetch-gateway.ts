@@ -106,15 +106,6 @@ type FetchGatewayProps = {
 	 */
 	claimedPackageId?: string | null
 	/**
-	 * Per-sandbox overall outbound fetch deadline, from request start until
-	 * the response body ends. Execute keeps the 60s default (30s under the
-	 * 90s sandbox). Long-lived surfaces such as workflows raise this so a
-	 * single slow upstream can finish under their larger budget. A stalled
-	 * body also stops after {@link outboundFetchIdleTimeoutMs} without
-	 * bytes. `null` disables both deadlines (caller signal only).
-	 */
-	outboundFetchTimeoutMs?: number | null
-	/**
 	 * When false, every sandbox `fetch` is rejected. Retriever runs use
 	 * this to stay closed-world. Defaults to true.
 	 */
@@ -146,49 +137,14 @@ export type FetchGatewayEnv = Pick<
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
 /**
- * Default overall deadline for sandbox outbound `fetch` (headers and body)
- * when the caller did not pass a tighter `AbortSignal`. Kept 30s under the default execute sandbox budget
- * (90s) so a hung upstream cannot strand the whole evaluation past the host
- * deadline.
+ * Overall deadline for one gateway fetch, from request start until the
+ * response body ends (time to headers included), on every surface. The run
+ * budget of the calling sandbox still applies on top, so a 90s execute stops
+ * its fetches at 90s. A body that goes quiet stops sooner, after
+ * {@link outboundFetchIdleTimeoutMs} without bytes. A tighter caller
+ * `AbortSignal` also wins.
  */
-export const defaultOutboundFetchTimeoutMs = 60_000
-
-/**
- * Headroom between the executor sandbox budget and the outbound fetch
- * deadline. Matches the default execute pair (90s sandbox / 60s fetch).
- */
-export const outboundFetchTimeoutHeadroomMs = 30_000
-
-/**
- * Hung-fetch cap when the sandbox itself is unbounded. Matches the
- * workflow sandbox (270s) minus {@link outboundFetchTimeoutHeadroomMs}.
- */
-export const unboundedOutboundFetchTimeoutMs = 240_000
-
-const unboundedExecutorTimeoutMs = 2_147_483_647
-
-/**
- * Outbound fetch deadline for a sandbox whose executor budget is
- * `executorTimeoutMs`. Short execute budgets keep the historic 60s cap;
- * workflow budgets raise it by the same 30s headroom so one slow
- * HTTP call (for example Cursor `createAgent`) can finish.
- */
-export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
-	if (
-		!Number.isFinite(executorTimeoutMs) ||
-		executorTimeoutMs >= unboundedExecutorTimeoutMs
-	) {
-		return unboundedOutboundFetchTimeoutMs
-	}
-	if (executorTimeoutMs <= 0) {
-		return defaultOutboundFetchTimeoutMs
-	}
-	const derived = executorTimeoutMs - outboundFetchTimeoutHeadroomMs
-	if (derived <= 0) {
-		return Math.min(executorTimeoutMs, defaultOutboundFetchTimeoutMs)
-	}
-	return Math.max(defaultOutboundFetchTimeoutMs, derived)
-}
+export const outboundFetchTimeoutMs = 5 * 60_000
 
 export const retrieverOutboundFetchDeniedMessage =
 	'Outbound fetch is not available in retriever runs.'
@@ -200,20 +156,8 @@ export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 			props: this.ctx.props,
 			request,
 			waitUntil: (promise) => this.ctx.waitUntil(promise),
-			timeoutMs: this.ctx.props.outboundFetchTimeoutMs,
 		})
 	}
-}
-
-function resolveOutboundFetchTimeoutMs(input: {
-	timeoutMs?: number | null
-	propsTimeoutMs?: number | null
-}): number | null {
-	if (input.timeoutMs === null) return null
-	if (input.timeoutMs !== undefined) return input.timeoutMs
-	if (input.propsTimeoutMs === null) return null
-	if (input.propsTimeoutMs !== undefined) return input.propsTimeoutMs
-	return defaultOutboundFetchTimeoutMs
 }
 
 export async function executeGatewayFetch(input: {
@@ -222,11 +166,8 @@ export async function executeGatewayFetch(input: {
 	request: Request
 	globalFetch?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
-	/**
-	 * Override the default overall outbound deadline. `null` disables the
-	 * gateway deadlines (caller signal only). Tests use short values.
-	 */
-	timeoutMs?: number | null
+	/** Override {@link outboundFetchTimeoutMs}. Tests use short values. */
+	timeoutMs?: number
 	/** Override {@link outboundFetchIdleTimeoutMs}. Tests use short values. */
 	idleTimeoutMs?: number
 }): Promise<Response> {
@@ -235,10 +176,6 @@ export async function executeGatewayFetch(input: {
 	let response: Response | undefined
 	let deadline: OutboundFetchDeadline | undefined
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
-	const timeoutMs = resolveOutboundFetchTimeoutMs({
-		timeoutMs: input.timeoutMs,
-		propsTimeoutMs: input.props.outboundFetchTimeoutMs,
-	})
 
 	try {
 		if (input.props.allowOutboundFetch === false) {
@@ -283,7 +220,7 @@ export async function executeGatewayFetch(input: {
 			transformed.url,
 		)
 		deadline = createOutboundFetchDeadline({
-			totalMs: timeoutMs,
+			totalMs: input.timeoutMs ?? outboundFetchTimeoutMs,
 			idleMs: input.idleTimeoutMs ?? outboundFetchIdleTimeoutMs,
 			callerSignal: transformed.signal,
 		})
