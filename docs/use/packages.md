@@ -123,8 +123,16 @@ hard-code a previous `@{username}` scope need updates from their owners.
 
 ### Credential slots (`kody.credentials`)
 
-`kody.credentials` names each credential the package needs. Package code uses
-the slot name; the org decides which credential fills it.
+`kody.credentials` names each credential the package needs. Publish validates
+the block, and the fetch gateway uses it to decide where each credential may be
+sent. A slot does not pick the credential: `{{secret:NAME}}` reads the secret
+stored as `NAME` and `{{integration-token:NAME}}` the integration named `NAME`,
+with the same package access rules as a package without slots. Name each slot
+after the secret or integration the code already references, and keep those
+references as they are. There is no way yet for an org to choose which
+credential fills a slot; see
+[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
+for the switch to assignments.
 
 ```json
 {
