@@ -37,15 +37,17 @@ export async function authorizeSecretSet(
 		storageContext: StorageContext | null
 	},
 ) {
+	const name = input.name.trim()
 	const existing = await findSecret({
 		env: ctx.env,
 		userId: ownerIdFromCaller(ctx.callerContext),
-		name: input.name,
+		name,
 		scope: input.scope,
 		storageContext: input.storageContext,
+		includeExpired: true,
 	})
 	if (existing.found) {
-		await authorizeSecret(ctx, 'secret:write', input.name)
+		await authorizeSecret(ctx, 'secret:write', name)
 		return
 	}
 	await authorize(

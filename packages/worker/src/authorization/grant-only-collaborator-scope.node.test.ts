@@ -146,7 +146,7 @@ async function seedGrant(input: {
 
 /**
  * An org Owner and a grant-only collaborator (no membership) holding Use on
- * one memory, one job, one integration, and one secret.
+ * one memory, one job, and one integration, and Use/Write/Delete on one secret.
  */
 async function setup() {
 	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
@@ -185,7 +185,7 @@ async function setup() {
 		subjectId: collaboratorId,
 		resourceType: 'secret',
 		resourceId: grantedSecret,
-		permissions: ['secret:use'],
+		permissions: ['secret:use', 'secret:write', 'secret:delete'],
 	})
 	const env = { APP_DB: db } as unknown as Env
 	function contextFor(input: { userId: string; role: 'owner' | null }) {
@@ -450,11 +450,18 @@ test('secret list, delete, and set honor per-secret grants', async () => {
 
 	await expect(
 		secretDeleteCapability.handler(
-			{ name: grantedSecret, scope: 'user' },
+			{ name: otherSecret, scope: 'user' },
 			collaborator,
 		),
 	).rejects.toBeInstanceOf(AuthorizationError)
 	expect(mocks.deleteSecret).not.toHaveBeenCalled()
+	mocks.deleteSecret.mockResolvedValue(true)
+	await expect(
+		secretDeleteCapability.handler(
+			{ name: grantedSecret, scope: 'user' },
+			collaborator,
+		),
+	).resolves.toEqual({ deleted: true })
 
 	mocks.findSecret.mockResolvedValue({
 		found: true,
@@ -468,6 +475,15 @@ test('secret list, delete, and set honor per-secret grants', async () => {
 			collaborator,
 		),
 	).rejects.toBeInstanceOf(AuthorizationError)
+	await expect(
+		secretSetCapability.handler(
+			{ name: `  ${otherSecret}  `, value: 'overwrite', scope: 'user' },
+			collaborator,
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	expect(mocks.findSecret).toHaveBeenLastCalledWith(
+		expect.objectContaining({ name: otherSecret, includeExpired: true }),
+	)
 	mocks.findSecret.mockResolvedValue({
 		found: false,
 		scope: null,
