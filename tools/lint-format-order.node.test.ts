@@ -63,7 +63,9 @@ async function runPipelineOnFixture(
 		for (const argv of commands) {
 			const [command, ...args] = targetCommand(argv, file)
 			const result = run(command!, args)
-			expect(result.status, `${argv.join(' ')}\n${result.stderr}`).toBe(0)
+			expect({ argv, status: result.status, stderr: result.stderr }).toEqual(
+				expect.objectContaining({ status: 0 }),
+			)
 		}
 		const check = run('oxfmt', ['--check', file])
 		return {
