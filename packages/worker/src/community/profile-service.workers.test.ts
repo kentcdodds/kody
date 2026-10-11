@@ -161,7 +161,6 @@ async function insertTestJob(userId: string, packageId: string) {
 			timezone: 'UTC',
 			enabled: true,
 			killSwitchEnabled: false,
-			preserved: false,
 			expiresAt: null,
 			createdAt: fixedNow,
 			updatedAt: fixedNow,

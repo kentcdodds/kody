@@ -112,7 +112,6 @@ test('expires_at helpers treat UTC expiry as a schedule gate separate from enabl
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: '2026-04-20T18:30:00.000Z',
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',

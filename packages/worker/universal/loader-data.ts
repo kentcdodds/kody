@@ -2192,8 +2192,6 @@ export type AccountValuesLoaderData = {
 	selectedValueId: string | null
 }
 
-type AccountJobOwnership = 'ad-hoc' | 'package'
-
 /**
  * JSON-safe blob for job params (and similar free-form payloads). Remix
  * entry props require SerializableValue; `unknown` is not allowed.
@@ -2214,8 +2212,7 @@ type AccountJobSchedule =
 export type AccountJobListItem = {
 	id: string
 	name: string
-	ownership: AccountJobOwnership
-	packageId: string | null
+	packageId: string
 	packageName: string | null
 	packageKodyId: string | null
 	scheduleSummary: string
@@ -2223,7 +2220,6 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
-	preserved: boolean
 	expiresAt: string | null
 	expired: boolean
 	dueNow: boolean
@@ -2275,16 +2271,6 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
-	retention: {
-		successOnceDays: number
-		failedOrNeverRanOnceDays: number
-		disabledRecurringDays: number
-		defaults: {
-			successOnce: number
-			failedOrNeverRanOnce: number
-			disabledRecurring: number
-		}
-	}
 }
 
 type AccountWorkflowSourceType = 'package' | 'inline'

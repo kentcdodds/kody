@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 	cleanupRepoSessionBranches: vi.fn(async () => ({})),
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
-	pruneJobRetention: vi.fn(async () => ({})),
 	checkAuthDenialBurstAndNotify: vi.fn(async () => ({
 		status: 'below_threshold',
 		count: 0,
@@ -76,10 +75,6 @@ vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
 
 vi.mock('#app/retention.ts', () => ({
 	pruneRetention: mocks.pruneRetention,
-}))
-
-vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
-	pruneJobRetention: mocks.pruneJobRetention,
 }))
 
 vi.mock('#app/auth-denial-alerts.ts', () => ({
@@ -161,7 +156,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'retention',
-		'job_retention',
 		'usage_aggregation',
 		'auth_denial_alert',
 	] as const) {
@@ -175,7 +169,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		mocks.checkAuthDenialBurstAndNotify,
 		mocks.backfillStorageBucketEstimates,
 		mocks.pruneRetention,
-		mocks.pruneJobRetention,
 	]) {
 		expect(laneMock).toHaveBeenCalledWith(
 			expect.objectContaining({ now: scheduledAt }),

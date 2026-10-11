@@ -20,7 +20,6 @@ import {
 	listAllJobStorageOwnerRows,
 	listDueJobRows,
 	listJobIdRowsForUser,
-	listJobRetentionCandidateRows,
 	listJobRowsByUserId,
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
@@ -108,10 +107,6 @@ export type JobsStore = {
 		userId: string
 		nowIso: string
 	}): Promise<number>
-	listJobRetentionCandidates(input: {
-		afterId: string | null
-		limit: number
-	}): Promise<Array<JobRow>>
 	upsertArchivedJobArtifact(input: {
 		jobId: string
 		userId: string
@@ -205,8 +200,6 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		deleteJob: (input) => deleteJobRow(db, input.userId, input.jobId),
 		disableExpiredJobsForUser: (input) =>
 			disableExpiredJobRowsForUser({ db, ...input }),
-		listJobRetentionCandidates: (input) =>
-			listJobRetentionCandidateRows(db, input),
 		upsertArchivedJobArtifact: (input) =>
 			upsertArchivedJobArtifact({ db, ...input }),
 		listArchivedJobArtifactsDueBefore: (input) =>

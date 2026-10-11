@@ -21,7 +21,6 @@ type JobRowRecord = {
 	timezone: string
 	enabled: number
 	kill_switch_enabled: number
-	preserved: number
 	expires_at: string | null
 	caller_context_json: string
 	created_at: string
@@ -60,7 +59,6 @@ function serializeJob(job: JobRecord) {
 		timezone: job.timezone,
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
-		preserved: job.preserved ? 1 : 0,
 		expires_at: job.expiresAt ?? null,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
@@ -106,7 +104,6 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		timezone: String(row['timezone']),
 		enabled: Number(row['enabled']) === 1,
 		killSwitchEnabled: Number(row['kill_switch_enabled']) === 1,
-		preserved: Number(row['preserved'] ?? 0) === 1,
 		expiresAt: row['expires_at'] == null ? null : String(row['expires_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -145,7 +142,6 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		timezone: record.timezone,
 		enabled: record.enabled ? 1 : 0,
 		kill_switch_enabled: record.killSwitchEnabled ? 1 : 0,
-		preserved: record.preserved ? 1 : 0,
 		expires_at: record.expiresAt,
 		caller_context_json: String(row['caller_context_json']),
 		created_at: record.createdAt,
@@ -197,9 +193,9 @@ export async function insertJobRow(input: {
 		.prepare(
 			`INSERT INTO jobs (
 				id, user_id, name, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
-				kill_switch_enabled, preserved, expires_at, caller_context_json, created_at, updated_at,
+				kill_switch_enabled, expires_at, caller_context_json, created_at, updated_at,
 				last_run_at, last_run_status, next_run_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
@@ -214,7 +210,6 @@ export async function insertJobRow(input: {
 			serialized.timezone,
 			serialized.enabled,
 			serialized.kill_switch_enabled,
-			serialized.preserved,
 			serialized.expires_at,
 			input.callerContextJson,
 			serialized.created_at,
@@ -237,7 +232,7 @@ export async function updateJobRow(input: {
 		.prepare(
 			`UPDATE jobs SET
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
+				enabled = ?, kill_switch_enabled = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?,
 				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
@@ -256,7 +251,6 @@ export async function updateJobRow(input: {
 			serialized.timezone,
 			serialized.enabled,
 			serialized.kill_switch_enabled,
-			serialized.preserved,
 			serialized.expires_at,
 			input.callerContextJson,
 			serialized.updated_at,
@@ -729,8 +723,7 @@ export async function deleteJobRow(
 
 /**
  * Auto-disable enabled jobs whose expires_at has passed. Expiry stops
- * scheduling; retention still ages disabled ad-hoc jobs separately from
- * `preserved`. Returns the number of rows flipped to enabled = 0.
+ * scheduling. Returns the number of rows flipped to enabled = 0.
  */
 export async function disableExpiredJobRowsForUser(input: {
 	db: D1Database
@@ -750,57 +743,6 @@ export async function disableExpiredJobRowsForUser(input: {
 		.bind(input.nowIso, input.userId, input.nowIso)
 		.run()
 	return result.meta.changes ?? 0
-}
-
-/**
- * Caps how many job rows the retention sweeper loads per cron tick so one
- * backlog cannot exhaust the Worker CPU budget. Remaining candidates are
- * picked up on subsequent hourly runs.
- */
-export const maxJobRetentionCandidatesPerRun = 100
-
-/**
- * Candidate scan for the platform job retention sweeper. Excludes preserved,
- * package-owned, soft-deleted, and clearly held/active rows in SQL so hourly
- * budget is not spent re-walking live jobs:
- * - enabled recurring (including kill-switched pause)
- * - enabled never-ran once that is still runnable
- * Age/category eligibility still runs in application code so account
- * preferences can vary per user. Not-yet-aged inactive rows are skipped cheaply;
- * deletes shrink that set across hourly ticks.
- */
-export async function listJobRetentionCandidateRows(
-	db: D1Database,
-	input: {
-		afterId: string | null
-		limit: number
-	},
-): Promise<Array<JobRow>> {
-	const { results } = await db
-		.prepare(
-			`SELECT * FROM jobs
-			WHERE preserved = 0
-				AND deleted_at IS NULL
-				AND id NOT LIKE 'package-job:%'
-				AND id > ?
-				AND NOT (
-					(
-						enabled = 1
-						AND json_extract(schedule_json, '$.type') != 'once'
-					)
-					OR (
-						enabled = 1
-						AND kill_switch_enabled = 0
-						AND json_extract(schedule_json, '$.type') = 'once'
-						AND last_run_at IS NULL
-					)
-				)
-			ORDER BY id ASC
-			LIMIT ?`,
-		)
-		.bind(input.afterId ?? '', input.limit)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
 }
 
 export async function countJobRowsForUser(

@@ -1,7 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
-	isPackageOwnedJobId,
 	loadAccountJobsData,
 	type AccountJobsLoaderData,
 } from '#app/account-jobs-data.ts'
@@ -15,8 +14,7 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-client.ts'
-import { updateJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
-import { deleteJob, updateJob } from '#worker/jobs/service.ts'
+import { updateJob } from '#worker/jobs/service.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -110,28 +108,11 @@ export function createAccountJobsApiHandler(env: Env) {
 
 			const action = readTrimmedStringOrEmpty(body, 'action')
 			try {
-				if (action === 'set_enabled') {
-					return await handleSetEnabledAction({ env, user, body, request })
-				}
 				if (action === 'set_kill_switch') {
 					return await handleSetKillSwitchAction({ env, user, body, request })
 				}
-				if (action === 'set_preserved') {
-					return await handleSetPreservedAction({ env, user, body, request })
-				}
-				if (action === 'update_retention') {
-					return await handleUpdateRetentionAction({
-						env,
-						user,
-						body,
-						request,
-					})
-				}
 				if (action === 'run_now') {
 					return await handleRunNowAction({ env, user, body, request })
-				}
-				if (action === 'delete') {
-					return await handleDeleteAction({ env, user, body, request })
 				}
 			} catch (error) {
 				return jsonResponse(
@@ -182,14 +163,6 @@ function requireJobId(body: object) {
 	return id
 }
 
-function assertNotPackageOwnedJob(jobId: string, mutation: string) {
-	if (isPackageOwnedJobId(jobId)) {
-		throw new Error(
-			`Package-owned jobs cannot ${mutation} from the account UI. Change the package job declaration and republish the package.`,
-		)
-	}
-}
-
 function buildCallerContext(input: {
 	env: Env
 	request: Request
@@ -208,31 +181,6 @@ function buildCallerContext(input: {
 			role: input.user.request.membership?.role ?? null,
 		},
 	})
-}
-
-async function handleSetEnabledAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-	request: Request
-}) {
-	const id = requireJobId(input.body)
-	assertNotPackageOwnedJob(id, 'change enabled state')
-	const enabled = readBoolean(input.body, 'enabled')
-	if (enabled === null) {
-		throw new Error('enabled must be a boolean.')
-	}
-	await updateJob({
-		env: input.env,
-		callerContext: buildCallerContext(input),
-		body: { id, enabled },
-	})
-	return jsonResponse(
-		await reloadJobsPayload({
-			...input,
-			selectedJobId: id,
-		}),
-	)
 }
 
 async function handleSetKillSwitchAction(input: {
@@ -255,69 +203,6 @@ async function handleSetKillSwitchAction(input: {
 		await reloadJobsPayload({
 			...input,
 			selectedJobId: id,
-		}),
-	)
-}
-
-async function handleSetPreservedAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-	request: Request
-}) {
-	const id = requireJobId(input.body)
-	assertNotPackageOwnedJob(id, 'change preserve state')
-	const preserved = readBoolean(input.body, 'preserved')
-	if (preserved === null) {
-		throw new Error('preserved must be a boolean.')
-	}
-	await updateJob({
-		env: input.env,
-		callerContext: buildCallerContext(input),
-		body: { id, preserved },
-	})
-	return jsonResponse(
-		await reloadJobsPayload({
-			...input,
-			selectedJobId: id,
-		}),
-	)
-}
-
-async function handleUpdateRetentionAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-	request: Request
-}) {
-	const successOnceDays = readNumber(input.body, 'successOnceDays')
-	const failedOrNeverRanOnceDays = readNumber(
-		input.body,
-		'failedOrNeverRanOnceDays',
-	)
-	const disabledRecurringDays = readNumber(input.body, 'disabledRecurringDays')
-	if (
-		successOnceDays === null ||
-		failedOrNeverRanOnceDays === null ||
-		disabledRecurringDays === null
-	) {
-		throw new Error(
-			'Retention days must be numbers between 1 and 365. Forever keep is only available via Preserve on a job.',
-		)
-	}
-	await updateJobRetentionPreferencesForUser({
-		db: input.env.APP_DB,
-		userId: input.user.mcpUser.userId,
-		successOnceDays,
-		failedOrNeverRanOnceDays,
-		disabledRecurringDays,
-	})
-	const selectedJobId =
-		readTrimmedStringOrEmpty(input.body, 'selectedJobId') || null
-	return jsonResponse(
-		await reloadJobsPayload({
-			...input,
-			selectedJobId,
 		}),
 	)
 }
@@ -352,36 +237,7 @@ async function handleRunNowAction(input: {
 	})
 }
 
-async function handleDeleteAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-	request: Request
-}) {
-	const id = requireJobId(input.body)
-	assertNotPackageOwnedJob(id, 'be deleted')
-	await deleteJob({
-		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
-		jobId: id,
-	})
-	return jsonResponse(
-		await reloadJobsPayload({
-			...input,
-			selectedJobId: null,
-		}),
-	)
-}
-
 function readBoolean(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : null
-}
-
-function readNumber(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	return typeof value === 'number' && Number.isFinite(value) ? value : null
 }

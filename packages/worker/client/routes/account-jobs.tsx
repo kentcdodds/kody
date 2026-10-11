@@ -1,7 +1,5 @@
 import { type Handle, css } from 'remix/component'
-import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
-import { createDoubleCheck } from '#client/double-check.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -34,7 +32,6 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
 	RecordChips,
@@ -48,15 +45,7 @@ import {
 	type AccountJobListItem,
 	type AccountJobsLoaderData,
 } from '#universal/loader-data.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
-import {
-	cardCss,
-	cardTitleCss,
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
-	getGhostButtonCss,
-} from '#universal/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
@@ -67,27 +56,11 @@ export function AccountJobsRoute(handle: Handle) {
 	let username = ''
 	let jobs: Array<AccountJobListItem> = []
 	let selectedJob: AccountJobDetail | null = null
-	let retention: AccountJobsLoaderData['retention'] = {
-		successOnceDays: 14,
-		failedOrNeverRanOnceDays: 60,
-		disabledRecurringDays: 90,
-		defaults: {
-			successOnce: 14,
-			failedOrNeverRanOnce: 60,
-			disabledRecurring: 90,
-		},
-	}
-	let retentionDraft = {
-		successOnceDays: '14',
-		failedOrNeverRanOnceDays: '60',
-		disabledRecurringDays: '90',
-	}
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AccountJobsLoaderData | null = null
 	let appliedError: Error | null = null
-	const deleteJobCheck = createDoubleCheck(handle)
 	const jobsData = createRouteData({
 		key: 'accountJobs',
 		locationKey: getDataLatchKey,
@@ -96,8 +69,6 @@ export function AccountJobsRoute(handle: Handle) {
 			return payload ?? routeDataRedirect('/login')
 		},
 	})
-
-	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -126,21 +97,10 @@ export function AccountJobsRoute(handle: Handle) {
 		messageTone = tone
 	}
 
-	function applyRetention(next: AccountJobsLoaderData['retention']) {
-		retention = next
-		retentionDraft = {
-			successOnceDays: String(next.successOnceDays),
-			failedOrNeverRanOnceDays: String(next.failedOrNeverRanOnceDays),
-			disabledRecurringDays: String(next.disabledRecurringDays),
-		}
-	}
-
 	function applyPayload(payload: AccountJobsLoaderData) {
 		username = payload.username
 		jobs = payload.jobs
 		selectedJob = payload.selectedJob
-		applyRetention(payload.retention)
-		deleteJobCheck.reset()
 	}
 
 	async function postAction(input: {
@@ -244,7 +204,7 @@ export function AccountJobsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Jobs"
-					description="Inspect scheduled package jobs, toggle kill switch or Preserve, and run jobs now. Completed one-off jobs are cleaned up automatically after your retention windows; longer retention uses more scheduled job slots and storage."
+					description="Inspect scheduled package jobs, toggle the kill switch, and run jobs now. To change or remove a job, edit its package and publish."
 					currentHref={currentHref}
 				/>
 
@@ -262,147 +222,12 @@ export function AccountJobsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section
-						mix={css({
-							...cardCss,
-							marginBottom: spacing.lg,
-							display: 'grid',
-							gap: spacing.md,
-						})}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							<h2 mix={css(cardTitleCss)}>Job retention</h2>
-							<p mix={css(descriptionCss)}>
-								Platform defaults clean up successful one-off jobs after{' '}
-								{retention.defaults.successOnce} days, failed or never-ran
-								one-offs after {retention.defaults.failedOrNeverRanOnce} days,
-								and disabled recurring jobs after{' '}
-								{retention.defaults.disabledRecurring} days. Longer windows keep
-								more jobs counting toward scheduled job slots and storage bytes.
-								Keep forever only with Preserve on a job — retention cannot be
-								unbounded.
-							</p>
-						</div>
-						<div
-							mix={css({
-								display: 'grid',
-								gap: spacing.md,
-								gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))',
-							})}
-						>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Successful one-off (days)</span>
-								<input
-									data-field-ring
-									type="number"
-									min={1}
-									max={365}
-									value={retentionDraft.successOnceDays}
-									disabled={isMutating}
-									mix={[
-										on('input', (event) => {
-											retentionDraft = {
-												...retentionDraft,
-												successOnceDays: (
-													event.currentTarget as HTMLInputElement
-												).value,
-											}
-											handle.update()
-										}),
-										css(accountInputCss),
-									]}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>
-									Failed / never-ran one-off (days)
-								</span>
-								<input
-									data-field-ring
-									type="number"
-									min={1}
-									max={365}
-									value={retentionDraft.failedOrNeverRanOnceDays}
-									disabled={isMutating}
-									mix={[
-										on('input', (event) => {
-											retentionDraft = {
-												...retentionDraft,
-												failedOrNeverRanOnceDays: (
-													event.currentTarget as HTMLInputElement
-												).value,
-											}
-											handle.update()
-										}),
-										css(accountInputCss),
-									]}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Disabled recurring (days)</span>
-								<input
-									data-field-ring
-									type="number"
-									min={1}
-									max={365}
-									value={retentionDraft.disabledRecurringDays}
-									disabled={isMutating}
-									mix={[
-										on('input', (event) => {
-											retentionDraft = {
-												...retentionDraft,
-												disabledRecurringDays: (
-													event.currentTarget as HTMLInputElement
-												).value,
-											}
-											handle.update()
-										}),
-										css(accountInputCss),
-									]}
-								/>
-							</label>
-						</div>
-						<div>
-							<button
-								type="button"
-								disabled={isMutating}
-								mix={[
-									on('click', () =>
-										postAction({
-											body: {
-												action: 'update_retention',
-												successOnceDays: Number(retentionDraft.successOnceDays),
-												failedOrNeverRanOnceDays: Number(
-													retentionDraft.failedOrNeverRanOnceDays,
-												),
-												disabledRecurringDays: Number(
-													retentionDraft.disabledRecurringDays,
-												),
-												selectedJobId: selection.selectedId,
-											},
-											successMessage: () =>
-												'Updated job retention preferences.',
-											failureMessage:
-												'Unable to update job retention preferences.',
-										}),
-									),
-									css(secondaryButtonCss),
-								]}
-							>
-								Save retention
-							</button>
-						</div>
-					</section>
-				) : null}
-
-				{status === 'ready' ? (
 					<RecordTable
 						mode="expand"
 						ariaLabel="Scheduled jobs"
 						selectedId={selection.selectedId}
 						recordLoading={waitingForDetail}
 						onNavigate={() => {
-							deleteJobCheck.reset()
 							setMessage(null)
 						}}
 						countLabel={`${filteredJobs.length} of ${jobs.length} shown`}
@@ -455,7 +280,7 @@ export function AccountJobsRoute(handle: Handle) {
 						]}
 						rows={filteredJobs.map((item) => ({
 							id: item.id,
-							// A save, toggle, or delete is in flight; the expanded
+							// A toggle or run is in flight; the expanded
 							// editor owns the selection until it settles.
 							href: isMutating
 								? undefined
@@ -477,10 +302,7 @@ export function AccountJobsRoute(handle: Handle) {
 								package: <span mix={clampedCellCss}>{packageLabel(item)}</span>,
 								flags: (
 									<RecordChips
-										items={[
-											...(item.preserved ? ['Preserved'] : []),
-											...(item.expired ? ['Expired'] : []),
-										]}
+										items={item.expired ? ['Expired'] : []}
 										empty="—"
 									/>
 								),
@@ -494,8 +316,6 @@ export function AccountJobsRoute(handle: Handle) {
 										currentHref: getCurrentHref(),
 										detail,
 										isMutating,
-										retention,
-										deleteJobCheck,
 										postAction,
 										navigateToList: () => {
 											navigate(

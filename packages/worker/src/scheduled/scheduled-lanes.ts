@@ -19,7 +19,6 @@ import {
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
-import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
@@ -120,8 +119,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'job_retention':
-			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
 		case 'usage_aggregation': {
 			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
 			try {

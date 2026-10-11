@@ -15,7 +15,6 @@ function job(
 	return {
 		id,
 		name: id,
-		ownership: 'package',
 		scheduleSummary: 'summary',
 		timezone: 'UTC',
 		enabled: true,
@@ -64,12 +63,10 @@ test('account jobs filters cover active/history views and search', () => {
 		job('live-package', { name: 'Package digest' }),
 		job('upcoming-once', {
 			name: 'Tomorrow ping',
-			ownership: 'ad-hoc',
 			...once('2026-07-28T09:00:00.000Z'),
 		}),
 		job('failed-once', {
 			name: 'Failed ping',
-			ownership: 'ad-hoc',
 			...once('2026-07-20T09:00:00.000Z'),
 		}),
 		job('disabled-package', { name: 'Old package digest', enabled: false }),

@@ -71,7 +71,7 @@ test('listJobIdsForUser returns the user’s live and archived job ids from the 
 	] as const) {
 		insertJob(sqlite, { id, userId })
 	}
-	// A job that was deleted by retention and archived keeps its id here so a
+	// A job that was deleted and archived keeps its id here so a
 	// leftover vector can still be swept; a still-live job that is also
 	// archived must not be listed twice.
 	for (const [id, jobId, userId] of [
@@ -128,11 +128,6 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 		)
 		.get() as { deleted_at: string; before: number }
 	expect(stillOriginal).toEqual({ deleted_at: deletedAt, before: 1 })
-	const candidates = await store.listJobRetentionCandidates({
-		afterId: null,
-		limit: 20,
-	})
-	expect(candidates.map((row) => row.id)).not.toContain('job-on')
 	expect(
 		await store.restoreJobsForUser({
 			userId: ownerIdFromStored('org-jobs'),
