@@ -561,10 +561,12 @@ endpoint's own signing secret, generated at mint or at migration:
 ```
 
 The sender signs the raw body with HMAC-SHA256 and sends
-`X-Kody-Signature: sha256=<hex>`. A missing or bad signature gets the same
-generic 401 and runs nothing. The webhook runs as its enabler, the person who
-turned it on; with no `on` enablement the delivery answers 409
-`enablement_not_on`.
+`X-Kody-Signature: sha256=<hex>`. Reveal the URL in the package settings
+Webhooks section to copy the signing secret next to it; only the owner sees it
+there, and it is shown only when this default scheme applies. Rotating the URL
+keeps the secret. A missing or bad signature gets the same generic 401 and runs
+nothing. The webhook runs as its enabler, the person who turned it on; with no
+`on` enablement the delivery answers 409 `enablement_not_on`.
 
 ## Synthetic smoke test
 
