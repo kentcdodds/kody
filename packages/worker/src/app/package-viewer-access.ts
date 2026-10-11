@@ -1,6 +1,6 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
-	canSeeResource,
+	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
@@ -9,12 +9,14 @@ import { deriveRequestContext } from '#worker/request-context/request-context.ts
 
 /**
  * Whether a signed-in person may open the owner view of a saved package on
- * `/@owner/<kody-id>`. Same rule as the org Repositories list: the person
- * belongs to (or holds a grant in) the org that owns the package, and
- * `canSeeResource` allows it there. The signup org owner sees every package
- * it owns; team org members see what their role, teams, and grants give them.
+ * `/@owner/<kody-id>` (details, source files, private icon). The person must
+ * belong to (or hold a grant in) the org that owns the package and hold
+ * `package:read` on it there, the same check as `packageGet`. The signup org
+ * owner reads every package it owns; team org members read what their role,
+ * teams, and grants give them. An execute-only grant lists the package but
+ * does not open its source.
  */
-export async function viewerCanSeeSavedPackage(input: {
+export async function viewerCanReadSavedPackage(input: {
 	env: Env
 	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
 	ownerId: string
@@ -35,8 +37,9 @@ export async function viewerCanSeeSavedPackage(input: {
 			orgBinding: binding,
 		}),
 	})
-	return canSeeResource(
+	return checkPermission(
 		access,
+		'package:read',
 		packageResource({ id: input.packageId, userId: input.ownerId }),
-	)
+	).allowed
 }

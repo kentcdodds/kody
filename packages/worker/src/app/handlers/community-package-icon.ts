@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { viewerCanSeeSavedPackage } from '#app/package-viewer-access.ts'
+import { viewerCanReadSavedPackage } from '#app/package-viewer-access.ts'
 import {
 	identityIconNotFound,
 	ownerIdentityIconCacheControl,
@@ -41,7 +41,7 @@ export function createCommunityPackageIconHandler(env: Env) {
 				Boolean(listing) || isGuestVisiblePackage(target.savedPackage)
 			if (
 				!guestVisible &&
-				!(await viewerCanSeeSavedPackage({
+				!(await viewerCanReadSavedPackage({
 					env,
 					viewer: user?.mcpUser ?? null,
 					ownerId: target.userId,

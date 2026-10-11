@@ -1,7 +1,7 @@
 import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { viewerCanSeeSavedPackage } from '#app/package-viewer-access.ts'
+import { viewerCanReadSavedPackage } from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
@@ -121,7 +121,7 @@ async function loadPackagePageUncached(input: {
 		// pair: only viewers who can see the package are sent to the current URL.
 		if (
 			!target.listingId &&
-			!(await viewerCanSeeSavedPackage({
+			!(await viewerCanReadSavedPackage({
 				env: input.env,
 				viewer,
 				ownerId: target.userId,
@@ -146,7 +146,7 @@ async function loadPackagePageUncached(input: {
 	}
 
 	const viewerIsOwner = target.savedPackage
-		? await viewerCanSeeSavedPackage({
+		? await viewerCanReadSavedPackage({
 				env: input.env,
 				viewer,
 				ownerId: target.userId,

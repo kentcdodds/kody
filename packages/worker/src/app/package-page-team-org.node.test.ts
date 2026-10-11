@@ -54,19 +54,35 @@ async function createEnv() {
 	)
 	insertPackage.run('pkg-shared', teamId, '@acme/shared', 'shared', 'src-1')
 	insertPackage.run('pkg-secret', teamId, '@acme/secret', 'secret', 'src-2')
-	sqlite
-		.prepare(
-			`INSERT INTO grants (
-				id, org_id, resource_type, resource_id, subject_type, subject_id,
-				preset, created_by_user_id, created_at, updated_at, deleted_at
-			) VALUES ('grant-member', ?, 'package', 'pkg-shared', 'user', ?, 'use', ?, ?, ?, NULL)`,
-		)
-		.run(teamId, memberId, ownerId, now, now)
-	sqlite
-		.prepare(
-			`INSERT INTO grant_permissions (grant_id, permission) VALUES ('grant-member', 'package:read')`,
-		)
-		.run()
+	const insertGrant = sqlite.prepare(
+		`INSERT INTO grants (
+			id, org_id, resource_type, resource_id, subject_type, subject_id,
+			preset, created_by_user_id, created_at, updated_at, deleted_at
+		) VALUES (?, ?, 'package', ?, 'user', ?, 'use', ?, ?, ?, NULL)`,
+	)
+	const insertGrantPermission = sqlite.prepare(
+		`INSERT INTO grant_permissions (grant_id, permission) VALUES (?, ?)`,
+	)
+	insertGrant.run(
+		'grant-read',
+		teamId,
+		'pkg-shared',
+		memberId,
+		ownerId,
+		now,
+		now,
+	)
+	insertGrantPermission.run('grant-read', 'package:read')
+	insertGrant.run(
+		'grant-run',
+		teamId,
+		'pkg-secret',
+		memberId,
+		ownerId,
+		now,
+		now,
+	)
+	insertGrantPermission.run('grant-run', 'package:execute')
 	const env = {
 		APP_DB: createD1FromSqlite(sqlite),
 		APP_BASE_URL: 'https://kody.test',
@@ -98,7 +114,7 @@ function loadAs(env: Env, personId: string | null, kodyId: string) {
 	})
 }
 
-test('team package pages open for viewers who can see the package in the team org', async () => {
+test('team package pages open for viewers who can read the package in the team org', async () => {
 	const env = await createEnv()
 
 	await expect(loadAs(env, ownerId, 'secret')).resolves.toMatchObject({
@@ -116,7 +132,7 @@ test('team package pages open for viewers who can see the package in the team or
 	})
 })
 
-test('team package pages 404 for members without access, outsiders, and visitors', async () => {
+test('team package pages 404 for execute-only members, outsiders, and visitors', async () => {
 	const env = await createEnv()
 
 	await expect(loadAs(env, memberId, 'secret')).resolves.toEqual({
@@ -130,7 +146,7 @@ test('team package pages 404 for members without access, outsiders, and visitors
 	})
 })
 
-test('an unlisted team package rename only redirects viewers who can see it', async () => {
+test('an unlisted team package rename only redirects viewers who can read it', async () => {
 	const env = await createEnv()
 
 	await expect(loadAs(env, memberId, 'old-shared')).resolves.toEqual({
