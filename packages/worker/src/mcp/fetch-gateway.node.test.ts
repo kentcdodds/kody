@@ -16,6 +16,7 @@ import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretPlacement from '#mcp/secrets/secret-placement.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import * as credentialResolution from '#worker/credentials/resolve-credential.ts'
 import {
 	isActiveOrgQuery,
 	isOrgBindingMembershipQuery,
@@ -224,12 +225,12 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	expect(await transformed.text()).toBe(JSON.stringify({ query: 'me' }))
 })
 
-test('fetch gateway refuses placeholders in the URL path, query, or body before resolving', async () => {
+test('fetch gateway refuses placeholders in the URL path or query before resolving', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
 	const urlRule =
-		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL, query, or body\./
+		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL or query, and sends the body verbatim\./
 
 	// Request serialization percent-encodes `{` / `}` in the path.
 	const pathRequest = new Request(
@@ -250,43 +251,60 @@ test('fetch gateway refuses placeholders in the URL path, query, or body before 
 	await expect(
 		expand(createPathOnlyRequest('/api?key={{integration-token:google}}')),
 	).rejects.toThrow(/^Integration token "google" is in the request URL\./)
-
-	const bodyRule = /^Secret "spotifyRefreshToken" is in the request body\./
-	await expect(
-		expand(
-			new Request('https://api.example.com/token', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					token: '{{secret:spotifyRefreshToken|scope=user}}',
-				}),
-			}),
-		),
-	).rejects.toThrow(bodyRule)
-	await expect(
-		expand(
-			new Request('https://api.example.com/token', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body: new URLSearchParams({
-					grant_type: 'refresh_token',
-					refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
-				}).toString(),
-			}),
-		),
-	).rejects.toThrow(bodyRule)
-	await expect(
-		expand(
-			new Request('https://api.example.com/token', {
-				method: 'POST',
-				headers: { Authorization: 'Basic {{secret:clientId}}' },
-				body: '{{secret-basic:username=clientId,password=clientSecret}}',
-			}),
-		),
-	).rejects.toThrow(
-		/^Basic auth secret pair "clientId" \/ "clientSecret" is in the request body\./,
-	)
 	expect(resolveSpy).not.toHaveBeenCalled()
+})
+
+test('fetch gateway sends placeholder text in a body verbatim, even for an existing secret approved for the host', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const credentialSpy = vi.spyOn(credentialResolution, 'resolveCredential')
+	const issueBody = JSON.stringify({
+		title: 'Placeholder docs',
+		body: 'Use {{secret:githubToken|scope=user}} or {{secret:githubToken}} in a header.',
+	})
+	const bodies = [
+		{ contentType: 'application/json', body: issueBody },
+		{
+			contentType: 'application/x-www-form-urlencoded',
+			body: new URLSearchParams({
+				grant_type: 'refresh_token',
+				refresh_token: '{{secret:githubToken|scope=user}}',
+			}).toString(),
+		},
+		{
+			contentType: 'text/plain',
+			body: '{{secret-basic:username=githubToken,password=githubToken}} {{integration-token:github}} {{secret/onepassword:op://vault/item/field}}',
+		},
+	]
+	for (const { contentType, body } of bodies) {
+		const sent = await expand(
+			new Request('https://api.example.com/repos/o/r/issues', {
+				method: 'POST',
+				headers: { 'Content-Type': contentType },
+				body,
+			}),
+		)
+		expect(await sent.text()).toBe(body)
+	}
+	expect(credentialSpy).not.toHaveBeenCalled()
+	expect(resolveSpy).not.toHaveBeenCalled()
+
+	// A header placeholder still resolves; the same text in the body does not.
+	const sent = await expand(
+		new Request('https://api.example.com/repos/o/r/issues', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer {{secret:githubToken|scope=user}}',
+				'Content-Type': 'application/json',
+			},
+			body: issueBody,
+		}),
+	)
+	expect(sent.headers.get('Authorization')).toBe('Bearer secret-value')
+	const sentBody = await sent.text()
+	expect(sentBody).toBe(issueBody)
+	expect(sentBody).not.toContain('secret-value')
 })
 
 test('fetch gateway bulk host approval uses the secret scope, not the package runtime context', async () => {

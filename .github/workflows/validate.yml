@@ -26,8 +26,8 @@ permissions:
 # (overprovisions the whole secrets context). Nx treats an
 # unreachable self-hosted cache as a fatal error, so setup-validate
 # probes before setting the server URL. Cached npm scripts then run
-# through tools/run-nx.ts so a mid-run /v1/cache transport flake
-# cannot fail the job after tasks already succeeded.
+# through tools/run-nx.ts so a rejected token or a mid-run /v1/cache
+# transport flake cannot fail the job after tasks already succeeded.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
@@ -54,6 +54,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -160,6 +161,9 @@ jobs:
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
+          # Advisory open-PR migration prefix scan. Missing auth skips it and
+          # does not fail this step.
+          GH_TOKEN: ${{ github.token }}
 
       - name: 🔒 Lockfile peer drift
         if: ${{ !cancelled() }}

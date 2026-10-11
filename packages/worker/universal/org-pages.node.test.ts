@@ -1,3 +1,4 @@
+import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
@@ -5,6 +6,7 @@ import {
 	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
+	isOrganizationSlug,
 	orgIdentity,
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
@@ -336,4 +338,21 @@ test('every org-bound URL names its section, or none for billing and management'
 	expect(orgOwnedSectionForPath('/@acme/-/nope.json')).toBeNull()
 	expect(orgSlugFromOrgOwnedPath('/@acme/-/packages.json')).toBe('acme')
 	expect(orgSlugFromOrgOwnedPath('/@acme/packages.json')).toBeNull()
+})
+
+test('organization slugs use the shared DNS-safe handle pattern', () => {
+	const samples = [
+		'ab',
+		'abc',
+		'a-b',
+		'-ab',
+		'ab-',
+		'Ab1',
+		'a_b',
+		'a'.repeat(32),
+		'a'.repeat(33),
+	]
+	for (const sample of samples) {
+		expect(isOrganizationSlug(sample)).toBe(dnsSafeUsernamePattern.test(sample))
+	}
 })

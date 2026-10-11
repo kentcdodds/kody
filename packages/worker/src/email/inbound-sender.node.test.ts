@@ -187,6 +187,11 @@ async function setup() {
 		.prepare(`SELECT id FROM orgs WHERE slug = 'quillworks'`)
 		.first<{ id: string }>()
 	const orgId = ownerIdFromStored(teamOrg!.id)
+	// These tests cover an org not yet moved to enablements.
+	await db
+		.prepare(`DELETE FROM enablement_org_migrations WHERE org_id = ?`)
+		.bind(orgId)
+		.run()
 	for (const memberId of [beaId, cyId]) {
 		await db
 			.prepare(

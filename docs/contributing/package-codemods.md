@@ -344,16 +344,19 @@ finding message starts with one fixed pattern label:
 | `computed secret`       | A secret placeholder built at runtime, or a secret helper called with a non-literal name                                                                                                                                                      |
 | `computed integration`  | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                       |
 | `kody.mcp`              | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                       |
-| `\|scope=`              | A `\|scope=` placeholder suffix, or a `scope` option on a secret helper                                                                                                                                                                       |
+| `\|scope=`              | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                      |
 | `secretMounts`          | `package.json#kody.secretMounts`                                                                                                                                                                                                              |
 | `webhook secretName`    | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                          |
 | `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input               |
 | `plain http`            | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                             |
 | `packageSecrets.get`    | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                      |
-| `missing placement`     | A `kody.credentials` secret slot with neither `placement` nor `"raw": true`                                                                                                                                                                   |
+| `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                          |
 
 Helpers are matched by name, comments are ignored, and an unparseable module
-falls back to a text match. This module yields `literal secret`,
+falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
+package-scoped secret before the user one, and no static scan can see that, so
+`|scope=` findings undercount package-scoped buckets. Count those from secret
+rows with `scope = 'package'`. This module yields `literal secret`,
 `computed secret`, `computed integration`, `kody.mcp`, and `|scope=` for
 `index.ts`:
 
@@ -372,11 +375,16 @@ export default async function digest(input: { account: string; key: string }) {
 }
 ```
 
-Save every scan step result as one JSON array, then print the report:
+Save each scan step result as its own JSON file, then print the report over all
+of them:
 
 ```bash
-node tools/credential-pattern-report.ts scan-steps.json
+node tools/credential-pattern-report.ts .tmp/scan/
 ```
+
+It takes any number of files or directories. A directory reads its `.json` files
+in natural order (`step-2.json` before `step-10.json`). When a package appears
+more than once, the last item read wins.
 
 It counts packages and files per pattern, per org, and per package, plus
 `skipped_unpublished` and `skipped_drift`. The org and package tables name

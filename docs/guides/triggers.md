@@ -152,6 +152,23 @@ and systems that can send email but cannot call an API. The same inbox is how a
 job tells you it finished: `emailSend` mails the account's own address and
 nothing else. See [Email primitives](../use/email-primitives.md).
 
+## Turning triggers on in an org
+
+In an org, a declared trigger runs only for the people who turned it on, and it
+runs as them: their access, their bill, their audit trail. Publishing never
+turns anything on.
+
+- `enablementEnable` turns a job (`cron`), subscription topic, or minted webhook
+  on for you. You need execute access to the package. Minting a webhook URL
+  turns it on for you when nobody else has.
+- `enablementList` shows yours (`scope: "mine"`); Owners can list the whole org
+  (`scope: "org"`). `enablementDisable` turns one off.
+- If you lose access to the package, the org, or a credential the run uses, the
+  enablement pauses and events are dropped. It resumes by itself on the next
+  event once access is back.
+- `jobRunNow` does not fire a scheduled run in an org; use `execute` to invoke
+  the wrapper as yourself.
+
 ## Choosing well
 
 - A schedule is optional, not the point. If the person cannot name a time they

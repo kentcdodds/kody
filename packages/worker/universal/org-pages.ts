@@ -1,3 +1,4 @@
+import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 
 /**
@@ -44,8 +45,6 @@ export type OrgSwitcherEntry =
 	| { kind: 'create' }
 	| { kind: 'invites'; count: number }
 
-const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
-
 /**
  * GitLab-style separator between an organization slug and its section pages.
  * Keeps `/@owner/<kody-id>` free for canonical package URLs. Bare `-` is not a
@@ -53,8 +52,9 @@ const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
  */
 const orgPageSeparator = '-'
 
+/** Organization slugs use {@link dnsSafeUsernamePattern} (3–32, DNS-safe). */
 export function isOrganizationSlug(value: string) {
-	return slugPattern.test(value)
+	return dnsSafeUsernamePattern.test(value)
 }
 
 function isOrgOwnedAccountSection(

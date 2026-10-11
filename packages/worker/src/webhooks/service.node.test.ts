@@ -2,7 +2,9 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
+	decryptWebhookHmacSecret,
 	decryptWebhookUrlSecret,
+	userWebhookHmacSecretContext,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -207,6 +209,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const revealed = await reveal({ handle: minted.handle })
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
+	expect(revealed.signingSecret).toBeNull()
 	// The account UI addresses a webhook by package + name rather than by
 	// handle; both paths resolve the same minted URL.
 	expect(await reveal(sentryHook)).toMatchObject({
@@ -428,6 +431,85 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(first.handle).toBe(second.handle)
 	expect(first.urlHost).toBe('heykody.dev')
 	expect(second).not.toHaveProperty('url')
+})
+
+test('reveal shows the generated signing secret only in an org on enablements', async () => {
+	const owner = await setupOwner('signer@example.com', 'signer')
+	const { env, db, userId } = owner
+	const sentryManifest = vi
+		.mocked(loadPackageManifestBySourceId)
+		.getMockImplementation()!
+	const unsignedManifest = async () => ({
+		manifest: {
+			name: '@owner/sentry-bridge',
+			exports: { './handle-sentry-webhook': './src/handle-sentry-webhook.ts' },
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+					},
+				],
+			},
+		},
+	})
+	vi.mocked(loadPackageManifestBySourceId).mockImplementation(
+		unsignedManifest as never,
+	)
+	const reveal = () =>
+		revealWebhookUrlForWebsite({
+			env,
+			userId: ownerIdFromStored(userId),
+			username: 'signer',
+			target: sentryHook,
+		})
+	try {
+		const legacyMint = await owner.mint()
+		const legacyEndpointId = parseWebhookUrlHandle(legacyMint.handle)!
+		expect(
+			(
+				await owner.readEndpoint<{ hmac_secret_encrypted: string | null }>(
+					legacyEndpointId,
+					'hmac_secret_encrypted',
+				)
+			)?.hmac_secret_encrypted,
+		).toBeNull()
+		expect((await reveal()).signingSecret).toBeNull()
+
+		await db
+			.prepare(
+				`INSERT INTO enablement_org_migrations (org_id, state, migrated_at, updated_at)
+				VALUES (?, 'migrated', ?, ?)`,
+			)
+			.bind(userId, '2026-10-11T00:00:00.000Z', '2026-10-11T00:00:00.000Z')
+			.run()
+		await owner.rotate()
+		const stored = await owner.readEndpoint<{
+			hmac_secret_encrypted: string | null
+		}>(legacyEndpointId, 'hmac_secret_encrypted')
+		expect(stored?.hmac_secret_encrypted).toBeTruthy()
+		const signingSecret = (await reveal()).signingSecret
+		expect(signingSecret).toEqual(
+			await decryptWebhookHmacSecret(
+				env,
+				stored!.hmac_secret_encrypted!,
+				userWebhookHmacSecretContext(
+					ownerIdFromStored(userId),
+					legacyEndpointId,
+				),
+			),
+		)
+		await owner.rotate()
+		expect((await reveal()).signingSecret).toBe(signingSecret)
+
+		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
+		expect((await reveal()).signingSecret).toBeNull()
+	} finally {
+		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
+	}
 })
 
 test('listing webhooks loads package manifests concurrently', async () => {

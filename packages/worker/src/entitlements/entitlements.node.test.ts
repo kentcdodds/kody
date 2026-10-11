@@ -44,6 +44,10 @@ import {
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type TestUser = {
@@ -155,9 +159,8 @@ function createEntitlementsTestDb(
 			}
 			return byId(String(params[0])) ? { present: 1 } : null
 		}
-		// Live seat count for the runaway brake (personal fixture orgs = 1).
-		if (query.includes('FROM org_memberships')) {
-			return { count: 1 }
+		if (isLiveSeatCountQuery(query)) {
+			return mockLiveSeatCountRow()
 		}
 		const table = countedTables.find((name) => query.includes(`FROM ${name}`))
 		if (table) return { count: counts[table] ?? 0 }

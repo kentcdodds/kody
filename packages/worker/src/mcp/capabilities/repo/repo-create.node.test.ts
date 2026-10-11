@@ -4,6 +4,10 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -61,8 +65,8 @@ function createDatabase(
 									)
 								return (user ? { plan: user['plan'] } : null) as T | null
 							}
-							if (query.includes('FROM org_memberships')) {
-								return { count: 1 } as T
+							if (isLiveSeatCountQuery(query)) {
+								return mockLiveSeatCountRow() as T
 							}
 							if (
 								query.includes('FROM user_repos') &&
