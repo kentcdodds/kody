@@ -60,7 +60,18 @@ import {
 	type McpPreRegisteredOAuthClientInformation,
 	type SealedMcpPreRegisteredOAuthClient,
 } from './preregistered-oauth-client.ts'
-import { sanitizeStoredMcpSessions } from './restore.ts'
+import {
+	hasForeignTransferStorageKey,
+	type McpHubServerImportResult,
+	type McpHubServerTransfer,
+	mcpServerOAuthStoragePrefix,
+	mcpServerSidecarStorageKeys,
+} from './hub-transfer.ts'
+import {
+	parsePersistedMcpServerOptions,
+	sanitizePersistedMcpServerOptions,
+	sanitizeStoredMcpSessions,
+} from './restore.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
@@ -1959,6 +1970,86 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	/** Close all connections and wipe stored servers, tokens, and OAuth state. */
+	/** Org resource transfer: this server's SDK row and every per-server key. */
+	async exportServerForTransfer(input: {
+		serverId: string
+	}): Promise<McpHubServerTransfer | null> {
+		const [row] = this.ctx.storage.sql
+			.exec<McpHubServerTransfer['row']>(
+				`SELECT id, name, server_url, client_id, auth_url, callback_url, server_options
+				 FROM cf_agents_mcp_servers WHERE id = ?`,
+				input.serverId,
+			)
+			.toArray()
+		if (!row) return null
+		const entries = await this.ctx.storage.list({
+			prefix: mcpServerOAuthStoragePrefix(input.serverId),
+		})
+		const sidecars = await this.ctx.storage.get(
+			mcpServerSidecarStorageKeys(input.serverId),
+		)
+		return { row: { ...row }, entries: [...entries, ...sidecars] }
+	}
+
+	/**
+	 * Org resource transfer: restore a server exported from another owner's
+	 * hub with its tokens, then reconnect with them. Refuses a server id this
+	 * hub already has.
+	 */
+	async importServerForTransfer(
+		input: McpHubServerTransfer,
+	): Promise<McpHubServerImportResult> {
+		await this.ensureRestored()
+		const serverId = input.row.id
+		if (this.manager.listServers().some((server) => server.id === serverId)) {
+			return { ok: false, reason: 'already_registered' }
+		}
+		if (hasForeignTransferStorageKey(input)) {
+			return { ok: false, reason: 'foreign_storage_key' }
+		}
+		if (input.entries.length > 0) {
+			await this.ctx.storage.put(Object.fromEntries(input.entries))
+		}
+		const sealed = await this.readSealedPreRegisteredOAuthClient(serverId)
+		if (sealed) this.preRegisteredClientIds.set(serverId, sealed.clientId)
+		await this.hydrateTokenRecoveryErrors()
+		const persisted = parsePersistedMcpServerOptions(input.row.server_options)
+		const options = reconnectMcpServerOptions(
+			persisted ? sanitizePersistedMcpServerOptions(persisted) : undefined,
+		)
+		const persistedType = options.transport.type
+		const transportType: 'sse' | 'streamable-http' | 'auto' =
+			persistedType === 'sse' || persistedType === 'streamable-http'
+				? persistedType
+				: 'auto'
+		const authProvider = this.createAuthProvider(input.row.callback_url)
+		authProvider.serverId = serverId
+		if (input.row.client_id) authProvider.clientId = input.row.client_id
+		await this.manager.registerServer(serverId, {
+			url: input.row.server_url,
+			name: input.row.name,
+			callbackUrl: input.row.callback_url,
+			...(input.row.client_id ? { clientId: input.row.client_id } : {}),
+			...(input.row.auth_url ? { authUrl: input.row.auth_url } : {}),
+			client: options.client,
+			transport: withStaticTransportHeaders({
+				...options.transport,
+				type: transportType,
+				authProvider,
+			}),
+		})
+		const connection = this.manager.mcpConnections[serverId]
+		if (input.row.auth_url && connection) {
+			// Same as the SDK restore path: a pending authorization waits for its
+			// callback instead of dialing the server.
+			connection.connectionState = 'authenticating'
+		} else {
+			await this.connectUsingStoredOAuthTokens(serverId)
+		}
+		await this.observeServer({ serverId, serverName: input.row.name })
+		return { ok: true, connection: this.finalizeConnectResult(serverId) }
+	}
+
 	async purgeForAccountDeletion(): Promise<void> {
 		try {
 			await this.manager.closeAllConnections()
