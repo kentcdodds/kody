@@ -1684,6 +1684,7 @@ function createPackageAppWorkerCacheKey(input: {
 	return JSON.stringify([
 		input.userId,
 		input.visitor.userId,
+		input.visitor.username,
 		input.visitor.role,
 		input.packageId,
 		input.kodyId,
