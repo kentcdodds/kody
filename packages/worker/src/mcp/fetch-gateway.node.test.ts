@@ -1586,6 +1586,28 @@ test('fetch gateway meters an abandoned body once, at the overall deadline or at
 	})
 })
 
+test('fetch gateway forwards a caller abort after headers when deadlines are disabled', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, forever])
+	const caller = new AbortController()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/unbounded', {
+			signal: caller.signal,
+		}),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: null,
+	})
+	expect(response.status).toBe(200)
+	const outboundSignal = (
+		fetchStub.mock.calls as unknown as Array<[Request]>
+	)[0]?.[0]?.signal
+	expect(outboundSignal?.aborted).toBe(false)
+	caller.abort(new Error('caller went away'))
+	expect(outboundSignal?.aborted).toBe(true)
+})
+
 test('fetch gateway idle deadline ignores time the consumer spends not reading', async () => {
 	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
 	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, { afterMs: 0 }])

@@ -54,10 +54,11 @@ export function createOutboundFetchDeadline(input: {
 		settled = true
 		clearTimeout(totalTimer)
 		clearTimeout(idleTimer)
-		input.callerSignal?.removeEventListener('abort', forwardCallerAbort)
 		resolveDone()
 	}
 
+	// Stays attached after `done`: an untracked body (no overall deadline,
+	// bodyless, or upgrade) still streams on `signal`.
 	if (input.callerSignal?.aborted) {
 		forwardCallerAbort()
 	} else {
