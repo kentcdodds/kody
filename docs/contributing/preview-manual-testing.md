@@ -67,11 +67,18 @@ memories, or similar — the check fails even when export works. At most assert
 manifest shape, for example
 `--request 'GET /account/export.json --contains accountExportSection'`. To
 verify exported content, use MCP `accountExportSection` via
-`control-kody execute` on the same preview origin. One-line example for
-`secret_entries` metadata (name only, never the value):
+`control-kody execute` on the same preview origin. `execute` takes the module
+from `--code-file`. Example for `secret_entries` metadata (name only, never the
+value):
 
 ```bash
-npm run control-kody -- execute --origin <preview> --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.accountExportSection({ section: "d1_table", table: "secret_entries" }) }'
+cat > .tmp/export-secret-entries.ts <<'EOF'
+import { kody } from 'kody:runtime'
+export default async function main() {
+  return await kody.accountExportSection({ section: 'd1_table', table: 'secret_entries' })
+}
+EOF
+npm run control-kody -- execute --origin <preview> --code-file .tmp/export-secret-entries.ts
 ```
 
 `--json` includes session metadata for the scripted run. For more authenticated
