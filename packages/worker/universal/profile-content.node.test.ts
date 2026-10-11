@@ -301,16 +301,3 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
 })
-
-test('repositories without package pages render names without links or a fork control', async () => {
-	const html = await render({
-		packages: [listedPackage, unpublishedPackage],
-		isSelf: true,
-		packageLinks: false,
-	})
-	expect(html).toContain('fathom-analytics')
-	expect(html).not.toContain('aria-label="fork"')
-	expect(html).not.toContain('href="/@kody/fathom-analytics"')
-	expect(html).not.toContain('href="/@kody/notes"')
-	expect(html).not.toContain('data-testid="profile-activity"')
-})

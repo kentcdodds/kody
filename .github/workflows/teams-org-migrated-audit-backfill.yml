@@ -2,10 +2,10 @@ name: 🧾 Teams org.migrated audit backfill
 
 # Operator path for ADR 0063 `org.migrated` rows. Deploy does not run this.
 # Dry-run prints counts and writes nothing. Apply inserts the missing success
-# rows; a repeat inserts nothing. Production runs are Kent's, from main, with
-# the confirm phrase. Preview targets (kody-pr-<number> or kody-branch-<slug>)
-# can run from a non-main ref so a rehearsal can use this file before it is
-# on main.
+# rows; a repeat inserts nothing. Production runs as Kent or kody-bot, from
+# main, with the confirm phrase. Preview targets (kody-pr-<number> or
+# kody-branch-<slug>) can run from a non-main ref so a rehearsal can use this
+# file before it is on main.
 
 on:
   workflow_dispatch:
@@ -65,10 +65,16 @@ jobs:
               echo "Production backfill runs from main only, got $REF." >&2
               exit 1
             fi
-            if [ "$ACTOR" != "kentcdodds" ]; then
-              echo "Production backfill runs as kentcdodds only (or Kent adds an approved runner here); got $ACTOR." >&2
-              exit 1
-            fi
+            # Approved production runners (Kent + kody-bot, because Cloud Agent
+            # gh cannot dispatch workflows and agents dispatch through
+            # @kentcdodds/github as kody-bot).
+            case "$ACTOR" in
+              kentcdodds|kody-bot) ;;
+              *)
+                echo "Production backfill runs as an approved actor only (kentcdodds or kody-bot); got $ACTOR." >&2
+                exit 1
+                ;;
+            esac
             if [ "$CONFIRM" != "backfill org.migrated audit" ]; then
               echo 'Production needs confirm = "backfill org.migrated audit".' >&2
               exit 1

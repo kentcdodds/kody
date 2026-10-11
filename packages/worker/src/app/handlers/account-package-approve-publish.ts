@@ -145,7 +145,7 @@ export function createAccountPackageApprovePublishHandler(env: Env) {
 					},
 				})
 			}
-			if (page.kind !== 'page' || !page.viewerIsOwner || !page.ownerPackage) {
+			if (page.kind !== 'page' || !page.viewerCanManage || !page.ownerPackage) {
 				return renderAppPage({
 					request,
 					env,
@@ -204,7 +204,7 @@ export function createAccountPackageApprovePublishApiHandler(env: Env) {
 					})
 					if (redirect) return redirect
 				}
-				if (page.kind === 'page' && page.viewerIsOwner && page.ownerPackage) {
+				if (page.kind === 'page' && page.viewerCanManage && page.ownerPackage) {
 					packageId = page.ownerPackage.id
 				}
 			}

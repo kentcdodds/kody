@@ -164,7 +164,6 @@ test('personal org: the owner sees org-wide usage for their own org', async () =
 			orgSlug: 'ada',
 			viewerPersonId: 'person-ada',
 			includeOrgWide: true,
-			packageLinks: true,
 		}),
 	)
 })
@@ -185,7 +184,6 @@ test('team org: only owners and billing admins see teammates and Automation', as
 				orgSlug: 'acme',
 				viewerPersonId: people[person].personId,
 				includeOrgWide,
-				packageLinks: false,
 			}),
 		)
 		const [call] = mocks.loadConnectionUsage.mock.calls.at(-1) ?? []

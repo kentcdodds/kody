@@ -24,8 +24,7 @@ function readOptionalLimit(raw: string | null) {
  * Repositories owned by a team org (`saved_packages.user_id = org.id`), for
  * `/@slug/-/packages`. Each row is shown only when the viewer can see that
  * package (`canSeeResource`): Owners see everything, other members see what
- * their grants and teams give them. Team packages have no `/@slug/<kody-id>`
- * page yet, so rows do not link to one.
+ * their grants and teams give them.
  */
 export async function loadOrgRepositoriesData(input: {
 	env: Env
@@ -88,12 +87,14 @@ export async function loadOrgRepositoriesData(input: {
 			listingCount: visible.filter((pkg) => pkg.communityListingId).length,
 		},
 		packages: visible.map((pkg) =>
-			toPublicProfilePackageItem(pkg, { includeOwnerVisibility: true }),
+			toPublicProfilePackageItem(pkg, {
+				includeOwnerVisibility: true,
+				username: slug,
+			}),
 		),
 		activity: [],
 		query: query || null,
 		isSelf: true,
 		loggedIn: true,
-		packageLinks: false,
 	}
 }

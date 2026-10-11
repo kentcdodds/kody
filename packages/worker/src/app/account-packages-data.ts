@@ -351,8 +351,11 @@ export async function loadAccountPackageDetail(input: {
 	env: Env
 	requestUrl: string
 	userId: string
-	/** Owner username; required to load credit attribution on the package page. */
-	username?: string
+	/**
+	 * Owner username. Set it to load the package's credit attribution, which is
+	 * the owner's billing data, so only for viewers who can manage the package.
+	 */
+	creditAttributionUsername?: string
 	packageId?: string
 	kodyId?: string
 }): Promise<AccountPackageDetail | null> {
@@ -379,7 +382,7 @@ export async function loadAccountPackageDetail(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 			userId: input.userId,
-			username: input.username,
+			username: input.creditAttributionUsername,
 			record: enriched,
 		}),
 	)

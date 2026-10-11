@@ -201,13 +201,15 @@ like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
-(`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
-`job_runs_per_day`, `concurrent_workflows`) are operator runaway caps sized from
-production usage with at least 2× busy-day headroom, and they still dominate
-every paid plan. `automation_invocations_per_day` on `max` is the public
-burst-friendly ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro
-automation stays at the job-matched values. All other resources use the ordinary
-`planLimits.max` numbers.
+(`execute_unique_workers_per_day`, `job_runs_per_day`, `concurrent_workflows`)
+are operator runaway caps sized from production usage with at least 2× busy-day
+headroom, and they still dominate every paid plan. `outbound_fetches_per_day` on
+`max` is instead 50× the purchasable Pro include (750,000), because it is also
+the per-seat credits ceiling and credits carry outbound fetches to 50× like
+execute. `automation_invocations_per_day` on `max` is the public burst-friendly
+ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays
+at the job-matched values. All other resources use the ordinary `planLimits.max`
+numbers.
 
 | Resource                         | Limit   |
 | -------------------------------- | ------- |
@@ -222,7 +224,7 @@ automation stays at the job-matched values. All other resources use the ordinary
 | `secrets`                        | 10,000  |
 | `storage_bytes`                  | 100 GiB |
 | `execute_unique_workers_per_day` | 25,000  |
-| `outbound_fetches_per_day`       | 80,000  |
+| `outbound_fetches_per_day`       | 750,000 |
 | `job_runs_per_day`               | 40,000  |
 | `automation_invocations_per_day` | 200,000 |
 
@@ -280,10 +282,12 @@ drops to Free limits.
 - **Credits ceiling.** With a positive balance, those fields
   (`unlockCreditsLimits`) can reach `creditsUnlockMultiplier` (50)× the pooled
   include, capped at the `max` daily ceilings × seats (per seat: execute 25,000
-  a day and 175,000 a week, outbound 80,000 / 560,000, job runs 40,000,
+  a day and 175,000 a week, outbound 750,000 / 5,250,000, job runs 40,000,
   automation 200,000; weekly is seven capped days). Whichever is lower wins: a
   funded 3-seat org gets 75,000 execute a day (both bounds agree) and 180,000 a
-  week (50 × 3,600; the 525,000 ceiling never binds for execute).
+  week (50 × 3,600; the 525,000 ceiling never binds for execute). Outbound works
+  the same way: the per-seat ceiling is 50× the 15,000 include, so a funded seat
+  runs to 750,000 fetches a day and 2,000,000 a week (50 × 40,000).
   `creditsCeilingScalesWithSeats` is the one switch for whether the ceiling
   grows with seats. At $0 `resolvePlanLimits` returns the pooled include (500
   execute/day and 1,200/week per seat), and every one of those fields stops at
@@ -1054,8 +1058,8 @@ Rate limit example (purchasable Pro with $0):
 Daily outbound fetch example (purchasable Pro with a funded wallet at the
 ceiling):
 
-> Plan limit reached: your "pro" plan allows at most 80000 outbound fetches per
-> day and you currently have 80000. This daily limit resets at 00:00 UTC, in 1h
+> Plan limit reached: your "pro" plan allows at most 750000 outbound fetches per
+> day and you currently have 750000. This daily limit resets at 00:00 UTC, in 1h
 > 26m.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
