@@ -137,8 +137,9 @@ export type FetchGatewayEnv = Pick<
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
 /**
- * Overall deadline for one gateway fetch, from request start until the
- * response body ends (time to headers included), on every surface. The run
+ * Overall deadline for one gateway fetch, from sending the upstream request
+ * (after quota and placeholder expansion) until the response body ends (time
+ * to headers included), on every surface. The run
  * budget of the calling sandbox still applies on top, so a 90s execute stops
  * its fetches at 90s. A body that goes quiet stops sooner, after
  * {@link outboundFetchIdleTimeoutMs} without bytes. A tighter caller
