@@ -20,11 +20,11 @@ import {
 	listAllJobStorageOwnerRows,
 	listDueJobRows,
 	listJobIdRowsForUser,
-	listJobRetentionCandidateRows,
 	listJobRowsByUserId,
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
 	refreshPackageJobRowIdentity,
+	renewClaimedJobRow,
 	restoreJobRowsForUser,
 	retryClaimedJobRow,
 	softDeleteJobRowsForUser,
@@ -77,6 +77,12 @@ export type JobsStore = {
 		nowMs: number
 		claimToken: string
 	}): Promise<JobRow | null>
+	renewClaimedJob(input: {
+		userId: string
+		jobId: string
+		claimToken: string
+		nowMs: number
+	}): Promise<boolean>
 	finalizeClaimedJob(input: {
 		userId: string
 		job: JobRecord
@@ -102,10 +108,6 @@ export type JobsStore = {
 		userId: string
 		nowIso: string
 	}): Promise<number>
-	listJobRetentionCandidates(input: {
-		afterId: string | null
-		limit: number
-	}): Promise<Array<JobRow>>
 	upsertArchivedJobArtifact(input: {
 		jobId: string
 		userId: string
@@ -202,6 +204,7 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 				now: new Date(input.nowMs),
 				claimToken: input.claimToken,
 			}),
+		renewClaimedJob: (input) => renewClaimedJobRow({ db, ...input }),
 		finalizeClaimedJob: (input) => finalizeClaimedJobRow({ db, ...input }),
 		retryClaimedJob: (input) => retryClaimedJobRow({ db, ...input }),
 		refreshPackageJobIdentity: (input) =>
@@ -209,8 +212,6 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		deleteJob: (input) => deleteJobRow(db, input.userId, input.jobId),
 		disableExpiredJobsForUser: (input) =>
 			disableExpiredJobRowsForUser({ db, ...input }),
-		listJobRetentionCandidates: (input) =>
-			listJobRetentionCandidateRows(db, input),
 		upsertArchivedJobArtifact: (input) =>
 			upsertArchivedJobArtifact({ db, ...input }),
 		listArchivedJobArtifactsDueBefore: (input) =>

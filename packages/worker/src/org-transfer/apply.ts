@@ -1,5 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import { packageIdFromJobId } from '#worker/jobs/package-job-id.ts'
+import { requirePackageIdFromJobId } from '#worker/jobs/package-job-id.ts'
 import {
 	type McpHubServerImportResult,
 	type McpHubServerTransfer,
@@ -322,7 +322,7 @@ async function applyUnderLease(input: {
 					jobId: job.id,
 					callerContextJson: await effects.jobCallerContextJson({
 						userId: to.id,
-						packageId: packageIdFromJobId(job.id)!,
+						packageId: requirePackageIdFromJobId(job.id),
 					}),
 				})),
 			)

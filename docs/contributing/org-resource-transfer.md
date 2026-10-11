@@ -53,10 +53,9 @@ Apply refuses when the plan has any of these:
   OAuth app, MCP server, or webhook with the same identity. Clashes also cover a
   server id already registered in the target's McpClientHub, and a target
   StorageRunner that already holds data.
-- Blockers: legacy (non-package) jobs, resource grants naming source-org
-  subjects, trigger enablements by someone outside the target org, an
-  integration whose OAuth app is not live, or an MCP server with no connection
-  in the source hub.
+- Blockers: resource grants naming source-org subjects, trigger enablements by
+  someone outside the target org, an integration whose OAuth app is not live, or
+  an MCP server with no connection in the source hub.
 - Orphans, unless `skipOrphans: true`.
 
 Both orgs must be live (not deleting, deleted, or suspended), and they must

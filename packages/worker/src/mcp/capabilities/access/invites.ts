@@ -298,6 +298,7 @@ export const inviteCreateCapability = defineDomainCapability(
 	{
 		name: 'inviteCreate',
 		orgPermission: 'none',
+		requiresLivePerson: true,
 		description:
 			'Invite someone to the organization this request is bound to, by email or username. kind membership needs member:write and adds them with a role (and optional teams). kind grant needs manage access on the resource and gives them a preset or permission list. The token is returned once, with a prompt that tells them to call inviteAccept. Invites expire in 7 days.',
 		keywords: ['invite', 'member', 'grant', 'email', 'username'],
@@ -452,6 +453,7 @@ export const inviteAcceptCapability = defineDomainCapability(
 	{
 		name: 'inviteAccept',
 		orgPermission: 'org:read',
+		requiresLivePerson: true,
 		description:
 			'Accept an invitation addressed to your account email or username. Pass the token from inviteCreate. Membership invites add you to that organization. Grant invites write the grant. The prompt from inviteCreate includes the organization slug and this call.',
 		keywords: ['invite', 'accept', 'join', 'token'],
@@ -532,6 +534,7 @@ export const inviteRevokeCapability = defineDomainCapability(
 	{
 		name: 'inviteRevoke',
 		orgPermission: 'none',
+		requiresLivePerson: true,
 		description:
 			'Revoke a pending invite in the organization this request is bound to. Membership invites need member:write. Grant invites need manage access on that resource (or member:write for an org grant). Accepted invites stay in place; remove the member or grant separately.',
 		keywords: ['invite', 'revoke', 'cancel'],

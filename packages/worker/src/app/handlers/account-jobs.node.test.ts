@@ -6,13 +6,12 @@ import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as appBaseUrl from '#worker/app-base-url.ts'
-import type * as jobRetention from '#worker/jobs/job-retention-cleanup.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
-const adHocJob = {
-	id: 'job-adhoc-1',
-	name: 'Morning digest',
+const packageJob = {
+	id: 'package-job:pkg-1:nightly',
+	name: 'Nightly package job',
 	sourceId: 'source-1',
 	publishedCommit: 'commit-1',
 	storageId: 'storage-1',
@@ -22,7 +21,6 @@ const adHocJob = {
 	timezone: 'UTC',
 	enabled: true,
 	killSwitchEnabled: false,
-	preserved: false,
 	expiresAt: null,
 	expired: false,
 	createdAt: new Date(0).toISOString(),
@@ -45,12 +43,12 @@ const adHocJob = {
 	],
 }
 
-const packageJob = {
-	...adHocJob,
-	id: 'package-job:pkg-1:nightly',
-	name: 'Nightly package job',
-	schedule: { type: 'interval' as const, every: '1d' },
-	scheduleSummary: 'Runs every 1d',
+const missingPackageJob = {
+	...packageJob,
+	id: 'package-job:pkg-missing:hourly',
+	name: 'Hourly job from a missing package',
+	schedule: { type: 'interval' as const, every: '1h' },
+	scheduleSummary: 'Runs every 1h',
 	params: undefined,
 	lastRunStatus: 'error' as const,
 	lastRunError: 'boom',
@@ -73,9 +71,9 @@ const alarmState = {
 	bindingAvailable: true,
 	status: 'armed' as const,
 	storedUserId: 'stable-user-1',
-	alarmScheduledFor: adHocJob.nextRunAt,
-	nextRunnableJobId: adHocJob.id,
-	nextRunnableRunAt: adHocJob.nextRunAt,
+	alarmScheduledFor: packageJob.nextRunAt,
+	nextRunnableJobId: packageJob.id,
+	nextRunnableRunAt: packageJob.nextRunAt,
 	alarmInSync: true,
 }
 
@@ -103,26 +101,11 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	inspectJobsForUser: vi.fn(),
 	updateJob: vi.fn(),
-	deleteJob: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 	getAppBaseUrl: vi.fn<typeof appBaseUrl.getAppBaseUrl>(
 		() => 'https://example.com',
 	),
 	listRunRecords: vi.fn(),
-	readJobRetentionPreferencesForUser: vi.fn<
-		typeof jobRetention.readJobRetentionPreferencesForUser
-	>(async () => ({
-		successOnceDays: 14,
-		failedOrNeverRanOnceDays: 60,
-		disabledRecurringDays: 90,
-	})),
-	updateJobRetentionPreferencesForUser: vi.fn<
-		typeof jobRetention.updateJobRetentionPreferencesForUser
-	>(async (input) => ({
-		successOnceDays: input.successOnceDays,
-		failedOrNeverRanOnceDays: input.failedOrNeverRanOnceDays,
-		disabledRecurringDays: input.disabledRecurringDays,
-	})),
 	listSavedPackagesByUserId: vi.fn<
 		typeof packageRepo.listSavedPackagesByUserId
 	>(async () => [
@@ -177,23 +160,11 @@ vi.mock('#worker/jobs/inspect.ts', () => ({
 
 vi.mock('#worker/jobs/service.ts', () => ({
 	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
-	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	runJobNowViaManager: (...args: Array<unknown>) =>
 		mockModule.runJobNowViaManager(...args),
-}))
-
-vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
-	readJobRetentionPreferencesForUser: (
-		...args: Parameters<typeof jobRetention.readJobRetentionPreferencesForUser>
-	) => mockModule.readJobRetentionPreferencesForUser(...args),
-	updateJobRetentionPreferencesForUser: (
-		...args: Parameters<
-			typeof jobRetention.updateJobRetentionPreferencesForUser
-		>
-	) => mockModule.updateJobRetentionPreferencesForUser(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -211,7 +182,9 @@ const { createAccountJobsApiHandler } = await import('./account-jobs.ts')
 
 const jobsUrl = 'https://example.com/account/jobs.json'
 
-function stubInspection(jobs: Array<typeof adHocJob | typeof packageJob>) {
+function stubInspection(
+	jobs: Array<typeof packageJob | typeof missingPackageJob>,
+) {
 	mockModule.inspectJobsForUser.mockResolvedValue({ jobs, alarm: alarmState })
 	mockModule.listRunRecords.mockImplementation(
 		async (input: { filter?: { jobId?: string | null } }) => {
@@ -249,7 +222,7 @@ function stubInspection(jobs: Array<typeof adHocJob | typeof packageJob>) {
 }
 
 function createJobsClient() {
-	stubInspection([adHocJob, packageJob])
+	stubInspection([packageJob, missingPackageJob])
 	const env = { APP_DB: {} as D1Database, COOKIE_SECRET: 'secret' } as Env
 	const { handler } = createAccountJobsApiHandler(env)
 	return {
@@ -271,7 +244,7 @@ function createJobsClient() {
 	}
 }
 
-test('jobs API lists jobs with ownership and selected detail', async () => {
+test('jobs API lists package jobs and selected detail', async () => {
 	const { get } = createJobsClient()
 
 	const listResponse = await get()
@@ -281,42 +254,33 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 		env: expect.anything(),
 		userId: ownerIdFromStored('stable-user-1'),
 	})
-	await expect(listResponse.json()).resolves.toMatchObject({
+	const listPayload = (await listResponse.json()) as {
+		jobs: Array<Record<string, unknown>>
+	}
+	expect(listPayload).not.toHaveProperty('retention')
+	expect(listPayload).toMatchObject({
 		ok: true,
 		username: 'test-user',
 		selectedJobId: null,
 		selectedJob: null,
-		retention: {
-			successOnceDays: 14,
-			failedOrNeverRanOnceDays: 60,
-			disabledRecurringDays: 90,
-			defaults: {
-				successOnce: 14,
-				failedOrNeverRanOnce: 60,
-				disabledRecurring: 90,
-			},
-		},
 		jobs: [
 			expect.objectContaining({
-				id: 'job-adhoc-1',
-				ownership: 'ad-hoc',
-				packageId: null,
-				packageName: null,
-				packageKodyId: null,
-				scheduleSummary: adHocJob.scheduleSummary,
+				id: 'package-job:pkg-1:nightly',
+				packageId: 'pkg-1',
+				packageName: 'State Store',
+				packageKodyId: 'state-store',
+				scheduleSummary: packageJob.scheduleSummary,
 				scheduleType: 'cron',
 				enabled: true,
 				killSwitchEnabled: false,
-				preserved: false,
 				expiresAt: null,
 				expired: false,
 			}),
 			expect.objectContaining({
-				id: 'package-job:pkg-1:nightly',
-				ownership: 'package',
-				packageId: 'pkg-1',
-				packageName: 'State Store',
-				packageKodyId: 'state-store',
+				id: 'package-job:pkg-missing:hourly',
+				packageId: 'pkg-missing',
+				packageName: null,
+				packageKodyId: null,
 				scheduleType: 'interval',
 			}),
 		],
@@ -325,20 +289,26 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 			status: 'armed',
 		}),
 	})
+	for (const job of listPayload.jobs) {
+		expect(job).not.toHaveProperty('ownership')
+		expect(job).not.toHaveProperty('preserved')
+	}
 
-	const detailResponse = await get('?selected=job-adhoc-1')
+	const detailResponse = await get(
+		`?selected=${encodeURIComponent(packageJob.id)}`,
+	)
 	expect(detailResponse.status).toBe(200)
 	await expect(detailResponse.json()).resolves.toMatchObject({
 		ok: true,
-		selectedJobId: 'job-adhoc-1',
+		selectedJobId: packageJob.id,
 		selectedJob: expect.objectContaining({
-			id: 'job-adhoc-1',
-			ownership: 'ad-hoc',
+			id: packageJob.id,
+			packageId: 'pkg-1',
 			params: { topic: 'news' },
 			schedule: { type: 'cron', expression: '0 9 * * *' },
 			recentRuns: [
 				expect.objectContaining({
-					id: 'job-adhoc-1-run-0',
+					id: `${packageJob.id}-run-0`,
 					status: 'success',
 					durationMs: 120,
 					error: null,
@@ -351,66 +321,42 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 	})
 })
 
-test('jobs API rejects unauthenticated, invalid, and package-owned mutations', async () => {
+test('jobs API rejects unauthenticated, unsupported, and removed actions', async () => {
 	const { get, post, put } = createJobsClient()
-	mockModule.updateJob.mockResolvedValue(packageJob)
-	mockModule.deleteJob.mockResolvedValue({ id: packageJob.id, deleted: true })
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
 	expect((await get()).status).toBe(401)
 	expect((await put()).status).toBe(405)
 
-	const invalidAction = await post({ action: 'nope' })
-	expect(invalidAction.status).toBe(400)
-	await expect(invalidAction.json()).resolves.toEqual({
-		ok: false,
-		error: 'Invalid action.',
-	})
-
 	for (const body of [
+		{ action: 'nope' },
 		{ action: 'set_enabled', id: packageJob.id, enabled: false },
 		{ action: 'set_preserved', id: packageJob.id, preserved: true },
+		{
+			action: 'update_retention',
+			successOnceDays: 14,
+			failedOrNeverRanOnceDays: 60,
+			disabledRecurringDays: 90,
+		},
 		{ action: 'delete', id: packageJob.id },
 	]) {
 		const response = await post(body)
 		expect([body.action, response.status]).toEqual([body.action, 400])
-		await expect(response.json()).resolves.toMatchObject({
+		await expect(response.json()).resolves.toEqual({
 			ok: false,
-			error: expect.stringContaining('Package-owned jobs cannot'),
+			error: 'Invalid action.',
 		})
 	}
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
-	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 })
 
-test('jobs API mutations are user-scoped for non-package jobs and kill switch', async () => {
+test('jobs API kill switch and run now are user-scoped', async () => {
 	const { env, post } = createJobsClient()
-	mockModule.deleteJob.mockResolvedValue({ id: adHocJob.id, deleted: true })
 	mockModule.runJobNowViaManager.mockResolvedValue({
-		job: adHocJob,
+		job: packageJob,
 		execution: { ok: true, logs: [] },
 		deletedAfterRun: false,
 	})
-
-	mockModule.updateJob.mockResolvedValue({ ...adHocJob, enabled: false })
-	const disableResponse = await post({
-		action: 'set_enabled',
-		id: adHocJob.id,
-		enabled: false,
-	})
-	expect(disableResponse.status).toBe(200)
-	expect(mockModule.updateJob).toHaveBeenCalledWith(
-		expect.objectContaining({
-			env,
-			callerContext: expect.objectContaining({
-				baseUrl: 'https://example.com',
-				user: expect.objectContaining({
-					userId: ownerIdFromStored('stable-user-1'),
-				}),
-			}),
-			body: { id: adHocJob.id, enabled: false },
-		}),
-	)
 
 	mockModule.updateJob.mockResolvedValue({
 		...packageJob,
@@ -420,47 +366,31 @@ test('jobs API mutations are user-scoped for non-package jobs and kill switch', 
 		action: 'set_kill_switch',
 		id: packageJob.id,
 		killSwitchEnabled: true,
-		preserved: false,
-		expiresAt: null,
-		expired: false,
 	})
 	expect(killSwitchResponse.status).toBe(200)
 	expect(mockModule.updateJob).toHaveBeenLastCalledWith(
 		expect.objectContaining({
+			env,
+			callerContext: expect.objectContaining({
+				baseUrl: 'https://example.com',
+				user: expect.objectContaining({
+					userId: ownerIdFromStored('stable-user-1'),
+				}),
+			}),
 			body: { id: packageJob.id, killSwitchEnabled: true },
 		}),
 	)
 
-	mockModule.updateJob.mockResolvedValue({ ...adHocJob, preserved: true })
-	const preserveResponse = await post({
-		action: 'set_preserved',
-		id: adHocJob.id,
-		preserved: true,
-	})
-	expect(preserveResponse.status).toBe(200)
-	expect(mockModule.updateJob).toHaveBeenLastCalledWith(
-		expect.objectContaining({ body: { id: adHocJob.id, preserved: true } }),
-	)
-
-	const runNowResponse = await post({ action: 'run_now', id: adHocJob.id })
+	const runNowResponse = await post({ action: 'run_now', id: packageJob.id })
 	expect(runNowResponse.status).toBe(200)
 	expect(mockModule.runJobNowViaManager).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('stable-user-1'),
-			jobId: adHocJob.id,
+			jobId: packageJob.id,
 		}),
 	)
 	await expect(runNowResponse.json()).resolves.toMatchObject({
 		ok: true,
 		runNow: { ok: true, deletedAfterRun: false },
-	})
-
-	stubInspection([])
-	const deleteResponse = await post({ action: 'delete', id: adHocJob.id })
-	expect(deleteResponse.status).toBe(200)
-	expect(mockModule.deleteJob).toHaveBeenCalledWith({
-		env,
-		userId: ownerIdFromStored('stable-user-1'),
-		jobId: adHocJob.id,
 	})
 })

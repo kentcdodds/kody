@@ -6,12 +6,8 @@ import {
 	buildJobManagerDebugOutput,
 } from '#mcp/capabilities/jobs/shared.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
-import {
-	defaultJobRetentionDays,
-	type JobRetentionPreferences,
-} from '#worker/jobs/job-retention.ts'
-import { readJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
+import { requirePackageIdFromJobId } from '#worker/jobs/package-job-id.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
@@ -23,13 +19,10 @@ type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
 
-export type JobOwnership = 'ad-hoc' | 'package'
-
 export type AccountJobListItem = {
 	id: string
 	name: string
-	ownership: JobOwnership
-	packageId: string | null
+	packageId: string
 	packageName: string | null
 	packageKodyId: string | null
 	scheduleSummary: string
@@ -37,7 +30,6 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
-	preserved: boolean
 	expiresAt: string | null
 	expired: boolean
 	dueNow: boolean
@@ -84,10 +76,6 @@ export type AccountJobsAlarm = {
 	alarmInSync: boolean | null
 }
 
-export type AccountJobRetentionPreferences = JobRetentionPreferences & {
-	defaults: typeof defaultJobRetentionDays
-}
-
 export type AccountJobsLoaderData = {
 	ok: true
 	username: string
@@ -95,33 +83,10 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
-	retention: AccountJobRetentionPreferences
 }
 
 const accountJobsBasePath = '/account/jobs'
-const packageJobIdPrefix = 'package-job:'
 const recentRunsLimit = 20
-
-export function isPackageOwnedJobId(jobId: string) {
-	return jobId.startsWith(packageJobIdPrefix)
-}
-
-export function jobOwnershipForId(jobId: string): JobOwnership {
-	return isPackageOwnedJobId(jobId) ? 'package' : 'ad-hoc'
-}
-
-/**
- * Package job ids are `package-job:{packageId}:{encodeURIComponent(jobName)}`.
- * Returns null for non-package jobs or malformed package job ids.
- */
-export function packageIdFromJobId(jobId: string): string | null {
-	if (!isPackageOwnedJobId(jobId)) return null
-	const rest = jobId.slice(packageJobIdPrefix.length)
-	const separatorIndex = rest.indexOf(':')
-	if (separatorIndex <= 0) return null
-	const packageId = rest.slice(0, separatorIndex).trim()
-	return packageId || null
-}
 
 export function readAccountJobsSelectedJobId(
 	requestUrl: string,
@@ -150,12 +115,11 @@ function toListItem(
 	packagesById: ReadonlyMap<string, { name: string; kodyId: string }>,
 	inspection = buildJobInspectionOutput(job),
 ): AccountJobListItem {
-	const packageId = packageIdFromJobId(job.id)
-	const savedPackage = packageId ? packagesById.get(packageId) : null
+	const packageId = requirePackageIdFromJobId(job.id)
+	const savedPackage = packagesById.get(packageId)
 	return {
 		id: job.id,
 		name: job.name,
-		ownership: jobOwnershipForId(job.id),
 		packageId,
 		packageName: savedPackage?.name ?? null,
 		packageKodyId: savedPackage?.kodyId ?? null,
@@ -164,7 +128,6 @@ function toListItem(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		killSwitchEnabled: job.killSwitchEnabled,
-		preserved: job.preserved,
 		expiresAt: inspection.expires_at,
 		expired: inspection.expired,
 		dueNow: inspection.due_now,
@@ -259,17 +222,12 @@ export async function loadAccountJobsData(input: {
 		input.request.url,
 		input.pathJobId,
 	)
-	const [inspection, savedPackages, retentionPreferences] = await Promise.all([
+	const [inspection, savedPackages] = await Promise.all([
 		inspectJobsForUser({
 			env: input.env,
 			userId,
 		}),
 		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
-		readJobRetentionPreferencesForUser({
-			db: input.env.APP_DB,
-			// Retention columns still live on the person row.
-			userId: input.user.mcpUser.userId,
-		}),
 	])
 	const packagesById = new Map(
 		savedPackages.map((savedPackage) => [
@@ -296,9 +254,5 @@ export async function loadAccountJobsData(input: {
 			: null,
 		selectedJobId,
 		alarm: toAlarm(inspection.alarm),
-		retention: {
-			...retentionPreferences,
-			defaults: defaultJobRetentionDays,
-		},
 	}
 }

@@ -23,6 +23,7 @@ const listDueJobRows = vi.fn()
 const claimJobRow = vi.fn()
 const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
+const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
 const listArchivedJobArtifactsDueBefore = vi.fn<
 	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
@@ -65,6 +66,8 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 			finalizeClaimedJobRow(...(args as [never])),
 		retryClaimedJobRow: (...args: Array<unknown>) =>
 			retryClaimedJobRow(...(args as [never])),
+		renewClaimedJobRow: (...args: Array<unknown>) =>
+			renewClaimedJobRow(...(args as [never])),
 	}
 })
 
@@ -112,17 +115,16 @@ const { runDueJobsForUser } = await import('./service.ts')
 function createJobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
 	return {
 		version: 1,
-		id: 'job-fenced',
+		id: 'package-job:pkg-fenced:fenced-job',
 		userId: ownerIdFromStored('user-fenced'),
 		name: 'Fenced job',
 		sourceId: 'source-fenced',
 		publishedCommit: null,
-		storageId: 'job:job-fenced',
+		storageId: 'job:package-job:pkg-fenced:fenced-job',
 		schedule: { type: 'interval', every: '1h' },
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: '2026-07-30T12:00:00.000Z',
 		updatedAt: '2026-07-30T12:00:00.000Z',
@@ -149,7 +151,6 @@ function claimedRow(record: JobRecord) {
 		timezone: record.timezone,
 		enabled: 1 as const,
 		kill_switch_enabled: 0 as const,
-		preserved: 0 as const,
 		expires_at: null,
 		caller_context_json: '{}',
 		created_at: record.createdAt,
@@ -268,7 +269,9 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 	retryClaimedJobRow.mockClear()
 	consoleInfo.mockClear()
 
-	const retryRecord = createJobRecord({ id: 'job-retry-fence' })
+	const retryRecord = createJobRecord({
+		id: 'package-job:pkg-fenced:retry-fence',
+	})
 	seedDueClaim(retryRecord)
 	claimRunRecord.mockResolvedValue(null)
 	retryClaimedJobRow.mockResolvedValue(false)
@@ -387,7 +390,9 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		jobOutcomes: [],
 	}
 
-	const recurring = createJobRecord({ id: 'job-recurring-skip' })
+	const recurring = createJobRecord({
+		id: 'package-job:pkg-fenced:recurring-skip',
+	})
 	seedDueClaim(recurring)
 	await expect(runDue(recurring.userId)).resolves.toEqual(skipped)
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
@@ -404,7 +409,7 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 
 	finalizeClaimedJobRow.mockClear()
 	const once = createJobRecord({
-		id: 'job-once-skip',
+		id: 'package-job:pkg-fenced:once-skip',
 		schedule: { type: 'once', runAt: '2026-07-30T19:00:00.000Z' },
 	})
 	seedDueClaim(once)
@@ -417,4 +422,53 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		}),
 	)
 	expect(claimRunRecord).not.toHaveBeenCalled()
+})
+
+test('each further enablement run renews the shared claim and stops once it is lost', async () => {
+	const secondEnablement: EnablementRun = {
+		...enablementRun,
+		id: 'enablement-second',
+	}
+	const record = createJobRecord({
+		id: 'package-job:pkg-fenced:multi-enablement',
+	})
+	const row = seedDueClaim(record)
+	claimRunRecord.mockReset()
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(record, row, {
+			packageId: null,
+			kodyId: null,
+			publishedCommit: null,
+		}),
+	)
+	finalizeClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	const twoRuns = {
+		runs: [enablementRun, secondEnablement],
+		skipped: [] as [],
+	}
+
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(true)
+	await runDue(record.userId)
+	const [claimInput] = claimJobRow.mock.lastCall as [{ claimToken: string }]
+	const claimToken = claimInput.claimToken
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(renewClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: record.userId,
+			jobId: record.id,
+			claimToken,
+			nowMs: expect.any(Number),
+		}),
+	)
+	expect(claimRunRecord).toHaveBeenCalledTimes(2)
+
+	renewClaimedJobRow.mockReset()
+	claimRunRecord.mockClear()
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(false)
+	await runDue(record.userId)
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(claimRunRecord).toHaveBeenCalledOnce()
 })

@@ -79,6 +79,19 @@ export type CapabilityDefinition<
 	 * concrete resource they touch.
 	 */
 	orgPermission: SurfacePermission
+	/**
+	 * The capability needs a live person: role and membership changes, billing
+	 * changes, and site-admin tools. It never runs from a triggered run (cron
+	 * job, webhook, subscription, inbound email) or package code one started,
+	 * whatever the enabler's role. `true` always applies; a function decides
+	 * from the parsed input. Checked at dispatch by `assertLivePerson`.
+	 */
+	requiresLivePerson?:
+		| true
+		| ((
+				args: InferCapabilitySchema<TInputSchema>,
+				ctx: CapabilityContext,
+		  ) => boolean | Promise<boolean>)
 	/** Site-admin role (separate from org permissions). */
 	requiredRole?: RoleName
 	/** Site-admin permission (separate from org permissions). */
@@ -110,6 +123,8 @@ export type Capability<TResult = CapabilityResult> = {
 	idempotent: boolean
 	destructive: boolean
 	orgPermission: SurfacePermission
+	/** `by-input`: the definition decides per call from the parsed input. */
+	requiresLivePerson: 'always' | 'by-input' | 'never'
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
 	featureFlag?: FeatureFlagKey

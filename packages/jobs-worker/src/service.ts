@@ -88,6 +88,15 @@ export class JobsService
 		return jobsStore(this.env).claimJob(input)
 	}
 
+	async renewClaimedJob(input: {
+		userId: string
+		jobId: string
+		claimToken: string
+		nowMs: number
+	}): Promise<boolean> {
+		return jobsStore(this.env).renewClaimedJob(input)
+	}
+
 	async finalizeClaimedJob(input: {
 		userId: string
 		job: JobRecord
@@ -126,13 +135,6 @@ export class JobsService
 		nowIso: string
 	}): Promise<number> {
 		return jobsStore(this.env).disableExpiredJobsForUser(input)
-	}
-
-	async listJobRetentionCandidates(input: {
-		afterId: string | null
-		limit: number
-	}): Promise<Array<JobRow>> {
-		return jobsStore(this.env).listJobRetentionCandidates(input)
 	}
 
 	async upsertArchivedJobArtifact(input: {

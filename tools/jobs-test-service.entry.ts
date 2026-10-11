@@ -68,7 +68,6 @@ const storeMethodNames = [
 	'refreshPackageJobIdentity',
 	'deleteJob',
 	'disableExpiredJobsForUser',
-	'listJobRetentionCandidates',
 	'upsertArchivedJobArtifact',
 	'listArchivedJobArtifactsDueBefore',
 	'deleteArchivedJobArtifact',

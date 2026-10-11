@@ -131,7 +131,8 @@ slot after the secret or integration the code already references, and keep those
 references as they are. There is no way yet for an org to choose which
 credential fills a slot; see
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-for the switch to assignments.
+for the planned switch to scoped credential clients
+([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
 {
@@ -588,6 +589,9 @@ Recurring schedules belong on a saved package:
 - Package config (secrets and manifest mounts) stays keyed by the saved package
   id
 - Shared durable data goes through `packageStorage()`
+- Each run, including `jobRunNow`, gets a 5-minute sandbox budget on every plan,
+  including package exports the job imports. Outbound `fetch` keeps its own
+  5-minute deadline and 60s idle timeout
 
 Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see
@@ -595,12 +599,10 @@ Jobs are part of the package definition. Deferred one-shot work uses
 
 `jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
-clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `jobDelete` is rejected for
-package-owned jobs for the same reason. `jobRunNow` triggers an existing package
-job immediately for debugging. When `expires_at` is reached the platform stops
-scheduling and auto-disables the job; that is separate from `preserved`, which
-only skips retention deletion.
+clears). Jobs keep name and source in the package repo — change, add, or remove
+the job entry there and publish. `jobRunNow` triggers an existing package job
+immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job.
 
 ## Save and edit packages
 

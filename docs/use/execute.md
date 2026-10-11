@@ -164,6 +164,30 @@ Sandbox timeout errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
 
+### Time limits
+
+Sandbox budgets are the same on every plan:
+
+| Run                                                                     | Budget                       |
+| ----------------------------------------------------------------------- | ---------------------------- |
+| MCP / ad-hoc execute, package export HTTP invokes, `sync` webhooks      | ~90s                         |
+| Jobs (scheduled and `jobRunNow`, including package exports they import) | 5 minutes                    |
+| Ack (queued) webhook deliveries                                         | 5 minutes                    |
+| Each workflow step                                                      | 5 minutes                    |
+| `execute --local`                                                       | none (fetch deadlines apply) |
+
+A `sync` webhook's HTTP response stops waiting after 30s. Work that does not fit
+the interactive budget goes in a workflow or a job.
+
+### Long calls: start a workflow and check back
+
+For work that may outlast one MCP call, return the `id` from `workflows.create`
+and end the call. In a later call, read the result with
+`kody.runList({ workflow_id: id, error_triage: 'all' })`: the newest run's
+`status` says whether it finished, and a successful run's `metadata.result`
+holds the workflow's return value (capped at 4 KiB). See
+[Start a workflow and check back](./workflows.md#start-a-workflow-and-check-back).
+
 ### Recovering from MCP client timeouts
 
 A timeout means the MCP client stopped waiting. Kody aborts that inbound
@@ -222,17 +246,16 @@ module-oriented runtime model:
 - deferred one-shot work uses **`workflows.create({ runAt, ... })`** from
   `execute` or package runtime — see [Workflows](./workflows.md)
 - **`kody.jobUpdate(...)`** updates metadata on an existing job (schedule,
-  timezone, enabled, kill switch, preserved, `expires_at`). Package job name and
-  source stay in the package repo.
+  timezone, enabled, kill switch, `expires_at`). Job name and source stay in the
+  package repo.
 - Optional **`expires_at`** on `jobUpdate` stops the platform from scheduling
   the job after that UTC time. When expiry is reached, Kody auto-disables the
   job (`enabled=false`) so it shows as disabled in `jobList` / `jobGet` (with
-  `expired: true`) and can age out via normal retention. This is separate from
-  **`preserved`**, which only skips auto-deletion.
+  `expired: true`).
 - **`kody.jobGet({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored entrypoint path and source code
-- Package-owned jobs are removed by editing the package and publishing, not by
-  `jobDelete`.
+- Remove a job by deleting it from `package.json#kody.jobs` and publishing the
+  package.
 - **`kody.jobRunNow(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging.
   Expired jobs are rejected.

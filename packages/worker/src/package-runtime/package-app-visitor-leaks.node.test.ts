@@ -172,21 +172,19 @@ test("a member's package app acts as its visitor, so it cannot make them Owner",
 			callerContext,
 		}),
 	).rejects.toMatchObject({
-		name: 'AuthorizationError',
-		permission: 'member:write',
+		name: 'LivePersonRequiredError',
+		capabilityName: 'orgMemberUpdate',
 	})
 
 	await expect(
 		t.bridgeFor(t.visitors.bea).callCapability(promoteBea),
-	).rejects.toMatchObject({
-		name: 'AuthorizationError',
-		permission: 'member:write',
-	})
+	).rejects.toThrow('"orgMemberUpdate" needs a live person')
 	expect(await t.beasRole()).toBe('member')
 
-	// The same app visited by an Owner acts with Owner access.
+	// Package code decides when an app calls, so even an Owner's visit is not a
+	// live person for role changes.
 	await expect(
 		t.bridgeFor(t.visitors.owner).callCapability(promoteBea),
-	).resolves.toBeTruthy()
-	expect(await t.beasRole()).toBe('owner')
+	).rejects.toThrow('"orgMemberUpdate" needs a live person')
+	expect(await t.beasRole()).toBe('member')
 })

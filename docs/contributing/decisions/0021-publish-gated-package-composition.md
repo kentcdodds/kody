@@ -4,6 +4,9 @@
 - **Date:** 2026-08-18
 - **Amended:** 2026-10-10 (Teams: ambient credential use requires per-resource
   `secret:use` / `integration:use`; delete the pre-Teams ambient skip)
+- **Superseded in part by:**
+  [0068](./0068-credentials-own-placement-scoped-clients.md) (credential
+  authority; see the note at the end)
 
 ## Context
 
@@ -82,3 +85,14 @@ resolution. Credential storage is read nowhere else.
   package stamps never skip Use. Owners and Automation are unchanged.
 - Revisit only if a concrete user need requires live in-process composition or a
   package-wide kill switch that is not delete.
+
+**Superseded in part (2026-10-11):**
+[0068](./0068-credentials-own-placement-scoped-clients.md) replaces the
+credential authority this record describes: the package as the unit of declared
+authority (`kody.secretMounts`, integration allowlists, provider grants), the
+slot binding or allowlist as the grant for package runs, package-attachment
+semantics for runners, and the `attested` stamp skipping the actor's Use. Under
+0068 the only authority is the actor's Use plus `package:execute`, and package
+stamps select needs and storage only. Runtime follows this record until 0068's
+migration reaches T. The publish-gated, snapshot-isolated composition decision
+is unchanged.

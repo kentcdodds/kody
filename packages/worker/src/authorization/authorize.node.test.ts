@@ -6,11 +6,18 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
-import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import {
+	deriveRequestContext,
+	inheritRequest,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
+	assertLivePerson,
 	authorize,
 	authorizeSurface,
+	isLivePersonRequest,
+	LivePersonRequiredError,
 	AuthorizationError,
 	denyProfileBoundPackageCreate,
 	canSeeResource,
@@ -463,4 +470,56 @@ test('deep call sites read the permissions bound for the request', async () => {
 			getRequestPermissions(),
 		),
 	).resolves.toBeUndefined()
+})
+
+test('only a person behind the request is live; a triggered run and anything it starts never are', () => {
+	const person = { userId: personIdFromStored('user-1'), username: 'ada' }
+	const enablement = { id: 'en-1', enabler: person, role: 'owner' as const }
+	const request = (source: RequestSource) =>
+		deriveRequestContext({ user: person, source })
+	const live = (source: RequestSource) => isLivePersonRequest(request(source))
+
+	expect(
+		(
+			[
+				{ kind: 'session' },
+				{ kind: 'mcp-oauth' },
+				{ kind: 'cli' },
+				{ kind: 'api-token', tokenId: 'token-1' },
+				{ kind: 'inherited', lineage: request({ kind: 'mcp-oauth' }) },
+			] satisfies Array<RequestSource>
+		).map(live),
+	).toEqual([true, true, true, true, true])
+
+	const webhookRun = request({ kind: 'webhook', sourceId: 'ep-1', enablement })
+	expect(
+		(
+			[
+				{ kind: 'package-app' },
+				{ kind: 'schedule', jobId: 'job-1', enablement },
+				{ kind: 'schedule', jobId: 'job-1' },
+				{ kind: 'webhook', sourceId: 'ep-1', enablement },
+				{
+					kind: 'inbound-email',
+					sourceId: 'message-1',
+					sender: { kind: 'member', actor: person, role: 'owner' },
+					enablement,
+				},
+				{ kind: 'platform-event', sourceId: 'event-1', enablement },
+				inheritRequest(webhookRun),
+				inheritRequest(request(inheritRequest(webhookRun))),
+			] satisfies Array<RequestSource>
+		).map(live),
+	).toEqual([false, false, false, false, false, false, false, false])
+	expect(isLivePersonRequest(null)).toBe(false)
+
+	expect(() => assertLivePerson(webhookRun, 'orgMemberUpdate')).toThrow(
+		LivePersonRequiredError,
+	)
+	expect(() => assertLivePerson(webhookRun, 'orgMemberUpdate')).toThrow(
+		/Capability "orgMemberUpdate" needs a live person/,
+	)
+	expect(() =>
+		assertLivePerson(request({ kind: 'session' }), 'orgMemberUpdate'),
+	).not.toThrow()
 })

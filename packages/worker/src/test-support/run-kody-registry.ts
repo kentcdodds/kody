@@ -349,8 +349,8 @@ export function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[17]
-								const userId = params[18]
+								const id = params[16]
+								const userId = params[17]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -368,13 +368,12 @@ export function createJobMutationDatabase(input: {
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									preserved: params[10],
-									expires_at: params[11],
-									caller_context_json: params[12],
-									updated_at: params[13],
-									last_run_at: params[14],
-									last_run_status: params[15],
-									next_run_at: params[16],
+									expires_at: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									next_run_at: params[15],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(
@@ -525,7 +524,6 @@ export function createJobRow(
 		timezone: job.timezone,
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
-		preserved: job.preserved ? 1 : 0,
 		expires_at: job.expiresAt ?? null,
 		caller_context_json: JSON.stringify(callerContext),
 		created_at: job.createdAt,

@@ -18,21 +18,23 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
-/** Site-admin tools: the `admin` role gates them, not org permissions. */
+/**
+ * Site-admin tools: the `admin` role gates them, not org permissions, and a
+ * live person must call them (never a job, webhook, subscription, or email).
+ */
 export const adminCapabilityAccess = {
 	orgPermission: 'none',
 	requiredRole: 'admin',
+	requiresLivePerson: true,
 	readOnly: true,
 	idempotent: true,
 	destructive: false,
 } as const
 
-// Admin mutations stay callable from admin-owned background package/job/webhook
-// callers (no executionOrigin gate). Accepted residual: cross-user / fleet blast
-// such as adminPackageCodemodApply. See docs/contributing/security.md.
 export const adminMutationCapabilityAccess = {
 	orgPermission: 'none',
 	requiredRole: 'admin',
+	requiresLivePerson: true,
 	readOnly: false,
 	idempotent: false,
 	destructive: false,

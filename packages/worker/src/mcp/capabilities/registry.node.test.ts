@@ -110,3 +110,41 @@ test('every capability declares a real org permission, and site-admin tools decl
 		)
 	}
 })
+
+test('site-admin tools and member, role, and invite changes need a live person', async () => {
+	const registry = await getStaticRegistry()
+	const missing = registry.capabilityList
+		.filter(
+			(capability) =>
+				(capability.requiredRole ||
+					capability.requiredPermission ||
+					capability.orgPermission === 'member:write' ||
+					capability.orgPermission === 'member:delete' ||
+					capability.domain === 'admin') &&
+				capability.requiresLivePerson === 'never',
+		)
+		.map((capability) => capability.name)
+	expect(missing).toEqual([])
+	const byName = (name: string) =>
+		registry.capabilityMap[name]?.requiresLivePerson
+	expect(
+		[
+			'orgMemberUpdate',
+			'orgMemberRemove',
+			'inviteCreate',
+			'inviteAccept',
+			'inviteRevoke',
+			'teamMemberAdd',
+			'teamMemberRemove',
+			'adminCreditGrant',
+			'adminUserUpdate',
+		].map(byName),
+	).toEqual(Array(9).fill('always'))
+	expect(['accessGrant', 'accessRevoke'].map(byName)).toEqual([
+		'by-input',
+		'by-input',
+	])
+	expect(
+		['secretSet', 'emailSend', 'jobUpdate', 'packageSave'].map(byName),
+	).toEqual(['never', 'never', 'never', 'never'])
+})

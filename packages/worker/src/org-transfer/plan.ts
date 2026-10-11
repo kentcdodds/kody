@@ -1,6 +1,5 @@
 import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
 import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
-import { packageIdFromJobId } from '#worker/jobs/package-job-id.ts'
 import {
 	buildPackageStorageId,
 	packageIdFromStorageId,
@@ -214,9 +213,6 @@ export function planOrgTransfer(
 	const repoIds = new Set(moves.user_repos.map((row) => text(row, 'id')))
 	clashIf('user_repos', moves.user_repos, ['name'], (row) => text(row, 'name'))
 
-	const liveJobSourceIds = new Set(
-		snapshot.sourceJobs.map((job) => job.record.sourceId),
-	)
 	for (const row of source.entity_sources.filter(isLiveRow)) {
 		const kind = text(row, 'entity_kind')
 		const entityId = text(row, 'entity_id')
@@ -224,10 +220,6 @@ export function planOrgTransfer(
 			moves.entity_sources.push(row)
 		} else if (kind === 'repo' && repoIds.has(entityId)) {
 			moves.entity_sources.push(row)
-		} else if (kind === 'job' && liveJobSourceIds.has(text(row, 'id'))) {
-			blockers.push(
-				`Unattached job source ${text(row, 'id')} has live jobs; retire them with adminLegacyJobsRetire first (ADR 0032).`,
-			)
 		} else {
 			orphan(
 				'entity_sources',
@@ -500,16 +492,7 @@ export function planOrgTransfer(
 	const jobs: Array<JobRow> = []
 	for (const job of snapshot.sourceJobs) {
 		if (sourceIds.has(job.record.sourceId)) jobs.push(job)
-		else if (!liveJobSourceIds.has(job.record.sourceId)) {
-			warnings.push(`Job ${job.record.name} has no live source and stays.`)
-		}
-	}
-	for (const job of jobs) {
-		if (packageIdFromJobId(job.id) == null) {
-			blockers.push(
-				`Job ${job.record.name} is not a package job; retire it with adminLegacyJobsRetire first (ADR 0032).`,
-			)
-		}
+		else warnings.push(`Job ${job.record.name} has no live source and stays.`)
 	}
 	const jobStorageIds = new Set(
 		jobs.map((job) => job.record.storageId ?? createJobStorageId(job.id)),

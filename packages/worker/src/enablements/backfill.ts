@@ -52,7 +52,7 @@ export type PlannedEnablement = {
 	triggerKind: EnablementTriggerKind
 	triggerName: string
 	instanceId: string
-	packageId: string | null
+	packageId: string
 	packageName: string | null
 	enablerUserId: string
 	enablerSource: 'creator' | 'earliest_owner'
@@ -360,19 +360,22 @@ export async function planOrgEnablements(input: {
 	}
 
 	for (const job of await input.deps.listJobs(input.orgId)) {
+		const packageId = packageIdFromJobId(job.id)
+		if (!packageId) {
+			throw new Error(
+				`Job "${job.id}" in org "${input.orgId}" is not a package job (ADR 0032).`,
+			)
+		}
 		if (!job.active) {
 			inactive += 1
 			continue
 		}
-		const packageId = packageIdFromJobId(job.id)
 		add({
 			triggerKind: 'cron',
 			triggerName: job.name,
 			instanceId: job.id,
 			packageId,
-			packageName: packageId
-				? (packagesById.get(packageId)?.name ?? null)
-				: null,
+			packageName: packagesById.get(packageId)?.name ?? null,
 			...enablerFor(job.creatorUserId),
 			unsignedWebhook: false,
 		})

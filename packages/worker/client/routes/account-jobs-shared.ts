@@ -106,13 +106,8 @@ export async function accountJobsRouteLoader(
 	return { accountJobs: payload }
 }
 
-export function packageLabel(
-	job: Pick<AccountJobListItem, 'ownership' | 'packageName'>,
-) {
-	if (job.ownership === 'package') {
-		return job.packageName ?? 'Package'
-	}
-	return '—'
+export function packageLabel(job: Pick<AccountJobListItem, 'packageName'>) {
+	return job.packageName ?? 'Package'
 }
 
 export function statusLabel(

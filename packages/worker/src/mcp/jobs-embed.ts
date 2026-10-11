@@ -31,5 +31,5 @@ export function buildJobEmbedText(
 }
 
 export function buildJobUsage(job: Pick<JobView, 'id'>) {
-	return `Inspect metadata with jobGet: ${JSON.stringify({ id: job.id })}. Include source code with jobGet: ${JSON.stringify({ id: job.id, includeCode: true })}. List jobs with jobList: {}. Update with jobUpdate: ${JSON.stringify({ id: job.id, enabled: false })}. Delete with jobDelete: ${JSON.stringify({ id: job.id })}. Trigger immediately with jobRunNow: ${JSON.stringify({ id: job.id })}.`
+	return `Inspect metadata with jobGet: ${JSON.stringify({ id: job.id })}. Include source code with jobGet: ${JSON.stringify({ id: job.id, includeCode: true })}. List jobs with jobList: {}. Update with jobUpdate: ${JSON.stringify({ id: job.id, enabled: false })}. Remove a job from its package.json#kody.jobs and publish the package. Trigger immediately with jobRunNow: ${JSON.stringify({ id: job.id })}.`
 }

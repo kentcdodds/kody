@@ -210,6 +210,22 @@ const ownerOnlyOrgGrantPermissions: ReadonlySet<OrgPermission> =
 	])
 
 /**
+ * Whether a grant hands out or takes away member or billing permissions. Only
+ * an organization grant can, and that change needs a live person. Organization
+ * grants take only an explicit permission list (presets do not apply to them).
+ */
+export function grantChangesMemberOrBilling(input: {
+	resourceType: string
+	permissions: ReadonlyArray<string> | null | undefined
+}): boolean {
+	if (input.resourceType !== 'org') return false
+	return (input.permissions ?? []).some(
+		(permission) =>
+			permission.startsWith('member:') || permission.startsWith('billing:'),
+	)
+}
+
+/**
  * Resolve grant permissions for a resource, and require an Owner when an
  * organization grant includes any of `ownerOnlyOrgGrantPermissions`.
  */
