@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { handleNxCacheRequest } from '../packages/nx-cache/handle-request.ts'
 import { createMemoryCacheStore } from '../packages/nx-cache/memory-store.ts'
 import {
+	envWithoutUnusableNxRemoteCache,
 	formatNxRemoteCacheProbe,
 	nxRemoteCacheUsable,
 	probeNxRemoteCache,
@@ -79,6 +80,12 @@ test('read token is reported read-only instead of silently dropping uploads', as
 	expect(formatNxRemoteCacheProbe(probe)).toMatch(
 		/READ-ONLY: PUT returned 403, so nothing this run computes will be uploaded/,
 	)
+	expect(
+		envWithoutUnusableNxRemoteCache(
+			{ NX_SELF_HOSTED_REMOTE_CACHE_SERVER: server },
+			probe,
+		).NX_SELF_HOSTED_REMOTE_CACHE_SERVER,
+	).toBe(server)
 })
 
 test('unknown token is unusable so Nx is never pointed at a server that 401s', async () => {
@@ -99,6 +106,14 @@ test('unknown token is unusable so Nx is never pointed at a server that 401s', a
 	expect(formatNxRemoteCacheProbe(probe)).toMatch(
 		/rejected the token on GET \(unauthorized\)/,
 	)
+	const env = {
+		NX_SELF_HOSTED_REMOTE_CACHE_SERVER: server,
+		NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'bogus',
+	}
+	const stripped = envWithoutUnusableNxRemoteCache(env, probe)
+	expect(stripped.NX_SELF_HOSTED_REMOTE_CACHE_SERVER).toBeUndefined()
+	expect(stripped.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN).toBe('bogus')
+	expect(env.NX_SELF_HOSTED_REMOTE_CACHE_SERVER).toBe(server)
 })
 
 test('unreachable server is skipped without touching the token', async () => {

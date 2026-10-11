@@ -104,6 +104,22 @@ export function nxRemoteCacheUsable(probe: NxRemoteCacheProbe) {
 	return probe.health === 'ok' && probe.read === 'ok'
 }
 
+/**
+ * CI only writes `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` when the probe can
+ * read. Local and Cloud Agent shells already have the variable set, so drop
+ * it when the probe says the cache is not usable. Nx enables the self-hosted
+ * client solely from that variable.
+ */
+export function envWithoutUnusableNxRemoteCache(
+	env: NodeJS.ProcessEnv,
+	probe: NxRemoteCacheProbe,
+): NodeJS.ProcessEnv {
+	if (!env[nxRemoteCacheServerEnv] || nxRemoteCacheUsable(probe)) return env
+	const next = { ...env }
+	delete next[nxRemoteCacheServerEnv]
+	return next
+}
+
 export function formatNxRemoteCacheProbe(probe: NxRemoteCacheProbe) {
 	if (probe.health !== 'ok') {
 		return `Nx remote cache skipped: ${probe.server}/health is unreachable; running with the local cache only.`
