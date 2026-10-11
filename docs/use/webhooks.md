@@ -271,11 +271,11 @@ package settings.
   body is `{ "ok": false, "error": { "code", "message" } }` and never carries
   package internals. `code` is `invocation_failed` unless the fetch gateway
   refused the package's request because a credential placeholder was bound for a
-  host the credential does not allow or went over plain HTTP: then it is
-  `credential_placement_refused`. When the refusal concerns one named slot,
-  `error.slot` carries that slot name (never a value); a Basic Auth pair or a
-  vault reference omits it. Ack deliveries record the same code in Activity. The
-  owner sees the full error in Activity.
+  host the credential does not allow, went over plain HTTP, or sat in the URL
+  host or user info: then it is `credential_placement_refused`. When the refusal
+  concerns one named slot, `error.slot` carries that slot name (never a value);
+  a Basic Auth pair or a vault reference omits it. Ack deliveries record the
+  same code in Activity. The owner sees the full error in Activity.
 
 Background delivery retries keep the same idempotency key, so a transient
 platform persistence failure does not duplicate a completed export. Package

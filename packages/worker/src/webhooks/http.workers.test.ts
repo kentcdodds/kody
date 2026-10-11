@@ -764,7 +764,7 @@ test('a sync webhook whose package was refused for credential placement returns 
 		error: {
 			code: 'credential_placement_refused',
 			message:
-				'The package tried to send a credential (slot "clerkReviewUserId") to a host the credential does not allow or over plain HTTP, so Kody refused the request. The package owner or the credential\'s owner needs to fix it.',
+				'The package tried to send a credential (slot "clerkReviewUserId") to a host the credential does not allow, over plain HTTP, or in the URL host, so Kody refused the request. The package owner or the credential\'s owner needs to fix it.',
 			slot: 'clerkReviewUserId',
 		},
 	})
