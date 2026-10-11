@@ -32,6 +32,21 @@ function distinctValues(values: Iterable<string>) {
 }
 
 /**
+ * Each value as written, plus the forms it takes once filled into a URL, a
+ * form-encoded body, or a JSON string, since a remote echoes what it got.
+ */
+function echoedForms(values: Iterable<string>) {
+	return distinctValues(
+		[...values].flatMap((value) => [
+			value,
+			encodeURIComponent(value),
+			new URLSearchParams([['', value]]).toString().slice(1),
+			JSON.stringify(value).slice(1, -1),
+		]),
+	)
+}
+
+/**
  * A byte stream transform that replaces every value with the redaction text,
  * including a value split across chunks. At one position the longest value
  * wins, so a value that begins with a shorter one is redacted whole. It holds
@@ -115,17 +130,18 @@ function redactHeaders(headers: Headers, values: ReadonlyArray<string>) {
 }
 
 /**
- * `response` with every `values` entry redacted from its URL, headers, and
- * body. The body length can change, so `content-length` is dropped, except on
- * range responses: there each value is masked byte for byte so
- * `content-range` and `content-length` stay true. A WebSocket upgrade keeps
- * its socket; messages on it are not redacted.
+ * `response` with every `values` entry (and its URL, form, and JSON encoded
+ * forms) redacted from its URL, headers, and body. The body length can
+ * change, so `content-length` is dropped, except on range responses: there
+ * each value is masked byte for byte so `content-range` and `content-length`
+ * stay true. A WebSocket upgrade keeps its socket; messages on it are not
+ * redacted.
  */
 export function redactEchoedSecrets(
 	response: Response,
 	values: Iterable<string>,
 ): Response {
-	const distinct = distinctValues(values)
+	const distinct = echoedForms(values)
 	if (distinct.length === 0) return response
 	const preserveLength = isRangeResponse(response)
 	const headers = redactHeaders(response.headers, distinct)
@@ -146,6 +162,22 @@ export function redactEchoedSecrets(
 		url: redactText(response.url, distinct),
 		redirected: response.redirected,
 	})
+}
+
+/**
+ * `error` with every `values` entry redacted from its message: a failed fetch
+ * can name the URL it was sending, secret and all.
+ */
+export function redactEchoedSecretsInError(
+	error: unknown,
+	values: Iterable<string>,
+): unknown {
+	if (!(error instanceof Error)) return error
+	const message = redactText(error.message, echoedForms(values))
+	if (message === error.message) return error
+	const redacted = new Error(message)
+	redacted.name = error.name
+	return redacted
 }
 
 /**

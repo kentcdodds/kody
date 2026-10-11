@@ -714,12 +714,9 @@ async function resolveIntegrationToken(
 		packageId: input.packageStamp?.packageId ?? null,
 		packageKodyId: credential.packageKodyId,
 	})
-	const token = await resolveIntegrationAccessToken({
-		env: input.env,
-		userId: input.orgId,
-		name: credential.name,
-	})
-	if (token && credential.requestHost) {
+	// The host is checked before the token resolves, so a refused host never
+	// triggers a refresh.
+	if (credential.requestHost) {
 		const joined = await getJoinedIntegration({
 			env: input.env,
 			userId: input.orgId,
@@ -739,7 +736,11 @@ async function resolveIntegrationToken(
 			credential.requestHost,
 		)
 	}
-	return token
+	return resolveIntegrationAccessToken({
+		env: input.env,
+		userId: input.orgId,
+		name: credential.name,
+	})
 }
 
 async function refreshIntegration(

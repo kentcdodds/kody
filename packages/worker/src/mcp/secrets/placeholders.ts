@@ -32,11 +32,26 @@ export type ReferencedProviderSecret = {
  * (`%7B` / `%7D`). `new Request('https://host/bot{{secret:name}}/me')`
  * therefore stores `bot%7B%7Bsecret:name%7D%7D` on `request.url`, and
  * the literal `{{secret:...}}` regex never matches. Restore those
- * delimiters so the gateway sees and refuses a placeholder in the path
- * the same as one in the query string (where `{` / `}` stay unencoded).
+ * delimiters so a path placeholder parses and fills the same as one in a
+ * header or the query string (where `{` / `}` stay unencoded).
  */
 export function decodeSecretPlaceholderDelimiters(value: string) {
 	return value.replaceAll(/%7B/gi, '{').replaceAll(/%7D/gi, '}')
+}
+
+/**
+ * Percent-decodes the punctuation of every placeholder form, so a reference
+ * built with `URLSearchParams` (`%7B%7Bsecret%3Aname%7D%7D`) is still found.
+ */
+export function decodeSecretPlaceholderPunctuation(value: string) {
+	return value.replaceAll(/%(7B|7D|3A|2F|3D|2C|7C)/gi, (_, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
+/** The decoded keys and values of a form-encoded string, in order. */
+export function formUrlEncodedTexts(value: string) {
+	return Array.from(new URLSearchParams(value)).flat()
 }
 
 export function parseSecretPlaceholders(value: string) {
@@ -140,9 +155,39 @@ export function replaceSecretPlaceholders(
 ) {
 	let nextValue = value
 	for (const [placeholder, secretValue] of replacements.entries()) {
-		nextValue = nextValue.replaceAll(placeholder, secretValue)
+		// A replacer function keeps `$&` and friends in a value literal.
+		nextValue = nextValue.replaceAll(placeholder, () => secretValue)
 	}
 	return nextValue
+}
+
+export function replaceSecretPlaceholdersInFormUrlEncoded(
+	value: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const nextParams = new URLSearchParams()
+	for (const [key, entryValue] of new URLSearchParams(value)) {
+		nextParams.append(
+			replaceSecretPlaceholders(key, replacements),
+			replaceSecretPlaceholders(entryValue, replacements),
+		)
+	}
+	return nextParams.toString()
+}
+
+/**
+ * Fills placeholders inside JSON text. Each value is JSON-escaped, so a quote
+ * or backslash in a credential stays inside the string it replaces.
+ */
+export function replaceSecretPlaceholdersInJson(
+	value: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const escaped = new Map<string, string>()
+	for (const [placeholder, secretValue] of replacements) {
+		escaped.set(placeholder, JSON.stringify(secretValue).slice(1, -1))
+	}
+	return replaceSecretPlaceholders(value, escaped)
 }
 
 /**
