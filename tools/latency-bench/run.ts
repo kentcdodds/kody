@@ -227,12 +227,15 @@ export async function runLatencyBench(
 		return { wallMs: performance.now() - startedAt }
 	}
 
+	// Execute admission refuses identical code + params repeated within a
+	// minute (loop detection), so every sample carries a distinct param.
+	let executeSample = 0
 	async function execute(code: string): Promise<PhaseSample> {
 		const startedAt = performance.now()
 		const result = assertToolSucceeded(
 			(await client.callTool({
 				name: 'execute',
-				arguments: { code },
+				arguments: { code, params: { sample: ++executeSample } },
 			})) as ExecuteResult,
 		)
 		const wallMs = performance.now() - startedAt
