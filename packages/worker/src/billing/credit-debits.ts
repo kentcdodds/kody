@@ -38,10 +38,7 @@
  * next run continues past the last wallet this one reached.
  */
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import {
-	computeMonthlyOverage,
-	computeMonthlyOverageForDebit,
-} from '#universal/compute-overage.ts'
+import { computeMonthlyOverage } from '#universal/compute-overage.ts'
 import {
 	creditDebitCostMicroUsd,
 	creditDebitMeters,
@@ -349,13 +346,6 @@ export async function settleCreditDebitMonth(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
-	const debitOverage = computeMonthlyOverageForDebit({
-		plan: input.entitlement.plan,
-		ladder: input.entitlement.ladder,
-		creditWallet: input.entitlement.creditWallet,
-		uniqueWorkerDays: usage.uniqueWorkerDays,
-		durableObjectRowsRead: usage.durableObjectRowsRead,
-	})
 	const purchasableProDebitBaseline = computeMonthlyOverage({
 		plan: 'pro',
 		ladder: 'public',
@@ -364,28 +354,23 @@ export async function settleCreditDebitMonth(input: {
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
 	const charge = input.entitlement.creditWallet === 'funded'
-	const walletEligiblePro =
-		input.entitlement.plan === 'pro' &&
-		input.entitlement.creditWallet !== 'none'
 	// When not charging, advance progress against at least the purchasable
 	// Pro debit baseline. Gift/retired Pro ceilings are larger than that
 	// baseline; without this, usage between 350 and 2,000 UWD would leave
 	// progress behind and get back-charged on a later funded return. Empty
 	// purchasable Pro already sits on that baseline.
 	const progressOverage = charge
-		? debitOverage
-		: input.entitlement.creditWallet === 'empty' && walletEligiblePro
-			? debitOverage
-			: {
-					billableUniqueWorkerDays: Math.max(
-						overage.billableUniqueWorkerDays,
-						purchasableProDebitBaseline.billableUniqueWorkerDays,
-					),
-					billableDurableObjectRowsRead: Math.max(
-						overage.billableDurableObjectRowsRead,
-						purchasableProDebitBaseline.billableDurableObjectRowsRead,
-					),
-				}
+		? overage
+		: {
+				billableUniqueWorkerDays: Math.max(
+					overage.billableUniqueWorkerDays,
+					purchasableProDebitBaseline.billableUniqueWorkerDays,
+				),
+				billableDurableObjectRowsRead: Math.max(
+					overage.billableDurableObjectRowsRead,
+					purchasableProDebitBaseline.billableDurableObjectRowsRead,
+				),
+			}
 	const billable: Record<CreditDebitMeter, number> = {
 		unique_worker_days: progressOverage.billableUniqueWorkerDays,
 		durable_object_rows_read: progressOverage.billableDurableObjectRowsRead,
@@ -493,11 +478,11 @@ export async function settleCreditDebitMonth(input: {
 				includes: [
 					{
 						meter: 'unique_worker_days',
-						include: debitOverage.includedUniqueWorkerDays,
+						include: overage.includedUniqueWorkerDays,
 					},
 					{
 						meter: 'durable_object_rows_read',
-						include: debitOverage.includedDurableObjectRowsRead,
+						include: overage.includedDurableObjectRowsRead,
 					},
 				],
 				now: input.now,

@@ -12,7 +12,7 @@
  */
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
-	computeMonthlyOverageForDebit,
+	computeMonthlyOverage,
 	computeOverageWarningResourceLabels,
 } from '#universal/compute-overage.ts'
 import { type AccountCreditsLedgerItem } from '#universal/loader-data.ts'
@@ -162,7 +162,7 @@ export async function forgiveUnchargedCreditUsage(input: {
 			stableUserId: input.userId,
 			month,
 		})
-		const overage = computeMonthlyOverageForDebit({
+		const overage = computeMonthlyOverage({
 			plan: input.entitlement.plan,
 			ladder: input.entitlement.ladder,
 			creditWallet: input.entitlement.creditWallet,
