@@ -9,6 +9,8 @@ import {
 import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
+import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
@@ -42,7 +44,10 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import { resolveHmacCiphertextForMint } from './signing-secret.ts'
+import {
+	defaultWebhookVerification,
+	resolveHmacCiphertextForMint,
+} from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
@@ -319,6 +324,14 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
+	const migration = await getEnablementOrgMigration({
+		db: input.env.APP_DB,
+		orgId: savedPackage.userId,
+	})
+	const verification =
+		declared.verification ??
+		(migration.state === 'migrated' ? defaultWebhookVerification : null)
+
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
 	const existing = await getWebhookEndpointByKey({
@@ -342,7 +355,7 @@ export async function mintWebhookUrlForUser(input: {
 			userId: input.userId,
 			endpointId,
 			packageId: savedPackage.id,
-			verification: declared.verification,
+			verification,
 			existingHmacEncrypted: existing?.hmacSecretEncrypted,
 		})
 		try {
@@ -379,6 +392,13 @@ export async function mintWebhookUrlForUser(input: {
 	if (!stored) {
 		throw new Error('Unable to persist webhook URL secret.')
 	}
+	await ensureWebhookEnablementForMinter({
+		env: input.env,
+		request: input.request,
+		savedPackage,
+		endpointId: stored.id,
+		webhookName,
+	})
 
 	return {
 		packageId: savedPackage.id,
