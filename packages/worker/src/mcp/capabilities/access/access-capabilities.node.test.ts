@@ -627,6 +627,49 @@ test('member and billing grant changes need a live person; other grants do not',
 	)
 	await expect(orgPreset).rejects.not.toBeInstanceOf(LivePersonRequiredError)
 
+	const memberId = testStableUserIdFromEmail('member-live@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: memberId,
+		username: 'livemember',
+	})
+	const scheduledMember = capabilityContext({
+		db,
+		userId: memberId,
+		email: 'member-live@example.com',
+		username: 'livemember',
+		org: { ...org, role: 'member' },
+		source: {
+			kind: 'schedule',
+			jobId: 'job-2',
+			enablement: {
+				id: 'enablement-2',
+				enabler: {
+					userId: personIdFromStored(memberId),
+					username: 'livemember',
+				},
+				role: 'member',
+			},
+		},
+	})
+	await expect(
+		accessGrantCapability.handler(
+			{ ...memberGrant, permissions: ['team:read'] } as never,
+			scheduledMember,
+		),
+	).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'member:write',
+	})
+	await expect(
+		accessRevokeCapability.handler(
+			{ grant_id: granted.grant.id },
+			scheduledMember,
+		),
+	).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'member:write',
+	})
+
 	await expect(
 		accessRevokeCapability.handler({ grant_id: granted.grant.id }, scheduled),
 	).rejects.toMatchObject({

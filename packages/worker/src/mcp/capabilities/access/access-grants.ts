@@ -90,7 +90,9 @@ export const accessGrantCapability = defineDomainCapability(
 			const request = ctx.callerContext.request
 			if (!request) return true
 			// The write replaces this subject's grant, so dropping member or billing
-			// permissions it already holds is a change too.
+			// permissions it already holds is a change too. Authorize first so only
+			// a caller who could make the write learns what the subject holds.
+			await authorizeGrantTarget(ctx, 'org', args.resource_id)
 			const subject = await resolveGrantSubject(
 				ctx.env.APP_DB,
 				request.org.id,
@@ -204,7 +206,9 @@ export const accessRevokeCapability = defineDomainCapability(
 				orgId: request.org.id,
 				grantId: args.grant_id,
 			})
-			return grant ? grantChangesMemberOrBilling(grant) : false
+			if (!grant || !grantChangesMemberOrBilling(grant)) return false
+			await authorizeGrantTarget(ctx, 'org', grant.resourceId)
+			return true
 		},
 		description:
 			'Revoke one live grant in the organization this request is bound to. You need manage access on that grant resource (or member:write for an organization grant).',
