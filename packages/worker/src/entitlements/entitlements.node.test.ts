@@ -381,7 +381,7 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 			now,
 		})
 		expect(hint).toBe(
-			'This weekly limit resets Monday 00:00 UTC, in 1d 1h. Rerun code you already ran today and vary params; repeats are free.',
+			'This weekly limit resets Monday 00:00 UTC, in 1d 1h 26m. Rerun code you already ran today and vary params; repeats are free.',
 		)
 		expect(hint).not.toMatch(/credits|upgrade/i)
 		expect(
@@ -447,7 +447,7 @@ test('denial hints follow each resource window: daily meters reset, only standin
 			now: new Date('2026-10-07T12:00:00.000Z'),
 		}),
 	).toBe(
-		'This weekly limit resets Monday 00:00 UTC, in 4d 12h. Upgrade your plan at /@<slug>/-/billing.',
+		'This weekly limit resets Monday 00:00 UTC, in 4d 12h 0m. Upgrade your plan at /@<slug>/-/billing.',
 	)
 	expect(
 		buildEntitlementUpgradeHint({
@@ -455,6 +455,12 @@ test('denial hints follow each resource window: daily meters reset, only standin
 			plan: 'max',
 		}),
 	).toBe('Use fewer bytes per email message.')
+	expect(
+		buildEntitlementUpgradeHint({
+			resource: 'execute_calls_per_minute',
+			plan: 'max',
+		}),
+	).toBe('This limit resets when the next minute starts.')
 })
 
 test('job interval floor messages parse back to known plan and interval', () => {

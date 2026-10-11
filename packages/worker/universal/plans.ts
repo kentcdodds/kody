@@ -427,13 +427,14 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
  * (execute and outbound also keep a Monday-start UTC week). `standing`
  * counts are what exists right now and drop when items are removed or
  * finish. `per_item` caps bound a single request and never accumulate.
- * `rolling_minute` brakes count the last 60 seconds.
+ * `utc_minute` brakes count calls in the current UTC clock minute and reset
+ * when the next minute starts.
  */
 export type EntitlementResourceWindow =
 	| 'utc_day'
 	| 'standing'
 	| 'per_item'
-	| 'rolling_minute'
+	| 'utc_minute'
 
 export const entitlementResourceWindows = {
 	repos: 'standing',
@@ -451,7 +452,7 @@ export const entitlementResourceWindows = {
 	outbound_fetches_per_day: 'utc_day',
 	job_runs_per_day: 'utc_day',
 	automation_invocations_per_day: 'utc_day',
-	execute_calls_per_minute: 'rolling_minute',
+	execute_calls_per_minute: 'utc_minute',
 } as const satisfies Record<EntitlementResource, EntitlementResourceWindow>
 
 export type DailyEntitlementResource = {

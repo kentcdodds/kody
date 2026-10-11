@@ -38,4 +38,10 @@ test('next UTC day and week starts are the following midnight and Monday', () =>
 	expect(nextUtcWeekStart(new Date('2026-12-30T12:00:00.000Z'))).toEqual(
 		new Date('2027-01-04T00:00:00.000Z'),
 	)
+	expect(nextUtcDayStart(new Date('0099-12-31T12:00:00.000Z'))).toEqual(
+		new Date('0100-01-01T00:00:00.000Z'),
+	)
+	expect(nextUtcWeekStart(new Date('0099-12-31T12:00:00.000Z'))).toEqual(
+		new Date('0100-01-04T00:00:00.000Z'),
+	)
 })

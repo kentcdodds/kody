@@ -123,7 +123,7 @@ function reduceGuidance(
 			return resource === 'execute_unique_workers_per_day'
 				? 'Rerun code you already ran today and vary params; repeats are free'
 				: null
-		case 'rolling_minute':
+		case 'utc_minute':
 			return null
 		default: {
 			const exhaustive: never = resourceWindow
@@ -146,8 +146,8 @@ function buildWindowResetSentence(input: {
 			const resetAt = nextUtcDayStart(input.now)
 			return `This daily limit resets at 00:00 UTC, in ${formatTimeUntil(input.now, resetAt)}.`
 		}
-		case 'rolling_minute':
-			return 'This limit counts the last minute, so it frees up within a minute.'
+		case 'utc_minute':
+			return 'This limit resets when the next minute starts.'
 		case 'standing':
 		case 'per_item':
 			return null
@@ -160,7 +160,7 @@ function buildWindowResetSentence(input: {
 
 const minuteMs = 60 * 1000
 
-/** Compact countdown such as `45m`, `1h 26m`, or `2d 5h` (rounded up). */
+/** Compact countdown such as `45m`, `1h 26m`, or `2d 5h 3m` (rounded up). */
 function formatTimeUntil(now: Date, resetAt: Date) {
 	const totalMinutes = Math.max(
 		1,
@@ -169,7 +169,7 @@ function formatTimeUntil(now: Date, resetAt: Date) {
 	const days = Math.floor(totalMinutes / (24 * 60))
 	const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
 	const minutes = totalMinutes % 60
-	if (days > 0) return `${days}d ${hours}h`
+	if (days > 0) return `${days}d ${hours}h ${minutes}m`
 	if (hours > 0) return `${hours}h ${minutes}m`
 	return `${minutes}m`
 }

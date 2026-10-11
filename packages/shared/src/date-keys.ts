@@ -18,21 +18,19 @@ export function utcWeekStart(date: Date = new Date()) {
 
 /** 00:00 UTC of the day after `date`. */
 export function nextUtcDayStart(date: Date = new Date()) {
-	return new Date(
-		Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1),
-	)
+	return utcMidnightDaysAfter(date, 1)
 }
 
 /** 00:00 UTC of the Monday after the week containing `date`. */
 export function nextUtcWeekStart(date: Date = new Date()) {
 	const daysSinceMonday = (date.getUTCDay() + 6) % 7
-	return new Date(
-		Date.UTC(
-			date.getUTCFullYear(),
-			date.getUTCMonth(),
-			date.getUTCDate() + 7 - daysSinceMonday,
-		),
-	)
+	return utcMidnightDaysAfter(date, 7 - daysSinceMonday)
+}
+
+function utcMidnightDaysAfter(date: Date, days: number) {
+	const start = new Date(date)
+	start.setUTCHours(24 * days, 0, 0, 0)
+	return start
 }
 
 /** UTC calendar month key, for example `2026-07`. */
