@@ -64,9 +64,11 @@ differ.
 An orphan is a row whose parent no longer exists, such as an `entity_sources`
 row for a deleted package or a webhook endpoint whose package is gone. With
 `skipOrphans: true` the transfer does not move orphans; it cleans them up in the
-source org instead. Orphan webhooks are soft-deleted and other orphan rows
-deleted in the same D1 batch. Orphan sources are deleted with their Artifacts
-repos after commit.
+source org instead. Orphan webhooks and community listings are soft-deleted and
+other orphan rows deleted in the same D1 batch. After commit, orphan sources are
+deleted with their Artifacts repos, and orphan storage buckets are cleared on
+their StorageRunner and then deleted, like package delete. A soft-deleted bucket
+would keep its `(user_id, storage_id)` key and block a later transfer back.
 
 ## Apply
 

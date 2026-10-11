@@ -240,9 +240,25 @@ function buildOrphanCleanupStatements(input: {
 }) {
 	const byTableAndCleanup = new Map<string, Array<OrgTransferOrphan>>()
 	for (const orphan of input.plan.orphans) {
-		if (orphan.cleanup === 'entity-source') continue
-		const key = `${orphan.cleanup}:${orphan.table}`
-		byTableAndCleanup.set(key, [...(byTableAndCleanup.get(key) ?? []), orphan])
+		switch (orphan.cleanup) {
+			case 'soft-delete':
+			case 'delete': {
+				const key = `${orphan.cleanup}:${orphan.table}`
+				byTableAndCleanup.set(key, [
+					...(byTableAndCleanup.get(key) ?? []),
+					orphan,
+				])
+				break
+			}
+			// Need side storage cleared, so post-commit owns them.
+			case 'entity-source':
+			case 'storage-bucket':
+				break
+			default: {
+				const exhaustive: never = orphan.cleanup
+				throw new Error(`Unknown orphan cleanup: ${String(exhaustive)}`)
+			}
+		}
 	}
 	const statements: Array<D1PreparedStatement> = []
 	for (const [key, orphans] of byTableAndCleanup) {

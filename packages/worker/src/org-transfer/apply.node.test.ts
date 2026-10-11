@@ -221,6 +221,14 @@ async function seed() {
 		now,
 		now,
 	)
+	run(
+		`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
+		 VALUES (?, ?, 'package', ?, ?)`,
+		src,
+		`package:${goneOrphanPkg}`,
+		now,
+		now,
+	)
 	return { sqlite, db }
 }
 
@@ -321,7 +329,11 @@ function createEffects(input: {
 		afterCommit: async ({ plan, cleanupOrphans }) => {
 			calls.push(
 				`afterCommit:${cleanupOrphans}:${plan.orphans
-					.filter((orphan) => orphan.cleanup === 'entity-source')
+					.filter(
+						(orphan) =>
+							orphan.cleanup === 'entity-source' ||
+							orphan.cleanup === 'storage-bucket',
+					)
 					.map((orphan) => orphan.key)
 					.join(',')}`,
 			)
@@ -508,8 +520,16 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 		'exportMcp:server-1',
 		`importMcp:${dst}:server-1`,
 		'deliverAudit',
-		'afterCommit:true:src-orphan',
+		`afterCommit:true:src-orphan,package:${goneOrphanPkg}`,
 	])
+	// Cleared and deleted by the post-commit step, never soft-deleted.
+	expect(
+		sqlite
+			.prepare(
+				`SELECT user_id, deleted_at FROM user_storage_buckets WHERE storage_id = ?`,
+			)
+			.get(`package:${goneOrphanPkg}`),
+	).toEqual({ user_id: src, deleted_at: null })
 
 	const packages = sqlite
 		.prepare(`SELECT id, user_id, name FROM saved_packages ORDER BY name`)
@@ -625,15 +645,16 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 	expect(orphanHook.user_id).toBe(src)
 	expect(orphanHook.deleted_at).not.toBeNull()
 
-	for (const table of [
-		'mcp_memories',
-		'mcp_server_settings',
-		'user_storage_buckets',
-	]) {
+	for (const table of ['mcp_memories', 'mcp_server_settings']) {
 		expect(
 			sqlite.prepare(`SELECT DISTINCT user_id FROM ${table}`).all(),
 		).toEqual([{ user_id: dst }])
 	}
+	expect(
+		sqlite
+			.prepare(`SELECT user_id FROM user_storage_buckets WHERE storage_id = ?`)
+			.all(`package:${pkgA}`),
+	).toEqual([{ user_id: dst }])
 	expect(
 		sqlite.prepare(`SELECT id, access_epoch FROM orgs ORDER BY id`).all(),
 	).toEqual([

@@ -18,6 +18,7 @@ import {
 } from '#worker/package-retrievers/manifest-cache.ts'
 import { deleteRepoSessionsBySourceForUser } from '#worker/repo/repo-sessions.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { deleteStorageBucketInventory } from '#worker/storage-buckets/service.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { buildMemoryEmbedTextFromRow } from '#mcp/memory/memory-embed.ts'
@@ -78,14 +79,39 @@ export async function runOrgTransferPostCommit(input: {
 	}
 	if (input.cleanupOrphans) {
 		for (const orphan of plan.orphans) {
-			if (orphan.cleanup !== 'entity-source') continue
-			await step(`delete orphan source ${orphan.key}`, () =>
-				deleteEntitySourceWithArtifacts({
-					env,
-					userId: fromId,
-					source: orphan.row as unknown as EntitySourceRow,
-				}),
-			)
+			switch (orphan.cleanup) {
+				case 'entity-source':
+					await step(`delete orphan source ${orphan.key}`, () =>
+						deleteEntitySourceWithArtifacts({
+							env,
+							userId: fromId,
+							source: orphan.row as unknown as EntitySourceRow,
+						}),
+					)
+					break
+				case 'storage-bucket':
+					await step(`delete orphan storage ${orphan.key}`, async () => {
+						await clearOwnerStorage({
+							env,
+							userId: fromId,
+							storageId: orphan.key,
+						})
+						await deleteStorageBucketInventory({
+							db: env.APP_DB,
+							userId: fromId,
+							storageId: orphan.key,
+						})
+					})
+					break
+				// Already handled in the batch.
+				case 'soft-delete':
+				case 'delete':
+					break
+				default: {
+					const exhaustive: never = orphan.cleanup
+					throw new Error(`Unknown orphan cleanup: ${String(exhaustive)}`)
+				}
+			}
 		}
 	}
 	for (const source of plan.moves.entity_sources) {

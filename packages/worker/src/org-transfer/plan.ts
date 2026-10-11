@@ -24,6 +24,11 @@ export type OrgTransferOrphanCleanup =
 	| 'delete'
 	/** `deleteEntitySourceWithArtifacts` (artifact repo, bundles, snapshot). */
 	| 'entity-source'
+	/**
+	 * Clear the StorageRunner, then hard delete the inventory row, like
+	 * package delete. A soft-deleted row would keep holding its primary key.
+	 */
+	| 'storage-bucket'
 
 export type OrgTransferOrphan = {
 	table: string
@@ -512,7 +517,7 @@ export function planOrgTransfer(
 					row,
 					storageId,
 					`package ${packageId ?? storageId} no longer exists`,
-					'soft-delete',
+					'storage-bucket',
 				)
 			}
 		} else if (kind === 'job' && jobStorageIds.has(storageId)) {
