@@ -381,7 +381,7 @@ export async function expandSecretPlaceholders(input: {
 				{
 					method: input.request.method,
 					headers,
-					body: requestBodyInit(requestBody),
+					body: requestBody,
 					redirect: input.request.redirect,
 					credentials: input.request.credentials,
 					mode: input.request.mode,
@@ -399,13 +399,6 @@ export async function expandSecretPlaceholders(input: {
 			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
 		),
 		headers,
-		body:
-			requestBody?.kind === 'text'
-				? {
-						text: requestBody.text,
-						formEncoded: isFormUrlEncodedRequest(headers),
-					}
-				: null,
 		loadPolicy: () =>
 			loadSecretPlacementPolicy({
 				env: input.env as Env,
@@ -640,7 +633,7 @@ export async function expandSecretPlaceholders(input: {
 		request: new Request(nextUrl, {
 			method: input.request.method,
 			headers,
-			body: requestBodyInit(requestBody),
+			body: requestBody,
 			redirect: nextRedirect,
 			credentials: input.request.credentials,
 			mode: input.request.mode,
@@ -942,52 +935,16 @@ function dedupeBasicAuthSecretPlaceholders(
 	return Array.from(deduped.values())
 }
 
-function isFormUrlEncodedRequest(headers: Headers) {
-	const contentType = headers.get('Content-Type')?.toLowerCase() ?? ''
-	return contentType.startsWith('application/x-www-form-urlencoded')
-}
-
-function isMultipartRequest(headers: Headers) {
-	const contentType = headers.get('Content-Type')?.toLowerCase() ?? ''
-	return contentType.startsWith('multipart/')
-}
-
-type GatewayRequestBody =
-	| { kind: 'text'; text: string }
-	| { kind: 'binary'; bytes: Uint8Array<ArrayBuffer> }
-
 /**
- * Read the outbound request body without corrupting binary payloads.
- * `multipart/*` is always opaque: a text-only Discord upload (JSON payload
- * plus a `.txt` attachment) is valid UTF-8, but scanning that blob would
- * refuse placeholders that appear in untrusted message content. Other bodies
- * that decode as valid UTF-8 are scanned so a placeholder there is refused.
- * Every body is forwarded unchanged.
+ * The outbound request body as opaque bytes. A body is data, so the gateway
+ * never decodes, scans, or substitutes into it: text that looks like a
+ * placeholder is forwarded byte-for-byte.
  */
 async function readRequestBody(
 	request: Request,
-): Promise<GatewayRequestBody | null> {
+): Promise<Uint8Array<ArrayBuffer> | null> {
 	if (!shouldSendBody(request.method)) return null
-	const bytes = new Uint8Array(await request.arrayBuffer())
-	if (isMultipartRequest(request.headers)) {
-		return { kind: 'binary', bytes }
-	}
-	try {
-		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
-		// bodies round-trip byte-for-byte.
-		const text = new TextDecoder('utf-8', {
-			fatal: true,
-			ignoreBOM: true,
-		}).decode(bytes)
-		return { kind: 'text', text }
-	} catch {
-		return { kind: 'binary', bytes }
-	}
-}
-
-function requestBodyInit(requestBody: GatewayRequestBody | null) {
-	if (requestBody == null) return undefined
-	return requestBody.kind === 'binary' ? requestBody.bytes : requestBody.text
+	return new Uint8Array(await request.arrayBuffer())
 }
 
 function shouldSendBody(method: string) {
