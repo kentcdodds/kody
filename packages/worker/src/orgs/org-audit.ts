@@ -173,7 +173,8 @@ export async function runAppDbBatchWithOrgAudit(input: {
 			await statement.run()
 		}
 	}
-	await commitOrgAuditOutbox(input.audit, plan)
+	// Deliver against the same APP_DB the outbox row was written to.
+	await commitOrgAuditOutbox({ ...input.audit, appDb: input.appDb }, plan)
 }
 
 /**

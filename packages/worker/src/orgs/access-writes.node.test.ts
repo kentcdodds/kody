@@ -178,7 +178,11 @@ test('write helpers record org audit events for the acting person', async () => 
 	const auditDb = createAuditTestDb()
 	const ownerId = testStableUserIdFromEmail('owner@example.com')
 	const memberId = testStableUserIdFromEmail('member@example.com')
-	const audit = createTestOrgAuditWriter({ db: auditDb, actorUserId: ownerId })
+	const audit = createTestOrgAuditWriter({
+		db: auditDb,
+		appDb: db,
+		actorUserId: ownerId,
+	})
 	const org = await createOrg({
 		db,
 		env: {} as Env,

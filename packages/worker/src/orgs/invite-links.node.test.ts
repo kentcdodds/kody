@@ -163,6 +163,7 @@ test('join adds the member, syncs seats, and audits the link', async () => {
 		},
 		audit: createTestOrgAuditWriter({
 			db: auditDb,
+			appDb: db,
 			actorUserId: joiner.personId,
 		}),
 	})
