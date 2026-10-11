@@ -201,6 +201,9 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'packagePublishExternalPush',
 		],
 		['GET', '/v1/package-subscriptions', 'packageSubscriptionsList'],
+		['GET', '/v1/enablements', 'enablementList'],
+		['POST', '/v1/enablements', 'enablementEnable'],
+		['POST', '/v1/enablements/{enablementId}/disable', 'enablementDisable'],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],

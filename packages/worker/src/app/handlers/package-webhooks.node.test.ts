@@ -121,6 +121,13 @@ async function setup(sessionUsername = 'owner') {
 		);
 		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
 		ON webhook_endpoints(user_id, package_id, webhook_name);
+		CREATE TABLE enablement_org_migrations (
+			org_id TEXT PRIMARY KEY,
+			state TEXT NOT NULL,
+			notice_sent_at TEXT,
+			migrated_at TEXT,
+			updated_at TEXT NOT NULL
+		);
 	`)
 	const db = createD1FromSqlite(sqlite)
 	const handler = createCommunityPackageWebhooksApiHandler({
