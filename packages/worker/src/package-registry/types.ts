@@ -175,15 +175,10 @@ export const packageCredentialSlotSchema = z
 					'mcp slots never send their value in a request, so they take no placement.',
 			})
 		}
-		if (slot.kind === 'secret' && !slot.placement) {
-			ctx.addIssue({
-				code: 'custom',
-				path: ['placement'],
-				message:
-					'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }.',
-			})
-		}
 	})
+
+export const secretSlotPlacementRequiredMessage =
+	'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }.'
 
 export type PackageCredentialSlot = z.infer<typeof packageCredentialSlotSchema>
 

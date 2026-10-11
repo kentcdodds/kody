@@ -5,6 +5,7 @@ import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	authoredPackageJsonSchema,
 	packageCredentialsSchema,
+	secretSlotPlacementRequiredMessage,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
 	type PackageExportTarget,
@@ -158,8 +159,32 @@ export function parseAuthoredPackageJson(input: {
 		manifest: authored,
 		manifestPath: input.manifestPath,
 	})
+	if (input.mode !== 'published') {
+		assertSecretSlotsDeclarePlacement({
+			manifest: authored,
+			manifestPath: input.manifestPath ?? packageManifestPath,
+		})
+	}
 
 	return authored
+}
+
+/**
+ * Publish-time only: snapshots published before placement existed keep their
+ * slots, and the fetch gateway refuses an undeclared placement at use time.
+ */
+function assertSecretSlotsDeclarePlacement(input: {
+	manifest: AuthoredPackageJson
+	manifestPath: string
+}) {
+	for (const [name, slot] of Object.entries(
+		input.manifest.kody.credentials ?? {},
+	)) {
+		if (slot.kind !== 'secret' || slot.placement) continue
+		throw new Error(
+			`Invalid ${input.manifestPath}:\nkody.credentials.${name}.placement: ${secretSlotPlacementRequiredMessage}`,
+		)
+	}
 }
 
 const retiredKodyFieldMessages = {

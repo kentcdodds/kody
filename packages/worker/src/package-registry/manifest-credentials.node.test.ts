@@ -53,7 +53,7 @@ test('the kody.credentials example in docs/use/packages.md publishes', () => {
 test('publish requires placement on secret slots and validates it', () => {
 	const secret = { kind: 'secret', provider: 'acme', description: 'x' }
 	expect(publishError({ KEY: secret })).toMatch(
-		/Secret slots declare placement[\s\S]*kody\.credentials\.KEY\.placement/,
+		/kody\.credentials\.KEY\.placement: Secret slots declare placement/,
 	)
 	expect(
 		publishError({ KEY: { ...secret, placement: { header: 'bad header' } } }),
@@ -146,4 +146,21 @@ test('published snapshots load when an old kody.credentials key predates the sch
 	).toEqual({
 		LINEAR: { kind: 'mcp', provider: 'linear', description: 'Linear MCP.' },
 	})
+})
+
+test('published snapshots keep slots whose secret slot predates placement', () => {
+	const slots = {
+		KEY: { kind: 'secret', provider: 'acme', description: 'Acme API key.' },
+		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
+	}
+	const content = manifestWithCredentials(slots)
+	expect(
+		parseAuthoredPackageJson({ content, mode: 'published' }).kody.credentials,
+	).toEqual(slots)
+	expect(
+		readRootPackage({ 'package.json': content })?.manifest.kody.credentials,
+	).toEqual(slots)
+	expect(() => parseAuthoredPackageJson({ content })).toThrow(
+		/kody\.credentials\.KEY\.placement/,
+	)
 })
