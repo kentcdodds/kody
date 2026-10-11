@@ -40,6 +40,8 @@ import {
 	listPendingEnablementOrgMigrations,
 	loadEarliestLiveOwnerId,
 	markEnablementOrgNotified,
+	saveEnablementNoticePlan,
+	type EnablementNoticePlan,
 	type EnablementOrgMigration,
 } from './repo.ts'
 import { type EnablementTriggerKind } from './types.ts'
@@ -62,7 +64,10 @@ export type OrgBackfillOutcome = 'planned' | 'notified' | 'migrated' | 'skipped'
 
 export type OrgBackfillSkipReason =
 	| 'no_owner'
+	/** Apply: some planned item is not in a notice its enabler got. */
 	| 'notice_required'
+	/** Notify: an enabler has no email, or a send failed; rerun notify. */
+	| 'notice_incomplete'
 	| 'manifest_load_failed'
 	| 'org_missing'
 
@@ -74,11 +79,15 @@ export type OrgBackfillReport = {
 	outcome: OrgBackfillOutcome
 	skipReason: OrgBackfillSkipReason | null
 	planned: Array<PlannedEnablement>
+	/** Disabled jobs and webhooks, and webhooks no longer declared. */
+	inactive: number
 	/** One entry per member a team-org notice went (or would go) to. */
 	notices: Array<{
 		enablerUserId: string
 		recipient: string | null
 		itemCount: number
+		/** An earlier notice already listed every one of these items. */
+		notified: boolean
 	}>
 }
 
@@ -92,6 +101,7 @@ export type EnablementBackfillReport = {
 		teamOrgs: number
 		enablementsByKind: Record<EnablementTriggerKind, number>
 		unsignedWebhooks: number
+		inactiveTriggers: number
 		distinctEnablers: number
 		noticesSent: number
 	}
@@ -103,12 +113,15 @@ type WebhookEndpointBackfillRow = {
 	webhook_name: string
 	created_by_user_id: string | null
 	hmac_secret_encrypted: string | null
+	enabled: number
 }
 
 type BackfillJob = {
 	id: string
 	name: string
 	creatorUserId: string | null
+	/** Enabled and not kill-switched: it runs today. */
+	active: boolean
 }
 
 export type EnablementBackfillDeps = {
@@ -137,10 +150,13 @@ export function defaultEnablementBackfillDeps(input: {
 			const rows = await jobsData(input.env).listJobsForUser({
 				userId: orgId,
 			})
+			// Team jobs persist the org identity as caller; the creator is provenance.
 			return rows.map((row) => ({
 				id: row.record.id,
 				name: row.record.name,
-				creatorUserId: row.callerContext?.user?.userId ?? null,
+				creatorUserId:
+					row.created_by_user_id ?? row.callerContext?.user?.userId ?? null,
+				active: row.record.enabled && !row.record.killSwitchEnabled,
 			}))
 		},
 		async loadManifest({ orgId, savedPackage }) {
@@ -211,7 +227,7 @@ async function loadWebhookEndpoints(db: D1Database, orgId: string) {
 	const result = await db
 		.prepare(
 			`SELECT id, package_id, webhook_name, created_by_user_id,
-			        hmac_secret_encrypted
+			        hmac_secret_encrypted, enabled
 			 FROM webhook_endpoints
 			 WHERE user_id = ? AND deleted_at IS NULL
 			 ORDER BY created_at, id`,
@@ -242,16 +258,37 @@ async function loadMemberEmails(
 	return emails
 }
 
-function plannedKey(input: {
+type TriggerRef = {
 	triggerKind: EnablementTriggerKind
 	instanceId: string
 	triggerName: string
-}) {
+}
+
+/** One trigger instance: a job or endpoint by id, a subscription by topic. */
+function instanceKey(input: TriggerRef) {
+	return input.triggerKind === 'subscription'
+		? `${input.triggerKind}\u0000${input.instanceId}\u0000${input.triggerName}`
+		: `${input.triggerKind}\u0000${input.instanceId}`
+}
+
+/** What a notice listed: the instance and the name the person was shown. */
+export function enablementNoticeKey(input: TriggerRef) {
 	return `${input.triggerKind}\u0000${input.instanceId}\u0000${input.triggerName}`
 }
 
+async function hasPublishedSource(db: D1Database, sourceId: string) {
+	const row = await db
+		.prepare(
+			`SELECT published_commit FROM entity_sources
+			 WHERE id = ? AND deleted_at IS NULL`,
+		)
+		.bind(sourceId)
+		.first<{ published_commit: string | null }>()
+	return Boolean(row?.published_commit)
+}
+
 type OrgPlan =
-	| { ok: true; planned: Array<PlannedEnablement> }
+	| { ok: true; planned: Array<PlannedEnablement>; inactive: number }
 	| { ok: false; reason: OrgBackfillSkipReason }
 
 /** What the auto-enable step would write for one org. Reads only. */
@@ -271,6 +308,8 @@ export async function planOrgEnablements(input: {
 					enablerSource: 'earliest_owner' as const,
 				}
 
+	// A migrated row (even one turned off) means this step already ran for
+	// the trigger; a person's own row that is off does not.
 	const existing = new Set(
 		(
 			await listEnablementsForOrg({
@@ -278,7 +317,9 @@ export async function planOrgEnablements(input: {
 				orgId: input.orgId,
 				includeOff: true,
 			})
-		).map(plannedKey),
+		)
+			.filter((row) => row.origin === 'migrated' || row.state !== 'off')
+			.map(instanceKey),
 	)
 	const savedPackages = await listSavedPackagesByUserId(input.db, {
 		userId: input.orgId,
@@ -295,6 +336,11 @@ export async function planOrgEnablements(input: {
 				await input.deps.loadManifest({ orgId: input.orgId, savedPackage }),
 			)
 		} catch (error) {
+			// Never published: none of its triggers can run today, so it holds
+			// nothing to migrate. Any other failure may hide live triggers.
+			if (!(await hasPublishedSource(input.db, savedPackage.sourceId))) {
+				continue
+			}
 			console.warn('enablement-backfill-manifest-load-failed', {
 				orgId: input.orgId,
 				packageId: savedPackage.id,
@@ -305,14 +351,19 @@ export async function planOrgEnablements(input: {
 	}
 
 	const planned: Array<PlannedEnablement> = []
+	let inactive = 0
 	const add = (entry: PlannedEnablement) => {
-		const key = plannedKey(entry)
+		const key = instanceKey(entry)
 		if (existing.has(key)) return
 		existing.add(key)
 		planned.push(entry)
 	}
 
 	for (const job of await input.deps.listJobs(input.orgId)) {
+		if (!job.active) {
+			inactive += 1
+			continue
+		}
 		const packageId = packageIdFromJobId(job.id)
 		add({
 			triggerKind: 'cron',
@@ -334,6 +385,11 @@ export async function planOrgEnablements(input: {
 					(webhook) => webhook.name === endpoint.webhook_name,
 				)
 			: undefined
+		// Ingress answers 404 for a disabled or undeclared webhook today.
+		if (!endpoint.enabled || !declared) {
+			inactive += 1
+			continue
+		}
 		add({
 			triggerKind: 'webhook',
 			triggerName: endpoint.webhook_name,
@@ -342,7 +398,7 @@ export async function planOrgEnablements(input: {
 			packageName: packagesById.get(endpoint.package_id)?.name ?? null,
 			...enablerFor(endpoint.created_by_user_id),
 			unsignedWebhook:
-				!declared?.verification && !endpoint.hmac_secret_encrypted,
+				!declared.verification && !endpoint.hmac_secret_encrypted,
 		})
 	}
 
@@ -362,7 +418,7 @@ export async function planOrgEnablements(input: {
 		}
 	}
 
-	return { ok: true, planned }
+	return { ok: true, planned, inactive }
 }
 
 const triggerKindLabels: Record<EnablementTriggerKind, string> = {
@@ -395,6 +451,11 @@ export function buildEnablementNotice(input: {
 			'- Usage from these runs is billed and audited to you instead of the organization.',
 			'- If you lose access (for example, you leave the organization or a credential is no longer shared with you), the automation pauses and resumes by itself when access returns.',
 			'- Webhooks now always verify request signatures.',
+			...(input.items.some((item) => item.unsignedWebhook)
+				? [
+						'- A webhook above had no signature check, so Kody generated a signing secret for it. Its sender must sign each request with that secret (X-Kody-Signature). Find the secret in the package settings, in the Webhooks section.',
+					]
+				: []),
 			'',
 			'Nothing else changes, and nothing stops running. To turn one off, ask your agent to list your enablements and disable the ones you do not want.',
 			'',
@@ -410,6 +471,7 @@ function emptyTotals(): EnablementBackfillReport['totals'] {
 		teamOrgs: 0,
 		enablementsByKind: { cron: 0, subscription: 0, webhook: 0 },
 		unsignedWebhooks: 0,
+		inactiveTriggers: 0,
 		distinctEnablers: 0,
 		noticesSent: 0,
 	}
@@ -454,6 +516,7 @@ async function applyOrgPlan(input: {
 					origin: 'migrated',
 				},
 				now: input.now,
+				ignoreConflicts: true,
 			}).statement,
 	)
 	const markMigrated = buildMarkEnablementOrgMigratedStatement({
@@ -475,10 +538,71 @@ async function applyOrgPlan(input: {
 	}
 }
 
+function noticeCovers(
+	plan: EnablementNoticePlan,
+	enablerUserId: string,
+	items: ReadonlyArray<PlannedEnablement>,
+) {
+	const listed = new Set(plan[enablerUserId] ?? [])
+	return items.every((item) => listed.has(enablementNoticeKey(item)))
+}
+
+/**
+ * Email each enabler whose items no earlier notice listed, recording each
+ * notice as it goes. Returns whether every enabler is now covered.
+ */
+async function notifyTeamOrg(input: {
+	db: D1Database
+	orgId: string
+	orgSlug: string | null
+	noticePlan: EnablementNoticePlan
+	byEnabler: Map<string, Array<PlannedEnablement>>
+	deps: Pick<EnablementBackfillDeps, 'sendNotice'>
+	now: () => string
+}): Promise<{ complete: boolean; sent: number }> {
+	const plan: EnablementNoticePlan = { ...input.noticePlan }
+	const emails = await loadMemberEmails(input.db, [...input.byEnabler.keys()])
+	let complete = true
+	let sent = 0
+	for (const [enablerUserId, items] of input.byEnabler) {
+		if (noticeCovers(plan, enablerUserId, items)) continue
+		const to = emails.get(enablerUserId)
+		if (!to) {
+			complete = false
+			continue
+		}
+		try {
+			await input.deps.sendNotice({
+				to,
+				...buildEnablementNotice({ orgSlug: input.orgSlug, items }),
+			})
+		} catch (error) {
+			console.error('enablement-backfill-notice-failed', {
+				orgId: input.orgId,
+				enablerUserId,
+				error,
+			})
+			complete = false
+			continue
+		}
+		sent += 1
+		plan[enablerUserId] = items.map(enablementNoticeKey)
+		await saveEnablementNoticePlan({
+			db: input.db,
+			orgId: input.orgId,
+			plan,
+			now: input.now(),
+		})
+	}
+	return { complete, sent }
+}
+
 /**
  * One page of the auto-enable step over orgs not yet migrated, in org id
- * order. `dry-run` writes nothing. `notify` emails team-org members and marks
- * those orgs notified. `apply` writes enablements and marks orgs migrated.
+ * order. `dry-run` writes nothing. `notify` emails team-org members what
+ * will bill them and marks the org notified once all of them were told.
+ * `apply` writes enablements and marks orgs migrated; a team org migrates
+ * only when every planned item was in a notice its enabler got.
  */
 export async function runEnablementBackfill(input: {
 	db: D1Database
@@ -510,6 +634,7 @@ export async function runEnablementBackfill(input: {
 			outcome: 'skipped',
 			skipReason: null,
 			planned: [],
+			inactive: 0,
 			notices: [],
 		}
 		orgs.push(report)
@@ -533,6 +658,7 @@ export async function runEnablementBackfill(input: {
 			continue
 		}
 		report.planned = plan.planned
+		report.inactive = plan.inactive
 		const byEnabler = groupByEnabler(plan.planned)
 		if (org.teamOrg) {
 			const emails = await loadMemberEmails(input.db, [...byEnabler.keys()])
@@ -543,27 +669,39 @@ export async function runEnablementBackfill(input: {
 						enablerUserId,
 						recipient: email ? redactEmailRecipient(email) : null,
 						itemCount: items.length,
+						notified: noticeCovers(migration.noticePlan, enablerUserId, items),
 					}
 				},
 			)
 		}
+		const noticesComplete = [...byEnabler.entries()].every(
+			([enablerUserId, items]) =>
+				noticeCovers(migration.noticePlan, enablerUserId, items),
+		)
 
 		switch (input.mode) {
 			case 'dry-run':
 				report.outcome = 'planned'
 				break
 			case 'notify': {
-				if (!org.teamOrg || migration.state !== 'legacy') {
+				if (!org.teamOrg) {
 					report.outcome = 'planned'
 					break
 				}
-				const emails = await loadMemberEmails(input.db, [...byEnabler.keys()])
-				for (const [enablerUserId, items] of byEnabler) {
-					const to = emails.get(enablerUserId)
-					if (!to) continue
-					const notice = buildEnablementNotice({ orgSlug: org.slug, items })
-					await input.deps.sendNotice({ to, ...notice })
-					totals.noticesSent += 1
+				const notified = await notifyTeamOrg({
+					db: input.db,
+					orgId: migration.orgId,
+					orgSlug: org.slug,
+					noticePlan: migration.noticePlan,
+					byEnabler,
+					deps: input.deps,
+					now,
+				})
+				totals.noticesSent += notified.sent
+				if (!notified.complete) {
+					report.skipReason = 'notice_incomplete'
+					report.outcome = 'skipped'
+					break
 				}
 				await markEnablementOrgNotified({
 					db: input.db,
@@ -574,7 +712,7 @@ export async function runEnablementBackfill(input: {
 				break
 			}
 			case 'apply': {
-				if (org.teamOrg && migration.state !== 'notified') {
+				if (org.teamOrg && !noticesComplete) {
 					report.skipReason = 'notice_required'
 					report.outcome = 'skipped'
 					break
@@ -596,6 +734,7 @@ export async function runEnablementBackfill(input: {
 		}
 		totals.orgsByOutcome[report.outcome] += 1
 		if (report.outcome === 'skipped') continue
+		totals.inactiveTriggers += plan.inactive
 		for (const item of plan.planned) {
 			totals.enablementsByKind[item.triggerKind] += 1
 			if (item.unsignedWebhook) totals.unsignedWebhooks += 1
@@ -606,10 +745,9 @@ export async function runEnablementBackfill(input: {
 	return {
 		mode: input.mode,
 		orgs,
+		// A full page may have more after it, with or without an org id filter.
 		nextCursor:
-			pending.length === limit && !input.orgIds?.length
-				? (pending.at(-1)?.orgId ?? null)
-				: null,
+			pending.length === limit ? (pending.at(-1)?.orgId ?? null) : null,
 		totals,
 	}
 }

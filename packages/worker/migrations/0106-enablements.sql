@@ -45,16 +45,25 @@ CREATE INDEX IF NOT EXISTS enablements_enabler
 	ON enablements (enabler_user_id, org_id)
 	WHERE state <> 'off';
 
+-- The auto-enable step writes exactly one migrated row per trigger instance,
+-- so an overlapping or retried run cannot add a second one.
+CREATE UNIQUE INDEX IF NOT EXISTS enablements_migrated_instance
+	ON enablements (org_id, trigger_kind, instance_id, trigger_name)
+	WHERE origin = 'migrated';
+
 -- Per-org migration to enablements. Only an org whose row is `migrated` runs
 -- its triggers through enablements; an org with no row (or a `legacy` or
 -- `notified` row) still runs them the old way until the auto-enable step
 -- (`adminEnablementsMigrate`) writes its enablements and marks it
 -- `migrated`. Team orgs must be `notified` (members told which enablements
--- will bill them) before they can migrate.
+-- will bill them) before they can migrate. notice_plan_json maps each
+-- notified enabler to the trigger keys their notice listed, so a retried
+-- notify emails nobody twice and apply refuses items nobody was told about.
 CREATE TABLE IF NOT EXISTS enablement_org_migrations (
 	org_id TEXT PRIMARY KEY NOT NULL,
 	state TEXT NOT NULL CHECK (state IN ('legacy', 'notified', 'migrated')),
 	notice_sent_at TEXT,
+	notice_plan_json TEXT,
 	migrated_at TEXT,
 	updated_at TEXT NOT NULL
 );

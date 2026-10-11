@@ -421,8 +421,8 @@
 			"sha256": "59d142b21ded2b22006ee16797e7db3dbdb8d832a68aa0b39b4d47cd0bba466b"
 		},
 		{
-			"filename": "0105-enablements.sql",
-			"sha256": "262a1d0e60c1880a83dd40ba8ec0eef45734e6d29406d7b2be19a6a827cc1949"
+			"filename": "0106-enablements.sql",
+			"sha256": "048095338516cf6e0b8f59bd743fa40232e181c38e45af4137813b78160d4d9f"
 		}
 	]
 }

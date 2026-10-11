@@ -35,17 +35,20 @@ const orgReportSchema = z.object({
 		.enum([
 			'no_owner',
 			'notice_required',
+			'notice_incomplete',
 			'manifest_load_failed',
 			'org_missing',
 		])
 		.nullable(),
 	enablement_count: z.number().int().nonnegative(),
+	inactive_count: z.number().int().nonnegative(),
 	planned: z.array(plannedSchema).optional(),
 	notices: z.array(
 		z.object({
 			enabler_user_id: z.string(),
 			recipient: z.string().nullable(),
 			item_count: z.number().int().nonnegative(),
+			notified: z.boolean(),
 		}),
 	),
 })
@@ -62,7 +65,7 @@ export const adminEnablementsMigrateCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminEnablementsMigrate',
 		description:
-			'Admin-only migration auto-enable for the single enablement model: every existing job, webhook and subscription in an org not yet migrated becomes one enablement for a real member (creator if still a member, else the earliest Owner). dry-run writes nothing. notify emails team-org members which enablements will bill them and marks those orgs notified. apply writes enablements, generates signing secrets for unsigned webhooks, and marks orgs migrated (team orgs must be notified first). Pages over orgs by id. Audited.',
+			'Admin-only migration auto-enable for the single enablement model: every job, webhook and subscription that runs today in an org not yet migrated becomes one enablement for a real member (creator if still a member, else the earliest Owner); disabled jobs and webhooks are counted, not migrated. dry-run writes nothing. notify emails team-org members which enablements will bill them (never the same items twice) and marks an org notified once every member was told. apply writes enablements, generates signing secrets for unsigned webhooks, and marks orgs migrated (in a team org, only when every item was in a notice to its enabler). Pages over orgs by id. Audited.',
 		keywords: [
 			'admin',
 			'enablements',
@@ -117,6 +120,7 @@ export const adminEnablementsMigrateCapability = defineDomainCapability(
 				team_orgs: z.number().int().nonnegative(),
 				enablements_by_kind: countByKindSchema,
 				unsigned_webhooks: z.number().int().nonnegative(),
+				inactive_triggers: z.number().int().nonnegative(),
 				distinct_enablers: z.number().int().nonnegative(),
 				notices_sent: z.number().int().nonnegative(),
 			}),
@@ -148,6 +152,7 @@ export const adminEnablementsMigrateCapability = defineDomainCapability(
 							team_orgs: report.totals.teamOrgs,
 							enablements_by_kind: report.totals.enablementsByKind,
 							unsigned_webhooks: report.totals.unsignedWebhooks,
+							inactive_triggers: report.totals.inactiveTriggers,
 							distinct_enablers: report.totals.distinctEnablers,
 							notices_sent: report.totals.noticesSent,
 						},
@@ -159,6 +164,7 @@ export const adminEnablementsMigrateCapability = defineDomainCapability(
 							outcome: org.outcome,
 							skip_reason: org.skipReason,
 							enablement_count: org.planned.length,
+							inactive_count: org.inactive,
 							...(args.include_planned
 								? {
 										planned: org.planned.map((item) => ({
@@ -177,6 +183,7 @@ export const adminEnablementsMigrateCapability = defineDomainCapability(
 								enabler_user_id: notice.enablerUserId,
 								recipient: notice.recipient,
 								item_count: notice.itemCount,
+								notified: notice.notified,
 							})),
 						})),
 					}

@@ -126,6 +126,7 @@ async function setup(sessionUsername = 'owner') {
 			state TEXT NOT NULL,
 			notice_sent_at TEXT,
 			migrated_at TEXT,
+			notice_plan_json TEXT,
 			updated_at TEXT NOT NULL
 		);
 	`)
