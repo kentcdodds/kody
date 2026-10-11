@@ -26,4 +26,9 @@ test('pricing columns show the limits enforced for each purchasable plan', () =>
 			.filter((column) => column.chargesPastInclude)
 			.map((column) => column.id),
 	).toEqual(['pro-credits'])
+	expect(
+		pricingLimitColumns
+			.filter((column) => column.monthlyIncludeIsGuideline)
+			.map((column) => column.id),
+	).toEqual(['free'])
 })
