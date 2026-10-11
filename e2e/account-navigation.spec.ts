@@ -123,9 +123,9 @@ test('signed-in profile and org switcher open the workspace rail through to Acti
 	test.setTimeout(process.env.CI ? 90_000 : 60_000)
 	const runId = Date.now()
 	const user = await seedE2eUser({
-		email: `workspace-entry-${runId}@example.com`,
-		username: `workspace-entry-${runId}`,
-		password: 'workspace-entry-password',
+		email: `rail-entry-${runId}@example.com`,
+		username: `rail-entry-${runId}`,
+		password: 'rail-entry-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 
@@ -136,15 +136,19 @@ test('signed-in profile and org switcher open the workspace rail through to Acti
 		'href',
 		`/@${user.username}/-/packages`,
 	)
-	await page.getByTestId('profile-workspace').click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/packages$`))
+	await Promise.all([
+		page.waitForURL(new RegExp(`/@${user.username}/-/packages$`)),
+		page.getByTestId('profile-workspace').click(),
+	])
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Repositories' }),
 	).toBeVisible()
 	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(rail).toBeVisible()
-	await rail.getByRole('link', { name: 'Activity', exact: true }).click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/activity$`))
+	await Promise.all([
+		page.waitForURL(new RegExp(`/@${user.username}/-/activity$`)),
+		rail.getByRole('link', { name: 'Activity', exact: true }).click(),
+	])
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Activity' }),
 	).toBeVisible()
@@ -160,13 +164,15 @@ test('signed-in profile and org switcher open the workspace rail through to Acti
 	await expect(panel).toBeVisible()
 	const manageGroup = panel.getByTestId('org-switcher-manage-group')
 	await expect(
-		manageGroup.getByRole('link', { name: 'Workspace' }),
+		manageGroup.getByTestId('org-switcher-org-manage-workspace'),
 	).toHaveAttribute('href', `/@${user.username}/-/packages`)
 	await expect(
-		manageGroup.getByRole('link', { name: 'Billing' }),
+		manageGroup.getByTestId('org-switcher-org-manage-billing'),
 	).toHaveAttribute('href', `/@${user.username}/-/billing`)
-	await manageGroup.getByRole('link', { name: 'Workspace' }).click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/packages$`))
+	await Promise.all([
+		page.waitForURL(new RegExp(`/@${user.username}/-/packages$`)),
+		manageGroup.getByTestId('org-switcher-org-manage-workspace').click(),
+	])
 	await expect(
 		page.getByRole('navigation', { name: 'Workspace sections' }),
 	).toBeVisible()

@@ -62,7 +62,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	const manageGroup = wide.panel.getByTestId('org-switcher-manage-group')
 	await expect(manageGroup).toBeVisible()
 	await expect(
-		manageGroup.getByRole('link', { name: 'Workspace' }),
+		manageGroup.getByTestId('org-switcher-org-manage-workspace'),
 	).toHaveAttribute('href', `/@pinned-${runId}/-/packages`)
 	await expect(
 		manageGroup.getByRole('link', { name: 'Settings' }),
