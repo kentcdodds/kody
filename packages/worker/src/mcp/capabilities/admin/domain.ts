@@ -14,6 +14,7 @@ import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-overrid
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
+import { adminPackageCodemodOwnerNoticeCapability } from './admin-package-codemod-owner-notice.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
 import { adminPackageCodemodScanCapability } from './admin-package-codemod-scan.ts'
 import { adminPlatformOauthAppDeleteCapability } from './admin-platform-oauth-app-delete.ts'
@@ -129,6 +130,7 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodDryRunCapability,
 		adminPackageCodemodApplyCapability,
 		adminPackageCodemodRevertCapability,
+		adminPackageCodemodOwnerNoticeCapability,
 		adminPublishedImportableArtifactBackfillCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,

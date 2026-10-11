@@ -714,8 +714,9 @@ change to these decisions here so future agents do not relitigate them.
   admin-gated write paths). The concrete cross-user blast includes
   `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
   users' published package trees), and the same unattended path can call other
-  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`, and
-  `adminSystemEmailSend`. Installing an untrusted package on an admin account
+  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`,
+  `adminSystemEmailSend`, and `adminPackageCodemodOwnerNotice` (emails package
+  owners fleet-wide). Installing an untrusted package on an admin account
   therefore carries that blast radius. This is accepted residual, not a silent
   interactive-only mutation gate. Deferred alternatives include gating admin
   mutations on `executionOrigin: 'interactive'`, and/or separate service

@@ -282,6 +282,7 @@ rule.
 - `adminPackageCodemodDryRun`
 - `adminPackageCodemodApply`
 - `adminPackageCodemodRevert`
+- `adminPackageCodemodOwnerNotice`
 
 When adding more admin actions, expose service-layer functions by adding new
 `admin/*` capability files that call those service functions directly, set
