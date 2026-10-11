@@ -318,6 +318,22 @@ export function defaultLegacyJobRetireDeps(input: {
 					jobId: packageJobId,
 				}
 			} catch (error) {
+				return await rollBackMove(error)
+			}
+			try {
+				await deleteLegacyJob(env, job)
+			} catch (error) {
+				// Once the legacy row is gone the package job is the only copy left.
+				const legacyRow = await jobsData(env).getJobById({
+					userId: owner.orgId,
+					jobId: record.id,
+				})
+				if (legacyRow) return await rollBackMove(error)
+				throw error
+			}
+			return moved
+
+			async function rollBackMove(error: unknown): Promise<never> {
 				try {
 					for (const id of insertedEnablementIds) {
 						await disableEnablement({ db: env.APP_DB, orgId: owner.orgId, id })
@@ -349,8 +365,6 @@ export function defaultLegacyJobRetireDeps(input: {
 				}
 				throw error
 			}
-			await deleteLegacyJob(env, job)
-			return moved
 		},
 		async deleteJob({ job }) {
 			await deleteLegacyJob(env, job)
