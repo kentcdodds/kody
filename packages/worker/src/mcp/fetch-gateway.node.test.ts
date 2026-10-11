@@ -361,6 +361,23 @@ test('fetch gateway fills placeholders in JSON, form, and text bodies on an allo
 		'token=plain-value;',
 	)
 
+	// JSON.stringify bodies sent without a Content-Type arrive as text/plain.
+	const untypedJson = await send(
+		'text/plain;charset=UTF-8',
+		JSON.stringify({ password: '{{secret:quoted}}' }),
+	)
+	expect(JSON.parse(untypedJson)).toEqual({ password: 'pa"ss\\word' })
+
+	const sized = await expand(
+		new Request('https://api.example.com/v1/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'Content-Length': '30' },
+			body: '{"identifier":"{{secret:h}}"}',
+		}),
+	)
+	expect(sized.headers.get('content-length')).toBeNull()
+	expect(await sized.text()).toBe('{"identifier":"h-value"}')
+
 	// A body without a placeholder is forwarded byte for byte.
 	const untouched = '{"a": 1,   "b": "{literal}"}'
 	expect(await send('application/json', untouched)).toBe(untouched)

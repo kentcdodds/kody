@@ -589,10 +589,12 @@ export async function expandSecretPlaceholders(input: {
 	const nextUrl = fillsUrlAndBody
 		? fillUrlPlaceholders(requestUrl, replacements)
 		: requestUrl
-	const nextBody =
-		requestBody && bodyTexts.some(holdsPlaceholder)
-			? fillBodyPlaceholders(requestBody, replacements)
-			: requestBodyInit(requestBody)
+	const fillsBody = requestBody != null && bodyTexts.some(holdsPlaceholder)
+	const nextBody = fillsBody
+		? fillBodyPlaceholders(requestBody, replacements)
+		: requestBodyInit(requestBody)
+	// A filled body has a new length; the runtime sets it from the bytes.
+	if (fillsBody) headers.delete('content-length')
 	const nextRedirect =
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
@@ -868,21 +870,39 @@ async function readRequestBody(
 			kind: 'text',
 			bytes,
 			text,
-			format: readTextBodyFormat(contentType),
+			format: readTextBodyFormat(contentType, text),
 		}
 	} catch {
 		return { kind: 'opaque', bytes }
 	}
 }
 
-function readTextBodyFormat(contentType: string) {
+/**
+ * `fetch(url, { body: JSON.stringify(...) })` without a Content-Type is sent
+ * as `text/plain`, so an untyped or plain-text body that parses as JSON is
+ * filled as JSON: a quote in a value must not end the string it fills.
+ */
+function readTextBodyFormat(contentType: string, text: string) {
 	if (contentType.startsWith('application/x-www-form-urlencoded')) {
 		return 'form'
 	}
 	const mediaType = contentType.split(';')[0]?.trim() ?? ''
-	return mediaType === 'application/json' || mediaType.endsWith('+json')
-		? 'json'
-		: 'text'
+	if (mediaType === 'application/json' || mediaType.endsWith('+json')) {
+		return 'json'
+	}
+	if ((mediaType === '' || mediaType === 'text/plain') && isJsonText(text)) {
+		return 'json'
+	}
+	return 'text'
+}
+
+function isJsonText(text: string) {
+	try {
+		JSON.parse(text)
+		return true
+	} catch {
+		return false
+	}
 }
 
 /**
