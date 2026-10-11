@@ -106,9 +106,8 @@ function applyCommand(
  * rows before the regular apply. Each apply is preceded by
  * `check-stale-local-migrations.ts`, which fails when the state records a
  * migration name that is no longer on disk (a renamed or deleted file).
- * `0090-teams-credential-org-binding.sql` rewrites API token scopes in SQL;
- * `tools/teams-migration/rewrite-api-token-scopes.ts` can re-run the same map
- * for local repair.
+ * `0090-teams-credential-org-binding.sql` rewrites API token scopes in SQL.
+ * The same map lives in `packages/worker/src/api-tokens/legacy-scope-rewrite.ts`.
  */
 export function buildLocalMigrationCommands(input: {
 	argv: ReadonlyArray<string>

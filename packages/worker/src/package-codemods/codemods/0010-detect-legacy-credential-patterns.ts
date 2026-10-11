@@ -51,9 +51,9 @@ export const legacyCredentialPatternMessages: Record<
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a secret through packageSecrets.get, which returns the value only for a kody.credentials secret slot that declares "raw": true and fails for anything else. Send the value with a {{secret:<slot>}} header placeholder instead, or declare the slot raw.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in only in the header a kody.credentials slot declares for that secret.',
 	'missing placement':
-		'missing placement: a kody.credentials secret slot has no placement and is not raw. Publish requires the header the value goes in.',
+		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
 }
 
 export function legacyCredentialPatternFromMessage(
@@ -590,10 +590,7 @@ function detectInManifest(
 		isPlainObject(kody.credentials) &&
 		Object.values(kody.credentials).some(
 			(slot) =>
-				isPlainObject(slot) &&
-				slot.kind === 'secret' &&
-				slot.placement == null &&
-				slot.raw !== true,
+				isPlainObject(slot) && slot.kind === 'secret' && slot.placement == null,
 		)
 	) {
 		add('missing placement')

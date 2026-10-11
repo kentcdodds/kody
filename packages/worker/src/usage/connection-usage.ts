@@ -219,7 +219,6 @@ function automationLabel(
  *
  * Package names follow the org Repositories list: a package the viewer
  * cannot see (`canSeePackage`) keeps its units but not its name.
- * `packageLinks` is false where packages have no detail page (team orgs).
  */
 export async function loadConnectionUsage(input: {
 	env: Env
@@ -228,7 +227,6 @@ export async function loadConnectionUsage(input: {
 	viewerPersonId: string
 	includeOrgWide: boolean
 	canSeePackage: (packageId: string) => boolean
-	packageLinks: boolean
 	now?: Date
 }): Promise<AccountConnectionUsageLoaderData> {
 	const now = input.now ?? new Date()
@@ -315,9 +313,7 @@ export async function loadConnectionUsage(input: {
 		}
 		return {
 			label: name,
-			href: input.packageLinks
-				? (packageLabels.hrefs.get(packageId) ?? null)
-				: null,
+			href: packageLabels.hrefs.get(packageId) ?? null,
 		}
 	}
 

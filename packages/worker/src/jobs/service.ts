@@ -7,10 +7,13 @@ import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	backgroundRunBilledActor,
 	parseRequestLineage,
 	type RequestOrgBinding,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
+import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
+import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import {
 	createMcpCallerContext,
 	createMcpCallerContextWire,
@@ -683,9 +686,9 @@ class JobOrgAccessError extends Error {
 /**
  * The org binding a run executes under, resolved from APP_DB at run time.
  * The persisted blob's binding (and role) is never authoritative: the job's
- * org must be live, and a run-now actor must still hold access to it.
- * Schedule and other automation runs carry no actor, so their binding has no
- * role, exactly as a fresh schedule tick derives it.
+ * org must be live, and a run-now actor or enabler must still hold access to
+ * it. Legacy schedule runs carry no actor, so their binding has no role,
+ * exactly as a fresh schedule tick derives it.
  */
 async function resolveJobRunOrgBinding(input: {
 	db: D1Database
@@ -699,13 +702,12 @@ async function resolveJobRunOrgBinding(input: {
 		)
 	}
 	const org = { id: ownerIdFromStored(input.org.id), slug: input.org.slug }
-	const actor =
-		input.source.kind === 'inherited' ? input.source.lineage.actor : null
+	const actor = backgroundRunBilledActor(input.source)
 	if (!actor) return { org, role: null }
 	const binding = await loadOrgBindingForOrg(input.db, actor.userId, org.id)
 	if (!binding) {
 		throw new JobOrgAccessError(
-			`Job "${input.job.id}" cannot run: the requesting person no longer has access to its organization.`,
+			`Job "${input.job.id}" cannot run: ${input.source.kind === 'inherited' ? 'the requesting person' : 'its enabler'} no longer has access to its organization.`,
 		)
 	}
 	return binding
@@ -1478,14 +1480,15 @@ export async function executeJobOnce(input: {
 				durationMs = Math.max(0, finished.valueOf() - started.valueOf())
 				const userId = input.job.userId
 				if (userId && completedOccurrence) {
+					const billedActor = backgroundRunBilledActor(input.source)
 					await recordUsage(input.env, {
 						userId,
 						eventType: 'job_run',
 						entityId: input.job.id,
 						durationMs,
 						outcome,
-						actorUserId: '',
-						automationSource: 'schedule',
+						actorUserId: billedActor?.userId ?? '',
+						automationSource: billedActor ? '' : 'schedule',
 					})
 				}
 			}
@@ -1601,13 +1604,30 @@ export async function runJobNow(input: {
 			const activeCallerContext = input.callerContext
 				? requirePersistableJobCallerContext(input.callerContext)
 				: row.callerContext
+			const source: RequestSource = input.callerContext
+				? runNowRequestSource(input.callerContext, row.record.id)
+				: { kind: 'schedule', jobId: row.record.id }
+			const runsAsNobody =
+				source.kind === 'schedule' ||
+				(source.kind === 'inherited' && !source.lineage.actor)
+			if (
+				runsAsNobody &&
+				(
+					await getEnablementOrgMigration({
+						db: input.env.APP_DB,
+						orgId: input.userId,
+					})
+				).state === 'migrated'
+			) {
+				throw new McpCallerError(
+					`Job "${input.jobId}" can only be run now by a signed-in person, who it then runs as.`,
+				)
+			}
 			const outcome = await executeJobOnce({
 				env: input.env,
 				job: row.record,
 				callerContext: activeCallerContext,
-				source: input.callerContext
-					? runNowRequestSource(input.callerContext, row.record.id)
-					: { kind: 'schedule', jobId: row.record.id },
+				source,
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 				waitUntil: input.waitUntil,
 			})
@@ -1687,16 +1707,129 @@ async function resolveScheduledJobRunAttribution(input: {
 	}
 }
 
+/**
+ * The runs one scheduled tick starts. A legacy org runs the job once as
+ * Automation. An org moved to enablements runs it once per on enablement, as
+ * its enabler, each with its own idempotency key; with none, nothing runs.
+ */
+async function planScheduledJobRuns(input: {
+	env: Env
+	job: JobRecord
+	idempotencyKey: string
+}): Promise<Array<{ source: RequestSource; idempotencyKey: string }>> {
+	const plan = await planEnablementRuns({
+		env: input.env,
+		orgId: input.job.userId,
+		packageId: packageIdFromJobId(input.job.id),
+		trigger: { kind: 'cron', instanceId: input.job.id },
+	})
+	if (plan.mode === 'legacy') {
+		return [
+			{
+				source: { kind: 'schedule', jobId: input.job.id },
+				idempotencyKey: input.idempotencyKey,
+			},
+		]
+	}
+	if (plan.runs.length === 0) {
+		console.info('job-tick-skipped-no-enablement', {
+			orgId: input.job.userId,
+			jobId: input.job.id,
+			skipped: plan.skipped,
+		})
+	}
+	return plan.runs.map((enablement) => ({
+		source: { kind: 'schedule', jobId: input.job.id, enablement },
+		idempotencyKey: `${input.idempotencyKey}:enablement:${enablement.id}`,
+	}))
+}
+
 async function executeClaimedScheduledJob(input: {
 	env: Env
 	row: JobRow
 	scheduledFor: string
 	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	const idempotencyKey = buildScheduledJobIdempotencyKey({
-		jobId: input.row.record.id,
-		scheduledFor: input.scheduledFor,
+}): Promise<JobExecutionOutcome | null> {
+	const runs = await planScheduledJobRuns({
+		env: input.env,
+		job: input.row.record,
+		idempotencyKey: buildScheduledJobIdempotencyKey({
+			jobId: input.row.record.id,
+			scheduledFor: input.scheduledFor,
+		}),
+	}).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
 	})
+	if (runs.length === 0) return null
+	let selected: JobExecutionOutcome | null = null
+	for (const run of runs) {
+		const outcome = await executeClaimedScheduledJobRun({ ...input, ...run })
+		if (!selected || selected.execution.ok) selected = outcome
+	}
+	if (!selected) throw new Error('Expected at least one scheduled job run.')
+	return selected
+}
+
+/**
+ * Nothing is on for this slot, so no run is recorded. A recurring job skips
+ * to its next slot. A once job keeps its slot and retries with backoff, so it
+ * still fires after its enabler regains access.
+ */
+async function deferClaimedJobWithoutEnablement(input: {
+	env: Env
+	userId: OwnerId
+	row: JobRow
+	claimToken: string
+	now: Date
+}) {
+	const { row } = input
+	const store = jobsData(input.env)
+	const scheduledFor = row.claimed_scheduled_for
+	const settled =
+		row.record.schedule.type === 'once' || !scheduledFor
+			? await store.retryClaimedJob({
+					userId: input.userId,
+					jobId: row.id,
+					claimToken: input.claimToken,
+					nextRunAt: computeJobRetryAt({
+						now: input.now,
+						retryCount: row.retry_count,
+					}),
+				})
+			: await store.finalizeClaimedJob({
+					userId: input.userId,
+					job: {
+						...row.record,
+						updatedAt: input.now.toISOString(),
+						nextRunAt: computeNextRunAt({
+							schedule: row.record.schedule,
+							timezone: row.record.timezone,
+							from: input.now,
+						}),
+					},
+					claimToken: input.claimToken,
+					scheduledFor,
+				})
+	logJobSchedulerEvent({
+		event: settled
+			? 'scheduled_job_skipped'
+			: 'claim_lost_before_skip_transition',
+		userId: input.userId,
+		jobId: row.id,
+		scheduleType: row.record.schedule.type,
+		reason: settled ? 'no_enablement_on' : 'fenced_claim_superseded',
+	})
+}
+
+async function executeClaimedScheduledJobRun(input: {
+	env: Env
+	row: JobRow
+	scheduledFor: string
+	source: RequestSource
+	idempotencyKey: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<JobExecutionOutcome> {
+	const { idempotencyKey } = input
 	const attribution = await resolveScheduledJobRunAttribution({
 		env: input.env,
 		job: input.row.record,
@@ -1728,7 +1861,7 @@ async function executeClaimedScheduledJob(input: {
 				executeJobOnce({
 					env: input.env,
 					job: input.row.record,
-					source: { kind: 'schedule', jobId: input.row.record.id },
+					source: input.source,
 					callerContext: resolveScheduledJobCallerContext({
 						callerContext: input.row.callerContext,
 					}),
@@ -1826,6 +1959,16 @@ export async function runDueJobsForUser(input: {
 						scheduledFor: row.claimed_scheduled_for,
 						waitUntil: input.waitUntil,
 					})
+					if (!outcome) {
+						await deferClaimedJobWithoutEnablement({
+							env: input.env,
+							userId: input.userId,
+							row,
+							claimToken,
+							now,
+						})
+						continue
+					}
 					const result = await processDueJobs({
 						jobs: [row.record],
 						now,

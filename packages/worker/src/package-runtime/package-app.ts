@@ -1484,7 +1484,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	private async resolvePackageSecretMount(input: {
 		alias: string
 		packageId?: string
-		access: 'raw' | 'presence'
 	}) {
 		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
@@ -1499,27 +1498,22 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			credential: {
 				use: 'package-secret-mount',
 				alias: input.alias,
-				access: input.access,
 				callerContext,
 			},
 		})
 	}
 
 	async packageSecretGet(input: { alias: string; packageId?: string }) {
-		const { value } = await this.resolvePackageSecretMount({
-			...input,
-			access: 'raw',
-		})
-		if (value === null) {
-			throw new Error(`packageSecrets.get("${input.alias}") resolved no value.`)
+		const resolved = await this.resolvePackageSecretMount(input)
+		// Opaque placeholder string only — never track or return plaintext.
+		return {
+			value: resolved.ref,
 		}
-		this.secretRedactor.track(value)
-		return { value }
 	}
 
 	async packageSecretHas(input: { alias: string; packageId?: string }) {
 		try {
-			await this.resolvePackageSecretMount({ ...input, access: 'presence' })
+			await this.resolvePackageSecretMount(input)
 			return {
 				has: true,
 			}

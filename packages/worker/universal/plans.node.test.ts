@@ -258,8 +258,8 @@ test('purchasable Pro has Max stock always; empty wallet keeps the full Pro incl
 		maxSavedPackages: 10_000,
 		maxSecrets: 10_000,
 		maxConcurrentWorkflows: 200,
-		maxOutboundFetchesPerDay: 80_000,
-		maxOutboundFetchesPerWeek: 560_000,
+		maxOutboundFetchesPerDay: 750_000,
+		maxOutboundFetchesPerWeek: 2_000_000,
 		maxJobRunsPerDay: 40_000,
 		maxAutomationInvocationsPerDay: 200_000,
 		minJobIntervalMs: 15 * 60 * 1000,
@@ -288,8 +288,8 @@ test('purchasable Pro rates pool across paid seats; funded ceilings scale with s
 			[10_000, 'pro', 'saved_packages', 'public', 'empty', 3],
 			[200, 'pro', 'email_sends_per_day', 'public', 'empty', 3],
 			[75_000, 'pro', 'execute_unique_workers_per_day', 'public', 'funded', 3],
-			// 45,000 × 50 is past the ceiling, so seats × 80,000 binds.
-			[240_000, 'pro', 'outbound_fetches_per_day', 'public', 'funded', 3],
+			// 45,000 × 50 and seats × 750,000 agree, like execute.
+			[2_250_000, 'pro', 'outbound_fetches_per_day', 'public', 'funded', 3],
 			[200, 'pro', 'concurrent_workflows', 'public', 'funded', 3],
 			[150, 'free', 'execute_unique_workers_per_day', 'public', 'none', 3],
 			[1_500, 'pro', 'execute_unique_workers_per_day', 'public', 'none', 3],
@@ -317,7 +317,7 @@ test('purchasable Pro rates pool across paid seats; funded ceilings scale with s
 			'funded',
 			3,
 		),
-	]).toEqual([3_600, 180_000, 3 * 560_000])
+	]).toEqual([3_600, 180_000, 6_000_000])
 	expect(resolvePlanLimits('free', 'public', 'none', 3)).toEqual({
 		...planLimits.free,
 		maxExecuteCallsPerMinute: 900,

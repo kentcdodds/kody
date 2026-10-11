@@ -4,10 +4,10 @@ import path from 'node:path'
 /**
  * Knip entries under tools/. Shared helpers stay project files so unused
  * exports are reported. A file is an entry only when it is a CLI main:
- * `isExecutedDirectly(import.meta.url)`, an argv main, a node shebang, an
- * esbuild `*.entry.ts` bundle target, or a tools module named by a package SQL
- * migration. package.json, project.json, husky, and GitHub Actions `run`
- * scripts are left to Knip's own plugins so the same file is not listed twice.
+ * `isExecutedDirectly(import.meta.url)` in code, an argv main, a node shebang,
+ * or an esbuild `*.entry.ts` bundle target. Comments do not count. package.json,
+ * project.json, husky, and GitHub Actions `run` scripts are left to Knip's own
+ * plugins so the same file is not listed twice.
  */
 
 const toolExtensions = new Set(['.ts', '.js', '.mjs'])
@@ -27,9 +27,6 @@ const directExecution =
 const nodeToolInvocation =
 	/(?:^|[^\w./-])node(?:\s+(?:--[\w][\w.-]*(?:=[^\s"'`]+)?|-[A-Za-z]+))*\s+(?:\.\.?\/)?(tools\/(?:[\w.-]+\/)*[\w.-]+\.(?:ts|js|mjs))/g
 
-const sqlToolPath =
-	/(?:^|[^\w./-])(tools\/(?:[\w.-]+\/)*[\w.-]+\.(?:ts|js|mjs))/g
-
 const bundleEntryPath = /['"](tools\/(?:[\w.-]+\/)*[\w.-]+\.entry\.ts)['"]/g
 
 export function toolCliEntryFiles(repoRoot: string): Array<string> {
@@ -46,7 +43,13 @@ export function toolCliEntryFiles(repoRoot: string): Array<string> {
 
 function isCliSource(source: string) {
 	if (hasNodeShebang(source)) return true
-	return directExecution.test(source)
+	return directExecution.test(stripComments(source))
+}
+
+function stripComments(source: string) {
+	return source
+		.replace(/\/\*[\s\S]*?\*\//g, '')
+		.replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
 function hasNodeShebang(source: string) {
@@ -72,11 +75,6 @@ function pluginOwnedToolPaths(repoRoot: string) {
 
 function extraToolPaths(repoRoot: string) {
 	const invoked = new Set<string>()
-	for (const filePath of invocationSourceFiles(repoRoot)) {
-		const relativePath = toPosix(path.relative(repoRoot, filePath))
-		if (!relativePath.endsWith('.sql')) continue
-		collectToolPaths(invoked, readFileSync(filePath, 'utf8'), sqlToolPath)
-	}
 	for (const relativePath of toolSourceFiles(repoRoot)) {
 		collectToolPaths(
 			invoked,
@@ -112,10 +110,6 @@ function invocationSourceFiles(repoRoot: string) {
 		if (isDirectory) return
 		const name = path.posix.basename(relativePath)
 		if (name === 'package.json' || name === 'project.json') {
-			files.push(absolutePath)
-			return
-		}
-		if (relativePath.endsWith('.sql') && relativePath.startsWith('packages/')) {
 			files.push(absolutePath)
 			return
 		}

@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
@@ -70,8 +69,6 @@ export function createAccountConnectionUsageApiHandler(env: Env) {
 							access,
 							packageResource({ id: packageId, userId: orgId }),
 						),
-					// Team-owned packages have no `/@team/<kody-id>` page yet (#3250).
-					packageLinks: orgId === personalOrgId(user.mcpUser.userId),
 				}),
 			)
 		},

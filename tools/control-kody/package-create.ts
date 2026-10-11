@@ -145,9 +145,15 @@ export async function createPreviewPackage(input: {
 	headAhead: boolean
 	cookieHeader?: string
 	oauth?: AppMcpOAuthSession
+	orgSlug?: string | null
 	connect?: (
 		origin: string,
 		user: AppAuthUser,
+		options: {
+			cookieHeader?: string
+			oauth?: AppMcpOAuthSession
+			orgSlug?: string
+		},
 	) => Promise<PackageCreateConnection>
 	pushHeadAhead?: (remote: GitRemoteResult) => Promise<void>
 	fetchImpl?: FetchLike
@@ -166,12 +172,14 @@ export async function createPreviewPackage(input: {
 		password: input.password,
 		username: usernameFromEmail(input.email),
 	}
+	const connectOptions = {
+		cookieHeader: input.cookieHeader,
+		oauth: input.oauth,
+		...(input.orgSlug ? { orgSlug: input.orgSlug } : {}),
+	}
 	const connection = input.connect
-		? await input.connect(input.origin, user)
-		: await connectAppMcpClient(input.origin, user, {
-				cookieHeader: input.cookieHeader,
-				oauth: input.oauth,
-			})
+		? await input.connect(input.origin, user, connectOptions)
+		: await connectAppMcpClient(input.origin, user, connectOptions)
 	try {
 		const params: Record<string, unknown> = {
 			kodyId: input.kodyId,

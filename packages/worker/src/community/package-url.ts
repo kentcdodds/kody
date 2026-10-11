@@ -54,6 +54,7 @@ export type PackagePageUrlTarget =
 			username: string
 			kodyId: string
 			userId: OwnerId
+			packageId: string
 			listingId: string | null
 			listingKodyId: string | null
 	  }
@@ -219,7 +220,8 @@ export async function resolvePackagePageUrl(input: {
 					packageId: listing.packageId,
 				})
 			}
-			if (listing || savedPackage) {
+			const packageId = savedPackage?.id ?? listing?.packageId
+			if (packageId) {
 				const listingKodyId = listing?.kodyId ?? null
 				const savedSlug = savedPackage
 					? getPackageNameLeaf(savedPackage.name)
@@ -236,6 +238,7 @@ export async function resolvePackagePageUrl(input: {
 							username: identity.handle,
 							kodyId: publicSlug,
 							userId: ownerUserId,
+							packageId,
 							listingId: listing?.id ?? null,
 							listingKodyId,
 						}
@@ -262,6 +265,7 @@ export async function resolvePackagePageUrl(input: {
 				kodyId:
 					currentListing?.kodyId ?? getPackageNameLeaf(found.savedPackage.name),
 				userId: ownerUserId,
+				packageId: found.savedPackage.id,
 				listingId: currentListing?.id ?? null,
 				listingKodyId: currentListing?.kodyId ?? null,
 			}

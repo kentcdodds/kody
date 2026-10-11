@@ -99,7 +99,7 @@ export function __kodyGetSecretAuthority() {
 }
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// opaque {{secret:…}} refs). Local isolate wraps globalThis.fetch
+// opaque refs from packageSecrets.get). Local isolate wraps globalThis.fetch
 // with __kodyGatewayFetch so secret-bearing calls hop through CapabilityProxy
 // (same as cloud), including frozen dependency copies that call
 // globalThis.fetch instead of free \`fetch\`. Non-secret requests still use

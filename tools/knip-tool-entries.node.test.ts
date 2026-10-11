@@ -11,13 +11,16 @@ test('shared tools helpers are not knip entries', () => {
 	const entries = toolCliEntryFiles(repoRoot)
 	expect(entries).not.toContain('tools/mcp-test-support.ts')
 	expect(entries).not.toContain('tools/node-runtime.ts')
+	expect(entries).not.toContain('tools/knip-tool-entries.ts')
+	expect(entries).not.toContain(
+		'tools/teams-migration/rewrite-api-token-scopes.ts',
+	)
 	expect(entries).not.toContain('tools/ensure-dev.ts')
 	expect(entries).not.toContain('tools/ci/merge-conflict-check.ts')
 	expect(entries).toContain('tools/memory-auto-surface-lab/run.mjs')
 	expect(entries).toContain('tools/evals/package-discovery-routing.ts')
 	expect(entries).toContain('tools/jobs-test-service.entry.ts')
 	expect(entries).toContain('tools/highlight-test-service.entry.ts')
-	expect(entries).toContain('tools/teams-migration/rewrite-api-token-scopes.ts')
 	expect(entries.length).toBeLessThan(160)
 })
 
@@ -43,7 +46,7 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 	writeFixture(
 		root,
 		'tools/helper.ts',
-		'export function helper() {}\n// node tools/mentioned.ts\n',
+		'export function helper() {}\n// isExecutedDirectly(import.meta.url)\n// node tools/mentioned.ts\n',
 	)
 	writeFixture(root, 'tools/mentioned.ts', 'export function mentioned() {}\n')
 	writeFixture(
@@ -90,11 +93,12 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 	const entries = toolCliEntryFiles(root)
 	expect(entries).not.toContain('tools/from-script.ts')
 	expect(entries).not.toContain('tools/ci/from-workflow.ts')
+	expect(entries).not.toContain('tools/repair.ts')
+	expect(entries).not.toContain('tools/helper.ts')
 	expect(entries).toEqual([
 		'tools/evals/score.ts',
 		'tools/lab/run.mjs',
 		'tools/main.ts',
-		'tools/repair.ts',
 		'tools/worker.entry.ts',
 	])
 })

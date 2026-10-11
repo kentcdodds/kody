@@ -1,7 +1,16 @@
+import { dnsSafeUsernamePatternSource } from '@kody-internal/shared/public-urls.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 
 const profileMatcher = createMatcher(routes.profile.pattern)
+
+/**
+ * `/@slug/-/packages` is the signed-in repository list. The capture is
+ * {@link dnsSafeUsernamePatternSource}, the same handle shape as usernames.
+ */
+const orgRepositoryListPattern = new RegExp(
+	`^/@(${dnsSafeUsernamePatternSource})/-/packages/?$`,
+)
 
 /**
  * Username for `/@username` only. The `/@owner/…` namespace also holds the
@@ -12,10 +21,7 @@ export function getProfileUsernameFromPathname(pathname: string) {
 	const matched = profileMatcher.match(new URL(pathname, 'http://localhost'))
 		?.params.username
 	if (matched) return matched
-	// `/@slug/-/packages` is the signed-in repository list for that organization.
-	const packages =
-		/^\/@([a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9]))\/-\/packages\/?$/.exec(pathname)
-	return packages?.[1] ?? null
+	return orgRepositoryListPattern.exec(pathname)?.[1] ?? null
 }
 
 export function isProfilePathname(pathname: string) {

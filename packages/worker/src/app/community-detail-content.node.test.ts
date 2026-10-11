@@ -40,6 +40,7 @@ function render(overrides: Partial<RenderInput> = {}) {
 		isPrivate: false,
 		ownerProfilePublic: true,
 		viewerIsOwner: false,
+		viewerCanManage: false,
 		returnTo: '/@kentcdodds/github-triage',
 		loggedIn: true,
 		...overrides,
@@ -133,6 +134,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		},
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		publishCompareHref: ownerAheadHref,
 	})
 	expect(ownerAheadHtml).toContain(`href="${ownerAheadHref}"`)
@@ -236,7 +238,7 @@ test('package chrome is shared for public listings and private owner packages', 
 		}),
 	).not.toContain(testId('community-detail-version'))
 
-	expectMarkers(await render({ viewerIsOwner: true }), [
+	expectMarkers(await render({ viewerIsOwner: true, viewerCanManage: true }), [
 		testId('package-repo-nav-settings'),
 		testId('package-repo-nav-repo'),
 		testId('package-repo-nav-files'),
@@ -245,10 +247,30 @@ test('package chrome is shared for public listings and private owner packages', 
 		'← @kentcdodds',
 	])
 
+	// A teammate who can read a team package opens it but cannot manage it.
+	expectMarkers(
+		await render({
+			listing: {
+				...sampleListing,
+				sourceAhead: true,
+				headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+			},
+			viewerIsOwner: true,
+			viewerCanManage: false,
+		}),
+		[testId('package-repo-nav-repo'), testId('package-repo-nav-files')],
+		[
+			testId('package-repo-nav-settings'),
+			'href="/@kentcdodds/github-triage/settings"',
+			'approve-publish',
+		],
+	)
+
 	const privateHtml = await render({
 		listing: null,
 		isPrivate: true,
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		description: 'Local notes.',
 	})
 	const privateNameAt = privateHtml.indexOf(testId('package-title-name'))

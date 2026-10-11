@@ -273,6 +273,26 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			},
 		],
 		[
+			['execute', '--code-file', 'fixture.ts', '--org', '@X-Org'],
+			{
+				command: 'execute',
+				codeFile: 'fixture.ts',
+				orgSlug: 'x-org',
+			},
+		],
+		[
+			['search', '--query', 'packageSave', '--org', 'x-org'],
+			{ command: 'search', query: 'packageSave', orgSlug: 'x-org' },
+		],
+		[
+			['package-create', '--package-name', 'preview-pkg', '--org', 'x-org'],
+			{
+				command: 'package-create',
+				kodyId: 'preview-pkg',
+				orgSlug: 'x-org',
+			},
+		],
+		[
 			[
 				'browse',
 				'--origin',
@@ -314,6 +334,14 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		[
 			'search --query packageSave --limit 1.5',
 			/--limit must be a positive integer/,
+		],
+		['execute --org', /--org requires a value/],
+		['execute --org --json', /--org requires a value/],
+		['execute --code-file fixture.ts --org no_slug', /organization slug/],
+		['execute --code-file fixture.ts --org ab', /organization slug/],
+		[
+			'request GET /account --org x-org',
+			/--org is only valid for execute, search, and package-create/,
 		],
 		['browse --close-after -1', /--close-after requires a value/],
 		['browse --path account', /same-origin path/],

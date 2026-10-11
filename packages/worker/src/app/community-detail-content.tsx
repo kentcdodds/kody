@@ -43,6 +43,7 @@ export type CommunityDetailContentProps = {
 	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	returnTo: string
 	treeRef?: string
 	publishCompareHref?: string | null
@@ -62,6 +63,7 @@ export function CommunityDetailContent(
 		ownerProfilePublic,
 		loggedIn,
 		viewerIsOwner,
+		viewerCanManage,
 		returnTo,
 		treeRef,
 		publishCompareHref,
@@ -91,6 +93,7 @@ export function CommunityDetailContent(
 				isPrivate,
 				isListed: listing != null,
 				viewerIsOwner,
+				viewerCanManage,
 				active: 'repo',
 				filesHref,
 				description,

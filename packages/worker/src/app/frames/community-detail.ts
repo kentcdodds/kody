@@ -15,10 +15,10 @@ import { createMatcher } from 'remix/route-pattern/match'
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
 
 function resolvePublishCompareHref(input: {
-	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	listing: PublicCommunityListing | null
 }) {
-	if (!input.viewerIsOwner || !input.listing?.sourceAhead) return null
+	if (!input.viewerCanManage || !input.listing?.sourceAhead) return null
 	return buildSourceAheadPublishHref({
 		username: input.listing.ownerUsername,
 		kodyId: input.listing.kodyId,
@@ -49,9 +49,10 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				ownerProfilePublic: page.ownerProfilePublic,
 				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
+				viewerCanManage: page.viewerCanManage,
 				returnTo: url.pathname,
 				publishCompareHref: resolvePublishCompareHref({
-					viewerIsOwner: page.viewerIsOwner,
+					viewerCanManage: page.viewerCanManage,
 					listing,
 				}),
 				hasApp: page.ownerPackage?.hasApp === true,
@@ -86,9 +87,10 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			ownerProfilePublic: detail.ownerProfilePublic,
 			loggedIn: detail.loggedIn,
 			viewerIsOwner: detail.viewerIsOwner,
+			viewerCanManage: detail.viewerCanManage,
 			returnTo: url.pathname,
 			publishCompareHref: resolvePublishCompareHref({
-				viewerIsOwner: detail.viewerIsOwner,
+				viewerCanManage: detail.viewerCanManage,
 				listing: detail.listing,
 			}),
 			hasApp: detail.ownerPackage?.hasApp === true,

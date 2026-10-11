@@ -193,6 +193,9 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 						}),
 						source: 'integrations',
 						request: { kind: 'platform-event', sourceId: 'integrations' },
+						audience: {
+							resource: { type: 'integration', id: input.integrationName },
+						},
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

@@ -1,6 +1,9 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { deletePackageCapability } from './delete-package.ts'
+import { enablementDisableCapability } from './enablement-disable.ts'
+import { enablementEnableCapability } from './enablement-enable.ts'
+import { enablementListCapability } from './enablement-list.ts'
 import { getGitRemoteCapability } from './get-git-remote.ts'
 import { getPackageCapability } from './get-package.ts'
 import { listPackagesCapability } from './list-packages.ts'
@@ -30,6 +33,8 @@ export const packagesDomain = defineDomain({
 		'simulate',
 		'probe',
 		'synthetic',
+		'enablement',
+		'enable',
 	],
 	capabilities: [
 		savePackageCapability,
@@ -42,5 +47,8 @@ export const packagesDomain = defineDomain({
 		packageUpdateCapability,
 		publishExternalPushCapability,
 		deletePackageCapability,
+		enablementListCapability,
+		enablementEnableCapability,
+		enablementDisableCapability,
 	],
 })
