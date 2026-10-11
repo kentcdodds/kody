@@ -550,17 +550,22 @@ guarded by a bearer secret comparison.
   backup SQL, manifests, or repository files.
 - Outbound secret use goes through the fetch gateway
   (`packages/worker/src/mcp/fetch-gateway.ts`), which is deny-by-default: a
-  secret placeholder is only substituted for a host the user explicitly approved
-  in the account UI, only in a request header, and only over HTTPS
-  (`packages/worker/src/mcp/secrets/secret-placement.ts` refuses the URL, plain
-  HTTP, and, for a package with `kody.credentials`, any header but the slot's
-  declared placement). The body is never substituted: one that holds a
-  placeholder is refused unless the caller sets
-  `x-kody-secret-resolution: headers-only` (or `off`, which skips resolution
-  entirely), and any other body is forwarded byte for byte. The control header
-  is stripped before the request leaves, on both the gateway and local native
-  fetch paths. Policy writes (allowed hosts/capabilities/ packages) are only
-  reachable through the authenticated account UI.
+  credential placeholder is filled only for a host the credential allows (a
+  secret's hosts the user approved in the account UI, an integration's
+  `requiredHosts` and `apiBaseUrl` host, a vault item's websites) and only over
+  HTTPS. It may sit in a header, the URL path or query, or a text body (JSON
+  values are JSON-escaped, form values form-encoded); multipart and non-UTF-8
+  bodies are forwarded byte for byte. A placeholder on plain HTTP, in the URL
+  host or user info, or bound for a host the credential does not allow is
+  refused before anything resolves
+  (`packages/worker/src/mcp/secrets/secret-placement.ts` and the credential
+  door), so none is sent unfilled. The values are redacted from echoes in the
+  response (also URL-, form-, and JSON-encoded) and from fetch errors.
+  `x-kody-secret-resolution: headers-only` fills headers only, for a body that
+  quotes the syntax; `off` skips resolution entirely. The control header is
+  stripped before the request leaves, on both the gateway and local native fetch
+  paths. Policy writes (allowed hosts/capabilities/ packages) are only reachable
+  through the authenticated account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.
 - The DR control-plane Admin UI is protected by Cloudflare Access plus in-worker
