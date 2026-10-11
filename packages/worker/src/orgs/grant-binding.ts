@@ -5,6 +5,10 @@ import {
 import {
 	loadOrgBindingForOrg,
 	loadOrgBindingForPerson,
+	orgBindingForOrgFromRows,
+	orgBindingForOrgStatements,
+	orgBindingForPersonFromRow,
+	orgBindingForPersonStatement,
 	type OrgBinding,
 } from '#worker/orgs/repo.ts'
 
@@ -34,5 +38,59 @@ export async function loadOrgBindingFromGrantProps(input: {
 		return await loadOrgBindingForPerson(input.db, input.personId)
 	} catch {
 		return null
+	}
+}
+
+export type OrgBindingPlan = {
+	/** Statements to run in the same D1 batch as the caller's other reads. */
+	statements: Array<D1PreparedStatement>
+	/** First row of each statement's result, in `statements` order. */
+	resolve: (rows: Array<unknown>) => OrgBinding | null
+}
+
+/**
+ * Same resolution as {@link loadOrgBindingFromGrantProps}, but as prepared
+ * statements so the caller can read the binding in one D1 batch (one
+ * transaction) together with the user row it gates on.
+ */
+export function planOrgBindingFromGrantProps(input: {
+	db: D1Database
+	personId: string
+	grantProps: unknown
+}): OrgBindingPlan {
+	const orgId =
+		readOrgIdFromGrantProps(input.grantProps) ??
+		readOrgIdFromGrantPropsOrUserId(input.grantProps)
+	if (orgId) {
+		const statements = orgBindingForOrgStatements(
+			input.db,
+			input.personId,
+			orgId,
+		)
+		return {
+			statements: [statements.membership, statements.grant],
+			resolve: (rows) =>
+				orgBindingForOrgFromRows({
+					membership: (rows[0] ?? null) as Parameters<
+						typeof orgBindingForOrgFromRows
+					>[0]['membership'],
+					grant: (rows[1] ?? null) as Parameters<
+						typeof orgBindingForOrgFromRows
+					>[0]['grant'],
+				}),
+		}
+	}
+	return {
+		statements: [orgBindingForPersonStatement(input.db, input.personId)],
+		resolve: (rows) => {
+			try {
+				return orgBindingForPersonFromRow(
+					input.personId,
+					(rows[0] ?? null) as Parameters<typeof orgBindingForPersonFromRow>[1],
+				)
+			} catch {
+				return null
+			}
+		},
 	}
 }

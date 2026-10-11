@@ -1,13 +1,25 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	checkPermission,
+	computeEffectivePermissions,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	dispatchAdminPackageSubscriptionEvent,
 	loadMatchingPackageSubscriptions,
 	readPreExecutionPackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	deriveRequestContext,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
+import { classifyInboundEmailSender } from './inbound-sender.ts'
 import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.ts'
 import { listSystemEmailAttachments } from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
@@ -124,12 +136,67 @@ async function loadMatchingEmailSubscriptions(input: {
 	return await loadMatchingPackageSubscriptions(input)
 }
 
+/**
+ * A member sender runs only the packages they may execute themselves, so an
+ * email from a member never starts a package that member cannot access.
+ */
+async function subscriptionsRunnableBySender<
+	T extends { savedPackage: SavedPackageRecord },
+>(input: {
+	env: Pick<Env, 'APP_DB'>
+	orgId: OwnerId
+	request: Extract<RequestSource, { kind: 'inbound-email' }>
+	subscriptions: Array<T>
+}): Promise<Array<T>> {
+	if (input.request.sender.kind === 'inbox-owner') return input.subscriptions
+	const request = deriveRequestContext({
+		user: await resolveBackgroundMcpUser(input.env.APP_DB, input.orgId),
+		source: input.request,
+	})
+	const access = await computeEffectivePermissions({
+		env: input.env as Env,
+		request,
+	})
+	return input.subscriptions.filter(
+		({ savedPackage }) =>
+			checkPermission(
+				access,
+				'package:execute',
+				packageResource({
+					id: savedPackage.id,
+					userId: savedPackage.userId,
+					label: savedPackage.name,
+				}),
+			).allowed,
+	)
+}
+
 export async function dispatchInboundEmailSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'MAILBOX'>
 	userId: OwnerId
 	message: EmailMessageRecord
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	const sender = await classifyInboundEmailSender({
+		db: input.env.APP_DB,
+		orgId: input.userId,
+		message: input.message,
+	})
+	if (sender.kind === 'unverified') {
+		console.warn('inbound-email-sender-unverified', {
+			orgId: input.userId,
+			inboxId: input.message.inboxId,
+			messageId: input.message.id,
+			reason: sender.reason,
+			outcome: 'no package subscriptions ran',
+		})
+		return []
+	}
+	const request = {
+		kind: 'inbound-email',
+		sourceId: input.message.inboxId ?? input.message.id,
+		sender,
+	} satisfies RequestSource
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 	})
@@ -149,6 +216,12 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 			userId: input.userId,
 			topic,
 		})
+	const runnable = await subscriptionsRunnableBySender({
+		env: input.env,
+		orgId: input.userId,
+		request,
+		subscriptions,
+	})
 	const eventPayload = buildEmailReceiptSubscriptionEnvelope({
 		event: topic,
 		message: input.message,
@@ -157,7 +230,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 	const settled = await runQueueableDynamicWorkerWork(
 		async () =>
 			await Promise.allSettled(
-				subscriptions.map(async ({ savedPackage }) => {
+				runnable.map(async ({ savedPackage }) => {
 					const response = await invokePackageSubscription({
 						env: input.env as Env,
 						baseUrl,
@@ -170,10 +243,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 							topic,
 						}),
 						source: 'email',
-						request: {
-							kind: 'inbound-email',
-							sourceId: input.message.inboxId ?? input.message.id,
-						},
+						request,
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

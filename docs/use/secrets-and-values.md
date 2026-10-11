@@ -30,12 +30,13 @@ carries that authority. Access rules are covered in
 
 `packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
 `{{secret:…}}` placeholder** after mount and grant checks succeed — never
-decrypted plaintext. Put that string in a secret-aware `fetch` header/URL/body,
-or pass it to `secretHeaders.basic` / `kody.secretJwtSign` (both accept saved
-secret names **or** opaque refs). Only platform use sites resolve it. Package
-and execute JavaScript never receive plaintext from `get`. A secret-aware
-`fetch` may send the value to an **approved** host; that host's response is not
-redacted for echoed credentials — treat response bodies as untrusted.
+decrypted plaintext. Put that string in a secret-aware `fetch` request header
+(the gateway refuses it in the URL or body), or pass it to `secretHeaders.basic`
+/ `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
+platform use sites resolve it. Package and execute JavaScript never receive
+plaintext from `get`. A secret-aware `fetch` may send the value to an
+**approved** host; that host's response is not redacted for echoed credentials —
+treat response bodies as untrusted.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
@@ -60,8 +61,16 @@ ones. See the [Terms](/terms).
 ## Placeholders in `fetch`
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
-or **`{{secret:tokenName|scope=user}}`** in the URL, headers, or body. The host
-resolves them for **approved** destinations.
+or **`{{secret:tokenName|scope=user}}`** in a **request header**. The host
+resolves them for **approved** destinations over **HTTPS** only.
+
+The fetch gateway refuses, before anything resolves, a placeholder in the URL,
+query string, or body, and any placeholder on a plain `http://` request. The
+error names the credential and the rule. A package that declares
+[`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
+further: each placeholder must name one of its slots and sit in that slot's
+declared `placement` header, matching its template (oauth slots default to
+`Authorization: Bearer {value}`).
 
 External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 `secret/`). Canonical 1Password form is
@@ -129,13 +138,13 @@ algorithms:
 
 ## Mentioning placeholders without resolving them
 
-Resolution runs on the **final serialized request** (URL, headers, and
-non-multipart body), so a literal placeholder assembled by any means — including
-string concatenation — will resolve. `multipart/*` bodies are opaque:
-placeholders inside a part are not resolved (put credentials in the URL or
-headers). Do **not** place resolvable placeholder tokens into user-visible or
-third-party-visible content such as issue bodies, comments, prompts, logs, or
-returned strings.
+The gateway scans the **final serialized request** (URL, headers, and
+non-multipart body), so a literal placeholder assembled by any means, including
+string concatenation, resolves in a header and is refused in the URL or body.
+`multipart/*` bodies are opaque: placeholders inside a part are forwarded as
+literal text (put credentials in headers). Do **not** place resolvable
+placeholder tokens into user-visible or third-party-visible content such as
+issue bodies, comments, prompts, logs, or returned strings.
 
 - To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.
   Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so

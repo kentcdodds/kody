@@ -24,6 +24,7 @@ import {
 	executeInvokeMutualExclusionMessage,
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
+import type * as MemoryToolContextModule from './memory-tool-context.ts'
 import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import {
@@ -43,6 +44,7 @@ vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
+	surfaceToolMemories: vi.fn(),
 	createPackageEventTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(
 		async (
@@ -94,6 +96,19 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
 		mockModule.runModuleWithRegistry(...args),
 }))
+
+vi.mock('./memory-tool-context.ts', async () => {
+	const actual = await vi.importActual<typeof MemoryToolContextModule>(
+		'./memory-tool-context.ts',
+	)
+	mockModule.surfaceToolMemories.mockImplementation(actual.surfaceToolMemories)
+	return {
+		...actual,
+		surfaceToolMemories: (
+			...args: Parameters<typeof MemoryToolContextModule.surfaceToolMemories>
+		) => mockModule.surfaceToolMemories(...args),
+	}
+})
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
 	getCapabilityRegistryForContext: (
@@ -201,6 +216,7 @@ type ExecuteInput = {
 	responseLimit?: number
 	conversationId?: string
 	idempotencyKey?: string
+	memoryContext?: { task?: string; query?: string }
 }
 
 type ExecuteResponse = {
@@ -1133,11 +1149,16 @@ test('execute tool refuses past the per-minute runaway limit before any run work
 		baseUrl: 'https://example.com',
 		user: { userId, email },
 	})
+	mockModule.surfaceToolMemories.mockClear()
 	const refused = await handler({
 		code: shouldNotRunCode,
 		conversationId: 'conv-execute-rate',
+		memoryContext: { task: 'recall what the user asked for last time' },
 	})
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	// Memory retrievers can run package code, so a refused call never starts
+	// them.
+	expect(mockModule.surfaceToolMemories).not.toHaveBeenCalled()
 	expect(refused.isError).toBe(true)
 	expect(refused.structuredContent.error).toMatch(
 		new RegExp(

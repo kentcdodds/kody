@@ -334,6 +334,25 @@ export async function getSavedPackageById(
 	return row ? mapSavedPackageRow(row) : null
 }
 
+/**
+ * A live saved package by id in whichever org owns it. Only for facts that
+ * belong to the package itself (its manifest), never for access decisions.
+ */
+export async function getSavedPackageByIdInAnyOrg(
+	db: D1Database,
+	packageId: string,
+): Promise<SavedPackageRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageSelectColumns}
+			FROM saved_packages
+			WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(packageId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageRow(row) : null
+}
+
 export async function getSavedPackageWithCommunityProvenanceById(
 	db: D1Database,
 	input: {

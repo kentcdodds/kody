@@ -73,7 +73,15 @@ test('automation sources have no actor and no membership', () => {
 	const cases = [
 		[{ kind: 'schedule', jobId: 'job-1' }, 'schedule', 'schedule'],
 		[{ kind: 'webhook', sourceId: 'wh-1' }, 'webhook', 'webhook'],
-		[{ kind: 'inbound-email', sourceId: 'inbox-1' }, 'email', 'inbound-email'],
+		[
+			{
+				kind: 'inbound-email',
+				sourceId: 'inbox-1',
+				sender: { kind: 'inbox-owner' },
+			},
+			'email',
+			'inbound-email',
+		],
 		[{ kind: 'platform-event', sourceId: 'repo' }, 'event', 'platform-event'],
 	] as const
 	for (const [source, automationSource, credentialKind] of cases) {
@@ -114,6 +122,78 @@ test('inherited runs keep the starter lineage and re-resolve the org', () => {
 	expect(emitted.attribution).toEqual(automation.attribution)
 })
 
+test('a verified member sender is the actor of an inbound email run, still billed as Automation', () => {
+	const memberId = personIdFromStored('b'.repeat(64))
+	const request = deriveRequestContext({
+		user,
+		source: {
+			kind: 'inbound-email',
+			sourceId: 'inbox-1',
+			sender: {
+				kind: 'member',
+				actor: { userId: memberId, username: 'bea' },
+				role: 'member',
+			},
+		},
+	})
+	expect(request).toEqual({
+		org: { id: stableId, slug: 'ada' },
+		actor: { userId: memberId, username: 'bea' },
+		attribution: { kind: 'automation', source: 'email', sourceId: 'inbox-1' },
+		credential: {
+			kind: 'inbound-email',
+			id: 'inbox-1',
+			orgId: stableId,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'member' },
+	})
+})
+
+test('downstream runs keep the starter role instead of the org identity Owner role', () => {
+	// A Member of the org `user` owns starts a run; downstream runs execute as
+	// `user`, the org's own identity, whose role is Owner.
+	const memberRun = deriveRequestContext({
+		user: { userId: personIdFromStored('b'.repeat(64)), username: 'bea' },
+		source: { kind: 'mcp-oauth' },
+		orgBinding: {
+			org: { id: ownerIdFromStored(stableId), slug: 'ada' },
+			role: 'member',
+		},
+	})
+	const lineage = JSON.parse(
+		JSON.stringify(requestLineage(memberRun)),
+	) as unknown
+	const parsed = parseRequestLineage(lineage)
+	expect(parsed?.membership).toEqual({ role: 'member' })
+	const emitted = deriveRequestContext({
+		user,
+		source: { kind: 'inherited', lineage: parsed! },
+	})
+	expect(emitted.actor).toEqual(memberRun.actor)
+	expect(emitted.membership).toEqual({ role: 'member' })
+
+	// The role was held in the starter's org only.
+	const otherOrg = deriveRequestContext({
+		user: { userId: personIdFromStored('c'.repeat(64)), username: 'cy' },
+		source: { kind: 'inherited', lineage: parsed! },
+	})
+	expect(otherOrg.membership).toBeNull()
+
+	// Lineage persisted before it carried membership keeps today's behavior.
+	const { membership: _membership, ...legacy } = parsed!
+	expect(
+		deriveRequestContext({
+			user,
+			source: { kind: 'inherited', lineage: parseRequestLineage(legacy)! },
+		}).membership,
+	).toEqual({ role: 'owner' })
+	expect(
+		parseRequestLineage({ ...legacy, membership: { role: 'admin' } }),
+	).toBeNull()
+})
+
 test('every source keeps the connection profile it was reached through', () => {
 	const job = deriveRequestContext({
 		user,
@@ -143,7 +223,10 @@ test('every source keeps the connection profile it was reached through', () => {
 			profileName: 'work',
 		}).credential.profileName,
 	).toBe('starter')
-	const unprofiled = deriveRequestContext({ user, source: { kind: 'session' } })
+	const unprofiled = deriveRequestContext({
+		user,
+		source: { kind: 'session' },
+	})
 	expect(
 		deriveRequestContext({
 			user,

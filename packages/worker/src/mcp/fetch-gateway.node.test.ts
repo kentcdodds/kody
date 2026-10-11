@@ -1,6 +1,6 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -13,6 +13,7 @@ import {
 	parsePackageAccessRequiredMessage,
 } from '#mcp/secrets/errors.ts'
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
+import * as secretPlacement from '#mcp/secrets/secret-placement.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import {
@@ -180,6 +181,14 @@ const isPackageAccessRequiredFor = (packageName: string) => (error: unknown) =>
 	parsePackageAccessRequiredMessage(getErrorMessage(error))?.packageName ===
 	packageName
 
+// Declared-slot placement is covered in fetch-gateway-credential-use; these
+// packages declare no kody.credentials.
+beforeEach(() => {
+	vi.spyOn(secretPlacement, 'loadSecretPlacementPolicy').mockResolvedValue({
+		kind: 'undeclared',
+	})
+})
+
 test('fetch gateway blocks or expands secret placeholders based on host approval', async () => {
 	const createRequest = () =>
 		new Request('https://example.com/api', {
@@ -188,9 +197,7 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer {{secret:spotifyRefreshToken|scope=user}}',
 			},
-			body: JSON.stringify({
-				token: '{{secret:spotifyRefreshToken|scope=user}}',
-			}),
+			body: JSON.stringify({ query: 'me' }),
 		})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
@@ -212,75 +219,72 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	resolveSpy.mockResolvedValue(userSecret('secret-value', ['example.com']))
 	const transformed = await expand(createRequest())
 	expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
-	expect(await transformed.text()).toBe(
-		JSON.stringify({ token: 'secret-value' }),
-	)
+	expect(await transformed.text()).toBe(JSON.stringify({ query: 'me' }))
 })
 
-test('fetch gateway expands secret placeholders in URL paths after Request serialization', async () => {
-	const telegramToken = '123456:AAHfakeTelegramToken'
-	const probeValue = '11111111-1111-4111-8111-111111111111'
+test('fetch gateway refuses placeholders in the URL path, query, or body before resolving', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
-		.mockImplementation(async ({ name }: { name: string }) =>
-			userSecret(name === 'telegramBotToken' ? telegramToken : probeValue, [
-				'api.telegram.org',
-				'api.notion.com',
-				'api.example.com',
-			]),
-		)
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const urlRule =
+		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL, query, or body\./
 
-	const pathOnlyRequest = new Request(
+	// Request serialization percent-encodes `{` / `}` in the path.
+	const pathRequest = new Request(
 		'https://api.telegram.org/bot{{secret:telegramBotToken|scope=user}}/getMe',
 	)
-	expect(pathOnlyRequest.url).toContain(
-		'%7B%7Bsecret:telegramBotToken|scope=user%7D%7D',
+	expect(pathRequest.url).toContain('%7B%7Bsecret:telegramBotToken')
+	await expect(expand(pathRequest)).rejects.toThrow(
+		/^Secret "telegramBotToken" is in the request URL\./,
 	)
-	expect((await expand(pathOnlyRequest)).url).toBe(
-		`https://api.telegram.org/bot${telegramToken}/getMe`,
-	)
-
-	const headerAndPathRequest = new Request(
-		'https://api.notion.com/v1/users/{{secret:kodyPathProbe|scope=user}}',
-		{ headers: { Authorization: 'Bearer {{secret:notionToken|scope=user}}' } },
-	)
-	expect(headerAndPathRequest.url).toContain(
-		'%7B%7Bsecret:kodyPathProbe|scope=user%7D%7D',
-	)
-	const headerAndPathTransformed = await expand(headerAndPathRequest)
-	expect(headerAndPathTransformed.url).toBe(
-		`https://api.notion.com/v1/users/${probeValue}`,
-	)
-	expect(headerAndPathTransformed.headers.get('Authorization')).toBe(
-		`Bearer ${probeValue}`,
-	)
-
-	const queryRequest = new Request(
-		'https://api.example.com/search?key={{secret:queryToken|scope=user}}',
-	)
-	expect(queryRequest.url).toContain('{{secret:queryToken|scope=user}}')
-	expect((await expand(queryRequest)).url).toBe(
-		`https://api.example.com/search?key=${probeValue}`,
-	)
-
-	resolveSpy.mockResolvedValue(userSecret(telegramToken, []))
-	expect(
-		await readHostApprovals(
-			expand(
-				new Request(
-					'https://api.telegram.org/bot{{secret:telegramBotToken}}/getMe',
-				),
+	await expect(
+		expand(
+			new Request(
+				'https://api.example.com/search?key={{secret:queryToken|scope=user}}',
+				{ headers: { Authorization: 'Bearer {{secret:okToken}}' } },
 			),
 		),
-	).toEqual({
-		entries: [
-			expect.objectContaining({
-				secretName: 'telegramBotToken',
-				host: 'api.telegram.org',
+	).rejects.toThrow(urlRule)
+	await expect(
+		expand(createPathOnlyRequest('/api?key={{integration-token:google}}')),
+	).rejects.toThrow(/^Integration token "google" is in the request URL\./)
+
+	const bodyRule = /^Secret "spotifyRefreshToken" is in the request body\./
+	await expect(
+		expand(
+			new Request('https://api.example.com/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					token: '{{secret:spotifyRefreshToken|scope=user}}',
+				}),
 			}),
-		],
-		bulkApprovalUrl: null,
-	})
+		),
+	).rejects.toThrow(bodyRule)
+	await expect(
+		expand(
+			new Request('https://api.example.com/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					grant_type: 'refresh_token',
+					refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
+				}).toString(),
+			}),
+		),
+	).rejects.toThrow(bodyRule)
+	await expect(
+		expand(
+			new Request('https://api.example.com/token', {
+				method: 'POST',
+				headers: { Authorization: 'Basic {{secret:clientId}}' },
+				body: '{{secret-basic:username=clientId,password=clientSecret}}',
+			}),
+		),
+	).rejects.toThrow(
+		/^Basic auth secret pair "clientId" \/ "clientSecret" is in the request body\./,
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
 })
 
 test('fetch gateway bulk host approval uses the secret scope, not the package runtime context', async () => {
@@ -686,22 +690,6 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		),
 	).toEqual(optOutBinaryBody)
 	expect(resolveSpy).not.toHaveBeenCalled()
-
-	// Form bodies re-encode resolved values.
-	resolveSpy.mockResolvedValue(userSecret('secret value+/&=', ['example.com']))
-	const transformedForm = await expand(
-		new Request('https://example.com/api/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
-			}).toString(),
-		}),
-	)
-	expect(await transformedForm.text()).toBe(
-		'grant_type=refresh_token&refresh_token=secret+value%2B%2F%26%3D',
-	)
 })
 
 test('fetch gateway derives Basic Auth header and enforces host approval', async () => {
@@ -919,33 +907,22 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(recordUsageSpy).not.toHaveBeenCalled()
 	fetchStub.mockClear()
 
-	// Metering never derives a hostname from expanded secret placeholders.
-	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
-		userSecret('resolved-secret-value', ['example.com']),
-	)
+	// Path-only URLs meter the baseUrl host they resolve against.
 	fetchStub.mockImplementation(async () => new Response('ok'))
-	const meterPathOnly = async (url: string) => {
-		await gatewayFetch(url)
-		expect(fetchStub).toHaveBeenCalledTimes(1)
-		const forwardedUrl = fetchStub.mock.calls[0]?.[0]?.url
-		return [forwardedUrl, takeUsage()?.[1]]
-	}
-	// Literal baseUrl host: safe to meter.
-	expect(await meterPathOnly('/api/status')).toEqual([
+	await gatewayFetch('/api/status')
+	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
 		'https://example.com/api/status',
-		expect.objectContaining({ entityId: 'example.com', outcome: 'success' }),
-	])
-	// Unparseable original URL containing a placeholder: the expanded host
-	// could contain secret material, so no hostname is metered.
-	expect((await meterPathOnly('/api?key={{secret:token}}'))[1]).toMatchObject({
-		entityId: '',
+	)
+	expect(takeUsage()?.[1]).toMatchObject({
+		entityId: 'example.com',
 		outcome: 'success',
 	})
-	// Placeholder percent-encoded the way `Request.url` serializes `{` / `}`.
-	expect(await meterPathOnly('/bot%7B%7Bsecret:token%7D%7D/getMe')).toEqual([
-		'https://example.com/botresolved-secret-value/getMe',
-		expect.objectContaining({ entityId: '', outcome: 'success' }),
-	])
+	// A URL placeholder is refused before anything leaves the gateway.
+	await expect(
+		gatewayFetch('/bot%7B%7Bsecret:token%7D%7D/getMe'),
+	).rejects.toThrow('is in the request URL')
+	expect(fetchStub).not.toHaveBeenCalled()
+	expect(takeUsage()?.[1]).toMatchObject({ entityId: '', outcome: 'error' })
 })
 
 test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {

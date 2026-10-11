@@ -227,10 +227,11 @@ export async function resolveBaseUserEntitlement(input: {
 }
 
 /**
- * Full {@link UserEntitlement} for a `users` row. Reads the wallet balance
- * only for wallet-eligible Pro accounts, so every other account costs no
- * extra query. Pass {@link balanceMicroUsd} when the caller already loaded
- * the wallet (for example `/account/usage`) so the balance is not read twice.
+ * Full {@link UserEntitlement} for a `users` row. Always attaches live seats
+ * (runaway brake scales on every plan). Reads the wallet balance only for
+ * wallet-eligible Pro accounts. Pass {@link balanceMicroUsd} when the caller
+ * already loaded the wallet (for example `/account/usage`) so the balance is
+ * not read twice.
  */
 export async function resolveUserEntitlementFromRow(input: {
 	db: D1Database
@@ -244,16 +245,19 @@ export async function resolveUserEntitlementFromRow(input: {
 		input.row,
 		input.now,
 	)
+	// Seats always attach: the execute runaway brake is seats × 300 on every
+	// plan, and admin / resolveEntitlementLimit display must match admit.
 	if (!creditsEligible) {
+		const [seats, limitOverrides] = await Promise.all([
+			readPaidSeats(input.db, input.stableUserId),
+			readActiveOrgLimitOverrides(input.db, input.stableUserId, input.now),
+		])
 		return {
 			plan,
 			ladder,
 			creditWallet: 'none',
-			limitOverrides: await readActiveOrgLimitOverrides(
-				input.db,
-				input.stableUserId,
-				input.now,
-			),
+			seats,
+			limitOverrides,
 		}
 	}
 	const [balanceMicroUsd, seats, limitOverrides] = await Promise.all([
@@ -287,7 +291,8 @@ async function readPaidSeats(db: D1Database, orgId: string): Promise<number> {
 /**
  * The rate pool is seats × the per-seat include, so seats are read live for
  * pooled resources: a removed seat shrinks the pool on the next check, not
- * after the entitlement cache.
+ * after the entitlement cache. The execute runaway brake also live-reads
+ * seats so a seat change binds on the next admit.
  */
 async function withLiveSeats(input: {
 	db: D1Database
@@ -295,16 +300,48 @@ async function withLiveSeats(input: {
 	entitlement: UserEntitlement
 	resource: EntitlementResource
 }): Promise<UserEntitlement> {
-	if (
-		input.entitlement.creditWallet === 'none' ||
-		!isCreditsUnlockedResource(input.resource)
-	) {
+	const needsLiveSeats =
+		input.resource === 'execute_calls_per_minute' ||
+		(input.entitlement.creditWallet !== 'none' &&
+			isCreditsUnlockedResource(input.resource))
+	if (!needsLiveSeats) {
 		return input.entitlement
 	}
 	return {
 		...input.entitlement,
 		seats: await readPaidSeats(input.db, input.orgId),
 	}
+}
+
+/**
+ * Cached entitlement with live seats (when the resource pools by seats) and
+ * live limit overrides (when the resource is overridable). Used by counted
+ * checks and the execute runaway brake so a seat or override change binds
+ * on the next call.
+ */
+export async function resolveLiveEntitlementForResource(input: {
+	db: D1Database
+	userId: OwnerId
+	email: string | null | undefined
+	resource: EntitlementResource
+	now?: Date
+}): Promise<UserEntitlement> {
+	const now = input.now ?? new Date()
+	return await withLiveSeats({
+		db: input.db,
+		orgId: input.userId,
+		entitlement: await withLiveLimitOverrides({
+			db: input.db,
+			orgId: input.userId,
+			entitlement: getCachedUserEntitlement(input.db, {
+				userId: input.userId,
+				email: input.email,
+			}),
+			resource: input.resource,
+			now,
+		}),
+		resource: input.resource,
+	})
 }
 
 /**
@@ -1259,6 +1296,12 @@ export async function readEntitlementResourceUsage(input: {
 			// passes the candidate message size via getCurrent.
 			throw new Error(
 				'email_message_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
+			)
+		case 'execute_calls_per_minute':
+			// In-memory runaway brake on UserMeter.admitExecuteCall, not a
+			// durable accumulating counter.
+			throw new Error(
+				'execute_calls_per_minute has no built-in counter; resolve the limit and pass it to admitExecuteCall.',
 			)
 		default: {
 			const exhaustive: never = resource

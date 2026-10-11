@@ -47,13 +47,22 @@ it is. The browser equivalent is `AuthenticatedAppUser.request`
 | Package app HTTP, realtime, bridge    | `package-app`                            | Person    |
 | Scheduled job                         | `schedule` (job id)                      | none      |
 | Webhook delivery                      | `webhook` (endpoint id)                  | none      |
-| Inbound email subscription            | `inbound-email` (inbox id)               | none      |
+| Inbound email subscription            | `inbound-email` (inbox id, sender)       | Sender\*  |
 | Platform topic subscription           | `platform-event` (source label)          | none      |
 | Nested invoke, run-now, workflow step | `inherited` (the starting run's lineage) | Inherited |
 | Emitted package event, retriever      | `inherited`                              | Inherited |
 | Sealed secret provider                | `inherited`                              | Inherited |
 
-`inherited` carries a `RequestLineage` (actor, attribution, credential). The org
+\* `classifyInboundEmailSender` (`packages/worker/src/email/inbound-sender.ts`)
+sets `sender`. A verified org member is the actor with their own role; any other
+verified sender is `inbox-owner` (Automation, no actor). Attribution stays
+Automation (`email`) either way, so the inbox's org is billed. Unverified mail
+never builds a source: it runs nothing.
+
+`inherited` carries a `RequestLineage` (actor, attribution, credential,
+membership). Membership is the starter's role in its own org, so a downstream
+run that executes as the org's identity does not lift a Member to Owner; lineage
+written before membership existed keeps the role of the run's identity. The org
 is never inherited; it is re-resolved for the identity the run uses. Lineage
 crosses durable boundaries as JSON: workflow payloads (`lineage`, kept out of
 instance-id hashing), package event queue messages (`lineage`), and the jobs

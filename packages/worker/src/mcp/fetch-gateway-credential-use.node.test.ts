@@ -19,7 +19,9 @@ import * as secretService from '#mcp/secrets/service.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 import * as integrationService from '#worker/integrations/service.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
+import * as packageSource from '#worker/package-registry/source.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
@@ -35,6 +37,22 @@ async function createOrgDb() {
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
 	return db
+}
+
+function mockPackageManifest(name: string, credentials?: unknown) {
+	return vi
+		.spyOn(packageSource, 'loadPackageManifestBySourceId')
+		.mockResolvedValue({
+			source: {} as packageSource.LoadedPackageManifest['source'],
+			manifest: parseAuthoredPackageJson({
+				content: JSON.stringify({
+					name,
+					exports: { '.': './index.ts' },
+					kody: { description: 'Test package.', credentials },
+				}),
+				mode: 'published',
+			}),
+		})
 }
 
 function userSecret(
@@ -323,6 +341,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	vi.mocked(secretService.resolveSecret).mockResolvedValue(
 		userSecret('pkg-secret-value', ['example.com']),
 	)
+	mockPackageManifest('@ownera/notes')
 	const packageAuthoritySecret = await expandSecretPlaceholders({
 		request: secretRequest(),
 		props: {
@@ -345,4 +364,216 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	expect(packageAuthoritySecret.headers.get('Authorization')).toBe(
 		'Bearer pkg-secret-value',
 	)
+})
+
+test('leak: a declared package credential is refused outside its placement, in the URL or body, or over plain HTTP, before it resolves', async () => {
+	const db = await createOrgDb()
+	const ownerStableId = testStableUserIdFromEmail('owner-p@example.com')
+	const ownerId = ownerIdFromStored(ownerStableId)
+	const now = '2026-10-11T00:00:00.000Z'
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'ownerp',
+		createdAt: now,
+	})
+	const packageId = crypto.randomUUID()
+	await insertSavedPackage(
+		db,
+		{
+			id: packageId,
+			user_id: ownerId,
+			name: '@ownerp/mailer',
+			kody_id: 'mailer',
+			description: 'mailer',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-${packageId}`,
+			has_app: 0,
+			has_skills: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		null,
+		{ stamp: false },
+	)
+	const manifestSpy = mockPackageManifest('@ownerp/mailer', {
+		RESEND_API_KEY: {
+			kind: 'secret',
+			provider: 'resend',
+			description: 'Resend API key.',
+			placement: { header: 'Authorization', template: 'Bearer {value}' },
+		},
+		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
+		CLIENT_ID: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme client id.',
+			placement: { header: 'Authorization' },
+		},
+		CLIENT_SECRET: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme client secret.',
+			placement: { header: 'Authorization', template: 'Basic {value}' },
+		},
+	})
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('google-access')
+	vi.spyOn(
+		integrationPackageAccess,
+		'assertCanUseIntegration',
+	).mockResolvedValue(undefined)
+	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
+		lane: 'user',
+		app: { apiBaseUrl: 'https://api.resend.com' },
+		connection: { requiredHosts: ['api.resend.com'] },
+	} as never)
+
+	const ownerRequest = deriveRequestContext({
+		user: { userId: personIdFromStored(ownerStableId), username: 'ownerp' },
+		source: { kind: 'mcp-oauth' },
+		orgBinding: { org: { id: ownerId, slug: 'ownerp' }, role: 'owner' },
+	})
+	const env = {
+		APP_DB: db,
+		...createInMemoryUserMeterEnv().env,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as unknown as Env
+	const expandAsPackage = (url: string, init: RequestInit = {}) =>
+		expandSecretPlaceholders({
+			request: new Request(url, init),
+			props: {
+				baseUrl: 'https://example.com',
+				userId: ownerId,
+				email: null,
+				request: ownerRequest,
+				storageContext: {
+					sessionId: null,
+					appId: packageId,
+					packageId,
+					storageId: packageId,
+				},
+				grantedSecretAuthorityPackageIds: [packageId],
+			},
+			env,
+		})
+	const refusal = async (url: string, init: RequestInit = {}) =>
+		String(
+			await expandAsPackage(url, init).then(
+				() => {
+					throw new Error(`Expected ${url} to be refused.`)
+				},
+				(error: unknown) => error,
+			),
+		)
+
+	const sent = await expandAsPackage('https://api.resend.com/emails', {
+		headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
+	})
+	expect(sent.headers.get('Authorization')).toBe('Bearer resend-secret-value')
+	const google = await expandAsPackage('https://api.resend.com/emails', {
+		headers: { Authorization: 'Bearer {{integration-token:GOOGLE}}' },
+	})
+	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
+	const basicPair = '{{secret-basic:username=CLIENT_ID,password=CLIENT_SECRET}}'
+	const basic = await expandAsPackage('https://api.resend.com/token', {
+		headers: { Authorization: `Basic ${basicPair}` },
+	})
+	expect(basic.headers.get('Authorization')).toBe(
+		`Basic ${btoa('resend-secret-value:resend-secret-value')}`,
+	)
+	resolveSpy.mockClear()
+	tokenSpy.mockClear()
+
+	// Outside the declared header or template.
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { 'X-Api-Key': '{{secret:RESEND_API_KEY}}' },
+		}),
+	).toContain(
+		'Slot "RESEND_API_KEY" of @ownerp/mailer may only be sent in its declared header "Authorization" (as "Bearer {value}"), not in "x-api-key".',
+	)
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { Authorization: 'Token {{secret:RESEND_API_KEY}}' },
+		}),
+	).toContain(
+		'Slot "RESEND_API_KEY" of @ownerp/mailer must be sent as "Authorization: Bearer {value}"',
+	)
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { Authorization: 'bearer {{secret:RESEND_API_KEY}}' },
+		}),
+	).toContain('must be sent as "Authorization: Bearer {value}"')
+	expect(
+		await refusal('https://api.resend.com/token', {
+			headers: { Authorization: `X Basic ${basicPair}` },
+		}),
+	).toContain(
+		`Header "authorization" must be exactly "Basic ${basicPair}" to send slots of @ownerp/mailer as Basic Auth.`,
+	)
+	expect(
+		await refusal('https://api.resend.com/token', {
+			headers: {
+				Authorization:
+					'Basic {{secret-basic:username=CLIENT_ID,password=RESEND_API_KEY}}',
+			},
+		}),
+	).toContain(
+		'Slot "RESEND_API_KEY" of @ownerp/mailer declares template "Bearer {value}", but a Basic Auth pair is sent as "Basic {value}".',
+	)
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { 'X-Token': 'Bearer {{integration-token:GOOGLE}}' },
+		}),
+	).toContain(
+		'Slot "GOOGLE" of @ownerp/mailer may only be sent in its declared header "Authorization"',
+	)
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { Authorization: 'Bearer {{secret:OTHER_KEY}}' },
+		}),
+	).toContain('"OTHER_KEY" is not a kody.credentials slot of @ownerp/mailer.')
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { Authorization: 'Bearer {{secret:GOOGLE}}' },
+		}),
+	).toContain(
+		'Slot "GOOGLE" of @ownerp/mailer has kind "oauth", but {{secret:GOOGLE}} needs a slot of kind "secret".',
+	)
+
+	// Outside every header: URL, query, and body.
+	expect(
+		await refusal(
+			'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
+		),
+	).toContain('Secret "RESEND_API_KEY" is in the request URL.')
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
+		}),
+	).toContain('Secret "RESEND_API_KEY" is in the request body.')
+
+	// Plain HTTP, even in the declared header.
+	expect(
+		await refusal('http://api.resend.com/emails', {
+			headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
+		}),
+	).toContain(
+		'Secret "RESEND_API_KEY" cannot be sent over plain HTTP. The fetch gateway substitutes secrets only over HTTPS.',
+	)
+
+	expect(resolveSpy).not.toHaveBeenCalled()
+	expect(tokenSpy).not.toHaveBeenCalled()
+	// One manifest read per run, however many fetches it makes.
+	expect(manifestSpy).toHaveBeenCalledTimes(1)
 })
