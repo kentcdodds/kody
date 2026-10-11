@@ -1192,6 +1192,28 @@ test('runRepoChecks reports old-style credential references by path and pattern 
 	expect(findCheck(docsFailed, 'credentials')?.message).toContain(
 		'- src/send.ts: literal secret',
 	)
+
+	const { result: migrated } = await runChecks(
+		packageFiles(
+			manifest('migrated-credentials', {
+				credentials: {
+					RESEND_API_KEY: {
+						kind: 'secret',
+						provider: 'resend',
+						description: 'Resend API key.',
+						placement: { header: 'Authorization', template: 'Bearer {value}' },
+					},
+				},
+			}),
+			{
+				'src/send.ts':
+					"export const h = { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' }",
+			},
+		),
+	)
+	expect(findCheck(migrated, 'credentials')?.message).toBe(
+		'No old-style credential references (codemod 0010-detect-legacy-credential-patterns).',
+	)
 })
 
 test('credentialPatternNoticeForFiles reads repo paths under the source root', () => {
