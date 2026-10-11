@@ -319,9 +319,10 @@ To run someone else's live package, they
 
 ## Package storage
 
-Every saved package owns one durable storage bucket per user
+Every saved package owns one durable storage bucket in the org that owns it
 (`storageId = package:{encodeURIComponent(packageId)}`), reached via
-`packageStorage()` from `kody:runtime`. One rule per context:
+`packageStorage()` from `kody:runtime`. Every member, job, and app of that org
+reads the same bucket. One rule per context:
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — from package apps, exports, subscriptions, jobs, and workflows. Retrievers

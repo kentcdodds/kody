@@ -673,6 +673,55 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 	)
 })
 
+test('packageStorage keys StorageRunner by the bound org, not the caller person', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.spyOn(registryModule, 'getCapabilityRegistryForContext').mockResolvedValue(
+		emptyRegistry,
+	)
+	const names: Array<string> = []
+	const env = {
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => {
+				names.push(name)
+				return name
+			},
+			get: () => ({
+				getValue: async ({ key }: { key: string }) => ({ key, value: 'v' }),
+			}),
+		},
+	} as unknown as Env
+	const user = {
+		userId: personIdFromStored('person-1'),
+		email: 'member@example.com',
+		displayName: 'Member',
+	}
+	const storageNameFor = async (orgId: string | null) => {
+		names.length = 0
+		const fns = await buildKodyFns(
+			env,
+			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://kody.codes',
+				user,
+				orgBinding: orgId
+					? { org: { id: orgId, slug: 'team' }, role: 'member' }
+					: null,
+			}),
+			{ packageStorageTools: { grantedPackageIds: new Set(['pkg-1']) } },
+		)
+		await (fns as Record<string, (args: unknown) => Promise<unknown>>)
+			.packageStorageGet!({ packageId: 'pkg-1', key: 'k' })
+		return names.at(-1)
+	}
+
+	expect(await storageNameFor('team-org-1')).toBe(
+		JSON.stringify(['team-org-1', 'package:pkg-1']),
+	)
+	expect(await storageNameFor(null)).toBe(
+		JSON.stringify([personalOrgId(user.userId), 'package:pkg-1']),
+	)
+})
+
 test('runModuleWithRegistry forwards package context and resolves package secrets as the trusted package', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
