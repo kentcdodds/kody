@@ -20,9 +20,9 @@ import {
 	accountFieldNoteCss,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import { createOrgMembersInviteLinks } from '#client/routes/org-members-invite-links.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import {
-	type OrgInviteLinkView,
 	type OrgMembersLoaderData,
 	type OrgMemberView,
 } from '#universal/loader-data.ts'
@@ -47,13 +47,6 @@ type MembersPayload = OrgMembersLoaderData & {
 }
 
 const memberRoles = ['owner', 'member', 'billing'] as const
-const inviteLinkRoles = ['member', 'billing'] as const
-
-function creatorLabel(link: OrgInviteLinkView) {
-	if (link.createdByDisplayName?.trim()) return link.createdByDisplayName.trim()
-	if (link.createdByUsername) return `@${link.createdByUsername}`
-	return 'Someone'
-}
 
 async function fetchMembers(
 	slug: string,
@@ -120,16 +113,27 @@ export function OrgMembersRoute(handle: Handle) {
 	let invitee = ''
 	let inviteRole: (typeof memberRoles)[number] = 'member'
 	let inviting = false
-	let inviteLinkRole: (typeof inviteLinkRoles)[number] = 'member'
-	let inviteLinkDomains = ''
-	let inviteLinkMaxUses = ''
-	let inviteLinkExpiresDays = '7'
-	let creatingLink = false
-	let copiedLinkUrl: string | null = null
-	let revokingLinkId: string | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let invitePrompt: string | null = null
+
+	const inviteLinksUi = createOrgMembersInviteLinks(handle, {
+		createLink: async (body) => {
+			const payload = await postMember('invite-link', body)
+			return payload ?? null
+		},
+		revokeLink: async (linkId) => {
+			await postMember('revoke-link', { linkId })
+		},
+		onMessage: (nextMessage, tone) => {
+			message = nextMessage
+			messageTone = tone
+		},
+		onBeforeMutate: () => {
+			message = null
+			invitePrompt = null
+		},
+	})
 
 	function removeCheckFor(userId: string) {
 		const existing = removeChecks.get(userId)
@@ -260,7 +264,7 @@ export function OrgMembersRoute(handle: Handle) {
 		inviting = true
 		message = null
 		invitePrompt = null
-		copiedLinkUrl = null
+		inviteLinksUi.clearCopiedLink()
 		handle.update()
 		try {
 			const payload = await postMember('invite', {
@@ -279,75 +283,6 @@ export function OrgMembersRoute(handle: Handle) {
 			messageTone = 'error'
 		} finally {
 			inviting = false
-			handle.update()
-		}
-	}
-
-	async function copyText(text: string) {
-		try {
-			await navigator.clipboard.writeText(text)
-			return true
-		} catch {
-			return false
-		}
-	}
-
-	async function createInviteLink(event: SubmitEvent) {
-		event.preventDefault()
-		creatingLink = true
-		message = null
-		invitePrompt = null
-		copiedLinkUrl = null
-		handle.update()
-		try {
-			const maxUsesRaw = inviteLinkMaxUses.trim()
-			const expiresRaw = inviteLinkExpiresDays.trim()
-			const payload = await postMember('invite-link', {
-				role: inviteLinkRole,
-				allowedEmailDomains: inviteLinkDomains,
-				maxUses: maxUsesRaw.length > 0 ? maxUsesRaw : null,
-				expiresInDays: expiresRaw.length > 0 ? expiresRaw : '7',
-			})
-			const url = payload?.inviteLink?.url ?? null
-			if (url) {
-				const copied = await copyText(url)
-				copiedLinkUrl = url
-				message = copied
-					? 'Invite link copied to clipboard.'
-					: 'Invite link created. Copy it below.'
-			} else {
-				message = 'Invite link created.'
-			}
-			messageTone = 'info'
-		} catch (error) {
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to create that invite link.'
-			messageTone = 'error'
-		} finally {
-			creatingLink = false
-			handle.update()
-		}
-	}
-
-	async function revokeInviteLink(linkId: string) {
-		revokingLinkId = linkId
-		message = null
-		handle.update()
-		try {
-			await postMember('revoke-link', { linkId })
-			if (copiedLinkUrl?.includes(linkId)) copiedLinkUrl = null
-			message = 'Invite link revoked.'
-			messageTone = 'info'
-		} catch (error) {
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to revoke that invite link.'
-			messageTone = 'error'
-		} finally {
-			revokingLinkId = null
 			handle.update()
 		}
 	}
@@ -493,195 +428,7 @@ export function OrgMembersRoute(handle: Handle) {
 						</AccountManagementPanel>
 						{data.canManage ? (
 							<>
-								<AccountManagementPanel title="Invite link">
-									<form
-										data-testid="org-invite-link-form"
-										mix={[
-											css(formCss),
-											on('submit', (event) => void createInviteLink(event)),
-										]}
-									>
-										<label mix={css(accountFieldCss)}>
-											<span mix={css(accountFieldLabelCss)}>Role</span>
-											<select
-												value={inviteLinkRole}
-												aria-label="Invite link role"
-												mix={[
-													css(selectCss),
-													on('change', (event) => {
-														const next = (
-															event.currentTarget as HTMLSelectElement
-														).value
-														if (next === 'member' || next === 'billing') {
-															inviteLinkRole = next
-															handle.update()
-														}
-													}),
-												]}
-											>
-												{inviteLinkRoles.map((role) => (
-													<option key={role} value={role}>
-														{orgRoleLabel(role)}
-													</option>
-												))}
-											</select>
-											<p mix={css(accountFieldNoteCss)}>
-												Anyone with the link joins as this role. Owner cannot be
-												granted through a link.
-											</p>
-										</label>
-										<label mix={css(accountFieldCss)}>
-											<span mix={css(accountFieldLabelCss)}>
-												Allowed email domains (optional)
-											</span>
-											<input
-												value={inviteLinkDomains}
-												data-field-ring
-												autoComplete="off"
-												placeholder="example.com, partner.org"
-												mix={[
-													css(accountInputCss),
-													on('input', (event) => {
-														inviteLinkDomains = (
-															event.currentTarget as HTMLInputElement
-														).value
-														handle.update()
-													}),
-												]}
-											/>
-											<p mix={css(accountFieldNoteCss)}>
-												Leave blank to allow any verified email. Domains check
-												the account’s verified email.
-											</p>
-										</label>
-										<label mix={css(accountFieldCss)}>
-											<span mix={css(accountFieldLabelCss)}>
-												Max uses (optional)
-											</span>
-											<input
-												value={inviteLinkMaxUses}
-												data-field-ring
-												inputMode="numeric"
-												autoComplete="off"
-												placeholder="Unlimited"
-												mix={[
-													css(accountInputCss),
-													on('input', (event) => {
-														inviteLinkMaxUses = (
-															event.currentTarget as HTMLInputElement
-														).value
-														handle.update()
-													}),
-												]}
-											/>
-										</label>
-										<label mix={css(accountFieldCss)}>
-											<span mix={css(accountFieldLabelCss)}>
-												Expires in days
-											</span>
-											<input
-												value={inviteLinkExpiresDays}
-												data-field-ring
-												inputMode="numeric"
-												autoComplete="off"
-												mix={[
-													css(accountInputCss),
-													on('input', (event) => {
-														inviteLinkExpiresDays = (
-															event.currentTarget as HTMLInputElement
-														).value
-														handle.update()
-													}),
-												]}
-											/>
-										</label>
-										<div mix={css(accountActionsCss)}>
-											<button
-												type="submit"
-												disabled={creatingLink}
-												mix={css(getPillButtonCss({ size: 'sm' }))}
-												data-testid="org-invite-link-copy"
-											>
-												{renderIcon('link', { size: '1.05rem' })}
-												{creatingLink ? 'Creating…' : 'Copy invite link'}
-											</button>
-										</div>
-									</form>
-									{copiedLinkUrl ? (
-										<div mix={css(copiedLinkCss)} data-testid="invite-link-url">
-											<code mix={css(copiedLinkCodeCss)}>{copiedLinkUrl}</code>
-											<button
-												type="button"
-												mix={[
-													css(getPillButtonCss({ size: 'sm' })),
-													on('click', () => {
-														void copyText(copiedLinkUrl!).then((copied) => {
-															message = copied
-																? 'Invite link copied to clipboard.'
-																: 'Could not copy the link. Select it manually.'
-															messageTone = copied ? 'info' : 'error'
-															handle.update()
-														})
-													}),
-												]}
-											>
-												{renderIcon('copy', { size: '1.05rem' })}
-												Copy again
-											</button>
-										</div>
-									) : null}
-								</AccountManagementPanel>
-								{data.inviteLinks.length > 0 ? (
-									<AccountManagementPanel title="Active invite links">
-										<ul mix={css(listCss)} data-testid="org-invite-links">
-											{data.inviteLinks.map((link) => (
-												<li key={link.id} mix={css(rowItemCss)}>
-													<div mix={css(rowCss)}>
-														<span aria-hidden="true" mix={css(inviteIconCss)}>
-															{renderIcon('link', { size: '1.25rem' })}
-														</span>
-														<span mix={css(rowTextCss)}>
-															<span mix={css(rowNameCss)}>
-																{link.roleLabel} link
-															</span>
-															<span mix={css(rowDetailCss)}>
-																{[
-																	`${link.useCount}${
-																		link.maxUses != null
-																			? ` / ${link.maxUses}`
-																			: ''
-																	} uses`,
-																	`Expires ${formatTimestampDate(link.expiresAt)}`,
-																	`Created by ${creatorLabel(link)}`,
-																	link.allowedEmailDomains.length > 0
-																		? `Domains ${link.allowedEmailDomains.join(', ')}`
-																		: null,
-																]
-																	.filter(Boolean)
-																	.join(' · ')}
-															</span>
-														</span>
-														<button
-															type="button"
-															disabled={revokingLinkId === link.id}
-															mix={[
-																css(getDangerPillCss({ size: 'sm' })),
-																on(
-																	'click',
-																	() => void revokeInviteLink(link.id),
-																),
-															]}
-														>
-															{revokingLinkId === link.id
-																? 'Revoking…'
-																: 'Revoke'}
-														</button>
-													</div>
-												</li>
-											))}
-										</ul>
-									</AccountManagementPanel>
-								) : null}
+								{inviteLinksUi.render(data.inviteLinks)}
 								<AccountManagementPanel title="Invite by email or username">
 									<form
 										data-testid="org-invite-form"
@@ -891,20 +638,4 @@ const promptCss = {
 	fontSize: typography.fontSize.sm,
 	whiteSpace: 'pre-wrap' as const,
 	overflowWrap: 'anywhere' as const,
-}
-
-const copiedLinkCss = {
-	display: 'grid',
-	gap: spacing.sm,
-	marginTop: spacing.lg,
-	padding: spacing.md,
-	borderRadius: radius.card,
-	border: `1.5px solid ${colors.border}`,
-	backgroundColor: colors.background,
-}
-
-const copiedLinkCodeCss = {
-	fontSize: typography.fontSize.sm,
-	overflowWrap: 'anywhere' as const,
-	color: colors.text,
 }
