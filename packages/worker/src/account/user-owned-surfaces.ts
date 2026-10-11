@@ -70,13 +70,15 @@ export type UserOwnedR2Surface = {
 		| 'community_icon'
 		| 'identity_icon'
 		| 'user_avatar'
-	binding: 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
+		| 'org_transfer_backup'
 	sourceTable: string
 	sourceColumn?: string
 	keyTemplate?: string
-	export: 'chunked_bytes'
 	notes?: string
-}
+} & (
+	| { binding: 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'; export: 'chunked_bytes' }
+	| { binding: 'OPERATOR_BACKUPS'; export: 'exclude'; excludeReason: string }
+)
 
 export type UserOwnedWorkflowSurface = {
 	id: 'dynamic_callable_workflow'
@@ -358,6 +360,18 @@ export const accountUserOwnedR2Surfaces: ReadonlyArray<UserOwnedR2Surface> = [
 		sourceTable: 'users',
 		sourceColumn: 'avatar_key',
 		export: 'chunked_bytes',
+	},
+	{
+		id: 'org_transfer_backup',
+		binding: 'OPERATOR_BACKUPS',
+		sourceTable: 'org_audit_events',
+		keyTemplate:
+			'org-resource-transfers/{fromOrgId}/{toOrgId}/{stamp}-{uuid}.json',
+		export: 'exclude',
+		excludeReason:
+			'Operator rollback snapshot of rows the owner already exports from D1; values stay ciphertext.',
+		notes:
+			'Written by adminOrgResourceTransfer apply. Account deletion and org hard purge delete every backup naming the owner as source or target (deleteOrgTransferBackupsForOwner).',
 	},
 ] as const
 
