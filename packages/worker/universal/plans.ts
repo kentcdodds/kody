@@ -635,8 +635,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// against calls; unique workers are never more than calls.
 		maxExecuteUniqueWorkersPerDay: 25_000,
 		maxExecuteUniqueWorkersPerWeek: null,
-		// 2× pro (40_000). Today's fetch spike (~17,000) stays well under.
-		maxOutboundFetchesPerDay: 80_000,
+		// 50× the purchasable Pro include (15_000), so the funded credits
+		// ceiling per seat matches the 50× multiplier like execute does.
+		maxOutboundFetchesPerDay: 750_000,
 		maxOutboundFetchesPerWeek: null,
 		// 2× the previous public Pro (20_000). Busy days are ~1,500–1,700
 		// job runs. `max` ceilings stay on that earlier Pro table; they
