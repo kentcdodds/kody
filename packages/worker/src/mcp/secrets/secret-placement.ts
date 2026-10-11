@@ -101,9 +101,8 @@ async function readSecretPlacementPolicy(
 ): Promise<SecretPlacementPolicy> {
 	const savedPackage = await getSavedPackageByIdInAnyOrg(env.APP_DB, packageId)
 	if (!savedPackage) {
-		throw new SecretPlacementError(
+		throw new McpCallerError(
 			`Package "${packageId}" was not found, so the fetch gateway cannot check where its credential slots may be sent.`,
-			null,
 		)
 	}
 	const loaded = await loadPackageManifestBySourceId({

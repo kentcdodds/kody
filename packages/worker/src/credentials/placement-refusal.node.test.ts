@@ -1,11 +1,21 @@
-import { expect, test } from 'vitest'
-import { SecretPlacementError } from '#mcp/secrets/secret-placement.ts'
+import { expect, test, vi } from 'vitest'
+import { isMcpCallerError } from '#mcp/caller-error.ts'
+import {
+	loadSecretPlacementPolicy,
+	SecretPlacementError,
+} from '#mcp/secrets/secret-placement.ts'
+import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
 import {
 	buildCredentialPlacementRefusedWebhookError,
 	formatCredentialPlacementRefusalTag,
 	readCredentialPlacementRefusal,
 	readCredentialPlacementRefusalFromInvocationBody,
 } from './placement-refusal.ts'
+
+vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof PackageRegistryRepo>()),
+	getSavedPackageByIdInAnyOrg: async () => null,
+}))
 
 test('a placement refusal round-trips its slot through the error message', () => {
 	const error = new SecretPlacementError(
@@ -55,4 +65,16 @@ test('the webhook error names the code and slot and nothing else', () => {
 		message:
 			'The package tried to send a credential outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.',
 	})
+})
+
+test('a package that cannot be found is a caller error, not a placement refusal', async () => {
+	const error = await loadSecretPlacementPolicy({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		packageId: 'missing-package',
+		cacheKey: null,
+	}).catch((caught: unknown) => caught)
+	expect(isMcpCallerError(error)).toBe(true)
+	expect(error).not.toBeInstanceOf(SecretPlacementError)
+	expect(readCredentialPlacementRefusal((error as Error).message)).toBeNull()
 })
