@@ -92,6 +92,7 @@ async function listAs(env: Env, personId: string, search = '') {
 		body: (await response.json()) as {
 			ok: boolean
 			error?: string
+			activity?: Array<unknown> | null
 			packages?: Array<{ kodyId: string; isPrivate?: boolean }>
 			profile?: { username: string; displayName: string }
 		},
@@ -107,6 +108,7 @@ test('team repositories list what each member role can see', async () => {
 		username: 'acme',
 		displayName: 'Acme',
 	})
+	expect(owner.body.activity).toBeNull()
 	expect(owner.body.packages?.map((pkg) => pkg.kodyId).sort()).toEqual([
 		'secret',
 		'shared',

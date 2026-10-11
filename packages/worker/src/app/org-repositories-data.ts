@@ -92,7 +92,7 @@ export async function loadOrgRepositoriesData(input: {
 				username: slug,
 			}),
 		),
-		activity: [],
+		activity: null,
 		query: query || null,
 		isSelf: true,
 		loggedIn: true,

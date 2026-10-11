@@ -267,7 +267,8 @@ export type ProfileLoaderData = {
 	ok: true
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	/** Null when the profile has no activity source (e.g. team org repositories). */
+	activity: Array<PublicCommunityActivityItem> | null
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
@@ -277,7 +278,7 @@ export type ProfileLoaderData = {
 export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	activity: Array<PublicCommunityActivityItem> | null
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
