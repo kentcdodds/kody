@@ -19,6 +19,7 @@ import {
 import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { retirePackageSlug } from '#worker/community/package-url.ts'
 import { handleWebhookIngressRequest } from './http.ts'
+import { mintPackageOwnedWebhookHmacCiphertext } from './signing-secret.ts'
 import { webhookRateLimitConfig } from './types.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -242,6 +243,7 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 		'orgs',
 		'package_slug_redirects',
 		'package_kody_id_redirects',
+		'enablement_org_migrations',
 	]) {
 		await env.APP_DB.prepare(`DELETE FROM ${table}`).run()
 	}
@@ -628,6 +630,57 @@ test('webhook ingress rejects suspended owners before any dispatch', async () =>
 	}
 	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
 	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
+})
+
+test('an org moved to enablements requires the default signature on webhooks that declare none', async () => {
+	const userId = await setupOwnerWithWebhooks(['plain'])
+	const orgId = ownerIdFromStored(userId)
+	const { plaintext, encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
+		env,
+		userId: orgId,
+		endpointId: 'mint-plain',
+	})
+	await env.APP_DB.prepare(
+		`UPDATE webhook_endpoints SET hmac_secret_encrypted = ? WHERE id = 'mint-plain'`,
+	)
+		.bind(encrypted)
+		.run()
+	declareWebhook({ name: 'plain' })
+
+	// Legacy orgs still accept unsigned deliveries for undeclared verification.
+	expect(await statusOf('plain')).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+
+	await env.APP_DB.prepare(
+		`INSERT INTO enablement_org_migrations (org_id, state, migrated_at, updated_at)
+		 VALUES (?, 'migrated', ?, ?)`,
+	)
+		.bind(orgId, '2026-10-11T00:00:00.000Z', '2026-10-11T00:00:00.000Z')
+		.run()
+	const body = JSON.stringify({ event: 'ping' })
+	expect(await statusOf('plain', { body })).toBe(401)
+	expect(
+		await statusOf('plain', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
+		}),
+	).toBe(401)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+
+	expect(
+		await statusOf('plain', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', plaintext) },
+		}),
+	).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const rejected = (await listDeliveries(userId, 'plain')).filter(
+		(run) => run.status === 'error',
+	)
+	expect(rejected.map((run) => run.errorMessage).sort()).toEqual([
+		'invalid_signature',
+		'missing_signature',
+	])
 })
 
 test('opt-in webhook replay protection rejects stale timestamps and dedupes delivery ids', async () => {
