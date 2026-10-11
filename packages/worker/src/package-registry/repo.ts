@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -147,7 +150,7 @@ export async function insertSavedPackage(
 		updated_at?: string
 	},
 	telemetry?: OnboardingFunnelEnv | null,
-	options?: { stamp?: boolean },
+	options?: { stamp?: boolean; actorUserId?: PersonId },
 ) {
 	const now = new Date().toISOString()
 	await db
@@ -178,7 +181,7 @@ export async function insertSavedPackage(
 	await stampFirstSavedPackage(
 		db,
 		{
-			stableUserId: row.user_id,
+			stableUserId: options?.actorUserId ?? row.user_id,
 			at: row.created_at ?? now,
 		},
 		telemetry,

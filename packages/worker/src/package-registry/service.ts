@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -240,6 +243,7 @@ export async function refreshSavedPackageProjection(input: {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	actorUserId?: PersonId
 	userEmail?: string | null
 	packageId: string
 	sourceId: string
@@ -377,7 +381,9 @@ export async function refreshSavedPackageProjection(input: {
 					console.warn('kit-first-package-pre-read-failed', error)
 					isFirstSavedPackage = true
 				}
-				await insertSavedPackage(input.env.APP_DB, row, input.env)
+				await insertSavedPackage(input.env.APP_DB, row, input.env, {
+					actorUserId: input.actorUserId,
+				})
 				if (isFirstSavedPackage) {
 					scheduleKitSubscriberSync({
 						env: input.env,

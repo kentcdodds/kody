@@ -154,6 +154,7 @@ export async function createStubSavedPackage(input: {
 			updated_at: now,
 		},
 		input.env,
+		{ actorUserId: input.owner.actorUserId },
 	)
 	await upsertSavedPackageVector(input.env, {
 		packageId,
@@ -164,6 +165,7 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.owner.ownerUserId,
+		actorUserId: input.owner.actorUserId,
 		userEmail: packageOwnerEntitlementEmail(input.owner),
 		packageId,
 		sourceId: ensuredSource.id,
