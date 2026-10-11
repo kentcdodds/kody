@@ -166,14 +166,10 @@ test('a 3-seat Pro org admits 900 execute calls per minute and refuses the 901st
 
 	await fillBrake(org, 900)
 	await expect(admit(org)).rejects.toBeInstanceOf(ExecuteRateLimitedError)
-	try {
-		await admit(org)
-	} catch (error) {
-		expect(error).toMatchObject({
-			code: 'execute_rate_limited',
-			message: expect.stringContaining('started 900 execute calls'),
-		})
-	}
+	await expect(admit(org)).rejects.toMatchObject({
+		code: 'execute_rate_limited',
+		message: expect.stringContaining('started 900 execute calls'),
+	})
 	expect(nowMs).toBe(now.getTime())
 }, 120_000)
 
