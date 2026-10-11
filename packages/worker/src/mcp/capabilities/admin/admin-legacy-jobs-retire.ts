@@ -11,6 +11,7 @@ import {
 	listEnablementsForInstance,
 } from '#worker/enablements/repo.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { resolvePublishedJobSource } from '#worker/jobs/inspect-published-source.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import {
@@ -110,6 +111,27 @@ async function listLegacyJobs(env: Env): Promise<Array<LegacyJob>> {
 	}
 }
 
+async function assertKeyValueOnlyStorage(input: {
+	env: Env
+	orgId: string
+	storageId: string
+}) {
+	const tables = await storageRunnerRpc({
+		env: input.env,
+		userId: ownerIdFromStored(input.orgId),
+		storageId: input.storageId,
+	}).sqlQuery({
+		query: `SELECT name FROM sqlite_master
+			WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\'
+			  AND name NOT LIKE 'sqlite%'`,
+	})
+	if (tables.rows.length > 0) {
+		throw new Error(
+			`Storage "${input.storageId}" holds SQL tables; only key/value entries are copied.`,
+		)
+	}
+}
+
 async function copyJobStorage(input: {
 	env: Env
 	orgId: string
@@ -122,16 +144,6 @@ async function copyJobStorage(input: {
 		userId,
 		storageId: input.fromStorageId,
 	})
-	const tables = await source.sqlQuery({
-		query: `SELECT name FROM sqlite_master
-			WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\'
-			  AND name NOT LIKE 'sqlite%'`,
-	})
-	if (tables.rows.length > 0) {
-		throw new Error(
-			`Storage "${input.fromStorageId}" holds SQL tables; only key/value entries are copied.`,
-		)
-	}
 	const target = storageRunnerRpc({
 		env: input.env,
 		userId,
@@ -212,46 +224,10 @@ export function defaultLegacyJobRetireDeps(input: {
 				email: owner.email,
 				resource: 'saved_packages',
 			})
-			const created = await createSavedPackageFromFiles({
-				env,
-				baseUrl,
-				owner: {
-					ownerUserId: orgId,
-					ownerScope: owner.orgSlug,
-					ownerEmail: owner.email,
-					actorUserId: personIdFromStored(owner.personId),
-				},
-				files,
-			})
-			const packageJobId = buildPackageJobId(created.packageId, record.name)
-			const packageJob = await jobsData(env).getJobById({
-				userId: owner.orgId,
-				jobId: packageJobId,
-			})
-			if (!packageJob) {
-				throw new Error(
-					`Package ${created.name} published but job "${packageJobId}" was not created.`,
-				)
-			}
-			if (record.params) {
-				const updated = await jobsData(env).updateJob({
-					userId: owner.orgId,
-					job: {
-						...packageJob.record,
-						params: record.params,
-						updatedAt: new Date().toISOString(),
-					},
-					callerContextJson: packageJob.callerContextJson,
-				})
-				if (!updated) {
-					throw new Error(`Params for job "${packageJobId}" were not saved.`)
-				}
-			}
-			await copyJobStorage({
+			await assertKeyValueOnlyStorage({
 				env,
 				orgId: owner.orgId,
-				fromStorageId: record.storageId,
-				toStorageId: packageJob.record.storageId,
+				storageId: record.storageId,
 			})
 			const legacyEnablements = await listEnablementsForInstance({
 				db: env.APP_DB,
@@ -259,26 +235,102 @@ export function defaultLegacyJobRetireDeps(input: {
 				triggerKind: 'cron',
 				instanceId: record.id,
 			})
-			for (const enablement of legacyEnablements) {
-				await insertEnablement({
-					db: env.APP_DB,
-					enablement: {
-						orgId: owner.orgId,
-						packageId: created.packageId,
-						triggerKind: 'cron',
-						triggerName: record.name,
-						instanceId: packageJobId,
-						enablerUserId: enablement.enablerUserId,
-						origin: 'migrated',
+			const paused = legacyEnablements.find(
+				(enablement) => enablement.state !== 'on',
+			)
+			if (paused) {
+				throw new Error(
+					`Enablement "${paused.id}" for job "${record.id}" is ${paused.state}; resolve it before moving.`,
+				)
+			}
+			const actorUserId = personIdFromStored(owner.personId)
+			const packageId = crypto.randomUUID()
+			const insertedEnablementIds: Array<string> = []
+			let moved: { packageId: string; packageName: string; jobId: string }
+			try {
+				const created = await createSavedPackageFromFiles({
+					env,
+					baseUrl,
+					owner: {
+						ownerUserId: orgId,
+						ownerScope: owner.orgSlug,
+						ownerEmail: owner.email,
+						actorUserId,
 					},
+					files,
+					packageId,
 				})
+				const packageJobId = buildPackageJobId(packageId, record.name)
+				const packageJob = await jobsData(env).getJobById({
+					userId: owner.orgId,
+					jobId: packageJobId,
+				})
+				if (!packageJob) {
+					throw new Error(
+						`Package ${created.name} published but job "${packageJobId}" was not created.`,
+					)
+				}
+				const updated = await jobsData(env).updateJob({
+					userId: owner.orgId,
+					job: {
+						...packageJob.record,
+						params: record.params ?? packageJob.record.params,
+						killSwitchEnabled: record.killSwitchEnabled,
+						expiresAt: record.expiresAt,
+						updatedAt: new Date().toISOString(),
+					},
+					callerContextJson: packageJob.callerContextJson,
+				})
+				if (!updated) {
+					throw new Error(`Job "${packageJobId}" settings were not saved.`)
+				}
+				await copyJobStorage({
+					env,
+					orgId: owner.orgId,
+					fromStorageId: record.storageId,
+					toStorageId: packageJob.record.storageId,
+				})
+				for (const enablement of legacyEnablements) {
+					const inserted = await insertEnablement({
+						db: env.APP_DB,
+						enablement: {
+							orgId: owner.orgId,
+							packageId,
+							triggerKind: 'cron',
+							triggerName: record.name,
+							instanceId: packageJobId,
+							enablerUserId: enablement.enablerUserId,
+							origin: 'migrated',
+						},
+					})
+					insertedEnablementIds.push(inserted.id)
+				}
+				moved = {
+					packageId,
+					packageName: created.name,
+					jobId: packageJobId,
+				}
+			} catch (error) {
+				try {
+					for (const id of insertedEnablementIds) {
+						await disableEnablement({ db: env.APP_DB, orgId: owner.orgId, id })
+					}
+					await deleteSavedPackageProjection({
+						env,
+						userId: orgId,
+						packageId,
+						actorUserId,
+					})
+				} catch (rollbackError) {
+					throw new AggregateError(
+						[error, rollbackError],
+						`Move of job "${record.id}" failed and rollback of package "${packageId}" also failed.`,
+					)
+				}
+				throw error
 			}
 			await deleteLegacyJob(env, job)
-			return {
-				packageId: created.packageId,
-				packageName: created.name,
-				jobId: packageJobId,
-			}
+			return moved
 		},
 		async deleteJob({ job }) {
 			await deleteLegacyJob(env, job)
@@ -317,7 +369,7 @@ export const adminLegacyJobsRetireCapability = defineDomainCapability(
 			mode: z
 				.enum(['dry-run', 'notify', 'apply'])
 				.describe('dry-run writes nothing. notify sends email. apply writes.'),
-			decisions: z.array(decisionSchema).min(1).max(100),
+			decisions: z.array(decisionSchema).max(100),
 			owners_notified: z
 				.boolean()
 				.optional()

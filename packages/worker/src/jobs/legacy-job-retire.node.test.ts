@@ -322,6 +322,26 @@ test('apply requires owners_notified, moves before deletes, then drops orphan so
 	})
 })
 
+test('apply with no legacy rows left still deletes orphan job sources', async () => {
+	const { db, deps, calls, fleet } = await setup()
+	fleet.length = 0
+	const report = await runLegacyJobRetire({
+		db,
+		mode: 'apply',
+		decisions: [],
+		ownersNotified: true,
+		baseUrl,
+		deps,
+	})
+	expect(report.rows).toEqual([])
+	expect(report.remainingLegacyJobs).toBe(0)
+	expect(calls).toContain('delete source source-orphan')
+	expect(report.remainingJobSources).toBe(0)
+	expect(
+		report.orphanJobSources.every((source) => source.outcome === 'deleted'),
+	).toBe(true)
+})
+
 test('apply keeps the legacy schedule when a move does not override it', async () => {
 	const { db, deps, decisions, calls } = await setup()
 	await runLegacyJobRetire({
