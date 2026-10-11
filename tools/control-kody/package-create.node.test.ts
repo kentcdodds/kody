@@ -136,6 +136,33 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 			pushedRemote = remote.authenticated_remote
 		},
 	})
+	const orgReport = await create({
+		orgSlug: 'x-org',
+		cookieHeader: 'kody_session=team',
+		connect: async (_origin, _user, options) => {
+			expect(options).toEqual({
+				cookieHeader: 'kody_session=team',
+				oauth: undefined,
+				orgSlug: 'x-org',
+			})
+			return {
+				cookieHeader: 'kody_session=team',
+				client: {
+					callTool: async () =>
+						executeResult({
+							remote: null,
+							detail: {
+								package_id: 'pkg-org',
+								kody_id: 'preview-pkg',
+								name: '@x-org/preview-pkg',
+							},
+						}),
+				},
+			}
+		},
+	})
+	expect(orgReport.username).toBe('x-org')
+
 	expect(report).toMatchObject({
 		ok: true,
 		packageId: 'pkg-1',

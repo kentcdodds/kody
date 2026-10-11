@@ -150,7 +150,6 @@ async function callKodyPath(input: {
 		? await createCapabilityProxyPackageHostTools({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
-				trackSecretValue: (value) => redactor.track(value),
 			})
 		: {}
 	const { tools, mcpServers } = await buildKodyToolContext(

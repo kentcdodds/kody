@@ -552,10 +552,12 @@ guarded by a bearer secret comparison.
   (`packages/worker/src/mcp/fetch-gateway.ts`), which is deny-by-default: a
   secret placeholder is only substituted for a host the user explicitly approved
   in the account UI, only in a request header, and only over HTTPS
-  (`packages/worker/src/mcp/secrets/secret-placement.ts` refuses the URL, body,
-  plain HTTP, and, for a package with `kody.credentials`, any header but the
-  slot's declared placement). Policy writes (allowed hosts/capabilities/
-  packages) are only reachable through the authenticated account UI.
+  (`packages/worker/src/mcp/secrets/secret-placement.ts` refuses the URL, plain
+  HTTP, and, for a package with `kody.credentials`, any header but the slot's
+  declared placement). The body is never scanned or substituted, so placeholder
+  text that arrives as data is forwarded verbatim. Policy writes (allowed
+  hosts/capabilities/ packages) are only reachable through the authenticated
+  account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.
 - The DR control-plane Admin UI is protected by Cloudflare Access plus in-worker

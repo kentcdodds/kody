@@ -11,6 +11,10 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const { mockModule, pickMocks } = vi.hoisted(() => {
@@ -1044,8 +1048,8 @@ function createEntitlementsDatabase(input: {
 							) {
 								return { count: savedPackageCount } as T
 							}
-							if (query.includes('FROM org_memberships')) {
-								return { count: 1 } as T
+							if (isLiveSeatCountQuery(query)) {
+								return mockLiveSeatCountRow() as T
 							}
 							const storageByteTables = [
 								'email_attachments',

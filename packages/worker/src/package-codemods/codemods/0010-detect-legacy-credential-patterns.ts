@@ -51,9 +51,9 @@ export const legacyCredentialPatternMessages: Record<
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a secret through packageSecrets.get, which returns the value only for a kody.credentials secret slot that declares "raw": true and fails for anything else. Send the value with a {{secret:<slot>}} header placeholder instead, or declare the slot raw.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in only in the header a kody.credentials slot declares for that secret.',
 	'missing placement':
-		'missing placement: a kody.credentials secret slot has no placement and is not raw. Publish requires the header the value goes in.',
+		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
 }
 
 export function legacyCredentialPatternFromMessage(
@@ -77,7 +77,13 @@ const completePlaceholderPatterns: Record<string, RegExp> = {
 	'secret/': /\{\{secret\/[a-zA-Z0-9._-]+:[^}]+\}\}/y,
 	'integration-token:': /\{\{integration-token:[a-zA-Z0-9._-]+\}\}/y,
 }
-const scopeSuffixPattern = /\|scope=(?:session|package|user)\b/
+/**
+ * A literal scope, or `|scope=` followed by a computed value: the end of a
+ * string piece (the AST splits templates and concatenations into pieces), or
+ * `${` / a closing quote and `+` in the text fallback.
+ */
+const scopeSuffixPattern =
+	/\|scope=(?:(?:session|package|user)\b|$|\$\{|['"`]\s*\+)/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
 
@@ -95,7 +101,11 @@ const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
 	},
 ]
 
-/** Helper calls whose first argument (or named fields) name a credential. */
+/**
+ * Helper calls whose first argument (or named fields) name a credential. Read
+ * with {@link ownEntry}: a callee named after an Object.prototype method
+ * (`toString`, `hasOwnProperty`) must not match.
+ */
 const nameArgumentCallees: Record<string, NameKind> = {
 	createAuthenticatedFetch: 'integration',
 }
@@ -127,6 +137,10 @@ const nameFieldCallees: Record<
 	},
 }
 const packageSecretsMethods = new Set(['get', 'has'])
+
+function ownEntry<Value>(record: Record<string, Value>, key: string) {
+	return Object.hasOwn(record, key) ? record[key] : undefined
+}
 
 type AstNode = ModuleAstNode & {
 	computed?: boolean
@@ -484,7 +498,7 @@ function detectInParsedModule(
 				const calleeName = getCalleeName(node.callee)
 				if (calleeName == null) return
 				const firstArgument = node.arguments?.[0]
-				const nameKind = nameArgumentCallees[calleeName]
+				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
 					if (firstArgument)
 						classifyNameExpression(firstArgument, nameKind, add)
@@ -502,7 +516,7 @@ function detectInParsedModule(
 				}
 				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
-				const fieldSpec = nameFieldCallees[calleeName]
+				const fieldSpec = ownEntry(nameFieldCallees, calleeName)
 				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, add)
 				return
 			}
@@ -590,10 +604,7 @@ function detectInManifest(
 		isPlainObject(kody.credentials) &&
 		Object.values(kody.credentials).some(
 			(slot) =>
-				isPlainObject(slot) &&
-				slot.kind === 'secret' &&
-				slot.placement == null &&
-				slot.raw !== true,
+				isPlainObject(slot) && slot.kind === 'secret' && slot.placement == null,
 		)
 	) {
 		add('missing placement')

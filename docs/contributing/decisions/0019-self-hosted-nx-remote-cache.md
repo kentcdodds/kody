@@ -34,11 +34,14 @@ Husky through Cursor's hook dispatcher (`npm run hooks:ensure`) so `pre-push`
 can upload `test:push` artifacts before GitHub sees the commit. Validate jobs
 probe `GET /health` and an authorized `GET /v1/cache/{hash}` before setting the
 server URL because Nx treats an unreachable or unauthorized self-hosted cache as
-a fatal error. The same probe (`tools/nx-remote-cache-probe.ts`) `PUT`s a fixed
-non-hash key and every cached script prints whether the token writes, because Nx
-is silent when a `PUT` is rejected. First PUT wins (`409` on overwrite) so a
-poisoned key cannot replace a stored artifact. R2 expires `v1/` objects 14 days
-after write (Age, not last access — GET does not refresh mtime) and aborts
-incomplete multipart uploads after 1 day. The cache worker is contributor infra,
-not a product primitive, and holds no user data. Revisit only if Nx Cloud
-becomes mandatory for a feature we need, or if the HTTP spec changes.
+a fatal error. `tools/run-nx.ts` applies that same gate on every cached script
+and treats a rejected token the way it treats a transport failure: local cache,
+a warning, and a successful exit when the tasks themselves succeeded. The same
+probe (`tools/nx-remote-cache-probe.ts`) `PUT`s a fixed non-hash key and every
+cached script prints whether the token writes, because Nx is silent when a `PUT`
+is rejected. First PUT wins (`409` on overwrite) so a poisoned key cannot
+replace a stored artifact. R2 expires `v1/` objects 14 days after write (Age,
+not last access — GET does not refresh mtime) and aborts incomplete multipart
+uploads after 1 day. The cache worker is contributor infra, not a product
+primitive, and holds no user data. Revisit only if Nx Cloud becomes mandatory
+for a feature we need, or if the HTTP spec changes.

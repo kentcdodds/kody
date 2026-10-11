@@ -34,6 +34,7 @@ import { adminSystemEmailSenderRuleDeleteCapability } from './admin-system-email
 import { adminSystemEmailSenderRuleListCapability } from './admin-system-email-sender-rule-list.ts'
 import { adminSystemEmailSenderRuleSetCapability } from './admin-system-email-sender-rule-set.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
+import { adminHandleGetCapability } from './admin-handle-get.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
@@ -93,6 +94,8 @@ export const adminDomain = defineDomain({
 		'published importable artifact backfill',
 		'missing artifacts',
 		'reserved username',
+		'handle',
+		'org slug',
 		'credits',
 		'credit grant',
 		'credit eligibility',
@@ -102,6 +105,7 @@ export const adminDomain = defineDomain({
 	capabilities: [
 		adminUserListCapability,
 		adminUserGetCapability,
+		adminHandleGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
 		adminUserVerifyCapability,

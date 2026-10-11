@@ -96,6 +96,63 @@ test('control-kody MCP execute and search reuse the OAuth client and print struc
 		})
 		expect(search.result).toEqual({ matches: [{ id: 'packageSave' }] })
 
+		const oauth = {
+			clientId: 'client-1',
+			clientSecret: 'secret-1',
+			redirectUri: 'http://127.0.0.1/oauth/callback',
+			accessToken: 'token-team',
+		}
+		const seen: Array<unknown> = []
+		const orgConnect = async (
+			_origin: string,
+			_user: { email: string },
+			options: unknown,
+		) => {
+			seen.push(options)
+			return {
+				cookieHeader: 'kody_session=abc',
+				oauth,
+				client: {
+					async callTool() {
+						return {
+							isError: false,
+							structuredContent: { result: { ok: true } },
+						}
+					},
+				},
+			}
+		}
+		await executeAppMcp({
+			origin: 'https://kody-pr-9.kody.workers.dev',
+			email: 'me@kentcdodds.com',
+			password: 'ilikecode',
+			code: 'export default async function main() { return 1 }',
+			orgSlug: 'x-org',
+			cookieHeader: 'kody_session=abc',
+			oauth,
+			connect: orgConnect,
+		})
+		await searchAppMcp({
+			origin: 'https://kody-pr-9.kody.workers.dev',
+			email: 'me@kentcdodds.com',
+			password: 'ilikecode',
+			query: 'packageSave',
+			orgSlug: 'x-org',
+			connect: orgConnect,
+		})
+		expect(seen).toEqual([
+			{
+				cookieHeader: 'kody_session=abc',
+				oauth,
+				orgSlug: 'x-org',
+			},
+			{
+				cookieHeader: undefined,
+				oauth: undefined,
+				orgSlug: 'x-org',
+			},
+		])
+
 		await expect(
 			executeAppMcp({
 				origin: 'https://kody.codes',

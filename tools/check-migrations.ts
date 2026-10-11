@@ -4,6 +4,11 @@ import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { isExecutedDirectly } from './node-runtime.ts'
+import {
+	scanOpenPullRequestMigrationPrefixes,
+	type OpenPullRequestFileClaim,
+	type OpenPullRequestMigrationScan,
+} from './open-pull-request-migration-prefixes.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -700,10 +705,187 @@ export async function checkMigrationsDirectory(
 	}
 }
 
+export function suggestFreeMigrationPrefix(input: {
+	nextPrefix: string
+	claimedPrefixes: ReadonlyArray<string>
+}): string | null {
+	if (!/^\d{4}$/.test(input.nextPrefix)) return null
+	const claimed = new Set(
+		input.claimedPrefixes.filter((prefix) => /^\d{4}$/.test(prefix)),
+	)
+	let prefix = Number(input.nextPrefix)
+	while (claimed.has(formatMigrationPrefix(prefix))) {
+		prefix += 1
+		if (prefix > 9999) return null
+	}
+	return formatMigrationPrefix(prefix)
+}
+
+export type OpenPullRequestMigrationAdvisory = {
+	suggestedPrefix: string
+	lines: Array<string>
+	warning: string | null
+}
+
+/**
+ * Lists prefixes claimed by other open pull requests and suggests the lowest
+ * prefix at or above the local next that none of them use. Gaps stay allowed.
+ * Missing auth is silent. A GitHub failure is a warning, not a check failure.
+ */
+export function formatOpenPullRequestMigrationAdvisory(input: {
+	migrationsDir: string
+	localFilenames: ReadonlyArray<string>
+	localNextPrefix: string
+	scan: OpenPullRequestMigrationScan
+}): OpenPullRequestMigrationAdvisory {
+	switch (input.scan.status) {
+		case 'skipped':
+			return skippedMigrationPrefixAdvisory(input.localNextPrefix, input.scan)
+		case 'ok':
+			return claimedMigrationPrefixAdvisory({
+				migrationsDir: input.migrationsDir,
+				localFilenames: input.localFilenames,
+				localNextPrefix: input.localNextPrefix,
+				scan: input.scan,
+			})
+		default: {
+			const neverScan: never = input.scan
+			throw new Error(`Unhandled open pull request scan: ${String(neverScan)}`)
+		}
+	}
+}
+
+function skippedMigrationPrefixAdvisory(
+	localNextPrefix: string,
+	scan: Extract<OpenPullRequestMigrationScan, { status: 'skipped' }>,
+): OpenPullRequestMigrationAdvisory {
+	switch (scan.reason) {
+		case 'no-token':
+		case 'no-repository':
+			return { suggestedPrefix: localNextPrefix, lines: [], warning: null }
+		case 'unauthorized':
+		case 'error':
+			return {
+				suggestedPrefix: localNextPrefix,
+				lines: [],
+				warning: `Open pull request migration prefix scan skipped: ${scan.detail ?? scan.reason}.`,
+			}
+		default: {
+			const neverReason: never = scan.reason
+			throw new Error(`Unhandled scan skip: ${String(neverReason)}`)
+		}
+	}
+}
+
+function claimedMigrationPrefixAdvisory(input: {
+	migrationsDir: string
+	localFilenames: ReadonlyArray<string>
+	localNextPrefix: string
+	scan: Extract<OpenPullRequestMigrationScan, { status: 'ok' }>
+}): OpenPullRequestMigrationAdvisory {
+	const claims = prefixesFromFileClaims(input.scan.claims)
+	const suggestedPrefix = suggestFreeMigrationPrefix({
+		nextPrefix: input.localNextPrefix,
+		claimedPrefixes: claims.flatMap((claim) => claim.prefixes),
+	})
+	if (suggestedPrefix === null) {
+		return {
+			suggestedPrefix: input.localNextPrefix,
+			lines: [],
+			warning:
+				'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+		}
+	}
+	if (claims.length === 0) {
+		return { suggestedPrefix, lines: [], warning: null }
+	}
+	const grouped = groupClaimedPrefixes(claims)
+	const localPrefixes = new Set(
+		input.localFilenames.flatMap((filename) => {
+			const parsed = parseMigrationFilename(filename)
+			return parsed ? [parsed.prefix] : []
+		}),
+	)
+	const overlaps = grouped.filter((group) => localPrefixes.has(group.prefix))
+	const lines = [
+		`Open pull requests claim migration prefixes in ${input.migrationsDir}:`,
+		...grouped.map((group) => `  ${group.prefix}: ${formatPullNumbers(group)}`),
+	]
+	if (overlaps.length > 0) {
+		lines.push(
+			'This checkout uses prefixes also claimed by open pull requests:',
+			...overlaps.map(
+				(group) => `  ${group.prefix}: ${formatPullNumbers(group)}`,
+			),
+		)
+	}
+	if (suggestedPrefix !== input.localNextPrefix) {
+		lines.push(
+			`Next prefix free of this checkout and those claims: ${suggestedPrefix}.`,
+		)
+	}
+	return { suggestedPrefix, lines, warning: null }
+}
+
+function prefixesFromFileClaims(
+	claims: ReadonlyArray<OpenPullRequestFileClaim>,
+) {
+	const parsed: Array<{ number: number; prefixes: Array<string> }> = []
+	for (const claim of claims) {
+		const prefixes = [
+			...new Set(
+				claim.filenames.flatMap((filename) => {
+					const prefix = parseMigrationFilename(
+						path.posix.basename(filename),
+					)?.prefix
+					return prefix ? [prefix] : []
+				}),
+			),
+		].sort()
+		if (prefixes.length === 0) continue
+		parsed.push({ number: claim.number, prefixes })
+	}
+	return parsed
+}
+
+function groupClaimedPrefixes(
+	claims: ReadonlyArray<{ number: number; prefixes: ReadonlyArray<string> }>,
+) {
+	const byPrefix = new Map<string, Set<number>>()
+	for (const claim of claims) {
+		for (const prefix of claim.prefixes) {
+			const pullNumbers = byPrefix.get(prefix) ?? new Set<number>()
+			pullNumbers.add(claim.number)
+			byPrefix.set(prefix, pullNumbers)
+		}
+	}
+	return [...byPrefix.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([prefix, pullNumbers]) => ({
+			prefix,
+			pullNumbers: [...pullNumbers].sort((left, right) => left - right),
+		}))
+}
+
+function formatPullNumbers(group: { pullNumbers: ReadonlyArray<number> }) {
+	return group.pullNumbers.map((number) => `#${String(number)}`).join(', ')
+}
+
 export async function main(
 	migrationsDir: string = defaultMigrationsDir,
 ): Promise<void> {
 	const result = await checkMigrationsDirectory(migrationsDir)
+	const directoryEntries = await readdir(migrationsDir)
+	const localFilenames = directoryEntries.filter((name) =>
+		name.endsWith('.sql'),
+	)
+	// Advisory only: missing GitHub auth or an API error must not fail the ledger check.
+	const advisory = formatOpenPullRequestMigrationAdvisory({
+		migrationsDir,
+		localFilenames,
+		localNextPrefix: result.nextPrefix,
+		scan: await scanOpenPullRequestMigrationPrefixes({ migrationsDir }),
+	})
 	if (!result.ok) {
 		console.error(
 			`Migration filename check failed for ${migrationsDir} (${String(result.errors.length)} issue(s)):`,
@@ -711,14 +893,23 @@ export async function main(
 		for (const error of result.errors) {
 			console.error(`  - ${error}`)
 		}
+		printMigrationPrefixAdvisory(advisory, console.error)
 		process.exitCode = 1
 		return
 	}
 
-	const fileCount = (await readdir(migrationsDir)).length
 	console.log(
-		`Migration ledger ok: ${String(fileCount)} file(s) in ${migrationsDir} (next free prefix ${result.nextPrefix}).`,
+		`Migration ledger ok: ${String(directoryEntries.length)} file(s) in ${migrationsDir} (next free prefix ${advisory.suggestedPrefix}).`,
 	)
+	printMigrationPrefixAdvisory(advisory, console.log)
+}
+
+function printMigrationPrefixAdvisory(
+	advisory: OpenPullRequestMigrationAdvisory,
+	write: (line: string) => void,
+) {
+	if (advisory.warning) console.warn(advisory.warning)
+	for (const line of advisory.lines) write(line)
 }
 
 if (isExecutedDirectly(import.meta.url)) {

@@ -116,6 +116,9 @@ export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(inp
 							sourceId: 'community-fork-upstream-updated',
 						},
 						actorTokenId: communityForkUpstreamUpdatedSubscriptionActorTokenId,
+						audience: {
+							resource: { type: 'package', id: fork.forkedPackageId },
+						},
 					})
 					const retryableCode =
 						readRetryablePackageInvocationInfrastructureCode(response)

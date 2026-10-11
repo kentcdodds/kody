@@ -6,8 +6,14 @@ import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation
 import { type createMcpCallerContext } from '#mcp/context.ts'
 import {
 	requestLineage,
+	type EnablementRun,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
+import {
+	planEnablementRuns,
+	type EnablementAudience,
+} from '#worker/enablements/run-gate.ts'
+import { loadEarliestLiveOwnerId } from '#worker/enablements/repo.ts'
 import { fanOutPackageEventToMcpSubscriptions } from '#mcp/events/fan-out.ts'
 import {
 	type PackageEventDispatchInput,
@@ -465,7 +471,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 	}
 }
 
-export async function invokePackageSubscriptionWithToolFactories(input: {
+type SubscriptionInvocationInput = {
 	env: Env
 	baseUrl: string
 	savedPackage: SavedPackageRecord
@@ -476,10 +482,94 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
 	request: RequestSource
+	/** What an org-wide event is about, for the enablement audience rule. */
+	audience?: EnablementAudience | null
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
-}) {
+}
+
+/**
+ * Who a subscription event may reach in an org moved to enablements:
+ * `{ onlyEnablerId }` narrows to one person, `null` reaches nobody.
+ *
+ * - An event raised by a run (and the smoke test) reaches only the run's
+ *   person, and nobody when the run had no person. A member-sent email
+ *   reaches only the sender.
+ * - Mail from a verified non-member reaches the inbox owner: the person in a
+ *   personal org, else the org's earliest current Owner.
+ * - Platform topics reach every enablement, narrowed by the audience rule.
+ */
+async function subscriptionEnablerScope(input: {
+	env: Env
+	orgId: string
+	request: RequestSource
+}): Promise<{ onlyEnablerId: string | null } | null> {
+	const { request } = input
+	switch (request.kind) {
+		case 'inherited': {
+			const actorId = request.lineage.actor?.userId
+			return actorId ? { onlyEnablerId: actorId } : null
+		}
+		case 'inbound-email': {
+			if (request.sender.kind === 'member') {
+				return { onlyEnablerId: request.sender.actor.userId }
+			}
+			const owner = await loadEarliestLiveOwnerId(input.env.APP_DB, input.orgId)
+			return owner ? { onlyEnablerId: owner } : null
+		}
+		case 'schedule':
+		case 'webhook': {
+			const enablerId = request.enablement?.enabler.userId
+			return enablerId ? { onlyEnablerId: enablerId } : null
+		}
+		case 'platform-event':
+			return {
+				onlyEnablerId: request.enablement?.enabler.userId ?? null,
+			}
+		case 'session':
+		case 'mcp-oauth':
+		case 'cli':
+		case 'api-token':
+		case 'package-app':
+			return null
+		default: {
+			const exhaustive: never = request
+			throw new Error(`Unhandled request source: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** The request source one enablement's run of a subscription uses. */
+function subscriptionEnablementSource(input: {
+	request: RequestSource
+	sourceId: string
+	run: EnablementRun
+}): RequestSource {
+	if (input.request.kind === 'inbound-email') {
+		return { ...input.request, enablement: input.run }
+	}
+	return {
+		kind: 'platform-event',
+		sourceId: input.sourceId,
+		enablement: input.run,
+	}
+}
+
+function isSuccessfulInvocation(response: PackageInvocationResponse) {
+	return response.status >= 200 && response.status < 400
+}
+
+/**
+ * Invoke one package subscription handler. In an org moved to enablements it
+ * runs once per on enablement in scope, each as its enabler with its own
+ * idempotency key; with none, the event is dropped (the smoke test gets a
+ * 409 telling the caller to turn the subscription on for themselves).
+ * Returns the first failed run's response, else the last run's.
+ */
+export async function invokePackageSubscriptionWithToolFactories(
+	input: SubscriptionInvocationInput,
+): Promise<PackageInvocationResponse> {
 	const topic = normalizePackageSubscriptionTopic(input.topic)
 	const idempotencyKey = input.idempotencyKey.trim()
 	if (!idempotencyKey) {
@@ -490,6 +580,68 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 				'Package subscription invocations require a non-empty idempotencyKey.',
 		})
 	}
+	const synthetic = isTrustedSyntheticSubscriptionDispatch(
+		input.trustedSyntheticDispatch,
+	)
+	const orgId = input.savedPackage.userId
+	const scope = await subscriptionEnablerScope({
+		env: input.env,
+		orgId,
+		request: input.request,
+	})
+	const plan = await planEnablementRuns({
+		env: input.env,
+		orgId,
+		packageId: input.savedPackage.id,
+		trigger: {
+			kind: 'subscription',
+			instanceId: input.savedPackage.id,
+			triggerName: topic,
+		},
+		onlyEnablerId: scope?.onlyEnablerId,
+		audience: input.audience,
+	})
+	if (plan.mode === 'legacy') {
+		return await invokeSubscriptionOnce(input, input.request, idempotencyKey)
+	}
+	const runs = scope ? plan.runs : []
+	if (runs.length === 0) {
+		if (synthetic) {
+			return buildJsonErrorResponse({
+				status: 409,
+				code: 'enablement_not_on',
+				message: `You have no on enablement of subscription "${topic}" on package "${input.savedPackage.kodyId}". Turn it on for yourself with enablementEnable, then dispatch again.`,
+				idempotencyKey,
+			})
+		}
+		return {
+			status: 202,
+			body: {
+				ok: true,
+				skipped: { reason: 'no_enablement_on', enablements: plan.skipped },
+			},
+		}
+	}
+	const sourceId = input.actorTokenId ?? internalEmailSubscriptionTokenId
+	let selected: PackageInvocationResponse | null = null
+	for (const run of runs) {
+		const response = await invokeSubscriptionOnce(
+			input,
+			subscriptionEnablementSource({ request: input.request, sourceId, run }),
+			`${idempotencyKey}:enablement:${run.id}`,
+		)
+		if (!selected || isSuccessfulInvocation(selected)) selected = response
+	}
+	if (!selected) throw new Error('Expected at least one enablement run.')
+	return selected
+}
+
+async function invokeSubscriptionOnce(
+	input: SubscriptionInvocationInput,
+	request: RequestSource,
+	idempotencyKey: string,
+) {
+	const topic = normalizePackageSubscriptionTopic(input.topic)
 	const synthetic = isTrustedSyntheticSubscriptionDispatch(
 		input.trustedSyntheticDispatch,
 	)
@@ -508,7 +660,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		actor: {
 			sourceId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
 			orgId: input.savedPackage.userId,
-			request: input.request,
+			request,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),

@@ -61,7 +61,11 @@ export function toPublicCommunityProfile(
 
 export function toPublicProfilePackageItem(
 	pkg: PublicProfilePackage,
-	options?: { includeOwnerVisibility?: boolean; username?: string },
+	options?: {
+		includeOwnerVisibility?: boolean
+		username?: string
+		canOpenDetail?: boolean
+	},
 ): PublicProfilePackageItem {
 	return {
 		name: pkg.name,
@@ -90,6 +94,7 @@ export function toPublicProfilePackageItem(
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),
+		...(options?.canOpenDetail === false ? { canOpenDetail: false } : {}),
 	}
 }
 

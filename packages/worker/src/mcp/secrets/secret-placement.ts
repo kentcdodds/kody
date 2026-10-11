@@ -2,7 +2,8 @@
  * Where the fetch gateway may substitute a credential (credentials plan v4,
  * open call 15). Checked before any credential resolves:
  *
- * - every placeholder sits in a request header, never the URL, query, or body;
+ * - every placeholder sits in a request header, never the URL or query (the
+ *   body is data: it is forwarded verbatim and never scanned or substituted);
  * - the request is HTTPS;
  * - in a package that declares `kody.credentials`, each placeholder names a
  *   slot of the matching kind and sits in that slot's declared header, with the
@@ -23,13 +24,9 @@ import {
 	buildProviderSecretPlaceholder,
 	buildSecretPlaceholder,
 	parseBasicAuthSecretPlaceholders,
-	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
 	parseIntegrationTokenPlaceholders,
-	parseIntegrationTokenPlaceholdersFromFormUrlEncoded,
 	parseProviderSecretPlaceholders,
-	parseProviderSecretPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
-	parseSecretPlaceholdersFromFormUrlEncoded,
 } from './placeholders.ts'
 
 export class SecretPlacementError extends McpCallerError {
@@ -117,39 +114,27 @@ type PlacedReference =
 	| { kind: 'provider-secret'; provider: string; placeholder: string }
 
 const headerRuleHint =
-	'The fetch gateway substitutes a secret only into a request header, never the URL, query, or body.'
+	'The fetch gateway substitutes a secret only into a request header, never the URL or query, and sends the body verbatim.'
 
-function referencesIn(value: string, formEncoded = false): PlacedReference[] {
-	const secrets = formEncoded
-		? parseSecretPlaceholdersFromFormUrlEncoded(value)
-		: parseSecretPlaceholders(value)
-	const basics = formEncoded
-		? parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(value)
-		: parseBasicAuthSecretPlaceholders(value)
-	const integrations = formEncoded
-		? parseIntegrationTokenPlaceholdersFromFormUrlEncoded(value)
-		: parseIntegrationTokenPlaceholders(value)
-	const providers = formEncoded
-		? parseProviderSecretPlaceholdersFromFormUrlEncoded(value)
-		: parseProviderSecretPlaceholders(value)
+function referencesIn(value: string): PlacedReference[] {
 	return [
-		...secrets.map((secret) => ({
+		...parseSecretPlaceholders(value).map((secret) => ({
 			kind: 'secret' as const,
 			name: secret.name,
 			placeholder: buildSecretPlaceholder(secret),
 		})),
-		...basics.map((basic) => ({
+		...parseBasicAuthSecretPlaceholders(value).map((basic) => ({
 			kind: 'secret-basic' as const,
 			usernameName: basic.username.name,
 			passwordName: basic.password.name,
 			placeholder: buildBasicAuthSecretPlaceholderFromReference(basic),
 		})),
-		...integrations.map((name) => ({
+		...parseIntegrationTokenPlaceholders(value).map((name) => ({
 			kind: 'integration-token' as const,
 			name,
 			placeholder: buildIntegrationTokenPlaceholder(name),
 		})),
-		...providers.map((provider) => ({
+		...parseProviderSecretPlaceholders(value).map((provider) => ({
 			kind: 'provider-secret' as const,
 			provider: provider.provider,
 			placeholder: buildProviderSecretPlaceholder(provider),
@@ -313,24 +298,16 @@ function assertDeclaredHeaderReferences(input: {
  * Throws a {@link SecretPlacementError} naming the credential and the rule when
  * a placeholder would be substituted anywhere but an allowed header, or over
  * plain HTTP. `url` is the absolute request URL with placeholder delimiters
- * decoded; `body` is the text body the gateway would scan, if any.
+ * decoded. The body is not an input: it is never a substitution site.
  */
 export async function assertSecretPlacement(input: {
 	url: string
 	headers: Headers
-	body: { text: string; formEncoded: boolean } | null
 	/** Read only when a header holds a placeholder. */
 	loadPolicy: () => Promise<SecretPlacementPolicy>
 }) {
 	const urlReference = referencesIn(input.url)[0]
 	if (urlReference) throw refuseOutsideHeader(urlReference, 'URL')
-	if (input.body) {
-		const bodyReference = referencesIn(
-			input.body.text,
-			input.body.formEncoded,
-		)[0]
-		if (bodyReference) throw refuseOutsideHeader(bodyReference, 'body')
-	}
 	const headerReferences = Array.from(input.headers.entries()).flatMap(
 		([headerName, headerValue]) => {
 			const references = referencesIn(headerValue)

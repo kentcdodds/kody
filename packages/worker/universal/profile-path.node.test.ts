@@ -16,3 +16,17 @@ test('profile paths are /@username only, not package URLs', () => {
 	expect(isProfilePathname('/community')).toBe(false)
 	expect(isProfilePathname('/account')).toBe(false)
 })
+
+test('org package list paths use the shared handle shape', () => {
+	const max = 'a'.repeat(32)
+	const tooLong = 'a'.repeat(33)
+	expect(getProfileUsernameFromPathname(`/@${max}/-/packages`)).toBe(max)
+	expect(getProfileUsernameFromPathname(`/@${max}/-/packages/`)).toBe(max)
+	expect(getProfileUsernameFromPathname(`/@${tooLong}/-/packages`)).toBeNull()
+	expect(getProfileUsernameFromPathname('/@ab/-/packages')).toBeNull()
+	expect(getProfileUsernameFromPathname('/@abc/-/packages')).toBe('abc')
+	expect(getProfileUsernameFromPathname('/@a-b/-/packages')).toBe('a-b')
+	expect(getProfileUsernameFromPathname('/@-ab/-/packages')).toBeNull()
+	expect(getProfileUsernameFromPathname('/@ab-/-/packages')).toBeNull()
+	expect(getProfileUsernameFromPathname('/@Ab1/-/packages')).toBeNull()
+})

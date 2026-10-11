@@ -139,6 +139,7 @@ function challengeValue(webhook: PackageWebhookListItem) {
 export function renderPackageWebhookCard(input: {
 	webhook: PackageWebhookListItem
 	revealedUrl: string | null
+	signingSecret: string | null
 	isMutating: boolean
 	rotateCheck: DoubleCheck
 	disableCheck: DoubleCheck
@@ -149,6 +150,7 @@ export function renderPackageWebhookCard(input: {
 	const {
 		webhook,
 		revealedUrl,
+		signingSecret,
 		isMutating,
 		rotateCheck,
 		disableCheck,
@@ -235,6 +237,7 @@ export function renderPackageWebhookCard(input: {
 				{renderUrlSection({
 					webhook,
 					revealedUrl,
+					signingSecret,
 					isMutating,
 					onIntent,
 					onHideUrl,
@@ -328,11 +331,19 @@ export function renderPackageWebhookCard(input: {
 function renderUrlSection(input: {
 	webhook: PackageWebhookListItem
 	revealedUrl: string | null
+	signingSecret: string | null
 	isMutating: boolean
 	onIntent: (intent: WebhookIntent) => void
 	onHideUrl: () => void
 }) {
-	const { webhook, revealedUrl, isMutating, onIntent, onHideUrl } = input
+	const {
+		webhook,
+		revealedUrl,
+		signingSecret,
+		isMutating,
+		onIntent,
+		onHideUrl,
+	} = input
 	if (!webhook.minted) {
 		return (
 			<div mix={css({ display: 'grid', gap: spacing.sm })}>
@@ -364,6 +375,26 @@ function renderUrlSection(input: {
 					copyLabel="Copy webhook URL"
 					variant="pill"
 				/>
+				{signingSecret ? (
+					<div
+						mix={css({ display: 'grid', gap: spacing.xs })}
+						data-testid="package-webhook-signing-secret"
+					>
+						<CopyCard
+							label="Signing secret"
+							value={signingSecret}
+							copyLabel="Copy signing secret"
+							variant="pill"
+						/>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							This org runs webhooks as their enabler, so every delivery must
+							sign its body: send{' '}
+							<code>{'X-Kody-Signature: sha256=<hex>'}</code> with the
+							HMAC-SHA256 of the raw body using this secret. Rotating the URL
+							keeps the secret.
+						</p>
+					</div>
+				) : null}
 				<div>
 					<button
 						type="button"

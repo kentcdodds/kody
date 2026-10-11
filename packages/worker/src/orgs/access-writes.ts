@@ -15,6 +15,7 @@ import {
 import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
+import { buildMarkEnablementOrgMigratedStatement } from '#worker/enablements/repo.ts'
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
@@ -539,6 +540,9 @@ export async function createOrg(input: {
 				 WHERE EXISTS (SELECT 1 FROM orgs WHERE id = ?)`,
 			)
 			.bind(slug, orgId, now, orgId),
+		// A new team org has no triggers yet, so it starts on enablements:
+		// nothing runs until a member turns it on for themselves.
+		buildMarkEnablementOrgMigratedStatement({ db: input.db, orgId, now }),
 	])
 	if (changesOf(results[0]) === 0) {
 		throw new FreeOrgLimitError(FREE_ORG_LIMIT_MESSAGE)

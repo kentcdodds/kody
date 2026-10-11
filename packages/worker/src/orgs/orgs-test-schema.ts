@@ -152,6 +152,42 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS enablement_org_migrations (
+				org_id TEXT PRIMARY KEY,
+				state TEXT NOT NULL,
+				notice_sent_at TEXT,
+				migrated_at TEXT,
+				notice_plan_json TEXT,
+				updated_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS enablements (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				package_id TEXT,
+				trigger_kind TEXT NOT NULL,
+				trigger_name TEXT NOT NULL,
+				instance_id TEXT NOT NULL,
+				enabler_user_id TEXT NOT NULL,
+				state TEXT NOT NULL DEFAULT 'on',
+				paused_reason TEXT,
+				paused_permission TEXT,
+				paused_resource_type TEXT,
+				paused_resource_id TEXT,
+				paused_at TEXT,
+				credential_mapping_json TEXT,
+				origin TEXT NOT NULL,
+				enabled_at TEXT NOT NULL,
+				disabled_at TEXT,
+				updated_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS access_cache (
 				org_id TEXT NOT NULL,
 				user_id TEXT NOT NULL,

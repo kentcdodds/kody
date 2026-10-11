@@ -66,12 +66,13 @@ export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_WRITE_TOKEN"
 
 Use `CI=1` on cached test commands (the repo scripts already do; typecheck and
 build hashes ignore `CI`). Leave the variables unset to run without remote
-cache. Those scripts run through `tools/run-nx.ts` so a mid-run `/v1/cache`
-transport flake cannot fail `test:push` or validate after the tasks already
-succeeded. Each cached script ends with an `Nx remote cache ...` line that says
-whether the token reads and writes next to the hit count; `READ-ONLY` means the
-environment holds the read token and nothing is uploaded for CI. See
-[`packages/nx-cache/readme.md`](../../packages/nx-cache/readme.md).
+cache. Those scripts run through `tools/run-nx.ts` so a rejected remote-cache
+token or a mid-run `/v1/cache` transport flake cannot fail `test:push` or
+validate after the tasks already succeeded. A token the probe cannot read is
+unset before Nx starts. Each cached script ends with an `Nx remote cache ...`
+line that says whether the token reads and writes next to the hit count;
+`READ-ONLY` means the environment holds the read token and nothing is uploaded
+for CI. See [`packages/nx-cache/readme.md`](../../packages/nx-cache/readme.md).
 
 ## Git hooks
 
@@ -176,6 +177,23 @@ machine has at most 4 cores or under 24GB of RAM. It does not drop checks and it
 does not change the GitHub Actions jobs. Larger machines still start every leg
 together.
 
+## Focused Vitest runs
+
+Run one file from the repo root. Pass `--project node-unit` for `*.node.test.ts`
+or `--project workers-unit` for `*.workers.test.ts`, plus a repo-relative path:
+
+```sh
+npx vitest run --project node-unit packages/worker/universal/compute-overage.node.test.ts
+npx vitest run --project workers-unit packages/worker/src/billing/credit-wallet.workers.test.ts
+```
+
+A command started in `packages/worker` exits with
+`Projects definition references a non-existing file or a directory` and a path
+ending in `vitest.node.config.ts` under that package. The configs live at the
+repo root, and the Nx targets run from there. Filename suffixes, `mcp-e2e`, and
+the full error are in
+[Running one file](./testing-principles.md#running-one-file).
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |
@@ -185,6 +203,7 @@ together.
 | Migrate local D1   | `npm run migrate:local`                                                                                                                                                     |
 | Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below)                                                                                                             |
 | Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)                                                                                                               |
+| One Vitest file    | Repo root: `npx vitest run --project node-unit` or `--project workers-unit` plus a repo-relative path ([Focused Vitest runs](#focused-vitest-runs))                         |
 | Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)                                                                                                               |
 | App verification   | `npm run control-kody -- doctor` then `login` / `request` (`--dump` / `--contains` for HTML) / `map --check` / `preview` / `health` (see [control-kody](./control-kody.md)) |
 

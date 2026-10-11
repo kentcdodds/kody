@@ -30,10 +30,8 @@
  * invocation and this script can be deleted entirely.
  */
 
-import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
+import { executeWranglerD1, runWranglerD1 } from '../wrangler-d1-execute.ts'
 
 export const squashedInitMigrationName = '0001-squashed-init.sql'
 
@@ -311,62 +309,20 @@ export function parseArgs(argv: ReadonlyArray<string>): CliOptions {
 	return options
 }
 
-function runWranglerD1(
-	options: CliOptions,
-	d1Arguments: ReadonlyArray<string>,
-): { status: number | null; stdout: string; stderr: string } {
-	const nodeArguments: Array<string> = []
-	const envFilePath = path.join('packages', 'worker', '.env')
-	if (existsSync(envFilePath)) {
-		nodeArguments.push(`--env-file=${envFilePath}`)
-	}
-	nodeArguments.push('./wrangler-env.ts', 'd1', ...d1Arguments, options.mode)
-	if (options.config) {
-		nodeArguments.push('--config', options.config)
-	}
-	if (options.persistTo) {
-		nodeArguments.push('--persist-to', options.persistTo)
-	}
-	const result = spawnSync(process.execPath, nodeArguments, {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-		// Wrangler emits --json query results through its logger; ambient
-		// WRANGLER_LOG levels above "log" (for example the vitest workers
-		// config sets "warn") silence the JSON on stdout entirely.
-		env: { ...process.env, WRANGLER_LOG: 'log' },
-		maxBuffer: 16 * 1024 * 1024,
-	})
+function d1Target(options: CliOptions) {
 	return {
-		status: result.status,
-		stdout: result.stdout ?? '',
-		stderr: result.stderr ?? '',
+		mode: options.mode,
+		...(options.config ? { config: options.config } : {}),
+		...(options.persistTo ? { persistTo: options.persistTo } : {}),
 	}
 }
 
-function queryRows(
-	options: CliOptions,
-	sql: string,
-): Array<{ name?: unknown }> {
-	const result = runWranglerD1(options, [
-		'execute',
-		options.binding,
-		'--json',
-		'--command',
+function queryRows(options: CliOptions, sql: string) {
+	return executeWranglerD1({
+		...d1Target(options),
+		binding: options.binding,
 		sql,
-	])
-	if (result.status !== 0) {
-		// Wrangler writes --json query errors to its log file; stdio can be
-		// empty in non-interactive contexts, so surface whatever we have.
-		throw new Error(
-			`wrangler d1 execute failed (exit ${String(result.status)}) for: ${sql}\n${result.stdout}\n${result.stderr}`,
-		)
-	}
-	const parsed: unknown = JSON.parse(result.stdout)
-	if (!Array.isArray(parsed) || parsed.length === 0) {
-		throw new Error('Unexpected wrangler d1 execute --json output shape.')
-	}
-	const first = parsed[0] as { results?: Array<{ name?: unknown }> }
-	return first.results ?? []
+	})
 }
 
 function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
@@ -388,22 +344,21 @@ function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
 }
 
 function resetBookkeeping(options: CliOptions): void {
-	const result = runWranglerD1(options, [
-		'execute',
-		options.binding,
-		'--json',
-		'--command',
-		`DELETE FROM d1_migrations; INSERT INTO d1_migrations (name) VALUES ('${squashedInitMigrationName}');`,
-	])
-	if (result.status !== 0) {
-		process.stderr.write(result.stderr)
-		throw new Error(`Bookkeeping reset failed (exit ${String(result.status)}).`)
+	try {
+		executeWranglerD1({
+			...d1Target(options),
+			binding: options.binding,
+			sql: `DELETE FROM d1_migrations; INSERT INTO d1_migrations (name) VALUES ('${squashedInitMigrationName}');`,
+		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		throw new Error(`Bookkeeping reset failed: ${message}`)
 	}
 }
 
 function printTimeTravelAnchor(options: CliOptions): void {
 	if (options.mode !== '--remote') return
-	const result = runWranglerD1(options, [
+	const result = runWranglerD1(d1Target(options), [
 		'time-travel',
 		'info',
 		options.binding,
