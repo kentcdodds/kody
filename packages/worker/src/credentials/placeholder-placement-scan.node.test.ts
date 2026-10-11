@@ -175,3 +175,40 @@ export async function cast() {
 		{ path: 'src/index.ts', line: 22, slot: 'moduleToken', location: 'body' },
 	])
 })
+
+test('request bindings resolve to the lexical declaration, including loops, outer scopes, and sibling blocks', () => {
+	const findings = findSecretPlaceholdersOutsideHeaders({
+		'src/index.ts': `const TOKEN = '{{secret:loopToken}}'
+const init = {
+	method: 'POST',
+	body: JSON.stringify({ id: '{{secret:outerOptions}}' }),
+}
+const payload = JSON.stringify({ id: '{{secret:outerBody}}' })
+export async function main(ids: Array<string>) {
+	for (const id of ids) {
+		await fetch('https://api.example.com/' + id, { method: 'POST', body: TOKEN })
+	}
+	for (let index = 0; index < ids.length; index += 1) {
+		await fetch('https://api.example.com/x', { method: 'POST', body: TOKEN })
+	}
+	await fetch('https://api.example.com/a', init)
+	await fetch('https://api.example.com/b', { method: 'POST', body: payload })
+}
+export function siblings(flag: boolean) {
+	if (flag) {
+		const note = JSON.stringify({ text: 'Configure {{secret:siblingHelp}}' })
+		return new Response(note)
+	} else {
+		const note = 'unused'
+		return fetch('https://api.example.com/c', { method: 'POST', body: note })
+	}
+}
+`,
+	})
+	expect(findings).toEqual([
+		{ path: 'src/index.ts', line: 4, slot: 'outerOptions', location: 'body' },
+		{ path: 'src/index.ts', line: 6, slot: 'outerBody', location: 'body' },
+		{ path: 'src/index.ts', line: 9, slot: 'loopToken', location: 'body' },
+		{ path: 'src/index.ts', line: 12, slot: 'loopToken', location: 'body' },
+	])
+})

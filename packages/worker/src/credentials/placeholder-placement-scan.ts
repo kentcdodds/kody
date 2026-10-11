@@ -354,14 +354,6 @@ function isRequestCall(node: AstNode | undefined) {
 	return node.type === 'NewExpression' && getNodeName(node.callee) === 'Request'
 }
 
-function declaredName(node: AstNode | undefined, init: AstNode) {
-	return node?.type === 'VariableDeclarator' &&
-		node.init === init &&
-		node.id?.type === 'Identifier'
-		? getNodeName(node.id)
-		: null
-}
-
 const functionTypes = new Set([
 	'FunctionDeclaration',
 	'FunctionExpression',
@@ -371,47 +363,161 @@ const functionTypes = new Set([
 	'ClassPrivateMethod',
 ])
 
-/** The nearest enclosing function, or the module root. */
-function scopeOf(ancestors: ReadonlyArray<AstNode>) {
-	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-		if (functionTypes.has(ancestors[index]!.type)) return ancestors[index]!
+function patternNames(pattern: AstNode | undefined, names: Set<string>) {
+	if (!pattern) return
+	switch (pattern.type) {
+		case 'Identifier': {
+			const name = getNodeName(pattern)
+			if (name) names.add(name)
+			return
+		}
+		case 'AssignmentPattern':
+			patternNames(pattern.left, names)
+			return
+		case 'RestElement':
+			patternNames(pattern.argument as AstNode | undefined, names)
+			return
+		case 'ObjectPattern':
+			for (const property of pattern.properties ?? []) {
+				patternNames(
+					property.type === 'RestElement'
+						? property
+						: (propertyValueNode(property) ?? undefined),
+					names,
+				)
+			}
+			return
+		case 'ArrayPattern':
+			for (const element of (pattern.elements ?? []) as Array<AstNode | null>) {
+				patternNames(element ?? undefined, names)
+			}
+			return
+		default:
+			return
 	}
-	return ancestors[0] ?? null
+}
+
+function asNode(value: unknown): AstNode | null {
+	return value && typeof value === 'object' && 'type' in value
+		? (value as AstNode)
+		: null
+}
+
+/** Statements a scope node declares directly (its own body, or a loop head). */
+function scopeStatements(node: AstNode): Array<AstNode> {
+	const body = (node.type === 'File' ? node.program : node) as {
+		body?: unknown
+	}
+	const statements = Array.isArray(body.body)
+		? (body.body as Array<AstNode>)
+		: []
+	if (
+		node.type === 'ForStatement' ||
+		node.type === 'ForOfStatement' ||
+		node.type === 'ForInStatement'
+	) {
+		return [asNode(node.init), asNode(node.left)].filter(
+			(part): part is AstNode => part != null,
+		)
+	}
+	if (
+		node.type === 'BlockStatement' ||
+		node.type === 'Program' ||
+		node.type === 'File' ||
+		node.type === 'StaticBlock'
+	) {
+		return statements
+	}
+	return []
+}
+
+type Resolution =
+	/** A `const name = init` declarator; `root` when it is module-level. */
+	| { kind: 'declarator'; declarator: AstNode; root: boolean }
+	/** A parameter, destructured binding, function, class, or catch param. */
+	| { kind: 'other'; root: boolean }
+
+/**
+ * The innermost declaration of `name` visible at the end of `ancestors`, or
+ * null when nothing in the module declares it (an import or a global).
+ */
+function resolveName(
+	name: string,
+	ancestors: ReadonlyArray<AstNode>,
+): Resolution | null {
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const node = ancestors[index]!
+		const root = index <= 1 && scopeStatements(node).length > 0
+		if (functionTypes.has(node.type)) {
+			const names = new Set<string>()
+			for (const param of (node.params ?? []) as Array<AstNode>) {
+				patternNames(param, names)
+			}
+			if (names.has(name)) return { kind: 'other', root: false }
+			continue
+		}
+		if (node.type === 'CatchClause') {
+			const names = new Set<string>()
+			patternNames(asNode(node.param) ?? undefined, names)
+			if (names.has(name)) return { kind: 'other', root: false }
+			continue
+		}
+		for (const raw of scopeStatements(node)) {
+			const statement =
+				raw.type === 'ExportNamedDeclaration' && raw.declaration
+					? raw.declaration
+					: raw
+			if (statement.type === 'VariableDeclaration') {
+				for (const declarator of statement.declarations ?? []) {
+					if (
+						declarator.id?.type === 'Identifier' &&
+						getNodeName(declarator.id) === name
+					) {
+						return statement.kind === 'const'
+							? { kind: 'declarator', declarator, root }
+							: { kind: 'other', root }
+					}
+					const names = new Set<string>()
+					patternNames(declarator.id, names)
+					if (names.has(name)) return { kind: 'other', root }
+				}
+			} else if (
+				(statement.type === 'FunctionDeclaration' ||
+					statement.type === 'ClassDeclaration') &&
+				getNodeName(statement.id) === name
+			) {
+				return { kind: 'other', root }
+			}
+		}
+	}
+	return null
 }
 
 /**
- * Names bound to request data, per enclosing function: `options` hold the
+ * `const` declarators a module binds to request data: `options` hold the
  * options object passed to `fetch` or `new Request` (`fetch(url, init)`),
  * and `bodies` hold a value used as that object's `body` (`body: payload`).
- * A name only counts in the function that uses it, so a same-named variable
- * elsewhere in the module is not request data.
+ * Each use is resolved lexically, so a same-named variable in another scope
+ * is not request data.
  */
 export type RequestBindings = {
-	options: ReadonlyMap<AstNode | null, ReadonlySet<string>>
-	bodies: ReadonlyMap<AstNode | null, ReadonlySet<string>>
+	options: ReadonlySet<AstNode>
+	bodies: ReadonlySet<AstNode>
 }
 
 const noRequestBindings: RequestBindings = {
-	options: new Map(),
-	bodies: new Map(),
+	options: new Set(),
+	bodies: new Set(),
 }
 
-function addBinding(
-	map: Map<AstNode | null, Set<string>>,
-	scope: AstNode | null,
-	name: string,
+function resolvedDeclarator(
+	identifier: AstNode | undefined,
+	ancestors: ReadonlyArray<AstNode>,
 ) {
-	const names = map.get(scope) ?? new Set<string>()
-	names.add(name)
-	map.set(scope, names)
-}
-
-function hasBinding(
-	map: ReadonlyMap<AstNode | null, ReadonlySet<string>>,
-	scope: AstNode | null,
-	name: string | null,
-) {
-	return name != null && (map.get(scope)?.has(name) ?? false)
+	if (identifier?.type !== 'Identifier') return null
+	const name = getNodeName(identifier)
+	const resolution = name ? resolveName(name, ancestors) : null
+	return resolution?.kind === 'declarator' ? resolution.declarator : null
 }
 
 /**
@@ -437,112 +543,50 @@ function isRequestOptionsAt(
 	const parent = ancestors[parentIndex]
 	if (!parent) return false
 	if (isRequestCall(parent) && parent.arguments?.[1] === child) return true
-	return hasBinding(
-		bindings.options,
-		scopeOf(ancestors.slice(0, parentIndex)),
-		declaredName(parent, child),
+	return (
+		parent.type === 'VariableDeclarator' &&
+		parent.init === child &&
+		bindings.options.has(parent)
 	)
 }
 
 export function collectRequestBindings(parsed: AstNode): RequestBindings {
-	const options = new Map<AstNode | null, Set<string>>()
+	const options = new Set<AstNode>()
 	walkAst(parsed, (node, ancestors) => {
 		if (!isRequestCall(node)) return
-		const init = unwrapExpression(node.arguments?.[1])
-		const name = init?.type === 'Identifier' ? getNodeName(init) : null
-		if (name) addBinding(options, scopeOf(ancestors), name)
+		const declarator = resolvedDeclarator(
+			unwrapExpression(node.arguments?.[1]),
+			[...ancestors, node],
+		)
+		if (declarator) options.add(declarator)
 	})
-	const bodies = new Map<AstNode | null, Set<string>>()
+	const bodies = new Set<AstNode>()
 	const partial = { options, bodies }
 	walkAst(parsed, (node, ancestors) => {
 		if (
 			node.type !== 'ObjectProperty' ||
 			node.computed === true ||
-			getNodeName(node.key) !== 'body'
+			getNodeName(node.key) !== 'body' ||
+			!isRequestOptionsAt(ancestors, ancestors.length - 1, partial)
 		) {
 			return
 		}
-		const value = unwrapExpression(propertyValueNode(node) ?? undefined)
-		const name = value?.type === 'Identifier' ? getNodeName(value) : null
-		if (name && isRequestOptionsAt(ancestors, ancestors.length - 1, partial)) {
-			addBinding(bodies, scopeOf(ancestors), name)
-		}
+		const declarator = resolvedDeclarator(
+			unwrapExpression(propertyValueNode(node) ?? undefined),
+			[...ancestors, node],
+		)
+		if (declarator) bodies.add(declarator)
 	})
 	return { options, bodies }
 }
 
-function patternNames(pattern: AstNode | undefined, names: Set<string>) {
-	if (!pattern) return
-	switch (pattern.type) {
-		case 'Identifier': {
-			const name = getNodeName(pattern)
-			if (name) names.add(name)
-			return
-		}
-		case 'AssignmentPattern':
-			patternNames(pattern.left as AstNode | undefined, names)
-			return
-		case 'RestElement':
-			patternNames(pattern.argument as AstNode | undefined, names)
-			return
-		case 'ObjectPattern':
-			for (const property of pattern.properties ?? []) {
-				patternNames(
-					property.type === 'RestElement'
-						? property
-						: (propertyValueNode(property) ?? undefined),
-					names,
-				)
-			}
-			return
-		case 'ArrayPattern':
-			for (const element of (pattern.elements ?? []) as Array<AstNode | null>) {
-				patternNames(element ?? undefined, names)
-			}
-			return
-		default:
-			return
-	}
-}
-
 /**
- * Whether `name` is redeclared between the module root and this point (a
- * parameter, or a local in an enclosing block), so it no longer refers to the
- * module constant.
+ * Whether a read of `name` here refers to something other than the
+ * module-level constant of that name (a parameter or a local that shadows it).
  */
 function isShadowed(name: string, ancestors: ReadonlyArray<AstNode>) {
-	for (let index = ancestors.length - 1; index >= 1; index -= 1) {
-		const node = ancestors[index]!
-		const names = new Set<string>()
-		if (functionTypes.has(node.type)) {
-			for (const param of (node.params ?? []) as Array<AstNode>) {
-				patternNames(param, names)
-			}
-		} else if (node.type === 'CatchClause') {
-			patternNames(node.param as AstNode | undefined, names)
-		} else if (
-			node.type === 'BlockStatement' ||
-			node.type === 'ForStatement' ||
-			node.type === 'ForOfStatement' ||
-			node.type === 'ForInStatement'
-		) {
-			const statements = [
-				...((node.body as Array<AstNode> | undefined) ?? []),
-				...[node.init, node.left].filter(
-					(part): part is AstNode =>
-						part != null && typeof part === 'object' && 'type' in part,
-				),
-			]
-			for (const statement of Array.isArray(statements) ? statements : []) {
-				if (statement.type !== 'VariableDeclaration') continue
-				for (const declarator of statement.declarations ?? []) {
-					patternNames(declarator.id, names)
-				}
-			}
-		}
-		if (names.has(name)) return true
-	}
-	return false
+	const resolution = resolveName(name, ancestors)
+	return resolution != null && !resolution.root
 }
 
 function isJsonStringifyCall(node: AstNode) {
@@ -585,11 +629,9 @@ export function literalLocationOutsideHeader(
 			return 'body'
 		}
 		if (
-			hasBinding(
-				bindings.bodies,
-				scopeOf(ancestors.slice(0, index)),
-				declaredName(parent, child),
-			)
+			parent.type === 'VariableDeclarator' &&
+			parent.init === child &&
+			bindings.bodies.has(parent)
 		) {
 			return 'body'
 		}
@@ -864,7 +906,7 @@ function placeholderSlot(placeholder: Placeholder) {
  * body) is exempt; when the request options are not literal, a module that
  * mentions that header is exempt. Unparseable modules are skipped: the bundle
  * check reports them, and a text guess here would block publish on a false
- * positive.
+ * positive. A module the scan itself fails on is skipped the same way.
  */
 export function findSecretPlaceholdersOutsideHeaders(
 	files: Record<string, string>,
@@ -883,24 +925,23 @@ export function findSecretPlaceholdersOutsideHeaders(
 	const moduleConstants = createModuleConstantsReader(parsedModules)
 	const findings: Array<MisplacedSecretPlaceholder> = []
 	const seen = new Set<string>()
-	for (const [path, parsed] of parsedModules) {
-		if (!parsed) continue
+	const scanModule = (path: string, parsed: AstNode) => {
 		const constants = moduleConstants(path)
 		const placeholderConstants = new Map(
 			[...constants].filter(([, value]) => findPlaceholders(value).length > 0),
 		)
 		if (!files[path]?.includes('{{') && placeholderConstants.size === 0) {
-			continue
+			return
 		}
 		const requestBindings = collectRequestBindings(parsed)
 		const bindings: RequestBindings = {
 			options: requestBindings.options,
 			// A string constant is reported where it is read, not where it is declared.
-			bodies: new Map(
-				[...requestBindings.bodies].map(([scope, names]) => [
-					scope,
-					new Set([...names].filter((name) => !placeholderConstants.has(name))),
-				]),
+			bodies: new Set(
+				[...requestBindings.bodies].filter(
+					(declarator) =>
+						resolveStringExpression(declarator.init, constants) == null,
+				),
 			),
 		}
 		const moduleMentionsOptOut = secretResolutionOptOutPattern.test(
@@ -939,6 +980,16 @@ export function findSecretPlaceholdersOutsideHeaders(
 					report(node, value, ancestors)
 				}
 			})
+		}
+	}
+	for (const [path, parsed] of parsedModules) {
+		if (!parsed) continue
+		try {
+			scanModule(path, parsed)
+		} catch {
+			// The run-time refusal still catches what a scanner bug misses, so a
+			// bug here must not block publish.
+			console.warn('placeholder-placement-scan-failed', { path })
 		}
 	}
 	return findings.sort(
