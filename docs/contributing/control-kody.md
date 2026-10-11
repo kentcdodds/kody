@@ -121,9 +121,9 @@ Override with `--email` / `--password`. `--cookie-file` defaults to
 `.tmp/control-kody-cookie` and stores the origin and email that created the
 session, so a leftover local cookie is not sent to a preview and `--email` does
 not reuse another user's cookie for the same origin. MCP commands also store the
-`--org` slug beside the OAuth token; a different org does not reuse it.
-`preview` uses [`preview-manual-test`](./preview-manual-testing.md) and its own
-seed.
+`--org` slug beside the OAuth token; a different org remints the token and keeps
+the login cookie. `preview` uses
+[`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview through MCP
 `packageGetGitRemote({ create: true, kody_id })`. Pass the package name leaf or
@@ -152,7 +152,8 @@ refuses to approve until an org is chosen. Pass `--org <slug>` on `execute`,
 `search`, and `package-create` (the slug from `POST /account/organizations/new`,
 with or without a leading `@`). The CLI sends that slug as `?org=` on authorize.
 The session file records the org next to the bearer token. A later call with a
-different `--org`, or with `--org` omitted, does not reuse that token.
+different `--org`, or with `--org` omitted, remints that token and keeps the
+login cookie.
 
 ## Daily garden
 

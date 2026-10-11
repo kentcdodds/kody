@@ -112,7 +112,8 @@ before opening a Feature Map PR.
 - After the seed user creates a team org, pass `--org <slug>` on `execute`,
   `search`, and `package-create`. OAuth otherwise fails with "Choose an
   organization before approving this connection." The cached bearer token is
-  keyed by origin, email, and org, so switching `--org` mints a new token.
+  keyed by origin, email, and org, so switching `--org` mints a new token and
+  keeps the login cookie.
 - `packageSave`, publish, and `packageGetGitRemote` / `package-create` need the
   remote `ARTIFACTS` binding. Use a PR preview origin, not `npm run dev`. See
   [Local limitations](../../../docs/contributing/cloud-agents.md#local-limitations).

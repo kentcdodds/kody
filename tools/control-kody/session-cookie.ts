@@ -161,9 +161,10 @@ function requestedOrgSlug(orgSlug: string | null) {
 }
 
 /**
- * Auth to pass to `connectAppMcpClient`. A different org (or dropping `--org`)
- * is a cache miss: no cookie and no bearer token, so the next call remints.
- * `orgSlug` is still returned so the new token is bound to the requested org.
+ * Auth to pass to `connectAppMcpClient`. The login cookie is keyed by origin
+ * and email, so an org switch keeps it. The bearer token is keyed by org:
+ * a different `--org`, or dropping `--org`, omits `oauth` and the next call
+ * remints. `orgSlug` is still returned so the new token binds to that org.
  */
 export function mcpAuthForOrg(
 	fileText: string | null,
@@ -171,13 +172,12 @@ export function mcpAuthForOrg(
 	email: string,
 	orgSlug: string | null,
 ): McpAuthCache {
-	const session = fileText
-		? sessionForOrigin(fileText, origin, email, orgSlug)
-		: null
+	const session = fileText ? sessionForOrigin(fileText, origin, email) : null
 	const slug = orgSlug ? normalizeCookieOrg(orgSlug) : null
+	const oauth = session?.org === slug ? session.oauth : null
 	return {
 		...(session?.cookieHeader ? { cookieHeader: session.cookieHeader } : {}),
-		...(session?.oauth ? { oauth: session.oauth } : {}),
+		...(oauth ? { oauth } : {}),
 		...(slug ? { orgSlug: slug } : {}),
 	}
 }

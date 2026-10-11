@@ -122,14 +122,18 @@ test('OAuth cache is keyed by org so a different --org does not reuse the token'
 		orgSlug: 'x-org',
 	})
 	expect(mcpAuthForOrg(team, origin, email, 'other-org')).toEqual({
+		cookieHeader: 'kody_session=preview',
 		orgSlug: 'other-org',
 	})
-	expect(mcpAuthForOrg(team, origin, email, null)).toEqual({})
+	expect(mcpAuthForOrg(team, origin, email, null)).toEqual({
+		cookieHeader: 'kody_session=preview',
+	})
 	expect(mcpAuthForOrg(personal, origin, email, null)).toEqual({
 		cookieHeader: 'kody_session=preview',
 		oauth: { ...oauth, accessToken: 'token-personal' },
 	})
 	expect(mcpAuthForOrg(personal, origin, email, '@X-Org')).toEqual({
+		cookieHeader: 'kody_session=preview',
 		orgSlug: 'x-org',
 	})
 	expect(mcpAuthForOrg(null, origin, email, 'x-org')).toEqual({
