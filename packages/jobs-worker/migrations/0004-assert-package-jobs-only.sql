@@ -10,7 +10,9 @@ CREATE TABLE __migration_assertions (
 INSERT INTO __migration_assertions (message)
 SELECT 'non-package job rows remain; retire them before 0004.'
 WHERE EXISTS (
-	SELECT 1 FROM jobs WHERE id NOT LIKE 'package-job:%'
+	SELECT 1 FROM jobs
+	WHERE id NOT LIKE 'package-job:_%:%'
+		OR id LIKE 'package-job::%'
 );
 
 DROP TABLE __migration_assertions;

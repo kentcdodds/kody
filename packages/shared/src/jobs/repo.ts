@@ -1,5 +1,6 @@
 import { parseJsonWithFallback } from '../json-parsing.ts'
 import { type OwnerId } from '../owner-person-ids.ts'
+import { requirePackageIdFromJobId } from './package-job-id.ts'
 import { createJobStorageId } from './storage-id.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
@@ -188,6 +189,7 @@ export async function insertJobRow(input: {
 	job: JobRecord
 	callerContextJson: string
 }) {
+	requirePackageIdFromJobId(input.job.id)
 	const serialized = serializeJob(input.job)
 	await input.db
 		.prepare(

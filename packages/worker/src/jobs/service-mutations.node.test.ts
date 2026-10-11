@@ -227,7 +227,7 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	expect(updated.enabled).toBe(false)
 })
 
-test('updateJob fails loudly on a job row that is not a package job', async () => {
+test('insertJob refuses a job id that is not a package job', async () => {
 	const { env, callerContext, userId } = setup()
 	const created = await insertJob(env, callerContext, 'not-a-package-job')
 	const ownerId = personalOrgId(userId)
@@ -236,23 +236,21 @@ test('updateJob fails loudly on a job row that is not a package job', async () =
 		jobId: created.id,
 	})
 	if (!packageRow) throw new Error('Expected the inserted job row.')
-	await jobsData(env).insertJob({
-		userId: ownerId,
-		job: {
-			...packageRow.record,
-			id: 'legacy-job-id',
-			storageId: 'job:legacy-job-id',
-		},
-		callerContextJson: JSON.stringify(callerContext),
-	})
 
 	await expect(
-		updateJob({
-			env,
-			callerContext,
-			body: { id: 'legacy-job-id', enabled: false },
+		jobsData(env).insertJob({
+			userId: ownerId,
+			job: {
+				...packageRow.record,
+				id: 'legacy-job-id',
+				storageId: 'job:legacy-job-id',
+			},
+			callerContextJson: JSON.stringify(callerContext),
 		}),
 	).rejects.toThrow('Job "legacy-job-id" is not a package job (ADR 0032).')
+	await expect(
+		jobsData(env).getJobById({ userId: ownerId, jobId: 'legacy-job-id' }),
+	).resolves.toBeNull()
 })
 
 test('updateJob updates package-owned job metadata without force-publishing the package source', async () => {
