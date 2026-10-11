@@ -119,6 +119,8 @@ export async function authorizeLocalExecuteOwnedPackageId(input: {
 export async function createCapabilityProxyPackageHostTools(input: {
 	env: Env
 	callerContext: McpCallerContext
+	/** Errors from the call redact the raw values `packageSecrets.get` returns. */
+	trackSecretValue: (value: string) => void
 }): Promise<AdditionalKodyTools> {
 	const orgUserId = ownerIdFromCaller(input.callerContext)
 	if (!orgUserId) return {}
@@ -164,6 +166,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 	const resolveClaimedMount = (inputMount: {
 		packageId: string
 		alias: string
+		access: 'raw' | 'presence'
 	}) =>
 		resolveCredential({
 			env: input.env,
@@ -174,6 +177,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 			credential: {
 				use: 'package-secret-mount',
 				alias: inputMount.alias,
+				access: inputMount.access,
 				callerContext: input.callerContext,
 			},
 		})
@@ -184,12 +188,16 @@ export async function createCapabilityProxyPackageHostTools(input: {
 			const authorized = await resolveSecretAuthority(
 				requestedPackageId ?? null,
 			)
-			return (
-				await resolveClaimedMount({
-					packageId: authorized.packageId,
-					alias,
-				})
-			).ref
+			const { value } = await resolveClaimedMount({
+				packageId: authorized.packageId,
+				alias,
+				access: 'raw',
+			})
+			if (value === null) {
+				throw new Error(`packageSecrets.get("${alias}") resolved no value.`)
+			}
+			input.trackSecretValue(value)
+			return value
 		},
 		has: async (alias, requestedPackageId) => {
 			const authorized = await resolveSecretAuthority(
@@ -199,6 +207,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				await resolveClaimedMount({
 					packageId: authorized.packageId,
 					alias,
+					access: 'presence',
 				})
 				return true
 			} catch (error) {

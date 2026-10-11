@@ -277,6 +277,8 @@ function createPackageSecretTools(input: {
 	callerContext: McpCallerContext
 	runPackageId: string | null
 	grantedPackageIds: ReadonlySet<string>
+	/** Run output redacts every raw value `get` hands to package code. */
+	trackSecretValue: (value: string) => void
 }): PackageSecretToolOptions {
 	const resolveAuthorityPackageId = (requestedPackageId?: string | null) => {
 		// Stamp identity only. The executor peels the hidden capability field
@@ -299,7 +301,11 @@ function createPackageSecretTools(input: {
 		}
 		return authorityPackageId
 	}
-	const resolveMount = (alias: string, requestedPackageId?: string | null) =>
+	const resolveMount = (
+		alias: string,
+		access: 'raw' | 'presence',
+		requestedPackageId?: string | null,
+	) =>
 		resolveCredential({
 			env: input.env,
 			orgId: ownerIdFromCaller(input.callerContext),
@@ -311,16 +317,23 @@ function createPackageSecretTools(input: {
 			credential: {
 				use: 'package-secret-mount',
 				alias,
+				access,
 				callerContext: input.callerContext,
 			},
 		})
 	return {
 		runPackageId: input.runPackageId,
-		get: async (alias: string, requestedPackageId?: string | null) =>
-			(await resolveMount(alias, requestedPackageId)).ref,
+		get: async (alias: string, requestedPackageId?: string | null) => {
+			const { value } = await resolveMount(alias, 'raw', requestedPackageId)
+			if (value === null) {
+				throw new Error(`packageSecrets.get("${alias}") resolved no value.`)
+			}
+			input.trackSecretValue(value)
+			return value
+		},
 		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
-				await resolveMount(alias, requestedPackageId)
+				await resolveMount(alias, 'presence', requestedPackageId)
 				return true
 			} catch (error) {
 				if (isPackageSecretAvailabilityError(error)) {
@@ -1308,6 +1321,7 @@ export async function runBundledModuleWithRegistry(
 					callerContext,
 					runPackageId: options?.packageContext?.packageId ?? null,
 					grantedPackageIds: grantedPackageStorageIds,
+					trackSecretValue: (value) => secretRedactor.track(value),
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {

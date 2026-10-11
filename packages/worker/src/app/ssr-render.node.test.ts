@@ -1361,6 +1361,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 						requestedPackageId: null,
 						currentAllowedHosts: ['oauth2.googleapis.com'],
 						currentAllowedPackages: [],
+						packageCredentials: [],
 					},
 					approvalError: null,
 				},
@@ -1373,6 +1374,63 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		'gmail.googleapis.com',
 		'data-testid="secret-approval-advanced"',
 	])
+
+	const signingSecret = { ...secret, id: 'user:signingKey', name: 'signingKey' }
+	const packageApproval = await render(
+		env,
+		'/@account-user/-/secrets/approve?package_id=pkg-signer&names=googleAccessToken,signingKey',
+		{
+			cookie,
+			loaderData: {
+				accountSecrets: {
+					ok: true,
+					email: 'user@example.com',
+					packageOptions: [],
+					packages: [
+						{
+							id: 'pkg-signer',
+							kodyId: 'signer',
+							name: '@account-user/signer',
+						},
+					],
+					secrets: [secret, signingSecret],
+					selectedSecret: null,
+					approval: {
+						name: 'googleAccessToken',
+						names: ['googleAccessToken', 'signingKey'],
+						scope: 'user',
+						requestedHost: '',
+						requestedHosts: [],
+						rejectedHosts: [],
+						requestedPackageId: 'pkg-signer',
+						currentAllowedHosts: [],
+						currentAllowedPackages: [],
+						packageCredentials: [
+							{
+								name: 'googleAccessToken',
+								allowedHosts: ['oauth2.googleapis.com'],
+								raw: false,
+							},
+							{ name: 'signingKey', allowedHosts: [], raw: true },
+						],
+					},
+					approvalError: null,
+				},
+			},
+		},
+	)
+	expect(packageApproval.response.status).toBe(200)
+	expectHtml(packageApproval.html, [
+		'data-testid="package-credential-consent"',
+		'Sent only to oauth2.googleapis.com.',
+		'Header placeholders resolve for no host until you allow one on this secret.',
+		'data-testid="package-credential-raw"',
+		'and send it to any host, not just the',
+	])
+	expect(packageApproval.html).not.toContain('Not sent to any host')
+	expect(
+		packageApproval.html.match(/data-testid="package-credential-raw"/g),
+	).toHaveLength(1)
 })
 
 test('renderAppPage renders the blog index and posts with placeholder or reviewed artwork', async () => {

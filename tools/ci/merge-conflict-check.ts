@@ -12,8 +12,13 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * a cached result can be replaced by a later calculation. GitHub often
  * keeps `base.sha` at the merge-base for a behind pull request and never
  * stores the new tip; after the poll a published non-pending state is used
- * instead of failing closed. It does not check out or execute pull request
- * code, and it does not run Validate.
+ * instead of failing closed. A head with no commits ahead of the expected
+ * base is skipped (the current tip, or an ancestor of it): writing that
+ * check would land on a default-branch SHA. Bots often open a pull request
+ * before the first unique commit, and main can move on before they push.
+ * A compare miss (fork head, flake) still writes the check so a unique
+ * pull request is not skipped. It does not check out or execute pull
+ * request code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -162,6 +167,12 @@ export async function reportMergeConflictCheck(input: {
 	maxAttempts?: number
 	delayMs?: number
 }): Promise<number> {
+	if (sameSha(input.headSha, input.expectedBaseSha)) {
+		console.log(
+			`Skipping ${mergeConflictCheckName}: pull request head is the default-branch tip.`,
+		)
+		return 0
+	}
 	const fetchImpl = input.fetchImpl ?? fetch
 	const { owner, repo } = parseRepository(input.repository)
 	const client = createGithubClient({
@@ -171,6 +182,11 @@ export async function reportMergeConflictCheck(input: {
 		fetchImpl,
 		detailsUrl: input.detailsUrl,
 	})
+	if (
+		await headHasNoUniqueCommits(client, input.expectedBaseSha, input.headSha)
+	) {
+		return 0
+	}
 	let checkRunId: number | null = null
 	try {
 		checkRunId = await client.openCheck(input.headSha)
@@ -367,6 +383,39 @@ function sameSha(left: string, right: string) {
 	return left.toLowerCase() === right.toLowerCase()
 }
 
+async function headHasNoUniqueCommits(
+	client: GithubClient,
+	expectedBaseSha: string,
+	headSha: string,
+) {
+	try {
+		const aheadBy = await client.compareAheadBy(expectedBaseSha, headSha)
+		if (aheadBy === 0) {
+			console.log(
+				`Skipping ${mergeConflictCheckName}: pull request head has no commits ahead of the base.`,
+			)
+			return true
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		console.log(
+			`Continuing ${mergeConflictCheckName}: could not compare head to base (${message}).`,
+		)
+	}
+	return false
+}
+
+function parseAheadBy(payload: unknown) {
+	if (typeof payload !== 'object' || payload === null) {
+		throw new Error('Compare response was not an object')
+	}
+	const aheadBy = (payload as { ahead_by?: unknown }).ahead_by
+	if (typeof aheadBy !== 'number' || !Number.isFinite(aheadBy) || aheadBy < 0) {
+		throw new Error('Compare response is missing ahead_by')
+	}
+	return aheadBy
+}
+
 function requiredEnv(env: NodeJS.ProcessEnv, name: string) {
 	const value = env[name]
 	if (!value) throw new Error(`Missing ${name}`)
@@ -396,6 +445,7 @@ type ListedPullRequest = {
 
 type GithubClient = {
 	openCheck: (headSha: string) => Promise<number>
+	compareAheadBy: (baseSha: string, headSha: string) => Promise<number>
 	readPullRequest: (pullNumber: number) => Promise<PullRequestMergeability>
 	listOpenPullRequests: (baseRef: string) => Promise<Array<ListedPullRequest>>
 	completeCheck: (
@@ -440,6 +490,13 @@ function createGithubClient(input: {
 	}
 
 	return {
+		async compareAheadBy(baseSha, headSha) {
+			const payload = await github(
+				'GET',
+				`${repoPath}/compare/${encodeURIComponent(baseSha)}...${encodeURIComponent(headSha)}`,
+			)
+			return parseAheadBy(payload)
+		},
 		async openCheck(headSha) {
 			const payload = await github('POST', `${repoPath}/check-runs`, {
 				name: mergeConflictCheckName,

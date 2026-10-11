@@ -180,7 +180,7 @@ function assertSecretSlotsDeclarePlacement(input: {
 	for (const [name, slot] of Object.entries(
 		input.manifest.kody.credentials ?? {},
 	)) {
-		if (slot.kind !== 'secret' || slot.placement) continue
+		if (slot.kind !== 'secret' || slot.placement || slot.raw) continue
 		throw new Error(
 			`Invalid ${input.manifestPath}:\nkody.credentials.${name}.placement: ${secretSlotPlacementRequiredMessage}`,
 		)

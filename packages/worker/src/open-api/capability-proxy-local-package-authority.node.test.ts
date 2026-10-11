@@ -20,7 +20,7 @@ vi.mock('#worker/storage-runner.ts', () => ({
 
 vi.mock('#worker/credentials/resolve-credential.ts', () => ({
 	resolveCredential: async () => ({
-		ref: 'owned-secret-ref',
+		value: 'owned-secret-value',
 		name: 'client-token',
 		alias: 'client-token',
 		scope: 'user',
@@ -103,6 +103,7 @@ async function packageStorageGet(db: D1Database, packageId: string) {
 	const tools = await createCapabilityProxyPackageHostTools({
 		env: { APP_DB: db } as Env,
 		callerContext: createContext(db).callerContext,
+		trackSecretValue: () => {},
 	})
 	return tools.packageStorageGet?.({ packageId, key: 'cursor' })
 }
@@ -111,6 +112,7 @@ async function packageSecretGet(db: D1Database, packageId: string) {
 	const tools = await createCapabilityProxyPackageHostTools({
 		env: { APP_DB: db } as Env,
 		callerContext: createContext(db).callerContext,
+		trackSecretValue: () => {},
 	})
 	return tools.packageSecretGet?.({
 		alias: 'client-token',
@@ -127,7 +129,7 @@ const packageOperations = [
 	{
 		name: 'package secret get',
 		run: packageSecretGet,
-		expected: { value: 'owned-secret-ref' },
+		expected: { value: 'owned-secret-value' },
 	},
 	{
 		name: 'authenticatedFetch',

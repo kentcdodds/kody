@@ -47,6 +47,13 @@ export class PackageSecretMissingError extends McpCallerError {
 		this.name = 'PackageSecretMissingError'
 	}
 }
+/** `packageSecrets.get` on anything but a `raw: true` secret slot. */
+export class PackageSecretRawAccessError extends McpCallerError {
+	constructor(message: string) {
+		super(message)
+		this.name = 'PackageSecretRawAccessError'
+	}
+}
 export class PackageSecretAccessDeniedError extends McpCallerError {
 	constructor(message: string, options?: ErrorOptions) {
 		super(message, options)
