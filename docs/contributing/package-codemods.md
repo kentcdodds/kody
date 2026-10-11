@@ -338,19 +338,32 @@ old way, ahead of `kody.credentials` slots (see
 It scans JavaScript and TypeScript modules and the root `package.json`. Each
 finding message starts with one fixed pattern label:
 
-| Label                   | Matches                                                                                                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `literal secret`        | A complete `{{secret:…}}`, `{{secret-basic:…}}`, `{{secret/provider:…}}`, or `{{integration-token:…}}` placeholder, or a string literal passed to `createAuthenticatedFetch`, `packageSecrets.get`, `secretHeaders.basic`, or similar helpers |
-| `computed secret`       | A secret placeholder built at runtime, or a secret helper called with a non-literal name                                                                                                                                                      |
-| `computed integration`  | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                       |
-| `kody.mcp`              | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                       |
-| `\|scope=`              | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                      |
-| `secretMounts`          | `package.json#kody.secretMounts`                                                                                                                                                                                                              |
-| `webhook secretName`    | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                          |
-| `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input               |
-| `plain http`            | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                             |
-| `packageSecrets.get`    | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                      |
-| `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                          |
+| Label                   | Matches                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `literal secret`        | A complete `{{secret:…}}`, `{{secret-basic:…}}`, `{{secret/provider:…}}`, or `{{integration-token:…}}` placeholder, or a known string passed to `createAuthenticatedFetch`, `packageSecrets.get`, `secretHeaders.basic`, or similar helpers, unless it names a declared slot of its kind |
+| `computed secret`       | A secret placeholder built at runtime, or a secret helper called with a runtime name                                                                                                                                                                                                     |
+| `computed integration`  | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                                                                  |
+| `kody.mcp`              | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                                                                  |
+| `\|scope=`              | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                                                                 |
+| `secretMounts`          | `package.json#kody.secretMounts`                                                                                                                                                                                                                                                         |
+| `webhook secretName`    | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                                                                     |
+| `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input                                                          |
+| `plain http`            | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                                                                        |
+| `packageSecrets.get`    | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                                                                 |
+| `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                                                                     |
+
+A reference that names a declared `kody.credentials` slot of its kind is not a
+finding. A secret name needs a `secret` slot: `{{secret:NAME}}`, either
+`{{secret-basic:…}}` name, `packageSecrets.get`, and the secret helper fields.
+An integration name needs an `oauth` slot: `{{integration-token:NAME}}`,
+`createAuthenticatedFetch`, and `integrationTokenRefresh`. A vault reference
+names no slot, so it stays a finding.
+
+A known string is a literal, a top-level `const` string (including one imported
+from a relative module), or a template or `+` chain of those. Placeholder-shaped
+text that names nothing, such as `{{secret:<name>}}` in help or redaction text,
+is ignored. Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/`)
+are skipped.
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
