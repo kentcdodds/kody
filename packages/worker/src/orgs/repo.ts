@@ -336,11 +336,14 @@ export async function listPendingInvitesForPerson(
 	}))
 }
 
-export async function loadOrgBindingForPerson(
+type OrgBindingRow = { org_id: string; org_slug: string; role: OrgRole }
+
+/** Live personal-org membership row for a person (org_id = user_id). */
+export function orgBindingForPersonStatement(
 	db: D1Database,
 	personId: string,
-): Promise<OrgBinding> {
-	const row = await db
+): D1PreparedStatement {
+	return db
 		.prepare(
 			`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
 			 FROM org_memberships m
@@ -351,7 +354,12 @@ export async function loadOrgBindingForPerson(
 			 LIMIT 1`,
 		)
 		.bind(personId)
-		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
+}
+
+export function orgBindingForPersonFromRow(
+	personId: string,
+	row: OrgBindingRow | null,
+): OrgBinding {
 	if (!row) {
 		throw new Error(
 			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have an org_memberships row where org_id = user_id.`,
@@ -360,43 +368,74 @@ export async function loadOrgBindingForPerson(
 	return toBinding(row)
 }
 
+export async function loadOrgBindingForPerson(
+	db: D1Database,
+	personId: string,
+): Promise<OrgBinding> {
+	const row = await orgBindingForPersonStatement(
+		db,
+		personId,
+	).first<OrgBindingRow>()
+	return orgBindingForPersonFromRow(personId, row)
+}
+
 /**
  * Bind a person to a specific org: live membership, or any live grant in that
  * org held directly or through a team (outside collaborator, role null).
  * Returns null when neither applies, or when the org is soft-deleted or
  * suspended. Same access rule as {@link loadOrgBindingForSlug}.
  */
-export async function loadOrgBindingForOrg(
+export function orgBindingForOrgStatements(
 	db: D1Database,
 	personId: string,
 	orgId: string,
-): Promise<OrgBinding | null> {
-	const membership = await db
-		.prepare(
-			`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
+): { membership: D1PreparedStatement; grant: D1PreparedStatement } {
+	return {
+		membership: db
+			.prepare(
+				`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
 			 FROM org_memberships m
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
 			   AND m.org_id = ?
 			   AND m.deleted_at IS NULL${andActiveOrgSql('o')}
 			 LIMIT 1`,
-		)
-		.bind(personId, orgId)
-		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
-	if (membership) return toBinding(membership)
-
-	const grant = await db
-		.prepare(
-			`SELECT o.id AS org_id, o.slug AS org_slug
+			)
+			.bind(personId, orgId),
+		grant: db
+			.prepare(
+				`SELECT o.id AS org_id, o.slug AS org_slug
 			 FROM orgs o
 			 WHERE o.id = ?${andActiveOrgSql('o')}
 			   AND EXISTS (${liveGrantForPersonSql('o.id')})
 			 LIMIT 1`,
-		)
-		.bind(orgId, personId, personId)
-		.first<{ org_id: string; org_slug: string }>()
-	if (!grant) return null
-	return toBinding({ ...grant, role: null })
+			)
+			.bind(orgId, personId, personId),
+	}
+}
+
+export function orgBindingForOrgFromRows(rows: {
+	membership: OrgBindingRow | null
+	grant: { org_id: string; org_slug: string } | null
+}): OrgBinding | null {
+	if (rows.membership) return toBinding(rows.membership)
+	if (!rows.grant) return null
+	return toBinding({ ...rows.grant, role: null })
+}
+
+export async function loadOrgBindingForOrg(
+	db: D1Database,
+	personId: string,
+	orgId: string,
+): Promise<OrgBinding | null> {
+	const statements = orgBindingForOrgStatements(db, personId, orgId)
+	const membership = await statements.membership.first<OrgBindingRow>()
+	if (membership) return toBinding(membership)
+	const grant = await statements.grant.first<{
+		org_id: string
+		org_slug: string
+	}>()
+	return orgBindingForOrgFromRows({ membership: null, grant })
 }
 
 /** True when the org exists and is neither soft-deleted nor suspended. */
