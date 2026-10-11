@@ -43,3 +43,37 @@ export async function viewerCanReadSavedPackage(input: {
 		packageResource({ id: input.packageId, userId: input.ownerId }),
 	).allowed
 }
+
+/**
+ * Whether a signed-in person may change a saved package from the account UI
+ * (settings, publish, delete). They must belong to the owning org and hold
+ * `package:write` on the package there — the same org binding used for write
+ * APIs, not signup-org equality.
+ */
+export async function viewerCanManageSavedPackage(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+	packageId: string
+}): Promise<boolean> {
+	if (!input.viewer) return false
+	const binding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.viewer.userId,
+		input.ownerId,
+	)
+	if (!binding) return false
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: deriveRequestContext({
+			user: input.viewer,
+			source: { kind: 'session' },
+			orgBinding: binding,
+		}),
+	})
+	return checkPermission(
+		access,
+		'package:write',
+		packageResource({ id: input.packageId, userId: input.ownerId }),
+	).allowed
+}

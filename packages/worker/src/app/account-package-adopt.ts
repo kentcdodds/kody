@@ -1,4 +1,4 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { loadWritableAccountSavedPackage } from '#app/account-package-write-access.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
@@ -23,13 +23,17 @@ export async function handleAccountPackageAdoptAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
+	const resolved = await loadWritableAccountSavedPackage({
+		env: input.env,
+		user: input.user,
+		packageId,
+		permission: 'package:write',
+	})
+	if (!resolved.ok) return resolved.response
 	try {
 		await adoptCommunityFork({
 			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
+			userId: resolved.package.ownerUserId,
 			packageId,
 			reviewSummary: readTrimmedStringOrEmpty(input.body, 'reviewNote'),
 		})

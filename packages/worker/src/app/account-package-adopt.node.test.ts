@@ -9,6 +9,25 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 const mockModule = vi.hoisted(() => ({
 	adoptCommunityFork: vi.fn(),
 	loadAccountPackagesData: vi.fn(),
+	writablePackage: {
+		id: 'pkg-1',
+		userId: 'stable-user-1',
+		name: '@user/pkg',
+		kodyId: 'pkg',
+	},
+}))
+
+vi.mock('#app/account-package-write-access.ts', () => ({
+	loadWritableAccountSavedPackage: vi.fn(
+		async (input: { user: { mcpUser: { userId: string } } }) => ({
+			ok: true as const,
+			package: {
+				savedPackage: mockModule.writablePackage,
+				ownerUserId: mockModule.writablePackage.userId,
+				actorUserId: input.user.mcpUser.userId,
+			},
+		}),
+	),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
