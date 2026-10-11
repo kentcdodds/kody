@@ -26,9 +26,9 @@ npm run control-kody -- map --check
 npm run control-kody -- health --sha <merge-sha>
 npm run control-kody -- preview --pr 42 --request 'GET /account/waiting.json' --check /account/waiting
 npm run control-kody -- browse --origin <preview> --path /@user-me/pkg [--record]
-npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
-npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
-npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead] [--org <slug>]
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json] [--org <slug>]
+npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages] [--org <slug>]
 ```
 
 `--kody-id` is an alias for `--package-name`.
@@ -109,6 +109,10 @@ before opening a Feature Map PR.
   local admin account plus Workers or unit tests
 - `execute` / `search` reuse the same seed session on preview or local; they
   refuse `https://kody.codes`
+- After the seed user creates a team org, pass `--org <slug>` on `execute`,
+  `search`, and `package-create`. OAuth otherwise fails with "Choose an
+  organization before approving this connection." The cached bearer token is
+  keyed by origin, email, and org, so switching `--org` mints a new token.
 - `packageSave`, publish, and `packageGetGitRemote` / `package-create` need the
   remote `ARTIFACTS` binding. Use a PR preview origin, not `npm run dev`. See
   [Local limitations](../../../docs/contributing/cloud-agents.md#local-limitations).
