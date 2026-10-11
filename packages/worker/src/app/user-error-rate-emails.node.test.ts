@@ -240,15 +240,15 @@ test('error-rate email names each failing package once with its error and a run 
 	)
 	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
 	expect(payload.text).toContain(
-		'Package review-ticket failed: Request refused (credential_placement_refused, slot "token") (run: https://kody.codes/account/activity/run-newest)',
+		'Package review-ticket failed: Request refused (credential_placement_refused, slot "token") Open the run: https://kody.codes/account/activity/run-newest',
 	)
 	expect(payload.text).not.toContain('run-older')
 	expect(payload.text).not.toContain('at stack')
 	expect(payload.text).toContain(
-		`stripe-webhook failed: ${'x'.repeat(239)}… (run: https://kody.codes/account/activity/run-hook)`,
+		`stripe-webhook failed: ${'x'.repeat(239)}… Open the run: https://kody.codes/account/activity/run-hook`,
 	)
 	expect(payload.text).toContain(
-		'A run failed: boom (run: https://kody.codes/account/activity/run-gone)',
+		'A run failed: boom Open the run: https://kody.codes/account/activity/run-gone',
 	)
 	expect(payload.text).not.toContain('nightly')
 })
@@ -282,8 +282,17 @@ test('error-rate email still sends the count when the run log is unavailable', a
 	)
 })
 
-test('summarizeRunError keeps the first line and notes a missing message', () => {
+test('summarizeRunError keeps the first non-empty line, redacts Kody tokens, and notes a missing message', () => {
 	expect(summarizeRunError({ errorMessage: '  first\nsecond' })).toBe('first')
+	expect(summarizeRunError({ errorMessage: '\n  \nactual error\nmore' })).toBe(
+		'actual error',
+	)
+	const token = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
+	const redacted = summarizeRunError({
+		errorMessage: `Unauthorized with ${token}`,
+	})
+	expect(redacted).toBe('Unauthorized with kody_at_[redacted]')
+	expect(redacted).not.toContain('B'.repeat(43))
 	expect(summarizeRunError({ errorMessage: null })).toBe(
 		'No error message was recorded.',
 	)

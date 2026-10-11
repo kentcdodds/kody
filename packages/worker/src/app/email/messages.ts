@@ -556,9 +556,10 @@ export function buildUserErrorRateEmail(input: {
 						failingRuns.length === 1
 							? 'The most recent open failure:'
 							: 'The most recent open failures:',
-						...failingRuns.map(
-							(run) => `${run.label} failed: ${run.error} (run: ${run.runUrl})`,
-						),
+						...failingRuns.map((run) => ({
+							text: `${run.label} failed: ${run.error}`,
+							link: { label: 'Open the run', url: run.runUrl },
+						})),
 					]
 				: []),
 			'Review the activity log, or contact support if you need help sorting out the failures.',

@@ -221,12 +221,12 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		],
 	})
 	expect(namedErrorRate.text).toContain(
-		'Package <b>review-ticket</b> failed: Request refused (credential_placement_refused, slot "token") (run: https://kody.codes/account/activity/run-1)',
+		'Package <b>review-ticket</b> failed: Request refused (credential_placement_refused, slot "token") Open the run: https://kody.codes/account/activity/run-1',
 	)
 	expect(namedErrorRate.html).toContain('Package &lt;b&gt;review-ticket')
 	expect(namedErrorRate.html).not.toContain('<b>review-ticket</b>')
-	expect(namedErrorRate.html).toContain(
-		'https://kody.codes/account/activity/run-1',
+	expect(namedErrorRate.html).toMatch(
+		/<a href="https:\/\/kody\.codes\/account\/activity\/run-1"[^>]*>Open the run<\/a>/,
 	)
 	expect(namedErrorRate.html).toContain('is among the failures')
 

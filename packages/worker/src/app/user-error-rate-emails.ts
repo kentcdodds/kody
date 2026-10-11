@@ -1,3 +1,4 @@
+import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
@@ -188,8 +189,18 @@ async function failingRunLabel(input: { env: Env; run: RunRecord }) {
 	return input.run.name?.trim() || 'A run'
 }
 
+/**
+ * Run errors are already scrubbed of substituted secret values when recorded;
+ * Kody API tokens and bootstrap codes are redacted again because this text
+ * leaves the run log for a mailbox.
+ */
 export function summarizeRunError(run: Pick<RunRecord, 'errorMessage'>) {
-	const firstLine = run.errorMessage?.split('\n', 1)[0]?.trim() ?? ''
+	const firstLine = redactKodyCredentials(
+		run.errorMessage
+			?.split('\n')
+			.find((line) => line.trim())
+			?.trim() ?? '',
+	)
 	if (!firstLine) return 'No error message was recorded.'
 	if (firstLine.length <= userErrorRateEmailErrorMaxLength) return firstLine
 	return `${firstLine.slice(0, userErrorRateEmailErrorMaxLength - 1).trimEnd()}…`
