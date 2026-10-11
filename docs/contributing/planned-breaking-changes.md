@@ -39,3 +39,24 @@ codemod.
 
 **Introduced as leftover by:** the change that documents identity as scoped
 `name` or `package_id` while leaving the leftover param in the runtime contract.
+
+## Name-based credential resolution in packages that declare slots
+
+A package that declares `kody.credentials` still resolves each reference by
+name: `{{secret:NAME}}` reads the secret stored as `NAME`, through the same
+package access rules as an undeclared package. Slots only drive publish
+validation and fetch gateway placement
+([credential slots](../use/packages.md#credential-slots-kodycredentials)).
+
+Credentials plan v4 (section 3.3) makes an assignment the grant: an org assigns
+a credential to each slot, a declared package resolves only through its
+assignments, and nothing falls back to a name. Once that ships, a package that
+declares slots and has no assignments fails each use with an assign link, so
+every declared package needs assignments on that deploy. Undeclared packages
+keep the name lane until their migration phase ends.
+
+**Ready when:** assignments, their API and UI, and the fork and install assign
+step are live, and the declared packages in the fleet scan have assignments.
+
+**Introduced as leftover by:** the `kody.credentials` manifest field (credential
+slots ship before assignments).

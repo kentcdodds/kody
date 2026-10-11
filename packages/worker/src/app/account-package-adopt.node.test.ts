@@ -8,9 +8,14 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	adoptCommunityFork: vi.fn(),
-	loadAccountPackagesData: vi.fn(),
-	getSavedPackageById: vi.fn(),
-	authorizePackageWrite: vi.fn(),
+	reloadAccountPackagesAfterWrite: vi.fn(),
+	savedPackage: {
+		id: 'pkg-1',
+		userId: 'stable-user-1',
+		name: '@user/pkg',
+		kodyId: 'pkg',
+	},
+	viewerIsOrgOwner: true,
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -19,23 +24,17 @@ vi.mock('#worker/community/service.ts', () => ({
 }))
 
 vi.mock('#app/account-packages-data.ts', () => ({
-	loadAccountPackagesData: (...args: Array<unknown>) =>
-		mockModule.loadAccountPackagesData(...args),
+	reloadAccountPackagesAfterWrite: (...args: Array<unknown>) =>
+		mockModule.reloadAccountPackagesAfterWrite(...args),
+}))
+
+vi.mock('#app/package-viewer-access.ts', () => ({
+	viewerIsSavedPackageOrgOwner: vi.fn(async () => mockModule.viewerIsOrgOwner),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+	getSavedPackageByIdInAnyOrg: vi.fn(async () => mockModule.savedPackage),
 }))
-
-vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
-	const actual = await importOriginal<Record<string, unknown>>()
-	return {
-		...actual,
-		authorizePackageWrite: (...args: Array<unknown>) =>
-			mockModule.authorizePackageWrite(...args),
-	}
-})
 
 const { handleAccountPackageAdoptAction } =
 	await import('./account-package-adopt.ts')
@@ -63,25 +62,14 @@ function createUser() {
 	}
 }
 
-function mockSavedPackage() {
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'pkg-1',
-		userId: ownerIdFromStored('stable-user-1'),
-		name: '@user/pkg',
-		kodyId: 'pkg',
-	})
-	mockModule.authorizePackageWrite.mockResolvedValue(undefined)
-}
-
 test('the signed-in owner adopts a community fork from the account API', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
 		method: 'POST',
 	})
-	mockSavedPackage()
 	mockModule.adoptCommunityFork.mockResolvedValue({ alreadyAdopted: false })
-	mockModule.loadAccountPackagesData.mockResolvedValue({
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({
 		ok: true,
 		selectedPackage: { id: 'pkg-1' },
 	})
@@ -110,19 +98,41 @@ test('the signed-in owner adopts a community fork from the account API', async (
 		ok: true,
 		selectedPackage: { id: 'pkg-1' },
 	})
-	expect(mockModule.authorizePackageWrite).toHaveBeenCalled()
 	expect(mockModule.adoptCommunityFork).toHaveBeenCalledWith({
 		env,
 		userId: ownerIdFromStored('stable-user-1'),
 		packageId: 'pkg-1',
 		reviewSummary: 'Read src/ and package.json; no exfiltration.',
 	})
-	expect(mockModule.loadAccountPackagesData).toHaveBeenCalledWith({
+	expect(mockModule.reloadAccountPackagesAfterWrite).toHaveBeenCalledWith({
 		env,
 		request,
 		user,
-		pathPackageId: 'pkg-1',
+		packageId: 'pkg-1',
+		ownerUserId: ownerIdFromStored('stable-user-1'),
 	})
+})
+
+test('account adopt requires org owner role on the package owning org', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.viewerIsOrgOwner = false
+	const denied = await handleAccountPackageAdoptAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'adopt-community-fork',
+			packageId: 'pkg-1',
+			reviewNote: 'Reviewed source and trust this fork.',
+		},
+	})
+	expect(denied?.status).toBe(404)
+	expect(mockModule.adoptCommunityFork).not.toHaveBeenCalled()
+	mockModule.viewerIsOrgOwner = true
 })
 
 test('account adopt requires a package id and surfaces caller-clearable errors', async () => {
@@ -141,21 +151,6 @@ test('account adopt requires a package id and surfaces caller-clearable errors',
 	expect(missingId?.status).toBe(400)
 	expect(mockModule.adoptCommunityFork).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
-	const missingPackage = await handleAccountPackageAdoptAction({
-		env,
-		request,
-		user,
-		body: {
-			action: 'adopt-community-fork',
-			packageId: 'pkg-missing',
-			reviewNote: 'Reviewed it all carefully.',
-		},
-	})
-	expect(missingPackage?.status).toBe(404)
-	expect(mockModule.adoptCommunityFork).not.toHaveBeenCalled()
-
-	mockSavedPackage()
 	mockModule.adoptCommunityFork.mockRejectedValueOnce(
 		new CommunityActionError('Adoption requires a review note of at least 10'),
 	)
@@ -174,5 +169,5 @@ test('account adopt requires a package id and surfaces caller-clearable errors',
 		ok: false,
 		error: 'Adoption requires a review note of at least 10',
 	})
-	expect(mockModule.loadAccountPackagesData).not.toHaveBeenCalled()
+	expect(mockModule.reloadAccountPackagesAfterWrite).not.toHaveBeenCalled()
 })

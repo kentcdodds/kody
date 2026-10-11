@@ -10,7 +10,7 @@ import path from 'node:path'
  * `packages/worker/wrangler.jsonc` and JOBS_DB beside
  * `packages/jobs-worker/wrangler.jsonc`, while Vite opens this directory.
  */
-export const defaultLocalD1PersistPath = '.wrangler/state'
+const defaultLocalD1PersistPath = '.wrangler/state'
 
 export const workerEnvFileRelativePath = 'packages/worker/.env'
 
@@ -32,7 +32,7 @@ export function resolveLocalD1PersistPath(
  * `WRANGLER_PERSIST_TO`. Migrate and seed read the same assignment here.
  * A value already in `env` (the shell) wins over the file.
  */
-export function wranglerPersistToFromEnvFile(contents: string) {
+function wranglerPersistToFromEnvFile(contents: string) {
 	for (const line of contents.split(/\r?\n/)) {
 		const trimmed = line.trim()
 		if (!trimmed || trimmed.startsWith('#')) continue

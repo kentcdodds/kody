@@ -27,7 +27,7 @@ export const targetUuid = '22222222-2222-4222-8222-222222222222'
 export const productionAccountId = 'a'.repeat(32)
 export const targetAccountId = 'b'.repeat(32)
 export const backupBytes = new TextEncoder().encode('backup')
-export const schemaRows: Array<Record<string, string>> = []
+const schemaRows: Array<Record<string, string>> = []
 export const now = new Date('2026-07-22T12:00:00.000Z')
 const manifestKeys = generateKeyPairSync('ed25519')
 export const manifestKeyRegistry: TrustedManifestPublicKeyRegistry = {
@@ -139,7 +139,7 @@ export function createBaseline(
 	}
 }
 
-export function createBaselineRegistry(
+function createBaselineRegistry(
 	baseline = createBaseline(),
 ): TrustedRestoreBaselineRegistry {
 	return {

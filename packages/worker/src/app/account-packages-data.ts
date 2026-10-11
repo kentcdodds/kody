@@ -1,4 +1,6 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import {
 	buildForkListingDiffHref,
 	buildListingAheadPrompt,
@@ -422,11 +424,17 @@ export async function loadAccountPackagesData(input: {
 	request: Request
 	user: AuthenticatedUser
 	pathPackageId?: string
+	/** When the selected package lives in another org (e.g. team), load it there. */
+	selectedPackageOwnerUserId?: OwnerId
+	selectedPackageOwnerUsername?: string
 }): Promise<AccountPackagesLoaderData> {
 	const userId = ownerIdFromCaller({
 		request: input.user.request,
 		user: input.user.mcpUser,
 	})
+	const selectedOwnerUserId = input.selectedPackageOwnerUserId ?? userId
+	const selectedOwnerUsername =
+		input.selectedPackageOwnerUsername ?? input.user.username
 	const url = new URL(input.request.url, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
 		defaultPageSize,
@@ -451,7 +459,7 @@ export async function loadAccountPackagesData(input: {
 		}),
 		selectedPackageId
 			? getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
-					userId,
+					userId: selectedOwnerUserId,
 					packageId: selectedPackageId,
 				})
 			: Promise.resolve(null),
@@ -472,8 +480,8 @@ export async function loadAccountPackagesData(input: {
 						? toDetailWithListingState({
 								env: input.env,
 								requestUrl: input.request.url,
-								userId,
-								username: input.user.username,
+								userId: selectedOwnerUserId,
+								username: selectedOwnerUsername,
 								record: enrichedSelected,
 							})
 						: null,
@@ -508,4 +516,27 @@ export async function loadAccountPackagesData(input: {
 		appFilter,
 		sort,
 	}
+}
+
+/** Reload account package JSON after a write when the row may live in another org. */
+export async function reloadAccountPackagesAfterWrite(input: {
+	env: Env
+	request: Request
+	user: AuthenticatedUser
+	packageId: string
+	ownerUserId: OwnerId
+}): Promise<AccountPackagesLoaderData> {
+	const binding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.user.mcpUser.userId,
+		input.ownerUserId,
+	)
+	return loadAccountPackagesData({
+		env: input.env,
+		request: input.request,
+		user: input.user,
+		pathPackageId: input.packageId,
+		selectedPackageOwnerUserId: input.ownerUserId,
+		selectedPackageOwnerUsername: binding?.org.slug ?? input.user.username,
+	})
 }

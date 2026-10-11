@@ -154,7 +154,7 @@ export type EvidenceArtifact = {
 	verifierIdentity: string
 }
 
-export type ResourceEvidence = {
+type ResourceEvidence = {
 	schemaVersion: 1
 	resourceId: CanonicalResourceId
 	verifierIdentity: string

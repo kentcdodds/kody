@@ -62,7 +62,7 @@ function normalizeErrorMessage(message: string) {
 	return message.replace(/conversationId: \S+/g, 'conversationId: <id>')
 }
 
-export type SnapshotCheckFailure = { check: string; error: string }
+type SnapshotCheckFailure = { check: string; error: string }
 
 type Capture = (check: string, fn: () => Promise<unknown>) => Promise<unknown>
 

@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { isRetryableCloudflareFailure } from './ci/resource-utils.ts'
 
-export const wranglerDeployRetryMaxAttempts = 4
-export const wranglerDeployRetryBaseDelayMs = 1_000
+const wranglerDeployRetryMaxAttempts = 4
+const wranglerDeployRetryBaseDelayMs = 1_000
 export const wranglerD1MigrationsRetryMaxAttempts = 3
 export const wranglerD1MigrationsRetryBaseDelayMs = 10_000
 

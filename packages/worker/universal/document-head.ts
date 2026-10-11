@@ -475,6 +475,14 @@ const routeDocumentHeads = {
 		'reset-password',
 		'Reset password',
 	),
+	[routePattern(routes.orgInviteJoin)]: ({ loaderData }) => {
+		const join = loaderData?.orgInviteJoin
+		if (join?.ok) {
+			const name = join.org.displayName?.trim() || join.org.slug
+			return titleOnly(`Join ${name}`)
+		}
+		return titleOnly('Invite link')
+	},
 	[routePattern(routes.verify)]: titleOnly('Two-factor authentication'),
 	[routePattern(routes.verifyEmail)]: ({ loaderData }) => {
 		const verification = loaderData?.emailVerification

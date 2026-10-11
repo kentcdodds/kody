@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest'
 import type * as ssrRender from '#app/ssr-render.tsx'
 
 const mockModule = vi.hoisted(() => ({
-	getSavedPackageById: vi.fn(),
+	getSavedPackageByIdInAnyOrg: vi.fn(),
 	loadAccountPackageApprovePublishData: vi.fn(),
 	loadPackagePage: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
@@ -33,9 +33,20 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: (...args: Parameters<typeof ssrRender.renderAppPage>) =>
 		mockModule.renderAppPage(...args),
 }))
+vi.mock('#app/package-viewer-access.ts', () => ({
+	viewerCanManageSavedPackage: vi.fn(async () => true),
+}))
+
+vi.mock('#worker/orgs/repo.ts', () => ({
+	loadOrgBindingForOrg: vi.fn(async () => ({
+		org: { id: ownerIdFromStored('user-1'), slug: 'kentcdodds' },
+		role: 'owner' as const,
+	})),
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+	getSavedPackageByIdInAnyOrg: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByIdInAnyOrg(...args),
 }))
 
 const {
@@ -51,8 +62,9 @@ const user = {
 
 test('legacy package approval links redirect and the canonical owner URL renders', async () => {
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue(user)
-	mockModule.getSavedPackageById.mockResolvedValue({
+	mockModule.getSavedPackageByIdInAnyOrg.mockResolvedValue({
 		id: 'pkg-1',
+		userId: ownerIdFromStored('user-1'),
 		kodyId: 'github-triage',
 	})
 	const handler = createAccountPackageApprovePublishHandler({

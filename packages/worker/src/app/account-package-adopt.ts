@@ -1,13 +1,11 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { viewerIsSavedPackageOrgOwner } from '#app/package-viewer-access.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { adoptCommunityFork } from '#worker/community/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { McpCallerError } from '#mcp/caller-error.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -26,29 +24,25 @@ export async function handleAccountPackageAdoptAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
-	const userId = ownerIdFromCaller({
-		request: input.user.request,
-		user: input.user.mcpUser,
-	})
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId,
+	const savedPackage = await getSavedPackageByIdInAnyOrg(
+		input.env.APP_DB,
 		packageId,
-	})
-	if (!savedPackage) {
+	)
+	if (
+		!savedPackage ||
+		!(await viewerIsSavedPackageOrgOwner({
+			env: input.env,
+			viewer: input.user.mcpUser,
+			ownerId: savedPackage.userId,
+		}))
+	) {
 		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
 	}
+	const ownerUserId = savedPackage.userId
 	try {
-		await authorizePackageWrite(
-			{ env: input.env, request: input.user.request },
-			{
-				id: savedPackage.id,
-				userId: savedPackage.userId,
-				label: savedPackage.name,
-			},
-		)
 		await adoptCommunityFork({
 			env: input.env,
-			userId,
+			userId: ownerUserId,
 			packageId,
 			reviewSummary: readTrimmedStringOrEmpty(input.body, 'reviewNote'),
 		})
@@ -56,17 +50,15 @@ export async function handleAccountPackageAdoptAction(input: {
 		if (error instanceof CommunityActionError) {
 			return jsonResponse({ ok: false, error: error.message }, 400)
 		}
-		if (error instanceof McpCallerError) {
-			return jsonResponse({ ok: false, error: error.message }, 403)
-		}
 		throw error
 	}
 	return jsonResponse(
-		await loadAccountPackagesData({
+		await reloadAccountPackagesAfterWrite({
 			env: input.env,
 			request: input.request,
 			user: input.user,
-			pathPackageId: packageId,
+			packageId,
+			ownerUserId,
 		}),
 	)
 }

@@ -7,17 +7,42 @@ import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
-	getSavedPackageById: vi.fn(),
+	writablePackage: null as ReturnType<typeof createSavedPackage> | null,
 	updateSavedPackage: vi.fn(),
 	publishCommunityListing: vi.fn(),
 	unpublishCommunityListing: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
-	loadAccountPackagesData: vi.fn(),
+	reloadAccountPackagesAfterWrite: vi.fn(),
+}))
+
+vi.mock('#app/account-package-write-access.ts', () => ({
+	loadWritableAccountSavedPackage: vi.fn(
+		async (input: {
+			packageId: string
+			user: { mcpUser: { userId: string } }
+		}) => {
+			if (!mockModule.writablePackage) {
+				return {
+					ok: false as const,
+					response: new Response(
+						JSON.stringify({ ok: false, error: 'Package not found.' }),
+						{ status: 404 },
+					),
+				}
+			}
+			return {
+				ok: true as const,
+				package: {
+					savedPackage: mockModule.writablePackage,
+					ownerUserId: mockModule.writablePackage.userId,
+					actorUserId: input.user.mcpUser.userId,
+				},
+			}
+		},
+	),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
 	updateSavedPackage: (...args: Array<unknown>) =>
 		mockModule.updateSavedPackage(...args),
 }))
@@ -35,8 +60,8 @@ vi.mock('#worker/community/repo.ts', () => ({
 }))
 
 vi.mock('#app/account-packages-data.ts', () => ({
-	loadAccountPackagesData: (...args: Array<unknown>) =>
-		mockModule.loadAccountPackagesData(...args),
+	reloadAccountPackagesAfterWrite: (...args: Array<unknown>) =>
+		mockModule.reloadAccountPackagesAfterWrite(...args),
 }))
 
 const { handleAccountPackageVisibilityAction } =
@@ -89,7 +114,7 @@ test('making a package public or private requires typing the slug', async () => 
 	const request = new Request('https://example.com/account/packages.json', {
 		method: 'POST',
 	})
-	mockModule.loadAccountPackagesData.mockResolvedValue({ ok: true })
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 
 	expect(
 		await handleAccountPackageVisibilityAction({
@@ -100,7 +125,7 @@ test('making a package public or private requires typing the slug', async () => 
 		}),
 	).toBeNull()
 
-	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage(true))
+	mockModule.writablePackage = createSavedPackage(true)
 	const missingPublicConfirm = await handleAccountPackageVisibilityAction({
 		env,
 		request,
@@ -132,7 +157,7 @@ test('making a package public or private requires typing the slug', async () => 
 	expect(publicOk?.status).toBe(200)
 	expect(mockModule.publishCommunityListing).toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage(false))
+	mockModule.writablePackage = createSavedPackage(false)
 	const missingPrivateConfirm = await handleAccountPackageVisibilityAction({
 		env,
 		request,
