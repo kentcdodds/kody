@@ -325,6 +325,49 @@ test('upsertPublishedBundleArtifactRow leaves a newer live identity alone when a
 	)
 })
 
+test('upsertPublishedBundleArtifactRow skips insert when live commit moves before write', async () => {
+	const db = createPublishedBundleArtifactsDb()
+	await setLivePublishedCommit(db, {
+		userId: ownerIdFromStored('user-1'),
+		sourceId: 'source-1',
+		publishedCommit: 'commit-2',
+	})
+
+	// Stale pre-check is lied to (still "commit-1") while the guarded INSERT
+	// EXISTS clause reads the real live commit-2 and inserts zero rows.
+	const guarded = {
+		prepare(query: string) {
+			const stmt = db.prepare(query)
+			return {
+				bind(...values: Array<unknown>) {
+					const bound = stmt.bind(...values)
+					return {
+						async first() {
+							if (
+								query.includes('FROM entity_sources') &&
+								!query.includes('INSERT INTO published_bundle_artifacts')
+							) {
+								return { published_commit: 'commit-1' }
+							}
+							return await bound.first()
+						},
+						run: () => bound.run(),
+						all: () => bound.all(),
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			guarded,
+			artifactRow('importable-module', 'commit-1'),
+		),
+	).resolves.toBeNull()
+	await expect(lookup(db, 'importable-module')).resolves.toBeNull()
+})
+
 test('upsertPublishedBundleArtifactRow does not retarget identity when live commit moves during update', async () => {
 	const db = createPublishedBundleArtifactsDb()
 	await setLivePublishedCommit(db, {
