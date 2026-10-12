@@ -131,7 +131,8 @@ slot after the secret or integration the code already references, and keep those
 references as they are. There is no way yet for an org to choose which
 credential fills a slot; see
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-for the switch to assignments.
+for the planned switch to scoped credential clients
+([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
 {
@@ -319,9 +320,10 @@ To run someone else's live package, they
 
 ## Package storage
 
-Every saved package owns one durable storage bucket per user
+Every saved package owns one durable storage bucket in the org that owns it
 (`storageId = package:{encodeURIComponent(packageId)}`), reached via
-`packageStorage()` from `kody:runtime`. One rule per context:
+`packageStorage()` from `kody:runtime`. Every member, job, and app of that org
+reads the same bucket. One rule per context:
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — from package apps, exports, subscriptions, jobs, and workflows. Retrievers
@@ -597,12 +599,10 @@ Jobs are part of the package definition. Deferred one-shot work uses
 
 `jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
-clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `jobDelete` is rejected for
-package-owned jobs for the same reason. `jobRunNow` triggers an existing package
-job immediately for debugging. When `expires_at` is reached the platform stops
-scheduling and auto-disables the job; that is separate from `preserved`, which
-only skips retention deletion.
+clears). Jobs keep name and source in the package repo — change, add, or remove
+the job entry there and publish. `jobRunNow` triggers an existing package job
+immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job.
 
 ## Save and edit packages
 

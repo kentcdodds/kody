@@ -2207,6 +2207,7 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName,
 	emailBlobsBucketName,
 	repoSessionBlobsBucketName,
+	operatorBackupsBucketName,
 	artifactsNamespace,
 	workerVars,
 	queueBindings,
@@ -2227,6 +2228,7 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	repoSessionBlobsBucketName: string
+	operatorBackupsBucketName: string
 	/** When set, rewrites env ARTIFACTS binding + ARTIFACTS_NAMESPACE var. */
 	artifactsNamespace?: string
 	mainEntryPath?: string
@@ -2382,6 +2384,13 @@ export async function writeGeneratedWranglerConfig({
 		r2Buckets,
 		binding: 'REPO_SESSION_BLOBS',
 		bucketName: repoSessionBlobsBucketName,
+		baseConfigPath,
+		envName,
+	})
+	setGeneratedR2BucketName({
+		r2Buckets,
+		binding: 'OPERATOR_BACKUPS',
+		bucketName: operatorBackupsBucketName,
 		baseConfigPath,
 		envName,
 	})

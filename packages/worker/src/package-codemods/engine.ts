@@ -8,6 +8,7 @@ import { isSavedPackageLocked } from '#worker/package-registry/package-publish-l
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import {
 	createSnapshotFilesWorkspace,
@@ -31,7 +32,11 @@ import {
 	packageCodemodAppliedTopic,
 	packageCodemodRevertedTopic,
 } from './subscription-events.ts'
-import { type PackageCodemod, type PackageCodemodFinding } from './types.ts'
+import {
+	type PackageCodemod,
+	type PackageCodemodContext,
+	type PackageCodemodFinding,
+} from './types.ts'
 
 export type PackageCodemodRunMode = 'scan' | 'dry-run' | 'apply' | 'revert'
 
@@ -508,15 +513,32 @@ async function runChecksOnFiles(input: {
 	})
 }
 
+/**
+ * `saved_packages.name` mirrors the published `package.json`, so after an org
+ * resource transfer (or a revert of a scope rewrite) it can still carry the
+ * previous owner's scope. The registry scope always comes from the owner.
+ */
+async function buildCodemodContext(input: {
+	env: Env
+	savedPackage: SavedPackageRecord
+}): Promise<PackageCodemodContext> {
+	const ownerScope = await getPackageScopeByUserId(
+		input.env.APP_DB,
+		input.savedPackage.userId,
+	)
+	const name = input.savedPackage.name
+	const leaf = name.slice(name.indexOf('/') + 1)
+	return { packageName: `@${ownerScope}/${leaf}` }
+}
+
 async function processScanItem(input: {
 	codemod: PackageCodemod
 	savedPackage: SavedPackageRecord
+	context: PackageCodemodContext
 	files: Record<string, string>
 	beforeCommit: string | null
 }): Promise<PersistedItemResult> {
-	const findings = input.codemod.detect(input.files, {
-		packageName: input.savedPackage.name,
-	})
+	const findings = input.codemod.detect(input.files, input.context)
 	const status: PackageCodemodItemStatus =
 		findings.length > 0 ? 'detected' : 'clean'
 	return emptyItemResult({
@@ -535,6 +557,7 @@ async function processTransformGates(input: {
 	baseUrl: string
 	codemod: PackageCodemod
 	savedPackage: SavedPackageRecord
+	context: PackageCodemodContext
 	files: Record<string, string>
 	beforeCommit: string | null
 	manifestPath: string
@@ -554,7 +577,7 @@ async function processTransformGates(input: {
 	  }
 > {
 	const itemId = crypto.randomUUID()
-	const context = { packageName: input.savedPackage.name }
+	const { context } = input
 	const transformed = input.codemod.transform(input.files, context)
 	if (!transformed.changed && transformed.needsManual.length > 0) {
 		return {
@@ -690,11 +713,16 @@ async function processPackageForMode(input: {
 		})
 	}
 
+	const context = await buildCodemodContext({
+		env: input.env,
+		savedPackage: input.savedPackage,
+	})
 	switch (input.mode) {
 		case 'scan':
 			return await processScanItem({
 				codemod: input.codemod,
 				savedPackage: input.savedPackage,
+				context,
 				files: loaded.files,
 				beforeCommit: publishedCommit,
 			})
@@ -704,6 +732,7 @@ async function processPackageForMode(input: {
 				baseUrl: input.baseUrl,
 				codemod: input.codemod,
 				savedPackage: input.savedPackage,
+				context,
 				files: loaded.files,
 				beforeCommit: publishedCommit,
 				manifestPath: loaded.source.manifest_path,
@@ -728,6 +757,7 @@ async function processPackageForMode(input: {
 				baseUrl: input.baseUrl,
 				codemod: input.codemod,
 				savedPackage: input.savedPackage,
+				context,
 				files: loaded.files,
 				beforeCommit: publishedCommit,
 				manifestPath: loaded.source.manifest_path,

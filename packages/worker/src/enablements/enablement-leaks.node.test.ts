@@ -51,6 +51,9 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
 import { orgMemberUpdateCapability } from '#mcp/capabilities/access/org-members.ts'
+import { adminCreditGrantCapability } from '#mcp/capabilities/admin/admin-credit-grant.ts'
+import { adminFeatureFlagSetCapability } from '#mcp/capabilities/admin/admin-feature-flag-set.ts'
+import { adminUserUpdateCapability } from '#mcp/capabilities/admin/admin-user-update.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import {
@@ -1182,20 +1185,26 @@ test('a member cannot make themselves Owner through a job or webhook in a packag
 	expect((await t.deliverWebhook('endpoint-bea')).status).toBe(409)
 	expect(t.runs).toEqual([])
 
-	// Turned on by Bea: both run as Bea, with only Bea's access.
+	// Turned on by Bea: both run as Bea, and a role change needs a live person.
 	await t.enable('bea', 'cron', jobName)
 	await t.enableWebhook('bea', 'endpoint-bea')
 	const [cronRun, ...otherCronRuns] = await tick()
 	expect(otherCronRuns).toEqual([])
 	expect(cronRun).toMatchObject({
 		request: { actor: { userId: t.people.bea.userId } },
-		error: { name: 'AuthorizationError', permission: 'member:write' },
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
 	})
 	await t.deliverWebhook('endpoint-bea')
 	expect(t.runs).toHaveLength(1)
 	expect(t.runs[0]).toMatchObject({
 		request: { actor: { userId: t.people.bea.userId } },
-		error: { name: 'AuthorizationError', permission: 'member:write' },
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
 	})
 	expect(await beasRole()).toBe('member')
 
@@ -1213,18 +1222,149 @@ test('a member cannot make themselves Owner through a job or webhook in a packag
 	})
 	expect(nobody.request?.actor).toBeNull()
 	await expect(promoteBea(nobody)).rejects.toMatchObject({
-		name: 'AuthorizationError',
-		permission: 'member:write',
+		name: 'LivePersonRequiredError',
 	})
 	expect(await beasRole()).toBe('member')
 
-	// The same package turned on by Owner acts with Owner's access.
+	// Turned on by an Owner, it still cannot change roles: that needs a live
+	// person, whatever the enabler's role.
 	await t.enable('owner', 'cron', jobName)
 	const outcomes = await tick()
 	expect(
 		outcomes.find(
 			(outcome) => outcome.request?.actor?.userId === t.people.owner.userId,
 		),
-	).toMatchObject({ error: null })
-	expect(await beasRole()).toBe('owner')
+	).toMatchObject({
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
+	})
+	expect(await beasRole()).toBe('member')
+})
+
+test("an Owner's job, webhook, and email handler cannot change roles, billing, or site-admin state (#2393)", async () => {
+	const t = await setup()
+	consoleInfo.mockImplementation(() => {})
+	// The Owner is a site admin too, so only the live-person rule stands in
+	// the way.
+	await t.db
+		.prepare(
+			`INSERT INTO user_roles (user_id, role_id)
+			 SELECT u.id, r.id FROM users u, roles r
+			 WHERE u.stable_user_id = ? AND r.name = 'admin'`,
+		)
+		.bind(t.people.owner.userId)
+		.run()
+	const livePersonCalls = {
+		orgMemberUpdate: (callerContext: McpCallerContext) =>
+			orgMemberUpdateCapability.handler(
+				{ username: 'bea', role: 'owner' },
+				{ env: t.env, callerContext },
+			),
+		adminCreditGrant: (callerContext: McpCallerContext) =>
+			adminCreditGrantCapability.handler(
+				{ username: 'bea', amountCents: 100_000 },
+				{ env: t.env, callerContext },
+			),
+		adminUserUpdate: (callerContext: McpCallerContext) =>
+			adminUserUpdateCapability.handler(
+				{ username: 'owner', plan: 'pro' },
+				{ env: t.env, callerContext },
+			),
+		adminFeatureFlagSet: (callerContext: McpCallerContext) =>
+			adminFeatureFlagSetCapability.handler(
+				{ key: 'jev', enabled: true },
+				{ env: t.env, callerContext },
+			),
+	}
+	type Attempt = { credential: string | undefined; denials: Array<string> }
+	const attempts: Array<Attempt> = []
+	const tryAll = async (callerContext: McpCallerContext) => {
+		const denials: Array<string> = []
+		for (const [name, call] of Object.entries(livePersonCalls)) {
+			try {
+				await call(callerContext)
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.name === 'LivePersonRequiredError' &&
+					error.message.includes(`"${name}"`)
+				) {
+					denials.push(name)
+				}
+			}
+		}
+		attempts.push({
+			credential: callerContext.request?.credential.kind,
+			denials,
+		})
+	}
+	t.setPackageCode(tryAll)
+	const everyCall = Object.keys(livePersonCalls)
+
+	await t.enable('owner', 'subscription', emailTopic)
+	await t.enableWebhook('owner', 'endpoint-owner')
+	await t.enable('owner', 'cron', jobName)
+	await t.sendEmail('owner@acme.example')
+	await t.deliverWebhook('endpoint-owner')
+	const jobId = buildPackageJobId('pkg-shared', jobName)
+	const plan = await planEnablementRuns({
+		env: t.env,
+		orgId: t.orgId,
+		packageId: 'pkg-shared',
+		trigger: { kind: 'cron', instanceId: jobId },
+	})
+	expect(plan.runs).toHaveLength(1)
+	await tryAll(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			user: {
+				...plan.runs[0]!.enabler,
+				email: 'owner@acme.example',
+				displayName: 'owner',
+				roles: ['admin'],
+			},
+			source: { kind: 'schedule', jobId, enablement: plan.runs[0] },
+			orgBinding: {
+				org: { id: t.orgId, slug: 'quillworks' },
+				role: plan.runs[0]!.role,
+			},
+		}),
+	)
+	expect(attempts).toEqual([
+		{ credential: 'inbound-email', denials: everyCall },
+		{ credential: 'webhook', denials: everyCall },
+		{ credential: 'schedule', denials: everyCall },
+	])
+	expect(t.runs.map((run) => run.request?.actor?.userId)).toEqual([
+		t.people.owner.userId,
+		t.people.owner.userId,
+	])
+	const roleOf = async (person: 'bea' | 'owner') =>
+		(
+			await t.db
+				.prepare(
+					`SELECT role FROM org_memberships
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(t.orgId, t.people[person].userId)
+				.first<{ role: string }>()
+		)?.role
+	expect(await roleOf('bea')).toBe('member')
+
+	// The same Owner, live in a web session, may change the role.
+	await livePersonCalls.orgMemberUpdate(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			user: {
+				...t.people.owner,
+				email: 'owner@acme.example',
+				displayName: 'owner',
+			},
+			source: { kind: 'session' },
+			orgBinding: { org: { id: t.orgId, slug: 'quillworks' }, role: 'owner' },
+		}),
+	)
+	expect(await roleOf('bea')).toBe('owner')
 })

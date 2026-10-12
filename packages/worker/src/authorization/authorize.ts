@@ -560,6 +560,61 @@ export async function authorize(
 export type SurfacePermission = OrgPermission | 'none'
 
 /**
+ * A capability that needs a live person ran without one: from a triggered
+ * run (cron job, webhook, subscription, inbound email), from package code one
+ * of those started, or from a package app. The actor's role does not matter.
+ */
+export class LivePersonRequiredError extends McpCallerError {
+	readonly capabilityName: string
+
+	constructor(capabilityName: string) {
+		super(
+			`Capability "${capabilityName}" needs a live person. Call it from a web session, an interactive MCP or CLI call, or an ad hoc execute. It never runs from a job, webhook, subscription, or inbound email handler, or from package code one of those started, even when the person who turned that trigger on is an Owner.`,
+		)
+		this.name = 'LivePersonRequiredError'
+		this.capabilityName = capabilityName
+	}
+}
+
+/**
+ * Whether a person is directly behind `request`: a web session, an MCP or
+ * CLI call, or an API token they hold. Runs nested in one of those keep its
+ * credential, so an ad hoc execute counts. Triggered runs keep the trigger's
+ * credential down every nested run, so nothing they start counts.
+ */
+export function isLivePersonRequest(request: RequestContext | null): boolean {
+	if (!request?.actor) return false
+	const kind = request.credential.kind
+	switch (kind) {
+		case 'session':
+		case 'mcp-oauth':
+		case 'cli':
+		case 'api-token':
+			return true
+		case 'package-app':
+		case 'schedule':
+		case 'webhook':
+		case 'inbound-email':
+		case 'platform-event':
+			return false
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** Refuse `capabilityName` unless a live person is behind `request`. */
+export function assertLivePerson(
+	request: RequestContext | null,
+	capabilityName: string,
+): void {
+	if (!isLivePersonRequest(request)) {
+		throw new LivePersonRequiredError(capabilityName)
+	}
+}
+
+/**
  * The dispatch gate every capability and Open API operation passes. The
  * permission must be held in the org; handlers then call `authorize` with
  * the concrete resource.

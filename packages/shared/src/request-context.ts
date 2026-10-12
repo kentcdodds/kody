@@ -74,7 +74,8 @@ export type RequestContext = {
  * `membership` is the starter's role in `credential.orgId`. Downstream runs
  * execute as the org's own identity, whose role is Owner, so without it a
  * Member actor would inherit Owner. Lineage written before it existed omits
- * it and keeps the role of the identity the run uses.
+ * it; such a run keeps the role of the identity it uses only when the actor is
+ * that identity (a personal org's owner), and otherwise gets no role.
  */
 export type RequestLineage = Pick<
 	RequestContext,

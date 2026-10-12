@@ -1,6 +1,5 @@
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
-import { type createDoubleCheck } from '#client/double-check.ts'
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import {
 	AccountManagementMessage,
@@ -11,10 +10,7 @@ import {
 import { recordBodyCss } from '#client/routes/record-table.tsx'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import { plainHighlightedCode } from '#universal/highlighted-code.ts'
-import {
-	type AccountJobDetail,
-	type AccountJobsLoaderData,
-} from '#universal/loader-data.ts'
+import { type AccountJobDetail } from '#universal/loader-data.ts'
 import { relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -22,7 +18,6 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	primaryLinkCss,
@@ -42,13 +37,11 @@ import {
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 function packageValue(
 	username: string,
-	job: Pick<AccountJobDetail, 'ownership' | 'packageName' | 'packageKodyId'>,
+	job: Pick<AccountJobDetail, 'packageName' | 'packageKodyId'>,
 ) {
-	if (job.ownership !== 'package') return '—'
 	if (username && job.packageKodyId && job.packageName) {
 		return (
 			<a
@@ -88,30 +81,18 @@ export function renderAccountJobDetail(input: {
 	currentHref: string
 	detail: AccountJobDetail
 	isMutating: boolean
-	retention: AccountJobsLoaderData['retention']
-	deleteJobCheck: ReturnType<typeof createDoubleCheck>
 	postAction: PostAccountJobsAction
 	navigateToList: () => void
 }) {
-	const {
-		username,
-		detail,
-		isMutating,
-		retention,
-		deleteJobCheck,
-		postAction,
-		navigateToList,
-	} = input
-	const isPackageOwned = detail.ownership === 'package'
-	const isNotPackageOwned = !isPackageOwned
+	const { username, detail, isMutating, postAction, navigateToList } = input
 	return (
 		<section mix={css(recordBodyCss)}>
 			<div mix={css({ display: 'grid', gap: spacing.xs })}>
 				<h2 mix={css(cardTitleCss)}>{detail.name}</h2>
 				<p mix={css(descriptionCss)}>
-					{isPackageOwned
-						? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here. Use the kill switch to stop it.'
-						: 'Scheduled job. You can enable or disable it, Preserve it from auto-cleanup, or delete it.'}
+					Package-owned job. Schedule and name are owned by package publish;
+					kill switch and run-now are available here. Use the kill switch to
+					stop it.
 				</p>
 			</div>
 
@@ -120,10 +101,6 @@ export function renderAccountJobDetail(input: {
 					{
 						label: 'Package',
 						value: packageValue(username, detail),
-					},
-					{
-						label: 'Preserve',
-						value: detail.preserved ? 'On (never auto-deleted)' : 'Off',
 					},
 					{
 						label: 'Expires',
@@ -200,12 +177,10 @@ export function renderAccountJobDetail(input: {
 				</AccountManagementMessage>
 			) : null}
 
-			{isPackageOwned ? (
-				<p mix={css(descriptionCss)}>
-					To change this job&apos;s schedule or name, update the package job
-					declaration and publish the package again.
-				</p>
-			) : null}
+			<p mix={css(descriptionCss)}>
+				To change this job&apos;s schedule or name, update the package job
+				declaration and publish the package again.
+			</p>
 
 			<div mix={css(fieldCss)}>
 				<span mix={css(fieldLabelCss)}>Recent runs</span>
@@ -386,11 +361,6 @@ export function renderAccountJobDetail(input: {
 											payload.runNow.error ? `: ${payload.runNow.error}` : '.'
 										}`
 									}
-									if (detail.schedule.type === 'once' && payload.runNow?.ok) {
-										return detail.preserved
-											? 'Job run finished. Preserved — will not be auto-deleted.'
-											: `Job run finished. Kept for ${retention.successOnceDays} days · Preserve to keep forever.`
-									}
 									return 'Job run requested.'
 								},
 								failureMessage: 'Unable to run job now.',
@@ -431,79 +401,6 @@ export function renderAccountJobDetail(input: {
 						? 'Clear kill switch'
 						: 'Enable kill switch'}
 				</button>
-				{isNotPackageOwned ? (
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[
-							on('click', () =>
-								postAction({
-									body: {
-										action: 'set_preserved',
-										id: detail.id,
-										preserved: !detail.preserved,
-									},
-									successMessage: () =>
-										detail.preserved
-											? 'Cleared Preserve. This job can age out under retention.'
-											: 'Preserved. This job will not be auto-deleted.',
-									failureMessage: 'Unable to update Preserve.',
-								}),
-							),
-							css(secondaryButtonCss),
-						]}
-					>
-						{detail.preserved ? 'Clear Preserve' : 'Preserve'}
-					</button>
-				) : null}
-				{isNotPackageOwned ? (
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[
-							on('click', () =>
-								postAction({
-									body: {
-										action: 'set_enabled',
-										id: detail.id,
-										enabled: !detail.enabled,
-									},
-									successMessage: () =>
-										detail.enabled ? 'Disabled job.' : 'Enabled job.',
-									failureMessage: 'Unable to update job.',
-								}),
-							),
-							css(secondaryButtonCss),
-						]}
-					>
-						{detail.enabled ? 'Disable' : 'Enable'}
-					</button>
-				) : null}
-				{isNotPackageOwned ? (
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[
-							...deleteJobCheck.getButtonMix({
-								on: {
-									click: () =>
-										void postAction({
-											body: { action: 'delete', id: detail.id },
-											successMessage: () => 'Deleted job.',
-											failureMessage: 'Unable to delete job.',
-											afterSuccess: () => {
-												navigateToList()
-											},
-										}),
-								},
-								resetAfterAction: false,
-							}),
-							css(dangerButtonCss),
-						]}
-					>
-						{deleteJobCheck.doubleCheck ? 'Confirm delete' : 'Delete'}
-					</button>
-				) : null}
 			</div>
 		</section>
 	)

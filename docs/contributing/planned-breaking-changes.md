@@ -48,15 +48,21 @@ package access rules as an undeclared package. Slots only drive publish
 validation
 ([credential slots](../use/packages.md#credential-slots-kodycredentials)).
 
-Credentials plan v4 (section 3.3) makes an assignment the grant: an org assigns
-a credential to each slot, a declared package resolves only through its
-assignments, and nothing falls back to a name. Once that ships, a package that
-declares slots and has no assignments fails each use with an assign link, so
-every declared package needs assignments on that deploy. Undeclared packages
-keep the name lane until their migration phase ends.
+[ADR 0068](./decisions/0068-credentials-own-placement-scoped-clients.md)
+replaces this name lane, and supersedes the assignments of credentials plan v4
+section 3.3 and its placeholder grammar in section 3.4: there are no
+assignments. Each credential owns its hosts and placement, package code reaches
+it through a scoped `credential(key)` client, and callers pick among candidates
+with a call map (or an enablement for triggers). A fleet codemod rewrites
+placeholders it can convert identically. The placeholder lane, `secretMounts`,
+`packageSecrets`, `|scope=`, webhook `secretName`, `x-kody-secret-resolution`,
+and package allowlists and usage modes are then removed, at once if a rescan
+finds no old patterns, otherwise when the remaining packages convert or at T+90
+at the latest.
 
-**Ready when:** assignments, their API and UI, and the fork and install assign
-step are live, and the declared packages in the fleet scan have assignments.
+**Ready when:** the credential clients and call maps are live in production (T),
+every placement the scan finds has a working resolver kind, and the post-codemod
+rescan shows no old patterns (or T+90 for packages that could not be converted).
 
 **Introduced as leftover by:** the `kody.credentials` manifest field (credential
-slots ship before assignments).
+slots ship before credential clients).

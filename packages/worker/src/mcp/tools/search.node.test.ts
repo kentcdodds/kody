@@ -102,6 +102,7 @@ function cap(
 		idempotent: true,
 		destructive: false,
 		orgPermission: 'none',
+		requiresLivePerson: 'never',
 		source: 'builtin',
 		inputSchema: { type: 'object' as const, properties: {} },
 		inputTypeDefinition: '',

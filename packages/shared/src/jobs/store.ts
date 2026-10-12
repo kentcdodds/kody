@@ -20,7 +20,6 @@ import {
 	listAllJobStorageOwnerRows,
 	listDueJobRows,
 	listJobIdRowsForUser,
-	listJobRetentionCandidateRows,
 	listJobRowsByUserId,
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
@@ -30,6 +29,7 @@ import {
 	retryClaimedJobRow,
 	softDeleteJobRowsForUser,
 	sumJobRowsStorageBytesForUser,
+	transferJobRowsOwner,
 	updateJobRow,
 	type JobCountBySourceId,
 	type JobRow,
@@ -108,10 +108,6 @@ export type JobsStore = {
 		userId: string
 		nowIso: string
 	}): Promise<number>
-	listJobRetentionCandidates(input: {
-		afterId: string | null
-		limit: number
-	}): Promise<Array<JobRow>>
 	upsertArchivedJobArtifact(input: {
 		jobId: string
 		userId: string
@@ -174,6 +170,17 @@ export type JobsStore = {
 		deletedAt: string
 		restoredAt: string
 	}): Promise<number>
+	/**
+	 * Operator org resource transfer: re-point live, unclaimed jobs from one
+	 * owner to another in one batch, rewriting each caller context. Refuses
+	 * (and changes nothing) unless every listed job matches.
+	 */
+	transferJobsOwner(input: {
+		fromUserId: string
+		toUserId: string
+		jobs: Array<{ jobId: string; callerContextJson: string }>
+		updatedAt: string
+	}): Promise<{ transferred: number }>
 }
 
 /** D1-backed {@link JobsStore} used by the jobs worker (and dev/test fallback). */
@@ -205,8 +212,6 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		deleteJob: (input) => deleteJobRow(db, input.userId, input.jobId),
 		disableExpiredJobsForUser: (input) =>
 			disableExpiredJobRowsForUser({ db, ...input }),
-		listJobRetentionCandidates: (input) =>
-			listJobRetentionCandidateRows(db, input),
 		upsertArchivedJobArtifact: (input) =>
 			upsertArchivedJobArtifact({ db, ...input }),
 		listArchivedJobArtifactsDueBefore: (input) =>
@@ -264,5 +269,6 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		softDeleteJobsForUser: (input) =>
 			softDeleteJobRowsForUser({ db, ...input }),
 		restoreJobsForUser: (input) => restoreJobRowsForUser({ db, ...input }),
+		transferJobsOwner: (input) => transferJobRowsOwner({ db, ...input }),
 	}
 }

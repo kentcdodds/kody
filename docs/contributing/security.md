@@ -712,24 +712,14 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
-- **Admin roles apply to package code running as an admin owner — including
-  mutations with cross-user / fleet blast.** Jobs, inbound webhook handlers,
-  package subscriptions, and other background package invocations resolve the
-  owner's current roles (`packages/worker/src/identity/background-mcp-user.ts`),
-  and admin capability checks do not require an interactive session. That reach
-  is not read-only: admin-owned package, job, and webhook code can invoke admin
-  mutations (anything that uses `adminMutationCapabilityAccess`, plus other
-  admin-gated write paths). The concrete cross-user blast includes
-  `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
-  users' published package trees), and the same unattended path can call other
-  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`,
-  `adminSystemEmailSend`, and `adminPackageCodemodOwnerNotice` (emails package
-  owners fleet-wide). Installing an untrusted package on an admin account
-  therefore carries that blast radius. This is accepted residual, not a silent
-  interactive-only mutation gate. Deferred alternatives include gating admin
-  mutations on `executionOrigin: 'interactive'`, and/or separate service
-  principals ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
-  [Background and package callers](./architecture/authorization.md#background-and-package-callers).
+- **Site-admin, role, membership, and billing actions need a live person.**
+  Background package runs still resolve the owner's current roles
+  (`packages/worker/src/identity/background-mcp-user.ts`), but every site-admin
+  capability and every member, role, invite, or member/billing grant change
+  declares `requiresLivePerson`, so a job, webhook, subscription, or inbound
+  email run (and package code it starts) is denied even when its enabler is an
+  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+  [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

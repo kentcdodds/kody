@@ -62,13 +62,14 @@ never builds a source: it runs nothing.
 `inherited` carries a `RequestLineage` (actor, attribution, credential,
 membership). Membership is the starter's role in its own org, so a downstream
 run that executes as the org's identity does not lift a Member to Owner; lineage
-written before membership existed keeps the role of the run's identity. The org
-is never inherited; it is re-resolved for the identity the run uses. Lineage
-crosses durable boundaries as JSON: workflow payloads (`lineage`, kept out of
-instance-id hashing), package event queue messages (`lineage`), and the jobs
-worker run-now RPC. Readers re-validate it with `parseRequestLineage`. A payload
-written before lineage existed runs as Automation, which can only narrow what
-the starter could do.
+written before membership existed keeps the role of the run's identity only when
+the actor is that identity (a personal org's owner); any other actor gets no
+role. The org is never inherited; it is re-resolved for the identity the run
+uses. Lineage crosses durable boundaries as JSON: workflow payloads (`lineage`,
+kept out of instance-id hashing), package event queue messages (`lineage`), and
+the jobs worker run-now RPC. Readers re-validate it with `parseRequestLineage`.
+A payload written before lineage existed runs as Automation, which can only
+narrow what the starter could do.
 
 ## The one swap point
 

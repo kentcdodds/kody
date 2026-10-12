@@ -155,13 +155,11 @@ Role and permission checks use the authenticated MCP caller context for the
 current request. That context carries the account owner's roles for interactive
 MCP sessions and for background package callers alike (jobs, webhooks,
 subscriptions, and other package invocations), and the checks do not look at
-`executionOrigin`. A `requiredRole: 'admin'` capability is therefore callable
-unattended from package code owned by an admin — including admin mutations with
-cross-user / fleet blast (for example `adminPackageCodemodApply`); see
-[Background and package callers](./architecture/authorization.md#background-and-package-callers)
-and the accepted residual in
-[Security](./security.md#accepted-residual-risks-and-out-of-scope-items). Do
-**not** cache role or permission decisions into Vectorize metadata, OAuth
+`executionOrigin`. Site-admin capabilities, and any capability that changes
+roles, membership, or billing, must also declare `requiresLivePerson` (the admin
+access helpers already do) so no triggered run can call them; see
+[Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
+Do **not** cache role or permission decisions into Vectorize metadata, OAuth
 grants, package state, or session-scoped data. Interactive requests reload roles
 every time, so revocation takes effect on the next request; background callers
 pick it up once the 60-second background identity cache expires.

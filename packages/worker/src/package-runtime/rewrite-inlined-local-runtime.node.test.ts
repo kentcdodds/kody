@@ -611,3 +611,44 @@ ${author}
 		).toEqual([])
 	}
 })
+
+test('rewriteInlinedLocalExecuteBundleSource aliases shim factories shadowed by a composed legacy runtime copy', () => {
+	const modulePath =
+		'.__kody_packages__/@acme/shades/.__published_bundle__/2e2f706c616e2d646179/bundle.js'
+	const source = `// virtual:.__kody_packages__/@acme/forecast/.__published_bundle__/2e2f686973746f7279/bundle.js
+function __kodyResolvePackageStorage(id) { throw new Error("cloud runtime store " + id); }
+function __kodyCreatePackageBoundStorage(id) { return () => __kodyResolvePackageStorage(id); }
+function __kodyOptionalRuntimeFunctionExport(exportName) { return void 0; }
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(dependencyPackageId)});
+async function getForecast() { return await packageStorage2().get("forecast"); }
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage3 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/plan-day.ts
+export default async function planDay() {
+  await packageStorage3().set("config", await getForecast());
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath,
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.packageId).toBe(packageId)
+	expect(result.source).toMatch(
+		/import \{[^}]*\b__kodyCreatePackageBoundStorage as __kodyShimCreatePackageBoundStorage\b[^}]*\}/,
+	)
+	expect(result.source).toContain(
+		`var packageStorage3 = __kodyShimCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	// The composed copy keeps its own declaration and stamped dependency binding.
+	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(dependencyPackageId)});`,
+	)
+	expect(result.source).toMatch(
+		/import \{[^}]*\b__kodyCreatePackageBoundSecrets\b[^}]*\}/,
+	)
+})

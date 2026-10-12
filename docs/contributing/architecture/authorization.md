@@ -228,6 +228,35 @@ discovery, platform feedback, your own tokens, and site-admin tools, which
 capability declares an org permission, and `operations.node.test.ts` fails when
 an operation publishes no valid permission.
 
+### Capabilities that need a live person
+
+Some capabilities never run unattended, whatever the enabler's role. A
+capability declares this once with `requiresLivePerson`, and `defineCapability`
+checks it in the same dispatch path as `authorizeSurface`:
+
+- `requiresLivePerson: true` is checked before any other gate.
+- A predicate `(args, ctx) => boolean` is checked after the input parses, for
+  capabilities where only some inputs qualify. `accessGrant` and `accessRevoke`
+  use it for org grants that carry `member:*` or `billing:*` permissions, or
+  that replace or revoke a grant that does.
+
+`isLivePersonRequest` (`packages/worker/src/authorization/authorize.ts`) is the
+one definition of a live person: an actor plus a credential kind of `session`,
+`mcp-oauth`, `cli`, or `api-token`. `package-app`, `schedule`, `webhook`,
+`inbound-email`, and `platform-event` are never live. Runs inherit their
+starter's credential, so package code started by a trigger is not live, and an
+execute started from an MCP call is. A denial throws `LivePersonRequiredError`,
+which names the capability; Open API maps it to 403 `insufficient_scope` with
+`denial: 'live_person_required'`.
+
+Declared today: every site-admin capability (through `adminCapabilityAccess` and
+`adminMutationCapabilityAccess`, plus `communitySetFeatured`),
+`orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`, `inviteAccept`,
+`inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member or billing
+grants. Org billing writes are session-only web handlers.
+`registry.node.test.ts` fails when a site-admin or member-changing capability
+does not declare it.
+
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
 write-implies-read hierarchy and no separate `x-kody-scope` check.
@@ -514,19 +543,15 @@ seconds, so a revoked role can still pass background checks until that entry
 expires and the owner is resolved again. Interactive MCP and browser requests
 reload roles on every request.
 
-`requiredRole` / `requiredPermission` checks compare against those roles and do
-not inspect `executionOrigin`. No admin capability has an interactive-only gate,
-so package code owned by an admin can call admin-gated capabilities unattended —
-reads and mutations alike — with the same reach as that admin calling them from
-an MCP session. That includes fleet-wide / cross-user mutations such as
-`adminPackageCodemodApply` (republishes other users' published packages), and
-other high-blast writes such as `adminUserCreate`, `adminFeatureFlagSet`, and
-`adminSystemEmailSend`. Interactive-only gates exist on a few specific non-admin
-capabilities (for example `communityForkAdopt`, `packageAppFetch`,
-`packageSubscriptionDispatch`, and platform-feedback submit); they are
-per-capability contracts, not part of role evaluation. Interactive-only
-`executionOrigin` gates for admin mutations, and separate service principals,
-are deferred designs — not applied as a silent gate on these capabilities.
+`requiredRole` / `requiredPermission` checks compare against those roles. Every
+site-admin capability also declares `requiresLivePerson`, so a background run
+owned by an admin still cannot call one: the call fails with
+`LivePersonRequiredError` (see
+[Capabilities that need a live person](#capabilities-that-need-a-live-person)).
+Other interactive-only gates exist on a few specific non-admin capabilities (for
+example `communityForkAdopt`, `packageAppFetch`, `packageSubscriptionDispatch`,
+and platform-feedback submit); they are per-capability contracts, not part of
+role evaluation.
 
 Package app HTTP handlers and realtime hooks call capabilities through the
 package-app runtime bridge
@@ -537,10 +562,6 @@ realtime hooks even though the realtime session resolves a role-bearing context
 when it builds the app worker; only identity fields reach the bridge. Package
 exports that app or realtime code invokes run through the background path above
 and do carry the owner's roles.
-
-Treat any package saved on an admin account as running with full admin reach,
-including those mutations. See the residual-risk entry in
-[Security](../security.md#accepted-residual-risks-and-out-of-scope-items).
 
 ## Privacy boundary
 

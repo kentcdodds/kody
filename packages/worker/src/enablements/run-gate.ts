@@ -166,7 +166,7 @@ type AccessCheck =
 async function checkEnablerAccess(input: {
 	env: Env
 	enablement: EnablementRecord
-	packageResource: OrgResource | null
+	packageResource: OrgResource
 }): Promise<AccessCheck> {
 	const { enablement } = input
 	const db = input.env.APP_DB
@@ -195,22 +195,20 @@ async function checkEnablerAccess(input: {
 		orgBinding: binding,
 	})
 	const access = await computeEffectivePermissions({ env: input.env, request })
-	if (input.packageResource) {
-		const decision = checkPermission(
-			access,
-			'package:execute',
-			input.packageResource,
-		)
-		if (!decision.allowed) {
-			return {
-				ok: false,
-				pause: {
-					reason: 'package_access',
-					permission: 'package:execute',
-					resourceType: input.packageResource.type,
-					resourceId: input.packageResource.id,
-				},
-			}
+	const packageDecision = checkPermission(
+		access,
+		'package:execute',
+		input.packageResource,
+	)
+	if (!packageDecision.allowed) {
+		return {
+			ok: false,
+			pause: {
+				reason: 'package_access',
+				permission: 'package:execute',
+				resourceType: input.packageResource.type,
+				resourceId: input.packageResource.id,
+			},
 		}
 	}
 	const stored = await storedPauseResource(db, enablement)
@@ -234,7 +232,7 @@ async function checkEnablerAccess(input: {
 export async function planEnablementRuns(input: {
 	env: Env
 	orgId: string
-	packageId: string | null
+	packageId: string
 	trigger: EnablementTrigger
 	onlyEnablerId?: string | null
 	audience?: EnablementAudience | null
@@ -266,13 +264,11 @@ export async function planEnablementRuns(input: {
 		const check = await checkEnablerAccess({
 			env: input.env,
 			enablement,
-			packageResource: input.packageId
-				? {
-						type: 'package',
-						id: input.packageId,
-						orgId: enablement.orgId,
-					}
-				: null,
+			packageResource: {
+				type: 'package',
+				id: input.packageId,
+				orgId: enablement.orgId,
+			},
 		})
 		if (!check.ok) {
 			if (check.pause && enablement.state === 'on') {

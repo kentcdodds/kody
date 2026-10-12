@@ -20,6 +20,7 @@ import {
 	accessGrantSchema,
 	authorizeGrantRevoke,
 	authorizeGrantTarget,
+	grantChangesMemberOrBilling,
 	grantPresetSchema,
 	grantTargetTypeSchema,
 	readPermissionList,
@@ -79,6 +80,42 @@ export const accessGrantCapability = defineDomainCapability(
 	{
 		name: 'accessGrant',
 		orgPermission: 'none',
+		requiresLivePerson: async (args, ctx) => {
+			if (args.resource_type !== 'org') return false
+			if (
+				grantChangesMemberOrBilling({
+					resourceType: args.resource_type,
+					permissions: args.permissions,
+				})
+			) {
+				return true
+			}
+			const request = ctx.callerContext.request
+			if (!request) return true
+			// The write replaces this subject's grant, so dropping member or billing
+			// permissions it already holds is a change too. Authorize first so only
+			// a caller who could make the write learns what the subject holds.
+			await authorizeGrantTarget(ctx, 'org', args.resource_id)
+			const subject = await resolveGrantSubject(
+				ctx.env.APP_DB,
+				request.org.id,
+				{
+					subject_type: args.subject_type,
+					subject_id: args.subject_id,
+					username: args.username,
+					team_slug: args.team_slug,
+				},
+			)
+			const existing = await listGrants({
+				db: ctx.env.APP_DB,
+				orgId: request.org.id,
+				resourceType: 'org',
+				resourceId: args.resource_id,
+				subjectType: subject.type,
+				subjectId: subject.id,
+			})
+			return existing.some(grantChangesMemberOrBilling)
+		},
 		description:
 			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Secrets, integrations, MCP servers, and vault bindings use resource_type credential with the credential_id from secretList, integrationList, mcpServerList, or secretProviderList; the grant follows the credential, not its name. resource_type secret or integration with a name still works: the name resolves to its credential once, when the grant is made. Organization grants use resource_type org and this organization id. You need manage access on that resource (or member:write for an organization grant). Only an Owner can put org:write, org:delete, member:write, or member:delete on an organization grant.',
 		keywords: ['grant', 'access', 'permission', 'share', 'preset'],
@@ -169,6 +206,18 @@ export const accessRevokeCapability = defineDomainCapability(
 	{
 		name: 'accessRevoke',
 		orgPermission: 'none',
+		requiresLivePerson: async (args, ctx) => {
+			const request = ctx.callerContext.request
+			if (!request) return true
+			const grant = await getGrantById({
+				db: ctx.env.APP_DB,
+				orgId: request.org.id,
+				grantId: args.grant_id,
+			})
+			if (!grant || !grantChangesMemberOrBilling(grant)) return false
+			await authorizeGrantTarget(ctx, 'org', grant.resourceId)
+			return true
+		},
 		description:
 			'Revoke one live grant in the organization this request is bound to. You need manage access on that grant resource (or member:write for an organization grant).',
 		keywords: ['grant', 'revoke', 'access', 'remove'],

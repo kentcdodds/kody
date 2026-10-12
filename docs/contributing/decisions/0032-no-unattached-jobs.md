@@ -23,9 +23,9 @@ package job. Deferred or long-running one-shot work is a workflow started from
 `execute` or package runtime. Do not add workflow cron, a `schedule()` wrapper
 package, or an unattached-job capability.
 
-`jobList`, `jobGet`, `jobRunNow`, metadata `jobUpdate`, and `jobDelete` remain
-for package jobs and for any leftover unattached rows until those rows are gone.
-The runner does not care how a row was created.
+`jobList`, `jobGet`, `jobRunNow`, and metadata `jobUpdate` operate on package
+jobs only. A job is removed by deleting it from `package.json#kody.jobs` and
+publishing; there is no `jobDelete`.
 
 ## Consequences
 
@@ -34,3 +34,15 @@ workflows only. `/account/workflows` is a view over existing
 `workflow_projections`, not a new primitive. Revisit only if a recurring
 schedule must exist without a package _and_ without a workflow — that has not
 shown up in the fleet.
+
+## Amendment: unattached rows retired
+
+There is no Owner-only re-enable path for unattached rows (#3401). The last
+unattached rows were moved into private package jobs in their owner's org or
+deleted after the owner was notified, using the one-shot `adminLegacyJobsRetire`
+capability. The code that existed only for those rows went with them: the
+enablement backfill branch for non-package jobs, the `kody.json` job source sync
+and templates, `jobDelete`, the job retention sweeper and `preserved` flag, and
+the `/account/jobs` delete, retention, and enable toggles. The jobs D1 now
+asserts every row id is a `package-job:` id, and the runner throws on any job
+that is not a package job.

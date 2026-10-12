@@ -1,0 +1,434 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { dirname } from 'node:path'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { build, type Plugin } from 'esbuild'
+import { expect, test, vi } from 'vitest'
+import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
+import {
+	moduleGraphMockModule as mockModule,
+	createSavedPackageRecord,
+	createTemporaryModuleGraph,
+} from '#worker/test-support/module-graph.ts'
+import { buildLocalExecutePackageGraph } from './local-execute-package-graph.ts'
+import { buildKodyImportableModuleBundle } from './module-graph-bundle-builders.ts'
+import { prepareKodyGraphFiles } from './module-graph-import-rewriting.ts'
+import {
+	joinPath,
+	normalizeWorkspaceModulePath,
+	resolveRelativeModulePath,
+	rootSourcePrefix,
+} from './module-graph-paths.ts'
+import {
+	createImportableEntrypointSource,
+	refreshKodyRuntimeModules,
+} from './runtime-source-modules.ts'
+
+vi.mock('#worker/worker-bundler-modules.ts', () => ({
+	importWorkerBundler: async () => ({ createWorker: bundleVirtualFiles }),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
+	getSavedPackageByName: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByName(...args),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageSourceBySourceId(...args),
+}))
+
+vi.mock('./published-bundle-artifacts.ts', async () => {
+	const actual = await vi.importActual<typeof PublishedBundleArtifactsModule>(
+		'./published-bundle-artifacts.ts',
+	)
+	return {
+		...actual,
+		loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
+			mockModule.loadPublishedBundleArtifactByIdentity(...args),
+	}
+})
+
+const env = { APP_DB: {}, REPO_SESSION: {} } as Env
+const baseUrl = 'https://heykody.dev'
+const userId = ownerIdFromStored('user-1')
+
+type FixturePackage = {
+	id: string
+	name: string
+	kodyId: string
+	sourceId: string
+	exportName: string
+	entryPoint: string
+	files: Record<string, string>
+}
+
+const forecastPackage: FixturePackage = {
+	id: '6f0c9d8e-0000-4000-8000-00000000f0ca',
+	name: '@acme/forecast',
+	kodyId: 'forecast',
+	sourceId: 'source-forecast',
+	exportName: './history',
+	entryPoint: 'src/history.ts',
+	files: {
+		'src/history.ts': `import { packageStorage } from 'kody:runtime'
+export async function recordForecast(value) {
+	await packageStorage().set('forecast', value)
+}
+export async function getForecast() {
+	return await packageStorage().get('forecast')
+}
+export default getForecast
+`,
+	},
+}
+
+const shadesPackage: FixturePackage = {
+	id: '6f0c9d8e-0000-4000-8000-0000000005ad',
+	name: '@acme/shades',
+	kodyId: 'shades',
+	sourceId: 'source-shades',
+	exportName: './plan-day',
+	entryPoint: 'src/plan-day.ts',
+	files: {
+		'src/plan-day.ts': `import { getForecast, recordForecast } from 'kody:@acme/forecast/history'
+import { packageStorage } from 'kody:runtime'
+export default async function planDay(params) {
+	await recordForecast(params.forecast)
+	await packageStorage().set('config', { synced: true })
+	return {
+		forecast: await getForecast(),
+		config: await packageStorage().get('config'),
+	}
+}
+`,
+	},
+}
+
+function packageJsonFor(pkg: FixturePackage) {
+	return {
+		name: pkg.name,
+		exports: { [pkg.exportName]: `./${pkg.entryPoint}` },
+		kody: { id: pkg.kodyId, description: `${pkg.name} fixture` },
+	}
+}
+
+function sourceFilesFor(pkg: FixturePackage) {
+	return {
+		'package.json': JSON.stringify(packageJsonFor(pkg)),
+		...pkg.files,
+	}
+}
+
+function virtualFilesPlugin(files: Record<string, string>): Plugin {
+	return {
+		name: 'virtual-files',
+		setup(pluginBuild) {
+			pluginBuild.onResolve({ filter: /.*/ }, (args) => {
+				if (args.path.startsWith('node:')) {
+					return { path: args.path, external: true }
+				}
+				const path =
+					args.kind === 'entry-point'
+						? normalizeWorkspaceModulePath(args.path)
+						: (resolveRelativeModulePath(args.importer, args.path) ??
+							normalizeWorkspaceModulePath(args.path))
+				return { path, namespace: 'virtual' }
+			})
+			pluginBuild.onLoad({ filter: /.*/, namespace: 'virtual' }, (args) => {
+				const contents = files[args.path]
+				if (contents === undefined) {
+					throw new Error(`Missing virtual fixture module ${args.path}`)
+				}
+				return {
+					contents,
+					loader: args.path.endsWith('.ts') ? 'ts' : 'js',
+					resolveDir: dirname(args.path),
+				}
+			})
+		},
+	}
+}
+
+/**
+ * Node stand-in for `@cloudflare/worker-bundler` `createWorker` (workerd
+ * only): esbuild over the same in-memory files, honoring the esbuild plugins
+ * the graph builder passes (the shared-runtime externals plugin).
+ */
+async function bundleVirtualFiles(input: {
+	files: Record<string, string>
+	entryPoint: string
+	__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?: Array<Plugin>
+}) {
+	const result = await build({
+		entryPoints: [input.entryPoint],
+		bundle: true,
+		format: 'esm',
+		platform: 'neutral',
+		write: false,
+		absWorkingDir: '/',
+		outfile: 'bundle.js',
+		plugins: [
+			...(input.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired ?? []),
+			virtualFilesPlugin(input.files),
+		],
+	})
+	const output = result.outputFiles[0]?.text
+	if (!output) throw new Error('Fixture bundle produced no output.')
+	return { mainModule: 'bundle.js', modules: { 'bundle.js': output } }
+}
+
+/**
+ * Importable-module artifacts published before the shared runtime was
+ * externalized inline a full cloud `kody:runtime` copy. Consumers published
+ * later still compose that artifact verbatim, so its runtime copy survives
+ * into their bundles without a `// virtual:` banner of its own.
+ */
+async function buildLegacyInlinedRuntimeArtifact(pkg: FixturePackage) {
+	const prepared = await prepareKodyGraphFiles({
+		env,
+		baseUrl,
+		userId,
+		sourceFiles: sourceFilesFor(pkg),
+		entryPoint: pkg.entryPoint,
+		rootPackageId: pkg.id,
+	})
+	const entryPath = joinPath(rootSourcePrefix, '.__kody_import_entry__.js')
+	const files = refreshKodyRuntimeModules({
+		...prepared.files,
+		[entryPath]: createImportableEntrypointSource({
+			modulePath: `./${prepared.entryPoint}`,
+		}),
+	}) as Record<string, string>
+	return await bundleVirtualFiles({ files, entryPoint: entryPath })
+}
+
+function artifactHit(
+	pkg: FixturePackage,
+	bundle: { mainModule: string; modules: Record<string, unknown> },
+) {
+	return {
+		row: { id: `artifact-${pkg.kodyId}` },
+		artifact: {
+			version: 1,
+			kind: 'importable-module' as const,
+			sourceId: pkg.sourceId,
+			publishedCommit: 'commit-1',
+			artifactName: pkg.exportName,
+			entryPoint: pkg.entryPoint,
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+			dependencies: [],
+			packageContext: {
+				packageId: pkg.id,
+				kodyId: pkg.kodyId,
+				sourceId: pkg.sourceId,
+			},
+			createdAt: '2026-10-01T00:00:00.000Z',
+		},
+	}
+}
+
+function installRegistry(
+	artifacts: Map<string, ReturnType<typeof artifactHit>>,
+) {
+	const packages = [forecastPackage, shadesPackage]
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) => {
+			const pkg = packages.find((candidate) => candidate.name === input.name)
+			if (!pkg) return null
+			return {
+				...createSavedPackageRecord({
+					name: pkg.name,
+					kodyId: pkg.kodyId,
+					sourceId: pkg.sourceId,
+				}),
+				id: pkg.id,
+			}
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			const pkg = packages.find(
+				(candidate) => candidate.sourceId === input.sourceId,
+			)
+			if (!pkg) throw new Error(`Unknown source ${input.sourceId}`)
+			return {
+				source: { id: pkg.sourceId, published_commit: 'commit-1' },
+				manifest: packageJsonFor(pkg),
+				files: sourceFilesFor(pkg),
+			}
+		},
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { sourceId: string }) =>
+			artifacts.get(input.sourceId) ?? null,
+	)
+}
+
+/**
+ * Mirrors the `@kodycodes/cli` workerd host: a `kody:runtime` module whose
+ * calls hop to CapabilityProxy, a shared runtime ALS entered with the host
+ * default before user code evaluates, and the origin shim imported first for
+ * its side effects.
+ */
+function createCliHostRuntimeSource() {
+	return `
+import { AsyncLocalStorage } from 'node:async_hooks';
+function __kodyNamespace(path) {
+	return new Proxy(function () {}, {
+		get(_target, property) {
+			if (typeof property === 'symbol' || property === 'then' || property === 'toJSON') return undefined;
+			return __kodyNamespace([...path, property]);
+		},
+		apply(_target, _thisArg, args) {
+			return globalThis.__kodyTestBridge(path, args);
+		},
+	});
+}
+export const kody = __kodyNamespace(['kody']);
+export const workflows = null;
+export const packages = null;
+export const packageContext = Object.freeze({});
+export const email = null;
+export const events = null;
+const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __kodyRuntimeStorage =
+	globalThis[__kodyRuntimeStorageSymbol] ??
+	(globalThis[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+const __kodyRuntimeDefault = Object.freeze({ kody, packageContext, email, workflows, packages, events });
+export default __kodyRuntimeDefault;
+export function __kodyRunInLocalRuntime(callback) {
+	return __kodyRuntimeStorage.run(__kodyRuntimeDefault, callback);
+}
+`
+}
+
+function createCliEntrySource() {
+	return `
+import './.__kody_virtual__/runtime.js';
+import { __kodyRunInLocalRuntime } from './kody:runtime';
+export async function run(params) {
+	return await __kodyRunInLocalRuntime(async () => {
+		const module = await import('./main.js');
+		return await module.default(params);
+	});
+}
+`
+}
+
+function createFakePackageStorageBridge() {
+	const buckets = new Map<string, Map<string, unknown>>()
+	const calls: Array<{ path: string; packageId: unknown }> = []
+	const bucket = (packageId: unknown) => {
+		const key = String(packageId)
+		let existing = buckets.get(key)
+		if (!existing) {
+			existing = new Map()
+			buckets.set(key, existing)
+		}
+		return existing
+	}
+	const bridge = async (path: Array<string>, args: Array<unknown>) => {
+		const input = (args[0] ?? {}) as {
+			packageId?: unknown
+			key?: string
+			value?: unknown
+		}
+		const name = path.join('.')
+		calls.push({ path: name, packageId: input.packageId })
+		switch (name) {
+			case 'kody.packageStorageGet':
+				return {
+					value: bucket(input.packageId).get(String(input.key)) ?? null,
+				}
+			case 'kody.packageStorageSet':
+				bucket(input.packageId).set(String(input.key), input.value)
+				return { ok: true }
+			default:
+				throw new Error(`Unexpected CapabilityProxy hop ${name}`)
+		}
+	}
+	return { bridge, buckets, calls }
+}
+
+test('execute --local binds packageStorage per package identity through nested imports of legacy artifacts', async () => {
+	vi.clearAllMocks()
+	const artifacts = new Map<string, ReturnType<typeof artifactHit>>()
+	installRegistry(artifacts)
+
+	artifacts.set(
+		forecastPackage.sourceId,
+		artifactHit(
+			forecastPackage,
+			await buildLegacyInlinedRuntimeArtifact(forecastPackage),
+		),
+	)
+	const forecastBundle = artifacts.get(forecastPackage.sourceId)?.artifact
+		.modules['bundle.js'] as string
+	expect(forecastBundle).toContain('function __kodyCreatePackageBoundStorage(')
+
+	const shadesBundle = await buildKodyImportableModuleBundle({
+		env,
+		baseUrl,
+		userId,
+		sourceFiles: sourceFilesFor(shadesPackage),
+		entryPoint: shadesPackage.entryPoint,
+		rootPackageId: shadesPackage.id,
+	})
+	artifacts.set(
+		shadesPackage.sourceId,
+		artifactHit(shadesPackage, shadesBundle),
+	)
+
+	const code = `import planDay from 'kody:@acme/shades/plan-day'
+export default async function main(params) { return await planDay(params) }`
+	const graph = await buildLocalExecutePackageGraph({
+		env,
+		baseUrl,
+		userId,
+		code,
+	})
+
+	const files: Record<string, string> = {
+		'kody:runtime': createCliHostRuntimeSource(),
+		'entry.js': createCliEntrySource(),
+		'main.js': code.replace(
+			"'kody:@acme/shades/plan-day'",
+			"'./kody:@acme/shades/plan-day'",
+		),
+	}
+	for (const module of graph.modules) files[module.name] = module.esModule
+
+	const { bridge, buckets, calls } = createFakePackageStorageBridge()
+	const runtimeStorageSymbol = Symbol.for('kody.runtimeStorage')
+	const previousStorage = Reflect.get(globalThis, runtimeStorageSymbol)
+	Reflect.set(globalThis, runtimeStorageSymbol, new AsyncLocalStorage())
+	Reflect.set(globalThis, '__kodyTestBridge', bridge)
+	const moduleGraph = await createTemporaryModuleGraph(files)
+	try {
+		const entry = (await moduleGraph.importModule('entry.js')) as {
+			run: (params: unknown) => Promise<unknown>
+		}
+		await expect(entry.run({ forecast: { high: 81 } })).resolves.toEqual({
+			forecast: { high: 81 },
+			config: { synced: true },
+		})
+	} finally {
+		await moduleGraph.cleanup()
+		Reflect.deleteProperty(globalThis, '__kodyTestBridge')
+		Reflect.set(globalThis, runtimeStorageSymbol, previousStorage)
+	}
+
+	expect(Object.fromEntries(buckets.get(forecastPackage.id) ?? [])).toEqual({
+		forecast: { high: 81 },
+	})
+	expect(Object.fromEntries(buckets.get(shadesPackage.id) ?? [])).toEqual({
+		config: { synced: true },
+	})
+	expect([...buckets.keys()].sort()).toEqual(
+		[forecastPackage.id, shadesPackage.id].sort(),
+	)
+	expect(calls.every((call) => typeof call.packageId === 'string')).toBe(true)
+})

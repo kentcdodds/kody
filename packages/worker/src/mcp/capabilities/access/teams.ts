@@ -136,6 +136,7 @@ export const teamMemberAddCapability = defineDomainCapability(
 	{
 		name: 'teamMemberAdd',
 		orgPermission: 'team:write',
+		requiresLivePerson: true,
 		description:
 			'Add an organization member to a team in the organization this request is bound to. The person must already be a live member.',
 		keywords: ['team', 'member', 'add'],
@@ -188,6 +189,7 @@ export const teamMemberRemoveCapability = defineDomainCapability(
 	{
 		name: 'teamMemberRemove',
 		orgPermission: 'team:delete',
+		requiresLivePerson: true,
 		description:
 			'Remove a person from a team in the organization this request is bound to. They stay an organization member.',
 		keywords: ['team', 'member', 'remove'],

@@ -20,6 +20,17 @@ import {
 } from '#worker/storage-buckets/service.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
+	countStorageSqlRows,
+	readStorageSqlRowsPage,
+	readStorageSqlSchema,
+	writeStorageSqlRows,
+	writeStorageSqlSchema,
+	type StorageSqlExec,
+	type StorageSqlRowsPage,
+	type StorageSqlSchemaObject,
+	type StorageSqlValue as DumpSqlValue,
+} from '#worker/storage-runner-sql-dump.ts'
+import {
 	buildPackageStorageId,
 	packageIdFromStorageId,
 } from '#worker/storage-ids.ts'
@@ -172,6 +183,57 @@ export async function applyImportStoragePage(
 			throw new Error(`Unsupported importStorage mode: ${String(exhaustive)}`)
 		}
 	}
+	return await applyReplaceStoragePage(storage, {
+		replacePage: input.replacePage,
+		entries: input.entries.map((entry) => ({
+			key: entry.key,
+			read: () => {
+				try {
+					return JSON.parse(entry.valueJson) as unknown
+				} catch {
+					throw new Error(
+						`importStorage received invalid valueJson for key ${normalizeStorageKey(entry.key)}`,
+					)
+				}
+			},
+		})),
+	})
+}
+
+/**
+ * Same replace protocol as {@link applyImportStoragePage}, but values arrive
+ * already structured-cloned over RPC, so Dates, Maps, typed arrays, and other
+ * cloneable values survive (JSON would flatten them).
+ */
+export async function applyImportStorageValuesPage(
+	storage: {
+		deleteAll: () => Promise<void> | void
+		put: (key: string, value: unknown) => Promise<void> | void
+	},
+	input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; value: unknown }>
+	},
+): Promise<{ ok: true; written: number; cleared: boolean }> {
+	return await applyReplaceStoragePage(storage, {
+		replacePage: input.replacePage,
+		entries: input.entries.map((entry) => ({
+			key: entry.key,
+			read: () => entry.value,
+		})),
+	})
+}
+
+async function applyReplaceStoragePage(
+	storage: {
+		deleteAll: () => Promise<void> | void
+		put: (key: string, value: unknown) => Promise<void> | void
+	},
+	input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; read: () => unknown }>
+	},
+): Promise<{ ok: true; written: number; cleared: boolean }> {
 	let cleared = false
 	switch (input.replacePage) {
 		case 'first': {
@@ -191,13 +253,7 @@ export async function applyImportStoragePage(
 	let written = 0
 	for (const entry of input.entries) {
 		const key = normalizeStorageKey(entry.key)
-		let value: unknown
-		try {
-			value = JSON.parse(entry.valueJson) as unknown
-		} catch {
-			throw new Error(`importStorage received invalid valueJson for key ${key}`)
-		}
-		await storage.put(key, value)
+		await storage.put(key, entry.read())
 		written += 1
 	}
 	return { ok: true, written, cleared }
@@ -669,6 +725,59 @@ class StorageRunnerBase extends DurableObject<Env> {
 		return await applyImportStoragePage(this.ctx.storage, input)
 	}
 
+	/** Owner-to-owner copy counterpart of {@link exportStorage}; lossless. */
+	async importStorageValues(input: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; value: unknown }>
+	}): Promise<{
+		ok: true
+		written: number
+		cleared: boolean
+	}> {
+		return await applyImportStorageValuesPage(this.ctx.storage, input)
+	}
+
+	private readonly sqlExec: StorageSqlExec = (query, ...params) =>
+		this.ctx.storage.sql.exec<Record<string, DumpSqlValue>>(query, ...params)
+
+	async exportSqlSchema(): Promise<Array<StorageSqlSchemaObject>> {
+		return readStorageSqlSchema(this.sqlExec)
+	}
+
+	async exportSqlRows(input: {
+		table: string
+		cursor: number | null
+		pageSize?: number
+	}): Promise<StorageSqlRowsPage> {
+		return readStorageSqlRowsPage(this.sqlExec, input)
+	}
+
+	async importSqlSchema(input: {
+		objects: Array<StorageSqlSchemaObject>
+		phase: 'tables' | 'finish'
+	}): Promise<{ ok: true }> {
+		this.ctx.storage.transactionSync(() =>
+			writeStorageSqlSchema(this.sqlExec, input),
+		)
+		return { ok: true }
+	}
+
+	async importSqlRows(input: {
+		table: string
+		columns: Array<string>
+		rows: Array<Array<DumpSqlValue>>
+	}): Promise<{ written: number }> {
+		return {
+			written: this.ctx.storage.transactionSync(() =>
+				writeStorageSqlRows(this.sqlExec, input),
+			),
+		}
+	}
+
+	async countSqlRows(): Promise<Record<string, number>> {
+		return countStorageSqlRows(this.sqlExec)
+	}
+
 	async sqlQuery(input: {
 		query: string
 		params?: Array<unknown>
@@ -691,6 +800,52 @@ export const StorageRunner = Sentry.instrumentDurableObjectWithSentry(
 	StorageRunnerBase,
 )
 export type StorageRunner = InstanceType<typeof StorageRunner>
+
+export type StorageRunnerTransferStub = {
+	exportStorage: (payload: {
+		pageSize?: number
+		startAfter?: string | null
+	}) => Promise<StorageExportResult>
+	importStorageValues: (payload: {
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; value: unknown }>
+	}) => Promise<{ ok: true; written: number; cleared: boolean }>
+	clearStorage: () => Promise<StorageClearResult>
+	exportSqlSchema: () => Promise<Array<StorageSqlSchemaObject>>
+	exportSqlRows: (payload: {
+		table: string
+		cursor: number | null
+		pageSize?: number
+	}) => Promise<StorageSqlRowsPage>
+	importSqlSchema: (payload: {
+		objects: Array<StorageSqlSchemaObject>
+		phase: 'tables' | 'finish'
+	}) => Promise<{ ok: true }>
+	importSqlRows: (payload: {
+		table: string
+		columns: Array<string>
+		rows: Array<Array<DumpSqlValue>>
+	}) => Promise<{ written: number }>
+	countSqlRows: () => Promise<Record<string, number>>
+}
+
+/**
+ * Unmetered StorageRunner stub for operator copies between owners. It skips
+ * bucket registration on purpose: an org resource transfer re-points the
+ * `user_storage_buckets` row in its own D1 batch, and a registration upsert
+ * for the target owner would collide with that row.
+ */
+export function storageRunnerTransferStub(input: {
+	env: Pick<Env, 'STORAGE_RUNNER'>
+	userId: OwnerId
+	storageId: string
+}): StorageRunnerTransferStub {
+	return input.env.STORAGE_RUNNER.get(
+		input.env.STORAGE_RUNNER.idFromName(
+			storageRunnerDurableObjectName(input.userId, input.storageId),
+		),
+	) as unknown as StorageRunnerTransferStub
+}
 
 export function storageRunnerRpc(input: {
 	env: Env

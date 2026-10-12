@@ -122,8 +122,6 @@ export async function createSavedPackageFromFiles(input: {
 	baseUrl: string
 	owner: PackageOwnerContext
 	files: Record<string, string>
-	/** Lets a caller that rolls back on failure know the id before publish. */
-	packageId?: string
 }) {
 	const { files } = input
 	const packageJsonContent = files['package.json']
@@ -135,7 +133,7 @@ export async function createSavedPackageFromFiles(input: {
 		manifestPath: 'package.json',
 		expectedPackageScope: input.owner.ownerScope,
 	})
-	const packageId = input.packageId ?? crypto.randomUUID()
+	const packageId = crypto.randomUUID()
 	const ensuredSource = await ensureEntitySource({
 		db: input.env.APP_DB,
 		env: input.env,

@@ -298,7 +298,8 @@ export function deriveRequestContext(input: {
 
 /**
  * The starter's role carries over only within the org it was held in. Legacy
- * lineage without `membership` keeps the role of the identity the run uses.
+ * lineage without `membership` keeps the run identity's role only when the
+ * starter is that identity (a personal org's owner); anyone else gets no role.
  */
 function inheritedMembership(
 	lineage: RequestLineage,
@@ -306,7 +307,9 @@ function inheritedMembership(
 ): RequestContext['membership'] {
 	if (!lineage.actor) return null
 	if (lineage.membership === undefined) {
-		return binding.role ? { role: binding.role } : null
+		const personalOwner =
+			String(lineage.actor.userId) === String(binding.org.id)
+		return personalOwner && binding.role ? { role: binding.role } : null
 	}
 	if (String(lineage.credential.orgId) !== String(binding.org.id)) return null
 	return lineage.membership

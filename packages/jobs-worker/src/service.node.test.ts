@@ -71,7 +71,7 @@ test('listJobIdsForUser returns the user’s live and archived job ids from the 
 	] as const) {
 		insertJob(sqlite, { id, userId })
 	}
-	// A job that was deleted by retention and archived keeps its id here so a
+	// A job that was deleted and archived keeps its id here so a
 	// leftover vector can still be swept; a still-live job that is also
 	// archived must not be listed twice.
 	for (const [id, jobId, userId] of [
@@ -128,11 +128,6 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 		)
 		.get() as { deleted_at: string; before: number }
 	expect(stillOriginal).toEqual({ deleted_at: deletedAt, before: 1 })
-	const candidates = await store.listJobRetentionCandidates({
-		afterId: null,
-		limit: 20,
-	})
-	expect(candidates.map((row) => row.id)).not.toContain('job-on')
 	expect(
 		await store.restoreJobsForUser({
 			userId: ownerIdFromStored('org-jobs'),
@@ -183,4 +178,61 @@ test('restore leaves a pre-column tombstone disabled', async () => {
 		.prepare(`SELECT enabled, deleted_at FROM jobs WHERE id = 'job-legacy'`)
 		.get() as { enabled: number; deleted_at: string | null }
 	expect(row).toEqual({ enabled: 0, deleted_at: null })
+})
+
+test('transferJobsOwner re-points live jobs and rewrites caller context', async () => {
+	const { sqlite, db } = createJobsDb()
+	insertJob(sqlite, { id: 'job-a', userId: 'org-from' })
+	insertJob(sqlite, { id: 'job-b', userId: 'org-from' })
+	insertJob(sqlite, { id: 'job-c', userId: 'org-from' })
+	const service = createService(db)
+	await expect(
+		service.transferJobsOwner({
+			fromUserId: 'org-from',
+			toUserId: 'org-to',
+			jobs: [
+				{ jobId: 'job-a', callerContextJson: '{"to":"a"}' },
+				{ jobId: 'job-b', callerContextJson: '{"to":"b"}' },
+			],
+			updatedAt: '2026-10-05T00:00:00.000Z',
+		}),
+	).resolves.toEqual({ transferred: 2 })
+	expect(
+		sqlite
+			.prepare(
+				'SELECT id, user_id, caller_context_json AS ctx FROM jobs ORDER BY id',
+			)
+			.all(),
+	).toEqual([
+		{ id: 'job-a', user_id: 'org-to', ctx: '{"to":"a"}' },
+		{ id: 'job-b', user_id: 'org-to', ctx: '{"to":"b"}' },
+		{ id: 'job-c', user_id: 'org-from', ctx: '{}' },
+	])
+})
+
+test('transferJobsOwner refuses running or foreign jobs and moves nothing', async () => {
+	const { sqlite, db } = createJobsDb()
+	insertJob(sqlite, { id: 'job-a', userId: 'org-from' })
+	insertJob(sqlite, { id: 'job-running', userId: 'org-from' })
+	insertJob(sqlite, { id: 'job-foreign', userId: 'org-other' })
+	sqlite
+		.prepare(`UPDATE jobs SET claim_token = 'claim' WHERE id = 'job-running'`)
+		.run()
+	const service = createService(db)
+	for (const jobId of ['job-running', 'job-foreign']) {
+		await expect(
+			service.transferJobsOwner({
+				fromUserId: 'org-from',
+				toUserId: 'org-to',
+				jobs: [
+					{ jobId: 'job-a', callerContextJson: '{}' },
+					{ jobId, callerContextJson: '{}' },
+				],
+				updatedAt: '2026-10-05T00:00:00.000Z',
+			}),
+		).rejects.toThrow()
+	}
+	expect(
+		sqlite.prepare(`SELECT user_id FROM jobs WHERE id = 'job-a'`).get(),
+	).toEqual({ user_id: 'org-from' })
 })

@@ -19,7 +19,10 @@ import {
 } from './schema-type-definitions.ts'
 import { assertCallerCanAccessCapability } from './access-control.ts'
 import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
-import { authorizeSurface } from '#worker/authorization/authorize.ts'
+import {
+	assertLivePerson,
+	authorizeSurface,
+} from '#worker/authorization/authorize.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
@@ -84,6 +87,7 @@ export function defineCapability<
 		idempotent: definition.idempotent ?? false,
 		destructive: definition.destructive ?? false,
 		orgPermission: definition.orgPermission,
+		requiresLivePerson: livePersonMode(definition.requiresLivePerson),
 		...(definition.requiredRole
 			? { requiredRole: definition.requiredRole }
 			: {}),
@@ -115,6 +119,9 @@ export function defineCapability<
 				hasUser,
 				userId,
 				...(storageId ? { storageId } : {}),
+			}
+			if (definition.requiresLivePerson === true) {
+				assertLivePerson(ctx.callerContext.request, definition.name)
 			}
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
@@ -149,6 +156,14 @@ export function defineCapability<
 					cause: callerError,
 				})
 				throw callerError
+			}
+
+			const livePersonRule = definition.requiresLivePerson
+			if (
+				typeof livePersonRule === 'function' &&
+				(await livePersonRule(parsedArgs, ctx))
+			) {
+				assertLivePerson(ctx.callerContext.request, definition.name)
 			}
 
 			let result: Awaited<ReturnType<typeof definition.handler>>
@@ -213,6 +228,13 @@ export function defineCapability<
 			}
 		},
 	}
+}
+
+function livePersonMode(
+	rule: true | ((...args: Array<never>) => unknown) | undefined,
+): Capability['requiresLivePerson'] {
+	if (rule === true) return 'always'
+	return rule ? 'by-input' : 'never'
 }
 
 function createCapabilityValidationError(
