@@ -1,19 +1,22 @@
-# 0068: Credentials own placement; scoped clients replace slots, assignments, and placeholders
+# 0068: Credentials own placement; scoped clients replace slots and assignments
 
 - **Status:** accepted
 - **Date:** 2026-10-11
+- **Amended:** 2026-10-12 (Kent: today's secrets are the Key credential type and
+  keep working permanently; the other types are opt-in; by-name grants stay; no
+  old-lane removal)
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
-  (package attachments, slot bindings, and attested package stamps as credential
-  authority), [0042](./0042-no-capability-input-secrets.md) (package grants and
-  `x-kody-secret-resolution` staying), and credentials plan v4 section 3.3
-  (assignments) and section 3.4 (placeholder grammar). The v4 plan lives outside
-  this repo.
+  (credential authority for the opt-in types used through scoped clients), and
+  credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
+  grammar). The v4 plan lives outside this repo.
 
 This record is the source of truth for the credentials model. Credentials plan
 v4 still holds for personal credentials (3.2), enablements, the one
 `resolveCredential` door, audit, and leak tests, except where this record
-changes them. Until the migration below reaches T, runtime behavior follows the
-records it supersedes.
+changes them. The rule is: do not break people while improving things for the
+future. Key credentials (today's secrets and their placeholders) keep working
+exactly as they do, with the authority rules of the records this one supersedes
+in part.
 
 ## Context
 
@@ -28,8 +31,12 @@ Plan v4 answered with manifest slots (`kody.credentials`), org assignments of a
 credential to each slot (3.3), and a placeholder grammar keyed by slot (3.4).
 Assignments add a mapping table, saved bindings, and a package-level grant that
 stands in for the actor's Use. This record replaces that with credentials that
-own their hosts and placement, and a scoped client that is the only surface code
-touches.
+own their hosts and placement, and a scoped client as the surface for the new
+credential types.
+
+The first version of this record also retired placeholders at a cutover. Kent
+amended it on 2026-10-12: placeholders are the Key type and stay, and the new
+types are more secure options that owners opt into.
 
 Baseline: [#3210](https://github.com/kentcdodds/kody/pull/3210) (`77a82ed3`)
 requires the actor's Use on CLI local execute even when a package id is stamped,
@@ -40,17 +47,20 @@ per-resource Use when resolving org credentials. This record builds on both.
 
 In short:
 
-- A credential owns its hosts and how its value is placed (header, basic, or
-  query; never the body). Code never decides where a value goes.
-- Code reaches a credential only through a scoped `credential(key)` client.
-  Placeholders, slots as grants, assignments, saved bindings, and package
-  allowlists go away.
-- The actor's Use plus `package:execute` is the only authority. Package stamps
-  grant nothing.
+- **Key** is today's secret, and it keeps working permanently: placeholders fill
+  anywhere in an HTTPS request to one of its allowed hosts. There is no cutover
+  that removes it.
+- The other types (`header` / `basic` / `query` inject through a scoped
+  `credential(key)` client, OAuth through a client, `url`, `login`, and
+  `signing`) are more secure options, not a forced migration. With them a
+  credential owns its hosts and placement (never the body) and code never
+  decides where a value goes.
+- Through a scoped client, the actor's Use plus `package:execute` is the only
+  authority and package stamps grant nothing.
 - Callers pick among candidates with a call map; triggers store the pick in an
   enablement. Zero or several candidates is a structured error, never a default.
-- The old lane is removed right after the fleet codemod if a rescan finds no old
-  patterns, otherwise when the rest convert, or at T+90 at the latest.
+- Slots as grants, assignments, and saved bindings are not built. By-name grants
+  stay. Nothing is scheduled for removal.
 
 The sections below are the full specification.
 
@@ -62,12 +72,33 @@ There are four:
    server. It owns its hosts and how its value is placed in a request.
 2. **Resolver.** One per credential kind, all behind the one `resolveCredential`
    door.
-3. **Scoped client.** The only credential surface package or user code touches.
+3. **Scoped client.** The credential surface for the opt-in types. Key
+   placeholders stay beside it.
 4. **Enablement.** The only persisted credential choice, used for triggers
    (cron, subscription, webhook) that have no live caller.
 
-Mapping or assignment tables, saved bindings, package allowlists and usage
-modes, and placeholders all go away (see [Migration](#migration)).
+There are no mapping or assignment tables and no saved bindings. Key
+placeholders, package allowlists, and usage modes stay (see
+[Key credentials](#key-credentials)).
+
+### Key credentials
+
+Key is the credential type for today's secrets, and it keeps working exactly as
+it does, permanently:
+
+- `{{secret:NAME}}` placeholders fill anywhere in a request (a header, the URL
+  path or query, or a text body) when the request is HTTPS and its host is one
+  the secret allows. `{{integration-token:NAME}}` placeholders keep working the
+  same way.
+- `kody.secretMounts`, `packageSecrets`, `|scope=`, webhook `secretName`,
+  `x-kody-secret-resolution`, package allowlists, usage modes, provider grants,
+  and today's package authority rules
+  ([0021](./0021-publish-gated-package-composition.md)) keep working.
+- Body, other, and computed placements are fine. Publish, `packageGet`, and
+  `repoRunChecks` never warn in a way that implies breakage. Where a more secure
+  type fits a placement, they may gently suggest it.
+- A Key can also be used through `credential(key)`, which places it by its
+  `inject` rule. The same Key keeps filling placeholders.
 
 ### Resolver interface
 
@@ -86,8 +117,9 @@ modes, and placeholders all go away (see [Migration](#migration)).
 - `audit(outcome)` writes one row per resolution, including denials: person,
   oauthClientId, package, need key, credential id, and outcome. Never a value.
 
-Kinds: `secret`, `oauth`, and `mcp` (the `mcp` client exposes `callTool`, not
-`fetch`). Later kinds are new resolvers in the same door, not new lanes:
+Kinds: `secret` (Key), `oauth`, and `mcp` (the `mcp` client exposes `callTool`,
+not `fetch`). Later kinds are new resolvers in the same door, not new lanes, and
+owners opt into them:
 
 - `login`: the gateway runs the login exchange and injects only the session
   token; the login response never reaches code.
@@ -101,7 +133,9 @@ Kinds: `secret`, `oauth`, and `mcp` (the `mcp` client exposes `callTool`, not
 { id, ownerKind: 'org'|'user', kind, provider: slug|null, name, hosts[], inject, source: 'stored'|{ vault, ref } }
 ```
 
-`inject` never places a value in the body. It is one of:
+`inject` decides placement when a credential is used through a scoped client
+(Key placeholders keep their own placement). It never places a value in the
+body. It is one of:
 
 - `header{ name, format }`. The default is `Authorization: Bearer {value}`.
   OAuth credentials always use Bearer.
@@ -130,8 +164,11 @@ org.
 
 `accessGrant` and `accessRevoke` keep accepting secret and integration names and
 resolve each name to a credential id at grant time. Granting and revoking by
-credential id is added alongside. By-name grants belong to the old lane and are
-removed with placeholders at old-lane removal.
+credential id is added alongside. By-name grants (including grant invites and
+`accessList` filters) stay permanently; they are not slated for removal.
+
+Use on a vault's door-key secret does not cover the vault, which is its own
+credential. Nothing is left to remove there.
 
 ### Manifest (`kody.credentials`)
 
@@ -244,8 +281,9 @@ credentials.needs[]: {
 }
 ```
 
-Every option and match is filtered by the actor's Use. From T, `packageGet` also
-warns about remaining legacy patterns.
+Every option and match is filtered by the actor's Use. From T, `packageGet` may
+gently suggest a more secure type where one fits a Key placeholder. It never
+warns as if the placeholder will break.
 
 ### Surfaces
 
@@ -277,18 +315,21 @@ warns about remaining legacy patterns.
 
 ### Security properties
 
-- No credential value enters package or user code, logs, errors, or tool output,
-  and code never decides where a value goes. Placement belongs to the credential
-  and is never the body.
+- No credential value enters package or user code, logs, errors, or tool output.
+- With the opt-in types, code never decides where a value goes. Placement
+  belongs to the credential and is never the body. A Key placeholder goes where
+  code puts it, on the Key's allowed hosts over HTTPS.
 - Publishing, republishing, or forking cannot widen a credential's hosts or
   placement.
-- The actor's Use is the only grant; CLI `--local` stays closed.
+- Through a scoped client, the actor's Use is the only grant; CLI `--local`
+  stays closed.
 - Personal credentials work only in their owner's runs, in orgs the owner
   granted them to.
 - Option lists never reveal credentials the actor cannot use.
 - Echo redaction stays as defense in depth.
 - Remaining risk: a token can do whatever it allows on its allowed hosts. Keep
-  OAuth scopes minimal and visible.
+  hosts narrow and OAuth scopes minimal and visible, and prefer a more secure
+  type where one fits.
 
 ### Lifecycle
 
@@ -301,20 +342,15 @@ warns about remaining legacy patterns.
   restored; rows are purged per [0066](./0066-soft-delete-and-purge.md).
 - **Account suspended:** resolution is denied and nothing is wiped.
 
-### Migration
+### Rollout
 
-T is the date clients and call maps are live in production.
+T is the date the new credential types are available, opt-in: the client API,
+call maps (invoke, execute, CLI, enable), `packageGet` needs, the stored needs
+closure, and enablement snapshots. Nothing existing changes at T.
 
-**Interim rule (Kent, 2026-10-11):** do not break anyone. Until clients are live
-and packages have migrated, production keeps filling placeholders anywhere on
-allowed hosts over HTTPS. There is no interim switch to header-only.
-
-**Gate on T.** T is not declared until every placement the scan finds in stored
-package source has a working target: headers use `credential()`, query
-placements use `query{ param }`, body placements use `login` (or `signing` where
-the scan finds a signature), and path or whole-URL placements use `url`. Ad hoc
-usage and computed patterns the scan cannot classify get warnings and do not
-hold up T.
+**Key behavior (Kent, 2026-10-11, made permanent 2026-10-12):** production keeps
+filling placeholders anywhere on allowed hosts over HTTPS. There is no switch to
+header-only, before or after T.
 
 **P1 (before T, no visible change):** add `provider`, `inject`, and `source`
 columns. Backfill `provider` from OAuth apps and from the slots that reference
@@ -324,67 +360,58 @@ credentials and org grants (v4 3.2) as backend only: schema, service, and
 resolver candidates, with no public capability or UI until T. Stamp `personId`
 on new OAuth grants.
 
-**T:** ship the client API, call maps (invoke, execute, CLI, enable),
-`packageGet` needs, the stored needs closure, and enablement snapshots, then run
-the fleet codemod. It rewrites a call site only when the result behaves
-identically:
+**T:** ship the opt-in types above. The `login`, `url`, and `signing` kinds ship
+as they are ready; none of them is a prerequisite for anything existing to keep
+working.
 
-- Rewritten: a placeholder in a literal header in the `init` object that matches
-  the credential's backfilled `inject`, where the credential's hosts cover the
-  URL (URLs stay absolute); integration-token placeholders only when the header
-  is exactly `Authorization: Bearer`; query placeholders only when the backfill
-  found one consistent param; secret basic auth with a literal username and a
-  secret password, to `basic{ valueAs: 'password', other }`.
-- Never rewritten (warning only): dynamically built headers; a credential used
-  with two header shapes; placeholders in the body or path; basic auth where
-  both parts are secret; calls that set `x-kody-secret-resolution: off` or
-  `headers-only`; vault placeholders (the codemod creates no credentials).
-- Declared keys named after a secret (for example `RESEND_API_KEY`) are renamed
-  to their provider when that provider is unique in the package.
-- Each package gets one revertable commit. A package is republished only when it
-  is clean, has no drift, and passes its checks; otherwise the change waits as a
-  proposal in the owner's waiting-for-me list. Locked, drifted, and unpublished
-  packages get warnings and email.
+**Suggested rewrites (optional, owner-approved):** the fleet codemod proposes a
+rewrite only when the result behaves identically, as a proposal in the owner's
+waiting-for-me list. Nothing is rewritten or republished without the owner's
+approval, and declining changes nothing.
 
-Package-scoped values each become an org credential named
-`<package-leaf>-<name>` (suffixed if taken; the email says so). The codemod adds
-a manifest need if missing and sets the credential's provider to that need's
-provider so it auto-resolves; `hosts` and `inject` come from the backfill. Use
-goes to whoever wrote the value, and in team orgs also to members who ran the
-package in the last 90 days; the owner email lists those grants and notes they
-work anywhere in the org. `|scope=user` becomes a plain reference;
-`|scope=session` is deleted.
+- It can propose: a placeholder in a literal header in the `init` object that
+  matches the credential's backfilled `inject`, where the credential's hosts
+  cover the URL (URLs stay absolute); integration-token placeholders only when
+  the header is exactly `Authorization: Bearer`; query placeholders only when
+  the backfill found one consistent param; secret basic auth with a literal
+  username and a secret password, to `basic{ valueAs: 'password', other }`.
+- It proposes nothing for dynamically built headers, a credential used with two
+  header shapes, placeholders in the body or path, basic auth where both parts
+  are secret, calls that set `x-kody-secret-resolution`, or vault placeholders.
+  Those stay as they are, with at most a gentle suggestion of a more secure type
+  where one fits.
+- An accepted proposal is one revertable commit, republished only when the
+  package is clean, has no drift, and passes its checks.
+- A proposal may rename a declared key named after a secret (for example
+  `RESEND_API_KEY`) to its provider when that provider is unique in the package.
+- A proposal may convert a package-scoped value into an org credential named
+  `<package-leaf>-<name>` (suffixed if taken), add the matching manifest need,
+  and set the credential's provider so it auto-resolves, with `hosts` and
+  `inject` from the backfill. The proposal lists the Use grants it would add:
+  whoever wrote the value, and in team orgs members who ran the package in the
+  last 90 days. Package-scoped values the owner does not convert keep working.
 
-**Old lane removal (Kent, 2026-10-11):** right after the codemod runs at T,
-rescan every package. The rescan counts every placeholder reference, including
-ones that match a declared key (the codemod 0010 detector skips those, so its
-clean result is not enough). If no old patterns remain, remove the old lane at
-once: publish rejects placeholders, `secretMounts`, `packageSecrets`, `|scope=`,
-and webhook `secretName` (which becomes a need key); the gateway stops parsing
-placeholders; and the `x-kody-secret-resolution` header, package allowlists,
-usage modes, provider grants, by-name `accessGrant` / `accessRevoke`, lock
-capabilities, the attested and claimed authority split (stamps remain for
-storage only), and the webhook no-actor exception are deleted. Only packages the
-codemod could not convert get a window, with warnings in publish responses and
-`packageGet` and email at T and T+60. The lane is removed as soon as a rescan
-shows them gone, or at T+90 at the latest. Two lanes never stay behind.
+**No old-lane removal (Kent, 2026-10-12):** there is no removal date, rescan
+gate, publish refusal of placeholders, window, or owner email. The gateway keeps
+parsing placeholders, and by-name grants stay.
 
 **P9:** drop the grant-props fallbacks.
 
 ## Consequences
 
-- One door, four primitives, no mapping tables. Placement moves from code to the
-  credential, which closes body and path placement for every package at T.
-- Authority is uniform: the actor's Use plus `package:execute`. Package runs
-  lose the package-attachment grant that
-  [0021](./0021-publish-gated-package-composition.md) records, so a runner needs
-  Use on each credential a run touches.
-- Interactive calls can hit `credential_ambiguous` after a second matching
-  credential is added; the error carries a ready-to-retry call. Enablements do
-  not drift.
-- The `login`, `url`, and `signing` kinds must ship before T can be declared.
-- Kent decides each user-visible step (new refusals, publish failures, owner
-  emails, removing the old lane) before it ships.
+- One door, four primitives, no mapping tables. Owners who opt into the new
+  types get placement owned by the credential, which keeps values out of request
+  bodies and paths for those credentials.
+- Nobody is broken: Key placeholders, by-name grants, and today's package
+  authority keep working, and suggestions are optional.
+- Through a scoped client, authority is uniform: the actor's Use plus
+  `package:execute`. Key placeholders keep the package authority that
+  [0021](./0021-publish-gated-package-composition.md) records.
+- Interactive calls through a client can hit `credential_ambiguous` after a
+  second matching credential is added; the error carries a ready-to-retry call.
+  Enablements do not drift.
+- Two lanes stay side by side on purpose: Key placeholders and scoped clients.
+- Kent decides each user-visible change before it ships.
 
 **Revisit-if** a placement appears that no resolver kind can express without
 returning a value to code.
