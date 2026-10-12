@@ -32,6 +32,11 @@ import {
 	type EnablementRun,
 } from '#worker/request-context/request-context.ts'
 import {
+	getSecretProviderBinding,
+	normalizeProviderId,
+} from '#mcp/secrets/secret-providers/service.ts'
+import { vaultPauseResourceType } from './pause-on-denial.ts'
+import {
 	listEnablementsForInstance,
 	pauseEnablement,
 	resumeEnablement,
@@ -116,7 +121,8 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
  * still live; once soft-deleted, its name resolves now (old lane), so a
  * grant on a deleted credential never resumes the enablement. A vault
  * binding, or an id whose row is gone (vault bindings are hard-deleted), has
- * no name lane. A name that still names nothing only Owners and org-wide
+ * no name lane. A vault that had no binding resolves its provider id to the
+ * live binding now. A name that still names nothing only Owners and org-wide
  * holders pass, and a name that names two integrations resumes on Use of
  * either.
  */
@@ -150,6 +156,22 @@ async function storedPauseResource(
 		}
 	}
 	if (!pause.resourceId) return null
+	if (pause.resourceType === vaultPauseResourceType) {
+		const binding = await getSecretProviderBinding(db, {
+			userId: enablement.orgId,
+			providerId: normalizeProviderId(pause.resourceId),
+		})
+		return {
+			permission: pause.permission,
+			resources: [
+				{
+					type: 'credential',
+					id: binding?.credentialId ?? '',
+					orgId: enablement.orgId,
+				},
+			],
+		}
+	}
 	if (isLegacyNamedCredentialTarget(pause.resourceType)) {
 		const credentialIds = await findCredentialIdsByLegacyName(
 			db,

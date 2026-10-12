@@ -57,17 +57,19 @@ anything differs; each difference must be expected by the migration (new tables,
 rewritten scopes) or it is a bug.
 
 The D1 diff always has some noise. Every bookmark changes. Each JSON snapshot
-also writes a fixed set of rows: about 20 `audit_events` (five logins, five MCP
+also writes a fixed set of rows: about 22 `audit_events` (five logins, seven MCP
 authorizations, and 10 audited admin reads) and 4
 `agent_package_conversation_uses` (one per non-admin user's package execute).
 Restore rewinds data only, so after a restore the JSON diff still shows whatever
 the deployed code changed.
 
 Keep the preview quiet while this runs: one step at a time, no other deploys to
-it, and no manual sign-ins during a `snapshot` or `restore`. The workflow runs
-one action at a time per preview, but it does not lock against `preview.yml`.
-The D1 bookmarks are taken one database after another, so a write landing
-between them makes the restore point inconsistent.
+it, and no manual sign-ins during a `snapshot` or `restore`. Extra `/auth` or
+`/oauth/authorize` traffic from the same GitHub Actions IP shares the preview's
+10-per-60s auth bucket and can 429 a snapshot. The workflow runs one action at a
+time per preview, but it does not lock against `preview.yml`. The D1 bookmarks
+are taken one database after another, so a write landing between them makes the
+restore point inconsistent.
 
 ## Workflow actions
 

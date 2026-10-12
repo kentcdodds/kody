@@ -280,7 +280,7 @@ type SeedInput = {
 async function sessionFor(
 	input: SeedInput,
 	user: RehearsalUser,
-	options: { orgSlug?: string } = {},
+	options: { orgSlug?: string; cookieHeader?: string } = {},
 ) {
 	const password = await deriveRehearsalPassword({
 		key: input.passwordKey,
@@ -292,7 +292,10 @@ async function sessionFor(
 	return openRehearsalSession(
 		input.origins.app,
 		{ email: user.email, username: user.username, password },
-		{ orgSlug: options.orgSlug ?? user.username },
+		{
+			orgSlug: options.orgSlug ?? user.username,
+			cookieHeader: options.cookieHeader,
+		},
 	)
 }
 
@@ -836,6 +839,7 @@ export async function seedRehearsal(
 		const useGrantId = readStringAt(useGrant, ['grant', 'id'], 'accessGrant')
 		const carolInAliceOrg = await sessionFor(input, rehearsalUser('carol'), {
 			orgSlug: rehearsalUser('alice').username,
+			cookieHeader: carolSession.cookieHeader,
 		})
 		sessions.push(carolInAliceOrg)
 		const granteeRun = readRecord(
@@ -893,6 +897,7 @@ export async function seedRehearsal(
 			rehearsalUser(rehearsalOrg.owner),
 			{
 				orgSlug: rehearsalOrg.slug,
+				cookieHeader: bob.cookieHeader,
 			},
 		)
 		sessions.push(bobInOrg)

@@ -266,10 +266,10 @@ export const vaultSecretResolver: CredentialResolver<'provider-secret'> = {
 		})
 		return {
 			// The binding is the credential: Use on it before any decrypt or
-			// provider invoke. A missing binding fails inside resolveProviderSecret.
+			// provider invoke. A missing binding is checked like any credential
+			// that was not found, then fails inside resolveProviderSecret.
 			async authorize() {
-				if (!binding) return
-				await authorizeActorUse(call, binding.credentialId)
+				await authorizeActorUse(call, binding?.credentialId ?? null)
 			},
 			async apply() {
 				const resolved = await resolveProviderSecret({

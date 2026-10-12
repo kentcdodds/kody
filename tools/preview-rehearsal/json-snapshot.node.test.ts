@@ -3,7 +3,14 @@ import {
 	diffSnapshots,
 	findPackagesListedByMoreThanOneOwner,
 	stripVolatile,
+	takeJsonSnapshot,
+	type SnapshotUser,
 } from './json-snapshot.ts'
+import {
+	type OpenRehearsalSession,
+	type RehearsalSession,
+} from './kody-session.ts'
+import { appMarker } from './rehearsal-packages.ts'
 
 test('stripVolatile drops per-read fields but keeps job schedules', () => {
 	expect(
@@ -65,4 +72,91 @@ test('findPackagesListedByMoreThanOneOwner flags a package injected into another
 			'@rh-platform': { packages: [{ id: 'o1' }] },
 		}),
 	).toEqual([])
+})
+
+function snapshotUser(
+	role: SnapshotUser['role'],
+	orgSlug = `rh-${role}`,
+): SnapshotUser {
+	return {
+		role,
+		email: `rh-${role}@example.com`,
+		username: `rh-${role}`,
+		orgSlug,
+		password: 'secret',
+	}
+}
+
+function fakeSession(cookieHeader: string): RehearsalSession {
+	return {
+		email: 'unused@example.com',
+		cookieHeader,
+		execute: async () => ({
+			sha256: 'secret-hash',
+			authorizationSha256: 'auth-hash',
+		}),
+		api: async () => ({}),
+		request: async () => ({ status: 200, body: appMarker, location: null }),
+		close: async () => {},
+	}
+}
+
+test('takeJsonSnapshot reuses person cookies and does not re-login alice', async () => {
+	const opens: Array<{
+		email: string
+		orgSlug?: string
+		cookieHeader?: string
+	}> = []
+	const openSession: OpenRehearsalSession = async (
+		_origin,
+		credentials,
+		options = {},
+	) => {
+		opens.push({
+			email: credentials.email,
+			orgSlug: options.orgSlug,
+			cookieHeader: options.cookieHeader,
+		})
+		return fakeSession(
+			options.cookieHeader ?? `kody_session=${credentials.email}`,
+		)
+	}
+	const snapshot = await takeJsonSnapshot({
+		origins: {
+			app: 'https://app.example',
+			api: 'https://api.example',
+			mockCloudflare: 'https://mock.example',
+		},
+		users: [
+			snapshotUser('admin'),
+			snapshotUser('alice'),
+			snapshotUser('bob'),
+			snapshotUser('carol'),
+			snapshotUser('dave'),
+		],
+		now: () => new Date('2026-10-12T00:00:00.000Z'),
+		openSession,
+	})
+	expect(opens).toEqual([
+		{ email: 'rh-admin@example.com', orgSlug: 'rh-admin' },
+		{ email: 'rh-alice@example.com', orgSlug: 'rh-alice' },
+		{ email: 'rh-bob@example.com', orgSlug: 'rh-bob' },
+		{ email: 'rh-carol@example.com', orgSlug: 'rh-carol' },
+		{ email: 'rh-dave@example.com', orgSlug: 'rh-dave' },
+		{
+			email: 'rh-bob@example.com',
+			orgSlug: 'rh-platform',
+			cookieHeader: 'kody_session=rh-bob@example.com',
+		},
+		{
+			email: 'rh-carol@example.com',
+			orgSlug: 'rh-alice',
+			cookieHeader: 'kody_session=rh-carol@example.com',
+		},
+	])
+	expect(
+		opens.filter((open) => open.email === 'rh-alice@example.com'),
+	).toHaveLength(1)
+	expect(snapshot.failures).toEqual([])
+	expect(snapshot.grantee).toMatchObject({ grantee: 'carol', org: 'rh-alice' })
 })

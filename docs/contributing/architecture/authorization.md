@@ -81,10 +81,10 @@ Profiles and the signed-in step are the other denials that can fire.
    calls `authorize` with `secret:use` or `integration:use` on its `credential`
    resource, by its stable credential id, for every package stamp. A `claimed`
    stamp (CLI `--local` CapabilityProxy) is checked for `package:execute` only
-   and is never secret authority. A name with no credential is checked against a
-   target no grant names, so a non-holder gets a denial rather than a not-found.
-   Denial messages name the credential by family and name (`secret apiKey`),
-   never by id;
+   and is never secret authority. A name with no credential, including a vault
+   provider with no binding, is checked against a target no grant names, so a
+   non-holder gets a denial rather than a not-found. Denial messages name the
+   credential by family and name (`secret apiKey`), never by id;
 3. applies the package rules (allowlists, usageMode, provider grants) and, for
    stored secrets and integrations, the allowed hosts, all from metadata; a
    vault item's hosts come back with its value, so the vault checks them right
@@ -173,7 +173,9 @@ gate every trigger passes:
   pause keeps the credential's family and name (what the waiting queue and
   `enablementList` show) and its id in `paused_credential_id`, which the resume
   check uses. A pause on a name that matched no credential has no id and
-  resolves the name on each check (old lane).
+  resolves the name on each check (old lane). A pause on a vault with no binding
+  is recorded as `secret-provider` and resolves the provider id to its live
+  binding on each check, never to a stored secret of the same name.
 - The next event checks again and resumes a paused enablement once access is
   back. There is never a fallback to another person, credential, or Owner.
 - No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook
