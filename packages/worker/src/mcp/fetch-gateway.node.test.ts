@@ -433,24 +433,33 @@ test('fetch gateway fills placeholders in one pass across headers, URL, and body
 test('fetch gateway fills integration-token placeholders without nested expansion', async () => {
 	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
 		async ({ credential }) => {
+			if (credential.use === 'integration-token') {
+				expect(credential).toMatchObject({
+					name: 'github',
+					requestHost: 'api.github.com',
+				})
+				return '{{secret:apiKey}}'
+			}
 			expect(credential).toMatchObject({
-				use: 'integration-token',
-				name: 'github',
+				use: 'secret',
+				name: 'apiKey',
 				requestHost: 'api.github.com',
 			})
-			return '{{secret:apiKey}}'
+			return userSecret('api-key-value', ['api.github.com'])
 		},
 	)
 	const sent = await expand(
 		new Request('https://api.github.com/user', {
 			headers: {
 				Authorization: 'Bearer {{integration-token:github}}',
-				'X-Also': '{{integration-token:github}}',
+				'X-Key': '{{secret:apiKey}}',
 			},
 		}),
 	)
+	// Nested {{secret:apiKey}} inside the integration token stays literal;
+	// only the top-level X-Key placeholder expands.
 	expect(sent.headers.get('Authorization')).toBe('Bearer {{secret:apiKey}}')
-	expect(sent.headers.get('X-Also')).toBe('{{secret:apiKey}}')
+	expect(sent.headers.get('X-Key')).toBe('api-key-value')
 })
 
 test('fetch gateway fills integration tokens in the body against the integration hosts', async () => {
