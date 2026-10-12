@@ -14,6 +14,8 @@ await kody.adminOrgResourceTransfer({
 	toOrgId: 'org_target',
 	mode: 'dry-run', // then 'apply'
 	skipOrphans: false,
+	// On apply: the fingerprint of the dry-run you reviewed.
+	expectedFingerprint: undefined,
 })
 ```
 
@@ -44,8 +46,24 @@ after the transfer.
 
 Dry-run reads both orgs and returns a summary of counts and names only: package
 renames, repos, secret and value names with their scope, integrations, OAuth
-apps, MCP servers, webhooks, jobs, storages to copy, orphans, clashes, blockers,
-and warnings. It never returns row values.
+apps, MCP servers (`{id, name}`), webhooks, enablements, jobs, storages to copy,
+orphans, clashes, blockers, and warnings. It never returns row values.
+
+- `webhooks`: each entry has `url_changed: true`, `old_path_prefix`,
+  `new_path_prefix`, and `manage_path`. Public webhook URLs embed the owner slug
+  (`/@<slug>/webhooks/<kody id>/<name>/<url secret>`), and the URL secret moves
+  with the endpoint, so the new URL is the old URL with the old prefix swapped
+  for the new one. The URL secret segment is never in the output.
+- `enablements`: package, `trigger_kind`, `trigger_name`, `state`,
+  `enabler_user_id`, and `enabler_is_target_member`.
+- `jobs`: id, name, package, and the schedule summary.
+- `clashes`, `blockers`, and `warnings` are findings:
+  `{ code, message, table?, subject? }`. `subject` names the row (a package,
+  secret, or server name) or, for post-commit warnings, the step. The codes are
+  listed in `packages/worker/src/org-transfer/findings.ts`.
+- `refusals`: the findings apply would refuse on (see the list that follows).
+- `fingerprint`: SHA-256 of the summary, with keys and list entries sorted. The
+  same plan always has the same fingerprint.
 
 Apply refuses when the plan has any of these:
 
@@ -56,7 +74,14 @@ Apply refuses when the plan has any of these:
 - Blockers: resource grants naming source-org subjects, trigger enablements by
   someone outside the target org, an integration whose OAuth app is not live, or
   an MCP server with no connection in the source hub.
-- Orphans, unless `skipOrphans: true`.
+- Orphans, unless `skipOrphans: true` (`orphans_present`).
+- A fingerprint other than `expectedFingerprint`, when it is passed
+  (`plan_drifted`). Pass the fingerprint of the dry-run you reviewed, so apply
+  never moves something nobody reviewed.
+
+A refusal is returned, not thrown: `outcome: 'refused'` with `refusals`. Input
+errors (the same org twice, an org that is not live or is suspended) still
+throw.
 
 Both orgs must be live (not deleting, deleted, or suspended), and they must
 differ.
@@ -104,8 +129,20 @@ refuse. Then, in order:
    on each org and an `access_epoch` bump on both.
 
 If any step before the batch commits fails, completed steps are undone in
-reverse order. If an undo step also fails, the error names it and the backup key
-so an operator can finish by hand.
+reverse order and the result is `outcome: 'failed'` with:
+
+```ts
+failure: {
+	committed: false,
+	failed_step: 'reseal' | 'backup' | 'logo_copy' | 'storage_copy' | 'mcp_import' | 'jobs_transfer' | 'commit',
+	failed_undo?: Array<string>, // undo steps that also failed; finish them by hand
+	backup_key: string | null, // null when the backup was not written yet
+	message: string,
+}
+```
+
+Nothing in APP_DB moved. With `failed_undo`, the target may hold stray copies
+(storage, logos, a staged MCP server) that the named steps did not remove.
 
 After commit, best-effort cleanup runs: source storage is cleared, each moved
 MCP server is removed from the source hub with all its keys (without first
@@ -114,11 +151,29 @@ and connected in the target hub, so only one hub can refresh its OAuth tokens;
 old logos are deleted, orphans cleaned, repo sessions on moved sources
 discarded, package, memory, and job vectors reindexed under the target, and the
 retriever, skills, subscription, invoke-contract, and community caches
-refreshed. Failures there come back as `post_commit_warnings`, and `leftovers`
-counts any rows still pointing at the source.
+refreshed. Failures there come back as `post_commit_warnings` (code
+`post_commit_step_failed`, `subject` naming the step), and `leftovers` counts
+any rows still pointing at the source.
 
-The result has the dry-run summary plus `backup_key`, `storage_copies`,
-`leftovers`, and `post_commit_warnings`.
+The result has `outcome` (`planned`, `refused`, `failed`, or `applied`),
+`fingerprint`, the dry-run summary, `refusals`, `failure`, `backup_key`,
+`storage_copies`, `leftovers`, `post_commit_warnings`, and `mcp_connections`.
+
+`mcp_connections` has one entry per moved MCP server after the target hub dialed
+it: `{ id, name, state, needs_authorization, authorize_url }`. `state` is null
+when the connect step failed. When `needs_authorization` is true,
+`authorize_url` is the Kody consent page in the target org
+(`/@<target>/-/mcp-servers/<id>/authorize`), never the provider's URL.
+
+## What the owner redoes
+
+- MCP servers with `needs_authorization` need the owner to open `authorize_url`.
+- Webhooks: update every external sender to the new URL (swap `old_path_prefix`
+  for `new_path_prefix`). The old URL stops resolving.
+- BYO integration OAuth apps need no change. Their redirect URI is
+  `<origin>/connect/oauth`, with no org slug, so the URI registered with the
+  provider keeps working. The remote MCP server OAuth callback
+  (`<origin>/account/mcp-servers/oauth/callback`) has no slug either.
 
 ## Secret values
 
@@ -148,11 +203,14 @@ that server needs reconnecting.
 
 1. Confirm the owner's approval and both org ids.
 2. Dry-run. Resolve clashes and blockers with the owner; decide on orphans.
-3. Apply, and record `backup_key` in the operator log.
+3. Apply with `expectedFingerprint` set to the reviewed dry-run's fingerprint.
+   Check `outcome`, and record `backup_key` in the operator log.
 4. Check `leftovers` is empty and review `post_commit_warnings`.
-5. Run codemod `0011-owner-scope-follows-registry` dry-run, then apply, with
+5. Send the owner the follow-ups: `mcp_connections` that need authorization and
+   the changed webhook URLs.
+6. Run codemod `0011-owner-scope-follows-registry` dry-run, then apply, with
    `userIds` set to the target org id.
-6. Spot-check that a moved package runs, its secrets resolve, and its storage
+7. Spot-check that a moved package runs, its secrets resolve, and its storage
    reads back.
 
 ## Related
