@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 	listSavedPackagesPage: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+	syncPublishedSourceSnapshotOnly: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	runRepoChecks: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 vi.mock('#worker/repo/source-sync.ts', () => ({
 	syncArtifactSourceSnapshot: mocks.syncArtifactSourceSnapshot,
+	syncPublishedSourceSnapshotOnly: mocks.syncPublishedSourceSnapshotOnly,
 }))
 vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: mocks.refreshSavedPackageProjection,
@@ -260,6 +262,10 @@ function setupMocks() {
 			input.files['index.ts']?.includes('packageStorage()')
 				? 'commit-after'
 				: 'commit-reverted',
+	)
+	mocks.syncPublishedSourceSnapshotOnly.mockReset()
+	mocks.syncPublishedSourceSnapshotOnly.mockResolvedValue(
+		'commit-published-only-after',
 	)
 }
 
@@ -856,4 +862,168 @@ test('package codemod continuation steps heartbeat the run and reopen abandoned 
 	const reopened = await getPackageCodemodRunById(env.APP_DB, 'run-heartbeat')
 	expect(reopened).toMatchObject({ status: 'running' })
 	expect(reopened!.updatedAt > '2026-07-30T10:00:00.000Z').toBe(true)
+})
+
+const publishedOnlyCodemodId = '0012-explicit-webhook-url-secret-verification'
+
+function webhookMissingVerificationFiles() {
+	return {
+		'package.json': `${JSON.stringify(
+			{
+				name: '@user/webhook-pkg',
+				exports: { '.': './index.ts' },
+				kody: {
+					id: 'webhook-pkg',
+					description: 'Webhook package for published-only codemod tests.',
+					webhooks: [{ path: '/hooks/demo' }],
+				},
+			},
+			null,
+			'\t',
+		)}\n`,
+		'index.ts': 'export {}\n',
+	}
+}
+
+test('published-only apply on drifted packages uses syncPublishedSourceSnapshotOnly and never default-branch sync', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const pkg = savedPackage('pkg-drift-published-only', {
+		kodyId: 'webhook-pkg',
+		sourceId: 'source-drift-published-only',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-published-old',
+			repoId: 'repo-drift-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-head-moved',
+	})
+	mocks.syncPublishedSourceSnapshotOnly.mockResolvedValue(
+		'commit-published-only-after',
+	)
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]).toMatchObject({
+		status: 'applied',
+		packageId: pkg.id,
+		beforeCommit: 'commit-published-old',
+		afterCommit: 'commit-published-only-after',
+	})
+	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: pkg.sourceId,
+			commitMessage: expect.stringContaining(publishedOnlyCodemodId),
+		}),
+	)
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
+test('published-only apply on non-drifted packages still uses syncArtifactSourceSnapshot', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const pkg = savedPackage('pkg-aligned-published-only', {
+		kodyId: 'webhook-pkg',
+		sourceId: 'source-aligned-published-only',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-repo-aligned',
+			repoId: 'repo-aligned-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-repo-aligned',
+	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after-aligned')
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]).toMatchObject({
+		status: 'applied',
+		afterCommit: 'commit-after-aligned',
+	})
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
+})
+
+test('published-only revert does not require HEAD to match afterCommit', async () => {
+	setupMocks()
+	const { env, kv } = createEnv()
+	const pkg = savedPackage('pkg-revert-published-only', {
+		kodyId: 'webhook-pkg',
+		sourceId: 'source-revert-published-only',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-before',
+			repoId: 'repo-revert-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-head-still-drifted',
+	})
+	mocks.syncPublishedSourceSnapshotOnly.mockResolvedValue('commit-after-apply')
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]?.status).toBe('applied')
+	const applyItemId = apply.items[0]!.itemId
+	expect(
+		kv.store.has(
+			buildPackageCodemodRevertSnapshotKvKey({
+				userId: ownerIdFromStored('user-1'),
+				itemId: applyItemId,
+			}),
+		),
+	).toBe(true)
+
+	// HEAD remains drifted; published_commit still equals afterCommit.
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-user-unpublished-work',
+	})
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-after-apply',
+			repoId: 'repo-revert-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.syncPublishedSourceSnapshotOnly.mockResolvedValue('commit-reverted')
+
+	const revert = await step(env, {
+		mode: 'revert',
+		codemodId: publishedOnlyCodemodId,
+		revertOfRunId: apply.runId,
+	})
+	expect(revert.items[0]?.status).toBe('reverted')
+	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalled()
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })

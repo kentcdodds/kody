@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	isKodyPublishedBranchRef,
 	isPublishGitNotesRef,
 	isSessionArtifactRepoName,
 	isSessionBranchRef,
@@ -136,6 +137,13 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 	).toBe(true)
 	expect(isSessionBranchRef('refs/heads/main')).toBe(false)
 	expect(isSessionBranchRef('refs/heads/session-notes')).toBe(false)
+
+	expect(isKodyPublishedBranchRef('refs/heads/kody-published')).toBe(true)
+	expect(isKodyPublishedBranchRef('kody-published')).toBe(true)
+	expect(isKodyPublishedBranchRef('refs/heads/main')).toBe(false)
+	expect(isKodyPublishedBranchRef('refs/heads/kody-published-extra')).toBe(
+		false,
+	)
 
 	expect(isPublishGitNotesRef('refs/notes/commits')).toBe(true)
 	expect(isPublishGitNotesRef('notes/commits')).toBe(true)

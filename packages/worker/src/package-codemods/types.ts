@@ -16,9 +16,28 @@ export type PackageCodemodContext = {
 	packageName: string
 }
 
+/**
+ * How apply/revert write when Artifacts default-branch HEAD has drifted from
+ * `published_commit`.
+ *
+ * - `head-and-published` (default) — today's path: require HEAD == published,
+ *   then `syncArtifactSourceSnapshot` (moves HEAD and published together).
+ *   Drifted packages stay `skipped_drift`.
+ * - `published-only` — on drift, commit the transformed published tree as a
+ *   child of `published_commit`, push to the durable `kody-published` ref, and
+ *   advance published via finalize — without moving default-branch HEAD.
+ *   Non-drifted applies still use `syncArtifactSourceSnapshot`.
+ */
+export type PackageCodemodApplyMode = 'head-and-published' | 'published-only'
+
 export type PackageCodemod = {
 	id: string
 	description: string
+	/**
+	 * Opt-in write lane for drifted packages. Omit for the historical
+	 * head-and-published behavior (fleet default).
+	 */
+	applyMode?: PackageCodemodApplyMode
 	detect(
 		files: Record<string, string>,
 		context: PackageCodemodContext,

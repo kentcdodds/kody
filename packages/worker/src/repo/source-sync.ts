@@ -441,3 +441,10 @@ export async function syncArtifactSourceSnapshot(
 		)
 	}
 }
+
+export {
+	kodyPublishedBranchName,
+	kodyPublishedRef,
+	syncPublishedSourceSnapshotOnly,
+	type SyncPublishedSourceOnlyInput,
+} from './published-source-sync.ts'

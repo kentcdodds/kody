@@ -15,7 +15,10 @@ import {
 	runRepoChecks,
 	type RepoCheckRunResult,
 } from '#worker/repo/checks.ts'
-import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import {
+	syncArtifactSourceSnapshot,
+	syncPublishedSourceSnapshotOnly,
+} from '#worker/repo/source-sync.ts'
 import {
 	createPackageCodemodRun,
 	getPackageCodemodRunById,
@@ -34,6 +37,7 @@ import {
 } from './subscription-events.ts'
 import {
 	type PackageCodemod,
+	type PackageCodemodApplyMode,
 	type PackageCodemodContext,
 	type PackageCodemodFinding,
 } from './types.ts'
@@ -471,6 +475,16 @@ async function detectPublishedDrift(input: {
 	}
 }
 
+function resolvePackageCodemodApplyMode(
+	codemod: PackageCodemod,
+): PackageCodemodApplyMode {
+	return codemod.applyMode ?? 'head-and-published'
+}
+
+function usesPublishedOnlyLane(codemod: PackageCodemod) {
+	return resolvePackageCodemodApplyMode(codemod) === 'published-only'
+}
+
 async function persistItem(
 	env: Env,
 	result: PersistedItemResult,
@@ -697,12 +711,16 @@ async function processPackageForMode(input: {
 			status: 'skipped_unpublished',
 		})
 	}
+	const applyMode = resolvePackageCodemodApplyMode(input.codemod)
 	const drifted = await detectPublishedDrift({
 		env: input.env,
 		repoId: loaded.source.repo_id,
 		expectedCommit: publishedCommit,
 	})
-	if (drifted) {
+	// published-only codemods may scan/dry-run/apply against the published
+	// tree even when default-branch HEAD has moved; head-and-published keeps
+	// today's skipped_drift gate.
+	if (drifted && applyMode !== 'published-only') {
 		return emptyItemResult({
 			itemId: crypto.randomUUID(),
 			userId: input.savedPackage.userId,
@@ -770,7 +788,9 @@ async function processPackageForMode(input: {
 				repoId: loaded.source.repo_id,
 				expectedCommit: publishedCommit,
 			})
-			if (prePublishDrift) {
+			const publishedOnlyApply =
+				prePublishDrift && applyMode === 'published-only'
+			if (prePublishDrift && !publishedOnlyApply) {
 				return emptyItemResult({
 					itemId: gated.itemId,
 					userId: input.savedPackage.userId,
@@ -801,21 +821,36 @@ async function processPackageForMode(input: {
 				{ expirationTtl: revertSnapshotTtlSeconds },
 			)
 
+			const promotePublished = !isSavedPackageLocked(
+				input.savedPackage.lockedAt,
+			)
+			const commitMessage = `codemod(${input.codemod.id}): ${input.codemod.description}`
+
 			try {
-				const afterCommit = await syncArtifactSourceSnapshot({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.savedPackage.userId,
-					sourceId: input.savedPackage.sourceId,
-					files: gated.transformedFiles,
-					destructiveOverwriteConfirmed: true,
-					promotePublished: !isSavedPackageLocked(input.savedPackage.lockedAt),
-					commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
-					// Align with runChecksOnFiles preflight (requirePackageDocs:
-					// false) so legacy packages without README/AGENTS can publish
-					// approved transforms. Other publish checks still run.
-					requirePackageDocs: false,
-				})
+				const afterCommit = publishedOnlyApply
+					? await syncPublishedSourceSnapshotOnly({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							userId: input.savedPackage.userId,
+							sourceId: input.savedPackage.sourceId,
+							files: gated.transformedFiles,
+							promotePublished,
+							commitMessage,
+						})
+					: await syncArtifactSourceSnapshot({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							userId: input.savedPackage.userId,
+							sourceId: input.savedPackage.sourceId,
+							files: gated.transformedFiles,
+							destructiveOverwriteConfirmed: true,
+							promotePublished,
+							commitMessage,
+							// Align with runChecksOnFiles preflight (requirePackageDocs:
+							// false) so legacy packages without README/AGENTS can publish
+							// approved transforms. Other publish checks still run.
+							requirePackageDocs: false,
+						})
 				if (afterCommit == null) {
 					return emptyItemResult({
 						itemId: gated.itemId,
@@ -828,8 +863,9 @@ async function processPackageForMode(input: {
 						beforeCommit: publishedCommit,
 						checkSummary: gated.checkSummary,
 						revertSnapshotKey,
-						error:
-							'syncArtifactSourceSnapshot returned no published commit. A revert snapshot was retained; repo HEAD may be ahead of published_commit.',
+						error: publishedOnlyApply
+							? 'syncPublishedSourceSnapshotOnly returned no published commit. A revert snapshot was retained; default-branch HEAD was not moved.'
+							: 'syncArtifactSourceSnapshot returned no published commit. A revert snapshot was retained; repo HEAD may be ahead of published_commit.',
 					})
 				}
 				try {
@@ -890,7 +926,9 @@ async function processPackageForMode(input: {
 					beforeCommit: publishedCommit,
 					checkSummary: gated.checkSummary,
 					revertSnapshotKey,
-					error: `${getErrorMessage(error)} A revert snapshot was retained; repo HEAD may be ahead of published_commit.`,
+					error: publishedOnlyApply
+						? `${getErrorMessage(error)} A revert snapshot was retained; default-branch HEAD was not moved.`
+						: `${getErrorMessage(error)} A revert snapshot was retained; repo HEAD may be ahead of published_commit.`,
 				})
 			}
 		}
@@ -1024,6 +1062,7 @@ async function processRevertStep(input: {
 								sourceId: savedPackage.sourceId,
 							})
 							const expectedHead = priorItem.afterCommit
+							const publishedOnlyRevert = usesPublishedOnlyLane(input.codemod)
 							if (expectedHead == null) {
 								result = emptyItemResult({
 									itemId,
@@ -1033,6 +1072,97 @@ async function processRevertStep(input: {
 									status: 'failed',
 									error: `Applied item "${priorItem.id}" is missing afterCommit for revert drift check.`,
 								})
+							} else if (publishedOnlyRevert) {
+								// Published-only apply never moved HEAD; do not require
+								// HEAD == afterCommit. Skip when published_commit moved to
+								// an unrelated tip (owner published something else).
+								const publishedCommit = loaded.source.published_commit
+								const publishedStillAtAfter =
+									publishedCommit === priorItem.afterCommit
+								const publishedStillAtBefore =
+									publishedCommit === priorItem.beforeCommit
+								if (!publishedStillAtAfter && !publishedStillAtBefore) {
+									result = emptyItemResult({
+										itemId,
+										userId: priorItem.userId,
+										packageId: priorItem.packageId,
+										kodyId: priorItem.kodyId,
+										status: 'skipped_drift',
+										beforeCommit: priorItem.afterCommit,
+									})
+								} else {
+									const afterCommit = await syncPublishedSourceSnapshotOnly({
+										env: input.env,
+										baseUrl: input.baseUrl,
+										userId: priorItem.userId,
+										sourceId: savedPackage.sourceId,
+										files: snapshot.files,
+										promotePublished: !isSavedPackageLocked(
+											savedPackage.lockedAt,
+										),
+										commitMessage: `revert codemod(${input.codemod.id})`,
+									})
+									if (afterCommit == null) {
+										result = emptyItemResult({
+											itemId,
+											userId: priorItem.userId,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											status: 'failed',
+											error:
+												'syncPublishedSourceSnapshotOnly returned no published commit.',
+										})
+									} else {
+										try {
+											await refreshSavedPackageProjection({
+												env: input.env,
+												baseUrl: input.baseUrl,
+												userId: priorItem.userId,
+												packageId: priorItem.packageId,
+												sourceId: savedPackage.sourceId,
+											})
+										} catch (error) {
+											console.error(
+												JSON.stringify({
+													message:
+														'package-codemod revert projection refresh failed',
+													packageId: priorItem.packageId,
+													error: getErrorMessage(error),
+												}),
+											)
+										}
+										await dispatchPackageCodemodSubscriptionEvent({
+											env: input.env,
+											userId: priorItem.userId,
+											topic: packageCodemodRevertedTopic,
+											codemodId: input.codemod.id,
+											codemodDescription: input.codemod.description,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											runId: input.run.id,
+											itemId,
+											changedPaths: priorItem.changedPaths,
+											beforeCommit: priorItem.afterCommit,
+											afterCommit,
+											waitUntil: input.waitUntil,
+											subscriptionCache: input.subscriptionCache,
+										})
+										await updatePackageCodemodRunItem(input.env.APP_DB, {
+											id: priorItem.id,
+											status: 'reverted',
+										})
+										result = emptyItemResult({
+											itemId,
+											userId: priorItem.userId,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											status: 'reverted',
+											changedPaths: priorItem.changedPaths,
+											beforeCommit: priorItem.afterCommit,
+											afterCommit,
+										})
+									}
+								}
 							} else {
 								const drifted = await detectPublishedDrift({
 									env: input.env,

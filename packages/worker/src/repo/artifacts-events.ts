@@ -149,6 +149,18 @@ export function isSessionBranchRef(ref: string) {
 }
 
 /**
+ * Durable published-only codemod tip (`kody-published`). Fleet apply pushes
+ * here so published OIDs stay fetchable without moving default-branch HEAD;
+ * those pushes must not fan out as `repo.pushed`.
+ */
+export function isKodyPublishedBranchRef(ref: string) {
+	const branch = ref.startsWith('refs/heads/')
+		? ref.slice('refs/heads/'.length)
+		: ref
+	return branch === 'kody-published'
+}
+
+/**
  * Publish git-notes (`refs/notes/commits` and other notes refs). Publish
  * attaches a metadata note after the source-branch push; those updates must
  * not fan out as a second `repo.pushed`.

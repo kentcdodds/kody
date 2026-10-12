@@ -217,6 +217,7 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 		pushEvent({
 			ref: 'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
 		}),
+		pushEvent({ ref: 'refs/heads/kody-published' }),
 		pushEvent({ ref: 'refs/notes/commits' }),
 	]
 	for (const body of ignoredBodies) {
