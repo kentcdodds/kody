@@ -187,6 +187,85 @@ test('accessGrant refuses a credential name, an unknown id, and a member without
 	).rejects.toThrow(/secret:manage_access/)
 })
 
+test('an integration name shared by an OAuth connection and an MCP server is refused as a grant target, and listing by that name shows grants on both', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'shared', 'google')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const serverId = crypto.randomUUID()
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url) VALUES (?, ?, 'shared', 'https://mcp.example.com')`,
+		)
+		.bind(serverId, t.orgId)
+		.run()
+	const connection = await t.db
+		.prepare(`SELECT id FROM user_integrations WHERE name = 'shared'`)
+		.first<{ id: string }>()
+
+	for (const create of [
+		() =>
+			accessGrantCapability.handler(
+				{
+					resource_type: 'integration',
+					resource_id: 'shared',
+					subject_type: 'user',
+					username: 'guestuser',
+					preset: 'use',
+				},
+				t.owner,
+			),
+		() =>
+			inviteCreateCapability.handler(
+				{
+					kind: 'grant',
+					username: 'memberuser',
+					resource_type: 'integration',
+					resource_id: 'shared',
+					preset: 'use',
+				},
+				t.owner,
+			),
+	]) {
+		const error = await create().then(
+			() => null,
+			(caught: unknown) => caught,
+		)
+		expect(error).toBeInstanceOf(McpCallerError)
+		expect(String(error)).toMatch(/names more than one integration/)
+	}
+
+	const granted = []
+	for (const resourceId of [connection?.id ?? '', serverId]) {
+		const { grant } = await accessGrantCapability.handler(
+			{
+				resource_type: 'credential',
+				resource_id: resourceId,
+				subject_type: 'user',
+				username: 'guestuser',
+				preset: 'use',
+			},
+			t.owner,
+		)
+		granted.push(grant.id)
+	}
+	const listed = await accessListCapability.handler(
+		{ resource_type: 'integration', resource_id: 'shared' },
+		t.owner,
+	)
+	expect(listed.grants.map((grant) => grant.id).sort()).toEqual(granted.sort())
+})
+
 test('a grant on a deleted credential can still be revoked, and a pending invite for it cannot be accepted', async () => {
 	const t = await setup()
 	const granted = await accessGrantCapability.handler(

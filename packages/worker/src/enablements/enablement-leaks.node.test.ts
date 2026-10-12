@@ -21,7 +21,7 @@ import {
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
-import { findCredentialIdByLegacyName } from '#worker/credentials/credential-ids.ts'
+import { findCredentialIdsByLegacyName } from '#worker/credentials/credential-ids.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { dispatchInboundEmailSubscriptionEvents } from '#worker/email/package-subscriptions.ts'
@@ -231,10 +231,12 @@ async function setup() {
 				? {
 						resourceType: 'credential',
 						resourceId:
-							(await findCredentialIdByLegacyName(db, orgId, {
-								type: 'secret',
-								name: resourceId,
-							})) ?? '',
+							(
+								await findCredentialIdsByLegacyName(db, orgId, {
+									type: 'secret',
+									name: resourceId,
+								})
+							)[0] ?? '',
 						family: 'secret',
 					}
 				: { resourceType, resourceId }),
@@ -625,7 +627,7 @@ test("a member's subscription cannot use an org credential they lack; it pauses,
 
 test('a pause keeps the credential name people read and its id, and a pause on a credential that did not exist yet resumes once it exists and is granted', async () => {
 	const t = await setup()
-	const teamTokenId = await findCredentialIdByLegacyName(t.db, t.orgId, {
+	const [teamTokenId] = await findCredentialIdsByLegacyName(t.db, t.orgId, {
 		type: 'secret',
 		name: 'teamToken',
 	})
