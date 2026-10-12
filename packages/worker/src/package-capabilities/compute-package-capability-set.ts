@@ -15,6 +15,9 @@ import {
  * PR1: root package only (secret mounts + secrets this package can use,
  * plus its own storage grant). Transitive dependency walking lands in the
  * follow-up that pins internet-visible trees.
+ *
+ * Callers must only invoke this when a published commit exists. Manifest load
+ * failures fail closed (throw) so approval cannot silently omit mounts.
  */
 export async function computePackageCapabilitySet(input: {
 	env: Env
@@ -43,11 +46,13 @@ export async function computePackageCapabilitySet(input: {
 		userId: input.ownerUserId,
 		sourceId: input.sourceId,
 	})
-	const secretMountNames = new Set<string>()
+	const userMountNames = new Set<string>()
 	for (const mount of Object.values(loaded.manifest.kody.secretMounts ?? {})) {
-		if (mount.scope === 'session') continue
 		const name = mount.name.trim()
-		if (name) secretMountNames.add(name)
+		if (!name) continue
+		// Only user-scoped mounts can pull user secrets into the set. Package
+		// mounts resolve against the package bucket (listed below).
+		if (mount.scope === 'user') userMountNames.add(name)
 	}
 
 	const packageStorageContext = {
@@ -78,14 +83,25 @@ export async function computePackageCapabilitySet(input: {
 	})
 
 	const seenCredentialIds = new Set<string>()
-	for (const secret of [...packageSecrets, ...userSecrets]) {
+	for (const secret of packageSecrets) {
 		if (seenCredentialIds.has(secret.credentialId)) continue
-		const isPackageScoped = secret.scope === 'package'
+		// Package-bucket secrets are always reachable for this package.
+		seenCredentialIds.add(secret.credentialId)
+		entries.push({
+			kind: 'credential',
+			credentialId: secret.credentialId,
+			name: secret.name,
+			credentialKind: 'secret',
+			hosts: secret.allowedHosts,
+			placement: null,
+			via,
+		})
+	}
+	for (const secret of userSecrets) {
+		if (seenCredentialIds.has(secret.credentialId)) continue
 		const granted =
-			isPackageScoped ||
-			secret.allowedPackages.includes(input.packageId) ||
-			hasImplicitRead
-		const mounted = secretMountNames.has(secret.name)
+			secret.allowedPackages.includes(input.packageId) || hasImplicitRead
+		const mounted = userMountNames.has(secret.name)
 		if (!granted && !mounted) continue
 		seenCredentialIds.add(secret.credentialId)
 		entries.push({

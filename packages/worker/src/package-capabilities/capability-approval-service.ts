@@ -6,7 +6,11 @@ import {
 	insertPackageCapabilityApproval,
 	type PackageCapabilityApprovalRecord,
 } from './capability-approvals-repo.ts'
-import { capabilitySetsEqual, type CapabilitySet } from './capability-set.ts'
+import {
+	buildCapabilitySet,
+	capabilitySetsEqual,
+	type CapabilitySet,
+} from './capability-set.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -34,6 +38,35 @@ export async function loadCapabilityApprovalSummary(input: {
 			? (source.published_commit ?? null)
 			: null
 
+	const latestApproval = await getLatestPackageCapabilityApproval(
+		input.env.APP_DB,
+		{
+			packageId: input.savedPackage.id,
+			ownerUserId: input.ownerUserId,
+		},
+	)
+
+	// Unpublished packages cannot load a published manifest. Return a
+	// storage-only placeholder so the approval page / toggle can show
+	// "publish first" instead of throwing.
+	if (!publishedCommit) {
+		const capabilitySet = await buildCapabilitySet([
+			{
+				kind: 'storage',
+				storageId: input.savedPackage.id,
+				hosts: [],
+				via: [input.savedPackage.kodyId],
+			},
+		])
+		return {
+			capabilitySet,
+			publishedCommit: null,
+			latestApproval,
+			fingerprintMatchesApproval: false,
+			isInternetVisible: input.savedPackage.isInternetVisible,
+		}
+	}
+
 	const capabilitySet = await computePackageCapabilitySet({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
@@ -42,14 +75,6 @@ export async function loadCapabilityApprovalSummary(input: {
 		sourceId: input.savedPackage.sourceId,
 		requestUrl: input.requestUrl,
 	})
-
-	const latestApproval = await getLatestPackageCapabilityApproval(
-		input.env.APP_DB,
-		{
-			packageId: input.savedPackage.id,
-			ownerUserId: input.ownerUserId,
-		},
-	)
 
 	const matchingApproval = await findPackageCapabilityApprovalByFingerprint(
 		input.env.APP_DB,
