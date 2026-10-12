@@ -55,7 +55,7 @@ import { adminCreditGrantCapability } from '#mcp/capabilities/admin/admin-credit
 import { adminFeatureFlagSetCapability } from '#mcp/capabilities/admin/admin-feature-flag-set.ts'
 import { adminUserUpdateCapability } from '#mcp/capabilities/admin/admin-user-update.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { deleteSecret, saveSecret } from '#mcp/secrets/service.ts'
 import {
 	collectWaitingSignals,
 	deriveWaitingItemsForStableUser,
@@ -687,6 +687,30 @@ test('a pause keeps the credential name people read and its id, and a pause on a
 	await expect(t.enablement(cys.id)).resolves.toMatchObject({
 		state: 'on',
 		pause: null,
+	})
+})
+
+test('a grant on a credential deleted since the pause does not resume the enablement', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+	})
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await deleteSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'teamToken',
+	})
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: { reason: 'credential_access', resourceId: 'teamToken' },
 	})
 })
 

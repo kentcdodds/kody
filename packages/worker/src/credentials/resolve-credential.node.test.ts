@@ -50,6 +50,24 @@ vi.mock('cloudflare:workers', async (importOriginal) => ({
 	},
 }))
 
+const integrationHooks = vi.hoisted(() => ({
+	beforeTokenRead: null as null | (() => Promise<void>),
+}))
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/integrations/credentials.ts')>()
+	return {
+		...actual,
+		resolveIntegrationAccessToken: async (
+			...args: Parameters<typeof actual.resolveIntegrationAccessToken>
+		) => {
+			await integrationHooks.beforeTokenRead?.()
+			return await actual.resolveIntegrationAccessToken(...args)
+		},
+	}
+})
+
 vi.mock('#mcp/secrets/secret-providers/declared-provider.ts', () => ({
 	readDeclaredSecretProviderId: async () => '1password',
 }))
@@ -915,6 +933,8 @@ test('a vault Use grant is keyed by the binding: it survives a door key rename, 
 		})
 
 	await expect(resolveVault()).rejects.toBeInstanceOf(AuthorizationError)
+	// The denial names the vault, not its door key.
+	await expect(resolveVault()).rejects.toThrow(/secret 1password\b/)
 	// Use on the door key secret alone is not Use on the vault.
 	await t.grantUse(await t.secretIdOf('opToken'), t.collaboratorId)
 	await expect(resolveVault()).rejects.toBeInstanceOf(AuthorizationError)
@@ -1010,4 +1030,58 @@ test('an integration Use grant does not carry over to a deleted and recreated co
 		code: 'missing_permission',
 		permission: 'integration:use',
 	})
+})
+
+test('a connection replaced after the Use check never hands its token to the old grant', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const insertConnection = () =>
+		t.db
+			.prepare(
+				`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'orgGoogle', 'google')`,
+			)
+			.bind(t.orgId)
+			.run()
+	await insertConnection()
+	const originalId =
+		(
+			await t.db
+				.prepare(`SELECT id FROM user_integrations WHERE name = 'orgGoogle'`)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: originalId,
+		family: 'integration',
+		subject: { type: 'user', id: t.collaboratorId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.ownerStableId,
+		audit: createTestOrgAuditWriter(),
+	})
+	integrationHooks.beforeTokenRead = async () => {
+		integrationHooks.beforeTokenRead = null
+		await t.db
+			.prepare(`DELETE FROM user_integrations WHERE id = ?`)
+			.bind(originalId)
+			.run()
+		await insertConnection()
+	}
+	await expect(
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-token', name: 'orgGoogle' },
+		}),
+	).rejects.toThrow(/orgGoogle/)
 })
