@@ -355,7 +355,7 @@ export function triggersScene(state: {
 			)}
 			<div class="pw-node pw-fn" style={at(76, 50)}>
 				<span class="pw-fn-mark" aria-hidden="true">
-					ƒ
+					f
 				</span>
 				<span>
 					<strong>purchase-thanks</strong>
