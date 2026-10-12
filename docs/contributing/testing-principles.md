@@ -66,10 +66,10 @@ other packages that share the root projects, for example
 
 ## Suite mechanics
 
-- Run full server/unit suites with `npm run test`. For one file, use the
+- Run full server/unit suites with `npm run test`. For one Vitest file, use the
   repo-root command in [Running one file](#running-one-file), which selects
-  `node-unit` or `workers-unit` and leaves Playwright specs and
-  `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts` to their own commands.
+  `node-unit`, `workers-unit`, or `mcp-e2e` from the filename suffix. Playwright
+  specs stay on `npm run test:e2e:run`.
 - Workers-unit harness rules (see
   [decision 0011](./decisions/0011-workers-unit-pool-harness.md)):
   - **Prefer `*.node.test.ts`** unless the assertion needs real Cloudflare
