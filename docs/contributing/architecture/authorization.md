@@ -278,12 +278,15 @@ One site-admin action may run unattended: `adminUserVerify` with
 `mint_verify_url`, so admin-event packages can rescue a stalled signup. Its
 predicate skips the live-person check only when `automationTriggerOf` (same
 file) finds a job (`schedule`), webhook, or subscription (`platform-event`)
-enablement behind the request, or package code one started, and the enabler:
+enablement behind the request, or package code one started, and:
 
-- is the package owner (`callerContext.user`, whose current site roles the
-  `admin` role check reads);
-- holds the Owner role in that org;
-- holds the site `admin` role.
+- that enablement row is `on`, belongs to the running package, and names the
+  same enabler;
+- the enabler is the package owner (`callerContext.user`) and holds the Owner
+  role in that org;
+- the enabler holds the site `admin` role in D1 right now
+  (`stableUserHoldsRole`). The background caller's roles are cached for up to a
+  minute, so they are not trusted after a revocation.
 
 Every automated mint writes an `adminUserVerify` audit row whose reason adds
 `trigger=job|webhook|subscription`, `enablement_id`, and `package_id`, on

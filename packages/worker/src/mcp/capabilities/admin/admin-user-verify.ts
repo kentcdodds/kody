@@ -8,8 +8,9 @@ import {
 	type AutomationTrigger,
 	automationTriggerOf,
 } from '#worker/authorization/authorize.ts'
+import { getEnablementById } from '#worker/enablements/repo.ts'
+import { stableUserHoldsRole } from '#worker/identity/permissions-db.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -55,36 +56,52 @@ const outputSchema = z.object({
 })
 
 /**
- * The automation allowed to run `mint_verify_url` without a live person: a
- * job, webhook, or subscription (or package code one started) whose enabler
- * owns the package, is its org's Owner, and holds the site `admin` role.
- * `callerContext.user` carries the package owner's current roles, so the
- * enabler must be that same person. Null means a live person is required.
+ * Whether `mint_verify_url` may run without a live person: a job, webhook, or
+ * subscription run (or package code it started) of an enablement that is on
+ * for the running package, whose enabler owns that package, is its org's
+ * Owner, and holds the site `admin` role in D1 right now (the background
+ * caller's roles are cached, so they are not trusted for revocation).
  */
-function automatedMintTrigger(
+async function isAllowedAutomatedMint(
 	args: { action: 'mark_verified' | 'mint_verify_url' },
 	ctx: CapabilityContext,
-): AutomationTrigger | null {
-	if (args.action !== 'mint_verify_url') return null
-	const { request, user } = ctx.callerContext
+): Promise<boolean> {
+	if (args.action !== 'mint_verify_url') return false
+	const { request, user, storageContext } = ctx.callerContext
 	const trigger = automationTriggerOf(request)
-	if (!trigger || !request?.actor || !user?.userId) return null
-	if (String(request.actor.userId) !== String(user.userId)) return null
-	if (request.membership?.role !== 'owner') return null
-	if (!callerHasRole(ctx.callerContext, 'admin')) return null
-	return trigger
+	const packageId = storageContext?.packageId
+	if (!trigger || !request?.actor || !user?.userId || !packageId) return false
+	const enablerId = String(request.actor.userId)
+	if (enablerId !== String(user.userId)) return false
+	if (request.membership?.role !== 'owner') return false
+	const enablement = await getEnablementById({
+		db: ctx.env.APP_DB,
+		orgId: request.org.id,
+		id: trigger.enablementId,
+	})
+	if (
+		enablement?.state !== 'on' ||
+		enablement.packageId !== packageId ||
+		String(enablement.enablerUserId) !== enablerId
+	) {
+		return false
+	}
+	return await stableUserHoldsRole(ctx.env.APP_DB, enablerId, 'admin')
 }
 
+/**
+ * Audit suffix for a run that passed {@link isAllowedAutomatedMint}; the
+ * dispatch gate refuses every other automated call before the handler runs.
+ */
 function automatedMintAuditContext(
 	trigger: AutomationTrigger | null,
 	ctx: CapabilityContext,
 ): string | null {
 	if (!trigger) return null
-	const packageId = ctx.callerContext.storageContext?.packageId
 	return [
 		`trigger=${trigger.type}`,
 		`enablement_id=${trigger.enablementId}`,
-		...(packageId ? [`package_id=${packageId}`] : []),
+		`package_id=${ctx.callerContext.storageContext?.packageId ?? ''}`,
 	].join(';')
 }
 
@@ -92,7 +109,8 @@ export const adminUserVerifyCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		requiresLivePerson: (args, ctx) => automatedMintTrigger(args, ctx) === null,
+		requiresLivePerson: async (args, ctx) =>
+			!(await isAllowedAutomatedMint(args, ctx)),
 		name: 'adminUserVerify',
 		description:
 			'Mark one account email verified, or mint a one-time verify URL to send over a path that is not kody.codes. Admin-only; audited; never touches user content. mark_verified needs a live person; mint_verify_url also runs from a job, webhook, or subscription an admin enabled on their own package.',
@@ -148,7 +166,7 @@ export const adminUserVerifyCapability = defineDomainCapability(
 					successReason: ({ user }) =>
 						`target_stable_user_id=${user.stableUserId};action=${args.action}`,
 					reasonContext: automatedMintAuditContext(
-						automatedMintTrigger(args, ctx),
+						automationTriggerOf(ctx.callerContext.request),
 						ctx,
 					),
 				},

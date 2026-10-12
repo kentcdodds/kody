@@ -650,8 +650,10 @@ one-time link over a path that is not `kody.codes`. A job or webhook may do the
 same. The run is allowed only when all of these hold:
 
 - it acts as its enabler (an enablement run, or package code one started);
+- that enablement is on for the package whose code is running;
 - the enabler owns the package and is the Owner of that org;
-- the enabler holds the site `admin` role at call time.
+- the enabler holds the site `admin` role at call time (read fresh, so a revoked
+  admin is refused at once).
 
 Each automated mint writes an `adminUserVerify` audit row whose reason adds
 `trigger=job|webhook|subscription;enablement_id=<id>;package_id=<id>`. Failed
