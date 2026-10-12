@@ -1,11 +1,13 @@
 # Open API
 
-The Kody Open API is the public HTTP surface at `https://api.kody.codes`. It
-serves JSON only: `GET /openapi.json` (OpenAPI 3.1) and the versioned `/v1`
-operations. Interactive HTML docs live on a separate Worker at
-`https://api-docs.kody.codes` (Scalar). The same operations back the MCP `api`
-tool, and two of them form the CapabilityProxy that local execute
-(`@kodycodes/cli`) calls.
+The Kody Open API is the public HTTP surface at `https://api.kody.codes`. Most
+operations serve JSON: `GET /openapi.json` (OpenAPI 3.1) and the versioned `/v1`
+operations. `POST /v1/capability-proxy/gateway-fetch` is a native streaming hop:
+the request body is the outbound fetch body, and a successful response is the
+upstream HTTP response, not a JSON envelope. Interactive HTML docs live on a
+separate Worker at `https://api-docs.kody.codes` (Scalar). The same JSON
+operations back the MCP `api` tool. CapabilityProxy, the streaming gateway-fetch
+hop, and package-graph are the local-execute HTTP surfaces (`@kodycodes/cli`).
 
 There is no account UI for API token management — mint, list, and revoke via the
 CLI / MCP `api` tool only.
@@ -27,11 +29,11 @@ sequenceDiagram
   E-->>D: OpenAPI JSON
   D-->>B: Scalar HTML + proxied spec
   C->>E: HTTPS api.kody.codes
-  E->>E: CORS, path + method allowlist, rate limits, 5 MiB cap
+  E->>E: CORS, path + method allowlist, rate limits, body caps
   E->>O: service binding KODY_API (allowlisted headers only)
   O->>DB: authenticate token, permission check, operation
-  O-->>E: JSON
-  E-->>C: JSON (no Set-Cookie)
+  O-->>E: operation result
+  E-->>C: response (no Set-Cookie)
 ```
 
 - `kody-api` (`packages/api-worker/`) is a thin edge script on the
@@ -39,9 +41,17 @@ sequenceDiagram
   `/openapi.json`, and `/v1/*`, applies per-IP (`API_IP_RATE_LIMITER`, 600/min)
   and per-token (`API_TOKEN_RATE_LIMITER`, 300/min, keyed by API token id or a
   SHA-256 of an opaque Bearer such as CLI MCP OAuth — never the secret
-  plaintext) limits, caps buffered bodies at 5 MiB (413), and forwards only
-  `Authorization`, `Content-Type`, `Accept`, `User-Agent`, and
-  `CF-Connecting-IP`. `Cookie` and `X-Kody-*` never reach origin, and origin
+  plaintext) limits, caps buffered bodies at 5 MiB (413) on JSON routes, and
+  forwards only `Authorization`, `Content-Type`, `Accept`, `User-Agent`, and
+  `CF-Connecting-IP` on those routes. `POST /v1/capability-proxy/gateway-fetch`
+  also forwards the allowlisted gateway headers (`X-Kody-Gateway-Url`,
+  `X-Kody-Gateway-Method`, `X-Kody-Gateway-Package-Id`,
+  `X-Kody-Gateway-Headers`, `x-kody-secret-resolution`) and does not apply the 5
+  MiB buffered-body cap; it still respects the Cloudflare Worker upload limit
+  (~100 MiB Free/Pro) and returns JSON `413 payload_too_large` when
+  `Content-Length` exceeds that limit (see the
+  [CLI streaming gateway-fetch contract](../contracts/cli-streaming-gateway-fetch.md)).
+  `Cookie` and other `X-Kody-*` headers never reach origin, and origin
   `Set-Cookie` never reaches the client. CORS allows any origin because auth is
   bearer-only. It never serves HTML.
 - `kody-api-docs` (`packages/api-docs-worker/`) is the interactive docs host on
@@ -86,7 +96,8 @@ the Open API. They are a separate credential class from MCP OAuth
 ([ADR 0053](../decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)).
 Kody stores only a SHA-256 hash; the value is returned once, on mint or rotate.
 
-On **local-execute HTTP only** (CapabilityProxy +
+On **local-execute HTTP only** (CapabilityProxy,
+`POST /v1/capability-proxy/gateway-fetch`, and
 `POST /v1/local-execute/package-graph`), a valid CLI MCP OAuth access token from
 `kody login` (official CLI CIMD client id) is also accepted as Bearer with the
 full MCP grant, without API-token scope checks
@@ -149,11 +160,12 @@ module and does not silently hop to `kody.execute`. See
 [Local CLI execute](../../guides/local-execute.md) and
 [Open API](../../guides/open-api.md).
 
-| Route                                  | Body                                  | 200 response                                                                    |
-| -------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
-| `GET /v1/capability-proxy/session`     | none                                  | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, limits }` (camelCase) |
-| `POST /v1/capability-proxy/call`       | `{ path, args, conversationId? }`     | `{ result }`                                                                    |
-| `POST /v1/local-execute/package-graph` | `{ code, imports?, conversationId? }` | `{ modules: [{ name, esModule }], imports, warnings }`                          |
+| Route                                     | Body                                  | 200 response                                                                    |
+| ----------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
+| `GET /v1/capability-proxy/session`        | none                                  | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, limits }` (camelCase) |
+| `POST /v1/capability-proxy/call`          | `{ path, args, conversationId? }`     | `{ result }`                                                                    |
+| `POST /v1/capability-proxy/gateway-fetch` | raw outbound fetch body (streamed)    | upstream HTTP response (status, headers, body), streamed                        |
+| `POST /v1/local-execute/package-graph`    | `{ code, imports?, conversationId? }` | `{ modules: [{ name, esModule }], imports, warnings }`                          |
 
 - `path` is the `kody:runtime` property path: `['kody', name]`,
   `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
@@ -174,9 +186,13 @@ module and does not silently hop to `kody.execute`. See
   tokens and any secret values the call wrote. Platform failures outside the
   capability return the generic `internal_error`, and the details are logged
   server-side.
-- Confused-deputy limits: the request is JSON arguments only. No caller header
-  or cookie is forwarded into a capability, and the edge strips `Cookie` and
-  `X-Kody-*` before origin sees the request.
+- Confused-deputy limits: `POST /v1/capability-proxy/call` is JSON arguments
+  only. No caller header or cookie is forwarded into a capability, and the edge
+  strips `Cookie` and non-allowlisted `X-Kody-*` before origin sees the request.
+  The streaming hop is the exception: allowlisted `X-Kody-Gateway-*` /
+  `x-kody-secret-resolution` headers carry outbound URL, method, package stamp,
+  and headers; the body is the outbound fetch body. Other `X-Kody-*` headers are
+  still stripped.
 - Order of checks: bearer credential (401), then — for `kody_at_` tokens only —
   `org:execute` via `authorize` (403 `insufficient_scope`). CLI MCP OAuth skips
   the token-scope check (full MCP grant on these routes).
@@ -205,7 +221,13 @@ module and does not silently hop to `kody.execute`. See
   rewrites published modules so ambient `fetch` hops here and quoted
   `{{secret:name|scope=…}}` literals become `__kodySecretRef(...)` — secret
   plaintext never enters local workerd, and a missing secret fails closed before
-  any third-party request.
+  any third-party request. Small buffered placeholder-bearing bodies use this
+  JSON hop (4 MiB). Streamed bodies, `multipart/*` bodies, and bodies that would
+  exceed 4 MiB use native `POST /v1/capability-proxy/gateway-fetch` via host
+  `kody.gatewayFetchStream`
+  ([contract](../contracts/cli-streaming-gateway-fetch.md)): raw body, no JSON
+  wrapper, upstream response streamed back. Literal `{{…}}` placeholders in
+  multipart parts are filled, matching hosted.
 - OAuth client-credentials: `path: ['kody','oauthClientCredentials']` with the
   same argument shape as cloud `oauthClientCredentials(...)`. Origin expands
   secret placeholders through the fetch gateway.

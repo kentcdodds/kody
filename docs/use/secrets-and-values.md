@@ -64,8 +64,9 @@ ones. See the [Terms](/terms).
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** anywhere in the request: a header, the
-URL path, the query string, or a text body (JSON, form-encoded, or plain text).
-The gateway fills them only when both hold:
+URL path, the query string, a text body (JSON, form-encoded, or plain text), or
+a literal `{{…}}` in a `multipart/*` part. The gateway fills them only when both
+hold:
 
 - the request is **HTTPS**;
 - the request host is one the credential allows: a saved secret's approved
@@ -79,12 +80,12 @@ refused, so filling one can never change where a request goes. In a JSON body
 each value is JSON-escaped; in a form-encoded body or query string each value is
 form-encoded, and the other keys and values keep their bytes as written. In the
 URL path each value is encoded as segment data, so a `/`, `?`, or `#` in it
-cannot change the route. A placeholder encoded with `encodeURIComponent` is
-found too.
-
-`multipart/*` bodies (file uploads) and bodies that are not UTF-8 text are
-forwarded byte for byte and never filled, so a placeholder there reaches the
-remote as written. Put a credential such an upload needs in a header.
+cannot change the route. A placeholder encoded with `encodeURIComponent` in the
+URL path or query, or in a form-urlencoded component the gateway already fills,
+is found too. Literal `{{…}}` placeholders in `multipart/*` parts are filled the
+same way. Streamed bodies are filled chunk by chunk. A percent-encoded or
+base64-encoded placeholder form the gateway will not fill is refused, with an
+error that names the form.
 
 The `x-kody-secret-resolution` header changes this per request, and Kody strips
 it before the request leaves:
@@ -99,9 +100,10 @@ it before the request leaves:
 See
 [Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
 Local execute sends a request through the cloud gateway when its URL, headers,
-or buffered body hold a placeholder. It cannot replay a caller `ReadableStream`
-body, so it scans that stream as it is sent and fails instead of sending a
-placeholder in it unfilled.
+or body hold a placeholder — including streamed and multipart bodies — so fill
+matches hosted. Small buffered bodies use the JSON CapabilityProxy hop. Streamed
+bodies, multipart bodies, and bodies that would exceed 4 MiB use the
+[streaming hop](../contributing/contracts/cli-streaming-gateway-fetch.md).
 
 If the remote echoes a substituted value back, in a response header, status
 text, the final URL after redirects, or anywhere in the body, the gateway

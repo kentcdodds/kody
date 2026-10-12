@@ -44,7 +44,9 @@ style, tests, MCP capabilities, and runtime architecture.
   Validate unit-job timing, ship-pr review-bot sort)
 - Local CLI execute (when, command, failure):
   [guide:local_execute](../guides/local-execute.md) and
-  [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
+  [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+  Streaming placeholder-fill hop:
+  [CLI streaming gateway-fetch contract](./contracts/cli-streaming-gateway-fetch.md)
 - PR system recaps (visual plan/recap blocks in PR descriptions):
   [visual-recap skill](../../.agents/skills/visual-recap/SKILL.md)
 
@@ -111,6 +113,10 @@ style, tests, MCP capabilities, and runtime architecture.
 
 - [Architecture](./architecture/index.md) — production worker fleet, request
   lifecycle, [authorization](./architecture/authorization.md) (RBAC)
+- [CLI streaming gateway-fetch contract](./contracts/cli-streaming-gateway-fetch.md)
+  — native Open API hop for local `kody.gatewayFetchStream`
+- [Direct-upload host token](./design-notes/direct-upload-host-token.md) —
+  two-way door design note; gateway remains the default
 
 Served usage docs are [`docs/guides/`](../guides/README.md) (`guide:{id}`,
 [kody.codes/docs](https://kody.codes/docs)). MCP field reference is
