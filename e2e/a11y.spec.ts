@@ -21,14 +21,6 @@ const publicRoutes: RouteScenario[] = [
 		},
 	},
 	{
-		path: '/features',
-		ready: async (page) => {
-			await expect(
-				page.getByRole('group', { name: 'Memory example' }),
-			).toBeVisible()
-		},
-	},
-	{
 		path: '/login',
 		// signup-gateway owns this invalid aria-pressed link. Keep the rest of
 		// the login page covered until that sibling track lands its fix.
@@ -63,6 +55,17 @@ const publicRoutes: RouteScenario[] = [
 		},
 	},
 ]
+
+// Scanned in its own test: the widget-heavy page plus its cold dev compile
+// does not fit inside the shared public-route budget.
+const featuresRoute: RouteScenario = {
+	path: '/features',
+	ready: async (page) => {
+		await expect(
+			page.getByRole('group', { name: 'Memory example' }),
+		).toBeVisible()
+	},
+}
 
 const authenticatedRoutes: RouteScenario[] = [
 	{
@@ -179,5 +182,14 @@ test('critical routes have no blocking axe violations in either theme', async ({
 		for (const scenario of authenticatedRoutes) {
 			await scanRoute(page, scenario, theme)
 		}
+	}
+})
+
+test('features overview has no blocking axe violations in either theme', async ({
+	page,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 45_000)
+	for (const theme of themes) {
+		await scanRoute(page, featuresRoute, theme)
 	}
 })
