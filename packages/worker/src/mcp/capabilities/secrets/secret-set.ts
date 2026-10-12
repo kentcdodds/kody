@@ -10,12 +10,19 @@ import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.t
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	findSecret,
+	readSecretMetadata,
 	saveSecret,
 	updateSecret,
 	updateUserSecretForPackage,
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecretSet } from './authorize-secret.ts'
+import {
+	applyCredentialFieldsOnly,
+	optInCredentialInputFields,
+	planOptInCredentialFields,
+	toSaveSecretCredential,
+} from './secret-set-opt-in.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetInputSchema = z
@@ -42,17 +49,23 @@ const secretSetInputSchema = z
 		scope: z
 			.enum(secretScopeValues)
 			.describe('Storage scope that owns the secret.'),
+		...optInCredentialInputFields,
 	})
 	.superRefine((value, ctx) => {
 		if (
 			(typeof value.value !== 'string' || value.value.length === 0) &&
 			value.description === undefined &&
-			value.expires_at === undefined
+			value.expires_at === undefined &&
+			value.provider === undefined &&
+			value.inject === undefined &&
+			value.kind === undefined &&
+			value.hosts === undefined &&
+			value.login_exchange === undefined
 		) {
 			ctx.addIssue({
 				code: 'custom',
 				message:
-					'Provide a secret value, or a description / expires_at update for an existing secret.',
+					'Provide a secret value, or a description / expires_at / provider / inject update for an existing secret.',
 				path: ['value'],
 			})
 		}
@@ -92,6 +105,21 @@ export const secretSetCapability = defineDomainCapability(
 				scope: parsed.scope,
 				storageContext,
 			})
+			const optIn = await planOptInCredentialFields(ctx, {
+				input: parsed,
+				authorityPackageId,
+			})
+			if (optIn.mode === 'fields-only') {
+				const report = await applyCredentialFieldsOnly(ctx, optIn)
+				const metadata = await readSecretMetadata({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+					scope: parsed.scope,
+					name: parsed.name,
+					storageContext,
+				})
+				return { ...toSecretCapabilityOutput(metadata), ...report }
+			}
 			let saved
 			if (parsed.scope === 'user' && authorityPackageId) {
 				if (parsed.expires_at !== undefined) {
@@ -147,6 +175,9 @@ export const secretSetCapability = defineDomainCapability(
 					description: parsed.description ?? '',
 					expiresAt: parsed.expires_at,
 					storageContext,
+					...(optIn.mode === 'with-value'
+						? { credential: toSaveSecretCredential(ctx, optIn) }
+						: {}),
 				})
 			} else {
 				saved = await updateSecret({
@@ -159,7 +190,10 @@ export const secretSetCapability = defineDomainCapability(
 					storageContext,
 				})
 			}
-			return toSecretCapabilityOutput(saved)
+			const output = toSecretCapabilityOutput(saved)
+			return optIn.mode === 'with-value'
+				? { ...output, ...optIn.report }
+				: output
 		},
 	},
 )

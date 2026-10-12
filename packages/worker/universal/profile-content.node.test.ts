@@ -319,7 +319,7 @@ test('plain repo rows show the Repo signifier, link to the repo page, and omit C
 		hasApp: false,
 		webhookCount: 0,
 		jobCount: 0,
-		iconUrl: '/account/repos/repo-1/icon/idx-1',
+		iconUrl: '/@kody/stash-files/icon/idx-1',
 		isPrivate: true,
 	} satisfies PublicProfilePackageItem
 	const html = await render({
@@ -330,7 +330,7 @@ test('plain repo rows show the Repo signifier, link to the repo page, and omit C
 		'href="/@kody/stash-files"',
 		'title="Repo"',
 		'data-icon="folder"',
-		'/account/repos/repo-1/icon/idx-1',
+		'/@kody/stash-files/icon/idx-1',
 		'title="Private"',
 	])
 	expect(html).not.toContain('title="Package"')

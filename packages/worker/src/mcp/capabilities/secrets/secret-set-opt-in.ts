@@ -1,0 +1,315 @@
+import { z } from 'zod'
+import {
+	assertInjectFitsKind,
+	assertLoginExchangeOnHosts,
+	assertOptInCredentialValue,
+	type CredentialFieldsUpdate,
+	type CredentialInject,
+	credentialHostsSchema,
+	credentialInjectSchema,
+	credentialProviderSchema,
+	defaultCredentialInject,
+	loginExchangeSchema,
+	normalizeCredentialHosts,
+	type OptInStoredCredentialKind,
+	optInStoredCredentialKinds,
+	readStoredCredentialPlacement,
+	updateCredentialFields,
+} from '#worker/credentials/credential-fields.ts'
+import {
+	type OrgAuditOutboxEvent,
+	orgAuditWriterFromRequest,
+} from '#worker/orgs/org-audit.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
+import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { type SaveSecretCredential } from '#mcp/secrets/service.ts'
+import { type secretScopeValues } from '#mcp/secrets/types.ts'
+
+const storedKindValues = ['secret', ...optInStoredCredentialKinds] as const
+
+type StoredKind = (typeof storedKindValues)[number]
+
+export const optInCredentialInputFields = {
+	kind: z
+		.enum(storedKindValues)
+		.optional()
+		.describe(
+			'Optional credential kind (ADR 0068), set together with a value. "secret" (default) is a Key used by `{{secret:name}}` placeholders. "url", "login", and "signing" are opt-in kinds a package reads through a scoped credential client, never as raw text; they need `hosts`.',
+		),
+	hosts: credentialHostsSchema
+		.optional()
+		.describe(
+			'Hosts an opt-in kind may be sent to: exact hosts or one wildcard level such as *.example.com. Set together with a value. Keys keep using host approvals instead.',
+		),
+	login_exchange: loginExchangeSchema
+		.optional()
+		.describe(
+			'For kind "login": how the login fields are exchanged for a session token. Its url must be on one of `hosts`.',
+		),
+	provider: credentialProviderSchema
+		.nullable()
+		.optional()
+		.describe(
+			'Optional provider slug (for example "github") a scoped credential client matches package needs against. Null clears it. Keys used by placeholders ignore it.',
+		),
+	inject: credentialInjectSchema
+		.optional()
+		.describe(
+			'Optional placement for a scoped credential client: a header with a "{value}" format, basic auth, or a query parameter. Defaults to `Authorization: Bearer {value}`. Placeholders ignore it.',
+		),
+}
+
+type OptInInput = {
+	name: string
+	scope: (typeof secretScopeValues)[number]
+	value?: string
+	description?: string
+	expires_at?: string | null
+	kind?: StoredKind
+	hosts?: Array<string>
+	login_exchange?: z.infer<typeof loginExchangeSchema>
+	provider?: string | null
+	inject?: CredentialInject
+}
+
+type CredentialReport = {
+	kind: StoredKind
+	provider: string | null
+	inject: CredentialInject
+}
+
+export type OptInCredentialPlan =
+	| { mode: 'none' }
+	| {
+			/** Saved by `saveSecret` in the same batch as the value. */
+			mode: 'with-value'
+			credential: Omit<SaveSecretCredential, 'audit'>
+			auditEvent: (credentialId: string) => OrgAuditOutboxEvent
+			report: CredentialReport
+	  }
+	| {
+			/** Only provider and/or inject change; the entry itself is untouched. */
+			mode: 'fields-only'
+			credentialId: string
+			kind: StoredKind
+			update: CredentialFieldsUpdate
+	  }
+
+function isOptInKind(kind: StoredKind): kind is OptInStoredCredentialKind {
+	return kind !== 'secret'
+}
+
+function exchangeHost(exchange: z.infer<typeof loginExchangeSchema> | null) {
+	return exchange ? new URL(exchange.url).hostname : null
+}
+
+/**
+ * Validates the opt-in fields before anything is written, so a bad kind,
+ * host, or value fails without touching the stored secret. Only the org's
+ * own user scope, outside package runtimes, carries these fields.
+ */
+export async function planOptInCredentialFields(
+	ctx: CapabilityContext,
+	input: { input: OptInInput; authorityPackageId: string | null | undefined },
+): Promise<OptInCredentialPlan> {
+	const {
+		kind,
+		hosts,
+		login_exchange: loginExchange,
+		provider,
+		inject,
+		value,
+	} = input.input
+	const name = input.input.name.trim()
+	const touchesKind =
+		kind !== undefined || hosts !== undefined || loginExchange !== undefined
+	const touchesFields = provider !== undefined || inject !== undefined
+	const hasValue = typeof value === 'string' && value.length > 0
+	if (!touchesKind && !touchesFields) {
+		// A new value for an existing opt-in kind is still checked against it.
+		if (input.input.scope !== 'user' || !hasValue) return { mode: 'none' }
+	} else if (input.input.scope !== 'user' || input.authorityPackageId) {
+		throw new McpCallerError(
+			'kind, hosts, login_exchange, provider, and inject apply only to user-scope secrets set outside a package.',
+		)
+	}
+	if (touchesKind && !hasValue) {
+		throw new McpCallerError(
+			'Set kind, hosts, or login_exchange together with a value: whoever supplies the value decides where it may go.',
+		)
+	}
+	const existing = await readStoredCredentialPlacement({
+		db: ctx.env.APP_DB,
+		orgId: ownerIdFromCaller(ctx.callerContext),
+		name,
+	})
+	if (touchesFields && !hasValue) {
+		if (!existing) {
+			throw new McpCallerError(
+				`No user-scope secret named "${name}" to update. Provide a value to create it.`,
+			)
+		}
+		if (
+			input.input.description !== undefined ||
+			input.input.expires_at !== undefined
+		) {
+			throw new McpCallerError(
+				'Without a value, change provider or inject in a call of their own, separate from description or expires_at.',
+			)
+		}
+		if (inject) assertInjectFitsKind({ kind: existing.kind, inject })
+		return {
+			mode: 'fields-only',
+			credentialId: existing.id,
+			kind: existing.kind,
+			update: {
+				...(provider !== undefined ? { provider } : {}),
+				...(inject ? { inject } : {}),
+			},
+		}
+	}
+	const existingKind: StoredKind = existing?.kind ?? 'secret'
+	const effectiveKind = kind ?? existingKind
+	let allowedHosts: Array<string> | null = null
+	let effectiveExchange: z.infer<typeof loginExchangeSchema> | null = null
+	if (isOptInKind(effectiveKind)) {
+		const effectiveHosts =
+			(hosts && normalizeCredentialHosts(hosts)) ??
+			(existingKind === effectiveKind && existing ? existing.allowedHosts : [])
+		if (effectiveHosts.length === 0) {
+			throw new McpCallerError(
+				`A ${effectiveKind} credential needs hosts: the hosts it may be sent to.`,
+			)
+		}
+		if (effectiveKind === 'login') {
+			effectiveExchange =
+				loginExchange ??
+				(existingKind === 'login' ? (existing?.loginExchange ?? null) : null)
+			if (!effectiveExchange) {
+				throw new McpCallerError(
+					'A login credential needs login_exchange: how its fields become a session token.',
+				)
+			}
+			assertLoginExchangeOnHosts({
+				exchangeUrl: effectiveExchange.url,
+				hosts: effectiveHosts,
+			})
+		} else if (loginExchange !== undefined) {
+			throw new McpCallerError('login_exchange applies only to kind "login".')
+		}
+		assertOptInCredentialValue({
+			kind: effectiveKind,
+			value: value as string,
+			hosts: effectiveHosts,
+		})
+		allowedHosts = effectiveHosts
+	} else {
+		if (hosts !== undefined) {
+			throw new McpCallerError(
+				'hosts apply only to the opt-in kinds (url, login, signing). A Key gets its hosts through host approvals.',
+			)
+		}
+		if (loginExchange !== undefined) {
+			throw new McpCallerError('login_exchange applies only to kind "login".')
+		}
+		// Back to a Key: its hosts come only from the approval flow again.
+		if (existingKind !== 'secret') allowedHosts = []
+	}
+	if (!touchesKind && !touchesFields) return { mode: 'none' }
+	const before = {
+		provider: existing?.provider ?? null,
+		inject: existing?.inject ?? defaultCredentialInject,
+	}
+	const report: CredentialReport = {
+		kind: effectiveKind,
+		provider: provider === undefined ? before.provider : provider,
+		inject: inject ?? before.inject,
+	}
+	assertInjectFitsKind({ kind: report.kind, inject: report.inject })
+	const fieldDetails = touchesFields
+		? {
+				provider: { before: before.provider, after: report.provider },
+				inject: { before: before.inject, after: report.inject },
+			}
+		: {}
+	const orgId = ownerIdFromCaller(ctx.callerContext)
+	return {
+		mode: 'with-value',
+		credential: {
+			kind: effectiveKind,
+			allowedHosts,
+			configJson: effectiveExchange ? JSON.stringify(effectiveExchange) : null,
+			provider: report.provider,
+			injectJson: JSON.stringify(report.inject),
+		},
+		auditEvent: (credentialId) =>
+			touchesKind
+				? {
+						orgId,
+						action: 'credential.kind_set',
+						resourceType: 'credential',
+						resourceId: credentialId,
+						details: {
+							kind: { before: existing?.kind ?? null, after: effectiveKind },
+							hosts: {
+								before: existing?.allowedHosts ?? null,
+								after: allowedHosts ?? existing?.allowedHosts ?? [],
+							},
+							loginExchangeHost: {
+								before: exchangeHost(existing?.loginExchange ?? null),
+								after: exchangeHost(effectiveExchange),
+							},
+							...fieldDetails,
+						},
+					}
+				: {
+						orgId,
+						action: 'credential.fields_updated',
+						resourceType: 'credential',
+						resourceId: credentialId,
+						details: { credentialKind: 'secret', ...fieldDetails },
+					},
+		report,
+	}
+}
+
+/** The `saveSecret` credential input for a plan that saves with the value. */
+export function toSaveSecretCredential(
+	ctx: CapabilityContext,
+	plan: Extract<OptInCredentialPlan, { mode: 'with-value' }>,
+): SaveSecretCredential {
+	return {
+		...plan.credential,
+		audit: {
+			writer: orgAuditWriterFromRequest(
+				ctx.env,
+				requireMcpRequest(ctx.callerContext),
+			),
+			event: plan.auditEvent,
+		},
+	}
+}
+
+/** Applies a provider/inject-only plan without rewriting the secret entry. */
+export async function applyCredentialFieldsOnly(
+	ctx: CapabilityContext,
+	plan: Extract<OptInCredentialPlan, { mode: 'fields-only' }>,
+): Promise<CredentialReport> {
+	const updated = await updateCredentialFields({
+		db: ctx.env.APP_DB,
+		orgId: ownerIdFromCaller(ctx.callerContext),
+		credentialId: plan.credentialId,
+		update: plan.update,
+		audit: orgAuditWriterFromRequest(
+			ctx.env,
+			requireMcpRequest(ctx.callerContext),
+		),
+	})
+	return {
+		kind: plan.kind,
+		provider: updated.provider,
+		inject: updated.inject,
+	}
+}

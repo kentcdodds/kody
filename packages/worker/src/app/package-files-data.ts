@@ -1,4 +1,7 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personalOrgId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
@@ -32,7 +35,10 @@ import {
 	normalizePackageFilesPath,
 	type PackageFilesView,
 } from '#universal/package-files.ts'
-import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
+import {
+	readArtifactFileAtCommit,
+	readArtifactTreeAtCommit,
+} from '#worker/repo/artifact-file.ts'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { loadPackagePage } from '#app/package-page.ts'
@@ -46,7 +52,10 @@ import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import {
+	getEntitySourceByEntity,
+	getEntitySourceById,
+} from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
 import {
 	getCommunityPackageAssetBaseHref,
@@ -72,6 +81,8 @@ async function toLoaderData(input: {
 	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
+	/** False for plain repos that share package chrome. Defaults to true. */
+	hasPackage?: boolean
 	listingId?: string | null
 	iconUrl?: string | null
 	viewedCommit?: string | null
@@ -128,6 +139,7 @@ async function toLoaderData(input: {
 		viewerCanManage: input.viewerCanManage,
 		isPrivate: input.isPrivate,
 		isListed: input.isListed ?? Boolean(input.listingId),
+		hasPackage: input.hasPackage,
 		iconUrl: input.iconUrl ?? null,
 		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
 			listingId: input.listingId,
@@ -526,6 +538,125 @@ export async function loadAccountPackageFilesData(input: {
 	})
 }
 
+/**
+ * Plain repos are live at HEAD via entity_sources.repo_id. Access is gated by
+ * loadPackagePage (public guests; private members/owners) before this runs.
+ */
+export async function loadPlainRepoFilesData(input: {
+	env: Env
+	request: Request
+	ownerUserId: string
+	username: string
+	kodyId: string
+	repoId: string
+	sourceId: string
+	isPrivate: boolean
+	description: string
+	selectedPath: string
+	ref?: string
+	serverTiming?: Array<ServerTimingEntry>
+	viewerIsOwner?: boolean
+	viewerCanManage?: boolean
+	ownerProfilePublic?: boolean
+}): Promise<PackageFilesLoaderData | null> {
+	const source = input.sourceId
+		? await getEntitySourceById(input.env.APP_DB, input.sourceId)
+		: await getEntitySourceByEntity(input.env.APP_DB, {
+				userId: ownerIdFromStored(input.ownerUserId),
+				entityKind: 'repo',
+				entityId: input.repoId,
+			})
+	if (!source?.repo_id) return null
+
+	const liveCommit = source.indexed_commit ?? source.published_commit ?? ''
+	const treeRef = input.ref?.trim() ?? ''
+	const resolved = await resolvePublicTreeCommit({
+		env: input.env,
+		request: input.request,
+		sourceRepoId: source.repo_id,
+		publishedCommit: source.published_commit ?? liveCommit,
+		pinnedCommit: liveCommit,
+		ref: treeRef,
+	})
+	const loaded = await loadPublicTreeFiles({
+		env: input.env,
+		request: input.request,
+		sourceId: source.id,
+		sourceRepoId: source.repo_id,
+		commit: resolved.commit,
+		pinnedCommit: liveCommit,
+	})
+	// Plain repos are live-at-HEAD and usually have no publish KV snapshot.
+	// When the public tree path is empty, shallow-fetch the Artifacts commit.
+	let files = loaded.files
+	if (Object.keys(files).length === 0 && resolved.commit) {
+		try {
+			const tree = await readArtifactTreeAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: resolved.commit,
+			})
+			if (tree) files = tree
+		} catch {
+			files = {}
+		}
+	}
+	const view = buildPackageFilesView({
+		files,
+		selectedPath: input.selectedPath,
+	})
+	if (!view) return null
+
+	const urlRef = isPublicTreeDefaultRefAlias(treeRef)
+		? resolved.defaultBranch
+		: treeRef || resolved.defaultBranch
+	return toLoaderData({
+		env: input.env,
+		title: `@${input.username}/${input.kodyId}`,
+		backHref: routes.communityPackage.href({
+			username: input.username,
+			kodyId: input.kodyId,
+		}),
+		backLabel: 'Repo',
+		filesBasePath: getPackageTreeHref({
+			username: input.username,
+			kodyId: input.kodyId,
+			ref: urlRef,
+		}),
+		view,
+		serverTiming: input.serverTiming,
+		username: input.username,
+		kodyId: input.kodyId,
+		viewerIsOwner: input.viewerIsOwner,
+		viewerCanManage: input.viewerCanManage,
+		isPrivate: input.isPrivate,
+		isListed: false,
+		hasPackage: false,
+		// Identity icons only serve indexed/published commits (not live HEAD).
+		iconUrl: resolvePackageListIconUrl({
+			username: input.username,
+			kodyId: input.kodyId,
+			listingId: null,
+			listingIconCommit: null,
+			publishedCommit: source.indexed_commit ?? source.published_commit ?? null,
+		}),
+		viewedCommit: resolved.commit,
+		// Plain repos have no package /assets/ publish snapshot; leave null so
+		// README images are not rewritten to an unservable prefix.
+		assetCommit: null,
+		mediaHref: view.contentPath
+			? getPackageRawHref({
+					username: input.username,
+					kodyId: input.kodyId,
+					ref: urlRef,
+					relativePath: view.contentPath,
+				})
+			: null,
+		description: input.description,
+		ownerProfilePublic: input.ownerProfilePublic,
+	})
+}
+
 export async function loadAccessiblePackageFilesData(input: {
 	env: Env
 	request: Request
@@ -565,7 +696,30 @@ export async function loadAccessiblePackageFilesData(input: {
 		}
 	}
 
-	if (!page.ownerPackage || !page.viewerIsOwner) return null
+	if (!page.ownerPackage) return null
+
+	if (!page.hasPackage) {
+		// loadPackagePage already gated access for public guests and private members.
+		return loadPlainRepoFilesData({
+			env: input.env,
+			request: input.request,
+			ownerUserId: page.ownerUserId,
+			username: page.username,
+			kodyId: page.kodyId,
+			repoId: page.ownerPackage.id,
+			sourceId: page.ownerPackage.sourceId,
+			isPrivate: page.ownerPackage.isPrivate,
+			description: page.ownerPackage.description,
+			selectedPath: input.selectedPath,
+			ref: input.ref,
+			serverTiming: input.serverTiming,
+			viewerIsOwner: page.viewerIsOwner,
+			viewerCanManage: page.viewerCanManage,
+			ownerProfilePublic: page.ownerProfilePublic,
+		})
+	}
+
+	if (!page.viewerIsOwner) return null
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	if (!user) return null
 	const data = await loadAccountPackageFilesData({
@@ -846,6 +1000,68 @@ export async function loadAccountPackageFileRaw(input: {
 	return { ...media, isPrivate: record.isPrivate }
 }
 
+export async function loadPlainRepoFileRaw(input: {
+	env: Env
+	request: Request
+	ownerUserId: string
+	repoId: string
+	sourceId: string
+	isPrivate: boolean
+	selectedPath: string
+	ref?: string
+}): Promise<PackageFileRawResult> {
+	if (!input.selectedPath) return { kind: 'not-found' }
+	const source = input.sourceId
+		? await getEntitySourceById(input.env.APP_DB, input.sourceId)
+		: await getEntitySourceByEntity(input.env.APP_DB, {
+				userId: ownerIdFromStored(input.ownerUserId),
+				entityKind: 'repo',
+				entityId: input.repoId,
+			})
+	if (!source?.repo_id) return { kind: 'not-found' }
+
+	const liveCommit = source.indexed_commit ?? source.published_commit ?? ''
+	const treeRef = input.ref?.trim() ?? ''
+	const resolved = await resolvePublicTreeCommit({
+		env: input.env,
+		request: input.request,
+		sourceRepoId: source.repo_id,
+		publishedCommit: source.published_commit ?? liveCommit,
+		pinnedCommit: liveCommit,
+		ref: treeRef,
+	})
+	const loaded = await loadPublicTreeFiles({
+		env: input.env,
+		request: input.request,
+		sourceId: source.id,
+		sourceRepoId: source.repo_id,
+		commit: resolved.commit,
+		pinnedCommit: liveCommit,
+	})
+	let files = loaded.files
+	if (Object.keys(files).length === 0 && resolved.commit) {
+		try {
+			const tree = await readArtifactTreeAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: resolved.commit,
+			})
+			if (tree) files = tree
+		} catch {
+			files = {}
+		}
+	}
+	const media = await readPackageFileMediaBytes({
+		env: input.env,
+		files,
+		filePath: input.selectedPath,
+		sourceRepoId: source.repo_id,
+		commit: resolved.commit,
+	})
+	if (media.kind !== 'ok') return media
+	return { ...media, isPrivate: input.isPrivate }
+}
+
 export async function loadAccessiblePackageFileRaw(input: {
 	env: Env
 	request: Request
@@ -874,6 +1090,20 @@ export async function loadAccessiblePackageFileRaw(input: {
 	}
 
 	if (!page.ownerPackage) return { kind: 'not-found' }
+
+	if (!page.hasPackage) {
+		return loadPlainRepoFileRaw({
+			env: input.env,
+			request: input.request,
+			ownerUserId: page.ownerUserId,
+			repoId: page.ownerPackage.id,
+			sourceId: page.ownerPackage.sourceId,
+			isPrivate: page.ownerPackage.isPrivate,
+			selectedPath: input.selectedPath,
+			ref: input.ref,
+		})
+	}
+
 	return loadAccountPackageFileRaw({
 		env: input.env,
 		request: input.request,

@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
 	resolvePackagePageUrl: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	getEntitySourceByEntity: vi.fn(),
+	findPublicOwnerIdentityByHandle: vi.fn(),
+	getUserRepoByName: vi.fn(),
 	serveIdentityIcon: vi.fn(),
 }))
 
@@ -31,6 +34,18 @@ vi.mock('#worker/community/repo.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mocks.getEntitySourceById(...args),
+	getEntitySourceByEntity: (...args: Array<unknown>) =>
+		mocks.getEntitySourceByEntity(...args),
+}))
+
+vi.mock('#worker/identity/user-lookup.ts', () => ({
+	findPublicOwnerIdentityByHandle: (...args: Array<unknown>) =>
+		mocks.findPublicOwnerIdentityByHandle(...args),
+}))
+
+vi.mock('#worker/repo/user-repos.ts', () => ({
+	getUserRepoByName: (...args: Array<unknown>) =>
+		mocks.getUserRepoByName(...args),
 }))
 
 vi.mock('./identity-icon-response.ts', () => ({
@@ -48,6 +63,16 @@ const source = {
 	repo_id: 'repo-1',
 	published_commit: 'pub-1',
 	indexed_commit: null,
+}
+
+const plainRepoSource = {
+	id: 'source-repo-1',
+	user_id: ownerIdFromStored('owner-1'),
+	entity_kind: 'repo' as const,
+	entity_id: 'user-repo-1',
+	repo_id: 'artifacts-repo-1',
+	published_commit: null,
+	indexed_commit: 'idx-1',
 }
 
 const publicPackage = {
@@ -210,5 +235,74 @@ test('private team package icons follow what the viewer can see in the team org'
 		mcpUser: { userId: ownerIdFromStored('other-1') },
 	})
 	expect((await callHandler()).status).toBe(404)
+	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
+})
+
+function stubPlainRepoLookup(input?: {
+	isPrivate?: boolean
+	indexedCommit?: string | null
+}) {
+	mocks.resolvePackagePageUrl.mockResolvedValue(null)
+	mocks.findPublicOwnerIdentityByHandle.mockResolvedValue({
+		ownerId: ownerIdFromStored('owner-1'),
+		handle: 'kent',
+	})
+	mocks.getUserRepoByName.mockResolvedValue({
+		id: 'user-repo-1',
+		name: 'notes',
+		isPrivate: input?.isPrivate ?? false,
+	})
+	mocks.getEntitySourceByEntity.mockResolvedValue({
+		...plainRepoSource,
+		indexed_commit:
+			input?.indexedCommit === undefined
+				? plainRepoSource.indexed_commit
+				: input.indexedCommit,
+	})
+	mocks.serveIdentityIcon.mockResolvedValue(
+		new Response('icon', { status: 200 }),
+	)
+}
+
+test('plain repo identity icons fall back when the slug is not a package', async () => {
+	stubPlainRepoLookup()
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+
+	const response = await callHandler('idx-1')
+	expect(response.status).toBe(200)
+	expect(mocks.serveIdentityIcon).toHaveBeenCalledWith(
+		expect.objectContaining({
+			repoId: 'artifacts-repo-1',
+			iconCommit: 'idx-1',
+			includePackageAppIcon: false,
+			leafName: 'notes',
+			cacheControl: undefined,
+			logLabel: 'repo-identity-icon',
+		}),
+	)
+})
+
+test('private plain repo icons require org membership and use a private cache', async () => {
+	stubPlainRepoLookup({ isPrivate: true })
+	mocks.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: ownerIdFromStored('owner-1') },
+	})
+	expect((await callHandler('idx-1')).status).toBe(200)
+	expect(mocks.serveIdentityIcon).toHaveBeenCalledWith(
+		expect.objectContaining({
+			cacheControl: 'private, max-age=31536000, immutable',
+		}),
+	)
+
+	mocks.serveIdentityIcon.mockClear()
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	expect((await callHandler('idx-1')).status).toBe(404)
+	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
+})
+
+test('plain repo identity icons reject stale commits', async () => {
+	stubPlainRepoLookup()
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	expect((await callHandler('old-commit')).status).toBe(404)
 	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
 })

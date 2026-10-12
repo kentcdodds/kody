@@ -217,6 +217,8 @@ export type PackageFilesLoaderData = {
 	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
+	/** False for plain repos that share package chrome. Defaults to true. */
+	hasPackage?: boolean
 	iconUrl?: string | null
 	imageBaseHref?: string | null
 	description?: string

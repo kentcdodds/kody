@@ -26,7 +26,7 @@ const exchangeTimeoutMs = 30_000
 const maxCachedSessions = 500
 const maxExchangeResponseBytes = 64 * 1024
 
-const loginExchangeSchema = z
+export const loginExchangeSchema = z
 	.object({
 		url: z.string().min(1),
 		method: z.enum(['POST', 'PUT']).default('POST'),

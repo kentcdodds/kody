@@ -28,9 +28,11 @@ you want runtime surfaces (exports, apps, jobs, webhooks).
 commit. Put the list mark at `.kody/icon.png` (also `.svg`, `.webp`, `.jpg`,
 `.jpeg`). Root `icon.*` and `community-icon.*` are aliases. See
 [Package icon](../guides/package-authoring.md#package-icon) for the resolution
-order. A default-branch push indexes the mark from the new HEAD. The owner-only
-image route is `/account/repos/:repoId/icon/:iconCommit`. Repos without a file
-show a monogram from the repo leaf name.
+order. A default-branch push indexes the mark from the new HEAD. Website list
+and detail marks use `/@:owner/:name/icon/:iconCommit` (same shape as packages;
+the route falls back to `entity_kind:'repo'` with public/member access). The
+owner-session MCP lane remains `/account/repos/:repoId/icon/:iconCommit`. Repos
+without a file show a monogram from the repo leaf name.
 
 Plain repos do not have Vectorize/search integration—use `repoList` for
 discovery.

@@ -29,17 +29,19 @@ only) for package or repo, private, hidden, published to Community or not
 published to Community (packages only), webhook count, job count, and whether it
 has an app. Private repositories do not also get a “not published to Community”
 signifier — the private icon is enough. List marks come from
-`/@username/:kodyId/icon/:iconCommit` (packages) and
-`/account/repos/:repoId/icon/:iconCommit` (plain repos). Each repository lives
-at `/@username/:kodyId` (the URL slug is the package or repo name leaf; **Repo**
-tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
-(**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
-published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab for
-packages: lock, visibility, webhooks, delete), and
-`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Opening an
-allowlisted image or video in the tree renders a preview; the bytes come from
-`/@username/:kodyId/raw/:ref/…` (same authz as the tree). `/account/packages`
-404s. `/account/packages/:packageId` redirects to the canonical package page.
+`/@username/:kodyId/icon/:iconCommit` for both packages and plain repos (the
+route falls back to `entity_kind:'repo'` with the same access as the detail
+page). `/account/repos/:repoId/icon/:iconCommit` remains the MCP/owner-only
+lane. Each repository lives at `/@username/:kodyId` (the URL slug is the package
+or repo name leaf; **Repo** tab: description, tags, license, badges),
+`/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
+(README-relative images from the published or pinned commit),
+`/@username/:kodyId/settings` (**Settings** tab for packages: lock, visibility,
+webhooks, delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD
+review). Opening an allowlisted image or video in the tree renders a preview;
+the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree).
+`/account/packages` 404s. `/account/packages/:packageId` redirects to the
+canonical package page.
 
 ## Drive it
 
@@ -73,8 +75,8 @@ fixtures use `control-kody execute` / `search` against the same origin.
   delete, adopt-community-fork, absorb-listing; no package-create action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
-- `GET /@:username/:kodyId/icon/:iconCommit` (package list mark)
-- `GET /account/repos/:repoId/icon/:iconCommit` (owner-only repo list mark)
+- `GET /@:username/:kodyId/icon/:iconCommit` (package or plain-repo list mark)
+- `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)

@@ -20,6 +20,8 @@ import {
 	getCommunityPackageHref,
 	resolvePackagePageUrl,
 } from '#worker/community/package-url.ts'
+import { isPlainRepoPackageShapedAtCommit } from '#mcp/capabilities/repo/plain-repo-package-shaped.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { getUserRepoByName } from '#worker/repo/user-repos.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -44,6 +46,12 @@ export type PackagePageAccess =
 			 * False for plain `user_repos` pages that share the same chrome.
 			 */
 			hasPackage: boolean
+			/**
+			 * Plain repos only: root `package.json` at the indexed/published
+			 * commit. Computed for org members so the detail chrome can offer
+			 * promote guidance; guests skip the Artifacts read.
+			 */
+			packageShaped?: boolean
 			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
 			/** The viewer may change the package (settings, publish). */
@@ -227,6 +235,33 @@ async function loadPlainRepoPage(input: {
 				isPrivate: true,
 			})
 		: false
+	// Match repoGet: probe package.json at live HEAD (not a possibly stale
+	// indexed icon commit). Fall back to iconCommit when HEAD resolve fails.
+	let headCommit = iconCommit
+	if (source?.repo_id) {
+		try {
+			const head = await resolveCachedArtifactSourceHead(
+				input.env,
+				source.repo_id,
+				{ request: input.request },
+			)
+			headCommit = head.commit
+		} catch {
+			headCommit = iconCommit
+		}
+	}
+	let packageShaped = false
+	if (viewerIsMember && source?.repo_id) {
+		try {
+			packageShaped = await isPlainRepoPackageShapedAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: headCommit,
+			})
+		} catch {
+			packageShaped = false
+		}
+	}
 	const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
 		env: input.env,
 		username: identity.handle,
@@ -246,6 +281,7 @@ async function loadPlainRepoPage(input: {
 			iconCommit,
 		}),
 		hasPackage: false,
+		packageShaped,
 		viewerIsOwner: viewerIsMember,
 		// Plain repos have no package settings/publish/delete surface here.
 		viewerCanManage: false,
