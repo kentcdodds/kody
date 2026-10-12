@@ -21,10 +21,7 @@ import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import {
-	listPackageWebhooks,
-	type PackageWebhookManifestEntry,
-} from '#worker/package-registry/manifest.ts'
+import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -69,10 +66,7 @@ import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
-import {
-	defaultWebhookVerification,
-	resolveWebhookHmacSigningSecret,
-} from './signing-secret.ts'
+import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
@@ -676,66 +670,68 @@ export async function handleWebhookIngressRequest(
 		}
 	}
 
-	// Every webhook enablement verifies signatures: the platform scheme
-	// applies when the manifest declares none.
-	const verification: NonNullable<PackageWebhookManifestEntry['verification']> =
-		declared.verification ?? defaultWebhookVerification
-	const headerName = verification.header
-	const provided = request.headers.get(headerName)
-	if (!provided) {
-		return rejectUnauthorized('missing_signature')
-	}
-	let hmacSecret: string
-	try {
-		hmacSecret = await resolveWebhookHmacSigningSecret({
-			env,
-			userId: liveEndpoint.userId,
-			endpoint: liveEndpoint,
-			verification: verification,
-			allowLegacySecretNameFallback: true,
-		})
-	} catch {
-		return rejectUnauthorized(
-			verification.secretName
-				? `verification_secret_missing:${verification.secretName}`
-				: 'verification_secret_missing:package_owned_hmac',
-		)
-	}
-	const signedPayload = verification.signedPayload ?? 'body'
-	let hmacPayload = bodyBuffer
-	if (signedPayload === 'timestamp.body') {
-		if (!replayTimestampToken) {
-			return rejectUnauthorized('invalid_timestamp')
+	// A webhook that declares no verification is authenticated by its URL
+	// secret alone. Requiring a signature it never declared would refuse
+	// senders that worked before, so that default is a product decision.
+	const verification = declared.verification
+	if (verification) {
+		const headerName = verification.header
+		const provided = request.headers.get(headerName)
+		if (!provided) {
+			return rejectUnauthorized('missing_signature')
 		}
-		hmacPayload = buildWebhookTimestampBodyPayload({
-			timestampToken: replayTimestampToken,
-			body: bodyBuffer,
-		})
-	}
-	const providedValues = providedWebhookHmacValues({
-		provided,
-		verificationHeader: headerName,
-		timestampHeader: declared.replay?.timestampHeader,
-		timestampFormat: declared.replay?.timestampFormat,
-	})
-	let valid = false
-	for (const candidate of providedValues) {
-		if (
-			await verifyWebhookHmacSignature({
-				algorithm: verification.type,
-				secret: hmacSecret,
-				body: hmacPayload,
-				encoding: verification.encoding,
-				prefix: verification.prefix,
-				provided: candidate,
+		let hmacSecret: string
+		try {
+			hmacSecret = await resolveWebhookHmacSigningSecret({
+				env,
+				userId: liveEndpoint.userId,
+				endpoint: liveEndpoint,
+				verification,
+				allowLegacySecretNameFallback: true,
 			})
-		) {
-			valid = true
-			break
+		} catch {
+			return rejectUnauthorized(
+				verification.secretName
+					? `verification_secret_missing:${verification.secretName}`
+					: 'verification_secret_missing:package_owned_hmac',
+			)
 		}
-	}
-	if (!valid) {
-		return rejectUnauthorized('invalid_signature')
+		const signedPayload = verification.signedPayload ?? 'body'
+		let hmacPayload = bodyBuffer
+		if (signedPayload === 'timestamp.body') {
+			if (!replayTimestampToken) {
+				return rejectUnauthorized('invalid_timestamp')
+			}
+			hmacPayload = buildWebhookTimestampBodyPayload({
+				timestampToken: replayTimestampToken,
+				body: bodyBuffer,
+			})
+		}
+		const providedValues = providedWebhookHmacValues({
+			provided,
+			verificationHeader: headerName,
+			timestampHeader: declared.replay?.timestampHeader,
+			timestampFormat: declared.replay?.timestampFormat,
+		})
+		let valid = false
+		for (const candidate of providedValues) {
+			if (
+				await verifyWebhookHmacSignature({
+					algorithm: verification.type,
+					secret: hmacSecret,
+					body: hmacPayload,
+					encoding: verification.encoding,
+					prefix: verification.prefix,
+					provided: candidate,
+				})
+			) {
+				valid = true
+				break
+			}
+		}
+		if (!valid) {
+			return rejectUnauthorized('invalid_signature')
+		}
 	}
 
 	const extraAllowedHeaders = [

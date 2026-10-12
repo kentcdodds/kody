@@ -1033,7 +1033,7 @@ test('a full page filtered by org ids still returns a cursor', async () => {
 	expect(third.nextCursor).toBeNull()
 })
 
-test('the notice tells the enabler of an unsigned webhook where its signing secret is', () => {
+test('the notice does not ask senders of an unsigned webhook to sign', () => {
 	const notice = buildEnablementNotice({
 		orgSlug: 'zeta-co',
 		items: [
@@ -1049,6 +1049,6 @@ test('the notice tells the enabler of an unsigned webhook where its signing secr
 			},
 		],
 	})
-	expect(notice.text).toContain('X-Kody-Signature')
-	expect(notice.text).toContain('package settings')
+	expect(notice.text).not.toContain('X-Kody-Signature')
+	expect(notice.text).not.toContain('signature')
 })

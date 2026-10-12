@@ -28,8 +28,8 @@ async function clickThroughSections(
 	const requests = collectJsonRequests(page)
 	let previousHeading = fromHeading
 	for (const hop of hops) {
-		requests.reset()
 		await observeMainTransitions(page)
+		requests.reset()
 		await page
 			.getByRole('navigation', { name: navName })
 			.getByRole('link', { name: hop.link, exact: true })
@@ -174,8 +174,8 @@ test('Add connection opens its own page with the client wall, then a host step (
 	)
 	await expect(page.getByTestId('account-connections-back')).toHaveCount(0)
 
-	const requests = collectJsonRequests(page)
 	await observeMainTransitions(page)
+	const requests = collectJsonRequests(page)
 	await page.getByTestId('account-connections-add').click()
 	await expect(page).toHaveURL(
 		new RegExp(`/@${user.username}/-/connections/new$`),

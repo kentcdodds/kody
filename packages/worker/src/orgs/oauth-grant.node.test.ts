@@ -1,11 +1,12 @@
 import {
 	ownerIdFromStored,
+	personIdFromStored,
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
+	grantBindingFields,
 	grantMatchesConsentOrg,
-	orgGrantFields,
 	readOrgIdFromGrantMetadata,
 	readOrgIdFromGrantMetadataOrUserId,
 	readOrgIdFromGrantProps,
@@ -13,10 +14,15 @@ import {
 	stampOrgIdOnTokenExchange,
 } from './oauth-grant.ts'
 
-test('orgGrantFields stamps the same orgId on props and metadata', () => {
-	expect(orgGrantFields('org-1')).toEqual({
-		props: { orgId: ownerIdFromStored('org-1') },
-		metadata: { orgId: ownerIdFromStored('org-1') },
+test('grantBindingFields stamps the same orgId and personId on props and metadata', () => {
+	expect(
+		grantBindingFields({
+			orgId: ownerIdFromStored('org-1'),
+			personId: personIdFromStored('person-1'),
+		}),
+	).toEqual({
+		props: { orgId: 'org-1', personId: 'person-1' },
+		metadata: { orgId: 'org-1', personId: 'person-1' },
 	})
 })
 

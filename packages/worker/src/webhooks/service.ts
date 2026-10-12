@@ -56,7 +56,6 @@ import {
 import {
 	defaultWebhookVerification,
 	resolveHmacCiphertextForMint,
-	resolveWebhookHmacSigningSecret,
 } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
@@ -693,43 +692,7 @@ export async function revealWebhookUrlForWebsite(input: {
 		handle: formatWebhookUrlHandle(resolved.endpoint.id),
 		urlHost: resolved.urlHost,
 		url: resolved.url,
-		signingSecret: await revealDefaultSigningSecret({
-			env: input.env,
-			userId: input.userId,
-			baseUrl: resolved.baseUrl,
-			endpoint: resolved.endpoint,
-			savedPackage: resolved.savedPackage,
-		}),
 	}
-}
-
-/**
- * The generated `X-Kody-Signature` secret, revealed only when it is the one
- * inbound delivery checks: the manifest declares no verification of its
- * own. Provider-issued secrets stay hidden.
- */
-async function revealDefaultSigningSecret(input: {
-	env: Env
-	userId: OwnerId
-	baseUrl: string
-	endpoint: WebhookEndpointRecord
-	savedPackage: SavedPackageRecord
-}): Promise<string | null> {
-	if (!input.endpoint.hmacSecretEncrypted) return null
-	const declared = await loadDeclaredWebhook({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		savedPackage: input.savedPackage,
-		webhookName: input.endpoint.webhookName,
-	}).catch(() => null)
-	if (!declared || declared.verification) return null
-	return resolveWebhookHmacSigningSecret({
-		env: input.env,
-		userId: input.endpoint.userId,
-		endpoint: input.endpoint,
-		verification: defaultWebhookVerification,
-	})
 }
 
 export type SyntheticWebhookRequestFixture = {

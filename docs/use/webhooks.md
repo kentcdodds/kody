@@ -555,28 +555,13 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
-### Default signature in orgs on enablements
+### Webhooks without `verification`
 
-In an org on enablements, every webhook verifies a signature. When the manifest
-declares no `verification`, Kody checks `X-Kody-Signature` against the
-endpoint's own signing secret, generated at mint or at migration:
-
-```json
-{
-	"type": "hmac-sha256",
-	"header": "x-kody-signature",
-	"encoding": "hex",
-	"prefix": "sha256="
-}
-```
-
-The sender signs the raw body with HMAC-SHA256 and sends
-`X-Kody-Signature: sha256=<hex>`. Reveal the URL in the package settings
-Webhooks section to copy the signing secret next to it; only the owner sees it
-there, and it is shown only when this default scheme applies. Rotating the URL
-keeps the secret. A missing or bad signature gets the same generic 401 and runs
-nothing. The webhook runs as its enabler, the person who turned it on; with no
-`on` enablement the delivery answers 409 `enablement_not_on`.
+When the manifest declares no `verification`, the URL secret is the only
+credential: any POST to the minted URL runs the export, and signature headers
+are ignored. Declare `verification` when the sender can sign. The webhook runs
+as its enabler, the person who turned it on; with no `on` enablement the
+delivery answers 409 `enablement_not_on`.
 
 ## Synthetic smoke test
 
@@ -641,10 +626,8 @@ Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 replays the stored result. On `sync`, a different payload is **409**
 `idempotency_mismatch` and an in-progress key is **409**
 `invocation_in_progress`. `ack` still returns **202** after enqueue; the
-consumer records the ledger outcome. Without a migrated enablement row this
-works without HMAC and the URL secret is the credential. In an org on
-enablements the caller must also send the
-[default signature](#default-signature-in-orgs-on-enablements).
+consumer records the ledger outcome. This works without HMAC: the URL secret is
+the credential.
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor

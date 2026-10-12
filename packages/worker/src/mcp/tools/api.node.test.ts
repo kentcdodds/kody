@@ -6,7 +6,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { buildMcpUserContextFromGrantProps } from '#worker/mcp-auth-user-context.ts'
 import { apiToolOutputSchema, registerApiTool } from './api.ts'
-import { expectMcpToolStructuredContent } from './mcp-tool-output.ts'
+import { expectMcpToolStructuredContent } from '#worker/test-support/mcp-tool-output-validation.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)

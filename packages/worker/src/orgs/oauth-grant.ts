@@ -1,15 +1,20 @@
 /**
- * Org id stamped onto MCP OAuth grants (props + metadata). Public surfaces
- * show slugs; this id is the internal grant binding (ADR 0064).
+ * Org id and person id stamped onto new MCP OAuth grants (props + metadata).
+ * Public surfaces show slugs; these ids are the internal grant binding
+ * (ADR 0064). `personId` names the person the grant acts as without relying
+ * on `userId` doubling as the personal org id.
  */
-
-export function orgGrantFields(orgId: string): {
-	props: { orgId: string }
-	metadata: { orgId: string }
+export function grantBindingFields(input: {
+	orgId: string
+	personId: string
+}): {
+	props: { orgId: string; personId: string }
+	metadata: { orgId: string; personId: string }
 } {
+	const binding = { orgId: input.orgId, personId: input.personId }
 	return {
-		props: { orgId },
-		metadata: { orgId },
+		props: { ...binding },
+		metadata: { ...binding },
 	}
 }
 

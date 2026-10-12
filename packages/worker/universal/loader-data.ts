@@ -1675,8 +1675,6 @@ export type PackageWebhookRevealedUrl = {
 	id: string
 	handle: string
 	url: string
-	/** Set when deliveries must carry `X-Kody-Signature` with this secret. */
-	signingSecret: string | null
 }
 
 export type PackageWebhooksActionPayload = PackageWebhooksLoaderData & {
