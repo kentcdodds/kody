@@ -6,27 +6,21 @@ import { bytesToBase64Url } from './base64.ts'
  * The id is the `api_tokens` primary key, so authentication is one keyed
  * lookup plus a hash compare (no global hash index). The fixed prefix lets
  * secret scanners and log redaction recognize a token without a lookup.
+ *
+ * The same token authenticates Open API, CapabilityProxy / local execute, and
+ * git HTTPS (`kody.codes/@owner/name.git` Basic/Bearer) after
+ * `kody auth setup-git`.
  */
 export const apiTokenPrefix = 'kody_at_'
-
-/**
- * Wire format for short-lived, single-repo git credentials:
- * `kody_gt_<id>_<secret>`. Minted by `POST /v1/git/credentials` for the CLI
- * credential helper; accepted only on `kody.codes/@owner/name.git` smart HTTP.
- */
-export const gitAccessTokenPrefix = 'kody_gt_'
 
 const apiTokenIdLength = 20
 const apiTokenSecretBytes = 32
 const apiTokenIdAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
 const apiTokenPattern = /^kody_at_([a-z0-9]{20})_([A-Za-z0-9_-]{43})$/
-const gitAccessTokenPattern = /^kody_gt_([a-z0-9]{20})_([A-Za-z0-9_-]{43})$/
 
 /** Matches any embedded token (for redaction), not only a whole string. */
 export const apiTokenSearchPattern = /kody_at_[a-z0-9]{20}_[A-Za-z0-9_-]{43}/g
-export const gitAccessTokenSearchPattern =
-	/kody_gt_[a-z0-9]{20}_[A-Za-z0-9_-]{43}/g
 export const cliBootstrapCodeSearchPattern =
 	/kody_bc_[a-z0-9]{16}_[A-Za-z0-9_-]{32}/g
 
@@ -35,23 +29,8 @@ export type ParsedApiToken = {
 	secret: string
 }
 
-export type ParsedGitAccessToken = {
-	tokenId: string
-	secret: string
-}
-
 export function parseApiToken(value: string): ParsedApiToken | null {
 	const match = apiTokenPattern.exec(value.trim())
-	if (!match) return null
-	const [, tokenId, secret] = match
-	if (!tokenId || !secret) return null
-	return { tokenId, secret }
-}
-
-export function parseGitAccessToken(
-	value: string,
-): ParsedGitAccessToken | null {
-	const match = gitAccessTokenPattern.exec(value.trim())
 	if (!match) return null
 	const [, tokenId, secret] = match
 	if (!tokenId || !secret) return null
@@ -77,27 +56,14 @@ export function formatApiToken(input: ParsedApiToken) {
 	return `${apiTokenPrefix}${input.tokenId}_${input.secret}`
 }
 
-export function formatGitAccessToken(input: ParsedGitAccessToken) {
-	return `${gitAccessTokenPrefix}${input.tokenId}_${input.secret}`
-}
-
 export function redactApiTokens(value: string) {
 	return value.replace(apiTokenSearchPattern, `${apiTokenPrefix}[redacted]`)
 }
 
-export function redactGitAccessTokens(value: string) {
-	return value.replace(
-		gitAccessTokenSearchPattern,
-		`${gitAccessTokenPrefix}[redacted]`,
-	)
-}
-
 export function redactKodyCredentials(value: string) {
-	return redactGitAccessTokens(
-		redactApiTokens(value).replace(
-			cliBootstrapCodeSearchPattern,
-			'kody_bc_[redacted]',
-		),
+	return redactApiTokens(value).replace(
+		cliBootstrapCodeSearchPattern,
+		'kody_bc_[redacted]',
 	)
 }
 

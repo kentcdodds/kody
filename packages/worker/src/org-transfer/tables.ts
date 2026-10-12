@@ -106,7 +106,6 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	api_tokens: keep(personOwned),
 	billing_promo_claims: keep(usageHistory),
 	cli_credential_bootstrap_codes: keep(personOwned),
-	git_access_tokens: keep(personOwned),
 	community_activity_events: keep('Historical activity log.'),
 	community_bans: keep(personOwned),
 	community_ratings: keep(personOwned),

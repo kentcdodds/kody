@@ -5,17 +5,12 @@ import {
 	redactKodyCredentialsDeep,
 } from './api-token-format.ts'
 
-test('redactKodyCredentials redacts API tokens, git tokens, and CLI bootstrap codes', () => {
+test('redactKodyCredentials redacts API tokens and CLI bootstrap codes', () => {
 	const apiToken = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
-	const gitToken = `kody_gt_${'c'.repeat(20)}_${'D'.repeat(43)}`
 	const bootstrapCode = `kody_bc_${'b'.repeat(16)}_${'C'.repeat(32)}`
 
-	expect(
-		redactKodyCredentials(
-			`failed ${apiToken} and ${gitToken} and ${bootstrapCode}`,
-		),
-	).toBe(
-		'failed kody_at_[redacted] and kody_gt_[redacted] and kody_bc_[redacted]',
+	expect(redactKodyCredentials(`failed ${apiToken} and ${bootstrapCode}`)).toBe(
+		'failed kody_at_[redacted] and kody_bc_[redacted]',
 	)
 	expect(redactApiTokens(bootstrapCode)).toBe(bootstrapCode)
 })

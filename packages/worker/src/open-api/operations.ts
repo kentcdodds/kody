@@ -26,7 +26,6 @@ export const apiOperationTags = [
 	'storage',
 	'community',
 	'tokens',
-	'git',
 	'capability-proxy',
 ] as const
 
@@ -70,7 +69,6 @@ export const nativeApiOperationIds = [
 	'tokenRotate',
 	'tokenRevoke',
 	'cliCredentialBootstrapRedeem',
-	'gitCredentialMint',
 	'capabilityProxySession',
 	'capabilityProxyCall',
 	'capabilityProxyGatewayFetch',
@@ -379,12 +377,6 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'token:delete',
 	),
 	nativeRoute('DELETE', '/v1/tokens/{token_id}', 'tokenRevoke', 'token:delete'),
-	// Handler checks package:read on the concrete @owner/name target (may be
-	// another org than the token's current ?org=). Surface permission stays
-	// none so grant-only readers are not blocked by the wrong request org.
-	nativeRoute('POST', '/v1/git/credentials', 'gitCredentialMint', 'none', {
-		tag: 'git',
-	}),
 	nativeRoute(
 		'GET',
 		'/v1/capability-proxy/session',

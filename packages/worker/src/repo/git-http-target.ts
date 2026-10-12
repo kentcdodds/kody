@@ -4,6 +4,7 @@ import {
 	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
+	type EffectivePermissions,
 } from '#worker/authorization/authorize.ts'
 import { resolvePackagePageUrl } from '#worker/community/package-url.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
@@ -12,22 +13,23 @@ import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { getUserRepoByName } from '#worker/repo/user-repos.ts'
-import { type GitAccessResourceKind } from '#worker/api-tokens/git-access-tokens.ts'
 import {
 	apiTokenScopeIncludes,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
 
+export type GitHttpResourceKind = 'package' | 'repo'
+
 export type ResolvedGitHttpTarget = {
 	ownerHandle: string
 	repoName: string
-	resourceKind: GitAccessResourceKind
+	resourceKind: GitHttpResourceKind
 	resourceId: string
 	resourceOrgId: string
 	sourceId: string
 	repoId: string
-	/** When set, advertise/proxy only this commit (public package snapshot). */
-	snapshotCommit: string | null
+	canRead: boolean
+	canWrite: boolean
 }
 
 /**
@@ -55,16 +57,18 @@ export function parseGitCredentialRepoPath(path: string): {
 /**
  * Resolve `@owner/name` to a package (preferred) or plain repo the caller may
  * read. Prefers a readable package when both a package and a repo share the
- * name (today's collision); otherwise the readable plain repo.
+ * name (today's collision); otherwise the readable plain repo. `canWrite` is
+ * true when the caller also has `package:write` on that resource (token scope
+ * + org permission). Returns null when the caller cannot read.
  */
-export async function resolveReadableGitHttpTarget(input: {
+export async function resolveGitHttpTargetAccess(input: {
 	env: Env
 	viewer: Pick<McpUserContext, 'userId' | 'username'>
 	ownerHandle: string
 	repoName: string
 	scopes: ReadonlyArray<ApiTokenScope> | null
 }): Promise<ResolvedGitHttpTarget | null> {
-	if (!apiTokenScopesAllowPackageRead(input.scopes)) return null
+	if (!apiTokenScopesAllow(input.scopes, 'package:read')) return null
 
 	const identity = await findPublicOwnerIdentityByHandle({
 		db: input.env.APP_DB,
@@ -85,14 +89,35 @@ export async function resolveReadableGitHttpTarget(input: {
 			packageId: packagePage.savedPackage.id,
 		})
 		if (canRead) {
-			const withScopes = await viewerHasPackageReadWithScopes({
+			const access = await loadScopedPackageAccess({
 				env: input.env,
 				viewer: input.viewer,
 				ownerId: packagePage.userId,
-				packageId: packagePage.savedPackage.id,
 				scopes: input.scopes,
 			})
-			if (!withScopes) return null
+			if (
+				!access ||
+				!checkPermission(
+					access,
+					'package:read',
+					packageResource({
+						id: packagePage.savedPackage.id,
+						userId: packagePage.userId,
+					}),
+				).allowed
+			) {
+				return null
+			}
+			const canWrite =
+				apiTokenScopesAllow(input.scopes, 'package:write') &&
+				checkPermission(
+					access,
+					'package:write',
+					packageResource({
+						id: packagePage.savedPackage.id,
+						userId: packagePage.userId,
+					}),
+				).allowed
 			const source = await getEntitySourceByEntity(input.env.APP_DB, {
 				userId: packagePage.userId,
 				entityKind: 'package',
@@ -107,7 +132,8 @@ export async function resolveReadableGitHttpTarget(input: {
 				resourceOrgId: packagePage.userId,
 				sourceId: source.id,
 				repoId: source.repo_id,
-				snapshotCommit: null,
+				canRead: true,
+				canWrite,
 			}
 		}
 	}
@@ -117,13 +143,18 @@ export async function resolveReadableGitHttpTarget(input: {
 		name: input.repoName,
 	})
 	if (!userRepo) return null
-	const canReadRepo = await viewerCanReadUserRepo({
+	const access = await loadScopedPackageAccess({
 		env: input.env,
 		viewer: input.viewer,
 		ownerId: identity.ownerId,
 		scopes: input.scopes,
 	})
-	if (!canReadRepo) return null
+	if (!access || !checkPermission(access, 'package:read').allowed) {
+		return null
+	}
+	const canWrite =
+		apiTokenScopesAllow(input.scopes, 'package:write') &&
+		checkPermission(access, 'package:write').allowed
 	const source = await getEntitySourceByEntity(input.env.APP_DB, {
 		userId: identity.ownerId,
 		entityKind: 'repo',
@@ -138,67 +169,38 @@ export async function resolveReadableGitHttpTarget(input: {
 		resourceOrgId: identity.ownerId,
 		sourceId: source.id,
 		repoId: source.repo_id,
-		snapshotCommit: null,
+		canRead: true,
+		canWrite,
 	}
 }
 
-function apiTokenScopesAllowPackageRead(
+function apiTokenScopesAllow(
 	scopes: ReadonlyArray<ApiTokenScope> | null,
+	required: ApiTokenScope,
 ) {
 	if (scopes === null) return true
-	return apiTokenScopeIncludes(scopes, 'package:read')
+	return apiTokenScopeIncludes(scopes, required)
 }
 
-async function viewerHasPackageReadWithScopes(input: {
+async function loadScopedPackageAccess(input: {
 	env: Env
 	viewer: Pick<McpUserContext, 'userId' | 'username'>
 	ownerId: string
-	packageId: string
 	scopes: ReadonlyArray<ApiTokenScope> | null
-}) {
-	if (input.scopes === null) return true
+}): Promise<EffectivePermissions | null> {
 	const binding = await loadOrgBindingForOrg(
 		input.env.APP_DB,
 		input.viewer.userId,
 		input.ownerId,
 	)
-	if (!binding) return false
-	const access = await computeEffectivePermissions({
+	if (!binding) return null
+	return computeEffectivePermissions({
 		env: input.env,
 		request: deriveRequestContext({
 			user: input.viewer,
-			source: { kind: 'api-token', tokenId: 'git-credential' },
+			source: { kind: 'api-token', tokenId: 'git-http' },
 			orgBinding: binding,
 			scopes: input.scopes,
 		}),
 	})
-	return checkPermission(
-		access,
-		'package:read',
-		packageResource({ id: input.packageId, userId: input.ownerId }),
-	).allowed
-}
-
-async function viewerCanReadUserRepo(input: {
-	env: Env
-	viewer: Pick<McpUserContext, 'userId' | 'username'>
-	ownerId: string
-	scopes: ReadonlyArray<ApiTokenScope> | null
-}) {
-	const binding = await loadOrgBindingForOrg(
-		input.env.APP_DB,
-		input.viewer.userId,
-		input.ownerId,
-	)
-	if (!binding) return false
-	const access = await computeEffectivePermissions({
-		env: input.env,
-		request: deriveRequestContext({
-			user: input.viewer,
-			source: { kind: 'api-token', tokenId: 'git-credential' },
-			orgBinding: binding,
-			scopes: input.scopes,
-		}),
-	})
-	return checkPermission(access, 'package:read').allowed
 }

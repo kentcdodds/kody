@@ -103,7 +103,6 @@ const tagDescriptions: Record<ApiOperation['tag'], string> = {
 	storage: 'Durable storage export and SQL query.',
 	community: 'Public packages in the community catalog, and profile.',
 	tokens: 'Scoped, short-lived API tokens.',
-	git: 'Short-lived git credentials for `kody.codes/@owner/name.git` (credential helper / setup-git).',
 	'capability-proxy':
 		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires `org:execute` and a scoped API token or CLI `kody login` MCP OAuth bearer.',
 }

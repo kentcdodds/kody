@@ -15,7 +15,6 @@ import {
 	type NativeApiOperationDefinition,
 } from './native-operation-helpers.ts'
 import { type NativeApiOperationId } from './operations.ts'
-import { gitCredentialOperationDefinitions } from './git-credential-operations.ts'
 import {
 	emptyInputSchema,
 	cliCredentialBootstrapRedeemDefinition,
@@ -127,7 +126,6 @@ export const nativeApiOperationDefinitions: Record<
 > = {
 	...tokenOperationDefinitions,
 	cliCredentialBootstrapRedeem: cliCredentialBootstrapRedeemDefinition,
-	...gitCredentialOperationDefinitions,
 	...capabilityProxyOperationDefinitions,
 	...localExecutePackageGraphOperationDefinitions,
 }

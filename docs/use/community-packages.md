@@ -32,12 +32,13 @@ That route proxies to the package's Artifacts repo with a short-lived
 server-side read token. Clients never see Artifacts host URLs or credentials.
 The advertised refs pin the **published snapshot** (`published_commit`, else the
 listing `pinned_commit`) — not a mutable worktree tip that may be ahead of
-publish. Push (`git-receive-pack`) is rejected with HTTP 403. Private or
-unlisted packages 404 the same way the website does (no existence leak).
+publish. Anonymous push is challenged (`401`). Private or unlisted packages
+challenge for credentials (`401`) so a configured helper can authenticate.
 
-Owner write remotes stay on `packageGetGitRemote` (signed-in, short-lived
-Artifacts credentials). The public `.git` URL is for anonymous clone, preview,
-and tools such as Celld import — not for authoring.
+After `kody auth setup-git`, the same URL accepts a long-lived `kody_at_…` for
+live HEAD clone/fetch/push (push moves HEAD only; it does not auto-publish). See
+[Git credential helper](../guides/auth-setup-git.md). Owner Artifacts remotes
+from `packageGetGitRemote` remain available and unchanged.
 
 Community discovery uses the MCP **`community`** domain. Catalog listings do
 **not** appear in the general MCP **`search`** tool.

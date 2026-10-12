@@ -3,27 +3,30 @@ id: auth_setup_git
 title: Git credential helper contract (setup-git)
 summary:
   Server contract for `kody auth setup-git`: user-owned CLI tokens, `?org=`,
-  `POST /v1/git/credentials`, and authenticated clone of
-  `https://kody.codes/@owner/name.git`.
+  and persistent HTTPS git auth with a long-lived `kody_at_…` on
+  `https://kody.codes/@owner/name.git` (clone, fetch, and push).
 category: platform
 ---
 
 # Git credential helper contract (`kody auth setup-git`)
 
 This page is the **server contract** for the CLI `kody auth setup-git` command
-(implemented in `kody-bot/cli`). Clone and fetch only; push and SSH are out of
-scope.
+(implemented in `kody-bot/cli`). Persistent HTTPS auth like GitHub's credential
+helper: after one setup, clone/pull/push over plain
+`https://kody.codes/@owner/name.git` with no re-auth. SSH is out of scope.
 
 ## Version detection
 
-| Signal                                                                               | Meaning                     |
-| ------------------------------------------------------------------------------------ | --------------------------- |
-| `GET https://api.kody.codes/openapi.json` includes `operationId` `gitCredentialMint` | Mint endpoint is live       |
-| Token metadata includes `org_binding` (`org` \| `user`)                              | User-owned tokens are live  |
-| New `cliCredentialBootstrap` redeems yield `org_binding: "user"`                     | CLI tokens are person-owned |
+| Signal                                                                  | Meaning                                   |
+| ----------------------------------------------------------------------- | ----------------------------------------- |
+| Token metadata includes `org_binding` (`org` \| `user`)                 | User-owned tokens are live                |
+| New `cliCredentialBootstrap` redeems yield `org_binding: "user"`        | CLI tokens are person-owned               |
+| Origin `.git` accepts Basic/Bearer `kody_at_…` (no `gitCredentialMint`) | Persistent git auth is live (this design) |
 
-If `gitCredentialMint` is absent, the CLI must not install the helper against
-this origin (older deploy).
+If `org_binding` is absent on token metadata, the CLI must not install the
+helper against this origin (older deploy). Do **not** look for
+`gitCredentialMint` / `POST /v1/git/credentials` — that short-lived mint was
+removed.
 
 ## User-owned API tokens
 
@@ -35,7 +38,9 @@ this origin (older deploy).
 | `org_binding: "user"` (new CLI default)  | `?org=<slug-or-id>`; omit → personal org.        | Token stays; membership/grant checks deny immediately.          |
 
 The same `kody_at_…` token covers Open API, CapabilityProxy / local execute, and
-git credential minting. Scopes still narrow every call.
+git HTTPS. Scopes still narrow every call. Revoke with `tokenRevoke` /
+`token:delete` (or account token UI); git stops accepting it on the next
+request.
 
 ### Request org selection
 
@@ -45,6 +50,8 @@ git credential minting. Scopes still narrow every call.
 - **Default:** personal org (person `stable_user_id`).
 - **Errors:** inaccessible or unknown `org` → `401 unauthorized` with a message
   that names `?org=`.
+- **Git HTTPS:** there is no `?org=` on the git URL. Authz uses the **resource
+  owner's** org (membership or live grant) plus the token's scopes.
 
 ### Minting
 
@@ -57,98 +64,23 @@ git credential minting. Scopes still narrow every call.
 
 Existing org-bound tokens keep working unchanged.
 
-## Git credential mint
+## Persistent git credentials (credential helper)
 
-### Endpoint
-
-```
-POST /v1/git/credentials
-Authorization: Bearer <kody_at_…>
-Content-Type: application/json
-```
-
-Optional: `?org=<slug>` when using a user-owned token (defaults to personal).
-Mint authz for the target repo uses the **resource owner's** org membership or
-grant, not only the selected `?org=`.
-
-### Request (git credential protocol fields)
-
-```json
-{
-	"host": "kody.codes",
-	"path": "/@owner/name.git",
-	"protocol": "https"
-}
-```
-
-| Field      | Rules                                                        |
-| ---------- | ------------------------------------------------------------ |
-| `host`     | Must equal the app origin host (production: `kody.codes`)    |
-| `path`     | `/@owner/name.git` (leading slash optional; `.git` required) |
-| `protocol` | Optional; only `https`                                       |
-
-### Response `200`
-
-```json
-{
-	"protocol": "https",
-	"host": "kody.codes",
-	"path": "/@owner/name.git",
-	"username": "x",
-	"password": "kody_gt_<id>_<secret>",
-	"expires_at": "2026-10-12T20:00:00.000Z",
-	"resource_kind": "package",
-	"owner_handle": "owner",
-	"repo_name": "name"
-}
-```
+`kody auth setup-git` installs a credential helper that stores the user's
+long-lived `kody_at_…` (same token as execute/API). Git sends it on every
+request; the origin checks it every request. There is **no** short-lived
+`kody_gt_…` mint and **no** `POST /v1/git/credentials`.
 
 CLI credential helper output for git:
 
 ```
 username=x
-password=kody_gt_…
+password=kody_at_…
 ```
 
-Do **not** store the password in git's `store` helper. Lifetime is ~1 hour
-(absolute; not sliding).
-
-### Errors
-
-| Status | Code              | When                                                                  |
-| ------ | ----------------- | --------------------------------------------------------------------- |
-| `400`  | `invalid_request` | Bad host/path/protocol                                                |
-| `401`  | `unauthorized`    | Missing/invalid/expired API token, or `?org=` not accessible          |
-| `404`  | `not_found`       | No readable package/repo at that path (or token lacks `package:read`) |
-| `403`  | (surface)         | Reserved; mint uses handler checks instead of a surface org gate      |
-
-### Authz
-
-Caller must:
-
-1. Hold `package:read` on the API token scopes.
-2. Be able to read the target (org membership or live grant with `package:read`
-   on a package; org-level `package:read` for a plain repo).
-
-Name collision: if both a package and a plain repo exist under the same
-`@owner/name`, a readable **package** wins.
-
-## Authenticated git HTTP
-
-Canonical URL (unchanged shape):
-
-```text
-https://kody.codes/@owner/name.git
-```
-
-| Client                                                        | Behavior                                                                    |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Anonymous + public listed package                             | Unchanged: published snapshot, read-only upload-pack                        |
-| Anonymous + private / missing                                 | `401` + `WWW-Authenticate: Basic realm="kody-git"` (so git asks the helper) |
-| Basic/Bearer `kody_gt_…` scoped to this path + still readable | Live HEAD upload-pack for that package or plain repo                        |
-| Valid token, wrong repo or lost access                        | `404`                                                                       |
-| Invalid token                                                 | `401`                                                                       |
-| `git-receive-pack` / push                                     | `403` (always)                                                              |
+Username may be any non-empty string (convention: `x`). Password is the full API
+token. Store it in the helper / OS keychain the CLI configures — same longevity
+as the API token (idle/max lifetime; slid on use).
 
 Git config installed by `kody auth setup-git` (CLI side):
 
@@ -158,9 +90,49 @@ git config --global credential.https://kody.codes.helper '!kody git-credential'
 git config --global credential.https://kody.codes.useHttpPath true
 ```
 
+## Authenticated git HTTP
+
+Canonical URL (unchanged shape — do not break existing remotes):
+
+```text
+https://kody.codes/@owner/name.git
+```
+
+| Client                                                         | Behavior                                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Anonymous + public listed package                              | Unchanged: published snapshot, read-only upload-pack                        |
+| Anonymous + private / missing                                  | `401` + `WWW-Authenticate: Basic realm="kody-git"` (so git asks the helper) |
+| Anonymous push                                                 | `401` (challenge)                                                           |
+| Basic/Bearer `kody_at_…` with `package:read` + can read target | Live HEAD upload-pack for that package or plain repo                        |
+| Same + `package:write` + can write target                      | Live HEAD; Artifacts **write** token; `git-receive-pack` allowed            |
+| Authenticated, can read but not write, push                    | `403` with a clear message (clone ok; need `package:write`)                 |
+| Valid token, wrong repo or lost read access                    | `404`                                                                       |
+| Invalid / expired / revoked token                              | `401` with a clear message                                                  |
+
+### Push semantics
+
+- **Plain repos:** push updates live HEAD (same as today's Artifacts write
+  remotes).
+- **Packages:** push moves live HEAD only. It does **not** auto-publish; publish
+  stays an explicit package action.
+- Access default: mint an Artifacts **write** token when the caller can write,
+  otherwise **read**.
+
+### Authz
+
+Caller must:
+
+1. Hold `package:read` (clone/fetch) or `package:write` (push) on the API token
+   scopes. Scopes have no hierarchy (`package:write` does not imply read).
+2. Be able to access the target via org membership or a live grant on the
+   **resource owner's** org.
+
+Name collision: if both a package and a plain repo exist under the same
+`@owner/name`, a readable **package** wins.
+
 ## Out of scope (this contract)
 
-- Push / receive-pack
 - SSH
 - Changing public anonymous snapshot semantics
 - Forced migration of existing org-bound `kody_at_…` tokens
+- Auto-publish on package push
