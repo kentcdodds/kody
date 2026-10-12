@@ -106,7 +106,7 @@ async function waitForCreatedVectorizeIndex(
 		if (await vectorizeIndexReady(client, name)) return
 	}
 	throw new Error(
-		`Vectorize index ${name} was created but stayed unreadably deleted (410) past the wait window.`,
+		`Vectorize index ${name} did not become ready (index GET or metadata_index/list kept returning 404/410) past the wait window.`,
 	)
 }
 
