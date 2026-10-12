@@ -7,6 +7,7 @@ import {
 	secretTtlMs,
 } from '@kody-internal/shared/secret-expires-at.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { assertOptInCredentialValue } from '#worker/credentials/opt-in-credential-value.ts'
 import {
 	normalizeAllowedPackages,
 	parseAllowedPackages,
@@ -139,6 +140,23 @@ export type ResolvedSecret = {
 	allowedPackages: Array<string>
 }
 
+/**
+ * A new value for an opt-in credential (ADR 0068) must still fit its kind and
+ * stored hosts, whichever path writes it, so it is never saved in a state
+ * resolution refuses. Keys are unaffected.
+ */
+function assertValueFitsStoredKind(
+	entry: { kind: StoredCredentialKind; allowed_hosts: string } | null,
+	value: string,
+) {
+	if (!entry || entry.kind === 'secret') return
+	assertOptInCredentialValue({
+		kind: entry.kind,
+		value,
+		hosts: parseAllowedHosts(entry.allowed_hosts),
+	})
+}
+
 export async function saveSecret(
 	input: SaveSecretInput,
 ): Promise<SecretMetadata> {
@@ -168,6 +186,8 @@ export async function saveSecret(
 		bucketId: bucket.id,
 		name,
 	})
+	// With credential fields, the caller validated the value for its new kind.
+	if (!credential) assertValueFitsStoredKind(existingEntry, value)
 	if (existingEntry == null) {
 		await assertWithinEntitlement({
 			db: input.env.APP_DB,
@@ -440,6 +460,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 			name,
 		})
 		if (!existingEntry) throw new Error('User secret not found.')
+		assertValueFitsStoredKind(existingEntry, value)
 		const description = secret.description?.trim() ?? existingEntry.description
 		const encryptedValue = await encryptSecretValue(
 			input.env,
@@ -564,6 +585,7 @@ async function saveSecretsAtomically(input: {
 			bucketId: bucket.id,
 			name,
 		})
+		assertValueFitsStoredKind(existingEntry, value)
 		if (existingEntry == null) {
 			newSecretCount += 1
 		}
@@ -987,6 +1009,7 @@ export async function updateSecret(
 	if (hasValueUpdate && !nextValue) {
 		throw new Error('Secret value must not be empty.')
 	}
+	if (nextValue) assertValueFitsStoredKind(existingEntry, nextValue)
 	const now = new Date().toISOString()
 	const entryExpiresAt = nextSecretExpiresAt({
 		existing: existingEntry.expires_at,

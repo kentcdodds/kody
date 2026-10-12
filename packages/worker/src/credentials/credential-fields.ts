@@ -18,6 +18,11 @@ import {
 import { getOrgCredential, type OrgCredential } from './credential-ids.ts'
 import { credentialHostsAllow } from './credential-request.ts'
 import { loginExchangeSchema } from './login-resolver.ts'
+import {
+	assertOptInCredentialValue,
+	type OptInStoredCredentialKind,
+	optInStoredCredentialKinds,
+} from './opt-in-credential-value.ts'
 
 /** RFC 9110 token characters for HTTP field names. */
 const httpFieldNamePattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
@@ -59,10 +64,7 @@ export const defaultCredentialInject: CredentialInject = {
 	format: 'Bearer {value}',
 }
 
-export const optInStoredCredentialKinds = ['url', 'login', 'signing'] as const
-
-export type OptInStoredCredentialKind =
-	(typeof optInStoredCredentialKinds)[number]
+export { type OptInStoredCredentialKind, optInStoredCredentialKinds }
 
 const hostLabel = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
 const bareHostPattern = new RegExp(
@@ -106,62 +108,7 @@ export function normalizeCredentialHosts(hosts: ReadonlyArray<string>) {
 }
 
 export { loginExchangeSchema }
-
-/**
- * Checks the value against the kind before it is stored, so a misconfigured
- * credential fails at write time instead of at first use. Messages never
- * repeat the value.
- */
-export function assertOptInCredentialValue(input: {
-	kind: OptInStoredCredentialKind
-	value: string
-	hosts: ReadonlyArray<string>
-}) {
-	switch (input.kind) {
-		case 'url': {
-			let url: URL
-			try {
-				url = new URL(input.value.trim())
-			} catch {
-				throw new McpCallerError('A url credential value is a whole URL.')
-			}
-			if (url.protocol !== 'https:') {
-				throw new McpCallerError('A url credential value must use https://.')
-			}
-			if (url.username || url.password) {
-				throw new McpCallerError(
-					'A url credential cannot carry a username or password in its URL.',
-				)
-			}
-			if (!credentialHostsAllow(input.hosts, url.hostname)) {
-				throw new McpCallerError(
-					"A url credential value's host must be one of its hosts.",
-				)
-			}
-			return
-		}
-		case 'login': {
-			let parsed: unknown
-			try {
-				parsed = JSON.parse(input.value)
-			} catch {
-				parsed = null
-			}
-			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-				throw new McpCallerError(
-					'A login credential value is a JSON object of its login fields, for example {"username":"…","password":"…"}.',
-				)
-			}
-			return
-		}
-		case 'signing':
-			return
-		default: {
-			const exhaustive: never = input.kind
-			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
-		}
-	}
-}
+export { assertOptInCredentialValue }
 
 export function assertLoginExchangeOnHosts(input: {
 	exchangeUrl: string

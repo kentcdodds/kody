@@ -19,6 +19,7 @@ import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { credentialUpdateCapability } from './credential-update.ts'
 import { secretListCapability } from './secret-list.ts'
+import { secretSetManyCapability } from './secret-set-many.ts'
 import { secretSetCapability } from './secret-set.ts'
 
 const now = '2026-10-12T00:00:00.000Z'
@@ -499,4 +500,46 @@ test('credentialUpdate refuses an API token not scoped for write, even for an ow
 		),
 	).rejects.toThrow('not scoped for secret:write')
 	expect((await t.entry('resendKey'))?.provider).toBeNull()
+})
+
+test('every value write path checks an opt-in credential against its stored kind and hosts', async () => {
+	const t = await setup()
+	await t.set({
+		name: 'deploy-hook',
+		value: hookUrl,
+		kind: 'url',
+		hosts: ['hooks.example.com'],
+	})
+	const before = await t.entry('deploy-hook')
+	const error = await secretSetManyCapability
+		.handler(
+			{
+				secrets: [
+					{
+						name: 'deploy-hook',
+						value: 'https://evil.example.net/hook-secret-part',
+						scope: 'user',
+					},
+				],
+			} as never,
+			t.owner,
+		)
+		.catch((caught: unknown) => caught)
+	expect(String(error)).toContain("value's host must be one of its hosts")
+	expect(String(error)).not.toContain('hook-secret-part')
+	expect(await t.entry('deploy-hook')).toEqual(before)
+	await secretSetManyCapability.handler(
+		{
+			secrets: [
+				{
+					name: 'deploy-hook',
+					value: 'https://hooks.example.com/services/T1/B3/next',
+					scope: 'user',
+				},
+				{ name: 'plainKey', value: 'anything', scope: 'user' },
+			],
+		} as never,
+		t.owner,
+	)
+	expect((await t.entry('deploy-hook'))?.kind).toBe('url')
 })
