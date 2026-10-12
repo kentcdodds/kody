@@ -3,12 +3,12 @@ import { expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
-const getEntitySourceByRepoEntityId = vi.fn()
+const getEntitySourceById = vi.fn()
 const resolveExistingArtifactSourceRepo = vi.fn()
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceByRepoEntityId: (...args: Array<unknown>) =>
-		getEntitySourceByRepoEntityId(...args),
+	getEntitySourceById: (...args: Array<unknown>) =>
+		getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', () => ({
@@ -37,26 +37,27 @@ const {
 	handlePlainRepoGitHttpRequest,
 	isArtifactsGitReceivePackBusyResponse,
 	parsePlainRepoGitHttpPath,
+	readCappedResponseText,
 	repositoryBusyRetryMessage,
 	repositoryBusyRetryResponse,
 } = await import('./plain-repo-git-http.ts')
 
-const repoId = '11111111-1111-4111-8111-111111111111'
+const sourceId = '11111111-1111-4111-8111-111111111111'
 const artifactsRemote =
 	'https://acct.artifacts.cloudflare.net/git/default/plain-notes.git'
 const artifactToken = 'art_plain_token_secret'
 
 function resetMocks() {
-	getEntitySourceByRepoEntityId.mockReset()
+	getEntitySourceById.mockReset()
 	resolveExistingArtifactSourceRepo.mockReset()
 }
 
 function seedPlainRepo() {
-	getEntitySourceByRepoEntityId.mockResolvedValue({
-		id: 'source-1',
+	getEntitySourceById.mockResolvedValue({
+		id: sourceId,
 		user_id: ownerIdFromStored('owner-1'),
 		entity_kind: 'repo',
-		entity_id: repoId,
+		entity_id: 'user-repo-1',
 		repo_id: 'plain-notes',
 		published_commit: null,
 		indexed_commit: null,
@@ -87,20 +88,20 @@ function seedPlainRepo() {
 }
 
 test('parsePlainRepoGitHttpPath matches UUID remotes and rejects junk', () => {
-	expect(parsePlainRepoGitHttpPath(`/git/repos/${repoId}.git`)).toEqual({
+	expect(parsePlainRepoGitHttpPath(`/git/sources/${sourceId}.git`)).toEqual({
 		kind: 'repo-root',
-		repoId,
+		sourceId,
 	})
 	expect(
-		parsePlainRepoGitHttpPath(`/git/repos/${repoId}.git/info/refs`),
-	).toEqual({ kind: 'info-refs', repoId })
+		parsePlainRepoGitHttpPath(`/git/sources/${sourceId}.git/info/refs`),
+	).toEqual({ kind: 'info-refs', sourceId })
 	expect(
-		parsePlainRepoGitHttpPath(`/git/repos/${repoId}.git/git-receive-pack`),
-	).toEqual({ kind: 'receive-pack', repoId })
+		parsePlainRepoGitHttpPath(`/git/sources/${sourceId}.git/git-receive-pack`),
+	).toEqual({ kind: 'receive-pack', sourceId })
 	expect(
-		parsePlainRepoGitHttpPath(`/git/repos/${repoId}.git/git-upload-pack`),
-	).toEqual({ kind: 'upload-pack', repoId })
-	expect(parsePlainRepoGitHttpPath('/git/repos/not-a-uuid.git')).toBeNull()
+		parsePlainRepoGitHttpPath(`/git/sources/${sourceId}.git/git-upload-pack`),
+	).toEqual({ kind: 'upload-pack', sourceId })
+	expect(parsePlainRepoGitHttpPath('/git/sources/not-a-uuid.git')).toBeNull()
 	expect(parsePlainRepoGitHttpPath('/@user/pkg.git')).toBeNull()
 })
 
@@ -108,9 +109,9 @@ test('buildPlainRepoGitHttpRemote strips trailing slash on the origin', () => {
 	expect(
 		buildPlainRepoGitHttpRemote({
 			baseUrl: 'https://kody.codes/',
-			repoId,
+			sourceId,
 		}),
-	).toBe(`https://kody.codes/git/repos/${repoId}.git`)
+	).toBe(`https://kody.codes/git/sources/${sourceId}.git`)
 })
 
 test('busy detector never rewrites success and matches the Artifacts code', () => {
@@ -132,6 +133,27 @@ test('busy detector never rewrites success and matches the Artifacts code', () =
 			bodyText: 'something else',
 		}),
 	).toBe(false)
+})
+
+test('readCappedResponseText detects busy marker in a truncated error body', async () => {
+	const body = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(
+				new TextEncoder().encode(
+					`remote: ${artifactsGitReceivePackBusyCode}\n`,
+				),
+			)
+			queueMicrotask(() => controller.error(new Error('upstream truncated')))
+		},
+	})
+	const response = new Response(body, { status: 500 })
+	const text = await readCappedResponseText(response)
+	expect(
+		isArtifactsGitReceivePackBusyResponse({ status: 500, bodyText: text }),
+	).toBe(true)
+	const retry = repositoryBusyRetryResponse()
+	expect(retry.status).toBe(503)
+	expect(retry.headers.get('Retry-After')).toBe('5')
 })
 
 test('repositoryBusyRetryResponse is 503 with Retry-After and clear message', () => {
@@ -174,14 +196,17 @@ test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async 
 		),
 	])
 	const response = await handlePlainRepoGitHttpRequest(
-		new Request(`https://kody.codes/git/repos/${repoId}.git/git-receive-pack`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${artifactToken}`,
-				'Content-Type': 'application/x-git-receive-pack-request',
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+				},
+				body: 'PACK',
 			},
-			body: 'PACK',
-		}),
+		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(response).not.toBeNull()
@@ -209,14 +234,17 @@ test('proxy streams successful receive-pack unchanged', async () => {
 		}),
 	])
 	const response = await handlePlainRepoGitHttpRequest(
-		new Request(`https://kody.codes/git/repos/${repoId}.git/git-receive-pack`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${artifactToken}`,
-				'Content-Type': 'application/x-git-receive-pack-request',
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+				},
+				body: 'PACK-OK',
 			},
-			body: 'PACK-OK',
-		}),
+		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(response).not.toBeNull()
@@ -236,11 +264,14 @@ test('proxy does not claim busy for unrelated upstream errors', async () => {
 		),
 	])
 	const response = await handlePlainRepoGitHttpRequest(
-		new Request(`https://kody.codes/git/repos/${repoId}.git/git-receive-pack`, {
-			method: 'POST',
-			headers: { Authorization: `Bearer ${artifactToken}` },
-			body: 'PACK',
-		}),
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: { Authorization: `Bearer ${artifactToken}` },
+				body: 'PACK',
+			},
+		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(response!.status).toBe(500)
@@ -250,21 +281,27 @@ test('proxy does not claim busy for unrelated upstream errors', async () => {
 test('proxy requires auth and 404s unknown repos', async () => {
 	resetMocks()
 	const missingAuth = await handlePlainRepoGitHttpRequest(
-		new Request(`https://kody.codes/git/repos/${repoId}.git/git-receive-pack`, {
-			method: 'POST',
-			body: 'PACK',
-		}),
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				body: 'PACK',
+			},
+		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(missingAuth!.status).toBe(401)
 
-	getEntitySourceByRepoEntityId.mockResolvedValue(null)
+	getEntitySourceById.mockResolvedValue(null)
 	const missingRepo = await handlePlainRepoGitHttpRequest(
-		new Request(`https://kody.codes/git/repos/${repoId}.git/git-receive-pack`, {
-			method: 'POST',
-			headers: { Authorization: `Bearer ${artifactToken}` },
-			body: 'PACK',
-		}),
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: { Authorization: `Bearer ${artifactToken}` },
+				body: 'PACK',
+			},
+		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(missingRepo!.status).toBe(404)

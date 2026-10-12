@@ -38,7 +38,7 @@ discovery.
 ## Git lane
 
 `repoGetGitRemote` mints a short-lived git remote (read or write) that points at
-Kody's smart-HTTP proxy (`/git/repos/{repo_id}.git`), which forwards to
+Kody's smart-HTTP proxy (`/git/sources/{source_id}.git`), which forwards to
 Cloudflare Artifacts with the minted bearer token. Concurrent push lock
 contention from Artifacts is translated to HTTP **503** with `Retry-After` and
 the body `repository busy, retry` so git clients get a clean, retryable

@@ -3,7 +3,7 @@ import {
 	parseArtifactTokenSecret,
 	resolveExistingArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
-import { getEntitySourceByRepoEntityId } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 const gitUploadPackService = 'git-upload-pack'
 const gitReceivePackService = 'git-receive-pack'
@@ -27,30 +27,30 @@ const hopByHopResponseHeaders = new Set([
 	'set-cookie',
 ])
 
-/** Plain-repo UUID from `user_repos.id` (crypto.randomUUID). */
+/** `entity_sources.id` (crypto.randomUUID). */
 const plainRepoIdPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type PlainRepoGitHttpPath =
 	| {
 			kind: 'info-refs'
-			repoId: string
+			sourceId: string
 	  }
 	| {
 			kind: 'upload-pack'
-			repoId: string
+			sourceId: string
 	  }
 	| {
 			kind: 'receive-pack'
-			repoId: string
+			sourceId: string
 	  }
 	| {
 			kind: 'repo-root'
-			repoId: string
+			sourceId: string
 	  }
 	| {
 			kind: 'unsupported'
-			repoId: string
+			sourceId: string
 	  }
 
 function decodePathComponent(value: string) {
@@ -66,35 +66,35 @@ function stripTrailingSlash(value: string) {
 }
 
 /**
- * Match `/git/repos/{repoId}.git` and smart-HTTP suffixes under it.
+ * Match `/git/sources/{sourceId}.git` and smart-HTTP suffixes under it.
  * Returns null when the path is not a plain-repo git proxy URL.
  */
 export function parsePlainRepoGitHttpPath(
 	pathname: string,
 ): PlainRepoGitHttpPath | null {
 	const parts = pathname.split('/').filter(Boolean)
-	if (parts.length < 3 || parts[0] !== 'git' || parts[1] !== 'repos') {
+	if (parts.length < 3 || parts[0] !== 'git' || parts[1] !== 'sources') {
 		return null
 	}
-	const repoSegment = decodePathComponent(parts[2] ?? '')
-	if (!repoSegment.toLowerCase().endsWith('.git')) return null
-	const repoId = repoSegment.slice(0, -'.git'.length)
-	if (!repoId || !plainRepoIdPattern.test(repoId)) return null
+	const sourceSegment = decodePathComponent(parts[2] ?? '')
+	if (!sourceSegment.toLowerCase().endsWith('.git')) return null
+	const sourceId = sourceSegment.slice(0, -'.git'.length)
+	if (!sourceId || !plainRepoIdPattern.test(sourceId)) return null
 
 	const rest = parts.slice(3)
 	if (rest.length === 0) {
-		return { kind: 'repo-root', repoId }
+		return { kind: 'repo-root', sourceId }
 	}
 	if (rest.length === 2 && rest[0] === 'info' && rest[1] === 'refs') {
-		return { kind: 'info-refs', repoId }
+		return { kind: 'info-refs', sourceId }
 	}
 	if (rest.length === 1 && rest[0] === 'git-upload-pack') {
-		return { kind: 'upload-pack', repoId }
+		return { kind: 'upload-pack', sourceId }
 	}
 	if (rest.length === 1 && rest[0] === 'git-receive-pack') {
-		return { kind: 'receive-pack', repoId }
+		return { kind: 'receive-pack', sourceId }
 	}
-	return { kind: 'unsupported', repoId }
+	return { kind: 'unsupported', sourceId }
 }
 
 export function isPlainRepoGitHttpRequest(pathname: string) {
@@ -103,10 +103,70 @@ export function isPlainRepoGitHttpRequest(pathname: string) {
 
 export function buildPlainRepoGitHttpRemote(input: {
 	baseUrl: string
-	repoId: string
+	sourceId: string
 }) {
 	const origin = stripTrailingSlash(input.baseUrl.trim())
-	return `${origin}/git/repos/${input.repoId}.git`
+	return `${origin}/git/sources/${input.sourceId}.git`
+}
+
+export const plainRepoGitHttpErrorBodyReadLimitBytes = 64 * 1024
+
+/** Read up to `limitBytes` of an error response for busy-code sniffing. */
+export async function readCappedResponseText(
+	response: Response,
+	limitBytes = plainRepoGitHttpErrorBodyReadLimitBytes,
+): Promise<string> {
+	if (!response.body) return ''
+	const reader = response.body.getReader()
+	const decoder = new TextDecoder()
+	let result = ''
+	let totalBytes = 0
+	try {
+		while (totalBytes < limitBytes) {
+			let chunk: ReadableStreamReadResult<Uint8Array>
+			try {
+				chunk = await reader.read()
+			} catch {
+				// Partial body is still useful when the upstream stream errors mid-read.
+				break
+			}
+			if (chunk.done) break
+			totalBytes += chunk.value.byteLength
+			result += decoder.decode(chunk.value, { stream: true })
+		}
+	} catch {
+		// Return whatever we sniffed before an unexpected failure.
+	} finally {
+		try {
+			reader.releaseLock()
+		} catch {
+			try {
+				await reader.cancel()
+			} catch {
+				// ignore
+			}
+		}
+	}
+	return result
+}
+
+const plainRepoGitHttpHeadersTimeoutMs = 120_000
+
+async function fetchWithHeadersTimeout(
+	url: string,
+	init: RequestInit,
+	timeoutMs = plainRepoGitHttpHeadersTimeoutMs,
+): Promise<Response> {
+	const controller = new AbortController()
+	const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+	try {
+		const response = await fetch(url, { ...init, signal: controller.signal })
+		clearTimeout(timeoutId)
+		return response
+	} catch (error) {
+		clearTimeout(timeoutId)
+		throw error
+	}
 }
 
 export function isArtifactsGitReceivePackBusyResponse(input: {
@@ -220,16 +280,16 @@ type ResolvedPlainGitTarget = {
 
 async function resolvePlainRepoGitTarget(input: {
 	env: Env
-	repoId: string
+	sourceId: string
 }): Promise<
 	| { kind: 'ok'; target: ResolvedPlainGitTarget }
 	| { kind: 'not_found' }
 	| { kind: 'unavailable'; message: string }
 > {
-	const source = await getEntitySourceByRepoEntityId(input.env.APP_DB, {
-		entityId: input.repoId,
-	})
-	if (!source?.repo_id) return { kind: 'not_found' }
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source || source.entity_kind !== 'repo' || !source.repo_id) {
+		return { kind: 'not_found' }
+	}
 
 	const repo = await resolveExistingArtifactSourceRepo(
 		input.env,
@@ -325,7 +385,6 @@ async function proxyArtifactsGitRequest(input: {
 	const init: RequestInit = {
 		method: input.request.method,
 		headers,
-		signal: AbortSignal.timeout(120_000),
 	}
 	if (
 		input.request.method !== 'GET' &&
@@ -336,7 +395,7 @@ async function proxyArtifactsGitRequest(input: {
 		;(init as RequestInit & { duplex: 'half' }).duplex = 'half'
 	}
 
-	const upstream = await fetch(upstreamUrl, init)
+	const upstream = await fetchWithHeadersTimeout(upstreamUrl, init)
 
 	// Never rewrite successful pushes/fetches — accepted packs must pass through.
 	if (upstream.ok || input.request.method === 'HEAD') {
@@ -347,7 +406,7 @@ async function proxyArtifactsGitRequest(input: {
 		})
 	}
 
-	const bodyText = await upstream.text()
+	const bodyText = await readCappedResponseText(upstream)
 	if (
 		isArtifactsGitReceivePackBusyResponse({
 			status: upstream.status,
@@ -388,7 +447,7 @@ export async function handlePlainRepoGitHttpRequest(
 		if (request.method !== 'GET' && request.method !== 'HEAD') {
 			return methodNotAllowedResponse('GET, HEAD')
 		}
-		const body = `This is a Kody plain-repo git remote.\nClone with: git clone ${url.origin}/git/repos/${parsed.repoId}.git\n`
+		const body = `This is a Kody plain-repo git remote.\nClone with: git clone ${url.origin}/git/sources/${parsed.sourceId}.git\n`
 		return new Response(request.method === 'HEAD' ? null : body, {
 			status: 200,
 			headers: {
@@ -421,7 +480,7 @@ export async function handlePlainRepoGitHttpRequest(
 
 	const resolved = await resolvePlainRepoGitTarget({
 		env,
-		repoId: parsed.repoId,
+		sourceId: parsed.sourceId,
 	})
 	if (resolved.kind === 'not_found') return notFoundResponse()
 	if (resolved.kind === 'unavailable') {

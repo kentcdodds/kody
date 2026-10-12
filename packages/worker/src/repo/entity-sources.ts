@@ -144,26 +144,6 @@ export async function getEntitySourceByEntity(
 	return result ? mapEntitySourceRow(result) : null
 }
 
-/**
- * Resolve a plain-repo `entity_sources` row by `user_repos.id` without a
- * user id. Used by the authenticated plain-repo git HTTP proxy (token auth
- * is the Artifacts bearer minted for that repo).
- */
-export async function getEntitySourceByRepoEntityId(
-	db: D1Database,
-	input: { entityId: string },
-): Promise<EntitySourceRow | null> {
-	const result = await db
-		.prepare(
-			`SELECT * FROM entity_sources
-			WHERE entity_kind = 'repo' AND entity_id = ?
-			${andLiveDeletedAtSql()} LIMIT 1`,
-		)
-		.bind(input.entityId)
-		.first<Record<string, unknown>>()
-	return result ? mapEntitySourceRow(result) : null
-}
-
 export async function getEntitySourceByRepoId(
 	db: D1Database,
 	repoId: string,

@@ -48,7 +48,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 		name: 'repoGetGitRemote',
 		orgPermission: 'package:read',
 		description:
-			'Mint a short-lived git remote for a plain repo (Kody smart-HTTP proxy in front of Cloudflare Artifacts). Write pushes are live at HEAD — no package publish reconcile step runs afterward. Concurrent push lock contention returns HTTP 503 with Retry-After and "repository busy, retry" instead of hanging up. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary); larger files are rejected with external-hosting guidance. The Artifacts backing store fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.',
+			'Mint a short-lived git remote for a plain repo (Kody smart-HTTP proxy in front of Cloudflare Artifacts). Write pushes are live at HEAD — no package publish reconcile step runs afterward. Concurrent push lock contention returns HTTP 503 with Retry-After and "repository busy, retry" instead of hanging up. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. The Artifacts backing store fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.',
 		keywords: ['repo', 'git', 'remote', 'artifacts', 'clone', 'push', 'plain'],
 		readOnly: false,
 		idempotent: false,
@@ -101,7 +101,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			// still an Artifacts bearer; the proxy forwards it upstream.
 			const remote = buildPlainRepoGitHttpRemote({
 				baseUrl: ctx.callerContext.baseUrl,
-				repoId: userRepo.id,
+				sourceId: source.id,
 			})
 			return {
 				repo_id: userRepo.id,
