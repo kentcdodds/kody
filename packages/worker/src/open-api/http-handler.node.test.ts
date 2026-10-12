@@ -3,6 +3,7 @@ import {
 	mintApiToken,
 	apiTokenLifetimeAliases,
 } from '#worker/api-tokens/service.ts'
+import { handleOpenApiRequest } from './http-handler.ts'
 import {
 	createOpenApiTestHarness as createApi,
 	openApiTestApiOrigin as apiOrigin,
@@ -498,6 +499,49 @@ test('unknown routes and methods use the error envelope', async () => {
 	const method = await api.call('PATCH', '/v1/tokens')
 	expect(method.status).toBe(405)
 	expect(method.headers.get('Allow')).toBe('GET, POST')
+})
+
+test('gateway-fetch stream route is registered and rejects a missing URL', async () => {
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+	const response = await handleOpenApiRequest({
+		request: new Request(`${apiOrigin}/v1/capability-proxy/gateway-fetch`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'text/plain',
+			},
+			body: 'hello',
+		}),
+		env: api.env,
+		appOrigin,
+		waitUntil: () => {},
+	})
+	expect(response.status).toBe(400)
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(await response.json()).toMatchObject({
+		error: {
+			code: 'invalid_request',
+			message: expect.stringMatching(/X-Kody-Gateway-Url/),
+		},
+	})
+
+	const noScope = await handleOpenApiRequest({
+		request: new Request(`${apiOrigin}/v1/capability-proxy/gateway-fetch`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${await api.mint(['org:read'])}`,
+				'X-Kody-Gateway-Url': 'https://example.com/upload',
+			},
+		}),
+		env: api.env,
+		appOrigin,
+		waitUntil: () => {},
+	})
+	expect(noScope.status).toBe(403)
+	expect(await noScope.json()).toMatchObject({
+		error: { code: 'insufficient_scope' },
+	})
 })
 
 test('local-execute package-graph requires scope and meters as api_call prep', async () => {

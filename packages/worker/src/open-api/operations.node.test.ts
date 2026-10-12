@@ -238,6 +238,26 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 			'x-kody-permission'
 		],
 	).toBe('org:execute')
+	const gatewayFetch =
+		document.paths['/v1/capability-proxy/gateway-fetch']?.['post']
+	expect(gatewayFetch?.['x-kody-permission']).toBe('org:execute')
+	expect(gatewayFetch?.requestBody?.content['application/json']).toBeUndefined()
+	expect(gatewayFetch?.requestBody?.content['*/*']?.schema).toEqual({
+		type: 'string',
+		format: 'binary',
+	})
+	expect(
+		(gatewayFetch?.responses['200'] as { content?: Record<string, unknown> })
+			?.content?.['application/json'],
+	).toBeUndefined()
+	expect(
+		(gatewayFetch?.parameters ?? []).some(
+			(parameter) =>
+				parameter.in === 'header' &&
+				parameter.name === 'X-Kody-Gateway-Url' &&
+				parameter.required,
+		),
+	).toBe(true)
 
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
 	expect(tokenCreate?.['x-kody-permission']).toBe('none')
@@ -257,7 +277,7 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 		],
 	).toBe('token:delete')
 	const secretSet = document.paths['/v1/secrets/{scope}/{name}']?.['put']
-	const secretBody = secretSet?.requestBody?.content['application/json'].schema
+	const secretBody = secretSet?.requestBody?.content['application/json']?.schema
 	expect(
 		Object.keys((secretBody?.['properties'] as object) ?? {}),
 	).not.toContain('name')

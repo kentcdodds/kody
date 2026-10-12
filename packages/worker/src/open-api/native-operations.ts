@@ -7,6 +7,7 @@ import {
 	capabilityProxyUsageEntityId,
 	runCapabilityProxyCall,
 } from './capability-proxy.ts'
+import { invalidRequest } from './errors.ts'
 import { localExecutePackageGraphOperationDefinitions } from './local-execute-package-graph.ts'
 import {
 	parseNativeInput,
@@ -102,6 +103,19 @@ const capabilityProxyOperationDefinitions: Record<
 				ctx,
 				call: parseNativeInput(capabilityProxyCallInputSchema, params),
 			})
+		},
+	},
+	capabilityProxyGatewayFetch: {
+		summary: 'Stream a secret-bearing outbound fetch',
+		description:
+			'Native streaming hop for local execute: the request body is the outbound fetch body (raw bytes, no JSON wrapper). Hop metadata is in `X-Kody-Gateway-Url` (required), `X-Kody-Gateway-Method`, `X-Kody-Gateway-Package-Id`, `X-Kody-Gateway-Headers`, and `x-kody-secret-resolution`. A successful response is the upstream HTTP response, streamed — not `{ status, headers, bodyBase64 }`. Requires `org:execute` and a scoped API token or CLI MCP OAuth bearer. Not available as a JSON MCP `api` invoke; use `POST /v1/capability-proxy/gateway-fetch`.',
+		inputSchema: emptyInputSchema,
+		outputSchema: emptyInputSchema,
+		readOnly: false,
+		async handler() {
+			throw invalidRequest(
+				'capabilityProxyGatewayFetch is a streaming HTTP route only. POST /v1/capability-proxy/gateway-fetch with X-Kody-Gateway-* headers; do not invoke it as JSON.',
+			)
 		},
 	},
 }

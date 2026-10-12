@@ -13,6 +13,7 @@ import {
 	usageAttributionFieldsFromRequest,
 } from '#worker/usage/record-usage.ts'
 import { authenticateApiRequest } from './authenticate.ts'
+import { type ApiInvocationContext } from './context.ts'
 import {
 	buildOpenApiDocument,
 	kodyApiVersion,
@@ -32,8 +33,13 @@ import {
 	isCapabilityProxyOperation,
 	isCliCredentialBootstrapRedeemOperation,
 } from './invoke.ts'
+import { runCapabilityProxyGatewayFetchStream } from './capability-proxy-gateway-fetch-stream.ts'
 import { parseNativeInput } from './native-operation-helpers.ts'
-import { apiOperationUsesQueryInputs, matchApiRoute } from './operations.ts'
+import {
+	apiOperationUsesQueryInputs,
+	isCapabilityProxyGatewayFetchOperation,
+	matchApiRoute,
+} from './operations.ts'
 import {
 	mergeApiParams,
 	readJsonBody,
@@ -249,6 +255,17 @@ async function handleOperation(input: {
 		}
 		throw error
 	}
+	if (isCapabilityProxyGatewayFetchOperation(matchedOperation)) {
+		return handleCapabilityProxyGatewayFetchStream({
+			request: input.request,
+			ctx,
+			env: input.env,
+			waitUntil: input.waitUntil,
+			startedAt,
+			operationId: matchedOperation.operationId,
+			resolved,
+		})
+	}
 	const params = await readOperationParams({
 		request: input.request,
 		url: input.url,
@@ -276,6 +293,69 @@ async function handleOperation(input: {
 			write: run,
 		}),
 	)
+}
+
+async function handleCapabilityProxyGatewayFetchStream(input: {
+	request: Request
+	ctx: ApiInvocationContext
+	env: Env
+	waitUntil: (promise: Promise<unknown>) => void
+	startedAt: number
+	operationId: string
+	resolved: ReturnType<typeof resolveApiOperation>
+}) {
+	const userId = personalOrgId(input.ctx.callerContext.user.userId)
+	const run = () =>
+		runCapabilityProxyGatewayFetchStream({
+			ctx: input.ctx,
+			request: input.request,
+		})
+	let outcome: 'success' | 'error' = 'error'
+	let failureCode: string | null = null
+	try {
+		const writes = operationNeedsAccountWriteLease(input.resolved)
+		let response: Response
+		if (!writes) {
+			await assertAccountWritableDb(input.env.APP_DB, userId)
+			response = await run()
+		} else {
+			response = await withAccountWriteLease({
+				db: input.env.APP_DB,
+				stableUserId: userId,
+				holder: `api:${input.operationId}`,
+				env: input.env,
+				write: run,
+			})
+		}
+		outcome = 'success'
+		return response
+	} catch (error) {
+		const apiError = toApiError(error)
+		failureCode = apiError.code
+		if (apiError.status >= 500 && !(error instanceof ApiError)) {
+			console.error('open-api-operation-failed', input.operationId, error)
+		}
+		throw apiError
+	} finally {
+		input.waitUntil(
+			recordUsage(
+				input.env,
+				{
+					userId: input.ctx.callerContext.user.userId,
+					eventType: 'api_call',
+					entityId: capabilityProxyObservationEntityId({
+						baseEntityId: input.operationId,
+						outcome,
+						failureCode,
+					}),
+					durationMs: Date.now() - input.startedAt,
+					outcome,
+					...usageAttributionFieldsFromRequest(input.ctx.callerContext.request),
+				},
+				{ waitUntil: input.waitUntil },
+			),
+		)
+	}
 }
 
 /**

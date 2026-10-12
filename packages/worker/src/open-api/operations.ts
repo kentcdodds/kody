@@ -63,6 +63,7 @@ export const nativeApiOperationIds = [
 	'cliCredentialBootstrapRedeem',
 	'capabilityProxySession',
 	'capabilityProxyCall',
+	'capabilityProxyGatewayFetch',
 	'localExecutePackageGraph',
 ] as const
 
@@ -371,6 +372,13 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 	),
 	nativeRoute(
 		'POST',
+		'/v1/capability-proxy/gateway-fetch',
+		'capabilityProxyGatewayFetch',
+		'org:execute',
+		capabilityProxyRoute,
+	),
+	nativeRoute(
+		'POST',
 		'/v1/local-execute/package-graph',
 		'localExecutePackageGraph',
 		'org:execute',
@@ -449,6 +457,15 @@ export type ApiRouteMatch =
 	  }
 	| { kind: 'method_not_allowed'; allow: Array<ApiOperationMethod> }
 	| { kind: 'not_found' }
+
+export function isCapabilityProxyGatewayFetchOperation(
+	operation: ApiOperation,
+): boolean {
+	return (
+		operation.kind === 'native' &&
+		operation.operationId === 'capabilityProxyGatewayFetch'
+	)
+}
 
 /**
  * Match a request path. Among routes for the request method, the one with

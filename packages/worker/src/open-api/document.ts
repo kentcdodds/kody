@@ -13,6 +13,7 @@ import {
 	apiOperationUsesQueryInputs,
 	apiOperations,
 	getApiOperationPathParams,
+	isCapabilityProxyGatewayFetchOperation,
 	type ApiOperation,
 } from './operations.ts'
 import { nativeApiOperationDefinitions } from './native-operations.ts'
@@ -22,9 +23,14 @@ export const kodyApiVersion = '1.0.0'
 
 type JsonSchema = Record<string, unknown>
 
+type OpenApiMediaType = {
+	schema: JsonSchema
+	description?: string
+}
+
 type OpenApiParameter = {
 	name: string
-	in: 'path' | 'query'
+	in: 'path' | 'query' | 'header'
 	required: boolean
 	description?: string
 	schema: JsonSchema
@@ -40,7 +46,8 @@ type OpenApiOperation = {
 	parameters?: Array<OpenApiParameter>
 	requestBody?: {
 		required: boolean
-		content: { 'application/json': { schema: JsonSchema } }
+		description?: string
+		content: Record<string, OpenApiMediaType>
 	}
 	responses: Record<string, unknown>
 	security: Array<Record<string, Array<string>>>
@@ -211,10 +218,90 @@ function describeWithPermission(resolved: ResolvedApiOperation) {
 	return `${resolved.description}\n\nOrg permission: ${permission}.`
 }
 
+function buildGatewayFetchStreamOperation(
+	resolved: ResolvedApiOperation,
+): OpenApiOperation {
+	const { operation } = resolved
+	const header = (
+		name: string,
+		required: boolean,
+		description: string,
+	): OpenApiParameter => ({
+		name,
+		in: 'header',
+		required,
+		description,
+		schema: { type: 'string' },
+	})
+	return {
+		operationId: operation.operationId,
+		summary: summarize(resolved.description),
+		description: describeWithPermission(resolved),
+		tags: [operation.tag],
+		parameters: [
+			header(
+				'X-Kody-Gateway-Url',
+				true,
+				'Absolute outbound URL. May contain literal `{{secret:…}}` / `{{integration-token:…}}` placeholders.',
+			),
+			header(
+				'X-Kody-Gateway-Method',
+				false,
+				'Outbound HTTP method. Defaults to GET.',
+			),
+			header(
+				'X-Kody-Gateway-Package-Id',
+				false,
+				'Claimed package stamp. Origin verifies `package:execute` for that id.',
+			),
+			header(
+				'X-Kody-Gateway-Headers',
+				false,
+				'JSON object of outbound header name → string value. Invalid JSON or non-string values are `400 invalid_request`.',
+			),
+			header(
+				'x-kody-secret-resolution',
+				false,
+				'`on` (default), `headers-only`, or `off`. Origin strips this header before the request leaves.',
+			),
+		],
+		requestBody: {
+			required: false,
+			description:
+				'Raw outbound fetch body, streamed. No JSON wrapper and no base64. Set `Content-Type` to the outbound value.',
+			content: {
+				'*/*': {
+					schema: { type: 'string', format: 'binary' },
+					description: 'Raw outbound bytes (may be multipart).',
+				},
+			},
+		},
+		responses: {
+			'200': {
+				description:
+					'Upstream HTTP response: status, headers, and body, streamed. Not a JSON envelope.',
+				content: {
+					'*/*': {
+						schema: { type: 'string', format: 'binary' },
+						description: 'Upstream response body, streamed.',
+					},
+				},
+			},
+			default: { $ref: '#/components/responses/Error' },
+		},
+		security: [{ apiToken: [] }],
+		'x-kody-permission': resolved.permission,
+		'x-kody-read-only': resolved.readOnly,
+	}
+}
+
 function buildOperation(
 	resolved: ResolvedApiOperation,
 	componentSchemas: Record<string, JsonSchema>,
 ): OpenApiOperation {
+	if (isCapabilityProxyGatewayFetchOperation(resolved.operation)) {
+		return buildGatewayFetchStreamOperation(resolved)
+	}
 	const { operation } = resolved
 	const inputSchema = hoistDefs(
 		resolved.inputSchema,
