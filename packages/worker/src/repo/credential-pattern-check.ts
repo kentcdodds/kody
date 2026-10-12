@@ -8,22 +8,23 @@ import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
 const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}, informational; publish is unaffected):`
-const credentialPatternFindingsFooter =
-	'These references keep working; nothing here needs to change. Labels are described under "Credential slots" in the packages docs.'
+const credentialPatternLabelsDoc =
+	'Labels are described under "Credential slots" in the packages docs.'
 
 /**
- * Optional notes for labels where something better already fits. Keep them
- * suggestions: every listed reference keeps working (ADR 0068).
+ * Notes for labels whose requests need a change to work as written, or where
+ * a more secure option already fits. Placeholders themselves keep working
+ * (ADR 0068), so no note may read as a coming removal.
  */
-const credentialPatternHints: Partial<Record<LegacyCredentialPattern, string>> =
+const credentialPatternNotes: Partial<Record<LegacyCredentialPattern, string>> =
 	{
 		'plain http':
-			'plain http: placeholders are filled only in HTTPS requests; use https:// for requests that need them.',
+			'plain http: the fetch gateway refuses a request that carries a placeholder over http://; use https:// for those requests.',
 	}
 
 /**
  * Owner-facing codemod 0010: a neutral list of credential placeholder
- * references, as path and pattern label only, with optional hints. Never
+ * references, as path and pattern label only, with optional notes. Never
  * fails the run.
  */
 export function buildCredentialPatternCheck(
@@ -50,17 +51,21 @@ export function buildCredentialPatternCheck(
 		([path, patterns]) => `- ${path}: ${patterns.join(', ')}`,
 	)
 	const foundPatterns = new Set([...patternsByPath.values()].flat())
-	const hints = Object.entries(credentialPatternHints)
+	const notes = Object.entries(credentialPatternNotes)
 		.filter(([pattern]) => foundPatterns.has(pattern))
-		.map(([, hint]) => hint)
+		.map(([, note]) => note)
+	const footer =
+		notes.length > 0
+			? `These references keep working, except as noted below. ${credentialPatternLabelsDoc}`
+			: `These references keep working; nothing here needs to change. ${credentialPatternLabelsDoc}`
 	return {
 		kind: 'credentials',
 		ok: true,
 		message: [
 			credentialPatternFindingsHeading,
 			...lines,
-			credentialPatternFindingsFooter,
-			...hints,
+			footer,
+			...notes,
 		].join('\n'),
 	}
 }

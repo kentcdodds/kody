@@ -1215,7 +1215,7 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 	)
 })
 
-test('runRepoChecks adds the plain http hint only when that pattern is found', async () => {
+test('runRepoChecks adds the plain http note only when that pattern is found', async () => {
 	const { result } = await runChecks(
 		packageFiles(manifest('plain-http-credentials'), {
 			'src/send.ts': [
@@ -1227,9 +1227,10 @@ test('runRepoChecks adds the plain http hint only when that pattern is found', a
 	expect(result.ok).toBe(true)
 	const message = findCheck(result, 'credentials')?.message
 	expect(message).toContain('- src/send.ts: literal secret, plain http')
-	expect(message?.split('\n').at(-1)).toBe(
-		'plain http: placeholders are filled only in HTTPS requests; use https:// for requests that need them.',
-	)
+	expect(message?.split('\n').slice(-2)).toEqual([
+		'These references keep working, except as noted below. Labels are described under "Credential slots" in the packages docs.',
+		'plain http: the fetch gateway refuses a request that carries a placeholder over http://; use https:// for those requests.',
+	])
 
 	const { result: https } = await runChecks(
 		packageFiles(manifest('https-credentials'), {
