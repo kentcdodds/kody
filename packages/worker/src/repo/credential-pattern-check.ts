@@ -1,17 +1,30 @@
 import {
 	detectLegacyCredentialPatternsCodemod,
 	detectLegacyCredentialPatternsCodemodId,
+	type LegacyCredentialPattern,
 	legacyCredentialPatternFromMessage,
 } from '#worker/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
-const credentialPatternFindingsHeading = `Old-style credential references (${credentialPatternCheckLabel}, does not block publish):`
+const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}, informational; publish is unaffected):`
+const credentialPatternFindingsFooter =
+	'These references keep working; nothing here needs to change. Labels are described under "Credential slots" in the packages docs.'
 
 /**
- * Owner-facing codemod 0010: the credential patterns the migration to
- * `kody.credentials` slots replaces, as path and pattern label only. Never
- * fails the run while old-style references still work.
+ * Optional notes for labels where something better already fits. Keep them
+ * suggestions: every listed reference keeps working (ADR 0068).
+ */
+const credentialPatternHints: Partial<Record<LegacyCredentialPattern, string>> =
+	{
+		'plain http':
+			'plain http: placeholders are filled only in HTTPS requests; use https:// for requests that need them.',
+	}
+
+/**
+ * Owner-facing codemod 0010: a neutral list of credential placeholder
+ * references, as path and pattern label only, with optional hints. Never
+ * fails the run.
  */
 export function buildCredentialPatternCheck(
 	sourceFiles: Record<string, string>,
@@ -30,19 +43,24 @@ export function buildCredentialPatternCheck(
 		return {
 			kind: 'credentials',
 			ok: true,
-			message: `No old-style credential references (${credentialPatternCheckLabel}).`,
+			message: `No credential placeholder references to list (${credentialPatternCheckLabel}).`,
 		}
 	}
 	const lines = [...patternsByPath].map(
 		([path, patterns]) => `- ${path}: ${patterns.join(', ')}`,
 	)
+	const foundPatterns = new Set([...patternsByPath.values()].flat())
+	const hints = Object.entries(credentialPatternHints)
+		.filter(([pattern]) => foundPatterns.has(pattern))
+		.map(([, hint]) => hint)
 	return {
 		kind: 'credentials',
 		ok: true,
 		message: [
 			credentialPatternFindingsHeading,
 			...lines,
-			'Each label is a pattern the move to kody.credentials slots replaces; see "Credential slots" in the packages docs.',
+			credentialPatternFindingsFooter,
+			...hints,
 		].join('\n'),
 	}
 }
