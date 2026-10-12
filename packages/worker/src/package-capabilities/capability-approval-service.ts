@@ -100,6 +100,8 @@ export async function approvePackageCapabilitySet(input: {
 	actorUserId: string
 	savedPackage: SavedPackageRecord
 	requestUrl: string
+	/** Fingerprint the owner reviewed; must match the live set. */
+	expectedFingerprint: string
 	dependencySnapshotJson?: string
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
@@ -114,6 +116,17 @@ export async function approvePackageCapabilitySet(input: {
 	if (!summary.publishedCommit) {
 		throw new CapabilityApprovalError(
 			'Publish the package before approving internet-visible capabilities.',
+		)
+	}
+	const expected = input.expectedFingerprint.trim()
+	if (!expected) {
+		throw new CapabilityApprovalError(
+			'Reload the approval page and approve the current capability summary.',
+		)
+	}
+	if (expected !== summary.capabilitySet.fingerprint) {
+		throw new CapabilityApprovalError(
+			'The capability set changed since you loaded this page. Reload, review the updated summary, and approve again.',
 		)
 	}
 

@@ -114,6 +114,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 					body: JSON.stringify({
 						action: 'approve-capabilities',
 						packageId: payload.package.id,
+						fingerprint: payload.fingerprint,
 					}),
 				},
 			)

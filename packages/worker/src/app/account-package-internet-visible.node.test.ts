@@ -2,7 +2,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
@@ -69,6 +69,15 @@ vi.mock('#worker/orgs/repo.ts', () => ({
 
 const { handleAccountPackageInternetVisibleAction } =
 	await import('./account-package-capability-approval.ts')
+
+beforeEach(() => {
+	mockModule.writablePackage = null
+	mockModule.loadCapabilityApprovalSummary.mockReset()
+	mockModule.approvePackageCapabilitySet.mockReset()
+	mockModule.clearInternetVisible.mockReset()
+	mockModule.reloadAccountPackagesAfterWrite.mockReset()
+	mockModule.loadOrgBindingForOrg.mockReset()
+})
 
 function createUser(): AuthenticatedAppUser {
 	return {
@@ -182,7 +191,43 @@ test('turning on internet-visible with matching approval activates the flag', as
 		},
 	})
 	expect(response?.status).toBe(200)
-	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalled()
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedFingerprint: 'abc',
+		}),
+	)
+})
+
+test('approve-capabilities binds the reviewed fingerprint', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1' },
+		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
+	})
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities',
+			packageId: 'pkg-1',
+			fingerprint: 'reviewed-fp',
+		},
+	})
+	expect(response?.status).toBe(200)
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedFingerprint: 'reviewed-fp',
+		}),
+	)
 })
 
 test('turning off internet-visible requires the slug and clears the flag', async () => {

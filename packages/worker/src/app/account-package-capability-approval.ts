@@ -139,12 +139,18 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 
 	try {
 		if (action === 'approve-capabilities') {
+			const expectedFingerprint =
+				'fingerprint' in input.body &&
+				typeof input.body.fingerprint === 'string'
+					? input.body.fingerprint.trim()
+					: ''
 			await approvePackageCapabilitySet({
 				env: input.env,
 				ownerUserId,
 				actorUserId,
 				savedPackage,
 				requestUrl: input.request.url,
+				expectedFingerprint,
 			})
 		} else {
 			const internetVisible =
@@ -198,6 +204,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 					actorUserId,
 					savedPackage,
 					requestUrl: input.request.url,
+					expectedFingerprint: summary.capabilitySet.fingerprint,
 				})
 			} else {
 				if (confirmName !== savedPackage.kodyId) {
