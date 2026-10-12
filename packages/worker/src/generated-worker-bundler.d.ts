@@ -36,3 +36,7 @@ declare module '*/node_modules/.kody-generated/local-execute-runtime-support.mjs
 declare module '*/node_modules/.kody-generated/isomorphic-git.mjs' {
 	export { git, http, createGit } from './repo/isomorphic-git-module.ts'
 }
+
+declare module '*/node_modules/.kody-generated/postal-mime.mjs' {
+	export { PostalMime } from './email/postal-mime-module.ts'
+}

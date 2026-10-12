@@ -105,6 +105,13 @@ export default mergeConfig(
 						'packages/worker/src/repo/isomorphic-git-module.ts',
 					),
 				},
+				{
+					find: './node_modules/.kody-generated/postal-mime.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/email/postal-mime-module.ts',
+					),
+				},
 			],
 		},
 		test: {

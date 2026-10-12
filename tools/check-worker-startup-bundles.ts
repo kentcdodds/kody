@@ -150,6 +150,7 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			'/packages/worker/src/repo/isomorphic-git-module.ts',
 			'/node_modules/isomorphic-git/',
 			'/node_modules/@cloudflare/shell/dist/git/',
+			'/node_modules/postal-mime/',
 		],
 	},
 	{
@@ -167,6 +168,7 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			'/packages/worker/src/repo/isomorphic-git-module.ts',
 			'/node_modules/isomorphic-git/',
 			'/node_modules/@cloudflare/shell/dist/git/',
+			'/node_modules/postal-mime/',
 		],
 	},
 ]
