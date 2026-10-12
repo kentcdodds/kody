@@ -1143,7 +1143,7 @@ test('runRepoChecks validates package skills and fails publish on malformed SKIL
 	})
 })
 
-test('runRepoChecks reports old-style credential references by path and pattern without failing', async () => {
+test('runRepoChecks lists credential placeholder references neutrally by path and pattern without failing', async () => {
 	const { result } = await runChecks(
 		packageFiles(
 			manifest('legacy-credentials', {
@@ -1164,10 +1164,10 @@ test('runRepoChecks reports old-style credential references by path and pattern 
 		kind: 'credentials',
 		ok: true,
 		message: [
-			'Old-style credential references (codemod 0010-detect-legacy-credential-patterns, does not block publish):',
+			'Credential placeholder references (codemod 0010-detect-legacy-credential-patterns, informational; publish is unaffected):',
 			'- package.json: secretMounts',
 			'- src/index.ts: literal secret, computed integration',
-			'Each label is a pattern the move to kody.credentials slots replaces; see "Credential slots" in the packages docs.',
+			'These references keep working; nothing here needs to change. Labels are described under "Credential slots" in the packages docs.',
 		].join('\n'),
 	})
 	expect(credentialPatternFindingsNotice(result.results)).toBe(check!.message)
@@ -1178,7 +1178,7 @@ test('runRepoChecks reports old-style credential references by path and pattern 
 		kind: 'credentials',
 		ok: true,
 		message:
-			'No old-style credential references (codemod 0010-detect-legacy-credential-patterns).',
+			'No credential placeholder references to list (codemod 0010-detect-legacy-credential-patterns).',
 	})
 	expect(credentialPatternFindingsNotice(clean.result.results)).toBeNull()
 
@@ -1211,8 +1211,33 @@ test('runRepoChecks reports old-style credential references by path and pattern 
 		),
 	)
 	expect(findCheck(migrated, 'credentials')?.message).toBe(
-		'No old-style credential references (codemod 0010-detect-legacy-credential-patterns).',
+		'No credential placeholder references to list (codemod 0010-detect-legacy-credential-patterns).',
 	)
+})
+
+test('runRepoChecks adds the plain http note only when that pattern is found', async () => {
+	const { result } = await runChecks(
+		packageFiles(manifest('plain-http-credentials'), {
+			'src/send.ts': [
+				"export const h = { Authorization: 'Bearer {{secret:TOKEN}}' }",
+				"export const send = () => fetch('http://api.example.com', { headers: h })",
+			].join('\n'),
+		}),
+	)
+	expect(result.ok).toBe(true)
+	const message = findCheck(result, 'credentials')?.message
+	expect(message).toContain('- src/send.ts: literal secret, plain http')
+	expect(message?.split('\n').slice(-2)).toEqual([
+		'These references keep working, except as noted below. Labels are described under "Credential slots" in the packages docs.',
+		'plain http: the fetch gateway refuses a request that carries a placeholder over http://; use https:// for those requests.',
+	])
+
+	const { result: https } = await runChecks(
+		packageFiles(manifest('https-credentials'), {
+			'src/send.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+		}),
+	)
+	expect(findCheck(https, 'credentials')?.message).not.toContain('plain http:')
 })
 
 test('credentialPatternNoticeForFiles reads repo paths under the source root', () => {
