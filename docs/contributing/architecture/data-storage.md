@@ -1512,7 +1512,7 @@ on write unless a migration backfills existing rows.
   `inject_json` only where they are still unset: `provider` when every slot
   naming the credential agrees on one provider slug, `inject_json` when every
   placement is the same header or the same query param.
-- `credential_org_grants` (`0115-credential-org-grants.sql`,
+- `credential_org_grants` (`0116-credential-org-grants.sql`,
   `packages/worker/src/credentials/personal-credentials.ts`) records which org
   each personal credential is granted to. `credential_id` is a credential in the
   owner's personal org, `user_id` is the owner's person id, and the row is
