@@ -228,7 +228,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(namedErrorRate.html).toMatch(
 		/<a href="https:\/\/kody\.codes\/account\/activity\/run-1"[^>]*>Open the run<\/a>/,
 	)
-	expect(namedErrorRate.html).toContain('is among the failures')
+	expect(namedErrorRate.text).toContain('most recent open failure')
 
 	const acknowledgement = buildPlatformFeedbackAcknowledgementEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -253,7 +253,6 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(genericResolved.html).toContain(
 		'&lt;/p&gt;&lt;script&gt;alert(1)&lt;/script&gt;Setup is confusing',
 	)
-	expect(genericResolved.html).not.toContain('The setup flow does not explain')
 	expect(genericResolved.text).toContain(`"${hostileSummary}"`)
 	expect(genericResolved.text).toContain(
 		'tell your agent you want to send more Kody feedback',

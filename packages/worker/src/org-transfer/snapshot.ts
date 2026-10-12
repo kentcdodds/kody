@@ -71,7 +71,6 @@ export type OrgTransferSnapshot = {
 	sourceJobs: Array<JobRow>
 	/** person id → role, for live memberships of the target org. */
 	targetMembers: Map<string, string>
-	enablementStates: { from: string | null; to: string | null }
 	/** Server ids registered in each org's McpClientHub. */
 	hubServerIds: { from: Set<string>; to: Set<string> }
 	/** Source credentials granted to other orgs as personal credentials. */
@@ -135,14 +134,6 @@ export async function readOrgTransferTableRows(
 	return Object.fromEntries(entries) as OrgTransferTableRows
 }
 
-async function readEnablementState(db: D1Database, orgId: string) {
-	const row = await db
-		.prepare(`SELECT state FROM enablement_org_migrations WHERE org_id = ?`)
-		.bind(orgId)
-		.first<{ state: string }>()
-	return row?.state ?? null
-}
-
 export async function loadOrgTransferSnapshot(input: {
 	env: JobsDataEnv & Pick<Env, 'APP_DB' | 'MCP_CLIENT_HUB'>
 	from: OrgTransferOrg
@@ -153,38 +144,27 @@ export async function loadOrgTransferSnapshot(input: {
 		mcpClientHubTransferStub({ env: input.env, userId })
 			.listServerIdsForTransfer()
 			.then((ids) => new Set(ids))
-	const [
-		source,
-		target,
-		sourceJobs,
-		members,
-		fromState,
-		toState,
-		fromHub,
-		toHub,
-		personalGrants,
-	] = await Promise.all([
-		readOrgTransferTableRows(db, input.from.id),
-		readOrgTransferTableRows(db, input.to.id),
-		jobsData(input.env).listJobsForUser({ userId: input.from.id }),
-		db
-			.prepare(
-				`SELECT user_id, role FROM org_memberships
+	const [source, target, sourceJobs, members, fromHub, toHub, personalGrants] =
+		await Promise.all([
+			readOrgTransferTableRows(db, input.from.id),
+			readOrgTransferTableRows(db, input.to.id),
+			jobsData(input.env).listJobsForUser({ userId: input.from.id }),
+			db
+				.prepare(
+					`SELECT user_id, role FROM org_memberships
 					 WHERE org_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(input.to.id)
-			.all<{ user_id: string; role: string }>(),
-		readEnablementState(db, input.from.id),
-		readEnablementState(db, input.to.id),
-		hubServerIds(input.from.id),
-		hubServerIds(input.to.id),
-		db
-			.prepare(
-				`SELECT DISTINCT credential_id FROM credential_org_grants WHERE user_id = ?`,
-			)
-			.bind(input.from.id)
-			.all<{ credential_id: string }>(),
-	])
+				)
+				.bind(input.to.id)
+				.all<{ user_id: string; role: string }>(),
+			hubServerIds(input.from.id),
+			hubServerIds(input.to.id),
+			db
+				.prepare(
+					`SELECT DISTINCT credential_id FROM credential_org_grants WHERE user_id = ?`,
+				)
+				.bind(input.from.id)
+				.all<{ credential_id: string }>(),
+		])
 	return {
 		from: input.from,
 		to: input.to,
@@ -194,7 +174,6 @@ export async function loadOrgTransferSnapshot(input: {
 		targetMembers: new Map(
 			(members.results ?? []).map((row) => [row.user_id, row.role]),
 		),
-		enablementStates: { from: fromState, to: toState },
 		hubServerIds: { from: fromHub, to: toHub },
 		personalGrantCredentialIds: new Set(
 			(personalGrants.results ?? []).map((row) => row.credential_id),

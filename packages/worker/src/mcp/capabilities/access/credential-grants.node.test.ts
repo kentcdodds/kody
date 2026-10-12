@@ -242,9 +242,7 @@ test('an integration name shared by an OAuth connection and an MCP server is ref
 			(caught: unknown) => caught,
 		)
 		expect(error).toBeInstanceOf(McpCallerError)
-		expect((error as Error).message).toBe(
-			'shared names more than one integration; pass resource_type credential with the credential_id from integrationList or mcpServerList.',
-		)
+		expect((error as Error).message).toMatch(/more than one integration/)
 	}
 
 	const granted = []

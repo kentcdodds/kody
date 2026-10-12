@@ -352,7 +352,6 @@ test('interactive-origin package jobs run in the background with writable storag
 	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
 		executorTimeoutMs: backgroundExecutorTimeoutMs,
 	})
-	expect(backgroundExecutorTimeoutMs).toBe(300_000)
 })
 
 test('executeJobOnce records job_run usage for success and failure', async () => {

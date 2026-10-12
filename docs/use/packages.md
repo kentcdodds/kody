@@ -127,11 +127,9 @@ hard-code a previous `@{username}` scope need updates from their owners.
 the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
 secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
 `NAME`, with the same package access rules as a package without slots. Name each
-slot after the secret or integration the code already references, and keep those
-references as they are. There is no way yet for an org to choose which
-credential fills a slot; see
+slot after the secret or integration the code references. The leftover name lane
+is tracked in
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-for the planned switch to scoped credential clients
 ([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
@@ -165,15 +163,15 @@ for the planned switch to scoped credential clients
 - Publish rejects any other key or a missing field and names the slot. If a
   later rule rejects a slot in a version that is already published, the package
   still loads with its other slots.
-- Slots take no `placement`. Publish rejects one with a message to remove it;
-  versions published while it was required load with it ignored. The fetch
-  gateway fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a
-  request (a header, the URL path or query, or a text body) when the request is
-  HTTPS and its host is one the secret or integration allows, the same as for a
+- Slots take no `placement`. Publish rejects one with a message to remove it.
+  Published versions that include it load with it ignored. The fetch gateway
+  fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request
+  (a header, the URL path or query, or a text body) when the request is HTTPS
+  and its host is one the secret or integration allows, the same as for a
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
-To see which old-style credential references a package still has, run
+To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
 pattern labels it matches (for example `- src/index.ts: literal secret`),
 without credential names. `repoPublishSession` and `packageSave` repeat that

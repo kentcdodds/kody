@@ -200,15 +200,3 @@ export async function resolveHmacCiphertextForMint(input: {
 		userWebhookHmacSecretContext(input.userId, input.endpointId),
 	)
 }
-
-/**
- * Whether mint should create package-owned HMAC: verification is declared and
- * there is no provider-issued secretName (those stay in the secret store until
- * optionally copied at mint via resolveHmacCiphertextForMint).
- */
-export function shouldMintPackageOwnedWebhookHmac(
-	verification: PackageWebhookManifestEntry['verification'] | null | undefined,
-) {
-	if (!verification) return false
-	return !(verification.secretName?.trim() ?? '')
-}

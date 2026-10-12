@@ -15,7 +15,6 @@ import {
 	resolveHmacCiphertextForMint,
 	resolveWebhookHmacSigningSecret,
 	resolveWebhookHmacVerificationSecrets,
-	shouldMintPackageOwnedWebhookHmac,
 } from './signing-secret.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
@@ -60,25 +59,6 @@ function endpoint(
 		...overrides,
 	}
 }
-
-test('shouldMintPackageOwnedWebhookHmac only when verification omits secretName', () => {
-	expect(shouldMintPackageOwnedWebhookHmac(null)).toBe(false)
-	expect(
-		shouldMintPackageOwnedWebhookHmac({
-			type: 'hmac-sha256',
-			header: 'x-hub-signature-256',
-			encoding: 'hex',
-			secretName: 'githubWebhookSecret',
-		}),
-	).toBe(false)
-	expect(
-		shouldMintPackageOwnedWebhookHmac({
-			type: 'hmac-sha256',
-			header: 'x-hub-signature-256',
-			encoding: 'hex',
-		}),
-	).toBe(true)
-})
 
 const env = {
 	APP_DB: {} as D1Database,

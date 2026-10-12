@@ -18,7 +18,6 @@ export const orgTransferFindingCodes = [
 	// Warnings: the move proceeds but needs attention.
 	'package_source_missing',
 	'job_source_missing',
-	'enablement_migration_state_differs',
 	// Post-commit warnings.
 	'post_commit_step_failed',
 ] as const

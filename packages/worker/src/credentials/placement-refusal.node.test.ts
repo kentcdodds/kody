@@ -52,11 +52,15 @@ test('the invocation body reader finds the tag in error.message only', () => {
 })
 
 test('the webhook error names the code and slot and nothing else', () => {
-	expect(buildCredentialPlacementRefusedWebhookError(null)).toEqual({
-		code: 'credential_placement_refused',
-		message:
-			"The package tried to send a credential to a host the credential does not allow, over plain HTTP, or in the URL host, so Kody refused the request. The package owner or the credential's owner needs to fix it.",
-	})
+	const unnamed = buildCredentialPlacementRefusedWebhookError(null)
+	expect(unnamed.code).toBe('credential_placement_refused')
+	expect(unnamed).not.toHaveProperty('slot')
+	expect(unnamed.message).not.toContain('slot "')
+
+	const named = buildCredentialPlacementRefusedWebhookError('token')
+	expect(named.code).toBe('credential_placement_refused')
+	expect(named.slot).toBe('token')
+	expect(named.message).toContain('slot "token"')
 })
 
 test('stripping the tag leaves a structured message parseable', () => {

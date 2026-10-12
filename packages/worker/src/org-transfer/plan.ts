@@ -643,16 +643,6 @@ export function planOrgTransfer(
 			})
 		}
 	}
-	if (
-		moves.enablements.length > 0 &&
-		snapshot.enablementStates.from !== snapshot.enablementStates.to
-	) {
-		warnings.push({
-			code: 'enablement_migration_state_differs',
-			message: `Enablement migration state differs (@${from.slug}: ${snapshot.enablementStates.from ?? 'legacy'}, @${to.slug}: ${snapshot.enablementStates.to ?? 'legacy'}); moved triggers run the way @${to.slug} runs triggers.`,
-			table: 'enablements',
-		})
-	}
 	for (const row of source.grants.filter(isLiveRow)) {
 		if (text(row, 'resource_type') === 'org') continue
 		blockers.push({

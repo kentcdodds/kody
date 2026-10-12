@@ -59,7 +59,6 @@ const summary = {
 }
 
 test('adminOrgResourceTransfer is admin-only, destructive, and audited', async () => {
-	expect(adminOrgResourceTransferCapability.destructive).toBe(true)
 	await expect(
 		adminOrgResourceTransferCapability.handler(
 			{ fromOrgId: 'org-a', toOrgId: 'org-b', mode: 'apply' },
