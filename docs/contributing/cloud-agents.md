@@ -156,11 +156,20 @@ ln -s "$main/packages/worker/node_modules" packages/worker/node_modules
 ```
 
 `realpath node_modules/@kody-internal/shared` should print the worktree path.
-Tool caches (`node_modules/.vite`, `.mf`, `.tmp`) stay per worktree. Hooks are
-shared, so `git push` from the worktree still runs `test:push` there. Redo the
-loop after `npm ci` in the main checkout adds or removes a package. A worktree
-whose `package-lock.json` differs from the main checkout's needs its own
-`npm ci`. Remove a worktree with `git worktree remove ~/wt/my-branch`.
+Tool caches (`node_modules/.vite`, `.mf`, `.tmp`) stay per worktree. The
+worktree's `node_modules` holds only links, copied scope links, and those
+caches. After `npm ci` in the main checkout adds or removes a package, run
+`rm -rf node_modules` in the worktree and redo the loop. A worktree whose
+`package-lock.json` differs from the main checkout's needs its own `npm ci`.
+
+Git hooks are shared. The Cursor dispatcher's `.cursor-original-hooks-path`
+names one Husky directory for every checkout, so `git push` from the worktree
+runs the main checkout's `.husky` scripts with the worktree as the working
+directory (`test:push` tests the worktree). `npm run hooks:ensure`, `npm ci`,
+and `npm install` (through `prepare`) rewrite that file to the checkout they run
+in. After running one of them in a worktree, run `npm run hooks:ensure` in the
+main checkout before `git worktree remove ~/wt/my-branch`, or the main
+checkout's commits and pushes lose their Husky hooks.
 
 ## GitHub CLI
 
