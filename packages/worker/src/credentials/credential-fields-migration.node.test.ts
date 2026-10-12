@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { upsertIntegrationConnection } from '#worker/integrations/repo.ts'
+import { upsertSecretProviderBinding } from '#mcp/secrets/secret-providers/repo.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -35,6 +36,8 @@ function databaseBeforeMigration() {
 			('org-a', 'github', 'my-github', NULL, 'ct'),
 			('org-a', 'calendar', NULL, 'kody-google', 'ct'),
 			('org-a', 'orphan', 'gone-app', NULL, 'ct');
+		INSERT INTO user_integrations (user_id, name, app_slug, access_token_encrypted, deleted_at)
+		VALUES ('org-a', 'old-github', 'my-github', 'ct', '2026-10-01T00:00:00Z');
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
 		VALUES ('bucket-a', 'org-a', 'user', '');
 		INSERT INTO secret_entries (bucket_id, name, encrypted_value)
@@ -79,6 +82,7 @@ test('0111 backfills integration providers from their OAuth app and defaults inj
 		{ provider: 'github', inject: bearerInject, source: 'stored' },
 		{ provider: 'google', inject: bearerInject, source: 'stored' },
 		{ provider: null, inject: bearerInject, source: 'stored' },
+		{ provider: 'github', inject: bearerInject, source: 'stored' },
 	])
 	expect(fieldsOf(sqlite, 'secret_entries')).toEqual([
 		{ provider: null, inject: bearerInject, source: 'stored' },
@@ -125,4 +129,23 @@ test('connecting or reconnecting an integration records its OAuth app provider',
 		row: { ...row, app_slug: null, platform_app_slug: 'kody-google' },
 	})
 	expect(providerOf()).toEqual({ provider: 'google' })
+})
+
+test('a vault binding created or rebound after 0111 records its vault as its source', async () => {
+	const sqlite = databaseBeforeMigration()
+	runMigration(sqlite)
+	const db = createD1FromSqlite(sqlite)
+	const binding = {
+		userId: 'org-a',
+		providerId: 'bitwarden',
+		packageId: 'pkg-bw',
+		doorSecretName: 'BW_DOOR',
+		configJson: '{}',
+	}
+	await upsertSecretProviderBinding(db, binding)
+	await upsertSecretProviderBinding(db, { ...binding, packageId: 'pkg-bw-2' })
+	expect(fieldsOf(sqlite, 'secret_provider_bindings')).toEqual([
+		{ provider: null, inject: bearerInject, source: { vault: '1password' } },
+		{ provider: null, inject: bearerInject, source: { vault: 'bitwarden' } },
+	])
 })
