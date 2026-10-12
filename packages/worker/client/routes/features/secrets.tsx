@@ -32,6 +32,9 @@ export function SecretsFeature(handle: Handle) {
 				Give your agent the API access it needs. Kody sends the credential only
 				to hosts you approve.
 			</p>
+			<a class="action" href="/onboarding">
+				Connect your agent
+			</a>
 			<div class="boundary ui-stage">
 				<div class="envelope ui-window">
 					<div class="ui-title">
@@ -224,7 +227,12 @@ export function SecretsFeature(handle: Handle) {
 						<a href="/docs/secrets">Read the guide</a>
 					</p>
 				</div>
-				<BuildWithAgentButton />
+				<div class="controls">
+					<a class="action" href="/onboarding">
+						Connect your agent
+					</a>
+					<BuildWithAgentButton />
+				</div>
 			</div>
 		</div>
 	)
