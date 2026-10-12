@@ -2,6 +2,7 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { insertEnablement } from '#worker/enablements/repo.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { ensureSavedPackageInternetVisibleColumn } from '#worker/package-registry/internet-visible-column-test-schema.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { ensurePersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -52,6 +53,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			has_skills INTEGER NOT NULL DEFAULT 0,
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
+			is_internet_visible INTEGER NOT NULL DEFAULT 0,
 			locked_at TEXT,
 			deleted_at TEXT,
 			created_at TEXT NOT NULL,
@@ -115,6 +117,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 	} catch {
 		// Column already present on newer schemas.
 	}
+	await ensureSavedPackageInternetVisibleColumn(db)
 	try {
 		await db
 			.prepare(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)

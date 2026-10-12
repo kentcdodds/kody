@@ -2007,7 +2007,13 @@ export type AccountPackageListItem = {
 	createdAt: string
 	updatedAt: string
 	hidden: boolean
+	/** Inverse of forkable: private packages are not community-forkable. */
 	isPrivate: boolean
+	/**
+	 * When true, the hosted package app may be served on the public internet
+	 * after capability approval. Independent of forkable/`isPrivate`.
+	 */
+	isInternetVisible: boolean
 	hasCommunityListing: boolean
 	listingAhead: AccountPackageListingAhead | null
 	forkAhead: AccountPackageForkAhead | null
@@ -2057,6 +2063,36 @@ export type AccountPackageApprovePublishLoaderData = {
 		files: Array<AccountPackagePublishDiffFile>
 		omittedCount: number
 	}
+}
+
+export type AccountPackageApproveCapabilitiesLoaderData = {
+	ok: true
+	email: string
+	package: {
+		id: string
+		name: string
+		kodyId: string
+		sourceId: string
+		hasApp: boolean
+		isInternetVisible: boolean
+	}
+	publishedCommit: string | null
+	fingerprint: string
+	entries: Array<{
+		kind: 'credential' | 'storage'
+		credentialId?: string
+		name?: string
+		credentialKind?: string
+		hosts: Array<string>
+		placement?: string | null
+		via: Array<string>
+		storageId?: string
+	}>
+	fingerprintMatchesApproval: boolean
+	latestApprovedAt: string | null
+	settingsHref: string
+	packageHref: string
+	approveHref: string
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
@@ -2622,6 +2658,7 @@ export type AppLoaderData = {
 	mcpServerAuthorize?: McpServerAuthorizeLoaderData
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
+	accountPackageApproveCapabilities?: AccountPackageApproveCapabilitiesLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData

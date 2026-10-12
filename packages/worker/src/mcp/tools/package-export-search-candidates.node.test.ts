@@ -73,7 +73,12 @@ function packageRow({
 	exports?: Array<ExportProjection>
 } & Pick<Partial<PackageSearchRow>, 'hydrate' | 'readmeSnippet'>) {
 	const name = `@kody/${kodyId}`
-	const flags = { hasApp: false, hidden: false, isPrivate: false }
+	const flags = {
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		isInternetVisible: false,
+	}
 	return {
 		record: {
 			id,

@@ -38,6 +38,11 @@ trees healthy precisely because platform APIs evolve.
 
 - Runtime resolution stays single-pointer (current published commit), and
   published-bundle retention stays at 30 days for non-current commits.
+- **Proposed exception:** internet-visible package apps may pin an approved
+  dependency snapshot and retain approved bundles past 30 days — see
+  [0069](./0069-internet-visible-capability-pinning.md) (status: proposed; not
+  accepted until Kent approves). Do not implement that exception under 0001
+  alone.
 - Users who want stability can tag commits in their package repo (labels for
   humans, never read by the platform), hold off republishing a dependent until
   ready, or fork a dependency into a frozen copy under another name.

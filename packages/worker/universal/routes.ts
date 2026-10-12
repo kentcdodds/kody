@@ -35,6 +35,10 @@ export const routes = route({
 	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
 	accountPackageApprovePublishApi:
 		'/account/packages/:packageId/approve-publish.json',
+	accountPackageApproveCapabilities:
+		'/account/packages/:packageId/approve-capabilities',
+	accountPackageApproveCapabilitiesApi:
+		'/account/packages/:packageId/approve-capabilities.json',
 	accountPackageFiles: '/account/packages/:packageId/files(/*relativePath)',
 	accountPackageFilesApi: '/account/packages/:packageId/files.json',
 	accountPackagesApi: '/account/packages.json',
@@ -275,12 +279,16 @@ export const routes = route({
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
+	communityPackageApproveCapabilities:
+		'/@:username/:kodyId/approve-capabilities',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
 	communityPackageApprovePublishApi:
 		'/profiles/:username/packages/:kodyId/approve-publish.json',
+	communityPackageApproveCapabilitiesApi:
+		'/profiles/:username/packages/:kodyId/approve-capabilities.json',
 	// Owner-only webhook URL management for one package (the Webhooks section
 	// of package settings): GET lists declared webhooks with minted state,
 	// POST mints / rotates / reveals / enables / disables one. The credential

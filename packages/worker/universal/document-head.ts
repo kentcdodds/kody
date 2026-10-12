@@ -236,6 +236,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),
+	[routePattern(routes.communityPackageApproveCapabilities)]: titleOnly(
+		'Approve internet-visible capabilities',
+	),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {
 		const files = loaderData?.packageFiles
 		return titleOnly(files?.ok ? `${files.title} files` : 'Package files')

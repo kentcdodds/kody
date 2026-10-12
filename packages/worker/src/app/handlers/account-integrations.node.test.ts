@@ -747,6 +747,7 @@ test('integrations API sets usage, returns approval payload, and grants a packag
 			hasApp: false,
 			hidden: false,
 			isPrivate: false,
+			isInternetVisible: false,
 			createdAt: '1970-01-01T00:00:00.000Z',
 			updatedAt: '1970-01-01T00:00:00.001Z',
 		},

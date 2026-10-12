@@ -38,11 +38,13 @@ lane. Each repository lives at `/@username/:kodyId` (the URL slug is the package
 or repo name leaf; **Repo** tab: description, tags, license, badges),
 `/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
 (README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (**Settings** tab for packages: lock, visibility,
-webhooks, delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD
-review). Opening an allowlisted image or video in the tree renders a preview;
-the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree).
-`/account/packages` 404s. `/account/packages/:packageId` redirects to the
+`/@username/:kodyId/settings` (**Settings** tab for packages: lock, forkable
+visibility, internet-visible, webhooks, delete),
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
+`/@username/:kodyId/approve-capabilities` (credential/capability summary before
+internet-visible). Opening an allowlisted image or video in the tree renders a
+preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the
+tree). `/account/packages` 404s. `/account/packages/:packageId` redirects to the
 canonical package page.
 
 ## Drive it
@@ -74,15 +76,18 @@ fixtures use `control-kody execute` / `search` against the same origin.
 ## APIs
 
 - `GET|POST /account/packages.json` (list / lock, unlock, set-visibility,
-  delete, adopt-community-fork, absorb-listing; no package-create action)
+  set-internet-visible, approve-capabilities, delete, adopt-community-fork,
+  absorb-listing; no package-create action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /@:username/:kodyId/icon/:iconCommit` (package or plain-repo list mark)
 - `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
+- `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
+- `GET|POST /account/packages/:packageId/approve-capabilities.json`
 
 ## Gotchas
 
@@ -94,6 +99,11 @@ fixtures use `control-kody execute` / `search` against the same origin.
   first. Agents review that hygiene before `packageUpdate`
   `changes.visibility: "public"`; they pass `confirm_name` only when going
   private.
+- **Forkable** (`visibility` / `is_private`) and **internet-visible** are
+  independent. Internet-visible requires a published commit and owner approval
+  of the credential/capability fingerprint (no secret values). Turning either
+  off requires typing the package slug. Agents requesting
+  `changes.internet_visible: true` get an `approval_url` instead of approving.
 - When default-branch HEAD is newer than the last publish, the Repo tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require

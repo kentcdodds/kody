@@ -67,6 +67,7 @@ function savedPackage(input: {
 		hasApp: false,
 		hidden: false,
 		isPrivate: true,
+		isInternetVisible: false,
 		lockedAt: null,
 		createdAt: '2026-10-02T00:00:00.000Z',
 		updatedAt: '2026-10-02T00:00:00.000Z',

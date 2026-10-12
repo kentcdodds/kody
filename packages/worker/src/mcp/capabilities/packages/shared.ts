@@ -40,7 +40,12 @@ export const packageSummarySchema = z.object({
 	visibility: z
 		.enum(['public', 'private'])
 		.describe(
-			'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only.',
+			'Repo visibility / forkable. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only. Independent of internet_visible.',
+		),
+	internet_visible: z
+		.boolean()
+		.describe(
+			'When true, the hosted package app may be served on the public internet after capability approval. Independent of visibility/forkable. Defaults false.',
 		),
 	locked_at: z
 		.string()
@@ -149,6 +154,7 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 		visibility: savedPackage.isPrivate
 			? ('private' as const)
 			: ('public' as const),
+		internet_visible: savedPackage.isInternetVisible,
 		locked_at: savedPackage.lockedAt ?? null,
 		source_id: savedPackage.sourceId,
 		created_at: savedPackage.createdAt,

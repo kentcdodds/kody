@@ -5,6 +5,7 @@ import { handleAccountPackageAdoptAction } from '#app/account-package-adopt.ts'
 import { handleAccountPackageDeleteAction } from '#app/account-package-delete.ts'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
 import { handleAccountPackageVisibilityAction } from '#app/account-package-visibility.ts'
+import { handleAccountPackageInternetVisibleAction } from '#app/account-package-capability-approval.ts'
 import {
 	loadAccountPackagesData,
 	reloadAccountPackagesAfterWrite,
@@ -130,6 +131,15 @@ export function createAccountPackagesApiHandler(env: Env) {
 				body,
 			})
 			if (visibilityResponse) return visibilityResponse
+
+			const internetVisibleResponse =
+				await handleAccountPackageInternetVisibleAction({
+					env,
+					request,
+					user,
+					body,
+				})
+			if (internetVisibleResponse) return internetVisibleResponse
 
 			const deleteResponse = await handleAccountPackageDeleteAction({
 				env,

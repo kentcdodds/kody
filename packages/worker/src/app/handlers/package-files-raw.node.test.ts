@@ -42,6 +42,7 @@ test('raw media serves allowlisted images inline and rejects binaries, HTML, and
 		contentType: 'image/png',
 		filename: 'logo.png',
 		isPrivate: false,
+		isInternetVisible: false,
 	})
 
 	const success = await handler.handler({
@@ -107,6 +108,7 @@ test('raw media serves allowlisted images inline and rejects binaries, HTML, and
 		contentType: 'text/html',
 		filename: 'nope.html',
 		isPrivate: false,
+		isInternetVisible: false,
 	})
 	const html = await handler.handler({
 		request: new Request('https://example.com/@owner/demo/raw/main/nope.html'),
@@ -133,6 +135,7 @@ test('listing raw SVG stays image/svg+xml with sandbox CSP and owner-only files 
 		contentType: 'image/svg+xml',
 		filename: 'icon.svg',
 		isPrivate: false,
+		isInternetVisible: false,
 	})
 	const publicSvg = await handler.handler({
 		request: new Request(
@@ -153,6 +156,7 @@ test('listing raw SVG stays image/svg+xml with sandbox CSP and owner-only files 
 		contentType: 'image/png',
 		filename: 'logo.png',
 		isPrivate: true,
+		isInternetVisible: false,
 	})
 	const privateImage = await createCommunityPackageRawHandler(
 		{} as Env,

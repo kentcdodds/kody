@@ -140,6 +140,7 @@ function savedPackage(
 		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		lockedAt: null,
 		sourceId,
 		createdAt: '2026-01-01T00:00:00.000Z',

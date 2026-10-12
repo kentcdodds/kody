@@ -424,6 +424,7 @@ test('resolveEntityDetail passes package export fragments and hidden known-id pa
 		tags: [],
 		searchText: null,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-03-20T00:00:00.000Z',
 		updatedAt: '2026-03-20T00:00:00.000Z',
 	})

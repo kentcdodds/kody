@@ -81,6 +81,7 @@ const publicPackage = {
 	sourceId: 'source-1',
 	hidden: false,
 	isPrivate: false,
+	isInternetVisible: false,
 }
 
 function createEnv() {
@@ -149,6 +150,7 @@ test('private package identity icons use a private cache for the owner and 404 f
 		...publicPackage,
 		hidden: false,
 		isPrivate: true,
+		isInternetVisible: false,
 	}
 	mocks.resolvePackagePageUrl.mockResolvedValue({
 		kind: 'package',

@@ -106,7 +106,8 @@ export function buildOrgTransferStatements(input: {
 		statements.push(
 			db
 				.prepare(
-					`UPDATE saved_packages SET user_id = ?, name = ?, updated_at = ?
+					`UPDATE saved_packages
+					 SET user_id = ?, name = ?, is_internet_visible = 0, updated_at = ?
 					 WHERE rowid = ? AND user_id = ?`,
 				)
 				.bind(

@@ -49,6 +49,7 @@ function createHiddenRetrieverFixture(scopes: Array<'search' | 'context'>) {
 			hasApp: false,
 			hidden: true,
 			isPrivate: false,
+			isInternetVisible: false,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},

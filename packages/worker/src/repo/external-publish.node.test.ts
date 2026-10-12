@@ -402,6 +402,7 @@ test('locked package finishes checks then withholds published_commit unless allo
 		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		lockedAt: '2026-08-28T12:00:00.000Z',
 		createdAt: '2026-05-04T00:00:00.000Z',
 		updatedAt: '2026-05-04T00:00:00.000Z',

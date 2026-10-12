@@ -718,6 +718,8 @@ export type SavedPackageRow = {
 	has_skills: 0 | 1
 	hidden: 0 | 1
 	is_private: 0 | 1
+	/** Anonymous public app serving. Independent of forkable (`is_private`). */
+	is_internet_visible: 0 | 1
 	locked_at: string | null
 	created_at: string
 	updated_at: string
@@ -736,6 +738,11 @@ export type SavedPackageRecord = {
 	hasSkills: boolean
 	hidden: boolean
 	isPrivate: boolean
+	/**
+	 * When true, the package app may be served on the public internet after
+	 * capability approval. Independent of `isPrivate` (forkable/public source).
+	 */
+	isInternetVisible: boolean
 	lockedAt: string | null
 	createdAt: string
 	updatedAt: string

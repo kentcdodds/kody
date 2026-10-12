@@ -20,6 +20,7 @@ function packageDetail(
 		updatedAt: '2026-09-12T00:00:00.000Z',
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		hasCommunityListing: false,
 		listingAhead: null,
 		forkAhead: null,
@@ -69,4 +70,32 @@ test('owner details show No app when the package has no app', async () => {
 	expect(html).toContain('No app')
 	expect(html).not.toContain('data-testid="open-package-app"')
 	expect(html).not.toContain('Open Package App')
+})
+
+test('owner details expose independent forkable and internet-visible controls', async () => {
+	const html = await renderToString(
+		jsx(AccountPackageOwnerDetails, {
+			ownerUsername: 'kentcdodds',
+			packageDetail: packageDetail({
+				isPrivate: true,
+				isInternetVisible: false,
+				hasApp: true,
+			}),
+			lockInFlight: false,
+			viewerCanPublish: true,
+			viewerCanDelete: true,
+			viewerCanAdoptCommunityFork: false,
+			onToggleLock: () => {},
+			onPackagesPayload: () => {},
+		}),
+	)
+
+	expect(html).toContain('data-testid="package-visibility-controls"')
+	expect(html).toContain('data-testid="package-internet-visible-controls"')
+	expect(html).toContain('data-testid="package-make-public"')
+	expect(html).toContain('Make forkable')
+	expect(html).toContain('data-testid="package-internet-visible-on"')
+	expect(html).toContain('Make internet-visible')
+	expect(html).toContain('data-testid="package-approve-capabilities-link"')
+	expect(html).toContain('/@kentcdodds/demo-app/approve-capabilities')
 })

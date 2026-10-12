@@ -33,7 +33,8 @@ const savedPackageSelectColumns = `saved_packages.id, saved_packages.user_id, sa
 				saved_packages.kody_id, saved_packages.description, saved_packages.tags_json,
 				saved_packages.search_text, saved_packages.source_id, saved_packages.has_app,
 				saved_packages.has_skills,
-				saved_packages.hidden, saved_packages.is_private, saved_packages.locked_at,
+				saved_packages.hidden, saved_packages.is_private,
+				saved_packages.is_internet_visible, saved_packages.locked_at,
 				saved_packages.created_at, saved_packages.updated_at`
 
 const savedPackageCommunityProvenanceSelectColumns = `${savedPackageSelectColumns},
@@ -79,6 +80,10 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 			row['is_private'] === 1 ||
 			row['is_private'] === '1' ||
 			row['is_private'] === true,
+		isInternetVisible:
+			row['is_internet_visible'] === 1 ||
+			row['is_internet_visible'] === '1' ||
+			row['is_internet_visible'] === true,
 		lockedAt:
 			row['locked_at'] == null || String(row['locked_at']).trim() === ''
 				? null
@@ -151,9 +156,14 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
  */
 export async function insertSavedPackage(
 	db: D1Database,
-	row: Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> & {
+	row: Omit<
+		SavedPackageRow,
+		'created_at' | 'updated_at' | 'locked_at' | 'is_internet_visible'
+	> & {
 		created_at?: string
 		updated_at?: string
+		/** Defaults to 0 (private app serving). */
+		is_internet_visible?: 0 | 1
 	},
 	telemetry?: OnboardingFunnelEnv | null,
 	options?: { stamp?: boolean; actorUserId?: PersonId },
@@ -163,8 +173,9 @@ export async function insertSavedPackage(
 		.prepare(
 			`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, has_skills, hidden, is_private, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_id, has_app, has_skills, hidden, is_private,
+				is_internet_visible, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -179,6 +190,7 @@ export async function insertSavedPackage(
 			row.has_skills,
 			row.hidden ?? 0,
 			row.is_private ?? 1,
+			row.is_internet_visible ?? 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -209,6 +221,7 @@ export async function updateSavedPackage(
 		hasSkills?: boolean
 		hidden?: boolean
 		isPrivate?: boolean
+		isInternetVisible?: boolean
 	},
 ) {
 	const assignments: Array<string> = []
@@ -248,6 +261,9 @@ export async function updateSavedPackage(
 	}
 	if (input.isPrivate !== undefined) {
 		addAssignment('is_private', input.isPrivate ? 1 : 0)
+	}
+	if (input.isInternetVisible !== undefined) {
+		addAssignment('is_internet_visible', input.isInternetVisible ? 1 : 0)
 	}
 
 	addAssignment('updated_at', new Date().toISOString())

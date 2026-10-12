@@ -317,6 +317,7 @@ function plainRepoOwnerPackage(
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		hasCommunityListing: false,
 		listingAhead: null,
 		forkAhead: null,

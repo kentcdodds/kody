@@ -61,10 +61,18 @@ async function ensureSecretAuthorityTestSchema() {
 		has_skills INTEGER NOT NULL DEFAULT 0 CHECK (has_skills IN (0, 1)),
 		hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 		is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
+		is_internet_visible INTEGER NOT NULL DEFAULT 0,
 		locked_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)
+	try {
+		await runSql(
+			`ALTER TABLE saved_packages ADD COLUMN is_internet_visible INTEGER NOT NULL DEFAULT 0`,
+		)
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await runSql(`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,

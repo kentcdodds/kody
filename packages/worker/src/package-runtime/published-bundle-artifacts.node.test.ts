@@ -198,6 +198,7 @@ function makeRebuildInput(input: {
 			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
+			isInternetVisible: false,
 			lockedAt: null,
 			createdAt: '2026-04-30T00:00:00.000Z',
 			updatedAt: '2026-04-30T00:00:00.000Z',

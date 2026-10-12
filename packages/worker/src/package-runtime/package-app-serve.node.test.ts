@@ -140,6 +140,7 @@ function createFixture(options: FixtureOptions = {}) {
 		hasApp: true,
 		hidden: true,
 		isPrivate: true,
+		isInternetVisible: false,
 		createdAt: '2026-08-12T00:00:00.000Z',
 		updatedAt: '2026-08-12T00:00:00.000Z',
 	}

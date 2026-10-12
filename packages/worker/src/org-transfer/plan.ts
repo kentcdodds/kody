@@ -86,6 +86,8 @@ export type OrgTransferPlan = {
 
 const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'saved_packages',
+	// Kept empty: approvals for moved packages are orphan-deleted (re-approve).
+	'package_capability_approvals',
 	'user_repos',
 	'entity_sources',
 	'published_bundle_artifacts',
@@ -626,6 +628,26 @@ export function planOrgTransfer(
 			}
 		}
 		clashIf(table, moves[table], [keyColumn], (row) => text(row, keyColumn))
+	}
+
+	for (const row of source.package_capability_approvals) {
+		if (packageIds.has(text(row, 'package_id'))) {
+			orphan(
+				'package_capability_approvals',
+				row,
+				text(row, 'id'),
+				'internet-visible approval must be re-attested by the destination owner',
+				'delete',
+			)
+		} else {
+			orphan(
+				'package_capability_approvals',
+				row,
+				text(row, 'id'),
+				'package no longer exists',
+				'delete',
+			)
+		}
 	}
 
 	// Enablements and grants (org-keyed).
