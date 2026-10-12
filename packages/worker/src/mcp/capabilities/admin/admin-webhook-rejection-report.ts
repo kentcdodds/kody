@@ -65,7 +65,7 @@ const outputSchema = z.object({
 	truncated: z
 		.boolean()
 		.describe(
-			'True when a RunLog page cap cut an owner scan short; pages are newest-first, so narrow `since` for older windows. RunLog also keeps only the newest 2,000 runs per owner for 30 days.',
+			'True when a RunLog page cap cut an owner scan short. `since`/`until` are applied in RunLog (newest-first pages); RunLog also keeps only the newest 2,000 runs per owner for 30 days.',
 		),
 	totals: z.object({
 		owners: z.number().int().nonnegative(),

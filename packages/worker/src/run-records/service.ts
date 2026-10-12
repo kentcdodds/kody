@@ -529,6 +529,7 @@ export async function listRunRecords(input: {
 		workflowId: normalizeOptionalString(input.filter?.workflowId),
 		name: normalizeOptionalString(input.filter?.name),
 		since: normalizeOptionalString(input.filter?.since),
+		until: normalizeOptionalString(input.filter?.until),
 		errorTriage: input.filter?.errorTriage ?? null,
 		limit,
 		cursor: input.cursor ?? null,

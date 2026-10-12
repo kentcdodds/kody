@@ -302,6 +302,7 @@ type ListRunsInput = {
 	workflowId?: string | null
 	name?: string | null
 	since?: string | null
+	until?: string | null
 	errorTriage?: RunErrorTriageFilter | null
 	limit: number
 	cursor?: string | null
@@ -3197,6 +3198,10 @@ class RunLogBase extends DurableObject<Env> {
 		if (input.since) {
 			clauses.push('r.started_at >= ?')
 			params.push(input.since)
+		}
+		if (input.until) {
+			clauses.push('r.started_at < ?')
+			params.push(input.until)
 		}
 		const errorTriage = input.errorTriage ?? null
 		if (errorTriage === 'open') {

@@ -268,6 +268,8 @@ export type RunRecordFilter = {
 	name?: string | null
 	/** ISO 8601 lower bound on `startedAt`, inclusive. */
 	since?: string | null
+	/** ISO 8601 upper bound on `startedAt`, exclusive. */
+	until?: string | null
 	/**
 	 * Soft error-triage filter. Omit / `null` means no triage filter (all runs).
 	 * User-facing `runList` and Activity pass `open` by default.
