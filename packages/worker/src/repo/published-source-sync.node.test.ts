@@ -323,3 +323,35 @@ test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip'
 		expect.objectContaining({ force: true }),
 	)
 })
+
+test('syncPublishedSourceSnapshotOnly refuses to force-push when ancestry check throws', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(sourceRow)
+	setupRepoAccess()
+	mockModule.loopback = false
+	mockModule.git.push.mockReset()
+	mockModule.git.push.mockRejectedValueOnce(new Error('non-fast-forward'))
+	mockModule.git.resolveRef.mockResolvedValue('commit-unrelated-tip')
+	mockModule.git.isDescendent.mockRejectedValueOnce(new Error('missing object'))
+
+	await expect(
+		syncPublishedSourceSnapshotOnly({
+			env: createEnv(),
+			userId: ownerIdFromStored('user-1'),
+			baseUrl: 'https://kody.codes',
+			sourceId: 'source-1',
+			files: { 'package.json': '{"name":"@user/pkg"}\n' },
+			expectedPublishedCommit: 'commit-published',
+			commitMessage: 'codemod(0012): ancestry unknown',
+		}),
+	).rejects.toThrow(/refusing to force-push/i)
+
+	expect(
+		mockModule.git.push.mock.calls.some(
+			(call) =>
+				call[0] != null &&
+				typeof call[0] === 'object' &&
+				'force' in call[0] &&
+				(call[0] as { force?: boolean }).force === true,
+		),
+	).toBe(false)
+})

@@ -1071,6 +1071,69 @@ test('published-only revert does not require HEAD to match afterCommit', async (
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
+test('published-only revert skips when published tip is still at beforeCommit and HEAD drifted', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const pkg = {
+		...savedPackage('pkg-revert-locked-aligned-drift', {
+			kodyId: 'webhook-pkg',
+			sourceId: 'source-revert-locked-aligned-drift',
+		}),
+		lockedAt: '2026-10-12T00:00:00.000Z',
+	}
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-before-locked',
+			repoId: 'repo-revert-locked-aligned-drift',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-before-locked',
+	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after-locked')
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]?.status).toBe('applied')
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ promotePublished: false }),
+	)
+
+	// Owner moved HEAD after the locked aligned apply; published stays before.
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-owner-moved-head',
+	})
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-before-locked',
+			repoId: 'repo-revert-locked-aligned-drift',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.syncPublishedSourceSnapshotOnly.mockClear()
+	mocks.syncArtifactSourceSnapshot.mockClear()
+
+	const revert = await step(env, {
+		mode: 'revert',
+		codemodId: publishedOnlyCodemodId,
+		revertOfRunId: apply.runId,
+	})
+	expect(revert.items[0]?.status).toBe('skipped_drift')
+	expect(revert.items[0]?.error).toMatch(/pre-apply tip/i)
+	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
 test('published-only codemod revert of an aligned apply uses syncArtifactSourceSnapshot', async () => {
 	setupMocks()
 	const { env } = createEnv()

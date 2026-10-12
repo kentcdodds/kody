@@ -335,8 +335,12 @@ async function pushKodyPublishedRef(input: {
 				oid: remoteTip,
 				ancestor: input.expectedPublishedCommit,
 			})
-		} catch {
-			remoteIsDescendantOfExpected = false
+		} catch (ancestryError) {
+			// Fail closed: an unverified tip must not reach force-push.
+			throw new Error(
+				`Artifacts git push failed for ${input.remote} (${kodyPublishedRef}): could not verify remote tip ${remoteTip} lineage; refusing to force-push. ${getErrorMessage(ancestryError)}`,
+				{ cause: error },
+			)
 		}
 		if (remoteIsDescendantOfExpected) {
 			throw new Error(

@@ -1109,12 +1109,12 @@ async function processRevertStep(input: {
 									const publishedCommit = loaded.source.published_commit
 									const publishedStillAtAfter =
 										publishedCommit === priorItem.afterCommit
-									const publishedStillAtBefore =
-										publishedCommit === priorItem.beforeCommit
-									if (
-										publishedCommit == null ||
-										(!publishedStillAtAfter && !publishedStillAtBefore)
-									) {
+									// Require published tip still at afterCommit. A locked
+									// aligned apply leaves published at beforeCommit while
+									// HEAD holds the pending commit — if HEAD then drifted,
+									// published-only "revert" would no-op and falsely mark
+									// reverted while approve-publish can still promote it.
+									if (publishedCommit == null || !publishedStillAtAfter) {
 										result = emptyItemResult({
 											itemId,
 											userId: priorItem.userId,
@@ -1122,6 +1122,10 @@ async function processRevertStep(input: {
 											kodyId: priorItem.kodyId,
 											status: 'skipped_drift',
 											beforeCommit: priorItem.afterCommit,
+											error:
+												publishedCommit === priorItem.beforeCommit
+													? 'Published commit is still at the pre-apply tip while HEAD has moved; unlock/align before revert so a pending HEAD commit is not left publishable.'
+													: null,
 										})
 									} else {
 										const afterCommit = await syncPublishedSourceSnapshotOnly({
