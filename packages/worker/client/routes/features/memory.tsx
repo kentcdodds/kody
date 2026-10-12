@@ -25,6 +25,10 @@ const notes = {
 const originalWritingPreference = 'Lead with the decision. Keep updates short.'
 const updatedWritingPreference =
 	'Include the decision, the reason, and the next step.'
+const originalProjectDraft =
+	"We're moving ahead with the new design. Review starts Thursday."
+const updatedProjectDraft =
+	"We're moving ahead with the new design. The review feedback is solid. Next step: begin the review Thursday."
 
 export function MemoryFeature(handle: Handle) {
 	let nextAgent = true
@@ -118,10 +122,7 @@ export function MemoryFeature(handle: Handle) {
 									: 'Saved your writing preference in Kody.'}
 							</p>
 							{nextAgent && (
-								<p>
-									We're moving ahead with the new design. Review starts
-									Thursday.
-								</p>
+								<p>{updated ? updatedProjectDraft : originalProjectDraft}</p>
 							)}
 						</div>
 					</div>
