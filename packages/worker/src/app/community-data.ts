@@ -166,7 +166,11 @@ async function loadCommunityIndexDataUncached(
 		request,
 	)
 
-	const user = await viewerPromise
+	const user = await recordServerTiming(
+		'viewer-auth',
+		() => viewerPromise,
+		request,
+	)
 	const visibleListings = overview
 		? (cached.groups ?? []).flatMap((group) => group.listings)
 		: cached.listings
