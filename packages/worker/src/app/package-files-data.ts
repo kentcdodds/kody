@@ -35,7 +35,10 @@ import {
 	normalizePackageFilesPath,
 	type PackageFilesView,
 } from '#universal/package-files.ts'
-import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
+import {
+	readArtifactFileAtCommit,
+	readArtifactTreeAtCommit,
+} from '#worker/repo/artifact-file.ts'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { loadPackagePage } from '#app/package-page.ts'
@@ -583,8 +586,23 @@ export async function loadPlainRepoFilesData(input: {
 		commit: resolved.commit,
 		pinnedCommit: liveCommit,
 	})
+	// Plain repos are live-at-HEAD and usually have no publish KV snapshot.
+	// When the public tree path is empty, shallow-fetch the Artifacts commit.
+	let files = loaded.files
+	if (Object.keys(files).length === 0 && resolved.commit) {
+		try {
+			const tree = await readArtifactTreeAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: resolved.commit,
+			})
+			if (tree) files = tree
+		} catch {
+			files = {}
+		}
+	}
 	const view = buildPackageFilesView({
-		files: loaded.files,
+		files,
 		selectedPath: input.selectedPath,
 	})
 	if (!view) return null
@@ -619,10 +637,14 @@ export async function loadPlainRepoFilesData(input: {
 			kodyId: input.kodyId,
 			listingId: null,
 			listingIconCommit: null,
-			publishedCommit: source.indexed_commit ?? source.published_commit ?? null,
+			publishedCommit:
+				resolved.commit ??
+				source.indexed_commit ??
+				source.published_commit ??
+				null,
 		}),
 		viewedCommit: resolved.commit,
-		assetCommit: liveCommit,
+		assetCommit: resolved.commit ?? liveCommit,
 		mediaHref: view.contentPath
 			? getPackageRawHref({
 					username: input.username,
@@ -1017,9 +1039,22 @@ export async function loadPlainRepoFileRaw(input: {
 		commit: resolved.commit,
 		pinnedCommit: liveCommit,
 	})
+	let files = loaded.files
+	if (Object.keys(files).length === 0 && resolved.commit) {
+		try {
+			const tree = await readArtifactTreeAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: resolved.commit,
+			})
+			if (tree) files = tree
+		} catch {
+			files = {}
+		}
+	}
 	const media = await readPackageFileMediaBytes({
 		env: input.env,
-		files: loaded.files,
+		files,
 		filePath: input.selectedPath,
 		sourceRepoId: source.repo_id,
 		commit: resolved.commit,

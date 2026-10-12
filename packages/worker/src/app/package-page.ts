@@ -21,6 +21,7 @@ import {
 	resolvePackagePageUrl,
 } from '#worker/community/package-url.ts'
 import { isPlainRepoPackageShapedAtCommit } from '#mcp/capabilities/repo/plain-repo-package-shaped.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { getUserRepoByName } from '#worker/repo/user-repos.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -234,12 +235,25 @@ async function loadPlainRepoPage(input: {
 				isPrivate: true,
 			})
 		: false
+	let headCommit = iconCommit
+	if (!headCommit && source?.repo_id) {
+		try {
+			const head = await resolveCachedArtifactSourceHead(
+				input.env,
+				source.repo_id,
+				{ request: input.request },
+			)
+			headCommit = head.commit
+		} catch {
+			headCommit = null
+		}
+	}
 	const packageShaped =
 		viewerIsMember && source?.repo_id
 			? await isPlainRepoPackageShapedAtCommit({
 					env: input.env,
 					repoId: source.repo_id,
-					commit: iconCommit,
+					commit: headCommit,
 				})
 			: false
 	const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
