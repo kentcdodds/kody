@@ -17,6 +17,7 @@ import {
 	type PublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	createIsolatedArtifactRebuildRunner,
 	isolatedArtifactRebuildChunkConcurrency,
@@ -328,6 +329,47 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 	})
 }
 
+async function assertPublishedCommitUnchanged(input: {
+	env: Env
+	sourceId: string
+	userId: OwnerId
+	publishedCommit: string
+}) {
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
+	if (!source) {
+		throw new Error(
+			`Repo source "${input.sourceId}" was not found for this user.`,
+		)
+	}
+	const currentCommit = source.published_commit?.trim() || null
+	if (currentCommit !== input.publishedCommit) {
+		throw new Error(
+			`Published commit for source "${input.sourceId}" changed from "${input.publishedCommit}" to "${currentCommit ?? 'unpublished'}" before artifact rebuild; retry with the current commit.`,
+		)
+	}
+}
+
+async function resolveRebuildTargets(input: {
+	session: ReturnType<typeof repoSessionRpc>
+	repoSessionId?: string
+	sourceId: string
+	userId: OwnerId
+	publishedCommit: string
+	targets?: ReadonlyArray<PublishedPackageArtifactBuildTarget>
+}): Promise<ReadonlyArray<PublishedPackageArtifactBuildTarget>> {
+	if (input.targets) return input.targets
+	return await listTargetsOrThrow({
+		session: input.session,
+		repoSessionId: input.repoSessionId,
+		sourceId: input.sourceId,
+		userId: input.userId,
+		publishedCommit: input.publishedCommit,
+	})
+}
+
 async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	env: Env
 	rpcSessionId: string
@@ -336,18 +378,26 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	userId: OwnerId
 	publishedCommit: string
 	baseUrl: string
+	targets?: ReadonlyArray<PublishedPackageArtifactBuildTarget>
 	force?: boolean
 }) {
+	await assertPublishedCommitUnchanged({
+		env: input.env,
+		sourceId: input.sourceId,
+		userId: input.userId,
+		publishedCommit: input.publishedCommit,
+	})
 	const session = repoSessionRpc(input.env, input.rpcSessionId)
 	const isolatedRunner = createIsolatedArtifactRebuildRunner(input.env)
 
 	if (!isolatedRunner) {
-		const targets = await listTargetsOrThrow({
+		const targets = await resolveRebuildTargets({
 			session,
 			repoSessionId: input.repoSessionId,
 			sourceId: input.sourceId,
 			userId: input.userId,
 			publishedCommit: input.publishedCommit,
+			targets: input.targets,
 		})
 		await rebuildPublishedPackageArtifactsOnSession({
 			...input,
@@ -358,13 +408,15 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 
 	// List + skip before staging so already_published / repair resumes and
 	// unchanged prior-commit targets do not pay collectWorkspaceFiles + KV
-	// stage when nothing remains to rebuild.
-	const targets = await listTargetsOrThrow({
+	// stage when nothing remains to rebuild. Callers such as the importable
+	// backfill may pass a filtered target list to stay in scope.
+	const targets = await resolveRebuildTargets({
 		session,
 		repoSessionId: input.repoSessionId,
 		sourceId: input.sourceId,
 		userId: input.userId,
 		publishedCommit: input.publishedCommit,
+		targets: input.targets,
 	})
 
 	const { remaining, alreadyBuilt } = await filterTargetsNeedingRebuild({
@@ -379,6 +431,13 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 		...alreadyBuilt,
 	]
 	if (remaining.length === 0) return
+
+	await assertPublishedCommitUnchanged({
+		env: input.env,
+		sourceId: input.sourceId,
+		userId: input.userId,
+		publishedCommit: input.publishedCommit,
+	})
 
 	let stagingKey: string
 	try {
@@ -490,6 +549,8 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	userId: OwnerId
 	publishedCommit: string
 	baseUrl: string
+	/** When set, rebuild only these targets instead of every package target. */
+	targets?: ReadonlyArray<PublishedPackageArtifactBuildTarget>
 	force?: boolean
 }) {
 	const maxAttempts = publishedPackageArtifactRebuildRetryDelaysMs.length + 1

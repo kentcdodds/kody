@@ -9,6 +9,12 @@ const mockModule = vi.hoisted(() => ({
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	readPublishedBundleArtifact: vi.fn(),
 	readPublishedSourceSnapshot: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -63,6 +69,10 @@ const env = {
 
 test('external artifact rebuild reads the published snapshot once per rebuild and shares it across targets', async () => {
 	const cutoffs = ['2026-09-05T16:00:00.000Z', '2026-09-05T17:00:00.000Z']
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: sourceId,
+		published_commit: publishedCommit,
+	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({ ok: true })
 	mockModule.getPublishedBundleArtifactByIdentity.mockImplementation(
@@ -142,6 +152,10 @@ test('external artifact rebuild reads the published snapshot once per rebuild an
 })
 
 test('empty artifact target list skips the published snapshot read', async () => {
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: sourceId,
+		published_commit: publishedCommit,
+	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
 	mockModule.readPublishedSourceSnapshot.mockRejectedValue(
 		new Error('transient kv get failed'),
