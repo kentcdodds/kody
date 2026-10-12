@@ -122,9 +122,11 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   rejected for MCP `api`) and mints a normal `kody_at_` with default scopes that
   restore pre-P4 `local-execute` parity (`org:execute` + `org:read` +
   package/integration/secret/email/job/app/memory use scopes; migration 0092)
-  and `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
-  both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
-  surface sliding `expires_at` (the idle window).
+  plus `package:write` (plain-repo / package pushes) and `token:delete`
+  (self-revoke), and `created_via: cli-bootstrap` for the CLI to store. Existing
+  tokens are unchanged. Lifetime is required on both bootstrap mint and redeem.
+  CLI `whoami` / `GET /v1/tokens/current` surface sliding `expires_at` (the idle
+  window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.
