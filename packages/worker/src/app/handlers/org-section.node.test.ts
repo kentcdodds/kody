@@ -17,7 +17,7 @@ vi.mock('#app/profile-data.ts', () => ({
 	loadProfileData: (...args: Array<unknown>) => mocks.loadProfileData(...args),
 }))
 
-const { createOrgPackagesApiHandler } = await import('./org-section.ts')
+const { createOrgRepositoriesApiHandler } = await import('./org-section.ts')
 
 const adaId = 'person-ada'
 const bobId = 'person-bob'
@@ -62,8 +62,10 @@ function signInAs(personId: string, username: string) {
 }
 
 async function getPackages(env: Env, orgSlug: string) {
-	const request = new Request(`https://kody.test/@${orgSlug}/-/packages.json`)
-	return createOrgPackagesApiHandler(env).handler({
+	const request = new Request(
+		`https://kody.test/@${orgSlug}/-/repositories.json`,
+	)
+	return createOrgRepositoriesApiHandler(env).handler({
 		request,
 		params: { orgSlug },
 		url: new URL(request.url),

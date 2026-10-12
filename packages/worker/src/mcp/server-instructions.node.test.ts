@@ -11,11 +11,15 @@ import {
 const overlayHeader = `---
 User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`
 
-test('buildMcpServerInstructions appends the user overlay after the stub', () => {
+test('Kent-locked stub stays within the 300–600 character budget', () => {
+	expect(maxBaseMcpServerInstructionsChars).toBe(600)
 	expect(baseMcpServerInstructions.length).toBeGreaterThanOrEqual(300)
 	expect(baseMcpServerInstructions.length).toBeLessThanOrEqual(
 		maxBaseMcpServerInstructionsChars,
 	)
+})
+
+test('buildMcpServerInstructions appends the user overlay after the stub', () => {
 	const assembled = buildMcpServerInstructions('Prefer concise replies.')
 	expect(assembled.startsWith(baseMcpServerInstructions)).toBe(true)
 	expect(assembled).toContain(overlayHeader)

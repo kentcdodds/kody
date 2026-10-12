@@ -30,7 +30,7 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(ownHtml).toContain('Joined March 1, 2026')
 	expect(ownHtml).toContain('Workspace')
 	expect(ownHtml).toContain('data-testid="profile-workspace"')
-	expect(ownHtml).toContain('href="/@jane/-/packages"')
+	expect(ownHtml).toContain('href="/@jane/-/repositories"')
 	expect(ownHtml).toContain('Edit profile')
 	expect(ownHtml).toContain(`href="${routes.account.href()}"`)
 	expect(ownHtml).not.toContain('data-testid="profile-guest-cta"')
@@ -46,8 +46,8 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 		),
 	)
 	expect(renamedHtml).toContain('@jane-new')
-	expect(renamedHtml).toContain('href="/@jane/-/packages"')
-	expect(renamedHtml).not.toContain('href="/@jane-new/-/packages"')
+	expect(renamedHtml).toContain('href="/@jane/-/repositories"')
+	expect(renamedHtml).not.toContain('href="/@jane-new/-/repositories"')
 
 	const privateHtml = await renderToString(
 		renderProfileIdentity({

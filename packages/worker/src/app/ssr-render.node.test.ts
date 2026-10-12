@@ -642,7 +642,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Workspace sections"',
 		'>Workspace<',
 		'>@account-user<',
-		'href="/@account-user/-/packages"',
+		'href="/@account-user/-/repositories"',
 		'aria-label="Connected agents"',
 		'aria-label="MCP URL"',
 		'data-testid="account-connections-verify-note"',

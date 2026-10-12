@@ -22,7 +22,9 @@ import { type IconName } from '#universal/icon.tsx'
  * opens the person hub instead of a removed `/account/packages` page.
  */
 export function accountPackagesNavHref(orgSlug: string | null | undefined) {
-	return orgSlug ? orgResourcePath(orgSlug, 'packages') : routes.account.href()
+	return orgSlug
+		? orgResourcePath(orgSlug, 'repositories')
+		: routes.account.href()
 }
 
 function orgSectionHref(
@@ -67,7 +69,7 @@ export type AccountRailItem = {
 	description?: string
 	/**
 	 * When true, only an exact path match marks this item current. Used for a
-	 * team Overview that lands on `/@slug` so `/@slug/-/packages` does not
+	 * team Overview that lands on `/@slug` so `/@slug/-/repositories` does not
 	 * light it up.
 	 */
 	exact?: boolean

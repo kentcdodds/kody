@@ -14,7 +14,8 @@ The account rail ("Account sections") lists those pages, then a Workspace group
 that links the signup org's Overview, Repositories, Connections, MCP servers,
 Secrets, Jobs, and Memories. Those workspace pages (and Billing and the rest)
 sit on a separate "Workspace sections" rail under `/@<slug>/-/…`; Repositories
-is `/@<slug>/-/packages`, distinct from the public profile at `/@<slug>`. The
+is `/@<slug>/-/repositories`, distinct from the public profile at `/@<slug>`.
+Former `/@<slug>/-/packages` URLs 301 to `/repositories` (query preserved). The
 signup org's Overview (`/@<slug>/-/overview`) is a card for every workspace
 section; a team org's overview URL redirects to its home at `/@<slug>`. Both
 rails come from `account-rail.ts` and render through `AccountPageHeader` in
@@ -25,7 +26,7 @@ The site header has one avatar: the org switcher (`data-testid="org-switcher"`).
 Its popover lists orgs, then Create organization, an invites row when you have
 any, then a "Your account" group (Your profile, Account settings, Log out).
 Narrow viewports show the same rows in the menu panel. Own profile
-(`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/packages`)
+(`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/repositories`)
 beside Edit profile. A team org home lists **Workspace** above its management
 links.
 
@@ -41,16 +42,17 @@ members, teams, grants, and collaborators are `/@<slug>/-/settings`,
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Secrets, jobs, and the other org resource pages read
 `request.org.id`. Connections lists the viewer's own agents approved for that
-org (members and grant-only collaborators). Repositories (`/@<slug>/-/packages`)
-lists the packages a team org owns that the member can see (Owners see all,
-other roles see what their grants and teams give them); rows do not link to a
-package page yet. Team orgs have an Organization rail: Settings, Members, Teams
-(owners/members), Grants, Collaborators, and Billing (`/@<slug>/-/billing`,
-owners and billing users). The org home and `/account/organizations` also link
-into those sections. From a page with no org section (such as `/account`), an
-org row in the switcher or in `/account/organizations` opens that org's
-overview: the team home, or the signup org's `/@<slug>/-/overview`. Personal
-orgs keep Billing/Usage in the workspace rail's Organization group.
+org (members and grant-only collaborators). Repositories
+(`/@<slug>/-/repositories`) lists the packages a team org owns that the member
+can see (Owners see all, other roles see what their grants and teams give them);
+rows do not link to a package page yet. Team orgs have an Organization rail:
+Settings, Members, Teams (owners/members), Grants, Collaborators, and Billing
+(`/@<slug>/-/billing`, owners and billing users). The org home and
+`/account/organizations` also link into those sections. From a page with no org
+section (such as `/account`), an org row in the switcher or in
+`/account/organizations` opens that org's overview: the team home, or the signup
+org's `/@<slug>/-/overview`. Personal orgs keep Billing/Usage in the workspace
+rail's Organization group.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. `/account/...` resource pages 404, except

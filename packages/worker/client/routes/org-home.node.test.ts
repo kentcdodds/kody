@@ -21,7 +21,7 @@ test('org home lists every management section for a member', async () => {
 	expect(html).not.toContain('href="/@acme/-/billing"')
 	expect(html).toContain('href="/@acme/-/secrets"')
 	expect(html).toContain('href="/@acme/-/jobs"')
-	expect(html).toContain('href="/@acme/-/packages"')
+	expect(html).toContain('href="/@acme/-/repositories"')
 	expect(html).toContain('href="/@acme/-/connections"')
 	expect(html).not.toContain('Invite members and share access')
 })
@@ -64,7 +64,7 @@ test('org home hides management nav for collaborators', async () => {
 	// Grant-only collaborators open Connections via the share step; the
 	// workspace step (packages/jobs/secrets) 404s for them, so it stays hidden.
 	expect(html).toContain('href="/@acme/-/connections"')
-	expect(html).not.toContain('href="/@acme/-/packages"')
+	expect(html).not.toContain('href="/@acme/-/repositories"')
 	expect(html).not.toContain('href="/@acme/-/jobs"')
 	expect(html).not.toContain('href="/@acme/-/secrets"')
 	expect(html).not.toContain('Repositories, connections, secrets, and jobs')

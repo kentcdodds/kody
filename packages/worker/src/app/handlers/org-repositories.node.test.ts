@@ -12,7 +12,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mocks.readAuthenticatedAppUser(...args),
 }))
 
-const { createOrgPackagesApiHandler } = await import('./org-section.ts')
+const { createOrgRepositoriesApiHandler } = await import('./org-section.ts')
 
 const ownerId = 'person-owner'
 const memberId = 'person-member'
@@ -134,9 +134,9 @@ async function listAs(env: Env, personId: string, search = '') {
 		mcpUser: { userId: personId, username: personId },
 	})
 	const request = new Request(
-		`https://kody.test/@acme/-/packages.json${search}`,
+		`https://kody.test/@acme/-/repositories.json${search}`,
 	)
-	const response = await createOrgPackagesApiHandler(env).handler({
+	const response = await createOrgRepositoriesApiHandler(env).handler({
 		request,
 		params: { orgSlug: 'acme' },
 		url: new URL(request.url),

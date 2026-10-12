@@ -198,7 +198,7 @@ export const routes = route({
 	communityInstallApiPost: post('/community/:listingId/install.json'),
 	// Organization section pages under `/@:orgSlug/-/…` so they never collide
 	// with a package's canonical public URL at `/@:username/:kodyId`.
-	// `packages` and `webhooks` are index-only so package apps and ingress
+	// `repositories` and `webhooks` are index-only so package apps and ingress
 	// (`/@owner/packages/…`, `/@owner/webhooks/…`) stay put.
 	orgActivity: get('/@:orgSlug/-/activity(/*rest)'),
 	orgBilling: get('/@:orgSlug/-/billing'),
@@ -219,6 +219,9 @@ export const routes = route({
 	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
 	orgOverview: get('/@:orgSlug/-/overview'),
+	orgRepositories: get('/@:orgSlug/-/repositories'),
+	orgRepositoriesApi: get('/@:orgSlug/-/repositories.json'),
+	// Previous spelling of the repository list. 301 to `/repositories`.
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),
 	orgSecretProviders: get('/@:orgSlug/-/secret-providers(/*rest)'),

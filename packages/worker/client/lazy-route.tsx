@@ -275,7 +275,7 @@ registerPreloadPatterns(
 		routePattern(routes.orgMcpServers),
 		routePattern(routes.orgMemories),
 		routePattern(routes.orgOverview),
-		routePattern(routes.orgPackages),
+		routePattern(routes.orgRepositories),
 		routePattern(routes.orgSecretProviders),
 		routePattern(routes.orgSecrets),
 		routePattern(routes.orgValues),
