@@ -21,6 +21,14 @@ const publicRoutes: RouteScenario[] = [
 		},
 	},
 	{
+		path: '/features',
+		ready: async (page) => {
+			await expect(
+				page.getByRole('group', { name: 'Memory example' }),
+			).toBeVisible()
+		},
+	},
+	{
 		path: '/login',
 		// signup-gateway owns this invalid aria-pressed link. Keep the rest of
 		// the login page covered until that sibling track lands its fix.
