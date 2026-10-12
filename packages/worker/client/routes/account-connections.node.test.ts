@@ -517,7 +517,7 @@ test('workspace rail for a team organization matches the personal section shape'
 			group.items.map((item) => item.href),
 		]),
 	).toEqual([
-		[null, ['/@acme/-/overview']],
+		[null, ['/@acme']],
 		[
 			'Build',
 			[
@@ -631,6 +631,21 @@ test('workspace rail for a team organization matches the personal section shape'
 	expect(
 		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
 	).toEqual([])
+	// Team Overview is the org home; exact match so section pages stay off.
+	const teamOverview = teamOwner
+		.flatMap((group) => group.items)
+		.find((item) => item.label === 'Overview')
+	expect(teamOverview?.href).toBe('/@acme')
+	expect(teamOverview?.exact).toBe(true)
+	expect(teamOverview && isAccountNavItemActive(teamOverview, '/@acme')).toBe(
+		true,
+	)
+	expect(
+		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/packages'),
+	).toBe(false)
+	expect(
+		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/overview'),
+	).toBe(true)
 })
 
 test('account rail org slug prefers the path org over username', () => {

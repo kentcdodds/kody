@@ -65,6 +65,12 @@ export type AccountRailItem = {
 	alsoActiveFor?: ReadonlyArray<string>
 	/** One line for the workspace overview card. */
 	description?: string
+	/**
+	 * When true, only an exact path match marks this item current. Used for a
+	 * team Overview that lands on `/@slug` so `/@slug/-/packages` does not
+	 * light it up.
+	 */
+	exact?: boolean
 }
 
 export type AccountRailGroup = {
@@ -140,9 +146,32 @@ export function accountRailGroups(input: {
 	]
 }
 
-function overviewRailItem(orgSlug: string | null | undefined): AccountRailItem {
+function overviewRailItem(
+	orgSlug: string | null | undefined,
+	personal = true,
+): AccountRailItem {
+	if (!orgSlug) {
+		return {
+			href: routes.account.href(),
+			label: 'Overview',
+			icon: 'home',
+			description: 'Every section this workspace owns, one click away.',
+		}
+	}
+	// Team orgs already use `/@slug` as their overview (the server redirects
+	// `/-/overview` there). Link straight to the home so a refresh keeps it.
+	if (!personal) {
+		return {
+			href: routes.profile.href({ username: orgSlug }),
+			label: 'Overview',
+			icon: 'home',
+			description: 'Every section this workspace owns, one click away.',
+			exact: true,
+			alsoActiveFor: [orgOverviewPath(orgSlug)],
+		}
+	}
 	return {
-		href: orgSlug ? orgOverviewPath(orgSlug) : routes.account.href(),
+		href: orgOverviewPath(orgSlug),
 		label: 'Overview',
 		icon: 'home',
 		description: 'Every section this workspace owns, one click away.',
@@ -417,7 +446,9 @@ export function workspaceRailGroups(input: {
 		: [...teamOrgManagementItems({ orgSlug, role }), usageRailItem()]
 
 	return [
-		...(orgSlug ? [{ label: null, items: [overviewRailItem(orgSlug)] }] : []),
+		...(orgSlug
+			? [{ label: null, items: [overviewRailItem(orgSlug, personal)] }]
+			: []),
 		...workspaceResourceGroups(orgSlug),
 		{ label: 'Organization', items: organizationItems },
 	]
@@ -431,9 +462,19 @@ function matchesRailPath(itemPath: string, currentPath: string) {
 }
 
 export function isAccountNavItemActive(
-	item: Pick<AccountRailItem, 'href' | 'alsoActiveFor'>,
+	item: Pick<AccountRailItem, 'href' | 'alsoActiveFor' | 'exact'>,
 	currentPath: string,
 ) {
+	const normalized =
+		currentPath.length > 1 ? currentPath.replace(/\/+$/, '') : currentPath
+	if (item.exact) {
+		const href =
+			item.href.length > 1 ? item.href.replace(/\/+$/, '') : item.href
+		if (normalized === href) return true
+		return (item.alsoActiveFor ?? []).some((path) =>
+			matchesRailPath(path, currentPath),
+		)
+	}
 	return [item.href, ...(item.alsoActiveFor ?? [])].some((path) =>
 		matchesRailPath(path, currentPath),
 	)

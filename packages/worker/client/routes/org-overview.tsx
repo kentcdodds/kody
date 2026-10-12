@@ -31,8 +31,18 @@ export function OrgOverviewRoute(handle: Handle) {
 		const slug = parseOrgOverviewPath(pathname)?.slug ?? null
 		const session = readAppSession(handle)?.session ?? null
 		const org = session?.organizations?.find((entry) => entry.slug === slug)
-		const personal = org?.personal ?? true
-		const role = org?.role ?? (personal ? ('owner' as const) : null)
+		// Same stale-list fallback as pageRail: an unknown slug that is not the
+		// signup username is treated as a team member, not a personal owner.
+		const personal =
+			org?.personal ?? (slug !== null && slug === (session?.username ?? null))
+		const role =
+			org !== undefined
+				? org.role
+				: personal
+					? ('owner' as const)
+					: slug
+						? ('member' as const)
+						: null
 		// Same section cards for personal and team. The server still redirects a
 		// team overview URL to `/@slug`; this client path covers in-app hops.
 		const groups = workspaceRailGroups({

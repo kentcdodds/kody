@@ -145,6 +145,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		).toBeVisible()
 	}
 	await expect(
+		teamRail.getByRole('link', { name: 'Overview', exact: true }),
+	).toHaveAttribute('href', `/@pinned-${runId}`)
+	await expect(
 		teamRail.getByRole('link', { name: 'MCP servers', exact: true }),
 	).toHaveAttribute('href', `/@pinned-${runId}/-/mcp-servers`)
 	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
