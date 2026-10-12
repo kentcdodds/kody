@@ -11,12 +11,18 @@ import {
 	capabilitySetsEqual,
 	type CapabilitySet,
 } from './capability-set.ts'
+import {
+	emptyDependencySnapshot,
+	serializeDependencySnapshot,
+	type PackageDependencySnapshot,
+} from './dependency-snapshot.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 export type CapabilityApprovalSummary = {
 	capabilitySet: CapabilitySet
+	dependencySnapshot: PackageDependencySnapshot | null
 	publishedCommit: string | null
 	latestApproval: PackageCapabilityApprovalRecord | null
 	/** Approval row for the current fingerprint, if any (not necessarily latest). */
@@ -62,6 +68,7 @@ export async function loadCapabilityApprovalSummary(input: {
 		])
 		return {
 			capabilitySet,
+			dependencySnapshot: null,
 			publishedCommit: null,
 			latestApproval,
 			matchingApproval: null,
@@ -70,13 +77,14 @@ export async function loadCapabilityApprovalSummary(input: {
 		}
 	}
 
-	const capabilitySet = await computePackageCapabilitySet({
+	const computed = await computePackageCapabilitySet({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
 		packageId: input.savedPackage.id,
 		packageKodyId: input.savedPackage.kodyId,
 		sourceId: input.savedPackage.sourceId,
 		requestUrl: input.requestUrl,
+		publishedCommit,
 	})
 
 	const matchingApproval = await findPackageCapabilityApprovalByFingerprint(
@@ -84,12 +92,13 @@ export async function loadCapabilityApprovalSummary(input: {
 		{
 			packageId: input.savedPackage.id,
 			ownerUserId: input.ownerUserId,
-			fingerprint: capabilitySet.fingerprint,
+			fingerprint: computed.capabilitySet.fingerprint,
 		},
 	)
 
 	return {
-		capabilitySet,
+		capabilitySet: computed.capabilitySet,
+		dependencySnapshot: computed.dependencySnapshot,
 		publishedCommit,
 		latestApproval,
 		matchingApproval,
@@ -144,6 +153,18 @@ export async function approvePackageCapabilitySet(input: {
 		},
 	)
 	const now = new Date().toISOString()
+	const dependencySnapshotJson =
+		input.dependencySnapshotJson ??
+		(summary.dependencySnapshot
+			? serializeDependencySnapshot(summary.dependencySnapshot)
+			: serializeDependencySnapshot(
+					emptyDependencySnapshot({
+						packageId: input.savedPackage.id,
+						kodyId: input.savedPackage.kodyId,
+						sourceId: input.savedPackage.sourceId,
+						publishedCommit: summary.publishedCommit,
+					}),
+				))
 	const approval =
 		existing ??
 		(await insertPackageCapabilityApproval(input.env.APP_DB, {
@@ -153,7 +174,7 @@ export async function approvePackageCapabilitySet(input: {
 			published_commit: summary.publishedCommit,
 			fingerprint: summary.capabilitySet.fingerprint,
 			capability_set_json: JSON.stringify(summary.capabilitySet.entries),
-			dependency_snapshot_json: input.dependencySnapshotJson ?? '{}',
+			dependency_snapshot_json: dependencySnapshotJson,
 			approved_by_user_id: input.actorUserId,
 			approved_at: now,
 		}))

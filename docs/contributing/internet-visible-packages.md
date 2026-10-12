@@ -10,7 +10,11 @@ public / `is_private = 0` community listing + anonymous git read).
 
 Either, both, or neither. Enabling internet-visible requires the owner to
 approve a one-page credential and capability summary (stable credential ids,
-hosts, storage). Secret values never appear on that page or in package code.
+hosts, storage) for the **resolved dependency tree** (root + transitive `kody:@`
+packages). Approval persists a lockfile-like dependency snapshot with the
+fingerprint. Secret values never appear on that page or in package code. Regular
+packages keep floating on current `published_commit`; only internet-visible
+approvals pin the snapshot (ADR 0069, proposed).
 
 ## ADR conflict
 

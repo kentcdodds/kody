@@ -132,6 +132,7 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: null,
 		publishedCommit: 'deadbeef',
 		latestApproval: null,
 		matchingApproval: null,
@@ -169,6 +170,16 @@ test('turning on internet-visible with matching approval activates the flag', as
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: {
+			version: 1,
+			root: {
+				packageId: 'pkg-1',
+				kodyId: 'notes',
+				sourceId: 'source-1',
+				publishedCommit: 'deadbeef',
+			},
+			dependencies: [],
+		},
 		publishedCommit: 'deadbeef',
 		latestApproval: { fingerprint: 'other' },
 		matchingApproval: {
