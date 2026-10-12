@@ -559,6 +559,44 @@ test('user-scoped rotation skips endpoints whose package owns the same secretNam
 	expect(endpoint?.hmacVerificationSecretEncrypted).toBeTruthy()
 })
 
+test('dropping secretName clears declared tracking so leftover name rotates cannot rearm previous', async () => {
+	const { env, userId, record, previousPlaintext } = await seededEndpointEnv()
+	const { secretName: _secretName, ...withoutName } = stripeVerification
+	const secrets = await resolveSecrets({
+		env,
+		userId,
+		endpoint: record,
+		verification: withoutName,
+		now: new Date('2026-07-24T12:00:00.000Z'),
+	})
+	expect(secrets.map((secret) => secret.source)).toEqual(['stored'])
+	expect(secrets.map((secret) => secret.value)).not.toContain(previousPlaintext)
+	const cleared = await getWebhookEndpointByIdForUser({
+		db: env.APP_DB,
+		userId,
+		endpointId: record.id,
+	})
+	expect(cleared?.hmacSecretName).toBeNull()
+	expect(cleared?.hmacVerificationSecretEncrypted).toBeNull()
+	expect(cleared?.previousHmacSecretEncrypted).toBeNull()
+
+	const updated = await rotateWebhookHmacSecretsForSecretValueChange({
+		env,
+		userId,
+		secretName: 'stripeWebhookSecretCancelFarewell',
+		previousPlaintext,
+		nextPlaintext: 'stripe-signing-secret-v2',
+		now: new Date('2026-07-24T12:30:00.000Z'),
+	})
+	expect(updated).toBe(0)
+	const afterRotate = await getWebhookEndpointByIdForUser({
+		db: env.APP_DB,
+		userId,
+		endpointId: record.id,
+	})
+	expect(afterRotate?.previousHmacSecretEncrypted).toBeNull()
+})
+
 test('secretName rename records previous identity and accepts the old value within grace', async () => {
 	const { env, userId, record, previousPlaintext } = await seededEndpointEnv()
 	const renamedAt = new Date('2026-07-24T12:00:00.000Z')

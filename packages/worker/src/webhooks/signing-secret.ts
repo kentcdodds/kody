@@ -15,7 +15,7 @@ import {
 	decryptWebhookVerificationSnapshot,
 	reconcileWebhookHmacVerificationRotation,
 } from './hmac-rotation.ts'
-import { clearWebhookEndpointPreviousHmacSecret } from './repo.ts'
+import { setWebhookEndpointHmacVerificationState } from './repo.ts'
 import {
 	isWebhookPreviousHmacLive,
 	type WebhookEndpointRecord,
@@ -112,17 +112,27 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 			secrets.push({ value: declared, source: 'declared' })
 		}
 	} else if (
-		endpoint.previousHmacSecretEncrypted &&
-		!isWebhookPreviousHmacLive(endpoint, now)
+		endpoint.hmacSecretName ||
+		endpoint.hmacVerificationSecretEncrypted ||
+		endpoint.previousHmacSecretEncrypted
 	) {
-		await clearWebhookEndpointPreviousHmacSecret({
+		// Package-owned HMAC (no secretName): drop last-seen declared tracking
+		// so a later rotate of the leftover name cannot rearm previous_*, and
+		// stop offering any prior named-secret grace under this auth model.
+		const cleared = await setWebhookEndpointHmacVerificationState({
 			db: input.env.APP_DB,
 			userId: endpoint.userId,
 			endpointId: endpoint.id,
-			previousHmacSecretEncrypted: endpoint.previousHmacSecretEncrypted,
+			hmacSecretName: null,
+			hmacVerificationSecretEncrypted: null,
+			previousHmacSecretName: null,
+			previousHmacSecretEncrypted: null,
+			previousHmacSecretExpiresAt: null,
 		})
-		endpoint = {
+		endpoint = cleared ?? {
 			...endpoint,
+			hmacSecretName: null,
+			hmacVerificationSecretEncrypted: null,
 			previousHmacSecretName: null,
 			previousHmacSecretEncrypted: null,
 			previousHmacSecretExpiresAt: null,
