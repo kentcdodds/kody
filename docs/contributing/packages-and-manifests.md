@@ -690,11 +690,13 @@ Package source is edited and published through repo-backed flows.
 ## External Artifacts pushes
 
 Saved package source repos are real Cloudflare Artifacts git repositories.
-`packageGetGitRemote` mints a short-lived read or write token for the canonical
-source repo and returns a plain remote URL, `git_author` (the signed-in Kody
-account), and setup commands that use `http.extraHeader` for secret-bearing
-credentials and set local git `user.email` / `user.name` from that account
-identity.
+`packageGetGitRemote` mints a short-lived Artifacts token for the canonical
+source repo (defaults to **write** when you have write access, otherwise
+**read**; explicit `scope` is honored) and returns a plain remote URL,
+`git_author` (the signed-in Kody account), and setup commands that use
+`http.extraHeader` for secret-bearing credentials and set local git `user.email`
+/ `user.name` from that account identity. Pushing with a read remote fails with:
+`this remote is read-only; request scope: 'write'`.
 
 After a direct `git push`, `packagePublishExternalPush` resolves the package's
 default-branch HEAD, opens a transient repo session checkout at that commit, and

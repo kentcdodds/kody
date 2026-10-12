@@ -20,7 +20,7 @@ you want runtime surfaces (exports, apps, jobs, webhooks).
 | `repoList`                       | List plain repos from D1 (`user_repos`); no live Artifacts reads.                                                                                                                                         |
 | `repoGet`                        | One repo by id or name, live default-branch HEAD, `package_shaped` hint.                                                                                                                                  |
 | `repoDelete`                     | Delete `user_repos`, `entity_sources`, and Artifacts repo (best-effort).                                                                                                                                  |
-| `repoGetGitRemote`               | Short-lived git remote; write pushes are live at HEAD (no publish reconcile).                                                                                                                             |
+| `repoGetGitRemote`               | Short-lived git remote (defaults to write when you can write, else read). Write pushes are live at HEAD (no publish reconcile).                                                                           |
 | `repoPromoteToPackage`           | Full publish checks + saved-package projection when root `package.json` exists at HEAD.                                                                                                                   |
 | `repoOpenSession` + session lane | File-level editing (`repoEditFiles`, `repoApplyPatch`, `repoCommit`, `repoStatus`, `repoDiff`, `repoLog`, `repoRestore`, `repoRunChecks`, `repoPublishSession`, …) with `target: { kind: "repo", name }`. |
 
@@ -37,11 +37,15 @@ discovery.
 
 ## Git lane
 
-`repoGetGitRemote` mints a short-lived git remote (read or write) that points at
-Kody's smart-HTTP proxy (`/git/sources/{source_id}.git`), which forwards to
-Cloudflare Artifacts with the minted bearer token. Pass exactly one of `repo_id`
-or `name`. Open API / CLI: prefer `POST /v1/repos/git-remote` with a JSON body
-(`name` or `repo_id`) so clients do not need a path id;
+`repoGetGitRemote` mints a short-lived git remote that points at Kody's
+smart-HTTP proxy (`/git/sources/{source_id}.git`), which forwards to Cloudflare
+Artifacts with the minted bearer token. When `scope` is omitted, it defaults to
+**write** if you have org-wide write access, otherwise **read**. Explicit
+`scope` is honored; requesting write without write access is denied with
+guidance. A read remote rejects push with:
+`this remote is read-only; request scope: 'write'`. Pass exactly one of
+`repo_id` or `name`. Open API / CLI: prefer `POST /v1/repos/git-remote` with a
+JSON body (`name` or `repo_id`) so clients do not need a path id;
 `POST /v1/repos/{repo_id}/git-remote` still works, and the `{repo_id}` segment
 accepts a UUID or the repo name. Concurrent push lock contention from Artifacts
 is translated to HTTP **503** with `Retry-After` and the body

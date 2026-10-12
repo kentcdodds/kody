@@ -1,8 +1,12 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	AuthorizationError,
 	authorize,
-	authorizePackageWrite,
+	authorizeOrgWide,
+	checkOrgWide,
+	checkPermission,
+	computeEffectivePermissions,
 	denyProfileBoundPackageCreate,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
@@ -35,6 +39,11 @@ import {
 } from '#worker/repo/artifacts.ts'
 import { markEntitySourcePendingExternalReconcile } from '#worker/repo/entity-sources.ts'
 import {
+	enhanceGitRemoteReadDenial,
+	enhanceGitRemoteWriteDenial,
+	pickGitRemoteAccessScope,
+} from '#worker/repo/git-remote-scope.ts'
+import {
 	assertPublishedPackageSourceRepoHead,
 	assertRestorablePackageSourceSnapshot,
 } from '#worker/repo/source-safety-policy.ts'
@@ -59,7 +68,12 @@ const getGitRemoteInputSchema = z.object({
 		.describe(
 			`Package description used when \`create: true\` registers a new stub package. At most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline). Ignored for existing packages.`,
 		),
-	scope: z.enum(['read', 'write']).default('write'),
+	scope: z
+		.enum(['read', 'write'])
+		.optional()
+		.describe(
+			"Access scope for the minted Artifacts token. When omitted, defaults to write if you have write access to the package, otherwise read. Explicit scope is honored; requesting write without write access is denied. A read remote rejects push with: this remote is read-only; request scope: 'write'.",
+		),
 	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
 })
 
@@ -89,7 +103,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 		name: 'packageGetGitRemote',
 		orgPermission: 'package:read',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new `@scope/leaf` name (or the name leaf) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer the scoped name for existing packages; use `package_id` only when the name is not known. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
+			"Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory. When scope is omitted, defaults to write if you have write access to the package, otherwise read. Pass scope explicitly to force read or write; requesting write without write access is denied with guidance (use scope: 'read', ask an Owner for a grant, or communityFork a public package). A read remote rejects push with: this remote is read-only; request scope: 'write'. Pass `create: true` with a new `@scope/leaf` name (or the name leaf) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer the scoped name for existing packages; use `package_id` only when the name is not known. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.",
 		keywords: [
 			'package',
 			'create',
@@ -110,17 +124,15 @@ export const getGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const request = requireMcpRequest(ctx.callerContext)
 			const authorizeCtx = {
 				env: ctx.env,
-				request: ctx.callerContext.request,
-			}
-			if (args.scope === 'write') {
-				await authorize(authorizeCtx, 'package:write')
+				request,
 			}
 			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				request: requireMcpRequest(ctx.callerContext),
+				request,
 			})
 			const requestedKodyId =
 				args.kody_id === undefined || args.kody_id.trim() === ''
@@ -130,7 +142,12 @@ export const getGitRemoteCapability = defineDomainCapability(
 							ownerScope: owner.ownerScope,
 							action: args.create ? 'create' : 'resolve',
 						})
+			const access = await computeEffectivePermissions({
+				env: ctx.env,
+				request,
+			})
 			let created = false
+			let scope: 'read' | 'write' | undefined
 			if (args.create) {
 				if (requestedKodyId === undefined || args.package_id !== undefined) {
 					throw new McpCallerError(
@@ -145,6 +162,40 @@ export const getGitRemoteCapability = defineDomainCapability(
 				if (!existing) {
 					await authorize(authorizeCtx, 'package:create')
 					await denyProfileBoundPackageCreate(authorizeCtx)
+					// New packages have no resource grants yet — mint access is
+					// org-wide / owner only. Authorize the mint scope before the
+					// stub exists so a denial does not leave an orphan package.
+					const canWriteNew = checkOrgWide(access, 'package:write').allowed
+					const canReadNew =
+						canWriteNew || checkOrgWide(access, 'package:read').allowed
+					scope = pickGitRemoteAccessScope({
+						requested: args.scope,
+						canWrite: canWriteNew,
+					})
+					const pendingLabel = `package @${owner.ownerScope}/${requestedKodyId}`
+					try {
+						if (scope === 'write') {
+							await authorizeOrgWide(authorizeCtx, 'package:write')
+						} else {
+							await authorizeOrgWide(authorizeCtx, 'package:read')
+						}
+					} catch (error) {
+						if (error instanceof AuthorizationError) {
+							throw scope === 'write'
+								? enhanceGitRemoteWriteDenial({
+										error,
+										resourceLabel: pendingLabel,
+										operation: 'packageGetGitRemote',
+										canRead: canReadNew,
+									})
+								: enhanceGitRemoteReadDenial({
+										error,
+										resourceLabel: pendingLabel,
+										operation: 'packageGetGitRemote',
+									})
+						}
+						throw error
+					}
 					await createStubSavedPackage({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -165,28 +216,60 @@ export const getGitRemoteCapability = defineDomainCapability(
 						kody_id: requestedKodyId,
 					},
 				})
-			// denyProfileBoundPackageCreate above stops a profile-bound credential
-			// before the stub exists. An existing package needs the scope's
-			// permission on that package, not just somewhere in the org.
+			const pkg = { id: packageId, userId, label: name }
+			const resource = packageResource(pkg)
+			const resourceLabel = `package ${name}`
 			if (!created) {
-				const pkg = { id: packageId, userId, label: name }
-				if (args.scope === 'write') {
-					await authorizePackageWrite(authorizeCtx, pkg)
-				} else {
-					await authorize(authorizeCtx, 'package:read', packageResource(pkg))
+				// Existing package: mint access is resource-scoped (profiles/grants).
+				const canWrite = checkPermission(
+					access,
+					'package:write',
+					resource,
+				).allowed
+				const canRead =
+					canWrite || checkPermission(access, 'package:read', resource).allowed
+				scope = pickGitRemoteAccessScope({
+					requested: args.scope,
+					canWrite,
+				})
+				try {
+					if (scope === 'write') {
+						await authorize(authorizeCtx, 'package:write', resource)
+					} else {
+						await authorize(authorizeCtx, 'package:read', resource)
+					}
+				} catch (error) {
+					if (error instanceof AuthorizationError) {
+						throw scope === 'write'
+							? enhanceGitRemoteWriteDenial({
+									error,
+									resourceLabel,
+									operation: 'packageGetGitRemote',
+									canRead,
+								})
+							: enhanceGitRemoteReadDenial({
+									error,
+									resourceLabel,
+									operation: 'packageGetGitRemote',
+								})
+					}
+					throw error
 				}
+			}
+			if (scope === undefined) {
+				throw new Error('packageGetGitRemote failed to resolve mint scope.')
 			}
 			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,
 				source,
 				operation: 'packageGetGitRemote',
 				accessToken: {
-					scope: args.scope,
+					scope,
 					ttlSeconds: args.ttl_seconds,
 				},
 			})
 			let sourceHead: Awaited<typeof headPromise>
-			if (args.scope === 'write') {
+			if (scope === 'write') {
 				const [snapshotResult, headResult] = await Promise.allSettled([
 					assertRestorablePackageSourceSnapshot({
 						env: ctx.env,
@@ -215,7 +298,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 					'packageGetGitRemote failed to mint an artifact access token.',
 				)
 			}
-			if (args.scope === 'write') {
+			if (scope === 'write') {
 				await markEntitySourcePendingExternalReconcile(ctx.env.APP_DB, {
 					id: source.id,
 					userId: owner.ownerUserId,
@@ -224,6 +307,20 @@ export const getGitRemoteCapability = defineDomainCapability(
 			}
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
+			const setupCommands = [
+				`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(sourceHead.remote)} ${shellQuote(cloneDirectory)}`,
+				`cd ${shellQuote(cloneDirectory)}`,
+				...gitAuthorSetupCommands(gitAuthor),
+				`git remote add kody ${shellQuote(sourceHead.remote)}`,
+				`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
+				`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
+				`git -c http.extraHeader=${shellQuote(gitExtraHeader)} fetch kody 'refs/notes/*:refs/notes/*'`,
+			]
+			if (scope === 'write') {
+				setupCommands.push(
+					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(sourceHead.defaultBranch)}`,
+				)
+			}
 			return {
 				package_id: packageId,
 				kody_id: kodyId,
@@ -235,19 +332,10 @@ export const getGitRemoteCapability = defineDomainCapability(
 					token: token.plaintext,
 				}),
 				git_extra_header: gitExtraHeader,
-				scope: args.scope,
+				scope,
 				expires_at: token.expiresAt,
 				git_author: gitAuthor,
-				setup_commands: [
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(sourceHead.remote)} ${shellQuote(cloneDirectory)}`,
-					`cd ${shellQuote(cloneDirectory)}`,
-					...gitAuthorSetupCommands(gitAuthor),
-					`git remote add kody ${shellQuote(sourceHead.remote)}`,
-					`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
-					`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} fetch kody 'refs/notes/*:refs/notes/*'`,
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(sourceHead.defaultBranch)}`,
-				],
+				setup_commands: setupCommands,
 			}
 		},
 	},
