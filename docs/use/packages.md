@@ -156,13 +156,22 @@ into are described in
 ```
 
 - Slot names start with a letter and use letters, numbers, `.`, `_`, or `-` (max
-  64).
-- `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
+  64). Prefer naming a slot after its provider (`github`, `resend`); publish
+  adds an informational note for a key that is not a provider slug
+  (`^[a-z0-9-]+$`) and never fails for it.
+- `kind` is `secret`, `oauth`, `mcp`, or one of the opt-in types `url`, `login`,
+  and `signing`. `provider` is optional and defaults to the key; a second
+  account from the same provider gets its own key with an explicit `provider`.
   `description` says what the slot is for. `multiple: true` means the package
-  picks among several accounts.
+  uses several accounts at once.
 - Publish rejects any other key or a missing field and names the slot. If a
   later rule rejects a slot in a version that is already published, the package
   still loads with its other slots.
+- Each publish stores the package's needs closure: its own slots plus those of
+  the packages it statically imports through `kody:@`, as they were at this
+  publish. A key that the package and a dependency declare with a different
+  `kind` or `provider` fails the publish and names both; give one a different
+  key.
 - Slots take no `placement`. Publish rejects one with a message to remove it.
   Published versions that include it load with it ignored. The fetch gateway
   fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request

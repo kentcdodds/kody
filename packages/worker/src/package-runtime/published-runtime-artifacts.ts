@@ -8,6 +8,8 @@ export const bundleArtifactVersion = 1
 const sourceSnapshotPrefix = 'source-snapshot'
 const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
+const credentialNeedsVersion = 1
+const credentialNeedsPrefix = 'credential-needs'
 
 /**
  * `app` is the Worker fetch bundle loaded into the package-app isolate;
@@ -227,6 +229,38 @@ export function buildPublishedSourceManifestSnapshotKvKey(input: {
 	publishedCommit: string
 }) {
 	return `${sourceManifestSnapshotPrefix}:v${sourceManifestSnapshotVersion}:${input.sourceId}:${input.publishedCommit}`
+}
+
+/** A package's credential needs closure at one publish (ADR 0068). */
+export function buildPublishedCredentialNeedsKvKey(input: {
+	sourceId: string
+	publishedCommit: string
+}) {
+	return `${credentialNeedsPrefix}:v${credentialNeedsVersion}:${input.sourceId}:${input.publishedCommit}`
+}
+
+export async function writePublishedCredentialNeeds(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+	needs: unknown
+}) {
+	await getBundleArtifactsKv(input.env).put(
+		buildPublishedCredentialNeedsKvKey(input),
+		JSON.stringify(input.needs),
+	)
+}
+
+/** The stored closure as written, or null when that publish stored none. */
+export async function readPublishedCredentialNeeds(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+}): Promise<unknown> {
+	return await getBundleArtifactsKv(input.env).get(
+		buildPublishedCredentialNeedsKvKey(input),
+		'json',
+	)
 }
 
 export function buildPublishedBundleArtifactKvKey(input: {

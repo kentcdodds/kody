@@ -91,6 +91,7 @@ import {
 } from '#worker/account/deletion-state.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
+	buildPublishedCredentialNeedsKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
@@ -418,6 +419,10 @@ async function listUserBundleKvKeys(input: {
 							publishedCommit: source.publishedCommit,
 						}),
 						buildPublishedSourceManifestSnapshotKvKey({
+							sourceId: source.sourceId,
+							publishedCommit: source.publishedCommit,
+						}),
+						buildPublishedCredentialNeedsKvKey({
 							sourceId: source.sourceId,
 							publishedCommit: source.publishedCommit,
 						}),
