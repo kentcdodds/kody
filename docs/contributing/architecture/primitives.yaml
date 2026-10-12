@@ -92,8 +92,7 @@ primitives:
     summary:
       Independently deployed jobs worker owning the JobManager Durable Object,
       the cron/scheduled dispatch lane and queue, and the dedicated kody-jobs D1
-      database (jobs + archived_job_artifacts), calling back into the main
-      worker for job execution.
+      database (jobs), calling back into the main worker for job execution.
     code:
       - packages/jobs-worker/
     docs:

@@ -506,15 +506,9 @@ export function createJobsBindingStub(
 				.all<{ id: string }>()
 			return (results ?? []).map((row) => row.id)
 		},
-		listJobStorageIdsForUser: async (input: { userId: string }) => [
-			...(await listStorageIds('jobs', input.userId)),
-			...(await listStorageIds('archived_job_artifacts', input.userId)),
-		],
+		listJobStorageIdsForUser: async (input: { userId: string }) =>
+			listStorageIds('jobs', input.userId),
 		purgeUser: async (input: { userId: string }) => {
-			await db
-				.prepare(`DELETE FROM archived_job_artifacts WHERE user_id = ?`)
-				.bind(input.userId)
-				.run()
 			await db
 				.prepare(`DELETE FROM jobs WHERE user_id = ?`)
 				.bind(input.userId)

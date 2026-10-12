@@ -348,10 +348,9 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'connected_by_user_id',
 		value: 'deleted-user',
 	},
-	// Job rows (`jobs`, `archived_job_artifacts`) live in the jobs worker's
-	// database (ADR 0016); account deletion reaches them through the JOBS
-	// service binding's purgeUser and export through listArchivedJobArtifacts /
-	// listJobsForUser.
+	// Job rows live in the jobs worker's database (ADR 0016). Account deletion
+	// reaches them through the JOBS service binding's purgeUser, and export
+	// reads them through listJobsForUser.
 	{ kind: 'user_id', table: 'published_bundle_artifacts' },
 	{
 		kind: 'user_id',

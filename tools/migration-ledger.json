@@ -443,6 +443,10 @@
 		{
 			"filename": "0112-credential-inventory.sql",
 			"sha256": "57e56179562397063d6f3f14745e43fec24149dfc98d518893009aa550f818b7"
+		},
+		{
+			"filename": "0114-drop-org-job-retention.sql",
+			"sha256": "c8f82d6f0604d07f6f0a81e735579d92a5f11b69b62957d1bf68621cd6f0af1c"
 		}
 	]
 }

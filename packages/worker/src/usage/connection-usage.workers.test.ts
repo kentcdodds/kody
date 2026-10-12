@@ -58,7 +58,6 @@ async function ensureSchema() {
 			timezone TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			kill_switch_enabled INTEGER NOT NULL DEFAULT 0,
-			preserved INTEGER NOT NULL DEFAULT 0,
 			expires_at TEXT,
 			caller_context_json TEXT NOT NULL,
 			created_at TEXT NOT NULL,

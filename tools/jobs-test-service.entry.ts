@@ -7,6 +7,7 @@ import {
 import jobsInitSql from '../packages/jobs-worker/migrations/0001-jobs-init.sql'
 import jobsSoftDeleteSql from '../packages/jobs-worker/migrations/0002-teams-expand-actor-and-soft-delete.sql'
 import jobsEnabledBeforeSoftDeleteSql from '../packages/jobs-worker/migrations/0003-job-enabled-before-soft-delete.sql'
+import jobsDropPreservedSql from '../packages/jobs-worker/migrations/0005-drop-preserved-and-archived-artifacts.sql'
 
 /**
  * Auxiliary worker for the workers-unit vitest pool: the main worker's test
@@ -33,6 +34,7 @@ const schemaStatements = [
 	...migrationStatements(jobsInitSql),
 	...migrationStatements(jobsSoftDeleteSql),
 	...migrationStatements(jobsEnabledBeforeSoftDeleteSql),
+	...migrationStatements(jobsDropPreservedSql),
 ]
 
 // Runs on every call (not memoized): the pool's isolated storage can reset
@@ -45,7 +47,8 @@ async function ensureSchema(db: D1Database) {
 			const message = String(error)
 			if (
 				message.includes('already exists') ||
-				message.includes('duplicate column name')
+				message.includes('duplicate column name') ||
+				message.includes('no such column')
 			) {
 				continue
 			}
@@ -68,14 +71,10 @@ const storeMethodNames = [
 	'refreshPackageJobIdentity',
 	'deleteJob',
 	'disableExpiredJobsForUser',
-	'upsertArchivedJobArtifact',
-	'listArchivedJobArtifactsDueBefore',
-	'deleteArchivedJobArtifact',
 	'countJobsForUser',
 	'countJobsBySourceId',
 	'sumJobsStorageBytesForUser',
 	'listJobStorageIdsForUser',
-	'listArchivedJobArtifactsForUser',
 	'listAllJobStorageOwners',
 	'getJobInsights',
 	'purgeUserJobsData',

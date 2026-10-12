@@ -385,9 +385,8 @@ after the restore window is `hardPurgeSoftDeletedUser`
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and
     saved-package entries by id,
-  - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts` and
-    `archived_job_artifacts`, plus user-prefixed keys such as the encrypted MCP
-    OAuth refresh-family snapshots,
+  - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts`, plus
+    user-prefixed keys such as the encrypted MCP OAuth refresh-family snapshots,
   - the user's `StorageRunner` Durable Objects via the user-scoped
     `storageRunnerRpc` stub,
   - all OAuth grants for the user (and the provider clients the user minted) via

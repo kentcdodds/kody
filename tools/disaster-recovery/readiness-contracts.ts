@@ -225,7 +225,7 @@ export const canonicalContracts = [
 		],
 		includes: [
 			'complete checksummed kody-jobs D1 SQL export',
-			'jobs and archived_job_artifacts table evidence',
+			'jobs table evidence',
 		],
 		excludes: ['production overwrite', 'Time Travel', 'automatic cutover'],
 	},
