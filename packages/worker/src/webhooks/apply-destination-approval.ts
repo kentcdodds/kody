@@ -399,7 +399,7 @@ function legacyRowMatchesCredential(
 		return pinned == null
 	}
 	// A pin must equal today's resolved id. Unpinned legacy rows are upgraded
-	// only when migration has not yet attached an id (should be rare after 0122).
+	// only when migration has not yet attached an id (should be rare after 0123).
 	if (pinned == null) return true
 	return pinned === resolvedCredentialId
 }

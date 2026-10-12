@@ -465,7 +465,7 @@
 			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
 		},
 		{
-			"filename": "0122-webhook-apply-destination-credential-ids.sql",
+			"filename": "0123-webhook-apply-destination-credential-ids.sql",
 			"sha256": "fb0ee23b20c0e6dbdf26d8e938632ed2d96d7073160d0e7f60fe9a0751c81a1e"
 		}
 	]

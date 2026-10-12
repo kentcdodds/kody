@@ -11,7 +11,7 @@ import {
 } from './apply-destination-approval.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const migrationFileName = '0122-webhook-apply-destination-credential-ids.sql'
+const migrationFileName = '0123-webhook-apply-destination-credential-ids.sql'
 
 function sha256Hex(value: string) {
 	return createHash('sha256').update(value).digest('hex')
@@ -100,7 +100,7 @@ function runMigration(sqlite: DatabaseSync) {
 	)
 }
 
-test('0122 backfills credential ids and drops orphan name-keyed approvals', () => {
+test('0123 backfills credential ids and drops orphan name-keyed approvals', () => {
 	const sqlite = databaseBeforeMigration()
 	const liveFingerprint = legacyFingerprint('hooksToken')
 	const orphanFingerprint = legacyFingerprint('deletedToken')
