@@ -198,18 +198,3 @@ test.each([
 		href: '/feature-pages.css',
 	})
 })
-
-test.each([
-	['/', true],
-	['/features', true],
-	['/features/memory', false],
-	['/pricing', false],
-])('%s loads the primitive widget stylesheet: %s', (path, expected) => {
-	const links = resolveDocumentHead(path).links ?? []
-	expect(
-		links.some(
-			(link) =>
-				link.rel === 'stylesheet' && link.hrefPath === '/primitive-widgets.css',
-		),
-	).toBe(expected)
-})

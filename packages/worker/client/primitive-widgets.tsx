@@ -8,7 +8,7 @@ import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
  * decorative). Scenes are plain markup on a 360×200 stage: nodes sit at
  * percentages, wires live in one SVG with the same viewBox, and the type
  * scales with the stage width (`cqw`), so a mini scene is the same picture
- * drawn smaller. Every loop is CSS in `public/primitive-widgets.css`, gated
+ * drawn smaller. Every loop is CSS in `public/styles.css` (`.pw-*`), gated
  * by `data-motion` from `primitiveWidgetMotion`. Without it the scene is a
  * finished still, which is also the reduced-motion and no-JS view.
  *
