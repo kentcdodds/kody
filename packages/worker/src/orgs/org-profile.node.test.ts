@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { createOrganization } from './create-organization.ts'
 import { isPersonalOrg } from './is-personal-org.ts'
 import { updateOrgProfile } from './org-profile.ts'
@@ -13,7 +14,26 @@ async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
+	await ensureUsersTestSchema({ db })
 	return db
+}
+
+async function insertPerson(
+	db: D1Database,
+	input: { id: number; personId: string; username: string },
+) {
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, ?, 'x', ?)`,
+		)
+		.bind(
+			input.id,
+			input.username,
+			`${input.username}@example.com`,
+			input.personId,
+		)
+		.run()
 }
 
 const env = {} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
@@ -69,6 +89,7 @@ test('updateOrgProfile changes the display name and keeps the handle permanent',
 test('updateOrgProfile refuses a personal org and rejects a different handle', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
+	await insertPerson(db, { id: 1, personId: ada, username: 'ada' })
 	await provisionPersonalOrg(db, {
 		stableUserId: ada,
 		username: 'ada',
@@ -111,6 +132,7 @@ test('updateOrgProfile refuses a personal org and rejects a different handle', a
 test('isPersonalOrg stays true after the founding membership is soft-deleted', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
+	await insertPerson(db, { id: 1, personId: ada, username: 'ada' })
 	await provisionPersonalOrg(db, {
 		stableUserId: ada,
 		username: 'ada',
@@ -130,4 +152,40 @@ test('isPersonalOrg stays true after the founding membership is soft-deleted', a
 			displayName: 'Nope',
 		}),
 	).toMatchObject({ ok: false, code: 'personal' })
+})
+
+test('updateOrgProfile allows a former platform org with a soft-deleted founding membership', async () => {
+	const db = await createDb()
+	const platformId = testStableUserIdFromEmail('kody@platform.example')
+	const ownerId = testStableUserIdFromEmail('kent@example.com')
+	const now = '2026-01-02T00:00:00.000Z'
+	await insertPerson(db, { id: 2, personId: ownerId, username: 'kent' })
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+			 VALUES (?, 'kody', NULL, ?, ?)`,
+		)
+		.bind(platformId, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'owner', ?, ?)`,
+		)
+		.bind(platformId, platformId, now, '2026-10-10T00:00:00.000Z')
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO handles (handle, org_id, created_at) VALUES ('kody', ?, ?)`,
+		)
+		.bind(platformId, now)
+		.run()
+
+	expect(await isPersonalOrg(db, platformId)).toBe(false)
+	expect(
+		await updateOrgProfile(db, {
+			orgId: platformId,
+			displayName: 'Kody',
+		}),
+	).toEqual({ ok: true, slug: 'kody', displayName: 'Kody' })
 })
