@@ -201,6 +201,7 @@ test('the inventory counts every placeholder and attributes it to credential ids
 			byKind: { secret: 4, oauth: 1, mcp: 0 },
 		},
 		credentialsReferenced: 6,
+		failures: [{ packageId: 'pkg-4', error: 'source unavailable' }],
 	})
 
 	const stored = sqlite
