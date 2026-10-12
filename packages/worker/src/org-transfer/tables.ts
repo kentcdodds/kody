@@ -26,6 +26,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	saved_packages: move(
 		'user_id re-pointed; name rewritten to @<target slug>/<kody_id>.',
 	),
+	package_capability_approvals: move(
+		'owner_user_id re-pointed for approvals of moved packages.',
+	),
 	user_repos: move('user_id re-pointed.'),
 	entity_sources: move(
 		'user_id re-pointed for sources of moved packages and repos.',

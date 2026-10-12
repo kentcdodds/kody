@@ -18,6 +18,7 @@ export type OrgTransferOrg = { id: OwnerId; slug: string }
 /** Tables read by owner column for both orgs. */
 export const orgTransferOwnerTables = {
 	saved_packages: 'user_id',
+	package_capability_approvals: 'owner_user_id',
 	user_repos: 'user_id',
 	entity_sources: 'user_id',
 	published_bundle_artifacts: 'user_id',

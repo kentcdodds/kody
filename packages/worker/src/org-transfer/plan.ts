@@ -86,6 +86,7 @@ export type OrgTransferPlan = {
 
 const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'saved_packages',
+	'package_capability_approvals',
 	'user_repos',
 	'entity_sources',
 	'published_bundle_artifacts',
@@ -626,6 +627,20 @@ export function planOrgTransfer(
 			}
 		}
 		clashIf(table, moves[table], [keyColumn], (row) => text(row, keyColumn))
+	}
+
+	for (const row of source.package_capability_approvals) {
+		if (packageIds.has(text(row, 'package_id'))) {
+			moves.package_capability_approvals.push(row)
+		} else {
+			orphan(
+				'package_capability_approvals',
+				row,
+				text(row, 'id'),
+				'package no longer exists',
+				'delete',
+			)
+		}
 	}
 
 	// Enablements and grants (org-keyed).
