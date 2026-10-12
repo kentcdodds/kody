@@ -235,8 +235,10 @@ async function loadPlainRepoPage(input: {
 				isPrivate: true,
 			})
 		: false
+	// Match repoGet: probe package.json at live HEAD (not a possibly stale
+	// indexed icon commit). Fall back to iconCommit when HEAD resolve fails.
 	let headCommit = iconCommit
-	if (!headCommit && source?.repo_id) {
+	if (source?.repo_id) {
 		try {
 			const head = await resolveCachedArtifactSourceHead(
 				input.env,
@@ -245,17 +247,21 @@ async function loadPlainRepoPage(input: {
 			)
 			headCommit = head.commit
 		} catch {
-			headCommit = null
+			headCommit = iconCommit
 		}
 	}
-	const packageShaped =
-		viewerIsMember && source?.repo_id
-			? await isPlainRepoPackageShapedAtCommit({
-					env: input.env,
-					repoId: source.repo_id,
-					commit: headCommit,
-				})
-			: false
+	let packageShaped = false
+	if (viewerIsMember && source?.repo_id) {
+		try {
+			packageShaped = await isPlainRepoPackageShapedAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: headCommit,
+			})
+		} catch {
+			packageShaped = false
+		}
+	}
 	const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
 		env: input.env,
 		username: identity.handle,

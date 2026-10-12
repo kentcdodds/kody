@@ -52,6 +52,8 @@ const mockModule = vi.hoisted(() => ({
 	),
 	readArtifactFileAtCommit:
 		vi.fn<typeof artifactFile.readArtifactFileAtCommit>(),
+	readArtifactTreeAtCommit:
+		vi.fn<typeof artifactFile.readArtifactTreeAtCommit>(),
 	getUserSocialRowByUsername:
 		vi.fn<typeof profileRepo.getUserSocialRowByUsername>(),
 }))
@@ -131,6 +133,9 @@ vi.mock('#worker/repo/artifact-file.ts', () => ({
 	readArtifactFileAtCommit: (
 		...args: Parameters<typeof artifactFile.readArtifactFileAtCommit>
 	) => mockModule.readArtifactFileAtCommit(...args),
+	readArtifactTreeAtCommit: (
+		...args: Parameters<typeof artifactFile.readArtifactTreeAtCommit>
+	) => mockModule.readArtifactTreeAtCommit(...args),
 }))
 
 const {
@@ -573,7 +578,9 @@ test('plain repo tree loads live HEAD via entity_sources.repo_id for guests', as
 		filesBasePath: '/@kentcdodds/notes/tree/main',
 		backHref: '/@kentcdodds/notes',
 		description: 'Plain notes repo',
-		iconUrl: '/@kentcdodds/notes/icon/headlive1',
+		// Indexed commit is what the identity-icon route can serve.
+		iconUrl: '/@kentcdodds/notes/icon/idxabc1',
+		imageBaseHref: null,
 	})
 	expect(data?.paths).toEqual(
 		expect.arrayContaining(['README.md', 'docs/guide.md']),
@@ -622,6 +629,44 @@ test('plain repo files resolve via getEntitySourceByEntity when sourceId is empt
 		entityKind: 'repo',
 		entityId: 'user-repo-1',
 	})
+})
+
+test('plain repo files fall back to Artifacts HEAD tree when publish snapshots are empty', async () => {
+	publishPlainRepo()
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactTreeAtCommit.mockResolvedValue({
+		'README.md': '# From HEAD\n',
+		'package.json': '{"name":"notes"}\n',
+	})
+	const data = await loadPlainRepoFilesData({
+		env,
+		request: new Request('https://example.com/@kentcdodds/notes/tree/main'),
+		ownerUserId: 'owner-1',
+		username: 'kentcdodds',
+		kodyId: 'notes',
+		repoId: 'user-repo-1',
+		sourceId: 'src-plain-1',
+		isPrivate: false,
+		description: 'Plain notes repo',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(data).toMatchObject({
+		ok: true,
+		hasPackage: false,
+		iconUrl: '/@kentcdodds/notes/icon/idxabc1',
+		imageBaseHref: null,
+	})
+	expect(data?.paths).toEqual(
+		expect.arrayContaining(['README.md', 'package.json']),
+	)
+	expect(mockModule.readArtifactTreeAtCommit).toHaveBeenCalledWith(
+		expect.objectContaining({
+			repoId: 'artifacts-repo-1',
+			commit: 'headlive1',
+		}),
+	)
 })
 
 test('plain repo raw serves media for guests who passed loadPackagePage', async () => {

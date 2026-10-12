@@ -632,19 +632,18 @@ export async function loadPlainRepoFilesData(input: {
 		isPrivate: input.isPrivate,
 		isListed: false,
 		hasPackage: false,
+		// Identity icons only serve indexed/published commits (not live HEAD).
 		iconUrl: resolvePackageListIconUrl({
 			username: input.username,
 			kodyId: input.kodyId,
 			listingId: null,
 			listingIconCommit: null,
-			publishedCommit:
-				resolved.commit ??
-				source.indexed_commit ??
-				source.published_commit ??
-				null,
+			publishedCommit: source.indexed_commit ?? source.published_commit ?? null,
 		}),
 		viewedCommit: resolved.commit,
-		assetCommit: resolved.commit ?? liveCommit,
+		// Plain repos have no package /assets/ publish snapshot; leave null so
+		// README images are not rewritten to an unservable prefix.
+		assetCommit: null,
 		mediaHref: view.contentPath
 			? getPackageRawHref({
 					username: input.username,
