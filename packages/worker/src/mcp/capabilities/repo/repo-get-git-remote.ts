@@ -19,8 +19,20 @@ import {
 import { resolveOwnedUserRepo } from './resolve-user-repo.ts'
 
 const getGitRemoteInputSchema = z.object({
-	repo_id: z.string().min(1).optional(),
-	name: z.string().min(1).optional(),
+	repo_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Plain repo UUID, or the repo name. OpenAPI path `/v1/repos/{repo_id}/git-remote` accepts either. Prefer `name` (or this field) on `POST /v1/repos/git-remote` when calling via CLI/OpenAPI without a path id.',
+		),
+	name: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Plain repo name. Provide exactly one of `repo_id` or `name`. Works on MCP `api`, execute, and OpenAPI `POST /v1/repos/git-remote`.',
+		),
 	scope: z.enum(['read', 'write']).default('write'),
 	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
 })

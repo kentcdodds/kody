@@ -70,7 +70,13 @@ to same-named inputs, `GET`/`DELETE` read the query string, and other methods
 read a JSON body). Token and CapabilityProxy operations are native.
 
 `/v1` is additive: add operations freely; never rename an `operationId`, change
-a method or path, or remove an operation without a new version.
+a method or path, or remove an operation without a new version. Capability
+routes may declare `aliasPaths`: extra HTTP paths for the same `operationId`,
+also listed in `/openapi.json` after the primary path (so clients that index by
+`operationId` and keep the last path prefer the alias). Use an alias when the
+primary path embeds an identity field that the capability also accepts under
+another input name (for example `repoGetGitRemote`'s body-only
+`/v1/repos/git-remote` beside `/v1/repos/{repo_id}/git-remote`).
 
 Never in the Open API: `execute`, secret plaintext, the inbound webhook receive
 path, package-app HTTP/WebSocket/realtime traffic, admin capabilities, and

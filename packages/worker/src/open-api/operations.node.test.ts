@@ -11,6 +11,7 @@ import {
 	apiOperationUsesQueryInputs,
 	apiOperations,
 	getApiOperationPathParams,
+	listApiOperationPaths,
 	matchApiRoute,
 } from './operations.ts'
 
@@ -64,12 +65,17 @@ function isQueryEncodable(schema: unknown) {
 test('operation ids and method+path pairs are unique', () => {
 	const ids = apiOperations.map((operation) => operation.operationId)
 	expect(new Set(ids).size).toBe(ids.length)
-	const routes = apiOperations.map(
-		(operation) => `${operation.method} ${operation.path}`,
+	const routes = apiOperations.flatMap((operation) =>
+		listApiOperationPaths(operation).map(
+			(path) => `${operation.method} ${path}`,
+		),
 	)
 	expect(new Set(routes).size).toBe(routes.length)
 	for (const operation of apiOperations) {
 		expect(operation.path.startsWith('/v1/')).toBe(true)
+		for (const path of listApiOperationPaths(operation)) {
+			expect(path.startsWith('/v1/')).toBe(true)
+		}
 	}
 })
 
@@ -146,11 +152,13 @@ test('every public capability in an API domain has an operation', async () => {
 
 test('every operation routes to itself, and static segments beat params', () => {
 	for (const operation of apiOperations) {
-		const path = operation.path.replace(/\{([^}]+)\}/g, 'sample-$1')
-		const match = matchApiRoute(operation.method, path)
-		expect(match.kind === 'match' && match.operation.operationId).toBe(
-			operation.operationId,
-		)
+		for (const template of listApiOperationPaths(operation)) {
+			const path = template.replace(/\{([^}]+)\}/g, 'sample-$1')
+			const match = matchApiRoute(operation.method, path)
+			expect(match.kind === 'match' && match.operation.operationId).toBe(
+				operation.operationId,
+			)
+		}
 	}
 	const current = matchApiRoute('GET', '/v1/tokens/current')
 	expect(current.kind === 'match' && current.operation.operationId).toBe(
@@ -171,6 +179,31 @@ test('every operation routes to itself, and static segments beat params', () => 
 		allow: ['GET', 'POST'],
 	})
 	expect(matchApiRoute('GET', '/v1/nope')).toEqual({ kind: 'not_found' })
+
+	const gitRemoteById = matchApiRoute(
+		'POST',
+		'/v1/repos/11111111-1111-4111-8111-111111111111/git-remote',
+	)
+	expect(gitRemoteById).toMatchObject({
+		kind: 'match',
+		pathParams: { repo_id: '11111111-1111-4111-8111-111111111111' },
+	})
+	expect(
+		gitRemoteById.kind === 'match' && gitRemoteById.operation.operationId,
+	).toBe('repoGetGitRemote')
+
+	const gitRemoteByBody = matchApiRoute('POST', '/v1/repos/git-remote')
+	expect(gitRemoteByBody).toMatchObject({
+		kind: 'match',
+		pathParams: {},
+	})
+	expect(
+		gitRemoteByBody.kind === 'match' && gitRemoteByBody.operation.operationId,
+	).toBe('repoGetGitRemote')
+	// Static `/git-remote` beats `/{repo_id}/git-remote` if both could match.
+	expect(
+		gitRemoteByBody.kind === 'match' && gitRemoteByBody.pathParams,
+	).toEqual({})
 })
 
 test('the OpenAPI document covers every operation with resolvable refs', async () => {
@@ -190,9 +223,36 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	const operationIds = Object.values(document.paths).flatMap((pathItem) =>
 		Object.values(pathItem).map((operation) => operation.operationId),
 	)
-	expect(operationIds.sort()).toEqual(
+	// Alias paths reuse the same operationId (additive HTTP + OpenAPI paths).
+	expect([...new Set(operationIds)].sort()).toEqual(
 		apiOperations.map((operation) => operation.operationId).sort(),
 	)
+	expect(operationIds.length).toBe(
+		apiOperations.reduce(
+			(count, operation) => count + listApiOperationPaths(operation).length,
+			0,
+		),
+	)
+	expect(document.paths['/v1/repos/git-remote']?.['post']?.operationId).toBe(
+		'repoGetGitRemote',
+	)
+	expect(
+		document.paths['/v1/repos/{repo_id}/git-remote']?.['post']?.operationId,
+	).toBe('repoGetGitRemote')
+	const bodyOnlyGitRemote = document.paths['/v1/repos/git-remote']?.['post']
+	expect(bodyOnlyGitRemote).toBeDefined()
+	const bodyOnlyPathParams = (bodyOnlyGitRemote?.parameters ?? []).filter(
+		(parameter: { in: string }) => parameter.in === 'path',
+	)
+	expect(bodyOnlyPathParams).toEqual([])
+	expect(
+		bodyOnlyGitRemote?.requestBody?.content['application/json']?.schema,
+	).toMatchObject({
+		properties: expect.objectContaining({
+			name: expect.anything(),
+			repo_id: expect.anything(),
+		}),
+	})
 
 	const serialized = JSON.stringify(document)
 	expect(serialized).not.toContain('"$schema"')

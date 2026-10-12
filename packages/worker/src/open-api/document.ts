@@ -13,6 +13,7 @@ import {
 	apiOperationUsesQueryInputs,
 	apiOperations,
 	getApiOperationPathParams,
+	listApiOperationPaths,
 	type ApiOperation,
 } from './operations.ts'
 import { nativeApiOperationDefinitions } from './native-operations.ts'
@@ -214,6 +215,7 @@ function describeWithPermission(resolved: ResolvedApiOperation) {
 function buildOperation(
 	resolved: ResolvedApiOperation,
 	componentSchemas: Record<string, JsonSchema>,
+	path: string,
 ): OpenApiOperation {
 	const { operation } = resolved
 	const inputSchema = hoistDefs(
@@ -223,7 +225,7 @@ function buildOperation(
 	)
 	const properties = readProperties(inputSchema)
 	const required = new Set(readRequired(inputSchema))
-	const pathParams = getApiOperationPathParams(operation.path)
+	const pathParams = getApiOperationPathParams(path)
 	const omitted = new Set(
 		operation.kind === 'capability' ? (operation.omitInputs ?? []) : [],
 	)
@@ -332,11 +334,17 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 	const paths: OpenApiDocument['paths'] = {}
 	for (const operation of apiOperations) {
 		const resolved = resolveApiOperation(operation, registry)
-		const pathItem = (paths[operation.path] ??= {})
-		pathItem[operation.method.toLowerCase()] = buildOperation(
-			resolved,
-			componentSchemas,
-		)
+		// Emit primary path first, then aliases, so OpenAPI clients that index
+		// by operationId and keep the last path (e.g. @kodycodes/cli) prefer
+		// aliases with fewer path params.
+		for (const path of listApiOperationPaths(operation)) {
+			const pathItem = (paths[path] ??= {})
+			pathItem[operation.method.toLowerCase()] = buildOperation(
+				resolved,
+				componentSchemas,
+				path,
+			)
+		}
 	}
 	const scopeList = apiTokenScopes
 		.map((scope) => `- \`${scope}\`: ${apiTokenScopeDescriptions[scope]}`)
