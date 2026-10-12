@@ -201,10 +201,11 @@ The keyed map stays. `provider` is optional and defaults to the key.
 
 ### Code API (`kody:runtime`)
 
-- `credential(key)` returns `{ fetch, callTool?, sign?, name, scope }`. A
-  relative URL resolves against the credential's first host; an absolute URL
-  must be in `hosts`. If code sets the header the credential injects, the
-  gateway overwrites it.
+- `credential(key)` returns `{ name, scope, kind, hosts }` plus `fetch` (secret,
+  oauth, url, login), `callTool` (mcp), or `sign` (signing). A relative URL
+  resolves against the credential's first host; an absolute URL must be in
+  `hosts`. If code sets the header the credential injects, the gateway
+  overwrites it.
 - `credentials(key)` returns an array, for `multiple: true` needs.
 - An undeclared key (ad hoc execute or author-only code) is treated as the
   provider.
