@@ -240,15 +240,15 @@ function classifyPlacement(
 		parent &&
 		(parent.node.type === 'CallExpression' ||
 			parent.node.type === 'OptionalCallExpression') &&
-		parent.node.arguments?.[1] === node
+		parent.node.arguments?.[1] === (ancestors[parent.index + 1] ?? node)
 	) {
 		const placement = setterPlacement(parent.node, text, match)
 		if (placement) return placement
 	}
-	if (/^https?:\/\//i.test(text)) return urlPlacement(text, match)
 	if (ancestors.some((ancestor) => propertyKey(ancestor) === 'body')) {
 		return { type: 'body' }
 	}
+	if (/^https?:\/\//i.test(text)) return urlPlacement(text, match)
 	return { type: 'other' }
 }
 

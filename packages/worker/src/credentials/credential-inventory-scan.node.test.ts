@@ -55,12 +55,16 @@ test('classifies header, query, path, body, and basic placements', () => {
 				'X-Custom': 'k={{secret:CUSTOM_KEY}};v=1',
 				Basic: 'Basic {{secret-basic:username=U,password=P}}',
 			},
-			body: JSON.stringify({ token: '{{secret:BODY_KEY}}' }),
+			body: JSON.stringify({
+				token: '{{secret:BODY_KEY}}',
+				callback: 'https://cb.example.com/hook?token={{secret:BODY_URL_KEY}}',
+			}),
 		})
 		await fetch('https://api.example.com/v1/items?limit=5&api_key={{secret:QUERY_KEY}}')
 		await fetch('https://api.example.com/bot{{secret:PATH_KEY}}/send')
 		const headers = new Headers({ 'x-token': 'Token {{secret:NEW_HEADERS_KEY}}' })
 		headers.set('X-Set', '{{secret:SET_KEY}}')
+		headers.set('X-Wrapped', ('{{secret:WRAPPED_SET_KEY}}' as string))
 		const url = new URL('https://api.example.com')
 		url.searchParams.set('key', '{{secret:SEARCH_KEY}}')
 		const stashed = '{{secret:STASHED_KEY}}'
@@ -80,6 +84,7 @@ test('classifies header, query, path, body, and basic placements', () => {
 		U: { type: 'basic' },
 		P: { type: 'basic' },
 		BODY_KEY: { type: 'body' },
+		BODY_URL_KEY: { type: 'body' },
 		QUERY_KEY: { type: 'query', param: 'api_key' },
 		PATH_KEY: { type: 'path' },
 		NEW_HEADERS_KEY: {
@@ -88,6 +93,11 @@ test('classifies header, query, path, body, and basic placements', () => {
 			format: 'Token {value}',
 		},
 		SET_KEY: { type: 'header', name: 'x-set', format: '{value}' },
+		WRAPPED_SET_KEY: {
+			type: 'header',
+			name: 'x-wrapped',
+			format: '{value}',
+		},
 		SEARCH_KEY: { type: 'query', param: 'key' },
 		STASHED_KEY: { type: 'other' },
 	})
