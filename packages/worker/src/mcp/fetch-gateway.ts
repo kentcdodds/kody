@@ -18,12 +18,17 @@ import {
 	parseSecretPlaceholders,
 	replaceSecretPlaceholders,
 	replaceSecretPlaceholdersInFormUrlEncoded,
-	replaceSecretPlaceholdersInJson,
 	replaceSecretPlaceholdersInPath,
 	type ReferencedBasicAuthSecretPlaceholder,
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
+import {
+	batchHasPlaceholders,
+	createPlaceholderFillStream,
+	type PlaceholderReferenceBatch,
+	type PlaceholderStreamBodyFormat,
+} from '#mcp/secrets/placeholder-stream-fill.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
@@ -210,12 +215,15 @@ export async function executeGatewayFetch(input: {
 				resource: 'outbound_fetches_per_day',
 			})
 		}
-		const { request: transformed, substitutedValues } =
-			await expandSecretPlaceholders({
-				request: input.request,
-				props: input.props,
-				env: input.env,
-			})
+		const {
+			request: transformed,
+			substitutedValues,
+			bodyFillDone,
+		} = await expandSecretPlaceholders({
+			request: input.request,
+			props: input.props,
+			env: input.env,
+		})
 		meteredEntityId = readMeteredRequestHostname(
 			input.request.url,
 			transformed.url,
@@ -231,6 +239,9 @@ export async function executeGatewayFetch(input: {
 					new Request(transformed, { signal: deadline.signal }),
 				),
 			)
+			// Body placeholders may resolve while the upload streams; wait so
+			// echo redaction sees every substituted value.
+			await bodyFillDone
 		} catch (error) {
 			throw redactEchoedSecretsInError(error, substitutedValues)
 		}
@@ -303,14 +314,22 @@ function readResponseContentLengthBytes(
 
 /**
  * The outbound request with placeholders filled in its headers, URL path and
- * query, and text body, plus every credential value that went into it so the
- * response can be redacted.
+ * query, and body (streamed chunk-by-chunk, including multipart parts), plus
+ * every credential value that went into it so the response can be redacted.
+ *
+ * `bodyFillDone` settles after the request body stream has been fully filled
+ * (or immediately when there is no body fill). Callers must await it before
+ * echo-redacting the response so body-only secrets are included.
  */
 export async function expandSecretPlaceholders(input: {
 	request: Request
 	props: FetchGatewayProps
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
-}): Promise<{ request: Request; substitutedValues: ReadonlyArray<string> }> {
+}): Promise<{
+	request: Request
+	substitutedValues: Array<string>
+	bodyFillDone: Promise<void>
+}> {
 	const headers = new Headers(input.request.headers)
 	// Several APIs (GitHub most prominently) reject requests without a
 	// User-Agent outright, and workerd sends none by default — bare sandbox
@@ -332,13 +351,15 @@ export async function expandSecretPlaceholders(input: {
 	const requestUrl = new URL(
 		resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
 	)
-	const requestBody = await readRequestBody(input.request)
+	const sendBody = shouldSendBody(input.request.method)
+	const sourceBody = sendBody ? input.request.body : null
+
 	if (resolutionMode === 'off') {
 		return {
 			request: new Request(requestUrl, {
 				method: input.request.method,
 				headers,
-				body: requestBodyInit(requestBody),
+				body: sourceBody,
 				redirect: input.request.redirect,
 				credentials: input.request.credentials,
 				mode: input.request.mode,
@@ -346,203 +367,261 @@ export async function expandSecretPlaceholders(input: {
 				integrity: input.request.integrity,
 				keepalive: input.request.keepalive,
 				signal: input.request.signal,
+				...(sourceBody ? { duplex: 'half' as const } : {}),
 			}),
 			substitutedValues: [],
+			bodyFillDone: Promise.resolve(),
 		}
 	}
+
 	// `headers-only` fills header placeholders and sends the URL and body as
 	// written, for a body that quotes the placeholder syntax.
 	const fillsUrlAndBody = resolutionMode === 'on'
 	const urlTexts = fillsUrlAndBody ? urlPlaceholderTexts(requestUrl) : []
-	const bodyTexts =
-		fillsUrlAndBody && requestBody ? bodyPlaceholderTexts(requestBody) : []
-	const placeholderSources = [
-		...Array.from(headers.values()),
-		...urlTexts,
-		...bodyTexts,
-	]
+	const placeholderSources = [...Array.from(headers.values()), ...urlTexts]
 	assertSecretPlacement({ url: requestUrl, values: placeholderSources })
+
 	const replacements = new Map<string, string>()
 	const resolvedValues = new Map<string, string>()
-	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders(
-		placeholderSources.flatMap((value) =>
-			parseBasicAuthSecretPlaceholders(value),
-		),
-	)
-	const referencedSecrets = dedupeReferencedSecrets([
-		...placeholderSources.flatMap((value) => parseSecretPlaceholders(value)),
-		...basicAuthPlaceholders.flatMap((placeholder) => [
-			placeholder.username,
-			placeholder.password,
-		]),
-	])
-	const referencedIntegrationTokens = dedupeIntegrationTokenNames(
-		placeholderSources.flatMap((value) =>
-			parseIntegrationTokenPlaceholders(value),
-		),
-	)
-	const referencedProviderSecrets = dedupeReferencedProviderSecrets(
-		placeholderSources.flatMap((value) =>
-			parseProviderSecretPlaceholders(value),
-		),
-	)
-	const hasReferencedSecrets =
-		referencedSecrets.length > 0 ||
-		referencedIntegrationTokens.length > 0 ||
-		referencedProviderSecrets.length > 0
-	const callerUserId = hasReferencedSecrets
-		? requireFetchUserId(input.props)
-		: input.props.userId
-	// The host is never a fill site, so the credential door checks each
-	// credential's allowed hosts against it before resolving.
+	const encodedBasicCredentials: Array<string> = []
+	const substitutedValues: Array<string> = []
+	let referencedAnyCredential = false
+
 	const requestHost = normalizeHost(requestUrl.hostname)
-	const settledSecretResults = await Promise.allSettled(
-		referencedSecrets.map(async (referenced) => {
-			if (!callerUserId) {
-				throw new Error(fetchSecretAuthRequiredMessage)
-			}
-			const resolved = await resolveCredential({
-				env: input.env as Env,
-				orgId: callerUserId,
-				actor: input.props.request,
-				packageStamp,
-				baseUrl: input.props.baseUrl,
-				credential: {
-					use: 'secret',
-					name: referenced.name,
-					scope: referenced.scope,
-					storageContext,
-					orgSlug: secretPageOrgSlugFromCaller(input.props),
-					requestHost,
-				},
+
+	const applyBasicAuthPlaceholders = (
+		placeholders: ReadonlyArray<ReferencedBasicAuthSecretPlaceholder>,
+	) => {
+		for (const placeholder of placeholders) {
+			const renderedPlaceholder =
+				buildBasicAuthSecretPlaceholderFromReference(placeholder)
+			const authHeader = buildBasicAuthHeader({
+				username: readResolvedSecretValue(resolvedValues, placeholder.username),
+				password: readResolvedSecretValue(resolvedValues, placeholder.password),
 			})
-			if (!resolved.found || typeof resolved.value !== 'string') {
-				// Missing or scope-unavailable secrets are caller-clearable
-				// (wrong name/runtime). Keep them off Sentry via McpCallerError.
-				throw new McpCallerError(
-					await createUnresolvedSecretMessage({
-						env: input.env,
-						userId: callerUserId,
+			encodedBasicCredentials.push(authHeader.slice('Basic '.length))
+			// Full header and credential fragment: remotes may echo either.
+			substitutedValues.push(authHeader, authHeader.slice('Basic '.length))
+			for (const scheme of ['Basic', 'basic', 'BASIC'] as const) {
+				const prefixedPlaceholder = `${scheme} ${renderedPlaceholder}`
+				if (!replacements.has(prefixedPlaceholder)) {
+					replacements.set(prefixedPlaceholder, authHeader)
+				}
+			}
+			if (!replacements.has(renderedPlaceholder)) {
+				replacements.set(renderedPlaceholder, authHeader)
+			}
+		}
+	}
+
+	const resolvePlaceholderBatch = async (
+		sources: ReadonlyArray<string>,
+	): Promise<void> => {
+		const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders(
+			sources.flatMap((value) => parseBasicAuthSecretPlaceholders(value)),
+		)
+		const referencedSecrets = dedupeReferencedSecrets([
+			...sources.flatMap((value) => parseSecretPlaceholders(value)),
+			...basicAuthPlaceholders.flatMap((placeholder) => [
+				placeholder.username,
+				placeholder.password,
+			]),
+		]).filter((secret) => !replacements.has(buildSecretPlaceholder(secret)))
+		const referencedIntegrationTokens = dedupeIntegrationTokenNames(
+			sources.flatMap((value) => parseIntegrationTokenPlaceholders(value)),
+		).filter(
+			(name) => !replacements.has(buildIntegrationTokenPlaceholder(name)),
+		)
+		const referencedProviderSecrets = dedupeReferencedProviderSecrets(
+			sources.flatMap((value) => parseProviderSecretPlaceholders(value)),
+		).filter(
+			(referenced) =>
+				!replacements.has(buildProviderSecretPlaceholder(referenced)),
+		)
+		const pendingBasicAuth = basicAuthPlaceholders.filter((placeholder) => {
+			const rendered = buildBasicAuthSecretPlaceholderFromReference(placeholder)
+			return !replacements.has(rendered)
+		})
+		if (
+			referencedSecrets.length === 0 &&
+			referencedIntegrationTokens.length === 0 &&
+			referencedProviderSecrets.length === 0 &&
+			pendingBasicAuth.length === 0
+		) {
+			return
+		}
+		referencedAnyCredential = true
+		assertSecretPlacement({ url: requestUrl, values: sources })
+		const callerUserId = requireFetchUserId(input.props)
+		const settledSecretResults = await Promise.allSettled(
+			referencedSecrets.map(async (referenced) => {
+				const resolved = await resolveCredential({
+					env: input.env as Env,
+					orgId: callerUserId,
+					actor: input.props.request,
+					packageStamp,
+					baseUrl: input.props.baseUrl,
+					credential: {
+						use: 'secret',
 						name: referenced.name,
 						scope: referenced.scope,
 						storageContext,
-						baseUrl: input.props.baseUrl,
-					}),
-				)
-			}
-			return { referenced, resolved, value: resolved.value }
-		}),
-	)
-	const resolvedSecretResults = readSettledSecretResults({
-		settled: settledSecretResults,
-		props: input.props,
-		storageContext,
-		requestedHost: requestUrl.hostname,
-	})
-	const resolvedIntegrationTokens = await Promise.all(
-		referencedIntegrationTokens.map(async (name) => {
-			if (!callerUserId) {
-				throw new Error(fetchSecretAuthRequiredMessage)
-			}
-			const value = await resolveCredential({
-				env: input.env as Env,
-				orgId: callerUserId,
-				actor: input.props.request,
-				packageStamp,
-				baseUrl: input.props.baseUrl,
-				credential: { use: 'integration-token', name, requestHost },
-			}).catch((error: unknown) => {
-				throw error instanceof IntegrationHostNotAllowedError
-					? new SecretPlacementError(error.message, name)
-					: error
-			})
-			if (!value) {
-				throw new Error(createMissingIntegrationAccessTokenMessage(name))
-			}
-			return { name, value }
-		}),
-	)
-	const resolvedProviderSecrets = await Promise.all(
-		referencedProviderSecrets.map(async (referenced) => {
-			const request = input.props.request
-			if (!callerUserId || !request) {
-				throw new Error(fetchSecretAuthRequiredMessage)
-			}
-			const resolved = await resolveCredential({
-				env: input.env as Env,
-				orgId: callerUserId,
-				actor: request,
-				packageStamp,
-				baseUrl: input.props.baseUrl,
-				credential: {
-					use: 'provider-secret',
-					provider: referenced.provider,
-					ref: referenced.ref,
-					storageContext,
-					requestHost,
-				},
-			}).catch((error: unknown) => {
-				throw error instanceof SecretProviderHostDeniedError
-					? new SecretPlacementError(error.message, null)
-					: error
-			})
-			return { referenced, resolved }
-		}),
-	)
-	for (const { referenced, value } of resolvedSecretResults) {
-		const placeholder = buildSecretPlaceholder(referenced)
-		if (!replacements.has(placeholder)) {
-			replacements.set(placeholder, value)
-		}
-		if (!resolvedValues.has(placeholder)) {
-			resolvedValues.set(placeholder, value)
-		}
-	}
-	for (const { name, value } of resolvedIntegrationTokens) {
-		const placeholder = buildIntegrationTokenPlaceholder(name)
-		if (!replacements.has(placeholder)) {
-			replacements.set(placeholder, value)
-		}
-	}
-	for (const { referenced, resolved } of resolvedProviderSecrets) {
-		const placeholder = buildProviderSecretPlaceholder(referenced)
-		if (!replacements.has(placeholder)) {
-			replacements.set(placeholder, resolved.value)
-		}
-	}
-	const encodedBasicCredentials: Array<string> = []
-	for (const placeholder of basicAuthPlaceholders) {
-		const renderedPlaceholder =
-			buildBasicAuthSecretPlaceholderFromReference(placeholder)
-		const authHeader = buildBasicAuthHeader({
-			username: readResolvedSecretValue(resolvedValues, placeholder.username),
-			password: readResolvedSecretValue(resolvedValues, placeholder.password),
+						orgSlug: secretPageOrgSlugFromCaller(input.props),
+						requestHost,
+					},
+				})
+				if (!resolved.found || typeof resolved.value !== 'string') {
+					throw new McpCallerError(
+						await createUnresolvedSecretMessage({
+							env: input.env,
+							userId: callerUserId,
+							name: referenced.name,
+							scope: referenced.scope,
+							storageContext,
+							baseUrl: input.props.baseUrl,
+						}),
+					)
+				}
+				return { referenced, resolved, value: resolved.value }
+			}),
+		)
+		const resolvedSecretResults = readSettledSecretResults({
+			settled: settledSecretResults,
+			props: input.props,
+			storageContext,
+			requestedHost: requestUrl.hostname,
 		})
-		encodedBasicCredentials.push(authHeader.slice('Basic '.length))
-		for (const scheme of ['Basic', 'basic', 'BASIC']) {
-			const prefixedPlaceholder = `${scheme} ${renderedPlaceholder}`
-			if (!replacements.has(prefixedPlaceholder)) {
-				replacements.set(prefixedPlaceholder, authHeader)
+		const resolvedIntegrationTokens = await Promise.all(
+			referencedIntegrationTokens.map(async (name) => {
+				const value = await resolveCredential({
+					env: input.env as Env,
+					orgId: callerUserId,
+					actor: input.props.request,
+					packageStamp,
+					baseUrl: input.props.baseUrl,
+					credential: { use: 'integration-token', name, requestHost },
+				}).catch((error: unknown) => {
+					throw error instanceof IntegrationHostNotAllowedError
+						? new SecretPlacementError(error.message, name)
+						: error
+				})
+				if (!value) {
+					throw new Error(createMissingIntegrationAccessTokenMessage(name))
+				}
+				return { name, value }
+			}),
+		)
+		const resolvedProviderSecrets = await Promise.all(
+			referencedProviderSecrets.map(async (referenced) => {
+				const request = input.props.request
+				if (!request) {
+					throw new Error(fetchSecretAuthRequiredMessage)
+				}
+				const resolved = await resolveCredential({
+					env: input.env as Env,
+					orgId: callerUserId,
+					actor: request,
+					packageStamp,
+					baseUrl: input.props.baseUrl,
+					credential: {
+						use: 'provider-secret',
+						provider: referenced.provider,
+						ref: referenced.ref,
+						storageContext,
+						requestHost,
+					},
+				}).catch((error: unknown) => {
+					throw error instanceof SecretProviderHostDeniedError
+						? new SecretPlacementError(error.message, null)
+						: error
+				})
+				return { referenced, resolved }
+			}),
+		)
+		for (const { referenced, value } of resolvedSecretResults) {
+			const placeholder = buildSecretPlaceholder(referenced)
+			if (!replacements.has(placeholder)) {
+				replacements.set(placeholder, value)
+				substitutedValues.push(value)
+			}
+			if (!resolvedValues.has(placeholder)) {
+				resolvedValues.set(placeholder, value)
 			}
 		}
-		if (!replacements.has(renderedPlaceholder)) {
-			replacements.set(renderedPlaceholder, authHeader)
+		for (const { name, value } of resolvedIntegrationTokens) {
+			const placeholder = buildIntegrationTokenPlaceholder(name)
+			if (!replacements.has(placeholder)) {
+				replacements.set(placeholder, value)
+				substitutedValues.push(value)
+			}
 		}
+		for (const { referenced, resolved } of resolvedProviderSecrets) {
+			const placeholder = buildProviderSecretPlaceholder(referenced)
+			if (!replacements.has(placeholder)) {
+				replacements.set(placeholder, resolved.value)
+				substitutedValues.push(resolved.value)
+			}
+		}
+		applyBasicAuthPlaceholders(pendingBasicAuth)
 	}
+
+	await resolvePlaceholderBatch(placeholderSources)
+
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
 	const nextUrl = fillsUrlAndBody
 		? fillUrlPlaceholders(requestUrl, replacements)
 		: requestUrl
-	const fillsBody = requestBody != null && bodyTexts.some(holdsPlaceholder)
-	const nextBody = fillsBody
-		? fillBodyPlaceholders(requestBody, replacements)
-		: requestBodyInit(requestBody)
-	// A filled body has a new length; the runtime sets it from the bytes.
-	if (fillsBody) headers.delete('content-length')
+
+	let nextBody: ReadableStream<Uint8Array> | null = sourceBody
+	let bodyFillDone: Promise<void> = Promise.resolve()
+
+	if (fillsUrlAndBody && sourceBody) {
+		const { format, body: classifiedBody } = await classifyStreamingBody({
+			body: sourceBody,
+			contentType: headers.get('content-type'),
+		})
+		const fill = createPlaceholderFillStream({
+			source: classifiedBody,
+			format,
+			replacements,
+			allowPercentEncoded: format === 'form',
+			resolve: async (batch: PlaceholderReferenceBatch) => {
+				if (!batchHasPlaceholders(batch)) return []
+				const sources = [
+					...batch.secrets.map((secret) => buildSecretPlaceholder(secret)),
+					...batch.basicAuth.map((placeholder) =>
+						buildBasicAuthSecretPlaceholderFromReference(placeholder),
+					),
+					...batch.integrationTokens.map((name) =>
+						buildIntegrationTokenPlaceholder(name),
+					),
+					...batch.providerSecrets.map((referenced) =>
+						buildProviderSecretPlaceholder(referenced),
+					),
+				]
+				const before = substitutedValues.length
+				await resolvePlaceholderBatch(sources)
+				return substitutedValues.slice(before)
+			},
+		})
+		nextBody = fill.stream
+		bodyFillDone = fill.done.then(() => {
+			for (const value of fill.substitutedValues) {
+				if (!substitutedValues.includes(value)) {
+					substitutedValues.push(value)
+				}
+			}
+		})
+		// Body length may change as placeholders fill.
+		headers.delete('content-length')
+	} else if (resolutionMode === 'headers-only') {
+		nextBody = sourceBody
+	}
+
 	const nextRedirect =
-		hasReferencedSecrets && input.request.redirect === 'follow'
+		referencedAnyCredential && input.request.redirect === 'follow'
 			? 'manual'
 			: input.request.redirect
 	return {
@@ -557,9 +636,95 @@ export async function expandSecretPlaceholders(input: {
 			integrity: input.request.integrity,
 			keepalive: input.request.keepalive,
 			signal: input.request.signal,
+			...(nextBody ? { duplex: 'half' as const } : {}),
 		}),
-		substitutedValues: [...replacements.values(), ...encodedBasicCredentials],
+		substitutedValues,
+		bodyFillDone,
 	}
+}
+
+function bodyFormatFromContentType(
+	contentType: string | null,
+): PlaceholderStreamBodyFormat {
+	const raw = contentType?.toLowerCase() ?? ''
+	if (raw.startsWith('multipart/')) return 'multipart'
+	if (raw.startsWith('application/x-www-form-urlencoded')) return 'form'
+	const mediaType = raw.split(';')[0]?.trim() ?? ''
+	if (mediaType === 'application/json' || mediaType.endsWith('+json')) {
+		return 'json'
+	}
+	return 'text'
+}
+
+/**
+ * `fetch(url, { body: JSON.stringify(...) })` without a Content-Type is sent
+ * as `text/plain`. Peek a small prefix so those bodies still JSON-escape,
+ * then rebuild a stream that starts with the peeked bytes.
+ */
+async function classifyStreamingBody(input: {
+	body: ReadableStream<Uint8Array>
+	contentType: string | null
+}): Promise<{
+	format: PlaceholderStreamBodyFormat
+	body: ReadableStream<Uint8Array>
+}> {
+	const hinted = bodyFormatFromContentType(input.contentType)
+	const mediaType = input.contentType?.toLowerCase().split(';')[0]?.trim() ?? ''
+	const mayBeUntypedJson = mediaType === '' || mediaType === 'text/plain'
+	if (hinted !== 'text' || !mayBeUntypedJson) {
+		return { format: hinted, body: input.body }
+	}
+	const reader = input.body.getReader()
+	const first = await reader.read()
+	if (first.done || !first.value) {
+		reader.releaseLock()
+		return {
+			format: 'text',
+			body: new ReadableStream({
+				start(c) {
+					c.close()
+				},
+			}),
+		}
+	}
+	const prefix = first.value
+	let format: PlaceholderStreamBodyFormat = 'text'
+	try {
+		const text = new TextDecoder('utf-8', { fatal: true }).decode(prefix)
+		JSON.parse(text)
+		format = 'json'
+	} catch {
+		// Not a complete JSON value in the first chunk, or not UTF-8 — keep text.
+		// A JSON body larger than one chunk still gets text fill for untyped
+		// Content-Type; callers that need JSON escaping should set the type.
+		try {
+			const text = new TextDecoder('utf-8', { fatal: true }).decode(prefix)
+			const trimmed = text.trimStart()
+			if (
+				(trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+				holdsPlaceholder(text)
+			) {
+				format = 'json'
+			}
+		} catch {
+			format = 'text'
+		}
+	}
+	const body = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			controller.enqueue(prefix)
+			for (;;) {
+				const { done, value } = await reader.read()
+				if (done) break
+				controller.enqueue(value)
+			}
+			controller.close()
+		},
+		cancel(reason) {
+			return reader.cancel(reason)
+		},
+	})
+	return { format, body }
 }
 
 /**
@@ -781,127 +946,6 @@ function dedupeBasicAuthSecretPlaceholders(
 		)
 	}
 	return Array.from(deduped.values())
-}
-
-type GatewayRequestBody =
-	| {
-			kind: 'text'
-			bytes: Uint8Array<ArrayBuffer>
-			text: string
-			format: 'form' | 'json' | 'text'
-	  }
-	| { kind: 'opaque'; bytes: Uint8Array<ArrayBuffer> }
-
-/**
- * The outbound request body. `multipart/*` is always opaque: a Discord upload
- * (JSON payload plus a `.txt` attachment) is valid UTF-8, but its message
- * content is not a fill site. Other bodies that decode as UTF-8 are text the
- * gateway fills; anything else is forwarded byte for byte.
- */
-async function readRequestBody(
-	request: Request,
-): Promise<GatewayRequestBody | null> {
-	if (!shouldSendBody(request.method)) return null
-	const bytes = new Uint8Array(await request.arrayBuffer())
-	const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
-	if (contentType.startsWith('multipart/')) return { kind: 'opaque', bytes }
-	try {
-		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
-		// bodies round-trip byte for byte.
-		const text = new TextDecoder('utf-8', {
-			fatal: true,
-			ignoreBOM: true,
-		}).decode(bytes)
-		return {
-			kind: 'text',
-			bytes,
-			text,
-			format: readTextBodyFormat(contentType, text),
-		}
-	} catch {
-		return { kind: 'opaque', bytes }
-	}
-}
-
-/**
- * `fetch(url, { body: JSON.stringify(...) })` without a Content-Type is sent
- * as `text/plain`, so an untyped or plain-text body that parses as JSON is
- * filled as JSON: a quote in a value must not end the string it fills.
- */
-function readTextBodyFormat(contentType: string, text: string) {
-	if (contentType.startsWith('application/x-www-form-urlencoded')) {
-		return 'form'
-	}
-	const mediaType = contentType.split(';')[0]?.trim() ?? ''
-	if (mediaType === 'application/json' || mediaType.endsWith('+json')) {
-		return 'json'
-	}
-	if ((mediaType === '' || mediaType === 'text/plain') && isJsonText(text)) {
-		return 'json'
-	}
-	return 'text'
-}
-
-function isJsonText(text: string) {
-	try {
-		JSON.parse(text)
-		return true
-	} catch {
-		return false
-	}
-}
-
-/**
- * Always bytes: a string body would make the Request constructor add a
- * `text/plain` Content-Type the caller never sent.
- */
-function requestBodyInit(body: GatewayRequestBody | null) {
-	return body?.bytes
-}
-
-/** The text in the body a placeholder may sit in. */
-function bodyPlaceholderTexts(body: GatewayRequestBody) {
-	switch (body.kind) {
-		case 'opaque':
-			return []
-		case 'text':
-			return body.format === 'form'
-				? formUrlEncodedTexts(body.text)
-				: [body.text]
-		default: {
-			const exhaustive: never = body
-			throw new Error(`Unhandled request body: ${String(exhaustive)}`)
-		}
-	}
-}
-
-function fillBodyPlaceholders(
-	body: GatewayRequestBody,
-	replacements: ReadonlyMap<string, string>,
-) {
-	if (body.kind === 'opaque') return body.bytes
-	return new TextEncoder().encode(
-		fillBodyText(body.text, body.format, replacements),
-	)
-}
-
-function fillBodyText(
-	text: string,
-	format: 'form' | 'json' | 'text',
-	replacements: ReadonlyMap<string, string>,
-) {
-	switch (format) {
-		case 'form':
-			return replaceSecretPlaceholdersInFormUrlEncoded(text, replacements)
-		case 'json':
-			return replaceSecretPlaceholdersInJson(text, replacements)
-		case 'text':
-			return replaceSecretPlaceholders(text, replacements)
-		default: {
-			const exhaustive: never = format
-			throw new Error(`Unhandled body format: ${String(exhaustive)}`)
-		}
-	}
 }
 
 /** The URL path and each decoded query key and value. */
