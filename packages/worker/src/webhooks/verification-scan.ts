@@ -30,6 +30,7 @@ export type WebhookVerificationScanEndpoint = {
 	packageId: string
 	packageKodyId: string | null
 	webhookName: string
+	enabled: boolean
 	status: WebhookVerificationStatus
 	verification: {
 		type: string
@@ -52,8 +53,9 @@ export type WebhookVerificationScan = {
 	endpoints: Array<WebhookVerificationScanEndpoint>
 }
 
-type LiveEndpointRow = {
+type EndpointRow = {
 	id: string
+	enabled: number
 	user_id: string
 	package_id: string
 	webhook_name: string
@@ -62,26 +64,27 @@ type LiveEndpointRow = {
 	source_id: string | null
 }
 
-async function listLiveWebhookEndpoints(db: D1Database) {
-	const rows: Array<LiveEndpointRow> = []
+async function listWebhookEndpoints(db: D1Database, includeDisabled: boolean) {
+	const enabledSql = includeDisabled ? '' : ' AND e.enabled = 1'
+	const rows: Array<EndpointRow> = []
 	let after = ''
 	for (;;) {
 		const page =
 			(
 				await db
 					.prepare(
-						`SELECT e.id, e.user_id, e.package_id, e.webhook_name,
+						`SELECT e.id, e.enabled, e.user_id, e.package_id, e.webhook_name,
 							o.slug AS owner_slug, p.kody_id, p.source_id
 						 FROM webhook_endpoints e
 						 LEFT JOIN orgs o ON o.id = e.user_id
 						 LEFT JOIN saved_packages p
 							ON p.id = e.package_id AND p.user_id = e.user_id${andLiveDeletedAtSql('p')}
-						 WHERE e.id > ?${andLiveDeletedAtSql('e')} AND e.enabled = 1
+						 WHERE e.id > ?${andLiveDeletedAtSql('e')}${enabledSql}
 						 ORDER BY e.id
 						 LIMIT ?`,
 					)
 					.bind(after, endpointPageSize)
-					.all<LiveEndpointRow>()
+					.all<EndpointRow>()
 			).results ?? []
 		rows.push(...page)
 		if (page.length < endpointPageSize) return rows
@@ -99,9 +102,13 @@ export async function scanWebhookVerification(input: {
 	env: Env
 	since: string
 	includeSignature: boolean
+	includeDisabled?: boolean
 }): Promise<WebhookVerificationScan> {
 	const since = new Date(input.since).toISOString()
-	const rows = await listLiveWebhookEndpoints(input.env.APP_DB)
+	const rows = await listWebhookEndpoints(
+		input.env.APP_DB,
+		input.includeDisabled === true,
+	)
 	const baseUrl = getAppBaseUrl({ env: input.env })
 
 	const manifestKeys = new Map<string, { userId: string; sourceId: string }>()
@@ -161,6 +168,7 @@ export async function scanWebhookVerification(input: {
 			packageId: row.package_id,
 			packageKodyId: row.kody_id,
 			webhookName: row.webhook_name,
+			enabled: row.enabled === 1,
 			status,
 			verification: declared?.verification
 				? {

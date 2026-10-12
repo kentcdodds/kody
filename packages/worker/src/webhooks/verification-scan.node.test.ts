@@ -59,6 +59,7 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 	const endpointRows = [
 		{
 			id: 'ep-stripe',
+			enabled: 1,
 			user_id: 'org-kent',
 			package_id: 'pkg-stripe',
 			webhook_name: 'stripe',
@@ -68,6 +69,7 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		},
 		{
 			id: 'ep-github',
+			enabled: 1,
 			user_id: 'org-kent',
 			package_id: 'pkg-desk',
 			webhook_name: 'github-pr',
@@ -77,6 +79,7 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		},
 		{
 			id: 'ep-gone',
+			enabled: 1,
 			user_id: 'org-kent',
 			package_id: 'pkg-desk',
 			webhook_name: 'removed',
@@ -86,6 +89,7 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		},
 		{
 			id: 'ep-upload',
+			enabled: 0,
 			user_id: 'org-ada',
 			package_id: 'pkg-planner',
 			webhook_name: 'upload',
@@ -95,6 +99,7 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		},
 		{
 			id: 'ep-broken',
+			enabled: 1,
 			user_id: 'org-ada',
 			package_id: 'pkg-broken',
 			webhook_name: 'hook',
@@ -225,15 +230,23 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		lastDeliveredAt: '2026-10-12T05:10:30.000Z',
 	})
 
+	expect(
+		scan.endpoints.find((row) => row.endpointId === 'ep-upload')?.enabled,
+	).toBe(false)
+
 	const withSignature = await scanWebhookVerification({
 		env,
 		since: '2026-10-11T06:00:00.000Z',
 		includeSignature: true,
+		includeDisabled: true,
 	})
+	expect(prepared.at(-1)).not.toContain('e.enabled = 1')
+	expect(prepared.at(-1)).toContain('e.deleted_at IS NULL')
 	expect(
 		withSignature.endpoints.find((row) => row.endpointId === 'ep-github'),
 	).toMatchObject({
 		status: 'signature',
+		enabled: true,
 		verification: {
 			type: 'hmac-sha256',
 			header: 'x-hub-signature-256',

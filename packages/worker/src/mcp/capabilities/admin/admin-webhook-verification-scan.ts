@@ -24,6 +24,12 @@ const inputSchema = z.object({
 		.describe(
 			'ISO 8601 lower bound for counting successful deliveries. Defaults to 30 days ago (RunLog retention).',
 		),
+	includeDisabled: z
+		.boolean()
+		.default(false)
+		.describe(
+			'Also scan disabled (but undeleted) webhook URLs. Ingress 404s them until re-enabled.',
+		),
 	includeSignature: z
 		.boolean()
 		.default(false)
@@ -57,6 +63,7 @@ const outputSchema = z.object({
 			packageId: z.string(),
 			packageKodyId: z.string().nullable(),
 			webhookName: z.string(),
+			enabled: z.boolean(),
 			status: statusSchema,
 			verification: z
 				.object({
@@ -103,6 +110,7 @@ export const adminWebhookVerificationScanCapability = defineDomainCapability(
 							args.since ??
 							new Date(Date.now() - runLogRetentionMs).toISOString(),
 						includeSignature: args.includeSignature,
+						includeDisabled: args.includeDisabled,
 					}),
 				{
 					successReason: (result) =>
