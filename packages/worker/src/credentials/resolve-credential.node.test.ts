@@ -1263,3 +1263,40 @@ test('a connection replaced after the Use check never hands its token to the old
 	).rejects.toThrow(/orgGoogle/)
 	expect(integrationHooks.duringRefresh).toBeNull()
 })
+
+test('a vault reference with no binding is checked for Use like any credential that was not found', async () => {
+	const t = await setup()
+	const resolveVaultAs = (actor: ReturnType<typeof t.personRequest>) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'provider-secret',
+				provider: '1password',
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			},
+		})
+	const missingBinding = /No secret provider is bound for "1password"/
+
+	const denied = await resolveVaultAs(
+		t.personRequest(t.collaboratorId, 'collab', null),
+	).then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(denied).toBeInstanceOf(AuthorizationError)
+	expect(String(denied)).toMatch(/Missing secret:use on secret 1password\b/)
+	expect(String(denied)).not.toMatch(missingBinding)
+
+	await expect(
+		resolveVaultAs(t.personRequest(t.ownerStableId, 'owner', 'owner')),
+	).rejects.toThrow(missingBinding)
+
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'failure',
+	])
+})

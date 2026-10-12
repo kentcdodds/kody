@@ -692,6 +692,41 @@ test('a pause keeps the credential name people read and its id, and a pause on a
 	})
 })
 
+test('a run that references a vault with no binding pauses the enablement on Use, like other credentials', async () => {
+	const t = await setup()
+	const cys = await t.enable('cy', 'subscription', emailTopic)
+	t.setPackageCode(async (callerContext, packageId) => {
+		await resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: callerContext.request,
+			packageStamp: attestedPackageStamp(packageId),
+			baseUrl: 'https://kody.example',
+			credential: {
+				use: 'provider-secret',
+				provider: '1password',
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: { sessionId: null, appId: packageId, packageId },
+			},
+		})
+	})
+	t.runs.splice(0)
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs[0]?.error).toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'secret:use',
+	})
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: {
+			reason: 'credential_access',
+			resourceType: 'secret',
+			resourceId: '1password',
+			credentialId: null,
+		},
+	})
+})
+
 test('a grant on a credential deleted since the pause does not resume the enablement', async () => {
 	const t = await setup()
 	const beas = await t.enable('bea', 'subscription', emailTopic)
