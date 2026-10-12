@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
@@ -7,6 +8,7 @@ import {
 	toProfileListLoaderData,
 	toProfileShellLoaderData,
 } from '#universal/loader-data.ts'
+import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
@@ -53,7 +55,7 @@ export function createProfileHandler(env: Env) {
 			})
 			if (!data) {
 				const memberOrg = await findMemberOrganization(env, request, username)
-				return renderAppPage({
+				const page = await renderAppPage({
 					request,
 					env,
 					title: memberOrg
@@ -63,6 +65,22 @@ export function createProfileHandler(env: Env) {
 					loaderData: {
 						profileShell: { ok: false, unavailable: true },
 					},
+				})
+				if (!memberOrg) return page
+				// The org home is where the switcher lands from account pages, so
+				// it remembers the org like the other org pages do.
+				const headers = new Headers(page.headers)
+				headers.append(
+					'Set-Cookie',
+					serializeLastUsedOrgCookie({
+						slug: memberOrg.slug,
+						secure: isSecureRequest(request),
+					}),
+				)
+				return new Response(page.body, {
+					status: page.status,
+					statusText: page.statusText,
+					headers,
 				})
 			}
 

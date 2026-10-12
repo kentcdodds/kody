@@ -349,3 +349,29 @@ test('an organization handle is a home for everyone its switcher lists and a 404
 	expect(outsider.status).toBe(404)
 	expect(outsider.body).toMatchObject({ title: 'Profile unavailable' })
 })
+
+test('an organization home remembers the org as last used; a public profile does not', async () => {
+	setupPublicProfileMocks()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		userId: 1,
+		mcpUser: { userId: ownerIdFromStored('stable-alice') },
+	})
+	mockModule.listOrganizationsForPerson.mockResolvedValue([
+		{ slug: 'alice', displayName: null, role: 'owner', personal: true },
+		{ slug: 'acme', displayName: 'Acme', role: 'member', personal: false },
+	])
+	const render = (username: string) =>
+		createProfileHandler(env).handler({
+			request: new Request(`https://example.com/@${username}`),
+			params: { username },
+			url: new URL(`https://example.com/@${username}`),
+		} as never)
+
+	expect((await render('alice')).headers.get('Set-Cookie')).toBeNull()
+
+	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
+	expect((await render('acme')).headers.get('Set-Cookie')).toContain(
+		'kody_last_org=acme',
+	)
+	expect((await render('zeta')).headers.get('Set-Cookie')).toBeNull()
+})
