@@ -3,9 +3,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	decryptWebhookHmacSecret,
+	encryptSecretValue,
 	encryptWebhookHmacSecret,
+	userSecretContext,
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { upsertSecretBucket, upsertSecretEntry } from '#mcp/secrets/repo.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
@@ -508,6 +511,52 @@ test('signing-secret rotation: new secret verifies and an unrelated secret does 
 	expect(
 		secrets.some((secret) => secret.value === 'unrelated-other-secret'),
 	).toBe(false)
+})
+
+test('user-scoped rotation skips endpoints whose package owns the same secretName', async () => {
+	const { env, userId, record, previousPlaintext } = await seededEndpointEnv()
+	await upsertSecretBucket({
+		db: env.APP_DB,
+		row: {
+			id: 'bucket-pkg-1',
+			user_id: userId,
+			scope: 'package',
+			binding_key: 'pkg-1',
+			expires_at: null,
+		},
+	})
+	await upsertSecretEntry({
+		db: env.APP_DB,
+		row: {
+			bucket_id: 'bucket-pkg-1',
+			name: 'stripeWebhookSecretCancelFarewell',
+			description: '',
+			encrypted_value: await encryptSecretValue(
+				env,
+				'package-stripe-value',
+				userSecretContext(userId),
+			),
+			allowed_hosts: '[]',
+			allowed_packages: '[]',
+			expires_at: null,
+		},
+	})
+	const updated = await rotateWebhookHmacSecretsForSecretValueChange({
+		env,
+		userId,
+		secretName: 'stripeWebhookSecretCancelFarewell',
+		previousPlaintext,
+		nextPlaintext: 'user-stripe-v2',
+		now: new Date('2026-07-24T12:00:00.000Z'),
+	})
+	expect(updated).toBe(0)
+	const endpoint = await getWebhookEndpointByIdForUser({
+		db: env.APP_DB,
+		userId,
+		endpointId: record.id,
+	})
+	expect(endpoint?.previousHmacSecretEncrypted).toBeNull()
+	expect(endpoint?.hmacVerificationSecretEncrypted).toBeTruthy()
 })
 
 test('secretName rename records previous identity and accepts the old value within grace', async () => {

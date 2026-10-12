@@ -155,12 +155,21 @@ async function retirePreviousWebhookHmacIfConfirmed(input: {
 	) {
 		return
 	}
-	await clearWebhookEndpointPreviousHmacSecret({
-		db: input.env.APP_DB,
-		userId: input.endpoint.userId,
-		endpointId: input.endpoint.id,
-		previousHmacSecretEncrypted: input.previousHmacSecretEncrypted,
-	})
+	try {
+		await clearWebhookEndpointPreviousHmacSecret({
+			db: input.env.APP_DB,
+			userId: input.endpoint.userId,
+			endpointId: input.endpoint.id,
+			previousHmacSecretEncrypted: input.previousHmacSecretEncrypted,
+		})
+	} catch (error) {
+		// Bookkeeping only: never change the delivery outcome after dispatch
+		// was accepted (ack already enqueued / sync about to invoke).
+		console.error('webhook-previous-hmac-retire-failed', {
+			endpointId: input.endpoint.id,
+			error,
+		})
+	}
 }
 
 function notFoundResponse() {

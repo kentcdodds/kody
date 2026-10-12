@@ -4,6 +4,7 @@ import {
 	encryptWebhookHmacSecret,
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { liveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	clearWebhookEndpointPreviousHmacSecret,
 	listWebhookEndpointsByHmacSecretName,
@@ -14,6 +15,41 @@ import {
 	type WebhookEndpointRecord,
 	webhookHmacSecretRotationGraceExpiresAt,
 } from './types.ts'
+
+/**
+ * Package scope wins over user for webhook-secret resolution. A user-scoped
+ * value change must not attach previous_* onto an endpoint whose declared
+ * secretName resolves to a package secret of the same name.
+ *
+ * Existence only — no decrypt. Inline SQL so this module stays outside the
+ * credential-storage door (`getSecretEntry` is resolveCredential-only).
+ */
+async function packageOwnsWebhookSecretName(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	secretName: string
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const row = await input.db
+		.prepare(
+			`SELECT 1 AS hit
+			FROM secret_buckets b
+			JOIN secret_entries e ON e.bucket_id = b.id
+			WHERE b.user_id = ?
+				AND b.scope = 'package'
+				AND b.binding_key = ?
+				AND e.name = ?
+				AND e.kind = 'secret'
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+				AND ${liveDeletedAtSql('b')}
+				AND ${liveDeletedAtSql('e')}
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.packageId, input.secretName, now)
+		.first<{ hit: number }>()
+	return row != null
+}
 
 /**
  * Snapshot of the declared signing value for change detection. Platform
@@ -74,8 +110,54 @@ export async function rotateWebhookHmacSecretsForSecretValueChange(input: {
 		hmacSecretName: secretName,
 		...(input.packageId ? { packageId: input.packageId } : {}),
 	})
+	const userScopedUpdate = !input.packageId
 	let updated = 0
 	for (const endpoint of endpoints) {
+		if (userScopedUpdate) {
+			if (
+				await packageOwnsWebhookSecretName({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					packageId: endpoint.packageId,
+					secretName,
+				})
+			) {
+				continue
+			}
+			if (!endpoint.hmacVerificationSecretEncrypted) continue
+			let snapshotPlaintext: string
+			try {
+				snapshotPlaintext = await decryptWebhookVerificationSnapshot({
+					env: input.env,
+					userId: input.userId,
+					endpointId: endpoint.id,
+					encrypted: endpoint.hmacVerificationSecretEncrypted,
+				})
+			} catch (error) {
+				console.warn('webhook-rotation-snapshot-decrypt-failed', {
+					endpointId: endpoint.id,
+					error,
+				})
+				continue
+			}
+			if (snapshotPlaintext !== input.previousPlaintext) continue
+		} else if (endpoint.hmacVerificationSecretEncrypted) {
+			try {
+				const snapshotPlaintext = await decryptWebhookVerificationSnapshot({
+					env: input.env,
+					userId: input.userId,
+					endpointId: endpoint.id,
+					encrypted: endpoint.hmacVerificationSecretEncrypted,
+				})
+				if (snapshotPlaintext !== input.previousPlaintext) continue
+			} catch (error) {
+				console.warn('webhook-rotation-snapshot-decrypt-failed', {
+					endpointId: endpoint.id,
+					error,
+				})
+				continue
+			}
+		}
 		// Always encrypt the known outgoing plaintext. Reusing a concurrent
 		// ingress snapshot can store the new value as previous_* and drop grace.
 		const previousEncrypted = await encryptWebhookVerificationSnapshot({
