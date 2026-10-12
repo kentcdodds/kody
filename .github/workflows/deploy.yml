@@ -19,8 +19,9 @@ permissions:
 # uploads and deploys platform before runtime, so cancelling mid-sequence
 # leaves new schema with old code or mismatched Durable Object bindings.
 # GitHub keeps at most one pending run per group and replaces it with a newer
-# one; that is intended, because the job only ever deploys `main` HEAD, so a
-# superseded pending run would have been a no-op.
+# one; that is intended, because Validate on `main` completes in push order and
+# the replacement targets a newer commit, so dropping the older one only skips
+# an intermediate deploy (sha-guard never moves production backwards).
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -61,13 +62,14 @@ jobs:
             github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: 🧾 Resolve deploy SHA and ensure it is main HEAD
+      - name: 🧾 Resolve deploy SHA and ensure production moves forward
         id: sha_guard
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW_DISPATCH_SHA: ${{ github.sha }}
+          PRODUCTION_URL: ${{ vars.APP_BASE_URL || 'https://kody.codes' }}
         run: |
           set -euo pipefail
           DEPLOY_SHA="$WORKFLOW_RUN_SHA"
@@ -83,7 +85,10 @@ jobs:
           git fetch origin main
           HEAD_SHA="$(git rev-parse origin/main)"
           echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
-          if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
+          # main HEAD, or an older validated main commit when production is
+          # strictly behind it (tools/ci/deploy-sha-guard.ts).
+          GUARD_OUTPUT="$(DEPLOY_SHA="$DEPLOY_SHA" HEAD_SHA="$HEAD_SHA" node tools/ci/deploy-sha-guard.ts)"
+          if [ "$GUARD_OUTPUT" != "should_deploy=true" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "deploy_main=false" >> "$GITHUB_OUTPUT"
             echo "deploy_platform=false" >> "$GITHUB_OUTPUT"
@@ -95,7 +100,6 @@ jobs:
             echo "deploy_api_worker=false" >> "$GITHUB_OUTPUT"
             echo "deploy_api_docs_worker=false" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deploy: target SHA is not current main HEAD."
             echo "target=$DEPLOY_SHA"
             echo "head=$HEAD_SHA"
             exit 0
