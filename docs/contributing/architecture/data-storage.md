@@ -1504,6 +1504,12 @@ on write unless a migration backfills existing rows.
   or `signing`. Placeholders fill only `secret` rows. A `url` value is a whole
   HTTPS URL that `resolveCredential` hands to the gateway only for one of the
   row's `allowed_hosts`; package code sends a relative path, never the URL.
+- `secret_entries.config_json` (`0118-credential-login-config.sql`) is a `login`
+  credential's exchange: an HTTPS URL on one of the row's `allowed_hosts`, the
+  body template, and where the session token is in the response. Other kinds
+  leave it NULL. The value holds the login fields as one JSON object, and
+  `inject_json` places the session token. Sessions are kept per isolate, never
+  in storage.
 - `credential_inventory_runs` and `credential_inventory_items`
   (`0112-credential-inventory.sql`,
   `packages/worker/src/credentials/credential-inventory.ts`) hold the admin

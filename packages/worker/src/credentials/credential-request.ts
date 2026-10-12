@@ -35,6 +35,25 @@ export class CredentialNotFoundError extends Error {
 }
 
 /**
+ * A login credential's exchange did not return a session. It carries only
+ * the HTTP status (null when the request did not complete), never the login
+ * response, which may echo the fields.
+ */
+export class CredentialLoginFailedError extends Error {
+	readonly code = 'login_failed'
+	readonly status: number | null
+	constructor(status: number | null) {
+		super(
+			status == null
+				? 'The login exchange did not complete.'
+				: `The login exchange did not return a session (HTTP ${status}).`,
+		)
+		this.name = 'CredentialLoginFailedError'
+		this.status = status
+	}
+}
+
+/**
  * Whether `hosts` allow `host`: an exact host, or a `*.example.com` entry,
  * which matches exactly one more label (`api.example.com`, not
  * `example.com` or `a.b.example.com`). No hosts allow nothing.

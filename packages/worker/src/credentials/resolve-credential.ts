@@ -47,6 +47,7 @@ import {
 	type ResolveCredentialInput,
 	type ResolvedCredential,
 } from './credential-resolver.ts'
+import { loginCredentialResolver } from './login-resolver.ts'
 import { mcpConnectionResolver } from './mcp-resolver.ts'
 import {
 	integrationRefreshResolver,
@@ -71,6 +72,7 @@ const credentialResolvers: {
 	'integration-refresh': integrationRefreshResolver,
 	'mcp-connection': mcpConnectionResolver,
 	url: urlCredentialResolver,
+	login: loginCredentialResolver,
 }
 
 export async function resolveCredential<T extends CredentialTarget>(

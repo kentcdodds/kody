@@ -23,6 +23,7 @@ import {
 	missingCredentialResource,
 } from './credential-ids.ts'
 import { type PackageStamp } from './package-stamp.ts'
+import { type ResolvedLoginSession } from './login-resolver.ts'
 import { type ResolvedCredentialUrl } from './url-resolver.ts'
 
 /**
@@ -97,6 +98,13 @@ export type CredentialTarget =
 	 * credential clients ship (T).
 	 */
 	| { use: 'url'; credentialId: string; path: string }
+	/**
+	 * A `login` credential picked by id: its session, from the exchange it
+	 * runs, placed for a request to `requestHost`, which must be one of the
+	 * credential's hosts. The caller places it only on a request to that host.
+	 * Not reachable from package code until the credential clients ship (T).
+	 */
+	| { use: 'login'; credentialId: string; requestHost: string }
 
 export type CredentialUse = CredentialTarget['use']
 
@@ -126,6 +134,7 @@ export type ResolvedCredentialByUse = {
 	'integration-refresh': IntegrationTokenRefreshResult
 	'mcp-connection': McpServerConnection
 	url: ResolvedCredentialUrl
+	login: ResolvedLoginSession
 }
 
 export type ResolvedCredential<T extends CredentialTarget> =
@@ -183,6 +192,7 @@ export function permissionForUse(use: CredentialUse): OrgPermission {
 		case 'webhook-secret':
 		case 'provider-secret':
 		case 'url':
+		case 'login':
 			return 'secret:use'
 		case 'integration-token':
 		case 'integration-refresh':

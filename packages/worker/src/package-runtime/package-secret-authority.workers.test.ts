@@ -95,6 +95,8 @@ async function ensureSecretAuthorityTestSchema() {
 		description TEXT NOT NULL DEFAULT '',
 		encrypted_value TEXT NOT NULL,
 		kind TEXT NOT NULL DEFAULT 'secret',
+		inject_json TEXT NOT NULL DEFAULT '{"kind":"header","name":"Authorization","format":"Bearer {value}"}',
+		config_json TEXT,
 		allowed_hosts TEXT NOT NULL DEFAULT '[]',
 		allowed_packages TEXT NOT NULL DEFAULT '[]',
 		lookup_hash TEXT,

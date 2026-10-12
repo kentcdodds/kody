@@ -459,6 +459,10 @@
 		{
 			"filename": "0117-credential-kinds.sql",
 			"sha256": "9299e404d3c3f1ca437c471b176507bd89dd0c11bbf9315b435753a8cc4b2260"
+		},
+		{
+			"filename": "0118-credential-login-config.sql",
+			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
 		}
 	]
 }

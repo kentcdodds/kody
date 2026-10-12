@@ -763,6 +763,11 @@ export type StoredCredential = {
 	name: string
 	kind: StoredCredentialKind
 	allowedHosts: Array<string>
+	/** Raw `inject_json`: how the credential's value or session is placed. */
+	injectJson: string
+	/** Raw `config_json`: a login credential's exchange, else null. */
+	configJson: string | null
+	updatedAt: string
 }
 
 /**
@@ -790,6 +795,9 @@ export async function findStoredCredentialForUse(input: {
 			name: row.name,
 			kind: row.kind,
 			allowedHosts: parseAllowedHosts(row.allowed_hosts),
+			injectJson: row.inject_json,
+			configJson: row.config_json,
+			updatedAt: row.updated_at,
 		},
 		readValue: () =>
 			decryptSecretValue(
