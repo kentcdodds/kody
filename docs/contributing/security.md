@@ -718,7 +718,10 @@ change to these decisions here so future agents do not relitigate them.
   capability and every member, role, invite, or member/billing grant change
   declares `requiresLivePerson`, so a job, webhook, subscription, or inbound
   email run (and package code it starts) is denied even when its enabler is an
-  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). The
+  one exception is `adminUserVerify` `mint_verify_url`. It is still admin-only,
+  but a job, webhook, or subscription that an admin enabled on their own package
+  may run it, and each mint is audited with its trigger. See
   [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,

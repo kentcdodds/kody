@@ -21,6 +21,7 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 /**
  * Site-admin tools: the `admin` role gates them, not org permissions, and a
  * live person must call them (never a job, webhook, subscription, or email).
+ * The one exception is `adminUserVerify` `mint_verify_url` (see that file).
  */
 export const adminCapabilityAccess = {
 	orgPermission: 'none',
@@ -218,9 +219,13 @@ export async function auditAdminCapabilityInvocation<TResult>(
 		successReason?: (result: TResult) => string
 		/** A resolved result that reports its own failure (default: success). */
 		resultOf?: (result: TResult) => 'success' | 'failure'
+		/** Appended to every reason, success or failure (`key=value;...`). */
+		reasonContext?: string | null
 	} = {},
 ): Promise<TResult> {
 	const actorEmail = ctx.callerContext.user?.email
+	const withContext = (reason: string) =>
+		options.reasonContext ? `${reason};${options.reasonContext}` : reason
 	try {
 		const result = await run()
 		await logAuditEvent({
@@ -230,7 +235,9 @@ export async function auditAdminCapabilityInvocation<TResult>(
 			result: options.resultOf?.(result) ?? 'success',
 			email: actorEmail,
 			path: '/mcp',
-			reason: options.successReason?.(result) ?? 'mcp_admin_capability',
+			reason: withContext(
+				options.successReason?.(result) ?? 'mcp_admin_capability',
+			),
 		})
 		return result
 	} catch (error) {
@@ -241,7 +248,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 			result: 'failure',
 			email: actorEmail,
 			path: '/mcp',
-			reason: getErrorReason(error),
+			reason: withContext(getErrorReason(error)),
 		})
 		throw error
 	}

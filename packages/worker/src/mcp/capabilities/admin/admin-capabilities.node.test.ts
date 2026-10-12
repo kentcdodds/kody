@@ -7,6 +7,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { LivePersonRequiredError } from '#worker/authorization/authorize.ts'
+import {
+	deriveRequestContext,
+	type EnablementRun,
+	inheritRequest,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -48,6 +55,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 
 const janeStableId = testStableUserIdFromEmail('jane@example.com')
+const adminPersonId = personIdFromStored('admin-user')
 const roleIds = { user: 1, admin: 2 } as const
 
 type SeedUser = {
@@ -95,6 +103,7 @@ function createAdminCapabilityTest(
 	users: Array<SeedUser>,
 	blobs?: ReturnType<typeof createMemoryEmailBlobs>['blobs'],
 	callerRoles: Array<string> = ['admin'],
+	callerSource: RequestSource = { kind: 'mcp-oauth' },
 ) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(
@@ -164,13 +173,19 @@ function createAdminCapabilityTest(
 			EMAIL_BLOBS: emailBlobs,
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
+			source: callerSource,
 			baseUrl: 'https://example.com',
 			user: {
-				userId: personIdFromStored('admin-user'),
+				userId: adminPersonId,
 				email: 'admin@example.com',
 				displayName: 'admin',
 				roles: callerRoles,
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'pkg-admin-event-notify',
+				packageId: 'pkg-admin-event-notify',
+				storageId: 'package-invocation:pkg-admin-event-notify',
 			},
 		}),
 	}
@@ -749,4 +764,159 @@ test('adminUserVerify marks verified and mints a one-time url with audit metadat
 			reason: 'User not found.',
 		},
 	])
+})
+
+const adminEnablement: EnablementRun = {
+	id: 'enablement-admin-notify',
+	enabler: { userId: adminPersonId, username: 'admin' },
+	role: 'owner',
+}
+const automatedMintAudit = (trigger: string) =>
+	`trigger=${trigger};enablement_id=${adminEnablement.id};package_id=pkg-admin-event-notify`
+
+test('adminUserVerify mint_verify_url runs from a job, webhook, or subscription an admin enabled, and audits the trigger', async () => {
+	const subscriptionRun: RequestSource = {
+		kind: 'platform-event',
+		sourceId: 'email_verification_stall_alert',
+		enablement: adminEnablement,
+	}
+	const cases: Array<{ source: RequestSource; trigger: string }> = [
+		{
+			source: { kind: 'schedule', jobId: 'job-1', enablement: adminEnablement },
+			trigger: 'job',
+		},
+		{
+			source: {
+				kind: 'webhook',
+				sourceId: 'ep-1',
+				enablement: adminEnablement,
+			},
+			trigger: 'webhook',
+		},
+		{ source: subscriptionRun, trigger: 'subscription' },
+		{
+			source: inheritRequest(
+				deriveRequestContext({
+					user: adminEnablement.enabler,
+					source: subscriptionRun,
+				}),
+			),
+			trigger: 'subscription',
+		},
+	]
+	for (const { source, trigger } of cases) {
+		const t = createAdminCapabilityTest(
+			[admin, jane],
+			undefined,
+			['admin'],
+			source,
+		)
+		const minted = await adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mint_verify_url' },
+			t.ctx,
+		)
+		expect(minted.verifyUrl).toMatch(
+			/^https:\/\/example.com\/verify-email\?token=/,
+		)
+		await expect(
+			adminUserVerifyCapability.handler(
+				{ email: 'missing@example.com', action: 'mint_verify_url' },
+				t.ctx,
+			),
+		).rejects.toThrow('User not found.')
+		expect(t.auditEvents()).toEqual([
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: `target_stable_user_id=${janeStableId};action=mint_verify_url;${automatedMintAudit(trigger)}`,
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'failure',
+				reason: `User not found.;${automatedMintAudit(trigger)}`,
+			},
+		])
+	}
+})
+
+test('adminUserVerify refuses automations that are not an admin owner minting a url', async () => {
+	const subscriptionRun = (enablement: EnablementRun): RequestSource => ({
+		kind: 'platform-event',
+		sourceId: 'email_verification_stall_alert',
+		enablement,
+	})
+	const mint = { email: 'jane@example.com', action: 'mint_verify_url' } as const
+	const refusals: Array<{
+		name: string
+		source: RequestSource
+		roles?: Array<string>
+		args?: { email: string; action: 'mark_verified' | 'mint_verify_url' }
+		error: RegExp | typeof LivePersonRequiredError
+	}> = [
+		{
+			name: 'non-admin enabler',
+			source: subscriptionRun(adminEnablement),
+			roles: ['user'],
+			error: /lacks required role "admin" for capability "adminUserVerify"/,
+		},
+		{
+			name: 'mark_verified stays live-person only',
+			source: subscriptionRun(adminEnablement),
+			args: { email: 'jane@example.com', action: 'mark_verified' },
+			error: LivePersonRequiredError,
+		},
+		{
+			name: 'enabler is not the package owner',
+			source: subscriptionRun({
+				...adminEnablement,
+				enabler: { userId: personIdFromStored('other-user'), username: 'bea' },
+			}),
+			error: LivePersonRequiredError,
+		},
+		{
+			name: 'enabler is not an Owner',
+			source: subscriptionRun({ ...adminEnablement, role: 'member' }),
+			error: LivePersonRequiredError,
+		},
+		{
+			name: 'trigger nobody turned on',
+			source: { kind: 'platform-event', sourceId: 'event-1' },
+			error: LivePersonRequiredError,
+		},
+		{
+			name: 'package app',
+			source: { kind: 'package-app' },
+			error: LivePersonRequiredError,
+		},
+		{
+			name: 'inbound email',
+			source: {
+				kind: 'inbound-email',
+				sourceId: 'message-1',
+				sender: { kind: 'inbox-owner' },
+				enablement: adminEnablement,
+			},
+			error: LivePersonRequiredError,
+		},
+	]
+	for (const refusal of refusals) {
+		const t = createAdminCapabilityTest(
+			[admin, jane],
+			undefined,
+			refusal.roles ?? ['admin'],
+			refusal.source,
+		)
+		await expect(
+			adminUserVerifyCapability.handler(refusal.args ?? mint, t.ctx),
+			refusal.name,
+		).rejects.toThrow(refusal.error)
+		expect(
+			t.auditEvents().filter((row) => row.action === 'adminUserVerify'),
+			refusal.name,
+		).toEqual([])
+		expect(
+			t.userRow('jane@example.com')?.['email_verified_at'],
+			refusal.name,
+		).toBeNull()
+	}
 })

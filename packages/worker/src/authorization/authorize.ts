@@ -650,6 +650,45 @@ export function isLivePersonRequest(request: RequestContext | null): boolean {
 	}
 }
 
+export type AutomationTrigger = {
+	type: 'job' | 'webhook' | 'subscription'
+	/** The enablement the run acts under; its row names the trigger instance. */
+	enablementId: string
+}
+
+/**
+ * The job, webhook, or subscription enablement behind `request`, including
+ * package code one of those started (lineage keeps the trigger credential).
+ * Null for live requests, package apps, inbound email, and trigger sources
+ * nobody turned on.
+ */
+export function automationTriggerOf(
+	request: RequestContext | null,
+): AutomationTrigger | null {
+	if (!request?.actor || request.attribution.kind !== 'user') return null
+	const { kind, id } = request.credential
+	if (!id) return null
+	switch (kind) {
+		case 'schedule':
+			return { type: 'job', enablementId: id }
+		case 'webhook':
+			return { type: 'webhook', enablementId: id }
+		case 'platform-event':
+			return { type: 'subscription', enablementId: id }
+		case 'session':
+		case 'mcp-oauth':
+		case 'cli':
+		case 'api-token':
+		case 'package-app':
+		case 'inbound-email':
+			return null
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /** Refuse `capabilityName` unless a live person is behind `request`. */
 export function assertLivePerson(
 	request: RequestContext | null,

@@ -14,6 +14,7 @@ import {
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	assertLivePerson,
+	automationTriggerOf,
 	authorize,
 	authorizeSurface,
 	isLivePersonRequest,
@@ -586,4 +587,56 @@ test('only a person behind the request is live; a triggered run and anything it 
 	expect(() =>
 		assertLivePerson(request({ kind: 'session' }), 'orgMemberUpdate'),
 	).not.toThrow()
+})
+
+test('automationTriggerOf names the job, webhook, or subscription enablement a run acts under', () => {
+	const person = { userId: personIdFromStored('user-1'), username: 'ada' }
+	const enablement = { id: 'en-1', enabler: person, role: 'owner' as const }
+	const request = (source: RequestSource) =>
+		deriveRequestContext({ user: person, source })
+	const trigger = (source: RequestSource) =>
+		automationTriggerOf(request(source))
+	const subscriptionRun = request({
+		kind: 'platform-event',
+		sourceId: 'event-1',
+		enablement,
+	})
+
+	expect(
+		(
+			[
+				{ kind: 'schedule', jobId: 'job-1', enablement },
+				{ kind: 'webhook', sourceId: 'ep-1', enablement },
+				{ kind: 'platform-event', sourceId: 'event-1', enablement },
+				inheritRequest(subscriptionRun),
+			] satisfies Array<RequestSource>
+		).map(trigger),
+	).toEqual([
+		{ type: 'job', enablementId: 'en-1' },
+		{ type: 'webhook', enablementId: 'en-1' },
+		{ type: 'subscription', enablementId: 'en-1' },
+		{ type: 'subscription', enablementId: 'en-1' },
+	])
+
+	expect(
+		(
+			[
+				{ kind: 'session' },
+				{ kind: 'mcp-oauth' },
+				{ kind: 'cli' },
+				{ kind: 'api-token', tokenId: 'token-1' },
+				{ kind: 'package-app' },
+				{ kind: 'schedule', jobId: 'job-1' },
+				{ kind: 'webhook', sourceId: 'ep-1' },
+				{ kind: 'platform-event', sourceId: 'event-1' },
+				{
+					kind: 'inbound-email',
+					sourceId: 'message-1',
+					sender: { kind: 'inbox-owner' },
+					enablement,
+				},
+			] satisfies Array<RequestSource>
+		).map(trigger),
+	).toEqual([null, null, null, null, null, null, null, null, null])
+	expect(automationTriggerOf(null)).toBeNull()
 })
