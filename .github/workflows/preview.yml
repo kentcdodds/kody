@@ -808,6 +808,10 @@ jobs:
           echo "API worker healthcheck failed after ${attempts} attempts: $API_URL" >&2
           exit 1
 
+      - name: ✅ Mark preview healthy
+        id: preview_healthy
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+
       - name: 🧾 Write preview link summary
         if: steps.deploy_preview.outputs.url != ''
         env:
@@ -976,11 +980,13 @@ jobs:
       # namespaces), D1, KV, and R2 until the PR closes, which can keep the
       # account at its Durable Object namespace cap (#3396). The next push
       # re-creates everything. Branch previews (workflow_dispatch) keep their
-      # state so a migration rehearsal can inspect or restore it.
+      # state so a migration rehearsal can inspect or restore it. A preview
+      # that passed its healthchecks stays up even if a later step fails.
       - name: 🧹 Clean up preview resources after a failed deploy
         if: >-
           failure() && github.event_name == 'pull_request' &&
-          steps.names.outputs.worker_name != ''
+          steps.names.outputs.worker_name != '' &&
+          steps.preview_healthy.outputs.ok != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
