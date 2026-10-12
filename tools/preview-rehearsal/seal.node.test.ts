@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
@@ -46,6 +46,7 @@ test('importRecipientPublicKey rejects a key that is not base64 SPKI RSA', async
 test('importRecipientPublicKey accepts keygen stderr banner plus the printed public key', async () => {
 	const recipient = await generateSealKeyPair()
 	const privateKeyPath = '/home/ubuntu/.kody-rehearsal/key'
+	const spaced = `${recipient.publicKey.slice(0, 32)} ${recipient.publicKey.slice(32, 64)}\n${recipient.publicKey.slice(64)}`
 	const pastes = [
 		`${privateKeyWrittenMessage(privateKeyPath)}\n${recipient.publicKey}`,
 		[
@@ -53,6 +54,7 @@ test('importRecipientPublicKey accepts keygen stderr banner plus the printed pub
 			publicKeyWrittenMessage(recipientPublicKeyPath(privateKeyPath)),
 			recipient.publicKey,
 		].join('\n'),
+		`${privateKeyWrittenMessage(privateKeyPath)}\n${spaced}`,
 	]
 	for (const noisy of pastes) {
 		const envelope = await sealJson(
@@ -73,6 +75,7 @@ test('writeSealKeyPair writes the private key and a sibling .pub file', async ()
 		expect(pair.publicKeyPath).toBe(recipientPublicKeyPath(privateKeyPath))
 		const published = await readFile(pair.publicKeyPath, 'utf8')
 		expect(published.trim()).toBe(pair.publicKey)
+		expect((await stat(path.dirname(privateKeyPath))).mode & 0o777).toBe(0o700)
 		const envelope = await sealJson(
 			{ n: 1 },
 			await importRecipientPublicKey(published),
@@ -80,6 +83,35 @@ test('writeSealKeyPair writes the private key and a sibling .pub file', async ()
 		await expect(
 			openSealedJson(envelope, await readFile(privateKeyPath, 'utf8')),
 		).resolves.toEqual({ n: 1 })
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('writeSealKeyPair refuses to overwrite an existing private key or .pub', async () => {
+	const directory = await mkdtemp(path.join(tmpdir(), 'kody-seal-keep-'))
+	try {
+		const privateKeyPath = path.join(directory, 'key')
+		await writeFile(privateKeyPath, 'old-private\n', { mode: 0o600 })
+		await writeFile(recipientPublicKeyPath(privateKeyPath), 'old-pub\n', {
+			mode: 0o600,
+		})
+		await expect(writeSealKeyPair(privateKeyPath)).rejects.toThrow(
+			'Refusing to overwrite existing key',
+		)
+		expect(await readFile(privateKeyPath, 'utf8')).toBe('old-private\n')
+		expect(await readFile(recipientPublicKeyPath(privateKeyPath), 'utf8')).toBe(
+			'old-pub\n',
+		)
+
+		const blocked = path.join(directory, 'blocked', 'key')
+		await mkdir(path.dirname(blocked), { recursive: true })
+		await writeFile(blocked, 'keep-private\n', { mode: 0o600 })
+		await mkdir(recipientPublicKeyPath(blocked))
+		await expect(writeSealKeyPair(blocked)).rejects.toThrow(
+			'Refusing to overwrite existing key',
+		)
+		expect(await readFile(blocked, 'utf8')).toBe('keep-private\n')
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}

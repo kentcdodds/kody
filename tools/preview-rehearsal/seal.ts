@@ -1,4 +1,12 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import {
+	access,
+	chmod,
+	mkdir,
+	readFile,
+	rename,
+	rm,
+	writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { fail } from '../ci/resource-utils.ts'
@@ -47,14 +55,28 @@ export function publicKeyWrittenMessage(publicKeyPath: string) {
  * Agents often paste keygen's stderr banner plus the printed public key into
  * `recipient_public_key`. Keep the SPKI blob; drop the rest.
  */
+function isEnoent(error: unknown) {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+async function assertNewKeyPath(filePath: string) {
+	try {
+		await access(filePath)
+	} catch (error) {
+		if (isEnoent(error)) return
+		throw error
+	}
+	throw new Error(`Refusing to overwrite existing key at ${filePath}`)
+}
+
 function normalizeRecipientPublicKey(raw: string) {
 	const keyLines = raw
 		.replace(/\r\n/g, '\n')
 		.split('\n')
-		.map((line) => line.trim())
+		.map((line) => line.replace(/\s+/g, ''))
 		.filter((line) => line && base64Line.test(line))
 	if (keyLines.length > 0) return keyLines.join('')
-	return raw.trim()
+	return raw.replace(/\s+/g, '')
 }
 
 export async function generateSealKeyPair() {
@@ -76,11 +98,31 @@ export async function generateSealKeyPair() {
 }
 
 export async function writeSealKeyPair(privateKeyPath: string) {
-	const pair = await generateSealKeyPair()
 	const publicKeyPath = recipientPublicKeyPath(privateKeyPath)
-	await mkdir(path.dirname(privateKeyPath), { recursive: true })
-	await writeFile(privateKeyPath, `${pair.privateKey}\n`, { mode: 0o600 })
-	await writeFile(publicKeyPath, `${pair.publicKey}\n`, { mode: 0o600 })
+	const directory = path.dirname(privateKeyPath)
+	await mkdir(directory, { recursive: true, mode: 0o700 })
+	await chmod(directory, 0o700)
+	await assertNewKeyPath(privateKeyPath)
+	await assertNewKeyPath(publicKeyPath)
+	const pair = await generateSealKeyPair()
+	const privateTmp = `${privateKeyPath}.${process.pid}.tmp`
+	const publicTmp = `${publicKeyPath}.${process.pid}.tmp`
+	try {
+		await writeFile(privateTmp, `${pair.privateKey}\n`, {
+			mode: 0o600,
+			flag: 'wx',
+		})
+		await writeFile(publicTmp, `${pair.publicKey}\n`, {
+			mode: 0o600,
+			flag: 'wx',
+		})
+		await rename(publicTmp, publicKeyPath)
+		await rename(privateTmp, privateKeyPath)
+	} catch (error) {
+		await rm(privateTmp, { force: true })
+		await rm(publicTmp, { force: true })
+		throw error
+	}
 	return { ...pair, publicKeyPath }
 }
 
