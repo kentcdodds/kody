@@ -6,8 +6,7 @@ import {
 	createPackagePublishLockedError,
 	loadLockedSavedPackage,
 } from '#worker/package-registry/package-publish-lock.ts'
-import { storeCredentialNeedsClosure } from '#worker/credentials/credential-needs-closure.ts'
-import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -191,45 +190,6 @@ export async function finalizePublishedEntitySource(
 			input.source.entity_id,
 			error,
 		)
-	}
-}
-
-/**
- * Best effort: a package whose closure was not stored falls back to its own
- * needs when read, so a failure here never fails the publish.
- */
-async function storePublishedCredentialNeeds(input: {
-	env: Env
-	source: EntitySourceRow
-	publishedCommit: string
-	files: Record<string, string>
-}) {
-	try {
-		const content = input.files[input.source.manifest_path]
-		if (typeof content !== 'string') return
-		const root = input.source.source_root.replace(/^\/+|\/+$/g, '')
-		await storeCredentialNeedsClosure({
-			env: input.env,
-			userId: input.source.user_id,
-			sourceId: input.source.id,
-			publishedCommit: input.publishedCommit,
-			manifest: parseAuthoredPackageJson({ content, mode: 'published' }),
-			files: root
-				? Object.fromEntries(
-						Object.entries(input.files).filter(([path]) =>
-							path.startsWith(`${root}/`),
-						),
-					)
-				: input.files,
-		})
-	} catch (error) {
-		Sentry.captureException(error, {
-			tags: { scope: 'repo.publish.store-credential-needs' },
-			extra: {
-				sourceId: input.source.id,
-				publishedCommit: input.publishedCommit,
-			},
-		})
 	}
 }
 

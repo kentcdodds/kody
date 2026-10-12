@@ -1737,6 +1737,7 @@ export async function deleteUserAccount(input: {
 				...inventory.sourceSnapshots.flatMap((source) => [
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
+					`credential-needs:v1:${source.sourceId}:`,
 				]),
 				...inventory.communityListings.flatMap((listing) =>
 					communityIconKvListingPrefixes(listing.id),

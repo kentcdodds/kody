@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 		{ id: string; user_id: string; published_commit: string | null }
 	>(),
 	manifests: new Map<string, unknown>(),
+	snapshots: new Map<string, Record<string, string>>(),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
@@ -23,18 +24,26 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 	}) => {
 		mocks.kv.set(`${input.sourceId}:${input.publishedCommit}`, input.needs)
 	},
+	readPublishedSourceSnapshot: async (input: {
+		sourceId: string
+		publishedCommit: string
+	}) => {
+		const files = mocks.snapshots.get(
+			`${input.sourceId}:${input.publishedCommit}`,
+		)
+		return files ? { files } : null
+	},
 }))
 
-vi.mock(
-	import('#worker/package-runtime/package-import-resolution.ts'),
-	async (importOriginal) => ({
-		...(await importOriginal()),
-		resolveSavedPackageImport: async (input) => {
-			const row = mocks.packages.get(String(input.specifier))
-			return row ? ({ row } as never) : null
-		},
-	}),
-)
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageByName: async (
+		_db: unknown,
+		input: { userId: string; name: string },
+	) => {
+		const row = mocks.packages.get(input.name)
+		return row && row.userId === input.userId ? row : null
+	},
+}))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: async (_db: unknown, id: string) =>
@@ -50,7 +59,7 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 const {
 	computeCredentialNeedsClosure,
 	loadPublishedCredentialNeeds,
-	storeCredentialNeedsClosure,
+	storePublishedCredentialNeeds,
 } = await import('./credential-needs-closure.ts')
 
 const env = { APP_DB: {} } as unknown as Env
@@ -72,6 +81,7 @@ function addPackage(input: {
 	commit: string
 	credentials?: AuthoredPackageJson['kody']['credentials']
 	storedNeeds?: unknown
+	files?: Record<string, string>
 }) {
 	mocks.packages.set(input.name, { userId: 'org-1', sourceId: input.sourceId })
 	mocks.sources.set(input.sourceId, {
@@ -83,6 +93,9 @@ function addPackage(input: {
 	if (input.storedNeeds !== undefined) {
 		mocks.kv.set(`${input.sourceId}:${input.commit}`, input.storedNeeds)
 	}
+	if (input.files) {
+		mocks.snapshots.set(`${input.sourceId}:${input.commit}`, input.files)
+	}
 }
 
 beforeEach(() => {
@@ -90,6 +103,7 @@ beforeEach(() => {
 	mocks.packages.clear()
 	mocks.sources.clear()
 	mocks.manifests.clear()
+	mocks.snapshots.clear()
 })
 
 test('publish stores own needs plus each imported package closure, and reads it back', async () => {
@@ -124,16 +138,26 @@ test('publish stores own needs plus each imported package closure, and reads it 
 			'export default () => [triage, notify, self, missing]',
 		].join('\n'),
 	}
-	const app = manifest('@acme/app', {
-		github: { kind: 'oauth', description: 'Repos.' },
-	})
-	await storeCredentialNeedsClosure({
+	await storePublishedCredentialNeeds({
 		env,
-		userId: 'org-1',
-		sourceId: 'src-app',
+		source: {
+			id: 'src-app',
+			user_id: 'org-1',
+			entity_kind: 'package',
+			manifest_path: 'package.json',
+		} as never,
 		publishedCommit: 'c3',
-		manifest: app,
-		files,
+		files: {
+			...files,
+			'package.json': JSON.stringify({
+				name: '@acme/app',
+				exports: { '.': './index.ts' },
+				kody: {
+					description: 'App.',
+					credentials: { github: { kind: 'oauth', description: 'Repos.' } },
+				},
+			}),
+		},
 	})
 	const expected = [
 		{
@@ -199,5 +223,67 @@ test('a dependency that declares the same key with another kind is a conflict', 
 	})
 	expect(conflicts).toEqual([
 		'kody.credentials.github: oauth from provider "github" (declared by this package) conflicts with secret from provider "github" (declared by @acme/gh-pat). Give one of them a different key.',
+	])
+})
+
+test('a publish that stored no closure is computed from its published source', async () => {
+	addPackage({
+		name: '@acme/connector',
+		sourceId: 'src-connector',
+		commit: 'c1',
+		credentials: { github: { kind: 'oauth', description: 'Repos.' } },
+	})
+	addPackage({
+		name: '@acme/bridge',
+		sourceId: 'src-bridge',
+		commit: 'c2',
+		files: { 'index.ts': "import c from 'kody:@acme/connector'" },
+	})
+	expect(
+		await loadPublishedCredentialNeeds({
+			env,
+			userId: 'org-1',
+			sourceId: 'src-bridge',
+		}),
+	).toEqual([
+		{
+			key: 'github',
+			kind: 'oauth',
+			provider: 'github',
+			description: 'Repos.',
+			multiple: false,
+			from: '@acme/connector',
+		},
+	])
+})
+
+test('an import cycle between unstored closures ends', async () => {
+	addPackage({
+		name: '@acme/a',
+		sourceId: 'src-a',
+		commit: 'c1',
+		credentials: { linear: { kind: 'mcp', description: 'Linear.' } },
+		files: { 'index.ts': "import b from 'kody:@acme/b'" },
+	})
+	addPackage({
+		name: '@acme/b',
+		sourceId: 'src-b',
+		commit: 'c1',
+		files: { 'index.ts': "import a from 'kody:@acme/a'" },
+	})
+	expect(
+		await loadPublishedCredentialNeeds({
+			env,
+			userId: 'org-1',
+			sourceId: 'src-a',
+		}),
+	).toEqual([
+		{
+			key: 'linear',
+			kind: 'mcp',
+			provider: 'linear',
+			description: 'Linear.',
+			multiple: false,
+		},
 	])
 })
