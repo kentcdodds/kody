@@ -179,6 +179,7 @@ function toPlainRepoOwnerPackage(input: {
 		updatedAt: input.repo.updatedAt,
 		hidden: false,
 		isPrivate: input.repo.isPrivate,
+		isInternetVisible: false,
 		hasCommunityListing: false,
 		listingAhead: null,
 		forkAhead: null,

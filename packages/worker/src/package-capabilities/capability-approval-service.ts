@@ -19,6 +19,8 @@ export type CapabilityApprovalSummary = {
 	capabilitySet: CapabilitySet
 	publishedCommit: string | null
 	latestApproval: PackageCapabilityApprovalRecord | null
+	/** Approval row for the current fingerprint, if any (not necessarily latest). */
+	matchingApproval: PackageCapabilityApprovalRecord | null
 	fingerprintMatchesApproval: boolean
 	isInternetVisible: boolean
 }
@@ -62,6 +64,7 @@ export async function loadCapabilityApprovalSummary(input: {
 			capabilitySet,
 			publishedCommit: null,
 			latestApproval,
+			matchingApproval: null,
 			fingerprintMatchesApproval: false,
 			isInternetVisible: input.savedPackage.isInternetVisible,
 		}
@@ -89,6 +92,7 @@ export async function loadCapabilityApprovalSummary(input: {
 		capabilitySet,
 		publishedCommit,
 		latestApproval,
+		matchingApproval,
 		fingerprintMatchesApproval: matchingApproval != null,
 		isInternetVisible: input.savedPackage.isInternetVisible,
 	}

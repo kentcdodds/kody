@@ -87,7 +87,9 @@ export async function loadAccountPackageApproveCapabilitiesData(input: {
 		fingerprint: summary.capabilitySet.fingerprint,
 		entries: summary.capabilitySet.entries,
 		fingerprintMatchesApproval: summary.fingerprintMatchesApproval,
-		latestApprovedAt: summary.latestApproval?.approvedAt ?? null,
+		// Timestamp for the matching fingerprint row, not the chronologically
+		// latest approval (which may be a different capability set).
+		latestApprovedAt: summary.matchingApproval?.approvedAt ?? null,
 		settingsHref,
 		packageHref,
 		approveHref,

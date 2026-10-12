@@ -134,6 +134,7 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 		capabilitySet: { entries: [], fingerprint: 'abc' },
 		publishedCommit: 'deadbeef',
 		latestApproval: null,
+		matchingApproval: null,
 		fingerprintMatchesApproval: false,
 		isInternetVisible: false,
 	})
@@ -169,7 +170,11 @@ test('turning on internet-visible with matching approval activates the flag', as
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'abc' },
 		publishedCommit: 'deadbeef',
-		latestApproval: { fingerprint: 'abc' },
+		latestApproval: { fingerprint: 'other' },
+		matchingApproval: {
+			fingerprint: 'abc',
+			approvedAt: '2026-01-02T00:00:00.000Z',
+		},
 		fingerprintMatchesApproval: true,
 		isInternetVisible: false,
 	})
