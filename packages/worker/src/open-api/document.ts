@@ -334,16 +334,15 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 	const paths: OpenApiDocument['paths'] = {}
 	for (const operation of apiOperations) {
 		const resolved = resolveApiOperation(operation, registry)
-		// Emit primary path first, then aliases, so OpenAPI clients that index
-		// by operationId and keep the last path (e.g. @kodycodes/cli) prefer
-		// aliases with fewer path params.
 		for (const path of listApiOperationPaths(operation)) {
 			const pathItem = (paths[path] ??= {})
-			pathItem[operation.method.toLowerCase()] = buildOperation(
-				resolved,
-				componentSchemas,
-				path,
-			)
+			const built = buildOperation(resolved, componentSchemas, path)
+			// Aliases keep a distinct operationId (OpenAPI uniqueness) while
+			// HTTP still dispatches to the same capability.
+			if (path !== operation.path) {
+				built.operationId = `${operation.operationId}ByPath`
+			}
+			pathItem[operation.method.toLowerCase()] = built
 		}
 	}
 	const scopeList = apiTokenScopes

@@ -50,11 +50,11 @@ export type CapabilityApiOperation = ApiOperationBase & {
 	/** Inputs that cannot be encoded in this method's query string. */
 	omitInputs?: ReadonlyArray<string>
 	/**
-	 * Extra HTTP paths that invoke this same operationId. Advertised in
-	 * `/openapi.json` after the primary path so OpenAPI clients that index by
-	 * operationId (last path wins) prefer the alias when it has fewer path
-	 * params — e.g. body-only identity for XOR `repo_id` | `name` inputs.
-	 * Primary path stays for backward-compatible callers.
+	 * Extra HTTP paths that invoke this same capability. Advertised in
+	 * `/openapi.json` with a distinct operationId (`${operationId}ByPath`) so
+	 * the document stays unique while legacy path callers keep working.
+	 * Prefer putting the body-friendly path on `path` when identity inputs are
+	 * XOR (e.g. `repo_id` | `name`).
 	 */
 	aliasPaths?: ReadonlyArray<string>
 }
@@ -221,14 +221,15 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['DELETE', '/v1/repos/{repo_id}', 'repoDelete'],
 		[
 			'POST',
-			'/v1/repos/{repo_id}/git-remote',
+			'/v1/repos/git-remote',
 			'repoGetGitRemote',
 			{
-				// Body-only alias so CLI/OpenAPI clients can pass `name` (or
-				// `repo_id`) without a required path param. Primary path stays
-				// for existing `{repo_id}` callers; `{repo_id}` also accepts a
-				// repo name (see resolveOwnedUserRepo).
-				aliasPaths: ['/v1/repos/git-remote'],
+				// Preferred body-only path so CLI/OpenAPI can pass `name` or
+				// `repo_id` without a path param. Legacy path stays as an HTTP
+				// alias (and a distinct OpenAPI operationId) so existing
+				// `/v1/repos/{repo_id}/git-remote` callers keep working;
+				// `{repo_id}` also accepts a repo name (see resolveOwnedUserRepo).
+				aliasPaths: ['/v1/repos/{repo_id}/git-remote'],
 			},
 		],
 		['POST', '/v1/repos/{repo_id}/promote', 'repoPromoteToPackage'],

@@ -15,6 +15,7 @@ export default mergeConfig(
 			name: 'mcp-e2e',
 			environment: 'node',
 			include: ['**/*.mcp-e2e.test.ts'],
+			exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
 			testTimeout: mcpE2eTimeout,
 			hookTimeout: mcpE2eTimeout,
 			// Shared harness lives on globalThis; keep one worker and one module

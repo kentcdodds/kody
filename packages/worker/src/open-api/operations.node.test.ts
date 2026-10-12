@@ -223,9 +223,12 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	const operationIds = Object.values(document.paths).flatMap((pathItem) =>
 		Object.values(pathItem).map((operation) => operation.operationId),
 	)
-	// Alias paths reuse the same operationId (additive HTTP + OpenAPI paths).
-	expect([...new Set(operationIds)].sort()).toEqual(
-		apiOperations.map((operation) => operation.operationId).sort(),
+	// Emitted operationIds must be unique (aliases get `${id}ByPath`).
+	expect(new Set(operationIds).size).toBe(operationIds.length)
+	expect(operationIds).toEqual(
+		expect.arrayContaining(
+			apiOperations.map((operation) => operation.operationId),
+		),
 	)
 	expect(operationIds.length).toBe(
 		apiOperations.reduce(
@@ -238,7 +241,7 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	)
 	expect(
 		document.paths['/v1/repos/{repo_id}/git-remote']?.['post']?.operationId,
-	).toBe('repoGetGitRemote')
+	).toBe('repoGetGitRemoteByPath')
 	const bodyOnlyGitRemote = document.paths['/v1/repos/git-remote']?.['post']
 	expect(bodyOnlyGitRemote).toBeDefined()
 	const bodyOnlyPathParams = (bodyOnlyGitRemote?.parameters ?? []).filter(
