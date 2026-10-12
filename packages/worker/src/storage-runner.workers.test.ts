@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
-import { expect, test } from 'vitest'
+import { beforeAll, expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -29,8 +29,14 @@ import {
 	storageValueNotCloneableMessage,
 } from './storage-runner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+
+beforeAll(async () => {
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+})
+
 async function ensureStorageRunnerTestSchema() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()

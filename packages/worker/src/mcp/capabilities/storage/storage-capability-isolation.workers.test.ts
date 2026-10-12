@@ -3,7 +3,7 @@ import {
 	ownerIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { beforeAll, expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
@@ -14,6 +14,7 @@ import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/worker
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { storageExportCapability } from './storage-export.ts'
 import { storageQueryCapability } from './storage-query.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 function createPackageCallerContext(input: {
 	userId: string
@@ -35,6 +36,10 @@ function createPackageCallerContext(input: {
 		},
 	})
 }
+
+beforeAll(async () => {
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+})
 
 test('storage capabilities keep a package out of another package bucket', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)

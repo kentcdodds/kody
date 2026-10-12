@@ -3,6 +3,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
 import {
+	consoleError,
+	silenceExpectedConsoleErrors,
+} from '#worker/test-support/console-spies.ts'
+import {
 	classifyOriginProductionScriptState,
 	inspectOriginProductionScriptState,
 	getCloudflareWorkerScriptExists,
@@ -335,11 +339,15 @@ test('inspectOriginProductionScriptState probes scripts and ownership, failing c
 	)
 	expect(missing.mode).toBe('fresh')
 
+	silenceExpectedConsoleErrors([/^Retrying Cloudflare API GET \/workers\//])
 	const failed = await inspect(async () => {
 		throw new Error('fetch failed')
 	})
 	expect(failed.mode).toBe('ambiguous')
 	expect(failed.reason).toContain('Cloudflare script probe failed')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringMatching(/^Retrying Cloudflare API GET \/workers\/scripts\//),
+	)
 })
 
 test('bootstrap config keeps the full entry and locally owns transferred classes', async () => {
