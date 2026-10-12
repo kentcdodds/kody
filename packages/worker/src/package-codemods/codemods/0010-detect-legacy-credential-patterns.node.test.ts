@@ -566,3 +566,89 @@ test('0010 detect reports a literal secret with its pattern message', () => {
 		},
 	])
 })
+
+test('0010 scans test-named job and app entry modules', () => {
+	const legacy = "export const h = { a: '{{secret:TOKEN}}' }"
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					description: 'Demo package.',
+					app: { entry: './src/app.test.ts' },
+					jobs: { digest: { entry: './src/digest.test.ts' } },
+					subscriptions: {
+						'topic.a': { handler: './src/sub.test.ts' },
+					},
+				},
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/app.test.ts': legacy,
+			'src/digest.test.ts': legacy,
+			'src/sub.test.ts': legacy,
+			'src/orphan.test.ts': legacy,
+		}),
+	).toEqual({
+		'src/app.test.ts': ['literal secret'],
+		'src/digest.test.ts': ['literal secret'],
+		'src/sub.test.ts': ['literal secret'],
+	})
+})
+
+test('0010 scans test-named modules loaded by dynamic import', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.ts' },
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': "export default async () => import('./worker.test.js')",
+			'src/worker.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+			'src/orphan.test.ts': "export const h = { a: '{{secret:ORPHAN}}' }",
+		}),
+	).toEqual({ 'src/worker.test.ts': ['literal secret'] })
+})
+
+test('0010 does not resolve a for-of loop binding as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default (accountNames) => {',
+				'\tfor (const NAME of accountNames) createAuthenticatedFetch(NAME)',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 ignores types-only export targets for test-named modules', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: {
+					'.': {
+						import: './src/index.ts',
+						types: './src/types.test.ts',
+					},
+				},
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/types.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+		}),
+	).toEqual({})
+})
+
+test('0010 flags |scope= through a TypeScript assertion before concatenation', () => {
+	expect(
+		modulePatterns(
+			"export const p = (ending: string) => ('{{secret:KEY|scope=pack' as string) + ending + '}}'",
+		),
+	).toContain('|scope=')
+})

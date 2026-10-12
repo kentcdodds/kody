@@ -362,8 +362,11 @@ from a relative module), or a template or `+` chain of those. A local binding
 that shadows a module constant is not treated as that constant.
 Placeholder-shaped text that names nothing, such as `{{secret:<name>}}` in help
 or redaction text, is ignored. Test files (`*.test.*`, `*.spec.*`, and anything
-under `__tests__/`) are skipped unless `package.json` exports (or a module
-imported from those exports) point at them as runtime entries.
+under `__tests__/`) are skipped unless a runtime entry points at them: `exports`
+(import/default, not types-only), `main` / `module` / `browser`, `kody.app`
+entries, job entries, subscription handlers, or a module those entries reach
+through a bundler-resolved import (`import` / `export … from`, `import()`,
+`require()`).
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a

@@ -4,6 +4,7 @@
  * built from.
  */
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
+import { collectBundlerResolvedSpecifiers } from '#worker/package-runtime/import-specifiers.ts'
 
 export const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 /**
@@ -168,11 +169,12 @@ export type AstNode = ModuleAstNode & {
 	elements?: Array<AstNode | null | undefined>
 	argument?: AstNode
 	param?: AstNode
+	consequent?: Array<AstNode>
 	kind?: unknown
 	program?: { body?: Array<AstNode> }
 }
 
-const transparentExpressionTypes = new Set([
+export const transparentExpressionTypes = new Set([
 	'ParenthesizedExpression',
 	'TSAsExpression',
 	'TSSatisfiesExpression',
@@ -230,8 +232,8 @@ export function resolveStringExpression(
 }
 
 /**
- * Names bound in an enclosing function, catch, or block that shadow a
- * module-level constant for `node`'s ancestors.
+ * Names bound in an enclosing function, catch, loop, switch case, or block
+ * that shadow a module-level constant for `node`'s ancestors.
  */
 export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 	const names = new Set<string>()
@@ -250,6 +252,23 @@ export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 		if (ancestor.type === 'CatchClause' && ancestor.param) {
 			collectBoundNames(ancestor.param, names)
 		}
+		if (
+			ancestor.type === 'ForOfStatement' ||
+			ancestor.type === 'ForInStatement'
+		) {
+			collectLoopBindingNames(ancestor.left, names)
+		}
+		if (ancestor.type === 'ForStatement' && ancestor.init) {
+			collectLoopBindingNames(ancestor.init, names)
+		}
+		if (ancestor.type === 'SwitchCase' && Array.isArray(ancestor.consequent)) {
+			for (const statement of ancestor.consequent) {
+				if (statement.type !== 'VariableDeclaration') continue
+				for (const declarator of statement.declarations ?? []) {
+					collectBoundNames(declarator.id, names)
+				}
+			}
+		}
 		if (ancestor.type === 'BlockStatement' && Array.isArray(ancestor.body)) {
 			for (const statement of ancestor.body) {
 				if (statement.type !== 'VariableDeclaration') continue
@@ -260,6 +279,20 @@ export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 		}
 	}
 	return names
+}
+
+function collectLoopBindingNames(
+	binding: AstNode | null | undefined,
+	names: Set<string>,
+) {
+	if (!binding) return
+	if (binding.type === 'VariableDeclaration') {
+		for (const declarator of binding.declarations ?? []) {
+			collectBoundNames(declarator.id, names)
+		}
+		return
+	}
+	collectBoundNames(binding, names)
 }
 
 function collectBoundNames(
@@ -344,7 +377,11 @@ function normalizePackageEntryPath(value: string) {
 	return value.replace(/^\.\//, '')
 }
 
-/** Manifest entry strings from `exports` / `main` / `module` / `browser`. */
+/**
+ * Runtime entry paths from the package manifest: the same roots published
+ * artifact builds use (`exports` import/default, main/module/browser, app,
+ * jobs, subscriptions). `types`-only export conditions are omitted.
+ */
 function collectManifestEntryPaths(manifestSource: string | undefined) {
 	if (manifestSource == null) return [] as Array<string>
 	let parsed: unknown
@@ -355,47 +392,55 @@ function collectManifestEntryPaths(manifestSource: string | undefined) {
 	}
 	if (!isPlainObject(parsed)) return []
 	const entries: Array<string> = []
-	const add = (value: unknown) => {
-		if (typeof value === 'string') {
+	const addPath = (value: unknown) => {
+		if (typeof value === 'string' && value.length > 0) {
 			entries.push(normalizePackageEntryPath(value))
-			return
-		}
-		if (Array.isArray(value)) {
-			for (const item of value) add(item)
-			return
-		}
-		if (isPlainObject(value)) {
-			for (const item of Object.values(value)) add(item)
 		}
 	}
-	add(parsed.exports)
-	add(parsed.main)
-	add(parsed.module)
-	add(parsed.browser)
+	const addRuntimeExportTarget = (target: unknown) => {
+		if (typeof target === 'string') {
+			addPath(target)
+			return
+		}
+		if (!isPlainObject(target)) return
+		addPath(target.import ?? target.default)
+	}
+	if (typeof parsed.exports === 'string') {
+		addPath(parsed.exports)
+	} else if (isPlainObject(parsed.exports)) {
+		for (const target of Object.values(parsed.exports)) {
+			addRuntimeExportTarget(target)
+		}
+	}
+	addPath(parsed.main)
+	addPath(parsed.module)
+	addPath(parsed.browser)
+	const kody = parsed.kody
+	if (isPlainObject(kody)) {
+		if (isPlainObject(kody.app)) {
+			addPath(kody.app.entry)
+			const client = kody.app.client
+			if (typeof client === 'string') addPath(client)
+			else if (isPlainObject(client)) addPath(client.entry)
+		}
+		if (isPlainObject(kody.jobs)) {
+			for (const job of Object.values(kody.jobs)) {
+				if (isPlainObject(job)) addPath(job.entry)
+			}
+		}
+		if (isPlainObject(kody.subscriptions)) {
+			for (const subscription of Object.values(kody.subscriptions)) {
+				if (isPlainObject(subscription)) addPath(subscription.handler)
+			}
+		}
+	}
 	return entries
-}
-
-function relativeModuleSpecifiers(parsed: AstNode) {
-	const specifiers: Array<string> = []
-	for (const node of parsed.program?.body ?? []) {
-		if (
-			node.type !== 'ImportDeclaration' &&
-			node.type !== 'ExportNamedDeclaration' &&
-			node.type !== 'ExportAllDeclaration'
-		) {
-			continue
-		}
-		const source = getNodeName(node.source)
-		if (source?.startsWith('./') || source?.startsWith('../')) {
-			specifiers.push(source)
-		}
-	}
-	return specifiers
 }
 
 /**
  * Modules the package can run: every scannable file except test-named ones,
- * plus test-named files reachable from package.json runtime entries.
+ * plus test-named files reachable from package.json runtime entries (including
+ * app, job, and subscription handlers) via static or bundler-resolved imports.
  */
 export function listScannableModulePaths(files: Record<string, string>) {
 	const modulePaths = Object.keys(files).filter(
@@ -421,9 +466,9 @@ export function listScannableModulePaths(files: Record<string, string>) {
 		const path = queue.pop()!
 		if (runtime.has(path)) continue
 		runtime.add(path)
-		const parsed = parseModule(files[path]!)
-		if (!parsed) continue
-		for (const specifier of relativeModuleSpecifiers(parsed)) {
+		const specifiers = collectBundlerResolvedSpecifiers(files[path]!)
+		if (specifiers == null) continue
+		for (const specifier of specifiers) {
 			const target = resolveRelativeModulePath(path, specifier, modulePathSet)
 			if (target) queue.push(target)
 		}

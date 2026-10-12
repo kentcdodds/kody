@@ -11,6 +11,7 @@ import {
 	parseModule,
 	resolveStringExpression,
 	templateElementText,
+	transparentExpressionTypes,
 	walkAst,
 } from '#worker/credentials/module-placeholder-scan.ts'
 import {
@@ -228,6 +229,10 @@ function hasComputedScopeContinuation(
 	}
 	for (; index >= 0; index -= 1) {
 		const parent = ancestors[index]!
+		if (transparentExpressionTypes.has(parent.type)) {
+			child = parent
+			continue
+		}
 		if (parent.type !== 'BinaryExpression' || parent.operator !== '+') {
 			return false
 		}
