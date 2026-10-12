@@ -112,10 +112,12 @@ own credential: Use on its door-key secret is not Use on the vault.
 `secretList`, `integrationList`, `mcpServerList`, and `secretProviderList`
 return the ids that `accessGrant` takes.
 
-`accessGrant`, `accessList`, and grant invites also accept `secret` and
-`integration` targets by name. The name resolves to the credential id once, at
-grant time, and the grant is stored under `credential`; a name that matches no
-credential is refused. Those by-name targets are leftover and tracked in
+`accessGrant` and grant invites also accept `secret` and `integration` targets
+by name. The name resolves to the credential id once, at grant time, and the
+grant is stored under `credential`; a name that matches no credential is
+refused. `accessList` accepts the same by-name filters and resolves the name
+when listing: after a rename, the old name finds no grants, though the grant on
+the credential id remains. Those by-name targets are leftover and tracked in
 [planned breaking changes](../planned-breaking-changes.md).
 
 `credential-storage-boundary.node.test.ts` fails if credential storage is read

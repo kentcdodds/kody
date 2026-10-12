@@ -69,9 +69,12 @@ slots ship before credential clients).
 
 ## By-name `secret` / `integration` grant targets
 
-`accessGrant`, `accessList`, and grant invites accept `secret` and `integration`
-targets by name. The name resolves to a credential id at grant time; the grant
-is stored under `credential`. A name that matches no credential is refused.
+`accessGrant` and grant invites accept `secret` and `integration` targets by
+name. The name resolves to a credential id at grant time; the grant is stored
+under `credential`. A name that matches no credential is refused. `accessList`
+accepts the same by-name filters and resolves the name when listing: after a
+rename, the old name finds no grants, though the grant on the credential id
+remains.
 
 Grant by credential id is the durable path
 ([authorization](./architecture/authorization.md)). By-name targets go away with
