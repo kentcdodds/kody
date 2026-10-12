@@ -441,24 +441,41 @@ export async function authorizeOrgWide(
 ): Promise<void> {
 	const request = requireRequest(ctx, permission)
 	const access = await computeEffectivePermissions({ env: ctx.env, request })
-	if (holdsOrgWide(access, permission)) return
-	const code: AuthorizationDenialCode =
-		access.credentialScopes && !access.credentialScopes.has(permission)
-			? 'credential_scope'
-			: 'missing_permission'
-	const mintScopes =
-		code === 'credential_scope'
-			? credentialMintScopes(access, permission)
-			: null
-	throw new AuthorizationError({
-		code,
+	const decision = checkOrgWide(access, permission)
+	if (!decision.allowed) throw decision.error
+}
+
+/**
+ * The pure decision behind `authorizeOrgWide`. Only a credential whose actor
+ * already holds `permission` org-wide gets the mint-a-token hint; otherwise a
+ * new token cannot help and the denial is the role's.
+ */
+export function checkOrgWide(
+	access: EffectivePermissions,
+	permission: OrgPermission,
+): AuthorizationDecision {
+	if (holdsOrgWide(access, permission)) return { allowed: true }
+	const roleHoldsOrgWide = access.isOwner || access.permissions.has(permission)
+	if (roleHoldsOrgWide) {
+		return deny({
+			code: 'credential_scope',
+			permission,
+			access,
+			resource: undefined,
+			message: denialMessage(
+				'credential_scope',
+				permission,
+				undefined,
+				credentialMintScopes(access, permission),
+			),
+		})
+	}
+	return deny({
+		code: 'missing_permission',
 		permission,
-		orgId: access.orgId,
-		resource: null,
-		mintScopes,
-		message: mintScopes
-			? denialMessage(code, permission, undefined, mintScopes)
-			: `Missing ${permission} across this org. A grant on one resource does not cover org-wide reads. An org Owner can grant it.`,
+		access,
+		resource: undefined,
+		message: `Missing ${permission} across this org. A grant on one resource does not cover org-wide reads. An org Owner can grant it.`,
 	})
 }
 

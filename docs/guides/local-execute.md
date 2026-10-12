@@ -133,10 +133,11 @@ not subject to this deadline.
   `lifetime: "short"` if the code expired.
 - `insufficient_scope` on a token means it lacks a scope. The error names the
   scope and prints both mint commands with the full list (the token's scopes
-  plus the missing one); run one and retry. Open API errors carry the same list
-  as `details.mint_scopes`. When your org role lacks the permission
-  (`denial: missing_permission`), a new token cannot help; an org Owner has to
-  grant it.
+  plus the missing one); run one and retry. `--token` and `KODY_API_TOKEN` still
+  win over the stored token, so replace or unset them before retrying. Open API
+  errors carry the same list as `details.mint_scopes`. When your org role lacks
+  the permission (`denial: missing_permission`), a new token cannot help; an org
+  Owner has to grant it.
 - The module imports `kody:@…`. Keep `--local`.
 - Auth priority for `--local`: `--token` / `KODY_API_TOKEN`, then the stored
   bootstrap token, then `kody login`.
