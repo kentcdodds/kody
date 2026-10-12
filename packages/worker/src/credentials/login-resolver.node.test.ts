@@ -371,6 +371,13 @@ test('a token the endpoint reports as expired, or an oversized response, is neve
 	})
 	expect(expired).toHaveLength(2)
 
+	const expiredText = stubLoginEndpoint((call) =>
+		Response.json({ data: { token: `text-${call}`, expires_in: '0' } }),
+	)
+	await t.signIn({ actor, credentialId: id })
+	await t.signIn({ actor, credentialId: id })
+	expect(expiredText).toHaveLength(2)
+
 	const oversized = stubLoginEndpoint(() =>
 		Response.json({ data: { token: 'big', padding: 'x'.repeat(70_000) } }),
 	)
@@ -381,6 +388,19 @@ test('a token the endpoint reports as expired, or an oversized response, is neve
 		CredentialLoginFailedError,
 	)
 	expect(oversized).toHaveLength(2)
+})
+
+test('a header format keeps a token with $ patterns as is', async () => {
+	const t = await setup()
+	stubLoginEndpoint(() =>
+		Response.json({ data: { token: "a$&b$'c$$d", expires_in: 3600 } }),
+	)
+	const id = await t.storeCredential({ name: 'portal-login' })
+	await expect(
+		t.signIn({ actor: t.requestAs('bea', 'owner'), credentialId: id }),
+	).resolves.toMatchObject({
+		placement: { value: "Bearer a$&b$'c$$d" },
+	})
 })
 
 test('a form exchange can place its session in a query parameter, and a changed credential signs in again', async () => {

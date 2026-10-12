@@ -215,9 +215,13 @@ async function runExchange(
 	const expiresIn = exchange.expiresInPath
 		? readPath(payload, exchange.expiresInPath)
 		: undefined
+	const reported =
+		typeof expiresIn === 'string' && /^-?\d+(\.\d+)?$/.test(expiresIn.trim())
+			? Number(expiresIn)
+			: expiresIn
 	const seconds =
-		typeof expiresIn === 'number' && Number.isFinite(expiresIn)
-			? Math.min(expiresIn, maxSessionSeconds)
+		typeof reported === 'number' && Number.isFinite(reported)
+			? Math.min(reported, maxSessionSeconds)
 			: exchange.ttlSeconds
 	const expiresAt = Date.now() + seconds * 1000 - sessionExpirySkewMs
 	return { token, expiresAt: expiresAt > Date.now() ? expiresAt : null }
@@ -238,7 +242,7 @@ function placeSession(
 ): ResolvedLoginSession {
 	switch (inject.kind) {
 		case 'header': {
-			const value = inject.format.replaceAll('{value}', token)
+			const value = inject.format.replaceAll('{value}', () => token)
 			return {
 				placement: { kind: 'header', name: inject.name, value },
 				substitutedValues: [...new Set([token, value])],
