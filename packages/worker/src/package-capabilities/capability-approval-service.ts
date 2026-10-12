@@ -4,6 +4,8 @@ import {
 	findPackageCapabilityApprovalByFingerprint,
 	getLatestPackageCapabilityApproval,
 	insertPackageCapabilityApproval,
+	isEmptyDependencySnapshotJson,
+	updatePackageCapabilityApprovalSnapshot,
 	type PackageCapabilityApprovalRecord,
 } from './capability-approvals-repo.ts'
 import {
@@ -115,7 +117,6 @@ export async function approvePackageCapabilitySet(input: {
 	requestUrl: string
 	/** Fingerprint the owner reviewed; must match the live set. */
 	expectedFingerprint: string
-	dependencySnapshotJson?: string
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
@@ -153,31 +154,48 @@ export async function approvePackageCapabilitySet(input: {
 		},
 	)
 	const now = new Date().toISOString()
-	const dependencySnapshotJson =
-		input.dependencySnapshotJson ??
-		(summary.dependencySnapshot
-			? serializeDependencySnapshot(summary.dependencySnapshot)
-			: serializeDependencySnapshot(
-					emptyDependencySnapshot({
-						packageId: input.savedPackage.id,
-						kodyId: input.savedPackage.kodyId,
-						sourceId: input.savedPackage.sourceId,
-						publishedCommit: summary.publishedCommit,
-					}),
-				))
-	const approval =
-		existing ??
-		(await insertPackageCapabilityApproval(input.env.APP_DB, {
+	const dependencySnapshotJson = serializeDependencySnapshot(
+		summary.dependencySnapshot ??
+			emptyDependencySnapshot({
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+				publishedCommit: summary.publishedCommit,
+			}),
+	)
+	const capabilitySetJson = JSON.stringify(summary.capabilitySet.entries)
+	let approval = existing
+	if (
+		existing &&
+		isEmptyDependencySnapshotJson(existing.dependencySnapshotJson)
+	) {
+		// PR1 rows stored "{}". Backfill the real pin on re-approve so
+		// internet-visible serving can read a lockfile.
+		approval =
+			(await updatePackageCapabilityApprovalSnapshot(input.env.APP_DB, {
+				id: existing.id,
+				dependencySnapshotJson,
+				capabilitySetJson,
+				approvedByUserId: input.actorUserId,
+				approvedAt: now,
+			})) ?? existing
+	} else if (!existing) {
+		approval = await insertPackageCapabilityApproval(input.env.APP_DB, {
 			id: crypto.randomUUID(),
 			package_id: input.savedPackage.id,
 			owner_user_id: input.ownerUserId,
 			published_commit: summary.publishedCommit,
 			fingerprint: summary.capabilitySet.fingerprint,
-			capability_set_json: JSON.stringify(summary.capabilitySet.entries),
+			capability_set_json: capabilitySetJson,
 			dependency_snapshot_json: dependencySnapshotJson,
 			approved_by_user_id: input.actorUserId,
 			approved_at: now,
-		}))
+		})
+	}
+
+	if (!approval) {
+		throw new CapabilityApprovalError('Could not record capability approval.')
+	}
 
 	if (!input.savedPackage.isInternetVisible) {
 		const changed = await updateSavedPackage(input.env.APP_DB, {

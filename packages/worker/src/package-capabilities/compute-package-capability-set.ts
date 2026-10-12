@@ -77,7 +77,10 @@ export async function computePackageCapabilitySet(input: {
 	})
 
 	for (const dependency of dependencySnapshot.dependencies) {
-		const packageId = dependency.packageId?.trim()
+		const packageId = await resolveDependencyPackageId({
+			env: input.env,
+			dependency,
+		})
 		if (!packageId) continue
 		await appendPackageCapabilityEntries({
 			env: input.env,
@@ -115,11 +118,21 @@ async function resolveDependencySnapshot(input: {
 		publishedCommit: input.publishedCommit,
 	})
 
+	const rootManifest = await loadPackageManifestBySourceId({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.ownerUserId,
+		sourceId: input.sourceId,
+	})
+	const hasApp = Boolean(rootManifest.manifest.kody.app?.entry?.trim())
 	const fromArtifact = await loadDependenciesFromPublishedArtifact({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
 		sourceId: input.sourceId,
 		publishedCommit: input.publishedCommit,
+		// Internet-visible is an app-serving flag. Never substitute a module
+		// artifact's dependency list for an app package's approval pin.
+		preferKind: hasApp ? 'app' : 'module',
 	})
 	if (fromArtifact) {
 		return canonicalizeDependencySnapshot({
@@ -128,12 +141,6 @@ async function resolveDependencySnapshot(input: {
 		})
 	}
 
-	const rootManifest = await loadPackageManifestBySourceId({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.ownerUserId,
-		sourceId: input.sourceId,
-	})
 	const fromManifest = await walkDeclaredKodyDependencies({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
@@ -147,11 +154,28 @@ async function resolveDependencySnapshot(input: {
 	})
 }
 
+async function resolveDependencyPackageId(input: {
+	env: Env
+	dependency: BundleArtifactDependency
+}): Promise<string | null> {
+	const explicit = input.dependency.packageId?.trim()
+	if (explicit) return explicit
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.dependency.sourceId,
+	)
+	if (source?.entity_kind === 'package' && source.entity_id) {
+		return source.entity_id
+	}
+	return null
+}
+
 async function loadDependenciesFromPublishedArtifact(input: {
 	env: Env
 	ownerUserId: OwnerId
 	sourceId: string
 	publishedCommit: string
+	preferKind: 'app' | 'module'
 }): Promise<Array<BundleArtifactDependency> | null> {
 	const rows = (
 		await listPublishedBundleArtifactsBySourceId(
@@ -160,10 +184,7 @@ async function loadDependenciesFromPublishedArtifact(input: {
 			input.sourceId,
 		)
 	).filter((row) => row.publishedCommit === input.publishedCommit)
-	const preferred =
-		rows.find((row) => row.artifactKind === 'app') ??
-		rows.find((row) => row.artifactKind === 'module') ??
-		rows[0]
+	const preferred = rows.find((row) => row.artifactKind === input.preferKind)
 	if (!preferred) return null
 	try {
 		const parsed = JSON.parse(preferred.dependenciesJson) as unknown
