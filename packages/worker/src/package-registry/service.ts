@@ -41,6 +41,7 @@ import {
 import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -360,6 +361,10 @@ export async function refreshSavedPackageProjection(input: {
 						: null,
 				}),
 			})
+			// Team packages are owned by the org (`userId`); the acting person
+			// gets the first-package stamp and Kit "activated" tag. Actor-free
+			// projection refreshes (publish, codemod) must not stamp anyone.
+			const activationUserId = input.actorUserId ?? input.userId
 			if (existing) {
 				await updateSavedPackage(input.env.APP_DB, {
 					userId: input.userId,
@@ -384,6 +389,22 @@ export async function refreshSavedPackageProjection(input: {
 					oldSlug: getPackageNameLeaf(existing.name),
 					newSlug: getPackageNameLeaf(row.name),
 				})
+				// A member's first save can be an update to an existing team
+				// package. Personal saves already stamped on insert; this only
+				// claims when an actor is present and still unstamped.
+				if (input.actorUserId) {
+					const stamped = await stampFirstSavedPackage(
+						input.env.APP_DB,
+						{ stableUserId: input.actorUserId },
+						input.env,
+					)
+					if (stamped) {
+						scheduleKitSubscriberSync({
+							env: input.env,
+							stableUserId: input.actorUserId,
+						})
+					}
+				}
 			} else {
 				await assertWithinEntitlement({
 					db: input.env.APP_DB,
@@ -396,7 +417,7 @@ export async function refreshSavedPackageProjection(input: {
 					const beforePackage = await input.env.APP_DB.prepare(
 						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 					)
-						.bind(input.userId)
+						.bind(activationUserId)
 						.first<{ first_saved_package_at: string | null }>()
 					isFirstSavedPackage = !beforePackage?.first_saved_package_at
 				} catch (error) {
@@ -409,8 +430,10 @@ export async function refreshSavedPackageProjection(input: {
 				if (isFirstSavedPackage) {
 					scheduleKitSubscriberSync({
 						env: input.env,
-						stableUserId: input.userId,
-						email: input.userEmail,
+						stableUserId: activationUserId,
+						...(activationUserId === input.userId
+							? { email: input.userEmail }
+							: {}),
 					})
 				}
 				// A brand new package claims its slug outright, so an earlier
