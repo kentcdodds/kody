@@ -140,8 +140,9 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 
 /**
  * Retire signing-secret grace only after a delivery that verified under the
- * current declared key is accepted for dispatch. Compare-and-swap against the
- * observed previous ciphertext so a concurrent rotation is not wiped.
+ * current declared key is accepted: ack enqueue succeeded, or sync dispatch
+ * returned 2xx. Compare-and-swap against the observed previous ciphertext so a
+ * concurrent rotation is not wiped.
  */
 async function retirePreviousWebhookHmacIfConfirmed(input: {
 	env: Env
@@ -1021,12 +1022,6 @@ export async function handleWebhookIngressRequest(
 			endpoint: liveEndpoint,
 			secretMatch,
 		})
-		await retirePreviousWebhookHmacIfConfirmed({
-			env,
-			endpoint: liveEndpoint,
-			matchedSource: matchedHmacSource,
-			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
-		})
 		const response = await runWithTimeout(
 			dispatchWebhookInvocation({
 				env,
@@ -1092,6 +1087,15 @@ export async function handleWebhookIngressRequest(
 				{ status: 502 },
 			)
 		}
+		// Sync: retire only after a successful invocation. A 409/502/timeout
+		// must leave previous_* so providers still retrying the old key keep
+		// working for the rest of the grace window.
+		await retirePreviousWebhookHmacIfConfirmed({
+			env,
+			endpoint: liveEndpoint,
+			matchedSource: matchedHmacSource,
+			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
+		})
 		return jsonResponse(response.body, { status: response.status })
 	} catch (error) {
 		await recordWebhookDelivery({

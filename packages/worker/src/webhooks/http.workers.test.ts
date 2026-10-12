@@ -1101,6 +1101,117 @@ test('signing-secret rotation grace accepts the previous key for 24h, then rejec
 	).toBe(202)
 })
 
+test('sync rejected dispatch does not retire previous HMAC grace', async () => {
+	const userId = await setupOwnerWithWebhooks(['stripe-sync-rotate'])
+	await useNamedSecret('stripe-sync-rotate')
+	const orgId = ownerIdFromStored(userId)
+	const previousSecret = 'stripe-signing-secret-v1'
+	const currentSecret = 'stripe-signing-secret-v2'
+	const endpointId = 'mint-stripe-sync-rotate'
+	const snapshot = await encryptWebhookVerificationSnapshot({
+		env,
+		userId: orgId,
+		endpointId,
+		plaintext: currentSecret,
+	})
+	const previousEncrypted = await encryptWebhookVerificationSnapshot({
+		env,
+		userId: orgId,
+		endpointId,
+		plaintext: previousSecret,
+	})
+	const graceUntil = new Date(
+		Date.now() + webhookHmacSecretRotationGraceMs,
+	).toISOString()
+	await env.APP_DB.prepare(
+		`UPDATE webhook_endpoints
+		 SET hmac_secret_name = ?,
+			 hmac_verification_secret_encrypted = ?,
+			 previous_hmac_secret_name = ?,
+			 previous_hmac_secret_encrypted = ?,
+			 previous_hmac_secret_expires_at = ?
+		 WHERE id = ?`,
+	)
+		.bind(
+			'stripeWebhookSecret',
+			snapshot,
+			'stripeWebhookSecret',
+			previousEncrypted,
+			graceUntil,
+			endpointId,
+		)
+		.run()
+	declareWebhook({
+		name: 'stripe-sync-rotate',
+		responseMode: 'sync',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'stripe-signature',
+			secretName: 'stripeWebhookSecret',
+			encoding: 'hex',
+			signedPayload: 'timestamp.body',
+		},
+		replay: {
+			timestampHeader: 'Stripe-Signature',
+			timestampFormat: 'stripe-signature',
+			toleranceSeconds: 300,
+		},
+	})
+	mockSecretValue(currentSecret)
+	const body = JSON.stringify({ type: 'invoice.paid' })
+	const stripeSigned = async (secret: string) => {
+		const seconds = Math.floor(Date.now() / 1000)
+		const payload = buildWebhookTimestampBodyPayload({
+			timestampToken: String(seconds),
+			body: encodeBody(body),
+		})
+		return {
+			body,
+			headers: {
+				'stripe-signature': `t=${seconds},v1=${await sign(payload, null, secret)}`,
+			},
+		}
+	}
+
+	await disableEnablement({
+		db: env.APP_DB,
+		orgId,
+		id: await enablementIdOf('stripe-sync-rotate'),
+	})
+	expect(
+		await statusOf('stripe-sync-rotate', await stripeSigned(currentSecret)),
+	).toBe(409)
+	const afterReject = await env.APP_DB.prepare(
+		`SELECT previous_hmac_secret_encrypted, previous_hmac_secret_expires_at
+		 FROM webhook_endpoints WHERE id = ?`,
+	)
+		.bind(endpointId)
+		.first<{
+			previous_hmac_secret_encrypted: string | null
+			previous_hmac_secret_expires_at: string | null
+		}>()
+	expect(afterReject?.previous_hmac_secret_encrypted).toBe(previousEncrypted)
+	expect(afterReject?.previous_hmac_secret_expires_at).toBe(graceUntil)
+
+	await env.APP_DB.prepare(
+		`UPDATE enablements SET state = 'on' WHERE instance_id = ?`,
+	)
+		.bind(endpointId)
+		.run()
+	expect(
+		await statusOf('stripe-sync-rotate', await stripeSigned(previousSecret)),
+	).toBe(200)
+	expect(
+		await statusOf('stripe-sync-rotate', await stripeSigned(currentSecret)),
+	).toBe(200)
+	const afterSuccess = await env.APP_DB.prepare(
+		`SELECT previous_hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`,
+	)
+		.bind(endpointId)
+		.first<{ previous_hmac_secret_encrypted: string | null }>()
+	expect(afterSuccess?.previous_hmac_secret_encrypted).toBeNull()
+})
+
 test('a webhook with no enablement on answers 409 instead of running', async () => {
 	const userId = await setupOwnerWithWebhooks(['plain'])
 	const orgId = ownerIdFromStored(userId)
