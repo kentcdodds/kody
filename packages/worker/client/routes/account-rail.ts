@@ -391,9 +391,12 @@ export function workspaceRailGroups(input: {
 	role: OrgRole | null
 }): Array<AccountRailGroup> {
 	const { orgSlug, personal, role } = input
-	if (!orgSlug) return []
+	// Team chrome needs a slug. A missing signup slug still lists the
+	// personal-shaped sections with `/account` fallbacks until one exists.
+	if (!orgSlug && !personal) return []
 
 	if (role === null) {
+		if (!orgSlug) return []
 		return [
 			{
 				label: 'Access',
@@ -414,7 +417,7 @@ export function workspaceRailGroups(input: {
 		: [...teamOrgManagementItems({ orgSlug, role }), usageRailItem()]
 
 	return [
-		{ label: null, items: [overviewRailItem(orgSlug)] },
+		...(orgSlug ? [{ label: null, items: [overviewRailItem(orgSlug)] }] : []),
 		...workspaceResourceGroups(orgSlug),
 		{ label: 'Organization', items: organizationItems },
 	]
