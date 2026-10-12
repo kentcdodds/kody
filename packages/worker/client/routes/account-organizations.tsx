@@ -23,7 +23,7 @@ import {
 	orderOrganizations,
 	orgIdentity,
 	orgRoleLabel,
-	orgSettingsPath,
+	orgOverviewPath,
 	organizationsWithSignupFallback,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
@@ -370,12 +370,12 @@ function renderOrganizationList(
 						org.slug === currentSlug
 							? [{ label: 'Current', tone: 'accent' }]
 							: [],
-					// Team orgs open Settings so management is one click from
-					// this list. Personal orgs still open the profile/home.
-					href:
-						!org.personal && org.role !== null
-							? orgSettingsPath(org.slug)
-							: routes.profile.href({ username: org.slug }),
+					// Each org opens its overview: a team org's home (which
+					// links Settings, Members, and its sections), the signup
+					// org's workspace overview.
+					href: org.personal
+						? orgOverviewPath(org.slug)
+						: routes.profile.href({ username: org.slug }),
 					testId: 'account-organization',
 				}),
 			)}

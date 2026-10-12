@@ -154,6 +154,23 @@ export function orgBillingPath(slug: string) {
 }
 
 /**
+ * `/@acme/-/overview`: the workspace landing that links every section the
+ * organization owns. A team org's overview is its home at `/@slug`, so the
+ * server redirects there.
+ */
+export function parseOrgOverviewPath(
+	pathname: string,
+): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/overview\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgOverviewPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/overview`
+}
+
+/**
  * Roles whose preset includes `billing:write`. Only decides which links to
  * show; the billing routes authorize every request.
  */
@@ -281,8 +298,8 @@ export function parseOrgManagementPath(
 }
 
 /**
- * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing, or
- * management). Same parse order as the server request binder. Public `/@slug`
+ * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing,
+ * management, or overview). Same parse order as the server request binder. Public `/@slug`
  * and `/@owner/pkg` paths are not org-owned pages — they return null so chrome
  * does not adopt a stranger's handle.
  */
@@ -292,6 +309,7 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
+		parseOrgOverviewPath(pathname)?.slug ??
 		null
 	)
 }

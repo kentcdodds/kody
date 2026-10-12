@@ -218,6 +218,7 @@ export const routes = route({
 		'/@:orgSlug/-/mcp-servers/:serverId/authorize',
 	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
+	orgOverview: get('/@:orgSlug/-/overview'),
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),
 	orgSecretProviders: get('/@:orgSlug/-/secret-providers(/*rest)'),

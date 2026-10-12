@@ -327,6 +327,7 @@ import {
 	createOrgCollaboratorsApiHandler,
 	createOrgCollaboratorsHandler,
 } from '#app/handlers/org-collaborators.ts'
+import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
@@ -616,6 +617,7 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgOverview: createOrgOverviewHandler(env),
 			orgPackages: createOrgSectionHandler(env, 'packages'),
 			orgPackagesApi: createOrgPackagesApiHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),

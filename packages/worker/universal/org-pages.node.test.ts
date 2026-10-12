@@ -8,11 +8,13 @@ import {
 	orgIdentity,
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
+	orgOverviewPath,
 	orgSlugFromOrgOwnedPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
 	parseOrgManagementPath,
+	parseOrgOverviewPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -120,6 +122,16 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
+	expect(switchOrgPath('/@acme/-/overview', 'other')).toBe('/@other')
+})
+
+test('the workspace overview is an org-owned page under the /- separator', () => {
+	expect(orgOverviewPath('ada')).toBe('/@ada/-/overview')
+	expect(parseOrgOverviewPath('/@ada/-/overview')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/extra')).toBeNull()
+	expect(parseOrgOverviewPath('/@ada/overview')).toBeNull()
+	expect(orgSlugFromOrgOwnedPath('/@ada/-/overview')).toBe('ada')
 })
 
 test('management paths name settings and members under the /- separator', () => {
