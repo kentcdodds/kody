@@ -17,6 +17,31 @@ test('serves the OpenAPI document without auth', async () => {
 	expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
 	expect(response.body['openapi']).toBe('3.1.0')
 	expect(response.body['servers']).toEqual([{ url: apiOrigin }])
+	expect(response.headers.get('Content-Type')).toBe('application/json')
+	expect(response.headers.get('ETag')).toMatch(/^"[0-9a-f]{64}"$/)
+})
+
+test('revalidates the OpenAPI document by content hash with If-None-Match', async () => {
+	const api = await createApi()
+	const first = await api.call('GET', '/openapi.json')
+	const etag = first.headers.get('ETag')
+	expect(etag).not.toBeNull()
+	const again = await api.call('GET', '/openapi.json')
+	expect(again.headers.get('ETag')).toBe(etag)
+
+	const unchanged = await api.call('GET', '/openapi.json', {
+		headers: { 'If-None-Match': `"stale", ${etag}` },
+	})
+	expect(unchanged.status).toBe(304)
+	expect(unchanged.body).toBeNull()
+	expect(unchanged.headers.get('ETag')).toBe(etag)
+	expect(unchanged.headers.get('Cache-Control')).toBe('public, max-age=300')
+
+	const changed = await api.call('GET', '/openapi.json', {
+		headers: { 'If-None-Match': '"stale"' },
+	})
+	expect(changed.status).toBe(200)
+	expect(changed.body['openapi']).toBe('3.1.0')
 })
 
 test('rejects missing, invalid, and revoked tokens with 401', async () => {
