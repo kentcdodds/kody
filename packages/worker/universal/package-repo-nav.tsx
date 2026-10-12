@@ -14,6 +14,8 @@ function renderPackageRepoNav(input: {
 	kodyId: string
 	filesHref: string
 	viewerCanManage: boolean
+	/** Plain repos hide Files until the tree loader accepts user_repos ids. */
+	showFilesNav?: boolean
 	active: PackageRepoNavActive
 }) {
 	const repoHref = routes.communityPackage.href({
@@ -24,6 +26,7 @@ function renderPackageRepoNav(input: {
 		username: input.username,
 		kodyId: input.kodyId,
 	})
+	const showFilesNav = input.showFilesNav !== false
 	return (
 		<nav
 			aria-label="Repository"
@@ -38,14 +41,16 @@ function renderPackageRepoNav(input: {
 			>
 				Repo
 			</a>
-			<a
-				href={input.filesHref}
-				aria-current={input.active === 'files' ? 'page' : undefined}
-				data-testid="package-repo-nav-files"
-				mix={css(tabCss)}
-			>
-				Files
-			</a>
+			{showFilesNav ? (
+				<a
+					href={input.filesHref}
+					aria-current={input.active === 'files' ? 'page' : undefined}
+					data-testid="package-repo-nav-files"
+					mix={css(tabCss)}
+				>
+					Files
+				</a>
+			) : null}
 			{input.viewerCanManage ? (
 				<a
 					href={settingsHref}
@@ -65,6 +70,8 @@ export function renderPackageRepoChrome(input: {
 	kodyId: string
 	isPrivate: boolean
 	isListed?: boolean
+	/** Defaults to true (saved package). Plain repos pass false. */
+	hasPackage?: boolean
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
 	active: PackageRepoNavActive
@@ -95,6 +102,7 @@ export function renderPackageRepoChrome(input: {
 				} as const)
 			: {}
 	const isListed = input.isListed === true
+	const hasPackage = input.hasPackage !== false
 
 	return (
 		<div data-testid="package-repo-chrome">
@@ -135,6 +143,7 @@ export function renderPackageRepoChrome(input: {
 						{renderPackageStatusSignifiers({
 							isPrivate: input.isPrivate,
 							isListed,
+							hasPackage,
 						})}
 					</span>
 				</h1>
@@ -150,6 +159,7 @@ export function renderPackageRepoChrome(input: {
 					kodyId: input.kodyId,
 					filesHref: input.filesHref,
 					viewerCanManage: input.viewerCanManage,
+					showFilesNav: hasPackage,
 					active: input.active,
 				})}
 			</div>

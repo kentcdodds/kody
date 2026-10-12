@@ -503,6 +503,7 @@ export async function listPublicProfileRepos(
 				'user_repos.deleted_at IS NULL',
 			]
 	const bindings: Array<unknown> = [input.ownerStableUserId]
+	const ownerUsername = input.ownerUsername.trim().replace(/^@/, '')
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
 		const tokenClauses = tokens.map((token) => {
@@ -511,6 +512,10 @@ export async function listPublicProfileRepos(
 				bindings.push(pattern)
 				return `user_repos.${column} LIKE ?`
 			})
+			// Match `@owner/leaf` the same way package search matches `name`.
+			bindings.push(ownerUsername)
+			bindings.push(pattern)
+			columnClauses.push(`('@' || ? || '/' || user_repos.name) LIKE ?`)
 			return `(${columnClauses.join(' OR ')})`
 		})
 		conditions.push(`(${tokenClauses.join(' AND ')})`)
@@ -537,7 +542,6 @@ export async function listPublicProfileRepos(
 			? statement.bind(...bindings)
 			: statement.bind(...bindings, input.limit)
 	const rows = await bound.all<Record<string, unknown>>()
-	const ownerUsername = input.ownerUsername.trim().replace(/^@/, '')
 
 	return (rows.results ?? []).map((row) => {
 		const leaf = String(row['name'])

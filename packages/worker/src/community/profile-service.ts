@@ -233,9 +233,17 @@ export async function listProfileRepositories(input: {
 			includePrivate: input.includePrivate,
 		}),
 	])
-	const merged = [...packages, ...repos].sort(
-		compareProfileRepositoryUpdatedDesc,
-	)
+	// One URL namespace (`/@owner/leaf`): when a saved package and plain repo
+	// share a leaf, keep the package — the page resolver already prefers it.
+	const byLeaf = new Map<string, (typeof packages)[number]>()
+	for (const item of [...packages, ...repos]) {
+		const key = item.kodyId.toLowerCase()
+		const existing = byLeaf.get(key)
+		if (!existing || (item.hasPackage && !existing.hasPackage)) {
+			byLeaf.set(key, item)
+		}
+	}
+	const merged = [...byLeaf.values()].sort(compareProfileRepositoryUpdatedDesc)
 	return input.limit == null ? merged : merged.slice(0, input.limit)
 }
 

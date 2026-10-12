@@ -245,6 +245,8 @@ type CommunityDetailShellLoaderData = {
 	imageBaseHref: string | null
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
+	/** False for plain repos that share package chrome. Defaults to true. */
+	hasPackage?: boolean
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean

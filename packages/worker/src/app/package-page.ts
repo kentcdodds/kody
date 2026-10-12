@@ -39,6 +39,11 @@ export type PackagePageAccess =
 			kodyId: string
 			listing: CommunityDetailLoaderData | null
 			ownerPackage: AccountPackageDetail | null
+			/**
+			 * True when this URL resolves to a saved package (or its listing).
+			 * False for plain `user_repos` pages that share the same chrome.
+			 */
+			hasPackage: boolean
 			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
 			/** The viewer may change the package (settings, publish). */
@@ -60,6 +65,23 @@ export type PackagePagePrivacySource = {
 
 export function packagePageIsPrivate(page: PackagePagePrivacySource): boolean {
 	return page.ownerPackage?.isPrivate ?? false
+}
+
+/**
+ * Client JSON must not leak internal source ids for plain repos to guests.
+ * Owners keep sourceId for settings/debug surfaces; packages keep current
+ * behavior (source ids already appear on saved-package payloads).
+ */
+export function ownerPackageForClient(input: {
+	ownerPackage: AccountPackageDetail | null
+	hasPackage: boolean
+	viewerIsOwner: boolean
+}): AccountPackageDetail | null {
+	const ownerPackage = input.ownerPackage
+	if (!ownerPackage) return null
+	if (input.hasPackage || input.viewerIsOwner) return ownerPackage
+	if (!ownerPackage.sourceId) return ownerPackage
+	return { ...ownerPackage, sourceId: '' }
 }
 
 function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
@@ -218,9 +240,12 @@ async function loadPlainRepoPage(input: {
 		ownerPackage: toPlainRepoOwnerPackage({
 			username: identity.handle,
 			repo,
+			// Keep sourceId server-side for owner README. Public JSON strips it
+			// (see communityPackageApi) so guests never see internal ids.
 			sourceId: source?.id ?? '',
 			iconCommit,
 		}),
+		hasPackage: false,
 		viewerIsOwner: viewerIsMember,
 		// Plain repos have no package settings/publish/delete surface here.
 		viewerCanManage: false,
@@ -401,6 +426,7 @@ async function loadPackagePageUncached(input: {
 			kodyId: target.kodyId,
 			listing,
 			ownerPackage,
+			hasPackage: true,
 			viewerIsOwner: true,
 			viewerCanManage,
 			viewerCanPublish,
@@ -426,6 +452,7 @@ async function loadPackagePageUncached(input: {
 			kodyId: target.kodyId,
 			listing,
 			ownerPackage: null,
+			hasPackage: true,
 			viewerIsOwner: false,
 			viewerCanManage: false,
 			viewerCanPublish: false,

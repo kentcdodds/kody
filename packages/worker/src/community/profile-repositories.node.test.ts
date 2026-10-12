@@ -89,3 +89,24 @@ test('packages and plain repos stay distinct inventories', async () => {
 		'stash-files',
 	])
 })
+
+test('capped plain-repo search matches @owner/leaf as well as the bare name', async () => {
+	const db = createDb()
+	const byScoped = await listPublicProfileRepos(db, {
+		ownerStableUserId: ownerId,
+		ownerUsername: 'owner',
+		query: '@owner/public-docs',
+		includePrivate: true,
+		limit: 5,
+	})
+	expect(byScoped.map((repo) => repo.kodyId)).toEqual(['public-docs'])
+
+	const byLeaf = await listPublicProfileRepos(db, {
+		ownerStableUserId: ownerId,
+		ownerUsername: 'owner',
+		query: 'stash-files',
+		includePrivate: true,
+		limit: 5,
+	})
+	expect(byLeaf.map((repo) => repo.kodyId)).toEqual(['stash-files'])
+})

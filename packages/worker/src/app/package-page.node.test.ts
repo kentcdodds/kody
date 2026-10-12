@@ -3,6 +3,7 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { type AccountPackageDetail } from '#universal/loader-data.ts'
 
 const mockModule = vi.hoisted(() => ({
 	resolvePackagePageUrl: vi.fn(),
@@ -137,6 +138,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	resolvesTo('package', { listingId: 'listing-1' })
 	expect(await load()).toMatchObject({
 		kind: 'page',
+		hasPackage: true,
 		viewerIsOwner: false,
 		viewerCanManage: false,
 		listing: { listing: { id: 'listing-1' } },
@@ -148,6 +150,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	resolvesTo('package', pkg({ hidden: true }))
 	expect(await load()).toMatchObject({
 		kind: 'page',
+		hasPackage: true,
 		viewerIsOwner: true,
 		viewerCanManage: true,
 		ownerPackage: { id: 'pkg-1' },
@@ -227,4 +230,33 @@ test('loadPackagePage hides a private package from a signed-in non-owner', async
 	resolvesTo('package', pkg({ isPrivate: true }))
 	expect(await load()).toEqual({ kind: 'not_found' })
 	expect(mockModule.loadAccountPackageDetail).not.toHaveBeenCalled()
+})
+
+test('ownerPackageForClient strips plain-repo sourceId for guests', async () => {
+	const { ownerPackageForClient } = await import('#app/package-page.ts')
+	const ownerPackage = {
+		...ownerPackageDetail,
+		sourceId: 'src-secret',
+	} as AccountPackageDetail
+	expect(
+		ownerPackageForClient({
+			ownerPackage,
+			hasPackage: false,
+			viewerIsOwner: false,
+		})?.sourceId,
+	).toBe('')
+	expect(
+		ownerPackageForClient({
+			ownerPackage,
+			hasPackage: false,
+			viewerIsOwner: true,
+		})?.sourceId,
+	).toBe('src-secret')
+	expect(
+		ownerPackageForClient({
+			ownerPackage,
+			hasPackage: true,
+			viewerIsOwner: false,
+		})?.sourceId,
+	).toBe('src-secret')
 })

@@ -109,6 +109,8 @@ async function loadProfileDataUncached(
 			toPublicProfilePackageItem(pkg, {
 				includeOwnerVisibility: isSelf,
 				username: profile.username,
+				// Account repo icons are personal-owner-only; guests/orgs omit.
+				includeRepoIconUrl: isSelf,
 			}),
 		),
 		activity: activity.map(toPublicCommunityActivityItem),

@@ -66,6 +66,11 @@ export function toPublicProfilePackageItem(
 		includeOwnerVisibility?: boolean
 		username?: string
 		canOpenDetail?: boolean
+		/**
+		 * `/account/repos/:id/icon` only serves the signed-in personal owner.
+		 * Pass true for own-profile inventory; omit for guests and team orgs.
+		 */
+		includeRepoIconUrl?: boolean
 	},
 ): PublicProfilePackageItem {
 	return {
@@ -84,7 +89,7 @@ export function toPublicProfilePackageItem(
 		webhookCount: pkg.webhookCount,
 		jobCount: pkg.jobCount,
 		iconUrl: !pkg.hasPackage
-			? pkg.repoIconCommit
+			? options?.includeRepoIconUrl && pkg.repoIconCommit
 				? buildRepoIdentityIconUrl({
 						repoId: pkg.packageId,
 						iconCommit: pkg.repoIconCommit,
