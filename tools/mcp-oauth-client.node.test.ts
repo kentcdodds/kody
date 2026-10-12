@@ -5,6 +5,7 @@ import {
 } from 'node:http'
 import { expect, test } from 'vitest'
 import {
+	AuthRateLimitedError,
 	authRetryAfterDelayMs,
 	authorizeOAuthClient,
 	exchangeAuthorizationCode,
@@ -495,6 +496,42 @@ test('loginToApp stops on a persistent 429 instead of trying signup', async () =
 	expect(modes).toEqual(['login', 'login', 'login'])
 })
 
+test('loginToApp stops on a terminal signup 429 instead of retrying login', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				if (body.mode === 'login') {
+					response.statusCode = 401
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ error: 'Invalid email or password.' }))
+					return
+				}
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'new@example.com',
+					username: 'new-user',
+					password: 'ilikecode',
+				}),
+			).rejects.toBeInstanceOf(AuthRateLimitedError)
+		},
+	)
+	expect(modes).toEqual(['login', 'signup', 'signup', 'signup'])
+})
+
 test('authorizeOAuthClient retries a 429 then succeeds', async () => {
 	let authorizeCalls = 0
 	await withMockOrigin(
@@ -532,6 +569,53 @@ test('authorizeOAuthClient retries a 429 then succeeds', async () => {
 		},
 	)
 	expect(authorizeCalls).toBe(2)
+})
+
+test('resolveAppMcpAuth does not re-login when authorize is rate limited', async () => {
+	const requests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			requests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			if (url.pathname === '/oauth/register') {
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						client_id: 'client-429',
+						client_secret: 'secret-429',
+					}),
+				)
+				return
+			}
+			response.statusCode = 429
+			response.setHeader('Retry-After', '0')
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					error: 'Too many requests. Please try again later.',
+				}),
+			)
+		},
+		async (origin) => {
+			await expect(
+				resolveAppMcpAuth(
+					origin,
+					{
+						email: 'rh-bob@example.com',
+						username: 'rh-bob',
+						password: 'ilikecode',
+					},
+					{ cookieHeader: 'kody_session=reused' },
+				),
+			).rejects.toBeInstanceOf(AuthRateLimitedError)
+		},
+	)
+	expect(requests).toEqual([
+		'POST /oauth/register',
+		'POST /oauth/authorize',
+		'POST /oauth/authorize',
+		'POST /oauth/authorize',
+	])
 })
 
 test('authorizeOAuthClient binds the connection to an org with ?org=', async () => {

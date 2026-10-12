@@ -40,6 +40,14 @@ const authRateLimitFallbackMs = 60_000
 const sleep = (ms: number) =>
 	new Promise<void>((resolve) => setTimeout(resolve, ms))
 
+export class AuthRateLimitedError extends Error {
+	readonly status = 429
+	constructor(message: string) {
+		super(message)
+		this.name = 'AuthRateLimitedError'
+	}
+}
+
 /**
  * Honor `Retry-After` seconds. Missing or unparsable headers wait the
  * limiter window; the cap keeps a bad header from parking a job.
@@ -102,7 +110,7 @@ export async function loginToApp(
 	// burn more slots and still fail.
 	if (loginResponse.status === 429) {
 		const loginBody = await loginResponse.text()
-		throw new Error(
+		throw new AuthRateLimitedError(
 			`Failed to authenticate test user.\nLogin: ${loginResponse.status} ${loginBody}`,
 		)
 	}
@@ -121,6 +129,12 @@ export async function loginToApp(
 		signupResponse.headers.get('Set-Cookie')?.includes('kody_session=')
 	) {
 		return readCookieHeader(signupResponse)
+	}
+	if (signupResponse.status === 429) {
+		const signupBody = await signupResponse.text()
+		throw new AuthRateLimitedError(
+			`Failed to authenticate test user.\nSignup: ${signupResponse.status} ${signupBody}`,
+		)
 	}
 
 	const retryLoginResponse = await authenticateAppUser(
@@ -209,6 +223,11 @@ export async function authorizeOAuthClient(
 		}),
 	)
 	const rawBody = await response.text()
+	if (response.status === 429) {
+		throw new AuthRateLimitedError(
+			`OAuth authorize request failed with ${response.status}: ${rawBody}`,
+		)
+	}
 	if (!response.ok) {
 		throw new Error(
 			`OAuth authorize request failed with ${response.status}: ${rawBody}`,
@@ -331,7 +350,9 @@ export async function resolveAppMcpAuth(
 			},
 		}
 	} catch (error) {
-		if (!options.cookieHeader) throw error
+		if (!options.cookieHeader || error instanceof AuthRateLimitedError) {
+			throw error
+		}
 		cookieHeader = await loginToApp(origin, user, fetchImpl)
 		return {
 			cookieHeader,
