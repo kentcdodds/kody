@@ -341,8 +341,10 @@ jobs:
       # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Vite +
       # @cloudflare/vite-plugin can also die on first start with
       # `ReferenceError: __LOAD__ is not defined` during live export-type
-      # inspection (Validate #36669175020). Retry the whole suite once
-      # with a fresh server, but only when the failure matches that
+      # inspection (Validate #36669175020), or restart workerd after
+      # "The Workers runtime crashed unexpectedly" while the webServer
+      # process stays up (Validate #38206666510). Retry the whole suite
+      # once with a fresh server, but only when the failure matches that
       # crash signature — genuine test failures never retry.
       - name: 🎭 Playwright E2E
         run: |

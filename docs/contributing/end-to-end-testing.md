@@ -111,9 +111,10 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   retries the suite once when `tools/ci/is-retryable-e2e-failure.ts` matches a
   webServer start crash (`Process from config.webServer was not able to start`,
   including Vite `__LOAD__ is not defined` during Cloudflare export-type
-  inspection) or a mid-suite death on port 3847. Genuine assertion failures do
-  not retry. The job uploads `logs.local/` as the `e2e-wrangler-logs` artifact
-  when the suite fails.
+  inspection), a mid-suite death on port 3847, or a recovered workerd crash
+  (`The Workers runtime crashed unexpectedly and is being restarted`). Genuine
+  assertion failures do not retry. The job uploads `logs.local/` as the
+  `e2e-wrangler-logs` artifact when the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

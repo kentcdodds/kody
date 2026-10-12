@@ -33,6 +33,14 @@ test('validate E2E retries webServer start/death flakes and fails fast on real s
 		'apiRequestContext.post: connect ECONNREFUSED 127.0.0.1:3847'
 	const otherPortRefusedLog = 'connect ECONNREFUSED 127.0.0.1:5432'
 	const ordinaryAssertionLog = 'Error: expect(locator).toHaveText failed'
+	// Vite keeps the webServer process alive across a workerd crash, so the
+	// poisoned tests look like ordinary assertions. Still retry once.
+	const workerdCrashThenAssertionLog = [
+		'[vite] Internal server error: fetch failed',
+		'The Workers runtime crashed unexpectedly and is being restarted (crash #1).',
+		'  1) [chromium] › e2e/admin-feature-flags.spec.ts:28:1 › admin feature flags',
+		'    Error: expect(locator).toBeVisible() failed',
+	].join('\n')
 
 	expect(isRetryableE2eFailure(loadCrashLog)).toBe(true)
 	expect(isRetryableE2eFailure(recoveredLoadThenAssertionLog)).toBe(false)
@@ -40,6 +48,10 @@ test('validate E2E retries webServer start/death flakes and fails fast on real s
 	expect(isRetryableE2eFailure(connectionRefusedLog)).toBe(true)
 	expect(isRetryableE2eFailure(otherPortRefusedLog)).toBe(false)
 	expect(isRetryableE2eFailure(ordinaryAssertionLog)).toBe(false)
+	expect(isRetryableE2eFailure(workerdCrashThenAssertionLog)).toBe(true)
+	expect(
+		isRetryableE2eFailure('[vite] Internal server error: fetch failed'),
+	).toBe(false)
 	expect(isRetryableE2eFailure('')).toBe(false)
 	expect(workflow).toContain(
 		'node tools/ci/is-retryable-e2e-failure.ts e2e-attempt-1.log',

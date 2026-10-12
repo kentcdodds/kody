@@ -19,6 +19,10 @@ const midSuiteWebServerDeathPatterns = [
 	/E2eWebServerDeadError/,
 	/ECONNREFUSED (?:127\.0\.0\.1|localhost):3847/,
 	/ERR_CONNECTION_REFUSED at https?:\/\/(?:127\.0\.0\.1|localhost):3847/,
+	// Vite + @cloudflare/vite-plugin restarts workerd after a crash. The
+	// Playwright webServer process stays up, so later tests fail as ordinary
+	// assertion timeouts instead of ECONNREFUSED. Validate #38206666510.
+	/The Workers runtime crashed unexpectedly and is being restarted/,
 ] as const
 
 function stripE2eLogAnsi(text: string) {
