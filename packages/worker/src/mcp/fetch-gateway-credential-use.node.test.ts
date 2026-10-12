@@ -440,8 +440,8 @@ async function setupDeclaredPackage(input: {
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	} as unknown as Env
-	const expandAsPackage = (url: string, init: RequestInit = {}) =>
-		expandSecretPlaceholders({
+	const expandAsPackage = async (url: string, init: RequestInit = {}) => {
+		const { request: expanded, bodyFillDone } = await expandSecretPlaceholders({
 			request: new Request(url, init),
 			props: {
 				baseUrl: 'https://example.com',
@@ -457,7 +457,24 @@ async function setupDeclaredPackage(input: {
 				grantedSecretAuthorityPackageIds: [packageId],
 			},
 			env,
-		}).then(({ request: expanded }) => expanded)
+		})
+		// Body placeholders resolve while the body streams. Drain a clone so
+		// placement / host-denial errors surface here while the returned
+		// Request still has a readable body for assertions.
+		if (expanded.body) {
+			const peeked = expanded.clone()
+			try {
+				await peeked.arrayBuffer()
+				await bodyFillDone
+			} catch (error) {
+				await bodyFillDone.catch(() => {})
+				throw error
+			}
+		} else {
+			await bodyFillDone
+		}
+		return expanded
+	}
 	return { expandAsPackage }
 }
 
