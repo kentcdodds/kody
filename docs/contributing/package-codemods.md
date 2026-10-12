@@ -502,11 +502,9 @@ Locked packages (`saved_packages.locked_at` set) still run apply and revert for
 `head-and-published` codemods when HEAD matches published: the engine commits
 and pushes HEAD and does **not** advance `published_commit`. The owner reviews
 that HEAD commit later at `/@username/:kodyId/approve-publish?commit=…`.
-`published-only` codemods **skip locked packages entirely** (aligned or
-drifted): an aligned locked apply would leave HEAD at `afterCommit` while
-`published_commit` stayed behind (revert cannot open a RepoSession), and a
-drifted locked apply would hide the pending tip on `kody-published` (approval UI
-loads HEAD).
+`published-only` codemods **always finalize** `published_commit`, including on
+locked packages via `allowLockedPublish`, so fleet migrations never leave a
+pending approve-publish tip on HEAD or `kody-published`.
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
