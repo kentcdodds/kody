@@ -42,11 +42,17 @@ export type SyncPublishedSourceOnlyInput = {
 	files: Record<string, string>
 	/** Git commit message for the published-only commit. */
 	commitMessage: string
+	/**
+	 * Published commit the caller transformed. Refuse if
+	 * `entity_sources.published_commit` moved (owner published concurrently).
+	 */
+	expectedPublishedCommit: string
 	/** Website or platform-owned rewrites may promote a locked package. */
 	allowLockedPublish?: boolean
 	/**
 	 * When false, push the durable ref but do not advance published_commit.
-	 * Used by fleet codemods on locked packages.
+	 * Used by fleet codemods on locked packages that still share HEAD with
+	 * published (aligned). Drifted locked packages must not use this path.
 	 */
 	promotePublished?: boolean
 }
@@ -227,6 +233,46 @@ async function commitPublishedOnlyTree(input: {
 	})
 }
 
+async function resolveRemoteKodyPublishedTip(input: {
+	git: Awaited<ReturnType<typeof loadIsomorphicGit>>['git']
+	http: Awaited<ReturnType<typeof loadIsomorphicGit>>['http']
+	fs: ReturnType<typeof createEphemeralGitWorkspace>['fs']
+	dir: string
+	onAuth: () => { username: string; password: string }
+}): Promise<string | null> {
+	try {
+		await input.git.fetch({
+			fs: input.fs,
+			http: input.http,
+			dir: input.dir,
+			remote: 'origin',
+			ref: kodyPublishedRef,
+			singleBranch: true,
+			tags: false,
+			onAuth: input.onAuth,
+		})
+	} catch {
+		return null
+	}
+	try {
+		return await input.git.resolveRef({
+			fs: input.fs,
+			dir: input.dir,
+			ref: `refs/remotes/origin/${kodyPublishedBranchName}`,
+		})
+	} catch {
+		try {
+			return await input.git.resolveRef({
+				fs: input.fs,
+				dir: input.dir,
+				ref: kodyPublishedRef,
+			})
+		} catch {
+			return null
+		}
+	}
+}
+
 async function pushKodyPublishedRef(input: {
 	git: Awaited<ReturnType<typeof loadIsomorphicGit>>['git']
 	http: Awaited<ReturnType<typeof loadIsomorphicGit>>['http']
@@ -235,6 +281,7 @@ async function pushKodyPublishedRef(input: {
 	remote: string
 	token: string
 	commitOid: string
+	expectedPublishedCommit: string
 	onAuth: () => { username: string; password: string }
 }) {
 	// Point a local branch at the new commit, then push only that ref so the
@@ -256,9 +303,50 @@ async function pushKodyPublishedRef(input: {
 			remoteRef: kodyPublishedRef,
 			onAuth: input.onAuth,
 		})
+		return
 	} catch (error) {
-		// Platform-owned tip: force when the remote ref is not a fast-forward
-		// of this commit (first write after an unrelated prior tip).
+		const remoteTip = await resolveRemoteKodyPublishedTip({
+			git: input.git,
+			http: input.http,
+			fs: input.fs,
+			dir: input.dir,
+			onAuth: input.onAuth,
+		})
+		if (remoteTip == null) {
+			throw new Error(
+				`Artifacts git push failed for ${input.remote} (${kodyPublishedRef}): ${getErrorMessage(error)}`,
+				{ cause: error },
+			)
+		}
+		// Concurrent published-only apply: remote tip is still our expected
+		// parent or a descendant of it. Never force — that would drop the
+		// winner's OID while it may still be the live published_commit.
+		if (remoteTip === input.expectedPublishedCommit) {
+			throw new Error(
+				`Artifacts git push non-fast-forward for ${input.remote} (${kodyPublishedRef}): concurrent published-only update (remote tip still at expected published commit ${input.expectedPublishedCommit}).`,
+				{ cause: error },
+			)
+		}
+		let remoteIsDescendantOfExpected = false
+		try {
+			remoteIsDescendantOfExpected = await input.git.isDescendent({
+				fs: input.fs,
+				dir: input.dir,
+				oid: remoteTip,
+				ancestor: input.expectedPublishedCommit,
+			})
+		} catch {
+			remoteIsDescendantOfExpected = false
+		}
+		if (remoteIsDescendantOfExpected) {
+			throw new Error(
+				`Artifacts git push non-fast-forward for ${input.remote} (${kodyPublishedRef}): concurrent published-only update (remote tip ${remoteTip} descends from expected published commit ${input.expectedPublishedCommit}).`,
+				{ cause: error },
+			)
+		}
+		// Stale platform tip from a prior published era (owner later published
+		// elsewhere). Force-updating keeps the *current* published OID reachable
+		// without dropping a concurrent winner.
 		try {
 			await input.git.push({
 				fs: input.fs,
@@ -304,6 +392,11 @@ export async function syncPublishedSourceSnapshotOnly(
 	if (publishedCommit == null) {
 		throw new Error(
 			`Source "${source.id}" has no published commit; published-only sync requires an existing published snapshot.`,
+		)
+	}
+	if (publishedCommit !== input.expectedPublishedCommit) {
+		throw new Error(
+			`Published commit moved for source "${source.id}" (expected ${input.expectedPublishedCommit}, found ${publishedCommit}). Refusing published-only sync so a concurrent owner publish is not overwritten.`,
 		)
 	}
 	if (source.entity_kind !== 'package') {
@@ -369,6 +462,7 @@ export async function syncPublishedSourceSnapshotOnly(
 			remote: access.remote,
 			token: access.token,
 			commitOid: newCommit,
+			expectedPublishedCommit: input.expectedPublishedCommit,
 			onAuth,
 		})
 	}

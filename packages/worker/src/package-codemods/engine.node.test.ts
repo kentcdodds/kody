@@ -923,9 +923,48 @@ test('published-only apply on drifted packages uses syncPublishedSourceSnapshotO
 	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: pkg.sourceId,
+			expectedPublishedCommit: 'commit-published-old',
 			commitMessage: expect.stringContaining(publishedOnlyCodemodId),
 		}),
 	)
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
+test('published-only apply fails locked drifted packages instead of hiding a pending commit', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const pkg = {
+		...savedPackage('pkg-locked-drift-published-only', {
+			kodyId: 'webhook-pkg',
+			sourceId: 'source-locked-drift-published-only',
+		}),
+		lockedAt: '2026-10-12T00:00:00.000Z',
+	}
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-published-old',
+			repoId: 'repo-locked-drift-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-head-moved',
+	})
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]).toMatchObject({
+		status: 'failed',
+		packageId: pkg.id,
+	})
+	expect(apply.items[0]?.error).toMatch(/locked drifted package/i)
+	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
@@ -1024,6 +1063,68 @@ test('published-only revert does not require HEAD to match afterCommit', async (
 		revertOfRunId: apply.runId,
 	})
 	expect(revert.items[0]?.status).toBe('reverted')
-	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalled()
+	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedPublishedCommit: 'commit-after-apply',
+		}),
+	)
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
+test('published-only codemod revert of an aligned apply uses syncArtifactSourceSnapshot', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const pkg = savedPackage('pkg-revert-aligned-published-only', {
+		kodyId: 'webhook-pkg',
+		sourceId: 'source-revert-aligned-published-only',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-aligned',
+			repoId: 'repo-revert-aligned-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-aligned',
+	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after-aligned')
+
+	const apply = await step(env, {
+		mode: 'apply',
+		codemodId: publishedOnlyCodemodId,
+	})
+	expect(apply.items[0]?.status).toBe('applied')
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+	mocks.syncArtifactSourceSnapshot.mockClear()
+	mocks.syncPublishedSourceSnapshotOnly.mockClear()
+
+	// HEAD still at afterCommit — aligned apply must revert via default sync.
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-after-aligned',
+	})
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: webhookMissingVerificationFiles(),
+			publishedCommit: 'commit-after-aligned',
+			repoId: 'repo-revert-aligned-published-only',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-reverted-aligned')
+
+	const revert = await step(env, {
+		mode: 'revert',
+		codemodId: publishedOnlyCodemodId,
+		revertOfRunId: apply.runId,
+	})
+	expect(revert.items[0]?.status).toBe('reverted')
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
 })

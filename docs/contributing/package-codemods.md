@@ -498,11 +498,12 @@ step matched zero packages.
 | `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, commit and push (see [Drift and applyMode](#drift-and-applymode)), refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before the write.                                    |
 | `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify the publish tip is still safe to restore (HEAD match for `head-and-published`; published-commit match for `published-only`), write the snapshot tree back, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.      |
 
-Locked packages (`saved_packages.locked_at` set) still run apply and revert. The
-engine commits and pushes HEAD and does **not** advance `published_commit`. The
-owner reviews that HEAD commit later at
-`/@username/:kodyId/approve-publish?commit=…`. Fleet apply does not skip locked
-packages.
+Locked packages (`saved_packages.locked_at` set) still run apply and revert when
+HEAD matches published: the engine commits and pushes HEAD and does **not**
+advance `published_commit`. The owner reviews that HEAD commit later at
+`/@username/:kodyId/approve-publish?commit=…`. A **drifted** locked package on a
+`published-only` codemod fails instead of applying — a pending commit on
+`kody-published` would not show in the approval UI (which loads HEAD).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.

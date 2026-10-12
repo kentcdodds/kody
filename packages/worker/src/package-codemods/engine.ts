@@ -803,6 +803,27 @@ async function processPackageForMode(input: {
 					checkSummary: gated.checkSummary,
 				})
 			}
+			// Locked + drifted published-only would push a pending commit only
+			// onto kody-published; the approval UI loads HEAD and would never
+			// show it. Fail closed instead of reporting applied.
+			if (
+				publishedOnlyApply &&
+				isSavedPackageLocked(input.savedPackage.lockedAt)
+			) {
+				return emptyItemResult({
+					itemId: gated.itemId,
+					userId: input.savedPackage.userId,
+					packageId: input.savedPackage.id,
+					kodyId: input.savedPackage.kodyId,
+					status: 'failed',
+					changedPaths: gated.changedPaths,
+					findings: gated.findings,
+					beforeCommit: publishedCommit,
+					checkSummary: gated.checkSummary,
+					error:
+						'Published-only apply cannot leave a locked drifted package pending: unlock the package (or align HEAD with published_commit) before applying.',
+				})
+			}
 
 			const revertSnapshotKey = buildPackageCodemodRevertSnapshotKvKey({
 				userId: input.savedPackage.userId,
@@ -834,6 +855,7 @@ async function processPackageForMode(input: {
 							userId: input.savedPackage.userId,
 							sourceId: input.savedPackage.sourceId,
 							files: gated.transformedFiles,
+							expectedPublishedCommit: publishedCommit,
 							promotePublished,
 							commitMessage,
 						})
@@ -1062,7 +1084,6 @@ async function processRevertStep(input: {
 								sourceId: savedPackage.sourceId,
 							})
 							const expectedHead = priorItem.afterCommit
-							const publishedOnlyRevert = usesPublishedOnlyLane(input.codemod)
 							if (expectedHead == null) {
 								result = emptyItemResult({
 									itemId,
@@ -1072,186 +1093,200 @@ async function processRevertStep(input: {
 									status: 'failed',
 									error: `Applied item "${priorItem.id}" is missing afterCommit for revert drift check.`,
 								})
-							} else if (publishedOnlyRevert) {
-								// Published-only apply never moved HEAD; do not require
-								// HEAD == afterCommit. Skip when published_commit moved to
-								// an unrelated tip (owner published something else).
-								const publishedCommit = loaded.source.published_commit
-								const publishedStillAtAfter =
-									publishedCommit === priorItem.afterCommit
-								const publishedStillAtBefore =
-									publishedCommit === priorItem.beforeCommit
-								if (!publishedStillAtAfter && !publishedStillAtBefore) {
-									result = emptyItemResult({
-										itemId,
-										userId: priorItem.userId,
-										packageId: priorItem.packageId,
-										kodyId: priorItem.kodyId,
-										status: 'skipped_drift',
-										beforeCommit: priorItem.afterCommit,
-									})
-								} else {
-									const afterCommit = await syncPublishedSourceSnapshotOnly({
-										env: input.env,
-										baseUrl: input.baseUrl,
-										userId: priorItem.userId,
-										sourceId: savedPackage.sourceId,
-										files: snapshot.files,
-										promotePublished: !isSavedPackageLocked(
-											savedPackage.lockedAt,
-										),
-										commitMessage: `revert codemod(${input.codemod.id})`,
-									})
-									if (afterCommit == null) {
-										result = emptyItemResult({
-											itemId,
-											userId: priorItem.userId,
-											packageId: priorItem.packageId,
-											kodyId: priorItem.kodyId,
-											status: 'failed',
-											error:
-												'syncPublishedSourceSnapshotOnly returned no published commit.',
-										})
-									} else {
-										try {
-											await refreshSavedPackageProjection({
-												env: input.env,
-												baseUrl: input.baseUrl,
-												userId: priorItem.userId,
-												packageId: priorItem.packageId,
-												sourceId: savedPackage.sourceId,
-											})
-										} catch (error) {
-											console.error(
-												JSON.stringify({
-													message:
-														'package-codemod revert projection refresh failed',
-													packageId: priorItem.packageId,
-													error: getErrorMessage(error),
-												}),
-											)
-										}
-										await dispatchPackageCodemodSubscriptionEvent({
-											env: input.env,
-											userId: priorItem.userId,
-											topic: packageCodemodRevertedTopic,
-											codemodId: input.codemod.id,
-											codemodDescription: input.codemod.description,
-											packageId: priorItem.packageId,
-											kodyId: priorItem.kodyId,
-											runId: input.run.id,
-											itemId,
-											changedPaths: priorItem.changedPaths,
-											beforeCommit: priorItem.afterCommit,
-											afterCommit,
-											waitUntil: input.waitUntil,
-											subscriptionCache: input.subscriptionCache,
-										})
-										await updatePackageCodemodRunItem(input.env.APP_DB, {
-											id: priorItem.id,
-											status: 'reverted',
-										})
-										result = emptyItemResult({
-											itemId,
-											userId: priorItem.userId,
-											packageId: priorItem.packageId,
-											kodyId: priorItem.kodyId,
-											status: 'reverted',
-											changedPaths: priorItem.changedPaths,
-											beforeCommit: priorItem.afterCommit,
-											afterCommit,
-										})
-									}
-								}
 							} else {
-								const drifted = await detectPublishedDrift({
-									env: input.env,
-									repoId: loaded.source.repo_id,
-									expectedCommit: expectedHead,
-								})
-								if (drifted) {
-									result = emptyItemResult({
-										itemId,
-										userId: priorItem.userId,
-										packageId: priorItem.packageId,
-										kodyId: priorItem.kodyId,
-										status: 'skipped_drift',
-										beforeCommit: priorItem.afterCommit,
-									})
-								} else {
-									const afterCommit = await syncArtifactSourceSnapshot({
-										env: input.env,
-										baseUrl: input.baseUrl,
-										userId: priorItem.userId,
-										sourceId: savedPackage.sourceId,
-										files: snapshot.files,
-										destructiveOverwriteConfirmed: true,
-										promotePublished: !isSavedPackageLocked(
-											savedPackage.lockedAt,
-										),
-										commitMessage: `revert codemod(${input.codemod.id})`,
-										// Same docs exemption as apply and preflight.
-										requirePackageDocs: false,
-									})
-									if (afterCommit == null) {
+								const head = await resolveArtifactSourceHead(
+									input.env,
+									loaded.source.repo_id,
+								)
+								const headMatchesAfter = head.commit === priorItem.afterCommit
+								// Aligned apply (HEAD still at afterCommit) must revert via
+								// syncArtifactSourceSnapshot so HEAD and published stay
+								// together. Published-only apply left HEAD alone — revert
+								// only when published_commit is still at after/before.
+								const publishedOnlyRevert =
+									usesPublishedOnlyLane(input.codemod) && !headMatchesAfter
+								if (publishedOnlyRevert) {
+									const publishedCommit = loaded.source.published_commit
+									const publishedStillAtAfter =
+										publishedCommit === priorItem.afterCommit
+									const publishedStillAtBefore =
+										publishedCommit === priorItem.beforeCommit
+									if (
+										publishedCommit == null ||
+										(!publishedStillAtAfter && !publishedStillAtBefore)
+									) {
 										result = emptyItemResult({
 											itemId,
 											userId: priorItem.userId,
 											packageId: priorItem.packageId,
 											kodyId: priorItem.kodyId,
-											status: 'failed',
-											error:
-												'syncArtifactSourceSnapshot returned no published commit.',
+											status: 'skipped_drift',
+											beforeCommit: priorItem.afterCommit,
 										})
 									} else {
-										try {
-											await refreshSavedPackageProjection({
-												env: input.env,
-												baseUrl: input.baseUrl,
+										const afterCommit = await syncPublishedSourceSnapshotOnly({
+											env: input.env,
+											baseUrl: input.baseUrl,
+											userId: priorItem.userId,
+											sourceId: savedPackage.sourceId,
+											files: snapshot.files,
+											expectedPublishedCommit: publishedCommit,
+											promotePublished: !isSavedPackageLocked(
+												savedPackage.lockedAt,
+											),
+											commitMessage: `revert codemod(${input.codemod.id})`,
+										})
+										if (afterCommit == null) {
+											result = emptyItemResult({
+												itemId,
 												userId: priorItem.userId,
 												packageId: priorItem.packageId,
-												sourceId: savedPackage.sourceId,
+												kodyId: priorItem.kodyId,
+												status: 'failed',
+												error:
+													'syncPublishedSourceSnapshotOnly returned no published commit.',
 											})
-										} catch (error) {
-											console.error(
-												JSON.stringify({
-													message:
-														'package-codemod revert projection refresh failed',
+										} else {
+											try {
+												await refreshSavedPackageProjection({
+													env: input.env,
+													baseUrl: input.baseUrl,
+													userId: priorItem.userId,
 													packageId: priorItem.packageId,
-													error: getErrorMessage(error),
-												}),
-											)
+													sourceId: savedPackage.sourceId,
+												})
+											} catch (error) {
+												console.error(
+													JSON.stringify({
+														message:
+															'package-codemod revert projection refresh failed',
+														packageId: priorItem.packageId,
+														error: getErrorMessage(error),
+													}),
+												)
+											}
+											await dispatchPackageCodemodSubscriptionEvent({
+												env: input.env,
+												userId: priorItem.userId,
+												topic: packageCodemodRevertedTopic,
+												codemodId: input.codemod.id,
+												codemodDescription: input.codemod.description,
+												packageId: priorItem.packageId,
+												kodyId: priorItem.kodyId,
+												runId: input.run.id,
+												itemId,
+												changedPaths: priorItem.changedPaths,
+												beforeCommit: priorItem.afterCommit,
+												afterCommit,
+												waitUntil: input.waitUntil,
+												subscriptionCache: input.subscriptionCache,
+											})
+											await updatePackageCodemodRunItem(input.env.APP_DB, {
+												id: priorItem.id,
+												status: 'reverted',
+											})
+											result = emptyItemResult({
+												itemId,
+												userId: priorItem.userId,
+												packageId: priorItem.packageId,
+												kodyId: priorItem.kodyId,
+												status: 'reverted',
+												changedPaths: priorItem.changedPaths,
+												beforeCommit: priorItem.afterCommit,
+												afterCommit,
+											})
 										}
-										await dispatchPackageCodemodSubscriptionEvent({
-											env: input.env,
-											userId: priorItem.userId,
-											topic: packageCodemodRevertedTopic,
-											codemodId: input.codemod.id,
-											codemodDescription: input.codemod.description,
-											packageId: priorItem.packageId,
-											kodyId: priorItem.kodyId,
-											runId: input.run.id,
-											itemId,
-											changedPaths: priorItem.changedPaths,
-											beforeCommit: priorItem.afterCommit,
-											afterCommit,
-											waitUntil: input.waitUntil,
-											subscriptionCache: input.subscriptionCache,
-										})
-										await updatePackageCodemodRunItem(input.env.APP_DB, {
-											id: priorItem.id,
-											status: 'reverted',
-										})
+									}
+								} else {
+									const drifted = await detectPublishedDrift({
+										env: input.env,
+										repoId: loaded.source.repo_id,
+										expectedCommit: expectedHead,
+									})
+									if (drifted) {
 										result = emptyItemResult({
 											itemId,
 											userId: priorItem.userId,
 											packageId: priorItem.packageId,
 											kodyId: priorItem.kodyId,
-											status: 'reverted',
-											changedPaths: priorItem.changedPaths,
+											status: 'skipped_drift',
 											beforeCommit: priorItem.afterCommit,
-											afterCommit,
 										})
+									} else {
+										const afterCommit = await syncArtifactSourceSnapshot({
+											env: input.env,
+											baseUrl: input.baseUrl,
+											userId: priorItem.userId,
+											sourceId: savedPackage.sourceId,
+											files: snapshot.files,
+											destructiveOverwriteConfirmed: true,
+											promotePublished: !isSavedPackageLocked(
+												savedPackage.lockedAt,
+											),
+											commitMessage: `revert codemod(${input.codemod.id})`,
+											// Same docs exemption as apply and preflight.
+											requirePackageDocs: false,
+										})
+										if (afterCommit == null) {
+											result = emptyItemResult({
+												itemId,
+												userId: priorItem.userId,
+												packageId: priorItem.packageId,
+												kodyId: priorItem.kodyId,
+												status: 'failed',
+												error:
+													'syncArtifactSourceSnapshot returned no published commit.',
+											})
+										} else {
+											try {
+												await refreshSavedPackageProjection({
+													env: input.env,
+													baseUrl: input.baseUrl,
+													userId: priorItem.userId,
+													packageId: priorItem.packageId,
+													sourceId: savedPackage.sourceId,
+												})
+											} catch (error) {
+												console.error(
+													JSON.stringify({
+														message:
+															'package-codemod revert projection refresh failed',
+														packageId: priorItem.packageId,
+														error: getErrorMessage(error),
+													}),
+												)
+											}
+											await dispatchPackageCodemodSubscriptionEvent({
+												env: input.env,
+												userId: priorItem.userId,
+												topic: packageCodemodRevertedTopic,
+												codemodId: input.codemod.id,
+												codemodDescription: input.codemod.description,
+												packageId: priorItem.packageId,
+												kodyId: priorItem.kodyId,
+												runId: input.run.id,
+												itemId,
+												changedPaths: priorItem.changedPaths,
+												beforeCommit: priorItem.afterCommit,
+												afterCommit,
+												waitUntil: input.waitUntil,
+												subscriptionCache: input.subscriptionCache,
+											})
+											await updatePackageCodemodRunItem(input.env.APP_DB, {
+												id: priorItem.id,
+												status: 'reverted',
+											})
+											result = emptyItemResult({
+												itemId,
+												userId: priorItem.userId,
+												packageId: priorItem.packageId,
+												kodyId: priorItem.kodyId,
+												status: 'reverted',
+												changedPaths: priorItem.changedPaths,
+												beforeCommit: priorItem.afterCommit,
+												afterCommit,
+											})
+										}
 									}
 								}
 							}

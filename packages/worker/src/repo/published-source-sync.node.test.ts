@@ -43,6 +43,8 @@ const mockModule = vi.hoisted(() => ({
 		commit: vi.fn(async () => 'commit-new-published'),
 		branch: vi.fn(async () => undefined),
 		push: vi.fn(async (_input: Record<string, unknown>) => undefined),
+		resolveRef: vi.fn(async () => 'commit-remote-tip'),
+		isDescendent: vi.fn(async () => false),
 	},
 	http: {},
 	ephemeralFs: {
@@ -174,6 +176,7 @@ test('syncPublishedSourceSnapshotOnly pushes kody-published and finalizes withou
 		baseUrl: 'https://kody.codes',
 		sourceId: 'source-1',
 		files: { 'package.json': '{"name":"@user/pkg"}\n' },
+		expectedPublishedCommit: 'commit-published',
 		commitMessage: 'codemod(0012): add url-secret verification',
 	})
 
@@ -222,6 +225,7 @@ test('syncPublishedSourceSnapshotOnly with promotePublished false skips finalize
 		baseUrl: 'https://kody.codes',
 		sourceId: 'source-1',
 		files: { 'package.json': '{"name":"@user/pkg"}\n' },
+		expectedPublishedCommit: 'commit-published',
 		commitMessage: 'codemod(0012): pending locked',
 		promotePublished: false,
 	})
@@ -244,6 +248,7 @@ test('syncPublishedSourceSnapshotOnly loopback path finalizes without git push',
 		baseUrl: 'http://localhost:3742',
 		sourceId: 'source-1',
 		files: { 'package.json': '{"name":"@user/pkg"}\n' },
+		expectedPublishedCommit: 'commit-published',
 		commitMessage: 'codemod(0012): loopback',
 	})
 
@@ -266,7 +271,55 @@ test('syncPublishedSourceSnapshotOnly refuses ownership mismatch', async () => {
 			baseUrl: 'https://kody.codes',
 			sourceId: 'source-1',
 			files: { 'package.json': '{}\n' },
+			expectedPublishedCommit: 'commit-published',
 			commitMessage: 'codemod(0012): nope',
 		}),
 	).rejects.toThrow(/ownership mismatch/i)
+})
+
+test('syncPublishedSourceSnapshotOnly refuses when published_commit moved', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue({
+		...sourceRow,
+		published_commit: 'commit-owner-just-published',
+	})
+	await expect(
+		syncPublishedSourceSnapshotOnly({
+			env: createEnv(),
+			userId: ownerIdFromStored('user-1'),
+			baseUrl: 'https://kody.codes',
+			sourceId: 'source-1',
+			files: { 'package.json': '{}\n' },
+			expectedPublishedCommit: 'commit-published',
+			commitMessage: 'codemod(0012): race',
+		}),
+	).rejects.toThrow(/published commit moved/i)
+})
+
+test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(sourceRow)
+	setupRepoAccess()
+	mockModule.loopback = false
+	mockModule.git.push.mockReset()
+	mockModule.git.push
+		.mockRejectedValueOnce(new Error('non-fast-forward'))
+		.mockResolvedValueOnce(undefined)
+	mockModule.git.resolveRef.mockResolvedValue('commit-published')
+	mockModule.git.isDescendent.mockResolvedValue(false)
+
+	await expect(
+		syncPublishedSourceSnapshotOnly({
+			env: createEnv(),
+			userId: ownerIdFromStored('user-1'),
+			baseUrl: 'https://kody.codes',
+			sourceId: 'source-1',
+			files: { 'package.json': '{"name":"@user/pkg"}\n' },
+			expectedPublishedCommit: 'commit-published',
+			commitMessage: 'codemod(0012): concurrent',
+		}),
+	).rejects.toThrow(/concurrent published-only update/i)
+
+	expect(mockModule.git.push).toHaveBeenCalledTimes(1)
+	expect(mockModule.git.push.mock.calls[0]?.[0]).not.toEqual(
+		expect.objectContaining({ force: true }),
+	)
 })
