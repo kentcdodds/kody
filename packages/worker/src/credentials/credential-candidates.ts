@@ -22,7 +22,6 @@ import {
 	listScopeIncludes,
 	loadResourceListScope,
 } from '#worker/authorization/authorize.ts'
-import { listJoinedIntegrationsForUser } from '#worker/integrations/repo.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { type PackageCredentialKind } from '#worker/package-registry/types.ts'
 import { type CredentialNeed } from './credential-needs.ts'
@@ -44,6 +43,9 @@ type Row = {
 	provider: string | null
 	hosts_json: string
 	url: string | null
+	/** OAuth only: the app's current hosts and API base URL host. */
+	app_hosts_json: string | null
+	api_base_url: string | null
 }
 
 const usableRowQueries = [
@@ -51,7 +53,8 @@ const usableRowQueries = [
 		family: 'secret' as const,
 		sql: (filter: (column: string) => string) =>
 			`SELECT e.id AS id, e.name AS name, e.kind AS kind, e.provider AS provider,
-				e.allowed_hosts AS hosts_json, NULL AS url
+				e.allowed_hosts AS hosts_json, NULL AS url, NULL AS app_hosts_json,
+				NULL AS api_base_url
 			FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
 				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
@@ -62,16 +65,24 @@ const usableRowQueries = [
 	{
 		family: 'integration' as const,
 		sql: (filter: (column: string) => string) =>
-			`SELECT id, name, 'oauth' AS kind, provider,
-				required_hosts_json AS hosts_json, NULL AS url
-			FROM user_integrations
-			WHERE user_id = ? AND deleted_at IS NULL AND connected_at IS NOT NULL${filter('id')}`,
+			`SELECT i.id AS id, i.name AS name, 'oauth' AS kind, i.provider AS provider,
+				i.required_hosts_json AS hosts_json, NULL AS url,
+				p.required_hosts_json AS app_hosts_json,
+				CASE WHEN i.platform_app_slug IS NOT NULL THEN p.api_base_url
+					ELSE a.api_base_url END AS api_base_url
+			FROM user_integrations i
+			LEFT JOIN user_oauth_apps a
+				ON a.user_id = i.user_id AND a.slug = i.app_slug AND a.deleted_at IS NULL
+			LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
+			WHERE i.user_id = ? AND i.deleted_at IS NULL
+				AND i.connected_at IS NOT NULL${filter('i.id')}`,
 		binds: () => [],
 	},
 	{
 		family: 'integration' as const,
 		sql: (filter: (column: string) => string) =>
-			`SELECT id, name, 'mcp' AS kind, provider, '[]' AS hosts_json, url
+			`SELECT id, name, 'mcp' AS kind, provider, '[]' AS hosts_json, url,
+				NULL AS app_hosts_json, NULL AS api_base_url
 			FROM mcp_server_settings
 			WHERE user_id = ? AND deleted_at IS NULL AND enabled = 1${filter('id')}`,
 		binds: () => [],
@@ -87,6 +98,22 @@ const needKinds = new Set<string>([
 	'signing',
 ] satisfies Array<PackageCredentialKind>)
 
+function parseHostList(json: string | null): Array<string> {
+	if (!json) return []
+	try {
+		const parsed: unknown = JSON.parse(json)
+		return Array.isArray(parsed)
+			? parsed.filter((host): host is string => typeof host === 'string')
+			: []
+	} catch {
+		return []
+	}
+}
+
+/**
+ * Hosts as the runtime allows them. An OAuth connection adds its app's
+ * current hosts and API base URL host to its stored hosts.
+ */
 function parseHosts(row: Row): Array<string> {
 	if (row.url) {
 		try {
@@ -95,14 +122,16 @@ function parseHosts(row: Row): Array<string> {
 			return []
 		}
 	}
-	try {
-		const parsed: unknown = JSON.parse(row.hosts_json)
-		return Array.isArray(parsed)
-			? parsed.filter((host): host is string => typeof host === 'string')
-			: []
-	} catch {
-		return []
+	if (row.kind === 'oauth') {
+		return getIntegrationAllowedHosts({
+			requiredHosts: [
+				...parseHostList(row.hosts_json),
+				...parseHostList(row.app_hosts_json),
+			],
+			apiBaseUrl: row.api_base_url,
+		})
 	}
+	return parseHostList(row.hosts_json)
 }
 
 async function loadRows(input: {
@@ -134,47 +163,18 @@ async function loadRows(input: {
 	return rows
 }
 
-/**
- * The hosts each OAuth connection of `ownerId` may reach, as the runtime
- * allows them: its stored hosts, a platform app's current hosts, and the
- * app's API base URL host. Read-only, unlike `listJoinedIntegrations`.
- */
-async function loadOauthHosts(db: D1Database, ownerId: string) {
-	const joined = await listJoinedIntegrationsForUser({ db, userId: ownerId })
-	return new Map(
-		joined.map((entry) => [
-			entry.connection.credentialId,
-			getIntegrationAllowedHosts({
-				requiredHosts:
-					entry.lane === 'platform'
-						? [...entry.connection.requiredHosts, ...entry.app.requiredHosts]
-						: entry.connection.requiredHosts,
-				apiBaseUrl: entry.app.apiBaseUrl,
-			}),
-		]),
-	)
-}
-
-async function toUsableList(input: {
-	db: D1Database
-	ownerId: string
-	rows: ReadonlyArray<Row>
-	scope: UsableCredential['scope']
-}): Promise<Array<UsableCredential>> {
-	const oauthHosts = input.rows.some((row) => row.kind === 'oauth')
-		? await loadOauthHosts(input.db, input.ownerId)
-		: new Map<string, Array<string>>()
-	return input.rows.map((row) => ({
+function toUsable(
+	row: Row,
+	scope: UsableCredential['scope'],
+): UsableCredential {
+	return {
 		id: row.id,
 		name: row.name,
 		kind: row.kind as PackageCredentialKind,
 		provider: row.provider,
-		hosts:
-			row.kind === 'oauth'
-				? (oauthHosts.get(row.id) ?? parseHosts(row))
-				: parseHosts(row),
-		scope: input.scope,
-	}))
+		hosts: parseHosts(row),
+		scope,
+	}
 }
 
 /**
@@ -200,37 +200,30 @@ export async function listUsableCredentials(input: {
 			orgId: orgId as OwnerId,
 		}),
 	])
-	const usable = await toUsableList({
-		db: input.env.APP_DB,
-		ownerId: orgId,
-		rows: orgRows.filter((row) =>
+	const usable = orgRows
+		.filter((row) =>
 			listScopeIncludes(
 				row.family === 'secret' ? secretScope : integrationScope,
 				row.id,
 			),
-		),
-		scope: 'org',
-	})
+		)
+		.map((row) => toUsable(row, 'org'))
 	const actor = input.request.actor?.userId
 	// A scoped token narrows personal credentials too: Use of each family.
 	const tokenScopes = input.request.credential.scopes
 	const tokenAllows = (family: 'secret' | 'integration') =>
 		tokenScopes === null || tokenScopes.includes(`${family}:use`)
 	if (actor && personal.length > 0) {
-		const personalOrg = personalOrgId(actor)
 		const personalRows = await loadRows({
 			db: input.env.APP_DB,
-			ownerId: personalOrg,
+			ownerId: personalOrgId(actor),
 			ids: personal.map((credential) => credential.id),
 			now,
 		})
 		usable.push(
-			...(await toUsableList({
-				db: input.env.APP_DB,
-				ownerId: personalOrg,
-				rows: personalRows.filter((row) => tokenAllows(row.family)),
-				scope: 'personal',
-			})),
+			...personalRows
+				.filter((row) => tokenAllows(row.family))
+				.map((row) => toUsable(row, 'personal')),
 		)
 	}
 	return usable.sort(

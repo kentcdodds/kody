@@ -316,6 +316,22 @@ test('an OAuth connection lists the hosts the runtime allows, including its API 
 		)
 		.bind(t.acmeId, now)
 		.run()
+	// A connection whose app was deleted still lists, with its stored hosts.
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow, deleted_at)
+			VALUES (?, 'deleted-app', 'linear', 'client-id', 'https://linear.app/token',
+				'https://old.linear.app', 'confidential', ?)`,
+		)
+		.bind(t.acmeId, now)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug, provider, required_hosts_json, connected_at)
+			VALUES (?, 'orphan', 'deleted-app', 'linear', '["api.linear.app"]', ?)`,
+		)
+		.bind(t.acmeId, now)
+		.run()
 	expect(
 		(await t.usableAs('bea', 'owner')).map(({ name, kind, hosts }) => ({
 			name,
@@ -328,5 +344,6 @@ test('an OAuth connection lists the hosts the runtime allows, including its API 
 			kind: 'oauth',
 			hosts: ['uploads.github.com', 'api.github.com'],
 		},
+		{ name: 'orphan', kind: 'oauth', hosts: ['api.linear.app'] },
 	])
 })
