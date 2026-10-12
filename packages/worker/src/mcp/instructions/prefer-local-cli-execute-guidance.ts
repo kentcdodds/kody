@@ -7,4 +7,4 @@
  * policy. Host-vs-Kody guidance stays in skills / guides.
  */
 export const preferLocalCliExecuteGuidance =
-	'When the Kody CLI and Node are available, run code with `kody execute --local`; use hosted execute otherwise.'
+	'When Node ≥22 and the Kody CLI are available, run code with `kody execute --local`; otherwise use Open API / MCP `api` or fix the environment.'
