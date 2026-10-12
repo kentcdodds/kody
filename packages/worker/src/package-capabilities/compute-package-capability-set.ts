@@ -76,22 +76,16 @@ export async function computePackageCapabilitySet(input: {
 		requestUrl: input.requestUrl,
 	})
 
-	const viaByPackageId = new Map<string, Array<string>>()
-	viaByPackageId.set(input.packageId, viaRoot)
 	for (const dependency of dependencySnapshot.dependencies) {
 		const packageId = await resolveDependencyPackageId({
 			env: input.env,
 			dependency,
 		})
 		if (!packageId) continue
-		const via = dependency.transitive
-			? [...viaRoot, dependency.kodyId]
-			: [input.packageKodyId, dependency.kodyId]
-		// Prefer longer provenance paths when the same package appears twice.
-		const previous = viaByPackageId.get(packageId)
-		if (!previous || via.length > previous.length) {
-			viaByPackageId.set(packageId, via)
-		}
+		// Artifact dependency lists are flat (no parent chain). Provenance is
+		// root → dependency kodyId; full intermediate paths need the graph walk
+		// (manifest fallback tracks depth only as transitive today).
+		const via = [input.packageKodyId, dependency.kodyId]
 		await appendPackageCapabilityEntries({
 			env: input.env,
 			ownerUserId: input.ownerUserId,
@@ -100,7 +94,7 @@ export async function computePackageCapabilitySet(input: {
 			sourceId: dependency.sourceId,
 			requestUrl: input.requestUrl,
 			baseUrl,
-			via: viaByPackageId.get(packageId) ?? via,
+			via,
 			entries,
 		})
 	}
