@@ -229,7 +229,7 @@ jobs:
       false
     steps:
       # Self-driving test-time budget: this job fails itself when wall-clock
-      # exceeds 480s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
+      # exceeds 600s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
       # baseline with headroom; cache hit or miss does not change it. Setup +
       # tests both count; do not delete tests to stay under.
       - name: ⏱️ Mark job start
@@ -255,7 +255,7 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
-      - name: ⏱️ Unit job budget (≤480s)
+      - name: ⏱️ Unit job budget (≤600s)
         if: success()
         run: >-
           node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch

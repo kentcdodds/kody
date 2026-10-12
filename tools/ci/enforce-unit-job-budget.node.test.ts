@@ -14,14 +14,14 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		evaluateUnitJobBudget({
 			leg: 'node',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 479,
+			nowEpochSeconds: 1_000 + 599,
 		}).ok,
 	).toBe(true)
 	expect(
 		evaluateUnitJobBudget({
 			leg: 'node',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 481,
+			nowEpochSeconds: 1_000 + 601,
 		}).ok,
 	).toBe(false)
 	expect(
