@@ -22,12 +22,13 @@ permissions:
 # one; that is intended, because Validate on `main` completes in push order and
 # the replacement targets a newer commit, so dropping the older one only skips
 # an intermediate deploy (sha-guard never moves production backwards).
-# Completions that sha-guard would skip (failed, cancelled, or non-push
-# Validate runs) get their own group so they cannot replace a pending deploy.
+# Runs that sha-guard would skip (failed, cancelled, or non-push Validate
+# completions, and off-main dispatches) get their own group so they cannot
+# replace a pending deploy.
 concurrency:
   group: >-
-    ${{ (github.event_name == 'workflow_dispatch' ||
-    (github.event.workflow_run.conclusion == 'success' &&
+    ${{ ((github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
+    || (github.event.workflow_run.conclusion == 'success' &&
     github.event.workflow_run.head_branch == 'main' &&
     github.event.workflow_run.event == 'push')) && 'deploy-production' ||
     format('deploy-skipped-{0}', github.run_id) }}
