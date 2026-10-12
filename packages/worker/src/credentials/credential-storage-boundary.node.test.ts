@@ -2,8 +2,8 @@
  * Credential storage is read only behind `resolveCredential`. This test
  * parses every non-test source file under `packages/` and fails when a
  * credential read or decrypt helper is imported (or re-exported, or reached
- * through a namespace import) outside the door, its storage layer, or the
- * explicit account-management list below.
+ * through a namespace import) outside the door and its resolvers, its storage
+ * layer, or the explicit account-management list below.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -16,14 +16,19 @@ const repoRoot = path.resolve(
 	'../../../..',
 )
 const workerRoot = path.join(repoRoot, 'packages/worker')
-const door = 'packages/worker/src/credentials/resolve-credential.ts'
+const doorModules = new Set([
+	'packages/worker/src/credentials/resolve-credential.ts',
+	'packages/worker/src/credentials/secret-resolvers.ts',
+	'packages/worker/src/credentials/oauth-resolvers.ts',
+	'packages/worker/src/credentials/mcp-resolver.ts',
+])
 
 type StorageRule = {
 	/** Repo-relative module that owns the storage read. */
 	module: string
 	/** Exports that return credential material. */
 	symbols: ReadonlyArray<string>
-	/** Importers allowed besides the door, with why. */
+	/** Importers allowed besides the door and its resolvers, with why. */
 	allowed: Record<string, string>
 }
 
@@ -34,7 +39,7 @@ const accountSecretsData = 'packages/worker/src/app/account-secrets-data.ts'
 const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/mcp/secrets/service.ts',
-		symbols: ['resolveSecret'],
+		symbols: ['resolveSecret', 'findSecretForUse'],
 		allowed: {
 			'packages/worker/src/mcp/secrets/secret-providers/service.ts':
 				'Vault door key read inside resolveProviderSecret, which only the door calls.',
@@ -262,7 +267,8 @@ test('credential storage is read only behind resolveCredential', () => {
 			readFileSync(filePath, 'utf8'),
 		)) {
 			const rule = rulesByModule.get(use.module)
-			if (!rule || importer === door || importer in rule.allowed) continue
+			if (!rule || doorModules.has(importer) || importer in rule.allowed)
+				continue
 			const reached =
 				use.names === '*'
 					? ['* (namespace import or re-export)']

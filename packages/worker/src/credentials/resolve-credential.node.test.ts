@@ -25,6 +25,11 @@ import {
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import {
+	encryptUserOauthAccessToken,
+	userIntegrationCredentialContext,
+} from '#mcp/secrets/crypto.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
 import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
@@ -53,6 +58,35 @@ vi.mock('cloudflare:workers', async (importOriginal) => ({
 vi.mock('#mcp/secrets/secret-providers/declared-provider.ts', () => ({
 	readDeclaredSecretProviderId: async () => '1password',
 }))
+
+const valueReads = vi.hoisted(() => [] as Array<string>)
+
+vi.mock('#mcp/secrets/crypto.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#mcp/secrets/crypto.ts')>()
+	return {
+		...actual,
+		decryptSecretValue: async (
+			...args: Parameters<typeof actual.decryptSecretValue>
+		) => {
+			valueReads.push('secret')
+			return await actual.decryptSecretValue(...args)
+		},
+	}
+})
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/integrations/credentials.ts')>()
+	return {
+		...actual,
+		resolveIntegrationAccessToken: async (
+			...args: Parameters<typeof actual.resolveIntegrationAccessToken>
+		) => {
+			valueReads.push('integration-token')
+			return await actual.resolveIntegrationAccessToken(...args)
+		},
+	}
+})
 
 const now = '2026-10-10T00:00:00.000Z'
 const secretValue = 'org-secret-value-never-audited'
@@ -1010,4 +1044,101 @@ test('an integration Use grant does not carry over to a deleted and recreated co
 		code: 'missing_permission',
 		permission: 'integration:use',
 	})
+})
+
+test('authorize runs before apply: a denied actor or a refused host never decrypts the secret', async () => {
+	const t = await setup()
+	await setSecretAllowedHosts({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedHosts: ['api.example.com'],
+	})
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const resolveAs = (
+		actor: ReturnType<typeof t.personRequest>,
+		requestHost: string,
+	) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'orgToken',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+				requestHost,
+			},
+		})
+	valueReads.splice(0)
+
+	await expect(
+		resolveAs(
+			t.personRequest(t.collaboratorId, 'collab', null),
+			'api.example.com',
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	await expect(resolveAs(owner, 'evil.example')).rejects.toBeInstanceOf(
+		SecretHostNotApprovedError,
+	)
+	expect(valueReads).toEqual([])
+
+	await expect(resolveAs(owner, 'api.example.com')).resolves.toMatchObject({
+		value: secretValue,
+	})
+	expect(valueReads).toEqual(['secret'])
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'denied',
+		'success',
+	])
+})
+
+test('a host the integration does not allow never reads or refreshes its token', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'https://api.example.com', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const accessToken = 'integration-token-never-audited'
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug, required_hosts_json, access_token_encrypted)
+			 VALUES (?, 'org-google', 'google', '["api.example.com"]', ?)`,
+		)
+		.bind(
+			t.orgId,
+			await encryptUserOauthAccessToken(
+				t.env,
+				accessToken,
+				userIntegrationCredentialContext(t.orgId, 'org-google'),
+			),
+		)
+		.run()
+	const resolveToken = (requestHost: string) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.ownerStableId, 'owner', 'owner'),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-token', name: 'org-google', requestHost },
+		})
+	valueReads.splice(0)
+
+	await expect(resolveToken('evil.example')).rejects.toBeInstanceOf(
+		IntegrationHostNotAllowedError,
+	)
+	expect(valueReads).toEqual([])
+
+	await expect(resolveToken('api.example.com')).resolves.toBe(accessToken)
+	expect(valueReads).toEqual(['integration-token'])
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'success',
+	])
 })

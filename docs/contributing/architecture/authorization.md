@@ -85,9 +85,16 @@ Profiles and the signed-in step are the other denials that can fire.
    target no grant names, so a non-holder gets a denial rather than a not-found.
    Denial messages name the credential by family and name (`secret apiKey`),
    never by id;
-3. applies the package rules (allowlists, usageMode, provider grants), then
-   reads storage;
-4. schedules one `credential.resolve` row in `org_audit_events` per resolution
+3. applies the package rules (allowlists, usageMode, provider grants) and, for
+   stored secrets and integrations, the allowed hosts, all from metadata; a
+   vault item's hosts come back with its value, so the vault checks them right
+   after the read;
+4. only then reads storage. Each credential kind is a resolver
+   (`credentials/credential-resolver.ts`: `resolve` returns a metadata-only
+   handle, the door calls its `authorize` and then `apply`, the only step that
+   reads a value), so a refused host never decrypts a secret or refreshes a
+   token;
+5. schedules one `credential.resolve` row in `org_audit_events` per resolution
    (success, not found, denied, failed) via `waitUntil`, with the actor, the
    credential id (null when nothing resolved) and requested name, owner kind,
    and package stamp kind. It never holds the value.
@@ -112,8 +119,8 @@ name that matches no credential is refused. The by-name targets are removed
 together with secret placeholders when the old credential lane is removed.
 
 `credential-storage-boundary.node.test.ts` fails if credential storage is read
-outside the door. Credential storage keys use `ownerIdFromCaller` (org id), not
-the acting person. Automation is Owner. See
+outside the door and its resolvers. Credential storage keys use
+`ownerIdFromCaller` (org id), not the acting person. Automation is Owner. See
 [ADR 0021](../decisions/0021-publish-gated-package-composition.md).
 
 ### Enablements

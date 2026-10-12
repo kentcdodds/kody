@@ -3,20 +3,24 @@
  *
  * Every runtime site that turns a credential reference into usable material
  * calls this function, and credential storage (secret values, OAuth tokens,
- * vault door keys, MCP hub tool calls) is read nowhere else
- * (`credential-storage-boundary.node.test.ts` enforces that). Each call:
+ * vault door keys, MCP hub tool calls) is read nowhere else but the door and
+ * its resolvers (`credential-storage-boundary.node.test.ts` enforces that).
+ * Each call:
  *
  * 1. checks that the acting person still has access to the org (live
  *    membership, team, or outside-collaborator grant, org not deleted or
  *    suspended), so access that ended without a cascade cannot resolve;
- * 2. requires the actor's Use on the credential's stable id, whatever the
- *    package stamp. The id comes from a metadata read (no decrypt), so a
- *    renamed credential keeps its grants and a deleted then recreated name
- *    starts with none. A trigger acts as its enabler, so it needs the
- *    enabler's own Use, and a denial pauses that enablement;
- * 3. applies the package rules for that use (secret allowlists, integration
- *    and MCP usage modes, vault provider grants), then reads storage;
- * 4. schedules exactly one `credential.resolve` org audit row for every
+ * 2. asks the credential kind's resolver (`credential-resolver.ts`) to find
+ *    the credential by metadata, with no decrypt;
+ * 3. authorizes the use: the actor's Use on the credential's stable id,
+ *    whatever the package stamp, then the package rules (secret allowlists,
+ *    integration and MCP usage modes, vault provider grants) and, where the
+ *    metadata has them, allowed hosts. A renamed credential keeps its grants
+ *    and a deleted then recreated name starts with none. A trigger acts as its
+ *    enabler, so it needs the enabler's own Use, and a denial pauses that
+ *    enablement;
+ * 4. only then applies the credential, the one step that reads storage;
+ * 5. schedules exactly one `credential.resolve` org audit row for every
  *    outcome (success, not found, denied, failed), for every kind of actor.
  *    The row never holds the credential value.
  *
@@ -24,190 +28,64 @@
  * no request at all is webhook ingress verifying a signature, which passes an
  * attested package stamp.
  */
-import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import {
-	AuthorizationError,
-	authorize,
-} from '#worker/authorization/authorize.ts'
-import {
-	createMissingIntegrationAccessTokenMessage,
-	findIntegrationCredentialId,
-	resolveIntegrationAccessToken,
-} from '#worker/integrations/credentials.ts'
-import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
-import { getJoinedIntegration } from '#worker/integrations/service.ts'
-import {
-	refreshIntegrationTokens,
-	type IntegrationTokenRefreshResult,
-} from '#worker/integrations/token-refresh.ts'
-import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
-import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { pauseEnablementOnDenial } from '#worker/enablements/pause-on-denial.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { enablementIdOf } from '#worker/request-context/request-context.ts'
-import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
-import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
-import {
-	assertPackageCanAccessResolvedSecret,
-	loadPackageSecretMounts,
-	PackageSecretMissingError,
-	PackageSecretMountError,
-} from '#mcp/secrets/package-access.ts'
-import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
-import { buildSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
-import {
-	createProviderHostDeniedMessage,
-	createProviderNoWebsitesMessage,
-	SecretProviderHostDeniedError,
-} from '#mcp/secrets/secret-providers/errors.ts'
-import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
-import { invokeSealedSecretProvider } from '#mcp/secrets/secret-providers/sealed-invoke.ts'
-import {
-	getSecretProviderBinding,
-	normalizeProviderId,
-	resolveProviderSecret,
-} from '#mcp/secrets/secret-providers/service.ts'
-import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
-import {
-	findSecretForUse,
-	type FoundSecret,
-	type ResolvedSecret,
-} from '#mcp/secrets/service.ts'
-import { type SecretScope } from '#mcp/secrets/types.ts'
-import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
-import { type StorageContext } from '#mcp/storage.ts'
 import {
 	credentialResolutionOutcomeForError,
 	scheduleCredentialResolutionAudit,
-	type CredentialAuditSubject,
 	type CredentialResolutionOutcome,
 } from './credential-resolution-audit.ts'
 import {
-	credentialResource,
-	missingCredentialResource,
-} from './credential-ids.ts'
-import { type PackageStamp } from './package-stamp.ts'
+	permissionForUse,
+	type CredentialResolver,
+	type CredentialTarget,
+	type CredentialTargetFor,
+	type CredentialUse,
+	type ResolveCredentialInput,
+	type ResolvedCredential,
+} from './credential-resolver.ts'
+import { mcpConnectionResolver } from './mcp-resolver.ts'
+import {
+	integrationRefreshResolver,
+	integrationTokenResolver,
+} from './oauth-resolvers.ts'
+import {
+	packageSecretMountResolver,
+	secretResolver,
+	vaultSecretResolver,
+	webhookSecretResolver,
+} from './secret-resolvers.ts'
 
-/**
- * Normalized host the value is about to be sent to. When set, the door
- * enforces the credential's host allowlist, so an unapproved host is an
- * audited denial instead of a successful resolution the caller then rejects.
- * Only pass a host that placeholder expansion cannot change.
- */
-type RequestHost = string | null
-
-/** What is being resolved. `use` picks the package rules that apply. */
-export type CredentialTarget =
-	/** `{{secret:…}}` / `secret-basic` placeholders and `secretJwtSign`. */
-	| {
-			use: 'secret'
-			name: string
-			scope?: SecretScope | null
-			storageContext: StorageContext
-			/** Org slug for approval links in denial messages. */
-			orgSlug?: string | null
-			requestHost?: RequestHost
-	  }
-	/** `packageSecrets.get` / `.has`: a declared `kody.secretMounts` alias. */
-	| {
-			use: 'package-secret-mount'
-			alias: string
-			callerContext: McpCallerContext
-			/**
-			 * `.has` uses `presence`: find the row and run package-access
-			 * without decrypting. `.get` keeps the default `value` path.
-			 */
-			access?: 'presence' | 'value'
-	  }
-	/**
-	 * Webhook `verification.secretName`, challenge `secretName`, and the apply
-	 * `destination.secretName`. Read in the stamped package's buckets.
-	 */
-	| { use: 'webhook-secret'; name: string }
-	/** `{{secret/provider:ref}}` vault references. */
-	| {
-			use: 'provider-secret'
-			provider: string
-			ref: string
-			storageContext: StorageContext
-			requestHost?: RequestHost
-	  }
-	/** `{{integration-token:…}}` and webhook apply integration auth. */
-	| {
-			use: 'integration-token'
-			name: string
-			packageKodyId?: string | null
-			requestHost?: RequestHost
-	  }
-	/** `integrationTokenRefresh` and webhook apply 401 retry. */
-	| {
-			use: 'integration-refresh'
-			name: string
-			userEmail?: string
-			packageKodyId?: string | null
-			waitUntil?: (promise: Promise<unknown>) => void
-	  }
-	/** `kody.mcp.<server>.<tool>`: a tool call on the org's MCP hub. */
-	| {
-			use: 'mcp-connection'
-			serverId: string
-			serverName: string
-			waitUntil?: (promise: Promise<unknown>) => void
-	  }
-
-export type ResolvedPackageSecretMount = {
-	alias: string
-	name: string
-	/** Opaque `{{secret:…}}` ref. Plaintext never leaves the host. */
-	ref: string
-	scope: SecretScope
-	packageId: string
-	kodyId: string
-}
-
-export type McpServerConnection = {
-	callTool(input: {
-		toolName: string
-		args: Record<string, unknown>
-	}): Promise<CallToolResult>
-}
-
-type ResolvedCredentialByUse = {
-	secret: ResolvedSecret
-	'package-secret-mount': ResolvedPackageSecretMount
-	'webhook-secret': ResolvedSecret
-	'provider-secret': ResolvedProviderSecret
-	'integration-token': string | null
-	'integration-refresh': IntegrationTokenRefreshResult
-	'mcp-connection': McpServerConnection
-}
-
-export type ResolvedCredential<T extends CredentialTarget> =
-	ResolvedCredentialByUse[T['use']]
-
-export type ResolveCredentialInput<T extends CredentialTarget> = {
-	env: Env
-	/** The org that owns the credential. */
-	orgId: OwnerId
-	/**
-	 * The run's request context. Null only on platform paths that have no
-	 * run (webhook ingress verification); those need an attested stamp.
-	 */
-	actor: RequestContext | null
-	packageStamp?: PackageStamp | null
-	/** App origin for approval links in denial messages. */
-	baseUrl: string
-	credential: T
+const credentialResolvers: {
+	[U in CredentialUse]: CredentialResolver<U>
+} = {
+	secret: secretResolver,
+	'package-secret-mount': packageSecretMountResolver,
+	'webhook-secret': webhookSecretResolver,
+	'provider-secret': vaultSecretResolver,
+	'integration-token': integrationTokenResolver,
+	'integration-refresh': integrationRefreshResolver,
+	'mcp-connection': mcpConnectionResolver,
 }
 
 export async function resolveCredential<T extends CredentialTarget>(
 	input: ResolveCredentialInput<T>,
 ): Promise<ResolvedCredential<T>> {
-	const subject = auditSubjectFor(input.credential)
+	return await resolveWith(
+		credentialResolvers[input.credential.use] as CredentialResolver<T['use']>,
+		input,
+	)
+}
+
+async function resolveWith<U extends CredentialUse>(
+	resolver: CredentialResolver<U>,
+	input: ResolveCredentialInput<CredentialTarget>,
+) {
+	const credential = input.credential as CredentialTargetFor<U>
+	const subject = resolver.auditSubject(credential)
 	const audit = (outcome: CredentialResolutionOutcome) =>
 		scheduleCredentialResolutionAudit({
 			env: input.env,
@@ -217,10 +95,12 @@ export async function resolveCredential<T extends CredentialTarget>(
 			subject,
 			outcome,
 		})
-	let result: AnyResolvedCredential
+	let result
 	try {
 		await assertActorHasOrgAccess(input)
-		result = await resolveTarget(input, input.credential, subject)
+		const handle = await resolver.resolve({ input, credential, subject })
+		await handle.authorize()
+		result = await handle.apply()
 	} catch (error) {
 		audit(credentialResolutionOutcomeForError(error))
 		const enablementId = enablementIdOf(input.actor)
@@ -235,160 +115,14 @@ export async function resolveCredential<T extends CredentialTarget>(
 		throw error
 	}
 	audit(
-		isResolved(input.credential, result)
+		resolver.isFound(result)
 			? { result: 'success' }
 			: { result: 'failure', reason: 'not_found' },
 	)
-	return result as ResolvedCredential<T>
-}
-
-type AnyResolvedCredential =
-	ResolvedCredentialByUse[keyof ResolvedCredentialByUse]
-
-function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
-	switch (credential.use) {
-		case 'secret':
-			return {
-				use: credential.use,
-				resourceType: 'secret',
-				name: credential.name,
-				credentialId: null,
-				details: { host: credential.requestHost ?? null },
-			}
-		case 'webhook-secret':
-			return {
-				use: credential.use,
-				resourceType: 'secret',
-				name: credential.name,
-				credentialId: null,
-			}
-		case 'package-secret-mount':
-			// The mounted secret's name replaces the alias once the mount loads.
-			return {
-				use: credential.use,
-				resourceType: 'secret',
-				name: credential.alias,
-				credentialId: null,
-				details: {
-					mountAlias: credential.alias,
-					access: credential.access ?? 'value',
-				},
-			}
-		case 'provider-secret':
-			return {
-				use: credential.use,
-				resourceType: 'secret-provider',
-				// Validated inside the audited resolve; building the subject must not throw.
-				name: credential.provider.trim().toLowerCase(),
-				credentialId: null,
-				details: { host: credential.requestHost ?? null },
-			}
-		case 'integration-token':
-			return {
-				use: credential.use,
-				resourceType: 'integration',
-				name: credential.name,
-				credentialId: null,
-				details: { host: credential.requestHost ?? null },
-			}
-		case 'integration-refresh':
-			return {
-				use: credential.use,
-				resourceType: 'integration',
-				name: credential.name,
-				credentialId: null,
-			}
-		case 'mcp-connection':
-			return {
-				use: credential.use,
-				resourceType: 'mcp-server',
-				name: credential.serverName,
-				credentialId: credential.serverId,
-				details: { serverId: credential.serverId },
-			}
-		default: {
-			const exhaustive: never = credential
-			throw new Error(
-				`Unhandled credential use: ${String((exhaustive as CredentialTarget).use)}`,
-			)
-		}
-	}
-}
-
-function isResolved(
-	credential: CredentialTarget,
-	result: AnyResolvedCredential,
-): boolean {
-	switch (credential.use) {
-		case 'secret':
-		case 'webhook-secret': {
-			const secret = result as ResolvedSecret
-			return secret.found && typeof secret.value === 'string'
-		}
-		case 'integration-token':
-			return result !== null
-		case 'package-secret-mount':
-		case 'provider-secret':
-		case 'integration-refresh':
-		case 'mcp-connection':
-			return true
-		default: {
-			const exhaustive: never = credential
-			throw new Error(
-				`Unhandled credential use: ${String((exhaustive as CredentialTarget).use)}`,
-			)
-		}
-	}
-}
-
-async function resolveTarget(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: CredentialTarget,
-	subject: CredentialAuditSubject,
-): Promise<AnyResolvedCredential> {
-	switch (credential.use) {
-		case 'secret':
-			return await resolvePlaceholderSecret(input, credential, subject)
-		case 'package-secret-mount':
-			return await resolvePackageSecretMount(input, credential, subject)
-		case 'webhook-secret':
-			return await resolveWebhookSecret(input, credential, subject)
-		case 'provider-secret':
-			return await resolveVaultSecret(input, credential, subject)
-		case 'integration-token':
-			return await resolveIntegrationToken(input, credential, subject)
-		case 'integration-refresh':
-			return await refreshIntegration(input, credential, subject)
-		case 'mcp-connection':
-			return await connectMcpServer(input, credential, subject)
-		default: {
-			const exhaustive: never = credential
-			throw new Error(
-				`Unhandled credential use: ${String((exhaustive as CredentialTarget).use)}`,
-			)
-		}
-	}
+	return result
 }
 
 const orgAccessByRequest = new WeakMap<RequestContext, Promise<void>>()
-
-function permissionForUse(use: CredentialTarget['use']): OrgPermission {
-	switch (use) {
-		case 'secret':
-		case 'package-secret-mount':
-		case 'webhook-secret':
-		case 'provider-secret':
-			return 'secret:use'
-		case 'integration-token':
-		case 'integration-refresh':
-		case 'mcp-connection':
-			return 'integration:use'
-		default: {
-			const exhaustive: never = use
-			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
-		}
-	}
-}
 
 /**
  * Resolve-time org access: re-reads membership, team membership, and grants
@@ -440,380 +174,4 @@ async function assertActorHasOrgAccess(
 		})
 	}
 	await check
-}
-
-/**
- * Every run needs its person's Use on the concrete credential, by its stable
- * id, saved package or not: package rules (allowed packages, integration
- * usage mode) only narrow it further. A trigger resolves an org credential
- * only while its enabler has Use on it. A credential that was not found is
- * checked against a target no grant names, so a non-holder sees a denial
- * rather than learning whether the name exists.
- */
-async function authorizeActorUse(
-	input: ResolveCredentialInput<CredentialTarget>,
-	subject: CredentialAuditSubject,
-	credentialId: string | null,
-	label: string = subject.name,
-) {
-	subject.credentialId = credentialId
-	// Webhook ingress verifies a signature before any run exists; the secret
-	// never reaches package code.
-	if (!input.actor && input.credential.use === 'webhook-secret') return
-	await authorize(
-		{ env: input.env, request: input.actor },
-		permissionForUse(input.credential.use),
-		credentialId
-			? credentialResource(input.orgId, { id: credentialId, name: label })
-			: missingCredentialResource(input.orgId, label),
-	)
-}
-
-async function resolvePlaceholderSecret(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'secret' }>,
-	subject: CredentialAuditSubject,
-): Promise<ResolvedSecret> {
-	const lookup = await findSecretForUse({
-		env: input.env,
-		userId: input.orgId,
-		name: credential.name,
-		scope: credential.scope,
-		storageContext: credential.storageContext,
-	})
-	await authorizeActorUse(input, subject, lookup.found.credentialId)
-	const resolved = await lookup.readValue()
-	if (!resolved.found || typeof resolved.value !== 'string') return resolved
-	await assertPackageCanAccessResolvedSecret({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		orgSlug: credential.orgSlug,
-		userId: input.orgId,
-		storageContext: credential.storageContext,
-		authorityPackageId: input.packageStamp?.packageId ?? null,
-		secretName: credential.name,
-		resolved,
-	})
-	if (
-		credential.requestHost &&
-		!resolved.allowedHosts.includes(credential.requestHost)
-	) {
-		throw new SecretHostNotApprovedError({
-			secretName: credential.name,
-			host: credential.requestHost,
-			scope: resolved.scope ?? credential.scope ?? 'user',
-		})
-	}
-	return resolved
-}
-
-async function resolvePackageSecretMount(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'package-secret-mount' }>,
-	subject: CredentialAuditSubject,
-): Promise<ResolvedPackageSecretMount> {
-	const packageId = input.packageStamp?.packageId ?? ''
-	if (!packageId) {
-		throw new Error(
-			'Package secret access requires a matching server-side package runtime context.',
-		)
-	}
-	if (!input.orgId) {
-		throw new Error(
-			'Package secret access requires an authenticated package caller context.',
-		)
-	}
-	const callerContext = credential.callerContext
-	const packageInfo = await loadPackageSecretMounts({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		packageId,
-	})
-	const mount = packageInfo.mounts[credential.alias]
-	if (!mount) {
-		throw new PackageSecretMountError(
-			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${credential.alias}".`,
-		)
-	}
-	subject.name = mount.name
-	const storageContext: StorageContext = {
-		sessionId: callerContext.storageContext?.sessionId ?? null,
-		appId: callerContext.storageContext?.appId ?? null,
-		packageId,
-		storageId: callerContext.storageContext?.storageId ?? null,
-	}
-	const resolved = await resolveMountedSecretMetadata({
-		input,
-		subject,
-		mount,
-		storageContext,
-		access: credential.access ?? 'value',
-	})
-	await assertPackageCanAccessResolvedSecret({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		orgSlug: secretPageOrgSlugFromCaller(callerContext),
-		userId: input.orgId,
-		storageContext,
-		authorityPackageId: packageId,
-		secretName: mount.name,
-		resolved,
-	})
-	// The placeholder carries name+scope only, never the owner id (that would
-	// be caller-forgeable).
-	const scope = resolved.scope ?? mount.scope ?? 'user'
-	return {
-		alias: credential.alias,
-		name: mount.name,
-		ref: buildSecretPlaceholder({ name: mount.name, scope }),
-		scope,
-		packageId: packageInfo.savedPackage.id,
-		kodyId: packageInfo.savedPackage.kodyId,
-	}
-}
-
-async function resolveMountedSecretMetadata(input: {
-	input: ResolveCredentialInput<CredentialTarget>
-	subject: CredentialAuditSubject
-	mount: { name: string; scope?: SecretScope }
-	storageContext: StorageContext
-	access: 'presence' | 'value'
-}): Promise<FoundSecret> {
-	const lookup = {
-		env: input.input.env,
-		userId: input.input.orgId,
-		name: input.mount.name,
-		scope: input.mount.scope,
-		storageContext: input.storageContext,
-	}
-	const missing = async () =>
-		new PackageSecretMissingError(
-			await createUnresolvedSecretMessage({
-				env: input.input.env,
-				userId: input.input.orgId,
-				name: input.mount.name,
-				scope: input.mount.scope,
-				storageContext: input.storageContext,
-				baseUrl: input.input.baseUrl,
-			}),
-		)
-	const found = await findSecretForUse(lookup)
-	await authorizeActorUse(input.input, input.subject, found.found.credentialId)
-	switch (input.access) {
-		case 'presence': {
-			if (!found.found.found) throw await missing()
-			return found.found
-		}
-		case 'value': {
-			const resolved = await found.readValue()
-			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw await missing()
-			}
-			return resolved
-		}
-		default: {
-			const exhaustive: never = input.access
-			throw new Error(`Unhandled package secret access: ${String(exhaustive)}`)
-		}
-	}
-}
-
-async function resolveWebhookSecret(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'webhook-secret' }>,
-	subject: CredentialAuditSubject,
-): Promise<ResolvedSecret> {
-	// Every webhook belongs to a package, and the read is limited to secrets
-	// that package may read, like placeholder and mount reads.
-	const packageId = input.packageStamp?.packageId
-	if (!packageId) {
-		throw new Error('Webhook secrets resolve only for the webhook package.')
-	}
-	const storageContext = { sessionId: null, appId: null, packageId }
-	const lookup = await findSecretForUse({
-		env: input.env,
-		userId: input.orgId,
-		name: credential.name,
-		storageContext,
-	})
-	await authorizeActorUse(input, subject, lookup.found.credentialId)
-	const resolved = await lookup.readValue()
-	if (!resolved.found || typeof resolved.value !== 'string') return resolved
-	await assertPackageCanAccessResolvedSecret({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		storageContext,
-		authorityPackageId: packageId,
-		secretName: credential.name,
-		resolved,
-	})
-	return resolved
-}
-
-async function resolveVaultSecret(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'provider-secret' }>,
-	subject: CredentialAuditSubject,
-): Promise<ResolvedProviderSecret> {
-	const request = input.actor
-	if (!request) {
-		throw new Error('Provider secrets require the fetching run request.')
-	}
-	const binding = await getSecretProviderBinding(input.env.APP_DB, {
-		userId: input.orgId,
-		providerId: normalizeProviderId(credential.provider),
-	})
-	// The binding is the credential: Use on it before any decrypt or provider
-	// invoke. A missing binding fails inside resolveProviderSecret.
-	if (binding) {
-		await authorizeActorUse(
-			input,
-			subject,
-			binding.credentialId,
-			binding.doorSecretName,
-		)
-	}
-	const resolved = await resolveProviderSecret({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		request,
-		provider: credential.provider,
-		binding,
-		ref: credential.ref,
-		storageContext: credential.storageContext,
-		// Claimed packages are held to their grants too; only Use differs.
-		authorityPackageId: input.packageStamp?.packageId ?? null,
-		invokeProvider: invokeSealedSecretProvider,
-	})
-	const host = credential.requestHost
-	if (host) {
-		if (resolved.hosts.length === 0) {
-			throw new SecretProviderHostDeniedError(
-				createProviderNoWebsitesMessage(resolved.provider),
-			)
-		}
-		if (!providerHostsAllowRequestHost(resolved.hosts, host)) {
-			throw new SecretProviderHostDeniedError(
-				createProviderHostDeniedMessage({
-					providerId: resolved.provider,
-					host,
-				}),
-			)
-		}
-	}
-	return resolved
-}
-
-async function resolveIntegrationToken(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'integration-token' }>,
-	subject: CredentialAuditSubject,
-): Promise<string | null> {
-	await authorizeActorUse(
-		input,
-		subject,
-		await findIntegrationCredentialId({
-			env: input.env,
-			userId: input.orgId,
-			name: credential.name,
-		}),
-	)
-	await assertCanUseIntegration({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		name: credential.name,
-		packageId: input.packageStamp?.packageId ?? null,
-		packageKodyId: credential.packageKodyId,
-	})
-	// The host is checked before the token resolves, so a refused host never
-	// triggers a refresh.
-	if (credential.requestHost) {
-		const joined = await getJoinedIntegration({
-			env: input.env,
-			userId: input.orgId,
-			name: credential.name,
-		})
-		if (!joined) {
-			throw new Error(
-				createMissingIntegrationAccessTokenMessage(credential.name),
-			)
-		}
-		assertIntegrationAllowsHost(
-			credential.name,
-			{
-				requiredHosts: joined.connection.requiredHosts,
-				apiBaseUrl: joined.app.apiBaseUrl,
-			},
-			credential.requestHost,
-		)
-	}
-	const resolved = await resolveIntegrationAccessToken({
-		env: input.env,
-		userId: input.orgId,
-		name: credential.name,
-	})
-	return resolved?.accessToken ?? null
-}
-
-async function refreshIntegration(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'integration-refresh' }>,
-	subject: CredentialAuditSubject,
-): Promise<IntegrationTokenRefreshResult> {
-	await authorizeActorUse(
-		input,
-		subject,
-		await findIntegrationCredentialId({
-			env: input.env,
-			userId: input.orgId,
-			name: credential.name,
-		}),
-	)
-	await assertCanUseIntegration({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		name: credential.name,
-		packageId: input.packageStamp?.packageId ?? null,
-		packageKodyId: credential.packageKodyId,
-	})
-	return await refreshIntegrationTokens({
-		env: input.env,
-		userId: input.orgId,
-		userEmail: credential.userEmail,
-		name: credential.name,
-		waitUntil: credential.waitUntil,
-	})
-}
-
-async function connectMcpServer(
-	input: ResolveCredentialInput<CredentialTarget>,
-	credential: Extract<CredentialTarget, { use: 'mcp-connection' }>,
-	subject: CredentialAuditSubject,
-): Promise<McpServerConnection> {
-	await authorizeActorUse(input, subject, credential.serverId)
-	await assertCanUseMcpServer({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.orgId,
-		serverId: credential.serverId,
-		serverName: credential.serverName,
-		packageId: input.packageStamp?.packageId ?? null,
-	})
-	return {
-		async callTool(call) {
-			return await callMcpServerTool({
-				env: input.env,
-				userId: input.orgId,
-				waitUntil: credential.waitUntil,
-				serverId: credential.serverId,
-				toolName: call.toolName,
-				args: call.args,
-			})
-		},
-	}
 }
