@@ -134,23 +134,14 @@ enabler's) switch for one trigger instance: the job id, the subscribing package
 id plus topic, or the webhook endpoint id. Its state is `on`, `paused` (with the
 cause), or `off`. One person may hold several enablements of the same trigger.
 
-`enablement_org_migrations` records which path an org uses. An org without a
-`migrated` row runs triggers as Automation, as Owner. The admin capability
-`adminEnablementsMigrate` writes one enablement per existing job, webhook, and
-subscription for a real member (the creator if still a member, else the earliest
-Owner), generates a signing secret for unsigned webhooks, and for team orgs
-first emails each member which enablements will bill them. Only triggers that
-run today migrate: disabled or kill-switched jobs, disabled webhook URLs, and
-URLs whose webhook is no longer declared are counted and left off.
-`notice_plan_json` records what each member's notice listed, so a retried
-`notify` emails nobody twice, and `apply` migrates a team org only when every
-planned item was in a notice to its enabler. A unique index allows one migrated
-row per trigger instance. New team orgs start `migrated`. Personal orgs use the
-Automation path (their only person is the Owner) until `adminEnablementsMigrate`
-backfills them.
+Every org runs its triggers through enablements. `#3388` removed the legacy
+lane, and migration `0115` drops `enablement_org_migrations`. A unique index
+still allows one `origin = 'migrated'` row per trigger instance, which is the
+audit of the backfill that already ran. New enablements are
+`origin = 'enabled'`.
 
-In a migrated org, `planEnablementRuns` (`enablements/run-gate.ts`) is the one
-gate every trigger passes:
+`planEnablementRuns` (`enablements/run-gate.ts`) is the one gate every trigger
+passes:
 
 - A trigger runs once per `on` enablement, as its enabler. The request context
   has the enabler as actor, `attribution.kind: 'user'`, the enablement id as

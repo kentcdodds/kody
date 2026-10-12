@@ -558,15 +558,6 @@ async function setup() {
 	}
 }
 
-test('team orgs created now start on enablements', async () => {
-	const t = await setup()
-	const row = await t.db
-		.prepare(`SELECT state FROM enablement_org_migrations WHERE org_id = ?`)
-		.bind(t.orgId)
-		.first<{ state: string }>()
-	expect(row?.state).toBe('migrated')
-})
-
 test("a member's subscription cannot use an org credential they lack; it pauses, drops events, and resumes after a grant", async () => {
 	const t = await setup()
 	const beas = await t.enable('bea', 'subscription', emailTopic)

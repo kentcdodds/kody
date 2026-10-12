@@ -68,5 +68,3 @@ export type EnablementRecord = {
 	disabledAt: string | null
 	updatedAt: string
 }
-
-export type EnablementOrgMigrationState = 'legacy' | 'notified' | 'migrated'
