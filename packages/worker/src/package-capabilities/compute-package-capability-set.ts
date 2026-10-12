@@ -50,9 +50,11 @@ export async function computePackageCapabilitySet(input: {
 	for (const mount of Object.values(loaded.manifest.kody.secretMounts ?? {})) {
 		const name = mount.name.trim()
 		if (!name) continue
-		// Only user-scoped mounts can pull user secrets into the set. Package
-		// mounts resolve against the package bucket (listed below).
-		if (mount.scope === 'user') userMountNames.add(name)
+		// Omitted scope defaults to user (same as secrets resolution). Package
+		// mounts resolve against the package bucket (listed below); session
+		// mounts are not durable package capabilities.
+		const scope = mount.scope ?? 'user'
+		if (scope === 'user') userMountNames.add(name)
 	}
 
 	const packageStorageContext = {
