@@ -54,7 +54,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🔎 Deploy Preview Resources
-    timeout-minutes: 12
+    # Includes room for the failed-deploy cleanup step (150s budget).
+    timeout-minutes: 15
     environment:
       name:
         preview-${{ github.event.pull_request.number || inputs.pr_number ||
@@ -970,6 +971,23 @@ jobs:
                 body,
               });
             }
+
+      # A failed PR preview still holds Workers (and their Durable Object
+      # namespaces), D1, KV, and R2 until the PR closes, which can keep the
+      # account at its Durable Object namespace cap (#3396). The next push
+      # re-creates everything. Branch previews (workflow_dispatch) keep their
+      # state so a migration rehearsal can inspect or restore it.
+      - name: 🧹 Clean up preview resources after a failed deploy
+        if: >-
+          failure() && github.event_name == 'pull_request' &&
+          steps.names.outputs.worker_name != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
 
   cleanup:
     runs-on: ubuntu-latest
