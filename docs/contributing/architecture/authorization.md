@@ -118,6 +118,16 @@ credential id once, at grant time, and the grant is stored under `credential`; a
 name that matches no credential is refused. The by-name targets are removed
 together with secret placeholders when the old credential lane is removed.
 
+**Personal credentials** (`credentials/personal-credentials.ts`) are credentials
+in their owner's personal org. The owner grants one to another org they have a
+live binding to, one org at a time (`credential_org_grants`). It is then usable
+only in the owner's own runs there: no role, grant, or package stamp lets an
+Owner or Automation use someone else's personal credential. Leaving the org
+hard-deletes the person's rows for it. This is backend only for now:
+placeholders still resolve org credentials, and no capability grants or lists
+personal credentials until the scoped client API
+([ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md)).
+
 `credential-storage-boundary.node.test.ts` fails if credential storage is read
 outside the door and its resolvers. Credential storage keys use
 `ownerIdFromCaller` (org id), not the acting person. Automation is Owner. See

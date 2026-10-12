@@ -286,6 +286,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		reason:
 			'Fleet/canary filter payloads may list the deleted user in userIds; deletion rewrites that id to deleted-user. Export reaches package_codemod_runs through scope/initiator columns instead.',
 	},
+	// A person's org grants of their personal credentials.
+	{ kind: 'user_id', table: 'credential_org_grants' },
 	// Inventory items are per-package results owned by the package owner; runs
 	// are operator ledger rows whose initiator is attribution only.
 	{ kind: 'user_id', table: 'credential_inventory_items' },
