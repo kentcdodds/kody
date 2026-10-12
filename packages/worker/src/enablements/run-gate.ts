@@ -113,9 +113,10 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
 
 /**
  * What a credential pause waits on. The credential's stable id while it is
- * still live; otherwise its name resolves now (old lane), so a grant on a
- * deleted credential never resumes the enablement. A vault binding has no
- * name lane. A name that still names nothing only Owners and org-wide
+ * still live; once soft-deleted, its name resolves now (old lane), so a
+ * grant on a deleted credential never resumes the enablement. A vault
+ * binding, or an id whose row is gone (vault bindings are hard-deleted), has
+ * no name lane. A name that still names nothing only Owners and org-wide
  * holders pass.
  */
 async function storedPauseResource(
@@ -131,12 +132,12 @@ async function storedPauseResource(
 			enablement.orgId,
 			pause.credentialId,
 		)
-		if (credential?.live || credential?.kind === 'vault') {
+		if (!credential || credential.live || credential.kind === 'vault') {
 			return {
 				permission: pause.permission,
 				resource: {
 					type: 'credential',
-					id: credential.live ? pause.credentialId : '',
+					id: credential?.live ? pause.credentialId : '',
 					orgId: enablement.orgId,
 				},
 			}

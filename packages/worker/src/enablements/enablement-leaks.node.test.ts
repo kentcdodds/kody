@@ -714,6 +714,28 @@ test('a grant on a credential deleted since the pause does not resume the enable
 	})
 })
 
+test('a pause on a credential whose row is gone never resumes through a same-named secret', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	// A vault binding is hard-deleted, leaving the pause's id naming no row.
+	await t.db
+		.prepare(
+			`UPDATE enablements SET paused_credential_id = ? WHERE id = ? AND org_id = ?`,
+		)
+		.bind('removed-vault-binding', beas.id, t.orgId)
+		.run()
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: { credentialId: 'removed-vault-binding' },
+	})
+})
+
 test("a member's paused email subscription waits on that member's own list, not the org's (#3317)", async () => {
 	const t = await setup()
 	const beas = await t.enable('bea', 'subscription', emailTopic)
