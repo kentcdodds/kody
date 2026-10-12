@@ -22,6 +22,8 @@ import {
 	listScopeIncludes,
 	loadResourceListScope,
 } from '#worker/authorization/authorize.ts'
+import { listJoinedIntegrationsForUser } from '#worker/integrations/repo.ts'
+import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { type PackageCredentialKind } from '#worker/package-registry/types.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import { listPersonalCredentialCandidates } from './personal-credentials.ts'
@@ -132,18 +134,47 @@ async function loadRows(input: {
 	return rows
 }
 
-function toUsable(
-	row: Row,
-	scope: UsableCredential['scope'],
-): UsableCredential {
-	return {
+/**
+ * The hosts each OAuth connection of `ownerId` may reach, as the runtime
+ * allows them: its stored hosts, a platform app's current hosts, and the
+ * app's API base URL host. Read-only, unlike `listJoinedIntegrations`.
+ */
+async function loadOauthHosts(db: D1Database, ownerId: string) {
+	const joined = await listJoinedIntegrationsForUser({ db, userId: ownerId })
+	return new Map(
+		joined.map((entry) => [
+			entry.connection.credentialId,
+			getIntegrationAllowedHosts({
+				requiredHosts:
+					entry.lane === 'platform'
+						? [...entry.connection.requiredHosts, ...entry.app.requiredHosts]
+						: entry.connection.requiredHosts,
+				apiBaseUrl: entry.app.apiBaseUrl,
+			}),
+		]),
+	)
+}
+
+async function toUsableList(input: {
+	db: D1Database
+	ownerId: string
+	rows: ReadonlyArray<Row>
+	scope: UsableCredential['scope']
+}): Promise<Array<UsableCredential>> {
+	const oauthHosts = input.rows.some((row) => row.kind === 'oauth')
+		? await loadOauthHosts(input.db, input.ownerId)
+		: new Map<string, Array<string>>()
+	return input.rows.map((row) => ({
 		id: row.id,
 		name: row.name,
 		kind: row.kind as PackageCredentialKind,
 		provider: row.provider,
-		hosts: parseHosts(row),
-		scope,
-	}
+		hosts:
+			row.kind === 'oauth'
+				? (oauthHosts.get(row.id) ?? parseHosts(row))
+				: parseHosts(row),
+		scope: input.scope,
+	}))
 }
 
 /**
@@ -169,23 +200,38 @@ export async function listUsableCredentials(input: {
 			orgId: orgId as OwnerId,
 		}),
 	])
-	const usable = orgRows
-		.filter((row) =>
+	const usable = await toUsableList({
+		db: input.env.APP_DB,
+		ownerId: orgId,
+		rows: orgRows.filter((row) =>
 			listScopeIncludes(
 				row.family === 'secret' ? secretScope : integrationScope,
 				row.id,
 			),
-		)
-		.map((row) => toUsable(row, 'org'))
+		),
+		scope: 'org',
+	})
 	const actor = input.request.actor?.userId
+	// A scoped token narrows personal credentials too: Use of each family.
+	const tokenScopes = input.request.credential.scopes
+	const tokenAllows = (family: 'secret' | 'integration') =>
+		tokenScopes === null || tokenScopes.includes(`${family}:use`)
 	if (actor && personal.length > 0) {
+		const personalOrg = personalOrgId(actor)
 		const personalRows = await loadRows({
 			db: input.env.APP_DB,
-			ownerId: personalOrgId(actor),
+			ownerId: personalOrg,
 			ids: personal.map((credential) => credential.id),
 			now,
 		})
-		usable.push(...personalRows.map((row) => toUsable(row, 'personal')))
+		usable.push(
+			...(await toUsableList({
+				db: input.env.APP_DB,
+				ownerId: personalOrg,
+				rows: personalRows.filter((row) => tokenAllows(row.family)),
+				scope: 'personal',
+			})),
+		)
 	}
 	return usable.sort(
 		(left, right) =>

@@ -5,6 +5,7 @@ import {
 	personIdFromStored,
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { expect, test } from 'vitest'
 import { upsertGrant } from '#worker/orgs/access-writes.ts'
@@ -113,14 +114,22 @@ async function setup() {
 			.first<{ id: string }>()
 		return row!.id
 	}
-	const requestAs = (person: keyof typeof people, role: OrgRole | null) =>
+	const requestAs = (
+		person: keyof typeof people,
+		role: OrgRole | null,
+		scopes?: Array<OrgPermission>,
+	) =>
 		deriveRequestContext({
 			user: { userId: people[person].personId, username: person },
 			source: { kind: 'mcp-oauth' },
 			orgBinding: { org: { id: acmeId, slug: 'acme-needs' }, role },
+			scopes: scopes ?? null,
 		})
-	const usableAs = (person: keyof typeof people, role: OrgRole | null) =>
-		listUsableCredentials({ env, request: requestAs(person, role) })
+	const usableAs = (
+		person: keyof typeof people,
+		role: OrgRole | null,
+		scopes?: Array<OrgPermission>,
+	) => listUsableCredentials({ env, request: requestAs(person, role, scopes) })
 	const grantUse = (credentialId: string, person: keyof typeof people) =>
 		upsertGrant({
 			db,
@@ -277,8 +286,47 @@ test('a member sees only org credentials they can Use, plus their own granted pe
 	expect(
 		resolveNeedCandidates({ kind: 'secret', provider: 'github' }, asAnn).status,
 	).toBe('ambiguous')
+	// A token without Use lists neither org nor personal credentials.
+	expect(await t.usableAs('ann', 'member', ['package:read'])).toEqual([])
+	expect(
+		(await t.usableAs('ann', 'member', ['package:read', 'secret:use'])).map(
+			(credential) => credential.name,
+		),
+	).toEqual(['ann-gh', 'gh-pat'])
 	// The org owner never sees a member's personal credential.
 	expect(
 		(await t.usableAs('bea', 'owner')).map((credential) => credential.name),
 	).toEqual(['gh-pat'])
+})
+
+test('an OAuth connection lists the hosts the runtime allows, including its API base URL', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+			VALUES (?, 'gh-app', 'github', 'client-id', 'https://github.com/login/oauth/access_token',
+				'https://api.github.com/v3', 'confidential')`,
+		)
+		.bind(t.acmeId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug, provider, required_hosts_json, connected_at)
+			VALUES (?, 'github', 'gh-app', 'github', '["uploads.github.com"]', ?)`,
+		)
+		.bind(t.acmeId, now)
+		.run()
+	expect(
+		(await t.usableAs('bea', 'owner')).map(({ name, kind, hosts }) => ({
+			name,
+			kind,
+			hosts,
+		})),
+	).toEqual([
+		{
+			name: 'github',
+			kind: 'oauth',
+			hosts: ['uploads.github.com', 'api.github.com'],
+		},
+	])
 })
