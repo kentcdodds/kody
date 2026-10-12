@@ -262,7 +262,7 @@ function setupDefaultMocks() {
 	mockModule.writePackageSkillsIndex.mockResolvedValue(undefined)
 	mockModule.removePackageSkillsIndexEntries.mockResolvedValue(undefined)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
-	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.insertSavedPackage.mockResolvedValue(true)
 	mockModule.deleteEntitySource.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
@@ -600,6 +600,7 @@ test('refreshSavedPackageProjection Kit-syncs the actor on a team insert, not th
 	const env = createEnv(teamId)
 	mockSource()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.insertSavedPackage.mockResolvedValueOnce(true)
 
 	await refresh(env, {
 		userId: teamId,
@@ -622,6 +623,26 @@ test('refreshSavedPackageProjection Kit-syncs the actor on a team insert, not th
 	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalledWith(
 		expect.objectContaining({ stableUserId: teamId }),
 	)
+})
+
+test('refreshSavedPackageProjection skips Kit sync on insert when the actor was already stamped', async () => {
+	setupDefaultMocks()
+	const teamId = ownerIdFromStored('acme-org')
+	const actorUserId = 'person-member-already'
+	const env = createEnv(teamId)
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.insertSavedPackage.mockResolvedValueOnce(false)
+
+	await refresh(env, {
+		userId: teamId,
+		actorUserId,
+		packageId: 'package-team-2',
+		sourceId: 'source-team-2',
+	})
+
+	expect(mockModule.insertSavedPackage).toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
 })
 
 test('refreshSavedPackageProjection stamps the actor when updating an existing team package', async () => {
