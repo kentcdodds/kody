@@ -6,7 +6,9 @@ dedicated **branch preview** before it runs in production. Rehearsal tooling is
 hold Cloudflare or site-admin credentials.
 
 Everything here runs on `kody-branch-<slug>` previews only. PR previews redeploy
-and reseed on every push; the scripts and workflow refuse them.
+and reseed on every push; the scripts and workflow refuse them. `preview.yml`
+takes the slug (`cig-0110`); `preview-rehearsal.yml` accepts that same slug or
+the full worker name (`kody-branch-cig-0110`).
 
 Cloudflare workflow binding names are capped at 64 characters. Long
 `preview_name` values still deploy: the runtime/platform generators truncate the

@@ -10,7 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       preview_name:
-        description: Branch preview worker name (kody-branch-<slug>)
+        description:
+          Branch preview worker name (kody-branch-<slug>) or the slug
+          preview.yml used (cig-0110 → kody-branch-cig-0110)
         required: true
         type: string
       action:
@@ -46,7 +48,8 @@ on:
         required: false
         type: string
       confirm:
-        description: restore — type the preview name again
+        description:
+          restore — type the preview name again (slug or kody-branch-<slug>)
         required: false
         type: string
 
@@ -79,10 +82,31 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
-          if ! [[ "$PREVIEW_NAME" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
-            echo "preview_name must be a branch preview (kody-branch-<slug>), got '$PREVIEW_NAME'." >&2
-            exit 1
-          fi
+          # Keep in sync with resolveRehearsalWorkerName in
+          # tools/preview-rehearsal/d1-rehearsal.ts. This step runs before
+          # checkout so a bad name fails in seconds, not after npm ci.
+          resolve_rehearsal_preview_name() {
+            local raw="$1"
+            local name
+            name="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+            if [[ "$name" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              printf '%s\n' "$name"
+              return
+            fi
+            if [[ "$name" =~ ^kody-pr-[0-9]+$ ]]; then
+              echo "preview_name must be a branch preview (kody-branch-<slug> or the slug preview.yml uses), got '$raw'." >&2
+              return 1
+            fi
+            if [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              printf '%s\n' "kody-branch-$name"
+              return
+            fi
+            echo "preview_name must be a branch preview (kody-branch-<slug> or the slug preview.yml uses), got '$raw'." >&2
+            return 1
+          }
+          PREVIEW_NAME="$(resolve_rehearsal_preview_name "$PREVIEW_NAME")"
+          echo "PREVIEW_NAME=$PREVIEW_NAME" >> "$GITHUB_ENV"
+          echo "Resolved preview_name=$PREVIEW_NAME"
           case "$ACTION" in
             seed|credentials)
               if [ -z "$RECIPIENT_PUBLIC_KEY" ]; then
@@ -95,6 +119,10 @@ jobs:
                 echo "restore needs snapshot_run_id." >&2
                 exit 1
               fi
+              CONFIRM="$(resolve_rehearsal_preview_name "$CONFIRM")" || {
+                echo "restore needs confirm to equal preview_name." >&2
+                exit 1
+              }
               if [ "$CONFIRM" != "$PREVIEW_NAME" ]; then
                 echo "restore needs confirm to equal preview_name." >&2
                 exit 1

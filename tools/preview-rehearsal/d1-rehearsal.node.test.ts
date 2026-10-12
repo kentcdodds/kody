@@ -3,6 +3,7 @@ import {
 	assertRehearsalWorkerName,
 	formatD1SnapshotMarkdown,
 	parseD1RehearsalSnapshot,
+	resolveRehearsalWorkerName,
 	restoreD1RehearsalSnapshot,
 	takeD1RehearsalSnapshot,
 } from './d1-rehearsal.ts'
@@ -126,6 +127,23 @@ test('rehearsals refuse PR previews, production, and non-preview names', () => {
 		'x',
 	]) {
 		expect(() => assertRehearsalWorkerName(name)).toThrow(
+			'rehearsals run only on branch previews',
+		)
+	}
+})
+
+test('resolveRehearsalWorkerName prefixes the preview.yml slug', () => {
+	expect(resolveRehearsalWorkerName('cig-0110')).toBe('kody-branch-cig-0110')
+	expect(resolveRehearsalWorkerName('kody-branch-cig-0110')).toBe(
+		'kody-branch-cig-0110',
+	)
+	expect(resolveRehearsalWorkerName('  Teams-Rehearsal  ')).toBe(
+		'kody-branch-teams-rehearsal',
+	)
+	expect(resolveRehearsalWorkerName('x')).toBe('kody-branch-x')
+	expect(resolveRehearsalWorkerName('kody')).toBe('kody-branch-kody')
+	for (const name of ['kody-pr-12', 'kody-branch-', 'CIG_0110', '']) {
+		expect(() => resolveRehearsalWorkerName(name)).toThrow(
 			'rehearsals run only on branch previews',
 		)
 	}
