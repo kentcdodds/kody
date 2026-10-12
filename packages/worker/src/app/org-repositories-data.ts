@@ -6,7 +6,7 @@ import {
 	computeEffectivePermissions,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
-import { listPublicProfilePackages } from '#worker/community/profile-service.ts'
+import { listProfileRepositories } from '#worker/community/profile-service.ts'
 import { buildOrgAvatarUrl } from '#worker/orgs/org-avatar.ts'
 import { type OrgBinding } from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
@@ -22,10 +22,11 @@ function readOptionalLimit(raw: string | null) {
 }
 
 /**
- * Repositories owned by a team org (`saved_packages.user_id = org.id`), for
- * `/@slug/-/packages`. Each row is shown only when the viewer can see that
- * package (`canSeeResource`): Owners see everything, other members see what
- * their grants and teams give them.
+ * Repositories owned by a team org (`saved_packages` and `user_repos` with
+ * `user_id = org.id`), for `/@slug/-/packages`. Packages pass `canSeeResource`
+ * (owners see everything; members see grants). Plain repos have no grant
+ * surface — every org member who can open this page sees them (same inventory
+ * as MCP `repoList` for the bound org).
  */
 export async function loadOrgRepositoriesData(input: {
 	env: Env
@@ -38,7 +39,7 @@ export async function loadOrgRepositoriesData(input: {
 	const url = new URL(input.request.url)
 	const query = url.searchParams.get('q')?.trim() ?? ''
 	const limit = readOptionalLimit(url.searchParams.get('limit'))
-	const [org, access, packages] = await Promise.all([
+	const [org, access, repositories] = await Promise.all([
 		input.env.APP_DB.prepare(
 			`SELECT display_name, avatar_key, created_at FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 		)
@@ -56,21 +57,23 @@ export async function loadOrgRepositoriesData(input: {
 				orgBinding: input.binding,
 			}),
 		}),
-		// Uncapped: the cap applies after the visibility filter, or packages the
-		// viewer cannot see could fill it and hide ones they can.
-		listPublicProfilePackages({
+		// Uncapped: the cap applies after the package visibility filter, or
+		// packages the viewer cannot see could fill it and hide ones they can.
+		listProfileRepositories({
 			env: input.env,
 			ownerStableUserId: orgId,
+			ownerUsername: slug,
 			...(limit != null && query ? { query } : {}),
 			includePrivate: true,
 		}),
 	])
-	const allVisible = packages.filter((pkg) =>
-		canSeeResource(
+	const allVisible = repositories.filter((pkg) => {
+		if (!pkg.hasPackage) return true
+		return canSeeResource(
 			access,
 			packageResource({ id: pkg.packageId, userId: orgId, label: pkg.name }),
-		),
-	)
+		)
+	})
 	const visible = limit == null ? allVisible : allVisible.slice(0, limit)
 	return {
 		ok: true,
@@ -88,6 +91,12 @@ export async function loadOrgRepositoriesData(input: {
 			listingCount: visible.filter((pkg) => pkg.communityListingId).length,
 		},
 		packages: visible.map((pkg) => {
+			if (!pkg.hasPackage) {
+				return toPublicProfilePackageItem(pkg, {
+					includeOwnerVisibility: true,
+					username: slug,
+				})
+			}
 			const resource = packageResource({
 				id: pkg.packageId,
 				userId: orgId,

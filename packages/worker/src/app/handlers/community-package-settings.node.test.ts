@@ -20,6 +20,9 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#app/package-page.ts', () => ({
 	loadPackagePage: (...args: Parameters<typeof PackagePage.loadPackagePage>) =>
 		mockModule.loadPackagePage(...args),
+	ownerPackageForClient: (
+		input: Parameters<typeof PackagePage.ownerPackageForClient>[0],
+	) => input.ownerPackage,
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({

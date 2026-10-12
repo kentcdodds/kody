@@ -401,6 +401,7 @@ export async function listPublicProfilePackages(
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
 		listingIconCommit: null as string | null,
+		repoIconCommit: null as string | null,
 	}))
 
 	if (packages.length === 0) return packages
@@ -473,6 +474,103 @@ export async function listPublicProfilePackages(
 			}),
 			listingIconCommit:
 				listing?.sourcePublishedCommit ?? listing?.pinnedCommit ?? null,
+		}
+	})
+}
+
+const publicRepoSearchColumns = ['name', 'description'] as const
+
+/**
+ * Plain repos (`user_repos`) for the repositories list. Same owner key and
+ * private filter as {@link listPublicProfilePackages}; no community listing.
+ */
+export async function listPublicProfileRepos(
+	db: D1Database,
+	input: {
+		ownerStableUserId: string
+		ownerUsername: string
+		query?: string
+		limit?: number
+		/** When true, include private repos (own-profile / org inventory). */
+		includePrivate?: boolean
+	},
+): Promise<Array<PublicProfilePackageListRow>> {
+	const conditions = input.includePrivate
+		? ['user_repos.user_id = ?', 'user_repos.deleted_at IS NULL']
+		: [
+				'user_repos.user_id = ?',
+				'user_repos.is_private = 0',
+				'user_repos.deleted_at IS NULL',
+			]
+	const bindings: Array<unknown> = [input.ownerStableUserId]
+	const ownerUsername = input.ownerUsername.trim().replace(/^@/, '')
+	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
+	if (tokens.length > 0) {
+		const tokenClauses = tokens.map((token) => {
+			const pattern = d1ContainsLikePattern(token, { escape: false })
+			const columnClauses = publicRepoSearchColumns.map((column) => {
+				bindings.push(pattern)
+				return `user_repos.${column} LIKE ?`
+			})
+			// Match `@owner/leaf` the same way package search matches `name`.
+			bindings.push(ownerUsername)
+			bindings.push(pattern)
+			columnClauses.push(`('@' || ? || '/' || user_repos.name) LIKE ?`)
+			return `(${columnClauses.join(' OR ')})`
+		})
+		conditions.push(`(${tokenClauses.join(' AND ')})`)
+	}
+
+	const limitClause = input.limit == null ? '' : '\n\t\t\tLIMIT ?'
+	const statement = db.prepare(
+		`SELECT user_repos.id, user_repos.name, user_repos.description,
+				user_repos.is_private, user_repos.created_at, user_repos.updated_at,
+				entity_sources.id AS source_id,
+				entity_sources.indexed_commit AS indexed_commit,
+				entity_sources.published_commit AS published_commit
+			FROM user_repos
+			LEFT JOIN entity_sources
+				ON entity_sources.user_id = user_repos.user_id
+				AND entity_sources.entity_kind = 'repo'
+				AND entity_sources.entity_id = user_repos.id
+				AND entity_sources.deleted_at IS NULL
+			WHERE ${conditions.join(' AND ')}
+			ORDER BY user_repos.updated_at DESC${limitClause}`,
+	)
+	const bound =
+		input.limit == null
+			? statement.bind(...bindings)
+			: statement.bind(...bindings, input.limit)
+	const rows = await bound.all<Record<string, unknown>>()
+
+	return (rows.results ?? []).map((row) => {
+		const leaf = String(row['name'])
+		const indexed =
+			row['indexed_commit'] == null ? null : String(row['indexed_commit'])
+		const published =
+			row['published_commit'] == null ? null : String(row['published_commit'])
+		return {
+			packageId: String(row['id']),
+			name: `@${ownerUsername}/${leaf}`,
+			kodyId: leaf,
+			description: row['description'] == null ? '' : String(row['description']),
+			tags: [] as Array<string>,
+			updatedAt: String(row['updated_at']),
+			createdAt: String(row['created_at']),
+			sourceId: row['source_id'] == null ? '' : String(row['source_id']),
+			communityListingId: null,
+			communityListingKodyId: null,
+			communityPublishedAt: null,
+			needsRepublish: false,
+			hasPackage: false,
+			hasApp: false,
+			webhookCount: 0,
+			jobCount: 0,
+			isPrivate: Number(row['is_private']) === 1,
+			hidden: false,
+			publishedCommit: null,
+			listingIconCommit: null,
+			repoIconCommit: indexed ?? published,
 		}
 	})
 }

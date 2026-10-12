@@ -23,10 +23,15 @@ import {
 	type ResolvedApiTokenLifetime,
 } from './service.ts'
 
-/** Bootstrap defaults = local-execute parity + `org:read` (account reads). */
+/**
+ * Bootstrap defaults = local-execute parity + `org:read` (account reads) +
+ * plain-repo push (`package:write`) + self-revoke (`token:delete`).
+ */
 const cliCredentialBootstrapDefaultScopes = normalizeApiTokenScopes([
 	...localExecuteOrgPermissions,
 	'org:read',
+	'package:write',
+	'token:delete',
 ]) as Array<ApiTokenScope>
 
 /** Distinct from `kody_at_` so chat/logs can show the CLI command safely. */
@@ -48,7 +53,8 @@ export const cliCredentialBootstrapPolicy = {
 	 * CapabilityProxy hops (`org:execute`), account reads (`org:read`), and
 	 * the use-level scopes saved packages need (package-graph
 	 * `package:execute`, `createAuthenticatedFetch` → `integration:read`,
-	 * secrets, email, jobs, …). Do not mint `search:read` or write scopes.
+	 * secrets, email, jobs, …), plus `package:write` (plain-repo / package
+	 * pushes) and `token:delete` (self-revoke). Do not mint `search:read`.
 	 */
 	defaultScopes: cliCredentialBootstrapDefaultScopes,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,

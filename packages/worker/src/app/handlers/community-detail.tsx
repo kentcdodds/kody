@@ -4,7 +4,11 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
+import {
+	loadPackagePage,
+	ownerPackageForClient,
+	packagePageIsPrivate,
+} from '#app/package-page.ts'
 import {
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
@@ -344,7 +348,8 @@ export function createCommunityPackageHandler(env: Env) {
 							hasAgentsDocs,
 							imageBaseHref,
 							viewerInstall: page.listing.viewerInstall,
-							ownerPackage: page.ownerPackage,
+							ownerPackage: ownerPackageForClient(page),
+							hasPackage: page.hasPackage,
 							username: page.username,
 							kodyId: page.kodyId,
 							viewerIsOwner: page.viewerIsOwner,
@@ -419,7 +424,8 @@ export function createCommunityPackageHandler(env: Env) {
 						hasAgentsDocs,
 						imageBaseHref,
 						viewerInstall: null,
-						ownerPackage: page.ownerPackage,
+						ownerPackage: ownerPackageForClient(page),
+						hasPackage: page.hasPackage,
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
@@ -581,7 +587,8 @@ export function createCommunityPackageApiHandler(env: Env) {
 					readmeFences: readme.readmeFences,
 					hasAgentsDocs,
 					imageBaseHref,
-					ownerPackage: page.ownerPackage,
+					ownerPackage: ownerPackageForClient(page),
+					hasPackage: page.hasPackage,
 					username: page.username,
 					kodyId: page.kodyId,
 					isPrivate: packagePageIsPrivate(page),
@@ -647,7 +654,8 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						hasAgentsDocs: false,
 						imageBaseHref: null,
 						viewerInstall: null,
-						ownerPackage: page.ownerPackage,
+						ownerPackage: ownerPackageForClient(page),
+						hasPackage: page.hasPackage,
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: true,

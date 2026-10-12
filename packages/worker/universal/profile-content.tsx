@@ -305,6 +305,7 @@ function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
 	const hasCommunityListing = pkg.communityListingId != null
 	const signifiers: Array<{ name: IconName; title: string; show: boolean }> = [
 		{ name: 'box', title: 'Package', show: pkg.hasPackage },
+		{ name: 'folder', title: 'Repo', show: !pkg.hasPackage },
 		{
 			name: 'lock',
 			title: 'Private',
@@ -323,7 +324,7 @@ function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
 		{
 			name: 'inbox',
 			title: 'Not published to Community',
-			show: !hasCommunityListing && pkg.isPrivate !== true,
+			show: pkg.hasPackage && !hasCommunityListing && pkg.isPrivate !== true,
 		},
 		{
 			name: 'cloud',

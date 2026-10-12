@@ -4,13 +4,14 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 ## How to get there
 
-`/@username` lists your repositories (saved packages), including private and
-unpublished ones when you view your own profile. The page heading and account
-rail label are **Repositories**; the list routes are `/@username` and
-`/@<slug>/-/packages`. On a team org, `/@<slug>/-/packages` (and
-`/@<slug>/-/packages.json`) lists the packages that org owns, filtered to what
-the member can see (`canSeeResource`), without package-page links or icons. Chip
-filters (`visibility`, `listing`, `hidden`, `package`, `app`) and sort
+`/@username` lists your repositories — saved packages and plain repos —
+including private and unpublished ones when you view your own profile. The page
+heading and account rail label are **Repositories**; the list routes are
+`/@username` and `/@<slug>/-/packages`. On a team org, `/@<slug>/-/packages`
+(and `/@<slug>/-/packages.json`) lists the packages that org owns, filtered to
+what the member can see (`canSeeResource`), plus every plain repo the org owns
+(members who can open the page see all of them; there is no per-repo grant).
+Chip filters (`visibility`, `listing`, `hidden`, `package`, `app`) and sort
 (`sort=updated|created|name`, `dir=asc|desc`) run client-side from the
 already-loaded list (behind a `<details>` Filters disclosure; no loader, no view
 transition). Default sort is updated descending (`updated_at DESC`); name
@@ -24,21 +25,21 @@ field's default). Guests can use `listing=published|unpublished`,
 `package=yes|no`, `app=yes|no`, `sort`, and `dir`. Owner-only params are ignored
 for them. Search is `q=` and filters the already-loaded list as you type (URL
 `replaceState`, no loader). Each row shows Iconic signifiers (native tooltip
-only) for package, private, hidden, published to Community or not published to
-Community, webhook count, job count, and whether it has an app. Private
-repositories do not also get a “not published to Community” signifier — the
-private icon is enough. List marks come from
+only) for package or repo, private, hidden, published to Community or not
+published to Community (packages only), webhook count, job count, and whether it
+has an app. Private repositories do not also get a “not published to Community”
+signifier — the private icon is enough. List marks come from
 `/@username/:kodyId/icon/:iconCommit` (packages) and
-`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
-lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**
+`/account/repos/:repoId/icon/:iconCommit` (plain repos). Each repository lives
+at `/@username/:kodyId` (the URL slug is the package or repo name leaf; **Repo**
 tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
 (**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
-published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab:
-lock, visibility, webhooks, delete), and `/@username/:kodyId/approve-publish`
-(published-vs-HEAD review). Opening an allowlisted image or video in the tree
-renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
-authz as the tree). `/account/packages` 404s. `/account/packages/:packageId`
-redirects to the canonical package page.
+published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab for
+packages: lock, visibility, webhooks, delete), and
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Opening an
+allowlisted image or video in the tree renders a preview; the bytes come from
+`/@username/:kodyId/raw/:ref/…` (same authz as the tree). `/account/packages`
+404s. `/account/packages/:packageId` redirects to the canonical package page.
 
 ## Drive it
 

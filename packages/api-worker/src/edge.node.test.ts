@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
+	gatewayFetchDeclaredBodyExceedsUploadLimit,
+	gatewayFetchUploadLimitMessage,
 	handleApiEdgeRequest,
 	maxApiRequestBodyBytes,
+	maxGatewayFetchUploadBytes,
 	type ApiWorkerEnv,
 } from './edge.ts'
 
@@ -114,6 +117,12 @@ test('answers CORS preflight without forwarding', async () => {
 	expect(response.headers.get('Access-Control-Allow-Headers')).toContain(
 		'Authorization',
 	)
+	expect(response.headers.get('Access-Control-Allow-Headers')).toContain(
+		'X-Kody-Gateway-Url',
+	)
+	expect(response.headers.get('Access-Control-Allow-Headers')).toContain(
+		'x-kody-secret-resolution',
+	)
 	expect(forwarded).toHaveLength(0)
 })
 
@@ -182,4 +191,86 @@ test('reports origin failures with the error envelope', async () => {
 		'api-worker-forward-failed',
 		expect.any(Error),
 	)
+})
+
+test('gateway-fetch streams the body past the JSON cap and forwards hop headers', async () => {
+	const { env, forwarded } = createEnv()
+	const body = 'x'.repeat(maxApiRequestBodyBytes + 1)
+	const response = await handleApiEdgeRequest(
+		new Request('https://api.kody.test/v1/capability-proxy/gateway-fetch', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'text/plain',
+				'X-Kody-Gateway-Url': 'https://example.com/upload',
+				'X-Kody-Gateway-Method': 'POST',
+				'X-Kody-Gateway-Package-Id': 'pkg-1',
+				'X-Kody-Gateway-Headers': JSON.stringify({
+					authorization: 'Bearer {{secret:demo}}',
+				}),
+				'x-kody-secret-resolution': 'headers-only',
+				Cookie: 'kody_session=abc',
+				'X-Kody-Internal': 'spoofed',
+			},
+			body,
+		}),
+		env,
+	)
+	expect(response.status).toBe(200)
+	const [request] = forwarded
+	expect(request?.url).toBe(
+		'https://api.kody.test/v1/capability-proxy/gateway-fetch',
+	)
+	expect(request?.headers.get('Authorization')).toBe(`Bearer ${token}`)
+	expect(request?.headers.get('X-Kody-Gateway-Url')).toBe(
+		'https://example.com/upload',
+	)
+	expect(request?.headers.get('X-Kody-Gateway-Method')).toBe('POST')
+	expect(request?.headers.get('X-Kody-Gateway-Package-Id')).toBe('pkg-1')
+	expect(request?.headers.get('X-Kody-Gateway-Headers')).toContain('demo')
+	expect(request?.headers.get('x-kody-secret-resolution')).toBe('headers-only')
+	expect(request?.headers.get('Cookie')).toBeNull()
+	expect(request?.headers.get('X-Kody-Internal')).toBeNull()
+	expect(await request?.text()).toBe(body)
+})
+
+test('gateway-fetch rejects a declared body over the Worker upload limit', async () => {
+	expect(
+		gatewayFetchDeclaredBodyExceedsUploadLimit(
+			new Headers({
+				'Content-Length': String(maxGatewayFetchUploadBytes + 1),
+			}),
+		),
+	).toBe(true)
+	expect(gatewayFetchUploadLimitMessage()).toContain(
+		String(maxGatewayFetchUploadBytes),
+	)
+	expect(gatewayFetchUploadLimitMessage()).toContain('100 MiB')
+
+	const { env, forwarded } = createEnv()
+	const oversize = await handleApiEdgeRequest(
+		new Request('https://api.kody.test/v1/capability-proxy/gateway-fetch', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'text/plain',
+				'Content-Length': String(maxGatewayFetchUploadBytes + 1),
+			},
+			body: new ReadableStream({
+				start(controller) {
+					controller.enqueue(new Uint8Array([0x78]))
+					controller.close()
+				},
+			}),
+			duplex: 'half',
+		} as RequestInit),
+		env,
+	)
+	expect(oversize.status).toBe(413)
+	expect(await oversize.json()).toMatchObject({
+		error: {
+			code: 'payload_too_large',
+			message: gatewayFetchUploadLimitMessage(),
+		},
+	})
+	expect(forwarded).toHaveLength(0)
 })

@@ -226,10 +226,15 @@ test('package chrome is shared for public listings and private owner packages', 
 		],
 		[
 			testId('package-repo-nav-settings'),
-			testId('package-visibility-badge'),
 			'data-signifier="unpublished"',
+			'data-signifier="repo"',
 		],
 	)
+	expectMarkers(await render({ listing: sampleListing, loggedIn: false }), [
+		testId('package-visibility-badge'),
+		'data-signifier="package"',
+		'title="Package"',
+	])
 
 	expect(
 		await render({

@@ -1,3 +1,6 @@
+# Nested git worktrees (full checkouts collide with Nx project names).
+.worktrees/
+
 # Logs
 logs
 *.log

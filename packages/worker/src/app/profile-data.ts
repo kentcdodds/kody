@@ -13,7 +13,7 @@ import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
-	listPublicProfilePackages,
+	listProfileRepositories,
 } from '#worker/community/profile-service.ts'
 
 const defaultProfileActivityLimit = 20
@@ -86,9 +86,10 @@ async function loadProfileDataUncached(
 		packageLimit == null ? undefined : filters.query || undefined
 
 	const [packages, activity] = await Promise.all([
-		listPublicProfilePackages({
+		listProfileRepositories({
 			env,
 			ownerStableUserId: profile.userId,
+			ownerUsername: profile.username,
 			...(serverQuery ? { query: serverQuery } : {}),
 			...(packageLimit == null ? {} : { limit: packageLimit }),
 			includePrivate: isSelf,
@@ -108,6 +109,8 @@ async function loadProfileDataUncached(
 			toPublicProfilePackageItem(pkg, {
 				includeOwnerVisibility: isSelf,
 				username: profile.username,
+				// Account repo icons are personal-owner-only; guests/orgs omit.
+				includeRepoIconUrl: isSelf,
 			}),
 		),
 		activity: activity.map(toPublicCommunityActivityItem),

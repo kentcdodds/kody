@@ -21,6 +21,15 @@ function requireExactlyOneUserRepoIdentity(input: UserRepoIdentity) {
 	}
 }
 
+/**
+ * Resolve a plain repo the caller owns.
+ *
+ * - `name` looks up by normalized repo name.
+ * - `repo_id` tries UUID id first, then falls back to name. OpenAPI path
+ *   `/v1/repos/{repo_id}/…` therefore accepts a UUID or a repo name (same
+ *   pattern as MCP server `{server}` id-or-name). Prefer the body-only
+ *   `/v1/repos/git-remote` alias when calling with `name` from OpenAPI/CLI.
+ */
 export async function resolveOwnedUserRepo(input: {
 	db: D1Database
 	userId: OwnerId
@@ -29,9 +38,10 @@ export async function resolveOwnedUserRepo(input: {
 	requireExactlyOneUserRepoIdentity(input.args)
 	const userRepo =
 		input.args.repo_id !== undefined
-			? await getUserRepoById(input.db, {
+			? await resolveUserRepoByIdOrName({
+					db: input.db,
 					userId: input.userId,
-					repoId: input.args.repo_id,
+					repoIdOrName: input.args.repo_id,
 				})
 			: await getUserRepoByName(input.db, {
 					userId: input.userId,
@@ -50,4 +60,20 @@ export async function resolveOwnedUserRepo(input: {
 		throw new McpCallerError('Repo source was not found for this user.')
 	}
 	return { userRepo, source }
+}
+
+async function resolveUserRepoByIdOrName(input: {
+	db: D1Database
+	userId: OwnerId
+	repoIdOrName: string
+}): Promise<UserRepoRecord | null> {
+	const byId = await getUserRepoById(input.db, {
+		userId: input.userId,
+		repoId: input.repoIdOrName,
+	})
+	if (byId) return byId
+	return await getUserRepoByName(input.db, {
+		userId: input.userId,
+		name: input.repoIdOrName,
+	})
 }

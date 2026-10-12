@@ -20,9 +20,38 @@ export type ApiWorkerEnv = {
 /** Matches `maxApiRequestBodyBytes` in origin's open-api request parsing. */
 export const maxApiRequestBodyBytes = 5 * 1024 * 1024
 
+/**
+ * Cloudflare Worker request upload limit on Free/Pro. Matches origin's
+ * `maxGatewayFetchUploadBytes` for `POST /v1/capability-proxy/gateway-fetch`.
+ */
+export const maxGatewayFetchUploadBytes = 100 * 1024 * 1024
+
+export const capabilityProxyGatewayFetchPath =
+	'/v1/capability-proxy/gateway-fetch'
+
 const forwardedPathPattern = /^\/(?:|openapi\.json|v1(?:\/.*)?)$/
 const allowedMethods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']
 const bodyMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+const gatewayFetchForwardHeaderNames = [
+	'X-Kody-Gateway-Url',
+	'X-Kody-Gateway-Method',
+	'X-Kody-Gateway-Package-Id',
+	'X-Kody-Gateway-Headers',
+	'x-kody-secret-resolution',
+	'Content-Length',
+	'Transfer-Encoding',
+] as const
+
+const corsAllowHeaders = [
+	'Authorization',
+	'Content-Type',
+	'X-Kody-Gateway-Url',
+	'X-Kody-Gateway-Method',
+	'X-Kody-Gateway-Package-Id',
+	'X-Kody-Gateway-Headers',
+	'x-kody-secret-resolution',
+].join(', ')
 
 const corsHeaders = {
 	'Access-Control-Allow-Origin': '*',
@@ -32,7 +61,7 @@ const corsHeaders = {
 const corsPreflightHeaders = {
 	...corsHeaders,
 	'Access-Control-Allow-Methods': allowedMethods.join(', '),
-	'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+	'Access-Control-Allow-Headers': corsAllowHeaders,
 	'Access-Control-Max-Age': '600',
 } as const
 
@@ -64,12 +93,32 @@ function withEdgeHeaders(response: Response) {
 	})
 }
 
+function isCapabilityProxyGatewayFetchRequest(
+	method: string,
+	pathname: string,
+) {
+	return method === 'POST' && pathname === capabilityProxyGatewayFetchPath
+}
+
+export function gatewayFetchDeclaredBodyExceedsUploadLimit(headers: Headers) {
+	const declared = Number(headers.get('Content-Length') ?? '0')
+	return Number.isFinite(declared) && declared > maxGatewayFetchUploadBytes
+}
+
+export function gatewayFetchUploadLimitMessage() {
+	return `Request body exceeds the Worker upload limit of ${maxGatewayFetchUploadBytes} bytes (100 MiB).`
+}
+
 /**
  * Only the API credential and content negotiation reach origin. Cookies
  * never authenticate the API, and `X-Kody-*` headers are internal fleet
- * signals a public caller must not be able to set.
+ * signals a public caller must not be able to set. Gateway-fetch also
+ * forwards the allowlisted hop metadata headers.
  */
-function buildForwardHeaders(headers: Headers) {
+function buildForwardHeaders(
+	headers: Headers,
+	extraNames: ReadonlyArray<string> = [],
+) {
 	const forwarded = new Headers()
 	for (const name of [
 		'Authorization',
@@ -77,6 +126,7 @@ function buildForwardHeaders(headers: Headers) {
 		'Accept',
 		'User-Agent',
 		'CF-Connecting-IP',
+		...extraNames,
 	]) {
 		const value = headers.get(name)
 		if (value !== null) forwarded.set(name, value)
@@ -197,6 +247,28 @@ export async function handleApiEdgeRequest(
 		)
 	}
 
+	if (isCapabilityProxyGatewayFetchRequest(request.method, url.pathname)) {
+		if (gatewayFetchDeclaredBodyExceedsUploadLimit(request.headers)) {
+			return errorResponse(
+				413,
+				'payload_too_large',
+				gatewayFetchUploadLimitMessage(),
+			)
+		}
+		const requestInit: RequestInit & { duplex?: 'half' } = {
+			method: request.method,
+			headers: buildForwardHeaders(
+				request.headers,
+				gatewayFetchForwardHeaderNames,
+			),
+		}
+		if (request.body) {
+			requestInit.body = request.body
+			requestInit.duplex = 'half'
+		}
+		return fetchOrigin(env, new Request(url.toString(), requestInit))
+	}
+
 	let body: Uint8Array<ArrayBuffer> | undefined
 	if (bodyMethods.has(request.method)) {
 		const capped = await readCappedBody(request)
@@ -215,6 +287,10 @@ export async function handleApiEdgeRequest(
 		headers: buildForwardHeaders(request.headers),
 		...(body && body.byteLength > 0 ? { body } : {}),
 	})
+	return fetchOrigin(env, forwarded)
+}
+
+async function fetchOrigin(env: ApiWorkerEnv, forwarded: Request) {
 	try {
 		return withEdgeHeaders(await env.KODY_API.fetch(forwarded))
 	} catch (error) {

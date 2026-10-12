@@ -8,7 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	getCommunityProfileByUsername: vi.fn(),
 	getProfileActivity: vi.fn(),
-	listPublicProfilePackages: vi.fn(),
+	listProfileRepositories: vi.fn(),
 	listOrganizationsForPerson: vi.fn(),
 }))
 
@@ -27,8 +27,8 @@ vi.mock('#worker/community/profile-service.ts', () => ({
 		mockModule.getCommunityProfileByUsername(...args),
 	getProfileActivity: (...args: Array<unknown>) =>
 		mockModule.getProfileActivity(...args),
-	listPublicProfilePackages: (...args: Array<unknown>) =>
-		mockModule.listPublicProfilePackages(...args),
+	listProfileRepositories: (...args: Array<unknown>) =>
+		mockModule.listProfileRepositories(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -95,6 +95,7 @@ const packageFixture = [
 		hidden: false,
 		publishedCommit: 'abc1234567890',
 		listingIconCommit: 'abc1234567890',
+		repoIconCommit: null,
 	},
 ]
 
@@ -134,7 +135,7 @@ const apiKeys = [
 function setupPublicProfileMocks() {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(publicProfile)
-	mockModule.listPublicProfilePackages.mockResolvedValue(packageFixture)
+	mockModule.listProfileRepositories.mockResolvedValue(packageFixture)
 	mockModule.getProfileActivity.mockResolvedValue(activityFixture)
 }
 
@@ -143,7 +144,7 @@ async function call(
 	path: string,
 	username = 'alice',
 ) {
-	mockModule.listPublicProfilePackages.mockClear()
+	mockModule.listProfileRepositories.mockClear()
 	const url = new URL(`https://example.com${path}`)
 	const response = await create(env).handler({
 		request: new Request(url),
@@ -157,7 +158,7 @@ async function call(
 }
 
 function lastPackagesQuery() {
-	return mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0]
+	return mockModule.listProfileRepositories.mock.calls.at(-1)?.[0]
 }
 
 test('profile API respects visibility, ignores owner-only filters for guests, and forwards search limits', async () => {
@@ -176,6 +177,7 @@ test('profile API respects visibility, ignores owner-only filters for guests, an
 	expect(guest.body.activity).toHaveLength(1)
 	expect(lastPackagesQuery()).toMatchObject({
 		ownerStableUserId: 'stable-alice',
+		ownerUsername: 'alice',
 		includePrivate: false,
 	})
 	expect(lastPackagesQuery()).not.toHaveProperty('limit')
@@ -230,7 +232,7 @@ test('profile API respects visibility, ignores owner-only filters for guests, an
 		userId: 1,
 		mcpUser: { userId: ownerIdFromStored('stable-alice') },
 	})
-	mockModule.listPublicProfilePackages.mockResolvedValue([])
+	mockModule.listProfileRepositories.mockResolvedValue([])
 	mockModule.getProfileActivity.mockResolvedValue([])
 	const own = await call(
 		createProfileApiHandler,

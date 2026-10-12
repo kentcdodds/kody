@@ -553,11 +553,14 @@ guarded by a bearer secret comparison.
   credential placeholder is filled only for a host the credential allows (a
   secret's hosts the user approved in the account UI, an integration's
   `requiredHosts` and `apiBaseUrl` host, a vault item's websites) and only over
-  HTTPS. It may sit in a header, the URL path or query, or a text body (JSON
-  values are JSON-escaped, form values form-encoded); multipart and non-UTF-8
-  bodies are forwarded byte for byte. A placeholder on plain HTTP, in the URL
-  host or user info, or bound for a host the credential does not allow is
-  refused before anything resolves
+  HTTPS. It may sit in a header, the URL path or query, a text body (JSON values
+  are JSON-escaped, form values form-encoded), or a literal `{{…}}` in a
+  `multipart/*` part. Streamed bodies are filled chunk by chunk. A
+  percent-encoded or base64-encoded placeholder form the gateway will not fill
+  is refused. Percent-encoded placeholders in the URL path or query, and in
+  form-urlencoded components the gateway already fills, stay supported. A
+  placeholder on plain HTTP, in the URL host or user info, or bound for a host
+  the credential does not allow is refused before anything resolves
   (`packages/worker/src/mcp/secrets/secret-placement.ts` and the credential
   door), so none is sent unfilled. The values are redacted from echoes in the
   response (also URL-, form-, and JSON-encoded) and from fetch errors.

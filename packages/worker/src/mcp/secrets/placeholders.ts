@@ -139,16 +139,33 @@ export function buildBasicAuthSecretPlaceholderFromReference(
 	})
 }
 
+/**
+ * Fills placeholders in a single pass over the original text. Matches come
+ * from `value` only: a placeholder that appears inside an already-substituted
+ * credential stays literal, so nested `{{secret:…}}` text in a stored value
+ * cannot pull in another credential. A function replacer keeps `$&` and
+ * friends in a value literal.
+ */
 export function replaceSecretPlaceholders(
 	value: string,
 	replacements: ReadonlyMap<string, string>,
 ) {
-	let nextValue = value
-	for (const [placeholder, secretValue] of replacements.entries()) {
-		// A replacer function keeps `$&` and friends in a value literal.
-		nextValue = nextValue.replaceAll(placeholder, () => secretValue)
-	}
-	return nextValue
+	if (replacements.size === 0) return value
+	const placeholders = [...replacements.keys()].sort(
+		(left, right) => right.length - left.length || left.localeCompare(right),
+	)
+	const pattern = new RegExp(
+		placeholders.map(escapeRegExpLiteral).join('|'),
+		'g',
+	)
+	return value.replace(pattern, (matched) => {
+		const secretValue = replacements.get(matched)
+		return secretValue === undefined ? matched : secretValue
+	})
+}
+
+function escapeRegExpLiteral(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**

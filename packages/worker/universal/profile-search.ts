@@ -299,7 +299,8 @@ function matchesListing(
 		case 'published':
 			return pkg.communityListingId != null
 		case 'unpublished':
-			return pkg.communityListingId == null
+			// Plain repos are not unpublished packages.
+			return pkg.hasPackage && pkg.communityListingId == null
 		case 'ahead':
 			return pkg.needsRepublish
 		default: {

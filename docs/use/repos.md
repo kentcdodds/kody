@@ -20,7 +20,7 @@ you want runtime surfaces (exports, apps, jobs, webhooks).
 | `repoList`                       | List plain repos from D1 (`user_repos`); no live Artifacts reads.                                                                                                                                         |
 | `repoGet`                        | One repo by id or name, live default-branch HEAD, `package_shaped` hint.                                                                                                                                  |
 | `repoDelete`                     | Delete `user_repos`, `entity_sources`, and Artifacts repo (best-effort).                                                                                                                                  |
-| `repoGetGitRemote`               | Short-lived git remote; write pushes are live at HEAD (no publish reconcile).                                                                                                                             |
+| `repoGetGitRemote`               | Short-lived git remote (defaults to write when you can write, else read). Write pushes are live at HEAD (no publish reconcile).                                                                           |
 | `repoPromoteToPackage`           | Full publish checks + saved-package projection when root `package.json` exists at HEAD.                                                                                                                   |
 | `repoOpenSession` + session lane | File-level editing (`repoEditFiles`, `repoApplyPatch`, `repoCommit`, `repoStatus`, `repoDiff`, `repoLog`, `repoRestore`, `repoRunChecks`, `repoPublishSession`, …) with `target: { kind: "repo", name }`. |
 
@@ -37,15 +37,28 @@ discovery.
 
 ## Git lane
 
-`repoGetGitRemote` mints a short-lived Artifacts remote (read or write). The
-result includes `git_author` (signed-in Kody account email and display name) and
-setup commands that set local `user.email` / `user.name` to that identity. Use
-those values for commits; do not invent a git email. Kody's **10 MiB** per-file
-gate (10,485,760 stored bytes) binds on session and file-level writes and again
-at `repoPromoteToPackage`; a direct `git push` to the minted remote has no Kody
-gate, so the only ceiling on that lane is Artifacts itself, which rejects pushes
-above ~32 MiB of decompressed pack content with a raw HTTP 413. Plain repos do
-not run the package publish reconcile cron after push—HEAD is live.
+`repoGetGitRemote` mints a short-lived git remote that points at Kody's
+smart-HTTP proxy (`/git/sources/{source_id}.git`), which forwards to Cloudflare
+Artifacts with the minted bearer token. When `scope` is omitted, it defaults to
+**write** if you have org-wide write access, otherwise **read**. Explicit
+`scope` is honored; requesting write without write access is denied with
+guidance. A read remote rejects push with:
+`this remote is read-only; request scope: 'write'`. Pass exactly one of
+`repo_id` or `name`. Open API / CLI: prefer `POST /v1/repos/git-remote` with a
+JSON body (`name` or `repo_id`) so clients do not need a path id;
+`POST /v1/repos/{repo_id}/git-remote` still works, and the `{repo_id}` segment
+accepts a UUID or the repo name. Concurrent push lock contention from Artifacts
+is translated to HTTP **503** with `Retry-After` and the body
+`repository busy, retry` so git clients get a clean, retryable rejection instead
+of `remote end hung up unexpectedly`. The result includes `git_author`
+(signed-in Kody account email and display name) and setup commands that set
+local `user.email` / `user.name` to that identity. Use those values for commits;
+do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760 stored
+bytes) binds on session and file-level writes and again at
+`repoPromoteToPackage`; the proxied push lane does not re-apply that gate, so
+the only ceiling there is Artifacts itself, which rejects pushes above ~32 MiB
+of decompressed pack content with a raw HTTP 413. Plain repos do not run the
+package publish reconcile cron after push—HEAD is live.
 
 ## Sessions
 
