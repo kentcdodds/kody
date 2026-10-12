@@ -17,7 +17,6 @@ import {
 	type PublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
-import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	createIsolatedArtifactRebuildRunner,
 	isolatedArtifactRebuildChunkConcurrency,
@@ -329,29 +328,6 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 	})
 }
 
-async function assertPublishedCommitUnchanged(input: {
-	env: Env
-	sourceId: string
-	userId: OwnerId
-	publishedCommit: string
-}) {
-	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
-		id: input.sourceId,
-		userId: input.userId,
-	})
-	if (!source) {
-		throw new Error(
-			`Repo source "${input.sourceId}" was not found for this user.`,
-		)
-	}
-	const currentCommit = source.published_commit?.trim() || null
-	if (currentCommit !== input.publishedCommit) {
-		throw new Error(
-			`Published commit for source "${input.sourceId}" changed from "${input.publishedCommit}" to "${currentCommit ?? 'unpublished'}" before artifact rebuild; retry with the current commit.`,
-		)
-	}
-}
-
 async function resolveRebuildTargets(input: {
 	session: ReturnType<typeof repoSessionRpc>
 	repoSessionId?: string
@@ -381,12 +357,6 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	targets?: ReadonlyArray<PublishedPackageArtifactBuildTarget>
 	force?: boolean
 }) {
-	await assertPublishedCommitUnchanged({
-		env: input.env,
-		sourceId: input.sourceId,
-		userId: input.userId,
-		publishedCommit: input.publishedCommit,
-	})
 	const session = repoSessionRpc(input.env, input.rpcSessionId)
 	const isolatedRunner = createIsolatedArtifactRebuildRunner(input.env)
 
@@ -431,13 +401,6 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 		...alreadyBuilt,
 	]
 	if (remaining.length === 0) return
-
-	await assertPublishedCommitUnchanged({
-		env: input.env,
-		sourceId: input.sourceId,
-		userId: input.userId,
-		publishedCommit: input.publishedCommit,
-	})
 
 	let stagingKey: string
 	try {

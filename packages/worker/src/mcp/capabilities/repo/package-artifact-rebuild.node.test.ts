@@ -10,12 +10,6 @@ const mockModule = vi.hoisted(() => ({
 	createIsolatedArtifactRebuildRunner: vi.fn(),
 	isPublishedPackageArtifactBuiltForCommit: vi.fn(),
 	reusePublishedPackageArtifactIfUnchanged: vi.fn(),
-	getEntitySourceByIdForUser: vi.fn(),
-}))
-
-vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -79,10 +73,6 @@ function setup({
 	for (const mock of Object.values(mockModule)) mock.mockReset()
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 	mockModule.reusePublishedPackageArtifactIfUnchanged.mockResolvedValue(false)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		published_commit: 'commit-1',
-	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 	if (stageKey) {
 		mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
@@ -208,10 +198,6 @@ test('isolated rebuild skips already-built or unchanged targets and does not sta
 		[mockModule.reusePublishedPackageArtifactIfUnchanged, 'commit-2'],
 	] as const) {
 		const { run, discard } = setup({ targets: sampleTargets.slice(0, 3) })
-		mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-			id: 'source-1',
-			published_commit: publishedCommit,
-		})
 		check.mockImplementation(builtOrUnchanged)
 
 		await rebuild({ publishedCommit })
@@ -507,14 +493,4 @@ test('optional targets skip listing and only rebuild the supplied set', async ()
 	await rebuild({ targets: selected })
 	expect(mockModule.listPublishedPackageArtifactTargets).not.toHaveBeenCalled()
 	expect(runTargets(run).flat()).toEqual(selected)
-})
-
-test('rebuild refuses when the published commit changed before staging', async () => {
-	setup()
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		published_commit: 'commit-other',
-	})
-	await expect(rebuild()).rejects.toThrow(/Published commit .* changed/)
-	expect(mockModule.stagePublishedPackageArtifactRebuild).not.toHaveBeenCalled()
 })
