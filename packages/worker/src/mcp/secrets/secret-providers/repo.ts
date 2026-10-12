@@ -102,8 +102,11 @@ export async function upsertSecretProviderBinding(
 		.prepare(
 			`INSERT INTO secret_provider_bindings (
 				user_id, provider_id, package_id, door_secret_name, config_json,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+				source_json, created_at, updated_at
+			) VALUES (
+				?, ?, ?, ?, ?, json_object('vault', ?), CURRENT_TIMESTAMP,
+				CURRENT_TIMESTAMP
+			)
 			ON CONFLICT(user_id, provider_id) DO UPDATE SET
 				package_id = excluded.package_id,
 				door_secret_name = excluded.door_secret_name,
@@ -116,6 +119,7 @@ export async function upsertSecretProviderBinding(
 			input.packageId,
 			input.doorSecretName,
 			input.configJson,
+			input.providerId,
 		)
 		.run()
 }

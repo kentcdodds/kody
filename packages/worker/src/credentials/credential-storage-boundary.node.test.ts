@@ -111,6 +111,28 @@ const storageRules: ReadonlyArray<StorageRule> = [
 		symbols: ['callMcpServerTool'],
 		allowed: {},
 	},
+	// A resolver handle's `apply` reads credential material, so only the door
+	// may hold a resolver: anywhere else would skip the door's checks and audit.
+	{
+		module: 'packages/worker/src/credentials/secret-resolvers.ts',
+		symbols: [
+			'secretResolver',
+			'webhookSecretResolver',
+			'packageSecretMountResolver',
+			'vaultSecretResolver',
+		],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/oauth-resolvers.ts',
+		symbols: ['integrationTokenResolver', 'integrationRefreshResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/mcp-resolver.ts',
+		symbols: ['mcpConnectionResolver'],
+		allowed: {},
+	},
 ]
 
 const skippedDirectories = new Set([
@@ -225,7 +247,7 @@ function collectImports(filePath: string, source: string): Array<ImportUse> {
 	return uses
 }
 
-function exportedFunctionNames(relativePath: string) {
+function exportedNames(relativePath: string) {
 	const filePath = path.join(repoRoot, relativePath)
 	const sourceFile = ts.createSourceFile(
 		filePath,
@@ -235,21 +257,28 @@ function exportedFunctionNames(relativePath: string) {
 		ts.ScriptKind.TS,
 	)
 	return new Set(
-		sourceFile.statements.flatMap((statement) =>
-			ts.isFunctionDeclaration(statement) &&
-			statement.name &&
-			statement.modifiers?.some(
-				(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+		sourceFile.statements.flatMap((statement) => {
+			const exported =
+				ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)
+					? statement.modifiers?.some(
+							(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+						)
+					: false
+			if (!exported) return []
+			if (ts.isFunctionDeclaration(statement)) {
+				return statement.name ? [statement.name.text] : []
+			}
+			if (!ts.isVariableStatement(statement)) return []
+			return statement.declarationList.declarations.flatMap((declaration) =>
+				ts.isIdentifier(declaration.name) ? [declaration.name.text] : [],
 			)
-				? [statement.name.text]
-				: [],
-		),
+		}),
 	)
 }
 
 test('every guarded credential read helper still exists', () => {
 	for (const rule of storageRules) {
-		const exported = exportedFunctionNames(rule.module)
+		const exported = exportedNames(rule.module)
 		for (const symbol of rule.symbols) {
 			expect(exported, `${rule.module} exports ${symbol}`).toContain(symbol)
 		}

@@ -498,6 +498,7 @@ test('package events fall back to inline delivery without a queue binding', asyn
 
 	// Inline delivery failures are logged, never surfaced to the emitter.
 	failSubscriberManifestLoads(seedRuntimeDispatchPackages())
+	consoleWarn.mockImplementation(() => {})
 	consoleError.mockImplementation(() => {})
 	await expect(
 		tools.dispatch({
@@ -506,6 +507,10 @@ test('package events fall back to inline delivery without a queue binding', asyn
 			payload: { messageId: 'inline-2' },
 		}),
 	).resolves.toMatchObject({ status: 'delivered_inline' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-package-subscription-manifest-load-failed',
+		expect.objectContaining({ topic: messageCreated }),
+	)
 	expect(consoleError).toHaveBeenCalledWith(
 		'package-events-inline-delivery-failed',
 		expect.objectContaining({ topic: messageCreated }),

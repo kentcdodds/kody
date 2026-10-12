@@ -247,8 +247,10 @@ assistant features:
   Consent binds the grant to one org
   ([0064](../decisions/0064-oauth-org-binding.md)): `?org=<slug>` on the
   authorize URL or `/mcp` resource, a hidden field when the user has exactly one
-  org, or a required picker when they have several. Approval stamps `orgId` on
-  grant props and metadata. There is no feature flag.
+  org, or a required picker when they have several. Approval stamps `orgId` and
+  `personId` on grant props and metadata (`grantBindingFields`). Nothing reads
+  `personId` yet; credential resolution will require it for new grants. Grants
+  minted before the stamp have only `userId`. There is no feature flag.
 - **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
   the single chokepoint for `/mcp`. After token validation it checks
   `users.email_verified_at` (via `isAccountEmailVerified`) and rejects

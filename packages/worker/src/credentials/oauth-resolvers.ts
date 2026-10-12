@@ -130,16 +130,20 @@ export const integrationRefreshResolver: CredentialResolver<'integration-refresh
 			return {
 				authorize: () => authorizeIntegrationUse(call, credentialId),
 				async apply() {
-					// A refresh hands back no token; checking first keeps an old
-					// grant from refreshing a replacement connection.
+					// A refresh hands back no token. Checking first keeps an old
+					// grant from refreshing a replacement connection; checking
+					// after keeps it from being told a replacement swapped in
+					// mid-refresh was refreshed for it.
 					await assertIntegrationUnchanged(call, credentialId)
-					return await refreshIntegrationTokens({
+					const result = await refreshIntegrationTokens({
 						env: input.env,
 						userId: input.orgId,
 						userEmail: credential.userEmail,
 						name: credential.name,
 						waitUntil: credential.waitUntil,
 					})
+					await assertIntegrationUnchanged(call, credentialId)
+					return result
 				},
 			}
 		},

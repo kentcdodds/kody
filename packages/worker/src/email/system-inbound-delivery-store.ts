@@ -1,4 +1,4 @@
-import PostalMime from 'postal-mime'
+import { loadPostalMime } from '#worker/postal-mime-load.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
@@ -633,6 +633,7 @@ async function recoverSystemDelivery(input: {
 	}
 	const object = await input.blobs.get(message.rawMimeKey)
 	if (!object) return false
+	const PostalMime = await loadPostalMime()
 	const parsed = await PostalMime.parse(await object.text(), {
 		attachmentEncoding: 'arraybuffer',
 	})

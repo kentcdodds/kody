@@ -1499,7 +1499,7 @@ on write unless a migration backfills existing rows.
   `Authorization: Bearer {value}`. `source_json` is `"stored"`, or
   `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
   its OAuth app's provider, written on connect and backfilled by the migration.
-  Nothing reads these yet; placeholders keep resolving as before.
+  Request placement does not read them; placeholders still decide it.
 - `credential_inventory_runs` and `credential_inventory_items`
   (`0112-credential-inventory.sql`,
   `packages/worker/src/credentials/credential-inventory.ts`) hold the admin

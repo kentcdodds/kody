@@ -295,7 +295,7 @@ test('kody namespaced proxy dispatches, enumerates tools, and reports entry/capa
 	)
 })
 
-test('generated kody provider and executor module sources stay bundle-safe and gate outbound fetch', () => {
+test('generated kody provider and executor module sources stay bundle-safe and gate outbound fetch', async () => {
 	assertGeneratedExecutorSourceIsBundleSafe(
 		createKodyProviderProxySource({ providerName: 'kody' }),
 	)
@@ -310,7 +310,7 @@ test('generated kody provider and executor module sources stay bundle-safe and g
 			...options,
 		})
 
-	const moduleSource = moduleSourceFor()
+	const moduleSource = await moduleSourceFor()
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
 	const expectedSnippets = [
 		'from "node:async_hooks"',
@@ -341,12 +341,12 @@ test('generated kody provider and executor module sources stay bundle-safe and g
 		`async (globalThis, self, global, ${kodyCallDispatcherName}`,
 	)
 
-	expect(moduleSourceFor({ shadowGlobalThis: true })).toContain(
+	expect(await moduleSourceFor({ shadowGlobalThis: true })).toContain(
 		`async (globalThis, self, global, ${kodyCallDispatcherName}, ${kodyProviderEvaluateBindingName}, __kodyMcp, __kodyCreateRemoteProxy, __dispatchers) => (`,
 	)
 
 	// Closed-world modules reject fetch in the sandbox before outbound RPC.
-	const denied = moduleSourceFor({ allowOutboundFetch: false })
+	const denied = await moduleSourceFor({ allowOutboundFetch: false })
 	expect(denied).not.toContain('.call("recordFetch", "[]")')
 	expect(denied).not.toContain('__kodyNativeFetchSymbol](input, init)')
 })
@@ -1240,7 +1240,7 @@ test('createToolDispatchers counts host-mediated attempts, rejects sanitized-nam
 		).resolves.toEqual({ result })
 	}
 
-	const moduleSource = createExecutorModuleSource({
+	const moduleSource = await createExecutorModuleSource({
 		code: 'async () => "ok"',
 		providers: [{ name: 'codemode', fns: { search: async () => ({}) } }],
 		shadowGlobalThis: false,

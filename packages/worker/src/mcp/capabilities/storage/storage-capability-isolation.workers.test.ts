@@ -14,6 +14,7 @@ import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/worker
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { storageExportCapability } from './storage-export.ts'
 import { storageQueryCapability } from './storage-query.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 function createPackageCallerContext(input: {
 	userId: string
@@ -39,6 +40,7 @@ function createPackageCallerContext(input: {
 test('storage capabilities keep a package out of another package bucket', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 

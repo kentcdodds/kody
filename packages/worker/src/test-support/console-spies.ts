@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, vi, type MockInstance } from 'vitest'
+import { afterEach, beforeEach, expect, vi, type MockInstance } from 'vitest'
 
 // Epic Stack-style console guard. Tests fail loudly when code under test
 // calls console.error/console.warn unless the test opts in with
@@ -13,14 +13,46 @@ export let consoleDebug: MockInstance<(typeof console)['debug']>
 const originalError = console.error.bind(console)
 const originalWarn = console.warn.bind(console)
 
+// The throw at the call site only fails the test when it propagates to the
+// test body. A call from a background promise (`waitUntil`, a `.catch`
+// handler) surfaces as an uncaught exception that workerd prints while the
+// test still passes, and a try/catch in code under test swallows it, so every
+// unexpected call is also recorded and rethrown from afterEach.
+let unexpectedCalls: Array<Error> = []
+
+function recordUnexpectedCall(message: string) {
+	const error = new Error(message)
+	unexpectedCalls.push(error)
+	return error
+}
+
+// Files that made unexpected console calls the call-site throw never
+// surfaced when afterEach enforcement landed. They keep the call-site throw
+// only until each is fixed; tracked in
+// https://github.com/kentcdodds/kody/issues/3456. Do not add new entries.
+const filesPendingAfterEachEnforcement = [
+	'packages/worker/src/mcp/fetch-gateway.node.test.ts',
+	'packages/worker/src/mcp/fetch-gateway-credential-use.node.test.ts',
+	'packages/worker/src/open-api/capability-proxy-local-credential-authority.node.test.ts',
+	'packages/worker/src/webhooks/signing-secret.node.test.ts',
+	'packages/worker/src/org-transfer/storage-copy.workers.test.ts',
+]
+
+function enforcesRecordedCalls() {
+	const testPath = expect.getState().testPath?.replaceAll('\\', '/') ?? ''
+	return !filesPendingAfterEachEnforcement.some((file) =>
+		testPath.endsWith(`/${file}`),
+	)
+}
+
 function failOnUnexpectedCall(
 	method: 'error' | 'warn',
 	original: (...args: Array<unknown>) => void,
 ) {
 	return (...args: Array<unknown>) => {
 		original(...args)
-		throw new Error(
-			`Unexpected console.${method} call. If this is expected, import console${
+		throw recordUnexpectedCall(
+			`Unexpected console.${method} call (${String(args[0])}). If this is expected, import console${
 				method === 'error' ? 'Error' : 'Warn'
 			} from #worker/test-support/console-spies.ts, call .mockImplementation(() => {}) in the test, and assert on the calls.`,
 		)
@@ -47,7 +79,7 @@ function silenceExpectedCalls(
 		) {
 			return
 		}
-		throw new Error(
+		throw recordUnexpectedCall(
 			`Unexpected console.${method} call (not in this test's expected-message allowlist): ${String(first)}`,
 		)
 	})
@@ -62,6 +94,7 @@ export function silenceExpectedConsoleErrors(patterns: Array<RegExp | string>) {
 }
 
 beforeEach(() => {
+	unexpectedCalls = []
 	consoleError = vi
 		.spyOn(console, 'error')
 		.mockImplementation(failOnUnexpectedCall('error', originalError))
@@ -80,4 +113,13 @@ afterEach(() => {
 	consoleWarn.mockRestore()
 	consoleInfo.mockRestore()
 	consoleDebug.mockRestore()
+	const calls = unexpectedCalls
+	unexpectedCalls = []
+	const [first] = calls
+	if (!first || !enforcesRecordedCalls()) return
+	if (calls.length === 1) throw first
+	throw new AggregateError(
+		calls,
+		`${calls.length} unexpected console calls; first: ${first.message}`,
+	)
 })

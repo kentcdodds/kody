@@ -26,7 +26,7 @@ import {
 import {
 	credentialPermissionFamily,
 	credentialResource,
-	findCredentialIdByLegacyName,
+	findCredentialIdsByLegacyName,
 	getOrgCredential,
 	legacyNamedCredentialTargets,
 } from '#worker/credentials/credential-ids.ts'
@@ -57,7 +57,8 @@ type GrantTargetType = z.infer<typeof grantTargetTypeSchema>
 
 /**
  * Resolves an old-lane by-name credential target to its credential id, so
- * the grant is stored under `credential`.
+ * the grant is stored under `credential`. A name that names more than one
+ * credential is refused rather than narrowed to one of them.
  */
 export async function resolveGrantTarget(
 	ctx: CapabilityContext,
@@ -67,14 +68,20 @@ export async function resolveGrantTarget(
 		case 'secret':
 		case 'integration': {
 			const request = requireMcpRequest(ctx.callerContext)
-			const credentialId = await findCredentialIdByLegacyName(
+			const credentialIds = await findCredentialIdsByLegacyName(
 				ctx.env.APP_DB,
 				request.org.id,
 				{ type: target.type, name: target.id },
 			)
+			const [credentialId, ...others] = credentialIds
 			if (!credentialId) {
 				throw new McpCallerError(
 					`No ${target.type} named "${target.id}" in this organization. Pass resource_type credential with the credential_id from secretList, integrationList, mcpServerList, or secretProviderList.`,
+				)
+			}
+			if (others.length > 0) {
+				throw new McpCallerError(
+					`${target.id} names more than one integration; pass resource_type credential with the credential_id from integrationList or mcpServerList.`,
 				)
 			}
 			return { resourceType: 'credential', resourceId: credentialId }

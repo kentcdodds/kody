@@ -38,7 +38,9 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * startup bytes stay under budget (kody#2831). isomorphic-git is already lazy
  * for CPU via `#worker/isomorphic-git-load.ts`; the additional module
  * keeps its ~160 KB (+ pako) out of the Wrangler main byte graph after the
- * Zod 4.6.5 startup growth (kody#2839 / kody#2856).
+ * Zod 4.6.5 startup growth (kody#2839 / kody#2856). postal-mime (~80 KB) and
+ * codemode's acorn-backed `normalizeCode` (~123 KB) ride the same lane: every
+ * MIME parse and every execute is already async (kody#3367 / kody#3368).
  *
  * Wrangler discovers additional ES modules by walking the entry directory
  * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
@@ -91,12 +93,24 @@ const isomorphicGitModuleEntry = path.join(
 	repoRoot,
 	'packages/worker/src/repo/isomorphic-git-module.ts',
 )
+export const postalMimeModuleName = 'postal-mime.mjs'
+const postalMimeModuleEntry = path.join(
+	repoRoot,
+	'packages/worker/src/email/postal-mime-module.ts',
+)
+export const codemodeNormalizeModuleName = 'codemode-normalize.mjs'
+const codemodeNormalizeModuleEntry = path.join(
+	repoRoot,
+	'packages/worker/src/mcp/codemode-normalize-module.ts',
+)
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
 	localExecuteRuntimeSupportModuleName,
 	isomorphicGitModuleName,
+	postalMimeModuleName,
+	codemodeNormalizeModuleName,
 	'esbuild.wasm',
 ] as const
 const leftoverWranglerVisibleNames = [
@@ -255,6 +269,11 @@ async function buildStampContent(
 		path.join(repoRoot, 'node_modules', 'isomorphic-git', 'package.json'),
 		'utf8',
 	)
+	const postalMimeModuleSource = await readFile(postalMimeModuleEntry, 'utf8')
+	const codemodeNormalizeModuleSource = await readFile(
+		codemodeNormalizeModuleEntry,
+		'utf8',
+	)
 	const shellPackageJson = await readFile(
 		path.join(repoRoot, 'node_modules', '@cloudflare', 'shell', 'package.json'),
 		'utf8',
@@ -278,6 +297,8 @@ async function buildStampContent(
 		.update(localExecuteModuleSource)
 		.update(isomorphicGitModuleSource)
 		.update(isomorphicGitPackageJson)
+		.update(postalMimeModuleSource)
+		.update(codemodeNormalizeModuleSource)
 		.update(shellPackageJson)
 		.update(
 			await readFile(
@@ -392,6 +413,21 @@ export async function ensureWorkerBundlerModules() {
 	})
 	await buildLocalExecuteRuntimeSupportModule()
 	await buildIsomorphicGitModule()
+	await build({
+		entryPoints: {
+			'postal-mime': postalMimeModuleEntry,
+			'codemode-normalize': codemodeNormalizeModuleEntry,
+		},
+		bundle: true,
+		format: 'esm',
+		platform: 'browser',
+		target: 'es2022',
+		minify: true,
+		outdir: workerBundlerGeneratedDir,
+		outExtension: { '.js': '.mjs' },
+		plugins: [externalsPlugin],
+		logLevel: 'silent',
+	})
 	await copyFile(
 		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),

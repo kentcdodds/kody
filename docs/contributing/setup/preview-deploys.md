@@ -50,6 +50,22 @@ resources. It does not delete the committed `kody-preview*` placeholder names,
 the shared Artifacts namespaces `production` / `preview`, or any production
 name.
 
+Leftover preview Workers keep their Durable Object namespaces, and the account
+allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
+10067). Two more paths keep previews from piling up:
+
+- A failed PR preview deploy runs the same cleanup before the job ends. The next
+  push re-creates the preview from scratch. Branch previews keep their state
+  after a failed deploy so a
+  [migration rehearsal](../preview-migration-rehearsal.md) can inspect it.
+- `.github/workflows/preview-sweep.yml` runs hourly (and on `workflow_dispatch`,
+  with `max` and `dry_run` inputs). It lists the account's Worker scripts,
+  Durable Object namespaces, and D1 databases, picks out `kody-pr-<n>` previews
+  whose PR is closed, and runs the same cleanup for up to 10 of them per run,
+  oldest first (`tools/ci/preview-sweep.ts`). It re-checks the PR state just
+  before each cleanup, skips previews with no matching PR, and never touches
+  `kody-branch-*` previews.
+
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
 four-minute job budget. Permanent 401/403 failures are not retried. A failure on

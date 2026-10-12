@@ -1,0 +1,67 @@
+name: 🧹 Preview Sweep
+
+# Removes Cloudflare resources left by PR previews whose PR is closed but whose
+# close-time cleanup never ran or failed (#3396). Leftover preview Workers keep
+# their Durable Object namespaces until the account cap blocks new previews.
+# tools/ci/preview-sweep.ts only deletes kody-pr-<number>* names, through the
+# preview naming guard in tools/ci/preview-resources.ts.
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      max:
+        description: Most closed-PR previews to clean up in this run
+        required: false
+        type: string
+        default: '10'
+      dry_run:
+        description: List what would be swept without deleting anything
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: preview-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    name: 🧹 Sweep closed-PR previews
+    # Each preview cleanup has a 150s budget (previewCleanupBudgetMsDefault);
+    # the default cap of 10 previews fits with room for npm ci.
+    timeout-minutes: 40
+    if: github.repository == 'kentcdodds/kody'
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: 🧹 Clean up previews of closed PRs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAX_PREVIEWS: ${{ inputs.max || '10' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          args=(--max "$MAX_PREVIEWS")
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          node tools/ci/preview-sweep.ts "${args[@]}"

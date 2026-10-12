@@ -232,8 +232,6 @@ export function createPackageWebhooksController(handle: Handle) {
 								renderPackageWebhookCard({
 									webhook,
 									revealedUrl: revealedUrls.get(webhook.id)?.url ?? null,
-									signingSecret:
-										revealedUrls.get(webhook.id)?.signingSecret ?? null,
 									isMutating: mutating,
 									rotateCheck: checkFor(rotateChecks, webhook.id),
 									disableCheck: checkFor(disableChecks, webhook.id),
