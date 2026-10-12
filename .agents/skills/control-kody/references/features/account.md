@@ -23,8 +23,7 @@ rail collapses to a `<details>` menu.
 
 The site header has one avatar: the org switcher (`data-testid="org-switcher"`).
 Its popover lists orgs, then Create organization, an invites row when you have
-any, then a "Your account" group (Your profile, Account settings, Log out). It
-does not list Settings, Members, Teams, Grants, Collaborators, or Billing.
+any, then a "Your account" group (Your profile, Account settings, Log out).
 Narrow viewports show the same rows in the menu panel. Own profile
 (`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/packages`)
 beside Edit profile. A team org home lists **Workspace** above its management
