@@ -7,6 +7,12 @@
  * needed for saved packages (integrations, secrets, email, jobs, …). 0090
  * only mapped it to `org:execute`; 0092 repairs stored tokens. Keep this list
  * in sync with `cliCredentialBootstrapPolicy.defaultScopes` (plus `org:read`).
+ *
+ * The 0090 SQL header also names a companion
+ * `tools/teams-migration/rewrite-api-token-scopes.ts`. That tool was deleted
+ * (#3365) and the applied migration's bytes are immutable under
+ * `tools/migration-ledger.json`, so this module and the SQL in 0090 are the
+ * only copies of the map.
  */
 import {
 	isOrgPermission,
