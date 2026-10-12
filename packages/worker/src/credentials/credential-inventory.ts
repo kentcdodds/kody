@@ -289,16 +289,35 @@ export async function attributePackageCredentials(input: {
 			scope: reference.scope,
 			placement: reference.placement,
 		})),
-		slots: scan.slots.map((slot) => ({
-			kind: slot.kind,
-			provider: slot.provider,
-			credentialIds:
-				slot.kind === 'secret'
-					? secretIdsFor(secretRows, slot.name, null, ownerId)
-					: slot.kind === 'oauth'
-						? integrationIdsFor(slot.name)
-						: [],
-		})),
+		// The inventory counts the kinds it was built for; later kinds are not
+		// placeholder slots.
+		slots: scan.slots.flatMap((slot) => {
+			switch (slot.kind) {
+				case 'secret':
+				case 'oauth':
+				case 'mcp':
+					return [
+						{
+							kind: slot.kind,
+							provider: slot.provider,
+							credentialIds:
+								slot.kind === 'secret'
+									? secretIdsFor(secretRows, slot.name, null, ownerId)
+									: slot.kind === 'oauth'
+										? integrationIdsFor(slot.name)
+										: [],
+						},
+					]
+				case 'url':
+				case 'login':
+				case 'signing':
+					return []
+				default: {
+					const exhaustive: never = slot.kind
+					throw new Error(`Unhandled slot kind: ${String(exhaustive)}`)
+				}
+			}
+		}),
 	}
 }
 
@@ -755,7 +774,11 @@ async function loadRowStates(
 				WHERE deleted_at IS NULL AND id IN (${placeholders(batch.length)})`,
 			)
 			.bind(JSON.stringify(defaultCredentialInject), ...batch)
-			.all<{ id: string; provider: string | null; inject_is_default: number }>()
+			.all<{
+				id: string
+				provider: string | null
+				inject_is_default: number
+			}>()
 		for (const row of result.results ?? []) {
 			states.set(row.id, {
 				provider: row.provider,

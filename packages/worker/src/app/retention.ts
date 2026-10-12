@@ -10,6 +10,7 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { agentPackagePopularityMaxAgeDays } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
+	buildPublishedCredentialNeedsKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { hasActiveRepoSessionForSource } from '#worker/repo/repo-sessions.ts'
@@ -431,6 +432,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 		for (const kvKey of [
 			buildPublishedSourceSnapshotKvKey(pair),
 			buildPublishedSourceManifestSnapshotKvKey(pair),
+			buildPublishedCredentialNeedsKvKey(pair),
 		]) {
 			try {
 				await input.env.BUNDLE_ARTIFACTS_KV.delete(kvKey)

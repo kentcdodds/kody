@@ -6,6 +6,7 @@ import {
 	createPackagePublishLockedError,
 	loadLockedSavedPackage,
 } from '#worker/package-registry/package-publish-lock.ts'
+import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -120,6 +121,14 @@ export async function finalizePublishedEntitySource(
 		)
 	}
 	if (input.source.entity_kind !== 'package') return
+	if (wrotePublishedSnapshot) {
+		await storePublishedCredentialNeeds({
+			env: input.env,
+			source: input.source,
+			publishedCommit: input.publishedCommit,
+			files: input.files,
+		})
+	}
 	try {
 		await refreshSavedPackageProjection({
 			env: input.env,

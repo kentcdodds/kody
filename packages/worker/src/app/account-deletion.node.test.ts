@@ -409,6 +409,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'source-manifest-snapshot:v1:src-1:abc123',
 		'source-snapshot:v1:src-1:old456',
 		'source-manifest-snapshot:v1:src-1:old456',
+		'credential-needs:v1:src-1:old456',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
@@ -776,6 +777,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedKvKeys.sort()).toEqual([
 		'bundle-artifact:v1:src-1',
 		'community-snapshot:v1:listing-1',
+		'credential-needs:v1:src-1:abc123',
+		'credential-needs:v1:src-1:old456',
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
@@ -820,7 +823,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		platform_feedback: 1,
 	})
 	expect(result).toMatchObject({
-		deletedKvKeys: 22,
+		deletedKvKeys: 24,
 		deletedCommunityAssets: 9,
 		deletedEmailBlobs: 2,
 		deletedVectors: 5,

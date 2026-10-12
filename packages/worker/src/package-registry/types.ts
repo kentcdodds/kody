@@ -107,7 +107,14 @@ export type PackageSecretMountDefinition = z.infer<
 	typeof packageSecretMountDefinitionSchema
 >
 
-export const packageCredentialKindValues = ['secret', 'oauth', 'mcp'] as const
+export const packageCredentialKindValues = [
+	'secret',
+	'oauth',
+	'mcp',
+	'url',
+	'login',
+	'signing',
+] as const
 export type PackageCredentialKind = (typeof packageCredentialKindValues)[number]
 
 /**
@@ -122,11 +129,14 @@ export const retiredCredentialPlacementMessage =
 
 export const packageCredentialSlotSchema = z.strictObject({
 	kind: z.enum(packageCredentialKindValues),
-	/** Free-form provider label (for example `google` or `1password`). */
-	provider: z.string().trim().min(1).max(64),
-	/** The package picks among several assigned accounts with `{ account }`. */
+	/**
+	 * Provider slug a credential must carry to auto-resolve for this need
+	 * (for example `github`). Defaults to the key.
+	 */
+	provider: z.string().trim().min(1).max(64).optional(),
+	/** `credentials(key)` returns the caller's picks as an array. */
 	multiple: z.boolean().optional(),
-	/** Shown when someone assigns a credential to this slot. */
+	/** Shown to callers choosing a credential for this need. */
 	description: z.string().trim().min(1).max(500),
 	placement: z.never({ error: retiredCredentialPlacementMessage }).optional(),
 })

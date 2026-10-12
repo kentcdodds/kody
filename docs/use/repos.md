@@ -39,14 +39,18 @@ discovery.
 
 `repoGetGitRemote` mints a short-lived git remote (read or write) that points at
 Kody's smart-HTTP proxy (`/git/sources/{source_id}.git`), which forwards to
-Cloudflare Artifacts with the minted bearer token. Concurrent push lock
-contention from Artifacts is translated to HTTP **503** with `Retry-After` and
-the body `repository busy, retry` so git clients get a clean, retryable
-rejection instead of `remote end hung up unexpectedly`. The result includes
-`git_author` (signed-in Kody account email and display name) and setup commands
-that set local `user.email` / `user.name` to that identity. Use those values for
-commits; do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760
-stored bytes) binds on session and file-level writes and again at
+Cloudflare Artifacts with the minted bearer token. Pass exactly one of `repo_id`
+or `name`. Open API / CLI: prefer `POST /v1/repos/git-remote` with a JSON body
+(`name` or `repo_id`) so clients do not need a path id;
+`POST /v1/repos/{repo_id}/git-remote` still works, and the `{repo_id}` segment
+accepts a UUID or the repo name. Concurrent push lock contention from Artifacts
+is translated to HTTP **503** with `Retry-After` and the body
+`repository busy, retry` so git clients get a clean, retryable rejection instead
+of `remote end hung up unexpectedly`. The result includes `git_author`
+(signed-in Kody account email and display name) and setup commands that set
+local `user.email` / `user.name` to that identity. Use those values for commits;
+do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760 stored
+bytes) binds on session and file-level writes and again at
 `repoPromoteToPackage`; the proxied push lane does not re-apply that gate, so
 the only ceiling there is Artifacts itself, which rejects pushes above ~32 MiB
 of decompressed pack content with a raw HTTP 413. Plain repos do not run the
