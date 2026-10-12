@@ -8,6 +8,7 @@ import {
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
+import { EncodedPlaceholderError } from '#mcp/secrets/encoded-placeholder.ts'
 import {
 	AuthorizationError,
 	LivePersonRequiredError,
@@ -204,6 +205,9 @@ export function toApiError(error: unknown): ApiError {
 		return /\bnot found\b/i.test(message)
 			? notFound(message)
 			: invalidRequest(message)
+	}
+	if (error instanceof EncodedPlaceholderError) {
+		return invalidRequest(error.message)
 	}
 	if (
 		error instanceof ArtifactsGitUnavailableError ||

@@ -498,6 +498,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		const straddling = new TextEncoder().encode(
 			`${'x'.repeat(64 * 1024 - 5)}{{secret:demoToken}}`,
 		)
+		gatewayStreamCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/upload', {
 			method: 'PUT',
 			body: straddling,
@@ -506,7 +507,9 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			method: 'PUT',
 			body: new Blob([straddling]),
 		})
-		expect(gatewayCalls).toHaveLength(2)
+		// Bytes buffer into the JSON hop; Blobs stream via gatewayFetchStream.
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
@@ -557,6 +560,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const decodeBody = (call: unknown) =>
 			atob((call as { request: { bodyBase64: string } }).request.bodyBase64)
 		const bodySecretText = '{"note":"{{secret:demoToken|scope=user}}"}'
@@ -583,7 +587,8 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: bigBlobBody,
 		})
 		expect(ambientCalls).toHaveLength(0)
-		expect(gatewayCalls).toHaveLength(4)
+		expect(gatewayCalls).toHaveLength(3)
+		expect(gatewayStreamCalls).toHaveLength(1)
 		expect(decodeBody(gatewayCalls[0])).toBe(bodySecretText)
 		expect(gatewayCalls[1]).toMatchObject({
 			request: {
@@ -596,9 +601,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			'token=%7B%7Bsecret%3AdemoToken%7D%7D',
 		)
 		expect(decodeBody(gatewayCalls[2])).toBe('{{integration-token:github}}')
-		expect(decodeBody(gatewayCalls[3]).endsWith('{{secret:demoToken}}')).toBe(
-			true,
-		)
+		expect(
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
 
 		gatewayCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/post', {

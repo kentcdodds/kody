@@ -512,6 +512,45 @@ async function __kodyGatewayFetchStreamCall(input) {
 	return kody.gatewayFetchStream(input);
 }
 
+function __kodyReadFetchSignal(input, init) {
+	return init?.signal ?? (input instanceof Request ? input.signal : null);
+}
+
+function __kodyReadFetchRedirect(input, init) {
+	return init?.redirect ?? (input instanceof Request ? input.redirect : null);
+}
+
+function __kodyNativeStreamInit({ method, headers, body, input, init }) {
+	const next = { method, headers };
+	if (body != null) {
+		next.body = body;
+		next.duplex = "half";
+	}
+	const signal = __kodyReadFetchSignal(input, init);
+	if (signal != null) next.signal = signal;
+	const redirect = __kodyReadFetchRedirect(input, init);
+	if (redirect != null) next.redirect = redirect;
+	return next;
+}
+
+function __kodyNativeRequestOverlay({ input, init }) {
+	const next = {};
+	const signal = __kodyReadFetchSignal(input, init);
+	if (signal != null) next.signal = signal;
+	const redirect = __kodyReadFetchRedirect(input, init);
+	if (redirect != null) next.redirect = redirect;
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function __kodyGatewayStreamControlFields({ input, init }) {
+	const next = {};
+	const signal = __kodyReadFetchSignal(input, init);
+	if (signal != null) next.signal = signal;
+	const redirect = __kodyReadFetchRedirect(input, init);
+	if (redirect != null) next.redirect = redirect;
+	return next;
+}
+
 function __kodyIsCallerByteStream(body) {
 	return Boolean(
 		body &&
@@ -602,15 +641,36 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			if (__kodyIsCallerByteStream(body)) {
 				// Streamed bodies hop through gatewayFetchStream when resolution
 				// fills the body (or URL/headers), matching hosted streaming fill.
-				if (!__kodyIsVerbatimBodyMode(resolutionMode)) {
-					streamingBody = body;
-				} else {
-					streamingBody = body;
-					reuseOriginal = false;
-					// Verbatim modes: native fetch with the stream as written.
-					const fallbackInit = { method, headers, body, duplex: "half" };
-					return __kodyNativeFetch(url, fallbackInit);
+				reuseOriginal = false;
+				if (__kodyIsVerbatimBodyMode(resolutionMode)) {
+					return __kodyNativeFetch(
+						url,
+						__kodyNativeStreamInit({
+							method,
+							headers,
+							body,
+							input,
+							init,
+						}),
+					);
 				}
+				streamingBody = body;
+			} else if (
+				typeof Blob !== "undefined" &&
+				body instanceof Blob &&
+				typeof body.stream === "function" &&
+				!__kodyIsVerbatimBodyMode(resolutionMode) &&
+				(__kodyRequestHasSecretPlaceholders(url, headers) ||
+					(await __kodyBodyValueHoldsPlaceholder(body)) ||
+					__kodyIsMultipartType(
+						new Headers(headers).get("content-type") ?? body.type,
+					))
+			) {
+				// Prefer Blob.stream() over arrayBuffer so large Blobs stay streamed.
+				const encoded = new Request(url, { method, headers, body });
+				method = encoded.method;
+				headers = Object.fromEntries(encoded.headers.entries());
+				streamingBody = body.stream();
 				reuseOriginal = false;
 			} else if (
 				__kodyRequestHasSecretPlaceholders(url, headers) ||
@@ -618,7 +678,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					(await __kodyBodyValueHoldsPlaceholder(body)))
 			) {
 				// The hop copy carries the implicit Content-Type (and multipart
-				// boundary) of a string, URLSearchParams, Blob, or FormData body.
+				// boundary) of a string, URLSearchParams, or FormData body.
 				// Keep the pre-Request url string so path {{secret:…}}
 				// placeholders are not percent-encoded by Request.
 				const encoded = new Request(url, { method, headers, body });
@@ -651,7 +711,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		if (method !== "GET" && method !== "HEAD" && merged.body) {
 			if (__kodyIsCallerByteStream(init?.body) || requestStream) {
 				if (__kodyIsVerbatimBodyMode(resolutionMode)) {
-					return __kodyNativeFetch(merged);
+					return __kodyNativeFetch(
+						merged,
+						__kodyNativeRequestOverlay({ input, init }),
+					);
 				}
 				streamingBody = merged.body;
 				reuseOriginal = false;
@@ -680,31 +743,54 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			? { ...headers, [__kodySecretResolutionHeader]: resolutionHeader }
 			: headers;
 	if (streamingBody != null && !__kodyIsVerbatimBodyMode(resolutionMode)) {
-		return __kodyGatewayFetchStreamCall({
-			...(packageId ? { packageId } : {}),
-			request: {
-				url,
+		if (typeof kody.gatewayFetchStream === "function") {
+			return __kodyGatewayFetchStreamCall({
+				...(packageId ? { packageId } : {}),
+				request: {
+					url,
+					method,
+					headers: hopHeaders,
+					body: streamingBody,
+					...__kodyGatewayStreamControlFields({ input, init }),
+				},
+			});
+		}
+		// Older CLI hosts: keep native streaming when URL/headers need no fill.
+		// Body placeholders will not fill until the host gains gatewayFetchStream.
+		if (__kodyRequestHasSecretPlaceholders(url, headers)) {
+			throw __kodyStreamingHostMissingError();
+		}
+		return __kodyNativeFetch(
+			url,
+			__kodyNativeStreamInit({
 				method,
-				headers: hopHeaders,
+				headers,
 				body: streamingBody,
-			},
-		});
+				input,
+				init,
+			}),
+		);
 	}
 	if (bodyBytes == null && !__kodyRequestHasSecretPlaceholders(url, headers)) {
 		if (reuseOriginal) {
 			return __kodyNativeFetch(input, init);
 		}
 		if (preservedRequest) {
-			return __kodyNativeFetch(preservedRequest);
+			return __kodyNativeFetch(
+				preservedRequest,
+				__kodyNativeRequestOverlay({ input, init }),
+			);
 		}
-		const fallbackInit = { method, headers };
-		const signal =
-			init?.signal ?? (input instanceof Request ? input.signal : null);
-		if (signal != null) fallbackInit.signal = signal;
-		const redirect =
-			init?.redirect ?? (input instanceof Request ? input.redirect : null);
-		if (redirect != null) fallbackInit.redirect = redirect;
-		return __kodyNativeFetch(url, fallbackInit);
+		return __kodyNativeFetch(
+			url,
+			__kodyNativeStreamInit({
+				method,
+				headers,
+				body: undefined,
+				input,
+				init,
+			}),
+		);
 	}
 	// Large buffered bodies use the streaming hop (no 4 MiB JSON cap).
 	if (
@@ -718,6 +804,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				method,
 				headers: hopHeaders,
 				body: bodyBytes,
+				...__kodyGatewayStreamControlFields({ input, init }),
 			},
 		});
 	}
@@ -731,6 +818,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				method,
 				headers: hopHeaders,
 				body: bodyBytes,
+				...__kodyGatewayStreamControlFields({ input, init }),
 			},
 		});
 	}

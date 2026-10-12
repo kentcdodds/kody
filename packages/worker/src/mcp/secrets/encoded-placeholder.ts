@@ -53,6 +53,20 @@ export function encodedPlaceholderRefusalMessage(kind: 'percent' | 'base64') {
 }
 
 /**
+ * Throws {@link EncodedPlaceholderError} when `text` holds a base64-encoded
+ * placeholder opener. Form bodies still call this while allowing percent fill.
+ */
+export function assertNoUnfilledBase64Placeholder(text: string) {
+	for (const opener of base64PlaceholderOpeners) {
+		if (text.includes(opener)) {
+			throw new EncodedPlaceholderError(
+				encodedPlaceholderRefusalMessage('base64'),
+			)
+		}
+	}
+}
+
+/**
  * Throws {@link EncodedPlaceholderError} when `text` (latin1 / binary-as-text)
  * holds a percent-encoded or base64-encoded placeholder opener the caller
  * will not fill.
@@ -63,13 +77,7 @@ export function assertNoUnfilledEncodedPlaceholder(text: string) {
 			encodedPlaceholderRefusalMessage('percent'),
 		)
 	}
-	for (const opener of base64PlaceholderOpeners) {
-		if (text.includes(opener)) {
-			throw new EncodedPlaceholderError(
-				encodedPlaceholderRefusalMessage('base64'),
-			)
-		}
-	}
+	assertNoUnfilledBase64Placeholder(text)
 }
 
 /** True when `text` holds an encoded placeholder form this module refuses. */

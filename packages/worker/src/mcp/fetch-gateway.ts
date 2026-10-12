@@ -29,6 +29,7 @@ import {
 	type PlaceholderReferenceBatch,
 	type PlaceholderStreamBodyFormat,
 } from '#mcp/secrets/placeholder-stream-fill.ts'
+import { EncodedPlaceholderError } from '#mcp/secrets/encoded-placeholder.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
@@ -243,12 +244,15 @@ export async function executeGatewayFetch(input: {
 			// echo redaction sees every substituted value.
 			await bodyFillDone
 		} catch (error) {
-			throw redactEchoedSecretsInError(error, substitutedValues)
+			throw redactEchoedSecretsInError(
+				asCallerFacingBodyFillError(error),
+				substitutedValues,
+			)
 		}
 		return redactEchoedSecrets(response, substitutedValues)
 	} catch (error) {
 		deadline?.fail()
-		throw error
+		throw asCallerFacingBodyFillError(error)
 	} finally {
 		const { userId } = input.props
 		if (input.props.allowOutboundFetch !== false && userId) {
@@ -620,8 +624,14 @@ export async function expandSecretPlaceholders(input: {
 		nextBody = sourceBody
 	}
 
+	// Body placeholders resolve while the upload streams, so body-only
+	// credentials are not yet in `referencedAnyCredential` when redirect is
+	// chosen. Any fillable body must not auto-follow (307/308 would replay
+	// filled credentials to an unapproved host).
+	const mayFillBodyCredentials = fillsUrlAndBody && sourceBody != null
 	const nextRedirect =
-		referencedAnyCredential && input.request.redirect === 'follow'
+		(referencedAnyCredential || mayFillBodyCredentials) &&
+		input.request.redirect === 'follow'
 			? 'manual'
 			: input.request.redirect
 	return {
@@ -643,6 +653,13 @@ export async function expandSecretPlaceholders(input: {
 	}
 }
 
+function asCallerFacingBodyFillError(error: unknown) {
+	if (error instanceof EncodedPlaceholderError) {
+		return new McpCallerError(error.message, { cause: error })
+	}
+	return error
+}
+
 function bodyFormatFromContentType(
 	contentType: string | null,
 ): PlaceholderStreamBodyFormat {
@@ -659,7 +676,8 @@ function bodyFormatFromContentType(
 /**
  * `fetch(url, { body: JSON.stringify(...) })` without a Content-Type is sent
  * as `text/plain`. Peek a small prefix so those bodies still JSON-escape,
- * then rebuild a stream that starts with the peeked bytes.
+ * then rebuild a stream that starts with the peeked bytes (pull-driven so the
+ * rest of a large upload stays backpressured).
  */
 async function classifyStreamingBody(input: {
 	body: ReadableStream<Uint8Array>
@@ -694,31 +712,37 @@ async function classifyStreamingBody(input: {
 		JSON.parse(text)
 		format = 'json'
 	} catch {
-		// Not a complete JSON value in the first chunk, or not UTF-8 — keep text.
-		// A JSON body larger than one chunk still gets text fill for untyped
-		// Content-Type; callers that need JSON escaping should set the type.
+		// Incomplete JSON in the first chunk, or not UTF-8. Opening `{` / `[`
+		// still means JSON-escape secrets in later chunks (untyped text/plain
+		// JSON bodies often arrive split).
 		try {
 			const text = new TextDecoder('utf-8', { fatal: true }).decode(prefix)
 			const trimmed = text.trimStart()
-			if (
-				(trimmed.startsWith('{') || trimmed.startsWith('[')) &&
-				holdsPlaceholder(text)
-			) {
+			if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
 				format = 'json'
 			}
 		} catch {
 			format = 'text'
 		}
 	}
+	let emittedPrefix = false
 	const body = new ReadableStream<Uint8Array>({
-		async start(controller) {
-			controller.enqueue(prefix)
-			for (;;) {
+		async pull(controller) {
+			try {
+				if (!emittedPrefix) {
+					emittedPrefix = true
+					controller.enqueue(prefix)
+					return
+				}
 				const { done, value } = await reader.read()
-				if (done) break
+				if (done) {
+					controller.close()
+					return
+				}
 				controller.enqueue(value)
+			} catch (error) {
+				controller.error(error)
 			}
-			controller.close()
 		},
 		cancel(reason) {
 			return reader.cancel(reason)

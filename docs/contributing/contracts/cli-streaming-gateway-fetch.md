@@ -168,9 +168,15 @@ kody.gatewayFetchStream({
 		method?: string
 		headers?: Record<string, string>
 		body?: ReadableStream<Uint8Array> | null // raw body; may be multipart
+		signal?: AbortSignal
+		redirect?: RequestRedirect
 	}
 }): Promise<Response>
 ```
+
+When `signal` aborts, cancel the outbound upload and reject (or abort the
+upstream `fetch`). Honor `redirect` on the Open API hop the same way a normal
+`fetch` would for the reconstructed upstream response.
 
 CLI `kody:runtime` host must:
 

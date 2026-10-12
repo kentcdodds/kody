@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	assertNoUnfilledBase64Placeholder,
 	assertNoUnfilledEncodedPlaceholder,
 	EncodedPlaceholderError,
 	encodedPlaceholderRefusalMessage,
@@ -30,4 +31,14 @@ test('allows literal placeholders', () => {
 		assertNoUnfilledEncodedPlaceholder('Bearer {{secret:token}}'),
 	).not.toThrow()
 	expect(holdsUnfilledEncodedPlaceholder('Bearer {{secret:token}}')).toBe(false)
+})
+
+test('base64-only assert allows percent-encoded forms', () => {
+	expect(() =>
+		assertNoUnfilledBase64Placeholder('%7B%7Bsecret%3Atoken%7D%7D'),
+	).not.toThrow()
+	const opener = btoa('{{secret:')
+	expect(() => assertNoUnfilledBase64Placeholder(`x${opener}y`)).toThrow(
+		EncodedPlaceholderError,
+	)
 })
