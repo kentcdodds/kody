@@ -1,8 +1,8 @@
 import {
-	type Address as PostalAddress,
-	type Attachment as PostalAttachment,
-} from 'postal-mime'
-import { loadPostalMime } from '#worker/postal-mime-load.ts'
+	loadPostalMime,
+	type PostalMimeAddress as PostalAddress,
+	type PostalMimeAttachment as PostalAttachment,
+} from '#worker/postal-mime-load.ts'
 import { normalizeEmailAddress, parseHeaderAddressList } from './address.ts'
 import {
 	maxKeptInboundRawBytes,
