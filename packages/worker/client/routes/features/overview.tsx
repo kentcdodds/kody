@@ -3,7 +3,18 @@ import {
 	primitiveCards,
 	primitiveFeatureHref,
 } from '#universal/primitive-cards.ts'
+import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 import { OverviewWidget } from './overview-widgets.tsx'
+
+/** Card accent hues; `feature-pages.css` derives `--accent` from `--hue`. */
+const cardHues = {
+	memory: '29',
+	secrets: '300',
+	packages: '255',
+	triggers: '96',
+	integrations: '148',
+	apps: '345',
+} as const satisfies Record<LandingPrimitiveId, string>
 
 export function FeaturesOverview() {
 	return () => (
@@ -26,7 +37,10 @@ export function FeaturesOverview() {
 						key={card.id}
 						class="feature"
 						data-primitive={card.id}
-						style={{ '--pw-accent': `var(--primitive-${card.id})` }}
+						style={{
+							'--hue': cardHues[card.id],
+							'--pw-accent': `var(--primitive-${card.id})`,
+						}}
 					>
 						<OverviewWidget id={card.id} />
 						<div class="pitch">

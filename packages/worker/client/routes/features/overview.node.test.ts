@@ -9,6 +9,9 @@ test('features overview gives every primitive card an interactive widget', async
 
 	for (const card of primitiveCards) {
 		expect(html).toContain(`data-primitive="${card.id}"`)
+		expect(html).toMatch(
+			new RegExp(`data-primitive="${card.id}"[^>]*--hue: \\d+;`),
+		)
 		expect(html).toContain(`class="pw pw-${card.id}"`)
 		expect(html).toContain(`href="/features/${card.id}"`)
 		expect(html).toContain(`<h2>${card.name}</h2>`)
