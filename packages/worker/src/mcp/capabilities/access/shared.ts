@@ -56,7 +56,7 @@ export const grantTargetTypeSchema = z.enum([
 type GrantTargetType = z.infer<typeof grantTargetTypeSchema>
 
 /**
- * Resolves an old-lane by-name credential target to its credential id, so
+ * Resolves a by-name credential target to its credential id, so
  * the grant is stored under `credential`. A name that names more than one
  * credential is refused rather than narrowed to one of them.
  */
