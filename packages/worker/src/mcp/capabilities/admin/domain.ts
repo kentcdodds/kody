@@ -37,6 +37,7 @@ import { adminSystemEmailSenderRuleListCapability } from './admin-system-email-s
 import { adminSystemEmailSenderRuleSetCapability } from './admin-system-email-sender-rule-set.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminHandleGetCapability } from './admin-handle-get.ts'
+import { adminWebhookRejectionReportCapability } from './admin-webhook-rejection-report.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
@@ -114,6 +115,7 @@ export const adminDomain = defineDomain({
 		adminUserListCapability,
 		adminUserGetCapability,
 		adminHandleGetCapability,
+		adminWebhookRejectionReportCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
 		adminUserVerifyCapability,
