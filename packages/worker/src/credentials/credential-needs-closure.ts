@@ -15,6 +15,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
 import { loadPublishedEntityManifest } from '#worker/repo/published-source.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
@@ -24,6 +25,46 @@ import {
 	type CredentialNeed,
 	type DependencyCredentialNeeds,
 } from './credential-needs.ts'
+
+/**
+ * The package's files relative to its source root, plus its manifest.
+ * Repo-session snapshots key files from the repo root; check results key them
+ * from the source root. Both shapes reach publish.
+ */
+export function packageSourceFiles(input: {
+	source: Pick<EntitySourceRow, 'manifest_path' | 'source_root'>
+	files: Record<string, string>
+}) {
+	const root = normalizeRepoWorkspacePath(input.source.source_root).replace(
+		/\/+$/,
+		'',
+	)
+	const manifestPath = normalizeRepoWorkspacePath(input.source.manifest_path)
+	const prefix = `${root}/`
+	if (root && manifestPath.startsWith(prefix)) {
+		const relativeManifest = manifestPath.slice(prefix.length)
+		if (typeof input.files[input.source.manifest_path] === 'string') {
+			const files = Object.fromEntries(
+				Object.entries(input.files)
+					.map(
+						([path, content]) =>
+							[normalizeRepoWorkspacePath(path), content] as const,
+					)
+					.filter(([path]) => path.startsWith(prefix))
+					.map(([path, content]) => [path.slice(prefix.length), content]),
+			)
+			return { files, manifestContent: files[relativeManifest] ?? null }
+		}
+		return {
+			files: input.files,
+			manifestContent: input.files[relativeManifest] ?? null,
+		}
+	}
+	return {
+		files: input.files,
+		manifestContent: input.files[input.source.manifest_path] ?? null,
+	}
+}
 
 /**
  * The closure a published package carries: the one stored at its publish.
@@ -64,7 +105,7 @@ export async function loadPublishedCredentialNeeds(input: {
 		env: input.env,
 		userId: input.userId,
 		manifest,
-		files: snapshot.files,
+		files: packageSourceFiles({ source, files: snapshot.files }).files,
 		visiting: new Set([...visiting, source.id]),
 	})
 	return needs
@@ -72,8 +113,9 @@ export async function loadPublishedCredentialNeeds(input: {
 
 /**
  * Each statically imported package's current closure, which is what the
- * dependent's bundle snapshots. A package that cannot be resolved here is
- * left to the bundle check, which reports it.
+ * dependent's bundle snapshots. A package that is not in this org is left to
+ * the bundle check, which reports it; any other failure throws, so a partial
+ * closure is never stored.
  */
 async function loadDependencyCredentialNeeds(input: {
 	env: Env
@@ -95,14 +137,14 @@ async function loadDependencyCredentialNeeds(input: {
 				db: input.env.APP_DB,
 				userId: input.userId,
 				specifier: { packageName, exportName: '.' },
-			}).catch(() => null)
+			})
 			if (!resolution) return null
 			const needs = await loadPublishedCredentialNeeds({
 				env: input.env,
 				userId: resolution.row.userId,
 				sourceId: resolution.row.sourceId,
 				visiting: input.visiting,
-			}).catch(() => [])
+			})
 			return { packageName, needs }
 		}),
 	)
@@ -139,13 +181,16 @@ export async function storePublishedCredentialNeeds(input: {
 }) {
 	if (input.source.entity_kind !== 'package') return
 	try {
-		const content = input.files[input.source.manifest_path]
-		if (typeof content !== 'string') return
+		const { files, manifestContent } = packageSourceFiles(input)
+		if (typeof manifestContent !== 'string') return
 		const { needs } = await computeCredentialNeedsClosure({
 			env: input.env,
 			userId: input.source.user_id,
-			manifest: parseAuthoredPackageJson({ content, mode: 'published' }),
-			files: input.files,
+			manifest: parseAuthoredPackageJson({
+				content: manifestContent,
+				mode: 'published',
+			}),
+			files,
 			visiting: new Set([input.source.id]),
 		})
 		await writePublishedCredentialNeeds({

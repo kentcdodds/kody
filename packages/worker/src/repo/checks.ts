@@ -1430,15 +1430,23 @@ async function buildCredentialNeedsCheck(input: {
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 }): Promise<RepoCheckResult | null> {
-	const { conflicts } =
-		input.env && input.userId
-			? await computeCredentialNeedsClosure({
-					env: input.env,
-					userId: input.userId,
-					manifest: input.manifest,
-					files: input.sourceFiles,
-				})
-			: { conflicts: [] }
+	const notes = credentialNeedKeyNotes(input.manifest.kody.credentials)
+	let conflicts: Array<string> = []
+	if (input.env && input.userId) {
+		try {
+			;({ conflicts } = await computeCredentialNeedsClosure({
+				env: input.env,
+				userId: input.userId,
+				manifest: input.manifest,
+				files: input.sourceFiles,
+			}))
+		} catch (error) {
+			// A lookup failure is not a conflict: note it and let publish go on.
+			notes.push(
+				`Dependency credential needs were not checked: ${getErrorMessage(error)}`,
+			)
+		}
+	}
 	if (conflicts.length > 0) {
 		return {
 			kind: 'manifest',
@@ -1449,7 +1457,6 @@ async function buildCredentialNeedsCheck(input: {
 			].join('\n'),
 		}
 	}
-	const notes = credentialNeedKeyNotes(input.manifest.kody.credentials)
 	if (notes.length === 0) return null
 	return {
 		kind: 'manifest',

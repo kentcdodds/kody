@@ -6,7 +6,13 @@ const mocks = vi.hoisted(() => ({
 	packages: new Map<string, { userId: string; sourceId: string }>(),
 	sources: new Map<
 		string,
-		{ id: string; user_id: string; published_commit: string | null }
+		{
+			id: string
+			user_id: string
+			published_commit: string | null
+			manifest_path?: string
+			source_root?: string
+		}
 	>(),
 	manifests: new Map<string, unknown>(),
 	snapshots: new Map<string, Record<string, string>>(),
@@ -59,6 +65,7 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 const {
 	computeCredentialNeedsClosure,
 	loadPublishedCredentialNeeds,
+	packageSourceFiles,
 	storePublishedCredentialNeeds,
 } = await import('./credential-needs-closure.ts')
 
@@ -88,6 +95,8 @@ function addPackage(input: {
 		id: input.sourceId,
 		user_id: 'org-1',
 		published_commit: input.commit,
+		manifest_path: 'package.json',
+		source_root: '/',
 	})
 	mocks.manifests.set(input.sourceId, manifest(input.name, input.credentials))
 	if (input.storedNeeds !== undefined) {
@@ -145,6 +154,7 @@ test('publish stores own needs plus each imported package closure, and reads it 
 			user_id: 'org-1',
 			entity_kind: 'package',
 			manifest_path: 'package.json',
+			source_root: '/',
 		} as never,
 		publishedCommit: 'c3',
 		files: {
@@ -286,4 +296,115 @@ test('an import cycle between unstored closures ends', async () => {
 			multiple: false,
 		},
 	])
+})
+
+test('package files come out source-root relative from either publish shape', () => {
+	const source = {
+		manifest_path: 'packages/demo/package.json',
+		source_root: '/packages/demo/',
+	}
+	expect(
+		packageSourceFiles({
+			source,
+			files: {
+				'packages/demo/package.json': '{}',
+				'packages/demo/src/index.ts': 'demo',
+				'packages/other/src/index.ts': 'other',
+			},
+		}),
+	).toEqual({
+		files: { 'package.json': '{}', 'src/index.ts': 'demo' },
+		manifestContent: '{}',
+	})
+	expect(
+		packageSourceFiles({
+			source,
+			files: { 'package.json': '{}', 'src/index.ts': 'demo' },
+		}),
+	).toEqual({
+		files: { 'package.json': '{}', 'src/index.ts': 'demo' },
+		manifestContent: '{}',
+	})
+	expect(
+		packageSourceFiles({
+			source: { manifest_path: 'package.json', source_root: '/' },
+			files: { 'package.json': '{}' },
+		}).manifestContent,
+	).toBe('{}')
+})
+
+test('a nested package stores only its own imports from a repo-relative snapshot', async () => {
+	addPackage({
+		name: '@acme/connector',
+		sourceId: 'src-connector',
+		commit: 'c1',
+		credentials: { github: { kind: 'oauth', description: 'Repos.' } },
+	})
+	addPackage({
+		name: '@acme/mailer',
+		sourceId: 'src-mailer',
+		commit: 'c1',
+		credentials: { resend: { kind: 'secret', description: 'Email.' } },
+	})
+	await storePublishedCredentialNeeds({
+		env,
+		source: {
+			id: 'src-demo',
+			user_id: 'org-1',
+			entity_kind: 'package',
+			manifest_path: 'packages/demo/package.json',
+			source_root: '/packages/demo/',
+		} as never,
+		publishedCommit: 'c9',
+		files: {
+			'packages/demo/package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './index.ts' },
+				kody: { description: 'Demo.' },
+			}),
+			'packages/demo/index.ts': "import c from 'kody:@acme/connector'",
+			'packages/other/index.ts': "import m from 'kody:@acme/mailer'",
+		},
+	})
+	expect(mocks.kv.get('src-demo:c9')).toEqual([
+		expect.objectContaining({ key: 'github', from: '@acme/connector' }),
+	])
+})
+
+test('a dependency lookup failure throws instead of yielding a partial closure', async () => {
+	addPackage({
+		name: '@acme/connector',
+		sourceId: 'src-connector',
+		commit: 'c1',
+		credentials: { github: { kind: 'oauth', description: 'Repos.' } },
+	})
+	mocks.manifests.delete('src-connector')
+	await expect(
+		computeCredentialNeedsClosure({
+			env,
+			userId: 'org-1',
+			manifest: manifest('@acme/app', undefined),
+			files: { 'index.ts': "import c from 'kody:@acme/connector'" },
+		}),
+	).rejects.toThrow()
+	await storePublishedCredentialNeeds({
+		env,
+		source: {
+			id: 'src-app',
+			user_id: 'org-1',
+			entity_kind: 'package',
+			manifest_path: 'package.json',
+			source_root: '/',
+		} as never,
+		publishedCommit: 'c3',
+		files: {
+			'package.json': JSON.stringify({
+				name: '@acme/app',
+				exports: { '.': './index.ts' },
+				kody: { description: 'App.' },
+			}),
+			'index.ts': "import c from 'kody:@acme/connector'",
+		},
+	})
+	expect(mocks.kv.has('src-app:c3')).toBe(false)
 })
