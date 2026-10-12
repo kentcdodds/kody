@@ -652,3 +652,34 @@ test('0010 flags |scope= through a TypeScript assertion before concatenation', (
 		),
 	).toContain('|scope=')
 })
+
+test('0010 does not resolve a class method parameter as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default class Runner {',
+				'\trun(NAME: string) { return createAuthenticatedFetch(NAME) }',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 does not resolve a nested function declaration name as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default () => {',
+				'\tfunction NAME() { return null }',
+				'\treturn createAuthenticatedFetch(NAME as unknown as string)',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})

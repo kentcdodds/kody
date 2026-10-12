@@ -243,8 +243,14 @@ export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 		if (
 			ancestor.type === 'FunctionDeclaration' ||
 			ancestor.type === 'FunctionExpression' ||
-			ancestor.type === 'ArrowFunctionExpression'
+			ancestor.type === 'ArrowFunctionExpression' ||
+			ancestor.type === 'ClassMethod' ||
+			ancestor.type === 'ClassPrivateMethod' ||
+			ancestor.type === 'ObjectMethod'
 		) {
+			if (ancestor.type === 'FunctionDeclaration') {
+				collectBoundNames(ancestor.id, names)
+			}
 			for (const param of ancestor.params ?? []) {
 				collectBoundNames(param, names)
 			}
@@ -263,18 +269,12 @@ export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 		}
 		if (ancestor.type === 'SwitchCase' && Array.isArray(ancestor.consequent)) {
 			for (const statement of ancestor.consequent) {
-				if (statement.type !== 'VariableDeclaration') continue
-				for (const declarator of statement.declarations ?? []) {
-					collectBoundNames(declarator.id, names)
-				}
+				collectStatementBindingNames(statement, names)
 			}
 		}
 		if (ancestor.type === 'BlockStatement' && Array.isArray(ancestor.body)) {
 			for (const statement of ancestor.body) {
-				if (statement.type !== 'VariableDeclaration') continue
-				for (const declarator of statement.declarations ?? []) {
-					collectBoundNames(declarator.id, names)
-				}
+				collectStatementBindingNames(statement, names)
 			}
 		}
 	}
@@ -293,6 +293,22 @@ function collectLoopBindingNames(
 		return
 	}
 	collectBoundNames(binding, names)
+}
+
+function collectStatementBindingNames(statement: AstNode, names: Set<string>) {
+	if (statement.type === 'VariableDeclaration') {
+		for (const declarator of statement.declarations ?? []) {
+			collectBoundNames(declarator.id, names)
+		}
+		return
+	}
+	if (statement.type === 'FunctionDeclaration') {
+		collectBoundNames(statement.id, names)
+		return
+	}
+	if (statement.type === 'ClassDeclaration') {
+		collectBoundNames(statement.id, names)
+	}
 }
 
 function collectBoundNames(
