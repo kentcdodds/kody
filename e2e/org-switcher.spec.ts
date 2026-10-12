@@ -114,6 +114,39 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto(`/@pinned-${runId}/-/settings`)
 	await waitForClientHydration(page)
+	// Team workspace rail matches the personal shape: same resource sections
+	// (MCP servers, Integrations, …) plus Organization management links.
+	const teamRail = page.getByRole('navigation', { name: 'Workspace sections' })
+	for (const label of [
+		'Overview',
+		'Repositories',
+		'Jobs',
+		'Workflows',
+		'Webhooks',
+		'Connections',
+		'Integrations',
+		'MCP servers',
+		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
+		'Settings',
+		'Members',
+		'Teams',
+		'Grants',
+		'Collaborators',
+		'Billing',
+		'Usage',
+	] as const) {
+		await expect(
+			teamRail.getByRole('link', { name: label, exact: true }),
+		).toBeVisible()
+	}
+	await expect(
+		teamRail.getByRole('link', { name: 'MCP servers', exact: true }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/mcp-servers`)
 	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
 		`@pinned-${runId}: organizations, manage, and account`,
 	)

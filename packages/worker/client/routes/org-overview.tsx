@@ -13,9 +13,7 @@ import {
 } from '#client/routes/account-rail.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import { parseOrgOverviewPath } from '#universal/org-pages.ts'
-import { routes } from '#universal/routes.ts'
 import { colors, radius, spacing } from '#universal/styles/tokens.ts'
-import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 export async function orgOverviewRouteLoader(): Promise<RouteLoaderResult> {
 	return {}
@@ -33,13 +31,18 @@ export function OrgOverviewRoute(handle: Handle) {
 		const slug = parseOrgOverviewPath(pathname)?.slug ?? null
 		const session = readAppSession(handle)?.session ?? null
 		const org = session?.organizations?.find((entry) => entry.slug === slug)
-		const teamOrg = org !== undefined && !org.personal
+		const personal = org?.personal ?? true
+		const role = org?.role ?? (personal ? ('owner' as const) : null)
+		// Same section cards for personal and team. The server still redirects a
+		// team overview URL to `/@slug`; this client path covers in-app hops.
 		const groups = workspaceRailGroups({
 			orgSlug: slug,
-			personal: true,
-			role: 'owner',
+			personal,
+			role,
 		}).flatMap((group) =>
-			group.label === null ? [] : [{ label: group.label, items: group.items }],
+			group.label === null
+				? []
+				: [{ label: group.label, items: group.items, note: group.note }],
 		)
 
 		return (
@@ -53,34 +56,22 @@ export function OrgOverviewRoute(handle: Handle) {
 					}
 					currentHref={currentHref}
 				/>
-				{teamOrg && slug ? (
-					<AccountManagementPanel
-						title={`@${slug} has its own home`}
-						description="Team organizations list their sections on the organization home."
-					>
-						<a
-							href={routes.profile.href({ username: slug })}
-							mix={css({
-								...getGhostButtonCss({ size: 'sm' }),
-								width: 'fit-content',
-							})}
+				{groups.map((group) => (
+					<AccountManagementPanel key={group.label} title={group.label}>
+						{group.note ? (
+							<p mix={css(groupNoteCss)} data-testid="org-overview-group-note">
+								{group.note}
+							</p>
+						) : null}
+						<ul
+							aria-label={group.label}
+							data-testid={`org-overview-${group.label.toLowerCase()}`}
+							mix={css(cardGridCss)}
 						>
-							Open @{slug}
-						</a>
+							{group.items.map(renderCard)}
+						</ul>
 					</AccountManagementPanel>
-				) : (
-					groups.map((group) => (
-						<AccountManagementPanel key={group.label} title={group.label}>
-							<ul
-								aria-label={group.label}
-								data-testid={`org-overview-${group.label.toLowerCase()}`}
-								mix={css(cardGridCss)}
-							>
-								{group.items.map(renderCard)}
-							</ul>
-						</AccountManagementPanel>
-					))
-				)}
+				))}
 			</AccountManagementShell>
 		)
 	}
@@ -102,6 +93,13 @@ function renderCard(item: AccountRailItem) {
 			</a>
 		</li>
 	)
+}
+
+const groupNoteCss = {
+	margin: `0 0 ${spacing.sm}`,
+	fontSize: '0.9rem',
+	lineHeight: 1.45,
+	color: colors.textMuted,
 }
 
 const cardGridCss = {

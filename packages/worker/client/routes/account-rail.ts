@@ -70,6 +70,12 @@ export type AccountRailItem = {
 export type AccountRailGroup = {
 	label: string | null
 	items: Array<AccountRailItem>
+	/**
+	 * Short explanation when role permissions hide the rest of this group
+	 * (grant-only collaborators). Shown in the rail; never used to hide a
+	 * section that the server would open for a member role.
+	 */
+	note?: string
 }
 
 /** Settings that belong to the person, whichever organization they are in. */
@@ -139,6 +145,7 @@ function overviewRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSlug ? orgOverviewPath(orgSlug) : routes.account.href(),
 		label: 'Overview',
 		icon: 'home',
+		description: 'Every section this workspace owns, one click away.',
 	}
 }
 
@@ -273,45 +280,30 @@ function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'memories'),
 		label: 'Memories',
 		icon: 'book',
-		description: 'Long-term memories Kody keeps for you.',
+		description: 'Long-term memories Kody keeps for this workspace.',
+	}
+}
+
+function usageRailItem(): AccountRailItem {
+	return {
+		href: routes.accountUsage.href(),
+		label: 'Usage',
+		icon: 'chart',
+		alsoActiveFor: [routes.accountCredits.href()],
+		description:
+			'Your personal compute usage, plan limits, and credits (not scoped to this organization).',
 	}
 }
 
 /**
- * The workspace rail: everything the organization owns, grouped by job.
- * Personal orgs get Overview and every Build / Access / Data / Activity
- * section. Team orgs get the sections `/@slug/-/<section>` opens for them:
- * Repositories, Jobs, Connections, and Secrets for every member role, above
- * the Organization management links. Grant-only collaborators (`role` null)
- * get Connections only, which is how they use what was shared with them.
+ * Shared Build / Access / Data / Activity sections. Personal and team orgs
+ * use the same list; the server opens every section for member roles
+ * (`orgSectionDenial` only closes grant-only collaborators).
  */
-export function workspaceRailGroups(input: {
-	orgSlug: string | null | undefined
-	/** True when `orgSlug` is the signup (personal) organization. */
-	personal: boolean
-	role: OrgRole | null
-}): Array<AccountRailGroup> {
-	const { orgSlug } = input
-	if (!input.personal) {
-		if (!orgSlug) return []
-		if (input.role === null) {
-			return [{ label: 'Access', items: [connectionsRailItem(orgSlug)] }]
-		}
-		return [
-			{
-				label: 'Build',
-				items: [repositoriesRailItem(orgSlug), jobsRailItem(orgSlug)],
-			},
-			{ label: 'Access', items: [connectionsRailItem(orgSlug)] },
-			{ label: 'Data', items: [secretsRailItem(orgSlug)] },
-			{
-				label: 'Organization',
-				items: teamOrgManagementItems({ orgSlug, role: input.role }),
-			},
-		]
-	}
+function workspaceResourceGroups(
+	orgSlug: string | null | undefined,
+): Array<AccountRailGroup> {
 	return [
-		...(orgSlug ? [{ label: null, items: [overviewRailItem(orgSlug)] }] : []),
 		{
 			label: 'Build',
 			items: [
@@ -360,7 +352,7 @@ export function workspaceRailGroups(input: {
 					label: 'Email',
 					icon: 'mail',
 					description:
-						'Your platform inbox and the addresses Kody may send from.',
+						'This workspace inbox and the addresses Kody may send from.',
 				},
 			],
 		},
@@ -381,22 +373,50 @@ export function workspaceRailGroups(input: {
 				},
 			],
 		},
-		{
-			label: 'Organization',
-			items: [
+	]
+}
+
+/**
+ * The workspace rail: everything the organization owns, grouped by job.
+ * Personal and team orgs share the same Build / Access / Data / Activity
+ * sections (and Overview). Organization links differ by kind: signup orgs
+ * get Billing + Usage; team orgs get Settings / Members / … (role-filtered)
+ * plus the same person-scoped Usage link. Grant-only collaborators
+ * (`role` null) get Connections only, with a short note explaining why.
+ */
+export function workspaceRailGroups(input: {
+	orgSlug: string | null | undefined
+	/** True when `orgSlug` is the signup (personal) organization. */
+	personal: boolean
+	role: OrgRole | null
+}): Array<AccountRailGroup> {
+	const { orgSlug, personal, role } = input
+	if (!orgSlug) return []
+
+	if (role === null) {
+		return [
+			{
+				label: 'Access',
+				items: [connectionsRailItem(orgSlug)],
+				note: 'Only Connections is available with a grant. Ask an owner for membership to open the rest of this workspace.',
+			},
+		]
+	}
+
+	const organizationItems: Array<AccountRailItem> = personal
+		? [
 				{
 					...billingRailItem(orgSlug),
 					description: 'Plan, subscription, and payment method.',
 				},
-				{
-					href: routes.accountUsage.href(),
-					label: 'Usage',
-					icon: 'chart',
-					alsoActiveFor: [routes.accountCredits.href()],
-					description: 'Included compute, plan limits, and credits.',
-				},
-			],
-		},
+				usageRailItem(),
+			]
+		: [...teamOrgManagementItems({ orgSlug, role }), usageRailItem()]
+
+	return [
+		{ label: null, items: [overviewRailItem(orgSlug)] },
+		...workspaceResourceGroups(orgSlug),
+		{ label: 'Organization', items: organizationItems },
 	]
 }
 
