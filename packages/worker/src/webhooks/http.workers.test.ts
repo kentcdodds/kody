@@ -27,6 +27,7 @@ import { mintPackageOwnedWebhookHmacCiphertext } from './signing-secret.ts'
 import { webhookRateLimitConfig } from './types.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { ensureSavedPackageInternetVisibleColumn } from '#worker/package-registry/ensure-internet-visible-column.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -154,6 +155,7 @@ async function ensureSchema(db: D1Database) {
 				has_skills INTEGER NOT NULL DEFAULT 0,
 				hidden INTEGER NOT NULL DEFAULT 0,
 				is_private INTEGER NOT NULL DEFAULT 1,
+				is_internet_visible INTEGER NOT NULL DEFAULT 0,
 				locked_at TEXT,
 				deleted_at TEXT,
 				created_at TEXT NOT NULL,
@@ -161,6 +163,7 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	await ensureSavedPackageInternetVisibleColumn(db)
 	for (const [table, slugColumn] of [
 		['package_slug_redirects', 'old_slug'],
 		['package_kody_id_redirects', 'old_kody_id'],
