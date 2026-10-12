@@ -261,6 +261,27 @@ async function handleCustomerSubscriptionChange(input: {
 		)
 			.bind(orgOrUserHint)
 			.first<{ id: number }>()
+		const org = await input.env.APP_DB.prepare(
+			`SELECT id, stripe_customer_id FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
+		)
+			.bind(orgOrUserHint)
+			.first<{ id: OwnerId; stripe_customer_id: string | null }>()
+		// Subscription objects may carry org metadata before
+		// checkout.session.completed links stripe_customer_id. Unlinked
+		// team refresh throws (Stripe retries forever); unlinked personal
+		// refresh no-ops the UPDATE but still runs forgive/email/Discord,
+		// which checkout then repeats. Defer both until the customer is linked.
+		if (
+			(user?.id != null || org?.id) &&
+			org?.stripe_customer_id !== customerId
+		) {
+			console.info('stripe_webhook_subscription_org_not_linked_yet', {
+				orgId: org?.id ?? orgOrUserHint,
+				customerId,
+			})
+			return
+		}
 		if (user?.id != null) {
 			const resolved = await refreshStripePlanForUser({
 				env: input.env,
@@ -269,33 +290,14 @@ async function handleCustomerSubscriptionChange(input: {
 				now: input.now,
 			})
 			result = { userId: user.id, orgId: orgOrUserHint, resolved }
-		} else {
-			const org = await input.env.APP_DB.prepare(
-				`SELECT id, stripe_customer_id FROM orgs
-				 WHERE id = ? AND deleted_at IS NULL`,
-			)
-				.bind(orgOrUserHint)
-				.first<{ id: OwnerId; stripe_customer_id: string | null }>()
-			if (org?.id) {
-				// Subscription objects may carry kody_org_id before
-				// checkout.session.completed links stripe_customer_id. Refreshing
-				// an unlinked team org throws and Stripe retries forever; defer
-				// to the checkout link webhook instead.
-				if (org.stripe_customer_id !== customerId) {
-					console.info('stripe_webhook_subscription_org_not_linked_yet', {
-						orgId: org.id,
-						customerId,
-					})
-					return
-				}
-				const resolved = await refreshStripePlanForOrg({
-					env: input.env,
-					orgId: org.id,
-					customerId,
-					now: input.now,
-				})
-				result = { userId: null, orgId: org.id, resolved }
-			}
+		} else if (org?.id) {
+			const resolved = await refreshStripePlanForOrg({
+				env: input.env,
+				orgId: org.id,
+				customerId,
+				now: input.now,
+			})
+			result = { userId: null, orgId: org.id, resolved }
 		}
 	}
 	if (result.userId == null && result.orgId == null) {
