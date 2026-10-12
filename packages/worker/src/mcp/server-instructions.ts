@@ -15,19 +15,19 @@ export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's
 
 - memory
 - secrets
-- packages (repositories of published code which you as the agent can use and compose together)
+- packages (published code you compose)
 - integrations
 - triggers
 - apps
 
 ${preferLocalCliExecuteGuidance}
 
-With these primitives you can do a wide variety of things. When the user asks you to do something, start by calling the \`search\` tool, then use \`execute\` to write code and have it evaluated in an isolated environment in the cloud in Kody.
+When the user asks you to do something, start with \`search\`, then \`execute\` to run code in Kody's cloud.
 
 Learn more with \`search({ entity: "guide:local_execute" })\`.`
 
-/** Soft budget for the always-on stub (excluding user overlay). */
-export const maxBaseMcpServerInstructionsChars = 800
+/** Soft budget for the always-on stub (excluding user overlay). Kent-locked ~300–600. */
+export const maxBaseMcpServerInstructionsChars = 600
 
 const userMcpServerInstructionOverlayHeader = `---
 User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`
