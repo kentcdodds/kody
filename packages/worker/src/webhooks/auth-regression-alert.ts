@@ -106,9 +106,9 @@ export async function checkWebhookAuthRegressionsAndAlert(input: {
 		now.getTime() - webhookAuthRegressionLookbackDays * 24 * 60 * 60_000,
 	).toISOString()
 
-	const { owners } = await listWebhookOwners({
+	const owners = await listWebhookOwners({
 		db: input.env.APP_DB,
-		enabledOnly: true,
+		scope: 'live',
 	})
 	let ownersFailed = 0
 	let candidates = 0
@@ -131,6 +131,10 @@ export async function checkWebhookAuthRegressionsAndAlert(input: {
 				candidates += unauthorized.size
 				const found: Array<WebhookAuthRegression> = []
 				for (const sample of unauthorized.values()) {
+					// RunLog filters by package and name only; a reminted webhook
+					// shares both with the endpoint it replaced.
+					const isSameEndpoint = (delivery: WebhookDelivery) =>
+						delivery.endpointKey === sample.endpointKey
 					const history = await readWebhookDeliveries({
 						env: input.env,
 						ownerId: owner.ownerId,
@@ -140,11 +144,12 @@ export async function checkWebhookAuthRegressionsAndAlert(input: {
 							name: sample.webhookName,
 						},
 						stopWhen: (delivery) =>
-							delivery.delivered || delivery.httpStatus !== 401,
+							isSameEndpoint(delivery) &&
+							(delivery.delivered || delivery.httpStatus !== 401),
 					})
 					const regression = classifyWebhookAuthRegression({
 						owner,
-						deliveries: history.deliveries,
+						deliveries: history.deliveries.filter(isSameEndpoint),
 						minStreak,
 					})
 					if (regression) found.push(regression)

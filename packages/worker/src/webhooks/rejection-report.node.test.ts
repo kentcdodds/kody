@@ -86,6 +86,21 @@ test('the report counts matching rejections per endpoint and owner, with deliver
 				httpStatus: 401,
 				error: 'invalid_signature',
 			}),
+			{
+				...run({
+					ownerName: 'kent',
+					startedAt: '2026-10-11T12:00:00.000Z',
+					name: 'wake',
+					status: 'error',
+					httpStatus: 401,
+					error: 'missing_signature',
+				}),
+				metadata: {
+					endpointId: 'kent-wake',
+					httpStatus: 401,
+					synthetic: true,
+				},
+			},
 		],
 		'org-ada': [
 			run({
@@ -160,9 +175,13 @@ test('the report counts matching rejections per endpoint and owner, with deliver
 
 	const untilFix = await buildWebhookRejectionReport({
 		env,
+		since: '2026-10-11T00:56:00-06:00',
+		until: '2026-10-11T22:00:00-06:00',
+		httpStatus: 401,
+	})
+	expect(untilFix).toMatchObject({
 		since: '2026-10-11T06:56:00.000Z',
 		until: '2026-10-12T04:00:00.000Z',
-		httpStatus: 401,
 	})
 	expect(untilFix.totals).toEqual({ owners: 2, endpoints: 3, rejected: 4 })
 	expect(

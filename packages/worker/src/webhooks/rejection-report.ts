@@ -37,7 +37,7 @@ export type WebhookRejectionReport = {
 	error: string | null
 	ownersScanned: number
 	ownersFailed: Array<OwnerId>
-	/** True when an owner list or a RunLog page cap cut the scan short. */
+	/** True when a RunLog page cap cut an owner's scan short. */
 	truncated: boolean
 	totals: { owners: number; endpoints: number; rejected: number }
 	owners: Array<WebhookRejectionOwner>
@@ -56,11 +56,13 @@ export async function buildWebhookRejectionReport(input: {
 	httpStatus: number
 	error?: string | null
 }): Promise<WebhookRejectionReport> {
-	const until = input.until ?? null
+	// RunLog and the window filter compare UTC strings lexically.
+	const since = new Date(input.since).toISOString()
+	const until = input.until ? new Date(input.until).toISOString() : null
 	const error = input.error ?? null
-	const { owners, truncated: ownersTruncated } = await listWebhookOwners({
+	const owners = await listWebhookOwners({
 		db: input.env.APP_DB,
-		enabledOnly: false,
+		scope: 'all',
 	})
 	const scans = await mapWithConcurrency(
 		owners,
@@ -70,7 +72,7 @@ export async function buildWebhookRejectionReport(input: {
 				const result = await readWebhookDeliveries({
 					env: input.env,
 					ownerId: owner.ownerId,
-					filter: { since: input.since },
+					filter: { since },
 				})
 				return { owner, ...result, failed: false }
 			} catch (cause) {
@@ -120,7 +122,7 @@ export async function buildWebhookRejectionReport(input: {
 	)
 
 	return {
-		since: input.since,
+		since,
 		until,
 		httpStatus: input.httpStatus,
 		error,
@@ -128,7 +130,7 @@ export async function buildWebhookRejectionReport(input: {
 		ownersFailed: scans
 			.filter((scan) => scan.failed)
 			.map((scan) => scan.owner.ownerId),
-		truncated: ownersTruncated || scans.some((scan) => scan.truncated),
+		truncated: scans.some((scan) => scan.truncated),
 		totals: {
 			owners: ownerRows.length,
 			endpoints: endpoints.length,

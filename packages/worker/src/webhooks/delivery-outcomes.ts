@@ -12,7 +12,7 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
  * fleet reads fan out per owner that has a minted webhook URL.
  */
 export const webhookOwnerScanConcurrency = 8
-export const webhookOwnerScanMaxOwners = 2_000
+const ownerPageSize = 1_000
 /** RunLog keeps at most 2,000 runs per owner: 20 full pages. */
 const maxPagesPerQuery = 20
 
@@ -21,29 +21,42 @@ export type WebhookOwner = {
 	slug: string | null
 }
 
+/**
+ * Every owner with a webhook URL. `live` keeps only enabled, undeleted
+ * endpoints (what can still receive deliveries); `all` also includes owners
+ * whose endpoints were disabled or deleted, whose RunLog history remains.
+ */
 export async function listWebhookOwners(input: {
 	db: D1Database
-	enabledOnly: boolean
-}): Promise<{ owners: Array<WebhookOwner>; truncated: boolean }> {
-	const rows = await input.db
-		.prepare(
-			`SELECT e.user_id AS owner_id, MAX(o.slug) AS slug
-			 FROM webhook_endpoints e
-			 LEFT JOIN orgs o ON o.id = e.user_id
-			 WHERE 1 = 1${andLiveDeletedAtSql('e')}${input.enabledOnly ? ' AND e.enabled = 1' : ''}
-			 GROUP BY e.user_id
-			 ORDER BY e.user_id
-			 LIMIT ?`,
-		)
-		.bind(webhookOwnerScanMaxOwners + 1)
-		.all<{ owner_id: string; slug: string | null }>()
-	const owners = (rows.results ?? [])
-		.filter((row) => typeof row.owner_id === 'string' && row.owner_id !== '')
-		.map((row) => ({ ownerId: row.owner_id as OwnerId, slug: row.slug }))
-	const truncated = owners.length > webhookOwnerScanMaxOwners
-	return {
-		owners: truncated ? owners.slice(0, webhookOwnerScanMaxOwners) : owners,
-		truncated,
+	scope: 'live' | 'all'
+}): Promise<Array<WebhookOwner>> {
+	const scopeSql =
+		input.scope === 'live'
+			? `${andLiveDeletedAtSql('e')} AND e.enabled = 1`
+			: ''
+	const owners: Array<WebhookOwner> = []
+	let after = ''
+	for (;;) {
+		const rows = await input.db
+			.prepare(
+				`SELECT e.user_id AS owner_id, MAX(o.slug) AS slug
+				 FROM webhook_endpoints e
+				 LEFT JOIN orgs o ON o.id = e.user_id
+				 WHERE e.user_id > ?${scopeSql}
+				 GROUP BY e.user_id
+				 ORDER BY e.user_id
+				 LIMIT ?`,
+			)
+			.bind(after, ownerPageSize)
+			.all<{ owner_id: string; slug: string | null }>()
+		const page = rows.results ?? []
+		for (const row of page) {
+			if (typeof row.owner_id === 'string' && row.owner_id !== '') {
+				owners.push({ ownerId: row.owner_id as OwnerId, slug: row.slug })
+			}
+		}
+		if (page.length < ownerPageSize) return owners
+		after = page[page.length - 1]!.owner_id
 	}
 }
 
@@ -102,7 +115,9 @@ export async function readWebhookDeliveries(input: {
 			cursor,
 		})
 		for (const run of result.runs) {
-			if (run.status === 'running') continue
+			if (run.status === 'running' || run.metadata['synthetic'] === true) {
+				continue
+			}
 			const delivery = toWebhookDelivery(run)
 			deliveries.push(delivery)
 			if (input.stopWhen?.(delivery)) {

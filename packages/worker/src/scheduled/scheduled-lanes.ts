@@ -182,10 +182,14 @@ export async function runScheduledLane(input: {
 				now: input.scheduledAt,
 			})
 		case 'auth_denial_alert': {
-			const authDenials = await checkAuthDenialBurstAndNotify({
-				env: input.env,
-				now: input.scheduledAt,
-			})
+			// Settled first so an audit-database failure still fails the lane
+			// without skipping the webhook check.
+			const [authDenials] = await Promise.allSettled([
+				checkAuthDenialBurstAndNotify({
+					env: input.env,
+					now: input.scheduledAt,
+				}),
+			])
 			let webhookAuthRegressions:
 				| Awaited<ReturnType<typeof checkWebhookAuthRegressionsAndAlert>>
 				| { status: 'failed' }
@@ -198,7 +202,8 @@ export async function runScheduledLane(input: {
 				console.warn('webhook-auth-regression-lane-failed', error)
 				webhookAuthRegressions = { status: 'failed' }
 			}
-			return { ...authDenials, webhookAuthRegressions }
+			if (authDenials.status === 'rejected') throw authDenials.reason
+			return { ...authDenials.value, webhookAuthRegressions }
 		}
 		case 'email_delivery_alert':
 			return checkEmailDeliveryBurstAndNotify({

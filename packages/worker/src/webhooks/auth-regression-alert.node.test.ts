@@ -224,6 +224,35 @@ test('the hourly check alerts once per regressed endpoint and then cools down', 
 	expect(mocks.captureMessage).toHaveBeenCalledTimes(1)
 })
 
+test('successes from a replaced endpoint or a synthetic smoke test do not count as the webhook delivering', async () => {
+	const reminted = { metadata: { endpointId: 'ep-wake-2', httpStatus: 401 } }
+	const history = [
+		run(5, missingSignature, reminted),
+		run(20, missingSignature, reminted),
+		run(40, missingSignature, reminted),
+		run(60, 'delivered', {
+			metadata: { endpointId: 'ep-wake-2', httpStatus: 202, synthetic: true },
+		}),
+		run(180, 'delivered'),
+	]
+	mocks.listRunRecords.mockImplementation(
+		async (input: { filter: { status?: string } }) => ({
+			runs:
+				input.filter.status === 'error'
+					? history.filter((entry) => entry.status === 'error')
+					: history,
+			nextCursor: null,
+		}),
+	)
+	expect(
+		await checkWebhookAuthRegressionsAndAlert({
+			env: createEnv(createKv()),
+			now,
+		}),
+	).toMatchObject({ candidates: 1, alerted: 0, regressions: [] })
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+})
+
 test('an owner with no recent 401s is never paged and a failing owner is counted', async () => {
 	mocks.listRunRecords.mockResolvedValueOnce({ runs: [], nextCursor: null })
 	const kv = createKv()
