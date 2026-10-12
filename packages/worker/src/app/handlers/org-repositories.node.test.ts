@@ -68,7 +68,8 @@ function createEnv() {
 		insertPermission.run(grantId, 'package:read')
 		insertPermission.run(grantId, 'package:execute')
 	}
-	// Execute-only: listed via canSeeResource, but the package page needs read.
+	// Execute-only without a listing: listed via canSeeResource, but the owner
+	// package page needs read, so the name stays unlinked.
 	insertPackage.run('pkg-run', teamId, '@acme/run', 'run', 'src-4')
 	insertGrant.run(
 		'grant-member-run',
@@ -80,6 +81,41 @@ function createEnv() {
 		now,
 	)
 	insertPermission.run('grant-member-run', 'package:execute')
+	// Execute-only with a public listing: the canonical URL resolves without
+	// package:read, so the name still links.
+	insertPackage.run('pkg-listed', teamId, '@acme/listed', 'listed', 'src-5')
+	insertGrant.run(
+		'grant-member-listed',
+		teamId,
+		'pkg-listed',
+		memberId,
+		ownerId,
+		now,
+		now,
+	)
+	insertPermission.run('grant-member-listed', 'package:execute')
+	sqlite
+		.prepare(
+			`INSERT INTO community_listings (
+				id, owner_user_id, package_id, source_id, kody_id, name, description,
+				tags_json, license, pinned_commit, status, created_at, updated_at, published_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+		)
+		.run(
+			'listing-listed',
+			teamId,
+			'pkg-listed',
+			'src-5',
+			'listed',
+			'@acme/listed',
+			'listed description',
+			'[]',
+			'MIT',
+			'commit-1',
+			now,
+			now,
+			now,
+		)
 	return {
 		APP_DB: createD1FromSqlite(sqlite),
 		JOBS: undefined,
@@ -126,6 +162,7 @@ test('team repositories list what each member role can see', async () => {
 	})
 	expect(owner.body.activity).toBeNull()
 	expect(owner.body.packages?.map((pkg) => pkg.kodyId).sort()).toEqual([
+		'listed',
 		'run',
 		'secret',
 		'shared',
@@ -142,6 +179,9 @@ test('team repositories list what each member role can see', async () => {
 			canOpenDetail: pkg.canOpenDetail,
 		})),
 	).toEqual([
+		// Execute-only + public listing → link (canonical URL resolves).
+		{ kodyId: 'listed', canOpenDetail: undefined },
+		// Execute-only, no listing → no link (owner page needs package:read).
 		{ kodyId: 'run', canOpenDetail: false },
 		{ kodyId: 'shared', canOpenDetail: undefined },
 	])
@@ -149,7 +189,7 @@ test('team repositories list what each member role can see', async () => {
 	// The newest org package is one the member cannot see. The cap applies
 	// after the visibility filter, so it does not crowd out theirs.
 	const capped = await listAs(env, memberId, '?limit=1')
-	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['run'])
+	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['listed'])
 	const ownerCapped = await listAs(env, ownerId, '?limit=1')
 	expect(ownerCapped.body.packages?.map((pkg) => pkg.kodyId)).toEqual([
 		'secret',
