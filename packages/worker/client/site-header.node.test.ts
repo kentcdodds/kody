@@ -51,18 +51,10 @@ test('logged-in header has one menu: the organization, then your own links and L
 	expect(html).not.toContain('data-testid="site-header-account"')
 	expect(html).not.toContain('data-testid="site-header-profile"')
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
-	expect(html).toContain(
-		'aria-label="@ada: organizations, manage, and account"',
-	)
-	expect(html).toContain('data-testid="org-switcher-manage-group"')
-	expect(html).toContain('>Manage @ada<')
-	// The signup org's door is its workspace overview, ahead of Billing.
-	const manage = html.slice(
-		html.indexOf('data-testid="org-switcher-manage-group"'),
-	)
-	const overviewAt = manage.indexOf('href="/@ada/-/overview"')
-	expect(overviewAt).toBeGreaterThan(-1)
-	expect(manage.indexOf('href="/@ada/-/billing"')).toBeGreaterThan(overviewAt)
+	expect(html).toContain('aria-label="@ada: organizations and account"')
+	expect(html).not.toContain('data-testid="org-switcher-manage-group"')
+	expect(html).not.toContain('>Manage @')
+	expect(html).not.toContain('href="/@ada/-/billing"')
 	// From an account page, the signup org row opens the overview too, not
 	// the public profile (that is "Your profile").
 	const adaRowAt = html.indexOf('data-testid="org-switcher-ada"')
@@ -140,17 +132,14 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain(
-		'aria-label="@acme: organizations, manage, and account"',
-	)
-	expect(menu).toContain('data-testid="org-switcher-manage-group"')
-	expect(menu).toContain('>Manage @acme<')
-	expect(menu).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>Overview</)
-	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/members"')
-	expect(menu).toContain('href="/@acme/-/teams"')
-	expect(menu).toContain('href="/@acme/-/grants"')
-	expect(menu).toContain('href="/@acme/-/collaborators"')
+	expect(html).toContain('aria-label="@acme: organizations and account"')
+	expect(menu).not.toContain('data-testid="org-switcher-manage-group"')
+	expect(menu).not.toContain('>Manage @')
+	expect(menu).not.toContain('href="/@acme/-/settings"')
+	expect(menu).not.toContain('href="/@acme/-/members"')
+	expect(menu).not.toContain('href="/@acme/-/teams"')
+	expect(menu).not.toContain('href="/@acme/-/grants"')
+	expect(menu).not.toContain('href="/@acme/-/collaborators"')
 	expect(menu).not.toContain('href="/@acme/-/billing"')
 	expect(menu).toContain('href="/account/organizations#invites"')
 	// The org in the URL is current: checked and announced, the other is not.
@@ -195,21 +184,18 @@ test('org switcher on team settings stays on the URL org when session lists only
 			lastUsedOrganization: 'ada',
 		}),
 	)
-	expect(html).toContain(
-		'aria-label="@acme: organizations, manage, and account"',
-	)
+	expect(html).toContain('aria-label="@acme: organizations and account"')
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	// Synthesized current appears as its own row (session list was personal-only).
 	expect(menu).toContain('data-testid="org-switcher-acme"')
-	expect(menu).toContain('>Manage @acme<')
+	expect(menu).not.toContain('data-testid="org-switcher-manage-group"')
+	expect(menu).not.toContain('>Manage @')
 	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/members"')
-	// Member-shaped synthesis: no Billing until the real role loads.
+	expect(menu).not.toContain('href="/@acme/-/members"')
 	expect(menu).not.toContain('href="/@acme/-/billing"')
-	expect(menu).not.toContain('>Manage @ada<')
 })
 
-test('org switcher keeps Manage links for a team org on account pages', async () => {
+test('org switcher from account pages opens the team home and the signup overview', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -238,11 +224,11 @@ test('org switcher keeps Manage links for a team org on account pages', async ()
 		}),
 	)
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	expect(menu).toContain('>Manage @acme<')
-	expect(menu).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>Overview</)
-	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/teams"')
-	expect(menu).toContain('href="/@acme/-/billing"')
+	expect(menu).not.toContain('data-testid="org-switcher-manage-group"')
+	expect(menu).not.toContain('>Manage @')
+	expect(menu).not.toContain('href="/@acme/-/settings"')
+	expect(menu).not.toContain('href="/@acme/-/teams"')
+	expect(menu).not.toContain('href="/@acme/-/billing"')
 	// Switching into the team org from an account page lands on its home,
 	// the team overview; the signup org lands on its workspace overview.
 	const acmeRow = menu.slice(
@@ -296,11 +282,9 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	)
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	// Manage stays on the personal org (Overview, Billing), not the
-	// collaborator org.
-	expect(collaborator).toContain('>Manage @ada<')
+	expect(collaborator).not.toContain('data-testid="org-switcher-manage-group"')
+	expect(collaborator).not.toContain('>Manage @')
 	expect(collaborator).toContain('href="/@ada/-/overview"')
-	expect(collaborator).not.toContain('>Manage @acme<')
 
 	const billing = await renderToString(
 		jsx(SiteHeader, {
