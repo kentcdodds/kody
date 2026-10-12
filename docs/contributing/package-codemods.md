@@ -329,8 +329,8 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 
 ### `0010-detect-legacy-credential-patterns`
 
-This detect-only codemod measures which packages still reference credentials the
-old way, ahead of `kody.credentials` slots (see
+This detect-only codemod lists credential references that are not declared
+`kody.credentials` slots (see
 [Credential slots](../use/packages.md#credential-slots-kodycredentials)).
 `transform` writes nothing; dry-run and apply return the findings as
 `needs_manual`. Run it with `adminPackageCodemodScan`.

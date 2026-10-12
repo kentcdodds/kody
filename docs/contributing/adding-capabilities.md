@@ -237,7 +237,9 @@ as feedback evidence. Reviewer identity, reviewer timestamp, and admin note are
 internal review metadata and must be redacted from the submitter's account
 export; feedback status may remain exportable.
 
-Current admin capabilities:
+Admin capabilities live in `packages/worker/src/mcp/capabilities/admin/` and are
+registered from `domain.ts`. That file is the inventory; do not copy the names
+here.
 
 User-targeting admin capabilities accept `stableUserId`, email, or username
 where operator ergonomics call for lookup. They never accept or return numeric
@@ -245,49 +247,10 @@ where operator ergonomics call for lookup. They never accept or return numeric
 only after boundary validation. Admin URLs and audit reasons follow the same
 rule.
 
-- `adminUserList`
-- `adminUserGet`
-- `adminHandleGet`
-- `adminWebhookRejectionReport`
-- `adminWebhookVerificationScan`
-- `adminUserCreate`
-- `adminUserUpdate`
-- `adminUserVerify`
-- `adminAccountWriteLeaseList`
-- `adminAccountWriteLeaseRepair`
-- `adminAccountDeletionAbort`
-- `adminUnverifiedAccountPurgeRun`
-- `adminAuditLogQuery`
-- `adminUserUsage`
-- `adminRunLogSqlBilling`
-- `adminFeatureFlagList`
-- `adminFeatureFlagSet`
-- `adminFeatureFlagOverride`
-- `adminReservedUsernameList`
-- `adminReservedUsernameAdd`
-- `adminReservedUsernameRemove`
-- `adminSystemEmailList`
-- `adminSystemEmailGet`
-- `adminSystemEmailDelete`
-- `adminSystemEmailSend`
-- `adminSystemEmailSenderRuleList`
-- `adminSystemEmailSenderRuleSet`
-- `adminSystemEmailSenderRuleDelete`
-- `adminPlatformFeedbackList`
-- `adminPlatformFeedbackGet`
-- `adminPlatformFeedbackUpdate`
-- `adminCommunityActivityList`
-- `adminCommunityOrphanForksCleanup`
-- `adminPackageCodemodScan`
-- `adminPackageCodemodDryRun`
-- `adminPackageCodemodApply`
-- `adminPackageCodemodRevert`
-- `adminPackageCodemodOwnerNotice`
-
-When adding more admin actions, expose service-layer functions by adding new
-`admin/*` capability files that call those service functions directly, set
-`requiredRole: 'admin'`, and audit-log the invocation. Do not duplicate admin
-workflow SQL in capability handlers.
+When adding an admin action, expose a service-layer function from a new
+`admin/*` capability file that calls it directly, set `requiredRole: 'admin'`,
+and audit-log the invocation. Do not duplicate admin workflow SQL in capability
+handlers.
 
 Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer consume normalized JSON Schema after

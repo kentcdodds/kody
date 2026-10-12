@@ -66,3 +66,36 @@ rescan shows no old patterns (or T+90 for packages that could not be converted).
 
 **Introduced as leftover by:** the `kody.credentials` manifest field (credential
 slots ship before credential clients).
+
+## By-name `secret` / `integration` grant targets
+
+`accessGrant`, `accessList`, and grant invites accept `secret` and `integration`
+targets by name. The name resolves to a credential id at grant time; the grant
+is stored under `credential`. A name that matches no credential is refused.
+
+Grant by credential id is the durable path
+([authorization](./architecture/authorization.md)). By-name targets go away with
+secret placeholders when the leftover credential lane is removed
+([ADR 0068](./decisions/0068-credentials-own-placement-scoped-clients.md)).
+
+**Ready when:** callers grant by credential id, and the leftover credential lane
+removal in ADR 0068 is ready.
+
+**Introduced as leftover by:** stable credential ids (`#3442`) while name
+targets remain accepted.
+
+## URL-secret-only webhook authentication
+
+When a webhook declares no `verification`, the URL secret is the only
+credential: any POST to the minted URL runs the export, and signature headers
+are ignored. Those deliveries are accepted through January 9, 2027
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+Declare HMAC `verification` when the sender can sign
+([inbound webhooks](../use/webhooks.md#webhooks-without-verification)).
+
+**Ready when:** the sunset date arrives, or earlier if remaining URL-secret-only
+endpoints declare verification.
+
+**Introduced as leftover by:** restoring URL-secret-only auth (`#3463`) and
+giving it a sunset (`#3481`).

@@ -112,11 +112,11 @@ own credential: Use on its door-key secret is not Use on the vault.
 `secretList`, `integrationList`, `mcpServerList`, and `secretProviderList`
 return the ids that `accessGrant` takes.
 
-`accessGrant`, `accessList`, and grant invites still accept `secret` and
-`integration` targets by name. That is the old lane: the name resolves to the
-credential id once, at grant time, and the grant is stored under `credential`; a
-name that matches no credential is refused. The by-name targets are removed
-together with secret placeholders when the old credential lane is removed.
+`accessGrant`, `accessList`, and grant invites also accept `secret` and
+`integration` targets by name. The name resolves to the credential id once, at
+grant time, and the grant is stored under `credential`; a name that matches no
+credential is refused. Those by-name targets are leftover and tracked in
+[planned breaking changes](../planned-breaking-changes.md).
 
 `credential-storage-boundary.node.test.ts` fails if credential storage is read
 outside the door and its resolvers. Credential storage keys use
@@ -163,9 +163,9 @@ gate every trigger passes:
   pause keeps the credential's family and name (what the waiting queue and
   `enablementList` show) and its id in `paused_credential_id`, which the resume
   check uses. A pause on a name that matched no credential has no id and
-  resolves the name on each check (old lane). A pause on a vault with no binding
-  is recorded as `secret-provider` and resolves the provider id to its live
-  binding on each check, never to a stored secret of the same name.
+  resolves the name on each check. A pause on a vault with no binding is
+  recorded as `secret-provider` and resolves the provider id to its live binding
+  on each check, never to a stored secret of the same name.
 - The next event checks again and resumes a paused enablement once access is
   back. There is never a fallback to another person, credential, or Owner.
 - No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook

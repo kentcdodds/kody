@@ -989,8 +989,7 @@ Package-owned scheduled jobs also refresh their persisted caller identity and
 published commit on every package sync, including when schedule, timezone, and
 enabled state are unchanged. Execution rehydrates the account user from the job
 row's stable user ID before exposing storage or nested MCP capabilities. The
-stable-ID plan lookup remains a defense-in-depth fallback for legacy rows whose
-saved caller context predates that refresh behavior.
+stable-ID plan lookup is the fallback when a saved caller context has no email.
 
 Inbound email routing has no caller context and resolves the owning account via
 the indexed username lookup (`findPublicUserIdentityByUsername`) — it does not
