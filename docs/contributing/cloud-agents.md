@@ -125,6 +125,43 @@ before you install anything yourself. Leave that diff unstaged. Restore it with
 `git restore package-lock.json` when you did not change dependencies. A pin
 update that `lockfile:check` asks for belongs in its own commit.
 
+## Git worktrees
+
+A worktree lets one VM work on several branches without a second `npm install`.
+Do not symlink the whole `node_modules` directory into the worktree.
+`node_modules/@kody/*` and `node_modules/@kody-internal/shared` are relative
+links to `../../packages/*`. Through a whole-directory symlink they resolve to
+the main checkout's `packages/`, so typecheck and tests read the main checkout's
+branch instead of the worktree's (#3404).
+
+From the main checkout, link every entry except those workspace scopes, which
+are copied as links so they point at the worktree's own `packages/`. The repo
+root is often not writable, so put worktrees under `~`:
+
+```sh
+main="$(git rev-parse --show-toplevel)"
+git worktree add ~/wt/my-branch -b cursor/my-branch origin/main
+cd ~/wt/my-branch
+mkdir node_modules
+for entry in "$main"/node_modules/* "$main"/node_modules/.bin \
+  "$main"/node_modules/.package-lock.json; do
+  if [ -d "$entry" ] &&
+    find "$entry" -maxdepth 1 -type l -lname '../../packages/*' | grep -q .; then
+    cp -PR "$entry" node_modules/
+  else
+    ln -s "$entry" "node_modules/$(basename "$entry")"
+  fi
+done
+ln -s "$main/packages/worker/node_modules" packages/worker/node_modules
+```
+
+`realpath node_modules/@kody-internal/shared` should print the worktree path.
+Tool caches (`node_modules/.vite`, `.mf`, `.tmp`) stay per worktree. Hooks are
+shared, so `git push` from the worktree still runs `test:push` there. Redo the
+loop after `npm ci` in the main checkout adds or removes a package. A worktree
+whose `package-lock.json` differs from the main checkout's needs its own
+`npm ci`. Remove a worktree with `git worktree remove ~/wt/my-branch`.
+
 ## GitHub CLI
 
 Cloud Agent `gh` can read issues, PRs, and checks (`gh issue view`,
