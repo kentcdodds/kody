@@ -36,8 +36,10 @@ deploys, code, or database are broken (see decision record 0004).
   send alert email.
 - A single `StatusStore` Durable Object (SQLite) stores per-minute samples (24
   h), daily uptime rollups (90 days), incidents, and sent notifications.
-- A component opens an incident after two consecutive probe failures and
-  resolves it after two consecutive successes.
+- A component opens an incident after three consecutive probe failures (about
+  three minutes) and resolves it after two consecutive successes. The thresholds
+  are independent (`failureThreshold` and `recoveryThreshold` in
+  `incidents.ts`), and apply to every component.
 - Day bars and the uptime percentage follow those opened incidents. Isolated
   probe failures below the threshold stay in the 24h sample log only — they do
   not increment daily failed counts or paint a day amber. A day turns amber when
