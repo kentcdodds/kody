@@ -91,17 +91,26 @@ function unstyledFeatureFrames(recording: HistoryRecording) {
 	)
 }
 
-test('a lantern link and Back/Forward paint styled and at the restored scroll', async ({
-	page,
-}) => {
+// Warm the feature route chunk first: a cold Vite compile can outlast the
+// router's navigation timeout and turn the click into a document load.
+async function openWarmHomepage(
+	page: Page,
+	warmPaths: Array<string> = ['/features/memory'],
+) {
 	await page.context().clearCookies()
-	// Warm the feature route chunk: a cold Vite compile can outlast the
-	// router's navigation timeout and turn the click into a document load.
-	await page.goto('/features/memory')
-	await waitForClientHydration(page)
+	for (const path of warmPaths) {
+		await page.goto(path)
+		await waitForClientHydration(page)
+	}
 	await page.goto('/')
 	await waitForClientHydration(page)
 	await page.evaluate(() => Object.assign(window, { __kodyBootDocument: true }))
+}
+
+test('a lantern link and Back/Forward paint styled and at the restored scroll', async ({
+	page,
+}) => {
+	await openWarmHomepage(page)
 	// A slow route stylesheet must hold the swap, not paint the page bare.
 	await page.route('**/feature-pages.css', async (route) => {
 		await new Promise((resolve) => setTimeout(resolve, 400))
@@ -172,4 +181,60 @@ test('a lantern link and Back/Forward paint styled and at the restored scroll', 
 		'feature page painted away from the top',
 	).toEqual([])
 	expect(forward.viewTransitions).toBe(0)
+})
+
+test('a superseding feature navigation waits for the stylesheet already loading', async ({
+	page,
+}) => {
+	await openWarmHomepage(page, ['/features/memory', '/features/secrets'])
+	await page.route('**/feature-pages.css', async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 2_500))
+		await route.continue()
+	})
+	const lantern = page.getByRole('main')
+	await lantern
+		.getByRole('link', { name: 'memory', exact: true })
+		.scrollIntoViewIfNeeded()
+
+	await startHistoryRecording(page)
+	await lantern.getByRole('link', { name: 'memory', exact: true }).click()
+	// The first navigation is now waiting on the stylesheet it inserted.
+	await expect(
+		page.locator('link[rel="stylesheet"][href="/feature-pages.css"]'),
+	).toBeAttached()
+	await lantern.getByRole('link', { name: 'secrets', exact: true }).click()
+	await expect(page).toHaveURL(/\/features\/secrets$/)
+	await expect(page.locator('.feature-detail')).toBeVisible()
+	await expectFeatureStylesheetApplied(page)
+	const recording = await stopHistoryRecording(page)
+
+	expect(await page.evaluate(() => '__kodyBootDocument' in window)).toBe(true)
+	expect(unstyledFeatureFrames(recording), 'painted unstyled').toEqual([])
+})
+
+test('a route stylesheet that fails to load falls back to a document load', async ({
+	page,
+}) => {
+	await openWarmHomepage(page)
+	let stylesheetRequests = 0
+	await page.route('**/feature-pages.css', async (route) => {
+		stylesheetRequests += 1
+		if (stylesheetRequests === 1) {
+			await route.abort('failed')
+			return
+		}
+		await route.continue()
+	})
+
+	await page
+		.getByRole('main')
+		.getByRole('link', { name: 'memory', exact: true })
+		.click()
+	await expect(page).toHaveURL(/\/features\/memory$/)
+	await expect
+		.poll(() => page.evaluate(() => '__kodyBootDocument' in window))
+		.toBe(false)
+	await expect(page.locator('.feature-detail')).toBeVisible()
+	await expectFeatureStylesheetApplied(page)
+	expect(stylesheetRequests).toBe(2)
 })
