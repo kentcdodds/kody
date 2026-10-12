@@ -351,6 +351,52 @@ export async function insertPublishedBundleArtifactRow(
 	return id
 }
 
+/**
+ * Insert an identity row only while `entity_sources.published_commit` still
+ * matches the write. Zero changes means the live commit moved — treat as a
+ * stale write and leave the identity table alone.
+ */
+async function insertPublishedBundleArtifactRowForLiveCommit(
+	db: D1Database,
+	input: PublishedBundleArtifactUpsertInput,
+) {
+	const now = new Date().toISOString()
+	const id = crypto.randomUUID()
+	const result = await db
+		.prepare(
+			`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, artifact_name,
+				entry_point, kv_key, dependencies_json, created_at, updated_at
+			)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE EXISTS (
+				SELECT 1 FROM entity_sources
+				WHERE id = ?
+					AND user_id = ?
+					AND published_commit = ?
+					${andLiveDeletedAtSql()}
+			)`,
+		)
+		.bind(
+			id,
+			input.userId,
+			input.sourceId,
+			input.publishedCommit,
+			input.artifactKind,
+			input.artifactName,
+			input.entryPoint,
+			input.kvKey,
+			input.dependenciesJson,
+			now,
+			now,
+			input.sourceId,
+			input.userId,
+			input.publishedCommit,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0 ? id : null
+}
+
 async function getLivePublishedCommit(
 	db: D1Database,
 	input: { userId: string; sourceId: string },
@@ -378,8 +424,8 @@ async function getLivePublishedCommit(
  * already succeeded; a UNIQUE on that index updates the winner instead of
  * aborting later importable-module targets. A persist whose commit is no
  * longer `entity_sources.published_commit` leaves the live identity alone,
- * and the UPDATE itself is gated on the live commit so a concurrent publish
- * cannot be overwritten by a stale rebuild.
+ * and both INSERT and UPDATE are gated on the live commit so a concurrent
+ * publish cannot be overwritten by a stale rebuild.
  */
 export async function upsertPublishedBundleArtifactRow(
 	db: D1Database,
@@ -416,7 +462,14 @@ export async function upsertPublishedBundleArtifactRow(
 			}
 			return existing.id
 		}
-		return await insertPublishedBundleArtifactRow(db, input)
+		if (liveCommit == null) {
+			// No readable entity_sources row (test fixtures): last-write-wins.
+			return await insertPublishedBundleArtifactRow(db, input)
+		}
+		// Atomic live-commit guard on INSERT: a concurrent publish that advances
+		// entity_sources between the stale check and this write must not create
+		// an identity row stamped with the older commit.
+		return await insertPublishedBundleArtifactRowForLiveCommit(db, input)
 	} catch (error) {
 		if (!isPublishedBundleArtifactIdentityConflict(error)) {
 			throw error
@@ -453,50 +506,48 @@ export async function upsertPublishedBundleArtifactRow(
 
 /**
  * Update an identity row only while `entity_sources.published_commit` still
- * matches the write. Falls back to an unconditional update when the sources
- * table is unavailable (unit fixtures without entity_sources).
+ * matches the write. Callers only use this when a live commit is already
+ * known; fixtures without `entity_sources` take the unguarded path via
+ * `liveCommit == null` in `upsertPublishedBundleArtifactRow`. Failures
+ * propagate — never fall back to an unguarded UPDATE.
  */
 async function updatePublishedBundleArtifactRowForLiveCommit(
 	db: D1Database,
 	input: { id: string } & PublishedBundleArtifactUpsertInput,
 ) {
 	const now = new Date().toISOString()
-	try {
-		const result = await db
-			.prepare(
-				`UPDATE published_bundle_artifacts
-				SET user_id = ?, source_id = ?, published_commit = ?, artifact_kind = ?,
-					artifact_name = ?, entry_point = ?, kv_key = ?, dependencies_json = ?,
-					updated_at = ?
-				WHERE id = ?
-					AND EXISTS (
-						SELECT 1 FROM entity_sources
-						WHERE id = ?
-							AND user_id = ?
-							AND published_commit = ?
-							${andLiveDeletedAtSql()}
-					)`,
-			)
-			.bind(
-				input.userId,
-				input.sourceId,
-				input.publishedCommit,
-				input.artifactKind,
-				input.artifactName,
-				input.entryPoint,
-				input.kvKey,
-				input.dependenciesJson,
-				now,
-				input.id,
-				input.sourceId,
-				input.userId,
-				input.publishedCommit,
-			)
-			.run()
-		return (result.meta.changes ?? 0) > 0
-	} catch {
-		return await updatePublishedBundleArtifactRow(db, input)
-	}
+	const result = await db
+		.prepare(
+			`UPDATE published_bundle_artifacts
+			SET user_id = ?, source_id = ?, published_commit = ?, artifact_kind = ?,
+				artifact_name = ?, entry_point = ?, kv_key = ?, dependencies_json = ?,
+				updated_at = ?
+			WHERE id = ?
+				AND EXISTS (
+					SELECT 1 FROM entity_sources
+					WHERE id = ?
+						AND user_id = ?
+						AND published_commit = ?
+						${andLiveDeletedAtSql()}
+				)`,
+		)
+		.bind(
+			input.userId,
+			input.sourceId,
+			input.publishedCommit,
+			input.artifactKind,
+			input.artifactName,
+			input.entryPoint,
+			input.kvKey,
+			input.dependenciesJson,
+			now,
+			input.id,
+			input.sourceId,
+			input.userId,
+			input.publishedCommit,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function updatePublishedBundleArtifactRow(

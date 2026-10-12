@@ -378,3 +378,99 @@ test('upsertPublishedBundleArtifactRow does not retarget identity when live comm
 		}),
 	)
 })
+
+test('upsertPublishedBundleArtifactRow does not insert when live commit moves during insert', async () => {
+	const db = createPublishedBundleArtifactsDb()
+	await setLivePublishedCommit(db, {
+		userId: ownerIdFromStored('user-1'),
+		sourceId: 'source-1',
+		publishedCommit: 'commit-2',
+	})
+
+	// Pre-check still sees commit-1, but the guarded INSERT EXISTS clause
+	// reads the real live commit-2 and refuses to create a stale identity.
+	const guarded = {
+		prepare(query: string) {
+			const stmt = db.prepare(query)
+			return {
+				bind(...values: Array<unknown>) {
+					const bound = stmt.bind(...values)
+					return {
+						async first() {
+							if (
+								query.includes('FROM entity_sources') &&
+								!query.includes('INSERT INTO published_bundle_artifacts')
+							) {
+								return { published_commit: 'commit-1' }
+							}
+							return await bound.first()
+						},
+						run: () => bound.run(),
+						all: () => bound.all(),
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			guarded,
+			artifactRow('importable-module', 'commit-1'),
+		),
+	).resolves.toBeNull()
+	await expect(lookup(db, 'importable-module')).resolves.toBeNull()
+})
+
+test('upsertPublishedBundleArtifactRow propagates guarded update failures without unguarded fallback', async () => {
+	const existingRow = {
+		id: 'row-importable',
+		user_id: ownerIdFromStored('user-1'),
+		source_id: 'source-1',
+		published_commit: 'commit-1',
+		artifact_kind: 'importable-module',
+		artifact_name: './record-version',
+		entry_point: 'src/record-version.ts',
+		kv_key: 'kv:importable:commit-1',
+		dependencies_json: '[]',
+		created_at: '2026-09-14T00:00:00.000Z',
+		updated_at: '2026-09-14T00:00:00.000Z',
+	}
+	const queries: Array<string> = []
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(..._values: Array<unknown>) {
+					return {
+						async first() {
+							if (query.includes('FROM entity_sources')) {
+								return { published_commit: 'commit-1' }
+							}
+							return existingRow
+						},
+						async run() {
+							queries.push(query)
+							if (
+								query.includes('UPDATE published_bundle_artifacts') &&
+								query.includes('EXISTS')
+							) {
+								throw new Error('D1_ERROR: network timeout')
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			db,
+			artifactRow('importable-module', 'commit-1', '[{"sourceId":"dep-1"}]'),
+		),
+	).rejects.toThrow('D1_ERROR: network timeout')
+	expect(queries).toHaveLength(1)
+	expect(queries[0]).toContain('UPDATE published_bundle_artifacts')
+	expect(queries[0]).toContain('EXISTS')
+})
