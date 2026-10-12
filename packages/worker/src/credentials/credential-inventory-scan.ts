@@ -382,11 +382,23 @@ function collectScopes(
 		names.add(name)
 		declared.set(scope, names)
 	}
+	const reassigned = new Map<AstNode, Set<string>>()
 	const bind = (scope: AstNode, name: string, text: string) => {
 		const scoped = bindings.get(scope) ?? new Map<string, Binding>()
-		scoped.set(name, { text, scope, reassigned: false })
+		scoped.set(name, {
+			text,
+			scope,
+			reassigned: reassigned.get(scope)?.has(name) === true,
+		})
 		bindings.set(scope, scoped)
 	}
+	const declarators: Array<{
+		scope: AstNode
+		name: string
+		init: AstNode | undefined
+		isConst: boolean
+		ancestors: ReadonlyArray<AstNode>
+	}> = []
 	for (const statement of parsed.program?.body ?? []) {
 		if (statement.type !== 'ImportDeclaration') continue
 		for (const specifier of statement.specifiers ?? []) {
@@ -422,19 +434,15 @@ function collectScopes(
 		for (const name of boundNames(node.id)) declare(scope, name)
 		if (node.id?.type !== 'Identifier') return
 		const name = getNodeName(node.id)
-		const text =
-			scope === parsed && declaration?.kind === 'const' && name
-				? constants.get(name)
-				: resolveStringExpression(node.init, constants)
-		if (name && text != null && findPlaceholderMatches(text).length > 0) {
-			bind(scope, name, text)
-		}
+		if (!name) return
+		declarators.push({
+			scope,
+			name,
+			init: node.init,
+			isConst: declaration?.kind === 'const',
+			ancestors: [...ancestors],
+		})
 	})
-	for (const [name, text] of constants) {
-		if (declared.get(parsed)?.has(name) !== true) continue
-		if (bindings.get(parsed)?.has(name)) continue
-		if (findPlaceholderMatches(text).length > 0) bind(parsed, name, text)
-	}
 	const scopes = { declared, bindings }
 	walkAst(parsed, (node, ancestors) => {
 		const target =
@@ -444,10 +452,54 @@ function collectScopes(
 					? node.argument
 					: null
 		if (target?.type !== 'Identifier') return
-		const binding = bindingInScope(scopes, getNodeName(target), ancestors)
-		if (binding) binding.reassigned = true
+		const name = getNodeName(target)
+		const scope = declaringScope(scopes, name, ancestors)
+		if (!scope || !name) return
+		const names = reassigned.get(scope) ?? new Set<string>()
+		names.add(name)
+		reassigned.set(scope, names)
 	})
+	// In source order, so a nested initializer resolves against the bindings
+	// visible where it is declared, including an alias of an earlier binding.
+	for (const declarator of declarators) {
+		const { scope, name, init } = declarator
+		const text =
+			scope === parsed
+				? declarator.isConst
+					? constants.get(name)
+					: resolveStringExpression(init, constants)
+				: init
+					? resolveStringExpression(
+							init,
+							visibleConstants(init, declarator.ancestors),
+						)
+					: null
+		if (text != null && findPlaceholderMatches(text).length > 0) {
+			bind(scope, name, text)
+		}
+	}
+	for (const [name, text] of constants) {
+		if (declared.get(parsed)?.has(name) !== true) continue
+		if (bindings.get(parsed)?.has(name)) continue
+		if (findPlaceholderMatches(text).length > 0) bind(parsed, name, text)
+	}
 	return scopes
+
+	function visibleConstants(init: AstNode, ancestors: ReadonlyArray<AstNode>) {
+		const visible = new Map<string, string>()
+		walkAst(init, (node) => {
+			const name = node.type === 'Identifier' ? getNodeName(node) : null
+			if (!name) return
+			const scope = declaringScope(scopes, name, ancestors)
+			const binding = scope ? bindings.get(scope)?.get(name) : null
+			if (binding) {
+				if (!binding.reassigned) visible.set(name, binding.text)
+			} else if (scope === parsed && constants.has(name)) {
+				visible.set(name, constants.get(name)!)
+			}
+		})
+		return visible
+	}
 }
 
 function boundNames(pattern: AstNode | null | undefined): Array<string> {
@@ -774,7 +826,7 @@ function classifyPlacement(
 		const placement = setterPlacement(call, text, match)
 		if (placement) return placement
 	}
-	const bodyIndex = ancestors.findIndex(
+	const bodyIndex = ancestors.findLastIndex(
 		(ancestor) => propertyKey(ancestor) === 'body',
 	)
 	if (bodyIndex !== -1) {

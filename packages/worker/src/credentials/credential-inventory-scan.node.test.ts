@@ -261,6 +261,52 @@ test('a name resolves to its nearest declaration, so shadows and reassigned bind
 	})
 })
 
+test('a local alias resolves against the bindings visible where it is declared', () => {
+	expect(
+		placementsByName(`
+		const key = 'not a credential'
+		function send() {
+			const k = '{{secret:LOCAL_ALIAS}}'
+			const h = k
+			fetch('https://x.example.com', { headers: { 'x-api-key': h } })
+		}
+		function moved() {
+			let m = '{{secret:MOVED_LOCAL}}'
+			m = 'plain'
+			const alias = m
+			fetch('https://x.example.com', { headers: { 'x-api-key': alias } })
+		}
+		function shadowed() {
+			const key = '{{secret:SHADOWED}}'
+			const alias = key
+			fetch(\`https://x.example.com/?k=\${alias}\`)
+		}
+		const handlers = {
+			body: async () => {
+				await fetch('https://api.example.com/v1/auth/login', {
+					method: 'POST',
+					body: JSON.stringify({ password: '{{secret:INNER_LOGIN}}' }),
+				})
+			},
+		}
+		export default handlers
+	`),
+	).toEqual({
+		LOCAL_ALIAS: [
+			{ type: 'binding' },
+			{ type: 'binding' },
+			{ type: 'header', name: 'x-api-key', format: '{value}' },
+		],
+		MOVED_LOCAL: [other('reassigned-binding')],
+		SHADOWED: [
+			{ type: 'binding' },
+			{ type: 'binding' },
+			{ type: 'query', param: 'k' },
+		],
+		INNER_LOGIN: [{ type: 'body', field: 'password', endpoint: 'login' }],
+	})
+})
+
 test('reads of a binding add placements, not placeholder occurrences', () => {
 	const result = scan(`
 		const key = '{{secret:KEY}}'
