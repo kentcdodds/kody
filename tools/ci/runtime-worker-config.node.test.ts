@@ -115,12 +115,15 @@ function buildMainGeneratedConfig(envName: string) {
 			{ binding: 'OAUTH_KV', id: 'kv-oauth-id' },
 			{ binding: 'BUNDLE_ARTIFACTS_KV', id: 'kv-bundle-id' },
 		],
-		r2_buckets: ['COMMUNITY_ASSETS', 'EMAIL_BLOBS', 'REPO_SESSION_BLOBS'].map(
-			(binding) => ({
-				binding,
-				bucket_name: `kody-pr-7-${binding.toLowerCase().replaceAll('_', '-')}`,
-			}),
-		),
+		r2_buckets: [
+			'COMMUNITY_ASSETS',
+			'EMAIL_BLOBS',
+			'REPO_SESSION_BLOBS',
+			'OPERATOR_BACKUPS',
+		].map((binding) => ({
+			binding,
+			bucket_name: `kody-pr-7-${binding.toLowerCase().replaceAll('_', '-')}`,
+		})),
 		queues: {
 			producers: [
 				...producers(

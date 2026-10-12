@@ -213,6 +213,11 @@ Operators can unblock a stranded signup without a raw D1 write:
 - `mint_verify_url` returns a one-time `/verify-email?token=...` link so the
   operator can send it over a path that is not `kody.codes`
 - both paths audit the actor and `target_stable_user_id`
+- `mark_verified` needs a live person. `mint_verify_url` may also run from a
+  job, webhook, or subscription that an admin enabled on a package they own
+  (admin-event auto-rescue). Those audit rows add `trigger`, `enablement_id`,
+  and `package_id`; see
+  [Capabilities that need a live person](./authorization.md#capabilities-that-need-a-live-person)
 
 Unverified accounts can still use browser sessions (sign in, manage account,
 resend verification), but they must verify before MCP OAuth authorization or
@@ -247,8 +252,10 @@ assistant features:
   Consent binds the grant to one org
   ([0064](../decisions/0064-oauth-org-binding.md)): `?org=<slug>` on the
   authorize URL or `/mcp` resource, a hidden field when the user has exactly one
-  org, or a required picker when they have several. Approval stamps `orgId` on
-  grant props and metadata. There is no feature flag.
+  org, or a required picker when they have several. Approval stamps `orgId` and
+  `personId` on grant props and metadata (`grantBindingFields`). Nothing reads
+  `personId` yet; credential resolution will require it for new grants. Grants
+  minted before the stamp have only `userId`. There is no feature flag.
 - **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
   the single chokepoint for `/mcp`. After token validation it checks
   `users.email_verified_at` (via `isAccountEmailVerified`) and rejects
@@ -383,9 +390,8 @@ after the restore window is `hardPurgeSoftDeletedUser`
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and
     saved-package entries by id,
-  - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts` and
-    `archived_job_artifacts`, plus user-prefixed keys such as the encrypted MCP
-    OAuth refresh-family snapshots,
+  - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts`, plus
+    user-prefixed keys such as the encrypted MCP OAuth refresh-family snapshots,
   - the user's `StorageRunner` Durable Objects via the user-scoped
     `storageRunnerRpc` stub,
   - all OAuth grants for the user (and the provider clients the user minted) via

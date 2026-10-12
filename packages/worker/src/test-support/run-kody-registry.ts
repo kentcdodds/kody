@@ -12,10 +12,7 @@ import {
 	type JobRecord,
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
-import {
-	type EntitySourceRow,
-	type RepoSessionRow,
-} from '#worker/repo/types.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function normalizeMockQuery(query: string): string {
@@ -349,8 +346,8 @@ export function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[17]
-								const userId = params[18]
+								const id = params[16]
+								const userId = params[17]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -368,13 +365,12 @@ export function createJobMutationDatabase(input: {
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									preserved: params[10],
-									expires_at: params[11],
-									caller_context_json: params[12],
-									updated_at: params[13],
-									last_run_at: params[14],
-									last_run_status: params[15],
-									next_run_at: params[16],
+									expires_at: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									next_run_at: params[15],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(
@@ -525,7 +521,6 @@ export function createJobRow(
 		timezone: job.timezone,
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
-		preserved: job.preserved ? 1 : 0,
 		expires_at: job.expiresAt ?? null,
 		caller_context_json: JSON.stringify(callerContext),
 		created_at: job.createdAt,
@@ -533,29 +528,6 @@ export function createJobRow(
 		last_run_at: job.lastRunAt ?? null,
 		last_run_status: job.lastRunStatus ?? null,
 		next_run_at: job.nextRunAt,
-	}
-}
-
-export function createEntitySourceRow(input: {
-	userId: string
-	jobId: string
-	sourceId: string
-	repoId: string
-}): EntitySourceRow {
-	return {
-		id: input.sourceId,
-		user_id: ownerIdFromStored(input.userId),
-		entity_kind: 'job',
-		entity_id: input.jobId,
-		repo_id: input.repoId,
-		published_commit: 'published-commit-1',
-		indexed_commit: null,
-		manifest_path: 'kody.json',
-		source_root: '/',
-		last_external_check_at: null,
-		external_check_until: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
 	}
 }
 

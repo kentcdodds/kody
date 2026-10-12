@@ -687,4 +687,48 @@ test('packageSave responses steer coding agents toward the git lane', async () =
 	expect(result.next_steps).toContain('packagePublishExternalPush')
 	expect(result.next_steps).toContain(JSON.stringify(result.package_id))
 	expect(result.pending_secret_package_approvals).toBeNull()
+	expect(result.next_steps).not.toContain('Old-style credential references')
+})
+
+test('packageSave responses list old-style credential references by path and pattern', async () => {
+	const { save } = await setup({ plan: 'max' })
+
+	const result = await save({
+		files: [
+			...buildPackageFiles('legacy-credentials-package'),
+			{
+				path: 'src/send.ts',
+				content:
+					"export const headers = { Authorization: 'Bearer {{secret:RESEND_KEY}}' }\n",
+			},
+		],
+	})
+
+	expect(result.next_steps).toContain(
+		'Old-style credential references (codemod 0010-detect-legacy-credential-patterns, does not block publish):\n- src/send.ts: literal secret',
+	)
+	expect(result.next_steps).not.toContain('RESEND_KEY')
+})
+
+test('packageSave lists old-style references from the published files, not only the submitted ones', async () => {
+	const { save } = await setup({ plan: 'max' })
+	const submitted = buildPackageFiles('kept-file-package')
+	const refresh =
+		mockModule.refreshSavedPackageProjection.getMockImplementation()!
+	mockModule.refreshSavedPackageProjection.mockImplementationOnce(
+		async (input) => ({
+			...(await refresh(input)),
+			files: {
+				...Object.fromEntries(
+					submitted.map((file) => [file.path, file.content]),
+				),
+				'src/kept.ts': "export const h = { a: '{{secret:OLD_KEY}}' }\n",
+			},
+		}),
+	)
+
+	const result = await save({ files: submitted })
+
+	expect(result.next_steps).toContain('- src/kept.ts: literal secret')
+	expect(result.next_steps).not.toContain('OLD_KEY')
 })

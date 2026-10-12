@@ -16,6 +16,7 @@ import {
 import { NonRetryableError } from 'cloudflare:workflows'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
 import {
 	parseRequestLineage,
@@ -200,15 +201,12 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 		delay: '30 seconds',
 		backoff: 'exponential',
 	},
-	timeout: '5 minutes',
+	// One minute over `backgroundExecutorTimeoutMs`, the sandbox budget for
+	// workflow-invoked exports and inline code, so the step records the
+	// sandbox's own timeout and run-record finish instead of being cut by the
+	// engine mid-write.
+	timeout: '6 minutes',
 }
-
-/**
- * Sandbox budget for workflow-invoked package exports / inline code.
- * Kept under the Cloudflare Workflow step timeout (`5 minutes`) so status
- * bookkeeping still has headroom after the sandbox returns.
- */
-export const workflowExecutorTimeoutMs = 270_000
 
 type DynamicCallableWorkflowStep = {
 	do(
@@ -221,8 +219,8 @@ type DynamicCallableWorkflowStep = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 
 /**
- * Instances created before payloads carried lineage run as Automation, which
- * has no actor and so can only narrow what the starter could do.
+ * Instances created before payloads carried lineage have no person behind
+ * them, so they hold no permissions.
  */
 function workflowRequestSource(
 	payload: DynamicCallableWorkflowPayload,
@@ -269,6 +267,13 @@ function readWorkflowInvocationErrorCode(response: {
 	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
 	const code = (error as Record<string, unknown>)['code']
 	return typeof code === 'string' && code.trim() ? code : null
+}
+
+function readWorkflowInvocationLogs(body: Record<string, unknown>) {
+	const logs = body['logs']
+	return Array.isArray(logs)
+		? logs.filter((line): line is string => typeof line === 'string')
+		: undefined
 }
 
 // Sandbox throws are HTTP 500 `execution_failed`; client mistakes are 4xx.
@@ -1605,11 +1610,12 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				this.ctx.waitUntil(promise)
 			},
 		})
+		let logs: Array<string> | undefined
 		try {
 			// Ephemeral + raised timeout: Workflow step.do already caches
 			// successful results. Keyed invoke would replay a sandbox timeout
-			// on retry (~ms) instead of re-executing; the default 90s export
-			// cap is also below the 5-minute step window.
+			// on retry (~ms) instead of re-executing. The background budget
+			// replaces the 90s interactive export cap.
 			const response = await invokePackageExport({
 				env: this.env,
 				baseUrl: getAppBaseUrl({
@@ -1631,8 +1637,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					topic: payload.workflowName,
 				},
 				ephemeral: true,
-				executorTimeoutMs: workflowExecutorTimeoutMs,
+				executorTimeoutMs: backgroundExecutorTimeoutMs,
 			})
+			logs = readWorkflowInvocationLogs(response.body)
 			if (
 				readWorkflowInvocationErrorCode(response) === accountSuspendedErrorCode
 			) {
@@ -1649,6 +1656,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				env: this.env,
 				handle: runHandle,
 				status: 'success',
+				logs,
+				result: response.body['result'],
 			})
 			return result
 		} catch (error) {
@@ -1656,6 +1665,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				env: this.env,
 				handle: runHandle,
 				status: 'error',
+				logs,
 				error,
 			})
 			throw error
@@ -1717,7 +1727,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				payload.params,
 				{
 					packageContext: payload.packageContext,
-					executorTimeoutMs: workflowExecutorTimeoutMs,
+					executorTimeoutMs: backgroundExecutorTimeoutMs,
 					runSurface: 'workflow',
 				},
 			)
@@ -1728,13 +1738,15 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				}
 				throw new UserCodeError(getErrorMessage(result.error))
 			}
+			const value = toJsonSafeValue(result.result) as JsonValue
 			await finishRunRecord({
 				env: this.env,
 				handle: runHandle,
 				status: 'success',
 				logs,
+				result: value,
 			})
-			return toJsonSafeValue(result.result) as JsonValue
+			return value
 		} catch (error) {
 			await finishRunRecord({
 				env: this.env,

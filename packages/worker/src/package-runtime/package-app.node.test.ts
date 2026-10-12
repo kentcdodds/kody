@@ -618,6 +618,24 @@ const {
 
 type BuildInput = Parameters<typeof buildPackageAppWorker>[0]
 
+/** The request of an Owner visiting their own org's app. */
+function appVisitorRequest(key: string) {
+	const id = `user-${key}`
+	return {
+		org: { id, slug: key },
+		actor: { userId: id, username: key },
+		attribution: { kind: 'user', userId: id },
+		credential: {
+			kind: 'package-app',
+			id: null,
+			orgId: id,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'owner' },
+	}
+}
+
 /** `key` keeps user/package ids unique so the in-memory build cache never leaks between tests. */
 function makeBuildInput(
 	env: Env,
@@ -640,6 +658,7 @@ function makeBuildInput(
 					email: `${key}@example.com`,
 					displayName: `${key} User`,
 				},
+				request: appVisitorRequest(key),
 			},
 		} as never,
 		...rest,
@@ -665,6 +684,8 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 			props: {
 				baseUrl: 'https://example.com',
 				userId: ownerIdFromStored('user-1'),
+				orgSlug: 'user',
+				visitor: { userId: 'user-1', username: 'user', role: 'owner' },
 				email: 'user@example.com',
 				displayName: 'User',
 				packageId: 'package-1',
@@ -802,6 +823,7 @@ test('package app worker exposes its public mount and records fetch query and re
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://packages.kody.test',
@@ -845,6 +867,7 @@ test('package app public mount uses the name leaf when kodyId diverges', async (
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://packages.kody.test',
@@ -899,6 +922,7 @@ test('package app worker exposes the fingerprinted client module URL when kody.a
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://serving-owner.kody.run',

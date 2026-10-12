@@ -80,6 +80,7 @@ export class RuntimeWorkerService
 					request: input.request,
 					env: this.env,
 					owner: input.owner,
+					visitor: input.visitor,
 					packagePath: input.packagePath,
 					dispatch: input.dispatch,
 				}),

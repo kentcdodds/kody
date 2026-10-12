@@ -47,13 +47,11 @@ const credentialSlots = {
 		kind: 'secret',
 		provider: 'aws',
 		description: 'Signing key.',
-		placement: { header: 'Authorization', template: 'AWS4 {value}' },
 	},
 	HEADER_KEY: {
 		kind: 'secret',
 		provider: 'resend',
 		description: 'API key.',
-		placement: { header: 'Authorization', template: 'Bearer {value}' },
 	},
 	GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
 }
@@ -175,14 +173,23 @@ async function setup() {
 			storageId: null,
 		},
 	})
-	const resolve = (alias: string, stamp: typeof attestedPackageStamp) =>
+	const resolve = (
+		alias: string,
+		stamp: typeof attestedPackageStamp,
+		access?: 'presence' | 'value',
+	) =>
 		resolveCredential({
 			env,
 			orgId,
 			actor: callerContext.request,
 			packageStamp: stamp(packageId),
 			baseUrl: 'https://example.com',
-			credential: { use: 'package-secret-mount', alias, callerContext },
+			credential: {
+				use: 'package-secret-mount',
+				alias,
+				callerContext,
+				...(access ? { access } : {}),
+			},
 		})
 	return { env, packageId, callerContext, resolve }
 }
@@ -205,6 +212,35 @@ test('packageSecrets.get resolves only opaque refs for every alias, stamp, and g
 	}
 	const granted = await t.resolve('SIGNING_KEY', attestedPackageStamp)
 	expect(granted.ref).toBe('{{secret:SIGNING_KEY|scope=user}}')
+})
+
+test('packageSecrets.has answers from metadata when ciphertext cannot decrypt', async () => {
+	const t = await setup()
+	await t.env.APP_DB.prepare(
+		`UPDATE secret_entries SET encrypted_value = 'v2.not-valid.ciphertext' WHERE name = 'SIGNING_KEY'`,
+	).run()
+	await expect(t.resolve('SIGNING_KEY', attestedPackageStamp)).rejects.toThrow(
+		'Unable to decrypt secret value.',
+	)
+	await expect(
+		t.resolve('SIGNING_KEY', attestedPackageStamp, 'presence'),
+	).resolves.toMatchObject({
+		alias: 'SIGNING_KEY',
+		name: 'SIGNING_KEY',
+		ref: '{{secret:SIGNING_KEY|scope=user}}',
+		scope: 'user',
+	})
+	const tools = await createCapabilityProxyPackageHostTools({
+		env: t.env,
+		callerContext: t.callerContext,
+	})
+	if (!tools.packageSecretHas) throw new Error('packageSecretHas missing')
+	await expect(
+		tools.packageSecretHas({
+			alias: 'SIGNING_KEY',
+			[secretAuthorityArgName]: t.packageId,
+		}),
+	).resolves.toEqual({ has: true })
 })
 
 test('the local-execute capability proxy returns only opaque refs to package code', async () => {
@@ -233,18 +269,18 @@ test('a manifest cannot declare a slot that reads the raw value', () => {
 				kind,
 				provider: 'aws',
 				description: 'Key.',
-				...(kind === 'secret'
-					? { placement: { header: 'Authorization' } }
-					: {}),
 				raw: true,
 			},
 		})
 		expect(() =>
 			parseAuthoredPackageJson({ content, mode: 'authoring' }),
 		).toThrow(/raw/)
-		// Snapshots published with a raw slot load with no credentials at all.
-		expect(
-			parseAuthoredPackageJson({ content, mode: 'published' }).kody,
-		).not.toHaveProperty('credentials')
+		// Snapshots published with a raw slot load it as invalid, never usable.
+		const published = parseAuthoredPackageJson({
+			content,
+			mode: 'published',
+		}).kody
+		expect(published.credentials).toEqual({})
+		expect(published.invalidCredentialSlots?.KEY).toMatch(/raw/)
 	}
 })

@@ -322,8 +322,17 @@ test('connection profiles list only granted packages and add more through a pack
 	expect(createForm).not.toContain('pkg-3"')
 })
 
-test('account rail holds only the person: profile, security, organizations, experiments, data', () => {
-	const items = accountRailGroups().flatMap((group) => group.items)
+test('account rail holds the person: profile, security, organizations, experiments, data', () => {
+	const items = accountRailGroups({ workspaceSlug: null }).flatMap(
+		(group) => group.items,
+	)
+	expect(items.map((item) => item.label)).toEqual([
+		'Profile',
+		'Security',
+		'Organizations',
+		'Experiments',
+		'Data & deletion',
+	])
 	const security = items.find((item) => item.label === 'Security')
 	expect(
 		security && isAccountNavItemActive(security, '/account/passkeys'),
@@ -365,6 +374,28 @@ test('workspace landing opens Repositories so the rail is one click away', () =>
 	expect(workspaceLandingItem(null).href).toBe('/account')
 })
 
+test('account rail opens the signup workspace: overview, repositories, connections, MCP servers, secrets, jobs, memories', () => {
+	const groups = accountRailGroups({ workspaceSlug: 'jane-old' })
+	expect(groups.map((group) => group.label)).toEqual([null, 'Workspace'])
+	expect(
+		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
+	).toEqual([
+		['Overview', '/@jane-old/-/overview', 'home'],
+		['Repositories', '/@jane-old/-/packages', 'box'],
+		['Connections', '/@jane-old/-/connections', 'link'],
+		['MCP servers', '/@jane-old/-/mcp-servers', 'server'],
+		['Secrets', '/@jane-old/-/secrets', 'key'],
+		['Jobs', '/@jane-old/-/jobs', 'briefcase'],
+		['Memories', '/@jane-old/-/memories', 'book'],
+	])
+	// Workspace links leave the account rail: those pages take the workspace
+	// rail, and nothing in the Workspace group is current on an account page.
+	for (const item of groups[1]?.items ?? []) {
+		expect(isAccountRailPath(item.href), item.href).toBe(false)
+		expect(isAccountNavItemActive(item, '/account'), item.href).toBe(false)
+	}
+})
+
 test('workspace rail groups what the organization owns and keeps its slug in every link', () => {
 	const groups = workspaceRailGroups({
 		orgSlug: 'jane',
@@ -372,6 +403,22 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		role: 'owner',
 	})
 	const items = groups.flatMap((group) => group.items)
+	// Overview leads the personal rail and is current only on its own page.
+	expect(groups[0]).toEqual({
+		label: null,
+		items: [{ href: '/@jane/-/overview', label: 'Overview', icon: 'home' }],
+	})
+	const overview = items[0]
+	expect(
+		overview && isAccountNavItemActive(overview, '/@jane/-/overview'),
+	).toBe(true)
+	expect(overview && isAccountNavItemActive(overview, '/@jane/-/jobs')).toBe(
+		false,
+	)
+	// Every section the overview page lists carries a one-line description.
+	for (const item of groups.slice(1).flatMap((group) => group.items)) {
+		expect(item.description, item.label).toBeTruthy()
+	}
 	// Repositories is the workspace list, not the public profile.
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
 		'/@jane/-/packages',

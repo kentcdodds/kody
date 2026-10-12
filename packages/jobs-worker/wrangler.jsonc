@@ -2,7 +2,7 @@
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	// Jobs worker (ADR 0016): owns the JobManager Durable Object, the
 	// scheduled/cron dispatch lane, the scheduled dispatch queue, and the
-	// dedicated jobs D1 database (`jobs` + `archived_job_artifacts`). Job
+	// dedicated jobs D1 database (`jobs`). Job
 	// execution and the platform scheduled lanes stay in the main worker and
 	// are reached through the HOST service binding (`JobsHost` entrypoint);
 	// the main worker reaches this worker through its JOBS service binding

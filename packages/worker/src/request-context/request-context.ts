@@ -25,8 +25,8 @@ import {
  * - `member`: the sender is a verified account email of a current member of
  *   the inbox's org, and the message authenticated. The member is the actor,
  *   with their own role.
- * - `inbox-owner`: a verified non-member (receipts, notifications). Runs as
- *   the org that owns the inbox, as Automation.
+ * - `inbox-owner`: a verified non-member (receipts, notifications). Runs the
+ *   inbox owner's enablements (the earliest live Owner in a team org).
  */
 export type InboundEmailSender =
 	| { kind: 'member'; actor: RequestActor; role: OrgRole }
@@ -46,8 +46,9 @@ export type EnablementRun = {
 /**
  * How a request reached Kody. Every place that builds a caller context names
  * its source, and `deriveRequestContext` turns it into the one shape
- * `authorize` reads. A trigger source without `enablement` is a legacy
- * Automation run (no actor, Owner) in an org not yet moved to enablements.
+ * `authorize` reads. A trigger source without `enablement` only names where
+ * an event came from: its request has no person and holds no permissions.
+ * Every triggered run carries the enablement it runs as.
  */
 export type RequestSource =
 	| { kind: 'session' }
@@ -180,7 +181,8 @@ function credentialIdFor(
 /**
  * Build the request context for `user` reached through `source`.
  * `user` is the identity the caller context carries: the signed-in person
- * for interactive sources, and the org's owning account for Automation.
+ * for interactive sources, and the org's owning account for triggers (the
+ * enablement, not `user`, decides who a trigger acts as).
  */
 export function deriveRequestContext(input: {
 	user: RequestPerson
@@ -250,8 +252,8 @@ export function deriveRequestContext(input: {
 				case 'inbox-owner':
 					return request
 				case 'member':
-					// Attribution stays Automation: the org is billed for email runs
-					// until enablements move billing to the enabler.
+					// Only decides which packages the sender may start; the runs
+					// themselves carry the sender's enablement.
 					return {
 						...request,
 						actor: sender.actor,
@@ -296,7 +298,8 @@ export function deriveRequestContext(input: {
 
 /**
  * The starter's role carries over only within the org it was held in. Legacy
- * lineage without `membership` keeps the role of the identity the run uses.
+ * lineage without `membership` keeps the run identity's role only when the
+ * starter is that identity (a personal org's owner); anyone else gets no role.
  */
 function inheritedMembership(
 	lineage: RequestLineage,
@@ -304,7 +307,9 @@ function inheritedMembership(
 ): RequestContext['membership'] {
 	if (!lineage.actor) return null
 	if (lineage.membership === undefined) {
-		return binding.role ? { role: binding.role } : null
+		const personalOwner =
+			String(lineage.actor.userId) === String(binding.org.id)
+		return personalOwner && binding.role ? { role: binding.role } : null
 	}
 	if (String(lineage.credential.orgId) !== String(binding.org.id)) return null
 	return lineage.membership
@@ -333,10 +338,9 @@ const triggerCredentialKinds: ReadonlySet<RequestCredentialKind> = new Set([
 
 /**
  * The enablement id when `request` is an enablement run, or a run nested in
- * one (lineage keeps the trigger credential and the enabler). Legacy
- * Automation, member-sent email included, stays attributed to Automation,
- * and interactive requests carry a person's own credential, so neither
- * matches.
+ * one (lineage keeps the trigger credential and the enabler). A trigger
+ * source with no enablement has no person, and interactive requests carry a
+ * person's own credential, so neither matches.
  */
 export function enablementIdOf(
 	request: RequestContext | null | undefined,
@@ -348,7 +352,8 @@ export function enablementIdOf(
 
 /**
  * The person a background run bills: an enablement's enabler, or the starter
- * of an inherited run. Null for legacy Automation, which bills the org.
+ * of an inherited run. Null for a trigger source with no enablement, which
+ * runs nothing.
  * Interactive sources bill their caller elsewhere.
  */
 export function backgroundRunBilledActor(

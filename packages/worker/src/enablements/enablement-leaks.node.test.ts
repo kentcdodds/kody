@@ -12,13 +12,16 @@ import type * as CloudflareWorkers from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	ownerIdFromStored,
+	personalOrgId,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type OrgRole,
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
+import { findCredentialIdsByLegacyName } from '#worker/credentials/credential-ids.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { dispatchInboundEmailSubscriptionEvents } from '#worker/email/package-subscriptions.ts'
@@ -47,7 +50,17 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { orgMemberUpdateCapability } from '#mcp/capabilities/access/org-members.ts'
+import { adminCreditGrantCapability } from '#mcp/capabilities/admin/admin-credit-grant.ts'
+import { adminFeatureFlagSetCapability } from '#mcp/capabilities/admin/admin-feature-flag-set.ts'
+import { adminUserUpdateCapability } from '#mcp/capabilities/admin/admin-user-update.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { deleteSecret, saveSecret } from '#mcp/secrets/service.ts'
+import {
+	collectWaitingSignals,
+	deriveWaitingItemsForStableUser,
+} from '#mcp/waiting/derive-waiting.ts'
+import { buildWaitingItems } from '#universal/waiting.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import { getEnablementById, insertEnablement } from './repo.ts'
 import { type EnablementAudience, planEnablementRuns } from './run-gate.ts'
@@ -124,6 +137,12 @@ type SandboxRun = {
 	}
 }
 
+/** What the saved package does when it runs, given the run's caller context. */
+type PackageCode = (
+	callerContext: McpCallerContext,
+	packageId: string,
+) => Promise<unknown>
+
 async function insertAccount(
 	db: D1Database,
 	input: { email: string; username: string },
@@ -193,6 +212,8 @@ async function setup() {
 		.bind(orgId)
 		.run()
 
+	// A secret is granted by name, as accessGrant accepts it: the grant is
+	// stored on the secret's credential id.
 	const grant = async (
 		subjectId: string,
 		resourceType: 'package' | 'secret',
@@ -201,18 +222,28 @@ async function setup() {
 		await upsertGrant({
 			db,
 			orgId,
-			resourceType,
-			resourceId,
 			subject: { type: 'user', id: subjectId },
 			preset: 'use',
 			permissions: null,
 			createdByUserId: ownerId,
 			audit: createTestOrgAuditWriter(),
+			...(resourceType === 'secret'
+				? {
+						resourceType: 'credential',
+						resourceId:
+							(
+								await findCredentialIdsByLegacyName(db, orgId, {
+									type: 'secret',
+									name: resourceId,
+								})
+							)[0] ?? '',
+						family: 'secret',
+					}
+				: { resourceType, resourceId }),
 		})
-	// Bea and Cy may run pkg-shared. Only Cy holds Use on the team secret.
+	// Bea and Cy may run pkg-shared.
 	await grant(beaId, 'package', 'pkg-shared')
 	await grant(cyId, 'package', 'pkg-shared')
-	await grant(cyId, 'secret', 'teamToken')
 
 	const env = {
 		APP_DB: db,
@@ -228,6 +259,8 @@ async function setup() {
 		name: 'teamToken',
 		value: teamSecretValue,
 	})
+	// Only Cy holds Use on the team secret.
+	await grant(cyId, 'secret', 'teamToken')
 
 	mocks.loadPackageManifestBySourceId.mockImplementation(
 		async ({ sourceId }: { sourceId: string }) => ({
@@ -314,6 +347,8 @@ async function setup() {
 				storageContext: { sessionId: null, appId: packageId, packageId },
 			},
 		})
+	let packageCode: PackageCode = (callerContext, packageId) =>
+		resolveTeamToken(callerContext.request, packageId)
 	mocks.runBundledModuleWithRegistry.mockImplementation(
 		async (
 			_env: Env,
@@ -334,7 +369,7 @@ async function setup() {
 			}
 			runs.push(run)
 			try {
-				await resolveTeamToken(callerContext.request, packageId)
+				await packageCode(callerContext, packageId)
 				return { result: { ok: true }, logs: [] }
 			} catch (error) {
 				run.error = error
@@ -517,17 +552,11 @@ async function setup() {
 		removeFromOrg,
 		resolveTeamToken,
 		auditRows,
+		setPackageCode: (code: PackageCode) => {
+			packageCode = code
+		},
 	}
 }
-
-test('team orgs created now start on enablements', async () => {
-	const t = await setup()
-	const row = await t.db
-		.prepare(`SELECT state FROM enablement_org_migrations WHERE org_id = ?`)
-		.bind(t.orgId)
-		.first<{ state: string }>()
-	expect(row?.state).toBe('migrated')
-})
 
 test("a member's subscription cannot use an org credential they lack; it pauses, drops events, and resumes after a grant", async () => {
 	const t = await setup()
@@ -587,6 +616,331 @@ test("a member's subscription cannot use an org credential they lack; it pauses,
 	expect(JSON.stringify(rows)).not.toContain(teamSecretValue)
 })
 
+test('a pause keeps the credential name people read and its id, and a pause on a credential that did not exist yet resumes once it exists and is granted', async () => {
+	const t = await setup()
+	const [teamTokenId] = await findCredentialIdsByLegacyName(t.db, t.orgId, {
+		type: 'secret',
+		name: 'teamToken',
+	})
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		pause: {
+			resourceType: 'secret',
+			resourceId: 'teamToken',
+			credentialId: teamTokenId,
+		},
+	})
+
+	const cys = await t.enable('cy', 'subscription', emailTopic)
+	t.setPackageCode(async (callerContext, packageId) => {
+		await resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: callerContext.request,
+			packageStamp: attestedPackageStamp(packageId),
+			baseUrl: 'https://kody.example',
+			credential: {
+				use: 'secret',
+				name: 'futureToken',
+				storageContext: { sessionId: null, appId: packageId, packageId },
+			},
+		})
+	})
+	t.runs.splice(0)
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs[0]?.error).toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'secret:use',
+	})
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: {
+			resourceType: 'secret',
+			resourceId: 'futureToken',
+			credentialId: null,
+		},
+	})
+
+	t.runs.splice(0)
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'futureToken',
+		value: 'future-secret-value',
+	})
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toEqual([])
+
+	await t.grant(t.people.cy.userId, 'secret', 'futureToken')
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toHaveLength(1)
+	expect(t.runs[0]?.error).toBeNull()
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'on',
+		pause: null,
+	})
+})
+
+test('a run that references a vault with no binding pauses the enablement on Use and resumes on Use of the binding', async () => {
+	const t = await setup()
+	const cys = await t.enable('cy', 'subscription', emailTopic)
+	t.setPackageCode(async (callerContext, packageId) => {
+		await resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: callerContext.request,
+			packageStamp: attestedPackageStamp(packageId),
+			baseUrl: 'https://kody.example',
+			credential: {
+				use: 'provider-secret',
+				provider: '1password',
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: { sessionId: null, appId: packageId, packageId },
+			},
+		})
+	})
+	t.runs.splice(0)
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs[0]?.error).toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'secret:use',
+	})
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: {
+			reason: 'credential_access',
+			resourceType: 'secret-provider',
+			resourceId: '1password',
+			credentialId: null,
+		},
+	})
+
+	// A stored secret with the provider's name is not the vault.
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: '1password',
+		value: 'not-the-vault',
+	})
+	await t.grant(t.people.cy.userId, 'secret', '1password')
+	t.runs.splice(0)
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toEqual([])
+
+	await t.db
+		.prepare(
+			`INSERT INTO secret_provider_bindings (
+				user_id, provider_id, package_id, door_secret_name, config_json
+			) VALUES (?, '1password', 'pkg-shared', 'opToken', '{}')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toEqual([])
+
+	const binding = await t.db
+		.prepare(`SELECT id FROM secret_provider_bindings WHERE user_id = ?`)
+		.bind(t.orgId)
+		.first<{ id: string }>()
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: binding?.id ?? '',
+		family: 'secret',
+		subject: { type: 'user', id: t.people.cy.userId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.people.owner.userId,
+		audit: createTestOrgAuditWriter(),
+	})
+	t.setPackageCode(async () => {})
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toHaveLength(1)
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'on',
+		pause: null,
+	})
+})
+
+test('a grant on a credential deleted since the pause does not resume the enablement', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+	})
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await deleteSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'teamToken',
+	})
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: { reason: 'credential_access', resourceId: 'teamToken' },
+	})
+})
+
+test('a pause on a credential whose row is gone never resumes through a same-named secret', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	// A vault binding is hard-deleted, leaving the pause's id naming no row.
+	await t.db
+		.prepare(
+			`UPDATE enablements SET paused_credential_id = ? WHERE id = ? AND org_id = ?`,
+		)
+		.bind('removed-vault-binding', beas.id, t.orgId)
+		.run()
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: { credentialId: 'removed-vault-binding' },
+	})
+})
+
+test('a pause on an integration name shared by two credentials resumes once either is granted', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'shared', 'google')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const serverId = crypto.randomUUID()
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url) VALUES (?, ?, 'shared', 'https://mcp.example.com')`,
+		)
+		.bind(serverId, t.orgId)
+		.run()
+	// Paused on the name before either credential existed.
+	await t.db
+		.prepare(
+			`UPDATE enablements
+			 SET paused_permission = 'integration:use', paused_resource_type = 'integration',
+			     paused_resource_id = 'shared', paused_credential_id = NULL
+			 WHERE id = ? AND org_id = ?`,
+		)
+		.bind(beas.id, t.orgId)
+		.run()
+
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: serverId,
+		family: 'integration',
+		subject: { type: 'user', id: t.people.bea.userId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.people.owner.userId,
+		audit: createTestOrgAuditWriter(),
+	})
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toHaveLength(1)
+	expect(t.runs[0]?.error).toBeNull()
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'on',
+		pause: null,
+	})
+})
+
+test("a member's paused email subscription waits on that member's own list, not the org's (#3317)", async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.enable('cy', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+	})
+
+	const waitingIds = async (
+		person: keyof typeof t.people,
+		orgId: OwnerId = t.orgId,
+	) => {
+		const personId = t.people[person].userId
+		const row = await t.db
+			.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first<{ id: number }>()
+		const signals = await collectWaitingSignals({
+			env: t.env,
+			user: {
+				userId: row!.id,
+				stableUserId: orgId,
+				actorStableUserId: personalOrgId(personId),
+				email: `${person}@acme.example`,
+				username: t.people[person].username,
+				emailVerified: true,
+			},
+		})
+		return buildWaitingItems(signals, 'quillworks')
+			.filter((item) => item.kind === 'enablement-paused')
+			.map((item) => ({ id: item.id, title: item.title, why: item.why }))
+	}
+
+	expect(await waitingIds('bea')).toEqual([
+		{
+			id: `enablement-paused:${beas.id}`,
+			title: `Your @acme/pkg-shared "${emailTopic}" subscription is paused`,
+			why: expect.stringContaining('Use on the secret "teamToken"'),
+		},
+	])
+	expect(await waitingIds('cy')).toEqual([])
+	expect(await waitingIds('owner')).toEqual([])
+	expect(await waitingIds('bea', personalOrgId(t.people.bea.userId))).toEqual(
+		[],
+	)
+
+	// Agents read the same queue for the org their connection is bound to.
+	const mcpWaitingIds = async (orgId: OwnerId | null) =>
+		(
+			await deriveWaitingItemsForStableUser({
+				env: t.env,
+				personId: t.people.bea.userId,
+				orgId,
+				email: 'bea@acme.example',
+			})
+		)
+			.filter((item) => item.kind === 'enablement-paused')
+			.map((item) => item.id)
+	expect(await mcpWaitingIds(t.orgId)).toEqual([`enablement-paused:${beas.id}`])
+	expect(await mcpWaitingIds(null)).toEqual([])
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await t.sendEmail('bea@acme.example')
+	expect(await waitingIds('bea')).toEqual([])
+	expect(await mcpWaitingIds(t.orgId)).toEqual([])
+})
+
 test("a member's webhook runs as its enabler, never as Owner, and a paused one answers 409", async () => {
 	const t = await setup()
 	const beas = await t.enableWebhook('bea', 'endpoint-bea')
@@ -635,7 +989,6 @@ test("a member's cron job runs as its enabler and cannot use an org credential t
 			packageId: 'pkg-shared',
 			trigger: { kind: 'cron', instanceId: jobId },
 		})
-		if (plan.mode !== 'enablements') throw new Error('Expected enablements.')
 		const outcomes = []
 		for (const run of plan.runs) {
 			const request = deriveRequestContext({
@@ -829,7 +1182,6 @@ test('turning a trigger on again keeps one enablement per person', async () => {
 			instanceId: buildPackageJobId('pkg-shared', jobName),
 		},
 	})
-	if (plan.mode !== 'enablements') throw new Error('Expected enablements.')
 	expect(plan.runs.map((run) => String(run.enabler.userId)).sort()).toEqual(
 		[t.people.bea.userId, t.people.cy.userId].map(String).sort(),
 	)
@@ -961,4 +1313,241 @@ test("a run as a member reads org mail only with that member's email:read", asyn
 		.getMessage('message-missing')
 		.catch((error: unknown) => error)
 	expect(ownerError).not.toMatchObject({ name: 'AuthorizationError' })
+})
+
+test('a member cannot make themselves Owner through a job or webhook in a package they saved', async () => {
+	const t = await setup()
+	consoleInfo.mockImplementation(() => {})
+	const promoteBea = (callerContext: McpCallerContext) =>
+		orgMemberUpdateCapability.handler(
+			{ username: 'bea', role: 'owner' },
+			{ env: t.env, callerContext },
+		)
+	t.setPackageCode(promoteBea)
+	const beasRole = async () =>
+		(
+			await t.db
+				.prepare(
+					`SELECT role FROM org_memberships
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(t.orgId, t.people.bea.userId)
+				.first<{ role: string }>()
+		)?.role
+	const jobId = buildPackageJobId('pkg-shared', jobName)
+	const orgBinding = { org: { id: t.orgId, slug: 'quillworks' } }
+	const tick = async () => {
+		const plan = await planEnablementRuns({
+			env: t.env,
+			orgId: t.orgId,
+			packageId: 'pkg-shared',
+			trigger: { kind: 'cron', instanceId: jobId },
+		})
+		return await Promise.all(
+			plan.runs.map((run) => {
+				const callerContext = createMcpCallerContext({
+					baseUrl: 'https://kody.example',
+					user: {
+						...run.enabler,
+						email: `${run.enabler.username}@acme.example`,
+						displayName: run.enabler.username ?? '',
+					},
+					source: { kind: 'schedule', jobId, enablement: run },
+					orgBinding: { ...orgBinding, role: run.role },
+				})
+				return promoteBea(callerContext).then(
+					() => ({ request: callerContext.request, error: null }),
+					(error: unknown) => ({ request: callerContext.request, error }),
+				)
+			}),
+		)
+	}
+
+	// Saved but turned on by nobody: neither trigger runs.
+	expect(await tick()).toEqual([])
+	expect((await t.deliverWebhook('endpoint-bea')).status).toBe(409)
+	expect(t.runs).toEqual([])
+
+	// Turned on by Bea: both run as Bea, and a role change needs a live person.
+	await t.enable('bea', 'cron', jobName)
+	await t.enableWebhook('bea', 'endpoint-bea')
+	const [cronRun, ...otherCronRuns] = await tick()
+	expect(otherCronRuns).toEqual([])
+	expect(cronRun).toMatchObject({
+		request: { actor: { userId: t.people.bea.userId } },
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
+	})
+	await t.deliverWebhook('endpoint-bea')
+	expect(t.runs).toHaveLength(1)
+	expect(t.runs[0]).toMatchObject({
+		request: { actor: { userId: t.people.bea.userId } },
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
+	})
+	expect(await beasRole()).toBe('member')
+
+	// A scheduled request that names no enabler holds no permissions at all.
+	const nobody = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user: {
+			userId: personIdFromStored(t.orgId as string),
+			username: 'quillworks',
+			email: 'team@acme.example',
+			displayName: 'Acme',
+		},
+		source: { kind: 'schedule', jobId },
+		orgBinding: { ...orgBinding, role: 'owner' },
+	})
+	expect(nobody.request?.actor).toBeNull()
+	await expect(promoteBea(nobody)).rejects.toMatchObject({
+		name: 'LivePersonRequiredError',
+	})
+	expect(await beasRole()).toBe('member')
+
+	// Turned on by an Owner, it still cannot change roles: that needs a live
+	// person, whatever the enabler's role.
+	await t.enable('owner', 'cron', jobName)
+	const outcomes = await tick()
+	expect(
+		outcomes.find(
+			(outcome) => outcome.request?.actor?.userId === t.people.owner.userId,
+		),
+	).toMatchObject({
+		error: {
+			name: 'LivePersonRequiredError',
+			capabilityName: 'orgMemberUpdate',
+		},
+	})
+	expect(await beasRole()).toBe('member')
+})
+
+test("an Owner's job, webhook, and email handler cannot change roles, billing, or site-admin state (#2393)", async () => {
+	const t = await setup()
+	consoleInfo.mockImplementation(() => {})
+	// The Owner is a site admin too, so only the live-person rule stands in
+	// the way.
+	await t.db
+		.prepare(
+			`INSERT INTO user_roles (user_id, role_id)
+			 SELECT u.id, r.id FROM users u, roles r
+			 WHERE u.stable_user_id = ? AND r.name = 'admin'`,
+		)
+		.bind(t.people.owner.userId)
+		.run()
+	const livePersonCalls = {
+		orgMemberUpdate: (callerContext: McpCallerContext) =>
+			orgMemberUpdateCapability.handler(
+				{ username: 'bea', role: 'owner' },
+				{ env: t.env, callerContext },
+			),
+		adminCreditGrant: (callerContext: McpCallerContext) =>
+			adminCreditGrantCapability.handler(
+				{ username: 'bea', amountCents: 100_000 },
+				{ env: t.env, callerContext },
+			),
+		adminUserUpdate: (callerContext: McpCallerContext) =>
+			adminUserUpdateCapability.handler(
+				{ username: 'owner', plan: 'pro' },
+				{ env: t.env, callerContext },
+			),
+		adminFeatureFlagSet: (callerContext: McpCallerContext) =>
+			adminFeatureFlagSetCapability.handler(
+				{ key: 'jev', enabled: true },
+				{ env: t.env, callerContext },
+			),
+	}
+	type Attempt = { credential: string | undefined; denials: Array<string> }
+	const attempts: Array<Attempt> = []
+	const tryAll = async (callerContext: McpCallerContext) => {
+		const denials: Array<string> = []
+		for (const [name, call] of Object.entries(livePersonCalls)) {
+			try {
+				await call(callerContext)
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.name === 'LivePersonRequiredError' &&
+					error.message.includes(`"${name}"`)
+				) {
+					denials.push(name)
+				}
+			}
+		}
+		attempts.push({
+			credential: callerContext.request?.credential.kind,
+			denials,
+		})
+	}
+	t.setPackageCode(tryAll)
+	const everyCall = Object.keys(livePersonCalls)
+
+	await t.enable('owner', 'subscription', emailTopic)
+	await t.enableWebhook('owner', 'endpoint-owner')
+	await t.enable('owner', 'cron', jobName)
+	await t.sendEmail('owner@acme.example')
+	await t.deliverWebhook('endpoint-owner')
+	const jobId = buildPackageJobId('pkg-shared', jobName)
+	const plan = await planEnablementRuns({
+		env: t.env,
+		orgId: t.orgId,
+		packageId: 'pkg-shared',
+		trigger: { kind: 'cron', instanceId: jobId },
+	})
+	expect(plan.runs).toHaveLength(1)
+	await tryAll(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			user: {
+				...plan.runs[0]!.enabler,
+				email: 'owner@acme.example',
+				displayName: 'owner',
+				roles: ['admin'],
+			},
+			source: { kind: 'schedule', jobId, enablement: plan.runs[0] },
+			orgBinding: {
+				org: { id: t.orgId, slug: 'quillworks' },
+				role: plan.runs[0]!.role,
+			},
+		}),
+	)
+	expect(attempts).toEqual([
+		{ credential: 'inbound-email', denials: everyCall },
+		{ credential: 'webhook', denials: everyCall },
+		{ credential: 'schedule', denials: everyCall },
+	])
+	expect(t.runs.map((run) => run.request?.actor?.userId)).toEqual([
+		t.people.owner.userId,
+		t.people.owner.userId,
+	])
+	const roleOf = async (person: 'bea' | 'owner') =>
+		(
+			await t.db
+				.prepare(
+					`SELECT role FROM org_memberships
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(t.orgId, t.people[person].userId)
+				.first<{ role: string }>()
+		)?.role
+	expect(await roleOf('bea')).toBe('member')
+
+	// The same Owner, live in a web session, may change the role.
+	await livePersonCalls.orgMemberUpdate(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			user: {
+				...t.people.owner,
+				email: 'owner@acme.example',
+				displayName: 'owner',
+			},
+			source: { kind: 'session' },
+			orgBinding: { org: { id: t.orgId, slug: 'quillworks' }, role: 'owner' },
+		}),
+	)
+	expect(await roleOf('bea')).toBe('owner')
 })

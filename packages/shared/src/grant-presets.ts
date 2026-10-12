@@ -2,6 +2,9 @@
  * Grant presets map to concrete org permissions (Teams spec §5.2). Advanced
  * grants store `preset = NULL` and an explicit permission checklist instead.
  * `billing:*` and `secret:read` are never in a preset.
+ *
+ * Presets are keyed by permission family. A credential grant uses the family
+ * of its credential's kind (`secret` or `integration`).
  */
 import { type OrgPermission, type OrgResourceType } from './org-permissions.ts'
 
@@ -75,52 +78,52 @@ const orgResourceGrantable: ReadonlyArray<OrgPermission> = [
  * presets; callers pass an explicit checklist.
  */
 export function permissionsForGrantPreset(
-	resourceType: OrgResourceType | 'org',
+	family: OrgResourceType | 'org',
 	preset: GrantPreset,
 ): ReadonlyArray<OrgPermission> {
-	if (resourceType === 'org') {
+	if (family === 'org') {
 		throw new Error(
 			'Grant presets do not apply to the org resource. Pass an explicit permission list.',
 		)
 	}
-	const use = useByType[resourceType]
+	const use = useByType[family]
 	if (preset === 'use') return use
-	const contribute = [...use, ...contributeExtraByType[resourceType]]
+	const contribute = [...use, ...contributeExtraByType[family]]
 	if (preset === 'contribute') return contribute
-	return [...contribute, ...manageExtraByType[resourceType]]
+	return [...contribute, ...manageExtraByType[family]]
 }
 
 /** True when a permission may be stored on a grant (never billing:*, secret:read). */
 export function isGrantablePermission(
-	resourceType: OrgResourceType | 'org',
+	family: OrgResourceType | 'org',
 	permission: OrgPermission,
 ): boolean {
 	if (permission === 'billing:read' || permission === 'billing:write') {
 		return false
 	}
 	if (permission === 'secret:read') return false
-	if (resourceType === 'org') {
+	if (family === 'org') {
 		return orgResourceGrantable.includes(permission)
 	}
-	const prefix = `${resourceType}:`
+	const prefix = `${family}:`
 	if (!permission.startsWith(prefix)) return false
 	const action = permission.slice(prefix.length)
 	return action !== 'create'
 }
 
 export function resolveGrantPermissions(input: {
-	resourceType: OrgResourceType | 'org'
+	family: OrgResourceType | 'org'
 	preset: GrantPreset | null
 	permissions: ReadonlyArray<OrgPermission> | null
 }): ReadonlyArray<OrgPermission> {
 	if (input.preset) {
-		return permissionsForGrantPreset(input.resourceType, input.preset)
+		return permissionsForGrantPreset(input.family, input.preset)
 	}
 	const list = input.permissions ?? []
 	for (const permission of list) {
-		if (!isGrantablePermission(input.resourceType, permission)) {
+		if (!isGrantablePermission(input.family, permission)) {
 			throw new Error(
-				`Permission ${permission} cannot be granted on ${input.resourceType}.`,
+				`Permission ${permission} cannot be granted on ${input.family}.`,
 			)
 		}
 	}

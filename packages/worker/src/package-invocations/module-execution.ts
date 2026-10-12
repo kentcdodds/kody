@@ -244,8 +244,7 @@ export async function runSavedPackageModuleOnce(
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
 			source: input.actor.request,
 		})
-		// A run that acts as a person (an enablement run) reads org mail only
-		// with that person's email:read; Automation runs keep Owner access.
+		// A run reads org mail only with its person's email:read.
 		const requireRunEmailRead = () =>
 			authorize(
 				{ env: input.env, request: callerContext.request },

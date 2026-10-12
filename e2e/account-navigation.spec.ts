@@ -28,8 +28,8 @@ async function clickThroughSections(
 	const requests = collectJsonRequests(page)
 	let previousHeading = fromHeading
 	for (const hop of hops) {
-		requests.reset()
 		await observeMainTransitions(page)
+		requests.reset()
 		await page
 			.getByRole('navigation', { name: navName })
 			.getByRole('link', { name: hop.link, exact: true })
@@ -115,7 +115,108 @@ test('account section switches keep the current page on screen (no loading flash
 	)
 })
 
-test('signed-in profile and org switcher open the workspace rail through to Activity', async ({
+test('MCP servers are one click from /account and two from the account menu', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `account-workspace-${runId}@example.com`,
+		username: `account-workspace-${runId}`,
+		password: 'account-workspace-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.setViewportSize({ width: 1440, height: 900 })
+	await page.goto('/account')
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Profile' }),
+	).toBeVisible()
+
+	// The account rail has a Workspace group that opens the signup org's
+	// resources under `/@slug/-/…`.
+	const accountRail = page.getByRole('navigation', {
+		name: 'Account sections',
+	})
+	for (const [label, section] of [
+		['Overview', 'overview'],
+		['Repositories', 'packages'],
+		['Connections', 'connections'],
+		['Secrets', 'secrets'],
+		['Jobs', 'jobs'],
+		['Memories', 'memories'],
+	]) {
+		await expect(
+			accountRail.getByRole('link', { name: label, exact: true }),
+		).toHaveAttribute('href', `/@${user.username}/-/${section}`)
+	}
+	await accountRail
+		.getByRole('link', { name: 'MCP servers', exact: true })
+		.click()
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/mcp-servers$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'MCP servers' }),
+	).toBeVisible()
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Workspace sections' })
+			.getByRole('link', { name: 'MCP servers', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+
+	// From the account menu: Manage leads with the workspace Overview (not
+	// Billing), and the overview links every section.
+	await page.goto('/account/security')
+	await waitForClientHydration(page)
+	await page.getByTestId('org-switcher').click()
+	const manageGroup = page
+		.getByTestId('org-switcher-panel')
+		.getByTestId('org-switcher-manage-group')
+	await expect(manageGroup.getByRole('link').first()).toHaveAccessibleName(
+		/Overview/,
+	)
+	await manageGroup.getByRole('link', { name: /Overview/ }).click()
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Overview' }),
+	).toBeVisible()
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Workspace sections' })
+			.getByRole('link', { name: 'Overview', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+	const overview = page.locator('[data-testid^="org-overview-"]')
+	for (const label of [
+		'Repositories',
+		'Connections',
+		'Secrets',
+		'Jobs',
+		'Memories',
+		'Billing',
+	]) {
+		await expect(
+			overview.getByRole('link', { name: new RegExp(`^${label}`) }),
+		).toBeVisible()
+	}
+	await page
+		.getByTestId('org-overview-access')
+		.getByRole('link', { name: /^MCP servers/ })
+		.click()
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/mcp-servers$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'MCP servers' }),
+	).toBeVisible()
+
+	// The organizations list opens the signup org's overview too.
+	await page.goto('/account/organizations')
+	await waitForClientHydration(page)
+	await expect(
+		page.getByTestId('account-organization').getByRole('link'),
+	).toHaveAttribute('href', `/@${user.username}/-/overview`)
+})
+
+test('signed-in profile opens the workspace rail through to Activity', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -155,27 +256,6 @@ test('signed-in profile and org switcher open the workspace rail through to Acti
 	await expect(
 		rail.getByRole('link', { name: 'Activity', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
-
-	// Org switcher Manage also names Workspace when there is no team org.
-	await page.goto('/account')
-	await waitForClientHydration(page)
-	await page.getByTestId('org-switcher').click()
-	const panel = page.getByTestId('org-switcher-panel')
-	await expect(panel).toBeVisible()
-	const manageGroup = panel.getByTestId('org-switcher-manage-group')
-	await expect(
-		manageGroup.getByTestId('org-switcher-org-manage-workspace'),
-	).toHaveAttribute('href', `/@${user.username}/-/packages`)
-	await expect(
-		manageGroup.getByTestId('org-switcher-org-manage-billing'),
-	).toHaveAttribute('href', `/@${user.username}/-/billing`)
-	await Promise.all([
-		page.waitForURL(new RegExp(`/@${user.username}/-/packages$`)),
-		manageGroup.getByTestId('org-switcher-org-manage-workspace').click(),
-	])
-	await expect(
-		page.getByRole('navigation', { name: 'Workspace sections' }),
-	).toBeVisible()
 })
 
 test('credits live on the usage page: /account/credits redirects there', async ({
@@ -237,8 +317,8 @@ test('Add connection opens its own page with the client wall, then a host step (
 	)
 	await expect(page.getByTestId('account-connections-back')).toHaveCount(0)
 
-	const requests = collectJsonRequests(page)
 	await observeMainTransitions(page)
+	const requests = collectJsonRequests(page)
 	await page.getByTestId('account-connections-add').click()
 	await expect(page).toHaveURL(
 		new RegExp(`/@${user.username}/-/connections/new$`),

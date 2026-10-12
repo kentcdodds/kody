@@ -2,6 +2,10 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
+import {
 	decryptWebhookUrlSecret,
 	encryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
@@ -15,12 +19,12 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
 import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
 	type PackageWebhookManifestEntry,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackage } from '#worker/package-invocations/module-artifacts.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -53,7 +57,6 @@ import {
 import {
 	defaultWebhookVerification,
 	resolveHmacCiphertextForMint,
-	resolveWebhookHmacSigningSecret,
 } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
@@ -342,13 +345,8 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
-	const migration = await getEnablementOrgMigration({
-		db: input.env.APP_DB,
-		orgId: savedPackage.userId,
-	})
 	const verification =
-		declared.verification ??
-		(migration.state === 'migrated' ? defaultWebhookVerification : null)
+		webhookHmacVerification(declared.verification) ?? defaultWebhookVerification
 
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
@@ -696,48 +694,7 @@ export async function revealWebhookUrlForWebsite(input: {
 		handle: formatWebhookUrlHandle(resolved.endpoint.id),
 		urlHost: resolved.urlHost,
 		url: resolved.url,
-		signingSecret: await revealDefaultSigningSecret({
-			env: input.env,
-			userId: input.userId,
-			baseUrl: resolved.baseUrl,
-			endpoint: resolved.endpoint,
-			savedPackage: resolved.savedPackage,
-		}),
 	}
-}
-
-/**
- * The generated `X-Kody-Signature` secret, revealed only when it is the one
- * inbound delivery checks: the org is on enablements and the manifest
- * declares no verification of its own. Provider-issued secrets stay hidden.
- */
-async function revealDefaultSigningSecret(input: {
-	env: Env
-	userId: OwnerId
-	baseUrl: string
-	endpoint: WebhookEndpointRecord
-	savedPackage: SavedPackageRecord
-}): Promise<string | null> {
-	if (!input.endpoint.hmacSecretEncrypted) return null
-	const migration = await getEnablementOrgMigration({
-		db: input.env.APP_DB,
-		orgId: input.endpoint.userId,
-	})
-	if (migration.state !== 'migrated') return null
-	const declared = await loadDeclaredWebhook({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		savedPackage: input.savedPackage,
-		webhookName: input.endpoint.webhookName,
-	}).catch(() => null)
-	if (!declared || declared.verification) return null
-	return resolveWebhookHmacSigningSecret({
-		env: input.env,
-		userId: input.endpoint.userId,
-		endpoint: input.endpoint,
-		verification: defaultWebhookVerification,
-	})
 }
 
 export type SyntheticWebhookRequestFixture = {
@@ -897,8 +854,9 @@ export async function dispatchSyntheticWebhookForUser(input: {
 				`Invalid request fixture method: ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
+		const hmacVerification = webhookHmacVerification(declared.verification)
 		const extraAllowedHeaders = [
-			...(declared.verification ? [declared.verification.header] : []),
+			...(hmacVerification ? [hmacVerification.header] : []),
 			...(declared.replay?.timestampHeader
 				? [declared.replay.timestampHeader]
 				: []),
@@ -1022,13 +980,20 @@ export async function dispatchSyntheticWebhookForUser(input: {
 					| Record<string, unknown>
 					| undefined)
 			: undefined
+	const placementRefused = Boolean(
+		readCredentialPlacementRefusalFromInvocationBody(response.body),
+	)
 	return await finish({
 		status: response.status,
 		outcome: 'failed',
-		error: `invocation_status_${response.status}`,
+		error: placementRefused
+			? credentialPlacementRefusedCode
+			: `invocation_status_${response.status}`,
 		result,
 		errorBody: {
-			code: String(errorRecord?.['code'] ?? 'invocation_failed'),
+			code: placementRefused
+				? credentialPlacementRefusedCode
+				: String(errorRecord?.['code'] ?? 'invocation_failed'),
 			message: String(
 				errorRecord?.['message'] ??
 					`Webhook export invocation failed with HTTP ${response.status}.`,

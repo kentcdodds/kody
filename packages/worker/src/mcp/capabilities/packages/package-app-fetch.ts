@@ -404,9 +404,15 @@ export const packageAppFetchCapability = defineDomainCapability(
 			const restPath = normalizePackageAppFetchPath(args.path)
 			const restPathOnly = restPath.split(/[?#]/, 1)[0] || '/'
 
+			const callerRequest = requireMcpRequest(ctx.callerContext)
+			if (!callerRequest.actor) {
+				throw new McpCallerError(
+					`${packageAppFetchCapabilityName} needs a signed-in caller, who the app acts as.`,
+				)
+			}
 			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				request: requireMcpRequest(ctx.callerContext),
+				request: callerRequest,
 			})
 			const lookupId = args.package_id ?? args.kody_id ?? ''
 			const savedPackage = await resolveOwnedSavedPackage({
@@ -473,6 +479,11 @@ export const packageAppFetchCapability = defineDomainCapability(
 						email: owner.ownerEmail,
 						username: owner.ownerScope,
 					}),
+				},
+				visitor: {
+					userId: callerRequest.actor.userId,
+					username: callerRequest.actor.username ?? user.username ?? '',
+					role: callerRequest.membership?.role ?? null,
 				},
 				packagePath,
 				dispatch: { synthetic: true },

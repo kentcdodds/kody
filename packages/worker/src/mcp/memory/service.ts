@@ -2,6 +2,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { type ResourceListScope } from '#worker/authorization/authorize.ts'
 import {
 	isCapabilitySearchOffline,
 	type EmbedTextFn,
@@ -20,7 +21,11 @@ import {
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
-import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
+import {
+	queryMemoryVectorIds,
+	rankMemoryVectorIdsWithin,
+	searchMemories,
+} from './memory-search.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
@@ -109,6 +114,8 @@ type MemoryGetInput = MemoryOwnerContext & {
 
 type MemorySearchInput = MemoryOwnerContext & {
 	env: MemoryEnv
+	/** Memories the caller may read (`memory:read`). */
+	scope: ResourceListScope
 	query: string
 	category?: string | null
 	limit?: number
@@ -120,6 +127,7 @@ type MemorySearchInput = MemoryOwnerContext & {
 
 type MemoryVerifyInput = MemoryOwnerContext & {
 	env: MemoryEnv
+	scope: ResourceListScope
 	candidate: {
 		subject: string
 		summary: string
@@ -136,6 +144,7 @@ type MemoryVerifyInput = MemoryOwnerContext & {
 
 type SurfaceRelevantMemoriesInput = MemoryOwnerContext & {
 	env: MemoryEnv
+	scope: ResourceListScope
 	query: string
 	conversationId: string
 	limit?: number
@@ -452,7 +461,21 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 
 	let rows: Array<McpMemoryRow>
 	let vectorRankedIds: Array<string> | undefined
-	if (offline) {
+	if (input.scope.kind === 'granted') {
+		rows = await listMemoriesByIds(input.env.APP_DB, input.userId, {
+			ids: [...input.scope.ids],
+			statuses,
+		})
+		if (!offline) {
+			vectorRankedIds = await rankMemoryVectorIdsWithin({
+				env: input.env as Env,
+				query,
+				userId: input.userId,
+				memoryIds: rows.map((row) => row.id),
+				...(input.embedText ? { embedText: input.embedText } : {}),
+			})
+		}
+	} else if (offline) {
 		rows = await listMemoriesByUserId(input.env.APP_DB, input.userId, {
 			statuses,
 			limit: memoryOfflineCandidateLimit,
@@ -541,6 +564,7 @@ export async function verifyMemoryCandidate(input: MemoryVerifyInput): Promise<{
 	const result = await searchMemoryRecords({
 		env: input.env,
 		userId: input.userId,
+		scope: input.scope,
 		storageContext: input.storageContext,
 		query,
 		limit: input.limit,
@@ -577,6 +601,7 @@ export async function surfaceRelevantMemories(
 	const result = await searchMemoryRecords({
 		env: input.env,
 		userId: input.userId,
+		scope: input.scope,
 		storageContext: input.storageContext,
 		query: input.query,
 		limit: input.limit,

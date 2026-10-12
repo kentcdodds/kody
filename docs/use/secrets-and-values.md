@@ -30,14 +30,15 @@ carries that authority. Access rules are covered in
 
 `packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
 `{{secret:…}}` placeholder** after mount and grant checks succeed — never
-decrypted plaintext. Put that string in a secret-aware `fetch` request header
-(the gateway refuses it in the URL or body), or pass it to `secretHeaders.basic`
-/ `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
-platform use sites resolve it. Package and execute JavaScript never receive
-plaintext from `get`. A secret-aware `fetch` may send the value to an
-**approved** host. If that host echoes the value back, the gateway redacts it
-from the response (see [Placeholders in `fetch`](#placeholders-in-fetch)); treat
-response bodies as untrusted all the same.
+decrypted plaintext. Put that string anywhere in a secret-aware `fetch` request
+(see [Placeholders in `fetch`](#placeholders-in-fetch)), or pass it to
+`secretHeaders.basic` / `kody.secretJwtSign` (both accept saved secret names
+**or** opaque refs). Only platform use sites resolve it. Package and execute
+JavaScript never receive plaintext from `get`. A secret-aware `fetch` may send
+the value to an **approved** host. If that host echoes the value back, the
+gateway redacts it from the response (see
+[Placeholders in `fetch`](#placeholders-in-fetch)); treat response bodies as
+untrusted all the same.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
@@ -62,29 +63,56 @@ ones. See the [Terms](/terms).
 ## Placeholders in `fetch`
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
-or **`{{secret:tokenName|scope=user}}`** in a **request header**. The host
-resolves them for **approved** destinations over **HTTPS** only.
+or **`{{secret:tokenName|scope=user}}`** anywhere in the request: a header, the
+URL path, the query string, or a text body (JSON, form-encoded, or plain text).
+The gateway fills them only when both hold:
 
-The request body is data, never a substitution site: the gateway forwards it
-byte for byte, so placeholder text in a body (an issue that documents the
-syntax, a form field, a stream) reaches the remote exactly as written. The
-gateway refuses, before anything resolves, a placeholder in the URL or query
-string, and a URL or header placeholder on a plain `http://` request. The error
-names the credential and the rule. A package that declares
-[`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
-further: each placeholder must name one of its slots and sit in that slot's
-declared `placement` header, matching its template (oauth slots default to
-`Authorization: Bearer {value}`).
+- the request is **HTTPS**;
+- the request host is one the credential allows: a saved secret's approved
+  hosts, an integration's `requiredHosts` and `apiBaseUrl` host, or a vault
+  item's websites.
+
+Otherwise the request is refused before any credential resolves, with an error
+that names the credential and the host; the gateway never sends a placeholder it
+would fill unfilled. A placeholder in the URL host or user info is always
+refused, so filling one can never change where a request goes. In a JSON body
+each value is JSON-escaped; in a form-encoded body or query string each value is
+form-encoded, and the other keys and values keep their bytes as written. In the
+URL path each value is encoded as segment data, so a `/`, `?`, or `#` in it
+cannot change the route. A placeholder encoded with `encodeURIComponent` is
+found too.
+
+`multipart/*` bodies (file uploads) and bodies that are not UTF-8 text are
+forwarded byte for byte and never filled, so a placeholder there reaches the
+remote as written. Put a credential such an upload needs in a header.
+
+The `x-kody-secret-resolution` header changes this per request, and Kody strips
+it before the request leaves:
+
+- `headers-only` fills header placeholders and sends the URL and body as
+  written, for a body that quotes the syntax on purpose (an issue or chat
+  message that documents it) on a host the credential allows. Without it, that
+  text would be filled with the secret.
+- `off` resolves nothing and checks nothing: every placeholder, in the URL,
+  headers, or body, is sent as written.
+
+See
+[Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
+Local execute sends a request through the cloud gateway when its URL, headers,
+or buffered body hold a placeholder. It cannot replay a caller `ReadableStream`
+body, so it scans that stream as it is sent and fails instead of sending a
+placeholder in it unfilled.
 
 If the remote echoes a substituted value back, in a response header, status
 text, the final URL after redirects, or anywhere in the body, the gateway
 replaces it with `[REDACTED SECRET]` before your code reads the response, the
-same way run output is redacted. A Basic Auth header is redacted whole and as
-its encoded credential. Because the body can change length, `content-length` is
-dropped from those responses. Range responses (`206` or `content-range`) are
-masked with `*` byte for byte instead, so their offsets stay true. A WebSocket
-upgrade keeps its socket and redacted headers, but messages on the socket are
-not redacted.
+same way run output is redacted. The value is also redacted in its URL-encoded,
+form-encoded, and JSON-escaped forms, and from the message of a fetch that
+fails. A Basic Auth header is redacted whole and as its encoded credential.
+Because the body can change length, `content-length` is dropped from those
+responses. Range responses (`206` or `content-range`) are masked with `*` byte
+for byte instead, so their offsets stay true. A WebSocket upgrade keeps its
+socket and redacted headers, but messages on the socket are not redacted.
 
 External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 `secret/`). Canonical 1Password form is
@@ -152,27 +180,29 @@ algorithms:
 
 ## Mentioning placeholders without resolving them
 
-The gateway scans the **final serialized URL and headers**, so a literal
-placeholder assembled by any means, including string concatenation, resolves in
-a header and is refused in the URL. The body is never scanned or substituted:
-placeholder text there is sent verbatim, so the gateway never substitutes a
-credential into a body (a form-encoded token exchange, a login password). Even
-so, avoid placing resolvable placeholder tokens into user-visible or
+The gateway scans the **final serialized URL, headers, and body**, so a literal
+placeholder assembled by any means, including string concatenation, resolves
+there. Avoid placing resolvable placeholder tokens into user-visible or
 third-party-visible content such as issue bodies, comments, prompts, logs, or
-returned strings: that text may later be copied into a header.
+returned strings: sent to a host the credential allows, that text is filled with
+the secret.
 
 - To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.
   Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so
   this form is inert everywhere — it cannot resolve in this request or any later
   one.
+- To send a body that **quotes** the syntax (an issue, comment, or chat
+  message), set the **`x-kody-secret-resolution: headers-only`** header on that
+  **`fetch`**. Header placeholders still resolve; placeholder text in the URL
+  and body is sent as written. Without it the gateway fills that text.
 - To deliberately send a **resolvable** literal placeholder to a third party
   (for example, config text that Kody itself will resolve later), set the
   **`x-kody-secret-resolution: off`** header on that **`fetch`**. The gateway
   strips the header and skips all placeholder resolution for that one request.
   Only the calling code can set headers, so data flowing through a URL or body
-  can never disable resolution. Bodies need no opt-out: they never resolve. Use
-  this sparingly: the delivered text is still one resolution step away from the
-  real secret if it later flows back through a secret-aware **`fetch`**.
+  can never disable resolution. Use this sparingly: the delivered text is still
+  one resolution step away from the real secret if it later flows back through a
+  secret-aware **`fetch`**.
 
 ## Host approval
 

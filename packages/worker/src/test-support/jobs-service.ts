@@ -11,7 +11,6 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
-import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { syncPackageJobsForPackage } from '#worker/jobs/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { computeNextRunAt, toJobView } from '#worker/jobs/schedule.ts'
@@ -42,7 +41,7 @@ export function mockRepoPersistence() {
 				entityKind,
 				entityId,
 				publishedCommit: 'published-commit-1',
-				manifestPath: entityKind === 'package' ? 'package.json' : 'kody.json',
+				manifestPath: 'package.json',
 				sourceRoot: sourceRoot ?? '/',
 			})
 			return {
@@ -53,7 +52,7 @@ export function mockRepoPersistence() {
 				repo_id: `${entityKind}-${entityId}`,
 				published_commit: 'published-commit-1',
 				indexed_commit: null,
-				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
+				manifest_path: 'package.json',
 				source_root: sourceRoot ?? '/',
 				last_external_check_at: null,
 				external_check_until: null,
@@ -78,10 +77,10 @@ export function mockRepoPersistence() {
 					userId,
 					sourceId,
 					entityKind:
-						(existing['entity_kind'] as 'job' | 'package' | undefined) ?? 'job',
+						(existing['entity_kind'] as EntityKind | undefined) ?? 'package',
 					entityId: String(existing['entity_id'] ?? sourceId),
 					publishedCommit: 'published-commit-1',
-					manifestPath: String(existing['manifest_path'] ?? 'kody.json'),
+					manifestPath: String(existing['manifest_path'] ?? 'package.json'),
 					sourceRoot: String(existing['source_root'] ?? '/'),
 				})
 				if (env.BUNDLE_ARTIFACTS_KV) {
@@ -93,12 +92,15 @@ export function mockRepoPersistence() {
 							id: sourceId,
 							user_id: ownerIdFromStored(String(existing['user_id'])),
 							entity_kind:
-								(existing['entity_kind'] as 'job' | 'package') ?? 'job',
+								(existing['entity_kind'] as EntityKind | undefined) ??
+								'package',
 							entity_id: String(existing['entity_id'] ?? sourceId),
 							repo_id: String(existing['repo_id'] ?? sourceId),
 							published_commit: 'published-commit-1',
 							indexed_commit: null,
-							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
+							manifest_path: String(
+								existing['manifest_path'] ?? 'package.json',
+							),
 							source_root: String(existing['source_root'] ?? '/'),
 							last_external_check_at: null,
 							external_check_until: null,
@@ -168,7 +170,6 @@ export function createDatabase(
 		['value_entries', []],
 		['entity_sources', []],
 		['published_bundle_artifacts', []],
-		['archived_job_artifacts', []],
 		['user_storage_buckets', []],
 		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
@@ -385,17 +386,6 @@ export function createDatabase(
 								) as T | null
 							}
 							if (
-								query.includes(
-									'SELECT id FROM archived_job_artifacts WHERE job_id = ? AND user_id = ?',
-								)
-							) {
-								return selectOne(
-									'archived_job_artifacts',
-									(row) =>
-										row['job_id'] === params[0] && row['user_id'] === params[1],
-								) as T | null
-							}
-							if (
 								query.includes('FROM published_bundle_artifacts') &&
 								query.includes(
 									'WHERE user_id = ? AND source_id = ? AND artifact_kind = ?',
@@ -553,21 +543,6 @@ export function createDatabase(
 								}
 							}
 							if (
-								query.includes('FROM archived_job_artifacts') &&
-								query.includes('WHERE retain_until <= ?')
-							) {
-								return {
-									results: selectAll(
-										'archived_job_artifacts',
-										(row) => String(row['retain_until']) <= String(params[0]),
-									).sort((left, right) =>
-										String(left['retain_until']).localeCompare(
-											String(right['retain_until']),
-										),
-									) as T[],
-								}
-							}
-							if (
 								query.includes('FROM published_bundle_artifacts') &&
 								query.includes('WHERE user_id = ? AND source_id = ?')
 							) {
@@ -701,14 +676,13 @@ export function createDatabase(
 									timezone: params[9],
 									enabled: params[10],
 									kill_switch_enabled: params[11],
-									preserved: params[12],
-									expires_at: params[13],
-									caller_context_json: params[14],
-									created_at: params[15],
-									updated_at: params[16],
-									last_run_at: params[17],
-									last_run_status: params[18],
-									next_run_at: params[19],
+									expires_at: params[12],
+									caller_context_json: params[13],
+									created_at: params[14],
+									updated_at: params[15],
+									last_run_at: params[16],
+									last_run_status: params[17],
+									next_run_at: params[18],
 								}
 								upsert(
 									'jobs',
@@ -785,12 +759,12 @@ export function createDatabase(
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[17] &&
-										existing['user_id'] === params[18],
+										existing['id'] === params[16] &&
+										existing['user_id'] === params[17],
 								)
 								const row = {
-									id: params[17],
-									user_id: params[18],
+									id: params[16],
+									user_id: params[17],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -801,14 +775,13 @@ export function createDatabase(
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									preserved: params[10],
-									expires_at: params[11],
-									caller_context_json: params[12],
-									updated_at: params[13],
-									last_run_at: params[14],
-									last_run_status: params[15],
-									next_run_at: params[16],
-									created_at: existingJob?.['created_at'] ?? params[13],
+									expires_at: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									next_run_at: params[15],
+									created_at: existingJob?.['created_at'] ?? params[12],
 								}
 								upsert(
 									'jobs',
@@ -940,55 +913,6 @@ export function createDatabase(
 										changes: deleteWhere(
 											'published_bundle_artifacts',
 											(row) => row['source_id'] === params[0],
-										),
-										last_row_id: 0,
-									},
-								}
-							}
-							if (query.startsWith('INSERT INTO archived_job_artifacts')) {
-								const row = {
-									id: params[0],
-									job_id: params[1],
-									user_id: params[2],
-									source_id: params[3],
-									published_commit: params[4],
-									storage_id: params[5],
-									retain_until: params[6],
-									created_at: params[7],
-									updated_at: params[8],
-								}
-								upsert(
-									'archived_job_artifacts',
-									(existing) => existing['id'] === row.id,
-									row,
-								)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('UPDATE archived_job_artifacts')) {
-								const id = params[5]
-								const existing = selectOne(
-									'archived_job_artifacts',
-									(row) => row['id'] === id,
-								)
-								if (!existing) {
-									return { meta: { changes: 0, last_row_id: 0 } }
-								}
-								upsert('archived_job_artifacts', (row) => row['id'] === id, {
-									...existing,
-									source_id: params[0],
-									published_commit: params[1],
-									storage_id: params[2],
-									retain_until: params[3],
-									updated_at: params[4],
-								})
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('DELETE FROM archived_job_artifacts')) {
-								return {
-									meta: {
-										changes: deleteWhere(
-											'archived_job_artifacts',
-											(row) => row['id'] === params[0],
 										),
 										last_row_id: 0,
 									},
@@ -1130,12 +1054,12 @@ export async function insertPublishedEntitySource(input: {
 		.bind(
 			input.sourceId,
 			input.userId,
-			input.entityKind ?? 'job',
+			input.entityKind ?? 'package',
 			input.entityId,
-			`${input.entityKind ?? 'job'}-${input.entityId}`,
+			`${input.entityKind ?? 'package'}-${input.entityId}`,
 			input.publishedCommit,
 			null,
-			input.manifestPath ?? 'kody.json',
+			input.manifestPath ?? 'package.json',
 			input.sourceRoot ?? '/',
 			'2026-04-16T00:00:00.000Z',
 			'2026-04-16T00:00:00.000Z',
@@ -1156,12 +1080,12 @@ export async function insertPublishedEntitySource(input: {
 			source: {
 				id: input.sourceId,
 				user_id: ownerIdFromStored(input.userId),
-				entity_kind: input.entityKind ?? 'job',
+				entity_kind: input.entityKind ?? 'package',
 				entity_id: input.entityId,
-				repo_id: `${input.entityKind ?? 'job'}-${input.entityId}`,
+				repo_id: `${input.entityKind ?? 'package'}-${input.entityId}`,
 				published_commit: input.publishedCommit,
 				indexed_commit: null,
-				manifest_path: input.manifestPath ?? 'kody.json',
+				manifest_path: input.manifestPath ?? 'package.json',
 				source_root: input.sourceRoot ?? '/',
 				last_external_check_at: null,
 				external_check_until: null,
@@ -1200,7 +1124,11 @@ export function createBaseCallerContext() {
 	)
 }
 
-export async function insertLeftoverJob(input: {
+/**
+ * A package job as `syncPackageJobsForPackage` writes it: the row points at a
+ * published package source whose package.json declares the job.
+ */
+export async function insertPackageJob(input: {
 	env: Env
 	callerContext: PersistedJobCallerContext
 	/** Org that owns the job; defaults to the caller's personal org. */
@@ -1212,13 +1140,14 @@ export async function insertLeftoverJob(input: {
 		params?: Record<string, unknown>
 		timezone?: string | null
 		enabled?: boolean
-		sourceId?: string | null
-		publishedCommit?: string | null
+		publishedCommit?: string
 	}
 }) {
 	const now = new Date().toISOString()
-	const jobId = crypto.randomUUID()
-	const sourceId = input.body.sourceId ?? `job-${jobId}`
+	const suffix = crypto.randomUUID().slice(0, 8)
+	const packageId = `pkg-${suffix}`
+	const sourceId = `package-source-${suffix}`
+	const jobId = buildPackageJobId(packageId, input.body.name)
 	const publishedCommit = input.body.publishedCommit ?? 'published-commit-1'
 	const timezone = input.body.timezone ?? 'UTC'
 	const ownerId =
@@ -1236,7 +1165,6 @@ export async function insertLeftoverJob(input: {
 		timezone,
 		enabled: input.body.enabled ?? true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: now,
 		updatedAt: now,
@@ -1248,25 +1176,30 @@ export async function insertLeftoverJob(input: {
 		successCount: 0,
 		errorCount: 0,
 	}
-	if (input.body.sourceId == null) {
-		const jobView = toJobView(job)
-		await insertPublishedEntitySource({
-			db: input.env.APP_DB as ReturnType<typeof createDatabase>,
-			env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
-			userId: ownerId,
-			sourceId,
-			entityKind: 'job',
-			entityId: jobId,
-			publishedCommit,
-			files: input.env.BUNDLE_ARTIFACTS_KV
-				? buildJobSourceFiles({
-						job: jobView,
-						moduleSource:
-							input.body.code ?? 'export default async () => ({ ok: true })',
-					})
-				: undefined,
-		})
-	}
+	await insertPublishedEntitySource({
+		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+		env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
+		userId: ownerId,
+		sourceId,
+		entityKind: 'package',
+		entityId: packageId,
+		publishedCommit,
+		manifestPath: 'package.json',
+		files: input.env.BUNDLE_ARTIFACTS_KV
+			? {
+					'package.json': createPackageJobManifestText({
+						packageName: `@owner/${packageId}`,
+						kodyId: packageId,
+						description: 'Package job fixture',
+						jobName: input.body.name,
+						schedule: input.body.schedule,
+						exportPath: './src/job.ts',
+					}),
+					'src/job.ts':
+						input.body.code ?? 'export default async () => ({ ok: true })',
+				}
+			: undefined,
+	})
 	await jobsData(input.env).insertJob({
 		userId: ownerId,
 		job,

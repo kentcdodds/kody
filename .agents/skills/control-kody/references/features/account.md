@@ -10,23 +10,26 @@ Pages about the person, split from the org workspace:
 - `/account/experiments`: experiments opt-in.
 - `/account/data`: export and delete account.
 
-The account rail ("Account sections") lists only those pages. Workspace pages
-(Repositories, Jobs, Secrets, Connections, Billing, and the rest) sit on a
-separate "Workspace sections" rail under `/@<slug>/-/…`; Repositories is
-`/@<slug>/-/packages`, distinct from the public profile at `/@<slug>`. Both
+The account rail ("Account sections") lists those pages, then a Workspace group
+that links the signup org's Overview, Repositories, Connections, MCP servers,
+Secrets, Jobs, and Memories. Those workspace pages (and Billing and the rest)
+sit on a separate "Workspace sections" rail under `/@<slug>/-/…`; Repositories
+is `/@<slug>/-/packages`, distinct from the public profile at `/@<slug>`. The
+signup org's Overview (`/@<slug>/-/overview`) is a card for every workspace
+section; a team org's overview URL redirects to its home at `/@<slug>`. Both
 rails come from `account-rail.ts` and render through `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
 The site header has one avatar: the org switcher (`data-testid="org-switcher"`).
-Its popover lists orgs, then a Manage group for the current team org (or the
-personal org when there is no team): **Workspace** first (lands on
-`/@<slug>/-/packages` and opens the workspace rail), then team Settings,
-Members, Teams, Grants, Collaborators, and Billing when the role allows
-(personal-only Manage is Workspace + Billing). Create organization, an invites
-row when you have any, then a "Your account" group (Your profile, Account
-settings, Log out). Narrow viewports show the same rows in the menu panel. Own
-profile (`/@<username>`) also links **Workspace** beside Edit profile.
+Its popover lists orgs, then Manage links: for the current team org Overview
+(`/@<slug>`), Settings, Members, Teams, Grants, Collaborators, and Billing when
+the role allows; with no team org, the signup org's Overview and Billing. Then
+Create organization, an invites row when you have any, then a "Your account"
+group (Your profile, Account settings, Log out). Narrow viewports show the same
+rows in the menu panel. Own profile (`/@<username>`) also links **Workspace**
+(lands on `/@<slug>/-/packages`) beside Edit profile. A team org home lists
+**Workspace** above its management links.
 
 ## How to get there
 
@@ -46,8 +49,11 @@ other roles see what their grants and teams give them); rows do not link to a
 package page yet. Team orgs have an Organization rail: Settings, Members, Teams
 (owners/members), Grants, Collaborators, and Billing (`/@<slug>/-/billing`,
 owners and billing users). The org switcher, org home, and
-`/account/organizations` also link into those sections. Personal orgs keep
-Billing/Usage on the account rail.
+`/account/organizations` also link into those sections. From a page with no org
+section (such as `/account`), an org row in the switcher or in
+`/account/organizations` opens that org's overview: the team home, or the signup
+org's `/@<slug>/-/overview`. Personal orgs keep Billing/Usage in the workspace
+rail's Organization group.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. `/account/...` resource pages 404, except

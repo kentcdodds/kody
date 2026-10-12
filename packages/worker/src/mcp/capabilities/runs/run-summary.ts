@@ -1,8 +1,12 @@
+import { authorizeOrgWide } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
 import { formatRunRecordSummary, runRecordSummarySchema } from './shared.ts'
 
@@ -44,6 +48,10 @@ export const runSummaryCapability = defineDomainCapability(
 		outputSchema: runRecordSummarySchema,
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeOrgWide(
+				{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
+				'job:read',
+			)
 			const summary = await summarizeRunRecords({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),

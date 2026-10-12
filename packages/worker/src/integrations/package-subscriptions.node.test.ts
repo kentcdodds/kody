@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	>(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
+	findIntegrationCredentialId: vi.fn(async () => 'cred-google'),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -21,6 +22,10 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
+}))
+
+vi.mock('#worker/integrations/credentials.ts', () => ({
+	findIntegrationCredentialId: mocks.findIntegrationCredentialId,
 }))
 
 const {

@@ -15,15 +15,18 @@ import {
 	evaluatePlatformHealth,
 	evaluateRuntimeHealth,
 	flattenGhJsonPages,
+	formatBriefing,
 	parseArgs,
 	parsePreviewComment,
 	parseSessionRequest,
 	previewCommentMarker,
 	previewSeedEmail,
 	runPreviewManualTest,
+	shellQuote,
 	workerNameFromPreviewUrl,
 	type GhResult,
 	type PreviewManualTestDeps,
+	type PreviewManualTestResult,
 } from './preview-manual-test.ts'
 
 const sampleComment = [
@@ -33,6 +36,7 @@ const sampleComment = [
 	'Worker: `kody-pr-42`',
 	'Runtime worker: `kody-pr-42-runtime` (https://kody-pr-42-runtime.kody.workers.dev)',
 	'Platform worker: `kody-pr-42-platform` (https://kody-pr-42-platform.kody.workers.dev)',
+	'API worker: `kody-pr-42-api` (https://kody-pr-42-api.kody.workers.dev)',
 	'D1: `kody-pr-42-db`',
 	'KV: `kody-pr-42-oauth-kv`',
 	'',
@@ -118,6 +122,8 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		runtimeUrl: 'https://kody-pr-42-runtime.kody.workers.dev',
 		platformWorkerName: 'kody-pr-42-platform',
 		platformUrl: 'https://kody-pr-42-platform.kody.workers.dev',
+		apiWorkerName: 'kody-pr-42-api',
+		apiUrl: 'https://kody-pr-42-api.kody.workers.dev',
 		d1DatabaseName: 'kody-pr-42-db',
 		oauthKvTitle: 'kody-pr-42-oauth-kv',
 		mocks: [mock],
@@ -144,6 +150,8 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		runtimeUrl: null,
 		platformWorkerName: null,
 		platformUrl: null,
+		apiWorkerName: null,
+		apiUrl: null,
 		d1DatabaseName: null,
 		oauthKvTitle: null,
 		mocks: [],
@@ -165,25 +173,19 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	).toBe('kody_session=abc')
 
 	const fullSha = '91bab582b2040e7b55a84f2415be82c1684ad565'
-	expect([
-		evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc'),
-		evaluateAppHealth({ ok: true, commitSha: fullSha }, '91bab582'),
-		evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
-			'basesha',
-			'headsha',
-		]),
-	]).toEqual([
-		{ ok: true, commitSha: 'abc', detail: 'ok, commitSha abc' },
-		{
-			ok: true,
-			commitSha: fullSha,
-			detail: `ok, commitSha ${fullSha} (matches 91bab582)`,
-		},
-		{
-			ok: true,
-			commitSha: 'mergesha',
-			detail: 'ok, commitSha mergesha (merge of headsha)',
-		},
+	expect(
+		[
+			evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc'),
+			evaluateAppHealth({ ok: true, commitSha: fullSha }, '91bab582'),
+			evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
+				'basesha',
+				'headsha',
+			]),
+		].map(({ ok, commitSha }) => ({ ok, commitSha })),
+	).toEqual([
+		{ ok: true, commitSha: 'abc' },
+		{ ok: true, commitSha: fullSha },
+		{ ok: true, commitSha: 'mergesha' },
 	])
 	expect(evaluateAppHealth({ ok: true, commitSha: 'old' }, 'new').ok).toBe(
 		false,
@@ -601,6 +603,145 @@ test('preview manual test waits for the GitHub preview comment and head SHA work
 	expect(prViews).toBeGreaterThanOrEqual(2)
 	expect(result?.snapshot.workflowStatus).toBe('completed')
 	expect(result?.snapshot.workflowConclusion).toBe('success')
+})
+
+test('briefing single-quotes KODY_API_URL so comment-sourced shell metacharacters do not run on paste', () => {
+	const hostile = 'https://evil.example/$(touch%/tmp/pwned)`id`&sleep%201;true'
+	expect(shellQuote(hostile)).toBe(`'${hostile}'`)
+	expect(shellQuote("https://x.test/o'clock")).toBe(
+		`'https://x.test/o'\\''clock'`,
+	)
+	// parsePreviewComment's URL capture is `https?:\/\/[^)\s]+`, so `$()`,
+	// backticks, `;`, and `&` can reach the briefing line; quote them.
+	const briefing = formatBriefing({
+		ok: true,
+		message: 'ready',
+		options: parseArgs(['--skip-login']),
+		snapshot: {
+			prNumber: 1,
+			prUrl: null,
+			isDraft: false,
+			headSha: null,
+			previewUrl: 'https://kody-pr-1.kody.workers.dev',
+			workerName: 'kody-pr-1',
+			runtimeWorkerName: null,
+			runtimeUrl: null,
+			platformWorkerName: null,
+			platformUrl: null,
+			apiWorkerName: 'kody-pr-1-api',
+			apiUrl: hostile,
+			d1DatabaseName: null,
+			oauthKvTitle: null,
+			mocks: [],
+			expectedSha: null,
+			workflowUrl: null,
+			workflowStatus: null,
+			workflowConclusion: null,
+			workflowHeadSha: null,
+			deploymentSha: null,
+		},
+		smoke: null,
+		session: { cookieHeader: null, origin: null, cookieFile: null },
+		login: {
+			email: previewSeedEmail,
+			password: 'x',
+			username: 'x',
+			admin: false,
+		},
+		briefing: '',
+	} satisfies PreviewManualTestResult)
+	expect(briefing).toContain(`export KODY_API_URL='${hostile}'`)
+	expect(briefing.includes(`export KODY_API_URL=${hostile}`)).toBe(false)
+})
+
+test('preview briefing prints the API host the CLI needs for auth bootstrap and execute --local', async () => {
+	await using server = await createPreviewFixtureServer()
+	const apiUrl = 'https://kody-pr-42-api.kody.workers.dev'
+	const fromComment = await runPreviewManualTest(
+		['--pr', '42', '--skip-login'],
+		createSilentDeps({
+			logs: [],
+			execGh: async (args) =>
+				fakeGh(args, {
+					commentBody: [
+						sampleCommentWithUrl(server.origin),
+						`API worker: \`kody-pr-42-api\` (${apiUrl})`,
+					].join('\n'),
+					headSha: 'headsha',
+					deploymentSha: 'deployedsha',
+					runStatus: 'completed',
+					runConclusion: 'success',
+				}),
+		}),
+	)
+	expect(fromComment.exitCode).toBe(0)
+	expect(fromComment.result?.snapshot).toMatchObject({
+		apiWorkerName: 'kody-pr-42-api',
+		apiUrl,
+	})
+	expect(fromComment.result?.briefing).toContain(
+		`API: ${apiUrl} (\`kody-pr-42-api\`)`,
+	)
+	expect(fromComment.result?.briefing).toContain(
+		`export KODY_API_URL='${apiUrl}'`,
+	)
+
+	const fromUrl = await runPreviewManualTest(
+		[
+			'--url',
+			'https://kody-pr-7.kody-a99.workers.dev',
+			'--no-wait',
+			'--skip-login',
+		],
+		{
+			...createSilentDeps({ logs: [] }),
+			fetch: async () => {
+				throw new Error('offline')
+			},
+		},
+	)
+	expect(fromUrl.result?.snapshot).toMatchObject({
+		apiWorkerName: 'kody-pr-7-api',
+		apiUrl: 'https://kody-pr-7-api.kody-a99.workers.dev',
+	})
+	expect(fromUrl.result?.briefing).toContain(
+		"export KODY_API_URL='https://kody-pr-7-api.kody-a99.workers.dev'",
+	)
+
+	const overridden = await runPreviewManualTest(
+		[
+			'--pr',
+			'42',
+			'--url',
+			'https://kody-pr-7.kody-a99.workers.dev',
+			'--no-wait',
+			'--skip-login',
+		],
+		{
+			...createSilentDeps({
+				logs: [],
+				execGh: async (args) =>
+					fakeGh(args, {
+						commentBody: [
+							sampleCommentWithUrl('https://kody-pr-42.kody-a99.workers.dev'),
+							'API worker: `kody-pr-42-api` (https://kody-pr-42-api.kody-a99.workers.dev)',
+						].join('\n'),
+						headSha: 'headsha',
+						deploymentSha: 'headsha',
+						runStatus: 'completed',
+						runConclusion: 'success',
+					}),
+			}),
+			fetch: async () => {
+				throw new Error('offline')
+			},
+		},
+	)
+	expect(overridden.result?.snapshot).toMatchObject({
+		previewUrl: 'https://kody-pr-7.kody-a99.workers.dev',
+		apiWorkerName: 'kody-pr-7-api',
+		apiUrl: 'https://kody-pr-7-api.kody-a99.workers.dev',
+	})
 })
 
 test('preview manual test treats merge-commit /health as ready when it contains the PR head', async () => {

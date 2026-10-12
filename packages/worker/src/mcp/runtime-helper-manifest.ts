@@ -5,9 +5,9 @@ import {
 } from '@cloudflare/codemode'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 import {
 	createExecuteHelperPrelude,
 	getExecuteHelperCapabilityNames,
@@ -497,14 +497,12 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 			}),
 		createKodyTools: (context) => {
 			const packageStorageTools = context.packageStorageTools
-			const packageStorageUserId = context.callerContext.user
-				? personalOrgId(context.callerContext.user.userId)
-				: ('' as OwnerId)
-			if (!packageStorageTools || !packageStorageUserId) return {}
+			const ownerId = ownerIdFromCaller(context.callerContext)
+			if (!packageStorageTools || !ownerId) return {}
 			return createPackageStorageKodyTools({
 				env: context.env,
-				userId: packageStorageUserId,
-				email: context.callerContext.user?.email,
+				userId: ownerId,
+				email: entitlementEmailForOwner(context.callerContext, ownerId),
 				grantedPackageIds: packageStorageTools.grantedPackageIds,
 				writable: packageStorageTools.writable,
 			})

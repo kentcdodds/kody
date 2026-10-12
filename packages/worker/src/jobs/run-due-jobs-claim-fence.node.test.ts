@@ -1,10 +1,13 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { type EnablementRun } from '#worker/request-context/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import type * as JobsRepo from '@kody-internal/shared/jobs/repo.ts'
-import type * as ArchivedArtifactsRepo from '@kody-internal/shared/jobs/archived-artifacts-repo.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import type * as EntitySources from '#worker/repo/entity-sources.ts'
 import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
@@ -19,18 +22,22 @@ const listDueJobRows = vi.fn()
 const claimJobRow = vi.fn()
 const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
+const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
-const listArchivedJobArtifactsDueBefore = vi.fn<
-	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
->(async () => [])
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
-const planEnablementRuns = vi.fn(async () => ({
-	mode: 'legacy' as 'legacy' | 'enablements',
-	runs: [],
-	skipped: [],
-}))
+const enablementRun: EnablementRun = {
+	id: 'enablement-fenced',
+	enabler: { userId: personIdFromStored('user-fenced'), username: 'fenced' },
+	role: 'owner',
+}
+const planEnablementRuns = vi.fn(
+	async (): Promise<{ runs: Array<EnablementRun>; skipped: [] }> => ({
+		runs: [enablementRun],
+		skipped: [],
+	}),
+)
 
 vi.mock('#worker/enablements/run-gate.ts', () => ({
 	planEnablementRuns: () => planEnablementRuns(),
@@ -55,6 +62,8 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 			finalizeClaimedJobRow(...(args as [never])),
 		retryClaimedJobRow: (...args: Array<unknown>) =>
 			retryClaimedJobRow(...(args as [never])),
+		renewClaimedJobRow: (...args: Array<unknown>) =>
+			renewClaimedJobRow(...(args as [never])),
 	}
 })
 
@@ -88,31 +97,21 @@ vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('@kody-internal/shared/jobs/archived-artifacts-repo.ts', () => ({
-	listArchivedJobArtifactsDueBefore: (
-		...args: Parameters<
-			typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
-		>
-	) => listArchivedJobArtifactsDueBefore(...args),
-	deleteArchivedJobArtifact: vi.fn(),
-}))
-
 const { runDueJobsForUser } = await import('./service.ts')
 
 function createJobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
 	return {
 		version: 1,
-		id: 'job-fenced',
+		id: 'package-job:pkg-fenced:fenced-job',
 		userId: ownerIdFromStored('user-fenced'),
 		name: 'Fenced job',
 		sourceId: 'source-fenced',
 		publishedCommit: null,
-		storageId: 'job:job-fenced',
+		storageId: 'job:package-job:pkg-fenced:fenced-job',
 		schedule: { type: 'interval', every: '1h' },
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: '2026-07-30T12:00:00.000Z',
 		updatedAt: '2026-07-30T12:00:00.000Z',
@@ -139,7 +138,6 @@ function claimedRow(record: JobRecord) {
 		timezone: record.timezone,
 		enabled: 1 as const,
 		kill_switch_enabled: 0 as const,
-		preserved: 0 as const,
 		expires_at: null,
 		caller_context_json: '{}',
 		created_at: record.createdAt,
@@ -258,7 +256,9 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 	retryClaimedJobRow.mockClear()
 	consoleInfo.mockClear()
 
-	const retryRecord = createJobRecord({ id: 'job-retry-fence' })
+	const retryRecord = createJobRecord({
+		id: 'package-job:pkg-fenced:retry-fence',
+	})
 	seedDueClaim(retryRecord)
 	claimRunRecord.mockResolvedValue(null)
 	retryClaimedJobRow.mockResolvedValue(false)
@@ -363,11 +363,8 @@ test('scheduled package job claims carry package identity and the published sour
 })
 
 test('a scheduled slot with no enablement on records no run and does not use up a once job', async () => {
-	planEnablementRuns.mockResolvedValue({
-		mode: 'enablements',
-		runs: [],
-		skipped: [],
-	})
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	claimRunRecord.mockClear()
 	finalizeClaimedJobRow.mockReset()
 	retryClaimedJobRow.mockReset()
@@ -380,7 +377,9 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		jobOutcomes: [],
 	}
 
-	const recurring = createJobRecord({ id: 'job-recurring-skip' })
+	const recurring = createJobRecord({
+		id: 'package-job:pkg-fenced:recurring-skip',
+	})
 	seedDueClaim(recurring)
 	await expect(runDue(recurring.userId)).resolves.toEqual(skipped)
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
@@ -397,7 +396,7 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 
 	finalizeClaimedJobRow.mockClear()
 	const once = createJobRecord({
-		id: 'job-once-skip',
+		id: 'package-job:pkg-fenced:once-skip',
 		schedule: { type: 'once', runAt: '2026-07-30T19:00:00.000Z' },
 	})
 	seedDueClaim(once)
@@ -410,9 +409,53 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		}),
 	)
 	expect(claimRunRecord).not.toHaveBeenCalled()
-	planEnablementRuns.mockResolvedValue({
-		mode: 'legacy',
-		runs: [],
-		skipped: [],
+})
+
+test('each further enablement run renews the shared claim and stops once it is lost', async () => {
+	const secondEnablement: EnablementRun = {
+		...enablementRun,
+		id: 'enablement-second',
+	}
+	const record = createJobRecord({
+		id: 'package-job:pkg-fenced:multi-enablement',
 	})
+	const row = seedDueClaim(record)
+	claimRunRecord.mockReset()
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(record, row, {
+			packageId: null,
+			kodyId: null,
+			publishedCommit: null,
+		}),
+	)
+	finalizeClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	const twoRuns = {
+		runs: [enablementRun, secondEnablement],
+		skipped: [] as [],
+	}
+
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(true)
+	await runDue(record.userId)
+	const [claimInput] = claimJobRow.mock.lastCall as [{ claimToken: string }]
+	const claimToken = claimInput.claimToken
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(renewClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: record.userId,
+			jobId: record.id,
+			claimToken,
+			nowMs: expect.any(Number),
+		}),
+	)
+	expect(claimRunRecord).toHaveBeenCalledTimes(2)
+
+	renewClaimedJobRow.mockReset()
+	claimRunRecord.mockClear()
+	planEnablementRuns.mockResolvedValueOnce(twoRuns)
+	renewClaimedJobRow.mockResolvedValueOnce(false)
+	await runDue(record.userId)
+	expect(renewClaimedJobRow).toHaveBeenCalledOnce()
+	expect(claimRunRecord).toHaveBeenCalledOnce()
 })

@@ -93,6 +93,7 @@ test('an OAuth outside collaborator can do only what their grant allows', async 
 		orgId: ownerId,
 		resourceType: 'package',
 		resourceId: grantedPackageId,
+		family: 'package',
 		subject: { type: 'user', id: collaboratorId },
 		preset: 'use',
 		permissions: null,

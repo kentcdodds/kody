@@ -48,6 +48,8 @@ vi.mock('#worker/orgs/billing.ts', async (importOriginal) => {
 
 const {
 	createOrgMembersApiHandler,
+	createOrgMembersInviteLinksPostHandler,
+	createOrgMembersInviteLinksRevokePostHandler,
 	createOrgMembersInvitePostHandler,
 	createOrgMembersRemovePostHandler,
 	createOrgMembersRolePostHandler,
@@ -311,6 +313,107 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 	})
 })
 
+test('owner can create invite links; member and billing cannot; owner role is rejected', async () => {
+	const env = createEnv()
+	const billingCreate = new Request(
+		'https://kody.test/@zeta-co/-/members/invite-links.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ role: 'member' }),
+		},
+	)
+	await signIn('cara', billingCreate)
+	expect(
+		(
+			await createOrgMembersInviteLinksPostHandler(env).handler({
+				request: billingCreate,
+			} as never)
+		).status,
+	).toBe(403)
+
+	const memberCreate = new Request(
+		'https://kody.test/@zeta-co/-/members/invite-links.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ role: 'member' }),
+		},
+	)
+	await signIn('bob', memberCreate)
+	expect(
+		(
+			await createOrgMembersInviteLinksPostHandler(env).handler({
+				request: memberCreate,
+			} as never)
+		).status,
+	).toBe(403)
+
+	const ownerRole = new Request(
+		'https://kody.test/@zeta-co/-/members/invite-links.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ role: 'owner' }),
+		},
+	)
+	await signIn('ada', ownerRole)
+	const rejectedOwner = await createOrgMembersInviteLinksPostHandler(
+		env,
+	).handler({ request: ownerRole } as never)
+	expect(rejectedOwner.status).toBe(400)
+	expect(await rejectedOwner.json()).toMatchObject({
+		ok: false,
+		error: 'Invite links cannot grant the Owner role.',
+	})
+
+	const create = new Request(
+		'https://kody.test/@zeta-co/-/members/invite-links.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				role: 'member',
+				allowedEmailDomains: 'example.com',
+				maxUses: 3,
+				expiresInDays: 7,
+			}),
+		},
+	)
+	await signIn('ada', create)
+	const created = await createOrgMembersInviteLinksPostHandler(env).handler({
+		request: create,
+	} as never)
+	expect(created.status).toBe(200)
+	const payload = (await created.json()) as {
+		ok: boolean
+		inviteLinks: Array<{ id: string; useCount: number }>
+		inviteLink: { id: string; url: string; token: string }
+	}
+	expect(payload.ok).toBe(true)
+	expect(payload.inviteLink.url).toContain('/join/')
+	expect(payload.inviteLink.url).toContain(payload.inviteLink.token)
+	expect(payload.inviteLinks).toHaveLength(1)
+
+	const revoke = new Request(
+		'https://kody.test/@zeta-co/-/members/invite-links-revoke.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ linkId: payload.inviteLink.id }),
+		},
+	)
+	await signIn('ada', revoke)
+	const revoked = await createOrgMembersInviteLinksRevokePostHandler(
+		env,
+	).handler({ request: revoke } as never)
+	expect(revoked.status).toBe(200)
+	expect(await revoked.json()).toMatchObject({
+		ok: true,
+		inviteLinks: [],
+	})
+})
+
 test('signup org membership writes stay off the web even for a second owner', async () => {
 	const env = createEnv()
 	sqlite
@@ -343,6 +446,23 @@ test('signup org membership writes stay off the web even for a second owner', as
 	} as never)
 	expect(invited.status).toBe(400)
 	expect(await invited.json()).toMatchObject({
+		error: expect.stringMatching(/personal organization/),
+	})
+
+	const link = new Request(
+		'https://kody.test/@ada/-/members/invite-links.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ role: 'member' }),
+		},
+	)
+	await signIn('bob', link)
+	const linked = await createOrgMembersInviteLinksPostHandler(env).handler({
+		request: link,
+	} as never)
+	expect(linked.status).toBe(400)
+	expect(await linked.json()).toMatchObject({
 		error: expect.stringMatching(/personal organization/),
 	})
 })

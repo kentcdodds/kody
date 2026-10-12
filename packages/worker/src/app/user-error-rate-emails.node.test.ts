@@ -1,6 +1,11 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as cloudflareEmail from '#app/email/cloudflare-email.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import type * as runRecordsService from '#worker/run-records/service.ts'
+import { type RunRecord } from '#worker/run-records/types.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const sendCloudflareEmail = vi.fn<typeof cloudflareEmail.sendCloudflareEmail>(
 	async () => ({ ok: true }),
@@ -12,12 +17,65 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 	) => sendCloudflareEmail(...args),
 }))
 
+const listRunRecords = vi.fn<typeof runRecordsService.listRunRecords>(
+	async () => ({ runs: [], nextCursor: null }),
+)
+
+vi.mock('#worker/run-records/service.ts', () => ({
+	listRunRecords: (
+		...args: Parameters<typeof runRecordsService.listRunRecords>
+	) => listRunRecords(...args),
+}))
+
+const getSavedPackageByIdInAnyOrg = vi.fn<
+	typeof packageRepo.getSavedPackageByIdInAnyOrg
+>(async () => null)
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageByIdInAnyOrg: (
+		...args: Parameters<typeof packageRepo.getSavedPackageByIdInAnyOrg>
+	) => getSavedPackageByIdInAnyOrg(...args),
+}))
+
 const {
 	sendUserErrorRateEmails,
 	shouldSendUserErrorRateEmail,
+	summarizeRunError,
 	userErrorRateEmailKvKey,
 	userErrorRateMinErrors,
 } = await import('#app/user-error-rate-emails.ts')
+
+function errorRun(overrides: Partial<RunRecord>): RunRecord {
+	return {
+		id: 'run-0',
+		surface: 'webhook',
+		status: 'error',
+		name: null,
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		publishedCommit: null,
+		storageId: null,
+		jobId: null,
+		workflowId: null,
+		invocationId: null,
+		sessionId: null,
+		idempotencyKey: null,
+		parentRunId: null,
+		startedAt: '2026-08-14T00:00:00.000Z',
+		finishedAt: '2026-08-14T00:00:01.000Z',
+		durationMs: 1000,
+		errorName: 'Error',
+		errorMessage: 'boom',
+		errorTriage: null,
+		triageNote: null,
+		triagedAt: null,
+		triagedBy: null,
+		metadata: {},
+		logCount: 0,
+		...overrides,
+	}
+}
 
 function createKv() {
 	const store = new Map<string, string>()
@@ -125,4 +183,114 @@ test('error-rate emails skip below-threshold users and claim once per month', as
 	const again = await sendUserErrorRateEmails({ env, now })
 	expect(again).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+})
+
+test('error-rate email names each failing package once with its error and a run link', async () => {
+	sendCloudflareEmail.mockClear()
+	listRunRecords.mockResolvedValueOnce({
+		runs: [
+			errorRun({
+				id: 'run-newest',
+				packageId: 'pkg-review',
+				errorMessage:
+					'Request refused (credential_placement_refused, slot "token")\n    at stack',
+			}),
+			errorRun({ id: 'run-older', packageId: 'pkg-review' }),
+			errorRun({
+				id: 'run-hook',
+				name: 'stripe-webhook',
+				errorMessage: 'x'.repeat(400),
+			}),
+			errorRun({ id: 'run-gone', packageId: 'pkg-deleted' }),
+			errorRun({ id: 'run-fourth', name: 'nightly' }),
+		],
+		nextCursor: null,
+	})
+	getSavedPackageByIdInAnyOrg.mockImplementation(async (_db, packageId) =>
+		packageId === 'pkg-review'
+			? ({ id: packageId, name: 'review-ticket' } as SavedPackageRecord)
+			: null,
+	)
+	const { kv } = createKv()
+	const result = await sendUserErrorRateEmails({
+		env: createEnv({
+			users: [
+				{
+					stable_user_id: 'user-named',
+					email: 'named@example.com',
+					event_count: 20,
+					error_count: 10,
+				},
+			],
+			kv,
+		}),
+		now: new Date('2026-08-15T12:00:00.000Z'),
+	})
+
+	expect(result).toEqual({ status: 'notified', emailedUsers: 1 })
+	expect(listRunRecords).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-named'),
+			filter: {
+				status: 'error',
+				since: '2026-08-01T00:00:00.000Z',
+				errorTriage: 'open',
+			},
+		}),
+	)
+	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
+	expect(payload.text).toContain(
+		'Package review-ticket failed: Request refused (credential_placement_refused, slot "token") Open the run: https://kody.codes/account/activity/run-newest',
+	)
+	expect(payload.text).not.toContain('run-older')
+	expect(payload.text).not.toContain('at stack')
+	expect(payload.text).toContain(
+		`stripe-webhook failed: ${'x'.repeat(239)}… Open the run: https://kody.codes/account/activity/run-hook`,
+	)
+	expect(payload.text).toContain(
+		'A run failed: boom Open the run: https://kody.codes/account/activity/run-gone',
+	)
+	expect(payload.text).not.toContain('nightly')
+})
+
+test('error-rate email still sends the count when the run log is unavailable', async () => {
+	sendCloudflareEmail.mockClear()
+	listRunRecords.mockRejectedValueOnce(new Error('run log down'))
+	consoleWarn.mockImplementation(() => {})
+	const { kv } = createKv()
+	const result = await sendUserErrorRateEmails({
+		env: createEnv({
+			users: [
+				{
+					stable_user_id: 'user-degraded',
+					email: 'degraded@example.com',
+					event_count: 20,
+					error_count: 10,
+				},
+			],
+			kv,
+		}),
+		now: new Date('2026-08-15T12:00:00.000Z'),
+	})
+	expect(result).toEqual({ status: 'notified', emailedUsers: 1 })
+	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
+	expect(payload.text).toContain('10 errors across 20 runs')
+	expect(payload.text).not.toContain('failed:')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'user-error-rate-email-runs-failed',
+		expect.any(Error),
+	)
+})
+
+test('summarizeRunError keeps the first non-empty line and redacts Kody tokens', () => {
+	expect(summarizeRunError({ errorMessage: '  first\nsecond' })).toBe('first')
+	expect(summarizeRunError({ errorMessage: '\n  \nactual error\nmore' })).toBe(
+		'actual error',
+	)
+	const token = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
+	const redacted = summarizeRunError({
+		errorMessage: `Unauthorized with ${token}`,
+	})
+	expect(redacted).toBe('Unauthorized with kody_at_[redacted]')
+	expect(redacted).not.toContain('B'.repeat(43))
 })

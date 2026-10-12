@@ -55,6 +55,7 @@ const mockModule = vi.hoisted(() => {
 		app,
 		connection: {
 			userId: 'stable-user-1' as OwnerId,
+			credentialId: 'cred-integration',
 			name,
 			appSlug: app.slug,
 			platformAppSlug: null,

@@ -269,3 +269,28 @@ test('revokeOAuthGrantsForOrg matches metadata.orgId with userId fallback', asyn
 	expect(revokedPersonal).toBe(1)
 	expect(revokeGrant).toHaveBeenCalledWith('g3', 'member-1')
 })
+
+test('offboarding hard-deletes the member’s personal credential grants to the org, and only theirs', async () => {
+	const db = await createDb()
+	await db
+		.prepare(
+			`INSERT INTO credential_org_grants (credential_id, user_id, org_id, created_at)
+			 VALUES ('cred-member', 'member-1', 'org-1', ?), ('cred-owner', 'owner-1', 'org-1', ?)`,
+		)
+		.bind('2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')
+		.run()
+	await offboardOrgMember({
+		appDb: db,
+		env: { APP_DB: db } as Env,
+		orgId: ownerIdFromStored('org-1'),
+		memberUserId: 'member-1',
+		memberLeftVoluntarily: true,
+		now: new Date('2026-10-01T12:00:00.000Z'),
+	})
+	const rows = await db
+		.prepare(
+			`SELECT credential_id FROM credential_org_grants ORDER BY credential_id`,
+		)
+		.all<{ credential_id: string }>()
+	expect(rows.results.map((row) => row.credential_id)).toEqual(['cred-owner'])
+})

@@ -1,6 +1,7 @@
 type SentryScope = {
 	setLevel(_level: string): void
 	setTag(_key: string, _value: string): void
+	setFingerprint(_fingerprint: Array<string>): void
 	setContext(_key: string, _value: Record<string, unknown>): void
 	setUser(_user: Record<string, unknown> | null): void
 }
@@ -12,6 +13,7 @@ type SentryClient = {
 const defaultScope: SentryScope = {
 	setLevel() {},
 	setTag() {},
+	setFingerprint() {},
 	setContext() {},
 	setUser() {},
 }

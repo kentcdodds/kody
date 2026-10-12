@@ -329,8 +329,8 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 
 ### `0010-detect-legacy-credential-patterns`
 
-This detect-only codemod measures which packages still reference credentials the
-old way, ahead of `kody.credentials` slots (see
+This detect-only codemod lists leftover credential patterns in package source
+and the root `package.json` (see
 [Credential slots](../use/packages.md#credential-slots-kodycredentials)).
 `transform` writes nothing; dry-run and apply return the findings as
 `needs_manual`. Run it with `adminPackageCodemodScan`.
@@ -338,19 +338,35 @@ old way, ahead of `kody.credentials` slots (see
 It scans JavaScript and TypeScript modules and the root `package.json`. Each
 finding message starts with one fixed pattern label:
 
-| Label                   | Matches                                                                                                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `literal secret`        | A complete `{{secret:…}}`, `{{secret-basic:…}}`, `{{secret/provider:…}}`, or `{{integration-token:…}}` placeholder, or a string literal passed to `createAuthenticatedFetch`, `packageSecrets.get`, `secretHeaders.basic`, or similar helpers |
-| `computed secret`       | A secret placeholder built at runtime, or a secret helper called with a non-literal name                                                                                                                                                      |
-| `computed integration`  | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                       |
-| `kody.mcp`              | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                       |
-| `\|scope=`              | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                      |
-| `secretMounts`          | `package.json#kody.secretMounts`                                                                                                                                                                                                              |
-| `webhook secretName`    | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                          |
-| `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input               |
-| `plain http`            | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                             |
-| `packageSecrets.get`    | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                      |
-| `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                          |
+| Label                  | Matches                                                                                                                                                                                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `literal secret`       | A complete `{{secret:…}}`, `{{secret-basic:…}}`, `{{secret/provider:…}}`, or `{{integration-token:…}}` placeholder, or a known string passed to `createAuthenticatedFetch`, `packageSecrets.get`, `secretHeaders.basic`, or similar helpers, unless it names a declared slot of its kind |
+| `computed secret`      | A secret placeholder built at runtime, or a secret helper called with a runtime name                                                                                                                                                                                                     |
+| `computed integration` | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                                                                  |
+| `kody.mcp`             | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                                                                  |
+| `\|scope=`             | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                                                                 |
+| `secretMounts`         | `package.json#kody.secretMounts`                                                                                                                                                                                                                                                         |
+| `webhook secretName`   | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                                                                     |
+| `plain http`           | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                                                                        |
+| `packageSecrets.get`   | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                                                                 |
+
+A reference that names a declared `kody.credentials` slot of its kind is not a
+finding. A secret name needs a `secret` slot: `{{secret:NAME}}`, either
+`{{secret-basic:…}}` name, `packageSecrets.get`, and the secret helper fields.
+An integration name needs an `oauth` slot: `{{integration-token:NAME}}`,
+`createAuthenticatedFetch`, and `integrationTokenRefresh`. A vault reference
+names no slot, so it stays a finding.
+
+A known string is a literal, a top-level `const` string (including one imported
+from a relative module), or a template or `+` chain of those. A local binding
+that shadows a module constant is not treated as that constant.
+Placeholder-shaped text that names nothing, such as `{{secret:<name>}}` in help
+or redaction text, is ignored. Test files (`*.test.*`, `*.spec.*`, and anything
+under `__tests__/`) are skipped unless a runtime entry points at them: `exports`
+(import/default, not types-only), `main` / `module` / `browser`, `kody.app`
+entries, job entries, subscription handlers, or a module those entries reach
+through a bundler-resolved import (`import` / `export … from`, `import()`,
+`require()`).
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
@@ -391,6 +407,54 @@ It counts packages and files per pattern, per org, and per package, plus
 private packages. Keep them out of public issues; public issues get the pattern
 counts only.
 
+### `0011-owner-scope-follows-registry`
+
+This codemod runs after an [org resource transfer](./org-resource-transfer.md).
+The transfer moves each package to the new org, but package sources still name
+the old scope. The engine builds `context.packageName` from the owning org's
+package scope and the package leaf, not from `saved_packages.name` (that column
+mirrors the published `package.json`, so a revert or projection refresh puts the
+old scope back). When the scope of the `package.json` `name` differs from the
+owner scope, the codemod replaces every `@<oldScope>/` with `@<newScope>/` in
+every file. That covers the manifest name, `kody.dependencies` keys,
+`kody:@oldScope/...` imports, and docs.
+
+- A match must be followed by `/`, so `@oldScopeish/x`, a bare `@oldScope`
+  handle, and email addresses are left alone. It shares
+  `rewriteScopedReferences` with the community fork self-reference rewrite.
+- Every package in the old scope moved together, so references to sibling
+  packages are rewritten too.
+- Packages whose scope already matches, unscoped names, and unparseable or
+  missing manifests are clean. The codemod is idempotent.
+
+Once the transfer has committed, run `adminPackageCodemodDryRun`, then
+`adminPackageCodemodApply`, with `userIds` set to the new org id.
+`adminPackageCodemodRevert` undoes it like any other codemod. A revert puts the
+old scope back in the sources, so the next scan detects the package again.
+Reverting a package whose `kody:@oldScope/...` dependencies no longer exist
+under the old scope fails the publish checks and leaves the package applied.
+Re-applying after a revert can report `dry_run_new_failures` for a package whose
+sibling dependency is still registered under the old scope. Run apply again once
+the sibling is applied.
+
+### `0012-explicit-webhook-url-secret-verification`
+
+This one-shot manifest-format codemod adds
+`"verification": { "type": "url-secret" }` to every `package.json#kody.webhooks`
+entry that declares no `verification`. Ingress already authenticates those
+webhooks by URL secret alone, so the rewrite changes no behavior (see
+[Senders that cannot sign](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
+Once a rescan finds no webhook without `verification`, publish requires it
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+- Appends `verification` to each undeclared entry. Entries that already declare
+  any verification type are left unchanged, and the codemod is idempotent.
+- Packages without `kody.webhooks` are clean.
+- Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
+  that is not an array of objects, and a `verification` that is not an object.
+- Does not touch the stored signing secret. Mint still gives these webhooks the
+  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
@@ -402,12 +466,12 @@ and `nextCursor` until `nextCursor` is null.
 The admin UI walks those pages as separate HTTP requests. MCP `execute` and
 inline workflow sandboxes do not: dry-run, apply, and revert are check-heavy
 enough that a second page in the same sandbox typically exceeds the workflow
-observer (~270s, under the Cloudflare Workflow step timeout). Those modes take
-one page per execute or workflow sandbox. When `nextCursor` is set, start a new
-`execute` or `workflows.create` with that `runId` and cursor. Omitted filters
-inherit from the stored run. Capability results include a `nextStep` string that
-restates this. Scan pages are cheaper and can often continue in the same
-sandbox.
+observer (5-minute sandbox budget, under the Cloudflare Workflow step timeout).
+Those modes take one page per execute or workflow sandbox. When `nextCursor` is
+set, start a new `execute` or `workflows.create` with that `runId` and cursor.
+Omitted filters inherit from the stored run. Capability results include a
+`nextStep` string that restates this. Scan pages are cheaper and can often
+continue in the same sandbox.
 
 ### Step limits
 
@@ -532,6 +596,7 @@ Admin-gated operator fleet runs:
 - `adminPackageCodemodDryRun`
 - `adminPackageCodemodApply`
 - `adminPackageCodemodRevert`
+- `adminPackageCodemodOwnerNotice` (see [Owner notice](#owner-notice))
 
 Admin capabilities require `requiredRole: 'admin'` and follow the RBAC boundary
 in [Authorization](./architecture/authorization.md).
@@ -550,14 +615,51 @@ sequence (formalizing existing practice):
 4. **Canary apply** — use admin filters (`userIds` / `packageIds`) for a small
    cohort; monitor checks, projections, and subscriber notifiers.
 5. **Fleet apply** — page through the full population.
-6. **Land enforcement** — add or tighten publish-time lint/checks so **new**
-   publishes cannot use the deprecated pattern.
+6. **Owner notice** — before a gateway, credential, or other runtime rule starts
+   refusing what affected packages still do, email each affected owner what
+   breaks, when, and how to fix it. See [Owner notice](#owner-notice). Required
+   whenever a scan finds packages a codemod cannot fix (for example
+   `needs_manual` findings).
+7. **Land enforcement** — add or tighten publish-time lint/checks so **new**
+   publishes cannot use the deprecated pattern, and turn on the runtime rule.
 
 Skipping dry-run or canary apply risks mass check failures; skipping step 6
-allows new packages to reintroduce debt. After enforcement lands, drop the
-deprecation shims when no remaining packages need them — or open a GitHub issue
-if that drop must wait. See
-[Cleanup after migrations](./cleanup-after-migrations.md).
+breaks packages with no warning; skipping step 7 allows new packages to
+reintroduce debt. After enforcement lands, drop the deprecation shims when no
+remaining packages need them — or open a GitHub issue if that drop must wait.
+See [Cleanup after migrations](./cleanup-after-migrations.md).
+
+### Owner notice
+
+`adminPackageCodemodOwnerNotice` emails the owners of every package a scan run
+flagged. Run a fresh scan after fleet apply, so owners whose packages the
+codemod already fixed are not warned, and pass that scan's `runId`. Dry-run,
+apply, and revert runs are refused, and a scan still running can be previewed
+but not sent. Also pass a stable `noticeId` (for example
+`2026-10-body-placeholders`), a `subject`, `whatBreaks`, `howToFix`,
+`effectiveAt` (when the rule takes effect, in words), and optionally
+`findingMessages` (exact finding messages to include; omit for every finding in
+the run).
+
+- **Dry run by default.** `dryRun` defaults to `true`. It lists each owner with
+  their flagged packages and a status, and renders a preview of the first email.
+  Review the preview before sending with `dryRun: false`.
+- **Recipients.** Every `owner` of the owning org with a verified email. A
+  personal org with no membership rows goes to the user whose id is the org id.
+  Owners with no verified address report `no_recipients`.
+- **Once per notice and recipient.** A KV claim
+  (`package-owner-notice:v1:<noticeId>:<ownerId>:<userId>`, 180 days) is written
+  after each successful send. A re-run skips delivered recipients
+  (`already_sent` once all are reached) and retries the rest (`send_failed`
+  until then). `claim_failed` means the email went out but its claim did not
+  save, so a re-run may send it again. KV has no atomic claim, so run one notice
+  from one place at a time.
+- **Content.** The email names up to 25 affected packages with a link to each
+  and its findings, then the fix. Never put secret values, internal hostnames,
+  or other owners' data in `whatBreaks` or `howToFix`.
+- **Paging.** Owners are processed in id order, `limit` (default 20, max 50) per
+  call. Pass `nextCursor` back until it is `null`. A scan with more than 10,000
+  items is refused; filter the scan first.
 
 ## Revert
 

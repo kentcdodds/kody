@@ -4,7 +4,7 @@ import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
 	teamOrgManagementItems,
-	workspaceLandingItem,
+	type AccountRailItem,
 } from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
@@ -12,6 +12,7 @@ import {
 	currentSwitcherSlug,
 	orgBillingPath,
 	orgIdentity,
+	orgOverviewPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgSettingsPath,
@@ -191,9 +192,15 @@ function teamOrgSwitchHref(input: {
 	onBillingPage: boolean
 	managesBilling: boolean
 }) {
-	if (input.personal) return switchOrgPath(input.pathname, input.slug)
+	const home = `/@${input.slug}`
+	if (input.personal) {
+		// The signup org's home is the public profile; its workspace door is
+		// the overview.
+		const next = switchOrgPath(input.pathname, input.slug)
+		return next === home ? orgOverviewPath(input.slug) : next
+	}
 	// Grant-only collaborators can open the org home, not Settings/Teams.
-	if (input.role === null) return `/@${input.slug}`
+	if (input.role === null) return home
 	if (input.onBillingPage && !input.managesBilling) {
 		return orgSettingsPath(input.slug)
 	}
@@ -202,7 +209,6 @@ function teamOrgSwitchHref(input: {
 	if (input.role === 'billing' && next === orgTeamsPath(input.slug)) {
 		return orgSettingsPath(input.slug)
 	}
-	if (next === `/@${input.slug}`) return orgSettingsPath(input.slug)
 	return next
 }
 
@@ -310,9 +316,11 @@ function OrgSwitcher(
 					const selected = entry.org.slug === currentSlug
 					return {
 						key: entry.org.slug,
-						// A team org keeps the current section, repositories and
+						// An org keeps the current section, repositories and
 						// connections included. Pages without an org section open
-						// Settings, as does Billing for roles that do not manage it.
+						// the org's overview (a team org's home, the signup org's
+						// `/-/overview`). Billing opens Settings for roles that do
+						// not manage it.
 						href: teamOrgSwitchHref({
 							pathname: handle.props.currentPathname,
 							slug: entry.org.slug,
@@ -362,39 +370,38 @@ function OrgSwitcher(
 				: orgRowsFromSession
 		// Prefer the team org in context so Settings/Members/… stay one click
 		// away from account pages. Fall back to last-used / first team org.
-		// Without a team membership, Manage uses a packages-capable org only
-		// (personal, or a member/billing role) — never a grant-only
-		// collaborator, whose packages URL 404s.
-		// Prefer listed (session) memberships only. A synthesized URL org is
-		// member-shaped for chrome, but may be grant-only — packages 404 then.
+		// Personal-only sessions get the signup org's Overview and Billing.
+		// Overview leads either way: the workspace, not Billing, is the door.
 		const manageOrg = manageOrganization(
 			organizations,
-			listedCurrent,
+			current,
 			handle.props.lastUsedOrganization,
 		)
-		const manageFallbackOrg =
-			listedCurrent && (listedCurrent.personal || listedCurrent.role !== null)
-				? listedCurrent
-				: (organizations.find((org) => org.personal) ?? null)
-		const manageTarget = manageOrg ?? manageFallbackOrg
-		const manageIdentity = manageTarget
-			? orgIdentity(manageTarget, viewer)
-			: null
-		const manageItems = manageOrg
+		const signupOrg = manageOrg
+			? null
+			: current?.personal
+				? current
+				: organizations.find((org) => org.personal)
+		const manageTarget = manageOrg ?? signupOrg ?? null
+		const manageItems: Array<AccountRailItem> = manageOrg
 			? [
-					workspaceLandingItem(manageOrg.slug),
+					{ href: `/@${manageOrg.slug}`, label: 'Overview', icon: 'home' },
 					...teamOrgManagementItems({
 						orgSlug: manageOrg.slug,
 						role: manageOrg.role,
 					}),
 				]
-			: manageFallbackOrg
+			: signupOrg
 				? [
-						workspaceLandingItem(manageFallbackOrg.slug),
-						...(orgRoleManagesBilling(manageFallbackOrg.role)
+						{
+							href: orgOverviewPath(signupOrg.slug),
+							label: 'Overview',
+							icon: 'home',
+						},
+						...(orgRoleManagesBilling(signupOrg.role)
 							? [
 									{
-										href: orgBillingPath(manageFallbackOrg.slug),
+										href: orgBillingPath(signupOrg.slug),
 										label: 'Billing',
 										icon: 'wallet' as const,
 									},
@@ -402,8 +409,9 @@ function OrgSwitcher(
 							: []),
 					]
 				: []
-		const manageDetailHandle =
-			manageIdentity?.handle ?? currentIdentity?.handle ?? null
+		const manageDetailHandle = manageTarget
+			? orgIdentity(manageTarget, viewer).handle
+			: null
 		const manageRows: Array<SwitcherRow> =
 			manageDetailHandle && manageItems.length > 0
 				? manageItems.map((item) => ({

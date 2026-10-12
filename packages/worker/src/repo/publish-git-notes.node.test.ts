@@ -146,9 +146,9 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 			publishedBy: 'external_push',
 			source: {
 				id: 'source-1',
-				entity_kind: 'job',
-				entity_id: 'job-1',
-				repo_id: 'job-job-1',
+				entity_kind: 'package',
+				entity_id: 'package-1',
+				repo_id: 'package-package-1',
 				published_commit: null,
 			},
 			commit: 'commit-new',
@@ -172,7 +172,7 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 		),
 	).toMatchObject({
 		publishedBy: 'external_push',
-		entityKind: 'job',
+		entityKind: 'package',
 		commit: 'commit-new',
 	})
 	expect(mockGit.fetch).toHaveBeenCalledWith(

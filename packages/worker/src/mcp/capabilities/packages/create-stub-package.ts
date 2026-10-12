@@ -10,6 +10,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
@@ -105,10 +106,28 @@ export async function createStubSavedPackage(input: {
 		// off Sentry even if the packageGetGitRemote schema max is bypassed.
 		throw new McpCallerError(getErrorMessage(error), { cause: error })
 	}
-	const files = buildStubPackageFiles({ name, kodyId, description })
+	return await createSavedPackageFromFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		owner: input.owner,
+		files: buildStubPackageFiles({ name, kodyId, description }),
+	})
+}
+
+/**
+ * Publish `files` as a new private saved package owned by `owner`, then
+ * refresh its projection (which syncs any `kody.jobs` into job rows).
+ */
+export async function createSavedPackageFromFiles(input: {
+	env: Env
+	baseUrl: string
+	owner: PackageOwnerContext
+	files: Record<string, string>
+}) {
+	const { files } = input
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
-		throw new Error('Stub package files are missing package.json.')
+		throw new Error('Package files are missing package.json.')
 	}
 	const manifest = parseAuthoredPackageJson({
 		content: packageJsonContent,
@@ -135,7 +154,7 @@ export async function createStubSavedPackage(input: {
 		files,
 	})
 	const now = new Date().toISOString()
-	await insertSavedPackage(
+	const stamped = await insertSavedPackage(
 		input.env.APP_DB,
 		{
 			id: packageId,
@@ -146,7 +165,7 @@ export async function createStubSavedPackage(input: {
 			tags_json: JSON.stringify(manifest.kody.tags ?? []),
 			search_text: manifest.kody.searchText ?? null,
 			source_id: ensuredSource.id,
-			has_app: 0,
+			has_app: manifest.kody.app ? 1 : 0,
 			has_skills: 0,
 			hidden: 0,
 			is_private: 1,
@@ -156,6 +175,12 @@ export async function createStubSavedPackage(input: {
 		input.env,
 		{ actorUserId: input.owner.actorUserId },
 	)
+	if (stamped) {
+		scheduleKitSubscriberSync({
+			env: input.env,
+			stableUserId: input.owner.actorUserId,
+		})
+	}
 	await upsertSavedPackageVector(input.env, {
 		packageId,
 		userId: input.owner.ownerUserId,

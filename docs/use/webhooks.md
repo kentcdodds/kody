@@ -60,11 +60,18 @@ Rules:
   `params` (see [Trusted clients](#trusted-clients)).
 - `rateLimitPerMinute` is optional. Default **60**. Maximum **600** (gateway
   fan-in). A leaked URL is still bounded; there is no unlimited setting.
+- `verification.type` is `hmac-sha256`, `hmac-sha1`, or `url-secret` for senders
+  that cannot sign (see
+  [Senders that cannot sign](#senders-that-cannot-sign-url-secret)). The
+  remaining `verification` fields apply to the HMAC types only.
 - `verification.secretName` is **optional**. Omit it for GitHub-style hooks
   where Kody mints package-owned HMAC onto the webhook URL record at
   `webhookUrlMint` (not listed in account secrets, no host Allow). Set it only
   for **provider-issued** signing secrets that must live in the secret store
-  (for example Sentry). Never put an inline secret value in the manifest.
+  (for example Sentry or Stripe). Inbound signatures are checked against the
+  named secret first, on the same URL; a signing secret Kody stored on the
+  endpoint earlier (generated, or copied at mint) is still accepted as a
+  fallback. Never put an inline secret value in the manifest.
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
@@ -160,14 +167,14 @@ required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
 stored on the minted webhook URL record (not a user secrets-list entry, and not
 host-gated). When a package declares `verification.secretName`, reminting (or
 rotating) the URL copies that value onto the endpoint when the named secret
-exists — apply never does a live `secretName` lookup for `{{webhookSecret}}` (so
-changing the name after destination Allow cannot swap credentials). Destination
-`secretName` / `integration` Bearer auth requires host approval / integration
-allowlists. Destination URLs must be `https://`. Redirects are not followed.
-Auth is optional via `secretName` or `integration` (Bearer), or a
-caller-supplied `Authorization` header — not both. Destination `secretName` /
-`integration` authorize the outbound request; they are not the webhook HMAC
-signing secret.
+exists and the endpoint holds no signing secret yet — apply never does a live
+`secretName` lookup for `{{webhookSecret}}` (so changing the name after
+destination Allow cannot swap credentials). Destination `secretName` /
+`integration` Bearer auth requires host approval / integration allowlists.
+Destination URLs must be `https://`. Redirects are not followed. Auth is
+optional via `secretName` or `integration` (Bearer), or a caller-supplied
+`Authorization` header — not both. Destination `secretName` / `integration`
+authorize the outbound request; they are not the webhook HMAC signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
@@ -267,13 +274,23 @@ package settings.
   consumer + export time (ingress receive time is kept as metadata). Failed
   deliveries keep diagnostic logs — including when the export never reached user
   code.
-- `sync`: waits for the export JSON result (**502** on failure).
+- `sync`: waits for the export JSON result (**502** on failure). The failure
+  body is `{ "ok": false, "error": { "code", "message" } }` and never carries
+  package internals. `code` is `invocation_failed` unless the fetch gateway
+  refused the package's request because a credential placeholder was bound for a
+  host the credential does not allow, went over plain HTTP, or sat in the URL
+  host or user info: then it is `credential_placement_refused`. When the refusal
+  concerns one named slot, `error.slot` carries that slot name (never a value);
+  a Basic Auth pair or a vault reference omits it. Ack deliveries record the
+  same code in Activity. The owner sees the full error in Activity.
 
 Background delivery retries keep the same idempotency key, so a transient
-platform persistence failure does not duplicate a completed export. Package
-exports still have the normal execution limit (about 90 seconds); packages that
-exceed it receive an explicit timeout failure and should split or checkpoint
-their work.
+platform persistence failure does not duplicate a completed export. Ack (queued)
+deliveries run the export with a 5-minute budget on every plan. `sync`
+deliveries keep the interactive ~90-second budget, and the HTTP response stops
+waiting after 30 seconds. Exports that exceed their budget receive an explicit
+timeout failure and should split or checkpoint their work, or hand long work to
+a [workflow](./workflows.md).
 
 ## Subscription challenges
 
@@ -545,28 +562,35 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
-### Default signature in orgs on enablements
+### Senders that cannot sign: `url-secret`
 
-In an org moved to enablements, every webhook verifies a signature. When the
-manifest declares no `verification`, Kody checks `X-Kody-Signature` against the
-endpoint's own signing secret, generated at mint or at migration:
+Declare `url-secret` when the sender has no way to sign requests (Telegram,
+Microsoft Graph, Azure DevOps, PostHog, a cron service). The URL secret is then
+the only credential and signature headers are ignored: a POST to the minted URL
+runs the export once it passes any declared `replay` checks (a matching
+`challenge` POST is answered without running it). This is a supported, permanent
+verification type:
 
 ```json
 {
-	"type": "hmac-sha256",
-	"header": "x-kody-signature",
-	"encoding": "hex",
-	"prefix": "sha256="
+	"name": "events",
+	"export": "./handle-events",
+	"verification": { "type": "url-secret" }
 }
 ```
 
-The sender signs the raw body with HMAC-SHA256 and sends
-`X-Kody-Signature: sha256=<hex>`. Reveal the URL in the package settings
-Webhooks section to copy the signing secret next to it; only the owner sees it
-there, and it is shown only when this default scheme applies. Rotating the URL
-keeps the secret. A missing or bad signature gets the same generic 401 and runs
-nothing. The webhook runs as its enabler, the person who turned it on; with no
-`on` enablement the delivery answers 409 `enablement_not_on`.
+A webhook that declares an HMAC type never falls back to the URL secret: a
+request without a valid signature is refused with 401, even on the right URL.
+Prefer an HMAC type whenever the sender can sign.
+
+A webhook that declares no `verification` is treated as `url-secret` for now.
+Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
+declaration to existing packages; once none are left, publish will require
+`verification` on every webhook
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+Either way, the webhook runs as its enabler, the person who turned it on; with
+no `on` enablement the delivery answers 409 `enablement_not_on`.
 
 ## Synthetic smoke test
 
@@ -608,7 +632,8 @@ extension, social-launch client) mints a webhook URL and POSTs JSON. No
 	"export": "./dispatch-message-created",
 	"responseMode": "sync",
 	"inputMode": "params",
-	"rateLimitPerMinute": 600
+	"rateLimitPerMinute": 600,
+	"verification": { "type": "url-secret" }
 }
 ```
 
@@ -631,9 +656,8 @@ Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 replays the stored result. On `sync`, a different payload is **409**
 `idempotency_mismatch` and an in-progress key is **409**
 `invocation_in_progress`. `ack` still returns **202** after enqueue; the
-consumer records the ledger outcome. In a legacy org this works without HMAC and
-the URL secret is the credential. In an org moved to enablements the caller must
-also send the [default signature](#default-signature-in-orgs-on-enablements).
+consumer records the ledger outcome. This works without HMAC: the URL secret is
+the credential.
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor

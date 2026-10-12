@@ -7,26 +7,58 @@ export type MainSnapshot = {
 	loadingCopy: string
 }
 
+function installMainSnapshot() {
+	const main = document.getElementById('main')
+	if (!main) throw new Error('Expected #main')
+	const snapshot = (): MainSnapshot => ({
+		h1: main.querySelector('h1')?.textContent?.trim() ?? '',
+		status: Array.from(main.querySelectorAll('[role="status"]'))
+			.map((node) => node.textContent?.trim() ?? '')
+			.join(' | '),
+		loadingCopy: Array.from(main.querySelectorAll('p'))
+			.map((node) => node.textContent?.trim() ?? '')
+			.filter((text) => /^Loading/i.test(text))
+			.join(' | '),
+	})
+	Object.assign(window, { __kodyMainSnapshot: snapshot })
+}
+
+function readMainSnapshot(page: Page) {
+	return page.evaluate(() =>
+		(
+			window as unknown as { __kodyMainSnapshot: () => MainSnapshot }
+		).__kodyMainSnapshot(),
+	)
+}
+
 /**
  * Record every distinct state `<main>` passes through from now until read.
  * Navigation must swap the previous page for the next one in a single
  * commit: no intermediate state without an `<h1>` and no loading copy where
  * content was — that is the "flash of loading" these specs guard against.
+ *
+ * Recording starts once the current page has settled. A page can still be
+ * filling a deferred panel after hydration (Connections renders "Loading
+ * usage…" until its usage fetch lands); that is the previous page finishing,
+ * not the navigation under test flashing.
  */
 export async function observeMainTransitions(page: Page) {
+	await page.evaluate(installMainSnapshot)
+	await expect
+		.poll(() => readMainSnapshot(page), {
+			message: 'Expected <main> to settle before observing a navigation',
+		})
+		.toEqual({
+			h1: expect.stringMatching(/\S/),
+			status: expect.not.stringMatching(/loading/i),
+			loadingCopy: '',
+		})
 	await page.evaluate(() => {
 		const main = document.getElementById('main')
 		if (!main) throw new Error('Expected #main')
-		const snapshot = () => ({
-			h1: main.querySelector('h1')?.textContent?.trim() ?? '',
-			status: Array.from(main.querySelectorAll('[role="status"]'))
-				.map((node) => node.textContent?.trim() ?? '')
-				.join(' | '),
-			loadingCopy: Array.from(main.querySelectorAll('p'))
-				.map((node) => node.textContent?.trim() ?? '')
-				.filter((text) => /^Loading/i.test(text))
-				.join(' | '),
-		})
+		const snapshot = (
+			window as unknown as { __kodyMainSnapshot: () => MainSnapshot }
+		).__kodyMainSnapshot
 		const log: Array<MainSnapshot> = [snapshot()]
 		const observer = new MutationObserver(() => {
 			const next = snapshot()

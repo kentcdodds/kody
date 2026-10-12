@@ -1,10 +1,10 @@
-export const cookieOriginPrefix = '# origin='
-export const cookieEmailPrefix = '# email='
-export const cookieOrgPrefix = '# org='
-export const oauthClientIdPrefix = '# oauth-client-id='
-export const oauthClientSecretPrefix = '# oauth-client-secret='
-export const oauthRedirectUriPrefix = '# oauth-redirect-uri='
-export const oauthAccessTokenPrefix = '# oauth-access-token='
+const cookieOriginPrefix = '# origin='
+const cookieEmailPrefix = '# email='
+const cookieOrgPrefix = '# org='
+const oauthClientIdPrefix = '# oauth-client-id='
+const oauthClientSecretPrefix = '# oauth-client-secret='
+const oauthRedirectUriPrefix = '# oauth-redirect-uri='
+const oauthAccessTokenPrefix = '# oauth-access-token='
 
 export type AppSessionOAuth = {
 	clientId: string
@@ -32,12 +32,12 @@ export function normalizeCookieOrigin(origin: string) {
 	return origin.replace(/\/$/, '')
 }
 
-export function normalizeCookieEmail(email: string) {
+function normalizeCookieEmail(email: string) {
 	return email.trim().toLowerCase()
 }
 
 /** Same shape as OAuth `?org=` (trim, lowercase, optional leading `@`). */
-export function normalizeCookieOrg(orgSlug: string) {
+function normalizeCookieOrg(orgSlug: string) {
 	const slug = orgSlug.trim().toLowerCase().replace(/^@/, '')
 	return slug.length > 0 ? slug : null
 }

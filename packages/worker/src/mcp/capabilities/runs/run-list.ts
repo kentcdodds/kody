@@ -1,8 +1,16 @@
+import {
+	authorizeOrgWide,
+	listScopeIncludes,
+	loadResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import {
 	formatRunRecord,
@@ -32,6 +40,13 @@ const inputSchema = z.object({
 		.min(1)
 		.optional()
 		.describe('Optional job id to list runs for one scheduled job.'),
+	workflow_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"Optional workflow run id (dynwf-… or pkgwf-…) from workflows.create. Returns that workflow's run, whose metadata.result holds the return value once it succeeds.",
+		),
 	since: z
 		.string()
 		.min(1)
@@ -99,6 +114,15 @@ export const runListCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
+			const auth = {
+				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
+			}
+			const scope = await loadResourceListScope(auth, 'job:read', 'job')
+			// A job grant covers that job's runs, never the org's run history.
+			if (!args.job_id || !listScopeIncludes(scope, args.job_id)) {
+				await authorizeOrgWide(auth, 'job:read')
+			}
 			const page = await listRunRecords({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
@@ -107,6 +131,7 @@ export const runListCapability = defineDomainCapability(
 					status: args.status ?? null,
 					packageId: args.package_id ?? null,
 					jobId: args.job_id ?? null,
+					workflowId: args.workflow_id ?? null,
 					since: args.since ?? null,
 					errorTriage: args.error_triage ?? 'open',
 				},

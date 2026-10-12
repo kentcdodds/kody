@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	insertSavedPackage: vi.fn(),
 	upsertSavedPackageVector: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
+	scheduleKitSubscriberSync: vi.fn(),
 }))
 
 vi.mock('#worker/entitlements/service.ts', () => ({
@@ -46,6 +47,11 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 		mockModule.refreshSavedPackageProjection(...args),
 }))
 
+vi.mock('#worker/kit/subscriber-sync.ts', () => ({
+	scheduleKitSubscriberSync: (...args: Array<unknown>) =>
+		mockModule.scheduleKitSubscriberSync(...args),
+}))
+
 const { createStubSavedPackage } = await import('./create-stub-package.ts')
 
 function resetMocks() {
@@ -58,7 +64,7 @@ function resetMocks() {
 		bootstrapAccess: null,
 	})
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
-	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.insertSavedPackage.mockResolvedValue(true)
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.refreshSavedPackageProjection.mockResolvedValue({ record: {} })
 }
@@ -193,6 +199,11 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 		expect.anything(),
 		{ actorUserId: personIdFromStored('actor-1') },
 	)
+	// Insert stamps before projection refresh; Kit sync must fire here.
+	expect(mockModule.scheduleKitSubscriberSync).toHaveBeenCalledWith({
+		env: expect.anything(),
+		stableUserId: personIdFromStored('actor-1'),
+	})
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
@@ -200,4 +211,17 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
+})
+
+test('createStubSavedPackage skips Kit sync when the actor was already stamped', async () => {
+	resetMocks()
+	mockModule.insertSavedPackage.mockResolvedValueOnce(false)
+	await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://example.test',
+		owner,
+		kodyId: 'already-activated',
+	})
+	expect(mockModule.insertSavedPackage).toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
 })

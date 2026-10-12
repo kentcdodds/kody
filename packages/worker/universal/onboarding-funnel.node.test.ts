@@ -27,6 +27,12 @@ test('waiting card ids drop secret names and unknown ids', () => {
 	expect(
 		sanitizeWaitingCardId('publish-lock:11111111-1111-1111-1111-111111111111'),
 	).toBe('publish-lock:11111111-1111-1111-1111-111111111111')
+	expect(sanitizeWaitingCardId('enablement-paused:en-1')).toBe(
+		'enablement-paused',
+	)
+	expect(sanitizeWaitingCardId('enablement-paused-more')).toBe(
+		'enablement-paused',
+	)
 	expect(sanitizeWaitingCardId('user@example.com')).toBeNull()
 	expect(sanitizeWaitingCardId('prompt:do this')).toBeNull()
 })

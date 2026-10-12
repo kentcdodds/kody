@@ -78,6 +78,8 @@ export const integrationConfigSchema = z.object({
 	 */
 	usageMode: z.enum(['any', 'packages']).optional(),
 	allowedPackageIds: z.array(z.string()).optional(),
+	/** Stable credential id for accessGrant. Output-only; save ignores it. */
+	credentialId: z.string().optional(),
 	/** Last classified OAuth refresh outcome. Output-only; save ignores it. */
 	lastAuthFailure: z
 		.object({

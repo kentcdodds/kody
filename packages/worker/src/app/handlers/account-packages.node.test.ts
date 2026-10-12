@@ -61,6 +61,11 @@ const mockModule = vi.hoisted(() => {
 		getSavedPackageById: vi.fn<typeof packageRepo.getSavedPackageById>(
 			async () => savedPackage,
 		),
+		getSavedPackageByIdInAnyOrg: vi.fn<
+			typeof packageRepo.getSavedPackageByIdInAnyOrg
+		>(async (_db, packageId) =>
+			packageId === savedPackage.id ? savedPackage : null,
+		),
 		getSavedPackageWithCommunityProvenanceById: vi.fn<
 			typeof packageRepo.getSavedPackageWithCommunityProvenanceById
 		>(async () => ({
@@ -163,6 +168,21 @@ vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 	}) => records,
 }))
 
+vi.mock('#app/package-viewer-access.ts', () => ({
+	viewerCanReadSavedPackage: vi.fn(async () => true),
+}))
+
+vi.mock('#worker/orgs/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#worker/orgs/repo.ts')>()
+	return {
+		...actual,
+		loadOrgBindingForOrg: vi.fn(async () => ({
+			org: { id: ownerIdFromStored('stable-user-1'), slug: 'test-user' },
+			role: 'owner' as const,
+		})),
+	}
+})
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	searchSavedPackagesByUserId: (
 		...args: Parameters<typeof packageRepo.searchSavedPackagesByUserId>
@@ -170,6 +190,9 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (
 		...args: Parameters<typeof packageRepo.getSavedPackageById>
 	) => mockModule.getSavedPackageById(...args),
+	getSavedPackageByIdInAnyOrg: (
+		...args: Parameters<typeof packageRepo.getSavedPackageByIdInAnyOrg>
+	) => mockModule.getSavedPackageByIdInAnyOrg(...args),
 	getSavedPackageWithCommunityProvenanceById: (
 		...args: Parameters<
 			typeof packageRepo.getSavedPackageWithCommunityProvenanceById
@@ -368,7 +391,7 @@ test('account package detail redirects the owner to the canonical package URL', 
 		'https://example.com/@test-user/discord-gateway?q=discord',
 	)
 
-	mockModule.getSavedPackageById.mockResolvedValue(null as never)
+	mockModule.getSavedPackageByIdInAnyOrg.mockResolvedValue(null as never)
 	expect((await visit('/missing', { packageId: 'missing' })).status).toBe(404)
 })
 

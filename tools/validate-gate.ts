@@ -9,7 +9,7 @@
  * together. No check is skipped on either size.
  */
 
-export type ValidateLegWeight = 'suite' | 'build' | 'check'
+type ValidateLegWeight = 'suite' | 'build' | 'check'
 
 export type ValidateLeg = {
 	name: string

@@ -5,6 +5,7 @@
  * `[REDACTED SECRET]` in response headers and in the body bytes.
  */
 import { redactedSecretText } from './execution-secret-redactor.ts'
+import { encodePathSegmentData } from './placeholders.ts'
 
 const encoder = new TextEncoder()
 
@@ -29,6 +30,22 @@ function distinctValues(values: Iterable<string>) {
 	return [...new Set(values)]
 		.filter((value) => value.length > 0)
 		.sort((left, right) => right.length - left.length)
+}
+
+/**
+ * Each value as written, plus the forms it takes once filled into a URL, a
+ * form-encoded body, or a JSON string, since a remote echoes what it got.
+ */
+function echoedForms(values: Iterable<string>) {
+	return distinctValues(
+		[...values].flatMap((value) => [
+			value,
+			encodeURIComponent(value),
+			encodePathSegmentData(value),
+			new URLSearchParams([['', value]]).toString().slice(1),
+			JSON.stringify(value).slice(1, -1),
+		]),
+	)
 }
 
 /**
@@ -115,17 +132,18 @@ function redactHeaders(headers: Headers, values: ReadonlyArray<string>) {
 }
 
 /**
- * `response` with every `values` entry redacted from its URL, headers, and
- * body. The body length can change, so `content-length` is dropped, except on
- * range responses: there each value is masked byte for byte so
- * `content-range` and `content-length` stay true. A WebSocket upgrade keeps
- * its socket; messages on it are not redacted.
+ * `response` with every `values` entry (and its URL, form, and JSON encoded
+ * forms) redacted from its URL, headers, and body. The body length can
+ * change, so `content-length` is dropped, except on range responses: there
+ * each value is masked byte for byte so `content-range` and `content-length`
+ * stay true. A WebSocket upgrade keeps its socket; messages on it are not
+ * redacted.
  */
 export function redactEchoedSecrets(
 	response: Response,
 	values: Iterable<string>,
 ): Response {
-	const distinct = distinctValues(values)
+	const distinct = echoedForms(values)
 	if (distinct.length === 0) return response
 	const preserveLength = isRangeResponse(response)
 	const headers = redactHeaders(response.headers, distinct)
@@ -149,11 +167,85 @@ export function redactEchoedSecrets(
 }
 
 /**
+ * `error` with every `values` entry redacted: a failed fetch can name the URL
+ * it was sending, secret and all, in its message, its stack, a field, or a
+ * `cause`. An error that mentions no value is returned as is. One that does is
+ * rebuilt from its redacted message, name, string `code`, and `cause` chain;
+ * its other fields are dropped.
+ */
+export function redactEchoedSecretsInError(
+	error: unknown,
+	values: Iterable<string>,
+): unknown {
+	const forms = echoedForms(values)
+	if (forms.length === 0 || !mentionsAny(error, forms, 0)) return error
+	return rebuildRedacted(error, forms, 0)
+}
+
+const maxCauseDepth = 8
+
+function errorTexts(error: Error) {
+	const texts = [error.message, error.stack ?? '']
+	for (const value of Object.values(error)) {
+		if (typeof value === 'string') texts.push(value)
+	}
+	return texts
+}
+
+function mentionsAny(
+	value: unknown,
+	forms: ReadonlyArray<string>,
+	depth: number,
+): boolean {
+	if (depth > maxCauseDepth || value == null) return false
+	if (!(value instanceof Error)) {
+		const text = typeof value === 'string' ? value : safeStringify(value)
+		return forms.some((form) => text.includes(form))
+	}
+	return (
+		errorTexts(value).some((text) =>
+			forms.some((form) => text.includes(form)),
+		) || mentionsAny(value.cause, forms, depth + 1)
+	)
+}
+
+function rebuildRedacted(
+	value: unknown,
+	forms: ReadonlyArray<string>,
+	depth: number,
+): unknown {
+	if (depth > maxCauseDepth || value == null) return undefined
+	if (typeof value === 'string') return redactText(value, forms)
+	if (!(value instanceof Error)) {
+		return mentionsAny(value, forms, depth) ? undefined : value
+	}
+	const cause = rebuildRedacted(value.cause, forms, depth + 1)
+	const redacted = new Error(
+		redactText(value.message, forms),
+		cause === undefined ? undefined : { cause },
+	)
+	redacted.name = value.name
+	const code: unknown = Reflect.get(value, 'code')
+	if (typeof code === 'string') {
+		Object.assign(redacted, { code: redactText(code, forms) })
+	}
+	return redacted
+}
+
+function safeStringify(value: unknown) {
+	try {
+		return JSON.stringify(value) ?? String(value)
+	} catch {
+		return String(value)
+	}
+}
+
+/**
  * The Response constructor cannot set `url` or `redirected`, and callers read
  * `url` to see where a fetch landed (a redirect can carry the value in it).
  * `clone()` copies only the internal slots, so it reapplies them too.
  */
-function withLanding(
+export function withLanding(
 	response: Response,
 	landing: { url: string; redirected: boolean },
 ): Response {

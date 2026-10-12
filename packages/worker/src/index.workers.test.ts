@@ -16,10 +16,17 @@ const mocks = vi.hoisted(() => ({
 	cleanupRepoSessionBranches: vi.fn(async () => ({})),
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
-	pruneJobRetention: vi.fn(async () => ({})),
 	checkAuthDenialBurstAndNotify: vi.fn(async () => ({
 		status: 'below_threshold',
 		count: 0,
+	})),
+	checkWebhookAuthRegressionsAndAlert: vi.fn(async () => ({
+		ownersScanned: 0,
+		ownersFailed: 0,
+		candidates: 0,
+		regressions: [],
+		alerted: 0,
+		cooldown: 0,
 	})),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	runCreditDebits: vi.fn(async () => ({
@@ -78,12 +85,13 @@ vi.mock('#app/retention.ts', () => ({
 	pruneRetention: mocks.pruneRetention,
 }))
 
-vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
-	pruneJobRetention: mocks.pruneJobRetention,
-}))
-
 vi.mock('#app/auth-denial-alerts.ts', () => ({
 	checkAuthDenialBurstAndNotify: mocks.checkAuthDenialBurstAndNotify,
+}))
+
+vi.mock('#worker/webhooks/auth-regression-alert.ts', () => ({
+	checkWebhookAuthRegressionsAndAlert:
+		mocks.checkWebhookAuthRegressionsAndAlert,
 }))
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
@@ -161,7 +169,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'retention',
-		'job_retention',
 		'usage_aggregation',
 		'auth_denial_alert',
 	] as const) {
@@ -173,9 +180,9 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		mocks.sweepStaleInboundDeliveries,
 		mocks.refreshAdminInsightsRunLogSnapshot,
 		mocks.checkAuthDenialBurstAndNotify,
+		mocks.checkWebhookAuthRegressionsAndAlert,
 		mocks.backfillStorageBucketEstimates,
 		mocks.pruneRetention,
-		mocks.pruneJobRetention,
 	]) {
 		expect(laneMock).toHaveBeenCalledWith(
 			expect.objectContaining({ now: scheduledAt }),

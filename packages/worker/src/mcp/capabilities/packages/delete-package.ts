@@ -9,7 +9,10 @@ import {
 } from '#mcp/capabilities/meta/require-user.ts'
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
+import {
+	deleteSavedPackageProjection,
+	PackageStorageCleanupError,
+} from '#worker/package-registry/service.ts'
 
 function createPackageDeleteConfirmNameError(packageName: string) {
 	return [
@@ -83,12 +86,19 @@ export const deletePackageCapability = defineDomainCapability(
 					createPackageDeleteConfirmNameError(existing.name),
 				)
 			}
-			await deleteSavedPackageProjection({
-				env: ctx.env,
-				userId: owner.ownerUserId,
-				actorUserId: owner.actorUserId,
-				packageId: args.package_id,
-			})
+			try {
+				await deleteSavedPackageProjection({
+					env: ctx.env,
+					userId: owner.ownerUserId,
+					actorUserId: owner.actorUserId,
+					packageId: args.package_id,
+				})
+			} catch (error) {
+				if (error instanceof PackageStorageCleanupError) {
+					throw new McpCallerError(error.message, { cause: error })
+				}
+				throw error
+			}
 			return {
 				ok: true as const,
 				package_id: args.package_id,

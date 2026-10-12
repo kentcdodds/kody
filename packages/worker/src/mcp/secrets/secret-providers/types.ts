@@ -1,4 +1,6 @@
 export type SecretProviderBindingRecord = {
+	/** Stable credential id, assigned by the database on insert. */
+	credentialId: string
 	userId: string
 	providerId: string
 	packageId: string

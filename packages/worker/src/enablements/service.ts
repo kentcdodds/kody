@@ -16,6 +16,7 @@ import { resolveSavedPackage } from '#worker/package-invocations/module-artifact
 import {
 	listPackageSubscriptions,
 	listPackageWebhooks,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -27,7 +28,6 @@ import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-
 import {
 	disableEnablement,
 	getEnablementById,
-	getEnablementOrgMigration,
 	insertEnablement,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
@@ -66,7 +66,7 @@ type ResolvedTrigger = {
 	triggerName: string
 	/** A webhook already enabled by someone else: one enabler per endpoint. */
 	webhookEnablers?: Array<EnablementRecord>
-	/** A webhook URL with no signing secret whose manifest declares no verification. */
+	/** A webhook URL with no signing secret whose manifest declares no HMAC scheme. */
 	unsignedWebhookEndpointId?: string
 }
 
@@ -132,7 +132,8 @@ async function resolveDeclaredTrigger(input: {
 					triggerKind: 'webhook',
 					instanceId: endpoint.id,
 				}),
-				...(!declared.verification && !endpoint.hmacSecretEncrypted
+				...(!webhookHmacVerification(declared.verification) &&
+				!endpoint.hmacSecretEncrypted
 					? { unsignedWebhookEndpointId: endpoint.id }
 					: {}),
 			}
@@ -189,12 +190,9 @@ export async function enableTriggerForCaller(input: {
 			`Webhook "${trigger.triggerName}" is already on for another person. Each webhook URL runs as one enabler.`,
 		)
 	}
-	// A migrated org checks X-Kody-Signature on unsigned webhooks, so a URL
-	// that never got a signing secret (disabled at migration) gets one now.
-	if (
-		trigger.unsignedWebhookEndpointId &&
-		(await getEnablementOrgMigration({ db, orgId })).state === 'migrated'
-	) {
+	// Keeps every enabled URL holding a signing secret, so requiring
+	// X-Kody-Signature later would not need a re-mint. Ingress does not check it.
+	if (trigger.unsignedWebhookEndpointId) {
 		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
 			env: input.env,
 			userId: orgId,
@@ -235,8 +233,8 @@ export async function enableTriggerForCaller(input: {
 }
 
 /**
- * Minting a webhook URL turns it on for the minter in an org moved to
- * enablements, unless it already has an enabler. A minter without
+ * Minting a webhook URL turns it on for the minter, unless it already has an
+ * enabler. A minter without
  * `package:execute` gets the URL and no enablement.
  */
 export async function ensureWebhookEnablementForMinter(input: {
@@ -250,8 +248,6 @@ export async function ensureWebhookEnablementForMinter(input: {
 	if (!actor) return null
 	const db = input.env.APP_DB
 	const orgId = input.savedPackage.userId
-	const migration = await getEnablementOrgMigration({ db, orgId })
-	if (migration.state !== 'migrated') return null
 	const [existing] = await listEnablementsForInstance({
 		db,
 		orgId,

@@ -30,12 +30,26 @@ export async function getPackageScopeByUserId(db: D1Database, userId: string) {
 		)
 		.bind(userId)
 		.first<UsernameRow>()
-	if (!row) {
+	if (row) {
+		return normalizePackageScopeUsername(row.username)
+	}
+	// Team orgs own packages under `orgs.id` with no matching `users` row; the
+	// package scope is the org slug (same as resolvePackageOwnerContext).
+	const org = await db
+		.prepare(
+			`SELECT slug
+			FROM orgs
+			WHERE id = ?
+			${andLiveDeletedAtSql()} LIMIT 1`,
+		)
+		.bind(userId)
+		.first<{ slug?: unknown }>()
+	if (!org?.slug || typeof org.slug !== 'string' || !org.slug.trim()) {
 		throw new Error(
 			'Cannot validate package scope because the signed-in user record was not found.',
 		)
 	}
-	return normalizePackageScopeUsername(row.username)
+	return normalizePackageScopeUsername(org.slug)
 }
 
 /**

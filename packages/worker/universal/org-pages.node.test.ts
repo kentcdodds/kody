@@ -1,4 +1,3 @@
-import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
@@ -6,15 +5,16 @@ import {
 	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
-	isOrganizationSlug,
 	orgIdentity,
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
+	orgOverviewPath,
 	orgSlugFromOrgOwnedPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
 	parseOrgManagementPath,
+	parseOrgOverviewPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -122,6 +122,16 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
+	expect(switchOrgPath('/@acme/-/overview', 'other')).toBe('/@other')
+})
+
+test('the workspace overview is an org-owned page under the /- separator', () => {
+	expect(orgOverviewPath('ada')).toBe('/@ada/-/overview')
+	expect(parseOrgOverviewPath('/@ada/-/overview')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/extra')).toBeNull()
+	expect(parseOrgOverviewPath('/@ada/overview')).toBeNull()
+	expect(orgSlugFromOrgOwnedPath('/@ada/-/overview')).toBe('ada')
 })
 
 test('management paths name settings and members under the /- separator', () => {
@@ -138,6 +148,16 @@ test('management paths name settings and members under the /- separator', () => 
 		section: 'settings',
 	})
 	expect(parseOrgManagementPath('/@acme/-/members/invite.json')).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
+	expect(parseOrgManagementPath('/@acme/-/members/invite-links.json')).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
+	expect(
+		parseOrgManagementPath('/@acme/-/members/invite-links-revoke.json'),
+	).toEqual({
 		slug: 'acme',
 		section: 'members',
 	})
@@ -338,21 +358,4 @@ test('every org-bound URL names its section, or none for billing and management'
 	expect(orgOwnedSectionForPath('/@acme/-/nope.json')).toBeNull()
 	expect(orgSlugFromOrgOwnedPath('/@acme/-/packages.json')).toBe('acme')
 	expect(orgSlugFromOrgOwnedPath('/@acme/packages.json')).toBeNull()
-})
-
-test('organization slugs use the shared DNS-safe handle pattern', () => {
-	const samples = [
-		'ab',
-		'abc',
-		'a-b',
-		'-ab',
-		'ab-',
-		'Ab1',
-		'a_b',
-		'a'.repeat(32),
-		'a'.repeat(33),
-	]
-	for (const sample of samples) {
-		expect(isOrganizationSlug(sample)).toBe(dnsSafeUsernamePattern.test(sample))
-	}
 })

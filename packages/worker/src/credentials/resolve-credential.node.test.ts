@@ -25,9 +25,20 @@ import {
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import {
+	encryptUserOauthAccessToken,
+	userIntegrationCredentialContext,
+} from '#mcp/secrets/crypto.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
-import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
+import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
+import {
+	deleteSecret,
+	saveSecret,
+	setSecretAllowedHosts,
+	setSecretAllowedPackages,
+} from '#mcp/secrets/service.ts'
 import {
 	attestedPackageStamp,
 	claimedPackageStamp,
@@ -44,9 +55,68 @@ vi.mock('cloudflare:workers', async (importOriginal) => ({
 	},
 }))
 
+const integrationHooks = vi.hoisted(() => ({
+	beforeTokenRead: null as null | (() => Promise<void>),
+	duringRefresh: null as null | (() => Promise<void>),
+}))
+
 vi.mock('#mcp/secrets/secret-providers/declared-provider.ts', () => ({
 	readDeclaredSecretProviderId: async () => '1password',
 }))
+
+const valueReads = vi.hoisted(() => [] as Array<string>)
+
+vi.mock('#mcp/secrets/crypto.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#mcp/secrets/crypto.ts')>()
+	return {
+		...actual,
+		decryptSecretValue: async (
+			...args: Parameters<typeof actual.decryptSecretValue>
+		) => {
+			valueReads.push('secret')
+			return await actual.decryptSecretValue(...args)
+		},
+	}
+})
+
+vi.mock('#worker/integrations/token-refresh.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/integrations/token-refresh.ts')
+		>()
+	return {
+		...actual,
+		refreshIntegrationTokens: async (
+			...args: Parameters<typeof actual.refreshIntegrationTokens>
+		) => {
+			const during = integrationHooks.duringRefresh
+			if (!during) return await actual.refreshIntegrationTokens(...args)
+			integrationHooks.duringRefresh = null
+			await during()
+			return {
+				refreshed: false,
+				skippedReason: 'refresh_not_applicable',
+				refreshedAt: null,
+				refreshTokenRotated: false,
+			} as const
+		},
+	}
+})
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/integrations/credentials.ts')>()
+	return {
+		...actual,
+		resolveIntegrationAccessToken: async (
+			...args: Parameters<typeof actual.resolveIntegrationAccessToken>
+		) => {
+			valueReads.push('integration-token')
+			await integrationHooks.beforeTokenRead?.()
+			return await actual.resolveIntegrationAccessToken(...args)
+		},
+	}
+})
 
 const now = '2026-10-10T00:00:00.000Z'
 const secretValue = 'org-secret-value-never-audited'
@@ -127,6 +197,7 @@ async function setup() {
 		orgId,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: collaboratorId },
 		preset: 'use',
 		permissions: null,
@@ -165,6 +236,27 @@ async function setup() {
 				},
 			},
 		})
+	const secretIdOf = async (name: string) => {
+		const row = await db
+			.prepare(`SELECT id FROM secret_entries WHERE name = ?`)
+			.bind(name)
+			.first<{ id: string }>()
+		if (!row) throw new Error(`No secret entry named ${name}.`)
+		return row.id
+	}
+	const grantUse = (resourceId: string, userId: string) =>
+		upsertGrant({
+			db,
+			orgId,
+			resourceType: 'credential',
+			resourceId,
+			family: 'secret',
+			subject: { type: 'user', id: userId },
+			preset: 'use',
+			permissions: null,
+			createdByUserId: ownerStableId,
+			audit: createTestOrgAuditWriter(),
+		})
 	const auditRows = async () => {
 		await Promise.all(scheduledAudits.splice(0))
 		const { results } = await auditDb
@@ -186,6 +278,8 @@ async function setup() {
 		packageId,
 		personRequest,
 		resolveSecretAs,
+		secretIdOf,
+		grantUse,
 		auditRows,
 	}
 }
@@ -208,6 +302,7 @@ test('owner resolves an ad-hoc secret; the door schedules exactly one audit row 
 	const resolved = await t.resolveSecretAs(owner)
 	expect(resolved).toMatchObject({ found: true, value: secretValue })
 	expect(scheduledAudits).toHaveLength(1)
+	const credentialId = await t.secretIdOf('orgToken')
 
 	const rows = await t.auditRows()
 	expect(rows).toHaveLength(1)
@@ -218,11 +313,12 @@ test('owner resolves an ad-hoc secret; the door schedules exactly one audit row 
 		credential_kind: 'mcp-oauth',
 		action: 'credential.resolve',
 		resource_type: 'secret',
-		resource_id: 'orgToken',
+		resource_id: credentialId,
 		result: 'success',
 	})
 	expect(details(rows[0])).toEqual({
 		use: 'secret',
+		name: 'orgToken',
 		actorKind: 'person',
 		ownerKind: 'org',
 		packageStampKind: 'none',
@@ -238,11 +334,14 @@ test('owner resolves an ad-hoc secret; the door schedules exactly one audit row 
 	).resolves.toMatchObject({ found: false })
 	const more = await t.auditRows()
 	expect(more.map((row) => [row.resource_id, row.result])).toEqual([
-		['orgToken', 'success'],
-		['orgToken', 'success'],
-		['missingToken', 'failure'],
+		[credentialId, 'success'],
+		[credentialId, 'success'],
+		[null, 'failure'],
 	])
-	expect(details(more[2])).toMatchObject({ reason: 'not_found' })
+	expect(details(more[2])).toMatchObject({
+		name: 'missingToken',
+		reason: 'not_found',
+	})
 })
 
 test('ad-hoc use without secret:use is denied and audited as denied (#3169)', async () => {
@@ -269,22 +368,21 @@ test('ad-hoc use without secret:use is denied and audited as denied (#3169)', as
 	})
 })
 
-test('a claimed package stamp never skips Use; the attested stamp for the same package does (#3210)', async () => {
+test('no package stamp skips the person’s Use, claimed or attested (#3210)', async () => {
 	const t = await setup()
 	const member = t.personRequest(t.memberId, 'member', 'member')
 
-	const forged = await denial(
-		t.resolveSecretAs(member, claimedPackageStamp(t.packageId)),
-	)
-	expect(forged).toBeInstanceOf(AuthorizationError)
-	expect(forged).toMatchObject({ code: 'missing_permission' })
-
-	await expect(
-		t.resolveSecretAs(member, attestedPackageStamp(t.packageId)),
-	).resolves.toMatchObject({ found: true })
+	for (const stamp of [
+		claimedPackageStamp(t.packageId),
+		attestedPackageStamp(t.packageId),
+	]) {
+		const error = await denial(t.resolveSecretAs(member, stamp))
+		expect(error).toBeInstanceOf(AuthorizationError)
+		expect(error).toMatchObject({ code: 'missing_permission' })
+	}
 
 	const rows = await t.auditRows()
-	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(rows.map((row) => row.result)).toEqual(['denied', 'denied'])
 	expect(details(rows[0])).toMatchObject({
 		packageStampKind: 'claimed',
 		packageId: t.packageId,
@@ -298,12 +396,13 @@ test('a claimed package stamp never skips Use; the attested stamp for the same p
 test('a removed member is denied at resolve time even with a stale request context', async () => {
 	const t = await setup()
 	const attested = attestedPackageStamp(t.packageId)
-	await expect(
+	const beforeRemoval = await denial(
 		t.resolveSecretAs(
 			t.personRequest(t.memberId, 'member', 'member'),
 			attested,
 		),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(beforeRemoval).toMatchObject({ code: 'missing_permission' })
 
 	// Only the membership row ends: the door re-reads access itself instead
 	// of relying on the removal cascade or the role baked into the request.
@@ -322,24 +421,14 @@ test('a removed member is denied at resolve time even with a stale request conte
 
 	// A live grant left in place makes them an outside collaborator, who keeps
 	// access to what the grant covers.
-	await upsertGrant({
-		db: t.db,
-		orgId: t.orgId,
-		resourceType: 'secret',
-		resourceId: 'orgToken',
-		subject: { type: 'user', id: t.memberId },
-		preset: 'use',
-		permissions: null,
-		createdByUserId: t.ownerStableId,
-		audit: createTestOrgAuditWriter(),
-	})
+	await t.grantUse(await t.secretIdOf('orgToken'), t.memberId)
 	await expect(
 		t.resolveSecretAs(t.personRequest(t.memberId, 'member', null)),
 	).resolves.toMatchObject({ found: true })
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual([
-		'success',
+		'denied',
 		'denied',
 		'denied',
 		'success',
@@ -347,14 +436,14 @@ test('a removed member is denied at resolve time even with a stale request conte
 	expect(details(rows[1])).toMatchObject({ reason: 'wrong_org' })
 })
 
-test('automation and platform resolutions keep today’s rules and are audited', async () => {
+test('a trigger with no enablement holds nothing; webhook verification still resolves', async () => {
 	const t = await setup()
 	const schedule = deriveRequestContext({
 		user: { userId: personIdFromStored(t.ownerStableId), username: 'owner' },
 		source: { kind: 'schedule', jobId: 'job-1' },
 		orgBinding: { org: { id: t.orgId, slug: 'owner' }, role: 'owner' },
 	})
-	await expect(
+	const noPerson = await denial(
 		resolveCredential({
 			env: t.env,
 			orgId: t.orgId,
@@ -366,7 +455,8 @@ test('automation and platform resolutions keep today’s rules and are audited',
 				storageContext: { sessionId: null, appId: null, packageId: null },
 			},
 		}),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(noPerson).toMatchObject({ code: 'missing_permission' })
 	await expect(
 		resolveCredential({
 			env: t.env,
@@ -384,7 +474,7 @@ test('automation and platform resolutions keep today’s rules and are audited',
 		actor_user_id: null,
 		credential_kind: 'schedule',
 		credential_id: 'job-1',
-		result: 'success',
+		result: 'denied',
 	})
 	expect(details(rows[0])).toMatchObject({
 		use: 'secret',
@@ -400,7 +490,97 @@ test('automation and platform resolutions keep today’s rules and are audited',
 	})
 })
 
-test('a package app in a team org acts as the org’s own account; a deleted org is denied', async () => {
+test('a webhook reads only a secret its own package may read (#3245)', async () => {
+	const t = await setup()
+	const forkId = crypto.randomUUID()
+	await insertSavedPackage(
+		t.db,
+		{
+			id: forkId,
+			user_id: t.orgId,
+			name: '@owner/forked',
+			kody_id: 'forked',
+			description: 'an unadopted community fork',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-${forkId}`,
+			has_app: 0,
+			has_skills: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		null,
+		{ stamp: false },
+	)
+	await t.db
+		.prepare(
+			`INSERT INTO community_forks (
+				id, listing_id, forker_user_id, origin_commit, forked_package_id,
+				forked_source_id, target_kody_id, created_at
+			) VALUES (?, ?, ?, 'origin', ?, ?, 'forked', ?)`,
+		)
+		.bind(
+			`fork-${forkId}`,
+			'listing-1',
+			t.orgId,
+			forkId,
+			`source-${forkId}`,
+			now,
+		)
+		.run()
+	await setSecretAllowedPackages({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedPackages: [t.packageId],
+	})
+	const webhookRead = (input: {
+		actor: ReturnType<typeof t.personRequest> | null
+		packageId: string | null
+	}) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: input.actor,
+			packageStamp: input.packageId
+				? attestedPackageStamp(input.packageId)
+				: null,
+			baseUrl: 'https://example.com',
+			credential: { use: 'webhook-secret', name: 'orgToken' },
+		})
+	const owner = () => t.personRequest(t.ownerStableId, 'owner', 'owner')
+
+	// Signature verification at ingress has no person, so the package check is
+	// the only gate there; an Owner applying a delivery is held to it too.
+	expect(
+		await denial(webhookRead({ actor: null, packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: owner(), packageId: forkId })),
+	).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(
+		await denial(webhookRead({ actor: null, packageId: null })),
+	).toBeInstanceOf(Error)
+	await expect(
+		webhookRead({ actor: null, packageId: t.packageId }),
+	).resolves.toMatchObject({ found: true, value: secretValue })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => row.result)).toEqual([
+		'denied',
+		'denied',
+		'failure',
+		'success',
+	])
+	for (const row of rows) {
+		expect(row.details_json ?? '').not.toContain(secretValue)
+	}
+})
+
+test('a package app in a team org acts as its visitor, never as the org itself; a deleted org is denied', async () => {
 	const t = await setup()
 	const created = await createOrganization(
 		t.db,
@@ -432,18 +612,23 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		name: 'teamToken',
 		value: secretValue,
 	})
-	// What `PackageAppRuntimeBridge` builds: the org id as the request user.
-	const packageAppRequest = () =>
+	// What `PackageAppRuntimeBridge` builds for its Owner visitor.
+	const visitorRequest = () =>
 		deriveRequestContext({
-			user: { userId: personIdFromStored(teamOrg!.id) },
+			user: { userId: personIdFromStored(t.ownerStableId) },
 			source: { kind: 'package-app' },
 			orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
 		})
-	const resolve = () =>
+	const orgAsActor = deriveRequestContext({
+		user: { userId: personIdFromStored(teamOrg!.id) },
+		source: { kind: 'package-app' },
+		orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
+	})
+	const resolve = (actor = visitorRequest()) =>
 		resolveCredential({
 			env: t.env,
 			orgId: teamOrgId,
-			actor: packageAppRequest(),
+			actor,
 			packageStamp: attestedPackageStamp(teamPackageId),
 			baseUrl: 'https://example.com',
 			credential: {
@@ -458,6 +643,10 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		})
 
 	await expect(resolve()).resolves.toMatchObject({ value: secretValue })
+	// The org's own id is no person and has no membership in it.
+	await expect(resolve(orgAsActor)).rejects.toMatchObject({
+		code: 'wrong_org',
+	})
 	await t.db
 		.prepare(`UPDATE orgs SET deleted_at = ? WHERE id = ?`)
 		.bind(now, teamOrgId)
@@ -467,6 +656,7 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 	const rows = await t.auditRows()
 	expect(rows.map((row) => [row.org_id, row.result])).toEqual([
 		[teamOrgId, 'success'],
+		[teamOrgId, 'denied'],
 		[teamOrgId, 'denied'],
 	])
 })
@@ -525,7 +715,11 @@ test('a host the secret is not approved for is an audited denial, not a success'
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
-	expect(rows.map((row) => row.resource_id)).toEqual(['orgToken', 'orgToken'])
+	const credentialId = await t.secretIdOf('orgToken')
+	expect(rows.map((row) => row.resource_id)).toEqual([
+		credentialId,
+		credentialId,
+	])
 	expect(details(rows[0])).toMatchObject({
 		reason: 'SecretHostNotApprovedError',
 		host: 'evil.example',
@@ -585,12 +779,17 @@ test('a claimed package stamp is held to vault grants, and an invalid provider i
 	)
 	await expect(resolveVault('x'.repeat(65))).rejects.toThrow(/is invalid/)
 
+	const binding = await t.db
+		.prepare(`SELECT id FROM secret_provider_bindings WHERE user_id = ?`)
+		.bind(t.orgId)
+		.first<{ id: string }>()
 	const rows = await t.auditRows()
 	expect(rows.map((row) => [row.resource_id, row.result])).toEqual([
-		['1password', 'denied'],
-		['x'.repeat(65), 'failure'],
+		[binding?.id, 'denied'],
+		[null, 'failure'],
 	])
 	expect(details(rows[0])).toMatchObject({
+		name: '1password',
 		reason: 'SecretProviderGrantDeniedError',
 		packageStampKind: 'claimed',
 	})
@@ -667,4 +866,437 @@ test('an audit write failure is logged without the value and never fails the res
 			value instanceof Error ? value.message : value,
 		),
 	).not.toContain(secretValue)
+})
+
+test('a Use grant follows the credential id through a rename; a deleted and recreated name does not inherit it', async () => {
+	const t = await setup()
+	const collaborator = () => t.personRequest(t.collaboratorId, 'collab', null)
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const originalId = await t.secretIdOf('orgToken')
+	await t.grantUse(originalId, t.collaboratorId)
+	await expect(t.resolveSecretAs(collaborator())).resolves.toMatchObject({
+		value: secretValue,
+	})
+
+	await t.db
+		.prepare(`UPDATE secret_entries SET name = 'renamedToken' WHERE id = ?`)
+		.bind(originalId)
+		.run()
+	await expect(
+		t.resolveSecretAs(collaborator(), null, 'renamedToken'),
+	).resolves.toMatchObject({ value: secretValue })
+	// The old name no longer exists; a non-holder of secret:use gets a
+	// denial, not a not-found that would reveal it.
+	await expect(t.resolveSecretAs(collaborator())).rejects.toMatchObject({
+		code: 'missing_permission',
+	})
+
+	await deleteSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'renamedToken',
+	})
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'renamedToken',
+		value: 'recreated-value',
+	})
+	expect(await t.secretIdOf('renamedToken')).not.toBe(originalId)
+	const error = await denial(
+		t.resolveSecretAs(collaborator(), null, 'renamedToken'),
+	)
+	expect(error).toBeInstanceOf(AuthorizationError)
+	expect(String(error)).not.toContain('recreated-value')
+	await expect(
+		t.resolveSecretAs(owner, null, 'renamedToken'),
+	).resolves.toMatchObject({ value: 'recreated-value' })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => [row.resource_id, row.result])).toEqual([
+		[originalId, 'success'],
+		[originalId, 'success'],
+		[null, 'denied'],
+		[await t.secretIdOf('renamedToken'), 'denied'],
+		[await t.secretIdOf('renamedToken'), 'success'],
+	])
+})
+
+test('a vault Use grant is keyed by the binding: it survives a door key rename, not a recreated binding', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES ('pkg-provider', ?, 'op', 'op', '', 'source-pkg-provider')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: 'opToken',
+		value: 'op-sa-token',
+	})
+	const insertBinding = (doorSecretName: string) =>
+		t.db
+			.prepare(
+				`INSERT INTO secret_provider_bindings (
+					user_id, provider_id, package_id, door_secret_name, config_json
+				) VALUES (?, '1password', 'pkg-provider', ?, '{}')`,
+			)
+			.bind(t.orgId, doorSecretName)
+			.run()
+	const bindingId = async () =>
+		(
+			await t.db
+				.prepare(`SELECT id FROM secret_provider_bindings WHERE user_id = ?`)
+				.bind(t.orgId)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	await insertBinding('opToken')
+	// The claimed package has no vault grant, so passing Use surfaces as the
+	// package-grant denial and failing it as an AuthorizationError.
+	const resolveVault = () =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			packageStamp: claimedPackageStamp(t.packageId),
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'provider-secret',
+				provider: '1password',
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: {
+					sessionId: null,
+					appId: null,
+					packageId: t.packageId,
+				},
+			},
+		})
+
+	await expect(resolveVault()).rejects.toBeInstanceOf(AuthorizationError)
+	// The denial names the vault, not its door key.
+	await expect(resolveVault()).rejects.toThrow(/secret 1password\b/)
+	// Use on the door key secret alone is not Use on the vault.
+	await t.grantUse(await t.secretIdOf('opToken'), t.collaboratorId)
+	await expect(resolveVault()).rejects.toBeInstanceOf(AuthorizationError)
+
+	const originalBindingId = await bindingId()
+	await t.grantUse(originalBindingId, t.collaboratorId)
+	await expect(resolveVault()).rejects.toBeInstanceOf(
+		SecretProviderGrantDeniedError,
+	)
+
+	await t.db.batch([
+		t.db.prepare(
+			`UPDATE secret_entries SET name = 'opTokenRenamed' WHERE name = 'opToken'`,
+		),
+		t.db
+			.prepare(
+				`UPDATE secret_provider_bindings SET door_secret_name = 'opTokenRenamed' WHERE id = ?`,
+			)
+			.bind(originalBindingId),
+	])
+	await expect(resolveVault()).rejects.toBeInstanceOf(
+		SecretProviderGrantDeniedError,
+	)
+
+	await t.db
+		.prepare(`DELETE FROM secret_provider_bindings WHERE id = ?`)
+		.bind(originalBindingId)
+		.run()
+	await insertBinding('opTokenRenamed')
+	expect(await bindingId()).not.toBe(originalBindingId)
+	await expect(resolveVault()).rejects.toBeInstanceOf(AuthorizationError)
+})
+
+test('an integration Use grant does not carry over to a deleted and recreated connection of the same name', async () => {
+	const t = await setup()
+	const insertConnection = () =>
+		t.db
+			.prepare(
+				`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'orgGoogle', 'google')`,
+			)
+			.bind(t.orgId)
+			.run()
+	const connectionId = async () =>
+		(
+			await t.db
+				.prepare(`SELECT id FROM user_integrations WHERE name = 'orgGoogle'`)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	const resolveToken = () =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-token', name: 'orgGoogle' },
+		})
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await insertConnection()
+	await expect(resolveToken()).rejects.toMatchObject({
+		code: 'missing_permission',
+		permission: 'integration:use',
+	})
+
+	const originalId = await connectionId()
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: originalId,
+		family: 'integration',
+		subject: { type: 'user', id: t.collaboratorId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.ownerStableId,
+		audit: createTestOrgAuditWriter(),
+	})
+	// Granted, with no stored token yet.
+	await expect(resolveToken()).resolves.toBeNull()
+
+	await t.db
+		.prepare(`DELETE FROM user_integrations WHERE id = ?`)
+		.bind(originalId)
+		.run()
+	await insertConnection()
+	expect(await connectionId()).not.toBe(originalId)
+	await expect(resolveToken()).rejects.toMatchObject({
+		code: 'missing_permission',
+		permission: 'integration:use',
+	})
+})
+
+test('authorize runs before apply: a denied actor or a refused host never decrypts the secret', async () => {
+	const t = await setup()
+	await setSecretAllowedHosts({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedHosts: ['api.example.com'],
+	})
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const resolveAs = (
+		actor: ReturnType<typeof t.personRequest>,
+		requestHost: string,
+	) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'orgToken',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+				requestHost,
+			},
+		})
+	valueReads.splice(0)
+
+	await expect(
+		resolveAs(
+			t.personRequest(t.collaboratorId, 'collab', null),
+			'api.example.com',
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	await expect(resolveAs(owner, 'evil.example')).rejects.toBeInstanceOf(
+		SecretHostNotApprovedError,
+	)
+	expect(valueReads).toEqual([])
+
+	await expect(resolveAs(owner, 'api.example.com')).resolves.toMatchObject({
+		value: secretValue,
+	})
+	expect(valueReads).toEqual(['secret'])
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'denied',
+		'success',
+	])
+})
+
+test('a host the integration does not allow never reads or refreshes its token', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'https://api.example.com', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const accessToken = 'integration-token-never-audited'
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug, required_hosts_json, access_token_encrypted)
+			 VALUES (?, 'org-google', 'google', '["api.example.com"]', ?)`,
+		)
+		.bind(
+			t.orgId,
+			await encryptUserOauthAccessToken(
+				t.env,
+				accessToken,
+				userIntegrationCredentialContext(t.orgId, 'org-google'),
+			),
+		)
+		.run()
+	const resolveToken = (requestHost: string) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.ownerStableId, 'owner', 'owner'),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-token', name: 'org-google', requestHost },
+		})
+	valueReads.splice(0)
+
+	await expect(resolveToken('evil.example')).rejects.toBeInstanceOf(
+		IntegrationHostNotAllowedError,
+	)
+	expect(valueReads).toEqual([])
+
+	await expect(resolveToken('api.example.com')).resolves.toBe(accessToken)
+	expect(valueReads).toEqual(['integration-token'])
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'success',
+	])
+})
+
+test('a connection replaced after the Use check never hands its token to the old grant', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const insertConnection = () =>
+		t.db
+			.prepare(
+				`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'orgGoogle', 'google')`,
+			)
+			.bind(t.orgId)
+			.run()
+	await insertConnection()
+	const originalId =
+		(
+			await t.db
+				.prepare(`SELECT id FROM user_integrations WHERE name = 'orgGoogle'`)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: originalId,
+		family: 'integration',
+		subject: { type: 'user', id: t.collaboratorId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.ownerStableId,
+		audit: createTestOrgAuditWriter(),
+	})
+	integrationHooks.beforeTokenRead = async () => {
+		integrationHooks.beforeTokenRead = null
+		await t.db
+			.prepare(`DELETE FROM user_integrations WHERE id = ?`)
+			.bind(originalId)
+			.run()
+		await insertConnection()
+	}
+	await expect(
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-token', name: 'orgGoogle' },
+		}),
+	).rejects.toThrow(/orgGoogle/)
+
+	integrationHooks.duringRefresh = async () => {
+		await t.db
+			.prepare(`DELETE FROM user_integrations WHERE name = 'orgGoogle'`)
+			.run()
+		await insertConnection()
+	}
+	const replacementId =
+		(
+			await t.db
+				.prepare(`SELECT id FROM user_integrations WHERE name = 'orgGoogle'`)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: replacementId,
+		family: 'integration',
+		subject: { type: 'user', id: t.collaboratorId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.ownerStableId,
+		audit: createTestOrgAuditWriter(),
+	})
+	await expect(
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-refresh', name: 'orgGoogle' },
+		}),
+	).rejects.toThrow(/orgGoogle/)
+	expect(integrationHooks.duringRefresh).toBeNull()
+})
+
+test('a vault reference with no binding is checked for Use like any credential that was not found', async () => {
+	const t = await setup()
+	const resolveVaultAs = (actor: ReturnType<typeof t.personRequest>) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'provider-secret',
+				provider: '1password',
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			},
+		})
+	const missingBinding = /No secret provider is bound for "1password"/
+
+	const denied = await resolveVaultAs(
+		t.personRequest(t.collaboratorId, 'collab', null),
+	).then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(denied).toBeInstanceOf(AuthorizationError)
+	expect(String(denied)).toMatch(/Missing secret:use on secret 1password\b/)
+	expect(String(denied)).not.toMatch(missingBinding)
+
+	await expect(
+		resolveVaultAs(t.personRequest(t.ownerStableId, 'owner', 'owner')),
+	).rejects.toThrow(missingBinding)
+
+	expect((await t.auditRows()).map((row) => row.result)).toEqual([
+		'denied',
+		'failure',
+	])
 })

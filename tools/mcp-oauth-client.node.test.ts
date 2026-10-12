@@ -5,6 +5,8 @@ import {
 } from 'node:http'
 import { expect, test } from 'vitest'
 import {
+	AuthRateLimitedError,
+	authRetryAfterDelayMs,
 	authorizeOAuthClient,
 	exchangeAuthorizationCode,
 	loginToApp,
@@ -412,6 +414,208 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 			).rejects.toThrow(/Failed to authenticate/)
 		},
 	)
+})
+
+test('authRetryAfterDelayMs honors Retry-After seconds and caps the wait', () => {
+	expect(
+		authRetryAfterDelayMs(
+			new Response(null, { headers: { 'Retry-After': '2' } }),
+		),
+	).toBe(2_000)
+	expect(
+		authRetryAfterDelayMs(
+			new Response(null, { headers: { 'Retry-After': '120' } }),
+		),
+	).toBe(60_000)
+	expect(authRetryAfterDelayMs(new Response(null))).toBe(60_000)
+})
+
+test('loginToApp retries a 429 login and does not fall through to signup', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				if (modes.length === 1) {
+					response.statusCode = 429
+					response.setHeader('Retry-After', '0')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							error: 'Too many requests. Please try again later.',
+						}),
+					)
+					return
+				}
+				response.setHeader('Set-Cookie', 'kody_session=after-429; Path=/')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(JSON.stringify({ ok: true }))
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'rh-alice@example.com',
+					username: 'rh-alice',
+					password: 'ilikecode',
+				}),
+			).resolves.toBe('kody_session=after-429')
+		},
+	)
+	expect(modes).toEqual(['login', 'login'])
+})
+
+test('loginToApp stops on a persistent 429 instead of trying signup', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'rh-alice@example.com',
+					username: 'rh-alice',
+					password: 'ilikecode',
+				}),
+			).rejects.toThrow(/Login: 429/)
+		},
+	)
+	expect(modes).toEqual(['login', 'login', 'login'])
+})
+
+test('loginToApp stops on a terminal signup 429 instead of retrying login', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				if (body.mode === 'login') {
+					response.statusCode = 401
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ error: 'Invalid email or password.' }))
+					return
+				}
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'new@example.com',
+					username: 'new-user',
+					password: 'ilikecode',
+				}),
+			).rejects.toBeInstanceOf(AuthRateLimitedError)
+		},
+	)
+	expect(modes).toEqual(['login', 'signup', 'signup', 'signup'])
+})
+
+test('authorizeOAuthClient retries a 429 then succeeds', async () => {
+	let authorizeCalls = 0
+	await withMockOrigin(
+		(_request, response) => {
+			authorizeCalls += 1
+			if (authorizeCalls === 1) {
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+				return
+			}
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					redirectTo: 'http://127.0.0.1/oauth/callback?code=auth-code-429',
+				}),
+			)
+		},
+		async (origin) => {
+			const code = await authorizeOAuthClient(
+				origin,
+				{
+					clientId: 'client-1',
+					clientSecret: 'secret-1',
+					redirectUri: 'http://127.0.0.1/oauth/callback',
+				},
+				'kody_session=abc',
+			)
+			expect(code).toBe('auth-code-429')
+		},
+	)
+	expect(authorizeCalls).toBe(2)
+})
+
+test('resolveAppMcpAuth does not re-login when authorize is rate limited', async () => {
+	const requests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			requests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			if (url.pathname === '/oauth/register') {
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						client_id: 'client-429',
+						client_secret: 'secret-429',
+					}),
+				)
+				return
+			}
+			response.statusCode = 429
+			response.setHeader('Retry-After', '0')
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					error: 'Too many requests. Please try again later.',
+				}),
+			)
+		},
+		async (origin) => {
+			await expect(
+				resolveAppMcpAuth(
+					origin,
+					{
+						email: 'rh-bob@example.com',
+						username: 'rh-bob',
+						password: 'ilikecode',
+					},
+					{ cookieHeader: 'kody_session=reused' },
+				),
+			).rejects.toBeInstanceOf(AuthRateLimitedError)
+		},
+	)
+	expect(requests).toEqual([
+		'POST /oauth/register',
+		'POST /oauth/authorize',
+		'POST /oauth/authorize',
+		'POST /oauth/authorize',
+	])
 })
 
 test('authorizeOAuthClient binds the connection to an org with ?org=', async () => {

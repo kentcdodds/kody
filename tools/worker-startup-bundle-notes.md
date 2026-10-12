@@ -415,3 +415,20 @@ raised again.
   5_224_171 measurement, 16_175 over the 5_226_000 ceiling) and runtime
   3_791_764 (+18_020 over 3_773_744, 16_764 over the 3_775_000 ceiling).
   Reviewed ceilings platform 5_244_000 and runtime 3_793_500.
+- Org resource transfer (`adminOrgResourceTransfer`, `org-transfer/`, codemod
+  `0011`) adds platform +42_788 (5_296_799 → 5_339_587) and runtime +40_776
+  (4_000_556 → 4_041_332) over main `763ceeba1`, which was already over both
+  ceilings. The engine sits in the lazily evaluated admin capability domain, so
+  it adds bytes, not startup CPU. Ceilings unchanged; main's existing overage
+  issues track the reset.
+- Reset under both ceilings without raising them (#3367, #3368). The Ajv MCP
+  output validator is test-only and moved to `test-support/` (production tools
+  type-import `mcp-tool-output.ts`, which kept its top-level validator on
+  runtime, about 145 KB with ajv's deps). postal-mime and codemode's
+  acorn-backed `normalizeCode` load from deferred additional modules, and
+  `patches/acorn+8.17.0.patch` marks acorn side-effect free (about 80 KB and 123
+  KB on each entry). Local dry-run of main `40280a610`: platform 5_328_864 and
+  runtime 4_029_466. After: platform 5_124_654 and runtime 3_680_395.
+  `wrangler check startup` best-of-3 active CPU drops from about 116 to about
+  104–112 ms on platform and from about 63 to about 57–58 ms on runtime.
+  Ceilings unchanged.

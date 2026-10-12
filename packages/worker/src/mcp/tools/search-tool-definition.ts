@@ -2,6 +2,7 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 
 import { maxBatchEntityRefs } from './search-constants.ts'
+import { type StructuredContentFromFields } from './mcp-tool-output.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -85,10 +86,11 @@ export const searchToolInputSchema = {
 
 /**
  * Advertised MCP output schema for the search tool's `structuredContent`
- * envelope. Deliberately loose: every field is optional and compound values
- * are `z.unknown()`, so server-side output validation (which runs on every
- * successful call once a schema is advertised) can never reject a real
- * response. The schema documents the envelope for clients; mode-specific
+ * envelope. This record is the single source of truth for tools/list JSON
+ * Schema and {@link SearchToolStructuredContent}. Keep every top-level key
+ * the runner emits here — strict clients reject undeclared fields
+ * (`additionalProperties: false`). Compound values stay `z.unknown()` so
+ * server-side Zod validation never rejects a real response; mode-specific
  * payload shapes stay in the tool description and docs.
  */
 export const searchToolOutputSchema = {
@@ -120,7 +122,17 @@ export const searchToolOutputSchema = {
 		.describe(
 			'Focused plan-limit or quota fields when a call is denied. Omitted from ordinary successes.',
 		),
+	rateLimit: z
+		.unknown()
+		.optional()
+		.describe(
+			'Abuse rate-limit fields when search is refused (code, window, retryAfterSeconds, limit, plan). Omitted otherwise.',
+		),
 }
+
+export type SearchToolStructuredContent = StructuredContentFromFields<
+	typeof searchToolOutputSchema
+>
 
 export type SearchToolArgs = {
 	query?: string

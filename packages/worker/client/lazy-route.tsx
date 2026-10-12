@@ -274,6 +274,7 @@ registerPreloadPatterns(
 		routePattern(routes.orgJobs),
 		routePattern(routes.orgMcpServers),
 		routePattern(routes.orgMemories),
+		routePattern(routes.orgOverview),
 		routePattern(routes.orgPackages),
 		routePattern(routes.orgSecretProviders),
 		routePattern(routes.orgSecrets),
@@ -375,6 +376,7 @@ registerPreloadPatterns(
 		routePattern(routes.verifyEmailClaimRelease),
 		routePattern(routes.verifyEmailDestination),
 		routePattern(routes.unsubscribeTips),
+		routePattern(routes.orgInviteJoin),
 	],
 	{ name: 'auth-area', load: authArea.load, getCached: authArea.getCached },
 )

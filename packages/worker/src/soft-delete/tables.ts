@@ -39,7 +39,7 @@ export const softDeleteAppTables = [
 
 export type SoftDeleteAppTable = (typeof softDeleteAppTables)[number]
 
-export const softDeleteJobsTables = ['jobs', 'archived_job_artifacts'] as const
+export const softDeleteJobsTables = ['jobs'] as const
 
 export type SoftDeleteJobsTable = (typeof softDeleteJobsTables)[number]
 

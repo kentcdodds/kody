@@ -142,39 +142,44 @@ export function renderOrgHomeMain(input: {
 							),
 						})
 					: null}
-				{renderStep({
-					icon: 'box',
-					title: 'Repositories, connections, secrets, and jobs',
-					body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
-					action: (
-						<div mix={css(stepActionsCss)}>
-							<a
-								href={orgResourcePath(input.slug, 'packages')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Repositories
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'jobs')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Jobs
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'connections')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Connections
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'secrets')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Secrets
-							</a>
-						</div>
-					),
-				})}
+				{/* Grant-only collaborators open Connections only (orgSectionDenial);
+				    members get the full workspace. The collaborator CTA above already
+				    covers Connections, so skip this step for them. */}
+				{collaborator
+					? null
+					: renderStep({
+							icon: 'box',
+							title: 'Repositories, connections, secrets, and jobs',
+							body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
+							action: (
+								<div mix={css(stepActionsCss)}>
+									<a
+										href={orgResourcePath(input.slug, 'packages')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Repositories
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'jobs')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Jobs
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'connections')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Connections
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'secrets')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Secrets
+									</a>
+								</div>
+							),
+						})}
 			</ul>
 		</div>
 	)

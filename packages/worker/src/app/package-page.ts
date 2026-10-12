@@ -1,9 +1,14 @@
 import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { viewerCanReadSavedPackage } from '#app/package-viewer-access.ts'
+import {
+	viewerCanDeleteSavedPackage,
+	viewerCanManageSavedPackage,
+	viewerCanPublishSavedPackage,
+	viewerCanReadSavedPackage,
+	viewerIsSavedPackageOrgOwner,
+} from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
 	memoizePerRequest,
@@ -30,12 +35,12 @@ export type PackagePageAccess =
 			ownerPackage: AccountPackageDetail | null
 			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
-			/**
-			 * The viewer may change the package (settings, publish). The account
-			 * package APIs act on the caller's own org, so only packages that org
-			 * owns are manageable here.
-			 */
+			/** The viewer may change the package (settings, publish). */
 			viewerCanManage: boolean
+			viewerCanPublish: boolean
+			viewerCanDelete: boolean
+			/** May adopt a community fork (org owner only; widens secret access). */
+			viewerCanAdoptCommunityFork: boolean
 			loggedIn: boolean
 			invocationUrlOrigin: string
 			ownerUserId: string
@@ -194,10 +199,38 @@ async function loadPackagePageUncached(input: {
 	})
 
 	if (viewerIsOwner && target.savedPackage) {
-		const viewerCanManage =
-			user != null &&
-			ownerIdFromCaller({ request: user.request, user: user.mcpUser }) ===
-				target.userId
+		const packageId = target.savedPackage.id
+		const ownerId = target.userId
+		const [
+			viewerCanManage,
+			viewerCanPublish,
+			viewerCanDelete,
+			viewerCanAdoptCommunityFork,
+		] = await Promise.all([
+			viewerCanManageSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanPublishSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanDeleteSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerIsSavedPackageOrgOwner({
+				env: input.env,
+				viewer,
+				ownerId,
+			}),
+		])
 		const [listing, ownerPackage] = await Promise.all([
 			target.listingId
 				? loadCommunityDetailData(input.env, input.request, target.listingId)
@@ -225,6 +258,9 @@ async function loadPackagePageUncached(input: {
 			ownerPackage,
 			viewerIsOwner: true,
 			viewerCanManage,
+			viewerCanPublish,
+			viewerCanDelete,
+			viewerCanAdoptCommunityFork,
 			loggedIn: true,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
@@ -247,6 +283,9 @@ async function loadPackagePageUncached(input: {
 			ownerPackage: null,
 			viewerIsOwner: false,
 			viewerCanManage: false,
+			viewerCanPublish: false,
+			viewerCanDelete: false,
+			viewerCanAdoptCommunityFork: false,
 			loggedIn: Boolean(user),
 			invocationUrlOrigin,
 			ownerUserId: target.userId,

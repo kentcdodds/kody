@@ -26,7 +26,7 @@ test('insertSavedPackage stamps the actor when package owner is a team org', asy
 	const sourceId = crypto.randomUUID()
 	const at = '2026-10-11T12:00:00.000Z'
 
-	await insertSavedPackage(
+	const stamped = await insertSavedPackage(
 		db,
 		{
 			id: packageId,
@@ -48,6 +48,7 @@ test('insertSavedPackage stamps the actor when package owner is a team org', asy
 		{ actorUserId },
 	)
 
+	expect(stamped).toBe(true)
 	expect(
 		sqlite
 			.prepare(
@@ -74,7 +75,7 @@ test('insertSavedPackage falls back to row user_id when no actor is provided', a
 	const sourceId = crypto.randomUUID()
 	const at = '2026-10-11T13:00:00.000Z'
 
-	await insertSavedPackage(db, {
+	const stamped = await insertSavedPackage(db, {
 		id: packageId,
 		user_id: ownerUserId,
 		name: '@solo/pkg',
@@ -91,6 +92,7 @@ test('insertSavedPackage falls back to row user_id when no actor is provided', a
 		updated_at: at,
 	})
 
+	expect(stamped).toBe(true)
 	expect(
 		sqlite
 			.prepare(

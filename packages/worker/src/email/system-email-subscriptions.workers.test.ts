@@ -10,6 +10,7 @@ import { exportRunRecords } from '#worker/run-records/service.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
 	assignAdminRole,
+	enableSubscriptionForOwner,
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
 	seedAccount,
@@ -65,6 +66,13 @@ async function seedSubscribedPackage(input: {
 			),
 	])
 
+	const enablement = await enableSubscriptionForOwner({
+		db: env.APP_DB,
+		userId: input.userId,
+		packageId,
+		topic: systemTopic,
+	})
+
 	const manifest = {
 		name,
 		exports: { '.': './src/index.ts' },
@@ -117,7 +125,7 @@ export default async function main(input = {}) {
 			createdAt: now,
 		}),
 	)
-	return { packageId, sourceId }
+	return { packageId, sourceId, enablementId: enablement.id }
 }
 
 async function seedMaxAccount(prefix: string) {
@@ -243,7 +251,7 @@ test(
 			exportName: `subscription:${systemTopic}`,
 			topic: systemTopic,
 			source: 'email',
-			idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
+			idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}:enablement:${adminPackage.enablementId}`,
 		})
 		const responseJson = invocation?.responseJson
 		if (!responseJson) {

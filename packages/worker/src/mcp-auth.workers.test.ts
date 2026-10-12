@@ -16,7 +16,10 @@ import {
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 import {
 	isOrgBindingMembershipQuery,
@@ -612,6 +615,9 @@ test('mcp request returns library insufficient_scope step-up when required scope
 })
 
 test('mcp requests route by protocol era and record lane metrics', async () => {
+	// The token env's fake D1 rejects the feature-flag exposure rollup that
+	// `tools/list` records while resolving caller flags.
+	silenceExpectedConsoleWarns(['flag-exposure-rollup-failed'])
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []
 	const mcpEnv = tokenEnv(mcpToken(), verified, {
 		MCP_PROTOCOL_EVENTS: {

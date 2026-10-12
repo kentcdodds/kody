@@ -10,12 +10,16 @@ import {
 	buildIntegrationTokenPlaceholder,
 	buildProviderSecretPlaceholder,
 	buildSecretPlaceholder,
-	decodeSecretPlaceholderDelimiters,
+	decodeSecretPlaceholderPunctuation,
+	formUrlEncodedTexts,
 	parseBasicAuthSecretPlaceholders,
 	parseIntegrationTokenPlaceholders,
 	parseProviderSecretPlaceholders,
 	parseSecretPlaceholders,
 	replaceSecretPlaceholders,
+	replaceSecretPlaceholdersInFormUrlEncoded,
+	replaceSecretPlaceholdersInJson,
+	replaceSecretPlaceholdersInPath,
 	type ReferencedBasicAuthSecretPlaceholder,
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
@@ -33,16 +37,19 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
+import { SecretProviderHostDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
 import {
-	createProviderHostDeniedMessage,
-	createProviderNoWebsitesMessage,
-} from '#mcp/secrets/secret-providers/errors.ts'
-import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
-import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
-import { redactEchoedSecrets } from '#mcp/secrets/echo-redaction.ts'
+	redactEchoedSecrets,
+	redactEchoedSecretsInError,
+} from '#mcp/secrets/echo-redaction.ts'
+import {
+	createOutboundFetchDeadline,
+	outboundFetchIdleTimeoutMs,
+	type OutboundFetchDeadline,
+} from '#mcp/outbound-fetch-deadline.ts'
 import {
 	assertSecretPlacement,
-	loadSecretPlacementPolicy,
+	SecretPlacementError,
 } from '#mcp/secrets/secret-placement.ts'
 import {
 	grantedSecretAuthorityPackageIdSet,
@@ -58,8 +65,7 @@ import {
 } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { createMissingIntegrationAccessTokenMessage } from '#worker/integrations/credentials.ts'
-import { getJoinedIntegration } from '#worker/integrations/service.ts'
-import { assertIntegrationHostAllowed } from './execute-modules/integration-host-allowlist.ts'
+import { IntegrationHostNotAllowedError } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
@@ -100,13 +106,6 @@ type FetchGatewayProps = {
 	 */
 	claimedPackageId?: string | null
 	/**
-	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
-	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
-	 * raise this so a single slow upstream can finish under their larger
-	 * budget. `null` disables the gateway timeout (caller signal only).
-	 */
-	outboundFetchTimeoutMs?: number | null
-	/**
 	 * When false, every sandbox `fetch` is rejected. Retriever runs use
 	 * this to stay closed-world. Defaults to true.
 	 */
@@ -128,56 +127,25 @@ export type FetchGatewayEnv = Pick<
  * literally. Out-of-band by design — only calling code can set a header, so
  * attacker-controlled *data* in a URL or body can never disable resolution.
  * Use it when a third party must receive literal placeholder text (for
- * example, writing config that Kody itself resolves later). For merely
- * mentioning the syntax in prose, prefer the inert `{{secret:<name>}}` form
- * instead, which never resolves anywhere.
+ * example, writing config that Kody itself resolves later). `headers-only`
+ * still fills header placeholders but sends the URL and body as written, for
+ * a body that quotes the syntax (an issue or chat message) on a host the
+ * credential allows; without it that text would be filled with the secret.
+ * For merely mentioning the syntax in prose, prefer the inert
+ * `{{secret:<name>}}` form, which never resolves.
  */
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
 /**
- * Default deadline for sandbox outbound `fetch` when the caller did not pass
- * a tighter `AbortSignal`. Kept 30s under the default execute sandbox budget
- * (90s) so a hung upstream cannot strand the whole evaluation past the host
- * deadline.
+ * Overall deadline for one gateway fetch, from sending the upstream request
+ * (after quota and placeholder expansion) until the response body ends (time
+ * to headers included), on every surface. The run
+ * budget of the calling sandbox still applies on top, so a 90s execute stops
+ * its fetches at 90s. A body that goes quiet stops sooner, after
+ * {@link outboundFetchIdleTimeoutMs} without bytes. A tighter caller
+ * `AbortSignal` also wins.
  */
-export const defaultOutboundFetchTimeoutMs = 60_000
-
-/**
- * Headroom between the executor sandbox budget and the outbound fetch
- * deadline. Matches the default execute pair (90s sandbox / 60s fetch).
- */
-export const outboundFetchTimeoutHeadroomMs = 30_000
-
-/**
- * Hung-fetch cap when the sandbox itself is unbounded. Matches the
- * workflow sandbox (270s) minus {@link outboundFetchTimeoutHeadroomMs}.
- */
-export const unboundedOutboundFetchTimeoutMs = 240_000
-
-const unboundedExecutorTimeoutMs = 2_147_483_647
-
-/**
- * Outbound fetch deadline for a sandbox whose executor budget is
- * `executorTimeoutMs`. Short execute budgets keep the historic 60s cap;
- * workflow budgets raise it by the same 30s headroom so one slow
- * HTTP call (for example Cursor `createAgent`) can finish.
- */
-export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
-	if (
-		!Number.isFinite(executorTimeoutMs) ||
-		executorTimeoutMs >= unboundedExecutorTimeoutMs
-	) {
-		return unboundedOutboundFetchTimeoutMs
-	}
-	if (executorTimeoutMs <= 0) {
-		return defaultOutboundFetchTimeoutMs
-	}
-	const derived = executorTimeoutMs - outboundFetchTimeoutHeadroomMs
-	if (derived <= 0) {
-		return Math.min(executorTimeoutMs, defaultOutboundFetchTimeoutMs)
-	}
-	return Math.max(defaultOutboundFetchTimeoutMs, derived)
-}
+export const outboundFetchTimeoutMs = 5 * 60_000
 
 export const retrieverOutboundFetchDeniedMessage =
 	'Outbound fetch is not available in retriever runs.'
@@ -189,33 +157,8 @@ export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 			props: this.ctx.props,
 			request,
 			waitUntil: (promise) => this.ctx.waitUntil(promise),
-			timeoutMs: this.ctx.props.outboundFetchTimeoutMs,
 		})
 	}
-}
-
-function resolveOutboundFetchTimeoutMs(input: {
-	timeoutMs?: number | null
-	propsTimeoutMs?: number | null
-}): number | null {
-	if (input.timeoutMs === null) return null
-	if (input.timeoutMs !== undefined) return input.timeoutMs
-	if (input.propsTimeoutMs === null) return null
-	if (input.propsTimeoutMs !== undefined) return input.propsTimeoutMs
-	return defaultOutboundFetchTimeoutMs
-}
-
-function applyOutboundFetchTimeout(
-	request: Request,
-	timeoutMs: number,
-): Request {
-	const timeoutSignal = AbortSignal.timeout(timeoutMs)
-	const existing = request.signal
-	const signal =
-		existing && typeof AbortSignal.any === 'function'
-			? AbortSignal.any([existing, timeoutSignal])
-			: timeoutSignal
-	return new Request(request, { signal })
 }
 
 export async function executeGatewayFetch(input: {
@@ -224,21 +167,16 @@ export async function executeGatewayFetch(input: {
 	request: Request
 	globalFetch?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
-	/**
-	 * Override the default outbound deadline. `null` disables the gateway
-	 * timeout (caller signal only). Tests use short values.
-	 */
-	timeoutMs?: number | null
+	/** Override {@link outboundFetchTimeoutMs}. Tests use short values. */
+	timeoutMs?: number
+	/** Override {@link outboundFetchIdleTimeoutMs}. Tests use short values. */
+	idleTimeoutMs?: number
 }): Promise<Response> {
 	const globalFetch = input.globalFetch ?? fetch
 	const startedAtMs = Date.now()
-	let outcome: 'success' | 'error' = 'success'
 	let response: Response | undefined
+	let deadline: OutboundFetchDeadline | undefined
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
-	const timeoutMs = resolveOutboundFetchTimeoutMs({
-		timeoutMs: input.timeoutMs,
-		propsTimeoutMs: input.props.outboundFetchTimeoutMs,
-	})
 
 	try {
 		if (input.props.allowOutboundFetch === false) {
@@ -282,30 +220,46 @@ export async function executeGatewayFetch(input: {
 			input.request.url,
 			transformed.url,
 		)
-		const outbound =
-			timeoutMs == null
-				? transformed
-				: applyOutboundFetchTimeout(transformed, timeoutMs)
-		response = await globalFetch(outbound)
+		deadline = createOutboundFetchDeadline({
+			totalMs: input.timeoutMs ?? outboundFetchTimeoutMs,
+			idleMs: input.idleTimeoutMs ?? outboundFetchIdleTimeoutMs,
+			callerSignal: transformed.signal,
+		})
+		try {
+			response = deadline.track(
+				await globalFetch(
+					new Request(transformed, { signal: deadline.signal }),
+				),
+			)
+		} catch (error) {
+			throw redactEchoedSecretsInError(error, substitutedValues)
+		}
 		return redactEchoedSecrets(response, substitutedValues)
 	} catch (error) {
-		outcome = 'error'
+		deadline?.fail()
 		throw error
 	} finally {
-		if (input.props.allowOutboundFetch !== false && input.props.userId) {
-			const usageEvent = {
-				userId: input.props.userId,
-				eventType: 'outbound_fetch' as const,
-				entityId: meteredEntityId,
-				durationMs: Date.now() - startedAtMs,
-				outcome,
-				...usageAttributionFieldsFromRequest(input.props.request),
-				...(response ? readResponseContentLengthBytes(response) : {}),
-			}
-			const usagePromise = recordUsage(input.env, usageEvent)
+		const { userId } = input.props
+		if (input.props.allowOutboundFetch !== false && userId) {
+			const meteredResponse = response
+			// Outcome is settled at headers; duration waits for the body so a
+			// streamed response reports how long it stayed open.
+			const usagePromise = (deadline?.done ?? Promise.resolve()).then(() =>
+				recordUsage(input.env, {
+					userId,
+					eventType: 'outbound_fetch',
+					entityId: meteredEntityId,
+					durationMs: Date.now() - startedAtMs,
+					outcome: meteredResponse ? 'success' : 'error',
+					...usageAttributionFieldsFromRequest(input.props.request),
+					...(meteredResponse
+						? readResponseContentLengthBytes(meteredResponse)
+						: {}),
+				}),
+			)
 			if (input.waitUntil) {
 				input.waitUntil(usagePromise)
-			} else {
+			} else if (!meteredResponse) {
 				await usagePromise
 			}
 		}
@@ -313,8 +267,8 @@ export async function executeGatewayFetch(input: {
 }
 
 /**
- * The hostname to meter. The gateway refuses placeholders in the URL, so the
- * transformed URL never carries a secret and its host is safe to record.
+ * The hostname to meter. The gateway refuses a placeholder in the URL host,
+ * so the host never carries a secret and is safe to record.
  */
 function readMeteredRequestHostname(
 	originalUrl: string,
@@ -348,8 +302,9 @@ function readResponseContentLengthBytes(
 }
 
 /**
- * The outbound request with header placeholders substituted, plus every
- * credential value that went into it so the response can be redacted.
+ * The outbound request with placeholders filled in its headers, URL path and
+ * query, and text body, plus every credential value that went into it so the
+ * response can be redacted.
  */
 export async function expandSecretPlaceholders(input: {
 	request: Request
@@ -373,62 +328,63 @@ export async function expandSecretPlaceholders(input: {
 		packageStamp?.packageId ?? null,
 	)
 	headers.delete(secretAuthorityHeaderName)
+	const resolutionMode = readSecretResolutionMode(headers)
+	const requestUrl = new URL(
+		resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
+	)
 	const requestBody = await readRequestBody(input.request)
-	if (readSecretResolutionMode(headers) === 'off') {
+	if (resolutionMode === 'off') {
 		return {
-			request: new Request(
-				resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
-				{
-					method: input.request.method,
-					headers,
-					body: requestBody,
-					redirect: input.request.redirect,
-					credentials: input.request.credentials,
-					mode: input.request.mode,
-					cache: input.request.cache,
-					integrity: input.request.integrity,
-					keepalive: input.request.keepalive,
-					signal: input.request.signal,
-				},
-			),
+			request: new Request(requestUrl, {
+				method: input.request.method,
+				headers,
+				body: requestBodyInit(requestBody),
+				redirect: input.request.redirect,
+				credentials: input.request.credentials,
+				mode: input.request.mode,
+				cache: input.request.cache,
+				integrity: input.request.integrity,
+				keepalive: input.request.keepalive,
+				signal: input.request.signal,
+			}),
 			substitutedValues: [],
 		}
 	}
-	await assertSecretPlacement({
-		url: decodeSecretPlaceholderDelimiters(
-			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
-		),
-		headers,
-		loadPolicy: () =>
-			loadSecretPlacementPolicy({
-				env: input.env as Env,
-				baseUrl,
-				packageId: packageStamp?.packageId,
-				cacheKey: input.props.request,
-			}),
-	})
-	const resolvedSecrets: Array<{
-		referenced: ReferencedSecret
-		resolved: ResolvedSecret
-	}> = []
+	// `headers-only` fills header placeholders and sends the URL and body as
+	// written, for a body that quotes the placeholder syntax.
+	const fillsUrlAndBody = resolutionMode === 'on'
+	const urlTexts = fillsUrlAndBody ? urlPlaceholderTexts(requestUrl) : []
+	const bodyTexts =
+		fillsUrlAndBody && requestBody ? bodyPlaceholderTexts(requestBody) : []
+	const placeholderSources = [
+		...Array.from(headers.values()),
+		...urlTexts,
+		...bodyTexts,
+	]
+	assertSecretPlacement({ url: requestUrl, values: placeholderSources })
 	const replacements = new Map<string, string>()
 	const resolvedValues = new Map<string, string>()
-	const headerValues = Array.from(headers.values())
 	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders(
-		headerValues.flatMap((value) => parseBasicAuthSecretPlaceholders(value)),
+		placeholderSources.flatMap((value) =>
+			parseBasicAuthSecretPlaceholders(value),
+		),
 	)
 	const referencedSecrets = dedupeReferencedSecrets([
-		...headerValues.flatMap((value) => parseSecretPlaceholders(value)),
+		...placeholderSources.flatMap((value) => parseSecretPlaceholders(value)),
 		...basicAuthPlaceholders.flatMap((placeholder) => [
 			placeholder.username,
 			placeholder.password,
 		]),
 	])
 	const referencedIntegrationTokens = dedupeIntegrationTokenNames(
-		headerValues.flatMap((value) => parseIntegrationTokenPlaceholders(value)),
+		placeholderSources.flatMap((value) =>
+			parseIntegrationTokenPlaceholders(value),
+		),
 	)
 	const referencedProviderSecrets = dedupeReferencedProviderSecrets(
-		headerValues.flatMap((value) => parseProviderSecretPlaceholders(value)),
+		placeholderSources.flatMap((value) =>
+			parseProviderSecretPlaceholders(value),
+		),
 	)
 	const hasReferencedSecrets =
 		referencedSecrets.length > 0 ||
@@ -437,10 +393,9 @@ export async function expandSecretPlaceholders(input: {
 	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
-	const preflightHost = hasReferencedSecrets
-		? readPreflightRequestHost(input.request.url, baseUrl)
-		: null
-	const requestHost = preflightHost ? normalizeHost(preflightHost) : null
+	// The host is never a fill site, so the credential door checks each
+	// credential's allowed hosts against it before resolving.
+	const requestHost = normalizeHost(requestUrl.hostname)
 	const settledSecretResults = await Promise.allSettled(
 		referencedSecrets.map(async (referenced) => {
 			if (!callerUserId) {
@@ -482,7 +437,7 @@ export async function expandSecretPlaceholders(input: {
 		settled: settledSecretResults,
 		props: input.props,
 		storageContext,
-		requestedHost: preflightHost ?? '',
+		requestedHost: requestUrl.hostname,
 	})
 	const resolvedIntegrationTokens = await Promise.all(
 		referencedIntegrationTokens.map(async (name) => {
@@ -496,6 +451,10 @@ export async function expandSecretPlaceholders(input: {
 				packageStamp,
 				baseUrl: input.props.baseUrl,
 				credential: { use: 'integration-token', name, requestHost },
+			}).catch((error: unknown) => {
+				throw error instanceof IntegrationHostNotAllowedError
+					? new SecretPlacementError(error.message, name)
+					: error
 			})
 			if (!value) {
 				throw new Error(createMissingIntegrationAccessTokenMessage(name))
@@ -522,11 +481,15 @@ export async function expandSecretPlaceholders(input: {
 					storageContext,
 					requestHost,
 				},
+			}).catch((error: unknown) => {
+				throw error instanceof SecretProviderHostDeniedError
+					? new SecretPlacementError(error.message, null)
+					: error
 			})
 			return { referenced, resolved }
 		}),
 	)
-	for (const { referenced, resolved, value } of resolvedSecretResults) {
+	for (const { referenced, value } of resolvedSecretResults) {
 		const placeholder = buildSecretPlaceholder(referenced)
 		if (!replacements.has(placeholder)) {
 			replacements.set(placeholder, value)
@@ -534,7 +497,6 @@ export async function expandSecretPlaceholders(input: {
 		if (!resolvedValues.has(placeholder)) {
 			resolvedValues.set(placeholder, value)
 		}
-		resolvedSecrets.push({ referenced, resolved })
 	}
 	for (const { name, value } of resolvedIntegrationTokens) {
 		const placeholder = buildIntegrationTokenPlaceholder(name)
@@ -567,64 +529,18 @@ export async function expandSecretPlaceholders(input: {
 			replacements.set(renderedPlaceholder, authHeader)
 		}
 	}
-	const nextUrl = resolveRequestUrlForFetchGateway(input.request.url, baseUrl)
-	if (hasReferencedSecrets) {
-		const requestedHost = readRequestedHost(nextUrl)
-		if (!requestedHost) {
-			throw new Error(
-				'Unable to resolve the request host after secret expansion.',
-			)
-		}
-		const normalizedHost = normalizeHost(requestedHost)
-		const missingApprovals = collectHostApprovalEntries({
-			props: input.props,
-			storageContext,
-			requestedHost,
-			normalizedHost,
-			resolvedSecrets,
-		})
-		if (missingApprovals.length > 0) {
-			throw createHostApprovalBatchError({
-				props: input.props,
-				storageContext,
-				missingApprovals,
-			})
-		}
-		assertProviderSecretHostsAllowed({
-			resolvedProviderSecrets: resolvedProviderSecrets.map(
-				(entry) => entry.resolved,
-			),
-			normalizedHost,
-		})
-		// With a preflight host the door already checked each integration's hosts.
-		if (
-			!requestHost &&
-			callerUserId &&
-			referencedIntegrationTokens.length > 0
-		) {
-			for (const name of referencedIntegrationTokens) {
-				const joined = await getJoinedIntegration({
-					env: input.env,
-					userId: callerUserId,
-					name,
-				})
-				if (!joined) {
-					throw new Error(createMissingIntegrationAccessTokenMessage(name))
-				}
-				assertIntegrationHostAllowed(
-					name,
-					{
-						requiredHosts: joined.connection.requiredHosts,
-						apiBaseUrl: joined.app.apiBaseUrl,
-					},
-					nextUrl,
-				)
-			}
-		}
-	}
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
+	const nextUrl = fillsUrlAndBody
+		? fillUrlPlaceholders(requestUrl, replacements)
+		: requestUrl
+	const fillsBody = requestBody != null && bodyTexts.some(holdsPlaceholder)
+	const nextBody = fillsBody
+		? fillBodyPlaceholders(requestBody, replacements)
+		: requestBodyInit(requestBody)
+	// A filled body has a new length; the runtime sets it from the bytes.
+	if (fillsBody) headers.delete('content-length')
 	const nextRedirect =
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
@@ -633,7 +549,7 @@ export async function expandSecretPlaceholders(input: {
 		request: new Request(nextUrl, {
 			method: input.request.method,
 			headers,
-			body: requestBody,
+			body: nextBody,
 			redirect: nextRedirect,
 			credentials: input.request.credentials,
 			mode: input.request.mode,
@@ -699,23 +615,6 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 	}
 }
 
-/**
- * The host as written, when placeholder expansion cannot change it (no
- * placeholder in the URL's userinfo or hostname). The door then enforces host
- * allowlists itself; otherwise only the post-expansion checks run.
- */
-function readPreflightRequestHost(rawUrl: string, baseUrl: string) {
-	let url: URL
-	try {
-		url = new URL(resolveRequestUrlForFetchGateway(rawUrl, baseUrl))
-	} catch {
-		return null
-	}
-	const authority = `${url.username}:${url.password}@${url.hostname}`
-	if (/\{\{|%7b%7b/i.test(authority)) return null
-	return url.hostname || null
-}
-
 type MissingHostApproval = HostApprovalEntry & { scope: SecretScope }
 
 type ResolvedSecretResult = {
@@ -725,9 +624,8 @@ type ResolvedSecretResult = {
 }
 
 /**
- * Door host denials are collected into one batch message, like the
- * post-expansion check, so every missing approval is listed at once. Any other
- * failure is rethrown first.
+ * Door host denials are collected into one batch message, so every missing
+ * approval is listed at once. Any other failure is rethrown first.
  */
 function readSettledSecretResults(input: {
 	settled: Array<PromiseSettledResult<ResolvedSecretResult>>
@@ -786,7 +684,7 @@ function createHostApprovalBatchError(input: {
 				storageContext: bulkScope.storageContext,
 			})
 		: null
-	return new Error(
+	return new SecretPlacementError(
 		createHostSecretAccessDeniedBatchMessage(
 			missingApprovals.map(({ secretName, host, approvalUrl }) => ({
 				secretName,
@@ -795,40 +693,10 @@ function createHostApprovalBatchError(input: {
 			})),
 			{ bulkApprovalUrl },
 		),
+		missingApprovals.length === 1
+			? (missingApprovals[0]?.secretName ?? null)
+			: null,
 	)
-}
-
-function collectHostApprovalEntries(input: {
-	props: FetchGatewayProps
-	storageContext: StorageContext
-	requestedHost: string
-	normalizedHost: string
-	resolvedSecrets: Array<{
-		referenced: ReferencedSecret
-		resolved: ResolvedSecret
-	}>
-}): Array<MissingHostApproval> {
-	return input.resolvedSecrets.flatMap(({ referenced, resolved }) => {
-		const allowedForHost =
-			resolved.allowedHosts.length > 0 &&
-			resolved.allowedHosts.includes(input.normalizedHost)
-		if (allowedForHost) return []
-		const scope = resolved.scope ?? referenced.scope ?? 'user'
-		return [
-			{
-				secretName: referenced.name,
-				host: input.requestedHost,
-				scope,
-				approvalUrl: buildSecretHostApprovalUrl({
-					baseUrl: input.props.baseUrl,
-					name: referenced.name,
-					scope,
-					requestedHost: input.requestedHost,
-					storageContext: input.storageContext,
-				}),
-			},
-		]
-	})
 }
 
 function readBulkHostApprovalScope(input: {
@@ -853,10 +721,6 @@ function readBulkHostApprovalScope(input: {
 	}
 }
 
-function readRequestedHost(url: string) {
-	return new URL(url).hostname
-}
-
 function requireFetchUserId(props: FetchGatewayProps): OwnerId {
 	if (!props.userId) {
 		throw new Error(fetchSecretAuthRequiredMessage)
@@ -869,35 +733,19 @@ function requireFetchUserId(props: FetchGatewayProps): OwnerId {
  * a typo like "of" silently resolving placeholders would defeat the point of
  * opting out.
  */
-function readSecretResolutionMode(headers: Headers): 'on' | 'off' {
+function readSecretResolutionMode(
+	headers: Headers,
+): 'on' | 'headers-only' | 'off' {
 	const raw = headers.get(secretResolutionHeaderName)
 	if (raw == null) return 'on'
 	headers.delete(secretResolutionHeaderName)
 	const value = raw.trim().toLowerCase()
 	if (value === 'off') return 'off'
+	if (value === 'headers-only') return 'headers-only'
 	if (value === 'on') return 'on'
 	throw new Error(
-		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, or omit the header for normal resolution.`,
+		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, "headers-only" to fill header placeholders and send the URL and body as written, or omit the header to fill placeholders anywhere in the request.`,
 	)
-}
-
-function assertProviderSecretHostsAllowed(input: {
-	resolvedProviderSecrets: Array<ResolvedProviderSecret>
-	normalizedHost: string
-}) {
-	for (const resolved of input.resolvedProviderSecrets) {
-		if (resolved.hosts.length === 0) {
-			throw new Error(createProviderNoWebsitesMessage(resolved.provider))
-		}
-		if (!providerHostsAllowRequestHost(resolved.hosts, input.normalizedHost)) {
-			throw new Error(
-				createProviderHostDeniedMessage({
-					providerId: resolved.provider,
-					host: input.normalizedHost,
-				}),
-			)
-		}
-	}
 }
 
 function dedupeReferencedProviderSecrets(
@@ -935,16 +783,163 @@ function dedupeBasicAuthSecretPlaceholders(
 	return Array.from(deduped.values())
 }
 
+type GatewayRequestBody =
+	| {
+			kind: 'text'
+			bytes: Uint8Array<ArrayBuffer>
+			text: string
+			format: 'form' | 'json' | 'text'
+	  }
+	| { kind: 'opaque'; bytes: Uint8Array<ArrayBuffer> }
+
 /**
- * The outbound request body as opaque bytes. A body is data, so the gateway
- * never decodes, scans, or substitutes into it: text that looks like a
- * placeholder is forwarded byte-for-byte.
+ * The outbound request body. `multipart/*` is always opaque: a Discord upload
+ * (JSON payload plus a `.txt` attachment) is valid UTF-8, but its message
+ * content is not a fill site. Other bodies that decode as UTF-8 are text the
+ * gateway fills; anything else is forwarded byte for byte.
  */
 async function readRequestBody(
 	request: Request,
-): Promise<Uint8Array<ArrayBuffer> | null> {
+): Promise<GatewayRequestBody | null> {
 	if (!shouldSendBody(request.method)) return null
-	return new Uint8Array(await request.arrayBuffer())
+	const bytes = new Uint8Array(await request.arrayBuffer())
+	const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
+	if (contentType.startsWith('multipart/')) return { kind: 'opaque', bytes }
+	try {
+		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
+		// bodies round-trip byte for byte.
+		const text = new TextDecoder('utf-8', {
+			fatal: true,
+			ignoreBOM: true,
+		}).decode(bytes)
+		return {
+			kind: 'text',
+			bytes,
+			text,
+			format: readTextBodyFormat(contentType, text),
+		}
+	} catch {
+		return { kind: 'opaque', bytes }
+	}
+}
+
+/**
+ * `fetch(url, { body: JSON.stringify(...) })` without a Content-Type is sent
+ * as `text/plain`, so an untyped or plain-text body that parses as JSON is
+ * filled as JSON: a quote in a value must not end the string it fills.
+ */
+function readTextBodyFormat(contentType: string, text: string) {
+	if (contentType.startsWith('application/x-www-form-urlencoded')) {
+		return 'form'
+	}
+	const mediaType = contentType.split(';')[0]?.trim() ?? ''
+	if (mediaType === 'application/json' || mediaType.endsWith('+json')) {
+		return 'json'
+	}
+	if ((mediaType === '' || mediaType === 'text/plain') && isJsonText(text)) {
+		return 'json'
+	}
+	return 'text'
+}
+
+function isJsonText(text: string) {
+	try {
+		JSON.parse(text)
+		return true
+	} catch {
+		return false
+	}
+}
+
+/**
+ * Always bytes: a string body would make the Request constructor add a
+ * `text/plain` Content-Type the caller never sent.
+ */
+function requestBodyInit(body: GatewayRequestBody | null) {
+	return body?.bytes
+}
+
+/** The text in the body a placeholder may sit in. */
+function bodyPlaceholderTexts(body: GatewayRequestBody) {
+	switch (body.kind) {
+		case 'opaque':
+			return []
+		case 'text':
+			return body.format === 'form'
+				? formUrlEncodedTexts(body.text)
+				: [body.text]
+		default: {
+			const exhaustive: never = body
+			throw new Error(`Unhandled request body: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function fillBodyPlaceholders(
+	body: GatewayRequestBody,
+	replacements: ReadonlyMap<string, string>,
+) {
+	if (body.kind === 'opaque') return body.bytes
+	return new TextEncoder().encode(
+		fillBodyText(body.text, body.format, replacements),
+	)
+}
+
+function fillBodyText(
+	text: string,
+	format: 'form' | 'json' | 'text',
+	replacements: ReadonlyMap<string, string>,
+) {
+	switch (format) {
+		case 'form':
+			return replaceSecretPlaceholdersInFormUrlEncoded(text, replacements)
+		case 'json':
+			return replaceSecretPlaceholdersInJson(text, replacements)
+		case 'text':
+			return replaceSecretPlaceholders(text, replacements)
+		default: {
+			const exhaustive: never = format
+			throw new Error(`Unhandled body format: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** The URL path and each decoded query key and value. */
+function urlPlaceholderTexts(url: URL) {
+	return [
+		decodeSecretPlaceholderPunctuation(url.pathname),
+		...formUrlEncodedTexts(url.search),
+	]
+}
+
+/**
+ * `url` with placeholders filled in its path and query. Only the components
+ * that hold one change.
+ */
+function fillUrlPlaceholders(
+	url: URL,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const next = new URL(url)
+	if (holdsPlaceholder(decodeSecretPlaceholderPunctuation(url.pathname))) {
+		next.pathname = replaceSecretPlaceholdersInPath(url.pathname, replacements)
+	}
+	if (formUrlEncodedTexts(url.search).some(holdsPlaceholder)) {
+		next.search = replaceSecretPlaceholdersInFormUrlEncoded(
+			url.search.slice(1),
+			replacements,
+		)
+	}
+	return next
+}
+
+function holdsPlaceholder(value: string) {
+	return (
+		parseSecretPlaceholders(value).length > 0 ||
+		parseBasicAuthSecretPlaceholders(value).length > 0 ||
+		parseIntegrationTokenPlaceholders(value).length > 0 ||
+		parseProviderSecretPlaceholders(value).length > 0
+	)
 }
 
 function shouldSendBody(method: string) {

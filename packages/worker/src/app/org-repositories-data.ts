@@ -93,20 +93,20 @@ export async function loadOrgRepositoriesData(input: {
 				userId: orgId,
 				label: pkg.name,
 			})
-			// List visibility is broader than the package page (read|execute|write).
-			// Only link when the viewer can open the page (`package:read`).
-			const canOpenDetail = checkPermission(
-				access,
-				'package:read',
-				resource,
-			).allowed
+			// List visibility is broader than the owner package page
+			// (read|execute|write). Link when the viewer can open that page
+			// (`package:read`), or when a public community listing makes the
+			// canonical `/@slug/kodyId` URL resolve without read.
+			const canOpenDetail =
+				checkPermission(access, 'package:read', resource).allowed ||
+				Boolean(pkg.communityListingId)
 			return toPublicProfilePackageItem(pkg, {
 				includeOwnerVisibility: true,
 				username: slug,
 				canOpenDetail,
 			})
 		}),
-		activity: [],
+		activity: null,
 		query: query || null,
 		isSelf: true,
 		loggedIn: true,

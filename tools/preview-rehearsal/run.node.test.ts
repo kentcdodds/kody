@@ -8,7 +8,7 @@ import {
 
 test('usage lists seed-status before seed', () => {
 	expect(rehearsalUsage).toContain(
-		'seed-status  --worker <kody-branch-*> [--out <seed-status.json>]',
+		'seed-status  --worker <kody-branch-*|slug> [--out <seed-status.json>]',
 	)
 	expect(rehearsalUsage.indexOf('seed-status')).toBeLessThan(
 		rehearsalUsage.indexOf('seed         --worker'),

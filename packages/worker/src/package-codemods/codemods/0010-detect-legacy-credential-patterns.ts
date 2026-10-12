@@ -1,4 +1,19 @@
-import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
+import {
+	type AstNode,
+	constantsWithoutShadows,
+	createModuleConstantsReader,
+	findPlaceholders,
+	getCalleeName,
+	getCalleeObjectName,
+	getNodeName,
+	listScannableModulePaths,
+	type NameKind,
+	parseModule,
+	resolveStringExpression,
+	templateElementText,
+	transparentExpressionTypes,
+	walkAst,
+} from '#worker/credentials/module-placeholder-scan.ts'
 import {
 	type PackageCodemod,
 	type PackageCodemodFinding,
@@ -16,10 +31,8 @@ export const legacyCredentialPatterns = [
 	'|scope=',
 	'secretMounts',
 	'webhook secretName',
-	'secret outside header',
 	'plain http',
 	'packageSecrets.get',
-	'missing placement',
 ] as const
 
 export type LegacyCredentialPattern = (typeof legacyCredentialPatterns)[number]
@@ -46,14 +59,10 @@ export const legacyCredentialPatternMessages: Record<
 		'secretMounts: declares kody.secretMounts. Replace each mount with a kody.credentials slot.',
 	'webhook secretName':
 		'webhook secretName: a webhook names its signing secret with secretName. Declare that secret as a kody.credentials slot.',
-	'secret outside header':
-		'secret outside header: puts a secret placeholder in a request URL, query, or body. The fetch gateway substitutes secrets only into the header a kody.credentials slot declares.',
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in only in the header a kody.credentials slot declares for that secret.',
-	'missing placement':
-		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in a header, the URL path or query, or a non-multipart text body of an HTTPS request to a host the secret allows.',
 }
 
 export function legacyCredentialPatternFromMessage(
@@ -66,28 +75,34 @@ export function legacyCredentialPatternFromMessage(
 }
 
 const packageManifestPath = 'package.json'
-const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
-const placeholderOpenerPattern =
-	/\{\{(secret-basic:|secret:|secret\/|integration-token:)/g
-const completePlaceholderPatterns: Record<string, RegExp> = {
-	'secret:': /\{\{secret:[a-zA-Z0-9._-]+(?:\|scope=[a-z]+)?\}\}/y,
-	'secret-basic:':
-		/\{\{secret-basic:username=[a-zA-Z0-9._-]+,password=[a-zA-Z0-9._-]+(?:\|scope=[a-z]+)?\}\}/y,
-	'secret/': /\{\{secret\/[a-zA-Z0-9._-]+:[^}]+\}\}/y,
-	'integration-token:': /\{\{integration-token:[a-zA-Z0-9._-]+\}\}/y,
+/** The kody.credentials slot kind a reference of each name kind resolves to. */
+const slotKindByNameKind: Record<NameKind, 'secret' | 'oauth'> = {
+	secret: 'secret',
+	integration: 'oauth',
+}
+
+type Scan = {
+	add: (pattern: LegacyCredentialPattern) => void
+	/**
+	 * A credential named by a known string. Not a finding when it names a
+	 * declared kody.credentials slot of the matching kind.
+	 */
+	named: (name: string, kind: NameKind) => void
+	/** Module-level string constants, declared or relatively imported. */
+	constants: ReadonlyMap<string, string>
 }
 /**
- * A literal scope, or `|scope=` followed by a computed value: the end of a
- * string piece (the AST splits templates and concatenations into pieces), or
- * `${` / a closing quote and `+` in the text fallback.
+ * A literal scope word, or a text-fallback computed suffix (`${` / quote +
+ * `+`). The bare end-of-piece `|scope=` / `|scope=pack` form is only counted
+ * when {@link hasComputedScopeContinuation} proves a following expression.
  */
 const scopeSuffixPattern =
-	/\|scope=(?:(?:session|package|user)\b|$|\$\{|['"`]\s*\+)/
+	/\|scope=(?:(?:session|package|user)\b|\$\{|['"`]\s*\+)/
+/** `|scope=` or a partial scope word at the end of a template/concat piece. */
+const computedScopePieceEndPattern = /\|scope=[a-z]*$/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
-
-type NameKind = 'secret' | 'integration'
 
 /** Group 1 captures the opening quote when the first argument is a literal. */
 const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
@@ -142,159 +157,10 @@ function ownEntry<Value>(record: Record<string, Value>, key: string) {
 	return Object.hasOwn(record, key) ? record[key] : undefined
 }
 
-type AstNode = ModuleAstNode & {
-	computed?: boolean
-	name?: unknown
-	value?: unknown
-	object?: AstNode
-	property?: AstNode
-	callee?: AstNode
-	arguments?: Array<AstNode>
-	properties?: Array<AstNode>
-	key?: AstNode
-	id?: AstNode
-	init?: AstNode
-	expressions?: Array<AstNode>
-	quasis?: Array<AstNode>
-	source?: AstNode
-	specifiers?: Array<AstNode>
-	local?: AstNode
-	imported?: AstNode
-	program?: { body?: Array<AstNode> }
-}
-
-function getNodeName(node: AstNode | null | undefined) {
-	if (!node) return null
-	if (typeof node.name === 'string') return node.name
-	if (typeof node.value === 'string') return node.value
-	return null
-}
-
-function walkAst(
-	node: AstNode,
-	visit: (node: AstNode, ancestors: ReadonlyArray<AstNode>) => void,
-	ancestors: Array<AstNode> = [],
-) {
-	visit(node, ancestors)
-	ancestors.push(node)
-	for (const [key, value] of Object.entries(node)) {
-		if (
-			key === 'loc' ||
-			key === 'range' ||
-			key === 'leadingComments' ||
-			key === 'trailingComments' ||
-			key === 'innerComments' ||
-			key === 'comments'
-		) {
-			continue
-		}
-		if (Array.isArray(value)) {
-			for (const child of value) {
-				if (child && typeof child === 'object' && 'type' in child) {
-					walkAst(child as AstNode, visit, ancestors)
-				}
-			}
-			continue
-		}
-		if (value && typeof value === 'object' && 'type' in value) {
-			walkAst(value as AstNode, visit, ancestors)
-		}
-	}
-	ancestors.pop()
-}
-
 function literalText(node: AstNode) {
 	if (node.type === 'StringLiteral') return getNodeName(node)
 	if (node.type !== 'TemplateLiteral') return null
-	return (node.quasis ?? [])
-		.map((quasi) => {
-			const value = quasi.value as { cooked?: string | null; raw?: string }
-			return value.cooked ?? value.raw ?? ''
-		})
-		.join('${}')
-}
-
-function isWithinHeaders(node: AstNode, ancestors: ReadonlyArray<AstNode>) {
-	let child = node
-	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-		const parent = ancestors[index]!
-		if (
-			parent.type === 'ObjectProperty' &&
-			parent.computed !== true &&
-			parent.value === child &&
-			getNodeName(parent.key) === 'headers'
-		) {
-			return true
-		}
-		if (
-			parent.type === 'NewExpression' &&
-			getNodeName(parent.callee) === 'Headers'
-		) {
-			return true
-		}
-		child = parent
-	}
-	return false
-}
-
-/**
- * True only when the literal provably lands in a request URL, query, or body:
- * a URL-shaped string, a `body` property, the URL argument of `fetch`,
- * `new Request`, or `new URL`, or `JSON.stringify` / `URLSearchParams` /
- * `FormData` input. Anything under a `headers` property or `new Headers` is a
- * header, so the count stays a floor.
- */
-function literalIsOutsideHeader(
-	node: AstNode,
-	text: string,
-	ancestors: ReadonlyArray<AstNode>,
-) {
-	if (isWithinHeaders(node, ancestors)) return false
-	if (/^\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(text)) return true
-	let child = node
-	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-		const parent = ancestors[index]!
-		if (
-			parent.type === 'ObjectProperty' &&
-			parent.computed !== true &&
-			parent.value === child &&
-			getNodeName(parent.key) === 'body'
-		) {
-			return true
-		}
-		if (
-			parent.type === 'CallExpression' ||
-			parent.type === 'OptionalCallExpression'
-		) {
-			const calleeName = getCalleeName(parent.callee)
-			if (calleeName === 'fetch' && parent.arguments?.[0] === child) {
-				return true
-			}
-			if (
-				calleeName === 'stringify' &&
-				getCalleeObjectName(parent.callee) === 'JSON'
-			) {
-				return true
-			}
-		}
-		if (parent.type === 'NewExpression') {
-			const constructorName = getNodeName(parent.callee)
-			if (
-				(constructorName === 'Request' || constructorName === 'URL') &&
-				parent.arguments?.[0] === child
-			) {
-				return true
-			}
-			if (
-				constructorName === 'URLSearchParams' ||
-				constructorName === 'FormData'
-			) {
-				return true
-			}
-		}
-		child = parent
-	}
-	return false
+	return (node.quasis ?? []).map(templateElementText).join('${}')
 }
 
 function isPlainHttpUrl(text: string) {
@@ -315,93 +181,114 @@ function isRequestUrlArgument(node: AstNode, parent: AstNode | undefined) {
 
 function classifyStringPiece(
 	text: string,
-	add: (pattern: LegacyCredentialPattern) => void,
+	scan: Scan,
+	allowComputedScopePieceEnd = false,
 ) {
-	if (scopeSuffixPattern.test(text)) add('|scope=')
-	for (const match of text.matchAll(placeholderOpenerPattern)) {
-		const opener = match[1]!
-		const complete = completePlaceholderPatterns[opener]!
-		complete.lastIndex = match.index
-		if (complete.test(text)) {
-			add('literal secret')
-		} else if (opener === 'integration-token:') {
-			add('computed integration')
-		} else {
-			add('computed secret')
+	if (
+		scopeSuffixPattern.test(text) ||
+		(allowComputedScopePieceEnd && computedScopePieceEndPattern.test(text))
+	) {
+		scan.add('|scope=')
+	}
+	for (const placeholder of findPlaceholders(text)) {
+		switch (placeholder.kind) {
+			case 'secret':
+			case 'integration':
+				for (const name of placeholder.names) {
+					scan.named(name, placeholder.kind)
+				}
+				break
+			case 'vault':
+				scan.add('literal secret')
+				break
+			case 'computed':
+				scan.add(computedPattern(placeholder.nameKind))
+				break
+			default: {
+				const exhaustive: never = placeholder
+				throw new Error(`Unhandled placeholder: ${String(exhaustive)}`)
+			}
 		}
 	}
 }
 
-function isLiteralString(node: AstNode | undefined) {
-	if (!node) return false
-	if (node.type === 'StringLiteral') return true
-	return (
-		node.type === 'TemplateLiteral' && (node.expressions ?? []).length === 0
-	)
+function hasComputedScopeContinuation(
+	node: AstNode,
+	ancestors: ReadonlyArray<AstNode>,
+) {
+	let child = node
+	let index = ancestors.length - 1
+	if (node.type === 'TemplateElement') {
+		const template = ancestors[index]
+		if (template?.type !== 'TemplateLiteral') return false
+		const quasiIndex = (template.quasis ?? []).indexOf(node)
+		if (quasiIndex < 0) return false
+		if (quasiIndex < (template.expressions ?? []).length) return true
+		child = template
+		index -= 1
+	}
+	for (; index >= 0; index -= 1) {
+		const parent = ancestors[index]!
+		if (transparentExpressionTypes.has(parent.type)) {
+			child = parent
+			continue
+		}
+		if (parent.type !== 'BinaryExpression' || parent.operator !== '+') {
+			return false
+		}
+		if (parent.left === child) return true
+		if (parent.right !== child) return false
+		child = parent
+	}
+	return false
 }
 
 function classifyNameExpression(
 	node: AstNode | undefined,
 	kind: NameKind,
-	add: (pattern: LegacyCredentialPattern) => void,
+	scan: Scan,
+	ancestors: ReadonlyArray<AstNode> = [],
 ) {
-	if (isLiteralString(node)) {
-		add('literal secret')
-		return
-	}
-	add(computedPattern(kind))
+	const name = resolveStringExpression(
+		node,
+		constantsWithoutShadows(scan.constants, ancestors),
+	)
+	if (name == null) scan.add(computedPattern(kind))
+	else scan.named(name, kind)
 }
 
 function computedPattern(kind: NameKind): LegacyCredentialPattern {
 	return kind === 'integration' ? 'computed integration' : 'computed secret'
 }
 
-function getCalleeName(callee: AstNode | undefined) {
-	if (!callee) return null
-	if (callee.type === 'Identifier') return getNodeName(callee)
-	if (
-		(callee.type === 'MemberExpression' ||
-			callee.type === 'OptionalMemberExpression') &&
-		callee.computed !== true
-	) {
-		return getNodeName(callee.property)
-	}
-	return null
-}
-
-function getCalleeObjectName(callee: AstNode | undefined) {
-	if (
-		callee &&
-		(callee.type === 'MemberExpression' ||
-			callee.type === 'OptionalMemberExpression')
-	) {
-		return getNodeName(callee.object)
-	}
-	return null
-}
-
 function classifyNamedFields(
 	argument: AstNode | undefined,
 	spec: (typeof nameFieldCallees)[string],
-	add: (pattern: LegacyCredentialPattern) => void,
+	scan: Scan,
+	ancestors: ReadonlyArray<AstNode>,
 ) {
 	if (argument?.type !== 'ObjectExpression') {
-		if (argument) add(computedPattern(spec.kind))
+		if (argument) scan.add(computedPattern(spec.kind))
 		return
 	}
 	for (const property of argument.properties ?? []) {
 		if (property.type !== 'ObjectProperty' || property.computed === true) {
-			add(computedPattern(spec.kind))
+			scan.add(computedPattern(spec.kind))
 			continue
 		}
 		const key = getNodeName(property.key)
 		if (key == null) continue
 		if (spec.scopeFields.includes(key)) {
-			add('|scope=')
+			scan.add('|scope=')
 			continue
 		}
 		if (spec.fields.includes(key)) {
-			classifyNameExpression(property.value as AstNode, spec.kind, add)
+			classifyNameExpression(
+				property.value as AstNode,
+				spec.kind,
+				scan,
+				ancestors,
+			)
 		}
 	}
 }
@@ -444,44 +331,85 @@ function isKodyMcpDestructure(node: AstNode, aliases: Set<string>) {
 	)
 }
 
-function detectInParsedModule(
-	parsed: AstNode,
-	add: (pattern: LegacyCredentialPattern) => void,
-) {
+/** A template or `+` chain with a non-literal part, so it may be computed. */
+function isCompositeString(node: AstNode) {
+	if (node.type === 'TemplateLiteral') {
+		return (node.expressions ?? []).length > 0
+	}
+	return node.type === 'BinaryExpression' && node.operator === '+'
+}
+
+function detectInParsedModule(parsed: AstNode, scan: Scan) {
+	const { add } = scan
 	const body = parsed.program?.body ?? []
 	const aliases = collectKodyAliases(body)
 	let usesPlaceholder = false
 	let fetchesPlainHttp = false
+	/** Pieces of a composite string already classified as one resolved string. */
+	const resolvedPieces = new WeakSet<AstNode>()
 	const classifyLiteral = (
 		node: AstNode,
+		text: string,
 		ancestors: ReadonlyArray<AstNode>,
 	) => {
-		const text = literalText(node)
-		if (text == null) return
 		if (isPlainHttpUrl(text) && isRequestUrlArgument(node, ancestors.at(-1))) {
 			fetchesPlainHttp = true
 		}
-		if (!new RegExp(placeholderOpenerPattern.source).test(text)) return
+		if (findPlaceholders(text).length === 0) return
 		usesPlaceholder = true
-		if (literalIsOutsideHeader(node, text, ancestors)) {
-			add('secret outside header')
-		}
 	}
 	walkAst(parsed, (node, ancestors) => {
+		if (resolvedPieces.has(node)) return
+		if (isCompositeString(node)) {
+			const resolved = resolveStringExpression(
+				node,
+				constantsWithoutShadows(scan.constants, ancestors),
+			)
+			if (resolved != null) {
+				walkAst(node, (piece) => resolvedPieces.add(piece))
+				classifyStringPiece(
+					resolved,
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
+				classifyLiteral(node, resolved, ancestors)
+				return
+			}
+		}
 		switch (node.type) {
 			case 'StringLiteral': {
 				const value = getNodeName(node)
-				if (value) classifyStringPiece(value, add)
-				classifyLiteral(node, ancestors)
+				if (value == null) return
+				classifyStringPiece(
+					value,
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
+				classifyLiteral(node, value, ancestors)
+				return
+			}
+			case 'Identifier': {
+				if (!hasComputedScopeContinuation(node, ancestors)) return
+				const name = getNodeName(node)
+				if (name == null) return
+				const value = constantsWithoutShadows(scan.constants, ancestors).get(
+					name,
+				)
+				if (value == null) return
+				classifyStringPiece(value, scan, true)
 				return
 			}
 			case 'TemplateLiteral': {
-				classifyLiteral(node, ancestors)
+				const text = literalText(node)
+				if (text != null) classifyLiteral(node, text, ancestors)
 				return
 			}
 			case 'TemplateElement': {
-				const value = node.value as { cooked?: string | null; raw?: string }
-				classifyStringPiece(value.cooked ?? value.raw ?? '', add)
+				classifyStringPiece(
+					templateElementText(node),
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
 				return
 			}
 			case 'VariableDeclarator': {
@@ -500,8 +428,9 @@ function detectInParsedModule(
 				const firstArgument = node.arguments?.[0]
 				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
-					if (firstArgument)
-						classifyNameExpression(firstArgument, nameKind, add)
+					if (firstArgument) {
+						classifyNameExpression(firstArgument, nameKind, scan, ancestors)
+					}
 					return
 				}
 				const objectName = getCalleeObjectName(node.callee)
@@ -510,14 +439,17 @@ function detectInParsedModule(
 					packageSecretsMethods.has(calleeName)
 				) {
 					if (calleeName === 'get') add('packageSecrets.get')
-					if (firstArgument)
-						classifyNameExpression(firstArgument, 'secret', add)
+					if (firstArgument) {
+						classifyNameExpression(firstArgument, 'secret', scan, ancestors)
+					}
 					return
 				}
 				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
 				const fieldSpec = ownEntry(nameFieldCallees, calleeName)
-				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, add)
+				if (fieldSpec) {
+					classifyNamedFields(firstArgument, fieldSpec, scan, ancestors)
+				}
 				return
 			}
 			default:
@@ -528,16 +460,24 @@ function detectInParsedModule(
 }
 
 /** Unparseable modules fall back to text: weaker, but never silent. */
-function detectInUnparsedModule(
-	source: string,
-	add: (pattern: LegacyCredentialPattern) => void,
-) {
-	classifyStringPiece(source, add)
+function detectInUnparsedModule(source: string, scan: Scan) {
+	const { add } = scan
+	/** The quoted name opened at `match`, or a computed finding. */
+	const classifyQuoted = (match: RegExpMatchArray, kind: NameKind) => {
+		const quote = match[1]
+		if (!quote) {
+			add(computedPattern(kind))
+			return
+		}
+		const start = match.index! + match[0].length
+		const end = source.indexOf(quote, start)
+		if (end === -1) add('literal secret')
+		else scan.named(source.slice(start, end), kind)
+	}
+	classifyStringPiece(source, scan)
 	if (textKodyMcpPattern.test(source)) add('kody.mcp')
 	for (const { pattern, kind } of textNameArgumentCalls) {
-		for (const match of source.matchAll(pattern)) {
-			add(match[1] ? 'literal secret' : computedPattern(kind))
-		}
+		for (const match of source.matchAll(pattern)) classifyQuoted(match, kind)
 	}
 	if (
 		/\bpackageSecrets\s*(?:\?\.|\.)\s*get\s*\(|\bpackageSecretGet\s*\(/.test(
@@ -558,7 +498,7 @@ function detectInUnparsedModule(
 				new RegExp(`\\b${field}\\s*:\\s*(['"\`])?`, 'g'),
 			)) {
 				namedField = true
-				add(match[1] ? 'literal secret' : computedPattern(spec.kind))
+				classifyQuoted(match, spec.kind)
 			}
 		}
 		if (!namedField) add(computedPattern(spec.kind))
@@ -600,36 +540,64 @@ function detectInManifest(
 	if (Array.isArray(kody.webhooks) && kody.webhooks.some(webhookNamesSecret)) {
 		add('webhook secretName')
 	}
-	if (
-		isPlainObject(kody.credentials) &&
-		Object.values(kody.credentials).some(
-			(slot) =>
-				isPlainObject(slot) && slot.kind === 'secret' && slot.placement == null,
-		)
-	) {
-		add('missing placement')
+}
+
+/** Declared kody.credentials slot names and their kinds. */
+function readDeclaredSlotKinds(manifestSource: string | undefined) {
+	const kinds = new Map<string, unknown>()
+	if (manifestSource == null) return kinds
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(manifestSource)
+	} catch {
+		return kinds
 	}
+	if (!isPlainObject(parsed) || !isPlainObject(parsed.kody)) return kinds
+	const credentials = parsed.kody.credentials
+	if (!isPlainObject(credentials)) return kinds
+	for (const [name, slot] of Object.entries(credentials)) {
+		if (isPlainObject(slot)) kinds.set(name, slot.kind)
+	}
+	return kinds
 }
 
 function detectLegacyCredentialPatterns(
 	files: Record<string, string>,
 ): Array<PackageCodemodFinding> {
 	const findings: Array<PackageCodemodFinding> = []
-	for (const [path, source] of Object.entries(files)) {
-		if (typeof source !== 'string') continue
+	const manifestSource = Object.hasOwn(files, packageManifestPath)
+		? files[packageManifestPath]
+		: undefined
+	const slotKinds = readDeclaredSlotKinds(manifestSource)
+	const modulePaths = listScannableModulePaths(files)
+	const parsedModules = new Map(
+		modulePaths.map((path) => [path, parseModule(files[path]!)]),
+	)
+	const moduleConstants = createModuleConstantsReader(parsedModules)
+	const scanPath = (path: string, source: string) => {
 		const patterns = new Set<LegacyCredentialPattern>()
 		const add = (pattern: LegacyCredentialPattern) => patterns.add(pattern)
+		const scan: Scan = {
+			add,
+			named: (name, kind) => {
+				if (slotKinds.get(name) !== slotKindByNameKind[kind]) {
+					add('literal secret')
+				}
+			},
+			constants: new Map(),
+		}
 		if (path === packageManifestPath) {
 			detectInManifest(source, add)
-		} else if (scannableModuleFilePattern.test(path)) {
-			let parsed: AstNode | null = null
-			try {
-				parsed = parseModuleSource(source) as unknown as AstNode
-			} catch {
-				parsed = null
+		} else if (parsedModules.has(path)) {
+			const parsed = parsedModules.get(path)
+			if (parsed) {
+				detectInParsedModule(parsed, {
+					...scan,
+					constants: moduleConstants(path),
+				})
+			} else {
+				detectInUnparsedModule(source, scan)
 			}
-			if (parsed) detectInParsedModule(parsed, add)
-			else detectInUnparsedModule(source, add)
 		}
 		for (const pattern of legacyCredentialPatterns) {
 			if (patterns.has(pattern)) {
@@ -639,6 +607,10 @@ function detectLegacyCredentialPatterns(
 				})
 			}
 		}
+	}
+	if (manifestSource != null) scanPath(packageManifestPath, manifestSource)
+	for (const path of modulePaths) {
+		scanPath(path, files[path]!)
 	}
 	return findings.sort((left, right) =>
 		(left.path ?? '').localeCompare(right.path ?? ''),
@@ -659,7 +631,7 @@ function transformLegacyCredentialPatterns(
 export const detectLegacyCredentialPatternsCodemod: PackageCodemod = {
 	id: detectLegacyCredentialPatternsCodemodId,
 	description:
-		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots, and code the fetch gateway secret rules refuse (placeholders outside headers, plain http, packageSecrets.get, secret slots without placement).',
+		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots, plain http fetches the fetch gateway refuses to fill, and packageSecrets.get reads.',
 	detect: detectLegacyCredentialPatterns,
 	transform: transformLegacyCredentialPatterns,
 }

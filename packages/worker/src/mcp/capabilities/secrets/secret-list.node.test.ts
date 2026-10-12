@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import * as secretService from '#mcp/secrets/service.ts'
-import { type SecretMetadata } from '#mcp/secrets/types.ts'
+import { type ListedSecret } from '#mcp/secrets/types.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -48,9 +48,10 @@ const communityFork = {
 }
 
 function secretMetadata(
-	overrides: Partial<SecretMetadata> & Pick<SecretMetadata, 'name' | 'scope'>,
-): SecretMetadata {
+	overrides: Partial<ListedSecret> & Pick<ListedSecret, 'name' | 'scope'>,
+): ListedSecret {
 	return {
+		credentialId: `cred-${overrides.name}`,
 		description: '',
 		packageId: overrides.scope === 'package' ? 'pkg-1' : null,
 		allowedHosts: [],

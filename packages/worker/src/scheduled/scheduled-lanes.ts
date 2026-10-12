@@ -19,7 +19,6 @@ import {
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
-import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
@@ -30,6 +29,8 @@ import { aggregateConnectionUsageDaily } from '#worker/usage/connection-usage-ro
 import { aggregateCreditAttributionDaily } from '#worker/usage/credit-attribution.ts'
 import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
 import { runCreditDebits } from '#worker/billing/credit-debits.ts'
+import { drainOrgAuditOutbox } from '#worker/orgs/org-audit-outbox.ts'
+import { checkWebhookAuthRegressionsAndAlert } from '#worker/webhooks/auth-regression-alert.ts'
 
 export {
 	isScheduledLaneName,
@@ -102,6 +103,11 @@ export async function runScheduledLane(input: {
 			const stub = input.env.OAUTH_PURGE_COORDINATOR.get(id)
 			return stub.run({ scheduledAt: input.scheduledAt.getTime() })
 		}
+		case 'org_audit_outbox':
+			return drainOrgAuditOutbox({
+				env: input.env,
+				now: input.scheduledAt,
+			})
 		case 'retention':
 			return pruneRetention({ env: input.env, now: input.scheduledAt })
 		case 'unverified_account_purge':
@@ -114,8 +120,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'job_retention':
-			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
 		case 'usage_aggregation': {
 			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
 			try {
@@ -177,11 +181,30 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'auth_denial_alert':
-			return checkAuthDenialBurstAndNotify({
-				env: input.env,
-				now: input.scheduledAt,
-			})
+		case 'auth_denial_alert': {
+			// Settled first so an audit-database failure still fails the lane
+			// without skipping the webhook check.
+			const [authDenials] = await Promise.allSettled([
+				checkAuthDenialBurstAndNotify({
+					env: input.env,
+					now: input.scheduledAt,
+				}),
+			])
+			let webhookAuthRegressions:
+				| Awaited<ReturnType<typeof checkWebhookAuthRegressionsAndAlert>>
+				| { status: 'failed' }
+			try {
+				webhookAuthRegressions = await checkWebhookAuthRegressionsAndAlert({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('webhook-auth-regression-lane-failed', error)
+				webhookAuthRegressions = { status: 'failed' }
+			}
+			if (authDenials.status === 'rejected') throw authDenials.reason
+			return { ...authDenials.value, webhookAuthRegressions }
+		}
 		case 'email_delivery_alert':
 			return checkEmailDeliveryBurstAndNotify({
 				env: input.env,

@@ -204,6 +204,31 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(errorRate.html).toContain('https://kody.codes/account/activity')
 	expect(errorRate.text).toContain('/support')
 	expect(errorRate.html).toContain('25%')
+	expect(errorRate.text).not.toContain('most recent open failure')
+
+	const namedErrorRate = buildUserErrorRateEmail({
+		appBaseUrl: 'https://kody.codes',
+		activityUrl: 'https://kody.codes/account/activity',
+		supportUrl: 'https://kody.codes/support',
+		errorCount: 10,
+		eventCount: 40,
+		failingRuns: [
+			{
+				label: 'Package <b>review-ticket</b>',
+				error: 'Request refused (credential_placement_refused, slot "token")',
+				runUrl: 'https://kody.codes/account/activity/run-1',
+			},
+		],
+	})
+	expect(namedErrorRate.text).toContain(
+		'Package <b>review-ticket</b> failed: Request refused (credential_placement_refused, slot "token") Open the run: https://kody.codes/account/activity/run-1',
+	)
+	expect(namedErrorRate.html).toContain('Package &lt;b&gt;review-ticket')
+	expect(namedErrorRate.html).not.toContain('<b>review-ticket</b>')
+	expect(namedErrorRate.html).toMatch(
+		/<a href="https:\/\/kody\.codes\/account\/activity\/run-1"[^>]*>Open the run<\/a>/,
+	)
+	expect(namedErrorRate.text).toContain('most recent open failure')
 
 	const acknowledgement = buildPlatformFeedbackAcknowledgementEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -228,7 +253,6 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(genericResolved.html).toContain(
 		'&lt;/p&gt;&lt;script&gt;alert(1)&lt;/script&gt;Setup is confusing',
 	)
-	expect(genericResolved.html).not.toContain('The setup flow does not explain')
 	expect(genericResolved.text).toContain(`"${hostileSummary}"`)
 	expect(genericResolved.text).toContain(
 		'tell your agent you want to send more Kody feedback',

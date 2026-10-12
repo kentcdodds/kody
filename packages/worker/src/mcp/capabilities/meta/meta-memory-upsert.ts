@@ -1,3 +1,4 @@
+import { authorize, orgResource } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -12,7 +13,7 @@ import {
 	memorySummaryField,
 	memoryTagsField,
 } from '#mcp/capabilities/meta/meta-memory-shared.ts'
-import { requireMcpUser } from './require-user.ts'
+import { requireMcpRequest, requireMcpUser } from './require-user.ts'
 
 const inputSchema = z.object({
 	memory_id: z
@@ -94,6 +95,16 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 				throw new Error(
 					'Agents must run metaMemoryVerify before calling metaMemoryUpsert. Set verified_by_agent=true only after review.',
 				)
+			}
+			const request = requireMcpRequest(ctx.callerContext)
+			if (args.memory_id) {
+				await authorize(
+					{ env: ctx.env, request },
+					'memory:write',
+					orgResource(request, 'memory', args.memory_id),
+				)
+			} else {
+				await authorize({ env: ctx.env, request }, 'memory:create')
 			}
 			const result = await upsertMemory({
 				env: ctx.env,

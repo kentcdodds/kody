@@ -165,7 +165,7 @@ export function createMcpClientHubClient(
  * The provider authorization URL stays in the hub. Callers learn that
  * approval is pending and link the Kody consent page instead.
  */
-function isAuthorizationPending(result: {
+export function isAuthorizationPending(result: {
 	state: McpHubConnectResult['state']
 	authUrl: string | null
 }) {

@@ -19,10 +19,9 @@ finish timestamps, duration, truncated error fields, optional soft error triage
 (`error_triage`: `ignored` / `resolved`, plus note / who / when — separate from
 execution status), JSON metadata, and up to 200 captured log lines.
 
-Package ownership is optional. Ad-hoc MCP `execute`, standalone `kody.json`
-jobs, and inline workflows have no `package_id`; the record still lands under
-the signed-in user. That optionality is why run records are not shaped as
-package-scoped debug rows.
+Package ownership is optional. Ad-hoc MCP `execute` and inline workflows have no
+`package_id`; the record still lands under the signed-in user. That optionality
+is why run records are not shaped as package-scoped debug rows.
 
 Code lives in `packages/worker/src/run-records/` (types, worker service, and the
 `RunLog` Durable Object). MCP capabilities live under
@@ -204,7 +203,8 @@ a shared D1 table:
 | Log lines per run          | 200                                             |
 | Text / JSON field budgets  | 16 KiB / 32 KiB truncated                       |
 | `metadata.result` snapshot | 4 KiB (`runRecordMaxResultSnapshotBytes`)       |
-| Stale `running` (short)    | ~3 minutes for execute/export/webhook/…         |
+| Stale `running` (short)    | ~3 minutes for execute/export/subscription/…    |
+| Stale `running` (webhook)  | ~10 minutes (2× the 5-minute background budget) |
 | Stale `running` (job)      | ~6 hours                                        |
 | Stale `running` (long)     | ~24 hours for service/workflow                  |
 
@@ -285,11 +285,11 @@ instead of replaying.
 ## Invariant: state vs history
 
 Entity rows hold **current state**. Run records hold **history**. Jobs keep
-schedule metadata and `last_run_at` / `last_run_status` on the D1 `jobs` row for
-the hourly retention sweeper; last-run error, duration, and counters for
-observability live in RunLog `job_run_observability` and survive run-history
-pruning. Package activation counters and milestones live in the same DO
-(`package_run_successes`, `activation_milestones`).
+schedule metadata and `last_run_at` / `last_run_status` on the D1 `jobs` row;
+last-run error, duration, and counters for observability live in RunLog
+`job_run_observability` and survive run-history pruning. Package activation
+counters and milestones live in the same DO (`package_run_successes`,
+`activation_milestones`).
 
 ## Recipe: instrumenting a new surface
 

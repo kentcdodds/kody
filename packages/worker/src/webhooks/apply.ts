@@ -5,7 +5,6 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
-import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
 import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import {
@@ -18,10 +17,7 @@ import {
 	collectWebhookCredentialSecrets,
 	redactWebhookCredentials,
 } from './redact.ts'
-import {
-	defaultWebhookVerification,
-	resolveWebhookHmacSigningSecret,
-} from './signing-secret.ts'
+import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 export const webhookUrlApplyHttpMethods = [
@@ -744,18 +740,7 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		savedPackage: input.savedPackage,
 		webhookName: input.webhookName,
 	})
-	const verification =
-		declared?.verification ??
-		(declared &&
-		(
-			await getEnablementOrgMigration({
-				db: input.env.APP_DB,
-				orgId: input.endpoint.userId,
-			})
-		).state === 'migrated'
-			? defaultWebhookVerification
-			: null)
-	if (!verification) {
+	if (!declared) {
 		throw new McpCallerError(
 			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification declaration.`,
 		)
@@ -764,7 +749,6 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		env: input.env,
 		userId: input.userId,
 		endpoint: input.endpoint,
-		verification,
 	})
 }
 

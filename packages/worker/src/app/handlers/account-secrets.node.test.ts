@@ -87,6 +87,7 @@ const mockModule = vi.hoisted(() => ({
 		typeof secretsService.listPackageSecretsByPackageIds
 	>(async () => new Map()),
 	resolveSecret: vi.fn<typeof secretsService.resolveSecret>(async () => ({
+		credentialId: null,
 		found: false,
 		value: null,
 		scope: null,
@@ -195,6 +196,7 @@ const mockModule = vi.hoisted(() => ({
 				},
 				connection: {
 					userId: ownerIdFromStored('stable-user-1'),
+					credentialId: 'cred-integration',
 					name,
 					appSlug: name,
 					platformAppSlug: null,
@@ -386,6 +388,7 @@ const approve = (search: string) => postRequest({ action: 'approve' }, search)
 
 function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
 	return {
+		credentialId: `cred-${name}`,
 		name,
 		scope: 'user' as const,
 		description: '',

@@ -15,7 +15,8 @@
  * bindings, not this RPC surface.
  */
 
-import { type OwnerId } from './owner-person-ids.ts'
+import { type OwnerId, type PersonId } from './owner-person-ids.ts'
+import { type OrgRole } from './request-context.ts'
 
 /** Healthcheck endpoint served by the runtime Worker. */
 export const runtimeWorkerHealthPath = '/__runtime/health'
@@ -49,6 +50,16 @@ export type RuntimePackageAppServeOwner = {
 	displayName: string
 }
 
+/**
+ * The signed-in person using the app. Its requests act as them, with their
+ * live role in the owning org (null for an outside collaborator).
+ */
+export type RuntimePackageAppVisitor = {
+	userId: PersonId
+	username: string
+	role: OrgRole | null
+}
+
 export type RuntimePackageAppPath = {
 	username: string
 	kodyId: string
@@ -59,6 +70,7 @@ export type RuntimePackageAppPath = {
 export type RuntimePackageAppServeInput = {
 	request: Request
 	owner: RuntimePackageAppServeOwner
+	visitor: RuntimePackageAppVisitor
 	packagePath: RuntimePackageAppPath
 	dispatch?: { readonly synthetic: true }
 }

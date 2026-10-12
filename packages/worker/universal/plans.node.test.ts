@@ -3,7 +3,6 @@ import {
 	applyLimitOverrides,
 	formatDurableObjectRowsRead,
 	isLimitOverrideResource,
-	limitOverrideKeys,
 	parseLimitOverrideKey,
 	parseEntitlementLadder,
 	planLimits,
@@ -416,9 +415,6 @@ test('limit overrides only raise caps, skip expired entries, and never add a mis
 })
 
 test('limit override keys parse strictly and map to overridable resources', () => {
-	expect(limitOverrideKeys.map(parseLimitOverrideKey)).toEqual(
-		limitOverrideKeys,
-	)
 	expect(parseLimitOverrideKey('saved_packages')).toBeNull()
 	expect(parseLimitOverrideKey(undefined)).toBeNull()
 	expect(isLimitOverrideResource('outbound_fetches_per_day')).toBe(true)

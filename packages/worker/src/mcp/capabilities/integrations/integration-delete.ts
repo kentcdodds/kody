@@ -3,8 +3,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { deleteIntegration } from '#worker/integrations/service.ts'
+import { canonicalIntegrationName } from './integration-shared.ts'
 
 const inputSchema = z.object({
 	name: z.string().min(1).describe('Integration name to delete.'),
@@ -36,6 +38,11 @@ export const integrationDeleteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeIntegration(
+				ctx,
+				'integration:delete',
+				canonicalIntegrationName(args.name),
+			)
 			const deleted = await deleteIntegration({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),

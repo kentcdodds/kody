@@ -4,10 +4,10 @@
  *
  * Report shape (sealed):
  * - orgs with more than one live member, or any outside grants
- * - secret / integration (MCP servers are integration resources) audit rows
+ * - credential audit rows (secrets, vault bindings, integrations, MCP servers)
  *   where the actor was not an org owner and not a granted subject for that
- *   resource (user grant or team grant membership)
- * - the credential grant id mapping (credential-grant-id-queries.ts)
+ *   credential id (user grant or team grant membership)
+ * - credential grant totals and the id check (credential-grant-id-queries.ts)
  *
  * Saved packages' implicit self-authored access is intentionally left as-is;
  * the credentials redesign series removes it. The full `resolveCredential`
@@ -40,14 +40,10 @@ import {
 import { buildPreviewResourceNames } from '../ci/preview-resources.ts'
 import {
 	classifyCredentialGrant,
-	classifyNameKeyedCredential,
 	countBy,
 	credentialGrantsByIdSql,
 	grantInviteTotalsSql,
 	grantTotalsSql,
-	nameKeyedCredentialGrantsSql,
-	nameKeyedCredentialInvitesSql,
-	type NameKeyedOutcome,
 } from './credential-grant-id-queries.ts'
 
 /** Orgs with more than one live member (personal org alone is always 1). */
@@ -88,10 +84,10 @@ WHERE g.deleted_at IS NULL
 	)`
 
 /**
- * Org audit rows for secret/integration resources where the actor is not the
- * org id. MCP servers authorize as integration resources. AUDIT_DB has no
- * org_memberships / grants (APP_DB only), so owner and grant filtering happens
- * in JS after APP_DB membership and grant queries.
+ * Org audit rows for credentials where the actor is not the org id. A
+ * `credential.resolve` row's resource id is the credential id. AUDIT_DB has
+ * no org_memberships / grants (APP_DB only), so owner and grant filtering
+ * happens in JS after APP_DB membership and grant queries.
  */
 /** Cap on AUDIT_DB candidates before APP_DB owner/grant filtering. */
 export const credentialAuditCandidateLimit = 500
@@ -101,7 +97,7 @@ export const credentialAuditCandidateSql = `SELECT e.org_id AS org_id,
 	e.resource_id AS resource_id, e.actor_user_id AS actor_user_id,
 	e.result AS result, e.created_at AS created_at
 FROM org_audit_events e
-WHERE e.resource_type IN ('secret', 'integration')
+WHERE e.resource_type IN ('secret', 'secret-provider', 'integration', 'mcp-server')
 	AND e.actor_user_id IS NOT NULL
 	AND e.actor_user_id != e.org_id
 ORDER BY e.created_at DESC
@@ -112,30 +108,18 @@ export const liveOwnerMembershipsSql = `SELECT org_id, user_id
 FROM org_memberships
 WHERE role = 'owner' AND deleted_at IS NULL`
 
-/**
- * Live secret/integration grants (user or team subjects). MCP servers use the
- * integration resource type.
- */
+/** Live credential grants (user or team subjects), keyed by credential id. */
 export const liveCredentialGrantsSql = `SELECT g.org_id AS org_id,
-	g.resource_type AS resource_type, g.resource_id AS resource_id,
+	g.resource_id AS resource_id,
 	g.subject_type AS subject_type, g.subject_id AS subject_id
 FROM grants g
 WHERE g.deleted_at IS NULL
-	AND g.resource_type IN ('secret', 'integration')`
+	AND g.resource_type = 'credential'`
 
 /** Live team memberships for resolving team-subject grants to users. */
 export const liveTeamMembersSql = `SELECT team_id, user_id
 FROM team_members
 WHERE deleted_at IS NULL`
-
-type NameKeyedRow = Record<string, unknown> & {
-	resource_type: string
-	org_secret_matches: number
-	scoped_secret_matches: number
-	vault_door_matches: number
-	integration_matches: number
-	mcp_server_matches: number
-}
 
 type CredentialGrantRow = Record<string, unknown> & {
 	grant_state: string
@@ -146,32 +130,18 @@ type CredentialGrantRow = Record<string, unknown> & {
 }
 
 /**
- * Before/after evidence for moving credential grants to stable ids. Name-keyed
- * rows carry candidate counts so an orphan or ambiguous grant is visible
- * before the migration runs (and aborts on it).
+ * Credential grant evidence: totals per resource type (no `secret` or
+ * `integration` rows remain once ids land) and every id-keyed grant's match.
  */
 export type CredentialGrantIdReport = {
 	grantTotals: Array<Record<string, unknown>>
 	grantInviteTotals: Array<Record<string, unknown>>
-	nameKeyedGrants: {
+	credentialGrants: {
 		count: number
-		byOutcome: Partial<Record<NameKeyedOutcome, number>>
-		rows: Array<Record<string, unknown> & { outcome: NameKeyedOutcome }>
+		live: number
+		byOutcome: Record<string, number>
+		rows: Array<Record<string, unknown>>
 	}
-	nameKeyedInvites: {
-		count: number
-		byOutcome: Partial<Record<NameKeyedOutcome, number>>
-		rows: Array<Record<string, unknown> & { outcome: NameKeyedOutcome }>
-	}
-	credentialGrants:
-		| {
-				status: 'ok'
-				count: number
-				live: number
-				byOutcome: Record<string, number>
-				rows: Array<Record<string, unknown>>
-		  }
-		| { status: 'not-migrated'; error: string }
 }
 
 export async function runCredentialGrantIdQueries(input: {
@@ -183,54 +153,23 @@ export async function runCredentialGrantIdQueries(input: {
 	const grantTotals = await query<Record<string, unknown>>(grantTotalsSql)
 	const grantInviteTotals =
 		await query<Record<string, unknown>>(grantInviteTotalsSql)
-	const nameKeyedGrants = (
-		await query<NameKeyedRow>(nameKeyedCredentialGrantsSql)
-	).map((row) => ({
-		...row,
-		outcome: classifyNameKeyedCredential(row.resource_type, row),
-	}))
-	const nameKeyedInvites = (
-		await query<NameKeyedRow>(nameKeyedCredentialInvitesSql)
-	).map((row) => ({
-		...row,
-		outcome: classifyNameKeyedCredential(row.resource_type, row),
-	}))
-	let credentialGrants: CredentialGrantIdReport['credentialGrants']
-	try {
-		const rows = (await query<CredentialGrantRow>(credentialGrantsByIdSql)).map(
-			(row) => ({ ...row, outcome: classifyCredentialGrant(row) }),
-		)
-		credentialGrants = {
-			status: 'ok',
+	const rows = (await query<CredentialGrantRow>(credentialGrantsByIdSql)).map(
+		(row) => ({ ...row, outcome: classifyCredentialGrant(row) }),
+	)
+	return {
+		grantTotals,
+		grantInviteTotals,
+		credentialGrants: {
 			count: rows.length,
 			live: rows.filter((row) => row.grant_state === 'live').length,
 			byOutcome: countBy(rows, (row) => row.outcome),
 			rows,
-		}
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		if (!/no such column/i.test(message)) throw error
-		credentialGrants = { status: 'not-migrated', error: message }
-	}
-	return {
-		grantTotals,
-		grantInviteTotals,
-		nameKeyedGrants: {
-			count: nameKeyedGrants.length,
-			byOutcome: countBy(nameKeyedGrants, (row) => row.outcome),
-			rows: nameKeyedGrants,
 		},
-		nameKeyedInvites: {
-			count: nameKeyedInvites.length,
-			byOutcome: countBy(nameKeyedInvites, (row) => row.outcome),
-			rows: nameKeyedInvites,
-		},
-		credentialGrants,
 	}
 }
 
 export type CredentialExposureReport = {
-	version: 3
+	version: 4
 	target: string
 	ranAt: string
 	/**
@@ -242,9 +181,9 @@ export type CredentialExposureReport = {
 	outsideGrants: { count: number; rows: Array<Record<string, unknown>> }
 	orgsWithOutsideGrants: { count: number }
 	/**
-	 * Capability / audit-surface events for secret or integration (incl. MCP)
-	 * where the actor was not an org owner and not a granted subject. Ambient
-	 * placeholder expansion did not write org_audit_events historically.
+	 * Credential audit events where the actor was not an org owner and not a
+	 * granted subject of that credential id. Rows from before stable ids carry
+	 * a name, not an id, so no grant matches them.
 	 */
 	nonOwnerOrGrantedCredentialAudit: {
 		status: 'ok' | 'unavailable'
@@ -284,10 +223,9 @@ export function filterNonOwnerOrGrantedCredentialAudit(input: {
 	return input.candidates.filter((row) => {
 		const orgId = String(row['org_id'] ?? '')
 		const actorId = String(row['actor_user_id'] ?? '')
-		const resourceType = String(row['resource_type'] ?? '')
 		const resourceId = String(row['resource_id'] ?? '')
 		if (input.ownerKeys.has(`${orgId}:${actorId}`)) return false
-		const resourceKey = `${orgId}:${resourceType}:${resourceId}`
+		const resourceKey = `${orgId}:${resourceId}`
 		if (input.userGrantKeys.has(`${resourceKey}:user:${actorId}`)) {
 			return false
 		}
@@ -339,7 +277,6 @@ export async function runCredentialExposureQueries(input: {
 
 	const credentialGrants = await readOnlyD1Query<{
 		org_id: string
-		resource_type: string
 		resource_id: string
 		subject_type: string
 		subject_id: string
@@ -347,7 +284,7 @@ export async function runCredentialExposureQueries(input: {
 	const userGrantKeys = new Set<string>()
 	const teamGrantByResource = new Map<string, Array<string>>()
 	for (const grant of credentialGrants) {
-		const resourceKey = `${grant.org_id}:${grant.resource_type}:${grant.resource_id}`
+		const resourceKey = `${grant.org_id}:${grant.resource_id}`
 		if (grant.subject_type === 'user') {
 			userGrantKeys.add(`${resourceKey}:user:${grant.subject_id}`)
 			continue
@@ -377,7 +314,7 @@ export async function runCredentialExposureQueries(input: {
 	exposureOrgIds.delete('')
 
 	const auditNote =
-		'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present. MCP servers authorize as integration resources.'
+		'credential.resolve rows are matched to grants by credential id. Rows written before stable ids carry a name instead and never match a grant.'
 	const auditUuid = await resolveAuditD1Uuid(input.client, input.target)
 	let auditStatus: 'ok' | 'unavailable' = 'unavailable'
 	let auditError: string | null = auditUuid
@@ -417,7 +354,7 @@ export async function runCredentialExposureQueries(input: {
 	})
 
 	return {
-		version: 3,
+		version: 4,
 		target:
 			input.target.kind === 'production'
 				? 'production'

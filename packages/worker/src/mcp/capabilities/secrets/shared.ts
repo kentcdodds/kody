@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { type SecretMetadata, secretScopeValues } from '#mcp/secrets/types.ts'
+import {
+	type ListedSecret,
+	type SecretMetadata,
+	secretScopeValues,
+} from '#mcp/secrets/types.ts'
 
 export const secretMetadataSchema = z.object({
 	name: z.string(),
@@ -26,5 +30,18 @@ export function toSecretCapabilityOutput(secret: SecretMetadata) {
 		updated_at: secret.updatedAt,
 		expires_at: secret.expiresAt,
 		ttl_ms: secret.ttlMs,
+	}
+}
+
+export const listedSecretSchema = secretMetadataSchema.extend({
+	credential_id: z
+		.string()
+		.describe('Stable credential id. accessGrant uses it as resource_id.'),
+})
+
+export function toListedSecretCapabilityOutput(secret: ListedSecret) {
+	return {
+		credential_id: secret.credentialId,
+		...toSecretCapabilityOutput(secret),
 	}
 }

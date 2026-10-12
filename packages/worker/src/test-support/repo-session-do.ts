@@ -8,7 +8,6 @@ import type * as artifactsModule from '#worker/repo/artifacts.ts'
 import type * as checksModule from '#worker/repo/checks.ts'
 import type * as entitySourcesModule from '#worker/repo/entity-sources.ts'
 import type * as externalPublishCloneModule from '#worker/repo/external-publish-clone.ts'
-import type * as manifestModule from '#worker/repo/manifest.ts'
 import type * as repoSessionsModule from '#worker/repo/repo-sessions.ts'
 import type * as storageBucketsModule from '#worker/storage-buckets/service.ts'
 
@@ -114,7 +113,7 @@ export const repoSessionMockModule = (() => {
 	const workspaceReadFile = vi.fn<Workspace['readFile']>(
 		async (path) =>
 			workspaceFiles.get(path) ??
-			'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
 	)
 
 	return {
@@ -192,11 +191,6 @@ export const repoSessionMockModule = (() => {
 		listArtifactServerRefs: vi.fn<
 			typeof artifactsModule.listArtifactServerRefs
 		>(async () => []),
-		parseRepoManifest: vi.fn(
-			(..._args: Parameters<typeof manifestModule.parseRepoManifest>) => ({
-				sourceRoot: '/',
-			}),
-		),
 		runRepoChecks: vi.fn<typeof checksModule.runRepoChecks>(async () => ({
 			ok: true,
 			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
@@ -286,7 +280,6 @@ export function restoreRepoSessionMockBaseline() {
 		mocks.resolveArtifactDefaultBranchHead,
 		mocks.resolveArtifactSourceHead,
 		mocks.listArtifactServerRefs,
-		mocks.parseRepoManifest,
 		mocks.runRepoChecks,
 		mocks.writePublishedSourceSnapshot,
 		mocks.loadPublishedSourceSnapshot,
@@ -358,6 +351,34 @@ export function createDurableObjectState() {
 		},
 		waitUntil: vi.fn(),
 	} as unknown as DurableObjectState
+}
+
+/** Same SHA-256 workspace tree hash `publishSession` uses for checks_outdated. */
+export async function workspaceTreeHash(files: Record<string, string>) {
+	const chunks = Object.keys(files)
+		.map((path) => `/session/${path}`)
+		.filter((path) => !path.includes('/.git/'))
+		.sort((left, right) => left.localeCompare(right))
+		.map((path) => `${path}\n${files[path.slice('/session/'.length)]}\n`)
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(chunks.join('')),
+	)
+	return [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+}
+
+export async function checkedPublishState(files: Record<string, string>) {
+	const state = createDurableObjectState()
+	await state.storage.put('repo-session:last-check-status', {
+		runId: 'run-1',
+		treeHash: await workspaceTreeHash(files),
+		checkedAt: '2026-04-18T00:00:00.000Z',
+		ok: true,
+		results: [],
+	})
+	return state
 }
 
 export function createFakeRepoSessionBlobs(
@@ -491,9 +512,11 @@ export function setCommonSessionFixtures() {
 	repoSessionMockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
 		repo_id: 'source-repo',
 		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 		source_root: '/',
 	})
 	repoSessionMockModule.resolveArtifactSourceRepo.mockResolvedValue({

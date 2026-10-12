@@ -7,8 +7,8 @@
 import {
 	isOrgPermission,
 	orgPermissions,
+	type OrgGrantResourceType,
 	type OrgPermission,
-	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
@@ -51,7 +51,7 @@ export type CompiledAccess = {
 }
 
 export function resourceGrantKey(
-	resourceType: OrgResourceType | 'org',
+	resourceType: OrgGrantResourceType | 'org',
 	resourceId: string,
 ) {
 	return `${resourceType}:${resourceId}`
@@ -141,7 +141,7 @@ function applyGrantRows(
 			continue
 		}
 		const key = resourceGrantKey(
-			row.resource_type as OrgResourceType,
+			row.resource_type as OrgGrantResourceType,
 			row.resource_id,
 		)
 		let set = resourcePermissionsOut.get(key)
@@ -318,6 +318,16 @@ function compileFromRoleAndGrants(input: {
 	}
 }
 
+function noCompiledAccess(orgId: OwnerId): CompiledAccess {
+	return {
+		orgId,
+		epoch: 0,
+		isOwner: false,
+		orgPermissions: new Set(),
+		resourcePermissions: new Map(),
+	}
+}
+
 function ownerCompiledAccess(orgId: OwnerId, epoch: number): CompiledAccess {
 	return {
 		orgId,
@@ -329,12 +339,13 @@ function ownerCompiledAccess(orgId: OwnerId, epoch: number): CompiledAccess {
 }
 
 /**
- * Compile what `request`'s actor may do in `request.org`. Automation acts for
- * the org with every permission. Results are cached in access_cache by epoch.
+ * Compile what `request`'s actor may do in `request.org`. Results are cached
+ * in access_cache by epoch.
  *
- * Owners and Automation hold every permission without reading grants or
- * access_epoch (the role alone decides). Member, Billing, and outside
- * collaborator paths load grants and require a real APP_DB.
+ * Owners hold every permission without reading grants or access_epoch (the
+ * role alone decides). Member, Billing, and outside collaborator paths load
+ * grants and require a real APP_DB. A request with no person holds nothing:
+ * every run acts as a real person (a trigger as its enabler).
  */
 export async function compileAccessForRequest(input: {
 	db: D1Database
@@ -344,9 +355,8 @@ export async function compileAccessForRequest(input: {
 	const orgId = request.org.id
 	const role = request.membership?.role ?? null
 
-	if (!request.actor || role === 'owner') {
-		return ownerCompiledAccess(orgId, 0)
-	}
+	if (!request.actor) return noCompiledAccess(orgId)
+	if (role === 'owner') return ownerCompiledAccess(orgId, 0)
 
 	const epochOrNull = await readOrgEpoch(input.db, orgId)
 	if (epochOrNull === null) {

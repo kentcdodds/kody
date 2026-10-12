@@ -411,12 +411,13 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 test('createAccountExport records partial-failure warnings and section pagination works', async () => {
 	const { sqlite, db } = createMigratedDbWithUser()
 	sqlite.exec(`
-		INSERT INTO archived_job_artifacts (
-			id, job_id, user_id, source_id, published_commit, storage_id,
-			retain_until, created_at, updated_at
+		INSERT INTO jobs (
+			id, user_id, name, source_id, storage_id, schedule_json, timezone,
+			caller_context_json, created_at, updated_at, next_run_at
 		) VALUES (
-			'archive-a', 'job-a', 'user-aaa', 'source-a', 'commit-a',
-			'job:archive-a', '2026-08-05', '2026-07-05', '2026-07-05'
+			'package-job:pkg-a:job-a', 'user-aaa', 'Archive stand-in', 'source-a',
+			'job:archive-a', '{}', 'UTC', '{}', '2026-07-05', '2026-07-05',
+			'2026-08-05'
 		);
 		INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
 		VALUES ('value-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');

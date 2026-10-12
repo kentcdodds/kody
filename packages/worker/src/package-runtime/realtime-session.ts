@@ -7,6 +7,7 @@ import {
 	accountSuspendedErrorCode,
 	isAccountSuspendedError,
 } from '#worker/account/account-suspension.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -311,10 +312,23 @@ function createPackageAppWorkerBindingIdentity(
 	])
 }
 
-async function resolvePackageAppWorkerBuildInput(input: {
+export async function resolvePackageAppWorkerBuildInput(input: {
 	env: Env
 	binding: PackageRealtimeBindingState
 }) {
+	// Realtime connects only through hosted serving, which serves a person's
+	// own personal-org apps, so the org id is that person and they are its
+	// Owner. A team org has no such person and is refused.
+	const orgBinding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.binding.userId,
+		input.binding.userId,
+	)
+	if (!orgBinding) {
+		throw new Error(
+			"Package realtime serves only a person's own personal-org apps.",
+		)
+	}
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.binding.userId,
 		packageId: input.binding.packageId,
@@ -335,6 +349,7 @@ async function resolvePackageAppWorkerBuildInput(input: {
 			input.env.APP_DB,
 			input.binding.userId,
 		),
+		orgBinding,
 		storageContext: {
 			sessionId: null,
 			appId: input.binding.packageId,

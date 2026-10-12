@@ -1,8 +1,10 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { creditAdminGrantNoteMaxLength } from '#universal/credits.ts'
 import {
+	AdminCreditGrantError,
 	formatAdminCreditEligibilityAuditReason,
 	setAdminCreditEligibility,
 } from '#worker/admin/credit-grants.ts'
@@ -60,21 +62,29 @@ export const adminCreditEligibilitySetCapability = defineDomainCapability(
 				ctx,
 				'adminCreditEligibilitySet',
 				async () => {
-					const result = await setAdminCreditEligibility({
-						env: ctx.env,
-						target: {
-							stableUserId: args.stableUserId,
-							email: args.email,
-							username: args.username,
-						},
-						creditsEligible: args.creditsEligible,
-						note: args.note,
-					})
-					note = result.note
-					const { ok: _ok, ...wallet } = result.wallet
-					return {
-						previousAdminCreditsEligible: result.previousAdminCreditsEligible,
-						wallet,
+					try {
+						const result = await setAdminCreditEligibility({
+							env: ctx.env,
+							target: {
+								stableUserId: args.stableUserId,
+								email: args.email,
+								username: args.username,
+							},
+							creditsEligible: args.creditsEligible,
+							note: args.note,
+						})
+						note = result.note
+						const { ok: _ok, ...wallet } = result.wallet
+						return {
+							previousAdminCreditsEligible: result.previousAdminCreditsEligible,
+							wallet,
+						}
+					} catch (error) {
+						// Missing targets and bad note input are caller-clearable.
+						if (error instanceof AdminCreditGrantError) {
+							throw new McpCallerError(error.message, { cause: error })
+						}
+						throw error
 					}
 				},
 				{

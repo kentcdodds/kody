@@ -8,7 +8,6 @@ import type * as Artifacts from './artifacts.ts'
 import type * as Checks from './checks.ts'
 import type * as EntitySources from './entity-sources.ts'
 import type * as ExternalPublishClone from './external-publish-clone.ts'
-import type * as Manifest from './manifest.ts'
 import type * as RepoSessions from './repo-sessions.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -170,12 +169,6 @@ vi.mock('./artifacts.ts', async () => {
 	}
 })
 
-vi.mock('./manifest.ts', () => ({
-	parseRepoManifest: (...args: Parameters<typeof Manifest.parseRepoManifest>) =>
-		mockModule.parseRepoManifest(...args),
-	normalizeRepoWorkspacePath: (path: string) => path.trim().replace(/^\/+/, ''),
-}))
-
 vi.mock('./checks.ts', () => ({
 	runRepoChecks: (...args: Parameters<typeof Checks.runRepoChecks>) =>
 		mockModule.runRepoChecks(...args),
@@ -304,7 +297,6 @@ vi.mock('#worker/storage-buckets/service.ts', () => ({
 
 const { RepoSession } = await import('./repo-session-do.ts')
 
-const jobManifest = '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
 const userPackageJson =
 	'{"name":"@user/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}'
 const artifactsRemote = (repo: string) =>
@@ -367,11 +359,8 @@ function seedWorkspace(
 test('bootstrapSource first-publishes from dest HEAD without replacing the forked tree', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const unpublishedSource = sourceRow({
-		entity_kind: 'job',
-		entity_id: 'job-1',
-		repo_id: 'job-1',
 		published_commit: null,
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 	})
 	const bootstrap = (sessionId: string, existingHeadCommit?: string) =>
 		repoSession().bootstrapSource({
@@ -381,16 +370,17 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 			...(existingHeadCommit ? { existingHeadCommit } : {}),
 			bootstrapAccess: {
 				defaultBranch: 'main',
-				remote: artifactsRemote('job-1'),
+				remote: artifactsRemote('package-package-1'),
 				token: 'art_v1_bootstrap?expires=1760000000',
 				expiresAt: '2025-10-09T08:53:20.000Z',
 			},
-			edits: [{ kind: 'write', path: 'kody.json', content: jobManifest }],
+			edits: [
+				{ kind: 'write', path: 'package.json', content: userPackageJson },
+			],
 		})
 	const destWorkspaceFiles = {
-		'kody.json': jobManifest,
-		'src/job.ts':
-			'export default async function main() { return { ok: true } }',
+		'package.json': userPackageJson,
+		'src/index.ts': 'export const ready = true\n',
 		'README.md': 'forked dest tree',
 	}
 
@@ -406,7 +396,7 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 		expect.objectContaining({ branch: 'main', singleBranch: true }),
 	)
 	expect(mockModule.git.init).not.toHaveBeenCalled()
-	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.runRepoChecks).toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -423,7 +413,7 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
 	restoreRepoSessionMockBaseline()
-	mockModule.workspaceReadFile.mockResolvedValue(jobManifest)
+	mockModule.workspaceReadFile.mockResolvedValue(userPackageJson)
 	mockModule.gitState.headCommit = 'commit-empty-bootstrap'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
 	await bootstrap('session-bootstrap-empty')

@@ -45,52 +45,35 @@ test('the kody.credentials example in docs/use/packages.md publishes', () => {
 			kind: 'secret',
 			provider: 'resend',
 			description: 'Resend API key that sends the digest email.',
-			placement: { header: 'Authorization', template: 'Bearer {value}' },
 		},
 	})
 })
 
-test('publish requires placement on secret slots and validates it', () => {
+test('publish rejects a retired placement, and published snapshots drop it', () => {
 	const secret = { kind: 'secret', provider: 'acme', description: 'x' }
-	expect(publishError({ KEY: secret })).toMatch(
-		/kody\.credentials\.KEY\.placement: Secret slots declare placement/,
-	)
 	expect(
-		publishError({ KEY: { ...secret, placement: { header: 'bad header' } } }),
-	).toMatch(/valid HTTP header name[\s\S]*kody\.credentials\.KEY\.placement/)
-	expect(
-		publishError({
-			KEY: { ...secret, placement: { header: 'X-Kody-Secret-Resolution' } },
-		}),
-	).toContain('x-kody-* headers are reserved')
-	for (const template of ['Bearer', '{value} {value}', 'a\n{value}']) {
-		expect(
-			publishError({
-				KEY: { ...secret, placement: { header: 'Authorization', template } },
-			}),
-		).toContain('contains {value} exactly once')
+		parseAuthoredPackageJson({
+			content: manifestWithCredentials({ KEY: secret }),
+		}).kody.credentials,
+	).toEqual({ KEY: secret })
+	const placed = {
+		KEY: {
+			...secret,
+			placement: { header: 'Authorization', template: 'Bearer {value}' },
+		},
 	}
-	expect(
-		publishError({
-			LINEAR: {
-				kind: 'mcp',
-				provider: 'linear',
-				description: 'x',
-				placement: { header: 'Authorization' },
-			},
-		}),
-	).toContain('mcp slots never send their value')
-
-	const manifest = parseAuthoredPackageJson({
-		content: manifestWithCredentials({
-			KEY: { ...secret, placement: { header: 'x-api-key' } },
-			GOOGLE: { kind: 'oauth', provider: 'google', description: 'x' },
-		}),
-	})
-	expect(manifest.kody.credentials?.KEY?.placement).toEqual({
-		header: 'x-api-key',
-	})
-	expect(manifest.kody.credentials?.GOOGLE?.placement).toBeUndefined()
+	expect(publishError(placed)).toContain(
+		'kody.credentials slots take no placement: the fetch gateway fills a credential anywhere in a request',
+	)
+	expect(publishError(placed)).toMatch(/kody\.credentials\.KEY\.placement/)
+	const content = manifestWithCredentials(placed)
+	for (const { kody } of [
+		parseAuthoredPackageJson({ content, mode: 'published' }),
+		readRootPackage({ 'package.json': content })!.manifest,
+	]) {
+		expect(kody.credentials).toEqual({ KEY: secret })
+		expect(kody.invalidCredentialSlots).toBeUndefined()
+	}
 })
 
 test('publish rejects invalid kody.credentials slots and names the slot', () => {
@@ -137,6 +120,21 @@ test('published snapshots load when an old kody.credentials key predates the sch
 		/kody\.credentials\.GOOGLE/,
 	)
 
+	for (const garbage of ['x', ['GOOGLE'], { GOOGLE: 'x', LINEAR: 1 }]) {
+		expect(
+			parseAuthoredPackageJson({
+				content: manifestWithCredentials(garbage),
+				mode: 'published',
+			}).kody,
+		).not.toHaveProperty('credentials')
+	}
+	const empty = manifestWithCredentials({})
+	for (const mode of ['published', 'authoring'] as const) {
+		expect(
+			parseAuthoredPackageJson({ content: empty, mode }).kody.credentials,
+		).toEqual({})
+	}
+
 	const valid = manifestWithCredentials({
 		LINEAR: { kind: 'mcp', provider: 'linear', description: 'Linear MCP.' },
 	})
@@ -148,19 +146,64 @@ test('published snapshots load when an old kody.credentials key predates the sch
 	})
 })
 
-test('published snapshots keep slots whose secret slot predates placement', () => {
-	const slots = {
-		KEY: { kind: 'secret', provider: 'acme', description: 'Acme API key.' },
-		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
+test('published snapshots keep valid slots when one slot fails the slot schema, and name the bad slot', () => {
+	const google = { kind: 'oauth', provider: 'google', description: 'Google.' }
+	const linear = { kind: 'mcp', provider: 'linear', description: 'Linear.' }
+	const content = manifestWithCredentials({
+		GOOGLE: google,
+		KEY: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme API key.',
+			placement: { header: 'X-Kody-Key' },
+		},
+		LINEAR: { ...linear, futureRule: true },
+		'bad name': google,
+		toString: google,
+	})
+	for (const { kody } of [
+		parseAuthoredPackageJson({ content, mode: 'published' }),
+		readRootPackage({ 'package.json': content })!.manifest,
+	]) {
+		expect(kody.credentials).toEqual({
+			GOOGLE: google,
+			KEY: { kind: 'secret', provider: 'acme', description: 'Acme API key.' },
+			toString: google,
+		})
+		expect(kody.invalidCredentialSlots).toEqual({
+			LINEAR: 'kody.credentials.LINEAR: Unrecognized key: "futureRule"',
+			'bad name':
+				'kody.credentials.bad name: Credential slot names start with a letter and use letters, numbers, dots, underscores, or hyphens (max 64).',
+		})
 	}
-	const content = manifestWithCredentials(slots)
-	expect(
-		parseAuthoredPackageJson({ content, mode: 'published' }).kody.credentials,
-	).toEqual(slots)
-	expect(
-		readRootPackage({ 'package.json': content })?.manifest.kody.credentials,
-	).toEqual(slots)
 	expect(() => parseAuthoredPackageJson({ content })).toThrow(
 		/kody\.credentials\.KEY\.placement/,
 	)
+
+	const allInvalid = parseAuthoredPackageJson({
+		content: manifestWithCredentials({ LINEAR: { ...linear, futureRule: 1 } }),
+		mode: 'published',
+	})
+	expect(allInvalid.kody.credentials).toEqual({})
+	expect(Object.keys(allInvalid.kody.invalidCredentialSlots ?? {})).toEqual([
+		'LINEAR',
+	])
+})
+
+test('package.json cannot set invalidCredentialSlots', () => {
+	const content = JSON.stringify({
+		name: '@acme/demo',
+		exports: { '.': './index.ts' },
+		kody: {
+			description: 'Demo package.',
+			invalidCredentialSlots: { GOOGLE: 'forged' },
+		},
+	})
+	expect(
+		parseAuthoredPackageJson({ content }).kody.invalidCredentialSlots,
+	).toBeUndefined()
+	expect(
+		parseAuthoredPackageJson({ content, mode: 'published' }).kody
+			.invalidCredentialSlots,
+	).toBeUndefined()
 })

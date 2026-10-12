@@ -28,6 +28,9 @@ export type CommunityDetailApiPayload = {
 	viewerIsAdmin: boolean
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	viewerCanPublish?: boolean
+	viewerCanDelete?: boolean
+	viewerCanAdoptCommunityFork?: boolean
 	forkPrompt: string
 	viewerInstall: ViewerListingInstall | null
 	readmeContent: string | null
@@ -200,6 +203,9 @@ export type PackageSettingsShell =
 			defaultBranch: string | null
 			/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 			ownerProfilePublic?: boolean
+			viewerCanPublish: boolean
+			viewerCanDelete: boolean
+			viewerCanAdoptCommunityFork: boolean
 	  }
 
 export function toPackageSettingsShell(
@@ -221,6 +227,9 @@ export function toPackageSettingsShell(
 		listingId: routeData.listingId,
 		defaultBranch: routeData.defaultBranch ?? null,
 		ownerProfilePublic: routeData.ownerProfilePublic,
+		viewerCanPublish: routeData.viewerCanPublish === true,
+		viewerCanDelete: routeData.viewerCanDelete === true,
+		viewerCanAdoptCommunityFork: routeData.viewerCanAdoptCommunityFork === true,
 	}
 }
 
@@ -327,6 +336,9 @@ export async function communityDetailRouteLoader(
 			viewerIsAdmin: payload.viewerIsAdmin,
 			viewerIsOwner: payload.viewerIsOwner,
 			viewerCanManage: payload.viewerCanManage,
+			viewerCanPublish: payload.viewerCanPublish === true,
+			viewerCanDelete: payload.viewerCanDelete === true,
+			viewerCanAdoptCommunityFork: payload.viewerCanAdoptCommunityFork === true,
 			trusted: payload.listing?.trusted ?? false,
 			featured: payload.listing?.featured ?? false,
 			readmeContent:

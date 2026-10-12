@@ -123,8 +123,14 @@ hard-code a previous `@{username}` scope need updates from their owners.
 
 ### Credential slots (`kody.credentials`)
 
-`kody.credentials` names each credential the package needs. Package code uses
-the slot name; the org decides which credential fills it.
+`kody.credentials` names each credential the package needs. Publish validates
+the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
+secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
+`NAME`, with the same package access rules as a package without slots. Name each
+slot after the secret or integration the code references. The leftover name lane
+is tracked in
+[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
+([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
 {
@@ -142,11 +148,7 @@ the slot name; the org decides which credential fills it.
 			"RESEND_API_KEY": {
 				"kind": "secret",
 				"provider": "resend",
-				"description": "Resend API key that sends the digest email.",
-				"placement": {
-					"header": "Authorization",
-					"template": "Bearer {value}"
-				}
+				"description": "Resend API key that sends the digest email."
 			}
 		}
 	}
@@ -158,25 +160,25 @@ the slot name; the org decides which credential fills it.
 - `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
   `description` says what the slot is for. `multiple: true` means the package
   picks among several accounts.
-- `placement` is the one request header the value may be sent in. `template` is
-  the whole header value with `{value}` where the credential goes; without it
-  the header value is the credential. Secret slots must declare `placement`.
-  OAuth slots default to
-  `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
-  no placement.
-- Publish rejects any other key or a missing field and names the slot.
-- Once a package declares `kody.credentials`, the fetch gateway substitutes only
-  its slots: `{{secret:NAME}}` names a secret slot and
-  `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's
-  `placement` header and match its template exactly, over HTTPS. A Basic Auth
-  pair (`secretHeaders.basic` over two secret slots) goes in both slots' header
-  as `Basic {{secret-basic:…}}`, so those slots declare template `Basic {value}`
-  or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
-  keep the header-only, HTTPS, and item-website rules. Anything else is refused
-  before the credential resolves, with an error naming the slot and the rule.
-- There is no body placement. The request body is forwarded verbatim, so the
-  gateway never substitutes a slot placeholder there (a login password, a
-  form-encoded token exchange).
+- Publish rejects any other key or a missing field and names the slot. If a
+  later rule rejects a slot in a version that is already published, the package
+  still loads with its other slots.
+- Slots take no `placement`. Publish rejects one with a message to remove it.
+  Published versions that include it load with it ignored. The fetch gateway
+  fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request
+  (a header, the URL path or query, or a text body) when the request is HTTPS
+  and its host is one the secret or integration allows, the same as for a
+  package without slots. See
+  [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
+
+To list credential references that match the detect-only scan, run
+`repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
+pattern labels it matches (for example `- src/index.ts: literal secret`),
+without credential names. `repoPublishSession` and `packageSave` repeat that
+list in their output, and `packagePublishExternalPush` includes the result in
+`checks`. It never fails a check or blocks a publish. The labels are described
+in
+[package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
 
 ### npm dependencies
 
@@ -316,9 +318,10 @@ To run someone else's live package, they
 
 ## Package storage
 
-Every saved package owns one durable storage bucket per user
+Every saved package owns one durable storage bucket in the org that owns it
 (`storageId = package:{encodeURIComponent(packageId)}`), reached via
-`packageStorage()` from `kody:runtime`. One rule per context:
+`packageStorage()` from `kody:runtime`. Every member, job, and app of that org
+reads the same bucket. One rule per context:
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — from package apps, exports, subscriptions, jobs, and workflows. Retrievers
@@ -554,7 +557,7 @@ snapshot. Recovery to ready dispatches `mcp.server.reconnected` with the same
 episode id. The payload is metadata-first (server id/name/state, `account_url`).
 See the [package subscriptions guide](../guides/package-subscriptions.md).
 
-Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
+Artifacts-backed plain repos and packages also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
 lifecycle events. Session workspace branch pushes (`sessions/<id>`) and publish
 git-notes (`refs/notes/commits`) do not fan out. See [Plain repos](./repos.md)
@@ -584,6 +587,9 @@ Recurring schedules belong on a saved package:
 - Package config (secrets and manifest mounts) stays keyed by the saved package
   id
 - Shared durable data goes through `packageStorage()`
+- Each run, including `jobRunNow`, gets a 5-minute sandbox budget on every plan,
+  including package exports the job imports. Outbound `fetch` keeps its own
+  5-minute deadline and 60s idle timeout
 
 Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see
@@ -591,12 +597,10 @@ Jobs are part of the package definition. Deferred one-shot work uses
 
 `jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
-clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `jobDelete` is rejected for
-package-owned jobs for the same reason. `jobRunNow` triggers an existing package
-job immediately for debugging. When `expires_at` is reached the platform stops
-scheduling and auto-disables the job; that is separate from `preserved`, which
-only skips retention deletion.
+clears). Jobs keep name and source in the package repo — change, add, or remove
+the job entry there and publish. `jobRunNow` triggers an existing package job
+immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job.
 
 ## Save and edit packages
 

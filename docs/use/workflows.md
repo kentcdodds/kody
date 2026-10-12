@@ -7,16 +7,20 @@ exports, and package apps.
 Use workflows instead of plain `execute` for durable batch sweeps, migrations,
 polling loops, retryable steps, or work that may run longer than execute's
 timeout (~90s). Workflow-invoked package exports and inline workflow code get a
-longer sandbox budget (~4.5 minutes, under the Cloudflare Workflow step timeout)
-and run without the package-invocation idempotency ledger, so a step retry
-re-executes instead of replaying a cached timeout. Outbound `fetch` in that
-sandbox is capped ~30s under the same budget (~4 minutes), so a single slow
-upstream can finish without the execute-oriented 60s fetch deadline. The initial
-`execute` call should submit one `workflows.create`; inspect that workflow later
-with `workflowRunList`, or cancel it with `workflowRunCancel`. Check-heavy admin
-steps such as fleet apply, dry-run, and revert take one page per workflow
-sandbox; when `nextCursor` is set, create another workflow with that `runId` and
-cursor instead of looping in the same run.
+longer sandbox budget (5 minutes, the same background budget jobs get, under the
+6-minute Cloudflare Workflow step timeout) and run without the
+package-invocation idempotency ledger, so a step retry re-executes instead of
+replaying a cached timeout. Each outbound `fetch` has a 5-minute total deadline
+(the same on every surface), from request start to the end of the response body,
+so a single slow upstream, such as a streamed AI-provider response that runs
+past a minute, can finish inside a workflow. A response body that sends no bytes
+for 60s is aborted; one that keeps streaming runs until the deadline or the
+sandbox budget, whichever comes first. The initial `execute` call should submit
+one `workflows.create`; inspect that workflow later with `workflowRunList`, or
+cancel it with `workflowRunCancel`. Check-heavy admin steps such as fleet apply,
+dry-run, and revert take one page per workflow sandbox; when `nextCursor` is
+set, create another workflow with that `runId` and cursor instead of looping in
+the same run.
 
 ```ts
 import { workflows } from 'kody:runtime'
@@ -29,15 +33,40 @@ export default async function main(params) {
 }
 ```
 
-Check status from a later MCP call:
+### Start a workflow and check back
+
+This is the pattern for any call too long for one MCP `execute`. Start the
+workflow, keep the returned `id`, and end the call. In a later `execute`, read
+the run by that id:
 
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main() {
-	return await kody.workflowRunList({ limit: 10 })
+export default async function main(params) {
+	const { runs } = await kody.runList({
+		workflow_id: params.id,
+		error_triage: 'all',
+	})
+	const run = runs[0]
+	if (!run) return { status: 'not started' }
+	return {
+		status: run.status,
+		result: run.metadata.result,
+		error: run.error_message,
+	}
 }
 ```
+
+The run appears once the workflow step starts (an empty list means it is still
+queued or waiting for `runAt`). Each step attempt is its own run, newest first,
+so a failed attempt that is being retried shows up as an older `error` row. The
+newest run's `status` is `running`, `success`, or `error`. A successful run
+keeps the workflow's return value in `metadata.result`, capped at 4 KiB (larger
+values are stored as a truncated `{ __truncated__: true, preview }`). Console
+output lands in the run's logs; use `runGet({ run_id })` with the run's `id` to
+read them. Return a small summary from the workflow and write bulky output to
+storage. `workflowRunList` shows the workflow-level status (`queued`, `running`,
+`complete`, …) without the result.
 
 `workflows.create` accepts one durable workflow request with two source shapes:
 

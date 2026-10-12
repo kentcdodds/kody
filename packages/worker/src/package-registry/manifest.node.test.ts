@@ -551,6 +551,30 @@ test('parseAuthoredPackageJson accepts kody.webhooks with verification, replay, 
 		},
 	])
 
+	const urlSecret = parse(
+		'@kentcdodds/sentry-bridge',
+		sentryHook({ verification: { type: 'url-secret' } }),
+		sentryExports,
+	)
+	expect(urlSecret.kody.webhooks?.[0]?.verification).toEqual({
+		type: 'url-secret',
+	})
+	expect(buildPackageSearchProjection(urlSecret).webhooks).toEqual([
+		{
+			...webhookDefaults,
+			name: 'sentry',
+			exportName: './handle-sentry-webhook',
+			verification: { type: 'url-secret' },
+		},
+	])
+	expect(() =>
+		parse(
+			'@kentcdodds/sentry-bridge',
+			sentryHook({ verification: { type: 'url-secrets' } }),
+			sentryExports,
+		),
+	).toThrow(/verification/)
+
 	const trusted = parse(
 		'@kentcdodds/discord',
 		{

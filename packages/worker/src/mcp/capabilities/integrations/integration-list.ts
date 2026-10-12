@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { loadIntegrationListScope } from '#mcp/capabilities/integrations/authorize-integration.ts'
+import { listScopeIncludes } from '#worker/authorization/authorize.ts'
 import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
@@ -36,11 +38,18 @@ export const integrationListCapability = defineDomainCapability(
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
-			const integrations = await listIntegrations({
-				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-			})
-			return { integrations }
+			const [integrations, scope] = await Promise.all([
+				listIntegrations({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+				}),
+				loadIntegrationListScope(ctx, 'integration:read'),
+			])
+			return {
+				integrations: integrations.filter((integration) =>
+					listScopeIncludes(scope, integration.credentialId ?? ''),
+				),
+			}
 		},
 	},
 )

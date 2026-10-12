@@ -772,7 +772,10 @@ export const packageSearchEntityPlugin = {
 			rateLimitPerMinute:
 				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
 			replay: webhook.replay ?? null,
-			signedPayload: webhook.verification?.signedPayload ?? null,
+			signedPayload:
+				webhook.verification?.type === 'url-secret'
+					? null
+					: (webhook.verification?.signedPayload ?? null),
 			challenge: webhook.challenge ?? null,
 		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null

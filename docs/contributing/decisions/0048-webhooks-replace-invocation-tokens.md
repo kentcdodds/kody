@@ -38,12 +38,6 @@ and POST JSON with `Idempotency-Key`. Vendor HMAC handlers stay on default
 the drain is unadvertised. Revisit only if a first-party caller cannot express
 its invoke shape as one webhook per export plus the params/idempotency contract.
 
-## LATER-NOTE (2026-09-04)
-
-Token UI, MCP guides, `packageGet.tokens`, and setup URLs are unadvertised.
-`packageInvocationTokenList` / `packageInvocationTokenGet` remain as an
-unadvertised drain. The HTTP bearer path stays until leftover rows are 0.
-
 ## LATER-NOTE (2026-10-08)
 
 Completed 2026-10-08: HTTP invocation tokens fully removed from code; rows

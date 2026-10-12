@@ -16,15 +16,16 @@ Object transfer or a bounded D1 copy against live production.
 | Concern                                                          | Owner                                                              |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `JobManager` Durable Object (per-user scheduling state + alarms) | `kody-jobs`                                                        |
-| `jobs` / `archived_job_artifacts` tables                         | `JOBS_DB` on `kody-jobs`                                           |
+| `jobs` table                                                     | `JOBS_DB` on `kody-jobs`                                           |
 | Five-minute cron and `kody-scheduled-dispatch` queues            | `kody-jobs`                                                        |
 | Job execution / scheduled lanes (`JobsHost`)                     | `kody` (origin); `kody-jobs` calls back through the `HOST` binding |
 | Job reads and writes from origin / MCP / dashboards              | `JOBS` service binding (`JobsService`) on origin                   |
 
-`APP_DB` has no `jobs` or `archived_job_artifacts` tables. The schema change is
+`APP_DB` has no `jobs` table. The schema change is
 `packages/worker/migrations/0010-drop-jobs-tables.sql`. Live authority is
-`JOBS_DB`. Do not query those names on `APP_DB`, do not copy them "one more
-time," and do not treat 0010 as a waiting follow-up.
+`JOBS_DB`. Do not query `jobs` on `APP_DB`, do not copy it "one more time," and
+do not treat 0010 as a waiting follow-up. `archived_job_artifacts` was dropped
+from `JOBS_DB` by `0005-drop-preserved-and-archived-artifacts.sql`.
 
 ## Invariants
 

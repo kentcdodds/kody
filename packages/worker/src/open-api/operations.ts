@@ -237,7 +237,6 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/jobs', 'jobList'],
 		['GET', '/v1/jobs/{id}', 'jobGet'],
 		['PATCH', '/v1/jobs/{id}', 'jobUpdate'],
-		['DELETE', '/v1/jobs/{id}', 'jobDelete'],
 		['POST', '/v1/jobs/{id}/run', 'jobRunNow'],
 		['GET', '/v1/workflow-runs', 'workflowRunList'],
 		['POST', '/v1/workflow-runs/{id}/cancel', 'workflowRunCancel'],

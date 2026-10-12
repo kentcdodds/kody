@@ -81,6 +81,7 @@ function createJoinedIntegration(input: {
 		},
 		connection: {
 			userId,
+			credentialId: 'cred-integration',
 			name: input.name,
 			appSlug,
 			platformAppSlug: null,
@@ -123,6 +124,7 @@ test('descriptor seam follows registry order and preserves integration affinity'
 			],
 			userSecretRows: [
 				{
+					credentialId: 'cred-weather_api_key',
 					name: 'weather_api_key',
 					description: 'Weather API key',
 					scope: 'user',

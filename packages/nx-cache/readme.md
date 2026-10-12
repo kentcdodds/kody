@@ -60,20 +60,23 @@ without re-running the command.
 
 ## Interpreting hit rates
 
-A PR that **introduces or renames Nx tasks** (or expands their `inputs`) will
-show `Cache: 0/N` on first run even when remote cache is enabled — those hashes
-have never been stored. Same-repo validate uses the write token (decision 0040),
-so that first run **PUTs**; the next identical tree on `main` or another PR
-should show `[remote cache]` hits. Example after parallel typecheck (#3209): the
-PR logged `0/12`, and the following `main` validate logged `12/12`.
+A PR that **introduces or renames Nx tasks** (or expands their `inputs`) makes
+those tasks' hashes cold. Nx checks each task hash independently, so unaffected
+tasks can still hit. You only see `Cache: 0/N` when every counted task misses
+(for example a first run where all N hashes are new). Same-repo validate uses
+the write token (decision 0040), so that first run **PUTs**; the next identical
+tree on `main` or another PR should show `[remote cache]` hits. Example after
+parallel typecheck (#3209): the PR logged `0/12`, and the following `main`
+validate logged `12/12`.
 
 Do **not** treat a cold `0/N` alone as a token, Nx Cloud, or `--skip-nx-cache`
 bug. Check the setup step for
 `Nx remote cache enabled (https://nx-cache.kody.codes)` first. Fork PRs use the
 read token only and cannot populate new hashes. Suite targets that hash
 `{workspaceRoot}/**/*` (notably `test-node` after #3207) miss whenever any
-workspace file changes — that is intentional correctness, not a transport
-failure.
+non-gitignored workspace file matched by the input changes — that is intentional
+correctness, not a transport failure. Nx leaves `.gitignore`d paths out of
+fileset inputs unless a fileset sets `includeIgnored: true`.
 
 ## Retention
 

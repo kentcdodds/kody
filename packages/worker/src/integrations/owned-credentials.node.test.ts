@@ -91,12 +91,14 @@ function createHarness(userId: string) {
 			userId: ownerIdFromStored(userId),
 			slug: 'google',
 		})
-	const accessToken = () =>
-		resolveIntegrationAccessToken({
-			env,
-			userId: ownerIdFromStored(userId),
-			name: 'google',
-		})
+	const accessToken = async () =>
+		(
+			await resolveIntegrationAccessToken({
+				env,
+				userId: ownerIdFromStored(userId),
+				name: 'google',
+			})
+		)?.accessToken ?? null
 	const canUse = (pkg?: { packageId: string; packageKodyId?: string }) =>
 		assertCanUseIntegration({
 			env,

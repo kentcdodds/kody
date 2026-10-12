@@ -89,10 +89,12 @@ async function ensureSecretAuthorityTestSchema() {
 		UNIQUE(user_id, scope, binding_key)
 	)`)
 	await runSql(`CREATE TABLE IF NOT EXISTS secret_entries (
+		id TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
 		bucket_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
 		encrypted_value TEXT NOT NULL,
+		kind TEXT NOT NULL DEFAULT 'secret',
 		allowed_hosts TEXT NOT NULL DEFAULT '[]',
 		allowed_packages TEXT NOT NULL DEFAULT '[]',
 		lookup_hash TEXT,

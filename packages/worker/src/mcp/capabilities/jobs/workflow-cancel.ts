@@ -1,8 +1,12 @@
+import { authorizeOrgWide } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 
 export const workflowCancelCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
@@ -54,6 +58,10 @@ export const workflowCancelCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeOrgWide(
+				{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
+				'job:execute',
+			)
 			const { cancelWorkflowRunForUser } =
 				await import('#worker/package-runtime/package-workflows.ts')
 			const result = await cancelWorkflowRunForUser({

@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { type PackageAppServeOwner } from './package-app-serve.ts'
@@ -52,11 +55,18 @@ const owner: PackageAppServeOwner = {
 	displayName: 'Demo',
 }
 
+const visitor = {
+	userId: personIdFromStored('user-1'),
+	username: 'demo',
+	role: 'owner',
+} as const
+
 function createServeInput(env: Env = {} as Env) {
 	return {
 		request: new Request('https://example.com/@demo/packages/hello/'),
 		env,
 		owner,
+		visitor,
 		packagePath: {
 			username: 'demo',
 			kodyId: 'hello',
@@ -83,6 +93,7 @@ test('servePackageAppRequest forwards to RUNTIME_WORKER when PackageAppRuntimeBr
 	expect(runtimeForwardMock.servePackageApp).toHaveBeenCalledWith({
 		request: input.request,
 		owner: input.owner,
+		visitor: input.visitor,
 		packagePath: input.packagePath,
 		dispatch: input.dispatch,
 	})

@@ -1,3 +1,4 @@
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -17,6 +18,10 @@ import {
 } from '#universal/mcp-oauth-return.ts'
 import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
 import { routes } from '#universal/routes.ts'
+import { extractMcpServerIdFromOAuthState } from '#worker/mcp-client/oauth-state.ts'
+import { getMcpServerOwnerId } from '#worker/mcp-client/settings-repo.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
@@ -161,9 +166,47 @@ export function createAccountMcpServersApiHandler(env: Env) {
 }
 
 /**
+ * The request to finish an MCP OAuth callback as. The callback URL has no
+ * org, so the session binds the person's signup org; the pending state lives
+ * in the hub of the org that owns the server named in `state`. That org is
+ * used when the person can write its integrations, the same check the
+ * consent page made before sending them to the provider. Rejects when the
+ * person cannot, so the caller falls back to the session request.
+ */
+async function callbackRequestForServer(input: {
+	env: Env
+	url: URL
+	user: AuthenticatedUser
+}): Promise<RequestContext> {
+	const fallback = input.user.request
+	const serverId = extractMcpServerIdFromOAuthState(
+		input.url.searchParams.get('state'),
+	)
+	if (!serverId) return fallback
+	const ownerId = await getMcpServerOwnerId({
+		db: input.env.APP_DB,
+		id: serverId,
+	})
+	if (!ownerId || ownerId === fallback.org.id) return fallback
+	const orgBinding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.user.mcpUser.userId,
+		ownerId,
+	)
+	if (!orgBinding) return fallback
+	const request = deriveRequestContext({
+		user: input.user.mcpUser,
+		source: { kind: 'session' },
+		orgBinding,
+	})
+	await authorize({ env: input.env, request }, 'integration:write')
+	return request
+}
+
+/**
  * Completes the OAuth authorization redirect from a remote MCP server. The
- * browser session cookie identifies the user, whose per-user hub DO holds the
- * pending OAuth state matching the `state` query parameter.
+ * browser session cookie identifies the user; the hub of the org that owns
+ * the server holds the pending OAuth state matching the `state` parameter.
  */
 export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 	return {
@@ -178,12 +221,18 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				return user
 			}
 
+			const callbackRequest = await callbackRequestForServer({
+				env,
+				url: new URL(request.url),
+				user,
+			}).catch(() => user.request)
+			const ownerId = ownerIdFromCaller({
+				request: callbackRequest,
+				user: user.mcpUser,
+			})
 			const hub = createMcpClientHubClient({
 				env,
-				userId: ownerIdFromCaller({
-					request: user.request,
-					user: user.mcpUser,
-				}),
+				userId: ownerId,
 				waitUntil,
 			})
 			let authSuccess = false
@@ -219,20 +268,14 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			if (serverId && authSuccess && !lastError) {
 				await setMcpServerLastError({
 					env,
-					userId: ownerIdFromCaller({
-						request: user.request,
-						user: user.mcpUser,
-					}),
+					userId: ownerId,
 					id: serverId,
 					lastError: null,
 				}).catch(() => {})
 			} else if (serverId && lastError) {
 				await setMcpServerLastError({
 					env,
-					userId: ownerIdFromCaller({
-						request: user.request,
-						user: user.mcpUser,
-					}),
+					userId: ownerId,
 					id: serverId,
 					lastError,
 				}).catch(() => {})
@@ -240,7 +283,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 
 			const returnToOnboarding =
 				readMcpOAuthReturnCookie(request.headers.get('Cookie')) != null
-			const orgSlug = user.request.org.slug?.trim() || user.username
+			const orgSlug = callbackRequest.org.slug?.trim() || user.username
 			const target = returnToOnboarding
 				? new URL(routes.onboardingStep2.href(), request.url)
 				: new URL(

@@ -5,6 +5,7 @@ import {
 	orgCollaboratorsPath,
 	orgGrantsPath,
 	orgMembersPath,
+	orgOverviewPath,
 	orgResourcePath,
 	orgRoleManagesBilling,
 	orgSettingsPath,
@@ -62,6 +63,8 @@ export type AccountRailItem = {
 	icon: IconName
 	/** Other pages that belong to this item (`/account/passkeys` → Security). */
 	alsoActiveFor?: ReadonlyArray<string>
+	/** One line for the workspace overview card. */
+	description?: string
 }
 
 export type AccountRailGroup = {
@@ -103,8 +106,40 @@ export function isAccountRailPath(pathname: string) {
 	return accountRailItems.some((item) => isAccountNavItemActive(item, pathname))
 }
 
-export function accountRailGroups(): Array<AccountRailGroup> {
-	return [{ label: null, items: accountRailItems }]
+/**
+ * The account rail: person settings, then a Workspace group that opens what
+ * the person's own organization holds (everything that lived under `/account`
+ * before organizations). Overview links the rest of the workspace.
+ */
+export function accountRailGroups(input: {
+	workspaceSlug: string | null | undefined
+}): Array<AccountRailGroup> {
+	const person: AccountRailGroup = { label: null, items: accountRailItems }
+	const slug = input.workspaceSlug
+	if (!slug) return [person]
+	return [
+		person,
+		{
+			label: 'Workspace',
+			items: [
+				overviewRailItem(slug),
+				repositoriesRailItem(slug),
+				connectionsRailItem(slug),
+				mcpServersRailItem(slug),
+				secretsRailItem(slug),
+				jobsRailItem(slug),
+				memoriesRailItem(slug),
+			],
+		},
+	]
+}
+
+function overviewRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSlug ? orgOverviewPath(orgSlug) : routes.account.href(),
+		label: 'Overview',
+		icon: 'home',
+	}
 }
 
 function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
@@ -188,6 +223,7 @@ function repositoriesRailItem(
 		href: accountPackagesNavHref(orgSlug),
 		label: 'Repositories',
 		icon: 'box',
+		description: 'Every repository in this workspace, private ones included.',
 	}
 }
 
@@ -196,6 +232,7 @@ function jobsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'jobs'),
 		label: 'Jobs',
 		icon: 'briefcase',
+		description: 'Scheduled package jobs. Run one now or pause it.',
 	}
 }
 
@@ -207,6 +244,18 @@ function connectionsRailItem(
 		label: 'Connections',
 		icon: 'link',
 		alsoActiveFor: [routes.accountMcpOauthClients.href()],
+		description: 'Agents connected to Kody and what they can use.',
+	}
+}
+
+function mcpServersRailItem(
+	orgSlug: string | null | undefined,
+): AccountRailItem {
+	return {
+		href: orgSectionHref(orgSlug, 'mcp-servers'),
+		label: 'MCP servers',
+		icon: 'server',
+		description: 'Remote MCP servers whose tools Kody can call.',
 	}
 }
 
@@ -215,16 +264,26 @@ function secretsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'secrets'),
 		label: 'Secrets',
 		icon: 'key',
+		description: 'API keys and tokens your packages use.',
+	}
+}
+
+function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSectionHref(orgSlug, 'memories'),
+		label: 'Memories',
+		icon: 'book',
+		description: 'Long-term memories Kody keeps for you.',
 	}
 }
 
 /**
  * The workspace rail: everything the organization owns, grouped by job.
- * Personal orgs get every Build / Access / Data / Activity section. Team orgs
- * get the sections `/@slug/-/<section>` opens for them: Repositories, Jobs,
- * Connections, and Secrets for every member role, above the Organization
- * management links. Grant-only collaborators (`role` null) get Connections
- * only, which is how they use what was shared with them.
+ * Personal orgs get Overview and every Build / Access / Data / Activity
+ * section. Team orgs get the sections `/@slug/-/<section>` opens for them:
+ * Repositories, Jobs, Connections, and Secrets for every member role, above
+ * the Organization management links. Grant-only collaborators (`role` null)
+ * get Connections only, which is how they use what was shared with them.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -252,6 +311,7 @@ export function workspaceRailGroups(input: {
 		]
 	}
 	return [
+		...(orgSlug ? [{ label: null, items: [overviewRailItem(orgSlug)] }] : []),
 		{
 			label: 'Build',
 			items: [
@@ -261,11 +321,13 @@ export function workspaceRailGroups(input: {
 					href: orgSectionHref(orgSlug, 'workflows'),
 					label: 'Workflows',
 					icon: 'refresh',
+					description: 'Deferred and long-running workflow runs.',
 				},
 				{
 					href: orgSectionHref(orgSlug, 'webhooks'),
 					label: 'Webhooks',
 					icon: 'cloud',
+					description: 'Every inbound webhook your packages declare.',
 				},
 			],
 		},
@@ -277,12 +339,9 @@ export function workspaceRailGroups(input: {
 					href: orgSectionHref(orgSlug, 'integrations'),
 					label: 'Integrations',
 					icon: 'plug',
+					description: 'Services you connect so Kody can use them.',
 				},
-				{
-					href: orgSectionHref(orgSlug, 'mcp-servers'),
-					label: 'MCP servers',
-					icon: 'server',
-				},
+				mcpServersRailItem(orgSlug),
 			],
 		},
 		{
@@ -293,16 +352,15 @@ export function workspaceRailGroups(input: {
 					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',
 					icon: 'key',
+					description: 'Bind a package to a provider such as 1password.',
 				},
-				{
-					href: orgSectionHref(orgSlug, 'memories'),
-					label: 'Memories',
-					icon: 'book',
-				},
+				memoriesRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'email'),
 					label: 'Email',
 					icon: 'mail',
+					description:
+						'Your platform inbox and the addresses Kody may send from.',
 				},
 			],
 		},
@@ -313,23 +371,29 @@ export function workspaceRailGroups(input: {
 					href: orgSectionHref(orgSlug, 'activity'),
 					label: 'Activity',
 					icon: 'trending-up',
+					description: 'Failures first, then recent runs with their logs.',
 				},
 				{
 					href: orgSectionHref(orgSlug, 'waiting'),
 					label: 'Waiting',
 					icon: 'clock',
+					description: 'Things that need you.',
 				},
 			],
 		},
 		{
 			label: 'Organization',
 			items: [
-				billingRailItem(orgSlug),
+				{
+					...billingRailItem(orgSlug),
+					description: 'Plan, subscription, and payment method.',
+				},
 				{
 					href: routes.accountUsage.href(),
 					label: 'Usage',
 					icon: 'chart',
 					alsoActiveFor: [routes.accountCredits.href()],
+					description: 'Included compute, plan limits, and credits.',
 				},
 			],
 		},

@@ -77,50 +77,85 @@ Profiles and the signed-in step are the other denials that can fire.
 1. re-checks that the acting person still has access to `orgId` (live
    membership, team, or outside-collaborator grant; org active), once per
    request context;
-2. calls `authorize` with `secret:use` or `integration:use` on the credential
-   unless the package stamp is `attested` (hosted bundler provenance, package
-   apps, webhooks). Ad hoc code (no stamp) and `claimed` stamps (CLI `--local`
-   CapabilityProxy) always need Use; a claimed stamp is checked for
-   `package:execute` only and is never secret authority;
-3. applies the package rules (allowlists, usageMode, provider grants), then
-   reads storage;
-4. schedules one `credential.resolve` row in `org_audit_events` per resolution
+2. looks up the credential the name resolves to without reading its value, then
+   calls `authorize` with `secret:use` or `integration:use` on its `credential`
+   resource, by its stable credential id, for every package stamp. A `claimed`
+   stamp (CLI `--local` CapabilityProxy) is checked for `package:execute` only
+   and is never secret authority. A name with no credential, including a vault
+   provider with no binding, is checked against a target no grant names, so a
+   non-holder gets a denial rather than a not-found. Denial messages name the
+   credential by family and name (`secret apiKey`), never by id;
+3. applies the package rules (allowlists, usageMode, provider grants) and, for
+   stored secrets and integrations, the allowed hosts, all from metadata; a
+   vault item's hosts come back with its value, so the vault checks them right
+   after the read;
+4. only then reads storage. Each credential kind is a resolver
+   (`credentials/credential-resolver.ts`: `resolve` returns a metadata-only
+   handle, the door calls its `authorize` and then `apply`, the only step that
+   reads a value), so a refused host never decrypts a secret or refreshes a
+   token;
+5. schedules one `credential.resolve` row in `org_audit_events` per resolution
    (success, not found, denied, failed) via `waitUntil`, with the actor, the
-   credential's resource key, owner kind, and package stamp kind. It never holds
-   the value.
+   credential id (null when nothing resolved) and requested name, owner kind,
+   and package stamp kind. It never holds the value.
+
+**Credential ids and grants.** Org secrets, OAuth integrations, MCP servers, and
+vault bindings each have a stable credential id: the database assigns one on
+insert (`secret_entries.id`, `user_integrations.id`,
+`secret_provider_bindings.id`; an MCP server's id is its `mcp_server_settings`
+row id) and an upsert keeps it. Grants on them use one resource type,
+`credential`, keyed by that id (`credentials/credential-ids.ts`); the
+permissions stay `secret:*` for secrets and vault bindings and `integration:*`
+for integrations and MCP servers. Renaming a credential keeps its grants, and a
+name deleted then recreated gets a new id with no grants. A vault binding is its
+own credential: Use on its door-key secret is not Use on the vault.
+`secretList`, `integrationList`, `mcpServerList`, and `secretProviderList`
+return the ids that `accessGrant` takes.
+
+`accessGrant` and grant invites also accept `secret` and `integration` targets
+by name. The name resolves to the credential id once, at grant time, and the
+grant is stored under `credential`; a name that matches no credential is
+refused. `accessList` accepts the same by-name filters and resolves the name
+when listing: after a rename, the old name finds no grants, though the grant on
+the credential id remains. Those by-name targets are leftover and tracked in
+[planned breaking changes](../planned-breaking-changes.md).
+
+**Personal credentials** (`credentials/personal-credentials.ts`) are credentials
+in their owner's personal org. The owner grants one to another org they have a
+live binding to, one org at a time (`credential_org_grants`). It is then usable
+only in the owner's own runs there: no role, grant, or package stamp lets an
+Owner or Automation use someone else's personal credential. Only live
+credentials of an active personal org qualify: a user-scope secret that has not
+expired, an integration, or an MCP server. Vault bindings and package or session
+secrets never do. Leaving the org hard-deletes the person's rows for it, and an
+org transfer out of the personal org is blocked while a moved credential still
+has grants. This is backend only for now: placeholders still resolve org
+credentials, and no capability grants or lists personal credentials until the
+scoped client API
+([ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 `credential-storage-boundary.node.test.ts` fails if credential storage is read
-outside the door. Credential storage keys use `ownerIdFromCaller` (org id), not
-the acting person. Automation is Owner. See
+outside the door and its resolvers. Credential storage keys use
+`ownerIdFromCaller` (org id), not the acting person. Automation is Owner. See
 [ADR 0021](../decisions/0021-publish-gated-package-composition.md).
 
 ### Enablements
 
 Everything that runs on its own (cron jobs, subscriptions including inbound
-email, webhooks) is moving to one primitive, the enablement
-(`packages/worker/src/enablements/`, credentials plan v4 section 3.3). Each
-`enablements` row is one person's (the enabler's) switch for one trigger
-instance: the job id, the subscribing package id plus topic, or the webhook
-endpoint id. Its state is `on`, `paused` (with the cause), or `off`. One person
-may hold several enablements of the same trigger.
+email, webhooks) is an enablement (`packages/worker/src/enablements/`,
+credentials plan v4 section 3.3). Each `enablements` row is one person's (the
+enabler's) switch for one trigger instance: the job id, the subscribing package
+id plus topic, or the webhook endpoint id. Its state is `on`, `paused` (with the
+cause), or `off`. One person may hold several enablements of the same trigger.
 
-`enablement_org_migrations` records each org's move: an org runs its triggers
-the old way (Automation, as Owner) until its row is `migrated`. The admin
-capability `adminEnablementsMigrate` writes one enablement per existing job,
-webhook, and subscription for a real member (the creator if still a member, else
-the earliest Owner), generates a signing secret for unsigned webhooks, and for
-team orgs first emails each member which enablements will bill them. Only
-triggers that run today migrate: disabled or kill-switched jobs, disabled
-webhook URLs, and URLs whose webhook is no longer declared are counted and left
-off. `notice_plan_json` records what each member's notice listed, so a retried
-`notify` emails nobody twice, and `apply` migrates a team org only when every
-planned item was in a notice to its enabler. A unique index allows one migrated
-row per trigger instance. Team orgs created after this change start `migrated`;
-personal orgs stay legacy until the backfill, which is safe because their only
-person is the Owner.
+Every org runs its triggers through enablements. `#3388` removed the legacy
+lane, and migration `0115` drops `enablement_org_migrations`. A unique index
+still allows one `origin = 'migrated'` row per trigger instance, which is the
+audit of the backfill that already ran. New enablements are
+`origin = 'enabled'`.
 
-In a migrated org, `planEnablementRuns` (`enablements/run-gate.ts`) is the one
-gate every trigger passes:
+`planEnablementRuns` (`enablements/run-gate.ts`) is the one gate every trigger
+passes:
 
 - A trigger runs once per `on` enablement, as its enabler. The request context
   has the enabler as actor, `attribution.kind: 'user'`, the enablement id as
@@ -131,7 +166,13 @@ gate every trigger passes:
   org, and `package:execute` on the package. A failure pauses the enablement
   (`org_access` or `package_access`) and drops the event.
 - `resolveCredential` pauses an enablement run that lacks Use on an org
-  credential (`credential_access`), even for an attested package stamp.
+  credential (`credential_access`), even for an attested package stamp. The
+  pause keeps the credential's family and name (what the waiting queue and
+  `enablementList` show) and its id in `paused_credential_id`, which the resume
+  check uses. A pause on a name that matched no credential has no id and
+  resolves the name on each check. A pause on a vault with no binding is
+  recorded as `secret-provider` and resolves the provider id to its live binding
+  on each check, never to a stored secret of the same name.
 - The next event checks again and resumes a paused enablement once access is
   back. There is never a fallback to another person, credential, or Owner.
 - No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook
@@ -151,9 +192,10 @@ Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
 People turn triggers on for themselves with `enablementEnable` and off with
 `enablementDisable` (the enabler or an Owner); `enablementList` lists them.
 Publishing never turns anything on. Minting a webhook URL turns it on for the
-minter when they hold `package:execute` and nobody else has. Webhooks in a
-migrated org always verify a signature: the declared `verification`, else
-`X-Kody-Signature` over the body with the endpoint's own signing secret.
+minter when they hold `package:execute` and nobody else has. A webhook verifies
+a signature only when its manifest declares `verification`; otherwise its URL
+secret is the credential. The generated signing secret on unsigned endpoints is
+stored but not checked.
 
 ### Checking many resources
 
@@ -203,9 +245,64 @@ discovery, platform feedback, your own tokens, and site-admin tools, which
 capability declares an org permission, and `operations.node.test.ts` fails when
 an operation publishes no valid permission.
 
+### Capabilities that need a live person
+
+Some capabilities never run unattended, whatever the enabler's role. A
+capability declares this once with `requiresLivePerson`, and `defineCapability`
+checks it in the same dispatch path as `authorizeSurface`:
+
+- `requiresLivePerson: true` is checked before any other gate.
+- A predicate `(args, ctx) => boolean` is checked after the input parses, for
+  capabilities where only some inputs qualify. `accessGrant` and `accessRevoke`
+  use it for org grants that carry `member:*` or `billing:*` permissions, or
+  that replace or revoke a grant that does.
+
+`isLivePersonRequest` (`packages/worker/src/authorization/authorize.ts`) is the
+one definition of a live person: an actor plus a credential kind of `session`,
+`mcp-oauth`, `cli`, or `api-token`. `package-app`, `schedule`, `webhook`,
+`inbound-email`, and `platform-event` are never live. Runs inherit their
+starter's credential, so package code started by a trigger is not live, and an
+execute started from an MCP call is. A denial throws `LivePersonRequiredError`,
+which names the capability; Open API maps it to 403 `insufficient_scope` with
+`denial: 'live_person_required'`.
+
+Declared today: every site-admin capability (through `adminCapabilityAccess` and
+`adminMutationCapabilityAccess`, plus `communitySetFeatured`),
+`orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`, `inviteAccept`,
+`inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member or billing
+grants. Org billing writes are session-only web handlers.
+`registry.node.test.ts` fails when a site-admin or member-changing capability
+does not declare it.
+
+One site-admin action may run unattended: `adminUserVerify` with
+`mint_verify_url`, so admin-event packages can rescue a stalled signup. Its
+predicate skips the live-person check only when `automationTriggerOf` (same
+file) finds a job (`schedule`), webhook, or subscription (`platform-event`)
+enablement behind the request, or package code one started, and:
+
+- that enablement row is `on`, belongs to the running package, and names the
+  same enabler;
+- the enabler is the package owner (`callerContext.user`) and holds the Owner
+  role in that org;
+- the enabler holds the site `admin` role in D1 right now
+  (`stableUserHoldsRole`). The background caller's roles are cached for up to a
+  minute, so they are not trusted after a revocation.
+
+Every automated mint writes an `adminUserVerify` audit row whose reason adds
+`trigger=job|webhook|subscription`, `enablement_id`, and `package_id`, on
+success and on failure. `mark_verified`, package apps, inbound email, trigger
+sources nobody turned on, and every other site-admin capability still need a
+live person.
+
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
-write-implies-read hierarchy and no separate `x-kody-scope` check.
+write-implies-read hierarchy and no separate `x-kody-scope` check. A scope
+denial (`credential_scope`) carries `mintScopes`: the credential's scopes plus
+the missing one. Its message prints the exact
+`cliCredentialBootstrap({ lifetime, scopes })` call and the matching
+`kody auth bootstrap --scopes` command. Open API adds `required_scope` and
+`mint_scopes` to the 403 `insufficient_scope` details so clients can print the
+same commands. Default bootstrap scopes stay least-privilege; callers opt in.
 
 Connection profiles remain an org-bound narrowing layer (not folded into
 scopes). A profile is stored with `org_id` and limits package resources listed
@@ -489,19 +586,15 @@ seconds, so a revoked role can still pass background checks until that entry
 expires and the owner is resolved again. Interactive MCP and browser requests
 reload roles on every request.
 
-`requiredRole` / `requiredPermission` checks compare against those roles and do
-not inspect `executionOrigin`. No admin capability has an interactive-only gate,
-so package code owned by an admin can call admin-gated capabilities unattended —
-reads and mutations alike — with the same reach as that admin calling them from
-an MCP session. That includes fleet-wide / cross-user mutations such as
-`adminPackageCodemodApply` (republishes other users' published packages), and
-other high-blast writes such as `adminUserCreate`, `adminFeatureFlagSet`, and
-`adminSystemEmailSend`. Interactive-only gates exist on a few specific non-admin
-capabilities (for example `communityForkAdopt`, `packageAppFetch`,
-`packageSubscriptionDispatch`, and platform-feedback submit); they are
-per-capability contracts, not part of role evaluation. Interactive-only
-`executionOrigin` gates for admin mutations, and separate service principals,
-are deferred designs — not applied as a silent gate on these capabilities.
+`requiredRole` / `requiredPermission` checks compare against those roles. Every
+site-admin capability also declares `requiresLivePerson`, so a background run
+owned by an admin still cannot call one: the call fails with
+`LivePersonRequiredError` (see
+[Capabilities that need a live person](#capabilities-that-need-a-live-person)).
+Other interactive-only gates exist on a few specific non-admin capabilities (for
+example `communityForkAdopt`, `packageAppFetch`, `packageSubscriptionDispatch`,
+and platform-feedback submit); they are per-capability contracts, not part of
+role evaluation.
 
 Package app HTTP handlers and realtime hooks call capabilities through the
 package-app runtime bridge
@@ -512,10 +605,6 @@ realtime hooks even though the realtime session resolves a role-bearing context
 when it builds the app worker; only identity fields reach the bridge. Package
 exports that app or realtime code invokes run through the background path above
 and do carry the owner's roles.
-
-Treat any package saved on an admin account as running with full admin reach,
-including those mutations. See the residual-risk entry in
-[Security](../security.md#accepted-residual-risks-and-out-of-scope-items).
 
 ## Privacy boundary
 

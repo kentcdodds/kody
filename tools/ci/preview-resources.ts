@@ -55,7 +55,7 @@ export type PreviewResourceKind =
  * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
  * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
  * `-jobs-db`, `-vectors`, `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
- * `-repo-session-blobs`, and one queue plus dead-letter queue for each origin
+ * `-repo-session-blobs`, `-operator-backups`, and one queue plus dead-letter queue for each origin
  * producer preview provisions (`tools/ci/preview-queue-plan.ts`;
  * `truncateWithSuffix` may shorten the base but keeps this shape). The
  * Artifacts namespace uses the bare worker name (`kody-pr-<n>` /
@@ -173,6 +173,7 @@ export function buildPreviewResourceNames(workerName: string) {
 	const communityAssetsSuffix = '-community-assets'
 	const emailBlobsSuffix = '-email-blobs'
 	const repoSessionBlobsSuffix = '-repo-session-blobs'
+	const operatorBackupsSuffix = '-operator-backups'
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
 	const auditD1DatabaseName = truncateWithSuffix(
 		workerName,
@@ -205,6 +206,11 @@ export function buildPreviewResourceNames(workerName: string) {
 		repoSessionBlobsSuffix,
 		maxLen,
 	)
+	const operatorBackupsBucketName = truncateWithSuffix(
+		workerName,
+		operatorBackupsSuffix,
+		maxLen,
+	)
 	const communityAssetsBucketName = truncateWithSuffix(
 		workerName,
 		communityAssetsSuffix,
@@ -233,6 +239,7 @@ export function buildPreviewResourceNames(workerName: string) {
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
+		operatorBackupsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 		/** Cloudflare Artifacts namespace: bare preview worker name. */
@@ -578,6 +585,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
+		operatorBackupsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 		artifactsNamespace,
@@ -623,6 +631,10 @@ async function ensurePreviewResources(options: CliOptions) {
 	})
 	const repoSessionBlobs = ensureR2Bucket({
 		name: repoSessionBlobsBucketName,
+		dryRun: options.dryRun,
+	})
+	const operatorBackups = ensureR2Bucket({
+		name: operatorBackupsBucketName,
 		dryRun: options.dryRun,
 	})
 	const communityAssets = ensureR2Bucket({
@@ -699,6 +711,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
 		repoSessionBlobsBucketName: repoSessionBlobs.name,
+		operatorBackupsBucketName: operatorBackups.name,
 		artifactsNamespace,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
@@ -744,6 +757,7 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 	console.log(`repo_session_blobs_bucket_name=${repoSessionBlobs.name}`)
+	console.log(`operator_backups_bucket_name=${operatorBackups.name}`)
 	console.log(`webhook_dispatch_queue_name=${webhookDispatchQueueName}`)
 	console.log(
 		`webhook_dispatch_dead_letter_queue_name=${webhookDispatchDeadLetterQueueName}`,
@@ -828,6 +842,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
+		operatorBackupsBucketName,
 		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
 	const queuePlan = planPreviewOriginQueues(options.workerName)
@@ -843,6 +858,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		[communityAssetsBucketName, 'r2'] as const,
 		[emailBlobsBucketName, 'r2'] as const,
 		[repoSessionBlobsBucketName, 'r2'] as const,
+		[operatorBackupsBucketName, 'r2'] as const,
 		...queuePlan.queueNames.map((name) => [name, 'queue'] as const),
 		[artifactsNamespace, 'artifacts'] as const,
 	]) {
@@ -919,6 +935,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
+		operatorBackupsBucketName,
 	]) {
 		await attempt(`r2 ${name}`, async () => {
 			await deletePreviewR2Bucket({
