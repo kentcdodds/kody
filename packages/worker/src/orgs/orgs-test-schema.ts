@@ -149,18 +149,6 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
-			`CREATE TABLE IF NOT EXISTS enablement_org_migrations (
-				org_id TEXT PRIMARY KEY,
-				state TEXT NOT NULL,
-				notice_sent_at TEXT,
-				migrated_at TEXT,
-				notice_plan_json TEXT,
-				updated_at TEXT NOT NULL
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
 			`CREATE TABLE IF NOT EXISTS enablements (
 				id TEXT PRIMARY KEY NOT NULL,
 				org_id TEXT NOT NULL,

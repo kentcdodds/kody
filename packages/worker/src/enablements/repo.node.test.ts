@@ -4,12 +4,9 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	disableEnablement,
-	getEnablementOrgMigration,
 	insertEnablement,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
-	markEnablementOrgNotified,
-	saveEnablementNoticePlan,
 	pauseEnablement,
 	resumeEnablement,
 } from './repo.ts'
@@ -101,36 +98,4 @@ test('an enablement moves on, paused, on, off, and off is final', async () => {
 	expect(
 		await listEnablementsForOrg({ db, orgId: 'org-1', includeOff: true }),
 	).toMatchObject([{ id: created.id, state: 'off' }])
-})
-
-test('an org with no migration row reads as legacy and can be notified once', async () => {
-	const db = setup()
-	expect(await getEnablementOrgMigration({ db, orgId: 'org-1' })).toEqual({
-		orgId: 'org-1',
-		state: 'legacy',
-		noticeSentAt: null,
-		noticePlan: {},
-		migratedAt: null,
-	})
-	await saveEnablementNoticePlan({
-		db,
-		orgId: 'org-1',
-		plan: { 'user-1': ['cron\u0000job-1\u0000digest'] },
-		now: 'first',
-	})
-	expect(await getEnablementOrgMigration({ db, orgId: 'org-1' })).toMatchObject(
-		{
-			state: 'legacy',
-			noticePlan: { 'user-1': ['cron\u0000job-1\u0000digest'] },
-		},
-	)
-	expect(
-		await markEnablementOrgNotified({ db, orgId: 'org-1', now: 'first' }),
-	).toBe(true)
-	expect(
-		await markEnablementOrgNotified({ db, orgId: 'org-1', now: 'second' }),
-	).toBe(false)
-	expect(await getEnablementOrgMigration({ db, orgId: 'org-1' })).toMatchObject(
-		{ state: 'notified', noticeSentAt: 'first' },
-	)
 })
