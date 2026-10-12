@@ -390,6 +390,69 @@ test('fetch gateway fills placeholders in JSON, form, and text bodies on an allo
 	expect(await send('application/json', untouched)).toBe(untouched)
 })
 
+test('fetch gateway fills placeholders in one pass across headers, URL, and body', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) => {
+			if (name === 'token') {
+				return userSecret('{{secret:apiKey}}', ['api.example.com'])
+			}
+			return userSecret(`${name}-value`, ['api.example.com'])
+		},
+	)
+
+	const expanded = await expand(
+		new Request(
+			'https://api.example.com/v1/{{secret:pathToken}}?q={{secret:queryToken}}',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer {{secret:token}}',
+					'X-Extra': '{{secret:apiKey}}',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					token: '{{secret:token}}',
+					key: '{{secret:apiKey}}',
+				}),
+			},
+		),
+	)
+	// Nested {{secret:apiKey}} inside token's stored value stays literal even
+	// though apiKey is also a top-level placeholder on this request.
+	expect(expanded.headers.get('Authorization')).toBe('Bearer {{secret:apiKey}}')
+	expect(expanded.headers.get('X-Extra')).toBe('apiKey-value')
+	expect(expanded.url).toBe(
+		'https://api.example.com/v1/pathToken-value?q=queryToken-value',
+	)
+	expect(JSON.parse(await expanded.text())).toEqual({
+		token: '{{secret:apiKey}}',
+		key: 'apiKey-value',
+	})
+})
+
+test('fetch gateway fills integration-token placeholders without nested expansion', async () => {
+	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
+		async ({ credential }) => {
+			expect(credential).toMatchObject({
+				use: 'integration-token',
+				name: 'github',
+				requestHost: 'api.github.com',
+			})
+			return '{{secret:apiKey}}'
+		},
+	)
+	const sent = await expand(
+		new Request('https://api.github.com/user', {
+			headers: {
+				Authorization: 'Bearer {{integration-token:github}}',
+				'X-Also': '{{integration-token:github}}',
+			},
+		}),
+	)
+	expect(sent.headers.get('Authorization')).toBe('Bearer {{secret:apiKey}}')
+	expect(sent.headers.get('X-Also')).toBe('{{secret:apiKey}}')
+})
+
 test('fetch gateway fills integration tokens in the body against the integration hosts', async () => {
 	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
 		async ({ credential }) => {
