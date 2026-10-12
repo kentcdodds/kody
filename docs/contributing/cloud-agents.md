@@ -272,6 +272,27 @@ token into chat. Guide: [Local CLI execute](../guides/local-execute.md). Skill:
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
 Open API fallback: [Open API](../guides/open-api.md).
 
+### CLI against a PR preview
+
+A preview deploys the Open API edge as its own worker,
+`https://kody-pr-<n>-api.kody-a99.workers.dev`, next to the app origin
+`https://kody-pr-<n>.kody-a99.workers.dev`. The CLI (`auth bootstrap`,
+`execute --local`, `api`) needs that `-api` host. The app origin answers `/v1/*`
+with an HTML 404, so `auth bootstrap` against it fails with
+`Bootstrap redeem failed (HTTP 404)` and burns the code.
+`npm run control-kody -- preview --pr <n>` prints the host as `API:` plus an
+`export KODY_API_URL=…` line (`snapshot.apiUrl` with `--json`). Mint the
+bootstrap code on the same preview, then pass the host with `--api-url` or the
+exported `KODY_API_URL`:
+
+```bash
+export KODY_API_URL=https://kody-pr-<n>-api.kody-a99.workers.dev
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
+```
+
+`control-kody execute --origin <preview>` is different: it calls the preview's
+`/mcp` (OAuth through the seed login) and never touches the API host.
+
 ## Seeding a test account
 
 After `npm run migrate:local`, seed the local fixture logins per
