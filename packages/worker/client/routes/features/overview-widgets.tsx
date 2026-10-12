@@ -72,7 +72,7 @@ function controlButton(options: {
 	)
 }
 
-export function MemoryWidget(handle: Handle) {
+function MemoryWidget(handle: Handle) {
 	let agent: MemoryAgentId = 'cursor'
 	let shot = 0
 	return () => {
@@ -97,7 +97,7 @@ export function MemoryWidget(handle: Handle) {
 	}
 }
 
-export function SecretsWidget(handle: Handle) {
+function SecretsWidget(handle: Handle) {
 	let host: SecretHostId = 'approved'
 	let shot = 0
 	return () => {
@@ -130,7 +130,7 @@ export function SecretsWidget(handle: Handle) {
 	}
 }
 
-export function PackagesWidget(handle: Handle) {
+function PackagesWidget(handle: Handle) {
 	let version = 0
 	return () =>
 		demo({
@@ -151,7 +151,7 @@ export function PackagesWidget(handle: Handle) {
 		})
 }
 
-export function TriggersWidget(handle: Handle) {
+function TriggersWidget(handle: Handle) {
 	let runs = 12
 	let fired: TriggerSourceId | null = null
 	let shot = 0
@@ -178,7 +178,7 @@ export function TriggersWidget(handle: Handle) {
 	}
 }
 
-export function IntegrationsWidget(handle: Handle) {
+function IntegrationsWidget(handle: Handle) {
 	let account: IntegrationAccountId = 'work'
 	let shot = 0
 	return () => {
@@ -200,7 +200,7 @@ export function IntegrationsWidget(handle: Handle) {
 	}
 }
 
-export function AppsWidget(handle: Handle) {
+function AppsWidget(handle: Handle) {
 	let prompt: AppPromptId = 'intake'
 	let shot = 0
 	return () => {
