@@ -671,8 +671,7 @@ async function findSecretEntry(input: ResolveSecretInput) {
 				bucketId: bucket.id,
 				name: input.name,
 			})
-			// A later kind places its own value; a placeholder never fills it.
-			if (!entry || entry.kind !== 'secret') return null
+			if (!entry) return null
 			if (!input.includeExpired && isSecretExpired(entry.expires_at)) {
 				return null
 			}
@@ -719,13 +718,15 @@ export async function findSecret(
 /**
  * One lookup for `resolveCredential`: the metadata it authorizes on, and a
  * `readValue` that decrypts only when the door calls it after authorizing.
+ * Only a `secret` is found: a later kind places its own value through its
+ * resolver, so a placeholder never fills it.
  */
 export async function findSecretForUse(input: ResolveSecretInput): Promise<{
 	found: FoundSecret
 	readValue: () => Promise<ResolvedSecret>
 }> {
 	const found = await findSecretEntry(input)
-	if (!found) {
+	if (!found || found.entry.kind !== 'secret') {
 		const missing: ResolvedSecret = {
 			found: false,
 			credentialId: null,

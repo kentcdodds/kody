@@ -100,6 +100,23 @@ function readCredentialUrl(value: string, hosts: ReadonlyArray<string>) {
 	return base
 }
 
+/**
+ * Strings the gateway redacts from errors and response URLs: the stored URL,
+ * the request URL it was joined into, and the stored path and query on their
+ * own, since joining puts the code's path between them.
+ */
+function echoedForms(value: string, base: URL, url: URL) {
+	const forms = [
+		value.trim(),
+		base.href,
+		url.href,
+		`${base.origin}${base.pathname}`,
+		base.pathname,
+		base.search,
+	]
+	return [...new Set(forms.filter((form) => form.length >= 8))]
+}
+
 export const urlCredentialResolver: CredentialResolver<'url'> = {
 	auditSubject: (credential) => ({
 		use: credential.use,
@@ -129,15 +146,7 @@ export const urlCredentialResolver: CredentialResolver<'url'> = {
 				const base = readCredentialUrl(value, hosts)
 				const url = joinCredentialUrl(base, credential.path)
 				call.subject.details = { host: url.hostname }
-				const pathAndQuery = `${base.pathname}${base.search}`
-				return {
-					url,
-					substitutedValues: [
-						value.trim(),
-						base.href,
-						...(pathAndQuery.length >= 8 ? [pathAndQuery] : []),
-					],
-				}
+				return { url, substitutedValues: echoedForms(value, base, url) }
 			},
 		}
 	},

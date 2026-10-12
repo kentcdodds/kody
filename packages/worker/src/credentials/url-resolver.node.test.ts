@@ -20,7 +20,7 @@ import {
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { findSecret, saveSecret } from '#mcp/secrets/service.ts'
 import {
 	CredentialNotFoundError,
 	CredentialRequestRefusedError,
@@ -343,6 +343,42 @@ test('a secret is not a url credential, and placeholders never fill a url creden
 	})
 	expect(placeholder.found).toBe(false)
 	expect(valueReads.count).toBe(0)
+	// Existence and grant checks still see it, so a delete by name is held to
+	// the same package grant as any credential.
+	await expect(
+		findSecret({
+			env: t.env,
+			userId: t.acmeId,
+			name: 'deploy-hook',
+			scope: 'user',
+		}),
+	).resolves.toMatchObject({ found: true })
+})
+
+test('the gateway redacts the joined request URL and the stored path and query', async () => {
+	const t = await setup()
+	const value = 'https://hooks.example.com/bot123:secret-token?key=query-secret'
+	const id = await t.storeCredential({
+		ownerId: t.acmeId,
+		name: 'bot',
+		value,
+	})
+	const resolved = await t.resolveUrl({
+		actor: t.requestAs('bea', 'owner'),
+		credentialId: id,
+		path: '/sendMessage?chat_id=5',
+	})
+	expect(resolved.url.href).toBe(
+		'https://hooks.example.com/bot123:secret-token/sendMessage?key=query-secret&chat_id=5',
+	)
+	expect(resolved.substitutedValues).toEqual(
+		expect.arrayContaining([
+			value,
+			resolved.url.href,
+			'/bot123:secret-token',
+			'?key=query-secret',
+		]),
+	)
 })
 
 test("a personal url credential works only in its owner's runs, through a live org grant", async () => {
