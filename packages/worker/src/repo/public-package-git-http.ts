@@ -661,6 +661,7 @@ async function resolveAuthenticatedGitTarget(input: {
 	kodyId: string
 	apiToken: string
 	needWrite: boolean
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<
 	| { kind: 'ok'; target: ProxiedGitTarget }
 	| { kind: 'not_found' }
@@ -719,7 +720,12 @@ async function resolveAuthenticatedGitTarget(input: {
 
 	const slid = slideApiTokenExpiry(record, new Date())
 	if (slid) {
-		void touchApiToken({ db: input.env.APP_DB, record: slid }).catch(() => {})
+		const touch = touchApiToken({
+			db: input.env.APP_DB,
+			record: slid,
+		}).catch(() => {})
+		if (input.waitUntil) input.waitUntil(touch)
+		else void touch
 	}
 
 	const access = await resolveGitHttpTargetAccess({
@@ -803,6 +809,7 @@ async function resolveGitHttpProxyTarget(input: {
 	kodyId: string
 	authorization: string | null
 	needWrite: boolean
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<
 	| { kind: 'ok'; target: ProxiedGitTarget }
 	| { kind: 'not_found' }
@@ -822,6 +829,7 @@ async function resolveGitHttpProxyTarget(input: {
 			kodyId: input.kodyId,
 			apiToken: credential.token,
 			needWrite: input.needWrite,
+			waitUntil: input.waitUntil,
 		})
 	}
 	if (credential.kind === 'invalid') {
@@ -887,6 +895,7 @@ function responseForGitResolve(
 export async function handlePublicPackageGitHttpRequest(
 	request: Request,
 	env: Env,
+	waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Response | null> {
 	const url = new URL(request.url)
 	const parsed = parsePublicPackageGitHttpPath(url.pathname)
@@ -909,6 +918,7 @@ export async function handlePublicPackageGitHttpRequest(
 			kodyId: parsed.kodyId,
 			authorization: request.headers.get('Authorization'),
 			needWrite: true,
+			waitUntil,
 		})
 		if (resolved.kind === 'redirect') {
 			const location = new URL(resolved.to, url.origin)
@@ -948,6 +958,7 @@ export async function handlePublicPackageGitHttpRequest(
 			kodyId: parsed.kodyId,
 			authorization: request.headers.get('Authorization'),
 			needWrite,
+			waitUntil,
 		})
 		if (resolved.kind === 'redirect') {
 			const location = new URL(resolved.to, url.origin)
@@ -1044,6 +1055,7 @@ export async function handlePublicPackageGitHttpRequest(
 			kodyId: parsed.kodyId,
 			authorization: request.headers.get('Authorization'),
 			needWrite: false,
+			waitUntil,
 		})
 		if (resolved.kind === 'redirect') {
 			return Response.redirect(new URL(resolved.to, url.origin).toString(), 301)
