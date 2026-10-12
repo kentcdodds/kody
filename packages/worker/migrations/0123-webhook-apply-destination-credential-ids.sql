@@ -4,11 +4,12 @@
 -- credential id; these approvals follow. The destination shape (method, url,
 -- headers, body — including host) stays in the fingerprint as today.
 --
--- Backfill matches apply's webhook-secret lookup: live, unexpired, kind=secret,
--- package scope for the grant's package_id first, then user scope. Integrations
--- match by lower(trim(name)) (canonical casing). Orphans are dropped so a later
--- recreate cannot inherit them. Runtime dual-reads legacy fingerprints and
--- rewrites them on first use so nothing currently working needs re-approval.
+-- Backfill matches apply's webhook-secret lookup: live, unexpired entry and
+-- bucket, kind=secret, package scope for the grant's package_id first, then
+-- user scope. Integrations match by lower(trim(name)) (canonical casing).
+-- Orphans are dropped so a later recreate cannot inherit them. Runtime
+-- dual-reads legacy fingerprints and rewrites them on first use so nothing
+-- currently working needs re-approval.
 
 ALTER TABLE webhook_apply_destination_pending
 	ADD COLUMN credential_id TEXT;
@@ -29,6 +30,7 @@ SET credential_id = (
 		AND e.deleted_at IS NULL
 		AND b.deleted_at IS NULL
 		AND (e.expires_at IS NULL OR e.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		AND (b.expires_at IS NULL OR b.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	LIMIT 1
 )
 WHERE json_extract(destination_json, '$.secretName') IS NOT NULL
@@ -47,6 +49,7 @@ SET credential_id = (
 		AND e.deleted_at IS NULL
 		AND b.deleted_at IS NULL
 		AND (e.expires_at IS NULL OR e.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		AND (b.expires_at IS NULL OR b.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	LIMIT 1
 )
 WHERE json_extract(destination_json, '$.secretName') IS NOT NULL
@@ -65,6 +68,7 @@ SET credential_id = (
 		AND e.deleted_at IS NULL
 		AND b.deleted_at IS NULL
 		AND (e.expires_at IS NULL OR e.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		AND (b.expires_at IS NULL OR b.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	LIMIT 1
 )
 WHERE credential_id IS NULL
@@ -84,6 +88,7 @@ SET credential_id = (
 		AND e.deleted_at IS NULL
 		AND b.deleted_at IS NULL
 		AND (e.expires_at IS NULL OR e.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		AND (b.expires_at IS NULL OR b.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	LIMIT 1
 )
 WHERE credential_id IS NULL

@@ -274,9 +274,10 @@ async function lookupLiveSecretCredentialId(input: {
 				AND e.name = ? AND e.kind = 'secret'
 				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
 			LIMIT 1`,
 		)
-		.bind(input.userId, input.packageId, input.secretName, now)
+		.bind(input.userId, input.packageId, input.secretName, now, now)
 		.first<{ id: string }>()
 	if (packageRow?.id) return packageRow.id
 	const userRow = await input.db
@@ -288,9 +289,10 @@ async function lookupLiveSecretCredentialId(input: {
 				AND e.name = ? AND e.kind = 'secret'
 				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
 			LIMIT 1`,
 		)
-		.bind(input.userId, input.secretName, now)
+		.bind(input.userId, input.secretName, now, now)
 		.first<{ id: string }>()
 	return userRow?.id ?? null
 }
