@@ -708,3 +708,20 @@ test('0010 flags |scope= when the suffix is a later concatenated piece', () => {
 		),
 	).toContain('|scope=')
 })
+
+test('0010 does not resolve a constructor parameter property as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default class Runner {',
+				'\tconstructor(public NAME: string) {',
+				'\t\tcreateAuthenticatedFetch(NAME)',
+				'\t}',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})

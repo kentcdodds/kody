@@ -169,6 +169,7 @@ export type AstNode = ModuleAstNode & {
 	elements?: Array<AstNode | null | undefined>
 	argument?: AstNode
 	param?: AstNode
+	parameter?: AstNode
 	consequent?: Array<AstNode>
 	kind?: unknown
 	program?: { body?: Array<AstNode> }
@@ -327,6 +328,9 @@ function collectBoundNames(
 			return
 		case 'RestElement':
 			collectBoundNames(pattern.argument, names)
+			return
+		case 'TSParameterProperty':
+			collectBoundNames(pattern.parameter, names)
 			return
 		case 'ObjectPattern':
 			for (const property of pattern.properties ?? []) {
