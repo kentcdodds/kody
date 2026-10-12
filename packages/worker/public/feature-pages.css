@@ -2443,6 +2443,13 @@
 	text-decoration: none;
 	font-size: 13px;
 }
+.feature-overview .together .actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1.25rem;
+	margin-top: 12px;
+}
 .feature-overview .cta {
 	display: inline-block;
 	background: var(--accent);
@@ -2451,7 +2458,6 @@
 	padding: 12px 18px;
 	text-decoration: none;
 	font-weight: 600;
-	margin-top: 12px;
 }
 .feature-overview .changed {
 	animation: change 0.4s ease-out;

@@ -179,10 +179,12 @@ export function FeaturesOverview() {
 					<span aria-hidden="true">→</span>
 					<a href="/features/apps">Review in your app</a>
 				</div>
-				<a class="cta" href="/onboarding">
-					Connect your agent
-				</a>
-				<BuildWithAgentButton />
+				<div class="actions">
+					<a class="cta" href="/onboarding">
+						Connect your agent
+					</a>
+					<BuildWithAgentButton />
+				</div>
 			</section>
 		</div>
 	)
