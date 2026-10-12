@@ -36,6 +36,11 @@ test('isRetryableWorkersDevSubdomainRace requires a successful upload then 10007
 			'Received a malformed response from the API\nupstream connect error or disconnect/reset before headers',
 		),
 	).toBe(true)
+	expect(
+		isRetryableWranglerDeployFailure(
+			'Received a malformed response from the API\nGET /accounts/acct/workers/scripts/kody-platform/deployments -> 200 OK',
+		),
+	).toBe(true)
 	expect(isRetryableWranglerDeployFailure(wranglerD1FetchFailedLog)).toBe(true)
 	expect(
 		isRetryableWranglerDeployFailure(

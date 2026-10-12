@@ -174,6 +174,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			false,
 		],
 		[
+			isRetryableCloudflareFailure,
+			'Received a malformed response from the API\nGET /accounts/acct/workers/scripts/kody-platform/deployments -> 200 OK',
+			true,
+		],
+		[
 			isPermanentCloudflareAuthFailure,
 			'Authentication error [code: 10000]',
 			true,
