@@ -1,32 +1,33 @@
 import { afterAll } from 'vitest'
 import { stopSharedMcpE2eServer } from './mcp-test-support.ts'
 
-type VitestWorkerState = {
-	filepath?: string
-	ctx?: {
-		files?: Array<string | { filepath?: string }>
+const teardownKey = Symbol.for('kody.mcpE2e.teardownRegistered')
+
+type TeardownGlobal = typeof globalThis & {
+	[teardownKey]?: boolean
+	__vitest_worker__?: {
+		onCleanup?: (listener: () => unknown) => void
 	}
 }
 
 /**
- * Shared Wrangler harness teardown. Vitest setupFiles re-import per file
- * (even with isolate: false), so afterAll registers for each file. Stop only
- * after the last file in this worker's run — earlier stops would cold-boot
- * the harness again and undo the shared-server win. Vitest awaits afterAll;
- * process `beforeExit` does not run when the pool exits via process.exit()
- * while Miniflare still holds the event loop.
+ * Shared Wrangler harness teardown. Prefer Vitest worker `onCleanup` (awaited
+ * once when the worker finishes all files). Process `beforeExit` does not run
+ * when the pool exits via process.exit() while Miniflare still holds the
+ * event loop. If `onCleanup` is unavailable, fall back to per-file `afterAll`
+ * so dispose still runs (the harness may cold-boot between files).
  */
-afterAll(async () => {
-	const worker = (
-		globalThis as typeof globalThis & {
-			__vitest_worker__?: VitestWorkerState
-		}
-	).__vitest_worker__
-	const files = worker?.ctx?.files ?? []
-	const paths = files.map((file) =>
-		typeof file === 'string' ? file : (file.filepath ?? ''),
-	)
-	const current = worker?.filepath
-	if (paths.length > 0 && current && paths.at(-1) !== current) return
-	await stopSharedMcpE2eServer()
-})
+const teardownGlobal = globalThis as TeardownGlobal
+if (!teardownGlobal[teardownKey]) {
+	teardownGlobal[teardownKey] = true
+	const onCleanup = teardownGlobal.__vitest_worker__?.onCleanup
+	if (typeof onCleanup === 'function') {
+		onCleanup(async () => {
+			await stopSharedMcpE2eServer()
+		})
+	} else {
+		afterAll(async () => {
+			await stopSharedMcpE2eServer()
+		})
+	}
+}
