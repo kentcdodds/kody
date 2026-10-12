@@ -796,6 +796,15 @@ export function deriveSiblingWorkerUrl(
 	}
 }
 
+function sameOrigin(a: string, b: string | null) {
+	if (!b) return false
+	try {
+		return new URL(a).origin === new URL(b).origin
+	} catch {
+		return false
+	}
+}
+
 export function cookieHeaderFromSetCookie(
 	setCookieValues: ReadonlyArray<string>,
 ): string {
@@ -1390,12 +1399,23 @@ async function loadSnapshot(
 		(previewUrl && workerName && platformWorkerName
 			? deriveSiblingWorkerUrl(previewUrl, workerName, platformWorkerName)
 			: null)
+	// The CLI must redeem on the same preview the smoke tests, so a `--url`
+	// that overrides the comment's preview ignores the comment's API host.
+	const apiFromComment =
+		parsed?.apiUrl &&
+		(!options.previewUrl || sameOrigin(options.previewUrl, parsed.previewUrl))
+			? parsed
+			: null
+	const previewWorkerName = previewUrl
+		? workerNameFromPreviewUrl(previewUrl)
+		: null
 	const apiWorkerName =
-		parsed?.apiWorkerName ?? (workerName ? `${workerName}-api` : null)
+		apiFromComment?.apiWorkerName ??
+		(previewWorkerName ? `${previewWorkerName}-api` : null)
 	const apiUrl =
-		parsed?.apiUrl ??
-		(previewUrl && workerName && apiWorkerName
-			? deriveSiblingWorkerUrl(previewUrl, workerName, apiWorkerName)
+		apiFromComment?.apiUrl ??
+		(previewUrl && previewWorkerName && apiWorkerName
+			? deriveSiblingWorkerUrl(previewUrl, previewWorkerName, apiWorkerName)
 			: null)
 
 	return {

@@ -279,9 +279,10 @@ A preview deploys the Open API edge as its own worker,
 `https://kody-pr-<n>.kody-a99.workers.dev`. The CLI (`auth bootstrap`,
 `execute --local`, `api`) needs that `-api` host. The app origin answers `/v1/*`
 with an HTML 404, so `auth bootstrap` against it fails with
-`Bootstrap redeem failed (HTTP 404)` and burns the code.
-`npm run control-kody -- preview --pr <n>` prints the host as `API:` plus an
-`export KODY_API_URL=…` line (`snapshot.apiUrl` with `--json`). Mint the
+`Bootstrap redeem failed (HTTP 404)`. That 404 comes before redemption, so the
+code is still unused; retry it against the API host instead of minting a new
+one. `npm run control-kody -- preview --pr <n>` prints the host as `API:` plus
+an `export KODY_API_URL=…` line (`snapshot.apiUrl` with `--json`). Mint the
 bootstrap code on the same preview, then pass the host with `--api-url` or the
 exported `KODY_API_URL`:
 
