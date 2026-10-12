@@ -627,6 +627,8 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	let headers = {};
 	let bodyBytes = null;
 	let streamingBody = null;
+	// True when the stream hop is required to fill (known placeholders / multipart).
+	let streamingBodyNeedsFill = false;
 	// Prefer ambient fetch(input, init) when nothing consumed the original
 	// body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
@@ -655,6 +657,8 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					);
 				}
 				streamingBody = body;
+				// Caller streams are opaque; the gateway hop fills when needed.
+				streamingBodyNeedsFill = true;
 			} else if (
 				typeof Blob !== "undefined" &&
 				body instanceof Blob &&
@@ -671,6 +675,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				method = encoded.method;
 				headers = Object.fromEntries(encoded.headers.entries());
 				streamingBody = body.stream();
+				streamingBodyNeedsFill = true;
 				reuseOriginal = false;
 			} else if (
 				__kodyRequestHasSecretPlaceholders(url, headers) ||
@@ -717,6 +722,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					);
 				}
 				streamingBody = merged.body;
+				streamingBodyNeedsFill = true;
 				reuseOriginal = false;
 			} else {
 				// String, bytes, and URLSearchParams become streams inside a
@@ -755,21 +761,49 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				},
 			});
 		}
-		// Older CLI hosts: keep native streaming when URL/headers need no fill.
-		// Body placeholders will not fill until the host gains gatewayFetchStream.
-		if (__kodyRequestHasSecretPlaceholders(url, headers)) {
-			throw __kodyStreamingHostMissingError();
+		// Older CLI: never forward a body that needs fill unfilled. Buffer to
+		// classify — JSON hop under 4 MiB, otherwise require gatewayFetchStream.
+		if (
+			streamingBodyNeedsFill ||
+			__kodyRequestHasSecretPlaceholders(url, headers)
+		) {
+			const buffered = new Uint8Array(
+				await new Response(streamingBody).arrayBuffer(),
+			);
+			if (
+				__kodyRequestHasSecretPlaceholders(url, headers) ||
+				__kodyBytesHoldPlaceholder(buffered) ||
+				__kodyIsMultipartType(headers["content-type"])
+			) {
+				if (buffered.byteLength > __kodyGatewayFetchMaxBufferedBodyBytes) {
+					throw __kodyStreamingHostMissingError();
+				}
+				bodyBytes = buffered;
+				streamingBody = null;
+			} else {
+				return __kodyNativeFetch(
+					url,
+					__kodyNativeStreamInit({
+						method,
+						headers,
+						body: buffered,
+						input,
+						init,
+					}),
+				);
+			}
+		} else {
+			return __kodyNativeFetch(
+				url,
+				__kodyNativeStreamInit({
+					method,
+					headers,
+					body: streamingBody,
+					input,
+					init,
+				}),
+			);
 		}
-		return __kodyNativeFetch(
-			url,
-			__kodyNativeStreamInit({
-				method,
-				headers,
-				body: streamingBody,
-				input,
-				init,
-			}),
-		);
 	}
 	if (bodyBytes == null && !__kodyRequestHasSecretPlaceholders(url, headers)) {
 		if (reuseOriginal) {

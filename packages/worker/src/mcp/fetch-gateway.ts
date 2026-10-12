@@ -29,7 +29,10 @@ import {
 	type PlaceholderReferenceBatch,
 	type PlaceholderStreamBodyFormat,
 } from '#mcp/secrets/placeholder-stream-fill.ts'
-import { EncodedPlaceholderError } from '#mcp/secrets/encoded-placeholder.ts'
+import {
+	EncodedPlaceholderError,
+	holdsUnfilledEncodedPlaceholder,
+} from '#mcp/secrets/encoded-placeholder.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
@@ -581,13 +584,19 @@ export async function expandSecretPlaceholders(input: {
 	let nextBody: ReadableStream<Uint8Array> | null = sourceBody
 	let bodyFillDone: Promise<void> = Promise.resolve()
 
+	let bodyMayHoldCredentials = false
 	if (fillsUrlAndBody && sourceBody) {
 		const { format, body: classifiedBody } = await classifyStreamingBody({
 			body: sourceBody,
 			contentType: headers.get('content-type'),
 		})
+		// Peek before fill so body-only secrets force manual redirects without
+		// disabling follow for ordinary bodies that have no credential opener
+		// in the first chunk.
+		const peeked = await peekCredentialOpenerInStream(classifiedBody)
+		bodyMayHoldCredentials = peeked.mayHold
 		const fill = createPlaceholderFillStream({
-			source: classifiedBody,
+			source: peeked.body,
 			format,
 			replacements,
 			allowPercentEncoded: format === 'form',
@@ -624,13 +633,8 @@ export async function expandSecretPlaceholders(input: {
 		nextBody = sourceBody
 	}
 
-	// Body placeholders resolve while the upload streams, so body-only
-	// credentials are not yet in `referencedAnyCredential` when redirect is
-	// chosen. Any fillable body must not auto-follow (307/308 would replay
-	// filled credentials to an unapproved host).
-	const mayFillBodyCredentials = fillsUrlAndBody && sourceBody != null
 	const nextRedirect =
-		(referencedAnyCredential || mayFillBodyCredentials) &&
+		(referencedAnyCredential || bodyMayHoldCredentials) &&
 		input.request.redirect === 'follow'
 			? 'manual'
 			: input.request.redirect
@@ -650,6 +654,62 @@ export async function expandSecretPlaceholders(input: {
 		}),
 		substitutedValues,
 		bodyFillDone,
+	}
+}
+
+/**
+ * Read one chunk for a credential-shaped opener, then rebuild a pull stream
+ * that starts with that chunk (backpressured).
+ */
+async function peekCredentialOpenerInStream(
+	body: ReadableStream<Uint8Array>,
+): Promise<{ mayHold: boolean; body: ReadableStream<Uint8Array> }> {
+	const reader = body.getReader()
+	const first = await reader.read()
+	if (first.done || !first.value) {
+		reader.releaseLock()
+		return {
+			mayHold: false,
+			body: new ReadableStream({
+				start(controller) {
+					controller.close()
+				},
+			}),
+		}
+	}
+	const prefix = first.value
+	const text = new TextDecoder('latin1').decode(prefix)
+	const mayHold =
+		holdsPlaceholder(text) ||
+		holdsUnfilledEncodedPlaceholder(text) ||
+		text.includes('{{secret') ||
+		text.includes('{{integration-token') ||
+		/%7B%7B(?:secret|integration-token)/i.test(text)
+	let emittedPrefix = false
+	return {
+		mayHold,
+		body: new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				try {
+					if (!emittedPrefix) {
+						emittedPrefix = true
+						controller.enqueue(prefix)
+						return
+					}
+					const { done, value } = await reader.read()
+					if (done) {
+						controller.close()
+						return
+					}
+					controller.enqueue(value)
+				} catch (error) {
+					controller.error(error)
+				}
+			},
+			cancel(reason) {
+				return reader.cancel(reason)
+			},
+		}),
 	}
 }
 

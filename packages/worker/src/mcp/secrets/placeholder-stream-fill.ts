@@ -229,37 +229,34 @@ function streamingHoldBytes(text: string): {
 		return { reject: null, hold: trailing }
 	}
 
-	candidates.sort((a, b) => a.start - b.start)
-	const first = candidates[0]!
-	const tail = rest.slice(first.start)
-	const closed =
-		first.kind === 'literal'
-			? tail.includes('}}')
-			: first.kind === 'percent'
-				? tail.toUpperCase().includes('%7D%7D')
-				: false
-	if (closed) {
-		return {
-			reject: null,
-			hold: rest.endsWith('{') || rest.toUpperCase().endsWith('%') ? 1 : 0,
+	// Rightmost holdable unclosed opener wins. An earlier closed or non-secret
+	// `%…` must not hide a later `{{secret` split across the next chunk.
+	candidates.sort((a, b) => b.start - a.start)
+	for (const candidate of candidates) {
+		const tail = rest.slice(candidate.start)
+		const closed =
+			candidate.kind === 'literal'
+				? tail.includes('}}')
+				: candidate.kind === 'percent'
+					? tail.toUpperCase().includes('%7D%7D')
+					: false
+		if (closed) continue
+		const couldBe =
+			candidate.kind === 'literal'
+				? unclosedCouldBeLiteralSecret(tail)
+				: candidate.kind === 'percent'
+					? unclosedCouldBePercentSecret(tail)
+					: true
+		if (!couldBe) continue
+		if (tail.length > placeholderStreamHoldLimitBytes) {
+			return { reject: 'window', hold: 0 }
 		}
+		return { reject: null, hold: tail.length }
 	}
-	const couldBe =
-		first.kind === 'literal'
-			? unclosedCouldBeLiteralSecret(tail)
-			: first.kind === 'percent'
-				? unclosedCouldBePercentSecret(tail)
-				: true
-	if (!couldBe) {
-		return {
-			reject: null,
-			hold: rest.endsWith('{') || rest.toUpperCase().endsWith('%') ? 1 : 0,
-		}
+	return {
+		reject: null,
+		hold: rest.endsWith('{') || rest.toUpperCase().endsWith('%') ? 1 : 0,
 	}
-	if (tail.length > placeholderStreamHoldLimitBytes) {
-		return { reject: 'window', hold: 0 }
-	}
-	return { reject: null, hold: tail.length }
 }
 
 function eofHasUnresolvedSecret(text: string) {

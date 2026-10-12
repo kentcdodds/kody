@@ -52,6 +52,18 @@ test('stream fill joins a placeholder split across chunks', async () => {
 	expect(fill.substitutedValues).toContain('s3cret')
 })
 
+test('stream fill holds a later literal opener after an earlier percent fragment', async () => {
+	const replacements = new Map([['{{secret:token}}', 'ok']])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['price=100% {{sec', 'ret:token}}']),
+		format: 'text',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe('price=100% ok')
+	await fill.done
+})
+
 test('stream fill fills a multipart text part', async () => {
 	const boundary = '----Bound'
 	const replacements = new Map([['{{secret:token}}', 'filled-token']])
