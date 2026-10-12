@@ -47,7 +47,12 @@ export function parseGitCredentialRepoPath(path: string): {
 	const ownerPart = parts[0] ?? ''
 	const repoPart = parts[1] ?? ''
 	const ownerHandle = ownerPart.startsWith('@') ? ownerPart.slice(1) : ownerPart
-	const repoSegment = decodeURIComponent(repoPart)
+	let repoSegment: string
+	try {
+		repoSegment = decodeURIComponent(repoPart)
+	} catch {
+		return null
+	}
 	if (!ownerHandle || !repoSegment.toLowerCase().endsWith('.git')) return null
 	const repoName = repoSegment.slice(0, -'.git'.length)
 	if (!repoName || !kodyPackageIdPattern.test(repoName)) return null
