@@ -831,6 +831,7 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 		message: expect.stringContaining('no_such_table'),
 	})
 	expect(calls).toContain(`backup:${result.failure?.backup_key}`)
+	expect(result.backupKey).toBe(result.failure?.backup_key)
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 	const undo = calls.slice(calls.indexOf(`transferJobs:${src}->${dst}:1`) + 1)
 	expect(undo).toEqual([
@@ -843,6 +844,38 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 		`deleteLogo:user-oauth-app-logos/${dst}/myapp.png`,
 	])
 	expectNoSecretMaterial(JSON.stringify(result), sqlite)
+})
+
+test('a failed backup write still names the backup key it tried', async () => {
+	const { db } = await seed()
+	const calls: Calls = []
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
+			db,
+			calls,
+			backups: [],
+			overrides: {
+				writeBackup: async () => {
+					throw new Error('Org transfer backup did not verify.')
+				},
+			},
+		}),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(result.failure).toEqual({
+		committed: false,
+		failed_step: 'backup',
+		backup_key: expect.stringMatching(
+			new RegExp(`^org-resource-transfers/${src}/${dst}/`),
+		),
+		message: 'Org transfer backup did not verify.',
+	})
+	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
 })
 
 test('a compensation that fails is reported as failed_undo', async () => {

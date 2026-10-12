@@ -83,9 +83,11 @@ export async function runOrgTransferPostCommit(input: {
 	for (const row of plan.moves.mcp_server_settings) {
 		const serverId = String(row['id'])
 		const name = String(row['name'])
-		await step(`remove source MCP server ${name}`, () =>
-			sourceHub.removeServerForTransfer({ serverId }),
-		)
+		let sourceRemoved = false
+		await step(`remove source MCP server ${name}`, async () => {
+			await sourceHub.removeServerForTransfer({ serverId })
+			sourceRemoved = true
+		})
 		let result: McpHubConnectResult | null = null
 		await step(`connect MCP server ${name}`, async () => {
 			result = await targetHub.connectTransferredServer({ serverId })
@@ -94,6 +96,7 @@ export async function runOrgTransferPostCommit(input: {
 			describeOrgTransferMcpConnection({
 				serverId,
 				name,
+				sourceRemoved,
 				result,
 				appOrigin: input.baseUrl,
 				toSlug: plan.to.slug,

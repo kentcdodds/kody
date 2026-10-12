@@ -63,7 +63,10 @@ orphans, clashes, blockers, and warnings. It never returns row values.
   listed in `packages/worker/src/org-transfer/findings.ts`.
 - `refusals`: the findings apply would refuse on (see the list that follows).
 - `fingerprint`: SHA-256 of the summary, with keys and list entries sorted. The
-  same plan always has the same fingerprint.
+  same plan always has the same fingerprint. It covers what an operator can
+  review (names, counts, destinations, findings), not values: secrets, tokens,
+  and storage contents move as they are when apply runs. Integration tokens
+  refresh on their own, so a fingerprint over values would drift constantly.
 
 Apply refuses when the plan has any of these:
 
@@ -136,10 +139,14 @@ failure: {
 	committed: false,
 	failed_step: 'reseal' | 'backup' | 'logo_copy' | 'storage_copy' | 'mcp_import' | 'jobs_transfer' | 'commit',
 	failed_undo?: Array<string>, // undo steps that also failed; finish them by hand
-	backup_key: string | null, // null when the backup was not written yet
+	backup_key: string | null, // null before the backup step; may not exist if the backup step failed
 	message: string,
 }
 ```
+
+The top-level `backup_key` carries the same key. A refused or failed apply is
+audited as a failure, with the step, failed undos, and backup key in the audit
+reason.
 
 Nothing in APP_DB moved. With `failed_undo`, the target may hold stray copies
 (storage, logos, a staged MCP server) that the named steps did not remove.
@@ -160,9 +167,11 @@ The result has `outcome` (`planned`, `refused`, `failed`, or `applied`),
 `storage_copies`, `leftovers`, `post_commit_warnings`, and `mcp_connections`.
 
 `mcp_connections` has one entry per moved MCP server after the target hub dialed
-it: `{ id, name, state, needs_authorization, authorize_url }`. `state` is null
-when the connect step failed. When `needs_authorization` is true,
-`authorize_url` is the Kody consent page in the target org
+it: `{ id, name, source_removed, state, needs_authorization, authorize_url }`.
+`state` is null when the connect step failed. `source_removed: false` means the
+source hub still holds the server, so both hubs may refresh its tokens; remove
+it from the source by hand. When `needs_authorization` is true, `authorize_url`
+is the Kody consent page in the target org
 (`/@<target>/-/mcp-servers/<id>/authorize`), never the provider's URL.
 
 ## What the owner redoes

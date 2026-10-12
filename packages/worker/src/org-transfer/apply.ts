@@ -118,7 +118,8 @@ export type OrgTransferStep = (typeof orgTransferSteps)[number]
  * A failure before the batch committed: nothing moved. `failed_undo` lists
  * side copies that could not be undone (the source still holds its data;
  * the target may hold stray copies). `backup_key` is null when the failure
- * came before the backup was written.
+ * came before the backup step; when the backup step itself failed, the
+ * object may or may not exist.
  */
 export type OrgTransferFailure = {
 	committed: false
@@ -251,7 +252,7 @@ function notApplied(input: {
 		fingerprint: input.fingerprint,
 		refusals: input.refusals,
 		failure: input.failure ?? null,
-		backupKey: null,
+		backupKey: input.failure?.backup_key ?? null,
 		storage: [],
 		leftovers: {},
 		postCommitWarnings: [],
@@ -366,6 +367,7 @@ async function applyUnderLease(input: {
 			toOrgId: to.id,
 			now: startedAt,
 		})
+		backupKey = key
 		await effects.writeBackup({
 			key,
 			backup: buildOrgTransferBackup({
@@ -374,7 +376,6 @@ async function applyUnderLease(input: {
 				createdAt: startedAt.toISOString(),
 			}),
 		})
-		backupKey = key
 
 		step = 'logo_copy'
 		for (const copy of plan.logoCopies) {

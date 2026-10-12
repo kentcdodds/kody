@@ -18,6 +18,7 @@ function connectResult(
 const base = {
 	serverId: 'server-1',
 	name: 'linear',
+	sourceRemoved: true,
 	appOrigin: 'https://kody.example',
 	toSlug: 'haveman',
 }
@@ -33,6 +34,7 @@ test('a server awaiting approval links the Kody consent page, never the provider
 	expect(connection).toEqual({
 		id: 'server-1',
 		name: 'linear',
+		source_removed: true,
 		state: 'authenticating',
 		needs_authorization: true,
 		authorize_url:
@@ -47,6 +49,7 @@ test('a ready server needs nothing, and a failed connect step has no state', () 
 	).toEqual({
 		id: 'server-1',
 		name: 'linear',
+		source_removed: true,
 		state: 'ready',
 		needs_authorization: false,
 		authorize_url: null,
@@ -54,6 +57,7 @@ test('a ready server needs nothing, and a failed connect step has no state', () 
 	expect(describeOrgTransferMcpConnection({ ...base, result: null })).toEqual({
 		id: 'server-1',
 		name: 'linear',
+		source_removed: true,
 		state: null,
 		needs_authorization: false,
 		authorize_url: null,

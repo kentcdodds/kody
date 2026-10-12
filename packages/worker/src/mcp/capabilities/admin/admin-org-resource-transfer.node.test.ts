@@ -84,6 +84,7 @@ test('adminOrgResourceTransfer is admin-only, destructive, and audited', async (
 			{
 				id: 'server-1',
 				name: 'linear',
+				source_removed: true,
 				state: 'authenticating',
 				needs_authorization: true,
 				authorize_url:
@@ -148,7 +149,7 @@ test('refused and failed outcomes come back as structured results', async () => 
 			backup_key: 'org-resource-transfers/org-a/org-b/y.json',
 			message: 'Storage package:p1 copy did not verify.',
 		},
-		backupKey: null,
+		backupKey: 'org-resource-transfers/org-a/org-b/y.json',
 		storage: [],
 		leftovers: {},
 		postCommitWarnings: [],
@@ -164,9 +165,9 @@ test('refused and failed outcomes come back as structured results', async () => 
 	})
 	expect(logAuditEventSpy).toHaveBeenLastCalledWith(
 		expect.objectContaining({
-			result: 'success',
-			reason: expect.stringContaining(
-				'outcome=failed;failed_step=storage_copy;',
+			result: 'failure',
+			reason: expect.stringMatching(
+				/outcome=failed;failed_step=storage_copy;failed_undo=storage package:p1;.*backup=org-resource-transfers\/org-a\/org-b\/y\.json/,
 			),
 		}),
 	)
@@ -199,6 +200,7 @@ test('refused and failed outcomes come back as structured results', async () => 
 	])
 	expect(logAuditEventSpy).toHaveBeenLastCalledWith(
 		expect.objectContaining({
+			result: 'failure',
 			reason: expect.stringContaining('refusals=plan_drifted'),
 		}),
 	)

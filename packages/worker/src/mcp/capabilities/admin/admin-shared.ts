@@ -216,6 +216,8 @@ export async function auditAdminCapabilityInvocation<TResult>(
 	run: () => Promise<TResult>,
 	options: {
 		successReason?: (result: TResult) => string
+		/** A resolved result that reports its own failure (default: success). */
+		resultOf?: (result: TResult) => 'success' | 'failure'
 	} = {},
 ): Promise<TResult> {
 	const actorEmail = ctx.callerContext.user?.email
@@ -225,7 +227,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 			db: auditDatabaseFromEnv(ctx.env),
 			category: 'admin',
 			action: capabilityName,
-			result: 'success',
+			result: options.resultOf?.(result) ?? 'success',
 			email: actorEmail,
 			path: '/mcp',
 			reason: options.successReason?.(result) ?? 'mcp_admin_capability',

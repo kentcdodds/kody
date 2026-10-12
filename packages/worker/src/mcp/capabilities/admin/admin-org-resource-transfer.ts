@@ -142,6 +142,7 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 				z.object({
 					id: z.string(),
 					name: z.string(),
+					source_removed: z.boolean(),
 					state: z.string().nullable(),
 					needs_authorization: z.boolean(),
 					authorize_url: z.string().nullable(),
@@ -196,8 +197,12 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 					}
 				},
 				{
+					resultOf: (result) =>
+						result.outcome === 'refused' || result.outcome === 'failed'
+							? 'failure'
+							: 'success',
 					successReason: (result) =>
-						`mode=${result.mode};outcome=${result.outcome};${result.failure ? `failed_step=${result.failure.failed_step};` : ''}fingerprint=${result.fingerprint};from=${result.from.id};to=${result.to.id};packages=${result.packages.length};orphans=${result.orphans.length};clashes=${result.clashes.length};blockers=${result.blockers.length};refusals=${result.refusals.map((finding) => finding.code).join(',')};backup=${result.backup_key ?? 'none'}`,
+						`mode=${result.mode};outcome=${result.outcome};${result.failure ? `failed_step=${result.failure.failed_step};failed_undo=${result.failure.failed_undo?.join(',') ?? 'none'};` : ''}fingerprint=${result.fingerprint};from=${result.from.id};to=${result.to.id};packages=${result.packages.length};orphans=${result.orphans.length};clashes=${result.clashes.length};blockers=${result.blockers.length};refusals=${result.refusals.map((finding) => finding.code).join(',')};backup=${result.backup_key ?? 'none'}`,
 				},
 			)
 		},
