@@ -432,6 +432,24 @@ Re-applying after a revert can report `dry_run_new_failures` for a package whose
 sibling dependency is still registered under the old scope. Run apply again once
 the sibling is applied.
 
+### `0012-explicit-webhook-url-secret-verification`
+
+This one-shot manifest-format codemod adds
+`"verification": { "type": "url-secret" }` to every `package.json#kody.webhooks`
+entry that declares no `verification`. Ingress already authenticates those
+webhooks by URL secret alone, so the rewrite changes no behavior (see
+[Senders that cannot sign](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
+Once a rescan finds no webhook without `verification`, publish requires it
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+- Appends `verification` to each undeclared entry. Entries that already declare
+  any verification type are left unchanged, and the codemod is idempotent.
+- Packages without `kody.webhooks` are clean.
+- Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
+  that is not an array of objects, and a `verification` that is not an object.
+- Does not touch the stored signing secret. Mint still gives these webhooks the
+  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
