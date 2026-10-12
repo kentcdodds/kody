@@ -89,7 +89,7 @@ export const adminCredentialBackfillCapability = defineDomainCapability(
 					}),
 				{
 					successReason: (result) =>
-						`run=${result.runId};dry_run=${result.dryRun};acknowledged_failed=${args.acknowledgedFailedPackageIds?.length ?? 0};provider=${result.counts.provider.write};inject=${result.counts.inject.write};written=${result.writtenRows}`,
+						`run=${result.runId};dry_run=${result.dryRun};acknowledged_failed=${result.dryRun ? 0 : result.counts.failedPackages};provider=${result.counts.provider.write};inject=${result.counts.inject.write};written=${result.writtenRows}`,
 				},
 			)
 		},

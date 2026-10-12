@@ -59,7 +59,7 @@ export const credentialInventoryReportSchema = z.object({
 	failures: z
 		.array(z.object({ packageId: z.string(), error: z.string() }))
 		.describe(
-			`Packages the run could not scan, with the load error (first ${credentialInventoryFailureListMax} by package id). A backfill apply refuses while any remain.`,
+			`Packages the run could not scan, with the load error (first ${credentialInventoryFailureListMax} by package id). A backfill apply refuses while any remain unless it lists every failed package in acknowledgedFailedPackageIds.`,
 		),
 })
 
