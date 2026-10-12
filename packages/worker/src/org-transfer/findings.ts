@@ -11,6 +11,7 @@ export const orgTransferFindingCodes = [
 	'integration_oauth_app_not_live',
 	'enabler_not_target_member',
 	'grant_names_source_subjects',
+	'personal_credential_granted_to_org',
 	// Refusals raised by apply itself.
 	'orphans_present',
 	'plan_drifted',

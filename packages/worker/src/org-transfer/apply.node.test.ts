@@ -1268,3 +1268,33 @@ test('an enabler outside the target org blocks with a coded finding', async () =
 		},
 	])
 })
+
+test('a source credential granted to another org as a personal credential blocks', async () => {
+	const { sqlite, db } = await seed()
+	const entry = sqlite
+		.prepare(`SELECT id FROM secret_entries WHERE name = 'API_KEY'`)
+		.get() as { id: string }
+	sqlite
+		.prepare(
+			`INSERT INTO credential_org_grants (credential_id, user_id, org_id, created_at) VALUES (?, ?, ?, ?)`,
+		)
+		.run(entry.id, src, 'org-elsewhere', now)
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'dry-run',
+		skipOrphans: true,
+	})
+	expect(result.refusals).toEqual([
+		{
+			code: 'personal_credential_granted_to_org',
+			message:
+				'secret_entries API_KEY is granted to other orgs as a personal credential; revoke those grants before transferring.',
+			table: 'secret_entries',
+			subject: entry.id,
+		},
+	])
+})

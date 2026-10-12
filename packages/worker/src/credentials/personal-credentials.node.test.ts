@@ -224,3 +224,96 @@ test('a grant needs the owner’s own live credential and a live binding to the 
 		}),
 	).toBe(1)
 })
+
+test('expired secrets, package secrets, and suspended personal orgs are not personal credentials', async () => {
+	const t = await setup()
+	const ann = t.people.ann.personId
+	const later = new Date('2026-10-12T00:00:00.000Z')
+	const candidateIds = async () =>
+		(
+			await listPersonalCredentialCandidates({
+				db: t.db,
+				actorPersonId: ann,
+				orgId: t.acmeId,
+				now: later,
+			})
+		).map((credential) => credential.id)
+	await grantPersonalCredentialToOrg({
+		db: t.db,
+		ownerPersonId: ann,
+		credentialId: t.annTokenId,
+		orgId: t.acmeId,
+		now: later,
+	})
+	expect(await candidateIds()).toEqual([t.annTokenId])
+
+	await t.db
+		.prepare(`UPDATE secret_entries SET expires_at = ? WHERE id = ?`)
+		.bind(now, t.annTokenId)
+		.run()
+	expect(await candidateIds()).toEqual([])
+	await t.db
+		.prepare(`UPDATE secret_entries SET expires_at = NULL WHERE id = ?`)
+		.bind(t.annTokenId)
+		.run()
+	await t.db
+		.prepare(
+			`UPDATE secret_buckets SET expires_at = ?
+			WHERE id = (SELECT bucket_id FROM secret_entries WHERE id = ?)`,
+		)
+		.bind(now, t.annTokenId)
+		.run()
+	expect(await candidateIds()).toEqual([])
+	await expect(
+		authorizePersonalCredentialUse({
+			db: t.db,
+			actorPersonId: ann,
+			orgId: t.acmeId,
+			credentialId: t.annTokenId,
+			now: later,
+		}),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	await t.db
+		.prepare(
+			`UPDATE secret_buckets SET expires_at = NULL
+			WHERE id = (SELECT bucket_id FROM secret_entries WHERE id = ?)`,
+		)
+		.bind(t.annTokenId)
+		.run()
+	expect(await candidateIds()).toEqual([t.annTokenId])
+
+	await saveSecret({
+		env: t.env,
+		userId: t.annOrgId,
+		scope: 'package',
+		name: 'annPackageToken',
+		value: 'ann-package-secret-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'ann-package',
+			storageId: 'ann-package',
+		},
+	})
+	const packageTokenId = (
+		await findCredentialIdsByLegacyName(t.db, t.annOrgId, {
+			type: 'secret',
+			name: 'annPackageToken',
+		})
+	)[0]!
+	await expect(
+		grantPersonalCredentialToOrg({
+			db: t.db,
+			ownerPersonId: ann,
+			credentialId: packageTokenId,
+			orgId: t.acmeId,
+			now: later,
+		}),
+	).rejects.toThrow('No personal credential with that id')
+
+	await t.db
+		.prepare(`UPDATE orgs SET suspended_at = ? WHERE id = ?`)
+		.bind(now, t.annOrgId)
+		.run()
+	expect(await candidateIds()).toEqual([])
+})

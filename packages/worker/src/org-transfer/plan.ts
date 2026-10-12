@@ -663,6 +663,22 @@ export function planOrgTransfer(
 		})
 	}
 
+	for (const table of [
+		'secret_entries',
+		'user_integrations',
+		'mcp_server_settings',
+	] as const) {
+		for (const row of moves[table]) {
+			if (!snapshot.personalGrantCredentialIds.has(text(row, 'id'))) continue
+			blockers.push({
+				code: 'personal_credential_granted_to_org',
+				message: `${table} ${text(row, 'name')} is granted to other orgs as a personal credential; revoke those grants before transferring.`,
+				table,
+				subject: text(row, 'id'),
+			})
+		}
+	}
+
 	// Derived rows rebuilt under the target.
 	const movedVectorIds = new Set([
 		...[...packageIds].map(savedPackageVectorId),

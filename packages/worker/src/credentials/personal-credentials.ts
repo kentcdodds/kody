@@ -16,9 +16,13 @@ import {
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
-import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import {
 	credentialPermissionFamily,
 	getOrgCredential,
@@ -36,10 +40,57 @@ const notFoundMessage =
 	'No personal credential with that id. Pass the credential_id of a secret, integration, or MCP server in your personal org.'
 
 /**
+ * The owner's credentials among `ids` that can be personal credentials now:
+ * live, in an active personal org, not a vault binding, and for secrets a
+ * user-scope entry that has not expired. Package and session secrets stay
+ * with their package or session.
+ */
+async function loadPersonalCredentials(
+	db: D1Database,
+	ownerPersonId: PersonId,
+	ids: ReadonlyArray<string>,
+	now: Date,
+): Promise<Map<string, OrgCredential>> {
+	const ownerOrgId = personalOrgId(ownerPersonId)
+	if (ids.length === 0 || !(await isOrgActive(db, ownerOrgId))) {
+		return new Map()
+	}
+	const credentials = await listOrgCredentialsByIds(db, ownerOrgId, ids)
+	const secretIds = [...credentials.values()]
+		.filter((credential) => credential.kind === 'secret')
+		.map((credential) => credential.id)
+	const usableSecretIds = new Set<string>()
+	const nowIso = now.toISOString()
+	for (const chunk of chunkArray(secretIds, maxD1BoundParameters - 3)) {
+		const result = await db
+			.prepare(
+				`SELECT e.id AS id FROM secret_entries e
+				JOIN secret_buckets b ON b.id = e.bucket_id
+				WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+					AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+					AND (e.expires_at IS NULL OR e.expires_at > ?)
+					AND (b.expires_at IS NULL OR b.expires_at > ?)
+					AND e.id IN (${chunk.map(() => '?').join(', ')})`,
+			)
+			.bind(ownerOrgId, nowIso, nowIso, ...chunk)
+			.all<{ id: string }>()
+		for (const row of result.results ?? []) usableSecretIds.add(row.id)
+	}
+	return new Map(
+		[...credentials].filter(
+			([id, credential]) =>
+				credential.live &&
+				credential.kind !== 'vault' &&
+				(credential.kind !== 'secret' || usableSecretIds.has(id)),
+		),
+	)
+}
+
+/**
  * Grants the owner's personal credential to `orgId`. The owner must have a
- * live binding to that org, and the credential must be live in the owner's
- * personal org. Vault bindings are org configuration, not credentials a
- * person carries, so they cannot be granted.
+ * live binding to that org, and the credential must be usable as a personal
+ * credential (`loadPersonalCredentials`). Vault bindings are org
+ * configuration, not credentials a person carries, so they cannot be granted.
  */
 export async function grantPersonalCredentialToOrg(input: {
 	db: D1Database
@@ -54,14 +105,16 @@ export async function grantPersonalCredentialToOrg(input: {
 			'A personal credential already works in your personal org; grant it to another org.',
 		)
 	}
-	const credential = await getOrgCredential(
-		input.db,
-		ownerOrgId,
-		input.credentialId,
-	)
-	if (!credential?.live || credential.kind === 'vault') {
-		throw new McpCallerError(notFoundMessage)
-	}
+	const now = input.now ?? new Date()
+	const credential = (
+		await loadPersonalCredentials(
+			input.db,
+			input.ownerPersonId,
+			[input.credentialId],
+			now,
+		)
+	).get(input.credentialId)
+	if (!credential) throw new McpCallerError(notFoundMessage)
 	const binding = await loadOrgBindingForOrg(
 		input.db,
 		input.ownerPersonId,
@@ -78,12 +131,7 @@ export async function grantPersonalCredentialToOrg(input: {
 			VALUES (?, ?, ?, ?)
 			ON CONFLICT (credential_id, org_id) DO NOTHING`,
 		)
-		.bind(
-			credential.id,
-			input.ownerPersonId,
-			input.orgId,
-			(input.now ?? new Date()).toISOString(),
-		)
+		.bind(credential.id, input.ownerPersonId, input.orgId, now.toISOString())
 		.run()
 	return {
 		...credential,
@@ -125,14 +173,16 @@ export async function deletePersonalCredentialOrgGrantsForMember(input: {
 }
 
 /**
- * The actor's own personal credentials granted to `orgId`, live, while the
- * actor still has a live binding to it. Nobody else's personal credentials
- * are ever candidates, whatever the actor's role.
+ * The actor's own personal credentials granted to `orgId` and still usable
+ * (`loadPersonalCredentials`), while the actor still has a live binding to
+ * it. Nobody else's personal credentials are ever candidates, whatever the
+ * actor's role.
  */
 export async function listPersonalCredentialCandidates(input: {
 	db: D1Database
 	actorPersonId: PersonId | null
 	orgId: OwnerId
+	now?: Date
 }): Promise<Array<PersonalCredential>> {
 	const actor = input.actorPersonId
 	if (!actor || input.orgId === personalOrgId(actor)) return []
@@ -145,14 +195,15 @@ export async function listPersonalCredentialCandidates(input: {
 		.bind(input.orgId, actor)
 		.all<{ credential_id: string }>()
 	const ids = (rows.results ?? []).map((row) => row.credential_id)
-	const credentials = await listOrgCredentialsByIds(
+	const credentials = await loadPersonalCredentials(
 		input.db,
-		personalOrgId(actor),
+		actor,
 		ids,
+		input.now ?? new Date(),
 	)
 	return ids.flatMap((id) => {
 		const credential = credentials.get(id)
-		if (!credential?.live || credential.kind === 'vault') return []
+		if (!credential) return []
 		return [{ ...credential, ownerKind: 'user' as const, ownerPersonId: actor }]
 	})
 }
@@ -167,6 +218,7 @@ export async function authorizePersonalCredentialUse(input: {
 	actorPersonId: PersonId | null
 	orgId: OwnerId
 	credentialId: string
+	now?: Date
 }): Promise<PersonalCredential> {
 	const candidates = await listPersonalCredentialCandidates(input)
 	const credential = candidates.find(
