@@ -7,6 +7,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -70,10 +71,16 @@ async function setup() {
 		...createInMemoryUserMeterEnv().env,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	} as unknown as Env
-	const ctx = (userId: string, username: string, role: OrgRole | null) => ({
+	const ctx = (
+		userId: string,
+		username: string,
+		role: OrgRole | null,
+		scopes?: Array<OrgPermission>,
+	) => ({
 		env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
+			scopes,
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(userId),
@@ -89,10 +96,15 @@ async function setup() {
 	})
 	const owner = ctx(ownerId, 'owneruser', 'owner')
 	const member = ctx(memberId, 'memberuser', 'member')
+	const ownerReadOnlyToken = ctx(ownerId, 'owneruser', 'owner', [
+		'secret:read',
+		'secret:use',
+	])
 	const entry = async (name: string) =>
 		await db
 			.prepare(
-				`SELECT e.id, e.kind, e.allowed_hosts, e.config_json, e.provider, e.inject_json
+				`SELECT e.id, e.kind, e.allowed_hosts, e.config_json, e.provider, e.inject_json,
+					e.encrypted_value, e.updated_at
 				 FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
 				 WHERE b.user_id = ? AND b.scope = 'user' AND e.name = ? AND e.deleted_at IS NULL`,
 			)
@@ -104,6 +116,8 @@ async function setup() {
 				config_json: string | null
 				provider: string | null
 				inject_json: string
+				encrypted_value: string
+				updated_at: string
 			}>()
 	const audits = async (action: string) => {
 		const { results } = await auditDb
@@ -119,7 +133,7 @@ async function setup() {
 	}
 	const set = (input: Record<string, unknown>, as = owner) =>
 		secretSetCapability.handler({ scope: 'user', ...input } as never, as)
-	return { owner, member, entry, audits, set }
+	return { sqlite, owner, member, ownerReadOnlyToken, entry, audits, set }
 }
 
 test('secretSet stores a url credential with its hosts, and audits the kind', async () => {
@@ -146,9 +160,9 @@ test('secretSet stores a url credential with its hosts, and audits the kind', as
 		{
 			resourceId: row!.id,
 			details: {
-				kind: 'url',
-				hosts: ['hooks.example.com'],
-				loginExchangeHost: null,
+				kind: { before: null, after: 'url' },
+				hosts: { before: null, after: ['hooks.example.com'] },
+				loginExchangeHost: { before: null, after: null },
 			},
 		},
 	])
@@ -261,6 +275,7 @@ test('switching back to a Key clears the opt-in hosts and exchange', async () =>
 test('provider and inject update an existing Key without a value, audited', async () => {
 	const t = await setup()
 	await t.set({ name: 'githubPat', value: 'ghp_value' })
+	const beforeEdit = await t.entry('githubPat')
 	const saved = await t.set({
 		name: 'githubPat',
 		provider: 'github',
@@ -273,6 +288,11 @@ test('provider and inject update an existing Key without a value, audited', asyn
 	})
 	const row = await t.entry('githubPat')
 	expect(row?.provider).toBe('github')
+	expect(row?.updated_at).toBe(beforeEdit!.updated_at)
+	expect(row?.encrypted_value).toBe(beforeEdit!.encrypted_value)
+	await expect(
+		t.set({ name: 'githubPat', provider: 'gh', description: 'PAT' }),
+	).rejects.toThrow('in a call of their own')
 	const [audit] = await t.audits('credential.fields_updated')
 	expect(audit).toMatchObject({
 		resourceId: row!.id,
@@ -323,4 +343,160 @@ test('credentialUpdate sets provider and inject by credential id for a writer on
 			t.owner,
 		),
 	).rejects.toThrow('No credential with that id')
+})
+
+test('a padded name saves the opt-in credential under the trimmed name', async () => {
+	const t = await setup()
+	await t.set({
+		name: '  deploy-hook  ',
+		value: hookUrl,
+		kind: 'url',
+		hosts: ['hooks.example.com'],
+	})
+	expect(await t.entry('deploy-hook')).toMatchObject({
+		kind: 'url',
+		allowed_hosts: '["hooks.example.com"]',
+	})
+	await expect(
+		t.set({ name: ' deploy-hook ', value: 'https://evil.example.net/x' }),
+	).rejects.toThrow("value's host must be one of its hosts")
+})
+
+test('hosts are bare hosts: URLs, ports, paths, and userinfo are refused, not narrowed', async () => {
+	const t = await setup()
+	for (const host of [
+		'https://hooks.example.com',
+		'hooks.example.com:8443',
+		'hooks.example.com/services',
+		'user@hooks.example.com',
+		'*.*.example.com',
+		'localhost',
+	]) {
+		await expect(
+			t.set({
+				name: 'deploy-hook',
+				value: hookUrl,
+				kind: 'url',
+				hosts: [host],
+			}),
+		).rejects.toThrow('not a bare host')
+	}
+	expect(await t.entry('deploy-hook')).toBeNull()
+	await t.set({
+		name: 'deploy-hook',
+		value: hookUrl,
+		kind: 'url',
+		hosts: ['*.Example.com'],
+	})
+	expect((await t.entry('deploy-hook'))?.allowed_hosts).toBe(
+		'["*.example.com"]',
+	)
+})
+
+test('login credentials refuse basic placement and exchange urls with userinfo', async () => {
+	const t = await setup()
+	const value = JSON.stringify({ username: 'kody', password: 'pw-123' })
+	const exchange = {
+		url: 'https://portal.example.com/api/login',
+		bodyFormat: 'json',
+		body: { user: '{username}' },
+		tokenPath: 'token',
+	}
+	const login = {
+		name: 'portal',
+		value,
+		kind: 'login',
+		hosts: ['portal.example.com'],
+	}
+	await expect(
+		t.set({
+			...login,
+			login_exchange: { ...exchange, url: 'https://a:b@portal.example.com/x' },
+		}),
+	).rejects.toThrow('cannot carry a username or password')
+	await expect(
+		t.set({
+			...login,
+			login_exchange: exchange,
+			inject: { kind: 'basic', valueAs: 'password', other: 'alice' },
+		}),
+	).rejects.toThrow('not basic auth')
+	expect(await t.entry('portal')).toBeNull()
+	await t.set({ ...login, login_exchange: exchange })
+	await expect(
+		t.set({
+			name: 'portal',
+			inject: { kind: 'basic', valueAs: 'password', other: 'alice' },
+		}),
+	).rejects.toThrow('not basic auth')
+	const { id } = (await t.entry('portal'))!
+	await expect(
+		credentialUpdateCapability.handler(
+			{
+				credential_id: id,
+				inject: { kind: 'basic', valueAs: 'password', other: 'alice' },
+			},
+			t.owner,
+		),
+	).rejects.toThrow('not basic auth')
+	await t.set({
+		name: 'basicKey',
+		value: 'k',
+		inject: { kind: 'basic', valueAs: 'password', other: 'alice' },
+	})
+	await expect(
+		t.set({ ...login, name: 'basicKey', login_exchange: exchange }),
+	).rejects.toThrow('not basic auth')
+})
+
+test('the value, its kind and hosts, and the audit commit together or not at all', async () => {
+	const t = await setup()
+	await t.set({ name: 'apiKey', value: 'key-1' })
+	const before = await t.entry('apiKey')
+	t.sqlite.exec(
+		`CREATE TRIGGER fail_outbox BEFORE INSERT ON org_audit_outbox
+		BEGIN SELECT RAISE(ABORT, 'outbox down'); END`,
+	)
+	await expect(
+		t.set({
+			name: 'apiKey',
+			value: hookUrl,
+			kind: 'url',
+			hosts: ['hooks.example.com'],
+		}),
+	).rejects.toThrow('outbox down')
+	expect(await t.entry('apiKey')).toEqual(before)
+	t.sqlite.exec('DROP TRIGGER fail_outbox')
+	await t.set({
+		name: 'apiKey',
+		value: hookUrl,
+		kind: 'url',
+		hosts: ['hooks.example.com'],
+	})
+	const after = await t.entry('apiKey')
+	expect(after).toMatchObject({ id: before!.id, kind: 'url' })
+	expect(after!.encrypted_value).not.toBe(before!.encrypted_value)
+	expect(await t.audits('credential.kind_set')).toEqual([
+		{
+			resourceId: before!.id,
+			details: {
+				kind: { before: 'secret', after: 'url' },
+				hosts: { before: [], after: ['hooks.example.com'] },
+				loginExchangeHost: { before: null, after: null },
+			},
+		},
+	])
+})
+
+test('credentialUpdate refuses an API token not scoped for write, even for an owner', async () => {
+	const t = await setup()
+	await t.set({ name: 'resendKey', value: 're_value' })
+	const { id } = (await t.entry('resendKey'))!
+	await expect(
+		credentialUpdateCapability.handler(
+			{ credential_id: id, provider: 'resend' },
+			t.ownerReadOnlyToken,
+		),
+	).rejects.toThrow('not scoped for secret:write')
+	expect((await t.entry('resendKey'))?.provider).toBeNull()
 })

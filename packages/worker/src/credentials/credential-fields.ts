@@ -11,10 +11,9 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import {
 	type OrgAuditWriter,
-	recordOrgAuditEvent,
+	runAppDbBatchWithOrgAudit,
 } from '#worker/orgs/org-audit.ts'
 import { getOrgCredential, type OrgCredential } from './credential-ids.ts'
 import { credentialHostsAllow } from './credential-request.ts'
@@ -65,11 +64,19 @@ export const optInStoredCredentialKinds = ['url', 'login', 'signing'] as const
 export type OptInStoredCredentialKind =
 	(typeof optInStoredCredentialKinds)[number]
 
+const hostLabel = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+const bareHostPattern = new RegExp(
+	`^(?:\\*\\.)?${hostLabel}(?:\\.${hostLabel})+$`,
+)
+
+/**
+ * A bare host or one wildcard level, lowercased. Anything URL-shaped (scheme,
+ * port, path, userinfo) is refused rather than reduced to its hostname, so a
+ * host list never looks narrower than what it allows.
+ */
 function normalizeCredentialHost(host: string) {
-	const wildcard = host.trim().startsWith('*.')
-	const bare = normalizeHost(wildcard ? host.trim().slice(2) : host)
-	if (!bare || bare.includes('*') || !bare.includes('.')) return null
-	return wildcard ? `*.${bare}` : bare
+	const candidate = host.trim().toLowerCase()
+	return bareHostPattern.test(candidate) ? candidate : null
 }
 
 /** Exact hosts or one wildcard level (`*.example.com`). */
@@ -82,7 +89,7 @@ export const credentialHostsSchema = z
 			if (normalizeCredentialHost(host)) continue
 			ctx.addIssue({
 				code: 'custom',
-				message: `"${host}" is not a host. Use an exact host or one wildcard level such as *.example.com.`,
+				message: `"${host}" is not a bare host. Use an exact host such as api.example.com or one wildcard level such as *.example.com, with no scheme, port, or path.`,
 			})
 		}
 	})
@@ -169,6 +176,11 @@ export function assertLoginExchangeOnHosts(input: {
 	if (url.protocol !== 'https:') {
 		throw new McpCallerError('The login exchange url must use https://.')
 	}
+	if (url.username || url.password) {
+		throw new McpCallerError(
+			'The login exchange url cannot carry a username or password.',
+		)
+	}
 	if (!credentialHostsAllow(input.hosts, url.hostname)) {
 		throw new McpCallerError(
 			"The login exchange url's host must be one of the credential's hosts.",
@@ -183,6 +195,38 @@ const fieldTables = {
 	vault: 'secret_provider_bindings',
 } as const satisfies Record<OrgCredential['kind'], string>
 
+const storedKindValues = ['secret', ...optInStoredCredentialKinds] as const
+
+export type StoredCredentialKindValue = (typeof storedKindValues)[number]
+
+function parseStoredKind(value: unknown): StoredCredentialKindValue {
+	const kind = storedKindValues.find((candidate) => candidate === value)
+	if (!kind) throw new Error(`Unknown stored credential kind: ${String(value)}`)
+	return kind
+}
+
+/**
+ * A login credential's session token is placed by header or query only; the
+ * login resolver has no Basic placement, so refuse it at write time.
+ */
+export function assertInjectFitsKind(input: {
+	kind: StoredCredentialKindValue
+	inject: CredentialInject
+}) {
+	if (input.kind === 'login' && input.inject.kind === 'basic') {
+		throw new McpCallerError(
+			'A login credential places its session token in a header or query parameter, not basic auth.',
+		)
+	}
+}
+
+function parseInject(injectJson: string | null | undefined): CredentialInject {
+	const inject = credentialInjectSchema.safeParse(
+		JSON.parse(injectJson ?? 'null'),
+	)
+	return inject.success ? inject.data : defaultCredentialInject
+}
+
 export type CredentialFieldsUpdate = {
 	provider?: string | null
 	inject?: CredentialInject
@@ -194,29 +238,27 @@ export type CredentialFields = {
 	inject: CredentialInject
 }
 
-async function readFields(
-	db: D1Database,
-	credential: OrgCredential,
-): Promise<CredentialFields> {
+async function readFields(db: D1Database, credential: OrgCredential) {
+	const isSecret = credential.kind === 'secret'
 	const row = await db
 		.prepare(
-			`SELECT provider, inject_json FROM ${fieldTables[credential.kind]} WHERE id = ?`,
+			`SELECT provider, inject_json${isSecret ? ', kind' : ''}
+			FROM ${fieldTables[credential.kind]} WHERE id = ?`,
 		)
 		.bind(credential.id)
-		.first<{ provider: string | null; inject_json: string }>()
-	const inject = credentialInjectSchema.safeParse(
-		JSON.parse(row?.inject_json ?? 'null'),
-	)
+		.first<{ provider: string | null; inject_json: string; kind?: string }>()
 	return {
 		credential,
 		provider: row?.provider ?? null,
-		inject: inject.success ? inject.data : defaultCredentialInject,
+		inject: parseInject(row?.inject_json),
+		storedKind: isSecret ? parseStoredKind(row?.kind) : null,
 	}
 }
 
 /**
- * Sets `provider` and/or `inject` on one credential of `orgId` and audits the
- * edit. The caller has already authorized the manager's write permission.
+ * Sets `provider` and/or `inject` on one credential of `orgId`, committed
+ * together with its audit event. The caller has already authorized the
+ * manager's write permission.
  */
 export async function updateCredentialFields(input: {
 	db: D1Database
@@ -252,86 +294,59 @@ export async function updateCredentialFields(input: {
 			'OAuth connections and MCP servers always send their token as `Authorization: Bearer {value}`; only provider can change.',
 		)
 	}
-	await input.db
-		.prepare(
-			`UPDATE ${fieldTables[credential.kind]} SET provider = ?, inject_json = ?
-			WHERE id = ? AND deleted_at IS NULL`,
-		)
-		.bind(provider, JSON.stringify(inject), credential.id)
-		.run()
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'credential.fields_updated',
-		resourceType: 'credential',
-		resourceId: credential.id,
-		details: {
-			credentialKind: credential.kind,
-			provider: { before: before.provider, after: provider },
-			inject: { before: before.inject, after: inject },
+	if (before.storedKind) {
+		assertInjectFitsKind({ kind: before.storedKind, inject })
+	}
+	await runAppDbBatchWithOrgAudit({
+		appDb: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE ${fieldTables[credential.kind]} SET provider = ?, inject_json = ?
+					WHERE id = ? AND deleted_at IS NULL`,
+				)
+				.bind(provider, JSON.stringify(inject), credential.id),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'credential.fields_updated',
+			resourceType: 'credential',
+			resourceId: credential.id,
+			details: {
+				credentialKind: credential.kind,
+				provider: { before: before.provider, after: provider },
+				inject: { before: before.inject, after: inject },
+			},
 		},
 	})
 	return { credential, provider, inject }
 }
 
-/**
- * Stores the kind of a user-scope secret entry that was just written with
- * its value, and audits it. An opt-in kind stores its hosts and login
- * exchange; going back to a Key clears them, so a Key's hosts only ever come
- * from the approval flow.
- */
-export async function setStoredCredentialKind(input: {
-	db: D1Database
-	orgId: OwnerId
-	credentialId: string
-	kind: 'secret' | OptInStoredCredentialKind
-	hosts: ReadonlyArray<string>
-	loginExchange: z.infer<typeof loginExchangeSchema> | null
-	audit: OrgAuditWriter
-}) {
-	const hosts = input.kind === 'secret' ? [] : input.hosts
-	const exchange = input.kind === 'login' ? input.loginExchange : null
-	await input.db
-		.prepare(
-			`UPDATE secret_entries SET kind = ?, allowed_hosts = ?, config_json = ?
-			WHERE id = ? AND deleted_at IS NULL`,
-		)
-		.bind(
-			input.kind,
-			JSON.stringify(hosts),
-			exchange ? JSON.stringify(exchange) : null,
-			input.credentialId,
-		)
-		.run()
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'credential.kind_set',
-		resourceType: 'credential',
-		resourceId: input.credentialId,
-		details: {
-			kind: input.kind,
-			hosts,
-			loginExchangeHost: exchange ? new URL(exchange.url).hostname : null,
-		},
-	})
-}
-
 export async function readCredentialFields(input: {
 	db: D1Database
 	credential: OrgCredential
-}) {
-	return await readFields(input.db, input.credential)
+}): Promise<CredentialFields> {
+	const { credential, provider, inject } = await readFields(
+		input.db,
+		input.credential,
+	)
+	return { credential, provider, inject }
 }
 
 export type StoredCredentialPlacement = {
 	id: string
-	kind: 'secret' | OptInStoredCredentialKind
+	kind: StoredCredentialKindValue
 	allowedHosts: Array<string>
 	loginExchange: z.infer<typeof loginExchangeSchema> | null
+	provider: string | null
+	inject: CredentialInject
 }
 
 /**
- * The kind, hosts, and login exchange of `orgId`'s live user-scope secret
- * `name`, never its value. Null when there is no such secret.
+ * The kind, hosts, login exchange, provider, and inject of `orgId`'s live
+ * user-scope secret `name`, never its value. Null when there is no such
+ * secret.
  */
 export async function readStoredCredentialPlacement(input: {
 	db: D1Database
@@ -341,7 +356,8 @@ export async function readStoredCredentialPlacement(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT e.id AS id, e.kind AS kind, e.allowed_hosts AS allowed_hosts,
-				e.config_json AS config_json
+				e.config_json AS config_json, e.provider AS provider,
+				e.inject_json AS inject_json
 			FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
 				AND e.name = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL`,
@@ -352,20 +368,20 @@ export async function readStoredCredentialPlacement(input: {
 			kind: string
 			allowed_hosts: string
 			config_json: string | null
+			provider: string | null
+			inject_json: string
 		}>()
 	if (!row) return null
-	const kind = (['secret', ...optInStoredCredentialKinds] as const).find(
-		(candidate) => candidate === row.kind,
-	)
-	if (!kind) throw new Error(`Unknown stored credential kind: ${row.kind}`)
 	const hosts = z.array(z.string()).safeParse(JSON.parse(row.allowed_hosts))
 	const exchange = row.config_json
 		? loginExchangeSchema.safeParse(JSON.parse(row.config_json))
 		: null
 	return {
 		id: row.id,
-		kind,
+		kind: parseStoredKind(row.kind),
 		allowedHosts: hosts.success ? hosts.data : [],
 		loginExchange: exchange?.success ? exchange.data : null,
+		provider: row.provider,
+		inject: parseInject(row.inject_json),
 	}
 }

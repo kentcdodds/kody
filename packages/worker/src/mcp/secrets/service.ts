@@ -38,6 +38,7 @@ import {
 	listSecretBucketsByScope,
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
+	prepareUpsertCredentialSecretEntryStatement,
 	updateApprovedUserSecretEntriesForPackageAtomically,
 	upsertSecretBucket,
 	upsertSecretEntry,
@@ -55,6 +56,11 @@ import {
 	type SecretScope,
 	type StoredCredentialKind,
 } from './types.ts'
+import {
+	type OrgAuditOutboxEvent,
+	type OrgAuditWriter,
+	runAppDbBatchWithOrgAudit,
+} from '#worker/orgs/org-audit.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
 
@@ -75,6 +81,25 @@ type SaveSecretInput = SecretOwnerContext & {
 	sessionExpiresAt?: string | null
 	userEmail?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	credential?: SaveSecretCredential
+}
+
+/**
+ * Opt-in credential fields (ADR 0068) committed in the same batch as the
+ * value and its audit event, so a failed call never leaves a new value under
+ * old settings.
+ */
+export type SaveSecretCredential = {
+	kind: StoredCredentialKind
+	/** Null keeps the entry's current hosts (a Key's approved hosts). */
+	allowedHosts: Array<string> | null
+	configJson: string | null
+	provider: string | null
+	injectJson: string
+	audit: {
+		writer: OrgAuditWriter
+		event: (credentialId: string) => OrgAuditOutboxEvent
+	}
 }
 
 type ListSecretsInput = SecretOwnerContext & {
@@ -96,8 +121,6 @@ type UpdateSecretInput = SecretOwnerContext & {
 	value?: string | null
 	description?: string | null
 	expiresAt?: string | null
-	/** The call changes only the credential's provider or inject. */
-	credentialFieldsOnly?: boolean
 }
 
 type DeleteSecretInput = SecretOwnerContext & {
@@ -129,6 +152,10 @@ export async function saveSecret(
 		throw new Error('Secret value is required.')
 	}
 	const description = input.description?.trim() ?? ''
+	const credential = input.credential ?? null
+	if (credential && input.scope !== 'user') {
+		throw new Error('Credential fields apply only to user-scope secrets.')
+	}
 	const bucket = await getOrCreateSecretBucket({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -154,6 +181,9 @@ export async function saveSecret(
 		value,
 		userSecretContext(input.userId),
 	)
+	const allowedHostsJson = credential?.allowedHosts
+		? JSON.stringify(credential.allowedHosts)
+		: (existingEntry?.allowed_hosts ?? '[]')
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
 		env: input.env,
@@ -165,7 +195,7 @@ export async function saveSecret(
 				value: {
 					description,
 					encryptedValue,
-					allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+					allowedHosts: allowedHostsJson,
 					allowedPackages: existingEntry?.allowed_packages ?? '[]',
 				},
 			},
@@ -187,20 +217,40 @@ export async function saveSecret(
 		existing: existingEntry?.expires_at,
 		requested: input.expiresAt,
 	})
-	await upsertSecretEntry({
-		db: input.env.APP_DB,
-		row: {
-			bucket_id: bucket.id,
-			name,
-			description,
-			encrypted_value: encryptedValue,
-			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
-			allowed_packages: existingEntry?.allowed_packages ?? '[]',
-			expires_at: entryExpiresAt,
-			created_at: existingEntry?.created_at ?? now,
-			updated_at: now,
-		},
-	})
+	const row = {
+		bucket_id: bucket.id,
+		name,
+		description,
+		encrypted_value: encryptedValue,
+		allowed_hosts: allowedHostsJson,
+		allowed_packages: existingEntry?.allowed_packages ?? '[]',
+		expires_at: entryExpiresAt,
+		created_at: existingEntry?.created_at ?? now,
+		updated_at: now,
+	}
+	if (credential) {
+		const credentialId = existingEntry?.id ?? crypto.randomUUID()
+		await runAppDbBatchWithOrgAudit({
+			appDb: input.env.APP_DB,
+			audit: credential.audit.writer,
+			statements: [
+				prepareUpsertCredentialSecretEntryStatement({
+					db: input.env.APP_DB,
+					row,
+					credential: {
+						id: credentialId,
+						kind: credential.kind,
+						config_json: credential.configJson,
+						provider: credential.provider,
+						inject_json: credential.injectJson,
+					},
+				}),
+			],
+			event: credential.audit.event(credentialId),
+		})
+	} else {
+		await upsertSecretEntry({ db: input.env.APP_DB, row })
+	}
 	if (existingEntry == null && input.scope === 'user') {
 		await stampFirstSecret(
 			input.env.APP_DB,
@@ -213,9 +263,7 @@ export async function saveSecret(
 		scope: input.scope,
 		description,
 		packageId: input.scope === 'package' ? bucket.binding_key : null,
-		allowedHosts: existingEntry
-			? parseAllowedHosts(existingEntry.allowed_hosts)
-			: [],
+		allowedHosts: parseAllowedHosts(allowedHostsJson),
 		allowedPackages: existingEntry
 			? parseAllowedPackages(existingEntry.allowed_packages)
 			: [],
@@ -862,6 +910,40 @@ export async function deleteSecret(input: DeleteSecretInput) {
 	})
 }
 
+/** A secret's metadata without writing it; throws when it does not exist. */
+export async function readSecretMetadata(
+	input: SecretOwnerContext & {
+		env: Pick<Env, 'APP_DB'>
+		name: string
+		scope: SecretScope
+	},
+): Promise<SecretMetadata> {
+	const name = input.name.trim()
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+	})
+	const entry = bucket
+		? await getSecretEntry({ db: input.env.APP_DB, bucketId: bucket.id, name })
+		: null
+	if (!bucket || !entry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	return toSecretMetadata({
+		name,
+		scope: input.scope,
+		description: entry.description,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(entry.allowed_packages),
+		createdAt: entry.created_at,
+		updatedAt: entry.updated_at,
+		expiresAt: earliestSecretExpiresAt(entry.expires_at, bucket.expires_at),
+	})
+}
+
 export async function updateSecret(
 	input: UpdateSecretInput,
 ): Promise<SecretMetadata> {
@@ -896,8 +978,7 @@ export async function updateSecret(
 	if (
 		!hasValueUpdate &&
 		input.description == null &&
-		input.expiresAt === undefined &&
-		input.credentialFieldsOnly !== true
+		input.expiresAt === undefined
 	) {
 		throw new Error(
 			'Provide a new secret value, description, or expires_at to update.',

@@ -61,25 +61,28 @@ opt-in credential types (ADR 0068):
   `login` (a JSON object of login fields), or `signing` (a signing key). The
   opt-in kinds are never placed by a placeholder; a package reaches them only
   through a scoped credential client.
-- **`hosts`**: where an opt-in kind may be sent, as exact hosts or one wildcard
-  level (`*.example.com`). Required for `url`, `login`, and `signing`; a `url`
-  value's own host must be one of them. Keys refuse `hosts` and keep using host
-  approval.
+- **`hosts`**: where an opt-in kind may be sent, as bare exact hosts or one
+  wildcard level (`*.example.com`); a scheme, port, or path is refused. Required
+  for `url`, `login`, and `signing`; a `url` value's own host must be one of
+  them. Keys refuse `hosts` and keep using host approval.
 - **`login_exchange`**: for `login`, how the fields become a session token. Its
-  url must be on one of the hosts.
+  url must be on one of the hosts and carry no username or password.
 - **`provider`** and **`inject`**: which package credential needs the credential
   can satisfy (for example `github`), and how a scoped client places it (a
-  header with a `{value}` format, basic auth, or a query parameter). The default
-  placement is `Authorization: Bearer {value}`. Placeholders ignore both.
+  header with a `{value}` format, basic auth, or a query parameter; a `login`
+  session token uses a header or query parameter). The default placement is
+  `Authorization: Bearer {value}`. Placeholders ignore both.
 
 `kind`, `hosts`, and `login_exchange` are set only together with a value:
 whoever supplies the value decides where it may go. A new value for an existing
 opt-in credential is checked against its stored hosts. Setting `kind: "secret"`
-turns an opt-in credential back into a Key and clears its hosts. **`provider`**
-and **`inject`** can change without a value, and **`credentialUpdate`** sets
-them by credential id on secrets, OAuth connections, and MCP servers (OAuth
-connections and MCP servers always use `Authorization: Bearer`, so only their
-provider changes). Every change needs Write on the credential and is audited.
+turns an opt-in credential back into a Key and clears its hosts. The value and
+these fields are saved together or not at all. **`provider`** and **`inject`**
+can change without a value (in a call of their own; the secret's value and
+`updated_at` stay as they are), and **`credentialUpdate`** sets them by
+credential id on secrets, OAuth connections, and MCP servers (OAuth connections
+and MCP servers always use `Authorization: Bearer`, so only their provider
+changes). Every change needs Write on the credential and is audited.
 
 The account create/edit form has the same optional expiry field. Agents
 prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query

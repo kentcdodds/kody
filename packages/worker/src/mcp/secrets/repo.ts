@@ -243,6 +243,64 @@ function prepareUpsertSecretEntryStatement(input: {
 		)
 }
 
+export type SecretEntryCredentialColumns = {
+	/** Used only when the upsert inserts; an existing row keeps its id. */
+	id: string
+	kind: StoredCredentialKind
+	config_json: string | null
+	provider: string | null
+	inject_json: string
+}
+
+/**
+ * The upsert for a value saved together with its opt-in credential fields
+ * (ADR 0068), so the value and where it may go change in one statement.
+ */
+export function prepareUpsertCredentialSecretEntryStatement(input: {
+	db: D1Database
+	row: Omit<SecretEntryRow, 'id' | 'created_at' | 'updated_at'> & {
+		created_at: string
+		updated_at: string
+	}
+	credential: SecretEntryCredentialColumns
+}): D1PreparedStatement {
+	return input.db
+		.prepare(
+			`INSERT INTO secret_entries (
+				id, bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages,
+				expires_at, created_at, updated_at, kind, config_json, provider, inject_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(bucket_id, name)
+			DO UPDATE SET
+				description = excluded.description,
+				encrypted_value = excluded.encrypted_value,
+				allowed_hosts = excluded.allowed_hosts,
+				allowed_packages = excluded.allowed_packages,
+				expires_at = excluded.expires_at,
+				updated_at = excluded.updated_at,
+				kind = excluded.kind,
+				config_json = excluded.config_json,
+				provider = excluded.provider,
+				inject_json = excluded.inject_json`,
+		)
+		.bind(
+			input.credential.id,
+			input.row.bucket_id,
+			input.row.name,
+			input.row.description,
+			input.row.encrypted_value,
+			input.row.allowed_hosts,
+			input.row.allowed_packages,
+			input.row.expires_at,
+			input.row.created_at,
+			input.row.updated_at,
+			input.credential.kind,
+			input.credential.config_json,
+			input.credential.provider,
+			input.credential.inject_json,
+		)
+}
+
 export async function upsertSecretEntry(input: {
 	db: D1Database
 	row: Omit<SecretEntryRow, 'id' | 'created_at' | 'updated_at'> & {

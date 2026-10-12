@@ -10,6 +10,7 @@ import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.t
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	findSecret,
+	readSecretMetadata,
 	saveSecret,
 	updateSecret,
 	updateUserSecretForPackage,
@@ -17,9 +18,10 @@ import {
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecretSet } from './authorize-secret.ts'
 import {
-	applyOptInCredentialFields,
+	applyCredentialFieldsOnly,
 	optInCredentialInputFields,
 	planOptInCredentialFields,
+	toSaveSecretCredential,
 } from './secret-set-opt-in.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
@@ -107,6 +109,17 @@ export const secretSetCapability = defineDomainCapability(
 				input: parsed,
 				authorityPackageId,
 			})
+			if (optIn.mode === 'fields-only') {
+				const report = await applyCredentialFieldsOnly(ctx, optIn)
+				const metadata = await readSecretMetadata({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+					scope: parsed.scope,
+					name: parsed.name,
+					storageContext,
+				})
+				return { ...toSecretCapabilityOutput(metadata), ...report }
+			}
 			let saved
 			if (parsed.scope === 'user' && authorityPackageId) {
 				if (parsed.expires_at !== undefined) {
@@ -162,6 +175,9 @@ export const secretSetCapability = defineDomainCapability(
 					description: parsed.description ?? '',
 					expiresAt: parsed.expires_at,
 					storageContext,
+					...(optIn.mode === 'with-value'
+						? { credential: toSaveSecretCredential(ctx, optIn) }
+						: {}),
 				})
 			} else {
 				saved = await updateSecret({
@@ -171,15 +187,13 @@ export const secretSetCapability = defineDomainCapability(
 					name: parsed.name,
 					description: parsed.description,
 					expiresAt: parsed.expires_at,
-					credentialFieldsOnly: optIn.fields !== null,
 					storageContext,
 				})
 			}
-			return await applyOptInCredentialFields(ctx, {
-				plan: optIn,
-				name: parsed.name,
-				saved: toSecretCapabilityOutput(saved),
-			})
+			const output = toSecretCapabilityOutput(saved)
+			return optIn.mode === 'with-value'
+				? { ...output, ...optIn.report }
+				: output
 		},
 	},
 )
