@@ -10,6 +10,9 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 /**
  * Webhook delivery outcomes live in each owner's RunLog Durable Object, so
  * fleet reads fan out per owner that has a minted webhook URL.
+ *
+ * soft-delete-read-filter: opt-out — the `all` owner scope includes deleted
+ * endpoints on purpose; their RunLog history outlives the endpoint row.
  */
 export const webhookOwnerScanConcurrency = 8
 const ownerPageSize = 1_000
