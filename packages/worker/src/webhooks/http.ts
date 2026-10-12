@@ -674,7 +674,9 @@ export async function handleWebhookIngressRequest(
 	}
 
 	// URL-secret-only auth for webhooks that declare no verification is a
-	// migration lane, removed per https://github.com/kentcdodds/kody/issues/3477.
+	// migration lane. It stays on until 2027-01-09 (users are told URL-only
+	// webhooks keep working until then); no enforcement before that date, even
+	// if a rescan reaches zero. https://github.com/kentcdodds/kody/issues/3477
 	// The log counts every request removal would refuse, even ones a later
 	// check rejects; adminWebhookVerificationScan counts successful deliveries.
 	const verification = declared.verification
