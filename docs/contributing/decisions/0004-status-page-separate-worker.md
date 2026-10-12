@@ -65,3 +65,8 @@ The write path is `POST /__maintenance/incidents/:id/retrospective` on
 `APP_DB`, so a down main worker cannot block a retrospective. There is no public
 unauthenticated write. Open incidents cannot receive a writeup until probes
 resolve them.
+
+`DELETE /__maintenance/incidents/:id` uses the same bearer to remove a resolved
+incident whose impact check showed no user impact (health-check-only), and
+recomputes that day's rollup so the day bar clears. Open incidents cannot be
+deleted.

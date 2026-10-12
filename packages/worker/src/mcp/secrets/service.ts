@@ -1,4 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import {
 	earliestSecretExpiresAt,
 	isSecretExpired,
@@ -767,7 +768,12 @@ export type StoredCredential = {
 	injectJson: string
 	/** Raw `config_json`: a login credential's exchange, else null. */
 	configJson: string | null
-	updatedAt: string
+	/**
+	 * Digest of the stored ciphertext and `config_json`. Every value write
+	 * re-encrypts with a fresh IV, so any change to the value or exchange
+	 * changes it.
+	 */
+	revision: string
 }
 
 /**
@@ -797,7 +803,9 @@ export async function findStoredCredentialForUse(input: {
 			allowedHosts: parseAllowedHosts(row.allowed_hosts),
 			injectJson: row.inject_json,
 			configJson: row.config_json,
-			updatedAt: row.updated_at,
+			revision: await sha256Hex(
+				JSON.stringify([row.encrypted_value, row.config_json]),
+			),
 		},
 		readValue: () =>
 			decryptSecretValue(

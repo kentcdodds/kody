@@ -24,6 +24,10 @@ import {
 } from './credential-ids.ts'
 import { type PackageStamp } from './package-stamp.ts'
 import { type ResolvedLoginSession } from './login-resolver.ts'
+import {
+	type SigningOperation,
+	type SigningResult,
+} from './signing-resolver.ts'
 import { type ResolvedCredentialUrl } from './url-resolver.ts'
 
 /**
@@ -100,11 +104,25 @@ export type CredentialTarget =
 	| { use: 'url'; credentialId: string; path: string }
 	/**
 	 * A `login` credential picked by id: its session, from the exchange it
-	 * runs, placed for a request to `requestHost`, which must be one of the
-	 * credential's hosts. The caller places it only on a request to that host.
-	 * Not reachable from package code until the credential clients ship (T).
+	 * runs, placed for the HTTPS request to `requestUrl`, whose host must be
+	 * one of the credential's hosts. The caller places it only on that
+	 * request. Not reachable from package code until the credential clients
+	 * ship (T).
 	 */
-	| { use: 'login'; credentialId: string; requestHost: string }
+	| { use: 'login'; credentialId: string; requestUrl: URL }
+	/**
+	 * A `signing` credential picked by id: a JWT or HMAC signature made with
+	 * its key, for a request to `requestHost`, which must be one of the
+	 * credential's hosts. The caller places the signature only on a request
+	 * to that host. Not reachable from package code until the credential
+	 * clients ship (T).
+	 */
+	| {
+			use: 'signing'
+			credentialId: string
+			requestHost: string
+			operation: SigningOperation
+	  }
 
 export type CredentialUse = CredentialTarget['use']
 
@@ -135,6 +153,7 @@ export type ResolvedCredentialByUse = {
 	'mcp-connection': McpServerConnection
 	url: ResolvedCredentialUrl
 	login: ResolvedLoginSession
+	signing: SigningResult
 }
 
 export type ResolvedCredential<T extends CredentialTarget> =
@@ -193,6 +212,7 @@ export function permissionForUse(use: CredentialUse): OrgPermission {
 		case 'provider-secret':
 		case 'url':
 		case 'login':
+		case 'signing':
 			return 'secret:use'
 		case 'integration-token':
 		case 'integration-refresh':

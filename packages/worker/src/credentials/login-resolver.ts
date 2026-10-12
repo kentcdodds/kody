@@ -7,6 +7,7 @@
  * `inject`. Neither the fields nor the login response ever reach code.
  */
 import { z } from 'zod'
+import { readBoundedBody } from '#mcp/capabilities/integrations/read-bounded-body.ts'
 import {
 	assertHttpsUrl,
 	credentialHostsAllow,
@@ -23,6 +24,7 @@ const maxSessionSeconds = 24 * 60 * 60
 const sessionExpirySkewMs = 30_000
 const exchangeTimeoutMs = 30_000
 const maxCachedSessions = 500
+const maxExchangeResponseBytes = 64 * 1024
 
 const loginExchangeSchema = z
 	.object({
@@ -65,11 +67,12 @@ export type ResolvedLoginSession = {
 	substitutedValues: ReadonlyArray<string>
 }
 
-type Session = { token: string; expiresAt: number }
+/** `expiresAt` is null when the response says the token is already expired. */
+type Session = { token: string; expiresAt: number | null }
 
 /**
- * Sessions by credential id and row version, so a changed value or exchange
- * starts a new session. Per isolate and never persisted; `authorize` still
+ * Sessions by credential id and revision (a digest of the stored ciphertext
+ * and exchange), so a changed value or exchange starts a new session. Per isolate and never persisted; `authorize` still
  * runs on every resolution before a cached session is used.
  */
 const sessions = new Map<string, Session>()
@@ -202,7 +205,9 @@ async function runExchange(
 		await response.body?.cancel()
 		throw new CredentialLoginFailedError(response.status)
 	}
-	const payload = await response.json().catch(() => null)
+	const payload = parseJson(
+		await readBoundedBody(response, maxExchangeResponseBytes).catch(() => null),
+	)
 	const token = readPath(payload, exchange.tokenPath)
 	if (typeof token !== 'string' || token === '') {
 		throw new CredentialLoginFailedError(response.status)
@@ -211,14 +216,16 @@ async function runExchange(
 		? readPath(payload, exchange.expiresInPath)
 		: undefined
 	const seconds =
-		typeof expiresIn === 'number' && expiresIn > 0
+		typeof expiresIn === 'number' && Number.isFinite(expiresIn)
 			? Math.min(expiresIn, maxSessionSeconds)
 			: exchange.ttlSeconds
-	return { token, expiresAt: Date.now() + seconds * 1000 - sessionExpirySkewMs }
+	const expiresAt = Date.now() + seconds * 1000 - sessionExpirySkewMs
+	return { token, expiresAt: expiresAt > Date.now() ? expiresAt : null }
 }
 
 function remember(key: string, session: Session) {
 	sessions.delete(key)
+	if (session.expiresAt === null) return
 	sessions.set(key, session)
 	while (sessions.size > maxCachedSessions) {
 		sessions.delete(sessions.keys().next().value!)
@@ -255,7 +262,7 @@ export const loginCredentialResolver: CredentialResolver<'login'> = {
 		resourceType: 'secret',
 		name: credential.credentialId,
 		credentialId: null,
-		details: { host: credential.requestHost },
+		details: { host: credential.requestUrl.hostname },
 	}),
 	async resolve(call) {
 		const { credential } = call
@@ -270,7 +277,13 @@ export const loginCredentialResolver: CredentialResolver<'login'> = {
 					lookup,
 					'login',
 				)
-				if (!credentialHostsAllow(found.allowedHosts, credential.requestHost)) {
+				assertHttpsUrl(credential.requestUrl)
+				if (
+					!credentialHostsAllow(
+						found.allowedHosts,
+						credential.requestUrl.hostname,
+					)
+				) {
 					throw new CredentialRequestRefusedError(
 						'host_not_allowed',
 						'This login credential does not sign in to requests for that host.',
@@ -282,9 +295,9 @@ export const loginCredentialResolver: CredentialResolver<'login'> = {
 			async apply(): Promise<ResolvedLoginSession> {
 				// `authorize` returned, so the lookup, exchange, and inject are set.
 				const { found, readValue } = lookup!
-				const key = `${found.credentialId}|${found.updatedAt}`
+				const key = `${found.credentialId}|${found.revision}`
 				const cached = sessions.get(key)
-				if (cached && cached.expiresAt > Date.now()) {
+				if (cached?.expiresAt && cached.expiresAt > Date.now()) {
 					call.subject.details = { ...call.subject.details, session: 'cached' }
 					return placeSession(inject!, cached.token)
 				}

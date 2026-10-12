@@ -23,6 +23,7 @@ const doorModules = new Set([
 	'packages/worker/src/credentials/mcp-resolver.ts',
 	'packages/worker/src/credentials/url-resolver.ts',
 	'packages/worker/src/credentials/login-resolver.ts',
+	'packages/worker/src/credentials/signing-resolver.ts',
 ])
 
 type StorageRule = {
@@ -154,6 +155,11 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/credentials/login-resolver.ts',
 		symbols: ['loginCredentialResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/signing-resolver.ts',
+		symbols: ['signingCredentialResolver'],
 		allowed: {},
 	},
 ]

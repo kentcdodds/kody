@@ -474,7 +474,12 @@ export async function createCheckoutSession(
 			const trimmedKey = key.trim()
 			const trimmedValue = value.trim()
 			if (!trimmedKey || !trimmedValue) continue
+			// Session metadata for webhook/success attribution, and
+			// subscription_data so the created Subscription carries the same
+			// org keys (ADR 0065). Checkout does not copy session metadata
+			// onto the subscription by itself.
 			form[`metadata[${trimmedKey}]`] = trimmedValue
+			form[`subscription_data[metadata][${trimmedKey}]`] = trimmedValue
 		}
 	}
 
@@ -975,6 +980,39 @@ export async function createProratedRefundCreditNote(
 		total: parsed.value.total,
 		currency: parsed.value.currency,
 	}
+}
+
+/**
+ * Merge metadata onto an existing Stripe Customer or Subscription. Only sets
+ * the supplied keys; other metadata on the object is left alone. Used when
+ * Checkout created the object without org keys (legacy sessions) or when an
+ * operator backfills attribution.
+ */
+export async function mergeStripeObjectMetadata(
+	env: StripeEnv,
+	input: {
+		object: 'customers' | 'subscriptions'
+		id: string
+		metadata: Record<string, string>
+	},
+): Promise<void> {
+	const id = input.id.trim()
+	if (!id) {
+		throw new StripeApiError(`${input.object} id is required.`, { status: 400 })
+	}
+	const form: Record<string, string> = {}
+	for (const [key, value] of Object.entries(input.metadata)) {
+		const trimmedKey = key.trim()
+		const trimmedValue = value.trim()
+		if (!trimmedKey || !trimmedValue) continue
+		form[`metadata[${trimmedKey}]`] = trimmedValue
+	}
+	if (Object.keys(form).length === 0) return
+	await stripeRequest(env, {
+		method: 'POST',
+		path: `/v1/${input.object}/${encodeURIComponent(id)}`,
+		form,
+	})
 }
 
 /**

@@ -353,11 +353,17 @@ test('an owner subscribes the team org in the URL with one seat per owner and me
 	const env = createEnv()
 	const response = await postCheckout(env, 'acme', { plan: 'pro' })
 	expect(response.status).toBe(200)
-	expect(mocks.createCheckoutSession).toHaveBeenCalledWith(
-		env,
+	const checkoutArgs = mocks.createCheckoutSession.mock.calls.at(-1)?.[1] as {
+		clientReferenceId: string
+		metadata: Record<string, string>
+		quantity: number
+		customerEmail: string
+		successUrl: string
+		cancelUrl: string
+	}
+	expect(checkoutArgs).toEqual(
 		expect.objectContaining({
 			clientReferenceId: await createBillingLinkReference(env, 'org-acme'),
-			metadata: expect.objectContaining({ kody_org_id: 'org-acme' }),
 			// Ada (owner) and Bob (member); Cara's billing role is not a seat.
 			quantity: 2,
 			customerEmail: 'ada@example.com',
@@ -365,6 +371,14 @@ test('an owner subscribes the team org in the URL with one seat per owner and me
 				'https://example.com/@acme/-/billing/success?session_id={CHECKOUT_SESSION_ID}',
 			cancelUrl: 'https://example.com/@acme/-/billing',
 		}),
+	)
+	// Team org id everywhere — never the authorizing member's personal org /
+	// stable user id (regression for misattributed team checkout).
+	expect(checkoutArgs.metadata.kody_org_id).toBe('org-acme')
+	expect(checkoutArgs.metadata.kody_stable_user_id).toBe('org-acme')
+	expect(checkoutArgs.metadata.kody_org_id).not.toBe(people.ada.personId)
+	expect(checkoutArgs.clientReferenceId).not.toBe(
+		await createBillingLinkReference(env, people.ada.personId),
 	)
 })
 

@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import {
+	handleIncidentDeleteRequest,
 	handleIncidentRetrospectiveRequest,
+	parseIncidentPath,
 	parseIncidentRetrospectivePath,
 	unknownStatusMaintenanceResponse,
 } from './retrospective-maintenance.ts'
@@ -134,5 +136,82 @@ test('retrospective maintenance path authenticates and writes only resolved inci
 			setRetrospective: async () => ({ ok: false, error }),
 		})
 		expect(response.status).toBe(status)
+	}
+})
+
+function deleteRequest(input: {
+	method?: string
+	authorization?: string | null
+}) {
+	const headers = new Headers()
+	if (input.authorization !== null) {
+		headers.set('authorization', input.authorization ?? 'Bearer shared-secret')
+	}
+	return new Request('https://status.kody.codes/__maintenance/incidents/11', {
+		method: input.method ?? 'DELETE',
+		headers,
+	})
+}
+
+test('incident delete path authenticates and deletes only resolved incidents', async () => {
+	expect(
+		[
+			'/__maintenance/incidents/11',
+			'/__maintenance/incidents/0',
+			'/__maintenance/incidents/11/retrospective',
+			'/__maintenance/incidents/abc',
+			'/__maintenance/incidents/',
+		].map(parseIncidentPath),
+	).toEqual([11, null, null, null, null])
+
+	const rejected: Array<[Request, string, number]> = [
+		[deleteRequest({ method: 'POST' }), 'shared-secret', 405],
+		[deleteRequest({}), '  ', 503],
+		[deleteRequest({ authorization: 'Bearer wrong' }), 'shared-secret', 401],
+		[deleteRequest({ authorization: null }), 'shared-secret', 401],
+	]
+	const responses = await Promise.all(
+		rejected.map(([request, secret]) =>
+			handleIncidentDeleteRequest({
+				request,
+				incidentId: 11,
+				secret,
+				deleteIncident: async () => {
+					throw new Error('should not delete')
+				},
+			}),
+		),
+	)
+	expect(responses.map((response) => response.status)).toEqual(
+		rejected.map(([, , status]) => status),
+	)
+	expect(responses[0]!.headers.get('Allow')).toBe('DELETE')
+
+	const deleted: Array<number> = []
+	const ok = await handleIncidentDeleteRequest({
+		request: deleteRequest({}),
+		incidentId: 11,
+		secret: 'shared-secret',
+		deleteIncident: async (id) => {
+			deleted.push(id)
+			return { ok: true, incident: { ...incidentView(), id } }
+		},
+	})
+	expect(ok.status).toBe(200)
+	expect(deleted).toEqual([11])
+	expect(await ok.json()).toMatchObject({ ok: true, incident: { id: 11 } })
+
+	for (const [error, status, message] of [
+		['not-found', 404, 'incident not found'],
+		['not-resolved', 409, 'only resolved incidents can be deleted'],
+	] as const) {
+		const response = await handleIncidentDeleteRequest({
+			request: deleteRequest({}),
+			incidentId: 11,
+			secret: 'shared-secret',
+			deleteIncident: async () => ({ ok: false, error }),
+		})
+		expect(response.status).toBe(status)
+		expect(await response.json()).toEqual({ ok: false, error: message })
 	}
 })

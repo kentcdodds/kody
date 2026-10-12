@@ -127,10 +127,10 @@ hard-code a previous `@{username}` scope need updates from their owners.
 the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
 secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
 `NAME`, with the same package access rules as a package without slots. Name each
-slot after the secret or integration the code references. The leftover name lane
-is tracked in
-[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
+slot after the secret or integration the code references. These placeholders
+keep working permanently; more secure credential types that a package can opt
+into are described in
+[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md).
 
 ```json
 {

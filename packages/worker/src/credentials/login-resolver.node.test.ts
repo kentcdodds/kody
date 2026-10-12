@@ -180,7 +180,7 @@ async function setup() {
 	const signIn = (input: {
 		actor: ReturnType<typeof requestAs>
 		credentialId: string
-		requestHost?: string
+		requestUrl?: string
 	}) =>
 		resolveCredential({
 			env,
@@ -190,7 +190,9 @@ async function setup() {
 			credential: {
 				use: 'login',
 				credentialId: input.credentialId,
-				requestHost: input.requestHost ?? 'api.example.com',
+				requestUrl: new URL(
+					input.requestUrl ?? 'https://api.example.com/v1/reports',
+				),
 			},
 		})
 	const grantUse = (credentialId: string) =>
@@ -283,14 +285,25 @@ test('Use is checked on every resolution, cached session or not', async () => {
 	])
 })
 
-test('an off-host request or exchange URL never runs the exchange or reads the fields', async () => {
+test('an off-host or plain HTTP request, or a bad exchange URL, never runs the exchange or reads the fields', async () => {
 	const t = await setup()
 	const exchanges = stubLoginEndpoint()
 	const actor = t.requestAs('bea', 'owner')
 	const id = await t.storeCredential({ name: 'portal-login' })
 	await expect(
-		t.signIn({ actor, credentialId: id, requestHost: 'evil.example.net' }),
+		t.signIn({
+			actor,
+			credentialId: id,
+			requestUrl: 'https://evil.example.net/v1/reports',
+		}),
 	).rejects.toMatchObject({ code: 'host_not_allowed' })
+	await expect(
+		t.signIn({
+			actor,
+			credentialId: id,
+			requestUrl: 'http://api.example.com/v1/reports',
+		}),
+	).rejects.toMatchObject({ code: 'insecure_transport' })
 	const offHost = await t.storeCredential({
 		name: 'off-host-exchange',
 		exchange: { ...jsonExchange, url: 'https://evil.example.net/login' },
@@ -343,6 +356,33 @@ test('a failed exchange reports only its status and keeps no session', async () 
 	expect(JSON.stringify(rows)).not.toContain(password)
 })
 
+test('a token the endpoint reports as expired, or an oversized response, is never cached', async () => {
+	const t = await setup()
+	const actor = t.requestAs('bea', 'owner')
+	const id = await t.storeCredential({ name: 'portal-login' })
+	const expired = stubLoginEndpoint((call) =>
+		Response.json({ data: { token: `session-${call}`, expires_in: 0 } }),
+	)
+	await expect(t.signIn({ actor, credentialId: id })).resolves.toMatchObject({
+		placement: { value: 'Bearer session-1' },
+	})
+	await expect(t.signIn({ actor, credentialId: id })).resolves.toMatchObject({
+		placement: { value: 'Bearer session-2' },
+	})
+	expect(expired).toHaveLength(2)
+
+	const oversized = stubLoginEndpoint(() =>
+		Response.json({ data: { token: 'big', padding: 'x'.repeat(70_000) } }),
+	)
+	await expect(t.signIn({ actor, credentialId: id })).rejects.toBeInstanceOf(
+		CredentialLoginFailedError,
+	)
+	await expect(t.signIn({ actor, credentialId: id })).rejects.toBeInstanceOf(
+		CredentialLoginFailedError,
+	)
+	expect(oversized).toHaveLength(2)
+})
+
 test('a form exchange can place its session in a query parameter, and a changed credential signs in again', async () => {
 	const t = await setup()
 	const exchanges = stubLoginEndpoint()
@@ -374,9 +414,29 @@ test('a form exchange can place its session in a query parameter, and a changed 
 	const formExchanges = stubLoginEndpoint(() =>
 		Response.json({ access_token: 'form-session-2' }),
 	)
+	// A replacement in the same millisecond still starts a new session.
+	const { updated_at } = (await t.db
+		.prepare(`SELECT updated_at FROM secret_entries WHERE id = ?`)
+		.bind(id)
+		.first<{ updated_at: string }>())!
+	await t.storeCredential({
+		name: 'form-login',
+		exchange: {
+			url: 'https://api.example.com/oauth/token',
+			bodyFormat: 'form',
+			body: {
+				grant_type: 'password',
+				username: '{username}',
+				password: '{password}',
+			},
+			tokenPath: 'access_token',
+			ttlSeconds: 600,
+		},
+		inject: { kind: 'query', param: 'access_token' },
+	})
 	await t.db
 		.prepare(`UPDATE secret_entries SET updated_at = ? WHERE id = ?`)
-		.bind('2026-10-13T00:00:00.000Z', id)
+		.bind(updated_at, id)
 		.run()
 	await expect(t.signIn({ actor, credentialId: id })).resolves.toMatchObject({
 		placement: { value: 'form-session-2' },

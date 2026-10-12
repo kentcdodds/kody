@@ -117,8 +117,9 @@ by name. The name resolves to the credential id once, at grant time, and the
 grant is stored under `credential`; a name that matches no credential is
 refused. `accessList` accepts the same by-name filters and resolves the name
 when listing: after a rename, the old name finds no grants, though the grant on
-the credential id remains. Those by-name targets are leftover and tracked in
-[planned breaking changes](../planned-breaking-changes.md).
+the credential id remains. By-name targets are a permanent part of the API,
+beside grants by credential id
+([ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 **Personal credentials** (`credentials/personal-credentials.ts`) are credentials
 in their owner's personal org. The owner grants one to another org they have a

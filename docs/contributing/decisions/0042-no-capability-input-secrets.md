@@ -2,10 +2,6 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-29
-- **Superseded in part by:**
-  [0068](./0068-credentials-own-placement-scoped-clients.md) (package grants and
-  `x-kody-secret-resolution` are removed with the placeholder lane; the decision
-  itself stands)
 
 ## Context
 

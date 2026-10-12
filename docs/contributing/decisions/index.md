@@ -63,7 +63,7 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
 - [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
-  (credential authority superseded in part by 0068)
+  (credential authority for scoped clients superseded in part by 0068)
 - [0022 — Retire the values primitive; do not add a thinner settings twin](./0022-retire-values-primitive.md)
 - [0023 — Progressive search disclosure; no full-SDK dumps or unbounded listings](./0023-progressive-search-disclosure.md)
 - [0024 — Packages outrank synthesized providers; no auto-delete or ranking toggle](./0024-packages-outrank-synthesized-providers.md)
@@ -79,8 +79,7 @@ Open these before proposing a new primitive, surface, or storage home.
   `@kody/*` admin-notify package
 - [0042 — No capability-input secret placeholders or capability allowlists](./0042-no-capability-input-secrets.md)
   — fetch host approval and package grants remain; do not re-add `x-kody-secret`
-  input resolution or a per-secret capability allowlist (package grants
-  superseded by 0068)
+  input resolution or a per-secret capability allowlist
 - [0043 — Repo visibility is the share switch; no community-package kind](./0043-repo-visibility-no-community-kind.md)
   — no `package.json#private` SoT, no second publish semantics
   (`communityPublish` stays a visibility alias), no license bureau, no trusted
@@ -167,14 +166,15 @@ Open these before proposing a new primitive, surface, or storage home.
   — shares are `use` grants, scope grants are Owner memberships, platform
   accounts are ordinary orgs; a package imports only its own org's packages and
   cross-org access is a grant or a fork (supersedes 0014, 0035, 0036, 0050)
-- [0068: Credentials own placement; scoped clients replace slots, assignments, and placeholders](./0068-credentials-own-placement-scoped-clients.md)
-  is the source of truth for the credentials model. Credentials own hosts and
-  placement (never the body); code gets a scoped `credential()` client; the
-  actor's Use plus `package:execute` is the only authority; enablements are the
-  only persisted choice. No assignment tables, saved bindings, or package
-  allowlists; placeholders retire after the fleet codemod (supersedes credential
-  authority in 0021, parts of 0042, and credentials plan v4 sections 3.3 and
-  3.4)
+- [0068: Credentials own placement; scoped clients replace slots and assignments](./0068-credentials-own-placement-scoped-clients.md)
+  is the source of truth for the credentials model. Today's secrets are the Key
+  type and keep filling placeholders permanently; by-name grants stay; nothing
+  is scheduled for removal. Opt-in types (scoped `credential()` clients with
+  credential-owned hosts and placement, `url`, `login`, `signing`) use the
+  actor's Use plus `package:execute` as the only authority. No assignment tables
+  or saved bindings; the fleet codemod is an owner-approved suggestion
+  (supersedes scoped-client credential authority in 0021 and credentials plan v4
+  sections 3.3 and 3.4)
 
 ## Historical / UI / implementation
 

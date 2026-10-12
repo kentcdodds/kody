@@ -38,6 +38,52 @@ export function daysToClearNonIncidentFailures(
 	})
 }
 
+export function utcDaysInSpan(
+	startedAt: number,
+	endedAt: number,
+): Array<string> {
+	const days: Array<string> = []
+	const last = new Date(Math.max(startedAt, endedAt)).toISOString().slice(0, 10)
+	let cursor = Date.parse(
+		`${new Date(startedAt).toISOString().slice(0, 10)}T00:00:00.000Z`,
+	)
+	for (;;) {
+		const day = new Date(cursor).toISOString().slice(0, 10)
+		days.push(day)
+		if (day >= last) return days
+		cursor += 24 * 60 * 60 * 1000
+	}
+}
+
+/**
+ * Daily failed counts for the days a deleted incident covered. Days no other
+ * incident covers drop to zero. Days shared with another incident subtract
+ * the deleted span's failed samples. Samples only live for about a day, so
+ * when they have been pruned (`removedFailedSamplesByDay` is null) the
+ * subtraction falls back to the deleted span's minutes on that day, since
+ * probes run once a minute.
+ */
+export function dailyFailedAfterIncidentDelete(input: {
+	stats: ReadonlyArray<Omit<DailyFailedStat, 'component'>>
+	deletedSpan: IncidentSpan
+	removedFailedSamplesByDay: ReadonlyMap<string, number> | null
+	remainingSpans: ReadonlyArray<IncidentSpan>
+	now: number
+}): Array<{ day: string; failed: number }> {
+	return input.stats.map((row) => {
+		const remainingMinutes = incidentMinutesForDay(
+			row.day,
+			input.remainingSpans,
+			input.now,
+		)
+		if (remainingMinutes === 0) return { day: row.day, failed: 0 }
+		const removed = input.removedFailedSamplesByDay
+			? (input.removedFailedSamplesByDay.get(row.day) ?? 0)
+			: incidentMinutesForDay(row.day, [input.deletedSpan], input.now)
+		return { day: row.day, failed: Math.max(0, row.failed - removed) }
+	})
+}
+
 export function daysFromFirstSample(
 	days: ReadonlyArray<ComponentDayStat>,
 ): Array<ComponentDayStat> {

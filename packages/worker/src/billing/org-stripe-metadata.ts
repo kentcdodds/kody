@@ -12,6 +12,10 @@ export const KODY_STABLE_USER_ID_METADATA_KEY = 'kody_stable_user_id'
  * `kody_org_id`; also sets `kody_stable_user_id` to the same value so webhooks
  * and checkout paths that still read the legacy key keep working. Cleanup will
  * drop `kody_stable_user_id` once all readers prefer `kody_org_id`.
+ *
+ * For a team org the value is the team `orgs.id`, which is not a person id.
+ * Equality of the two keys therefore does not mean "personal org" — that is
+ * only true when the shared value also exists as `users.stable_user_id`.
  */
 export function buildOrgBillingMetadata(orgId: string): Record<string, string> {
 	return {

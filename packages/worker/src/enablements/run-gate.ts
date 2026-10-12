@@ -118,7 +118,7 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
 
 /**
  * What a credential pause waits on. The credential's stable id while it is
- * still live; once soft-deleted, its name resolves now (old lane), so a
+ * still live; once soft-deleted, its name resolves now (by name), so a
  * grant on a deleted credential never resumes the enablement. A vault
  * binding, or an id whose row is gone (vault bindings are hard-deleted), has
  * no name lane. A vault that had no binding resolves its provider id to the

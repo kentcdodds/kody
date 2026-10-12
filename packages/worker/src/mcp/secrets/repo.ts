@@ -111,7 +111,6 @@ export type StoredCredentialRow = {
 	allowed_hosts: string
 	inject_json: string
 	config_json: string | null
-	updated_at: string
 }
 
 /**
@@ -130,8 +129,7 @@ export async function getStoredCredentialEntry(input: {
 		.prepare(
 			`SELECT e.id AS id, e.name AS name, e.kind AS kind,
 				e.encrypted_value AS encrypted_value, e.allowed_hosts AS allowed_hosts,
-				e.inject_json AS inject_json, e.config_json AS config_json,
-				e.updated_at AS updated_at
+				e.inject_json AS inject_json, e.config_json AS config_json
 			FROM secret_entries e
 			JOIN secret_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
@@ -151,7 +149,6 @@ export async function getStoredCredentialEntry(input: {
 		allowed_hosts: String(row['allowed_hosts']),
 		inject_json: String(row['inject_json']),
 		config_json: row['config_json'] == null ? null : String(row['config_json']),
-		updated_at: String(row['updated_at']),
 	}
 }
 

@@ -1,5 +1,6 @@
 /**
- * Secret-gated write for attaching a retrospective to a resolved incident.
+ * Secret-gated operator writes on resolved incidents: attach a retrospective,
+ * or delete a health-check-only incident that had no user impact.
  * Lives on the status worker so origin / APP_DB being down cannot block it.
  */
 
@@ -11,12 +12,12 @@ import {
 } from './retrospective.ts'
 import { type IncidentView } from './status-types.ts'
 
-const incidentRetrospectivePathPrefix = '/__maintenance/incidents/'
+const incidentPathPrefix = '/__maintenance/incidents/'
 const incidentRetrospectivePathSuffix = '/retrospective'
-const incidentRetrospectiveNotConfiguredMessage =
-	'Status incident retrospectives are not configured'
+const incidentMaintenanceNotConfiguredMessage =
+	'Status incident maintenance is not configured'
 
-export type SetIncidentRetrospectiveResult =
+export type ResolvedIncidentWriteResult =
 	| { ok: true; incident: IncidentView }
 	| { ok: false; error: 'not-found' | 'not-resolved' }
 
@@ -27,23 +28,78 @@ function readBearerToken(request: Request) {
 		: null
 }
 
-export function parseIncidentRetrospectivePath(
-	pathname: string,
-): number | null {
-	if (
-		!pathname.startsWith(incidentRetrospectivePathPrefix) ||
-		!pathname.endsWith(incidentRetrospectivePathSuffix)
-	) {
-		return null
-	}
-	const idPart = pathname.slice(
-		incidentRetrospectivePathPrefix.length,
-		pathname.length - incidentRetrospectivePathSuffix.length,
-	)
+function parseIncidentId(idPart: string): number | null {
 	if (!/^\d+$/.test(idPart)) return null
 	const id = Number(idPart)
 	if (!Number.isInteger(id) || id < 1) return null
 	return id
+}
+
+export function parseIncidentRetrospectivePath(
+	pathname: string,
+): number | null {
+	if (
+		!pathname.startsWith(incidentPathPrefix) ||
+		!pathname.endsWith(incidentRetrospectivePathSuffix)
+	) {
+		return null
+	}
+	return parseIncidentId(
+		pathname.slice(
+			incidentPathPrefix.length,
+			pathname.length - incidentRetrospectivePathSuffix.length,
+		),
+	)
+}
+
+export function parseIncidentPath(pathname: string): number | null {
+	if (!pathname.startsWith(incidentPathPrefix)) return null
+	return parseIncidentId(pathname.slice(incidentPathPrefix.length))
+}
+
+async function rejectUnauthorizedMaintenance(input: {
+	request: Request
+	method: 'POST' | 'DELETE'
+	secret: string | null | undefined
+}): Promise<Response | null> {
+	if (input.request.method !== input.method) {
+		return new Response('Method Not Allowed', {
+			status: 405,
+			headers: { Allow: input.method },
+		})
+	}
+
+	const secret = input.secret?.trim()
+	if (!secret) {
+		return new Response(incidentMaintenanceNotConfiguredMessage, {
+			status: 503,
+		})
+	}
+
+	const bearer = readBearerToken(input.request)
+	if (bearer === null || !(await timingSafeEqualString(bearer, secret))) {
+		return new Response('Unauthorized', { status: 401 })
+	}
+	return null
+}
+
+function resolvedIncidentWriteResponse(
+	result: ResolvedIncidentWriteResult,
+	notResolvedMessage: string,
+): Response {
+	if (!result.ok) {
+		const status = result.error === 'not-found' ? 404 : 409
+		const error =
+			result.error === 'not-found' ? 'incident not found' : notResolvedMessage
+		return Response.json(
+			{ ok: false, error },
+			{ status, headers: { 'Cache-Control': 'no-store' } },
+		)
+	}
+	return Response.json(
+		{ ok: true, incident: result.incident },
+		{ headers: { 'Cache-Control': 'no-store' } },
+	)
 }
 
 export async function handleIncidentRetrospectiveRequest(input: {
@@ -54,23 +110,14 @@ export async function handleIncidentRetrospectiveRequest(input: {
 	setRetrospective: (
 		id: number,
 		retrospective: IncidentRetrospective,
-	) => Promise<SetIncidentRetrospectiveResult>
+	) => Promise<ResolvedIncidentWriteResult>
 }): Promise<Response> {
-	if (input.request.method !== 'POST') {
-		return new Response('Method Not Allowed', { status: 405 })
-	}
-
-	const secret = input.secret?.trim()
-	if (!secret) {
-		return new Response(incidentRetrospectiveNotConfiguredMessage, {
-			status: 503,
-		})
-	}
-
-	const bearer = readBearerToken(input.request)
-	if (bearer === null || !(await timingSafeEqualString(bearer, secret))) {
-		return new Response('Unauthorized', { status: 401 })
-	}
+	const rejected = await rejectUnauthorizedMaintenance({
+		request: input.request,
+		method: 'POST',
+		secret: input.secret,
+	})
+	if (rejected) return rejected
 
 	const body = await input.request.json().catch(() => null)
 	const parsed = parseIncidentRetrospectiveInput(body)
@@ -85,22 +132,28 @@ export async function handleIncidentRetrospectiveRequest(input: {
 		parsed.retrospective,
 		input.now ?? Date.now(),
 	)
-	const result = await input.setRetrospective(input.incidentId, retrospective)
-	if (!result.ok) {
-		const status = result.error === 'not-found' ? 404 : 409
-		const error =
-			result.error === 'not-found'
-				? 'incident not found'
-				: 'retrospective requires a resolved incident'
-		return Response.json(
-			{ ok: false, error },
-			{ status, headers: { 'Cache-Control': 'no-store' } },
-		)
-	}
+	return resolvedIncidentWriteResponse(
+		await input.setRetrospective(input.incidentId, retrospective),
+		'retrospective requires a resolved incident',
+	)
+}
 
-	return Response.json(
-		{ ok: true, incident: result.incident },
-		{ headers: { 'Cache-Control': 'no-store' } },
+export async function handleIncidentDeleteRequest(input: {
+	request: Request
+	incidentId: number
+	secret: string | null | undefined
+	deleteIncident: (id: number) => Promise<ResolvedIncidentWriteResult>
+}): Promise<Response> {
+	const rejected = await rejectUnauthorizedMaintenance({
+		request: input.request,
+		method: 'DELETE',
+		secret: input.secret,
+	})
+	if (rejected) return rejected
+
+	return resolvedIncidentWriteResponse(
+		await input.deleteIncident(input.incidentId),
+		'only resolved incidents can be deleted',
 	)
 }
 

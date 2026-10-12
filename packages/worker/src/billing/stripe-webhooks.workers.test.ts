@@ -6,8 +6,10 @@ import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
 import { readCreditWallet } from './credit-wallet.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 const webhookSecret = 'whsec_test_workers_secret'
 const now = new Date('2026-07-25T12:00:00.000Z')
@@ -139,9 +141,16 @@ function subscriptionList(id: string, status: string, item = {}) {
 	}
 }
 
-function stubFetch(handler: (url: string) => Response | Promise<Response>) {
-	const fetchStub = vi.fn(async (request: RequestInfo | URL) =>
-		handler(String(request)),
+function stubFetch(
+	handler: (
+		url: string,
+		init?: RequestInit,
+		request?: RequestInfo | URL,
+	) => Response | Promise<Response>,
+) {
+	const fetchStub = vi.fn(
+		async (request: RequestInfo | URL, init?: RequestInit) =>
+			handler(String(request), init, request),
 	)
 	vi.stubGlobal('fetch', fetchStub)
 	return Object.assign(fetchStub, {
@@ -153,9 +162,15 @@ function stubStripeFetch(input: {
 	checkout?: unknown
 	subscriptions: unknown
 }) {
-	return stubFetch((url) => {
+	return stubFetch((url, init) => {
 		if (url.includes('/v1/checkout/sessions/')) {
 			return jsonResponse(input.checkout)
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_metadata' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(input.subscriptions)
@@ -172,7 +187,11 @@ const noFetch = (reason: string) =>
 		throw new Error(`fetch should not run for ${reason}`)
 	})
 
-async function deliver(event: Record<string, unknown>, secret = webhookSecret) {
+async function deliver(
+	event: Record<string, unknown>,
+	secret = webhookSecret,
+	envOverrides: Partial<Env> = {},
+) {
 	const rawBody = JSON.stringify(event)
 	const signature = await buildStripeWebhookSignatureHeader({
 		secret,
@@ -180,7 +199,7 @@ async function deliver(event: Record<string, unknown>, secret = webhookSecret) {
 		timestamp: Math.floor(now.valueOf() / 1000),
 	})
 	return handleStripeWebhookRequest({
-		env: createWebhookEnv(),
+		env: createWebhookEnv(envOverrides),
 		request: new Request('https://test.kody.dev/webhooks/stripe', {
 			method: 'POST',
 			headers: {
@@ -591,6 +610,209 @@ test('checkout.session.completed for a credit top-up credits the wallet once and
 			String(request).includes('/v1/subscriptions'),
 		),
 	).toBe(false)
+})
+
+test('subscription.updated with team org metadata defers until the customer is linked', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-unlinked-wh-${crypto.randomUUID()}@example.com`,
+	)
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	// No Stripe listSubscriptions: refresh must not run before checkout link.
+	using _fetch = noFetch('unlinked team subscription.updated')
+	const result = await deliver({
+		id: `evt_team_meta_${crypto.randomUUID()}`,
+		type: 'customer.subscription.updated',
+		data: {
+			object: {
+				id: 'sub_team_meta',
+				customer: 'cus_team_meta',
+				status: 'active',
+				metadata: {
+					kody_org_id: ownerIdFromStored(teamOrgId),
+					kody_stable_user_id: ownerIdFromStored(teamOrgId),
+				},
+			},
+		},
+	})
+	expect(result).toEqual({ status: 200, body: { ok: true } })
+	const org = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id, stripe_plan FROM orgs WHERE id = ?`,
+	)
+		.bind(teamOrgId)
+		.first<{ stripe_customer_id: string | null; stripe_plan: string | null }>()
+	expect(org).toEqual({ stripe_customer_id: null, stripe_plan: null })
+})
+
+test('subscription.updated before personal checkout link defers side effects until checkout', async () => {
+	const email = `wh-personal-race-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({ email })
+	const customerId = 'cus_personal_race'
+	const checkoutSessionId = 'cs_personal_race'
+	const sideEffectEnv = {
+		DISCORD_BOT_TOKEN: 'bot-token-test',
+		DISCORD_GUILD_ID: '111111111111111111',
+		DISCORD_MEMBER_ROLE_ID: '222222222222222222',
+		DISCORD_STANDARD_ROLE_ID: '444444444444444444',
+		DISCORD_PRO_ROLE_ID: '555555555555555555',
+		APP_BASE_URL: 'https://kody.codes',
+		SYSTEM_EMAIL_DOMAIN: 'kody.codes',
+		CLOUDFLARE_ACCOUNT_ID: 'account-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+	} satisfies Partial<Env>
+
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS oauth_connections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider_name TEXT NOT NULL,
+			provider_id TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			provider_display_name TEXT,
+			created_at TEXT,
+			updated_at TEXT
+		)`,
+	).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO oauth_connections (provider_name, provider_id, user_id)
+		 VALUES ('discord', '333333333333333333', ?)`,
+	)
+		.bind(user.id)
+		.run()
+	// Usage above the free include so unlock forgiveness writes progress rows.
+	await env.APP_DB.prepare(
+		`INSERT INTO usage_rollups (user_id, metric, month, event_count)
+		 VALUES (?, 'dynamic_worker_day', '2026-07', 900)`,
+	)
+		.bind(user.stableUserId)
+		.run()
+
+	const counts = {
+		subscriptionLists: 0,
+		discordRoleWrites: 0,
+		billingSuccessEmails: 0,
+	}
+	using _fetch = stubFetch((url, init) => {
+		if (url.includes('/v1/subscriptions')) {
+			counts.subscriptionLists += 1
+			return jsonResponse(subscriptionList('sub_personal_race', 'active'))
+		}
+		if (url.includes('/v1/checkout/sessions/')) {
+			return jsonResponse({
+				id: checkoutSessionId,
+				customer: customerId,
+				client_reference_id: user.linkReference,
+			})
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: customerId })
+		}
+		if (url.includes('discord.com/api/v10/guilds/')) {
+			counts.discordRoleWrites += 1
+			return new Response(null, { status: 204 })
+		}
+		if (url.includes('/email/sending/send')) {
+			counts.billingSuccessEmails += 1
+			return jsonResponse({
+				success: true,
+				result: { message_id: 'msg_personal_race' },
+			})
+		}
+		return jsonResponse({ error: 'unexpected path' }, 500)
+	})
+
+	const subscriptionMetadata = {
+		kody_org_id: ownerIdFromStored(user.stableUserId),
+		kody_stable_user_id: ownerIdFromStored(user.stableUserId),
+	}
+	const progressCount = () =>
+		env.APP_DB.prepare(
+			`SELECT COUNT(*) AS n FROM credit_debit_progress WHERE user_id = ?`,
+		)
+			.bind(user.stableUserId)
+			.first<{ n: number }>()
+
+	// Race: subscription.updated arrives before checkout.session.completed.
+	expect(
+		await deliver(
+			{
+				id: `evt_personal_race_sub_${crypto.randomUUID()}`,
+				type: 'customer.subscription.updated',
+				data: {
+					object: {
+						id: 'sub_personal_race',
+						customer: customerId,
+						status: 'active',
+						metadata: subscriptionMetadata,
+					},
+				},
+			},
+			webhookSecret,
+			sideEffectEnv,
+		),
+	).toEqual({ status: 200, body: { ok: true } })
+	expect(await readUserBilling(user.id)).toEqual({
+		stripe_customer_id: null,
+		stripe_plan: null,
+		stripe_plan_refreshed_at: null,
+	})
+	expect(counts).toEqual({
+		subscriptionLists: 0,
+		discordRoleWrites: 0,
+		billingSuccessEmails: 0,
+	})
+	expect(await progressCount()).toEqual({ n: 0 })
+
+	expect(
+		await deliver(
+			{
+				id: `evt_personal_race_checkout_${crypto.randomUUID()}`,
+				type: 'checkout.session.completed',
+				data: {
+					object: {
+						id: checkoutSessionId,
+						customer: customerId,
+						client_reference_id: user.linkReference,
+						customer_email: email,
+						metadata: subscriptionMetadata,
+					},
+				},
+			},
+			webhookSecret,
+			sideEffectEnv,
+		),
+	).toEqual({ status: 200, body: { ok: true } })
+	expect(await readUserBilling(user.id)).toEqual({
+		stripe_customer_id: customerId,
+		stripe_plan: 'pro',
+		stripe_plan_refreshed_at: now.toISOString(),
+	})
+	await vi.waitFor(() => {
+		expect(counts.discordRoleWrites).toBe(3)
+		expect(counts.billingSuccessEmails).toBe(1)
+	})
+	// One refresh after the link: Stripe list once, Discord sync once,
+	// billing-success email once, credit forgiveness once.
+	expect(counts).toEqual({
+		subscriptionLists: 1,
+		discordRoleWrites: 3,
+		billingSuccessEmails: 1,
+	})
+	const forgiven = await progressCount()
+	expect(forgiven?.n).toBeGreaterThan(0)
 })
 
 test('checkout.session.expired releases a reserved promo claim but never a finalized one', async () => {
