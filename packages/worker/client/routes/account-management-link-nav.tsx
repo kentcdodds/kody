@@ -17,6 +17,8 @@ type AccountManagementLinkNavItem = {
 type AccountManagementLinkNavGroup = {
 	label: string | null
 	items: Array<AccountManagementLinkNavItem>
+	/** Role-permission explanation when this group is a reduced subset. */
+	note?: string
 }
 
 type AccountManagementLinkNavProps = {
@@ -75,6 +77,14 @@ const railGroupCss = {
 	gap: '0.15rem',
 }
 
+const railGroupNoteCss = {
+	margin: 0,
+	padding: '0.35rem 0.7rem 0.55rem',
+	fontSize: '0.8rem',
+	lineHeight: 1.4,
+	color: colors.textMuted,
+}
+
 function renderRailHeading(heading: AccountManagementLinkNavProps['heading']) {
 	if (!heading) return null
 	return (
@@ -99,6 +109,11 @@ function renderRailGroups(
 			{group.label ? (
 				<p aria-hidden="true" mix={css(railGroupLabelCss)}>
 					{group.label}
+				</p>
+			) : null}
+			{group.note ? (
+				<p mix={css(railGroupNoteCss)} data-testid="account-rail-group-note">
+					{group.note}
 				</p>
 			) : null}
 			{renderAccountNavLinks(group.items, linkCss)}

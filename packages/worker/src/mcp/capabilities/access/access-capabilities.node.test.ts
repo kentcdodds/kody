@@ -31,7 +31,21 @@ async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
+	await ensureUsersTestSchema({ db })
 	return db
+}
+
+async function insertPerson(
+	db: D1Database,
+	input: { personId: string; username: string; email: string },
+) {
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, 'x', ?)`,
+		)
+		.bind(input.username, input.email, input.personId)
+		.run()
 }
 
 function capabilityContext(input: {
@@ -135,6 +149,11 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 test('teamCreate refuses the personal organization', async () => {
 	const db = await createDb()
 	const ownerId = testStableUserIdFromEmail('owner-personal-team@example.com')
+	await insertPerson(db, {
+		personId: ownerId,
+		username: 'personalteamowner',
+		email: 'owner-personal-team@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId: ownerId,
 		username: 'personalteamowner',
@@ -156,6 +175,11 @@ test('teamCreate refuses the personal organization', async () => {
 test('inviteCreate membership refuses the personal organization', async () => {
 	const db = await createDb()
 	const ownerId = testStableUserIdFromEmail('owner-personal-invite@example.com')
+	await insertPerson(db, {
+		personId: ownerId,
+		username: 'personalowner',
+		email: 'owner-personal-invite@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId: ownerId,
 		username: 'personalowner',

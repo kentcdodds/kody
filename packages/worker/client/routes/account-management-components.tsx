@@ -401,6 +401,7 @@ type AccountPageHeaderProps = {
 function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
 	return groups.map((group) => ({
 		label: group.label,
+		note: group.note,
 		items: group.items.map((item) => ({
 			href: item.href,
 			label: item.label,

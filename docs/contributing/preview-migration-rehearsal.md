@@ -52,6 +52,10 @@ node tools/preview-rehearsal/run.ts diff --before before/d1-snapshot.json --afte
 
 # 7. Rehearse rollback: restore the step 4 bookmarks.
 gh workflow run preview-rehearsal.yml -f preview_name=$P -f action=restore -f snapshot_run_id=<before-run-id> -f confirm=$P
+
+# 8. Redeploy main. Restore rewinds D1 but leaves the migration branch's code
+#    deployed, so the worker can read columns the restored D1 lacks (#3550).
+gh workflow run preview.yml --ref main -f action=deploy -f target=branch -f preview_name=teams-rehearsal
 ```
 
 Attach the run links and both diffs to the migration PR. `diff` exits 1 when

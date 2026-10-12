@@ -17,39 +17,6 @@ const listPackageScopeSecretFixedBindings = 2
 const secretEntryColumns =
 	'id, bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages, expires_at, created_at, updated_at'
 
-function isMissingKindColumn(error: unknown) {
-	const message = error instanceof Error ? error.message : String(error)
-	return /no such column: (?:\w+\.)?kind\b/i.test(message)
-}
-
-function isMissingConfigColumn(error: unknown) {
-	const message = error instanceof Error ? error.message : String(error)
-	return /no such column: (?:\w+\.)?config_json\b/i.test(message)
-}
-
-/**
- * 0117 adds `secret_entries.kind`. A rehearsal restore (or a preview still on
- * the previous schema) can drop that column while this worker is already
- * deployed; every existing row is a `secret`.
- */
-async function firstRowWithOptionalKind(
-	queryWithKind: () => Promise<Record<string, unknown> | null>,
-	queryWithoutKind: () => Promise<Record<string, unknown> | null>,
-): Promise<Record<string, unknown> | null> {
-	try {
-		return await queryWithKind()
-	} catch (error) {
-		if (!isMissingKindColumn(error)) throw error
-		return await queryWithoutKind()
-	}
-}
-
-function storedKindFromRow(row: Record<string, unknown>): StoredCredentialKind {
-	return row['kind'] === undefined
-		? 'secret'
-		: readStoredCredentialKind(row['kind'])
-}
-
 type SecretMetadataRow = {
 	id: string
 	scope: SecretScope
@@ -119,23 +86,16 @@ export async function getSecretEntry(input: {
 	bucketId: string
 	name: string
 }): Promise<(SecretEntryRow & { kind: StoredCredentialKind }) | null> {
-	const where = `FROM secret_entries
+	const row = await input.db
+		.prepare(
+			`SELECT ${secretEntryColumns}, kind FROM secret_entries
 			WHERE bucket_id = ? AND name = ?
-			${andLiveDeletedAtSql()} LIMIT 1`
-	const row = await firstRowWithOptionalKind(
-		() =>
-			input.db
-				.prepare(`SELECT ${secretEntryColumns}, kind ${where}`)
-				.bind(input.bucketId, input.name)
-				.first<Record<string, unknown>>(),
-		() =>
-			input.db
-				.prepare(`SELECT ${secretEntryColumns} ${where}`)
-				.bind(input.bucketId, input.name)
-				.first<Record<string, unknown>>(),
-	)
+			${andLiveDeletedAtSql()} LIMIT 1`,
+		)
+		.bind(input.bucketId, input.name)
+		.first<Record<string, unknown>>()
 	return row
-		? { ...mapSecretEntryRow(row), kind: storedKindFromRow(row) }
+		? { ...mapSecretEntryRow(row), kind: readStoredCredentialKind(row['kind']) }
 		: null
 }
 
@@ -167,40 +127,26 @@ export async function getStoredCredentialEntry(input: {
 	now?: string
 }): Promise<StoredCredentialRow | null> {
 	const now = input.now ?? new Date().toISOString()
-	const from = `FROM secret_entries e
+	const row = await input.db
+		.prepare(
+			`SELECT e.id AS id, e.name AS name, e.kind AS kind,
+				e.encrypted_value AS encrypted_value, e.allowed_hosts AS allowed_hosts,
+				e.inject_json AS inject_json, e.config_json AS config_json
+			FROM secret_entries e
 			JOIN secret_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
 				AND e.id = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			LIMIT 1`
-	const select = (columns: string) =>
-		input.db
-			.prepare(`SELECT ${columns} ${from}`)
-			.bind(input.ownerId, input.credentialId, now, now)
-			.first<Record<string, unknown>>()
-	const columns = `e.id AS id, e.name AS name,
-				e.encrypted_value AS encrypted_value, e.allowed_hosts AS allowed_hosts,
-				e.inject_json AS inject_json`
-	// 0118 adds `config_json`; before it no row has an exchange.
-	const row = await firstRowWithOptionalKind(
-		async () => {
-			try {
-				return await select(
-					`${columns}, e.kind AS kind, e.config_json AS config_json`,
-				)
-			} catch (error) {
-				if (!isMissingConfigColumn(error)) throw error
-				return await select(`${columns}, e.kind AS kind`)
-			}
-		},
-		() => select(columns),
-	)
+			LIMIT 1`,
+		)
+		.bind(input.ownerId, input.credentialId, now, now)
+		.first<Record<string, unknown>>()
 	if (!row) return null
 	return {
 		id: String(row['id']),
 		name: String(row['name']),
-		kind: storedKindFromRow(row),
+		kind: readStoredCredentialKind(row['kind']),
 		encrypted_value: String(row['encrypted_value']),
 		allowed_hosts: String(row['allowed_hosts']),
 		inject_json: String(row['inject_json']),

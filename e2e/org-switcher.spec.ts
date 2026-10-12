@@ -59,20 +59,10 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).not.toHaveAttribute('aria-current', 'true')
 	await expect(wide.panel.getByTestId('org-switcher-create')).toBeVisible()
-	const manageGroup = wide.panel.getByTestId('org-switcher-manage-group')
-	await expect(manageGroup).toBeVisible()
-	await expect(
-		manageGroup.getByTestId('org-switcher-org-manage-overview'),
-	).toHaveAttribute('href', `/@pinned-${runId}`)
-	await expect(
-		manageGroup.getByRole('link', { name: 'Settings' }),
-	).toHaveAttribute('href', `/@pinned-${runId}/-/settings`)
-	await expect(
-		manageGroup.getByRole('link', { name: 'Members' }),
-	).toHaveAttribute('href', `/@pinned-${runId}/-/members`)
-	await expect(
-		manageGroup.getByRole('link', { name: 'Teams' }),
-	).toHaveAttribute('href', `/@pinned-${runId}/-/teams`)
+	await expect(wide.panel.getByTestId('org-switcher-manage-group')).toHaveCount(
+		0,
+	)
+	await expect(wide.panel.getByText(/^Manage /)).toHaveCount(0)
 	await expect(page.getByTestId('org-home-nav-workspace')).toHaveAttribute(
 		'href',
 		`/@pinned-${runId}/-/packages`,
@@ -114,8 +104,44 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto(`/@pinned-${runId}/-/settings`)
 	await waitForClientHydration(page)
+	// Team workspace rail matches the personal shape: same resource sections
+	// (MCP servers, Integrations, …) plus Organization management links.
+	const teamRail = page.getByRole('navigation', { name: 'Workspace sections' })
+	for (const label of [
+		'Overview',
+		'Repositories',
+		'Jobs',
+		'Workflows',
+		'Webhooks',
+		'Connections',
+		'Integrations',
+		'MCP servers',
+		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
+		'Settings',
+		'Members',
+		'Teams',
+		'Grants',
+		'Collaborators',
+		'Billing',
+		'Usage',
+	] as const) {
+		await expect(
+			teamRail.getByRole('link', { name: label, exact: true }),
+		).toBeVisible()
+	}
+	await expect(
+		teamRail.getByRole('link', { name: 'Overview', exact: true }),
+	).toHaveAttribute('href', `/@pinned-${runId}`)
+	await expect(
+		teamRail.getByRole('link', { name: 'MCP servers', exact: true }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/mcp-servers`)
 	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
-		`@pinned-${runId}: organizations, manage, and account`,
+		`@pinned-${runId}: organizations and account`,
 	)
 	await expect(
 		page.getByLabel('Workspace sections').getByText(`@pinned-${runId}`),
