@@ -353,6 +353,34 @@ export function createDurableObjectState() {
 	} as unknown as DurableObjectState
 }
 
+/** Same SHA-256 workspace tree hash `publishSession` uses for checks_outdated. */
+export async function workspaceTreeHash(files: Record<string, string>) {
+	const chunks = Object.keys(files)
+		.map((path) => `/session/${path}`)
+		.filter((path) => !path.includes('/.git/'))
+		.sort((left, right) => left.localeCompare(right))
+		.map((path) => `${path}\n${files[path.slice('/session/'.length)]}\n`)
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(chunks.join('')),
+	)
+	return [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+}
+
+export async function checkedPublishState(files: Record<string, string>) {
+	const state = createDurableObjectState()
+	await state.storage.put('repo-session:last-check-status', {
+		runId: 'run-1',
+		treeHash: await workspaceTreeHash(files),
+		checkedAt: '2026-04-18T00:00:00.000Z',
+		ok: true,
+		results: [],
+	})
+	return state
+}
+
 export function createFakeRepoSessionBlobs(
 	initial: Record<string, number> = {},
 ) {
