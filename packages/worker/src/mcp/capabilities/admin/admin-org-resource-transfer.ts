@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { runOrgResourceTransfer } from '#worker/org-transfer/apply.ts'
+import {
+	orgTransferSteps,
+	runOrgResourceTransfer,
+} from '#worker/org-transfer/apply.ts'
 import { defaultOrgTransferEffects } from '#worker/org-transfer/effects.ts'
+import { orgTransferFindingCodes } from '#worker/org-transfer/findings.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -15,6 +19,12 @@ const entryNameSchema = z.object({
 	binding: z.string(),
 	name: z.string(),
 })
+const findingSchema = z.object({
+	code: z.enum(orgTransferFindingCodes),
+	message: z.string(),
+	table: z.string().optional(),
+	subject: z.string().optional(),
+})
 
 export const adminOrgResourceTransferCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
@@ -22,7 +32,7 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminOrgResourceTransfer',
 		description:
-			'Admin-only: move every live resource of one org (packages, repos, sources, memories, secrets and values, integrations, OAuth apps, MCP servers, webhooks, package storage, package jobs, enablements) to another org. Email inboxes, usage history, run logs, billing, and the meter stay. dry-run reports the plan as counts and names, with clashes, blockers, and orphans. apply refuses on any clash or blocker, and on orphans unless skipOrphans (which leaves orphans out and deletes them). apply holds both orgs\u2019 write leases, writes an R2 backup of every touched row, re-seals credentials to the target, copies package storage, re-points everything in one D1 batch (package names become @<target>/<kody_id>), bumps both access epochs, and writes org audit events on both. Returns counts, names, and the backup key; never credential values. Follow with the owner-scope-follows-registry codemod so package sources import the new scope. Audited.',
+			'Admin-only: move every live resource of one org (packages, repos, sources, memories, secrets and values, integrations, OAuth apps, MCP servers, webhooks, package storage, package jobs, enablements) to another org. Email inboxes, usage history, run logs, billing, and the meter stay. dry-run reports the plan as counts and names, with coded clashes, blockers, warnings, and orphans, the refusals apply would raise, and a plan fingerprint. apply returns outcome refused (with refusals) on any clash or blocker, on orphans unless skipOrphans (which leaves orphans out and deletes them), and when expectedFingerprint no longer matches the plan. A failure before commit returns outcome failed with { committed: false, failed_step, failed_undo?, backup_key } and moves nothing. apply holds both orgs\u2019 write leases, writes an R2 backup of every touched row, re-seals credentials to the target, copies package storage, re-points everything in one D1 batch (package names become @<target>/<kody_id>), bumps both access epochs, and writes org audit events on both. Returns counts, names, the backup key, per-server MCP connection state with the Kody authorize URL when approval is pending, and each webhook\u2019s old and new public path prefix (without the URL secret); never credential values. Follow with the owner-scope-follows-registry codemod so package sources import the new scope. Audited.',
 		keywords: [
 			'admin',
 			'org',
@@ -44,10 +54,19 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 				.describe(
 					'Leave rows whose parent no longer exists out of the move and delete them.',
 				),
+			expectedFingerprint: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'The fingerprint from a reviewed dry-run. apply refuses (plan_drifted) if the plan changed since.',
+				),
 		}),
 		outputSchema: z.object({
 			mode: z.enum(['dry-run', 'apply']),
+			outcome: z.enum(['planned', 'refused', 'failed', 'applied']),
 			applied: z.boolean(),
+			fingerprint: z.string(),
 			from: orgSchema,
 			to: orgSchema,
 			counts: z.record(z.string(), z.number()),
@@ -63,16 +82,52 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 			values: z.array(entryNameSchema),
 			integrations: z.array(z.string()),
 			oauth_apps: z.array(z.string()),
-			mcp_servers: z.array(z.string()),
-			webhooks: z.array(z.object({ package: z.string(), name: z.string() })),
-			jobs: z.array(z.string()),
+			mcp_servers: z.array(z.object({ id: z.string(), name: z.string() })),
+			webhooks: z.array(
+				z.object({
+					package: z.string(),
+					name: z.string(),
+					url_changed: z.literal(true),
+					old_path_prefix: z.string(),
+					new_path_prefix: z.string(),
+					manage_path: z.string(),
+				}),
+			),
+			enablements: z.array(
+				z.object({
+					package: z.string(),
+					trigger_kind: z.string(),
+					trigger_name: z.string(),
+					state: z.string(),
+					enabler_user_id: z.string(),
+					enabler_is_target_member: z.boolean(),
+				}),
+			),
+			jobs: z.array(
+				z.object({
+					id: z.string(),
+					name: z.string(),
+					package: z.string(),
+					schedule: z.string(),
+				}),
+			),
 			storages: z.array(z.object({ storage_id: z.string(), kind: z.string() })),
 			orphans: z.array(
 				z.object({ table: z.string(), key: z.string(), reason: z.string() }),
 			),
-			clashes: z.array(z.string()),
-			blockers: z.array(z.string()),
-			warnings: z.array(z.string()),
+			clashes: z.array(findingSchema),
+			blockers: z.array(findingSchema),
+			warnings: z.array(findingSchema),
+			refusals: z.array(findingSchema),
+			failure: z
+				.object({
+					committed: z.literal(false),
+					failed_step: z.enum(orgTransferSteps),
+					failed_undo: z.array(z.string()).optional(),
+					backup_key: z.string().nullable(),
+					message: z.string(),
+				})
+				.nullable(),
 			backup_key: z.string().nullable(),
 			storage_copies: z.array(
 				z.object({
@@ -82,7 +137,16 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 				}),
 			),
 			leftovers: z.record(z.string(), z.number()),
-			post_commit_warnings: z.array(z.string()),
+			post_commit_warnings: z.array(findingSchema),
+			mcp_connections: z.array(
+				z.object({
+					id: z.string(),
+					name: z.string(),
+					state: z.string().nullable(),
+					needs_authorization: z.boolean(),
+					authorize_url: z.string().nullable(),
+				}),
+			),
 		}),
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
@@ -110,11 +174,16 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 						toOrgId: args.toOrgId,
 						mode: args.mode,
 						skipOrphans: args.skipOrphans ?? false,
+						expectedFingerprint: args.expectedFingerprint,
 					})
 					return {
 						mode: result.mode,
+						outcome: result.outcome,
 						applied: result.applied,
+						fingerprint: result.fingerprint,
 						...result.summary,
+						refusals: result.refusals,
+						failure: result.failure,
 						backup_key: result.backupKey,
 						storage_copies: result.storage.map((copy) => ({
 							storage_id: copy.storageId,
@@ -123,11 +192,12 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 						})),
 						leftovers: result.leftovers,
 						post_commit_warnings: result.postCommitWarnings,
+						mcp_connections: result.mcpConnections,
 					}
 				},
 				{
 					successReason: (result) =>
-						`mode=${result.mode};from=${result.from.id};to=${result.to.id};packages=${result.packages.length};orphans=${result.orphans.length};clashes=${result.clashes.length};blockers=${result.blockers.length};backup=${result.backup_key ?? 'none'}`,
+						`mode=${result.mode};outcome=${result.outcome};${result.failure ? `failed_step=${result.failure.failed_step};` : ''}fingerprint=${result.fingerprint};from=${result.from.id};to=${result.to.id};packages=${result.packages.length};orphans=${result.orphans.length};clashes=${result.clashes.length};blockers=${result.blockers.length};refusals=${result.refusals.map((finding) => finding.code).join(',')};backup=${result.backup_key ?? 'none'}`,
 				},
 			)
 		},

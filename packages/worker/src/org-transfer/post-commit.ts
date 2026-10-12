@@ -4,6 +4,7 @@ import { invalidateCommunityPublicCache } from '#worker/app/data-cache.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { deleteEntitySourceWithArtifacts } from '#worker/repo/entity-source-cleanup.ts'
 import { mcpClientHubTransferStub } from '#worker/mcp-client/hub-transfer.ts'
+import { type McpHubConnectResult } from '#worker/mcp-client/types.ts'
 import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
 import { refreshPackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
@@ -28,7 +29,13 @@ import {
 } from '#mcp/memory/memory-vectorize.ts'
 import { type McpMemoryRow } from '#mcp/memory/types.ts'
 import { countOrgTransferLeftovers } from './batch.ts'
+import { type OrgTransferFinding } from './findings.ts'
 import { type OrgTransferPlan } from './plan.ts'
+import {
+	describeOrgTransferMcpConnection,
+	type OrgTransferMcpConnection,
+	type OrgTransferPostCommitResult,
+} from './post-commit-result.ts'
 import { clearOwnerStorage } from './storage-copy.ts'
 
 /**
@@ -41,18 +48,20 @@ export async function runOrgTransferPostCommit(input: {
 	baseUrl: string
 	plan: OrgTransferPlan
 	cleanupOrphans: boolean
-}) {
+}): Promise<OrgTransferPostCommitResult> {
 	const { env, plan } = input
 	const fromId = plan.from.id
 	const toId = plan.to.id
-	const warnings: Array<string> = []
+	const warnings: Array<OrgTransferFinding> = []
 	const step = async (label: string, run: () => Promise<unknown>) => {
 		try {
 			await run()
 		} catch (error) {
-			warnings.push(
-				`${label}: ${error instanceof Error ? error.message : String(error)}`,
-			)
+			warnings.push({
+				code: 'post_commit_step_failed',
+				message: `${label}: ${error instanceof Error ? error.message : String(error)}`,
+				subject: label,
+			})
 		}
 	}
 
@@ -70,12 +79,25 @@ export async function runOrgTransferPostCommit(input: {
 	const targetHub = mcpClientHubTransferStub({ env, userId: toId })
 	// Close the source connection before dialing the target, so only one hub
 	// can refresh (and rotate) the server's OAuth tokens.
+	const mcpConnections: Array<OrgTransferMcpConnection> = []
 	for (const row of plan.moves.mcp_server_settings) {
-		await step(`remove source MCP server ${String(row['name'])}`, () =>
-			sourceHub.removeServerForTransfer({ serverId: String(row['id']) }),
+		const serverId = String(row['id'])
+		const name = String(row['name'])
+		await step(`remove source MCP server ${name}`, () =>
+			sourceHub.removeServerForTransfer({ serverId }),
 		)
-		await step(`connect MCP server ${String(row['name'])}`, () =>
-			targetHub.connectTransferredServer({ serverId: String(row['id']) }),
+		let result: McpHubConnectResult | null = null
+		await step(`connect MCP server ${name}`, async () => {
+			result = await targetHub.connectTransferredServer({ serverId })
+		})
+		mcpConnections.push(
+			describeOrgTransferMcpConnection({
+				serverId,
+				name,
+				result,
+				appOrigin: input.baseUrl,
+				toSlug: plan.to.slug,
+			}),
 		)
 	}
 	for (const copy of plan.logoCopies) {
@@ -220,5 +242,5 @@ export async function runOrgTransferPostCommit(input: {
 		)
 	}
 	invalidateCommunityPublicCache()
-	return { leftovers, warnings }
+	return { leftovers, warnings, mcpConnections }
 }

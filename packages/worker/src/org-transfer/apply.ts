@@ -6,6 +6,7 @@ import {
 } from '#worker/mcp-client/hub-transfer.ts'
 import { buildOrgTransferBackup, orgTransferBackupKey } from './backup.ts'
 import { buildOrgTransferStatements } from './batch.ts'
+import { type OrgTransferFinding } from './findings.ts'
 import {
 	type OrgTransferLogoCopy,
 	type OrgTransferPlan,
@@ -14,10 +15,18 @@ import {
 import { type OrgTransferSealedColumns } from './reencrypt.ts'
 import { type OrgTransferSnapshot, type OrgTransferOrg } from './snapshot.ts'
 import {
+	type OrgTransferMcpConnection,
+	type OrgTransferPostCommitResult,
+} from './post-commit-result.ts'
+import {
 	OrgTransferStorageNotEmptyError,
 	type StorageCopyResult,
 } from './storage-copy.ts'
-import { type OrgTransferSummary, summarizeOrgTransferPlan } from './report.ts'
+import {
+	fingerprintOrgTransferSummary,
+	type OrgTransferSummary,
+	summarizeOrgTransferPlan,
+} from './report.ts'
 
 export type OrgTransferMode = 'dry-run' | 'apply'
 
@@ -87,17 +96,53 @@ export type OrgTransferEffects = {
 	afterCommit(input: {
 		plan: OrgTransferPlan
 		cleanupOrphans: boolean
-	}): Promise<{ leftovers: Record<string, number>; warnings: Array<string> }>
+	}): Promise<OrgTransferPostCommitResult>
+}
+
+export type OrgTransferOutcome = 'planned' | 'refused' | 'failed' | 'applied'
+
+/** Apply's pre-commit steps, in order. */
+export const orgTransferSteps = [
+	'reseal',
+	'backup',
+	'logo_copy',
+	'storage_copy',
+	'mcp_import',
+	'jobs_transfer',
+	'commit',
+] as const
+
+export type OrgTransferStep = (typeof orgTransferSteps)[number]
+
+/**
+ * A failure before the batch committed: nothing moved. `failed_undo` lists
+ * side copies that could not be undone (the source still holds its data;
+ * the target may hold stray copies). `backup_key` is null when the failure
+ * came before the backup was written.
+ */
+export type OrgTransferFailure = {
+	committed: false
+	failed_step: OrgTransferStep
+	failed_undo?: Array<string>
+	backup_key: string | null
+	message: string
 }
 
 export type OrgTransferResult = {
 	mode: OrgTransferMode
+	outcome: OrgTransferOutcome
 	applied: boolean
 	summary: OrgTransferSummary
+	/** Hash of `summary`; pass it back as `expectedFingerprint` to apply. */
+	fingerprint: string
+	/** Why apply refuses (or, on dry-run, would refuse) this plan. */
+	refusals: Array<OrgTransferFinding>
+	failure: OrgTransferFailure | null
 	backupKey: string | null
 	storage: Array<StorageCopyResult>
 	leftovers: Record<string, number>
-	postCommitWarnings: Array<string>
+	postCommitWarnings: Array<OrgTransferFinding>
+	mcpConnections: Array<OrgTransferMcpConnection>
 }
 
 export class OrgTransferRefusedError extends Error {
@@ -142,22 +187,76 @@ async function addStorageClashes(
 	)
 	for (const storageId of full) {
 		if (storageId) {
-			plan.clashes.push(
-				`storage: ${storageId} already holds data in @${plan.to.slug}`,
-			)
+			plan.clashes.push({
+				code: 'target_storage_not_empty',
+				message: `storage: ${storageId} already holds data in @${plan.to.slug}`,
+				table: 'user_storage_buckets',
+				subject: storageId,
+			})
 		}
 	}
 	return plan
 }
 
-function refusalFor(plan: OrgTransferPlan, skipOrphans: boolean) {
-	const reasons = [...plan.clashes, ...plan.blockers]
-	if (plan.orphans.length > 0 && !skipOrphans) {
-		reasons.push(
-			`${plan.orphans.length} orphaned row(s) found; pass skipOrphans to leave them out and clean them up.`,
-		)
+async function planWithFingerprint(input: {
+	effects: OrgTransferEffects
+	from: OrgTransferOrg
+	to: OrgTransferOrg
+	skipOrphans: boolean
+	expectedFingerprint: string | undefined
+}) {
+	const plan = await addStorageClashes(
+		input.effects,
+		planOrgTransfer(
+			await input.effects.loadSnapshot({ from: input.from, to: input.to }),
+		),
+	)
+	const summary = summarizeOrgTransferPlan(plan)
+	const fingerprint = await fingerprintOrgTransferSummary(summary)
+	const refusals: Array<OrgTransferFinding> = [
+		...plan.clashes,
+		...plan.blockers,
+	]
+	if (plan.orphans.length > 0 && !input.skipOrphans) {
+		refusals.push({
+			code: 'orphans_present',
+			message: `${plan.orphans.length} orphaned row(s) found; pass skipOrphans to leave them out and clean them up.`,
+		})
 	}
-	return reasons
+	if (
+		input.expectedFingerprint !== undefined &&
+		input.expectedFingerprint !== fingerprint
+	) {
+		refusals.push({
+			code: 'plan_drifted',
+			message: `The plan changed since expectedFingerprint ${input.expectedFingerprint} (now ${fingerprint}); dry-run again and review it.`,
+		})
+	}
+	return { plan, summary, fingerprint, refusals }
+}
+
+function notApplied(input: {
+	mode: OrgTransferMode
+	outcome: OrgTransferOutcome
+	summary: OrgTransferSummary
+	fingerprint: string
+	refusals: Array<OrgTransferFinding>
+	failure?: OrgTransferFailure
+}): OrgTransferResult {
+	return {
+		mode: input.mode,
+		outcome: input.outcome,
+		applied: false,
+		summary: input.summary,
+		fingerprint: input.fingerprint,
+		refusals: input.refusals,
+		failure: input.failure ?? null,
+		backupKey: null,
+		storage: [],
+		leftovers: {},
+		postCommitWarnings: [],
+		mcpConnections: [],
+	}
 }
 
 async function runCompensations(compensations: Array<Compensation>) {
@@ -176,7 +275,8 @@ async function runCompensations(compensations: Array<Compensation>) {
  * Move every live resource of one org to another: dry-run reports the plan;
  * apply holds both orgs' write leases, backs up every touched row, copies
  * side storage, then re-points APP_DB in one batch. Any failure before the
- * batch commits undoes the side copies, so the source org stays whole.
+ * batch commits undoes the side copies, so the source org stays whole, and
+ * returns outcome `failed` instead of throwing.
  */
 export async function runOrgResourceTransfer(input: {
 	db: D1Database
@@ -186,6 +286,8 @@ export async function runOrgResourceTransfer(input: {
 	toOrgId: string
 	mode: OrgTransferMode
 	skipOrphans: boolean
+	/** Apply refuses unless the plan still hashes to this. */
+	expectedFingerprint?: string
 	now?: () => Date
 }): Promise<OrgTransferResult> {
 	const { db, effects } = input
@@ -197,26 +299,27 @@ export async function runOrgResourceTransfer(input: {
 	const to = await resolveOrg(db, input.toOrgId, 'target')
 
 	if (input.mode === 'dry-run') {
-		const plan = await addStorageClashes(
+		const planned = await planWithFingerprint({
 			effects,
-			planOrgTransfer(await effects.loadSnapshot({ from, to })),
-		)
-		return {
-			mode: 'dry-run',
-			applied: false,
-			summary: summarizeOrgTransferPlan(plan),
-			backupKey: null,
-			storage: [],
-			leftovers: {},
-			postCommitWarnings: [],
-		}
+			from,
+			to,
+			skipOrphans: input.skipOrphans,
+			expectedFingerprint: input.expectedFingerprint,
+		})
+		return notApplied({ mode: 'dry-run', outcome: 'planned', ...planned })
 	}
 
 	// A fixed lock order keeps two opposite transfers from deadlocking.
 	const [first, second] = [from.id, to.id].toSorted()
 	return await effects.withWriteLease(first!, () =>
 		effects.withWriteLease(second!, () =>
-			applyUnderLease({ ...input, from, to, now }),
+			applyUnderLease({
+				...input,
+				expectedFingerprint: input.expectedFingerprint,
+				from,
+				to,
+				now,
+			}),
 		),
 	)
 }
@@ -228,40 +331,52 @@ async function applyUnderLease(input: {
 	to: OrgTransferOrg
 	actorUserId: string
 	skipOrphans: boolean
+	expectedFingerprint: string | undefined
 	now: () => Date
 }): Promise<OrgTransferResult> {
 	const { db, effects, from, to } = input
-	const plan = await addStorageClashes(
+	const { plan, summary, fingerprint, refusals } = await planWithFingerprint({
 		effects,
-		planOrgTransfer(await effects.loadSnapshot({ from, to })),
-	)
-	const refusal = refusalFor(plan, input.skipOrphans)
-	if (refusal.length > 0) {
-		throw new OrgTransferRefusedError(
-			`Org transfer refused:\n- ${refusal.join('\n- ')}`,
-		)
+		from,
+		to,
+		skipOrphans: input.skipOrphans,
+		expectedFingerprint: input.expectedFingerprint,
+	})
+	if (refusals.length > 0) {
+		return notApplied({
+			mode: 'apply',
+			outcome: 'refused',
+			summary,
+			fingerprint,
+			refusals,
+		})
 	}
-	const summary = summarizeOrgTransferPlan(plan)
-	const sealed = await effects.reseal(plan)
 
-	const startedAt = input.now()
-	const backupKey = orgTransferBackupKey({
-		fromOrgId: from.id,
-		toOrgId: to.id,
-		now: startedAt,
-	})
-	await effects.writeBackup({
-		key: backupKey,
-		backup: buildOrgTransferBackup({
-			plan,
-			actorUserId: input.actorUserId,
-			createdAt: startedAt.toISOString(),
-		}),
-	})
-
+	let step: OrgTransferStep = 'reseal'
+	let backupKey: string | null = null
 	const compensations: Array<Compensation> = []
 	const storage: Array<StorageCopyResult> = []
 	try {
+		const sealed = await effects.reseal(plan)
+
+		step = 'backup'
+		const startedAt = input.now()
+		const key = orgTransferBackupKey({
+			fromOrgId: from.id,
+			toOrgId: to.id,
+			now: startedAt,
+		})
+		await effects.writeBackup({
+			key,
+			backup: buildOrgTransferBackup({
+				plan,
+				actorUserId: input.actorUserId,
+				createdAt: startedAt.toISOString(),
+			}),
+		})
+		backupKey = key
+
+		step = 'logo_copy'
 		for (const copy of plan.logoCopies) {
 			await effects.copyLogo(copy)
 			compensations.push({
@@ -269,6 +384,7 @@ async function applyUnderLease(input: {
 				run: () => effects.deleteLogo(copy.toKey),
 			})
 		}
+		step = 'storage_copy'
 		for (const copy of plan.storageCopies) {
 			const clearTarget: Compensation = {
 				label: `storage ${copy.storageId}`,
@@ -293,6 +409,7 @@ async function applyUnderLease(input: {
 			}
 			compensations.push(clearTarget)
 		}
+		step = 'mcp_import'
 		for (const row of plan.moves.mcp_server_settings) {
 			const serverId = String(row['id'])
 			const transfer = await effects.exportMcpServer({
@@ -318,6 +435,7 @@ async function applyUnderLease(input: {
 				run: () => effects.discardMcpServerImport({ userId: to.id, serverId }),
 			})
 		}
+		step = 'jobs_transfer'
 		if (plan.jobs.length > 0) {
 			const updatedAt = input.now().toISOString()
 			const jobs = await Promise.all(
@@ -351,6 +469,7 @@ async function applyUnderLease(input: {
 			})
 		}
 
+		step = 'commit'
 		const details = {
 			from_org_id: from.id,
 			from_slug: from.slug,
@@ -376,33 +495,50 @@ async function applyUnderLease(input: {
 		)
 		await audit.deliver().catch(() => {})
 	} catch (error) {
-		const failed = await runCompensations(compensations)
-		if (failed.length > 0) {
-			throw new AggregateError(
-				[error],
-				`Org transfer failed and could not undo: ${failed.join(', ')}. Backup: ${backupKey}`,
-			)
-		}
-		throw error
+		const failedUndo = await runCompensations(compensations)
+		return notApplied({
+			mode: 'apply',
+			outcome: 'failed',
+			summary,
+			fingerprint,
+			refusals: [],
+			failure: {
+				committed: false,
+				failed_step: step,
+				...(failedUndo.length > 0 ? { failed_undo: failedUndo } : {}),
+				backup_key: backupKey,
+				message: error instanceof Error ? error.message : String(error),
+			},
+		})
 	}
 
 	// The move is durable now: an unexpected failure here must still return
 	// the committed result and backup key.
 	const after = await effects
 		.afterCommit({ plan, cleanupOrphans: input.skipOrphans })
-		.catch((error: unknown) => ({
+		.catch((error: unknown): OrgTransferPostCommitResult => ({
 			leftovers: {},
 			warnings: [
-				`post-commit: ${error instanceof Error ? error.message : String(error)}`,
+				{
+					code: 'post_commit_step_failed',
+					message: `post-commit: ${error instanceof Error ? error.message : String(error)}`,
+					subject: 'post-commit',
+				},
 			],
+			mcpConnections: [],
 		}))
 	return {
 		mode: 'apply',
+		outcome: 'applied',
 		applied: true,
 		summary,
+		fingerprint,
+		refusals: [],
+		failure: null,
 		backupKey,
 		storage,
 		leftovers: after.leftovers,
 		postCommitWarnings: after.warnings,
+		mcpConnections: after.mcpConnections,
 	}
 }

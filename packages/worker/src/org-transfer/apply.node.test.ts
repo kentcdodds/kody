@@ -28,11 +28,7 @@ import {
 } from '#worker/orgs/org-audit-outbox.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import {
-	type OrgTransferEffects,
-	OrgTransferRefusedError,
-	runOrgResourceTransfer,
-} from './apply.ts'
+import { type OrgTransferEffects, runOrgResourceTransfer } from './apply.ts'
 import { resealOrgTransferSecrets } from './reencrypt.ts'
 import { loadOrgTransferSnapshot } from './snapshot.ts'
 import { OrgTransferStorageNotEmptyError } from './storage-copy.ts'
@@ -246,6 +242,37 @@ async function seed() {
 
 type Calls = Array<string>
 
+function packageJob(packageId: string, name: string, sourceId: string) {
+	const id = buildPackageJobId(packageId, name)
+	return {
+		id,
+		user_id: src,
+		callerContextJson: '{"original":true}',
+		record: {
+			id,
+			name,
+			sourceId,
+			storageId: `job:${id}`,
+			schedule: { type: 'cron', expression: '0 3 * * *' },
+			timezone: 'UTC',
+		},
+	} as unknown as JobRow
+}
+
+function insertEnablement(
+	sqlite: DatabaseSync,
+	input: { id: string; enabler: string; state?: string },
+) {
+	sqlite
+		.prepare(
+			`INSERT INTO enablements (
+				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+				enabler_user_id, state, origin, enabled_at, updated_at
+			) VALUES (?, ?, ?, 'webhook', 'ping', 'hook-1', ?, ?, 'enabled', ?, ?)`,
+		)
+		.run(input.id, src, pkgA, input.enabler, input.state ?? 'on', now, now)
+}
+
 function createEffects(input: {
 	db: D1Database
 	calls: Calls
@@ -347,7 +374,7 @@ function createEffects(input: {
 					.map((orphan) => orphan.key)
 					.join(',')}`,
 			)
-			return { leftovers: {}, warnings: [] }
+			return { leftovers: {}, warnings: [], mcpConnections: [] }
 		},
 		...input.overrides,
 	}
@@ -391,6 +418,8 @@ function expectNoSecretMaterial(text: string, sqlite: DatabaseSync) {
 
 test('dry-run reports the plan as counts and names and writes nothing', async () => {
 	const { sqlite, db } = await seed()
+	jobsMock.jobs = [packageJob(pkgA, 'nightly', 'src-alpha')]
+	insertEnablement(sqlite, { id: 'enablement-1', enabler: 'person-brad' })
 	const calls: Calls = []
 	const before = dumpOwnedRows(sqlite)
 	const result = await runOrgResourceTransfer({
@@ -404,8 +433,14 @@ test('dry-run reports the plan as counts and names and writes nothing', async ()
 	})
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 	expect(calls).toEqual([])
+	expect(result.outcome).toBe('planned')
 	expect(result.applied).toBe(false)
+	expect(result.failure).toBeNull()
 	expect(result.backupKey).toBeNull()
+	expect(result.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+	expect(result.refusals.map((finding) => finding.code)).toEqual([
+		'orphans_present',
+	])
 	expect(result.summary.packages.map((pkg) => pkg.to_name).sort()).toEqual([
 		'@haveman/alpha',
 		'@haveman/beta',
@@ -419,11 +454,45 @@ test('dry-run reports the plan as counts and names and writes nothing', async ()
 	)
 	expect(result.summary.integrations).toEqual(['github'])
 	expect(result.summary.oauth_apps).toEqual(['myapp'])
-	expect(result.summary.mcp_servers).toEqual(['linear'])
+	expect(result.summary.mcp_servers).toEqual([
+		{ id: 'server-1', name: 'linear' },
+	])
+	expect(result.summary.webhooks).toEqual([
+		{
+			package: 'alpha',
+			name: 'ping',
+			url_changed: true,
+			old_path_prefix: '/@bradhave/webhooks/alpha/ping/',
+			new_path_prefix: '/@haveman/webhooks/alpha/ping/',
+			manage_path: '/@haveman/-/webhooks',
+		},
+	])
+	expect(result.summary.enablements).toEqual([
+		{
+			package: 'alpha',
+			trigger_kind: 'webhook',
+			trigger_name: 'ping',
+			state: 'on',
+			enabler_user_id: 'person-brad',
+			enabler_is_target_member: true,
+		},
+	])
+	expect(result.summary.jobs).toEqual([
+		{
+			id: buildPackageJobId(pkgA, 'nightly'),
+			name: 'nightly',
+			package: 'alpha',
+			schedule: 'Runs on cron "0 3 * * *" in UTC',
+		},
+	])
 	expect(result.summary.storages).toEqual([
 		{ storage_id: `package:${pkgA}`, kind: 'package' },
 		{ storage_id: `package:${pkgB}`, kind: 'package' },
 		{ storage_id: `package:${pkgC}`, kind: 'package' },
+		{
+			storage_id: `job:${buildPackageJobId(pkgA, 'nightly')}`,
+			kind: 'job',
+		},
 	])
 	expect(result.summary.orphans).toEqual(
 		expect.arrayContaining([
@@ -458,7 +527,7 @@ test('apply refuses clashes in the target and touches nothing', async () => {
 		.run()
 	const calls: Calls = []
 	const before = dumpOwnedRows(sqlite)
-	const error = await runOrgResourceTransfer({
+	const result = await runOrgResourceTransfer({
 		db,
 		effects: createEffects({ db, calls, backups: [] }),
 		actorUserId: 'person-admin',
@@ -466,12 +535,31 @@ test('apply refuses clashes in the target and touches nothing', async () => {
 		toOrgId: dst,
 		mode: 'apply',
 		skipOrphans: true,
-	}).catch((caught: unknown) => caught)
-	expect(error).toBeInstanceOf(OrgTransferRefusedError)
-	const message = (error as Error).message
-	expect(message).toContain('saved_packages: @haveman/alpha already exists')
-	expect(message).toContain('saved_packages: alpha already exists')
-	expect(message).toContain('secret_entries: user API_KEY already exists')
+	})
+	expect(result.outcome).toBe('refused')
+	expect(result.applied).toBe(false)
+	expect(result.backupKey).toBeNull()
+	expect(result.refusals).toEqual([
+		{
+			code: 'target_row_exists',
+			message: 'saved_packages: @haveman/alpha already exists in @haveman',
+			table: 'saved_packages',
+			subject: '@haveman/alpha',
+		},
+		{
+			code: 'target_row_exists',
+			message: 'saved_packages: alpha already exists in @haveman',
+			table: 'saved_packages',
+			subject: 'alpha',
+		},
+		{
+			code: 'target_entry_exists',
+			message: 'secret_entries: user API_KEY already exists in @haveman',
+			table: 'secret_entries',
+			subject: 'user API_KEY',
+		},
+	])
+	expect(result.refusals).toEqual(result.summary.clashes)
 	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 })
@@ -479,17 +567,24 @@ test('apply refuses clashes in the target and touches nothing', async () => {
 test('apply refuses orphans unless skipOrphans', async () => {
 	const { sqlite, db } = await seed()
 	const before = dumpOwnedRows(sqlite)
-	await expect(
-		runOrgResourceTransfer({
-			db,
-			effects: createEffects({ db, calls: [], backups: [] }),
-			actorUserId: 'person-admin',
-			fromOrgId: src,
-			toOrgId: dst,
-			mode: 'apply',
-			skipOrphans: false,
-		}),
-	).rejects.toThrow(/orphaned row\(s\) found; pass skipOrphans/)
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: false,
+	})
+	expect(result.outcome).toBe('refused')
+	expect(result.refusals).toEqual([
+		{
+			code: 'orphans_present',
+			message: expect.stringMatching(
+				/orphaned row\(s\) found; pass skipOrphans/,
+			),
+		},
+	])
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 })
 
@@ -515,7 +610,9 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 	})
 	for (const spy of spies) spy.mockRestore()
 
+	expect(result.outcome).toBe('applied')
 	expect(result.applied).toBe(true)
+	expect(result.failure).toBeNull()
 	expect(result.backupKey).toMatch(
 		new RegExp(`^org-resource-transfers/${src}/${dst}/`),
 	)
@@ -701,19 +798,7 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 test('a failure before commit undoes side copies and leaves APP_DB unchanged', async () => {
 	const { sqlite, db } = await seed()
 	const jobId = buildPackageJobId(pkgA, 'nightly')
-	jobsMock.jobs = [
-		{
-			id: jobId,
-			user_id: src,
-			callerContextJson: '{"original":true}',
-			record: {
-				id: jobId,
-				name: 'nightly',
-				sourceId: 'src-alpha',
-				storageId: `job:${jobId}`,
-			},
-		} as unknown as JobRow,
-	]
+	jobsMock.jobs = [packageJob(pkgA, 'nightly', 'src-alpha')]
 	const calls: Calls = []
 	const before = dumpOwnedRows(sqlite)
 	const effects = createEffects({
@@ -728,7 +813,7 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 			}),
 		},
 	})
-	const error = await runOrgResourceTransfer({
+	const result = await runOrgResourceTransfer({
 		db,
 		effects,
 		actorUserId: 'person-admin',
@@ -736,8 +821,16 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 		toOrgId: dst,
 		mode: 'apply',
 		skipOrphans: true,
-	}).catch((caught: unknown) => caught)
-	expect(error).toBeInstanceOf(Error)
+	})
+	expect(result.outcome).toBe('failed')
+	expect(result.applied).toBe(false)
+	expect(result.failure).toEqual({
+		committed: false,
+		failed_step: 'commit',
+		backup_key: expect.stringMatching(/^org-resource-transfers\//),
+		message: expect.stringContaining('no_such_table'),
+	})
+	expect(calls).toContain(`backup:${result.failure?.backup_key}`)
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 	const undo = calls.slice(calls.indexOf(`transferJobs:${src}->${dst}:1`) + 1)
 	expect(undo).toEqual([
@@ -749,33 +842,73 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 		`clearStorage:${dst}:package:${pkgA}`,
 		`deleteLogo:user-oauth-app-logos/${dst}/myapp.png`,
 	])
-	expectNoSecretMaterial(String((error as Error).message), sqlite)
+	expectNoSecretMaterial(JSON.stringify(result), sqlite)
+})
+
+test('a compensation that fails is reported as failed_undo', async () => {
+	const { db } = await seed()
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
+			db,
+			calls: [],
+			backups: [],
+			overrides: {
+				importMcpServer: async () => ({
+					ok: false,
+					reason: 'already_registered',
+				}),
+				clearStorage: async ({ storageId }) => {
+					if (storageId === `package:${pkgB}`) {
+						throw new Error('storage runner unavailable')
+					}
+				},
+			},
+		}),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(result.outcome).toBe('failed')
+	expect(result.failure).toEqual({
+		committed: false,
+		failed_step: 'mcp_import',
+		failed_undo: [`storage package:${pkgB}`],
+		backup_key: expect.any(String),
+		message: 'MCP server linear could not move: already_registered.',
+	})
 })
 
 test('a storage copy failure part way stops before any later step', async () => {
 	const { sqlite, db } = await seed()
 	const calls: Calls = []
 	const before = dumpOwnedRows(sqlite)
-	await expect(
-		runOrgResourceTransfer({
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
 			db,
-			effects: createEffects({
-				db,
-				calls,
-				backups: [],
-				overrides: {
-					copyStorage: async () => {
-						throw new Error('Storage package:x copy did not verify.')
-					},
+			calls,
+			backups: [],
+			overrides: {
+				copyStorage: async () => {
+					throw new Error('Storage package:x copy did not verify.')
 				},
-			}),
-			actorUserId: 'person-admin',
-			fromOrgId: src,
-			toOrgId: dst,
-			mode: 'apply',
-			skipOrphans: true,
+			},
 		}),
-	).rejects.toThrow('copy did not verify')
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(result.failure).toMatchObject({
+		committed: false,
+		failed_step: 'storage_copy',
+		message: 'Storage package:x copy did not verify.',
+	})
+	expect(result.failure).not.toHaveProperty('failed_undo')
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
 	expect(calls.some((call) => call.startsWith('importMcp'))).toBe(false)
 	expect(calls).toContain(`clearStorage:${dst}:package:${pkgA}`)
@@ -803,57 +936,66 @@ test('a target storage that already holds data is a clash and is never cleared',
 		skipOrphans: true,
 	})
 	expect(dryRun.summary.clashes).toEqual([
-		`storage: ${fullTarget} already holds data in @haveman`,
+		{
+			code: 'target_storage_not_empty',
+			message: `storage: ${fullTarget} already holds data in @haveman`,
+			table: 'user_storage_buckets',
+			subject: fullTarget,
+		},
 	])
 
 	const calls: Calls = []
-	await expect(
-		runOrgResourceTransfer({
+	const refused = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
 			db,
-			effects: createEffects({
-				db,
-				calls,
-				backups: [],
-				overrides: { isStorageEmpty },
-			}),
-			actorUserId: 'person-admin',
-			fromOrgId: src,
-			toOrgId: dst,
-			mode: 'apply',
-			skipOrphans: true,
+			calls,
+			backups: [],
+			overrides: { isStorageEmpty },
 		}),
-	).rejects.toThrow(OrgTransferRefusedError)
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(refused.outcome).toBe('refused')
+	expect(refused.refusals.map((finding) => finding.code)).toEqual([
+		'target_storage_not_empty',
+	])
 	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
 
 	// Filled between the check and the copy: the copy refuses before writing,
 	// so only the copies that did write are undone.
 	const raceCalls: Calls = []
-	await expect(
-		runOrgResourceTransfer({
+	const raced = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({
 			db,
-			effects: createEffects({
-				db,
-				calls: raceCalls,
-				backups: [],
-				overrides: {
-					copyStorage: async ({ storageId }) => {
-						raceCalls.push(`copyStorage:${storageId}`)
-						if (storageId === fullTarget) {
-							throw new OrgTransferStorageNotEmptyError(
-								`Target storage ${storageId} is not empty.`,
-							)
-						}
-						return { storageId, kvEntries: 0, sqlRows: {} }
-					},
+			calls: raceCalls,
+			backups: [],
+			overrides: {
+				copyStorage: async ({ storageId }) => {
+					raceCalls.push(`copyStorage:${storageId}`)
+					if (storageId === fullTarget) {
+						throw new OrgTransferStorageNotEmptyError(
+							`Target storage ${storageId} is not empty.`,
+						)
+					}
+					return { storageId, kvEntries: 0, sqlRows: {} }
 				},
-			}),
-			actorUserId: 'person-admin',
-			fromOrgId: src,
-			toOrgId: dst,
-			mode: 'apply',
-			skipOrphans: true,
+			},
 		}),
-	).rejects.toThrow(OrgTransferStorageNotEmptyError)
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'apply',
+		skipOrphans: true,
+	})
+	expect(raced.failure).toMatchObject({
+		failed_step: 'storage_copy',
+		message: `Target storage ${fullTarget} is not empty.`,
+	})
 	expect(raceCalls).toContain(`clearStorage:${dst}:package:${pkgA}`)
 	expect(raceCalls).not.toContain(`clearStorage:${dst}:${fullTarget}`)
 })
@@ -870,12 +1012,20 @@ test('MCP servers missing from the source hub block and ids taken in the target 
 		mode: 'dry-run',
 		skipOrphans: true,
 	})
-	expect(result.summary.blockers).toContain(
-		"MCP server linear has no connection in @bradhave's hub; reconnect or remove it first.",
-	)
-	expect(result.summary.clashes).toContain(
-		"mcp_server_settings: server id of linear is already registered in @haveman's hub",
-	)
+	expect(result.summary.blockers).toContainEqual({
+		code: 'source_hub_missing_mcp_server',
+		message:
+			"MCP server linear has no connection in @bradhave's hub; reconnect or remove it first.",
+		table: 'mcp_server_settings',
+		subject: 'linear',
+	})
+	expect(result.summary.clashes).toContainEqual({
+		code: 'target_hub_has_mcp_server',
+		message:
+			"mcp_server_settings: server id of linear is already registered in @haveman's hub",
+		table: 'mcp_server_settings',
+		subject: 'linear',
+	})
 })
 
 test('a post-commit failure still returns the committed result and backup key', async () => {
@@ -900,7 +1050,15 @@ test('a post-commit failure still returns the committed result and backup key', 
 	})
 	expect(result.applied).toBe(true)
 	expect(result.backupKey).not.toBeNull()
-	expect(result.postCommitWarnings).toEqual(['post-commit: hub stub exploded'])
+	expect(result.outcome).toBe('applied')
+	expect(result.postCommitWarnings).toEqual([
+		{
+			code: 'post_commit_step_failed',
+			message: 'post-commit: hub stub exploded',
+			subject: 'post-commit',
+		},
+	])
+	expect(result.mcpConnections).toEqual([])
 	expect(
 		sqlite.prepare(`SELECT DISTINCT user_id FROM saved_packages`).all(),
 	).toEqual([{ user_id: dst }])
@@ -950,7 +1108,7 @@ test('a ciphertext that does not open fails with a generic message before any wr
 		)
 	const calls: Calls = []
 	const before = dumpOwnedRows(sqlite)
-	const error = await runOrgResourceTransfer({
+	const result = await runOrgResourceTransfer({
 		db,
 		effects: createEffects({ db, calls, backups: [] }),
 		actorUserId: 'person-admin',
@@ -958,13 +1116,16 @@ test('a ciphertext that does not open fails with a generic message before any wr
 		toOrgId: dst,
 		mode: 'apply',
 		skipOrphans: true,
-	}).catch((caught: unknown) => caught)
-	expect((error as Error).message).toBe(
-		'Could not re-seal encrypted_value for secret API_KEY.',
-	)
+	})
+	expect(result.failure).toEqual({
+		committed: false,
+		failed_step: 'reseal',
+		backup_key: null,
+		message: 'Could not re-seal encrypted_value for secret API_KEY.',
+	})
 	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
 	expect(dumpOwnedRows(sqlite)).toEqual(before)
-	expectNoSecretMaterial((error as Error).message, sqlite)
+	expectNoSecretMaterial(JSON.stringify(result), sqlite)
 })
 
 test('transfer refuses the same org, a missing org, and a suspended org', async () => {
@@ -987,4 +1148,90 @@ test('transfer refuses the same org, a missing org, and a suspended org', async 
 	await expect(
 		runOrgResourceTransfer({ ...base, fromOrgId: src, toOrgId: dst }),
 	).rejects.toThrow('The target org @haveman is suspended.')
+})
+
+test('apply refuses with plan_drifted when the plan changed since the reviewed dry-run', async () => {
+	const { sqlite, db } = await seed()
+	const base = {
+		db,
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		skipOrphans: true,
+	}
+	const first = await runOrgResourceTransfer({
+		...base,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		mode: 'dry-run',
+	})
+	const again = await runOrgResourceTransfer({
+		...base,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		mode: 'dry-run',
+	})
+	expect(again.fingerprint).toBe(first.fingerprint)
+
+	sqlite
+		.prepare(
+			`INSERT INTO secret_entries (bucket_id, name, encrypted_value) VALUES ('bucket-user', 'LATE_KEY', ?)`,
+		)
+		.run(
+			await encryptSecretValue(env, 'late-plaintext', userSecretContext(src)),
+		)
+	const before = dumpOwnedRows(sqlite)
+	const calls: Calls = []
+	const drifted = await runOrgResourceTransfer({
+		...base,
+		effects: createEffects({ db, calls, backups: [] }),
+		mode: 'apply',
+		expectedFingerprint: first.fingerprint,
+	})
+	expect(drifted.outcome).toBe('refused')
+	expect(drifted.fingerprint).not.toBe(first.fingerprint)
+	expect(drifted.refusals).toEqual([
+		{
+			code: 'plan_drifted',
+			message: expect.stringContaining(first.fingerprint),
+		},
+	])
+	expect(calls.filter((call) => !call.startsWith('lease:'))).toEqual([])
+	expect(dumpOwnedRows(sqlite)).toEqual(before)
+
+	const applied = await runOrgResourceTransfer({
+		...base,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		mode: 'apply',
+		expectedFingerprint: drifted.fingerprint,
+	})
+	expect(applied.outcome).toBe('applied')
+	expect(applied.fingerprint).toBe(drifted.fingerprint)
+})
+
+test('an enabler outside the target org blocks with a coded finding', async () => {
+	const { sqlite, db } = await seed()
+	insertEnablement(sqlite, { id: 'enablement-1', enabler: 'person-outsider' })
+	const result = await runOrgResourceTransfer({
+		db,
+		effects: createEffects({ db, calls: [], backups: [] }),
+		actorUserId: 'person-admin',
+		fromOrgId: src,
+		toOrgId: dst,
+		mode: 'dry-run',
+		skipOrphans: true,
+	})
+	expect(result.summary.enablements).toEqual([
+		expect.objectContaining({
+			enabler_user_id: 'person-outsider',
+			enabler_is_target_member: false,
+		}),
+	])
+	expect(result.refusals).toEqual([
+		{
+			code: 'enabler_not_target_member',
+			message:
+				'Enablement webhook:ping of alpha is enabled by person-outsider, who is not a member of @haveman.',
+			table: 'enablements',
+			subject: 'alpha webhook:ping',
+		},
+	])
 })

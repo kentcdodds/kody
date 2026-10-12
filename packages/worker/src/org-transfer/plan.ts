@@ -9,6 +9,7 @@ import { mcpServerLogoR2KeyPrefix } from '#worker/mcp-client/mcp-server-logo.ts'
 import { memoryVectorId } from '#mcp/memory/memory-vectorize.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
+import { type OrgTransferFinding } from './findings.ts'
 import {
 	type OrgTransferOrg,
 	type OrgTransferOwnerTable,
@@ -76,9 +77,11 @@ export type OrgTransferPlan = {
 	storageCopies: Array<OrgTransferStorageCopy>
 	logoCopies: Array<OrgTransferLogoCopy>
 	orphans: Array<OrgTransferOrphan>
-	clashes: Array<string>
-	blockers: Array<string>
-	warnings: Array<string>
+	/** Person ids with a live membership in the target org. */
+	targetMemberIds: ReadonlySet<string>
+	clashes: Array<OrgTransferFinding>
+	blockers: Array<OrgTransferFinding>
+	warnings: Array<OrgTransferFinding>
 }
 
 const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
@@ -150,9 +153,9 @@ export function planOrgTransfer(
 		movedTables.map((table) => [table, [] as Array<OrgTransferRow>]),
 	) as OrgTransferPlan['moves']
 	const orphans: Array<OrgTransferOrphan> = []
-	const clashes: Array<string> = []
-	const blockers: Array<string> = []
-	const warnings: Array<string> = []
+	const clashes: Array<OrgTransferFinding> = []
+	const blockers: Array<OrgTransferFinding> = []
+	const warnings: Array<OrgTransferFinding> = []
 	const orphan = (
 		table: string,
 		row: OrgTransferRow,
@@ -180,7 +183,13 @@ export function planOrgTransfer(
 		for (const row of rows) {
 			const key = options.sourceKey?.(row) ?? keyOf(row, columns)
 			if (taken.has(key)) {
-				clashes.push(`${table}: ${label(row)} already exists in @${to.slug}`)
+				const subject = label(row)
+				clashes.push({
+					code: 'target_row_exists',
+					message: `${table}: ${subject} already exists in @${to.slug}`,
+					table,
+					subject,
+				})
 			}
 		}
 	}
@@ -244,9 +253,12 @@ export function planOrgTransfer(
 	)
 	for (const pkg of moves.saved_packages) {
 		if (!sourceIds.has(text(pkg, 'source_id'))) {
-			warnings.push(
-				`Package ${text(pkg, 'kody_id')} has no live source; it moves but cannot load until republished.`,
-			)
+			warnings.push({
+				code: 'package_source_missing',
+				message: `Package ${text(pkg, 'kody_id')} has no live source; it moves but cannot load until republished.`,
+				table: 'saved_packages',
+				subject: text(pkg, 'kody_id'),
+			})
 		}
 	}
 
@@ -335,14 +347,20 @@ export function planOrgTransfer(
 	for (const row of moves.mcp_server_settings) {
 		const serverId = text(row, 'id')
 		if (!snapshot.hubServerIds.from.has(serverId)) {
-			blockers.push(
-				`MCP server ${text(row, 'name')} has no connection in @${from.slug}'s hub; reconnect or remove it first.`,
-			)
+			blockers.push({
+				code: 'source_hub_missing_mcp_server',
+				message: `MCP server ${text(row, 'name')} has no connection in @${from.slug}'s hub; reconnect or remove it first.`,
+				table: 'mcp_server_settings',
+				subject: text(row, 'name'),
+			})
 		}
 		if (snapshot.hubServerIds.to.has(serverId)) {
-			clashes.push(
-				`mcp_server_settings: server id of ${text(row, 'name')} is already registered in @${to.slug}'s hub`,
-			)
+			clashes.push({
+				code: 'target_hub_has_mcp_server',
+				message: `mcp_server_settings: server id of ${text(row, 'name')} is already registered in @${to.slug}'s hub`,
+				table: 'mcp_server_settings',
+				subject: text(row, 'name'),
+			})
 		}
 	}
 	moves.mcp_user_server_instructions =
@@ -351,9 +369,11 @@ export function planOrgTransfer(
 		moves.mcp_user_server_instructions.length > 0 &&
 		target.mcp_user_server_instructions.length > 0
 	) {
-		clashes.push(
-			`mcp_user_server_instructions: @${to.slug} already has MCP server instructions`,
-		)
+		clashes.push({
+			code: 'target_mcp_instructions_exist',
+			message: `mcp_user_server_instructions: @${to.slug} already has MCP server instructions`,
+			table: 'mcp_user_server_instructions',
+		})
 	}
 	moves.user_oauth_apps = source.user_oauth_apps.filter(isLiveRow)
 	const oauthAppSlugs = new Set(
@@ -369,9 +389,12 @@ export function planOrgTransfer(
 	for (const row of moves.user_integrations) {
 		const appSlug = row['app_slug']
 		if (appSlug != null && !oauthAppSlugs.has(String(appSlug))) {
-			blockers.push(
-				`Integration ${text(row, 'name')} uses OAuth app ${String(appSlug)}, which is not live in @${from.slug}.`,
-			)
+			blockers.push({
+				code: 'integration_oauth_app_not_live',
+				message: `Integration ${text(row, 'name')} uses OAuth app ${String(appSlug)}, which is not live in @${from.slug}.`,
+				table: 'user_integrations',
+				subject: text(row, 'name'),
+			})
 		}
 	}
 
@@ -409,9 +432,12 @@ export function planOrgTransfer(
 			const label = scope === 'user' ? 'user' : packageLabel(bindingKey)
 			const existing = targetBuckets.get(keyOf(row, ['scope', 'binding_key']))
 			if (existing && !isLiveRow(existing)) {
-				clashes.push(
-					`${bucketTable}: ${label} bucket in @${to.slug} is deleted but not purged`,
-				)
+				clashes.push({
+					code: 'target_bucket_deleted_not_purged',
+					message: `${bucketTable}: ${label} bucket in @${to.slug} is deleted but not purged`,
+					table: bucketTable,
+					subject: label,
+				})
 				continue
 			}
 			movedBucketIds.add(text(row, 'id'))
@@ -441,9 +467,12 @@ export function planOrgTransfer(
 				const scope = text(bucket, 'scope')
 				const label =
 					scope === 'user' ? 'user' : packageLabel(text(bucket, 'binding_key'))
-				clashes.push(
-					`${entryTable}: ${label} ${text(row, 'name')} already exists in @${to.slug}`,
-				)
+				clashes.push({
+					code: 'target_entry_exists',
+					message: `${entryTable}: ${label} ${text(row, 'name')} already exists in @${to.slug}`,
+					table: entryTable,
+					subject: `${label} ${text(row, 'name')}`,
+				})
 			}
 		}
 	}
@@ -492,7 +521,14 @@ export function planOrgTransfer(
 	const jobs: Array<JobRow> = []
 	for (const job of snapshot.sourceJobs) {
 		if (sourceIds.has(job.record.sourceId)) jobs.push(job)
-		else warnings.push(`Job ${job.record.name} has no live source and stays.`)
+		else {
+			warnings.push({
+				code: 'job_source_missing',
+				message: `Job ${job.record.name} has no live source and stays.`,
+				table: 'jobs',
+				subject: job.record.name,
+			})
+		}
 	}
 	const jobStorageIds = new Set(
 		jobs.map((job) => job.record.storageId ?? createJobStorageId(job.id)),
@@ -598,24 +634,33 @@ export function planOrgTransfer(
 		moves.enablements.push(row)
 		const enabler = text(row, 'enabler_user_id')
 		if (text(row, 'state') !== 'off' && !snapshot.targetMembers.has(enabler)) {
-			blockers.push(
-				`Enablement ${text(row, 'trigger_kind')}:${text(row, 'trigger_name')} of ${packageLabel(text(row, 'package_id'))} is enabled by ${enabler}, who is not a member of @${to.slug}.`,
-			)
+			const subject = `${packageLabel(text(row, 'package_id'))} ${text(row, 'trigger_kind')}:${text(row, 'trigger_name')}`
+			blockers.push({
+				code: 'enabler_not_target_member',
+				message: `Enablement ${text(row, 'trigger_kind')}:${text(row, 'trigger_name')} of ${packageLabel(text(row, 'package_id'))} is enabled by ${enabler}, who is not a member of @${to.slug}.`,
+				table: 'enablements',
+				subject,
+			})
 		}
 	}
 	if (
 		moves.enablements.length > 0 &&
 		snapshot.enablementStates.from !== snapshot.enablementStates.to
 	) {
-		warnings.push(
-			`Enablement migration state differs (@${from.slug}: ${snapshot.enablementStates.from ?? 'legacy'}, @${to.slug}: ${snapshot.enablementStates.to ?? 'legacy'}); moved triggers run the way @${to.slug} runs triggers.`,
-		)
+		warnings.push({
+			code: 'enablement_migration_state_differs',
+			message: `Enablement migration state differs (@${from.slug}: ${snapshot.enablementStates.from ?? 'legacy'}, @${to.slug}: ${snapshot.enablementStates.to ?? 'legacy'}); moved triggers run the way @${to.slug} runs triggers.`,
+			table: 'enablements',
+		})
 	}
 	for (const row of source.grants.filter(isLiveRow)) {
 		if (text(row, 'resource_type') === 'org') continue
-		blockers.push(
-			`Grant ${text(row, 'id')} on ${text(row, 'resource_type')} ${text(row, 'resource_id')} names @${from.slug} subjects; remove it before transferring.`,
-		)
+		blockers.push({
+			code: 'grant_names_source_subjects',
+			message: `Grant ${text(row, 'id')} on ${text(row, 'resource_type')} ${text(row, 'resource_id')} names @${from.slug} subjects; remove it before transferring.`,
+			table: 'grants',
+			subject: text(row, 'id'),
+		})
 	}
 
 	// Derived rows rebuilt under the target.
@@ -662,6 +707,7 @@ export function planOrgTransfer(
 		storageCopies,
 		logoCopies,
 		orphans,
+		targetMemberIds: new Set(snapshot.targetMembers.keys()),
 		clashes,
 		blockers,
 		warnings,
