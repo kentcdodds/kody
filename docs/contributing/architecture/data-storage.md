@@ -1499,6 +1499,11 @@ on write unless a migration backfills existing rows.
   `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
   its OAuth app's provider, written on connect and backfilled by the migration.
   Request placement does not read them; placeholders still decide it.
+- `secret_entries.kind` (`0117-credential-kinds.sql`) is the credential's kind
+  from ADR 0068: `secret` (every existing row and the default), `url`, `login`,
+  or `signing`. Placeholders fill only `secret` rows. A `url` value is a whole
+  HTTPS URL that `resolveCredential` hands to the gateway only for one of the
+  row's `allowed_hosts`; package code sends a relative path, never the URL.
 - `credential_inventory_runs` and `credential_inventory_items`
   (`0112-credential-inventory.sql`,
   `packages/worker/src/credentials/credential-inventory.ts`) hold the admin
@@ -1506,11 +1511,13 @@ on write unless a migration backfills existing rows.
   `adminCredentialInventoryScan` pages saved packages into a run; each item's
   `result_json` holds credential ids, placement shapes, slot providers, and
   placeholder counts (every placeholder, including ones that match a declared
-  slot), never a credential name or value. A failed item holds only its load
-  error, and the report lists failed package ids. `adminCredentialBackfill`
-  reads a complete run with no failed packages (or whose failed packages the
-  caller lists exactly in `acknowledgedFailedPackageIds`) and writes `provider`
-  and `inject_json` only where they are still unset: `provider` when every slot
+  slot), never a credential name or value. Placement shapes may carry package
+  identifiers (a body field, an SDK option key, a callee name) but never one
+  that spells a credential name. A failed item holds only its load error, and
+  the report lists failed package ids. `adminCredentialBackfill` reads a
+  complete run with no failed packages (or whose failed packages the caller
+  lists exactly in `acknowledgedFailedPackageIds`) and writes `provider` and
+  `inject_json` only where they are still unset: `provider` when every slot
   naming the credential agrees on one provider slug, `inject_json` when every
   placement is the same header or the same query param.
 - `credential_org_grants` (`0116-credential-org-grants.sql`,

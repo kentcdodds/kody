@@ -62,7 +62,10 @@ package code one of those started or a package app's server code:
 - Role and membership changes: adding or removing members, changing a role,
   invites, and grants that carry member or billing permissions.
 - Billing changes: plan, seats, payment, wallet, budgets, and promo codes.
-- Site-admin tools.
+- Site-admin tools. One exception: `adminUserVerify` with `mint_verify_url` runs
+  from a job, webhook, or subscription that a site admin turned on for a package
+  they own, and every such mint is audited with the trigger type and enablement
+  id.
 
 Do these from the web app, an MCP or CLI call you make yourself, or an execute
 you run. A triggered run that tries one fails with

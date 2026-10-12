@@ -64,6 +64,25 @@ export async function getMcpServerSettingRowById(input: {
 	return row ? mapMcpServerSettingRow(row) : null
 }
 
+/**
+ * The org that owns a live MCP server, by its globally unique id. Callers
+ * still authorize the person in that org before acting on it.
+ */
+export async function getMcpServerOwnerId(input: {
+	db: D1Database
+	id: string
+}): Promise<string | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT user_id FROM mcp_server_settings
+			WHERE id = ?${andLiveDeletedAtSql()}
+			LIMIT 1`,
+		)
+		.bind(input.id)
+		.first<{ user_id: string }>()
+	return row?.user_id ?? null
+}
+
 export async function getMcpServerSettingRowByName(input: {
 	db: D1Database
 	userId: string

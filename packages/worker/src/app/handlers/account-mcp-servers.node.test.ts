@@ -4,6 +4,9 @@ import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as authSession from '#app/auth-session.ts'
 import type * as settingsService from '#worker/mcp-client/settings-service.ts'
 import type * as hubClient from '#worker/mcp-client/hub-client.ts'
+import type * as settingsRepo from '#worker/mcp-client/settings-repo.ts'
+import type * as orgsRepo from '#worker/orgs/repo.ts'
+import type * as authorizeModule from '#worker/authorization/authorize.ts'
 import { type McpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { type McpServerSettingMetadata } from '#worker/mcp-client/settings-types.ts'
 import { type McpServerLastError } from '#worker/mcp-client/types.ts'
@@ -43,6 +46,14 @@ const mockModule = await vi.hoisted(async () => {
 	}
 	return {
 		epoch,
+		hubOwners: [] as Array<string>,
+		getMcpServerOwnerId: vi.fn<typeof settingsRepo.getMcpServerOwnerId>(
+			async () => null,
+		),
+		loadOrgBindingForOrg: vi.fn<typeof orgsRepo.loadOrgBindingForOrg>(
+			async () => null,
+		),
+		authorize: vi.fn<typeof authorizeModule.authorize>(async () => {}),
 		waitUntil: vi.fn<typeof CloudflareWorkers.waitUntil>(),
 		readAuthenticatedAppUser: vi.fn<
 			typeof authenticatedUserModule.readAuthenticatedAppUser
@@ -233,25 +244,48 @@ vi.mock('#worker/integrations/provider-marks.ts', async (importOriginal) => {
 	}
 })
 
+vi.mock('#worker/mcp-client/settings-repo.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof settingsRepo>()),
+	getMcpServerOwnerId: (
+		...args: Parameters<typeof settingsRepo.getMcpServerOwnerId>
+	) => mockModule.getMcpServerOwnerId(...args),
+}))
+
+vi.mock('#worker/orgs/repo.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof orgsRepo>()),
+	loadOrgBindingForOrg: (
+		...args: Parameters<typeof orgsRepo.loadOrgBindingForOrg>
+	) => mockModule.loadOrgBindingForOrg(...args),
+}))
+
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof authorizeModule>()),
+	authorize: (...args: Parameters<typeof authorizeModule.authorize>) =>
+		mockModule.authorize(...args),
+}))
+
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 	getCachedMcpClientHubSnapshot: (
 		...args: Parameters<typeof hubClient.getCachedMcpClientHubSnapshot>
 	) => mockModule.getCachedMcpClientHubSnapshot(...args),
-	createMcpClientHubClient: () => ({
-		handleOAuthCallback: (
-			...args: Parameters<McpClientHubClient['handleOAuthCallback']>
-		) => mockModule.handleOAuthCallback(...args),
-		reconnectServer: (
-			...args: Parameters<McpClientHubClient['reconnectServer']>
-		) => mockModule.reconnectServer(...args),
-		refreshServer: vi.fn(async () => ({
-			serverId: 'server-1',
-			state: 'ready',
-			authorizationPending: false,
-			error: null,
-			toolCount: 2,
-		})),
-	}),
+	createMcpClientHubClient: (input: { userId: string }) => {
+		mockModule.hubOwners.push(input.userId)
+		return {
+			handleOAuthCallback: (
+				...args: Parameters<McpClientHubClient['handleOAuthCallback']>
+			) => mockModule.handleOAuthCallback(...args),
+			reconnectServer: (
+				...args: Parameters<McpClientHubClient['reconnectServer']>
+			) => mockModule.reconnectServer(...args),
+			refreshServer: vi.fn(async () => ({
+				serverId: 'server-1',
+				state: 'ready',
+				authorizationPending: false,
+				error: null,
+				toolCount: 2,
+			})),
+		}
+	},
 }))
 
 const {
@@ -549,4 +583,74 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 			}),
 		}),
 	)
+})
+
+test('the OAuth callback finishes in the org that owns the server when the person can write its integrations', async () => {
+	const { AuthorizationError } =
+		await import('#worker/authorization/authorize.ts')
+	const acmeId = ownerIdFromStored('org-acme')
+	const callback = createCallbackClient()
+	mockModule.getMcpServerOwnerId.mockResolvedValue(acmeId)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue({
+		org: { id: acmeId, slug: 'acme' },
+		role: 'member',
+	})
+	mockModule.hubOwners.length = 0
+	mockModule.setMcpServerLastError.mockClear()
+
+	const team = await callback('code=abc&state=nonce.server-1')
+	expect(mockModule.getMcpServerOwnerId).toHaveBeenCalledWith(
+		expect.objectContaining({ id: 'server-1' }),
+	)
+	expect(mockModule.authorize).toHaveBeenCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				org: expect.objectContaining({ id: acmeId }),
+			}),
+		}),
+		'integration:write',
+	)
+	expect(mockModule.hubOwners).toEqual([acmeId])
+	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: acmeId,
+			id: 'server-1',
+			lastError: null,
+		}),
+	)
+	expect(team.location.pathname).toBe('/@acme/-/mcp-servers/server-1')
+	expect(team.location.searchParams.get('auth')).toBe('success')
+
+	// Without integration:write there, or without access to the org, the
+	// callback stays in the session's org, as before.
+	mockModule.authorize.mockRejectedValueOnce(
+		new AuthorizationError({
+			code: 'missing_permission',
+			permission: 'integration:write',
+			orgId: acmeId,
+			resource: null,
+			message: 'Missing integration:write',
+		}),
+	)
+	await callback('code=abc&state=nonce.server-1')
+	mockModule.loadOrgBindingForOrg.mockResolvedValueOnce(null)
+	await callback('code=abc&state=nonce.server-1')
+	mockModule.getMcpServerOwnerId.mockResolvedValueOnce(null)
+	const unknown = await callback('code=abc&state=nonce.server-9')
+	mockModule.getMcpServerOwnerId.mockRejectedValueOnce(new Error('D1 down'))
+	const lookupFailed = await callback('code=abc&state=nonce.server-1')
+	expect(mockModule.hubOwners.slice(1)).toEqual([
+		userScope.userId,
+		userScope.userId,
+		userScope.userId,
+		userScope.userId,
+	])
+	expect(unknown.location.pathname).toBe('/@test-user/-/mcp-servers/server-1')
+	expect(lookupFailed.response.status).toBe(303)
+	expect(lookupFailed.location.pathname).toBe(
+		'/@test-user/-/mcp-servers/server-1',
+	)
+
+	mockModule.getMcpServerOwnerId.mockResolvedValue(null)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 })

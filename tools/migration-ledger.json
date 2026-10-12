@@ -455,6 +455,10 @@
 		{
 			"filename": "0116-credential-org-grants.sql",
 			"sha256": "88f8a994e1b1f99b872a7ad10fcf55f53987a7359e427d9e7cb9bdd05583fd16"
+		},
+		{
+			"filename": "0117-credential-kinds.sql",
+			"sha256": "9299e404d3c3f1ca437c471b176507bd89dd0c11bbf9315b435753a8cc4b2260"
 		}
 	]
 }

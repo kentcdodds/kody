@@ -23,6 +23,7 @@ import {
 	missingCredentialResource,
 } from './credential-ids.ts'
 import { type PackageStamp } from './package-stamp.ts'
+import { type ResolvedCredentialUrl } from './url-resolver.ts'
 
 /**
  * Normalized host the value is about to be sent to. When set, the door
@@ -90,6 +91,12 @@ export type CredentialTarget =
 			serverName: string
 			waitUntil?: (promise: Promise<unknown>) => void
 	  }
+	/**
+	 * A `url` credential picked by id: the relative path and query code sends
+	 * to the credential's own URL. Not reachable from package code until the
+	 * credential clients ship (T).
+	 */
+	| { use: 'url'; credentialId: string; path: string }
 
 export type CredentialUse = CredentialTarget['use']
 
@@ -118,6 +125,7 @@ export type ResolvedCredentialByUse = {
 	'integration-token': string | null
 	'integration-refresh': IntegrationTokenRefreshResult
 	'mcp-connection': McpServerConnection
+	url: ResolvedCredentialUrl
 }
 
 export type ResolvedCredential<T extends CredentialTarget> =
@@ -174,6 +182,7 @@ export function permissionForUse(use: CredentialUse): OrgPermission {
 		case 'package-secret-mount':
 		case 'webhook-secret':
 		case 'provider-secret':
+		case 'url':
 			return 'secret:use'
 		case 'integration-token':
 		case 'integration-refresh':

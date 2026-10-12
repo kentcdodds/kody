@@ -3,7 +3,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	credentialOtherContexts,
+	credentialPlacementTypes,
+} from '#worker/credentials/credential-inventory-scan.ts'
+import {
 	credentialInventoryFailureListMax,
+	credentialInventoryTallyMax,
 	credentialInventoryScanLimitDefault,
 	credentialInventoryScanLimitMax,
 	getCredentialInventoryReport,
@@ -15,6 +20,16 @@ import {
 } from './admin-shared.ts'
 
 const count = z.number().int().nonnegative()
+
+const placementCountsSchema = z.object(
+	Object.fromEntries(credentialPlacementTypes.map((type) => [type, count])) as {
+		[K in (typeof credentialPlacementTypes)[number]]: typeof count
+	},
+)
+
+const tallySchema = z
+	.array(z.object({ name: z.string(), count }))
+	.describe(`Most common first, at most ${credentialInventoryTallyMax}.`)
 
 const placeholderCountsSchema = z.object({
 	secret: count,
@@ -40,15 +55,39 @@ export const credentialInventoryReportSchema = z.object({
 		total: count,
 		attributed: count,
 		unattributed: count,
-		byPlacement: z.object({
-			header: count,
-			query: count,
-			'header-custom': count,
-			basic: count,
-			path: count,
-			body: count,
-			other: count,
-		}),
+		byPlacement: placementCountsSchema.describe(
+			'`binding` is a placeholder bound to a variable; each read of the variable is counted as its own reference.',
+		),
+		unattributedByPlacement: placementCountsSchema,
+		otherByContext: z
+			.object(
+				Object.fromEntries(
+					credentialOtherContexts.map((context) => [context, count]),
+				) as {
+					[K in (typeof credentialOtherContexts)[number]]: typeof count
+				},
+			)
+			.describe('Why each `other` placement is not on a request shape.'),
+		bodyByEndpoint: z
+			.object({ login: count, other: count, unknown: count })
+			.describe(
+				'Body placements by the literal fetch URL path: a login or token exchange, any other path, or not known statically.',
+			),
+		bodyFields: tallySchema.describe('Body fields placeholders fill.'),
+		sdkOptions: tallySchema.describe(
+			'`callee.key` object options passed to a call or constructor.',
+		),
+		argumentCallees: tallySchema.describe(
+			'Functions a placeholder is passed to directly.',
+		),
+	}),
+	vault: z.object({ byPlacement: placementCountsSchema }),
+	signing: z.object({
+		placeholderKeys: count.describe(
+			'Placeholders used as signing key material (HMAC, JWT, crypto.subtle).',
+		),
+		jwtSignCalls: count.describe('`secretJwtSign` calls in package source.'),
+		packagesWithSigning: count,
 	}),
 	slots: z.object({
 		total: count,
@@ -98,7 +137,7 @@ export const adminCredentialInventoryScanCapability = defineDomainCapability(
 		idempotent: true,
 		name: 'adminCredentialInventoryScan',
 		description:
-			'Fleet inventory of credential placeholders in published package source (ADR 0068). Changes no package or credential: it records, per package, which credential ids each placeholder can fill, where the placeholder sits on a request, and the declared slot providers. Never records credential names or values. Paged: call again with the returned runId until complete is true; the final call returns the report.',
+			'Fleet inventory of credential placeholders in published package source (ADR 0068). Changes no package or credential: it records, per package, which credential ids each placeholder can fill, where the placeholder sits on a request (a placeholder bound to a variable is followed to each read), and the declared slot providers. Never records credential names or values; placement detail keeps only package identifiers such as body fields and SDK option keys. Paged: call again with the returned runId until complete is true; the final call returns the report.',
 		keywords: [
 			'admin',
 			'credential',

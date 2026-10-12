@@ -18,6 +18,7 @@ vi.mock('#worker/credentials/credential-inventory.ts', () => ({
 	credentialInventoryFailureListMax: 50,
 	credentialInventoryScanLimitDefault: 25,
 	credentialInventoryScanLimitMax: 50,
+	credentialInventoryTallyMax: 25,
 	runCredentialInventoryScanStep: (...args: Array<unknown>) =>
 		mocks.runCredentialInventoryScanStep(...args),
 	getCredentialInventoryReport: (...args: Array<unknown>) =>
@@ -25,6 +26,19 @@ vi.mock('#worker/credentials/credential-inventory.ts', () => ({
 	runCredentialBackfill: (...args: Array<unknown>) =>
 		mocks.runCredentialBackfill(...args),
 }))
+
+const noPlacements = {
+	header: 0,
+	query: 0,
+	'header-custom': 0,
+	basic: 0,
+	path: 0,
+	url: 0,
+	body: 0,
+	signing: 0,
+	binding: 0,
+	other: 0,
+}
 
 const fullReport = {
 	packages: {
@@ -46,16 +60,31 @@ const fullReport = {
 		total: 1,
 		attributed: 1,
 		unattributed: 0,
-		byPlacement: {
-			header: 1,
-			query: 0,
-			'header-custom': 0,
-			basic: 0,
-			path: 0,
-			body: 0,
+		byPlacement: { ...noPlacements, header: 1 },
+		unattributedByPlacement: noPlacements,
+		otherByContext: {
+			'sdk-option': 0,
+			object: 0,
+			argument: 0,
+			return: 0,
+			assignment: 0,
+			array: 0,
+			'default-param': 0,
+			comparison: 0,
+			'unused-binding': 0,
+			'reassigned-binding': 0,
+			'template-computed': 0,
+			'url-host': 0,
+			unparsed: 0,
 			other: 0,
 		},
+		bodyByEndpoint: { login: 0, other: 0, unknown: 0 },
+		bodyFields: [],
+		sdkOptions: [],
+		argumentCallees: [],
 	},
+	vault: { byPlacement: noPlacements },
+	signing: { placeholderKeys: 0, jwtSignCalls: 0, packagesWithSigning: 0 },
 	slots: { total: 0, attributed: 0, byKind: { secret: 0, oauth: 0, mcp: 0 } },
 	credentialsReferenced: 1,
 	failures: [],
