@@ -84,7 +84,14 @@ export type CredentialInventoryReport = {
 		byKind: Record<InventorySlot['kind'], number>
 	}
 	credentialsReferenced: number
+	/** The packages the run could not scan, first by package id. */
+	failures: Array<InventoryFailure>
 }
+
+export type InventoryFailure = { packageId: string; error: string }
+
+/** How many failed packages a report lists; `packages.failed` counts all. */
+export const credentialInventoryFailureListMax = 50
 
 type InventoryRunRow = {
 	id: string
@@ -271,6 +278,7 @@ async function scanOnePackage(input: {
 }): Promise<{
 	status: InventoryItemStatus
 	result: InventoryItemResult | null
+	error?: string
 }> {
 	try {
 		const loaded = await loadPackageSourceBySourceId({
@@ -291,8 +299,15 @@ async function scanOnePackage(input: {
 				slots: loaded.manifest.kody?.credentials,
 			}),
 		}
-	} catch {
-		return { status: 'failed', result: null }
+	} catch (error) {
+		return {
+			status: 'failed',
+			result: null,
+			error: (error instanceof Error ? error.message : String(error)).slice(
+				0,
+				300,
+			),
+		}
 	}
 }
 
@@ -359,7 +374,11 @@ export async function runCredentialInventoryScanStep(input: {
 					savedPackage.id,
 					savedPackage.userId,
 					item.status,
-					JSON.stringify(item.result ?? {}),
+					JSON.stringify(
+						item.status === 'failed'
+							? { error: item.error }
+							: (item.result ?? {}),
+					),
 					now,
 				),
 		)
@@ -384,25 +403,36 @@ export async function runCredentialInventoryScanStep(input: {
 }
 
 type StoredItem = {
+	packageId: string
 	status: InventoryItemStatus
 	result: InventoryItemResult | null
+	/** Why a `failed` package could not be scanned. */
+	error?: string
 }
 
 async function loadRunItems(db: D1Database, runId: string) {
 	const rows = await db
 		.prepare(
-			`SELECT status, result_json FROM credential_inventory_items
+			`SELECT package_id, status, result_json FROM credential_inventory_items
 			WHERE run_id = ? ORDER BY package_id`,
 		)
 		.bind(runId)
-		.all<{ status: InventoryItemStatus; result_json: string }>()
-	return (rows.results ?? []).map((row): StoredItem => ({
-		status: row.status,
-		result:
-			row.status === 'scanned'
-				? (JSON.parse(row.result_json) as InventoryItemResult)
-				: null,
-	}))
+		.all<{
+			package_id: string
+			status: InventoryItemStatus
+			result_json: string
+		}>()
+	return (rows.results ?? []).map((row): StoredItem => {
+		const stored = JSON.parse(row.result_json) as unknown
+		return {
+			packageId: row.package_id,
+			status: row.status,
+			result: row.status === 'scanned' ? (stored as InventoryItemResult) : null,
+			...(row.status === 'failed'
+				? { error: (stored as { error?: string }).error ?? 'unknown error' }
+				: {}),
+		}
+	})
 }
 
 function emptyPlacementCounts(): Record<CredentialPlacementType, number> {
@@ -438,10 +468,20 @@ export function summarizeCredentialInventory(
 		},
 		slots: { total: 0, attributed: 0, byKind: { secret: 0, oauth: 0, mcp: 0 } },
 		credentialsReferenced: 0,
+		failures: [],
 	}
 	const referenced = new Set<string>()
 	for (const item of items) {
 		report.packages[item.status] += 1
+		if (
+			item.status === 'failed' &&
+			report.failures.length < credentialInventoryFailureListMax
+		) {
+			report.failures.push({
+				packageId: item.packageId,
+				error: item.error ?? 'unknown error',
+			})
+		}
 		const result = item.result
 		if (!result) continue
 		const placeholderTotal = Object.values(result.placeholders).reduce(

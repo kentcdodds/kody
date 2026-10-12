@@ -562,9 +562,11 @@ rejected with the same generic 401 as a bad HMAC.
 
 When the manifest declares no `verification`, the URL secret is the only
 credential: any POST to the minted URL runs the export, and signature headers
-are ignored. Declare `verification` when the sender can sign. The webhook runs
-as its enabler, the person who turned it on; with no `on` enablement the
-delivery answers 409 `enablement_not_on`.
+are ignored. Declare `verification` when the sender can sign: URL-secret-only
+webhooks keep working until January 9, 2027, then stop being accepted
+([#3477](https://github.com/kentcdodds/kody/issues/3477)). The webhook runs as
+its enabler, the person who turned it on; with no `on` enablement the delivery
+answers 409 `enablement_not_on`.
 
 ## Synthetic smoke test
 

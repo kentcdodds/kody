@@ -673,11 +673,21 @@ export async function handleWebhookIngressRequest(
 		}
 	}
 
-	// A webhook that declares no verification is authenticated by its URL
-	// secret alone. Requiring a signature it never declared would refuse
-	// senders that worked before, so that default is a product decision.
+	// URL-secret-only auth for webhooks that declare no verification is a
+	// migration lane. It stays on until 2027-01-09 (users are told URL-only
+	// webhooks keep working until then); no enforcement before that date, even
+	// if a rescan reaches zero. https://github.com/kentcdodds/kody/issues/3477
+	// The log counts every request removal would refuse, even ones a later
+	// check rejects; adminWebhookVerificationScan counts successful deliveries.
 	const verification = declared.verification
-	if (verification) {
+	if (!verification) {
+		console.info('webhook-url-secret-only-authenticated', {
+			endpointId: liveEndpoint.id,
+			ownerId: liveEndpoint.userId,
+			packageId: liveEndpoint.packageId,
+			webhookName: liveEndpoint.webhookName,
+		})
+	} else {
 		const headerName = verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {

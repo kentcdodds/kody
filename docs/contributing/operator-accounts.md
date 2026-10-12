@@ -93,8 +93,7 @@ Production names from committed Wrangler / ensure scripts
   `<preview-worker-name>-vectors` indexes.
 - **Analytics Engine** — `kody_usage_events`, `kody_flag_exposures`,
   `kody_email_events`, `kody_mcp_protocol_events`,
-  `kody_package_invoke_specifier_events`, `kody_execute_interpretable_events`,
-  `kody_mcp_search_events`.
+  `kody_execute_interpretable_events`, `kody_mcp_search_events`.
 - **Artifacts** — namespaces `production` and `preview`; binding `ARTIFACTS`.
 - **Images** — binding `IMAGES` on origin and platform (no extra resource to
   create).

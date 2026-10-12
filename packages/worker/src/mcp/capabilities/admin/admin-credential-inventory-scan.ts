@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	credentialInventoryFailureListMax,
 	credentialInventoryScanLimitDefault,
 	credentialInventoryScanLimitMax,
 	getCredentialInventoryReport,
@@ -55,6 +56,11 @@ export const credentialInventoryReportSchema = z.object({
 		byKind: z.object({ secret: count, oauth: count, mcp: count }),
 	}),
 	credentialsReferenced: count,
+	failures: z
+		.array(z.object({ packageId: z.string(), error: z.string() }))
+		.describe(
+			`Packages the run could not scan, with the load error (first ${credentialInventoryFailureListMax} by package id). A backfill apply refuses while any remain.`,
+		),
 })
 
 const inputSchema = z.object({

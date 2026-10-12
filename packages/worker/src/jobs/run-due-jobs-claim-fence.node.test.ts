@@ -8,7 +8,6 @@ import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import type * as JobsRepo from '@kody-internal/shared/jobs/repo.ts'
-import type * as ArchivedArtifactsRepo from '@kody-internal/shared/jobs/archived-artifacts-repo.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import type * as EntitySources from '#worker/repo/entity-sources.ts'
 import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
@@ -25,9 +24,6 @@ const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
 const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
-const listArchivedJobArtifactsDueBefore = vi.fn<
-	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
->(async () => [])
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
@@ -100,15 +96,6 @@ vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 			getSavedPackageById(...(args as [never])),
 	}
 })
-
-vi.mock('@kody-internal/shared/jobs/archived-artifacts-repo.ts', () => ({
-	listArchivedJobArtifactsDueBefore: (
-		...args: Parameters<
-			typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
-		>
-	) => listArchivedJobArtifactsDueBefore(...args),
-	deleteArchivedJobArtifact: vi.fn(),
-}))
 
 const { runDueJobsForUser } = await import('./service.ts')
 

@@ -167,7 +167,6 @@ export function createDatabase(
 		['value_entries', []],
 		['entity_sources', []],
 		['published_bundle_artifacts', []],
-		['archived_job_artifacts', []],
 		['user_storage_buckets', []],
 		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
@@ -384,17 +383,6 @@ export function createDatabase(
 								) as T | null
 							}
 							if (
-								query.includes(
-									'SELECT id FROM archived_job_artifacts WHERE job_id = ? AND user_id = ?',
-								)
-							) {
-								return selectOne(
-									'archived_job_artifacts',
-									(row) =>
-										row['job_id'] === params[0] && row['user_id'] === params[1],
-								) as T | null
-							}
-							if (
 								query.includes('FROM published_bundle_artifacts') &&
 								query.includes(
 									'WHERE user_id = ? AND source_id = ? AND artifact_kind = ?',
@@ -549,21 +537,6 @@ export function createDatabase(
 										.sort((left, right) =>
 											String(left['name']).localeCompare(String(right['name'])),
 										) as T[],
-								}
-							}
-							if (
-								query.includes('FROM archived_job_artifacts') &&
-								query.includes('WHERE retain_until <= ?')
-							) {
-								return {
-									results: selectAll(
-										'archived_job_artifacts',
-										(row) => String(row['retain_until']) <= String(params[0]),
-									).sort((left, right) =>
-										String(left['retain_until']).localeCompare(
-											String(right['retain_until']),
-										),
-									) as T[],
 								}
 							}
 							if (
@@ -937,55 +910,6 @@ export function createDatabase(
 										changes: deleteWhere(
 											'published_bundle_artifacts',
 											(row) => row['source_id'] === params[0],
-										),
-										last_row_id: 0,
-									},
-								}
-							}
-							if (query.startsWith('INSERT INTO archived_job_artifacts')) {
-								const row = {
-									id: params[0],
-									job_id: params[1],
-									user_id: params[2],
-									source_id: params[3],
-									published_commit: params[4],
-									storage_id: params[5],
-									retain_until: params[6],
-									created_at: params[7],
-									updated_at: params[8],
-								}
-								upsert(
-									'archived_job_artifacts',
-									(existing) => existing['id'] === row.id,
-									row,
-								)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('UPDATE archived_job_artifacts')) {
-								const id = params[5]
-								const existing = selectOne(
-									'archived_job_artifacts',
-									(row) => row['id'] === id,
-								)
-								if (!existing) {
-									return { meta: { changes: 0, last_row_id: 0 } }
-								}
-								upsert('archived_job_artifacts', (row) => row['id'] === id, {
-									...existing,
-									source_id: params[0],
-									published_commit: params[1],
-									storage_id: params[2],
-									retain_until: params[3],
-									updated_at: params[4],
-								})
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('DELETE FROM archived_job_artifacts')) {
-								return {
-									meta: {
-										changes: deleteWhere(
-											'archived_job_artifacts',
-											(row) => row['id'] === params[0],
 										),
 										last_row_id: 0,
 									},

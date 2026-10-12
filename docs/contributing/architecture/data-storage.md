@@ -434,8 +434,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
   [Run records](./run-records.md)).
-- There is no `jobs` or `archived_job_artifacts` table in `APP_DB` — those live
-  in the jobs worker's `JOBS_DB` (see [D1 (`JOBS_DB`)](#d1-jobs_db)).
+- There is no `jobs` table in `APP_DB` — it lives in the jobs worker's `JOBS_DB`
+  (see [D1 (`JOBS_DB`)](#d1-jobs_db)). `archived_job_artifacts` was dropped from
+  `JOBS_DB`.
 - There is no `repo_sessions` table in `APP_DB` (dropped in migration `0013`).
   The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
   only the thin `repo_session_due_owners` hint and the platform-owned
@@ -556,8 +557,6 @@ Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
   and `last_run_at` / `last_run_status`; terminal run error, duration, and
   counters for observability live in the per-user `RunLog`
   `job_run_observability` table (see [Run records](./run-records.md)).
-- `archived_job_artifacts`: retained job artifact rows with per-row
-  `retain_until` cleanup (exempt from the global age prunes on `APP_DB`).
 
 ## Analytics Engine reporting
 
@@ -1507,12 +1506,13 @@ on write unless a migration backfills existing rows.
   `adminCredentialInventoryScan` pages saved packages into a run; each item's
   `result_json` holds credential ids, placement shapes, slot providers, and
   placeholder counts (every placeholder, including ones that match a declared
-  slot), never a credential name or value. `adminCredentialBackfill` reads a
-  complete run with no failed packages and writes `provider` and `inject_json`
-  only where they are still unset: `provider` when every slot naming the
-  credential agrees on one provider slug, `inject_json` when every placement is
-  the same header or the same query param.
-- `credential_org_grants` (`0113-credential-org-grants.sql`,
+  slot), never a credential name or value. A failed item holds only its load
+  error, and the report lists failed package ids. `adminCredentialBackfill`
+  reads a complete run with no failed packages and writes `provider` and
+  `inject_json` only where they are still unset: `provider` when every slot
+  naming the credential agrees on one provider slug, `inject_json` when every
+  placement is the same header or the same query param.
+- `credential_org_grants` (`0115-credential-org-grants.sql`,
   `packages/worker/src/credentials/personal-credentials.ts`) records which org
   each personal credential is granted to. `credential_id` is a credential in the
   owner's personal org, `user_id` is the owner's person id, and the row is
@@ -1880,9 +1880,7 @@ The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user
 composite indexes cannot serve those ordered scans.
 
-Documented exemptions: `archived_job_artifacts` is exempt because job artifact
-cleanup is driven by each row's `retain_until` value, `jobs` are package-owned
-and stay until package sync, package deletion, or account deletion, and
-`mcp_memories` is exempt because memories are durable user-curated content
-removed by explicit user action or account deletion rather than by time-based
-retention.
+Documented exemptions: `jobs` are package-owned and stay until package sync,
+package deletion, or account deletion, and `mcp_memories` is exempt because
+memories are durable user-curated content removed by explicit user action or
+account deletion rather than by time-based retention.

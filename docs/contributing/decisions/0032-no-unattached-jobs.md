@@ -39,10 +39,10 @@ shown up in the fleet.
 
 There is no Owner-only re-enable path for unattached rows (#3401). The last
 unattached rows were moved into private package jobs in their owner's org or
-deleted after the owner was notified, using the one-shot `adminLegacyJobsRetire`
-capability. The code that existed only for those rows went with them: the
-enablement backfill branch for non-package jobs, the `kody.json` job source sync
-and templates, `jobDelete`, the job retention sweeper and `preserved` flag, and
-the `/account/jobs` delete, retention, and enable toggles. The jobs D1 now
-asserts every row id is a `package-job:` id, and the runner throws on any job
-that is not a package job.
+deleted after the owner was notified. `adminLegacyJobsRetire` was used at deploy
+time for that one-shot and is gone. The code that existed only for those rows
+went with them: the enablement backfill branch for non-package jobs, the
+`kody.json` job source sync and templates, `jobDelete`, the job retention
+sweeper and `preserved` flag, and the `/account/jobs` delete, retention, and
+enable toggles. The jobs D1 now asserts every row id is a `package-job:` id, and
+the runner throws on any job that is not a package job.

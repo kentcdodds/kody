@@ -5,7 +5,6 @@ import {
 	type JobsServiceContract,
 	type JobsHostContract,
 } from '@kody-internal/shared/jobs/rpc.ts'
-import { type ArchivedJobArtifactRecord } from '@kody-internal/shared/jobs/archived-artifacts-repo.ts'
 import {
 	type JobCountBySourceId,
 	type JobRow,
@@ -137,28 +136,6 @@ export class JobsService
 		return jobsStore(this.env).disableExpiredJobsForUser(input)
 	}
 
-	async upsertArchivedJobArtifact(input: {
-		jobId: string
-		userId: string
-		sourceId: string
-		publishedCommit: string
-		storageId: string
-		retainUntil: string
-	}): Promise<string> {
-		return jobsStore(this.env).upsertArchivedJobArtifact(input)
-	}
-
-	async listArchivedJobArtifactsDueBefore(input: {
-		retainUntil: string
-		limit?: number
-	}): Promise<Array<ArchivedJobArtifactRecord>> {
-		return jobsStore(this.env).listArchivedJobArtifactsDueBefore(input)
-	}
-
-	async deleteArchivedJobArtifact(input: { id: string }): Promise<void> {
-		await jobsStore(this.env).deleteArchivedJobArtifact(input)
-	}
-
 	async countJobsForUser(input: { userId: string }): Promise<number> {
 		return jobsStore(this.env).countJobsForUser(input)
 	}
@@ -181,12 +158,6 @@ export class JobsService
 		userId: string
 	}): Promise<Array<string>> {
 		return jobsStore(this.env).listJobStorageIdsForUser(input)
-	}
-
-	async listArchivedJobArtifactsForUser(input: {
-		userId: string
-	}): Promise<Array<ArchivedJobArtifactRecord>> {
-		return jobsStore(this.env).listArchivedJobArtifactsForUser(input)
 	}
 
 	async listAllJobStorageOwners(): Promise<

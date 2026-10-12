@@ -339,14 +339,14 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
-	/** Manual grant (`users.plan`). Manage plan writes this column. */
+	/** Manual grant (`orgs.plan` on the personal org). */
 	plan: AdminPlanName
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
-	/** Raw `users.second_agent_standard_gift_expires_at`, or null. */
+	/** Raw `orgs.second_agent_standard_gift_expires_at`, or null. */
 	secondAgentGiftExpiresAt: string | null
-	/** Raw `users.referral_standard_credit_expires_at`, or null. */
+	/** Raw `orgs.referral_standard_credit_expires_at`, or null. */
 	referralCreditExpiresAt: string | null
 	/**
 	 * Later of the two overlay expiry columns (or null). Same value
@@ -418,7 +418,7 @@ export type AdminCreditWalletSummary = {
 	plan: AdminPlanName
 	/** Purchasable Pro: credits unlock limits and debit usage. */
 	eligible: boolean
-	/** `users.admin_credits_eligible`: admin-set, never touched by Stripe. */
+	/** `orgs.admin_credits_eligible`: admin-set, never touched by Stripe. */
 	adminCreditsEligible: boolean
 	unlocked: boolean
 	balanceMicroUsd: number

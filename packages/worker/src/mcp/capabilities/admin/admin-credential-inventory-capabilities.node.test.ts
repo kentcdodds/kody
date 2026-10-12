@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/credentials/credential-inventory.ts', () => ({
+	credentialInventoryFailureListMax: 50,
 	credentialInventoryScanLimitDefault: 25,
 	credentialInventoryScanLimitMax: 50,
 	runCredentialInventoryScanStep: (...args: Array<unknown>) =>
@@ -57,6 +58,7 @@ const fullReport = {
 	},
 	slots: { total: 0, attributed: 0, byKind: { secret: 0, oauth: 0, mcp: 0 } },
 	credentialsReferenced: 1,
+	failures: [],
 }
 
 function createContext(roles: Array<string>) {

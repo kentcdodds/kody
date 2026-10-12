@@ -126,13 +126,6 @@ test('deleteUserAccount deletes owned OAuth clients and fails closed on critical
 				kv_key: 'bundle-artifact:v1:src-1',
 			},
 		],
-		archived_job_artifacts: [
-			{
-				id: 'aja-1',
-				user_id: ownerIdFromStored('user-aaa'),
-				kv_key: 'archived:src-1',
-			},
-		],
 	})
 	await expect(
 		deleteUserA(
@@ -163,7 +156,6 @@ test('deleteUserAccount deletes owned OAuth clients and fails closed on critical
 		]),
 	})
 	expect(kvFailureRows.published_bundle_artifacts).toHaveLength(1)
-	expect(kvFailureRows.archived_job_artifacts).toHaveLength(1)
 	expect(kvFailureRows.users).toEqual([fencedUser])
 })
 

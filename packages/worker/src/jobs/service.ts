@@ -62,7 +62,7 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
+import { createJobStorageId } from '#worker/storage-runner.ts'
 import { stampFirstJob } from '#worker/identity/activation-stamps.ts'
 import {
 	isBudgetLimitError,
@@ -118,9 +118,7 @@ import {
 	bundleArtifactVersion,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
-	logJobSchedulerError,
 	logJobSchedulerEvent,
-	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
 import {
@@ -503,38 +501,6 @@ async function executePublishedJobArtifact(input: {
 		...result,
 		logs: [...input.bypassLogs, ...(result.logs ?? [])],
 	}))
-}
-
-async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
-	const due = await jobsData(input.env).listArchivedJobArtifactsDueBefore({
-		retainUntil: (input.now ?? new Date()).toISOString(),
-	})
-	for (const artifact of due) {
-		try {
-			await storageRunnerRpc({
-				env: input.env,
-				userId: artifact.userId,
-				storageId: artifact.storageId,
-			}).clearStorage()
-			await jobsData(input.env).deleteArchivedJobArtifact({ id: artifact.id })
-			logJobSchedulerEvent({
-				event: 'job_artifact_cleanup_completed',
-				userId: artifact.userId,
-				jobId: artifact.jobId,
-				sourceId: artifact.sourceId,
-				reason: 'retention_elapsed',
-			})
-		} catch (error) {
-			logJobSchedulerError({
-				event: 'job_artifact_cleanup_failed',
-				userId: artifact.userId,
-				jobId: artifact.jobId,
-				sourceId: artifact.sourceId,
-				reason: 'retention_elapsed',
-				...schedulerErrorFields(error),
-			})
-		}
-	}
 }
 
 export async function createPackageJobCallerContext(input: {
@@ -1688,10 +1654,6 @@ export async function runDueJobsForUser(input: {
 					})
 				}
 			}
-			await cleanupArchivedJobArtifacts({
-				env: input.env,
-				now,
-			})
 			return {
 				dueJobCount: claimedJobCount,
 				successCount,
