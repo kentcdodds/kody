@@ -1024,6 +1024,7 @@ export async function handlePublicPackageGitHttpRequest(
 			kodyId: parsed.kodyId,
 			authorization: request.headers.get('Authorization'),
 			needWrite: false,
+			waitUntil,
 		})
 		if (resolved.kind === 'redirect') {
 			const location = new URL(resolved.to, url.origin)
