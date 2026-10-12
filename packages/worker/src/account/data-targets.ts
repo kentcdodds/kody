@@ -204,6 +204,7 @@ export const accountUserDataPendingDropTables = [] as const
 
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },
+	{ kind: 'user_id', table: 'git_access_tokens' },
 	{ kind: 'user_id', table: 'connection_profiles' },
 	{ kind: 'user_id', table: 'mcp_event_subscriptions' },
 	{ kind: 'user_id', table: 'cli_credential_bootstrap_codes' },
@@ -956,6 +957,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	Record<string, ReadonlyArray<string>>
 > = {
 	api_tokens: ['token_hash'],
+	git_access_tokens: ['token_hash'],
 	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
 	org_invite_links: ['token_hash'],

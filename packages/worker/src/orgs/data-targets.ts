@@ -49,6 +49,7 @@ export const orgOwnedUserIdSoftDeleteTables = softDeleteAppTables.filter(
  */
 export const orgCredentialTablesExcludedFromRestore = [
 	'api_tokens',
+	'git_access_tokens',
 	'connection_profiles',
 	'user_oauth_apps',
 ] as const
