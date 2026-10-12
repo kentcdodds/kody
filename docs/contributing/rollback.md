@@ -139,31 +139,35 @@ versions. Kody production deploys are single-version `wrangler deploy` uploads
 ### Freeze the deploy queue
 
 Do this **before** any `wrangler rollback`. A queued `workflow_run` of
-`.github/workflows/deploy.yml` still deploys whatever SHA `sha-guard` accepts
-(`origin/main` HEAD). If `main` is still the bad SHA, that pending run promotes
-the bad code over a manual rollback. Waiting is the only supported path for a
-queued or in-progress Deploy run.
+`.github/workflows/deploy.yml` still deploys whatever SHA `sha-guard` accepts:
+`origin/main` HEAD, or an older validated `main` commit that is ahead of the
+live production SHA. After a rollback, live production is behind every later
+`main` commit, so any Validate run on `main` that finishes queues a deploy that
+promotes code over the rollback. Waiting is the only supported path for a queued
+or in-progress Deploy or `main` Validate run.
 
 1. Freeze merges to `main` (no squash-merges, no Path B land, no
    `workflow_dispatch` of Deploy) until Path A is verified or you switch to Path
    B. That freeze is what keeps a new Deploy from queueing.
-2. Inspect queued and in-progress Deploy runs:
+2. Inspect queued and in-progress Deploy runs and `main` Validate runs:
 
 ```sh
 gh run list --workflow=deploy.yml --limit 5
+gh run list --workflow=validate.yml --branch main --event push --limit 5
 ```
 
-3. If any Deploy run is **queued** or **in progress**, wait until it finishes.
-   Then re-check health and Path A safety, and roll back from the resulting live
-   versions (or abort Path A if the deploy already landed a Durable Object / D1
-   / secrets change that fails those checks).
+3. If any Deploy or `main` Validate run is **queued** or **in progress**, wait
+   until it and the Deploy it queues finish. Then re-check health and Path A
+   safety, and roll back from the resulting live versions (or abort Path A if
+   the deploy already landed a Durable Object / D1 / secrets change that fails
+   those checks).
 4. Do **not** cancel a Deploy run. A status check followed by `gh run cancel`
    races the run leaving `queued`: the cancel can land after jobs or highlight
    are live, or after a D1 migration has already applied.
    `cancel-in-progress: false` exists so GitHub itself will not auto-cancel an
    in-flight deploy.
-5. Confirm no Deploy run is queued or in progress before you start wrangler
-   rollbacks.
+5. Confirm no Deploy or `main` Validate run is queued or in progress before you
+   start wrangler rollbacks.
 
 ### Commands
 
@@ -389,21 +393,26 @@ forward-fix, or when you want Git history and CI to match what is live.
    time out at 10–15 minutes (E2E 15).
 3. 🚀 Deploy (production) then runs because Validate completed on `main`. GitHub
    still enqueues a Deploy `workflow_run` when a Validate run completes with a
-   non-success conclusion (for example the previous `main` Validate cancelled by
-   `cancel-in-progress`). That run's jobs are all skipped because `sha-guard`
-   requires `workflow_run.conclusion == success`. Wait for ✅ Validate success
-   on the merge SHA, then watch the subsequent Deploy run. Do not treat the
-   all-skipped run as a failed deploy or poll production `/health` against the
-   previous SHA. `sha-guard` deploys **only** the current `origin/main` HEAD.
-   Path-filtered push deploys skip unchanged workers. Optional workers (backup
-   control plane, status, nx-cache) path-filter against a 15-commit lookback
-   from the deploy SHA, so a Validate gap longer than that window can leave
-   those workers on an older tree even when `main` still contains the change.
-   Manual `workflow_dispatch` on current `main` HEAD force-deploys every worker,
-   including those optional ones. The production job timeout is 20 minutes,
-   jobs/highlight 8 minutes each. Wall time is one Validate cycle plus one
-   Deploy cycle. The deploy job applies `APP_DB` / `AUDIT_DB` migrations,
-   uploads platform → runtime → origin, health-checks, and runs execute smoke.
+   non-success conclusion (for example a pending `main` Validate that GitHub
+   replaced with a newer push). That run's jobs are all skipped because
+   `sha-guard` requires `workflow_run.conclusion == success`. Wait for ✅
+   Validate success on the merge SHA, then watch the subsequent Deploy run. Do
+   not treat the all-skipped run as a failed deploy or poll production `/health`
+   against the previous SHA. `main` Validate runs queue instead of cancelling,
+   one in progress at a time. `sha-guard` deploys the current `origin/main`
+   HEAD, or an older validated `main` commit when live production `/health`
+   reports an ancestor of it (`tools/ci/deploy-sha-guard.ts`). It never deploys
+   a commit that is already live, older than live, or compared against an
+   unreadable live SHA. Path-filtered push deploys skip unchanged workers.
+   Optional workers (backup control plane, status, nx-cache) path-filter against
+   a 15-commit lookback from the deploy SHA, so a Validate gap longer than that
+   window can leave those workers on an older tree even when `main` still
+   contains the change. Manual `workflow_dispatch` on current `main` HEAD
+   force-deploys every worker, including those optional ones. The production job
+   timeout is 20 minutes, jobs/highlight 8 minutes each. Wall time is one
+   Validate cycle plus one Deploy cycle. The deploy job applies `APP_DB` /
+   `AUDIT_DB` migrations, uploads platform → runtime → origin, health-checks,
+   and runs execute smoke.
 
 `workflow_dispatch` on `.github/workflows/deploy.yml` has **no inputs**. It is
 allowed only when `github.ref_name == 'main'`. `sha-guard` compares the

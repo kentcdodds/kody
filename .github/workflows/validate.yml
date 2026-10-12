@@ -36,11 +36,16 @@ env:
     github.event.pull_request.head.repo.fork != true &&
     secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || '' }}
 
+# PR and manual runs cancel superseded runs. `main` pushes queue instead: a
+# busy `main` cancelled every run and starved production deploys (#3380). One
+# run stays in progress and GitHub replaces the pending one with the newest
+# push; deploy.yml's sha-guard can deploy any completed run that is ahead of
+# production, though its own queue may replace an older pending deploy.
 concurrency:
   group: >-
     validate-${{ github.event_name }}-${{ github.event.pull_request.number ||
     github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
 # (node/workers unit, Playwright E2E, MCP E2E, typecheck) do not contend on one

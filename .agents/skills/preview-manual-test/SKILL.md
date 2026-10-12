@@ -51,6 +51,12 @@ not cat the session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 
+The briefing's `API:` line is the preview's Open API host,
+`https://kody-pr-<n>-api.kody-a99.workers.dev`, and the next line prints
+`export KODY_API_URL=…` for it. `@kodycodes/cli` (`auth bootstrap`,
+`execute --local`) needs that host; the app origin 404s `/v1/*` with HTML. See
+[CLI against a PR preview](../../../docs/contributing/cloud-agents.md#cli-against-a-pr-preview).
+
 Flag-gated preview checks need a `preview-flag:<key>` label for a key in
 `tools/preview-seed-flag-allowlist.ts` before 🔎 Preview seeds. Example for
 connection profiles:

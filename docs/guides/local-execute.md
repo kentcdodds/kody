@@ -44,6 +44,24 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 pass both `--idle-ttl-seconds` and `--max-lifetime-seconds`. Lifetime is
 required; missing it fails with the exact flag syntax.
 
+**Opt-in scopes:** bootstrap defaults stay least-privilege (no `package:write`,
+for example). When a task needs more, pass `scopes` when minting. The list
+replaces the defaults, so include every scope you need:
+
+```bash
+# Agents on MCP: cliCredentialBootstrap({ lifetime: "short", scopes: ["org:execute", "org:read", "package:execute", "package:read", "package:write"] })
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
+
+# After `kody login`, the CLI mints the code itself and stores the token:
+npx @kodycodes/cli auth bootstrap --lifetime short \
+  --scopes org:execute,org:read,package:execute,package:read,package:write
+```
+
+`--scopes` mints with `--token` when given, else the `kody login` session (any
+scope your org role grants), else `KODY_API_TOKEN` or the stored token (only
+scopes that token already holds). `--code` with `--scopes` is an error because a
+code's scopes are fixed when it is minted.
+
 **Interactive humans:** `kody login` once per machine, then run `--local`
 without `KODY_API_TOKEN`.
 
@@ -100,8 +118,12 @@ until the response body ends. The response is also aborted after 60s with no
 bytes. `--local` has no run cap, so a long streamed response, such as an AI
 completion, can finish. Origin buffers the whole response before returning it,
 so your code receives nothing until the body ends, and a body over 4 MiB fails.
-The CLI's own HTTP client also waits at most 5 minutes for origin's reply, so
-leave a few seconds of margin. Use cloud execute or a workflow for larger
+From `@kodycodes/cli` 1.13.1, the CLI's CapabilityProxy client waits up to 7
+minutes for origin's reply, so the gateway's 5-minute deadline is what ends a
+slow fetch, with its own error. Older CLIs stop waiting after Node's default 300
+seconds (`UND_ERR_HEADERS_TIMEOUT`) and need a few seconds of margin. With
+`NODE_USE_ENV_PROXY=1` or `--use-env-proxy`, these requests still go through
+`HTTP_PROXY` / `HTTPS_PROXY`. Use cloud execute or a workflow for larger
 payloads. A `fetch` without placeholders goes straight from local workerd and is
 not subject to this deadline.
 
@@ -113,6 +135,13 @@ not subject to this deadline.
 - Bootstrap or redeem rejects a missing lifetime. Pass `--lifetime short|long`
   (or both idle/max flags). Call `cliCredentialBootstrap` again with
   `lifetime: "short"` if the code expired.
+- `insufficient_scope` on a token means it lacks a scope. The error names the
+  scope and prints both mint commands with the full list (the token's scopes
+  plus the missing one); run one and retry. `--token` and `KODY_API_TOKEN` still
+  win over the stored token, so replace or unset them before retrying. Open API
+  errors carry the same list as `details.mint_scopes`. When your org role lacks
+  the permission (`denial: missing_permission`), a new token cannot help; an org
+  Owner has to grant it.
 - The module imports `kody:@…`. Keep `--local`.
 - Auth priority for `--local`: `--token` / `KODY_API_TOKEN`, then the stored
   bootstrap token, then `kody login`.

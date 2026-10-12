@@ -188,8 +188,8 @@ export async function enableTriggerForCaller(input: {
 			`Webhook "${trigger.triggerName}" is already on for another person. Each webhook URL runs as one enabler.`,
 		)
 	}
-	// Inbound delivery checks X-Kody-Signature on unsigned webhooks, so a URL
-	// that never got a signing secret gets one now.
+	// Keeps every enabled URL holding a signing secret, so requiring
+	// X-Kody-Signature later would not need a re-mint. Ingress does not check it.
 	if (trigger.unsignedWebhookEndpointId) {
 		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
 			env: input.env,

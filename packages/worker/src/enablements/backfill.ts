@@ -8,7 +8,8 @@
  * - the enabler is the item's creator when that person is still a member,
  *   else the org's earliest live Owner. There is no system owner;
  * - each migrated webhook without signature verification gets a generated
- *   signing secret, because every webhook enablement verifies signatures.
+ *   signing secret. Ingress does not check it; the URL secret stays the
+ *   credential.
  *
  * Team orgs move billing from the org to each enabler, so their members are
  * emailed first (`notify`); `apply` refuses a team org that was not
@@ -453,12 +454,6 @@ export function buildEnablementNotice(input: {
 			'- Each run acts as you. It can only use organization credentials and resources you have Use on.',
 			'- Usage from these runs is billed and audited to you instead of the organization.',
 			'- If you lose access (for example, you leave the organization or a credential is no longer shared with you), the automation pauses and resumes by itself when access returns.',
-			'- Webhooks now always verify request signatures.',
-			...(input.items.some((item) => item.unsignedWebhook)
-				? [
-						'- A webhook above had no signature check, so Kody generated a signing secret for it. Its sender must sign each request with that secret (X-Kody-Signature). Find the secret in the package settings, in the Webhooks section.',
-					]
-				: []),
 			'',
 			'Nothing else changes, and nothing stops running. To turn one off, ask your agent to list your enablements and disable the ones you do not want.',
 			'',
