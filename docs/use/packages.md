@@ -172,6 +172,14 @@ into are described in
   publish. A key that the package and a dependency declare with a different
   `kind` or `provider` fails the publish and names both; give one a different
   key.
+- `packageGet` returns that closure as `credentials.needs`, each need with how
+  it resolves for you: `status` is `ready` (exactly one credential you can Use
+  has the need's kind and provider; `autoPick` names it), `ambiguous` (several
+  do), or `unbound` (none). `yourOptions` lists what you could pick (name, `org`
+  or `personal` scope, hosts): the matches plus same-kind credentials with no
+  provider, which resolve automatically once their provider is set
+  (`credentialUpdate`). Only credentials you can Use are listed, and needs
+  inherited from a dependency carry `from`.
 - Slots take no `placement`. Publish rejects one with a message to remove it.
   Published versions that include it load with it ignored. The fetch gateway
   fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request

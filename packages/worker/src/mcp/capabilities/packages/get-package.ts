@@ -9,6 +9,7 @@ import {
 import { toSecretCapabilityOutput } from '#mcp/capabilities/secrets/shared.ts'
 import { listPackageSecretsByPackageIds } from '#mcp/secrets/service.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
+import { describePackageCredentialNeeds } from '#worker/credentials/package-credential-needs.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
@@ -27,7 +28,7 @@ export const getPackageCapability = defineDomainCapability(
 		name: 'packageGet',
 		orgPermission: 'package:read',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, the full export array, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values). For a single export contract, prefer search({ entity: "package:{kodyId}#{subpath}" }). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, the full export array, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values), and its credential needs with how each resolves for you (`credentials.needs`). For a single export contract, prefer search({ entity: "package:{kodyId}#{subpath}" }). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
 		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
 		readOnly: true,
 		idempotent: true,
@@ -91,6 +92,12 @@ export const getPackageCapability = defineDomainCapability(
 			const packageSecrets = (packageSecretsById.get(saved.id) ?? []).map(
 				(secret) => toSecretCapabilityOutput(secret),
 			)
+			const credentialNeeds = await describePackageCredentialNeeds({
+				env: ctx.env,
+				request,
+				ownerUserId: owner.ownerUserId,
+				sourceId: saved.sourceId,
+			})
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
@@ -116,6 +123,7 @@ export const getPackageCapability = defineDomainCapability(
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
 				package_secrets: packageSecrets,
+				credentials: { needs: credentialNeeds },
 				exports: (projection.exports ?? []).map((exportDetail) => ({
 					subpath: exportDetail.subpath,
 					import_specifier: buildPackageImportSpecifier(
