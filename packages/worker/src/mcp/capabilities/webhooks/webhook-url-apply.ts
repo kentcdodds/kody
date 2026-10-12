@@ -141,20 +141,22 @@ function assertInteractiveHttpApplyCaller(callerContext: {
 
 async function assertHttpApplyDestinationApproved(input: {
 	env: Env
-	userId: string
+	userId: ReturnType<typeof ownerIdFromCaller>
 	handle: string
 	destination: HttpApplyDestinationInput
 	baseUrl: string
-}) {
+}): Promise<{ credentialId: string | null }> {
 	try {
 		const gate = await requireWebhookApplyDestinationGrantOrPending({
-			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			handle: input.handle,
 			destination: input.destination,
 			baseUrl: input.baseUrl,
 		})
-		if (gate.status === 'granted') return
+		if (gate.status === 'granted') {
+			return { credentialId: gate.credentialId }
+		}
 		throw new McpCallerError(gate.message)
 	} catch (error) {
 		if (error instanceof McpCallerError) throw error
@@ -206,9 +208,10 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			assertInteractiveHttpApplyCaller(ctx.callerContext)
-			await assertHttpApplyDestinationApproved({
+			const userId = ownerIdFromCaller(ctx.callerContext)
+			const approved = await assertHttpApplyDestinationApproved({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId,
 				handle: args.handle,
 				destination: args.destination,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -216,13 +219,14 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 			const applied = await applyWebhookUrlForUser({
 				env: ctx.env,
 				request: requireMcpRequest(ctx.callerContext),
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId,
 				email: user.email,
 				username: user.username,
 				handle: args.handle,
 				destination: toApplyDestination(args.destination),
 				requestUrl: ctx.callerContext.baseUrl,
 				waitUntil: ctx.waitUntil,
+				expectedAuthCredentialId: approved.credentialId,
 			})
 			return toAppliedWebhookCapability(applied)
 		},

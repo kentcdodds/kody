@@ -161,9 +161,13 @@ test('backfill preserves access; replaced credential under same name needs appro
 	runMigration(sqlite)
 
 	const db = createD1FromSqlite(sqlite)
+	const env = {
+		APP_DB: db,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	const afterBackfill = await requireWebhookApplyDestinationGrantOrPending({
-		db,
-		userId: 'org-a',
+		env,
+		userId: 'org-a' as never,
 		handle: 'whh_ep-1',
 		destination,
 		baseUrl: 'https://heykody.dev',
@@ -174,6 +178,9 @@ test('backfill preserves access; replaced credential under same name needs appro
 	})
 	expect(afterBackfill.status === 'granted' && afterBackfill.fingerprint).toBe(
 		idKeyed,
+	)
+	expect(afterBackfill.status === 'granted' && afterBackfill.credentialId).toBe(
+		'cred-hooks',
 	)
 	const upgraded = sqlite
 		.prepare(
@@ -201,8 +208,8 @@ test('backfill preserves access; replaced credential under same name needs appro
 		)
 		.run()
 	const afterRotation = await requireWebhookApplyDestinationGrantOrPending({
-		db,
-		userId: 'org-a',
+		env,
+		userId: 'org-a' as never,
 		handle: 'whh_ep-1',
 		destination,
 		baseUrl: 'https://heykody.dev',
@@ -219,8 +226,8 @@ test('backfill preserves access; replaced credential under same name needs appro
 		)
 		.run()
 	const afterReplace = await requireWebhookApplyDestinationGrantOrPending({
-		db,
-		userId: 'org-a',
+		env,
+		userId: 'org-a' as never,
 		handle: 'whh_ep-1',
 		destination,
 		baseUrl: 'https://heykody.dev',
@@ -263,9 +270,13 @@ test("deleted credential's approvals do not transfer to a later recreate", async
 		.run()
 
 	const db = createD1FromSqlite(sqlite)
+	const env = {
+		APP_DB: db,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	const gate = await requireWebhookApplyDestinationGrantOrPending({
-		db,
-		userId: 'org-a',
+		env,
+		userId: 'org-a' as never,
 		handle: 'whh_ep-1',
 		destination,
 		baseUrl: 'https://heykody.dev',

@@ -317,6 +317,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
 		status: 'granted',
 		fingerprint: 'fp-github-hooks',
+		credentialId: null,
 	})
 	await expect(
 		webhookUrlApplyCapability.handler(
@@ -534,6 +535,7 @@ test('webhookUrlApply http destination requires owner website approval before ou
 	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
 		status: 'granted',
 		fingerprint: 'fp-1',
+		credentialId: null,
 	})
 	mockModule.applyWebhookUrlForUser.mockResolvedValue({
 		ok: true,

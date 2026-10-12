@@ -614,6 +614,8 @@ export async function applyWebhookUrlForUser(input: {
 	destination: WebhookUrlApplyDestination
 	requestUrl?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	/** Credential id pinned by destination Allow; rejects mid-flight name swaps. */
+	expectedAuthCredentialId?: string | null
 }): Promise<WebhookUrlApplyResult> {
 	const resolved = await resolveMintedWebhookUrl(input)
 	await authorizeWebhookPackageWrite({
@@ -637,6 +639,7 @@ export async function applyWebhookUrlForUser(input: {
 		urlHost: resolved.urlHost,
 		destination: input.destination,
 		waitUntil: input.waitUntil,
+		expectedAuthCredentialId: input.expectedAuthCredentialId,
 	})
 }
 

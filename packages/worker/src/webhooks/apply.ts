@@ -131,6 +131,20 @@ async function loadDeclaredWebhookIfPresent(input: {
 	)
 }
 
+function assertExpectedAuthCredentialId(input: {
+	expectedAuthCredentialId?: string | null
+	resolvedCredentialId: string | null | undefined
+	label: string
+}) {
+	const expected = input.expectedAuthCredentialId?.trim() || null
+	if (!expected) return
+	const resolved = input.resolvedCredentialId?.trim() || null
+	if (resolved === expected) return
+	throw new McpCallerError(
+		`${input.label} no longer matches the credential the owner approved for this destination. Retry webhookUrlApply for a fresh approval link.`,
+	)
+}
+
 async function authorizeApplyRequest(input: {
 	env: Env
 	request: RequestContext
@@ -143,6 +157,7 @@ async function authorizeApplyRequest(input: {
 	integration?: string
 	secretName?: string
 	waitUntil?: (promise: Promise<unknown>) => void
+	expectedAuthCredentialId?: string | null
 }): Promise<{
 	authorization: string | null
 	/** Resolves `null` when no fresher credential exists, so apply keeps the original 401. */
@@ -173,6 +188,11 @@ async function authorizeApplyRequest(input: {
 				`Secret "${secretName}" was not found for this user.`,
 			)
 		}
+		assertExpectedAuthCredentialId({
+			expectedAuthCredentialId: input.expectedAuthCredentialId,
+			resolvedCredentialId: resolved.credentialId,
+			label: `Secret "${secretName}"`,
+		})
 		if (!resolved.allowedHosts.includes(host)) {
 			const approvalUrl = buildSecretHostApprovalUrl({
 				baseUrl: input.baseUrl,
@@ -209,6 +229,11 @@ async function authorizeApplyRequest(input: {
 			`Integration "${integrationName}" was not found. Connect it at /connect/oauth?provider=${encodeURIComponent(integrationName)} or pass secretName for a host-approved token.`,
 		)
 	}
+	assertExpectedAuthCredentialId({
+		expectedAuthCredentialId: input.expectedAuthCredentialId,
+		resolvedCredentialId: joined.connection.credentialId,
+		label: `Integration "${integrationName}"`,
+	})
 	const readToken = async () => {
 		const token = await resolveCredential({
 			...credentialInput,
@@ -767,6 +792,7 @@ async function dispatchHttpApply(input: {
 	urlSecret: string
 	destination: WebhookUrlApplyHttpDestination
 	waitUntil?: (promise: Promise<unknown>) => void
+	expectedAuthCredentialId?: string | null
 }): Promise<WebhookUrlApplyResult> {
 	const { urlTemplate, headers, body, method } =
 		validateHttpDestinationTemplate(input.destination)
@@ -852,6 +878,7 @@ async function dispatchHttpApply(input: {
 		integration: input.destination.integration,
 		secretName: input.destination.secretName,
 		waitUntil: input.waitUntil,
+		expectedAuthCredentialId: input.expectedAuthCredentialId,
 	})
 	const secrets = [
 		...collectWebhookCredentialSecrets({
@@ -899,6 +926,7 @@ export async function dispatchWebhookUrlApply(input: {
 	urlHost: string
 	destination: WebhookUrlApplyDestination
 	waitUntil?: (promise: Promise<unknown>) => void
+	expectedAuthCredentialId?: string | null
 }): Promise<WebhookUrlApplyResult> {
 	const result = await dispatchHttpApply({
 		env: input.env,
@@ -915,6 +943,7 @@ export async function dispatchWebhookUrlApply(input: {
 		urlSecret: input.urlSecret,
 		destination: input.destination,
 		waitUntil: input.waitUntil,
+		expectedAuthCredentialId: input.expectedAuthCredentialId,
 	})
 	const secrets = collectWebhookCredentialSecrets({
 		url: input.webhookUrl,

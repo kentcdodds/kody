@@ -1,4 +1,7 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { findSecretForUse } from '#mcp/secrets/service.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	countWebhookSecretPlaceholdersInFormBody,
@@ -255,8 +258,9 @@ export function buildWebhookApplyDestinationApprovalRequiredMessage(input: {
 }
 
 async function resolveDestinationCredentialId(input: {
-	db: D1Database
-	userId: string
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: OwnerId
+	packageId: string
 	destination: WebhookUrlApplyHttpDestination
 }): Promise<string | null> {
 	const secretName = input.destination.secretName?.trim() || ''
@@ -265,33 +269,40 @@ async function resolveDestinationCredentialId(input: {
 		throw new Error('Provide either integration or secretName, not both.')
 	}
 	if (secretName) {
-		const row = await input.db
-			.prepare(
-				`SELECT e.id AS id
-				FROM secret_entries e
-				JOIN secret_buckets b ON b.id = e.bucket_id
-				WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
-					AND e.name = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL
-				LIMIT 1`,
-			)
-			.bind(input.userId, secretName)
-			.first<{ id: string }>()
-		if (!row?.id) {
+		// Same live lookup as webhook-secret apply: package then user, kind=secret,
+		// unexpired. Pins the credential id that outbound Bearer auth will use.
+		const lookup = await findSecretForUse({
+			env: input.env,
+			userId: input.userId,
+			name: secretName,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: input.packageId,
+			},
+		})
+		const credentialId = lookup.found.credentialId
+		if (!lookup.found.found || !credentialId) {
 			throw new Error(
-				`Secret "${secretName}" was not found. Save the secret, then retry webhookUrlApply so the owner can approve this destination for that credential.`,
+				`Secret "${secretName}" was not found. Save a live secret (not expired, kind secret), then retry webhookUrlApply so the owner can approve this destination for that credential.`,
 			)
 		}
-		return row.id
+		return credentialId
 	}
 	if (integrationName) {
-		const row = await input.db
-			.prepare(
-				`SELECT id
+		const canonical = canonicalIntegrationName(integrationName)
+		if (!canonical) {
+			throw new Error(
+				`Integration "${integrationName}" was not found. Connect it, then retry webhookUrlApply so the owner can approve this destination for that credential.`,
+			)
+		}
+		const row = await input.env.APP_DB.prepare(
+			`SELECT id
 				FROM user_integrations
 				WHERE user_id = ? AND name = ? AND deleted_at IS NULL
 				LIMIT 1`,
-			)
-			.bind(input.userId, integrationName)
+		)
+			.bind(input.userId, canonical)
 			.first<{ id: string }>()
 		if (!row?.id) {
 			throw new Error(
@@ -689,13 +700,13 @@ export async function loadWebhookApplyDestinationApprovalView(input: {
 }
 
 export async function requireWebhookApplyDestinationGrantOrPending(input: {
-	db: D1Database
-	userId: string
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: OwnerId
 	handle: string
 	destination: WebhookUrlApplyHttpDestination
 	baseUrl: string
 }): Promise<
-	| { status: 'granted'; fingerprint: string }
+	| { status: 'granted'; fingerprint: string; credentialId: string | null }
 	| {
 			status: 'approval_required'
 			fingerprint: string
@@ -709,7 +720,7 @@ export async function requireWebhookApplyDestinationGrantOrPending(input: {
 		throw new Error('Invalid webhook URL handle.')
 	}
 	const endpoint = await getWebhookEndpointByIdForUser({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		endpointId,
 	})
@@ -718,27 +729,32 @@ export async function requireWebhookApplyDestinationGrantOrPending(input: {
 	}
 
 	const credentialId = await resolveDestinationCredentialId({
-		db: input.db,
+		env: input.env,
 		userId: input.userId,
+		packageId: endpoint.packageId,
 		destination: input.destination,
 	})
 	const snapshot = toHttpApplyDestinationSnapshot(input.destination, {
 		credentialId,
 	})
 	const grantedFingerprint = await findGrantFingerprint({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		endpointId,
 		destination: input.destination,
 		snapshot,
 	})
 	if (grantedFingerprint) {
-		return { status: 'granted', fingerprint: grantedFingerprint }
+		return {
+			status: 'granted',
+			fingerprint: grantedFingerprint,
+			credentialId,
+		}
 	}
 
 	const fingerprint = await fingerprintDestinationSnapshot(snapshot)
 	await upsertWebhookApplyDestinationPending({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		endpointId,
 		fingerprint,
