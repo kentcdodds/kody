@@ -4,7 +4,7 @@ import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { type PublishPhaseTimings } from './publish-phase-timing.ts'
 
-export const entityKindValues = ['job', 'package', 'repo'] as const
+export const entityKindValues = ['package', 'repo'] as const
 export type EntityKind = (typeof entityKindValues)[number]
 
 export const entitySourceRowSchema = z.object({
@@ -80,55 +80,6 @@ export const repoContextSchema = z.object({
 })
 
 export type RepoContext = z.infer<typeof repoContextSchema>
-
-export const repoChecksSchema = z
-	.object({
-		manifest: z.boolean().optional(),
-		dependencies: z.boolean().optional(),
-		bundle: z.boolean().optional(),
-		typecheck: z.boolean().optional(),
-		lint: z.boolean().optional(),
-		smoke: z
-			.array(
-				z.object({
-					path: z.string().min(1),
-					method: z.string().min(1).optional(),
-				}),
-			)
-			.optional(),
-	})
-	.optional()
-
-const manifestParameterSchema = z.object({
-	name: z.string().min(1),
-	description: z.string().min(1),
-	type: z.enum(['string', 'number', 'boolean', 'json']),
-	required: z.boolean().optional(),
-	default: z.unknown().optional(),
-})
-
-const manifestBaseSchema = z.object({
-	version: z.literal(1),
-	kind: z.enum(entityKindValues),
-	title: z.string().min(1),
-	description: z.string().min(1),
-	keywords: z.array(z.string()).optional(),
-	searchText: z.string().optional(),
-	sourceRoot: z.string().optional(),
-	manifestPath: z.string().optional(),
-	parameters: z.array(manifestParameterSchema).optional(),
-	checks: repoChecksSchema,
-})
-
-export const jobManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('job'),
-	entrypoint: z.string().min(1),
-})
-
-export const repoManifestSchema = jobManifestSchema
-
-export type JobManifest = z.infer<typeof jobManifestSchema>
-export type RepoManifest = z.infer<typeof repoManifestSchema>
 
 export type SearchProjection = {
 	title: string

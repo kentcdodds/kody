@@ -562,9 +562,9 @@ run-error strings for connection health.
 ## `repo.pushed`
 
 When Cloudflare Artifacts reports commits pushed to a Kody-managed Artifacts
-repo (plain repo, package, or job source), Kody dispatches `repo.pushed` to
-packages saved by that same user that declare the topic. Delivery is durable via
-the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos, session
+repo (plain repo or package), Kody dispatches `repo.pushed` to packages saved by
+that same user that declare the topic. Delivery is durable via the
+`kody-artifacts-repo-events` Queue (with DLQ). Session fork repos, session
 workspace branch pushes (`sessions/<id>`), and publish git-notes
 (`refs/notes/commits`) never emit. Opening a repo session git-pushes the session
 ref, and delivering it as `repo.pushed` would let a handler that opens another
@@ -581,7 +581,7 @@ type RepoPushedEvent = {
 	repo: {
 		source_id: string
 		repo_id: string
-		entity_kind: 'repo' | 'package' | 'job'
+		entity_kind: 'repo' | 'package'
 		entity_id: string
 		name: string | null
 		kody_id: string | null
@@ -612,9 +612,9 @@ type RepoPushedEvent = {
 
 `repo_id` is the Artifacts repo name (also stored on `entity_sources.repo_id`).
 `name` is the user-facing plain-repo name or package npm name when known; The
-package name leaf is set for packages. For `entity_kind: 'package' | 'job'`, a
-push updates live HEAD but does not mean the package/job published commit
-advanced — use publish / external-push / reconcile for activation.
+package name leaf is set for packages. For `entity_kind: 'package'`, a push
+updates live HEAD but does not mean the package published commit advanced — use
+publish / external-push / reconcile for activation.
 
 Idempotency keys include the after commit, ref, and subscriber package id, so
 Queue redelivery is safe.

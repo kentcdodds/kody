@@ -564,7 +564,7 @@ primitives:
   - id: artifacts-repos
     group: storage
     name: Artifacts repos
-    summary: Canonical published git source for packages and jobs.
+    summary: Canonical published git source for packages.
     code:
       - packages/worker/src/repo/artifacts.ts
       - packages/worker/src/repo/public-package-git-http.ts
@@ -752,7 +752,7 @@ invariants:
       - docs/contributing/architecture/integrations.md
 
   - id: canonical-repo-source
-    summary: Artifacts repos are canonical package/job source; D1 is metadata.
+    summary: Artifacts repos are canonical package source; D1 is metadata.
     docs:
       - docs/contributing/architecture/data-storage.md
 

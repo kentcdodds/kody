@@ -8,7 +8,6 @@ import type * as artifactsModule from '#worker/repo/artifacts.ts'
 import type * as checksModule from '#worker/repo/checks.ts'
 import type * as entitySourcesModule from '#worker/repo/entity-sources.ts'
 import type * as externalPublishCloneModule from '#worker/repo/external-publish-clone.ts'
-import type * as manifestModule from '#worker/repo/manifest.ts'
 import type * as repoSessionsModule from '#worker/repo/repo-sessions.ts'
 import type * as storageBucketsModule from '#worker/storage-buckets/service.ts'
 
@@ -114,7 +113,7 @@ export const repoSessionMockModule = (() => {
 	const workspaceReadFile = vi.fn<Workspace['readFile']>(
 		async (path) =>
 			workspaceFiles.get(path) ??
-			'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
 	)
 
 	return {
@@ -192,11 +191,6 @@ export const repoSessionMockModule = (() => {
 		listArtifactServerRefs: vi.fn<
 			typeof artifactsModule.listArtifactServerRefs
 		>(async () => []),
-		parseRepoManifest: vi.fn(
-			(..._args: Parameters<typeof manifestModule.parseRepoManifest>) => ({
-				sourceRoot: '/',
-			}),
-		),
 		runRepoChecks: vi.fn<typeof checksModule.runRepoChecks>(async () => ({
 			ok: true,
 			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
@@ -286,7 +280,6 @@ export function restoreRepoSessionMockBaseline() {
 		mocks.resolveArtifactDefaultBranchHead,
 		mocks.resolveArtifactSourceHead,
 		mocks.listArtifactServerRefs,
-		mocks.parseRepoManifest,
 		mocks.runRepoChecks,
 		mocks.writePublishedSourceSnapshot,
 		mocks.loadPublishedSourceSnapshot,
@@ -491,9 +484,11 @@ export function setCommonSessionFixtures() {
 	repoSessionMockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
 		repo_id: 'source-repo',
 		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 		source_root: '/',
 	})
 	repoSessionMockModule.resolveArtifactSourceRepo.mockResolvedValue({

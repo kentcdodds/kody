@@ -41,7 +41,7 @@ export function mockRepoPersistence() {
 				entityKind,
 				entityId,
 				publishedCommit: 'published-commit-1',
-				manifestPath: entityKind === 'package' ? 'package.json' : 'kody.json',
+				manifestPath: 'package.json',
 				sourceRoot: sourceRoot ?? '/',
 			})
 			return {
@@ -52,7 +52,7 @@ export function mockRepoPersistence() {
 				repo_id: `${entityKind}-${entityId}`,
 				published_commit: 'published-commit-1',
 				indexed_commit: null,
-				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
+				manifest_path: 'package.json',
 				source_root: sourceRoot ?? '/',
 				last_external_check_at: null,
 				external_check_until: null,
@@ -77,10 +77,10 @@ export function mockRepoPersistence() {
 					userId,
 					sourceId,
 					entityKind:
-						(existing['entity_kind'] as 'job' | 'package' | undefined) ?? 'job',
+						(existing['entity_kind'] as EntityKind | undefined) ?? 'package',
 					entityId: String(existing['entity_id'] ?? sourceId),
 					publishedCommit: 'published-commit-1',
-					manifestPath: String(existing['manifest_path'] ?? 'kody.json'),
+					manifestPath: String(existing['manifest_path'] ?? 'package.json'),
 					sourceRoot: String(existing['source_root'] ?? '/'),
 				})
 				if (env.BUNDLE_ARTIFACTS_KV) {
@@ -92,12 +92,15 @@ export function mockRepoPersistence() {
 							id: sourceId,
 							user_id: ownerIdFromStored(String(existing['user_id'])),
 							entity_kind:
-								(existing['entity_kind'] as 'job' | 'package') ?? 'job',
+								(existing['entity_kind'] as EntityKind | undefined) ??
+								'package',
 							entity_id: String(existing['entity_id'] ?? sourceId),
 							repo_id: String(existing['repo_id'] ?? sourceId),
 							published_commit: 'published-commit-1',
 							indexed_commit: null,
-							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
+							manifest_path: String(
+								existing['manifest_path'] ?? 'package.json',
+							),
 							source_root: String(existing['source_root'] ?? '/'),
 							last_external_check_at: null,
 							external_check_until: null,
@@ -1051,12 +1054,12 @@ export async function insertPublishedEntitySource(input: {
 		.bind(
 			input.sourceId,
 			input.userId,
-			input.entityKind ?? 'job',
+			input.entityKind ?? 'package',
 			input.entityId,
-			`${input.entityKind ?? 'job'}-${input.entityId}`,
+			`${input.entityKind ?? 'package'}-${input.entityId}`,
 			input.publishedCommit,
 			null,
-			input.manifestPath ?? 'kody.json',
+			input.manifestPath ?? 'package.json',
 			input.sourceRoot ?? '/',
 			'2026-04-16T00:00:00.000Z',
 			'2026-04-16T00:00:00.000Z',
@@ -1077,12 +1080,12 @@ export async function insertPublishedEntitySource(input: {
 			source: {
 				id: input.sourceId,
 				user_id: ownerIdFromStored(input.userId),
-				entity_kind: input.entityKind ?? 'job',
+				entity_kind: input.entityKind ?? 'package',
 				entity_id: input.entityId,
-				repo_id: `${input.entityKind ?? 'job'}-${input.entityId}`,
+				repo_id: `${input.entityKind ?? 'package'}-${input.entityId}`,
 				published_commit: input.publishedCommit,
 				indexed_commit: null,
-				manifest_path: input.manifestPath ?? 'kody.json',
+				manifest_path: input.manifestPath ?? 'package.json',
 				source_root: input.sourceRoot ?? '/',
 				last_external_check_at: null,
 				external_check_until: null,

@@ -12,10 +12,7 @@ import {
 	type JobRecord,
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
-import {
-	type EntitySourceRow,
-	type RepoSessionRow,
-} from '#worker/repo/types.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function normalizeMockQuery(query: string): string {
@@ -531,29 +528,6 @@ export function createJobRow(
 		last_run_at: job.lastRunAt ?? null,
 		last_run_status: job.lastRunStatus ?? null,
 		next_run_at: job.nextRunAt,
-	}
-}
-
-export function createEntitySourceRow(input: {
-	userId: string
-	jobId: string
-	sourceId: string
-	repoId: string
-}): EntitySourceRow {
-	return {
-		id: input.sourceId,
-		user_id: ownerIdFromStored(input.userId),
-		entity_kind: 'job',
-		entity_id: input.jobId,
-		repo_id: input.repoId,
-		published_commit: 'published-commit-1',
-		indexed_commit: null,
-		manifest_path: 'kody.json',
-		source_root: '/',
-		last_external_check_at: null,
-		external_check_until: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
 	}
 }
 

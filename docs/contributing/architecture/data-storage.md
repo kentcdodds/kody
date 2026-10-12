@@ -441,9 +441,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
   only the thin `repo_session_due_owners` hint and the platform-owned
   `repo_session_storage_bucket_cursor`.
-- `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
-  or `repo`) to Artifacts repos and their latest published commit (packages
-  only; plain repos are live-at-HEAD without a publish pointer)
+- `entity_sources`: durable mapping from user-facing entities (`package` or
+  `repo`) to Artifacts repos and their latest published commit (packages only;
+  plain repos are live-at-HEAD without a publish pointer)
 - `user_repos`: plain-repo discovery metadata (`name`, optional `description`);
   one row per user-owned plain repo, keyed by `entity_sources.entity_id` when
   `entity_kind = 'repo'`
@@ -605,7 +605,7 @@ Two D1 reporting projections deliberately remain:
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
 OAuth provider state is stored in `OAUTH_KV` through the
-`@cloudflare/workers-oauth-provider` integration. Published package/job source
+`@cloudflare/workers-oauth-provider` integration. Published package source
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
 platform-owned `platform-settings:v1:reserved-usernames` runtime
@@ -1725,11 +1725,12 @@ restored fingerprints cannot skip an empty index.
 `entity_sources` is the durable repo pointer table:
 `(user_id, entity_kind, entity_id) -> source_id`. Child tables store
 `source_id = entity_sources.id`; KV snapshots use that same source id plus the
-published commit. `entity_kind` accepts `job`, `package`, and `repo`.
-`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+published commit. `entity_kind` accepts `package` and `repo`. `manifest_path`,
+`source_root`, `published_commit`, `indexed_commit`, and
 `last_external_check_at` are part of the repo-source synchronization contract
-for jobs and packages; plain `repo` sources are live-at-HEAD, have no manifest
-requirement, and are skipped by the external-push reconcile lane.
+for packages; plain `repo` sources are live-at-HEAD, have no manifest
+requirement, and are skipped by the external-push reconcile lane. Package-owned
+jobs live in the package repo.
 
 Saved package imports in user code use `kody:@scope/name/export` specifiers:
 

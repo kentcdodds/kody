@@ -157,8 +157,8 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 			db: empty.db,
 			env: { APP_DB: empty.db } as Env,
 			userId: ownerIdFromStored('user-1'),
-			entityKind: 'job',
-			entityId: 'job-1',
+			entityKind: 'package',
+			entityId: 'pkg-new',
 			sourceRoot: '/',
 			requirePersistence: true,
 		}),
@@ -167,24 +167,25 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 	)
 	expect(empty.runs).toEqual([])
 
-	const newJob = makeDb(null)
-	const newJobFetch = mockArtifactsFetch('job-job-1', true)
+	const newPackage = makeDb(null)
+	const newPackageFetch = mockArtifactsFetch('package-pkg-new', true)
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const newSource = await ensureEntitySource({
-		db: newJob.db,
-		env: artifactsEnv(newJob.db),
+		db: newPackage.db,
+		env: artifactsEnv(newPackage.db),
 		userId: ownerIdFromStored('user-1'),
-		entityKind: 'job',
-		entityId: 'job-1',
+		entityKind: 'package',
+		entityId: 'pkg-new',
 		sourceRoot: '/',
 		serverTiming,
 	})
-	expect(newJobFetch).toHaveBeenCalledTimes(2)
-	expect(newJob.runs).toEqual([
+	expect(newPackageFetch).toHaveBeenCalledTimes(2)
+	expect(newPackage.runs).toEqual([
 		expect.stringContaining('INSERT INTO entity_sources'),
 	])
-	expect(newSource.repo_id).toBe('job-job-1')
-	expect(newSource.bootstrapAccess).toEqual(createdAccess('job-job-1'))
+	expect(newSource.repo_id).toBe('package-pkg-new')
+	expect(newSource.manifest_path).toBe('package.json')
+	expect(newSource.bootstrapAccess).toEqual(createdAccess('package-pkg-new'))
 	expect(serverTiming.map((entry) => entry.name)).toEqual([
 		'artifacts-repo-ready',
 		'entity-source-insert',

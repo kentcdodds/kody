@@ -10,7 +10,7 @@ the saved package: documents live chunked in values, attachments in self-managed
 R2 buckets, and versioned document stores get reimplemented in package storage.
 Cloudflare Artifacts is a general git-compatible store, and the schema already
 models repos as the base layer: `entity_sources` maps
-`(user_id, entity_kind, entity_id)` to a repo, with packages and jobs as the two
+`(user_id, entity_kind, entity_id)` to a repo, with `package` and `repo` as the
 entity kinds. Evaluated alternatives: a Durable-Object-filesystem "workspace"
 primitive (rejected — duplicates Artifacts worse, 10 GB DO cap, ~13x storage
 cost) and a "data repo" primitive alongside packages (rejected — two lifecycles

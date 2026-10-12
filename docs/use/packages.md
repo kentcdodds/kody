@@ -557,7 +557,7 @@ snapshot. Recovery to ready dispatches `mcp.server.reconnected` with the same
 episode id. The payload is metadata-first (server id/name/state, `account_url`).
 See the [package subscriptions guide](../guides/package-subscriptions.md).
 
-Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
+Artifacts-backed plain repos and packages also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
 lifecycle events. Session workspace branch pushes (`sessions/<id>`) and publish
 git-notes (`refs/notes/commits`) do not fan out. See [Plain repos](./repos.md)
