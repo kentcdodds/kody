@@ -329,6 +329,24 @@ test('package chrome is shared for public listings and private owner packages', 
 		['href="/@kentcdodds/github-triage/tree/develop"'],
 		['href="/@kentcdodds/github-triage/tree/main"'],
 	)
+
+	// Plain repos show Repo mark and still expose the Files tab.
+	expectMarkers(
+		await render({
+			listing: null,
+			hasPackage: false,
+			viewerIsOwner: true,
+			description: 'Scratch notes.',
+		}),
+		[
+			testId('package-repo-nav-files'),
+			'data-signifier="repo"',
+			'title="Repo"',
+			'href="/@kentcdodds/github-triage/tree/main"',
+			'Scratch notes.',
+		],
+		['data-signifier="package"', 'data-signifier="unpublished"'],
+	)
 })
 
 test('open package app link shows for the owner, and hides without an app or access', async () => {

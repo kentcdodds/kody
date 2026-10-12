@@ -48,7 +48,7 @@ export type CommunityDetailContentProps = {
 	treeRef?: string
 	publishCompareHref?: string | null
 	hasApp?: boolean
-	/** Defaults to true. Plain repos pass false for Repo mark + no Files tab. */
+	/** Defaults to true. Plain repos pass false for the Repo mark. */
 	hasPackage?: boolean
 	iconUrl?: string | null
 }
