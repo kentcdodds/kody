@@ -139,7 +139,9 @@ function communityListingHead({
 function homeDocumentHead(
 	context: DocumentHeadContext,
 ): DocumentHeadDescriptor {
-	const head = publicPageHead('home', publicOgPages.home.ogTitle)
+	const head = publicPageHead('home', publicOgPages.home.ogTitle, {
+		links: [primitiveWidgetsStylesheet],
+	})
 	const variant = readHomeOgVariant(context.search)
 	if (!variant || !head.og) return head
 	const page = applyHomeOgVariant(publicOgPages.home, variant)
@@ -171,9 +173,17 @@ function publicPageHead(
 	}
 }
 
+/** Animated primitive cards on the homepage and the `/features` overview. */
+const primitiveWidgetsStylesheet: DocumentHeadLink = {
+	rel: 'stylesheet',
+	hrefPath: '/primitive-widgets.css',
+	sameOrigin: true,
+}
+
 function featurePageHead(
 	pageId: PublicOgPageId,
 	title: string,
+	extraLinks: Array<DocumentHeadLink> = [],
 ): DocumentHeadDescriptor {
 	return {
 		...publicPageHead(pageId, title, {
@@ -183,6 +193,7 @@ function featurePageHead(
 					hrefPath: '/feature-pages.css',
 					sameOrigin: true,
 				},
+				...extraLinks,
 			],
 		}),
 		description: publicOgPages[pageId].ogDescription,
@@ -421,6 +432,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.features)]: featurePageHead(
 		'features',
 		'Kody features for your AI agents | Kody',
+		[primitiveWidgetsStylesheet],
 	),
 	[routePattern(routes.featureMemory)]: featurePageHead(
 		'feature-memory',
