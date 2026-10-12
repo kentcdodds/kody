@@ -91,13 +91,24 @@ async function readLiveProductionSha(healthUrl: string) {
 	}
 }
 
+function gitHasCommit(sha: string) {
+	const result = spawnSync('git', ['cat-file', '-e', `${sha}^{commit}`], {
+		stdio: 'ignore',
+	})
+	return result.status === 0
+}
+
 function gitIsAncestor(ancestor: string, descendant: string) {
 	const result = spawnSync(
 		'git',
 		['merge-base', '--is-ancestor', ancestor, descendant],
-		{ stdio: 'ignore' },
+		{ stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' },
 	)
-	return result.status === 0
+	if (result.status === 0) return true
+	if (result.status === 1) return false
+	throw new Error(
+		`git merge-base --is-ancestor ${ancestor} ${descendant} failed (${result.status ?? result.signal}): ${result.stderr.trim()}`,
+	)
 }
 
 function requireEnv(name: string) {
@@ -114,8 +125,14 @@ export async function main() {
 		eventName: requireEnv('EVENT_NAME'),
 		deploySha: requireEnv('DEPLOY_SHA'),
 		headSha: requireEnv('HEAD_SHA'),
-		readLiveSha: () =>
-			readLiveProductionSha(`${productionUrl.replace(/\/$/, '')}/health`),
+		readLiveSha: async () => {
+			const liveSha = await readLiveProductionSha(
+				`${productionUrl.replace(/\/$/, '')}/health`,
+			)
+			// A live build from a commit this clone lacks is as unknown as an
+			// unreadable /health.
+			return liveSha && gitHasCommit(liveSha) ? liveSha : null
+		},
 		isAncestor: gitIsAncestor,
 	})
 	console.error(
