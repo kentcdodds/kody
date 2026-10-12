@@ -72,12 +72,15 @@ const forecastPackage: FixturePackage = {
 	exportName: './history',
 	entryPoint: 'src/history.ts',
 	files: {
-		'src/history.ts': `import { packageStorage } from 'kody:runtime'
+		'src/history.ts': `import { packageSecrets, packageStorage } from 'kody:runtime'
 export async function recordForecast(value) {
 	await packageStorage().set('forecast', value)
 }
 export async function getForecast() {
 	return await packageStorage().get('forecast')
+}
+export async function forecastHasWakeToken() {
+	return await packageSecrets.has('wakeToken')
 }
 export default getForecast
 `,
@@ -92,14 +95,20 @@ const shadesPackage: FixturePackage = {
 	exportName: './plan-day',
 	entryPoint: 'src/plan-day.ts',
 	files: {
-		'src/plan-day.ts': `import { getForecast, recordForecast } from 'kody:@acme/forecast/history'
-import { packageStorage } from 'kody:runtime'
+		'src/plan-day.ts': `import {
+	forecastHasWakeToken,
+	getForecast,
+	recordForecast,
+} from 'kody:@acme/forecast/history'
+import { packageSecrets, packageStorage } from 'kody:runtime'
 export default async function planDay(params) {
 	await recordForecast(params.forecast)
 	await packageStorage().set('config', { synced: true })
 	return {
 		forecast: await getForecast(),
 		config: await packageStorage().get('config'),
+		forecastHasWakeToken: await forecastHasWakeToken(),
+		shadesHasWakeToken: await packageSecrets.has('wakeToken'),
 	}
 }
 `,
@@ -330,14 +339,21 @@ function createFakePackageStorageBridge() {
 		}
 		return existing
 	}
+	const authorityPackageId = (input: {
+		packageId?: unknown
+		__kodySecretAuthorityPackageId?: unknown
+	}) => input.__kodySecretAuthorityPackageId ?? input.packageId
 	const bridge = async (path: Array<string>, args: Array<unknown>) => {
 		const input = (args[0] ?? {}) as {
 			packageId?: unknown
+			__kodySecretAuthorityPackageId?: unknown
 			key?: string
 			value?: unknown
+			alias?: string
 		}
 		const name = path.join('.')
-		calls.push({ path: name, packageId: input.packageId })
+		const packageId = authorityPackageId(input)
+		calls.push({ path: name, packageId })
 		switch (name) {
 			case 'kody.packageStorageGet':
 				return {
@@ -346,6 +362,10 @@ function createFakePackageStorageBridge() {
 			case 'kody.packageStorageSet':
 				bucket(input.packageId).set(String(input.key), input.value)
 				return { ok: true }
+			case 'kody.packageSecretHas':
+				return { has: false }
+			case 'kody.packageSecretGet':
+				return { value: '' }
 			default:
 				throw new Error(`Unexpected CapabilityProxy hop ${name}`)
 		}
@@ -353,7 +373,7 @@ function createFakePackageStorageBridge() {
 	return { bridge, buckets, calls }
 }
 
-test('execute --local binds packageStorage per package identity through nested imports of legacy artifacts', async () => {
+test('execute --local binds packageStorage and packageSecrets per package identity through nested imports of legacy artifacts', async () => {
 	vi.clearAllMocks()
 	const artifacts = new Map<string, ReturnType<typeof artifactHit>>()
 	installRegistry(artifacts)
@@ -414,6 +434,8 @@ export default async function main(params) { return await planDay(params) }`
 		await expect(entry.run({ forecast: { high: 81 } })).resolves.toEqual({
 			forecast: { high: 81 },
 			config: { synced: true },
+			forecastHasWakeToken: false,
+			shadesHasWakeToken: false,
 		})
 	} finally {
 		await moduleGraph.cleanup()
@@ -431,4 +453,10 @@ export default async function main(params) { return await planDay(params) }`
 		[forecastPackage.id, shadesPackage.id].sort(),
 	)
 	expect(calls.every((call) => typeof call.packageId === 'string')).toBe(true)
+	const secretHasCalls = calls.filter(
+		(call) => call.path === 'kody.packageSecretHas',
+	)
+	expect(secretHasCalls.map((call) => call.packageId).sort()).toEqual(
+		[forecastPackage.id, shadesPackage.id].sort(),
+	)
 })

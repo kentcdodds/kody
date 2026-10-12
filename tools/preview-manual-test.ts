@@ -1011,6 +1011,11 @@ function healthMatchDetail(
 	return `ok, commitSha ${commitSha}`
 }
 
+/** Single-quote for paste-into-shell briefing lines (blocks metacharacters). */
+export function shellQuote(value: string) {
+	return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 export function formatBriefing(result: PreviewManualTestResult): string {
 	const lines = [
 		result.ok
@@ -1034,7 +1039,7 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 			? `API: ${result.snapshot.apiUrl}${result.snapshot.apiWorkerName ? ` (\`${result.snapshot.apiWorkerName}\`)` : ''}`
 			: null,
 		result.snapshot.apiUrl
-			? `CLI (auth bootstrap / execute --local) API host: export KODY_API_URL=${result.snapshot.apiUrl}`
+			? `CLI (auth bootstrap / execute --local) API host: export KODY_API_URL=${shellQuote(result.snapshot.apiUrl)}`
 			: null,
 		result.smoke?.commitSha
 			? `Deployed commit: ${result.smoke.commitSha}`

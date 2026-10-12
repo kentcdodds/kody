@@ -36,6 +36,18 @@ test('production deploy retries transient Cloudflare flakes and fails fast on re
 		'  upstream connect error or disconnect/reset before headers. reset reason: connection termination',
 		'  PATCH /accounts/acct/workers/scripts/kody-runtime/secrets-bulk -> 503 Service Unavailable',
 	].join('\n')
+	const deploymentsList200Log = [
+		'✘ [ERROR] Received a malformed response from the API',
+		'',
+		'  {',
+		'    "result": {',
+		'      "deployments": [',
+		'        {',
+		'          "id": "4cb6dc7e-ee4f-4342-beea-6ca7952ac2f1",',
+		'    ... (length = 3959)',
+		'',
+		'  GET /accounts/acct/workers/scripts/kody-platform/deployments -> 200 OK',
+	].join('\n')
 
 	expect(isRetryableDeployFailure(startupCpuLog)).toBe(true)
 	expect(
@@ -44,6 +56,7 @@ test('production deploy retries transient Cloudflare flakes and fails fast on re
 	expect(isRetryableDeployFailure(internalServerLog)).toBe(true)
 	expect(isRetryableDeployFailure(apiAuthFlakeLog)).toBe(true)
 	expect(isRetryableDeployFailure(secretBulk503Log)).toBe(true)
+	expect(isRetryableDeployFailure(deploymentsList200Log)).toBe(true)
 	expect(isRetryableDeployFailure(durableObjectMigrationLog)).toBe(false)
 	expect(isRetryableDeployFailure('')).toBe(false)
 

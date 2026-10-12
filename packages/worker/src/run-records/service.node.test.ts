@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 	dispatchRunErrorSubscriptionEvents: vi.fn(async () => []),
 	finishRun: vi.fn(async () => ({ ok: true })),
 	startRun: vi.fn(async () => ({ ok: true })),
+	listRuns: vi.fn(async () => ({ runs: [], nextCursor: null })),
 	listPackageRunSuccesses: vi.fn(async () => []),
 	listActivationMilestones: vi.fn(async () => []),
 	getAdminInsightsSnapshot: vi.fn(async () => ({
@@ -54,6 +55,7 @@ const {
 	inspectRunLogSqlBilling,
 	listActivationMilestones,
 	listPackageRunSuccesses,
+	listRunRecords,
 	recordRunRecord,
 } = await import('./service.ts')
 
@@ -64,6 +66,7 @@ function createEnv(overrides: Partial<Env> = {}) {
 			get: () => ({
 				startRun: mocks.startRun,
 				finishRun: mocks.finishRun,
+				listRuns: mocks.listRuns,
 				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
 				listActivationMilestones: mocks.listActivationMilestones,
 				getAdminInsightsSnapshot: mocks.getAdminInsightsSnapshot,
@@ -372,4 +375,29 @@ test('RUN_LOG admin reads require the binding and forward the RPC result', async
 			call({ env: createEnv(), userId: ownerIdFromStored('user-1') }),
 		).resolves.toEqual(value)
 	}
+})
+
+test('listRunRecords normalizes since/until to UTC ISO before lexical RunLog compares', async () => {
+	mocks.listRuns.mockClear()
+	await listRunRecords({
+		env: createEnv(),
+		userId: ownerIdFromStored('user-1'),
+		filter: {
+			since: '2026-10-11T00:56:00-06:00',
+			until: '2026-10-12T04:00:00Z',
+		},
+	})
+	expect(mocks.listRuns).toHaveBeenCalledWith(
+		expect.objectContaining({
+			since: '2026-10-11T06:56:00.000Z',
+			until: '2026-10-12T04:00:00.000Z',
+		}),
+	)
+	await expect(
+		listRunRecords({
+			env: createEnv(),
+			userId: ownerIdFromStored('user-1'),
+			filter: { until: 'not-a-timestamp' },
+		}),
+	).rejects.toThrow(/Invalid ISO timestamp filter/)
 })

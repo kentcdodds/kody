@@ -23,13 +23,12 @@ import {
 	findPlaceholderMatches,
 	getCalleeName,
 	getNodeName,
+	listScannableModulePaths,
 	parseModule,
 	type PlaceholderMatch,
 	type PlaceholderMatchKind,
 	resolveStringExpression,
-	scannableModuleFilePattern,
 	templateElementText,
-	testFilePattern,
 	walkAst,
 } from './module-placeholder-scan.ts'
 
@@ -266,12 +265,7 @@ export function scanPackageCredentials(input: {
 		})),
 		unparsedModules: 0,
 	}
-	const modulePaths = Object.keys(input.files)
-		.filter(
-			(path) =>
-				scannableModuleFilePattern.test(path) && !testFilePattern.test(path),
-		)
-		.sort()
+	const modulePaths = listScannableModulePaths(input.files).sort()
 	const parsedModules = new Map(
 		modulePaths.map((path) => [path, parseModule(input.files[path]!)]),
 	)

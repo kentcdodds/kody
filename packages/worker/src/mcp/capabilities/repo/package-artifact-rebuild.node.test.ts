@@ -91,7 +91,12 @@ function setup({
 }
 
 function rebuild(
-	overrides: { env?: Env; publishedCommit?: string; force?: boolean } = {},
+	overrides: {
+		env?: Env
+		publishedCommit?: string
+		force?: boolean
+		targets?: Array<Target>
+	} = {},
 ) {
 	return rebuildPublishedPackageArtifactsViaRepoSession({
 		env: isolatedEnv,
@@ -471,4 +476,21 @@ test('mixed caller and platform rebuild failures keep a platform cause for Sentr
 		expect(String((error as Error).cause)).toContain(platformMessage)
 		return true
 	})
+})
+
+test('optional targets skip listing and only rebuild the supplied set', async () => {
+	const selected = sampleTargets.slice(0, 2)
+	const run = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: true,
+		message: 'rebuilt',
+		results: input.targets.map((target) => ({
+			ok: true,
+			message: 'rebuilt',
+			target,
+		})),
+	}))
+	setup({ run })
+	await rebuild({ targets: selected })
+	expect(mockModule.listPublishedPackageArtifactTargets).not.toHaveBeenCalled()
+	expect(runTargets(run).flat()).toEqual(selected)
 })

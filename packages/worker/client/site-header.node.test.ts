@@ -56,7 +56,19 @@ test('logged-in header has one menu: the organization, then your own links and L
 	)
 	expect(html).toContain('data-testid="org-switcher-manage-group"')
 	expect(html).toContain('>Manage @ada<')
-	expect(html).toContain('href="/@ada/-/billing"')
+	// The signup org's door is its workspace overview, ahead of Billing.
+	const manage = html.slice(
+		html.indexOf('data-testid="org-switcher-manage-group"'),
+	)
+	const overviewAt = manage.indexOf('href="/@ada/-/overview"')
+	expect(overviewAt).toBeGreaterThan(-1)
+	expect(manage.indexOf('href="/@ada/-/billing"')).toBeGreaterThan(overviewAt)
+	// From an account page, the signup org row opens the overview too, not
+	// the public profile (that is "Your profile").
+	const adaRowAt = html.indexOf('data-testid="org-switcher-ada"')
+	expect(html.slice(html.lastIndexOf('<a', adaRowAt), adaRowAt)).toContain(
+		'href="/@ada/-/overview"',
+	)
 	// The photo is drawn once on the trigger and once on the signup org row
 	// in each panel (desktop popover and phone menu), never as its own link.
 	const trigger = html.slice(
@@ -133,6 +145,7 @@ test('org switcher lists the signup organization, then others with roles, then c
 	)
 	expect(menu).toContain('data-testid="org-switcher-manage-group"')
 	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>Overview</)
 	expect(menu).toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/@acme/-/members"')
 	expect(menu).toContain('href="/@acme/-/teams"')
@@ -229,12 +242,18 @@ test('org switcher keeps Manage links for a team org on account pages', async ()
 	expect(menu).toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/@acme/-/teams"')
 	expect(menu).toContain('href="/@acme/-/billing"')
-	// Switching into the team org from an account page lands on Settings.
+	// Switching into the team org from an account page lands on its home,
+	// the team overview; the signup org lands on its workspace overview.
 	const acmeRow = menu.slice(
 		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
 		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
 	)
-	expect(acmeRow).toContain('href="/@acme/-/settings"')
+	expect(acmeRow).toContain('href="/@acme"')
+	const adaRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-ada"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-ada"')) + 1,
+	)
+	expect(adaRow).toContain('href="/@ada/-/overview"')
 })
 
 test('org switcher sends collaborators to org home and billing off Teams', async () => {
@@ -276,8 +295,10 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	)
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	// Manage stays on the personal org (Billing), not the collaborator org.
+	// Manage stays on the personal org (Overview, Billing), not the
+	// collaborator org.
 	expect(collaborator).toContain('>Manage @ada<')
+	expect(collaborator).toContain('href="/@ada/-/overview"')
 	expect(collaborator).not.toContain('>Manage @acme<')
 
 	const billing = await renderToString(

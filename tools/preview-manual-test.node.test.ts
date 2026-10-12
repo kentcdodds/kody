@@ -15,15 +15,18 @@ import {
 	evaluatePlatformHealth,
 	evaluateRuntimeHealth,
 	flattenGhJsonPages,
+	formatBriefing,
 	parseArgs,
 	parsePreviewComment,
 	parseSessionRequest,
 	previewCommentMarker,
 	previewSeedEmail,
 	runPreviewManualTest,
+	shellQuote,
 	workerNameFromPreviewUrl,
 	type GhResult,
 	type PreviewManualTestDeps,
+	type PreviewManualTestResult,
 } from './preview-manual-test.ts'
 
 const sampleComment = [
@@ -602,6 +605,55 @@ test('preview manual test waits for the GitHub preview comment and head SHA work
 	expect(result?.snapshot.workflowConclusion).toBe('success')
 })
 
+test('briefing single-quotes KODY_API_URL so comment-sourced shell metacharacters do not run on paste', () => {
+	const hostile = 'https://evil.example/$(touch%/tmp/pwned)`id`&sleep%201;true'
+	expect(shellQuote(hostile)).toBe(`'${hostile}'`)
+	expect(shellQuote("https://x.test/o'clock")).toBe(
+		`'https://x.test/o'\\''clock'`,
+	)
+	// parsePreviewComment's URL capture is `https?:\/\/[^)\s]+`, so `$()`,
+	// backticks, `;`, and `&` can reach the briefing line; quote them.
+	const briefing = formatBriefing({
+		ok: true,
+		message: 'ready',
+		options: parseArgs(['--skip-login']),
+		snapshot: {
+			prNumber: 1,
+			prUrl: null,
+			isDraft: false,
+			headSha: null,
+			previewUrl: 'https://kody-pr-1.kody.workers.dev',
+			workerName: 'kody-pr-1',
+			runtimeWorkerName: null,
+			runtimeUrl: null,
+			platformWorkerName: null,
+			platformUrl: null,
+			apiWorkerName: 'kody-pr-1-api',
+			apiUrl: hostile,
+			d1DatabaseName: null,
+			oauthKvTitle: null,
+			mocks: [],
+			expectedSha: null,
+			workflowUrl: null,
+			workflowStatus: null,
+			workflowConclusion: null,
+			workflowHeadSha: null,
+			deploymentSha: null,
+		},
+		smoke: null,
+		session: { cookieHeader: null, origin: null, cookieFile: null },
+		login: {
+			email: previewSeedEmail,
+			password: 'x',
+			username: 'x',
+			admin: false,
+		},
+		briefing: '',
+	} satisfies PreviewManualTestResult)
+	expect(briefing).toContain(`export KODY_API_URL='${hostile}'`)
+	expect(briefing.includes(`export KODY_API_URL=${hostile}`)).toBe(false)
+})
+
 test('preview briefing prints the API host the CLI needs for auth bootstrap and execute --local', async () => {
 	await using server = await createPreviewFixtureServer()
 	const apiUrl = 'https://kody-pr-42-api.kody.workers.dev'
@@ -631,7 +683,7 @@ test('preview briefing prints the API host the CLI needs for auth bootstrap and 
 		`API: ${apiUrl} (\`kody-pr-42-api\`)`,
 	)
 	expect(fromComment.result?.briefing).toContain(
-		`export KODY_API_URL=${apiUrl}`,
+		`export KODY_API_URL='${apiUrl}'`,
 	)
 
 	const fromUrl = await runPreviewManualTest(
@@ -653,7 +705,7 @@ test('preview briefing prints the API host the CLI needs for auth bootstrap and 
 		apiUrl: 'https://kody-pr-7-api.kody-a99.workers.dev',
 	})
 	expect(fromUrl.result?.briefing).toContain(
-		'export KODY_API_URL=https://kody-pr-7-api.kody-a99.workers.dev',
+		"export KODY_API_URL='https://kody-pr-7-api.kody-a99.workers.dev'",
 	)
 
 	const overridden = await runPreviewManualTest(

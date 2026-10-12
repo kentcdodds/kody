@@ -4,7 +4,8 @@ import { runPublishedImportableArtifactBackfill } from './published-importable-a
 
 const mocks = vi.hoisted(() => ({
 	listSavedPackagesPage: vi.fn(),
-	loadPackageManifestBySourceId: vi.fn(),
+	loadPackageSourceRowForUser: vi.fn(),
+	loadPackageManifestForSource: vi.fn(),
 	isPublishedPackageArtifactBuiltForCommit: vi.fn(),
 	rebuildPublishedPackageArtifactsViaRepoSession: vi.fn(),
 }))
@@ -15,8 +16,10 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
-		mocks.loadPackageManifestBySourceId(...args),
+	loadPackageSourceRowForUser: (...args: Array<unknown>) =>
+		mocks.loadPackageSourceRowForUser(...args),
+	loadPackageManifestForSource: (...args: Array<unknown>) =>
+		mocks.loadPackageManifestForSource(...args),
 }))
 
 vi.mock('./published-bundle-artifacts.ts', () => ({
@@ -59,6 +62,13 @@ function savedPackage(
 	}
 }
 
+function sourceRow(
+	sourceId: string,
+	publishedCommit: string | null,
+): { id: string; published_commit: string | null } {
+	return { id: sourceId, published_commit: publishedCommit }
+}
+
 test('dry-run reports missing importable-module artifacts without rebuilding', async () => {
 	mocks.listSavedPackagesPage.mockResolvedValueOnce([
 		savedPackage(),
@@ -69,28 +79,27 @@ test('dry-run reports missing importable-module artifacts without rebuilding', a
 			sourceId: 'source-3',
 		}),
 	])
-	mocks.loadPackageManifestBySourceId.mockImplementation(
+	mocks.loadPackageSourceRowForUser.mockImplementation(
 		async (input: { sourceId: string }) => {
 			if (input.sourceId === 'source-3') {
-				return {
-					source: { id: 'source-3', published_commit: null },
-					manifest: { exports: {} },
-				}
+				return sourceRow('source-3', null)
 			}
-			return {
-				source: {
-					id: input.sourceId,
-					published_commit: 'commit-1',
-				},
-				manifest: {
-					exports: {
-						'.': './src/index.ts',
-						'./util': './src/util.ts',
-					},
-					kody: {},
-				},
-			}
+			return sourceRow(input.sourceId, 'commit-1')
 		},
+	)
+	mocks.loadPackageManifestForSource.mockImplementation(
+		async (input: {
+			source: { id: string; published_commit: string | null }
+		}) => ({
+			source: input.source,
+			manifest: {
+				exports: {
+					'.': './src/index.ts',
+					'./util': './src/util.ts',
+				},
+				kody: {},
+			},
+		}),
 	)
 	mocks.isPublishedPackageArtifactBuiltForCommit.mockImplementation(
 		async (input: {
@@ -136,44 +145,82 @@ test('dry-run reports missing importable-module artifacts without rebuilding', a
 			outcome: 'skipped_unpublished',
 		}),
 	])
+	expect(mocks.loadPackageManifestForSource).not.toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: expect.objectContaining({ id: 'source-3' }),
+		}),
+	)
 	expect(
 		mocks.rebuildPublishedPackageArtifactsViaRepoSession,
 	).not.toHaveBeenCalled()
 })
 
-test('apply rebuilds only packages with missing importable-module artifacts', async () => {
+test('unpublished drafts are skipped even when the published manifest loader would throw', async () => {
 	mocks.listSavedPackagesPage.mockResolvedValueOnce([savedPackage()])
-	mocks.loadPackageManifestBySourceId.mockResolvedValue({
-		source: { id: 'source-1', published_commit: 'commit-abc' },
+	mocks.loadPackageSourceRowForUser.mockResolvedValue(
+		sourceRow('source-1', null),
+	)
+	mocks.loadPackageManifestForSource.mockRejectedValue(
+		new Error('Source "source-1" has no published commit.'),
+	)
+
+	const result = await runPublishedImportableArtifactBackfill({
+		env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: true,
+	})
+
+	expect(result).toMatchObject({
+		failedPackages: 0,
+		skippedUnpublished: 1,
+	})
+	expect(result.outcomes).toEqual([
+		expect.objectContaining({
+			outcome: 'skipped_unpublished',
+			publishedCommit: null,
+		}),
+	])
+	expect(mocks.loadPackageManifestForSource).not.toHaveBeenCalled()
+})
+
+test('apply rebuilds only missing importable targets and keeps gap details on failure', async () => {
+	mocks.listSavedPackagesPage.mockResolvedValueOnce([savedPackage()])
+	mocks.loadPackageSourceRowForUser.mockResolvedValue(
+		sourceRow('source-1', 'commit-abc'),
+	)
+	mocks.loadPackageManifestForSource.mockResolvedValue({
+		source: sourceRow('source-1', 'commit-abc'),
 		manifest: {
 			exports: { '.': './src/index.ts' },
 			kody: {},
 		},
 	})
 	mocks.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
-	mocks.rebuildPublishedPackageArtifactsViaRepoSession.mockResolvedValue(
-		undefined,
+	mocks.rebuildPublishedPackageArtifactsViaRepoSession.mockRejectedValue(
+		new Error('esbuild failed'),
 	)
 
-	const result = await runPublishedImportableArtifactBackfill({
+	const failed = await runPublishedImportableArtifactBackfill({
 		env,
 		baseUrl: 'https://heykody.dev',
 		dryRun: false,
 		limit: 5,
 	})
 
-	expect(result).toMatchObject({
+	expect(failed).toMatchObject({
 		dryRun: false,
 		packagesNeedingRebuild: 1,
-		rebuiltPackages: 1,
-		failedPackages: 0,
+		missingImportableArtifacts: 1,
+		rebuiltPackages: 0,
+		failedPackages: 1,
 	})
-	expect(result.outcomes).toEqual([
+	expect(failed.outcomes).toEqual([
 		expect.objectContaining({
 			packageId: 'pkg-1',
-			outcome: 'rebuilt',
+			outcome: 'failed',
 			publishedCommit: 'commit-abc',
 			missingImportableCount: 1,
+			error: 'esbuild failed',
 		}),
 	])
 	expect(
@@ -185,6 +232,61 @@ test('apply rebuilds only packages with missing importable-module artifacts', as
 			userId: owner,
 			publishedCommit: 'commit-abc',
 			baseUrl: 'https://heykody.dev',
+			targets: [
+				expect.objectContaining({
+					kind: 'importable-module',
+					artifactName: '.',
+				}),
+			],
 		}),
 	)
+
+	mocks.listSavedPackagesPage.mockResolvedValueOnce([savedPackage()])
+	mocks.loadPackageSourceRowForUser.mockResolvedValue(
+		sourceRow('source-1', 'commit-abc'),
+	)
+	mocks.rebuildPublishedPackageArtifactsViaRepoSession.mockResolvedValue(
+		undefined,
+	)
+
+	const rebuilt = await runPublishedImportableArtifactBackfill({
+		env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: false,
+		limit: 5,
+	})
+	expect(rebuilt).toMatchObject({ rebuiltPackages: 1, failedPackages: 0 })
+})
+
+test('apply fails instead of rebuilding when the published commit changes mid-flight', async () => {
+	mocks.listSavedPackagesPage.mockResolvedValueOnce([savedPackage()])
+	mocks.loadPackageSourceRowForUser
+		.mockResolvedValueOnce(sourceRow('source-1', 'commit-a'))
+		.mockResolvedValueOnce(sourceRow('source-1', 'commit-b'))
+	mocks.loadPackageManifestForSource.mockResolvedValue({
+		source: sourceRow('source-1', 'commit-a'),
+		manifest: {
+			exports: { '.': './src/index.ts' },
+			kody: {},
+		},
+	})
+	mocks.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
+
+	const result = await runPublishedImportableArtifactBackfill({
+		env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: false,
+	})
+
+	expect(result.outcomes).toEqual([
+		expect.objectContaining({
+			outcome: 'failed',
+			publishedCommit: 'commit-a',
+			missingImportableCount: 1,
+			error: expect.stringContaining('Published commit changed'),
+		}),
+	])
+	expect(
+		mocks.rebuildPublishedPackageArtifactsViaRepoSession,
+	).not.toHaveBeenCalled()
 })

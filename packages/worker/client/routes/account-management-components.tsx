@@ -411,14 +411,20 @@ function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
 }
 
 function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
+	const organizations = input.session?.organizations ?? []
 	if (isAccountRailPath(input.currentPath)) {
 		return {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
-			groups: accountRailGroups(),
+			groups: accountRailGroups({
+				workspaceSlug: accountRailOrgSlug({
+					pathname: input.currentPath,
+					organizations,
+					username: input.session?.username,
+				}),
+			}),
 		}
 	}
-	const organizations = input.session?.organizations ?? []
 	const orgSlug = accountRailOrgSlug({
 		pathname: input.currentPath,
 		organizations,

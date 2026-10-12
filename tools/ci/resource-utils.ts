@@ -84,6 +84,9 @@ export function isRetryableCloudflareFailure(message: string) {
 	return (
 		(message.includes('Malformed Cloudflare response') &&
 			!/Malformed Cloudflare response \(200\).*--/u.test(message)) ||
+		// Wrangler uses this phrasing for truncated JSON on 200 GET /deployments,
+		// not only 5xx connect resets. Keep the multipart-200 exclusion above.
+		message.includes('Received a malformed response from the API') ||
 		message.includes('upstream connect error') ||
 		message.includes('Cloudflare API request failed (429)') ||
 		/Cloudflare API request failed \(5\d\d\)/.test(message) ||

@@ -10,6 +10,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
@@ -153,7 +154,7 @@ export async function createSavedPackageFromFiles(input: {
 		files,
 	})
 	const now = new Date().toISOString()
-	await insertSavedPackage(
+	const stamped = await insertSavedPackage(
 		input.env.APP_DB,
 		{
 			id: packageId,
@@ -174,6 +175,12 @@ export async function createSavedPackageFromFiles(input: {
 		input.env,
 		{ actorUserId: input.owner.actorUserId },
 	)
+	if (stamped) {
+		scheduleKitSubscriberSync({
+			env: input.env,
+			stableUserId: input.owner.actorUserId,
+		})
+	}
 	await upsertSavedPackageVector(input.env, {
 		packageId,
 		userId: input.owner.ownerUserId,
