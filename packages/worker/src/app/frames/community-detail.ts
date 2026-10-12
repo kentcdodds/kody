@@ -57,18 +57,15 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				}),
 				hasApp: page.ownerPackage?.hasApp === true,
 				hasPackage: page.hasPackage,
-				// Plain repos cannot use the package identity-icon route yet;
-				// omit rather than emit a URL that 404s for every viewer.
-				iconUrl: page.hasPackage
-					? (listing?.iconUrl ??
-						resolvePackageListIconUrl({
-							username: page.username,
-							kodyId: page.kodyId,
-							listingId: null,
-							listingIconCommit: null,
-							publishedCommit: page.ownerPackage?.publishedCommit ?? null,
-						}))
-					: null,
+				iconUrl:
+					listing?.iconUrl ??
+					resolvePackageListIconUrl({
+						username: page.username,
+						kodyId: page.kodyId,
+						listingId: null,
+						listingIconCommit: null,
+						publishedCommit: page.ownerPackage?.publishedCommit ?? null,
+					}),
 			})
 		}
 

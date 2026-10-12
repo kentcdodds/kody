@@ -614,8 +614,13 @@ export async function loadPlainRepoFilesData(input: {
 		isPrivate: input.isPrivate,
 		isListed: false,
 		hasPackage: false,
-		// Package identity-icon URLs 404 for plain repos; omit like detail chrome.
-		iconUrl: null,
+		iconUrl: resolvePackageListIconUrl({
+			username: input.username,
+			kodyId: input.kodyId,
+			listingId: null,
+			listingIconCommit: null,
+			publishedCommit: source.indexed_commit ?? source.published_commit ?? null,
+		}),
 		viewedCommit: resolved.commit,
 		assetCommit: liveCommit,
 		mediaHref: view.contentPath

@@ -573,7 +573,7 @@ test('plain repo tree loads live HEAD via entity_sources.repo_id for guests', as
 		filesBasePath: '/@kentcdodds/notes/tree/main',
 		backHref: '/@kentcdodds/notes',
 		description: 'Plain notes repo',
-		iconUrl: null,
+		iconUrl: '/@kentcdodds/notes/icon/idxabc1',
 	})
 	expect(data?.paths).toEqual(
 		expect.arrayContaining(['README.md', 'docs/guide.md']),
