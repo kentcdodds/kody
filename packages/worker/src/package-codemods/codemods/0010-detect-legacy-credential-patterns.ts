@@ -367,7 +367,11 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 			)
 			if (resolved != null) {
 				walkAst(node, (piece) => resolvedPieces.add(piece))
-				classifyStringPiece(resolved, scan)
+				classifyStringPiece(
+					resolved,
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
 				classifyLiteral(node, resolved, ancestors)
 				return
 			}

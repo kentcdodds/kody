@@ -683,3 +683,28 @@ test('0010 does not resolve a nested function declaration name as a module const
 		})['index.ts'],
 	).toEqual(['computed integration'])
 })
+
+test('0010 ignores root types condition on exports', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: {
+					types: './src/types.test.ts',
+					import: './src/index.ts',
+				},
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/types.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+		}),
+	).toEqual({})
+})
+
+test('0010 flags |scope= when the suffix is a later concatenated piece', () => {
+	expect(
+		modulePatterns(
+			"export const p = (ending: string) => '{{secret:KEY' + '|scope=' + ending + '}}'",
+		),
+	).toContain('|scope=')
+})

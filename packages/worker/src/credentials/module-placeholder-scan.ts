@@ -413,19 +413,31 @@ function collectManifestEntryPaths(manifestSource: string | undefined) {
 			entries.push(normalizePackageEntryPath(value))
 		}
 	}
+	/** Condition maps and nested targets; skip type-only conditions. */
 	const addRuntimeExportTarget = (target: unknown) => {
 		if (typeof target === 'string') {
 			addPath(target)
 			return
 		}
 		if (!isPlainObject(target)) return
-		addPath(target.import ?? target.default)
+		for (const [condition, nested] of Object.entries(target)) {
+			if (condition === 'types') continue
+			addRuntimeExportTarget(nested)
+		}
+	}
+	const isRootExportConditionMap = (exportsMap: Record<string, unknown>) => {
+		const keys = Object.keys(exportsMap)
+		return keys.length > 0 && keys.every((key) => !key.startsWith('.'))
 	}
 	if (typeof parsed.exports === 'string') {
 		addPath(parsed.exports)
 	} else if (isPlainObject(parsed.exports)) {
-		for (const target of Object.values(parsed.exports)) {
-			addRuntimeExportTarget(target)
+		if (isRootExportConditionMap(parsed.exports)) {
+			addRuntimeExportTarget(parsed.exports)
+		} else {
+			for (const target of Object.values(parsed.exports)) {
+				addRuntimeExportTarget(target)
+			}
 		}
 	}
 	addPath(parsed.main)
