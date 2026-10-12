@@ -847,7 +847,7 @@ test('a webhook that declares no verification runs on its URL secret alone, with
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
 	const urlSecretOnlyLogs = () =>
 		consoleInfo.mock.calls.filter(
-			([message]) => message === 'webhook-url-secret-only-accepted',
+			([message]) => message === 'webhook-url-secret-only-authenticated',
 		)
 	expect(urlSecretOnlyLogs()).toHaveLength(3)
 	expect(urlSecretOnlyLogs()[2]?.[1]).toMatchObject({
@@ -922,7 +922,7 @@ test('a declared verification.secretName wins over the stored generated secret, 
 	)
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
 	expect(consoleInfo).not.toHaveBeenCalledWith(
-		'webhook-url-secret-only-accepted',
+		'webhook-url-secret-only-authenticated',
 		expect.anything(),
 	)
 

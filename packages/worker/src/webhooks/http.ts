@@ -675,9 +675,11 @@ export async function handleWebhookIngressRequest(
 
 	// URL-secret-only auth for webhooks that declare no verification is a
 	// migration lane, removed per https://github.com/kentcdodds/kody/issues/3477.
+	// The log counts every request removal would refuse, even ones a later
+	// check rejects; adminWebhookVerificationScan counts successful deliveries.
 	const verification = declared.verification
 	if (!verification) {
-		console.info('webhook-url-secret-only-accepted', {
+		console.info('webhook-url-secret-only-authenticated', {
 			endpointId: liveEndpoint.id,
 			ownerId: liveEndpoint.userId,
 			packageId: liveEndpoint.packageId,
