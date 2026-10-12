@@ -87,18 +87,20 @@ removal in ADR 0068 is ready.
 **Introduced as leftover by:** stable credential ids (`#3442`) while name
 targets remain accepted.
 
-## URL-secret-only webhook authentication
+## Webhooks without a `verification` declaration
 
-When a webhook declares no `verification`, the URL secret is the only
-credential: any POST to the minted URL runs the export, and signature headers
-are ignored. Those deliveries are accepted through January 9, 2027
-([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+A webhook that declares no `verification` is treated as
+`verification: { type: 'url-secret' }`, which stays a supported type for senders
+that cannot sign
+([inbound webhooks](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
+Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
+declaration to existing packages. Then publish requires `verification` on every
+webhook, and the implicit default goes away
+([#3477](https://github.com/kentcdodds/kody/issues/3477)). No deliveries are
+refused by this change.
 
-Declare HMAC `verification` when the sender can sign
-([inbound webhooks](../use/webhooks.md#webhooks-without-verification)).
+**Ready when:** `adminWebhookVerificationScan` reports zero
+`implicit_url_secret` webhooks after codemod 0012 is applied.
 
-**Ready when:** the sunset date arrives, or earlier if remaining URL-secret-only
-endpoints declare verification.
-
-**Introduced as leftover by:** restoring URL-secret-only auth (`#3463`) and
-giving it a sunset (`#3481`).
+**Introduced as leftover by:** restoring URL-secret-only auth (`#3463`) and the
+explicit `url-secret` type.
