@@ -33,9 +33,9 @@ export default defineConfig({
 		// The web server starts Vite (`CLOUDFLARE_ENV=test`) after D1
 		// migrations and the Cloudflare mock. Startup still competes with
 		// parallel unit workers during `validate`, and the default 60s budget
-		// times out on 4-core CI runners. The CI budget also covers one 60s
+		// times out on 4-core CI runners. Both budgets also cover one 60s
 		// mock-start retry (`startCloudflareMockWithRetry`).
-		timeout: process.env.CI ? 300_000 : 90_000,
+		timeout: process.env.CI ? 300_000 : 150_000,
 		reuseExistingServer: hasExplicitBaseUrl,
 		env: {
 			CLOUDFLARE_ENV: 'test',
