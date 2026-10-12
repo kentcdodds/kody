@@ -399,15 +399,27 @@ export async function upsertPublishedBundleArtifactRow(
 		entryPoint: input.entryPoint,
 	}
 	const existing = await getPublishedBundleArtifactByIdentity(db, identity)
-	if (await isStalePublishedBundleArtifactWrite(db, input)) {
+	const liveCommit = await getLivePublishedCommit(db, input)
+	if (liveCommit != null && liveCommit !== input.publishedCommit) {
 		return existing?.id ?? null
 	}
 	try {
 		if (existing) {
-			await updatePublishedBundleArtifactRow(db, {
-				id: existing.id,
-				...input,
-			})
+			if (liveCommit == null) {
+				// No readable entity_sources row (test fixtures): last-write-wins.
+				await updatePublishedBundleArtifactRow(db, {
+					id: existing.id,
+					...input,
+				})
+			} else {
+				// Atomic live-commit guard: a concurrent publish that advances
+				// entity_sources between the stale check and this write must not
+				// retarget the identity row to an older commit.
+				await updatePublishedBundleArtifactRowForLiveCommit(db, {
+					id: existing.id,
+					...input,
+				})
+			}
 			return existing.id
 		}
 		return await insertPublishedBundleArtifactRow(db, input)
@@ -419,17 +431,77 @@ export async function upsertPublishedBundleArtifactRow(
 		if (!raced) {
 			throw error
 		}
-		if (await isStalePublishedBundleArtifactWrite(db, input)) {
+		const liveAfterRace = await getLivePublishedCommit(db, input)
+		if (liveAfterRace != null && liveAfterRace !== input.publishedCommit) {
 			return raced.id
 		}
-		const updated = await updatePublishedBundleArtifactRow(db, {
+		if (liveAfterRace == null) {
+			const updated = await updatePublishedBundleArtifactRow(db, {
+				id: raced.id,
+				...input,
+			})
+			if (!updated) {
+				throw error
+			}
+			return raced.id
+		}
+		const updated = await updatePublishedBundleArtifactRowForLiveCommit(db, {
 			id: raced.id,
 			...input,
 		})
 		if (!updated) {
-			throw error
+			// Commit moved under us — leave the live identity alone.
+			return raced.id
 		}
 		return raced.id
+	}
+}
+
+/**
+ * Update an identity row only while `entity_sources.published_commit` still
+ * matches the write. Falls back to an unconditional update when the sources
+ * table is unavailable (unit fixtures without entity_sources).
+ */
+async function updatePublishedBundleArtifactRowForLiveCommit(
+	db: D1Database,
+	input: { id: string } & PublishedBundleArtifactUpsertInput,
+) {
+	const now = new Date().toISOString()
+	try {
+		const result = await db
+			.prepare(
+				`UPDATE published_bundle_artifacts
+				SET user_id = ?, source_id = ?, published_commit = ?, artifact_kind = ?,
+					artifact_name = ?, entry_point = ?, kv_key = ?, dependencies_json = ?,
+					updated_at = ?
+				WHERE id = ?
+					AND EXISTS (
+						SELECT 1 FROM entity_sources
+						WHERE id = ?
+							AND user_id = ?
+							AND published_commit = ?
+							${andLiveDeletedAtSql()}
+					)`,
+			)
+			.bind(
+				input.userId,
+				input.sourceId,
+				input.publishedCommit,
+				input.artifactKind,
+				input.artifactName,
+				input.entryPoint,
+				input.kvKey,
+				input.dependenciesJson,
+				now,
+				input.id,
+				input.sourceId,
+				input.userId,
+				input.publishedCommit,
+			)
+			.run()
+		return (result.meta.changes ?? 0) > 0
+	} catch {
+		return await updatePublishedBundleArtifactRow(db, input)
 	}
 }
 

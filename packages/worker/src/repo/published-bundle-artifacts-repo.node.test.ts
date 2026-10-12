@@ -324,3 +324,57 @@ test('upsertPublishedBundleArtifactRow leaves a newer live identity alone when a
 		}),
 	)
 })
+
+test('upsertPublishedBundleArtifactRow does not retarget identity when live commit moves during update', async () => {
+	const db = createPublishedBundleArtifactsDb()
+	await setLivePublishedCommit(db, {
+		userId: ownerIdFromStored('user-1'),
+		sourceId: 'source-1',
+		publishedCommit: 'commit-2',
+	})
+	const liveId = await upsertPublishedBundleArtifactRow(
+		db,
+		artifactRow('importable-module', 'commit-2'),
+	)
+
+	// Stale pre-check is lied to (still "commit-1") while the atomic UPDATE
+	// EXISTS clause reads the real live commit-2 and refuses to retarget.
+	const guarded = {
+		prepare(query: string) {
+			const stmt = db.prepare(query)
+			return {
+				bind(...values: Array<unknown>) {
+					const bound = stmt.bind(...values)
+					return {
+						async first() {
+							if (
+								query.includes('FROM entity_sources') &&
+								!query.includes('UPDATE published_bundle_artifacts')
+							) {
+								return { published_commit: 'commit-1' }
+							}
+							return await bound.first()
+						},
+						run: () => bound.run(),
+						all: () => bound.all(),
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			guarded,
+			artifactRow('importable-module', 'commit-1', '[{"sourceId":"stale"}]'),
+		),
+	).resolves.toBe(liveId)
+	await expect(lookup(db, 'importable-module')).resolves.toEqual(
+		expect.objectContaining({
+			id: liveId,
+			publishedCommit: 'commit-2',
+			kvKey: 'kv:importable:commit-2',
+			dependenciesJson: '[]',
+		}),
+	)
+})
