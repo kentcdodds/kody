@@ -824,6 +824,8 @@ async function processPackageForMode(input: {
 			// published-only fleet migrations always finalize published_commit
 			// (including locked packages via allowLockedPublish) so they never
 			// leave a pending approve-publish tip on HEAD or kody-published.
+			// Approving a sibling pending HEAD after this uses allowForce on the
+			// approve-publish action (owner click is the overwrite confirmation).
 			// head-and-published keeps the existing locked → pending path.
 			const promotePublished = applyMode === 'published-only' ? true : !locked
 			const allowLockedPublish =

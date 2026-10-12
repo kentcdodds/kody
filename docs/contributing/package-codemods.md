@@ -503,8 +503,9 @@ Locked packages (`saved_packages.locked_at` set) still run apply and revert for
 and pushes HEAD and does **not** advance `published_commit`. The owner reviews
 that HEAD commit later at `/@username/:kodyId/approve-publish?commit=…`.
 `published-only` codemods **always finalize** `published_commit`, including on
-locked packages via `allowLockedPublish`, so fleet migrations never leave a
-pending approve-publish tip on HEAD or `kody-published`.
+locked packages via `allowLockedPublish`. If that creates a sibling of pending
+HEAD, approve-publish still works: the owner click passes `allowForce` with
+destructive overwrite confirmation (backup required).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
