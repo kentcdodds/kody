@@ -45,10 +45,17 @@ async function ensureSchema(db: D1Database) {
 			await db.prepare(statement).run()
 		} catch (error) {
 			const message = String(error)
+			// 0005 drops `jobs.preserved` on every call. SQLite has no
+			// DROP COLUMN IF EXISTS, so the repeat is "no such column".
+			// Do not swallow that error from earlier statements (0002
+			// updates archived columns); a missing column there is drift.
+			const repeatedColumnDrop =
+				message.includes('no such column') &&
+				/^alter\s+table\s+\w+\s+drop\s+column\b/i.test(statement)
 			if (
 				message.includes('already exists') ||
 				message.includes('duplicate column name') ||
-				message.includes('no such column')
+				repeatedColumnDrop
 			) {
 				continue
 			}
