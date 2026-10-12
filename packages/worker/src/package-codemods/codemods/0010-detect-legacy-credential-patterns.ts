@@ -1,16 +1,16 @@
 import {
 	type AstNode,
+	constantsWithoutShadows,
 	createModuleConstantsReader,
 	findPlaceholders,
 	getCalleeName,
 	getCalleeObjectName,
 	getNodeName,
+	listScannableModulePaths,
 	type NameKind,
 	parseModule,
 	resolveStringExpression,
-	scannableModuleFilePattern,
 	templateElementText,
-	testFilePattern,
 	walkAst,
 } from '#worker/credentials/module-placeholder-scan.ts'
 import {
@@ -92,12 +92,14 @@ type Scan = {
 	constants: ReadonlyMap<string, string>
 }
 /**
- * A literal scope, or `|scope=` followed by a computed value: the end of a
- * string piece (the AST splits templates and concatenations into pieces), or
- * `${` / a closing quote and `+` in the text fallback.
+ * A literal scope word, or a text-fallback computed suffix (`${` / quote +
+ * `+`). The bare end-of-piece `|scope=` / `|scope=pack` form is only counted
+ * when {@link hasComputedScopeContinuation} proves a following expression.
  */
 const scopeSuffixPattern =
-	/\|scope=(?:(?:session|package|user)\b|$|\$\{|['"`]\s*\+)/
+	/\|scope=(?:(?:session|package|user)\b|\$\{|['"`]\s*\+)/
+/** `|scope=` or a partial scope word at the end of a template/concat piece. */
+const computedScopePieceEndPattern = /\|scope=[a-z]*$/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
 
@@ -176,8 +178,17 @@ function isRequestUrlArgument(node: AstNode, parent: AstNode | undefined) {
 	)
 }
 
-function classifyStringPiece(text: string, scan: Scan) {
-	if (scopeSuffixPattern.test(text)) scan.add('|scope=')
+function classifyStringPiece(
+	text: string,
+	scan: Scan,
+	allowComputedScopePieceEnd = false,
+) {
+	if (
+		scopeSuffixPattern.test(text) ||
+		(allowComputedScopePieceEnd && computedScopePieceEndPattern.test(text))
+	) {
+		scan.add('|scope=')
+	}
 	for (const placeholder of findPlaceholders(text)) {
 		switch (placeholder.kind) {
 			case 'secret':
@@ -200,12 +211,43 @@ function classifyStringPiece(text: string, scan: Scan) {
 	}
 }
 
+function hasComputedScopeContinuation(
+	node: AstNode,
+	ancestors: ReadonlyArray<AstNode>,
+) {
+	let child = node
+	let index = ancestors.length - 1
+	if (node.type === 'TemplateElement') {
+		const template = ancestors[index]
+		if (template?.type !== 'TemplateLiteral') return false
+		const quasiIndex = (template.quasis ?? []).indexOf(node)
+		if (quasiIndex < 0) return false
+		if (quasiIndex < (template.expressions ?? []).length) return true
+		child = template
+		index -= 1
+	}
+	for (; index >= 0; index -= 1) {
+		const parent = ancestors[index]!
+		if (parent.type !== 'BinaryExpression' || parent.operator !== '+') {
+			return false
+		}
+		if (parent.left === child) return true
+		if (parent.right !== child) return false
+		child = parent
+	}
+	return false
+}
+
 function classifyNameExpression(
 	node: AstNode | undefined,
 	kind: NameKind,
 	scan: Scan,
+	ancestors: ReadonlyArray<AstNode> = [],
 ) {
-	const name = resolveStringExpression(node, scan.constants)
+	const name = resolveStringExpression(
+		node,
+		constantsWithoutShadows(scan.constants, ancestors),
+	)
 	if (name == null) scan.add(computedPattern(kind))
 	else scan.named(name, kind)
 }
@@ -218,6 +260,7 @@ function classifyNamedFields(
 	argument: AstNode | undefined,
 	spec: (typeof nameFieldCallees)[string],
 	scan: Scan,
+	ancestors: ReadonlyArray<AstNode>,
 ) {
 	if (argument?.type !== 'ObjectExpression') {
 		if (argument) scan.add(computedPattern(spec.kind))
@@ -235,7 +278,12 @@ function classifyNamedFields(
 			continue
 		}
 		if (spec.fields.includes(key)) {
-			classifyNameExpression(property.value as AstNode, spec.kind, scan)
+			classifyNameExpression(
+				property.value as AstNode,
+				spec.kind,
+				scan,
+				ancestors,
+			)
 		}
 	}
 }
@@ -308,7 +356,10 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 	walkAst(parsed, (node, ancestors) => {
 		if (resolvedPieces.has(node)) return
 		if (isCompositeString(node)) {
-			const resolved = resolveStringExpression(node, scan.constants)
+			const resolved = resolveStringExpression(
+				node,
+				constantsWithoutShadows(scan.constants, ancestors),
+			)
 			if (resolved != null) {
 				walkAst(node, (piece) => resolvedPieces.add(piece))
 				classifyStringPiece(resolved, scan)
@@ -320,7 +371,11 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 			case 'StringLiteral': {
 				const value = getNodeName(node)
 				if (value == null) return
-				classifyStringPiece(value, scan)
+				classifyStringPiece(
+					value,
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
 				classifyLiteral(node, value, ancestors)
 				return
 			}
@@ -330,7 +385,11 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 				return
 			}
 			case 'TemplateElement': {
-				classifyStringPiece(templateElementText(node), scan)
+				classifyStringPiece(
+					templateElementText(node),
+					scan,
+					hasComputedScopeContinuation(node, ancestors),
+				)
 				return
 			}
 			case 'VariableDeclarator': {
@@ -349,8 +408,9 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 				const firstArgument = node.arguments?.[0]
 				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
-					if (firstArgument)
-						classifyNameExpression(firstArgument, nameKind, scan)
+					if (firstArgument) {
+						classifyNameExpression(firstArgument, nameKind, scan, ancestors)
+					}
 					return
 				}
 				const objectName = getCalleeObjectName(node.callee)
@@ -359,14 +419,17 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 					packageSecretsMethods.has(calleeName)
 				) {
 					if (calleeName === 'get') add('packageSecrets.get')
-					if (firstArgument)
-						classifyNameExpression(firstArgument, 'secret', scan)
+					if (firstArgument) {
+						classifyNameExpression(firstArgument, 'secret', scan, ancestors)
+					}
 					return
 				}
 				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
 				const fieldSpec = ownEntry(nameFieldCallees, calleeName)
-				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, scan)
+				if (fieldSpec) {
+					classifyNamedFields(firstArgument, fieldSpec, scan, ancestors)
+				}
 				return
 			}
 			default:
@@ -486,17 +549,12 @@ function detectLegacyCredentialPatterns(
 		? files[packageManifestPath]
 		: undefined
 	const slotKinds = readDeclaredSlotKinds(manifestSource)
-	const parsedModules = new Map<string, AstNode | null>()
-	for (const [path, source] of Object.entries(files)) {
-		if (typeof source !== 'string') continue
-		if (!scannableModuleFilePattern.test(path) || testFilePattern.test(path)) {
-			continue
-		}
-		parsedModules.set(path, parseModule(source))
-	}
+	const modulePaths = listScannableModulePaths(files)
+	const parsedModules = new Map(
+		modulePaths.map((path) => [path, parseModule(files[path]!)]),
+	)
 	const moduleConstants = createModuleConstantsReader(parsedModules)
-	for (const [path, source] of Object.entries(files)) {
-		if (typeof source !== 'string') continue
+	const scanPath = (path: string, source: string) => {
 		const patterns = new Set<LegacyCredentialPattern>()
 		const add = (pattern: LegacyCredentialPattern) => patterns.add(pattern)
 		const scan: Scan = {
@@ -529,6 +587,10 @@ function detectLegacyCredentialPatterns(
 				})
 			}
 		}
+	}
+	if (manifestSource != null) scanPath(packageManifestPath, manifestSource)
+	for (const path of modulePaths) {
+		scanPath(path, files[path]!)
 	}
 	return findings.sort((left, right) =>
 		(left.path ?? '').localeCompare(right.path ?? ''),

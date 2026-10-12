@@ -11,17 +11,17 @@ import {
 } from '#worker/package-registry/types.ts'
 import {
 	type AstNode,
+	constantsWithoutShadows,
 	createModuleConstantsReader,
 	findPlaceholderMatches,
 	getCalleeName,
 	getNodeName,
+	listScannableModulePaths,
 	parseModule,
 	type PlaceholderMatch,
 	type PlaceholderMatchKind,
 	resolveStringExpression,
-	scannableModuleFilePattern,
 	templateElementText,
-	testFilePattern,
 	walkAst,
 } from './module-placeholder-scan.ts'
 
@@ -101,12 +101,7 @@ export function scanPackageCredentials(input: {
 		})),
 		unparsedModules: 0,
 	}
-	const modulePaths = Object.keys(input.files)
-		.filter(
-			(path) =>
-				scannableModuleFilePattern.test(path) && !testFilePattern.test(path),
-		)
-		.sort()
+	const modulePaths = listScannableModulePaths(input.files).sort()
 	const parsedModules = new Map(
 		modulePaths.map((path) => [path, parseModule(input.files[path]!)]),
 	)
@@ -153,7 +148,10 @@ function scanParsedModule(
 	walkAst(parsed, (node, ancestors) => {
 		if (resolvedPieces.has(node)) return
 		if (isCompositeString(node)) {
-			const resolved = resolveStringExpression(node, constants)
+			const resolved = resolveStringExpression(
+				node,
+				constantsWithoutShadows(constants, ancestors),
+			)
 			if (resolved != null) {
 				walkAst(node, (piece) => resolvedPieces.add(piece))
 				recordPlaceholders(

@@ -358,10 +358,12 @@ An integration name needs an `oauth` slot: `{{integration-token:NAME}}`,
 names no slot, so it stays a finding.
 
 A known string is a literal, a top-level `const` string (including one imported
-from a relative module), or a template or `+` chain of those. Placeholder-shaped
-text that names nothing, such as `{{secret:<name>}}` in help or redaction text,
-is ignored. Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/`)
-are skipped.
+from a relative module), or a template or `+` chain of those. A local binding
+that shadows a module constant is not treated as that constant.
+Placeholder-shaped text that names nothing, such as `{{secret:<name>}}` in help
+or redaction text, is ignored. Test files (`*.test.*`, `*.spec.*`, and anything
+under `__tests__/`) are skipped unless `package.json` exports (or a module
+imported from those exports) point at them as runtime entries.
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a

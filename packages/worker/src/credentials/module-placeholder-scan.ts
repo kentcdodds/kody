@@ -163,6 +163,12 @@ export type AstNode = ModuleAstNode & {
 	operator?: unknown
 	declaration?: AstNode
 	declarations?: Array<AstNode>
+	params?: Array<AstNode>
+	body?: AstNode | Array<AstNode>
+	elements?: Array<AstNode | null | undefined>
+	argument?: AstNode
+	param?: AstNode
+	kind?: unknown
 	program?: { body?: Array<AstNode> }
 }
 
@@ -223,8 +229,91 @@ export function resolveStringExpression(
 	}
 }
 
+/**
+ * Names bound in an enclosing function, catch, or block that shadow a
+ * module-level constant for `node`'s ancestors.
+ */
+export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
+	const names = new Set<string>()
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const ancestor = ancestors[index]!
+		if (ancestor.type === 'Program') break
+		if (
+			ancestor.type === 'FunctionDeclaration' ||
+			ancestor.type === 'FunctionExpression' ||
+			ancestor.type === 'ArrowFunctionExpression'
+		) {
+			for (const param of ancestor.params ?? []) {
+				collectBoundNames(param, names)
+			}
+		}
+		if (ancestor.type === 'CatchClause' && ancestor.param) {
+			collectBoundNames(ancestor.param, names)
+		}
+		if (ancestor.type === 'BlockStatement' && Array.isArray(ancestor.body)) {
+			for (const statement of ancestor.body) {
+				if (statement.type !== 'VariableDeclaration') continue
+				for (const declarator of statement.declarations ?? []) {
+					collectBoundNames(declarator.id, names)
+				}
+			}
+		}
+	}
+	return names
+}
+
+function collectBoundNames(
+	pattern: AstNode | null | undefined,
+	names: Set<string>,
+) {
+	if (!pattern) return
+	switch (pattern.type) {
+		case 'Identifier': {
+			const name = getNodeName(pattern)
+			if (name) names.add(name)
+			return
+		}
+		case 'AssignmentPattern':
+			collectBoundNames(pattern.left, names)
+			return
+		case 'RestElement':
+			collectBoundNames(pattern.argument, names)
+			return
+		case 'ObjectPattern':
+			for (const property of pattern.properties ?? []) {
+				if (property.type === 'RestElement') {
+					collectBoundNames(property.argument, names)
+				} else if (property.type === 'ObjectProperty') {
+					collectBoundNames(property.value as AstNode, names)
+				}
+			}
+			return
+		case 'ArrayPattern':
+			for (const element of pattern.elements ?? []) {
+				collectBoundNames(element, names)
+			}
+			return
+		default:
+			return
+	}
+}
+
+/** Module constants with locally shadowed names removed. */
+export function constantsWithoutShadows(
+	constants: ReadonlyMap<string, string>,
+	ancestors: ReadonlyArray<AstNode>,
+) {
+	const shadowed = shadowedConstantNames(ancestors)
+	if (shadowed.size === 0) return constants
+	const filtered = new Map<string, string>()
+	for (const [name, value] of constants) {
+		if (!shadowed.has(name)) filtered.set(name, value)
+	}
+	return filtered
+}
+
 /** `src/a.ts` + `../lib/names.js` → `lib/names.ts` when that file exists. */
-function resolveRelativeModulePath(
+export function resolveRelativeModulePath(
 	importer: string,
 	specifier: string,
 	modulePaths: ReadonlySet<string>,
@@ -247,79 +336,233 @@ function resolveRelativeModulePath(
 	return candidates.find((candidate) => modulePaths.has(candidate)) ?? null
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizePackageEntryPath(value: string) {
+	return value.replace(/^\.\//, '')
+}
+
+/** Manifest entry strings from `exports` / `main` / `module` / `browser`. */
+function collectManifestEntryPaths(manifestSource: string | undefined) {
+	if (manifestSource == null) return [] as Array<string>
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(manifestSource)
+	} catch {
+		return []
+	}
+	if (!isPlainObject(parsed)) return []
+	const entries: Array<string> = []
+	const add = (value: unknown) => {
+		if (typeof value === 'string') {
+			entries.push(normalizePackageEntryPath(value))
+			return
+		}
+		if (Array.isArray(value)) {
+			for (const item of value) add(item)
+			return
+		}
+		if (isPlainObject(value)) {
+			for (const item of Object.values(value)) add(item)
+		}
+	}
+	add(parsed.exports)
+	add(parsed.main)
+	add(parsed.module)
+	add(parsed.browser)
+	return entries
+}
+
+function relativeModuleSpecifiers(parsed: AstNode) {
+	const specifiers: Array<string> = []
+	for (const node of parsed.program?.body ?? []) {
+		if (
+			node.type !== 'ImportDeclaration' &&
+			node.type !== 'ExportNamedDeclaration' &&
+			node.type !== 'ExportAllDeclaration'
+		) {
+			continue
+		}
+		const source = getNodeName(node.source)
+		if (source?.startsWith('./') || source?.startsWith('../')) {
+			specifiers.push(source)
+		}
+	}
+	return specifiers
+}
+
+/**
+ * Modules the package can run: every scannable file except test-named ones,
+ * plus test-named files reachable from package.json runtime entries.
+ */
+export function listScannableModulePaths(files: Record<string, string>) {
+	const modulePaths = Object.keys(files).filter(
+		(path) =>
+			typeof files[path] === 'string' && scannableModuleFilePattern.test(path),
+	)
+	const modulePathSet = new Set(modulePaths)
+	const resolveEntry = (entry: string) => {
+		if (modulePathSet.has(entry)) return entry
+		return (
+			resolveRelativeModulePath('package.json', `./${entry}`, modulePathSet) ??
+			null
+		)
+	}
+	const runtime = new Set<string>()
+	const queue = collectManifestEntryPaths(files[packageManifestPath]).flatMap(
+		(entry) => {
+			const resolved = resolveEntry(entry)
+			return resolved ? [resolved] : []
+		},
+	)
+	while (queue.length > 0) {
+		const path = queue.pop()!
+		if (runtime.has(path)) continue
+		runtime.add(path)
+		const parsed = parseModule(files[path]!)
+		if (!parsed) continue
+		for (const specifier of relativeModuleSpecifiers(parsed)) {
+			const target = resolveRelativeModulePath(path, specifier, modulePathSet)
+			if (target) queue.push(target)
+		}
+	}
+	return modulePaths.filter(
+		(path) => !testFilePattern.test(path) || runtime.has(path),
+	)
+}
+
+const packageManifestPath = 'package.json'
+
+type ModuleImport = {
+	local: string
+	imported: string
+	target: string
+}
+
+type ModuleBindingInfo = {
+	body: Array<AstNode>
+	imports: Array<ModuleImport>
+}
+
+function readModuleBindingInfo(
+	path: string,
+	parsed: AstNode | null | undefined,
+	modulePaths: ReadonlySet<string>,
+): ModuleBindingInfo {
+	const body = parsed?.program?.body ?? []
+	const imports: Array<ModuleImport> = []
+	for (const node of body) {
+		if (node.type !== 'ImportDeclaration') continue
+		const source = getNodeName(node.source)
+		const target = source
+			? resolveRelativeModulePath(path, source, modulePaths)
+			: null
+		if (!target) continue
+		for (const specifier of node.specifiers ?? []) {
+			if (specifier.type !== 'ImportSpecifier') continue
+			const imported = getNodeName(specifier.imported)
+			const local = getNodeName(specifier.local)
+			if (imported && local) imports.push({ local, imported, target })
+		}
+	}
+	return { body, imports }
+}
+
+function resolveModuleBindings(
+	info: ModuleBindingInfo,
+	importedConstants: ReadonlyMap<string, string>,
+) {
+	const constants = new Map(importedConstants)
+	const exportedNames = new Map<string, string>()
+	for (const node of info.body) {
+		const declaration =
+			node.type === 'ExportNamedDeclaration' ? node.declaration : node
+		if (
+			declaration?.type === 'VariableDeclaration' &&
+			declaration.kind === 'const'
+		) {
+			for (const declarator of declaration.declarations ?? []) {
+				if (declarator.id?.type !== 'Identifier') continue
+				const name = getNodeName(declarator.id)
+				const value = resolveStringExpression(declarator.init, constants)
+				if (!name || value == null) continue
+				constants.set(name, value)
+				if (declaration !== node) exportedNames.set(name, name)
+			}
+		}
+		if (node.type === 'ExportNamedDeclaration' && !node.source) {
+			for (const specifier of node.specifiers ?? []) {
+				const local = getNodeName(specifier.local)
+				const exported = getNodeName(specifier.exported)
+				if (local && exported) exportedNames.set(exported, local)
+			}
+		}
+	}
+	const exported = new Map<string, string>()
+	for (const [exportedName, local] of exportedNames) {
+		const value = constants.get(local)
+		if (value != null) exported.set(exportedName, value)
+	}
+	return { constants, exported }
+}
+
 /**
  * Top-level `const NAME = <string>` bindings of each module, plus names
- * imported from relative modules that export one. Inner scopes that shadow
- * a constant are not tracked.
+ * imported from relative modules that export one. Import cycles iterate to a
+ * fixed point so order does not change the result. Inner scopes that shadow a
+ * constant are filtered at each use via {@link constantsWithoutShadows}.
  */
 export function createModuleConstantsReader(
 	parsedModules: ReadonlyMap<string, AstNode | null>,
 ) {
 	const modulePaths = new Set(parsedModules.keys())
-	const cache = new Map<
-		string,
-		{ constants: Map<string, string>; exported: Map<string, string> }
-	>()
-	const read = (path: string) => {
-		const cached = cache.get(path)
-		if (cached) return cached
-		const result = {
-			constants: new Map<string, string>(),
-			exported: new Map<string, string>(),
-		}
-		// Set before reading imports so an import cycle ends at an empty map.
-		cache.set(path, result)
-		const body = parsedModules.get(path)?.program?.body ?? []
-		for (const node of body) {
-			if (node.type !== 'ImportDeclaration') continue
-			const source = getNodeName(node.source)
-			const target = source
-				? resolveRelativeModulePath(path, source, modulePaths)
-				: null
-			if (!target) continue
-			const { exported } = read(target)
-			for (const specifier of node.specifiers ?? []) {
-				if (specifier.type !== 'ImportSpecifier') continue
-				const value = exported.get(getNodeName(specifier.imported) ?? '')
-				const local = getNodeName(specifier.local)
-				if (value != null && local) result.constants.set(local, value)
-			}
-		}
-		const exportedNames = new Map<string, string>()
-		for (const node of body) {
-			const declaration =
-				node.type === 'ExportNamedDeclaration' ? node.declaration : node
-			if (
-				declaration?.type === 'VariableDeclaration' &&
-				declaration.kind === 'const'
-			) {
-				for (const declarator of declaration.declarations ?? []) {
-					if (declarator.id?.type !== 'Identifier') continue
-					const name = getNodeName(declarator.id)
-					const value = resolveStringExpression(
-						declarator.init,
-						result.constants,
-					)
-					if (!name || value == null) continue
-					result.constants.set(name, value)
-					if (declaration !== node) exportedNames.set(name, name)
-				}
-			}
-			if (node.type === 'ExportNamedDeclaration' && !node.source) {
-				for (const specifier of node.specifiers ?? []) {
-					const local = getNodeName(specifier.local)
-					const exported = getNodeName(specifier.exported)
-					if (local && exported) exportedNames.set(exported, local)
-				}
-			}
-		}
-		for (const [exported, local] of exportedNames) {
-			const value = result.constants.get(local)
-			if (value != null) result.exported.set(exported, value)
-		}
-		return result
+	const infos = new Map<string, ModuleBindingInfo>()
+	for (const [path, parsed] of parsedModules) {
+		infos.set(path, readModuleBindingInfo(path, parsed, modulePaths))
 	}
-	return (path: string) => read(path).constants
+	const constantsByPath = new Map<string, Map<string, string>>()
+	const exportedByPath = new Map<string, Map<string, string>>()
+	for (const [path, info] of infos) {
+		const resolved = resolveModuleBindings(info, new Map())
+		constantsByPath.set(path, resolved.constants)
+		exportedByPath.set(path, resolved.exported)
+	}
+	let changed = true
+	while (changed) {
+		changed = false
+		for (const [path, info] of infos) {
+			const importedConstants = new Map<string, string>()
+			for (const { local, imported, target } of info.imports) {
+				const value = exportedByPath.get(target)?.get(imported)
+				if (value != null) importedConstants.set(local, value)
+			}
+			const resolved = resolveModuleBindings(info, importedConstants)
+			const previousConstants = constantsByPath.get(path)!
+			const previousExported = exportedByPath.get(path)!
+			if (
+				!mapsEqual(previousConstants, resolved.constants) ||
+				!mapsEqual(previousExported, resolved.exported)
+			) {
+				changed = true
+			}
+			constantsByPath.set(path, resolved.constants)
+			exportedByPath.set(path, resolved.exported)
+		}
+	}
+	return (path: string) => constantsByPath.get(path) ?? new Map()
+}
+
+function mapsEqual(
+	left: ReadonlyMap<string, string>,
+	right: ReadonlyMap<string, string>,
+) {
+	if (left.size !== right.size) return false
+	for (const [key, value] of left) {
+		if (right.get(key) !== value) return false
+	}
+	return true
 }
 
 export function getNodeName(node: AstNode | null | undefined) {
