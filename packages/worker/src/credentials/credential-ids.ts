@@ -179,15 +179,16 @@ export function isLegacyNamedCredentialTarget(
 }
 
 /**
- * The credential id an old-lane name names: a user-scope secret, or an
- * integration (an OAuth connection, else an MCP server) by its stored name.
- * Null when nothing live has that name.
+ * The credential ids an old-lane name names: a user-scope secret, or every
+ * integration (OAuth connection and MCP server) with that stored name. An
+ * OAuth connection and an MCP server may share a name, so an integration
+ * name can name two credentials. Empty when nothing live has that name.
  */
-export async function findCredentialIdByLegacyName(
+export async function findCredentialIdsByLegacyName(
 	db: D1Database,
 	orgId: string,
 	target: { type: LegacyNamedCredentialTarget; name: string },
-): Promise<string | null> {
+): Promise<Array<string>> {
 	switch (target.type) {
 		case 'secret': {
 			const row = await db
@@ -199,25 +200,20 @@ export async function findCredentialIdByLegacyName(
 				)
 				.bind(orgId, target.name)
 				.first<{ id: string }>()
-			return row?.id ?? null
+			return row ? [row.id] : []
 		}
 		case 'integration': {
-			const integration = await db
+			const result = await db
 				.prepare(
 					`SELECT id FROM user_integrations
+					WHERE user_id = ? AND name = ? AND deleted_at IS NULL
+					UNION ALL
+					SELECT id FROM mcp_server_settings
 					WHERE user_id = ? AND name = ? AND deleted_at IS NULL`,
 				)
-				.bind(orgId, target.name)
-				.first<{ id: string }>()
-			if (integration) return integration.id
-			const server = await db
-				.prepare(
-					`SELECT id FROM mcp_server_settings
-					WHERE user_id = ? AND name = ? AND deleted_at IS NULL`,
-				)
-				.bind(orgId, target.name)
-				.first<{ id: string }>()
-			return server?.id ?? null
+				.bind(orgId, target.name, orgId, target.name)
+				.all<{ id: string }>()
+			return (result.results ?? []).map((row) => row.id)
 		}
 		default: {
 			const exhaustive: never = target.type

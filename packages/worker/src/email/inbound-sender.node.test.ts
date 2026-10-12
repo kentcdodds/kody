@@ -15,7 +15,7 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
-import { findCredentialIdByLegacyName } from '#worker/credentials/credential-ids.ts'
+import { findCredentialIdsByLegacyName } from '#worker/credentials/credential-ids.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { insertEnablement } from '#worker/enablements/repo.ts'
@@ -275,7 +275,7 @@ async function setup() {
 		value: teamSecretValue,
 	})
 	// Bea may use the team secret.
-	const teamTokenId = await findCredentialIdByLegacyName(db, orgId, {
+	const [teamTokenId] = await findCredentialIdsByLegacyName(db, orgId, {
 		type: 'secret',
 		name: 'teamToken',
 	})

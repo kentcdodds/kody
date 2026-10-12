@@ -183,9 +183,10 @@ Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
 People turn triggers on for themselves with `enablementEnable` and off with
 `enablementDisable` (the enabler or an Owner); `enablementList` lists them.
 Publishing never turns anything on. Minting a webhook URL turns it on for the
-minter when they hold `package:execute` and nobody else has. Webhooks in a
-migrated org always verify a signature: the declared `verification`, else
-`X-Kody-Signature` over the body with the endpoint's own signing secret.
+minter when they hold `package:execute` and nobody else has. A webhook verifies
+a signature only when its manifest declares `verification`; otherwise its URL
+secret is the credential. The generated signing secret on unsigned endpoints is
+stored but not checked.
 
 ### Checking many resources
 
@@ -266,7 +267,13 @@ does not declare it.
 
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
-write-implies-read hierarchy and no separate `x-kody-scope` check.
+write-implies-read hierarchy and no separate `x-kody-scope` check. A scope
+denial (`credential_scope`) carries `mintScopes`: the credential's scopes plus
+the missing one. Its message prints the exact
+`cliCredentialBootstrap({ lifetime, scopes })` call and the matching
+`kody auth bootstrap --scopes` command. Open API adds `required_scope` and
+`mint_scopes` to the 403 `insufficient_scope` details so clients can print the
+same commands. Default bootstrap scopes stay least-privilege; callers opt in.
 
 Connection profiles remain an org-bound narrowing layer (not folded into
 scopes). A profile is stored with `org_id` and limits package resources listed

@@ -894,7 +894,7 @@ export default async function main(params) { return { other: true, ...params } }
 				mainModule: 'executor.js',
 				modules: {
 					...(call.input.modules as Record<string, string>),
-					'executor.js': mcpExecutor.createExecutorModuleSource({
+					'executor.js': await mcpExecutor.createExecutorModuleSource({
 						code: call.source,
 						providers: [{ name: 'kody', fns: {} }],
 						shadowGlobalThis: false,

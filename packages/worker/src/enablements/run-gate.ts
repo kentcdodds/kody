@@ -22,7 +22,7 @@ import {
 	type OrgResource,
 } from '#worker/authorization/authorize.ts'
 import {
-	findCredentialIdByLegacyName,
+	findCredentialIdsByLegacyName,
 	getOrgCredential,
 	isLegacyNamedCredentialTarget,
 } from '#worker/credentials/credential-ids.ts'
@@ -113,15 +113,20 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
 
 /**
  * What a credential pause waits on. The credential's stable id while it is
- * still live; otherwise its name resolves now (old lane), so a grant on a
- * deleted credential never resumes the enablement. A vault binding has no
- * name lane. A name that still names nothing only Owners and org-wide
- * holders pass.
+ * still live; once soft-deleted, its name resolves now (old lane), so a
+ * grant on a deleted credential never resumes the enablement. A vault
+ * binding, or an id whose row is gone (vault bindings are hard-deleted), has
+ * no name lane. A name that still names nothing only Owners and org-wide
+ * holders pass, and a name that names two integrations resumes on Use of
+ * either.
  */
 async function storedPauseResource(
 	db: D1Database,
 	enablement: EnablementRecord,
-): Promise<{ permission: OrgPermission; resource: OrgResource } | null> {
+): Promise<{
+	permission: OrgPermission
+	resources: Array<OrgResource>
+} | null> {
 	const pause = enablement.pause
 	if (pause?.reason !== 'credential_access') return null
 	if (!isOrgPermission(pause.permission)) return null
@@ -131,41 +136,43 @@ async function storedPauseResource(
 			enablement.orgId,
 			pause.credentialId,
 		)
-		if (credential?.live || credential?.kind === 'vault') {
+		if (!credential || credential.live || credential.kind === 'vault') {
 			return {
 				permission: pause.permission,
-				resource: {
-					type: 'credential',
-					id: credential.live ? pause.credentialId : '',
-					orgId: enablement.orgId,
-				},
+				resources: [
+					{
+						type: 'credential',
+						id: credential?.live ? pause.credentialId : '',
+						orgId: enablement.orgId,
+					},
+				],
 			}
 		}
 	}
 	if (!pause.resourceId) return null
 	if (isLegacyNamedCredentialTarget(pause.resourceType)) {
-		const credentialId = await findCredentialIdByLegacyName(
+		const credentialIds = await findCredentialIdsByLegacyName(
 			db,
 			enablement.orgId,
 			{ type: pause.resourceType, name: pause.resourceId },
 		)
 		return {
 			permission: pause.permission,
-			resource: {
-				type: 'credential',
-				id: credentialId ?? '',
-				orgId: enablement.orgId,
-			},
+			resources: (credentialIds.length > 0 ? credentialIds : ['']).map(
+				(id) => ({ type: 'credential', id, orgId: enablement.orgId }),
+			),
 		}
 	}
 	if (!isOrgGrantResourceType(pause.resourceType)) return null
 	return {
 		permission: pause.permission,
-		resource: {
-			type: pause.resourceType,
-			id: pause.resourceId,
-			orgId: enablement.orgId,
-		},
+		resources: [
+			{
+				type: pause.resourceType,
+				id: pause.resourceId,
+				orgId: enablement.orgId,
+			},
+		],
 	}
 }
 
@@ -223,9 +230,12 @@ async function checkEnablerAccess(input: {
 	}
 	const stored = await storedPauseResource(db, enablement)
 	if (stored) {
-		const decision = checkPermission(access, stored.permission, stored.resource)
 		// Still blocked on the same credential: stay paused as is.
-		if (!decision.allowed) return { ok: false, pause: null }
+		const allowed = stored.resources.some(
+			(resource) =>
+				checkPermission(access, stored.permission, resource).allowed,
+		)
+		if (!allowed) return { ok: false, pause: null }
 	}
 	return { ok: true, run, access }
 }

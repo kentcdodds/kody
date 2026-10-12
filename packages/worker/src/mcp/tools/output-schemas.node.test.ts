@@ -14,9 +14,9 @@ import { apiToolOutputSchema } from './api.ts'
 import { executeToolOutputSchema } from './execute.ts'
 import {
 	expectMcpToolStructuredContent,
-	mcpToolOutputJsonSchema,
 	validateMcpToolStructuredContent,
-} from './mcp-tool-output.ts'
+} from '#worker/test-support/mcp-tool-output-validation.ts'
+import { mcpToolOutputJsonSchema } from './mcp-tool-output.ts'
 import { searchToolOutputSchema } from './search-tool-definition.ts'
 
 const timing = {

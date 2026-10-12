@@ -21,7 +21,7 @@ import {
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
-import { findCredentialIdByLegacyName } from '#worker/credentials/credential-ids.ts'
+import { findCredentialIdsByLegacyName } from '#worker/credentials/credential-ids.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { dispatchInboundEmailSubscriptionEvents } from '#worker/email/package-subscriptions.ts'
@@ -231,10 +231,12 @@ async function setup() {
 				? {
 						resourceType: 'credential',
 						resourceId:
-							(await findCredentialIdByLegacyName(db, orgId, {
-								type: 'secret',
-								name: resourceId,
-							})) ?? '',
+							(
+								await findCredentialIdsByLegacyName(db, orgId, {
+									type: 'secret',
+									name: resourceId,
+								})
+							)[0] ?? '',
 						family: 'secret',
 					}
 				: { resourceType, resourceId }),
@@ -625,7 +627,7 @@ test("a member's subscription cannot use an org credential they lack; it pauses,
 
 test('a pause keeps the credential name people read and its id, and a pause on a credential that did not exist yet resumes once it exists and is granted', async () => {
 	const t = await setup()
-	const teamTokenId = await findCredentialIdByLegacyName(t.db, t.orgId, {
+	const [teamTokenId] = await findCredentialIdsByLegacyName(t.db, t.orgId, {
 		type: 'secret',
 		name: 'teamToken',
 	})
@@ -711,6 +713,89 @@ test('a grant on a credential deleted since the pause does not resume the enable
 	await expect(t.enablement(beas.id)).resolves.toMatchObject({
 		state: 'paused',
 		pause: { reason: 'credential_access', resourceId: 'teamToken' },
+	})
+})
+
+test('a pause on a credential whose row is gone never resumes through a same-named secret', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	// A vault binding is hard-deleted, leaving the pause's id naming no row.
+	await t.db
+		.prepare(
+			`UPDATE enablements SET paused_credential_id = ? WHERE id = ? AND org_id = ?`,
+		)
+		.bind('removed-vault-binding', beas.id, t.orgId)
+		.run()
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+		pause: { credentialId: 'removed-vault-binding' },
+	})
+})
+
+test('a pause on an integration name shared by two credentials resumes once either is granted', async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
+			 VALUES (?, 'google', 'google', 'client-id', 'https://oauth2.example.com/token', 'pkce')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug) VALUES (?, 'shared', 'google')`,
+		)
+		.bind(t.orgId)
+		.run()
+	const serverId = crypto.randomUUID()
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url) VALUES (?, ?, 'shared', 'https://mcp.example.com')`,
+		)
+		.bind(serverId, t.orgId)
+		.run()
+	// Paused on the name before either credential existed.
+	await t.db
+		.prepare(
+			`UPDATE enablements
+			 SET paused_permission = 'integration:use', paused_resource_type = 'integration',
+			     paused_resource_id = 'shared', paused_credential_id = NULL
+			 WHERE id = ? AND org_id = ?`,
+		)
+		.bind(beas.id, t.orgId)
+		.run()
+
+	t.runs.splice(0)
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toEqual([])
+
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: serverId,
+		family: 'integration',
+		subject: { type: 'user', id: t.people.bea.userId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.people.owner.userId,
+		audit: createTestOrgAuditWriter(),
+	})
+	await t.sendEmail('bea@acme.example')
+	expect(t.runs).toHaveLength(1)
+	expect(t.runs[0]?.error).toBeNull()
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'on',
+		pause: null,
 	})
 })
 
