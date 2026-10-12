@@ -310,7 +310,8 @@ warns as if the placeholder will break.
 
 ### Identity and MCP tokens
 
-- Nothing resolves without a `PersonId` actor with a live org binding.
+- Nothing resolves without a `PersonId` actor with a live org binding, except
+  the webhook verification no-actor exception, which stays (see Surfaces).
 - New OAuth grants require `personId`, stamped at consent the same way
   [0064](./0064-oauth-org-binding.md) stamps `orgId`.
 - Legacy grants in a personal org derive the person after a database check (the
