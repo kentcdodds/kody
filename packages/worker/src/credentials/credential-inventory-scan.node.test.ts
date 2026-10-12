@@ -1,6 +1,23 @@
 import { expect, test } from 'vitest'
 import { scanPackageCredentials } from './credential-inventory-scan.ts'
 
+function other(
+	context: string,
+	key: string | null = null,
+	callee: string | null = null,
+) {
+	return { type: 'other', context, key, callee }
+}
+
+function placementsByName(source: string) {
+	const result = scan(source)
+	const byName: Record<string, Array<unknown>> = {}
+	for (const ref of result.references) {
+		;(byName[ref.name] ??= []).push(ref.placement)
+	}
+	return byName
+}
+
 function scan(
 	source: string,
 	slots?: Parameters<typeof scanPackageCredentials>[0]['slots'],
@@ -83,8 +100,8 @@ test('classifies header, query, path, body, and basic placements', () => {
 		CUSTOM_KEY: { type: 'header-custom' },
 		U: { type: 'basic' },
 		P: { type: 'basic' },
-		BODY_KEY: { type: 'body' },
-		BODY_URL_KEY: { type: 'body' },
+		BODY_KEY: { type: 'body', field: 'token', endpoint: 'other' },
+		BODY_URL_KEY: { type: 'body', field: 'callback', endpoint: 'other' },
 		QUERY_KEY: { type: 'query', param: 'api_key' },
 		PATH_KEY: { type: 'path' },
 		NEW_HEADERS_KEY: {
@@ -99,7 +116,7 @@ test('classifies header, query, path, body, and basic placements', () => {
 			format: '{value}',
 		},
 		SEARCH_KEY: { type: 'query', param: 'key' },
-		STASHED_KEY: { type: 'other' },
+		STASHED_KEY: other('unused-binding'),
 	})
 })
 
@@ -118,15 +135,89 @@ test('keeps literal scopes, skips test files, and reads unparseable modules as t
 			nameKind: 'secret',
 			name: 'BROKEN_KEY',
 			scope: null,
-			placement: { type: 'other' },
+			placement: other('unparsed'),
 		},
 		{
 			nameKind: 'secret',
 			name: 'PKG_KEY',
 			scope: 'package',
-			placement: { type: 'other' },
+			placement: other('unused-binding'),
 		},
 	])
 	expect(result.unparsedModules).toBe(1)
 	expect(result.placeholders.secret).toBe(2)
+})
+
+test('follows a bound placeholder to each read of the variable', () => {
+	expect(
+		placementsByName(`
+		const TOP_KEY = '{{secret:TOP_KEY}}'
+		export async function send(body) {
+			const token = '{{secret:LOCAL_KEY}}'
+			const hook = '{{secret:HOOK_URL}}'
+			const bot = \`https://api.telegram.org/bot{{secret:BOT_TOKEN}}\`
+			await fetch('https://api.example.com/v1', {
+				headers: { 'x-api-key': token, Authorization: \`Bearer \${TOP_KEY}\` },
+			})
+			await fetch(hook, { method: 'POST', body })
+			await fetch(\`\${bot}/sendMessage\`)
+		}
+		function unrelated() {
+			return token
+		}
+	`),
+	).toEqual({
+		TOP_KEY: [
+			{ type: 'binding' },
+			{ type: 'header', name: 'authorization', format: 'Bearer {value}' },
+		],
+		LOCAL_KEY: [
+			{ type: 'binding' },
+			{ type: 'header', name: 'x-api-key', format: '{value}' },
+		],
+		HOOK_URL: [{ type: 'binding' }, { type: 'url' }],
+		BOT_TOKEN: [{ type: 'binding' }, { type: 'path' }],
+	})
+})
+
+test('classifies signing keys, SDK options, arguments, and login bodies', () => {
+	const result = scan(`
+		const key = await crypto.subtle.importKey(
+			'raw',
+			new TextEncoder().encode('{{secret:HMAC_KEY}}'),
+			{ name: 'HMAC', hash: 'SHA-256' },
+			false,
+			['sign'],
+		)
+		const client = new OpenAI({ apiKey: '{{secret:OPENAI_KEY}}' })
+		connect('{{secret:ARG_KEY}}')
+		const config = { RAW_NAME: '{{secret:RAW_NAME}}' }
+		await fetch('https://api.example.com/v1/auth/login', {
+			method: 'POST',
+			body: JSON.stringify({ password: '{{secret:LOGIN_PASSWORD}}' }),
+		})
+		await fetch('https://{{secret:TENANT}}.example.com/v1')
+		await fetch('https://api.example.com/v1', {
+			headers: { Authorization: 'Bearer {{secret/1password:op://v/i/f}}' },
+		})
+		await kody.secretJwtSign({ private_key_secret_name: 'SIGNER', claims: {} })
+		export default config
+	`)
+	expect(
+		Object.fromEntries(
+			result.references.map((ref) => [ref.name, ref.placement]),
+		),
+	).toEqual({
+		HMAC_KEY: { type: 'signing' },
+		OPENAI_KEY: other('sdk-option', 'apiKey', 'OpenAI'),
+		ARG_KEY: other('argument', null, 'connect'),
+		// A key that spells the credential name is not stored.
+		RAW_NAME: other('object'),
+		LOGIN_PASSWORD: { type: 'body', field: 'password', endpoint: 'login' },
+		TENANT: other('url-host'),
+	})
+	expect(result.vaultPlacements).toEqual([
+		{ type: 'header', name: 'authorization', format: 'Bearer {value}' },
+	])
+	expect(result.jwtSignCalls).toBe(1)
 })

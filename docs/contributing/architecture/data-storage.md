@@ -1506,11 +1506,13 @@ on write unless a migration backfills existing rows.
   `adminCredentialInventoryScan` pages saved packages into a run; each item's
   `result_json` holds credential ids, placement shapes, slot providers, and
   placeholder counts (every placeholder, including ones that match a declared
-  slot), never a credential name or value. A failed item holds only its load
-  error, and the report lists failed package ids. `adminCredentialBackfill`
-  reads a complete run with no failed packages (or whose failed packages the
-  caller lists exactly in `acknowledgedFailedPackageIds`) and writes `provider`
-  and `inject_json` only where they are still unset: `provider` when every slot
+  slot), never a credential name or value. Placement shapes may carry package
+  identifiers (a body field, an SDK option key, a callee name) but never one
+  that spells a credential name. A failed item holds only its load error, and
+  the report lists failed package ids. `adminCredentialBackfill` reads a
+  complete run with no failed packages (or whose failed packages the caller
+  lists exactly in `acknowledgedFailedPackageIds`) and writes `provider` and
+  `inject_json` only where they are still unset: `provider` when every slot
   naming the credential agrees on one provider slug, `inject_json` when every
   placement is the same header or the same query param.
 - `credential_org_grants` (`0116-credential-org-grants.sql`,

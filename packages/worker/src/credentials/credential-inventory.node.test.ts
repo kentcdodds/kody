@@ -3,6 +3,8 @@ import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	type InventoryItemResult,
+	summarizeCredentialInventory,
 	getCredentialInventoryReport,
 	runCredentialBackfill,
 	runCredentialInventoryScanStep,
@@ -160,6 +162,19 @@ function credentialFields(sqlite: DatabaseSync) {
 	)
 }
 
+const noPlacements = {
+	header: 0,
+	query: 0,
+	'header-custom': 0,
+	basic: 0,
+	path: 0,
+	url: 0,
+	body: 0,
+	signing: 0,
+	binding: 0,
+	other: 0,
+}
+
 test('the inventory counts every placeholder and attributes it to credential ids without storing names', async () => {
 	const { sqlite, env } = seedFleet()
 	const runId = await scanFleet(env)
@@ -185,16 +200,16 @@ test('the inventory counts every placeholder and attributes it to credential ids
 			total: 6,
 			attributed: 6,
 			unattributed: 0,
-			byPlacement: {
-				header: 3,
-				query: 2,
-				'header-custom': 0,
-				basic: 0,
-				path: 0,
-				body: 0,
-				other: 1,
-			},
+			byPlacement: { ...noPlacements, header: 3, query: 2, binding: 1 },
+			unattributedByPlacement: noPlacements,
+			otherByContext: expect.objectContaining({ other: 0 }),
+			bodyByEndpoint: { login: 0, other: 0, unknown: 0 },
+			bodyFields: [],
+			sdkOptions: [],
+			argumentCallees: [],
 		},
+		vault: { byPlacement: noPlacements },
+		signing: { placeholderKeys: 0, jwtSignCalls: 0, packagesWithSigning: 0 },
 		slots: {
 			total: 5,
 			attributed: 5,
@@ -376,4 +391,91 @@ test('an apply with failed packages proceeds only when it acknowledges exactly t
 	expect(applied.counts.failedPackages).toBe(1)
 	expect(applied.writtenRows).toBeGreaterThan(0)
 	expect(credentialFields(sqlite)).not.toEqual(before)
+})
+
+test('the report breaks down body, other, vault, and signing placements, and reads items from the earlier scan format', () => {
+	const reference = (
+		placement: InventoryItemResult['references'][number]['placement'],
+		credentialIds: Array<string> = ['secret-1'],
+	) => ({ table: 'secret' as const, credentialIds, scope: null, placement })
+	const result = (
+		references: InventoryItemResult['references'],
+		extra: Partial<InventoryItemResult> = {},
+	): InventoryItemResult => ({
+		placeholders: {
+			secret: references.length,
+			'secret-basic': 0,
+			'integration-token': 0,
+			vault: 0,
+			computed: 0,
+		},
+		unparsedModules: 0,
+		references,
+		slots: [],
+		...extra,
+	})
+	const report = summarizeCredentialInventory([
+		{
+			packageId: 'pkg-new',
+			status: 'scanned',
+			result: result(
+				[
+					reference({ type: 'body', field: 'password', endpoint: 'login' }),
+					reference({ type: 'body', field: 'password', endpoint: 'login' }, []),
+					reference({
+						type: 'other',
+						context: 'sdk-option',
+						key: 'apiKey',
+						callee: 'OpenAI',
+					}),
+					reference({
+						type: 'other',
+						context: 'argument',
+						key: null,
+						callee: 'connect',
+					}),
+					reference({ type: 'signing' }),
+				],
+				{ vaultPlacements: [{ type: 'path' }], jwtSignCalls: 2 },
+			),
+		},
+		{
+			packageId: 'pkg-old',
+			status: 'scanned',
+			// Stored before body and other detail existed.
+			result: result([
+				reference({ type: 'body' } as never),
+				reference({ type: 'other' } as never),
+			]),
+		},
+	])
+	expect(report.references.byPlacement).toMatchObject({
+		body: 3,
+		other: 3,
+		signing: 1,
+	})
+	expect(report.references.unattributedByPlacement.body).toBe(1)
+	expect(report.references.bodyByEndpoint).toEqual({
+		login: 2,
+		other: 0,
+		unknown: 1,
+	})
+	expect(report.references.bodyFields).toEqual([{ name: 'password', count: 2 }])
+	expect(report.references.otherByContext).toMatchObject({
+		'sdk-option': 1,
+		argument: 1,
+		other: 1,
+	})
+	expect(report.references.sdkOptions).toEqual([
+		{ name: 'OpenAI.apiKey', count: 1 },
+	])
+	expect(report.references.argumentCallees).toEqual([
+		{ name: 'connect', count: 1 },
+	])
+	expect(report.vault.byPlacement.path).toBe(1)
+	expect(report.signing).toEqual({
+		placeholderKeys: 1,
+		jwtSignCalls: 2,
+		packagesWithSigning: 1,
+	})
 })
