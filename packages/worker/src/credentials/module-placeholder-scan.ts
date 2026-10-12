@@ -249,12 +249,18 @@ export function shadowedConstantNames(ancestors: ReadonlyArray<AstNode>) {
 			ancestor.type === 'ClassPrivateMethod' ||
 			ancestor.type === 'ObjectMethod'
 		) {
-			if (ancestor.type === 'FunctionDeclaration') {
+			if (
+				ancestor.type === 'FunctionDeclaration' ||
+				ancestor.type === 'FunctionExpression'
+			) {
 				collectBoundNames(ancestor.id, names)
 			}
 			for (const param of ancestor.params ?? []) {
 				collectBoundNames(param, names)
 			}
+		}
+		if (ancestor.type === 'ClassExpression') {
+			collectBoundNames(ancestor.id, names)
 		}
 		if (ancestor.type === 'CatchClause' && ancestor.param) {
 			collectBoundNames(ancestor.param, names)

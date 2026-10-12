@@ -388,6 +388,17 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 				classifyLiteral(node, value, ancestors)
 				return
 			}
+			case 'Identifier': {
+				if (!hasComputedScopeContinuation(node, ancestors)) return
+				const name = getNodeName(node)
+				if (name == null) return
+				const value = constantsWithoutShadows(scan.constants, ancestors).get(
+					name,
+				)
+				if (value == null) return
+				classifyStringPiece(value, scan, true)
+				return
+			}
 			case 'TemplateLiteral': {
 				const text = literalText(node)
 				if (text != null) classifyLiteral(node, text, ancestors)

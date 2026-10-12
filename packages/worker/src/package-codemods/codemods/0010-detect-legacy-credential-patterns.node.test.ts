@@ -725,3 +725,32 @@ test('0010 does not resolve a constructor parameter property as a module constan
 		})['index.ts'],
 	).toEqual(['computed integration'])
 })
+
+test('0010 does not resolve a named function expression id as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default function run() {',
+				'\tconst f = function NAME() {',
+				'\t\treturn createAuthenticatedFetch(NAME as unknown as string)',
+				'\t}',
+				'\treturn f()',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 flags |scope= when a constant prefix continues via concatenation', () => {
+	expect(
+		modulePatterns(
+			[
+				"const PREFIX = '{{secret:KEY|scope='",
+				"export const p = (ending: string) => PREFIX + ending + '}}'",
+			].join('\n'),
+		),
+	).toContain('|scope=')
+})
