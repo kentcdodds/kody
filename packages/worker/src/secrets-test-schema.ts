@@ -28,6 +28,7 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 				name TEXT NOT NULL,
 				description TEXT NOT NULL DEFAULT '',
 				encrypted_value TEXT NOT NULL,
+				kind TEXT NOT NULL DEFAULT 'secret',
 				allowed_hosts TEXT NOT NULL DEFAULT '[]',
 				allowed_packages TEXT NOT NULL DEFAULT '[]',
 				lookup_hash TEXT,
