@@ -37,15 +37,20 @@ discovery.
 
 ## Git lane
 
-`repoGetGitRemote` mints a short-lived Artifacts remote (read or write). The
-result includes `git_author` (signed-in Kody account email and display name) and
-setup commands that set local `user.email` / `user.name` to that identity. Use
-those values for commits; do not invent a git email. Kody's **10 MiB** per-file
-gate (10,485,760 stored bytes) binds on session and file-level writes and again
-at `repoPromoteToPackage`; a direct `git push` to the minted remote has no Kody
-gate, so the only ceiling on that lane is Artifacts itself, which rejects pushes
-above ~32 MiB of decompressed pack content with a raw HTTP 413. Plain repos do
-not run the package publish reconcile cron after push—HEAD is live.
+`repoGetGitRemote` mints a short-lived git remote (read or write) that points at
+Kody's smart-HTTP proxy (`/git/repos/{repo_id}.git`), which forwards to
+Cloudflare Artifacts with the minted bearer token. Concurrent push lock
+contention from Artifacts is translated to HTTP **503** with `Retry-After` and
+the body `repository busy, retry` so git clients get a clean, retryable
+rejection instead of `remote end hung up unexpectedly`. The result includes
+`git_author` (signed-in Kody account email and display name) and setup commands
+that set local `user.email` / `user.name` to that identity. Use those values for
+commits; do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760
+stored bytes) binds on session and file-level writes and again at
+`repoPromoteToPackage`; the proxied push lane does not re-apply that gate, so
+the only ceiling there is Artifacts itself, which rejects pushes above ~32 MiB
+of decompressed pack content with a raw HTTP 413. Plain repos do not run the
+package publish reconcile cron after push—HEAD is live.
 
 ## Sessions
 

@@ -16,6 +16,7 @@ import {
 	resolveArtifactSourceHead,
 	resolveExistingArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
+import { buildPlainRepoGitHttpRemote } from '#worker/repo/plain-repo-git-http.ts'
 import { resolveOwnedUserRepo } from './resolve-user-repo.ts'
 
 const getGitRemoteInputSchema = z.object({
@@ -47,7 +48,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 		name: 'repoGetGitRemote',
 		orgPermission: 'package:read',
 		description:
-			'Mint a short-lived Cloudflare Artifacts git remote for a plain repo. Write pushes are live at HEAD — no package publish reconcile step runs afterward. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary); larger files are rejected with external-hosting guidance. The Artifacts remote itself fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.',
+			'Mint a short-lived git remote for a plain repo (Kody smart-HTTP proxy in front of Cloudflare Artifacts). Write pushes are live at HEAD — no package publish reconcile step runs afterward. Concurrent push lock contention returns HTTP 503 with Retry-After and "repository busy, retry" instead of hanging up. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary); larger files are rejected with external-hosting guidance. The Artifacts backing store fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.',
 		keywords: ['repo', 'git', 'remote', 'artifacts', 'clone', 'push', 'plain'],
 		readOnly: false,
 		idempotent: false,
@@ -95,13 +96,20 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			const token = await repo.createToken(args.scope, args.ttl_seconds)
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = userRepo.name
+			// Proxy through Kody so receive-pack lock contention is a clean 503
+			// (Retry-After) instead of a hung-up Artifacts connection. Token is
+			// still an Artifacts bearer; the proxy forwards it upstream.
+			const remote = buildPlainRepoGitHttpRemote({
+				baseUrl: ctx.callerContext.baseUrl,
+				repoId: userRepo.id,
+			})
 			return {
 				repo_id: userRepo.id,
 				name: userRepo.name,
 				source_id: source.id,
-				remote: info.remote,
+				remote,
 				authenticated_remote: buildAuthenticatedArtifactsRemote({
-					remote: info.remote,
+					remote,
 					token: token.plaintext,
 				}),
 				git_extra_header: gitExtraHeader,
@@ -110,10 +118,10 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 				live_at_head: true as const,
 				git_author: gitAuthor,
 				setup_commands: [
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(info.remote)} ${shellQuote(cloneDirectory)}`,
+					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(remote)} ${shellQuote(cloneDirectory)}`,
 					`cd ${shellQuote(cloneDirectory)}`,
 					...gitAuthorSetupCommands(gitAuthor),
-					`git remote add kody ${shellQuote(info.remote)}`,
+					`git remote add kody ${shellQuote(remote)}`,
 					`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(head.branch)}`,
 				],
