@@ -167,18 +167,32 @@ function resolveClientDocumentHead(
 	)
 }
 
-function waitForStylesheet(link: HTMLLinkElement, signal: AbortSignal) {
-	return new Promise<void>((resolve) => {
-		const settle = () => {
-			link.removeEventListener('load', settle)
-			link.removeEventListener('error', settle)
-			signal.removeEventListener('abort', settle)
-			resolve()
-		}
-		link.addEventListener('load', settle)
-		link.addEventListener('error', settle)
-		signal.addEventListener('abort', settle)
-		if (signal.aborted) settle()
+// Load outcome per inserted stylesheet, independent of any one navigation's
+// abort signal: a superseding navigation that wants the same href awaits the
+// load already in flight instead of treating the link as ready.
+const stylesheetLoads = new WeakMap<HTMLLinkElement, Promise<boolean>>()
+
+function trackStylesheetLoad(link: HTMLLinkElement) {
+	const load = new Promise<boolean>((resolve) => {
+		link.addEventListener('load', () => resolve(true), { once: true })
+		link.addEventListener(
+			'error',
+			() => {
+				// Drop the failed link so the next navigation retries the fetch.
+				link.remove()
+				resolve(false)
+			},
+			{ once: true },
+		)
+	})
+	stylesheetLoads.set(link, load)
+	return load
+}
+
+function untilAborted(signal: AbortSignal) {
+	return new Promise<'aborted'>((resolve) => {
+		if (signal.aborted) resolve('aborted')
+		signal.addEventListener('abort', () => resolve('aborted'), { once: true })
 	})
 }
 
@@ -193,31 +207,42 @@ function waitForStylesheet(link: HTMLLinkElement, signal: AbortSignal) {
  * their page, so the early insert leaves the current page alone). The
  * returned commit applies the rest — title, metadata, and removal of the
  * previous page's stylesheets — and must run in the same task as the DOM
- * swap so neither page paints without its styles.
+ * swap so neither page paints without its styles. Resolves `null` when a
+ * destination stylesheet failed to load; the caller should fall back to a
+ * document navigation rather than paint the route without it.
  */
 export async function prepareDocumentHead(
 	pathname: string,
 	loaderData: Partial<AppLoaderData> | undefined,
 	search: string,
 	signal: AbortSignal,
-): Promise<() => void> {
+): Promise<(() => void) | null> {
 	if (typeof document === 'undefined') return () => {}
 	const resolved = resolveClientDocumentHead(pathname, loaderData, search)
 	const head = document.head
-	const present = new Set(
-		managedStylesheetLinks(head).map((link) => link.getAttribute('href')),
-	)
-	const pending: Array<Promise<void>> = []
+	const loads: Array<Promise<boolean>> = []
 	for (const [index, link] of (resolved.links ?? []).entries()) {
-		if (link.rel !== 'stylesheet' || present.has(link.href)) continue
-		const element = appendLink(head, `link:${index}`, {
-			rel: link.rel,
-			href: link.href,
-			type: link.type,
-			title: link.title,
-		})
-		pending.push(waitForStylesheet(element, signal))
+		if (link.rel !== 'stylesheet') continue
+		let element = managedStylesheetLinks(head).find(
+			(candidate) => candidate.getAttribute('href') === link.href,
+		)
+		if (element?.sheet) continue
+		let load = element ? stylesheetLoads.get(element) : undefined
+		if (!element || !load) {
+			// An untracked link without a sheet already failed (SSR); replace it.
+			element?.remove()
+			element = appendLink(head, `link:${index}`, {
+				rel: link.rel,
+				href: link.href,
+				type: link.type,
+				title: link.title,
+			})
+			load = trackStylesheetLoad(element)
+		}
+		loads.push(load)
 	}
-	await Promise.all(pending)
+	const outcome = await Promise.race([Promise.all(loads), untilAborted(signal)])
+	if (outcome === 'aborted') return () => {}
+	if (outcome.includes(false)) return null
 	return () => applyResolvedDocumentHead(resolved)
 }

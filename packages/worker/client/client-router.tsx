@@ -819,6 +819,15 @@ async function runNavigationWithLoader(
 
 	const nextPath = getPathWithSearchAndHashFromUrl(destination)
 	const navigationEndDetail = createNavigationEventDetail(nextPath, options)
+	// The SPA cannot commit this destination intact (route chunk or route
+	// stylesheet missing): recover with a full document navigation.
+	const leaveForDocument = () => {
+		dispatchNavigationEnd({
+			...navigationEndDetail,
+			preventScrollReset: true,
+		})
+		window.location.assign(nextPath)
+	}
 	const loader = matchRouteLoader(destination)
 	activeNavigationPath = nextPath
 	const timeoutId = globalThis.setTimeout(() => {
@@ -887,11 +896,7 @@ async function runNavigationWithLoader(
 		if (signal.aborted) return
 
 		if (chunkLoadFailed) {
-			dispatchNavigationEnd({
-				...navigationEndDetail,
-				preventScrollReset: true,
-			})
-			window.location.assign(nextPath)
+			leaveForDocument()
 			return
 		}
 
@@ -907,6 +912,10 @@ async function runNavigationWithLoader(
 			signal,
 		)
 		if (signal.aborted) return
+		if (!commitHead) {
+			leaveForDocument()
+			return
+		}
 
 		// Store and commit in the same synchronous block so a superseding
 		// navigation can never leave consume-once data behind for a URL the
@@ -930,11 +939,7 @@ async function runNavigationWithLoader(
 		if (chunkLoadFailed) {
 			// The loader also failed, but the missing chunk is what makes SPA
 			// commit impossible — recover with a full document navigation.
-			dispatchNavigationEnd({
-				...navigationEndDetail,
-				preventScrollReset: true,
-			})
-			window.location.assign(nextPath)
+			leaveForDocument()
 			return
 		}
 		const commitHead = await prepareDocumentHead(
@@ -944,6 +949,10 @@ async function runNavigationWithLoader(
 			signal,
 		)
 		if (signal.aborted) return
+		if (!commitHead) {
+			leaveForDocument()
+			return
+		}
 		// The loader failed, so no preloaded data exists for the committed
 		// destination. Same-path refreshes (form POST redirects back to the
 		// current URL) have no href change to trigger a route's fallback
