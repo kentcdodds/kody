@@ -24,6 +24,9 @@ const outputSchema = z.object({
 	runId: z.string(),
 	dryRun: z.boolean(),
 	counts: z.object({
+		failedPackages: count.describe(
+			'Packages the run could not scan. An apply refuses while any remain.',
+		),
 		credentials: count.describe('Credential ids the run attributed usage to.'),
 		missingRows: count,
 		provider: z.object({
@@ -54,7 +57,7 @@ export const adminCredentialBackfillCapability = defineDomainCapability(
 		idempotent: true,
 		name: 'adminCredentialBackfill',
 		description:
-			'Fill credential `provider` and `inject` from a complete inventory run (ADR 0068). provider is written only when every slot naming the credential agrees on one provider slug; inject only when every placement is the same header or the same query param. Only unset columns are written, and nothing reads them yet. Never reads a credential value. dryRun defaults to true.',
+			'Fill credential `provider` and `inject` from a complete inventory run (ADR 0068). provider is written only when every slot naming the credential agrees on one provider slug; inject only when every placement is the same header or the same query param. Only unset columns are written, and nothing reads them yet. An apply refuses a run with failed packages (counts.failedPackages). Never reads a credential value. dryRun defaults to true.',
 		keywords: [
 			'admin',
 			'credential',

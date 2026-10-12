@@ -14,7 +14,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
-import { findCredentialIdByLegacyName } from './credential-ids.ts'
+import { findCredentialIdsByLegacyName } from './credential-ids.ts'
 import {
 	authorizePersonalCredentialUse,
 	deletePersonalCredentialOrgGrantsForMember,
@@ -84,10 +84,12 @@ async function setup() {
 		name: 'annToken',
 		value: 'ann-secret-value',
 	})
-	const annTokenId = (await findCredentialIdByLegacyName(db, annOrgId, {
-		type: 'secret',
-		name: 'annToken',
-	}))!
+	const annTokenId = (
+		await findCredentialIdsByLegacyName(db, annOrgId, {
+			type: 'secret',
+			name: 'annToken',
+		})
+	)[0]!
 	return { db, env, people, acmeId, annOrgId, annTokenId }
 }
 
@@ -188,11 +190,13 @@ test('a grant needs the owner’s own live credential and a live binding to the 
 		name: 'cyToken',
 		value: 'cy-secret-value',
 	})
-	const cyTokenId = (await findCredentialIdByLegacyName(
-		t.db,
-		personalOrgId(t.people.cy.personId),
-		{ type: 'secret', name: 'cyToken' },
-	))!
+	const cyTokenId = (
+		await findCredentialIdsByLegacyName(
+			t.db,
+			personalOrgId(t.people.cy.personId),
+			{ type: 'secret', name: 'cyToken' },
+		)
+	)[0]!
 	await expect(
 		grant({ owner: t.people.cy.personId, credentialId: cyTokenId }),
 	).rejects.toThrow('an org you belong to')

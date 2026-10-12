@@ -9,7 +9,6 @@
  * provider slug, and `inject_json` when every placement of the credential is
  * the same header or the same query param.
  */
-import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { listSavedPackagesPage } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -222,12 +221,11 @@ export async function attributePackageCredentials(input: {
 	const integrationNames = new Set<string>()
 	for (const reference of scan.references) {
 		if (reference.nameKind === 'secret') secretNames.add(reference.name)
-		else integrationNames.add(normalizeProviderKey(reference.name))
+		else integrationNames.add(reference.name)
 	}
 	for (const slot of scan.slots) {
 		if (slot.kind === 'secret') secretNames.add(slot.name)
-		if (slot.kind === 'oauth')
-			integrationNames.add(normalizeProviderKey(slot.name))
+		if (slot.kind === 'oauth') integrationNames.add(slot.name)
 	}
 	const secretRows = await loadSecretCandidates(input.db, input.savedPackage, [
 		...secretNames,
@@ -236,7 +234,7 @@ export async function attributePackageCredentials(input: {
 		...integrationNames,
 	])
 	const integrationIdsFor = (name: string) => {
-		const id = integrationIds.get(normalizeProviderKey(name))
+		const id = integrationIds.get(name)
 		return id ? [id] : []
 	}
 	return {
@@ -618,6 +616,8 @@ async function loadRowStates(
 }
 
 export type CredentialBackfillCounts = {
+	/** Packages the run could not scan; an apply refuses while any remain. */
+	failedPackages: number
 	credentials: number
 	missingRows: number
 	provider: {
@@ -641,8 +641,10 @@ export type CredentialBackfillCounts = {
 
 /**
  * Fills `provider` and `inject_json` from a complete inventory run. With
- * `dryRun` it only counts. Each write re-checks that the column is still
- * unset, so a value set by anyone since the scan is never overwritten.
+ * `dryRun` it only counts. A package the run failed to scan may use any
+ * credential in a way the run never saw, so an apply refuses a run with
+ * failed packages. Each write re-checks that the column is still unset, so a
+ * value set by anyone since the scan is never overwritten.
  */
 export async function runCredentialBackfill(input: {
 	env: Env
@@ -656,8 +658,16 @@ export async function runCredentialBackfill(input: {
 			`Credential inventory run ${run.id} is still scanning; finish the scan before the backfill.`,
 		)
 	}
-	const usage = collectUsage(await loadRunItems(db, run.id))
+	const items = await loadRunItems(db, run.id)
+	const failedPackages = items.filter((item) => item.status === 'failed').length
+	if (!input.dryRun && failedPackages > 0) {
+		throw new Error(
+			`Credential inventory run ${run.id} failed to scan ${failedPackages} package(s); fix them and scan again before applying the backfill.`,
+		)
+	}
+	const usage = collectUsage(items)
 	const counts: CredentialBackfillCounts = {
+		failedPackages,
 		credentials: usage.size,
 		missingRows: 0,
 		provider: { write: 0, alreadySet: 0, none: 0, conflicting: 0, invalid: 0 },

@@ -139,6 +139,7 @@ test('credential backfill is admin-only and defaults to a dry run', async () => 
 	expect(mocks.runCredentialBackfill).not.toHaveBeenCalled()
 
 	const counts = {
+		failedPackages: 0,
 		credentials: 0,
 		missingRows: 0,
 		provider: { write: 0, alreadySet: 0, none: 0, conflicting: 0, invalid: 0 },

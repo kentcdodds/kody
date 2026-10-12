@@ -46,7 +46,7 @@ function seedFleet() {
 				await fetch('https://api.stripe.com/v1/charges', {
 					headers: {
 						'X-Api-Key': '{{secret:STRIPE_KEY}}',
-						Authorization: 'Bearer {{integration-token:github}}',
+						Authorization: 'Bearer {{integration-token:orgGitHub}}',
 					},
 				})
 				await fetch('https://api.weather.com/v1?appid={{secret:WEATHER_KEY}}')
@@ -59,7 +59,7 @@ function seedFleet() {
 		credentials: {
 			RESEND_API_KEY: slot('secret', 'resend'),
 			STRIPE_KEY: slot('secret', 'stripe'),
-			github: slot('oauth', 'github'),
+			orgGitHub: slot('oauth', 'github'),
 		},
 	})
 	sources.set('source-pkg-2', {
@@ -103,7 +103,7 @@ function seedFleet() {
 		INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
 		VALUES ('org-a', 'my-github', 'github', 'client', 'https://github.com/token', 'confidential');
 		INSERT INTO user_integrations (id, user_id, name, app_slug, access_token_encrypted)
-		VALUES ('i-github', 'org-a', 'github', 'my-github', 'ct');
+		VALUES ('i-github', 'org-a', 'orgGitHub', 'my-github', 'ct');
 	`)
 	const env = { APP_DB: createD1FromSqlite(sqlite) } as Env
 	return { sqlite, env }
@@ -244,11 +244,36 @@ test('the backfill fills only unset provider and inject columns from consistent 
 	const runId = await scanFleet(env)
 	const before = credentialFields(sqlite)
 
-	const dryRun = await runCredentialBackfill({ env, runId, dryRun: true })
-	expect(dryRun).toEqual({
+	const withFailure = await runCredentialBackfill({
+		env,
 		runId,
 		dryRun: true,
+	})
+	expect(withFailure.counts.failedPackages).toBe(1)
+	await expect(
+		runCredentialBackfill({ env, runId, dryRun: false }),
+	).rejects.toThrow('failed to scan 1 package(s)')
+	expect(credentialFields(sqlite)).toEqual(before)
+
+	sources.set('source-pkg-4', { published: false, files: {} })
+	const cleanRunId = (
+		await runCredentialInventoryScanStep({
+			env,
+			baseUrl: 'https://heykody.dev',
+			initiatedByUserId: 'admin-1',
+			limit: 10,
+		})
+	).runId
+	const dryRun = await runCredentialBackfill({
+		env,
+		runId: cleanRunId,
+		dryRun: true,
+	})
+	expect(dryRun).toEqual({
+		runId: cleanRunId,
+		dryRun: true,
 		counts: {
+			failedPackages: 0,
 			credentials: 7,
 			missingRows: 0,
 			provider: {
@@ -273,7 +298,11 @@ test('the backfill fills only unset provider and inject columns from consistent 
 	})
 	expect(credentialFields(sqlite)).toEqual(before)
 
-	const applied = await runCredentialBackfill({ env, runId, dryRun: false })
+	const applied = await runCredentialBackfill({
+		env,
+		runId: cleanRunId,
+		dryRun: false,
+	})
 	expect(applied.counts).toEqual(dryRun.counts)
 	expect(applied.writtenRows).toBe(6)
 	const bearer = {
@@ -298,7 +327,11 @@ test('the backfill fills only unset provider and inject columns from consistent 
 		's-weather': { provider: null, inject: { kind: 'query', param: 'appid' } },
 	})
 
-	const again = await runCredentialBackfill({ env, runId, dryRun: false })
+	const again = await runCredentialBackfill({
+		env,
+		runId: cleanRunId,
+		dryRun: false,
+	})
 	expect(again.writtenRows).toBe(0)
 	expect(again.counts.provider).toMatchObject({ write: 0, alreadySet: 4 })
 	expect(again.counts.inject).toMatchObject({ write: 0, alreadySet: 3 })

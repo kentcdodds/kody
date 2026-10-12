@@ -1508,10 +1508,10 @@ on write unless a migration backfills existing rows.
   `result_json` holds credential ids, placement shapes, slot providers, and
   placeholder counts (every placeholder, including ones that match a declared
   slot), never a credential name or value. `adminCredentialBackfill` reads a
-  complete run and writes `provider` and `inject_json` only where they are still
-  unset: `provider` when every slot naming the credential agrees on one provider
-  slug, `inject_json` when every placement is the same header or the same query
-  param.
+  complete run with no failed packages and writes `provider` and `inject_json`
+  only where they are still unset: `provider` when every slot naming the
+  credential agrees on one provider slug, `inject_json` when every placement is
+  the same header or the same query param.
 - `credential_org_grants` (`0113-credential-org-grants.sql`,
   `packages/worker/src/credentials/personal-credentials.ts`) records which org
   each personal credential is granted to. `credential_id` is a credential in the
