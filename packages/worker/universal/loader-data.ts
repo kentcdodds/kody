@@ -2065,17 +2065,6 @@ export type AccountPackageApprovePublishLoaderData = {
 	}
 }
 
-export type AccountPackageCapabilityEntry = {
-	kind: 'credential' | 'storage'
-	credentialId?: string
-	name?: string
-	credentialKind?: string
-	hosts: Array<string>
-	placement?: string | null
-	via: Array<string>
-	storageId?: string
-}
-
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
 	email: string
@@ -2089,7 +2078,16 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 	}
 	publishedCommit: string | null
 	fingerprint: string
-	entries: Array<AccountPackageCapabilityEntry>
+	entries: Array<{
+		kind: 'credential' | 'storage'
+		credentialId?: string
+		name?: string
+		credentialKind?: string
+		hosts: Array<string>
+		placement?: string | null
+		via: Array<string>
+		storageId?: string
+	}>
 	fingerprintMatchesApproval: boolean
 	latestApprovedAt: string | null
 	settingsHref: string

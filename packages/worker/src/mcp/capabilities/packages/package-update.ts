@@ -195,7 +195,6 @@ export const packageUpdateCapability = defineDomainCapability(
 						userId: owner.ownerUserId,
 						packageId: args.package_id,
 						isPrivate: true,
-						isInternetVisible: false,
 					})
 					if (!changed) {
 						throw new McpCallerError('Saved package not found for this user.')

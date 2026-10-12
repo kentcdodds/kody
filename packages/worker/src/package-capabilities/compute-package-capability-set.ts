@@ -12,7 +12,7 @@ import {
 /**
  * Compute the capability set for a package.
  *
- * PR1: root package only (secret mounts + user secrets this package can use,
+ * PR1: root package only (secret mounts + secrets this package can use,
  * plus its own storage grant). Transitive dependency walking lands in the
  * follow-up that pins internet-visible trees.
  */
@@ -34,33 +34,42 @@ export async function computePackageCapabilitySet(input: {
 		via,
 	})
 
-	let secretMountNames = new Set<string>()
-	try {
-		const loaded = await loadPackageManifestBySourceId({
+	const loaded = await loadPackageManifestBySourceId({
+		env: input.env,
+		baseUrl: getAppBaseUrl({
 			env: input.env,
-			baseUrl: getAppBaseUrl({
-				env: input.env,
-				requestUrl: input.requestUrl,
-			}),
-			userId: input.ownerUserId,
-			sourceId: input.sourceId,
-		})
-		for (const mount of Object.values(
-			loaded.manifest.kody.secretMounts ?? {},
-		)) {
-			if (mount.scope === 'package' || mount.scope === 'session') continue
-			const name = mount.name.trim()
-			if (name) secretMountNames.add(name)
-		}
-	} catch {
-		secretMountNames = new Set()
+			requestUrl: input.requestUrl,
+		}),
+		userId: input.ownerUserId,
+		sourceId: input.sourceId,
+	})
+	const secretMountNames = new Set<string>()
+	for (const mount of Object.values(loaded.manifest.kody.secretMounts ?? {})) {
+		if (mount.scope === 'session') continue
+		const name = mount.name.trim()
+		if (name) secretMountNames.add(name)
 	}
 
-	const listed = await listSecrets({
-		env: input.env,
-		userId: input.ownerUserId,
-		scope: 'user',
-	})
+	const packageStorageContext = {
+		sessionId: null,
+		appId: input.packageId,
+		packageId: input.packageId,
+		storageId: input.packageId,
+	}
+
+	const [userSecrets, packageSecrets] = await Promise.all([
+		listSecrets({
+			env: input.env,
+			userId: input.ownerUserId,
+			scope: 'user',
+		}),
+		listSecrets({
+			env: input.env,
+			userId: input.ownerUserId,
+			scope: 'package',
+			storageContext: packageStorageContext,
+		}),
+	])
 
 	const hasImplicitRead = await packageHasImplicitUserSecretReadAccess({
 		env: input.env,
@@ -68,11 +77,17 @@ export async function computePackageCapabilitySet(input: {
 		packageId: input.packageId,
 	})
 
-	for (const secret of listed) {
+	const seenCredentialIds = new Set<string>()
+	for (const secret of [...packageSecrets, ...userSecrets]) {
+		if (seenCredentialIds.has(secret.credentialId)) continue
+		const isPackageScoped = secret.scope === 'package'
 		const granted =
-			secret.allowedPackages.includes(input.packageId) || hasImplicitRead
+			isPackageScoped ||
+			secret.allowedPackages.includes(input.packageId) ||
+			hasImplicitRead
 		const mounted = secretMountNames.has(secret.name)
 		if (!granted && !mounted) continue
+		seenCredentialIds.add(secret.credentialId)
 		entries.push({
 			kind: 'credential',
 			credentialId: secret.credentialId,

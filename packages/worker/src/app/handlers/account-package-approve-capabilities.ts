@@ -213,13 +213,45 @@ export function createAccountPackageApproveCapabilitiesApiHandler(env: Env) {
 						400,
 					)
 				}
+				let packageId = readPackageId(params)
+				const canonicalParams = readCanonicalPackageParams(params)
+				if (!packageId && canonicalParams) {
+					const page = await loadPackagePage({
+						env,
+						request,
+						username: canonicalParams.username,
+						kodyId: canonicalParams.kodyId,
+					})
+					if (page.kind === 'redirect') {
+						const redirect = redirectToCanonicalApprovalApi({
+							request,
+							packageHref: page.to,
+						})
+						if (redirect) return redirect
+					}
+					if (
+						page.kind === 'page' &&
+						page.viewerCanManage &&
+						page.ownerPackage
+					) {
+						packageId = page.ownerPackage.id
+					}
+				}
+				if (!packageId) {
+					return jsonResponse(
+						{ ok: false, error: 'Package id is required.' },
+						400,
+					)
+				}
 				const response = await handleAccountPackageInternetVisibleAction({
 					env,
 					request,
 					user,
 					body: {
 						...body,
+						// URL package wins: collaborators must approve the page they reviewed.
 						action: 'approve-capabilities',
+						packageId,
 					},
 				})
 				return (

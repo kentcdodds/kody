@@ -95,8 +95,30 @@ export async function findPackageCapabilityApprovalByFingerprint(
 		packageId: string
 		ownerUserId: string
 		fingerprint: string
+		publishedCommit?: string
 	},
 ): Promise<PackageCapabilityApprovalRecord | null> {
+	if (input.publishedCommit) {
+		const row = await db
+			.prepare(
+				`SELECT id, package_id, owner_user_id, published_commit, fingerprint,
+					capability_set_json, dependency_snapshot_json,
+					approved_by_user_id, approved_at, created_at
+				FROM package_capability_approvals
+				WHERE package_id = ? AND owner_user_id = ?
+					AND fingerprint = ? AND published_commit = ?
+				ORDER BY approved_at DESC
+				LIMIT 1`,
+			)
+			.bind(
+				input.packageId,
+				input.ownerUserId,
+				input.fingerprint,
+				input.publishedCommit,
+			)
+			.first()
+		return row ? mapRow(row) : null
+	}
 	const row = await db
 		.prepare(
 			`SELECT id, package_id, owner_user_id, published_commit, fingerprint,

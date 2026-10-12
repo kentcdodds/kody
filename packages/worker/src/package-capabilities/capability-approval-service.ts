@@ -98,6 +98,7 @@ export async function approvePackageCapabilitySet(input: {
 			packageId: input.savedPackage.id,
 			ownerUserId: input.ownerUserId,
 			fingerprint: summary.capabilitySet.fingerprint,
+			publishedCommit: summary.publishedCommit,
 		},
 	)
 	const now = new Date().toISOString()

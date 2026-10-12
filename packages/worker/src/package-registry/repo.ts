@@ -173,8 +173,9 @@ export async function insertSavedPackage(
 		.prepare(
 			`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, has_skills, hidden, is_private, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_id, has_app, has_skills, hidden, is_private,
+				is_internet_visible, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -189,6 +190,7 @@ export async function insertSavedPackage(
 			row.has_skills,
 			row.hidden ?? 0,
 			row.is_private ?? 1,
+			row.is_internet_visible ?? 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
