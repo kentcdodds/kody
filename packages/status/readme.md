@@ -101,8 +101,10 @@ it through `@kentcdodds/github` as kody-bot.
 The delete removes the incident row and recomputes `daily_stats.failed` for the
 days it covered, so the day bar loses its amber or red marker. Days no other
 incident covers drop to zero failed. Days shared with another incident only lose
-the deleted span's failed samples (available for 24h). Open incidents return
-409, unknown ids 404, and an unset secret 503.
+the deleted span's failed samples, or one failure per incident minute once those
+samples are past the 24h retention. Open incidents return 409, unknown ids 404,
+and an unset secret 503. Alert emails and `status.incident.*` package events
+already sent for the incident are not retracted.
 
 ## Retrospectives
 

@@ -66,12 +66,17 @@ test('rollups count only incident-state failures and drop empty leading days', (
 			Date.parse('2026-10-12T13:22:11.371Z'),
 		),
 	).toEqual(['2026-10-12'])
+	const deletedSpan = {
+		startedAt: Date.parse('2026-08-11T23:58:00.000Z'),
+		resolvedAt: Date.parse('2026-08-12T00:03:00.000Z'),
+	}
 	expect(
 		dailyFailedAfterIncidentDelete({
 			stats: [
 				{ day: '2026-08-11', failed: 4 },
 				{ day: '2026-08-12', failed: 9 },
 			],
+			deletedSpan,
 			removedFailedSamplesByDay: new Map([
 				['2026-08-11', 4],
 				['2026-08-12', 2],
@@ -83,6 +88,15 @@ test('rollups count only incident-state failures and drop empty leading days', (
 		{ day: '2026-08-11', failed: 0 },
 		{ day: '2026-08-12', failed: 7 },
 	])
+	expect(
+		dailyFailedAfterIncidentDelete({
+			stats: [{ day: '2026-08-12', failed: 9 }],
+			deletedSpan,
+			removedFailedSamplesByDay: null,
+			remainingSpans: spans.get('package_apps')!,
+			now,
+		}),
+	).toEqual([{ day: '2026-08-12', failed: 6 }])
 
 	const padded = [
 		day({ day: '2026-05-22', total: 0 }),

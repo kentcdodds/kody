@@ -153,6 +153,29 @@ test('deleteIncident keeps another incident failures on a shared day', async () 
 	expect(dailyFailed(db, 'app_db', '2026-10-12')).toBe(4)
 })
 
+test('deleteIncident estimates failures from minutes once samples are pruned', async () => {
+	const { db, store } = createStore()
+	insertIncident(
+		db,
+		'app_db',
+		'2026-10-10T09:00:00.000Z',
+		'2026-10-10T09:04:00.000Z',
+	)
+	const deletedId = insertIncident(
+		db,
+		'app_db',
+		'2026-10-10T13:21:00.000Z',
+		'2026-10-10T13:23:00.000Z',
+	)
+	db.prepare(
+		`INSERT INTO daily_stats (component, day, total, failed)
+		VALUES ('app_db', '2026-10-10', 1440, 6)`,
+	).run()
+
+	expect((await store.deleteIncident(deletedId)).ok).toBe(true)
+	expect(dailyFailed(db, 'app_db', '2026-10-10')).toBe(4)
+})
+
 test('deleteIncident refuses open and unknown incidents', async () => {
 	const { db, store } = createStore()
 	const openId = insertIncident(db, 'app_db', '2026-10-12T14:58:00.000Z', null)

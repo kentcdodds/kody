@@ -747,26 +747,16 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 					...days,
 				)
 				.toArray()
-			const removedFailedSamplesByDay = new Map<string, number>()
-			for (const sample of this.ctx.storage.sql
-				.exec<{ checked_at: number }>(
-					`SELECT checked_at FROM samples
-					WHERE component = ? AND ok = 0 AND checked_at >= ? AND checked_at < ?`,
-					row.component,
-					row.started_at,
-					resolvedAt,
-				)
-				.toArray()) {
-				const day = toDay(sample.checked_at)
-				removedFailedSamplesByDay.set(
-					day,
-					(removedFailedSamplesByDay.get(day) ?? 0) + 1,
-				)
-			}
+			const deletedSpan = { startedAt: row.started_at, resolvedAt }
+			const removedFailedSamplesByDay =
+				row.started_at >= now - sampleRetentionMs
+					? this.countFailedSamplesByDay(row.component, deletedSpan)
+					: null
 			const remainingSpans =
 				this.loadIncidentSpans(0, now).get(incident.component) ?? []
 			for (const stat of dailyFailedAfterIncidentDelete({
 				stats,
+				deletedSpan,
 				removedFailedSamplesByDay,
 				remainingSpans,
 				now,
@@ -784,6 +774,26 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			JSON.stringify({ id, component: row.component }),
 		)
 		return { ok: true, incident }
+	}
+
+	private countFailedSamplesByDay(
+		component: string,
+		span: { startedAt: number; resolvedAt: number },
+	): Map<string, number> {
+		const byDay = new Map<string, number>()
+		for (const sample of this.ctx.storage.sql
+			.exec<{ checked_at: number }>(
+				`SELECT checked_at FROM samples
+				WHERE component = ? AND ok = 0 AND checked_at >= ? AND checked_at < ?`,
+				component,
+				span.startedAt,
+				span.resolvedAt,
+			)
+			.toArray()) {
+			const day = toDay(sample.checked_at)
+			byDay.set(day, (byDay.get(day) ?? 0) + 1)
+		}
+		return byDay
 	}
 
 	async getSnapshot(): Promise<StatusSnapshot> {
