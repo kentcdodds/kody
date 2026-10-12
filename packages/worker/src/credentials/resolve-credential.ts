@@ -39,6 +39,11 @@ import {
 	type CredentialResolutionOutcome,
 } from './credential-resolution-audit.ts'
 import {
+	clientKeyResolver,
+	clientOauthRefreshResolver,
+	clientOauthResolver,
+} from './client-resolver.ts'
+import {
 	permissionForUse,
 	type CredentialResolver,
 	type CredentialTarget,
@@ -75,6 +80,9 @@ const credentialResolvers: {
 	url: urlCredentialResolver,
 	login: loginCredentialResolver,
 	signing: signingCredentialResolver,
+	'client-key': clientKeyResolver,
+	'client-oauth': clientOauthResolver,
+	'client-oauth-refresh': clientOauthRefreshResolver,
 }
 
 export async function resolveCredential<T extends CredentialTarget>(

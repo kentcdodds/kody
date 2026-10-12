@@ -178,6 +178,26 @@ function toUsable(
 }
 
 /**
+ * One live credential of `ownerId` by id, with its kind, provider, and hosts.
+ * Says nothing about whether anyone may use it, and reads no value.
+ */
+export async function findCredentialById(input: {
+	db: D1Database
+	ownerId: string
+	id: string
+	scope: UsableCredential['scope']
+	now?: Date
+}): Promise<UsableCredential | null> {
+	const [row] = await loadRows({
+		db: input.db,
+		ownerId: input.ownerId,
+		ids: [input.id],
+		now: (input.now ?? new Date()).toISOString(),
+	})
+	return row ? toUsable(row, input.scope) : null
+}
+
+/**
  * Every credential the actor can Use in the run org, by kind: the org's own
  * credentials the actor holds Use on, and the actor's own personal
  * credentials granted to the org. In the actor's personal org, its
