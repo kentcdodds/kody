@@ -8,10 +8,15 @@ import {
 type FakeIndex = { config: unknown; metadataIndexes: Array<string> }
 
 function fakeVectorizeApi(
-	options: { ignoreDeletes?: boolean; lookupStatus?: number } = {},
+	options: {
+		ignoreDeletes?: boolean
+		lookupStatus?: number
+		staleReadsAfterRecreate?: number
+	} = {},
 ) {
 	const indexes = new Map<string, FakeIndex>()
 	const deleted = new Set<string>()
+	const staleReads = new Map<string, number>()
 	const requests: Array<string> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
 	const fetcher: typeof fetch = async (input, init) => {
@@ -22,10 +27,21 @@ function fakeVectorizeApi(
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined
 		if (path === '' && method === 'POST') {
 			indexes.set(body.name, { config: body.config, metadataIndexes: [] })
+			if (deleted.has(body.name)) {
+				staleReads.set(body.name, options.staleReadsAfterRecreate ?? 0)
+			}
 			return ok({ name: body.name })
 		}
 		const match = /^\/([^/]+)(\/.*)?$/.exec(path)
 		const name = decodeURIComponent(match?.[1] ?? '')
+		const stale = staleReads.get(name) ?? 0
+		if (stale > 0) {
+			staleReads.set(name, stale - 1)
+			return Response.json(
+				{ success: false, errors: [{ code: 3001, message: 'index deleted' }] },
+				{ status: 410 },
+			)
+		}
 		if (options.lookupStatus) {
 			return Response.json(
 				{
@@ -178,6 +194,30 @@ test('deleteVectorizeIndex treats a missing or just-deleted (410) index as succe
 		}),
 	).rejects.toThrow('Cloudflare API request failed (403)')
 	expect(forbidden.requests).not.toContain('DELETE /kody-pr-9-vectors')
+})
+
+test('ensureVectorizeIndex waits for a re-created index that still reads as deleted before adding metadata indexes', async () => {
+	consoleError.mockImplementation(() => {})
+	const api = fakeVectorizeApi({ staleReadsAfterRecreate: 2 })
+	const name = 'kody-pr-11-vectors'
+	await ensureVectorizeIndex({ ...client(api.fetcher), name })
+	await deleteVectorizeIndex({ ...client(api.fetcher), name })
+	api.requests.length = 0
+	await ensureVectorizeIndex({ ...client(api.fetcher), name })
+	expect(api.requests.slice(0, 5)).toEqual([
+		`GET /${name}`,
+		'POST /',
+		`GET /${name}`,
+		`GET /${name}`,
+		`GET /${name}`,
+	])
+	expect(api.indexes.get(name)?.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
 })
 
 test('dry-run ensure and delete make no Cloudflare requests', async () => {

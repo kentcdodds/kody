@@ -60,6 +60,30 @@ async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 	}
 }
 
+const vectorizeRecreateVisibleDelaysMs = [1_000, 2_000, 4_000, 8_000, 15_000]
+
+/**
+ * Re-creating a name that was deleted minutes earlier (a preview redeploy
+ * after its cleanup) succeeds, but reads keep answering 410
+ * vectorize.index.deleted for a while. Wait for the new index to be readable
+ * before configuring it; if it never shows, the next call reports the error.
+ */
+async function waitForCreatedVectorizeIndex(
+	client: VectorizeClient,
+	name: string,
+) {
+	const wait =
+		client.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+	for (const delayMs of vectorizeRecreateVisibleDelaysMs) {
+		if (await vectorizeIndexExists(client, name)) return
+		console.error(
+			`Waiting ${String(delayMs)}ms for new Vectorize index ${name} to be readable.`,
+		)
+		await wait(delayMs)
+	}
+}
+
 async function ensureVectorizeMetadataIndexes(
 	client: VectorizeClient,
 	name: string,
@@ -113,6 +137,7 @@ export async function ensureVectorizeIndex(
 				},
 			})
 			console.error(`Created Vectorize index: ${input.name}`)
+			await waitForCreatedVectorizeIndex(input, input.name)
 		}
 		await ensureVectorizeMetadataIndexes(input, input.name)
 	} catch (error) {

@@ -18,6 +18,8 @@ type StoredSnapshot = {
 	files: Record<string, string>
 }
 
+const loopbackRemoteOrigin = 'http://127.0.0.1:1'
+
 function envelope<T>(result: T, status = 200) {
 	return HttpResponse.json(
 		{
@@ -51,9 +53,31 @@ export function createArtifactsMswHandlers(input: {
 	const repos = new Map<string, StoredRepo>()
 	const snapshots = new Map<string, StoredSnapshot>()
 	const apiOrigin = input.apiBaseUrl.replace(/\/$/, '')
-	const reposPath = `/client/v4/accounts/${input.accountId}/artifacts/namespaces/${namespace}/repos`
+	const namespacePath = `/client/v4/accounts/${input.accountId}/artifacts/namespaces/${namespace}`
+	const reposPath = `${namespacePath}/repos`
 
 	return [
+		// Mock repo remotes point at a closed loopback port: git over HTTP
+		// fails like a refused connection instead of reaching a real server.
+		http.all(`${loopbackRemoteOrigin}/git/*`, () => HttpResponse.error()),
+		http.post(`${apiOrigin}${namespacePath}/tokens`, async ({ request }) => {
+			const body = (await request.json()) as {
+				repo?: string
+				scope?: string
+				ttl?: number
+			}
+			const repoName = body.repo?.trim() ?? ''
+			if (!repos.has(repoName)) {
+				return errorEnvelope(404, 1002, 'repo not found')
+			}
+			const ttlSeconds = body.ttl ?? 3600
+			return envelope({
+				id: `tok_${crypto.randomUUID()}`,
+				plaintext: `art_v1_${repoName}?expires=${Math.floor(Date.now() / 1000) + ttlSeconds}`,
+				scope: body.scope ?? 'write',
+				expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+			})
+		}),
 		http.get(`${apiOrigin}${reposPath}`, () => {
 			return envelope([...repos.values()], 200)
 		}),
@@ -86,7 +110,7 @@ export function createArtifactsMswHandlers(input: {
 				last_push_at: null,
 				source: null,
 				read_only: body.read_only === true,
-				remote: `http://127.0.0.1:1/git/${namespace}/${repoName}.git`,
+				remote: `${loopbackRemoteOrigin}/git/${namespace}/${repoName}.git`,
 			}
 			repos.set(repoName, repo)
 			return envelope({
@@ -140,7 +164,7 @@ export function createArtifactsMswHandlers(input: {
 					last_push_at: source.last_push_at,
 					source: source.name,
 					read_only: body.read_only === true,
-					remote: `http://127.0.0.1:1/git/${namespace}/${targetName}.git`,
+					remote: `${loopbackRemoteOrigin}/git/${namespace}/${targetName}.git`,
 				}
 				repos.set(targetName, repo)
 				const sourceSnapshot = snapshots.get(sourceName)

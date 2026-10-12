@@ -1,6 +1,9 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { StripeApiError } from './stripe-client.ts'
 import {
@@ -666,6 +669,9 @@ test('a completed checkout with promo metadata records the claim for that person
 		)
 		.run()
 	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
+	// The org has no members, so the background plan-upgrade email finds no
+	// billing recipients and warns.
+	consoleWarn.mockImplementation(() => {})
 	using _fetch = stubStripeFetch({
 		checkout: {
 			id: 'cs_promo_org',
@@ -709,4 +715,13 @@ test('a completed checkout with promo metadata records the claim for that person
 			claimed_at: now.toISOString(),
 		},
 	])
+	await vi.waitFor(() =>
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'billing-success-email-failed',
+			expect.objectContaining({
+				message: expect.stringContaining('No billing recipients with email'),
+			}),
+		),
+	)
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 })
