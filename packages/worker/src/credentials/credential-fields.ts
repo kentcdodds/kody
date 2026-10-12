@@ -9,6 +9,7 @@
  * where it may go, and an existing value's hosts keep the approval flow.
  */
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { getDomain, getPublicSuffix } from 'tldts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -78,7 +79,16 @@ const bareHostPattern = new RegExp(
  */
 function normalizeCredentialHost(host: string) {
 	const candidate = host.trim().toLowerCase()
-	return bareHostPattern.test(candidate) ? candidate : null
+	if (!bareHostPattern.test(candidate)) return null
+	if (candidate.startsWith('*.')) {
+		// `*.github.io` would reach every site on the suffix, not one owner's hosts.
+		const base = candidate.slice(2)
+		const options = { allowPrivateDomains: true }
+		if (getPublicSuffix(base, options) === base || !getDomain(base, options)) {
+			return null
+		}
+	}
+	return candidate
 }
 
 /** Exact hosts or one wildcard level (`*.example.com`). */
@@ -91,7 +101,7 @@ export const credentialHostsSchema = z
 			if (normalizeCredentialHost(host)) continue
 			ctx.addIssue({
 				code: 'custom',
-				message: `"${host}" is not a bare host. Use an exact host such as api.example.com or one wildcard level such as *.example.com, with no scheme, port, or path.`,
+				message: `"${host}" is not a bare host. Use an exact host such as api.example.com or one wildcard level under a registrable domain such as *.example.com (not *.github.io), with no scheme, port, or path.`,
 			})
 		}
 	})

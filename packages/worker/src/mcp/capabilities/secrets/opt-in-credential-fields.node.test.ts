@@ -372,6 +372,9 @@ test('hosts are bare hosts: URLs, ports, paths, and userinfo are refused, not na
 		'user@hooks.example.com',
 		'*.*.example.com',
 		'localhost',
+		'*.github.io',
+		'*.co.uk',
+		'*.com',
 	]) {
 		await expect(
 			t.set({
@@ -387,10 +390,10 @@ test('hosts are bare hosts: URLs, ports, paths, and userinfo are refused, not na
 		name: 'deploy-hook',
 		value: hookUrl,
 		kind: 'url',
-		hosts: ['*.Example.com'],
+		hosts: ['*.Example.com', '*.example.co.uk'],
 	})
 	expect((await t.entry('deploy-hook'))?.allowed_hosts).toBe(
-		'["*.example.com"]',
+		'["*.example.com","*.example.co.uk"]',
 	)
 })
 

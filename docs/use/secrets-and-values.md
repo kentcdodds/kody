@@ -62,9 +62,10 @@ opt-in credential types (ADR 0068):
   opt-in kinds are never placed by a placeholder; a package reaches them only
   through a scoped credential client.
 - **`hosts`**: where an opt-in kind may be sent, as bare exact hosts or one
-  wildcard level (`*.example.com`); a scheme, port, or path is refused. Required
-  for `url`, `login`, and `signing`; a `url` value's own host must be one of
-  them. Keys refuse `hosts` and keep using host approval.
+  wildcard level under a registrable domain (`*.example.com`, not
+  `*.github.io`); a scheme, port, or path is refused. Required for `url`,
+  `login`, and `signing`; a `url` value's own host must be one of them. Keys
+  refuse `hosts` and keep using host approval.
 - **`login_exchange`**: for `login`, how the fields become a session token. Its
   url must be on one of the hosts and carry no username or password.
 - **`provider`** and **`inject`**: which package credential needs the credential
