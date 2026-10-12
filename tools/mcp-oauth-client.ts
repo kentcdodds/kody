@@ -33,6 +33,40 @@ const defaultRedirectUri = 'http://127.0.0.1/oauth/callback'
 const defaultOAuthClientName = 'Kody MCP E2E Test Client'
 const defaultMcpClientName = 'kody-mcp-e2e-client'
 const defaultControlKodyClientName = 'kody-control-kody'
+/** `/auth` and `/oauth/authorize` share the per-IP 10/60s bucket. */
+const authRateLimitAttempts = 3
+const authRateLimitFallbackMs = 60_000
+
+const sleep = (ms: number) =>
+	new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Honor `Retry-After` seconds. Missing or unparsable headers wait the
+ * limiter window; the cap keeps a bad header from parking a job.
+ */
+export function authRetryAfterDelayMs(
+	response: Response,
+	fallbackMs = authRateLimitFallbackMs,
+	maxMs = authRateLimitFallbackMs,
+) {
+	const header = response.headers.get('Retry-After')?.trim()
+	if (header && /^\d+$/.test(header)) {
+		return Math.min(Number(header) * 1000, maxMs)
+	}
+	return fallbackMs
+}
+
+async function fetchAuthRateLimited(fetchOnce: () => Promise<Response>) {
+	let attempt = 0
+	for (;;) {
+		attempt += 1
+		const response = await fetchOnce()
+		if (response.status !== 429 || attempt >= authRateLimitAttempts) {
+			return response
+		}
+		await sleep(authRetryAfterDelayMs(response))
+	}
+}
 
 export function usernameFromEmail(email: string) {
 	const local = email.split('@')[0]?.trim()
@@ -63,6 +97,14 @@ export async function loginToApp(
 	)
 	if (loginResponse.ok) {
 		return readCookieHeader(loginResponse)
+	}
+	// 429 is the shared auth bucket, not a missing account. Signup would
+	// burn more slots and still fail.
+	if (loginResponse.status === 429) {
+		const loginBody = await loginResponse.text()
+		throw new Error(
+			`Failed to authenticate test user.\nLogin: ${loginResponse.status} ${loginBody}`,
+		)
 	}
 
 	const signupResponse = await authenticateAppUser(
@@ -153,17 +195,19 @@ export async function authorizeOAuthClient(
 	authorizeUrl.searchParams.set('resource', resource)
 	if (orgSlug) authorizeUrl.searchParams.set('org', orgSlug)
 
-	const response = await fetchImpl(authorizeUrl, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			Cookie: cookieHeader,
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: new URLSearchParams({
-			decision: 'approve',
+	const response = await fetchAuthRateLimited(() =>
+		fetchImpl(authorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				Cookie: cookieHeader,
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+			}),
 		}),
-	})
+	)
 	const rawBody = await response.text()
 	if (!response.ok) {
 		throw new Error(
@@ -405,19 +449,21 @@ async function authenticateAppUser(
 	mode: 'login' | 'signup',
 	fetchImpl: FetchLike,
 ) {
-	return fetchImpl(new URL('/auth', origin), {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			email: user.email,
-			...(mode === 'signup' ? { username: user.username } : {}),
-			password: user.password,
-			mode,
+	return fetchAuthRateLimited(() =>
+		fetchImpl(new URL('/auth', origin), {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				email: user.email,
+				...(mode === 'signup' ? { username: user.username } : {}),
+				password: user.password,
+				mode,
+			}),
 		}),
-	})
+	)
 }
 
 export function readCookieHeader(response: Response) {

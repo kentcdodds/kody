@@ -5,6 +5,7 @@ import {
 } from 'node:http'
 import { expect, test } from 'vitest'
 import {
+	authRetryAfterDelayMs,
 	authorizeOAuthClient,
 	exchangeAuthorizationCode,
 	loginToApp,
@@ -412,6 +413,125 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 			).rejects.toThrow(/Failed to authenticate/)
 		},
 	)
+})
+
+test('authRetryAfterDelayMs honors Retry-After seconds and caps the wait', () => {
+	expect(
+		authRetryAfterDelayMs(
+			new Response(null, { headers: { 'Retry-After': '2' } }),
+		),
+	).toBe(2_000)
+	expect(
+		authRetryAfterDelayMs(
+			new Response(null, { headers: { 'Retry-After': '120' } }),
+		),
+	).toBe(60_000)
+	expect(authRetryAfterDelayMs(new Response(null))).toBe(60_000)
+})
+
+test('loginToApp retries a 429 login and does not fall through to signup', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				if (modes.length === 1) {
+					response.statusCode = 429
+					response.setHeader('Retry-After', '0')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							error: 'Too many requests. Please try again later.',
+						}),
+					)
+					return
+				}
+				response.setHeader('Set-Cookie', 'kody_session=after-429; Path=/')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(JSON.stringify({ ok: true }))
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'rh-alice@example.com',
+					username: 'rh-alice',
+					password: 'ilikecode',
+				}),
+			).resolves.toBe('kody_session=after-429')
+		},
+	)
+	expect(modes).toEqual(['login', 'login'])
+})
+
+test('loginToApp stops on a persistent 429 instead of trying signup', async () => {
+	const modes: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			void readRequestBody(request).then((rawBody) => {
+				const body = JSON.parse(rawBody) as { mode?: string }
+				modes.push(body.mode ?? '')
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'rh-alice@example.com',
+					username: 'rh-alice',
+					password: 'ilikecode',
+				}),
+			).rejects.toThrow(/Login: 429/)
+		},
+	)
+	expect(modes).toEqual(['login', 'login', 'login'])
+})
+
+test('authorizeOAuthClient retries a 429 then succeeds', async () => {
+	let authorizeCalls = 0
+	await withMockOrigin(
+		(_request, response) => {
+			authorizeCalls += 1
+			if (authorizeCalls === 1) {
+				response.statusCode = 429
+				response.setHeader('Retry-After', '0')
+				response.setHeader('Content-Type', 'application/json')
+				response.end(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+				)
+				return
+			}
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					redirectTo: 'http://127.0.0.1/oauth/callback?code=auth-code-429',
+				}),
+			)
+		},
+		async (origin) => {
+			const code = await authorizeOAuthClient(
+				origin,
+				{
+					clientId: 'client-1',
+					clientSecret: 'secret-1',
+					redirectUri: 'http://127.0.0.1/oauth/callback',
+				},
+				'kody_session=abc',
+			)
+			expect(code).toBe('auth-code-429')
+		},
+	)
+	expect(authorizeCalls).toBe(2)
 })
 
 test('authorizeOAuthClient binds the connection to an org with ?org=', async () => {
