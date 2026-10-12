@@ -80,7 +80,13 @@ to same-named inputs, `GET`/`DELETE` read the query string, and other methods
 read a JSON body). Token and CapabilityProxy operations are native.
 
 `/v1` is additive: add operations freely; never rename an `operationId`, change
-a method or path, or remove an operation without a new version.
+a method or path, or remove an operation without a new version. Capability
+routes may declare `aliasPaths`: extra HTTP paths for the same capability. They
+are listed in `/openapi.json` with a distinct operationId (`${id}ByPath`) so the
+document stays unique; HTTP still dispatches both paths to the capability. Put
+the preferred client path on `path` (for example `repoGetGitRemote`'s body-only
+`/v1/repos/git-remote`, with legacy `/v1/repos/{repo_id}/git-remote` as an
+alias).
 
 Never in the Open API: `execute`, secret plaintext, the inbound webhook receive
 path, package-app HTTP/WebSocket/realtime traffic, admin capabilities, and
@@ -133,9 +139,11 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   rejected for MCP `api`) and mints a normal `kody_at_` with default scopes that
   restore pre-P4 `local-execute` parity (`org:execute` + `org:read` +
   package/integration/secret/email/job/app/memory use scopes; migration 0092)
-  and `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
-  both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
-  surface sliding `expires_at` (the idle window).
+  plus `package:write` (plain-repo / package pushes) and `token:delete`
+  (self-revoke), and `created_via: cli-bootstrap` for the CLI to store. Existing
+  tokens are unchanged. Lifetime is required on both bootstrap mint and redeem.
+  CLI `whoami` / `GET /v1/tokens/current` surface sliding `expires_at` (the idle
+  window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.

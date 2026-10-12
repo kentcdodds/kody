@@ -7,7 +7,9 @@
   2026-10-09 (default scopes also include `package:execute` so local `kody:@…`
   package-graph resolution works); 2026-10-09 (default scopes restore pre-P4
   `local-execute` parity: integration, secret, email, job, app, memory use-level
-  permissions — migration 0092)
+  permissions — migration 0092); 2026-10-12 (default scopes also include
+  `package:write` and `token:delete` so new CLI bootstrap tokens can push plain
+  repos and self-revoke without a second mint; existing tokens unchanged)
 - **Amends:** [0053](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md),
   [0055](./0055-cli-mcp-oauth-local-execute-http.md)
 

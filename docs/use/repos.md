@@ -37,12 +37,16 @@ discovery.
 
 ## Git lane
 
-`repoGetGitRemote` mints a short-lived Artifacts remote (read or write). The
-result includes `git_author` (signed-in Kody account email and display name) and
-setup commands that set local `user.email` / `user.name` to that identity. Use
-those values for commits; do not invent a git email. Kody's **10 MiB** per-file
-gate (10,485,760 stored bytes) binds on session and file-level writes and again
-at `repoPromoteToPackage`; a direct `git push` to the minted remote has no Kody
+`repoGetGitRemote` mints a short-lived Artifacts remote (read or write). Pass
+exactly one of `repo_id` or `name`. Open API / CLI: prefer
+`POST /v1/repos/git-remote` with a JSON body (`name` or `repo_id`) so clients do
+not need a path id; `POST /v1/repos/{repo_id}/git-remote` still works, and the
+`{repo_id}` segment accepts a UUID or the repo name. The result includes
+`git_author` (signed-in Kody account email and display name) and setup commands
+that set local `user.email` / `user.name` to that identity. Use those values for
+commits; do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760
+stored bytes) binds on session and file-level writes and again at
+`repoPromoteToPackage`; a direct `git push` to the minted remote has no Kody
 gate, so the only ceiling on that lane is Artifacts itself, which rejects pushes
 above ~32 MiB of decompressed pack content with a raw HTTP 413. Plain repos do
 not run the package publish reconcile cron after push—HEAD is live.

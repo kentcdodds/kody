@@ -15,6 +15,7 @@ import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
 } from './large-file-policy.ts'
+import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	loadLockedSavedPackage,
@@ -288,6 +289,12 @@ export async function syncArtifactSourceSnapshot(
 							)
 							throw error
 						}
+						await storePublishedCredentialNeeds({
+							env: input.env,
+							source,
+							publishedCommit: snapshot.published_commit,
+							files: input.files,
+						})
 						return snapshot.published_commit
 					},
 				)
@@ -339,6 +346,12 @@ export async function syncArtifactSourceSnapshot(
 					publishedCommit: bootstrapResult.publishedCommit,
 				}),
 			)
+			await storePublishedCredentialNeeds({
+				env: input.env,
+				source,
+				publishedCommit: bootstrapResult.publishedCommit,
+				files: snapshotFiles,
+			})
 			return bootstrapResult.publishedCommit
 		}
 		await session.openSession({

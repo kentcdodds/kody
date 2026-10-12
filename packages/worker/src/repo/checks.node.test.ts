@@ -1213,6 +1213,23 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 	expect(findCheck(migrated, 'credentials')?.message).toBe(
 		'No credential placeholder references to list (codemod 0010-detect-legacy-credential-patterns).',
 	)
+	expect(migrated.ok).toBe(true)
+	expect(
+		migrated.results.filter(
+			(check) =>
+				check.kind === 'manifest' &&
+				check.message.startsWith('kody.credentials'),
+		),
+	).toEqual([
+		{
+			kind: 'manifest',
+			ok: true,
+			message: [
+				'kody.credentials notes (publish is unaffected):',
+				'kody.credentials.RESEND_API_KEY: keys usually name their provider; "resend" would read more clearly as the key.',
+			].join('\n'),
+		},
+	])
 })
 
 test('runRepoChecks adds the plain http note only when that pattern is found', async () => {

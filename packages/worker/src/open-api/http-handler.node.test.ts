@@ -725,3 +725,28 @@ test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-exe
 		).status,
 	).toBe(401)
 })
+
+test('repoGetGitRemote body-only alias accepts name without path repo_id', async () => {
+	const api = await createApi()
+	const token = await api.mint(['package:read', 'package:write'])
+	const byName = await api.call('POST', '/v1/repos/git-remote', {
+		token,
+		body: { name: 'missing-plain-repo' },
+	})
+	// Route + body merge succeed; missing repo is a capability not_found (404).
+	expect(byName.status).toBe(404)
+	expect(byName.body.error?.code).toBe('not_found')
+	expect(byName.body.error?.message).toMatch(
+		/Plain repo "missing-plain-repo" was not found/,
+	)
+
+	const byPathName = await api.call(
+		'POST',
+		'/v1/repos/missing-plain-repo/git-remote',
+		{ token, body: {} },
+	)
+	expect(byPathName.status).toBe(404)
+	expect(byPathName.body.error?.message).toMatch(
+		/Plain repo "missing-plain-repo" was not found/,
+	)
+})

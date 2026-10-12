@@ -12,6 +12,7 @@ import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { orgUpdateCapability } from './org-update.ts'
 import {
 	createAuditTestDb,
@@ -22,6 +23,7 @@ async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
+	await ensureUsersTestSchema({ db })
 	return db
 }
 
@@ -55,6 +57,13 @@ function context(input: {
 test('orgUpdate changes a team org display name, keeps the handle permanent, and refuses a personal org', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id)
+			 VALUES (1, 'ada', 'ada@example.com', 'x', ?)`,
+		)
+		.bind(ada)
+		.run()
 	await provisionPersonalOrg(db, {
 		stableUserId: ada,
 		username: 'ada',

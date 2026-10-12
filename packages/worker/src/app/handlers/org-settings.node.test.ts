@@ -381,3 +381,97 @@ test('a second owner still treats a signup org as personal', async () => {
 	expect(blocked.status).toBe(400)
 	expect(mocks.softDeleteOrg).not.toHaveBeenCalled()
 })
+
+test('owner sees personal identity lock on their signup org and edits a team org', async () => {
+	const env = createEnv()
+
+	const personalGet = new Request('https://kody.test/@ada/-/settings.json')
+	await signIn('ada', personalGet)
+	expect(
+		await (
+			await createOrgSettingsApiHandler(env).handler({
+				request: personalGet,
+			} as never)
+		).json(),
+	).toMatchObject({
+		ok: true,
+		org: { slug: 'ada', personal: true },
+		canManage: false,
+		canDelete: false,
+	})
+
+	const teamGet = new Request('https://kody.test/@zeta-co/-/settings.json')
+	await signIn('ada', teamGet)
+	expect(
+		await (
+			await createOrgSettingsApiHandler(env).handler({
+				request: teamGet,
+			} as never)
+		).json(),
+	).toMatchObject({
+		ok: true,
+		org: { slug: 'zeta-co', personal: false },
+		canManage: true,
+		canDelete: true,
+	})
+})
+
+test('former platform orgs are not personal for settings identity editing', async () => {
+	const env = createEnv()
+	const platformId = 'e'.repeat(64)
+	const now = '2026-01-02T00:00:00.000Z'
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+			 VALUES (?, 'kody', NULL, ?, ?)`,
+		)
+		.run(platformId, now, now)
+	sqlite
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'owner', ?, ?)`,
+		)
+		.run(platformId, platformId, now, '2026-10-10T00:00:00.000Z')
+	sqlite
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?)`,
+		)
+		.run(platformId, people.ada.personId, now)
+	sqlite
+		.prepare(
+			`INSERT INTO handles (handle, org_id, created_at) VALUES ('kody', ?, ?)`,
+		)
+		.run(platformId, now)
+
+	const get = new Request('https://kody.test/@kody/-/settings.json')
+	await signIn('ada', get)
+	expect(
+		await (
+			await createOrgSettingsApiHandler(env).handler({
+				request: get,
+			} as never)
+		).json(),
+	).toMatchObject({
+		ok: true,
+		org: { slug: 'kody', personal: false },
+		canManage: true,
+		canDelete: true,
+	})
+
+	const update = new Request('https://kody.test/@kody/-/settings.json', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ displayName: 'Kody' }),
+	})
+	await signIn('ada', update)
+	const updated = await createOrgSettingsPostHandler(env).handler({
+		request: update,
+	} as never)
+	expect(updated.status).toBe(200)
+	expect(await updated.json()).toMatchObject({
+		ok: true,
+		org: { slug: 'kody', displayName: 'Kody', personal: false },
+		canManage: true,
+	})
+})

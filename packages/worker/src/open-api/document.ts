@@ -14,6 +14,7 @@ import {
 	apiOperations,
 	getApiOperationPathParams,
 	isCapabilityProxyGatewayFetchOperation,
+	listApiOperationPaths,
 	type ApiOperation,
 } from './operations.ts'
 import { nativeApiOperationDefinitions } from './native-operations.ts'
@@ -298,6 +299,7 @@ function buildGatewayFetchStreamOperation(
 function buildOperation(
 	resolved: ResolvedApiOperation,
 	componentSchemas: Record<string, JsonSchema>,
+	path: string,
 ): OpenApiOperation {
 	if (isCapabilityProxyGatewayFetchOperation(resolved.operation)) {
 		return buildGatewayFetchStreamOperation(resolved)
@@ -310,7 +312,7 @@ function buildOperation(
 	)
 	const properties = readProperties(inputSchema)
 	const required = new Set(readRequired(inputSchema))
-	const pathParams = getApiOperationPathParams(operation.path)
+	const pathParams = getApiOperationPathParams(path)
 	const omitted = new Set(
 		operation.kind === 'capability' ? (operation.omitInputs ?? []) : [],
 	)
@@ -419,11 +421,16 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 	const paths: OpenApiDocument['paths'] = {}
 	for (const operation of apiOperations) {
 		const resolved = resolveApiOperation(operation, registry)
-		const pathItem = (paths[operation.path] ??= {})
-		pathItem[operation.method.toLowerCase()] = buildOperation(
-			resolved,
-			componentSchemas,
-		)
+		for (const path of listApiOperationPaths(operation)) {
+			const pathItem = (paths[path] ??= {})
+			const built = buildOperation(resolved, componentSchemas, path)
+			// Aliases keep a distinct operationId (OpenAPI uniqueness) while
+			// HTTP still dispatches to the same capability.
+			if (path !== operation.path) {
+				built.operationId = `${operation.operationId}ByPath`
+			}
+			pathItem[operation.method.toLowerCase()] = built
+		}
 	}
 	const scopeList = apiTokenScopes
 		.map((scope) => `- \`${scope}\`: ${apiTokenScopeDescriptions[scope]}`)

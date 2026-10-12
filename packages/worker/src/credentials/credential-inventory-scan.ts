@@ -261,7 +261,7 @@ export function scanPackageCredentials(input: {
 		slots: Object.entries(input.slots ?? {}).map(([name, slot]) => ({
 			name,
 			kind: slot.kind,
-			provider: slot.provider,
+			provider: slot.provider ?? name,
 		})),
 		unparsedModules: 0,
 	}

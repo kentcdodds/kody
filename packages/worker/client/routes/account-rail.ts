@@ -205,8 +205,8 @@ export function workspaceLandingItem(
  * Management links for a team (non-personal) organization. Same order as the
  * Organization rail: Settings, Members, Teams (owners/members), Grants,
  * Collaborators, Billing (owners/billing). Empty for collaborators (`role`
- * null) or when `orgSlug` is missing. Used by the rail, org switcher, and org
- * home so discovery stays consistent.
+ * null) or when `orgSlug` is missing. Used by the rail and org home so
+ * discovery stays consistent.
  */
 export function teamOrgManagementItems(input: {
 	orgSlug: string | null | undefined

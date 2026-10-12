@@ -165,18 +165,15 @@ test('MCP servers are one click from /account and two from the account menu', as
 			.getByRole('link', { name: 'MCP servers', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
-	// From the account menu: Manage leads with the workspace Overview (not
-	// Billing), and the overview links every section.
+	// From an account page the switcher has no Manage block. The signup org
+	// row opens the workspace overview, which links every section.
 	await page.goto('/account/security')
 	await waitForClientHydration(page)
 	await page.getByTestId('org-switcher').click()
-	const manageGroup = page
-		.getByTestId('org-switcher-panel')
-		.getByTestId('org-switcher-manage-group')
-	await expect(manageGroup.getByRole('link').first()).toHaveAccessibleName(
-		/Overview/,
-	)
-	await manageGroup.getByRole('link', { name: /Overview/ }).click()
+	const panel = page.getByTestId('org-switcher-panel')
+	await expect(panel.getByTestId('org-switcher-manage-group')).toHaveCount(0)
+	await expect(panel.getByText(/^Manage /)).toHaveCount(0)
+	await panel.getByTestId(`org-switcher-${user.username}`).click()
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Overview' }),

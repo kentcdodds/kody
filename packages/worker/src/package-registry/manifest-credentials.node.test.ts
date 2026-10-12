@@ -82,11 +82,11 @@ test('publish rejects invalid kody.credentials slots and names the slot', () => 
 			GOOGLE: { kind: 'token', provider: 'google', description: 'x' },
 		}),
 	).toBe(
-		'Invalid package.json:\n✖ Invalid option: expected one of "secret"|"oauth"|"mcp"\n  → at kody.credentials.GOOGLE.kind',
+		'Invalid package.json:\n✖ Invalid option: expected one of "secret"|"oauth"|"mcp"|"url"|"login"|"signing"\n  → at kody.credentials.GOOGLE.kind',
 	)
-	expect(publishError({ GOOGLE: { kind: 'oauth', description: 'x' } })).toMatch(
-		/kody\.credentials\.GOOGLE\.provider/,
-	)
+	expect(
+		publishError({ GOOGLE: { kind: 'oauth', provider: '', description: 'x' } }),
+	).toMatch(/kody\.credentials\.GOOGLE\.provider/)
 	expect(
 		publishError({ GOOGLE: { kind: 'oauth', provider: 'google' } }),
 	).toMatch(/kody\.credentials\.GOOGLE\.description/)
@@ -106,6 +106,19 @@ test('publish rejects invalid kody.credentials slots and names the slot', () => 
 		}),
 	).toContain('Credential slot names start with a letter')
 	expect(publishError(['GOOGLE'])).toMatch(/kody\.credentials/)
+})
+
+test('needs may omit provider and use the opt-in kinds', () => {
+	const credentials = {
+		github: { kind: 'oauth', description: 'Repos to triage.' },
+		telegram: { kind: 'url', description: 'Bot URL.' },
+		portal: { kind: 'login', provider: 'acme-portal', description: 'Portal.' },
+		webhook: { kind: 'signing', description: 'Signs requests.' },
+	}
+	expect(
+		parseAuthoredPackageJson({ content: manifestWithCredentials(credentials) })
+			.kody.credentials,
+	).toEqual(credentials)
 })
 
 test('published snapshots load when an old kody.credentials key predates the schema', () => {

@@ -76,6 +76,8 @@ import {
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
 import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
 import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
+import { credentialNeedKeyNotes } from '#worker/credentials/credential-needs.ts'
+import { computeCredentialNeedsClosure } from '#worker/credentials/credential-needs-closure.ts'
 
 export const repoCheckKinds = [
 	'manifest',
@@ -1416,6 +1418,55 @@ async function runChunkedBundleValidation(input: {
 	}
 }
 
+/**
+ * `kody.credentials` needs (ADR 0068): a key the package and a dependency
+ * declare with a different kind or provider fails; keys that are not
+ * provider slugs get an informational note. Null when there is nothing to
+ * say. Without env (offline checks) only the package's own needs are read.
+ */
+async function buildCredentialNeedsCheck(input: {
+	env?: Env
+	userId?: string
+	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
+}): Promise<RepoCheckResult | null> {
+	const notes = credentialNeedKeyNotes(input.manifest.kody.credentials)
+	let conflicts: Array<string> = []
+	if (input.env && input.userId) {
+		try {
+			;({ conflicts } = await computeCredentialNeedsClosure({
+				env: input.env,
+				userId: input.userId,
+				manifest: input.manifest,
+				files: input.sourceFiles,
+			}))
+		} catch (error) {
+			// A lookup failure is not a conflict: note it and let publish go on.
+			notes.push(
+				`Dependency credential needs were not checked: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+	if (conflicts.length > 0) {
+		return {
+			kind: 'manifest',
+			ok: false,
+			message: [
+				'kody.credentials needs conflict with a dependency:',
+				...conflicts,
+			].join('\n'),
+		}
+	}
+	if (notes.length === 0) return null
+	return {
+		kind: 'manifest',
+		ok: true,
+		message: ['kody.credentials notes (publish is unaffected):', ...notes].join(
+			'\n',
+		),
+	}
+}
+
 export async function runRepoChecks(input: {
 	workspace: {
 		readFile(path: string): Promise<string | null>
@@ -1556,6 +1607,18 @@ export async function runRepoChecks(input: {
 	const sourceFiles = sourceWalk.collected
 	// Before any gate that returns early, so owners see it while fixing others.
 	results.push(buildCredentialPatternCheck(sourceFiles))
+	const credentialNeedsCheck = await buildCredentialNeedsCheck({
+		env: input.env,
+		userId: input.userId,
+		manifest,
+		sourceFiles,
+	})
+	if (credentialNeedsCheck) {
+		results.push(credentialNeedsCheck)
+		if (!credentialNeedsCheck.ok) {
+			return toRepoCheckRunResult({ results, manifest, sourceFiles })
+		}
+	}
 	// Cheap static gates for the package-app browser surface run before the
 	// heavy phases so a misconfigured manifest fails fast with one message.
 	const packageAppSurfaceChecks = [
