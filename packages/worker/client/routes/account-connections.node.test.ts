@@ -104,7 +104,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('aria-label="Workspace sections"')
 	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
 	expect(html).toMatch(
-		/href="\/@jane\/-\/packages"[^>]*>[\s\S]*?Repositories<\/a>/,
+		/href="\/@jane\/-\/repositories"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
 	expect(html).toContain('data-icon="box"')
 })
@@ -359,7 +359,7 @@ test('account rail holds the person: profile, security, organizations, experimen
 		'/account/credits',
 		'/account/mcp-oauth-clients',
 		'/@jane/-/secrets',
-		'/@jane/-/packages',
+		'/@jane/-/repositories',
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
@@ -367,7 +367,7 @@ test('account rail holds the person: profile, security, organizations, experimen
 
 test('workspace landing opens Repositories so the rail is one click away', () => {
 	expect(workspaceLandingItem('jane')).toEqual({
-		href: '/@jane/-/packages',
+		href: '/@jane/-/repositories',
 		label: 'Workspace',
 		icon: 'box',
 	})
@@ -381,7 +381,7 @@ test('account rail opens the signup workspace: overview, repositories, connectio
 		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
 	).toEqual([
 		['Overview', '/@jane-old/-/overview', 'home'],
-		['Repositories', '/@jane-old/-/packages', 'box'],
+		['Repositories', '/@jane-old/-/repositories', 'box'],
 		['Connections', '/@jane-old/-/connections', 'link'],
 		['MCP servers', '/@jane-old/-/mcp-servers', 'server'],
 		['Secrets', '/@jane-old/-/secrets', 'key'],
@@ -428,7 +428,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	}
 	// Repositories is the workspace list, not the public profile.
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@jane/-/packages',
+		'/@jane/-/repositories',
 	)
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
 		'/@jane/-/secret-providers',
@@ -521,7 +521,7 @@ test('workspace rail for a team organization matches the personal section shape'
 		[
 			'Build',
 			[
-				'/@acme/-/packages',
+				'/@acme/-/repositories',
 				'/@acme/-/jobs',
 				'/@acme/-/workflows',
 				'/@acme/-/webhooks',
@@ -641,7 +641,8 @@ test('workspace rail for a team organization matches the personal section shape'
 		true,
 	)
 	expect(
-		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/packages'),
+		teamOverview &&
+			isAccountNavItemActive(teamOverview, '/@acme/-/repositories'),
 	).toBe(false)
 	expect(
 		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/overview'),

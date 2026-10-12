@@ -7,18 +7,20 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 `/@username` lists your repositories — saved packages and plain repos —
 including private and unpublished ones when you view your own profile. The page
 heading and account rail label are **Repositories**; the list routes are
-`/@username` and `/@<slug>/-/packages`. On a team org, `/@<slug>/-/packages`
-(and `/@<slug>/-/packages.json`) lists the packages that org owns, filtered to
-what the member can see (`canSeeResource`), plus every plain repo the org owns
-(members who can open the page see all of them; there is no per-repo grant).
-Chip filters (`visibility`, `listing`, `hidden`, `package`, `app`) and sort
-(`sort=updated|created|name`, `dir=asc|desc`) run client-side from the
-already-loaded list (behind a `<details>` Filters disclosure; no loader, no view
-transition). Default sort is updated descending (`updated_at DESC`); name
-defaults to ascending. `package=yes|no` is whether the row has the saved-package
-extension — distinct from `app=yes|no` (Has app / No app). Own-profile GET
-params: `visibility=public|private`, `listing=published|unpublished|ahead`
-(ahead = **Needs republish**: the listing pin is behind `published_commit`, not
+`/@username` and `/@<slug>/-/repositories`. On a team org,
+`/@<slug>/-/repositories` (and `/@<slug>/-/repositories.json`) lists the
+packages that org owns, filtered to what the member can see (`canSeeResource`),
+plus every plain repo the org owns (members who can open the page see all of
+them; there is no per-repo grant). Former `/@<slug>/-/packages` (+ `.json`) URLs
+301 to `/repositories` and keep the query string. Chip filters (`visibility`,
+`listing`, `hidden`, `package`, `app`) and sort (`sort=updated|created|name`,
+`dir=asc|desc`) run client-side from the already-loaded list (behind a
+`<details>` Filters disclosure; no loader, no view transition). Default sort is
+updated descending (`updated_at DESC`); name defaults to ascending.
+`package=yes|no` is whether the row has the saved-package extension — distinct
+from `app=yes|no` (Has app / No app). Own-profile GET params:
+`visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
+**Needs republish**: the listing pin is behind `published_commit`, not
 HEAD-ahead-of-published), `hidden=yes|no`, `package=yes|no`, `app=yes|no`,
 `sort=created|name`, and `dir=asc|desc` (omit `dir` when it matches the sort
 field's default). Guests can use `listing=published|unpublished`,

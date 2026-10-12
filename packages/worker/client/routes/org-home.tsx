@@ -154,7 +154,7 @@ export function renderOrgHomeMain(input: {
 							action: (
 								<div mix={css(stepActionsCss)}>
 									<a
-										href={orgResourcePath(input.slug, 'packages')}
+										href={orgResourcePath(input.slug, 'repositories')}
 										mix={css(getGhostButtonCss({ size: 'sm' }))}
 									>
 										Repositories

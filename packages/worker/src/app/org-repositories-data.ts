@@ -23,7 +23,7 @@ function readOptionalLimit(raw: string | null) {
 
 /**
  * Repositories owned by a team org (`saved_packages` and `user_repos` with
- * `user_id = org.id`), for `/@slug/-/packages`. Packages pass `canSeeResource`
+ * `user_id = org.id`), for `/@slug/-/repositories`. Packages pass `canSeeResource`
  * (owners see everything; members see grants). Plain repos have no grant
  * surface — every org member who can open this page sees them (same inventory
  * as MCP `repoList` for the bound org).

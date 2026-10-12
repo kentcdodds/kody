@@ -205,7 +205,7 @@ function compareProfileRepositoryUpdatedDesc(
 }
 
 /**
- * Saved packages plus plain repos for `/@slug/-/packages` and the public
+ * Saved packages plus plain repos for `/@slug/-/repositories` and the public
  * profile list. MCP `communityProfileGet` keeps packages-only via
  * {@link listPublicProfilePackages}; plain repos stay on `repoList`.
  */

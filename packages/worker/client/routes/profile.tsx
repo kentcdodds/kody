@@ -68,9 +68,9 @@ function getCurrentLoadKey(handle: Handle) {
 	return isWorkspaceRepositoriesPath(pathname) ? `${name}/packages` : name
 }
 
-/** `/@slug/-/packages`: the workspace Repositories page, not a public profile. */
+/** `/@slug/-/repositories`: the workspace Repositories page, not a public profile. */
 function isWorkspaceRepositoriesPath(pathname: string) {
-	return parseOrgResourcePath(pathname)?.section === 'packages'
+	return parseOrgResourcePath(pathname)?.section === 'repositories'
 }
 
 /**
@@ -83,7 +83,7 @@ function profileDataHref(
 	searchParams: URLSearchParams,
 ) {
 	return isWorkspaceRepositoriesPath(pathname)
-		? routes.orgPackagesApi.href({ orgSlug: key }, { searchParams })
+		? routes.orgRepositoriesApi.href({ orgSlug: key }, { searchParams })
 		: routes.profileApi.href({ username: key }, { searchParams })
 }
 
@@ -193,7 +193,7 @@ export function ProfileRoute(handle: Handle) {
 		const loadKey = getCurrentLoadKey(handle)
 		const currentHref = readCurrentRouterHref(handle)
 		const currentPathname = new URL(currentHref, 'http://localhost').pathname
-		// `/@slug/-/packages` is the workspace Repositories page, which supplies
+		// `/@slug/-/repositories` is the workspace Repositories page, which supplies
 		// its own shell and heading; filter links stay on that page.
 		const embedded = isWorkspaceRepositoriesPath(currentPathname)
 

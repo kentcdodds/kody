@@ -144,7 +144,11 @@ test('grouped rail names its groups and whose settings they are', async () => {
 				{
 					label: 'Build',
 					items: [
-						{ href: '/@jane/-/packages', label: 'Repositories', active: true },
+						{
+							href: '/@jane/-/repositories',
+							label: 'Repositories',
+							active: true,
+						},
 					],
 				},
 				{
@@ -250,7 +254,7 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/members"')
 	expect(html).toContain('aria-label="Organization"')
 	expect(html).not.toContain('href="/@acme/-/billing"')
-	expect(html).toContain('href="/@acme/-/packages"')
+	expect(html).toContain('href="/@acme/-/repositories"')
 	expect(html).toContain('href="/@acme/-/jobs"')
 	expect(html).toContain('href="/@acme/-/workflows"')
 	expect(html).toContain('href="/@acme/-/webhooks"')

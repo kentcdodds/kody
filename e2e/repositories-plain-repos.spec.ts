@@ -36,7 +36,7 @@ VALUES (
 `)
 
 	await login({ email: user.email, password: user.password, mode: 'login' })
-	const listResponse = await page.goto(`/@${user.username}/-/packages`)
+	const listResponse = await page.goto(`/@${user.username}/-/repositories`)
 	expect(listResponse?.status()).toBe(200)
 	await waitForClientHydration(page)
 	await expect(

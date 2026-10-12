@@ -41,9 +41,10 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountBillingCancellationFeedbackPost: 'feedback from the person',
 	accountMcpServerLogo: 'logos are stored on the signup org',
 	accountMcpServersOauthCallback: 'OAuth state carries the server owner',
-	accountPackagesApi: 'no per-package authz; teams use /@slug/-/packages.json',
+	accountPackagesApi:
+		'no per-package authz; teams use /@slug/-/repositories.json',
 	accountPackagesApiPost:
-		'no per-package authz; teams use /@slug/-/packages.json',
+		'no per-package authz; teams use /@slug/-/repositories.json',
 	accountPackageDetail: 'package authz, not request org',
 	accountPackageApprovePublish: 'package authz, not request org',
 	accountPackageApprovePublishApi: 'package authz, not request org',

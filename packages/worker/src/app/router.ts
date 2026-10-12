@@ -294,7 +294,11 @@ import {
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
 import {
-	createOrgPackagesApiHandler,
+	createLegacyOrgPackagesApiRedirectHandler,
+	createLegacyOrgPackagesRedirectHandler,
+} from '#app/handlers/legacy-org-packages-redirect.ts'
+import {
+	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
@@ -618,8 +622,10 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
 			orgOverview: createOrgOverviewHandler(env),
-			orgPackages: createOrgSectionHandler(env, 'packages'),
-			orgPackagesApi: createOrgPackagesApiHandler(env),
+			orgRepositories: createOrgSectionHandler(env, 'repositories'),
+			orgRepositoriesApi: createOrgRepositoriesApiHandler(env),
+			orgPackages: createLegacyOrgPackagesRedirectHandler(env),
+			orgPackagesApi: createLegacyOrgPackagesApiRedirectHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
 			orgSecrets: createOrgSectionHandler(env, 'secrets'),
 			orgValues: createOrgSectionHandler(env, 'values'),

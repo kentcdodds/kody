@@ -41,7 +41,7 @@ async function createEnvWithSqlite() {
 test('account package JSON stays on the signup org from a team page', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/packages.json', {
-		headers: { referer: 'https://kody.test/@acme/-/packages' },
+		headers: { referer: 'https://kody.test/@acme/-/repositories' },
 	})
 	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
 		'personal',
@@ -191,7 +191,7 @@ test('org sections follow the page gate for grant-only collaborators', async () 
 		true,
 	)
 	await expect(
-		deniedPage('https://kody.test/@acme/-/packages.json'),
+		deniedPage('https://kody.test/@acme/-/repositories.json'),
 	).resolves.toBe(true)
 	// Management pages check their own permission once the org is bound.
 	await expect(deniedPage('https://kody.test/@acme/-/settings')).resolves.toBe(

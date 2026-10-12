@@ -551,7 +551,7 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.orgMemories)]: titleOnly('Memories'),
 	[routePattern(routes.orgOverview)]: titleOnly('Overview'),
-	[routePattern(routes.orgPackages)]: titleOnly('Repositories'),
+	[routePattern(routes.orgRepositories)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
 	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.orgValues)]: titleOnly('Values'),

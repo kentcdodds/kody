@@ -14,7 +14,7 @@ const orgOwnedAccountSections = [
 	'jobs',
 	'mcp-servers',
 	'memories',
-	'packages',
+	'repositories',
 	'secret-providers',
 	'secrets',
 	'values',
@@ -28,7 +28,10 @@ export type OrgOwnedAccountSection = (typeof orgOwnedAccountSections)[number]
 const orgOwnedSectionSet: ReadonlySet<string> = new Set(orgOwnedAccountSections)
 
 /** Sections whose org URL is only the index. Nested paths stay on other routes. */
-const exactOrgSections: ReadonlySet<string> = new Set(['packages', 'webhooks'])
+const exactOrgSections: ReadonlySet<string> = new Set([
+	'repositories',
+	'webhooks',
+])
 
 export type OrganizationSummary = {
 	slug: string
@@ -70,7 +73,7 @@ function isOrgOwnedAccountSection(
  * person's sign-in providers. The Memories download is
  * `/account/memories-export.json`.
  * `/account/packages.json` lists and mutates without per-package authz, so it
- * stays on the person; team Repositories read `/@slug/-/packages.json`.
+ * stays on the person; team Repositories read `/@slug/-/repositories.json`.
  */
 export function orgOwnedAccountApiSection(
 	pathname: string,
@@ -110,7 +113,7 @@ export function parseOrgResourcePath(
 	return { slug, section, rest }
 }
 
-/** `/@acme/-/packages.json`: the JSON twin of an org section page. */
+/** `/@acme/-/repositories.json`: the JSON twin of an org section page. */
 function parseOrgResourceApiPath(
 	pathname: string,
 ): { slug: string; section: OrgOwnedAccountSection } | null {
@@ -209,7 +212,7 @@ export function orgResourcePathForAccountPath(
 	const normalized =
 		pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 	if (normalized === '/account/packages') {
-		return orgResourcePath(personalSlug, 'packages')
+		return orgResourcePath(personalSlug, 'repositories')
 	}
 	if (
 		normalized === '/account/billing' ||

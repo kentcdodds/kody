@@ -26,7 +26,7 @@ test('route-owned prefixes skip the ASSETS probe', () => {
 		'/account/billing',
 		'/@acme',
 		'/@acme/-/jobs',
-		'/@acme/-/packages',
+		'/@acme/-/repositories',
 		'/mcp',
 		'/api/me',
 		'/oauth/authorize',

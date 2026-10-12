@@ -88,7 +88,7 @@ test('account section switches keep the current page on screen (no loading flash
 		page
 			.getByRole('navigation', { name: 'Workspace sections' })
 			.getByRole('link', { name: 'Repositories', exact: true }),
-	).toHaveAttribute('href', `/@${user.username}/-/packages`)
+	).toHaveAttribute('href', `/@${user.username}/-/repositories`)
 
 	// Person settings have their own rail; the header menu is the way across.
 	await page.getByTestId('org-switcher').click()
@@ -232,10 +232,10 @@ test('signed-in profile opens the workspace rail through to Activity', async ({
 	await waitForClientHydration(page)
 	await expect(page.getByTestId('profile-workspace')).toHaveAttribute(
 		'href',
-		`/@${user.username}/-/packages`,
+		`/@${user.username}/-/repositories`,
 	)
 	await Promise.all([
-		page.waitForURL(new RegExp(`/@${user.username}/-/packages$`)),
+		page.waitForURL(new RegExp(`/@${user.username}/-/repositories$`)),
 		page.getByTestId('profile-workspace').click(),
 	])
 	await expect(
