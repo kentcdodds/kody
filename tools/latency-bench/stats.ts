@@ -1,4 +1,4 @@
-export type Percentiles = {
+type Percentiles = {
 	n: number
 	p50: number
 	p95: number
@@ -43,7 +43,7 @@ function round1(value: number) {
 	return Math.round(value * 10) / 10
 }
 
-export function summarize(values: Array<number>): Percentiles {
+function summarize(values: Array<number>): Percentiles {
 	return {
 		n: values.length,
 		p50: round1(percentile(values, 50)),

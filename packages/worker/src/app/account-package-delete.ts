@@ -1,8 +1,10 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { loadWritableAccountSavedPackage } from '#app/account-package-write-access.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
+import {
+	deleteSavedPackageProjection,
+	PackageStorageCleanupError,
+} from '#worker/package-registry/service.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 
@@ -24,17 +26,14 @@ export async function handleAccountPackageDeleteAction(input: {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
 
-	const userId = ownerIdFromCaller({
-		request: input.user.request,
-		user: input.user.mcpUser,
-	})
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId,
+	const resolved = await loadWritableAccountSavedPackage({
+		env: input.env,
+		user: input.user,
 		packageId,
+		permission: 'package:delete',
 	})
-	if (!savedPackage) {
-		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
-	}
+	if (!resolved.ok) return resolved.response
+	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 	if (confirmName !== savedPackage.name) {
 		return jsonResponse(
 			{
@@ -48,13 +47,16 @@ export async function handleAccountPackageDeleteAction(input: {
 	try {
 		await deleteSavedPackageProjection({
 			env: input.env,
-			userId,
-			actorUserId: userId,
+			userId: ownerUserId,
+			actorUserId,
 			packageId,
 		})
 	} catch (error) {
 		if (error instanceof CommunityActionError) {
 			return jsonResponse({ ok: false, error: error.message }, 400)
+		}
+		if (error instanceof PackageStorageCleanupError) {
+			return jsonResponse({ ok: false, error: error.message }, 409)
 		}
 		throw error
 	}

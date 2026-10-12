@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -140,6 +143,12 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
 	listingAhead: null,
 	forkListingRelation: null,
 }
+/**
+ * Inserts a saved-package row. Returns whether this insert newly claimed
+ * `users.first_saved_package_at` for the actor (or the owning user when no
+ * actor is passed). Callers that stamp before a projection refresh must Kit
+ * sync when this returns true — refresh sees an existing row and will not.
+ */
 export async function insertSavedPackage(
 	db: D1Database,
 	row: Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> & {
@@ -147,8 +156,8 @@ export async function insertSavedPackage(
 		updated_at?: string
 	},
 	telemetry?: OnboardingFunnelEnv | null,
-	options?: { stamp?: boolean },
-) {
+	options?: { stamp?: boolean; actorUserId?: PersonId },
+): Promise<boolean> {
 	const now = new Date().toISOString()
 	await db
 		.prepare(
@@ -174,11 +183,11 @@ export async function insertSavedPackage(
 			row.updated_at ?? now,
 		)
 		.run()
-	if (options?.stamp === false) return
-	await stampFirstSavedPackage(
+	if (options?.stamp === false) return false
+	return await stampFirstSavedPackage(
 		db,
 		{
-			stableUserId: row.user_id,
+			stableUserId: options?.actorUserId ?? row.user_id,
 			at: row.created_at ?? now,
 		},
 		telemetry,

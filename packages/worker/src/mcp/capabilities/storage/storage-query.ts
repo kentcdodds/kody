@@ -14,10 +14,10 @@ import {
 } from '#worker/storage-runner.ts'
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
-import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { packageIdFromStorageId } from '#worker/storage-ids.ts'
+import {
+	authorizeCapabilityStorageId,
+	authorizePackageBucketAccess,
+} from '#mcp/capabilities/storage-access.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -42,7 +42,7 @@ export const storageQueryCapability = defineDomainCapability(
 		orgPermission: 'package:write',
 		description:
 			'Run SQL against one durable storage bucket. Defaults to read-only and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true.',
-		keywords: ['storage', 'sql', 'sqlite', 'query', 'inspect', 'database'],
+		keywords: ['storage', 'sql', 'query', 'inspect', 'database'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -67,20 +67,12 @@ export const storageQueryCapability = defineDomainCapability(
 				capabilityName: 'storageQuery',
 				storageId: args.storage_id,
 			})
-			const packageId = packageIdFromStorageId(storageId)
-			if (packageId) {
-				const ownerId = ownerIdFromCaller(ctx.callerContext)
-				const saved = await getSavedPackageById(ctx.env.APP_DB, {
-					userId: ownerId,
-					packageId,
-				})
-				if (saved) {
-					await authorizePackageWrite(
-						{ env: ctx.env, request: ctx.callerContext.request },
-						{ id: saved.id, userId: saved.userId, label: saved.name },
-					)
-				}
-			}
+			await authorizePackageBucketAccess({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				storageId,
+				permission: 'package:write',
+			})
 			const writable = args.writable ?? false
 			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({

@@ -74,6 +74,7 @@ function createCapability(
 		idempotent: true,
 		destructive: false,
 		orgPermission: 'none',
+		requiresLivePerson: 'never',
 		...(featureFlag ? { featureFlag } : {}),
 		source: 'builtin',
 		inputSchema: { type: 'object', properties: {} },

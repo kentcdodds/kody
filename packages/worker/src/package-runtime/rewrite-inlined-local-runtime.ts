@@ -717,7 +717,50 @@ function pickCollisionFreeShimLocalName(
 	canonical: SharedRuntimeExportCanonical,
 	authorBindings: ReadonlySet<string>,
 ) {
-	const preferred = `__kodyShim${canonical.charAt(0).toUpperCase()}${canonical.slice(1)}`
+	return pickCollisionFreeLocalName(
+		`__kodyShim${canonical.charAt(0).toUpperCase()}${canonical.slice(1)}`,
+		authorBindings,
+	)
+}
+
+const shimPackageBoundFactoryNames = [
+	'__kodyCreatePackageBoundAuthenticatedFetch',
+	'__kodyCreatePackageBoundStorage',
+	'__kodyCreatePackageBoundSecrets',
+	'__kodyCreatePackageBoundOauthClientCredentials',
+	'__kodyCreatePackageBoundGatewayFetch',
+] as const
+
+type ShimPackageBoundFactoryName = (typeof shimPackageBoundFactoryNames)[number]
+
+/**
+ * Local names for the shim's package-bound factories. Published artifacts
+ * from before the shared runtime was externalized inline a cloud runtime copy
+ * that declares `__kodyCreatePackageBoundStorage` (and siblings) at top level.
+ * Composed into a later consumer, that copy is retained author source; the
+ * replacement bindings must still reach the shim's CapabilityProxy factories,
+ * so a colliding name is imported under a private alias instead of skipped.
+ */
+function pickShimPackageBoundFactoryLocals(
+	authorBindings: ReadonlySet<string>,
+) {
+	return Object.fromEntries(
+		shimPackageBoundFactoryNames.map((name) => [
+			name,
+			authorBindings.has(name)
+				? pickCollisionFreeLocalName(
+						`__kodyShim${name.slice('__kody'.length)}`,
+						authorBindings,
+					)
+				: name,
+		]),
+	) as Record<ShimPackageBoundFactoryName, string>
+}
+
+function pickCollisionFreeLocalName(
+	preferred: string,
+	authorBindings: ReadonlySet<string>,
+) {
 	if (!authorBindings.has(preferred)) return preferred
 	let suffix = 2
 	while (authorBindings.has(`${preferred}${suffix}`)) suffix += 1
@@ -834,6 +877,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
+		const factory = pickShimPackageBoundFactoryLocals(input.authorBindings)
 		const packageBoundLines: Array<string> = []
 		const emittedBindingNames = new Set<string>()
 		for (const binding of input.packageBoundBindings) {
@@ -844,22 +888,22 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			switch (binding.kind) {
 				case 'packageStorage':
 					packageBoundLines.push(
-						`var ${binding.name} = __kodyCreatePackageBoundStorage(${idLiteral});`,
+						`var ${binding.name} = ${factory.__kodyCreatePackageBoundStorage}(${idLiteral});`,
 					)
 					break
 				case 'packageSecrets':
 					packageBoundLines.push(
-						`var ${binding.name} = __kodyCreatePackageBoundSecrets(${idLiteral});`,
+						`var ${binding.name} = ${factory.__kodyCreatePackageBoundSecrets}(${idLiteral});`,
 					)
 					break
 				case 'createAuthenticatedFetch':
 					packageBoundLines.push(
-						`var ${binding.name} = __kodyCreatePackageBoundAuthenticatedFetch(${idLiteral});`,
+						`var ${binding.name} = ${factory.__kodyCreatePackageBoundAuthenticatedFetch}(${idLiteral});`,
 					)
 					break
 				case 'oauthClientCredentials':
 					packageBoundLines.push(
-						`var ${binding.name} = __kodyCreatePackageBoundOauthClientCredentials(${idLiteral});`,
+						`var ${binding.name} = ${factory.__kodyCreatePackageBoundOauthClientCredentials}(${idLiteral});`,
 					)
 					break
 				default: {
@@ -876,7 +920,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			!input.authorBindings.has(createAuthenticatedFetch)
 		) {
 			packageBoundLines.push(
-				`var ${createAuthenticatedFetch} = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});`,
+				`var ${createAuthenticatedFetch} = ${factory.__kodyCreatePackageBoundAuthenticatedFetch}(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(createAuthenticatedFetch)
 		}
@@ -885,7 +929,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			!input.authorBindings.has(packageStorage)
 		) {
 			packageBoundLines.push(
-				`var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});`,
+				`var ${packageStorage} = ${factory.__kodyCreatePackageBoundStorage}(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(packageStorage)
 		}
@@ -894,7 +938,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			!input.authorBindings.has(packageSecrets)
 		) {
 			packageBoundLines.push(
-				`var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});`,
+				`var ${packageSecrets} = ${factory.__kodyCreatePackageBoundSecrets}(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(packageSecrets)
 		}
@@ -903,7 +947,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			!input.authorBindings.has(oauthClientCredentials)
 		) {
 			packageBoundLines.push(
-				`var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});`,
+				`var ${oauthClientCredentials} = ${factory.__kodyCreatePackageBoundOauthClientCredentials}(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(oauthClientCredentials)
 		}
@@ -948,17 +992,15 @@ function createInlinedRuntimeReplacementPreamble(input: {
 					...(needsPackageBoundFactories || emitFetchBinding
 						? (['__kodySecretRef'] as const)
 						: []),
-					...(needsPackageBoundFactories
-						? ([
-								'__kodyCreatePackageBoundAuthenticatedFetch',
-								'__kodyCreatePackageBoundStorage',
-								'__kodyCreatePackageBoundSecrets',
-								'__kodyCreatePackageBoundOauthClientCredentials',
-							] as const)
-						: []),
-					...(emitFetchBinding
-						? (['__kodyCreatePackageBoundGatewayFetch'] as const)
-						: []),
+					...shimPackageBoundFactoryNames
+						.filter((name) =>
+							name === '__kodyCreatePackageBoundGatewayFetch'
+								? emitFetchBinding
+								: needsPackageBoundFactories,
+						)
+						.map((name): ShimImportBinding =>
+							factory[name] === name ? name : { name, as: factory[name] },
+						),
 				],
 				input.authorBindings,
 			),
@@ -969,7 +1011,7 @@ ${shimImport}
 ${packageBoundLines.join('\n')}
 ${
 	emitFetchBinding
-		? `var fetch = __kodyCreatePackageBoundGatewayFetch(${packageIdLiteral});`
+		? `var fetch = ${factory.__kodyCreatePackageBoundGatewayFetch}(${packageIdLiteral});`
 		: ''
 }
 ${aliases}

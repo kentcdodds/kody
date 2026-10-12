@@ -137,6 +137,7 @@ test('mergeIntegrationConfig and integrationSave create, canonicalize identity, 
 
 	expect(result.integration).toEqual({
 		name: 'spotify',
+		credentialId: expect.any(String),
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		flow: 'pkce',

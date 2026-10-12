@@ -8,6 +8,7 @@ import {
 	type OrgPermission,
 	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { z } from 'zod'
@@ -20,7 +21,15 @@ import {
 import {
 	authorize,
 	computeEffectivePermissions,
+	type OrgResource,
 } from '#worker/authorization/authorize.ts'
+import {
+	credentialPermissionFamily,
+	credentialResource,
+	findCredentialIdsByLegacyName,
+	getOrgCredential,
+	legacyNamedCredentialTargets,
+} from '#worker/credentials/credential-ids.ts'
 import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
@@ -38,6 +47,49 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const grantPresetSchema = z.enum(grantPresets)
 
 export const grantResourceTypeSchema = z.enum(grantResourceTypes)
+
+export const grantTargetTypeSchema = z.enum([
+	...grantResourceTypes,
+	...legacyNamedCredentialTargets,
+])
+
+type GrantTargetType = z.infer<typeof grantTargetTypeSchema>
+
+/**
+ * Resolves an old-lane by-name credential target to its credential id, so
+ * the grant is stored under `credential`. A name that names more than one
+ * credential is refused rather than narrowed to one of them.
+ */
+export async function resolveGrantTarget(
+	ctx: CapabilityContext,
+	target: { type: GrantTargetType; id: string },
+): Promise<{ resourceType: GrantResourceType; resourceId: string }> {
+	switch (target.type) {
+		case 'secret':
+		case 'integration': {
+			const request = requireMcpRequest(ctx.callerContext)
+			const credentialIds = await findCredentialIdsByLegacyName(
+				ctx.env.APP_DB,
+				request.org.id,
+				{ type: target.type, name: target.id },
+			)
+			const [credentialId, ...others] = credentialIds
+			if (!credentialId) {
+				throw new McpCallerError(
+					`No ${target.type} named "${target.id}" in this organization. Pass resource_type credential with the credential_id from secretList, integrationList, mcpServerList, or secretProviderList.`,
+				)
+			}
+			if (others.length > 0) {
+				throw new McpCallerError(
+					`${target.id} names more than one integration; pass resource_type credential with the credential_id from integrationList or mcpServerList.`,
+				)
+			}
+			return { resourceType: 'credential', resourceId: credentialId }
+		}
+		default:
+			return { resourceType: target.type, resourceId: target.id }
+	}
+}
 
 export const orgRoleSchema = z.enum(['owner', 'member', 'billing'])
 
@@ -161,37 +213,114 @@ function manageAccessPermission(resourceType: OrgResourceType): OrgPermission {
 	}
 }
 
+type GrantTargetCheck = {
+	family: OrgResourceType | 'org'
+	permission: OrgPermission
+	resource?: OrgResource
+}
+
+async function grantTargetCheck(
+	ctx: CapabilityContext,
+	orgId: OwnerId,
+	resourceType: GrantResourceType,
+	resourceId: string,
+	purpose: 'grant' | 'revoke',
+): Promise<GrantTargetCheck> {
+	switch (resourceType) {
+		case 'org':
+			if (resourceId !== orgId) {
+				throw new McpCallerError(
+					'An org grant uses this organization id as resource_id.',
+				)
+			}
+			return { family: 'org', permission: 'member:write' }
+		case 'credential': {
+			const credential = await getOrgCredential(
+				ctx.env.APP_DB,
+				orgId,
+				resourceId,
+			)
+			if (!credential || (purpose === 'grant' && !credential.live)) {
+				if (purpose === 'revoke') {
+					// The credential is gone, so its family is unknown: revoking a
+					// leftover grant needs the organization-level access permission.
+					return { family: 'org', permission: 'member:write' }
+				}
+				throw new McpCallerError(
+					'Credential was not found in this organization. Pass the credential_id from secretList, integrationList, mcpServerList, or secretProviderList.',
+				)
+			}
+			const family = credentialPermissionFamily(credential.kind)
+			return {
+				family,
+				permission: manageAccessPermission(family),
+				resource: credentialResource(orgId, credential),
+			}
+		}
+		case 'package':
+		case 'app':
+		case 'job':
+		case 'memory':
+		case 'email':
+			return {
+				family: resourceType,
+				permission: manageAccessPermission(resourceType),
+				resource: {
+					type: resourceType,
+					id: resourceId,
+					orgId,
+				},
+			}
+		default: {
+			const exhaustive: never = resourceType
+			throw new Error(`Unhandled grant resource type: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /**
- * The permission that allows changing who can use `resourceType`.
- * Organization grants use member:write. Every other type uses manage_access
- * on that resource.
+ * Check the permission that allows changing who can use a resource, and
+ * return the permission family its grants resolve against. Organization
+ * grants use member:write; every other type uses manage_access on that
+ * resource. A credential must exist and be live in the organization.
  */
 export async function authorizeGrantTarget(
 	ctx: CapabilityContext,
 	resourceType: GrantResourceType,
 	resourceId: string,
 ) {
+	return await authorizeGrantChange(ctx, resourceType, resourceId, 'grant')
+}
+
+/**
+ * Like `authorizeGrantTarget`, for revoking. A grant on a credential that no
+ * longer exists can still be revoked with member:write.
+ */
+export async function authorizeGrantRevoke(
+	ctx: CapabilityContext,
+	resourceType: GrantResourceType,
+	resourceId: string,
+) {
+	return await authorizeGrantChange(ctx, resourceType, resourceId, 'revoke')
+}
+
+async function authorizeGrantChange(
+	ctx: CapabilityContext,
+	resourceType: GrantResourceType,
+	resourceId: string,
+	purpose: 'grant' | 'revoke',
+) {
 	const user = requireMcpUser(ctx.callerContext)
 	const request = requireMcpRequest(ctx.callerContext)
-	if (resourceType === 'org') {
-		if (resourceId !== request.org.id) {
-			throw new McpCallerError(
-				'An org grant uses this organization id as resource_id.',
-			)
-		}
-		await authorize({ env: ctx.env, request }, 'member:write')
-		return { user, request, db: ctx.env.APP_DB }
-	}
-	await authorize(
-		{ env: ctx.env, request },
-		manageAccessPermission(resourceType),
-		{
-			type: resourceType,
-			id: resourceId,
-			orgId: request.org.id,
-		},
+	const check = await grantTargetCheck(
+		ctx,
+		request.org.id,
+		resourceType,
+		resourceId,
+		purpose,
 	)
-	return { user, request, db: ctx.env.APP_DB }
+	await authorize({ env: ctx.env, request }, check.permission, check.resource)
+	return { user, request, db: ctx.env.APP_DB, family: check.family }
 }
 
 /**
@@ -210,13 +339,29 @@ const ownerOnlyOrgGrantPermissions: ReadonlySet<OrgPermission> =
 	])
 
 /**
+ * Whether a grant hands out or takes away member or billing permissions. Only
+ * an organization grant can, and that change needs a live person. Organization
+ * grants take only an explicit permission list (presets do not apply to them).
+ */
+export function grantChangesMemberOrBilling(input: {
+	resourceType: string
+	permissions: ReadonlyArray<string> | null | undefined
+}): boolean {
+	if (input.resourceType !== 'org') return false
+	return (input.permissions ?? []).some(
+		(permission) =>
+			permission.startsWith('member:') || permission.startsWith('billing:'),
+	)
+}
+
+/**
  * Resolve grant permissions for a resource, and require an Owner when an
  * organization grant includes any of `ownerOnlyOrgGrantPermissions`.
  */
 export async function resolveAuthorizedGrantPermissions(
 	ctx: CapabilityContext,
 	input: {
-		resourceType: GrantResourceType
+		family: OrgResourceType | 'org'
 		preset?: GrantPreset | null
 		permissions: Array<OrgPermission> | null
 	},
@@ -224,7 +369,7 @@ export async function resolveAuthorizedGrantPermissions(
 	let permissions: ReadonlyArray<OrgPermission>
 	try {
 		permissions = resolveGrantPermissions({
-			resourceType: input.resourceType,
+			family: input.family,
 			preset: input.preset ?? null,
 			permissions: input.permissions,
 		})
@@ -233,7 +378,7 @@ export async function resolveAuthorizedGrantPermissions(
 			error instanceof Error ? error.message : 'Invalid grant permissions.',
 		)
 	}
-	if (input.resourceType !== 'org') return permissions
+	if (input.family !== 'org') return permissions
 	const ownerOnly = permissions.filter((permission) =>
 		ownerOnlyOrgGrantPermissions.has(permission),
 	)

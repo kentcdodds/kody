@@ -83,6 +83,12 @@ test('org hard purge is the org-owned slice of the account inventory plus the or
 	expect(sqlFor(orgTargets[grants]!)).toBe(
 		'DELETE FROM grants WHERE org_id = ?',
 	)
+	expect(
+		orgTargets.some(
+			(target) =>
+				target.kind === 'org_id' && target.table === 'org_audit_outbox',
+		),
+	).toBe(true)
 	expect(sqlFor(orgTargets[grantPermissions]!)).toContain(
 		'SELECT id FROM grants WHERE org_id = ?',
 	)

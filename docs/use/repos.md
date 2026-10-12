@@ -95,8 +95,8 @@ event. Session fork Artifacts repos, session workspace branch pushes
 (`sessions/<id>`), and publish git-notes (`refs/notes/commits`) never fan out.
 
 `repo.pushed` is the primary automation hook (for example resyncing a projection
-after a git-lane push to a plain repo). For packages and jobs, a push updates
-HEAD but does **not** by itself advance `published_commit` — publish /
+after a git-lane push to a plain repo). For packages, a push updates HEAD but
+does **not** by itself advance `published_commit` — publish /
 `packagePublishExternalPush` / reconcile still own activation.
 
 Payload shapes and idempotency details live in the

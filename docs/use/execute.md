@@ -148,15 +148,45 @@ several capabilities or package exports, branch on results, and return the final
 structured result. Split into multiple **execute** calls only when you need new
 user input, confirmation, or a result that changes the plan.
 
-Plain **execute** has a hard timeout (~90s by default). Sandbox outbound `fetch`
-is capped at 60s (30s under that budget) unless the caller passes a tighter
-`AbortSignal`. For multi-step or long-running work (>~60s, batch sweeps,
-migrations, polling loops), use one **execute** call to submit
-`workflows.create({ code, params })`, then inspect progress with
-`workflowRunList` instead of chaining many MCP tool calls. Sandbox timeout
-errors state the enforced budget (for example
+Plain **execute** has a hard timeout (~90s by default). Each sandbox outbound
+`fetch` has a 5-minute overall deadline on every surface, counted from the
+request until the response body ends, unless the caller passes a tighter
+`AbortSignal`. A response that stops sending bytes for 60s is also aborted, so a
+streamed response keeps going while bytes arrive, up to the overall deadline.
+The run budget still applies on top, so inside a 90s execute a fetch stops at
+90s. Long calls, such as streamed AI-provider completions that can run past a
+minute, belong in a workflow, or in `execute --local`
+([local execute](../guides/local-execute.md)). For multi-step or long-running
+work (>~60s, batch sweeps, migrations, polling loops, long streamed responses),
+use one **execute** call to submit `workflows.create({ code, params })`, then
+inspect progress with `workflowRunList` instead of chaining many MCP tool calls.
+Sandbox timeout errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
+
+### Time limits
+
+Sandbox budgets are the same on every plan:
+
+| Run                                                                     | Budget                       |
+| ----------------------------------------------------------------------- | ---------------------------- |
+| MCP / ad-hoc execute, package export HTTP invokes, `sync` webhooks      | ~90s                         |
+| Jobs (scheduled and `jobRunNow`, including package exports they import) | 5 minutes                    |
+| Ack (queued) webhook deliveries                                         | 5 minutes                    |
+| Each workflow step                                                      | 5 minutes                    |
+| `execute --local`                                                       | none (fetch deadlines apply) |
+
+A `sync` webhook's HTTP response stops waiting after 30s. Work that does not fit
+the interactive budget goes in a workflow or a job.
+
+### Long calls: start a workflow and check back
+
+For work that may outlast one MCP call, return the `id` from `workflows.create`
+and end the call. In a later call, read the result with
+`kody.runList({ workflow_id: id, error_triage: 'all' })`: the newest run's
+`status` says whether it finished, and a successful run's `metadata.result`
+holds the workflow's return value (capped at 4 KiB). See
+[Start a workflow and check back](./workflows.md#start-a-workflow-and-check-back).
 
 ### Recovering from MCP client timeouts
 
@@ -216,17 +246,16 @@ module-oriented runtime model:
 - deferred one-shot work uses **`workflows.create({ runAt, ... })`** from
   `execute` or package runtime — see [Workflows](./workflows.md)
 - **`kody.jobUpdate(...)`** updates metadata on an existing job (schedule,
-  timezone, enabled, kill switch, preserved, `expires_at`). Package job name and
-  source stay in the package repo.
+  timezone, enabled, kill switch, `expires_at`). Job name and source stay in the
+  package repo.
 - Optional **`expires_at`** on `jobUpdate` stops the platform from scheduling
   the job after that UTC time. When expiry is reached, Kody auto-disables the
   job (`enabled=false`) so it shows as disabled in `jobList` / `jobGet` (with
-  `expired: true`) and can age out via normal retention. This is separate from
-  **`preserved`**, which only skips auto-deletion.
+  `expired: true`).
 - **`kody.jobGet({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored entrypoint path and source code
-- Package-owned jobs are removed by editing the package and publishing, not by
-  `jobDelete`.
+- Remove a job by deleting it from `package.json#kody.jobs` and publishing the
+  package.
 - **`kody.jobRunNow(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging.
   Expired jobs are rejected.
@@ -415,9 +444,9 @@ outbound request.
 See [Secrets and host approval](./secrets-and-values.md) for placeholders, host
 approval, **`kody.secretList`** / **`secretSet`**, and the rules for mentioning
 placeholder syntax without resolving it (the inert `{{secret:<name>}}` form and
-the `x-kody-secret-resolution: off` header). Treat placeholder syntax as
-operational wiring, not prose — never place a resolvable **`{{secret:...}}`**
-token into content shown to users or sent to third parties.
+the `x-kody-secret-resolution: off` and `headers-only` headers). Treat
+placeholder syntax as operational wiring, not prose — never place a resolvable
+**`{{secret:...}}`** token into content shown to users or sent to third parties.
 
 ## Named state
 

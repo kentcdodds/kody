@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	createEchoRedactionStream,
 	redactEchoedSecrets,
+	redactEchoedSecretsInError,
 } from './echo-redaction.ts'
 
 const encoder = new TextEncoder()
@@ -129,4 +130,33 @@ test('a range response is masked byte for byte so its offsets stay true', async 
 	const body = await redacted.text()
 	expect(body).toBe('id=*******;')
 	expect(body).toHaveLength(chunk.length)
+})
+
+test('redactEchoedSecretsInError redacts the cause chain and fields, and keeps clean errors', () => {
+	const cause = Object.assign(
+		new Error('connect to https://h/t-s3cret failed'),
+		{
+			code: 'ECONNREFUSED',
+			url: 'https://h/t-s3cret',
+		},
+	)
+	const error = new TypeError('fetch failed', { cause })
+	const redacted = redactEchoedSecretsInError(error, ['s3cret'])
+	expect(redacted).not.toBe(error)
+	expect(redacted).toBeInstanceOf(Error)
+	const redactedError = redacted as Error
+	expect(redactedError.name).toBe('TypeError')
+	expect(redactedError.message).toBe('fetch failed')
+	const redactedCause = redactedError.cause as Error & Record<string, unknown>
+	expect(redactedCause.message).toBe(
+		'connect to https://h/t-[REDACTED SECRET] failed',
+	)
+	expect(redactedCause.code).toBe('ECONNREFUSED')
+	expect(redactedCause.url).toBeUndefined()
+	expect(
+		JSON.stringify(redactedError, Object.getOwnPropertyNames(redactedError)),
+	).not.toContain('s3cret')
+
+	const clean = new DOMException('aborted', 'AbortError')
+	expect(redactEchoedSecretsInError(clean, ['s3cret'])).toBe(clean)
 })

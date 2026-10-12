@@ -1,12 +1,17 @@
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import {
+	authorize,
+	listScopeIncludes,
+	orgResource,
+	type ResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
-import { McpCallerError } from '#mcp/caller-error.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
-	isPackageOwnedJobId,
-	packageOwnedJobDeleteErrorMessage,
-} from '#worker/jobs/job-retention.ts'
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
@@ -55,10 +60,6 @@ export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
 ])
 
 export const scheduledJobSummarySchema = scheduledJobScheduleSchema
-
-export const jobInspectionInputSchema = z.object({
-	id: z.string().min(1).describe('Job id from jobList or jobGet output.'),
-})
 
 export const jobGetInputSchema = z
 	.object({
@@ -134,7 +135,6 @@ export const jobInspectionSchema = z.object({
 	timezone: z.string(),
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
-	preserved: z.boolean(),
 	expires_at: z
 		.string()
 		.nullable()
@@ -212,7 +212,6 @@ export const jobViewOutputSchema = z.object({
 	timezone: z.string(),
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
-	preserved: z.boolean(),
 	expires_at: z.string().nullable(),
 	expired: z.boolean(),
 	created_at: z.string(),
@@ -245,13 +244,6 @@ export const jobRunNowInputSchema = z.object({
 	id: z.string().min(1).describe('Existing job id to execute immediately.'),
 })
 
-export const jobDeleteInputSchema = jobInspectionInputSchema
-
-export const jobDeleteOutputSchema = z.object({
-	job_id: z.string(),
-	deleted: z.literal(true),
-})
-
 export const jobUpdateInputSchema = z
 	.object({
 		id: z
@@ -259,11 +251,10 @@ export const jobUpdateInputSchema = z
 			.min(1)
 			.describe('Existing job id from jobList or jobGet output.'),
 		name: z
-			.string()
-			.min(1)
+			.unknown()
 			.optional()
 			.describe(
-				'Optional new human-readable name for the job. Rejected for package-owned jobs.',
+				'Rejected. A job is named by its key in package.json#kody.jobs; rename it there and publish.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
@@ -293,19 +284,13 @@ export const jobUpdateInputSchema = z
 			.describe(
 				'Force the job off regardless of schedule. This remains visible in jobList and jobGet for debugging.',
 			),
-		preserved: z
-			.boolean()
-			.optional()
-			.describe(
-				'When true, platform job auto-cleanup never deletes this job. Preserved jobs still count toward scheduled_jobs and storage_bytes entitlements. Forever keep is only available via Preserve — account retention preferences cannot be unbounded.',
-			),
 		expires_at: z
 			.string()
 			.min(1)
 			.nullable()
 			.optional()
 			.describe(
-				'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Pass null to clear. Separate from preserved (retention).',
+				'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Pass null to clear.',
 			),
 		code: z
 			.unknown()
@@ -323,14 +308,21 @@ export const jobUpdateInputSchema = z
 			})
 			return
 		}
+		if (input.name !== undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['name'],
+				message:
+					'Job name cannot be changed via jobUpdate. Rename the job in package.json#kody.jobs and publish.',
+			})
+			return
+		}
 		if (
-			input.name === undefined &&
 			input.params === undefined &&
 			input.schedule === undefined &&
 			input.timezone === undefined &&
 			input.enabled === undefined &&
 			input.kill_switch_enabled === undefined &&
-			input.preserved === undefined &&
 			input.expires_at === undefined
 		) {
 			ctx.addIssue({
@@ -346,12 +338,11 @@ export const jobRunNowOutputSchema = z.object({
 	deleted_after_run: z
 		.boolean()
 		.describe(
-			'Whether the job was deleted after this run. One-off jobs are retained for account/platform cleanup instead of being deleted immediately.',
+			'Whether the job was deleted after this run. One-off jobs stay on their package instead of being deleted after running.',
 		),
 })
 
 export type JobGetCapabilityInput = z.infer<typeof jobGetInputSchema>
-export type JobDeleteCapabilityInput = z.infer<typeof jobDeleteInputSchema>
 export type JobRunNowCapabilityInput = z.infer<typeof jobRunNowInputSchema>
 export type JobUpdateCapabilityInput = z.infer<typeof jobUpdateInputSchema>
 
@@ -453,7 +444,6 @@ export function buildJobViewOutput(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
-		preserved: job.preserved,
 		expires_at: expiresAt,
 		expired,
 		created_at: job.createdAt,
@@ -474,13 +464,6 @@ export function buildJobViewOutput(
 			duration_ms: entry.duration_ms,
 			...(entry.error ? { error: entry.error } : {}),
 		})),
-	}
-}
-
-export function buildJobDeleteOutput(input: { id: string; deleted: true }) {
-	return {
-		job_id: input.id,
-		deleted: input.deleted,
 	}
 }
 
@@ -522,7 +505,6 @@ export function buildJobInspectionOutput(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
-		preserved: job.preserved,
 		expires_at: expiresAt,
 		expired,
 		created_at: job.createdAt,
@@ -540,14 +522,24 @@ export function buildJobInspectionOutput(
 	}
 }
 
-export function buildJobManagerDebugOutput(state: JobManagerDebugState) {
+/**
+ * The scheduler's next job is org-wide state. Its id and timing are shown only
+ * when that job is within the caller's read scope.
+ */
+export function buildJobManagerDebugOutput(
+	state: JobManagerDebugState,
+	scope: ResourceListScope,
+) {
+	const nextJobVisible =
+		state.nextRunnableJobId == null ||
+		listScopeIncludes(scope, state.nextRunnableJobId)
 	return {
 		binding_available: state.bindingAvailable,
 		status: state.status,
 		stored_user_id: state.storedUserId,
-		alarm_scheduled_for: state.alarmScheduledFor,
-		next_runnable_job_id: state.nextRunnableJobId,
-		next_runnable_run_at: state.nextRunnableRunAt,
+		alarm_scheduled_for: nextJobVisible ? state.alarmScheduledFor : null,
+		next_runnable_job_id: nextJobVisible ? state.nextRunnableJobId : null,
+		next_runnable_run_at: nextJobVisible ? state.nextRunnableRunAt : null,
 		alarm_in_sync: state.alarmInSync,
 	}
 }
@@ -569,16 +561,29 @@ export function resolveJobUpdateBody(
 ): JobUpdateInput {
 	return {
 		id: input.id,
-		name: input.name,
 		params: input.params,
 		schedule:
 			input.schedule === undefined ? undefined : toJobSchedule(input.schedule),
 		timezone: input.timezone,
 		enabled: input.enabled,
 		killSwitchEnabled: input.kill_switch_enabled,
-		preserved: input.preserved,
 		...(input.expires_at !== undefined ? { expiresAt: input.expires_at } : {}),
 	}
+}
+
+/** Every single-job surface checks the job itself, not only the surface. */
+export async function authorizeJob(input: {
+	env: Env
+	callerContext: CapabilityContext['callerContext']
+	permission: Extract<OrgPermission, `job:${string}`>
+	jobId: string
+}) {
+	const request = requireMcpRequest(input.callerContext)
+	await authorize(
+		{ env: input.env, request },
+		input.permission,
+		orgResource(request, 'job', input.jobId),
+	)
 }
 
 export async function runJobNowFromArgs(input: {
@@ -587,6 +592,12 @@ export async function runJobNowFromArgs(input: {
 	args: JobRunNowCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:execute',
+		jobId: input.args.id,
+	})
 	const { runJobNowViaManager } = await import('#worker/jobs/manager-client.ts')
 	const result = await runJobNowViaManager({
 		env: input.env,
@@ -603,6 +614,12 @@ export async function updateJobFromArgs(input: {
 	args: JobUpdateCapabilityInput
 }) {
 	requireMcpUser(input.callerContext)
+	await authorizeJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		permission: 'job:write',
+		jobId: input.args.id,
+	})
 	const { updateJob } = await import('#worker/jobs/service.ts')
 	const updated = await updateJob({
 		env: input.env,
@@ -617,28 +634,4 @@ export async function updateJobFromArgs(input: {
 		nextRunAt: updated.nextRunAt,
 	})
 	return buildJobViewOutput(updated)
-}
-
-export async function deleteJobFromArgs(input: {
-	env: Env
-	callerContext: CapabilityContext['callerContext']
-	args: JobDeleteCapabilityInput
-}) {
-	requireMcpUser(input.callerContext)
-	if (isPackageOwnedJobId(input.args.id)) {
-		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
-	}
-	const { deleteJob } = await import('#worker/jobs/service.ts')
-	const result = await deleteJob({
-		env: input.env,
-		userId: ownerIdFromCaller(input.callerContext),
-		jobId: input.args.id,
-	})
-	logJobSchedulerEvent({
-		event: 'job_deleted',
-		userId: ownerIdFromCaller(input.callerContext),
-		jobId: result.id,
-		reason: 'mcp_capability',
-	})
-	return buildJobDeleteOutput(result)
 }

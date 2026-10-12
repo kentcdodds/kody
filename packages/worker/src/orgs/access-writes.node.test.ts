@@ -4,7 +4,7 @@ import {
 	personIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -51,6 +51,7 @@ test('createOrg and upsertGrant are visible when access is compiled', async () =
 		orgId: org.id,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -145,6 +146,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		orgId: org.id,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -178,7 +180,11 @@ test('write helpers record org audit events for the acting person', async () => 
 	const auditDb = createAuditTestDb()
 	const ownerId = testStableUserIdFromEmail('owner@example.com')
 	const memberId = testStableUserIdFromEmail('member@example.com')
-	const audit = createTestOrgAuditWriter({ db: auditDb, actorUserId: ownerId })
+	const audit = createTestOrgAuditWriter({
+		db: auditDb,
+		appDb: db,
+		actorUserId: ownerId,
+	})
 	const org = await createOrg({
 		db,
 		env: {} as Env,
@@ -222,6 +228,7 @@ test('write helpers record org audit events for the acting person', async () => 
 		orgId: org.id,
 		resourceType: 'package',
 		resourceId: 'pkg-1',
+		family: 'package',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -291,26 +298,27 @@ test('an audit write failure is reported without undoing the access change', asy
 			throw new Error('AUDIT_DB is unavailable')
 		},
 	} as unknown as D1Database
-	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-	try {
-		await addOrgMember({
-			db,
-			orgId: org.id,
-			userId: memberId,
-			role: 'member',
-			invitedByUserId: ownerId,
-			audit: createTestOrgAuditWriter({
-				db: failingAuditDb,
-				actorUserId: ownerId,
-			}),
-		})
-		expect(errorSpy).toHaveBeenCalledTimes(1)
-		expect(errorSpy.mock.calls[0]?.[0]).toBe(
-			'Failed to record org audit event:',
-		)
-	} finally {
-		errorSpy.mockRestore()
-	}
+	await addOrgMember({
+		db,
+		orgId: org.id,
+		userId: memberId,
+		role: 'member',
+		invitedByUserId: ownerId,
+		audit: createTestOrgAuditWriter({
+			db: failingAuditDb,
+			appDb: db,
+			actorUserId: ownerId,
+		}),
+	})
+	const outbox = await db
+		.prepare(`SELECT id, org_id, payload_json FROM org_audit_outbox`)
+		.all<{ id: string; org_id: string; payload_json: string }>()
+	expect(outbox.results).toHaveLength(1)
+	expect(outbox.results[0]?.org_id).toBe(org.id)
+	expect(JSON.parse(outbox.results[0]?.payload_json ?? '{}')).toMatchObject({
+		action: 'member.added',
+		orgId: org.id,
+	})
 	const membership = await db
 		.prepare(
 			`SELECT role FROM org_memberships

@@ -1,9 +1,10 @@
-export const cookieOriginPrefix = '# origin='
-export const cookieEmailPrefix = '# email='
-export const oauthClientIdPrefix = '# oauth-client-id='
-export const oauthClientSecretPrefix = '# oauth-client-secret='
-export const oauthRedirectUriPrefix = '# oauth-redirect-uri='
-export const oauthAccessTokenPrefix = '# oauth-access-token='
+const cookieOriginPrefix = '# origin='
+const cookieEmailPrefix = '# email='
+const cookieOrgPrefix = '# org='
+const oauthClientIdPrefix = '# oauth-client-id='
+const oauthClientSecretPrefix = '# oauth-client-secret='
+const oauthRedirectUriPrefix = '# oauth-redirect-uri='
+const oauthAccessTokenPrefix = '# oauth-access-token='
 
 export type AppSessionOAuth = {
 	clientId: string
@@ -15,16 +16,30 @@ export type AppSessionOAuth = {
 export type AppSessionFile = {
 	origin: string
 	email: string | null
+	/** Organization the cached OAuth token was minted for. Null is unbound. */
+	org: string | null
 	cookieHeader: string | null
 	oauth: AppSessionOAuth | null
+}
+
+export type McpAuthCache = {
+	cookieHeader?: string
+	oauth?: AppSessionOAuth
+	orgSlug?: string
 }
 
 export function normalizeCookieOrigin(origin: string) {
 	return origin.replace(/\/$/, '')
 }
 
-export function normalizeCookieEmail(email: string) {
+function normalizeCookieEmail(email: string) {
 	return email.trim().toLowerCase()
+}
+
+/** Same shape as OAuth `?org=` (trim, lowercase, optional leading `@`). */
+function normalizeCookieOrg(orgSlug: string) {
+	const slug = orgSlug.trim().toLowerCase().replace(/^@/, '')
+	return slug.length > 0 ? slug : null
 }
 
 export function formatCookieFile(
@@ -32,9 +47,12 @@ export function formatCookieFile(
 	cookieHeader: string,
 	email?: string | null,
 	oauth?: AppSessionOAuth | null,
+	orgSlug?: string | null,
 ) {
 	const lines = [`${cookieOriginPrefix}${normalizeCookieOrigin(origin)}`]
 	if (email) lines.push(`${cookieEmailPrefix}${normalizeCookieEmail(email)}`)
+	const org = orgSlug ? normalizeCookieOrg(orgSlug) : null
+	if (org) lines.push(`${cookieOrgPrefix}${org}`)
 	if (oauth) {
 		lines.push(`${oauthClientIdPrefix}${oauth.clientId}`)
 		lines.push(`${oauthClientSecretPrefix}${oauth.clientSecret}`)
@@ -58,6 +76,7 @@ function parseCookieFile(fileText: string): AppSessionFile | null {
 	if (!firstLine.startsWith(cookieOriginPrefix)) return null
 	const origin = firstLine.slice(cookieOriginPrefix.length).trim()
 	let email: string | null = null
+	let org: string | null = null
 	let clientId: string | null = null
 	let clientSecret: string | null = null
 	let redirectUri: string | null = null
@@ -67,6 +86,11 @@ function parseCookieFile(fileText: string): AppSessionFile | null {
 		const nextEmail = readPrefixedLine(line, cookieEmailPrefix)
 		if (nextEmail !== null) {
 			email = normalizeCookieEmail(nextEmail)
+			continue
+		}
+		const nextOrg = readPrefixedLine(line, cookieOrgPrefix)
+		if (nextOrg !== null) {
+			org = normalizeCookieOrg(nextOrg)
 			continue
 		}
 		const nextClientId = readPrefixedLine(line, oauthClientIdPrefix)
@@ -100,15 +124,23 @@ function parseCookieFile(fileText: string): AppSessionFile | null {
 	return {
 		origin,
 		email,
+		org,
 		cookieHeader: cookieHeader.length > 0 ? cookieHeader : null,
 		oauth,
 	}
 }
 
+/**
+ * Session lookup. `orgSlug` omitted ignores the org binding (request and
+ * browse only need the login cookie). `null` is the unbound MCP connection
+ * (no `--org`). A string requires that exact org, so a token minted for
+ * another org is not reused.
+ */
 export function sessionForOrigin(
 	fileText: string,
 	origin: string,
 	email?: string | null,
+	orgSlug?: string | null,
 ): AppSessionFile | null {
 	const parsed = parseCookieFile(fileText)
 	if (!parsed) return null
@@ -117,7 +149,37 @@ export function sessionForOrigin(
 		if (!parsed.email) return null
 		if (parsed.email !== normalizeCookieEmail(email)) return null
 	}
+	if (orgSlug !== undefined && parsed.org !== requestedOrgSlug(orgSlug)) {
+		return null
+	}
 	return parsed
+}
+
+function requestedOrgSlug(orgSlug: string | null) {
+	if (orgSlug === null) return null
+	return normalizeCookieOrg(orgSlug)
+}
+
+/**
+ * Auth to pass to `connectAppMcpClient`. The login cookie is keyed by origin
+ * and email, so an org switch keeps it. The bearer token is keyed by org:
+ * a different `--org`, or dropping `--org`, omits `oauth` and the next call
+ * remints. `orgSlug` is still returned so the new token binds to that org.
+ */
+export function mcpAuthForOrg(
+	fileText: string | null,
+	origin: string,
+	email: string,
+	orgSlug: string | null,
+): McpAuthCache {
+	const session = fileText ? sessionForOrigin(fileText, origin, email) : null
+	const slug = orgSlug ? normalizeCookieOrg(orgSlug) : null
+	const oauth = session?.org === slug ? session.oauth : null
+	return {
+		...(session?.cookieHeader ? { cookieHeader: session.cookieHeader } : {}),
+		...(oauth ? { oauth } : {}),
+		...(slug ? { orgSlug: slug } : {}),
+	}
 }
 
 export function cookieHeaderForOrigin(

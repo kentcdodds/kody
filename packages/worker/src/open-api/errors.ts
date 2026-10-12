@@ -8,7 +8,10 @@ import {
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
-import { AuthorizationError } from '#worker/authorization/authorize.ts'
+import {
+	AuthorizationError,
+	LivePersonRequiredError,
+} from '#worker/authorization/authorize.ts'
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
@@ -143,9 +146,24 @@ export function toApiError(error: unknown): ApiError {
 			details: {
 				required_permission: error.permission,
 				denial: error.code,
+				...(error.mintScopes
+					? { required_scope: error.permission, mint_scopes: error.mintScopes }
+					: {}),
 			},
 			headers: {
 				'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${error.permission}"`,
+			},
+			cause: error,
+		})
+	}
+	if (error instanceof LivePersonRequiredError) {
+		return new ApiError({
+			status: 403,
+			code: 'insufficient_scope',
+			message: error.message,
+			details: {
+				capability: error.capabilityName,
+				denial: 'live_person_required',
 			},
 			cause: error,
 		})

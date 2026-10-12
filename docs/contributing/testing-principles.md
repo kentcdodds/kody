@@ -28,11 +28,48 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
 `beforeEach` hooks that hide setup. See
 [Test the workflow](../principles/test-the-workflow.md).
 
+## Running one file
+
+Vitest project configs live at the repo root. `vitest.config.ts` lists
+`vitest.node.config.ts`, `vitest.workers.config.ts`, and
+`vitest.mcp-e2e.config.ts`. Nx targets in `packages/worker/project.json` run
+`vitest run` with the repo root as the working directory. `npm run test`,
+`npm run test:node`, and `npm run test:workers` call those targets through
+`tools/run-nx.ts`. A focused run uses that same directory, the project that
+matches the filename suffix, and a repo-relative path:
+
+```sh
+npx vitest run --project node-unit packages/worker/universal/compute-overage.node.test.ts
+npx vitest run --project workers-unit packages/worker/src/billing/credit-wallet.workers.test.ts
+npx vitest run --project mcp-e2e packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts
+```
+
+| Suffix              | `--project`    |
+| ------------------- | -------------- |
+| `*.node.test.ts`    | `node-unit`    |
+| `*.workers.test.ts` | `workers-unit` |
+| `*.mcp-e2e.test.ts` | `mcp-e2e`      |
+
+The shell's working directory is the repo root. Vitest resolves the root
+config's `projects` entries against the current directory. A command started in
+`packages/worker` with a package-relative path exits before any test runs:
+
+```text
+Projects definition references a non-existing file or a directory: <cwd>/vitest.node.config.ts
+```
+
+The path in that message is the current directory joined with
+`vitest.node.config.ts`. The config files are at the repo root. Re-run from the
+repo root with the repo-relative path above. The same `--project` names cover
+other packages that share the root projects, for example
+`npx vitest run --project node-unit packages/api-worker`.
+
 ## Suite mechanics
 
-- Run server/unit tests with `npm run test` (plus targeted Vitest paths when
-  needed) to avoid Playwright spec discovery and accidental matches like
-  `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
+- Run full server/unit suites with `npm run test`. For one Vitest file, use the
+  repo-root command in [Running one file](#running-one-file), which selects
+  `node-unit`, `workers-unit`, or `mcp-e2e` from the filename suffix. Playwright
+  specs stay on `npm run test:e2e:run`.
 - Workers-unit harness rules (see
   [decision 0011](./decisions/0011-workers-unit-pool-harness.md)):
   - **Prefer `*.node.test.ts`** unless the assertion needs real Cloudflare

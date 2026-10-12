@@ -105,6 +105,12 @@ export const authRateLimitConfig: RateLimitConfig = {
 	windowSeconds: 60,
 }
 
+/** Public org invite-link join attempts per IP (and per token prefix). */
+export const orgInviteJoinRateLimitConfig: RateLimitConfig = {
+	maxRequests: 20,
+	windowSeconds: 60,
+}
+
 /**
  * Guessing a 6-digit TOTP code only works with many attempts, so the second
  * factor gets a far tighter per-account budget than the per-IP auth ingress

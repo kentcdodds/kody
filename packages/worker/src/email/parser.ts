@@ -1,7 +1,8 @@
-import PostalMime, {
-	type Address as PostalAddress,
-	type Attachment as PostalAttachment,
-} from 'postal-mime'
+import {
+	loadPostalMime,
+	type PostalMimeAddress as PostalAddress,
+	type PostalMimeAttachment as PostalAttachment,
+} from '#worker/postal-mime-load.ts'
 import { normalizeEmailAddress, parseHeaderAddressList } from './address.ts'
 import {
 	maxKeptInboundRawBytes,
@@ -181,6 +182,7 @@ export async function parseForwardableEmailRawMime(
 	message: ForwardableEmailMessage,
 	rawMime: string,
 ): Promise<ParsedInboundEmail> {
+	const PostalMime = await loadPostalMime()
 	const parsed = await PostalMime.parse(rawMime, {
 		attachmentEncoding: 'arraybuffer',
 	})

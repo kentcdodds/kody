@@ -67,7 +67,8 @@ const statusPillCss = {
 
 function verificationValue(webhook: PackageWebhookListItem) {
 	const verification = webhook.verification
-	if (!verification) return 'URL secret only (no HMAC)'
+	if (!verification) return 'URL secret only (no HMAC; not declared)'
+	if (verification.type === 'url-secret') return 'URL secret only (no HMAC)'
 	return (
 		<span mix={css({ display: 'grid', gap: spacing.xs })}>
 			<span>

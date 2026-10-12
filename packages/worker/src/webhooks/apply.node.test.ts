@@ -37,6 +37,7 @@ vi.mock('#worker/integrations/service.ts', () => ({
 vi.mock('#worker/integrations/credentials.ts', () => ({
 	resolveIntegrationAccessToken: (...args: Array<unknown>) =>
 		integrationMocks.resolveIntegrationAccessToken(...args),
+	findIntegrationCredentialId: async () => 'cred-integration',
 }))
 
 vi.mock('#worker/integrations/package-access.ts', async (importOriginal) => ({
@@ -83,6 +84,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) =>
 		secretMocks.resolveSecret(...args),
+	findSecretForUse: async (input: unknown) => {
+		const resolved = await secretMocks.resolveSecret(input)
+		const { value: _value, ...found } = resolved
+		return { found, readValue: async () => resolved }
+	},
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -93,6 +99,10 @@ type Destination = Parameters<typeof applyWebhookUrlForUser>[0]['destination']
 
 const redirectError = 'Destination redirected. Apply does not follow redirects.'
 const hooksRegister = 'https://hooks.example/register'
+
+function storedToken(accessToken: string) {
+	return { credentialId: 'cred-integration', accessToken }
+}
 
 function mockIntegration(name = 'github', host = 'api.github.com') {
 	integrationMocks.getJoinedIntegration.mockResolvedValue({
@@ -105,7 +115,9 @@ function mockIntegration(name = 'github', host = 'api.github.com') {
 			allowedPackageIds: [],
 		},
 	})
-	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue('ghs_test')
+	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue(
+		storedToken('ghs_test'),
+	)
 	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
 }
 
@@ -114,6 +126,7 @@ function mockSecret(value: string, host = 'api.github.com') {
 		found: true,
 		value,
 		allowedHosts: [host],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
 }
@@ -253,6 +266,7 @@ async function setupOwner(
 			found: true,
 			value: legacyMintHmac,
 			allowedHosts: [],
+			allowedPackages: ['pkg-1'],
 			scope: 'user',
 		})
 	}
@@ -439,10 +453,6 @@ test('webhookUrlApply rejects invalid destinations before fetch', async () => {
 			},
 			/Authorization/,
 		],
-		[
-			githubHooksHttpDestination({ includeWebhookSecret: true }),
-			/no verification declaration/,
-		],
 	]
 	for (const [destination, message] of cases) {
 		const { apply } = await setupOwner()
@@ -530,8 +540,8 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 	const refreshedToken = 'tok_refreshed_apply_auth'
 	mockIntegration('hooks', 'hooks.example')
 	integrationMocks.resolveIntegrationAccessToken
-		.mockResolvedValueOnce(initialToken)
-		.mockResolvedValue(refreshedToken)
+		.mockResolvedValueOnce(storedToken(initialToken))
+		.mockResolvedValue(storedToken(refreshedToken))
 	integrationMocks.refreshIntegrationTokens.mockResolvedValue({
 		refreshed: true,
 		refreshedAt: new Date(0).toISOString(),
@@ -568,7 +578,7 @@ test('webhookUrlApply returns the original 401 when the integration refresh is n
 	const { apply } = await setupOwner()
 	mockIntegration('hooks', 'hooks.example')
 	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue(
-		'gho_non_expiring',
+		storedToken('gho_non_expiring'),
 	)
 	integrationMocks.refreshIntegrationTokens.mockResolvedValue({
 		refreshed: false,
@@ -594,7 +604,9 @@ test('webhookUrlApply returns the original 401 when the integration refresh is n
 test('webhookUrlApply cancels the original 401 body when the integration refresh throws', async () => {
 	const { apply } = await setupOwner()
 	mockIntegration('hooks', 'hooks.example')
-	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue('ya29_lost')
+	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue(
+		storedToken('ya29_lost'),
+	)
 	integrationMocks.refreshIntegrationTokens.mockRejectedValue(
 		new Error('missing refresh token'),
 	)
@@ -651,6 +663,35 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
 })
 
+test('webhookUrlApply injects the default signing secret when the manifest declares no verification', async () => {
+	const { db, env, handle, userId, apply } = await setupOwner()
+	mockIntegration()
+	const endpointId = parseWebhookUrlHandle(handle)!
+	const row = await db
+		.prepare(`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`)
+		.bind(endpointId)
+		.first<{ hmac_secret_encrypted: string | null }>()
+	expect(row?.hmac_secret_encrypted).toBeTruthy()
+	const plaintext = await decryptWebhookHmacSecret(
+		env,
+		row!.hmac_secret_encrypted!,
+		userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId),
+	)
+	using fetchMock = fetchResponding(JSON.stringify({ id: 7 }), {
+		status: 201,
+	})
+
+	const applied = await apply(
+		githubHooksHttpDestination({ includeWebhookSecret: true }),
+	)
+
+	expect(applied).toMatchObject({ ok: true, remoteId: '7' })
+	expect(JSON.parse(String(requestOf(fetchMock).init.body)).config.secret).toBe(
+		plaintext,
+	)
+	expect(JSON.stringify(applied)).not.toContain(plaintext)
+})
+
 test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a live secrets lookup', async () => {
 	const { db, handle, legacyMintHmac, reveal, apply } = await setupOwner({
 		verification: 'secret-name',
@@ -692,6 +733,7 @@ test('webhookUrlApply still requires host Allow for destination.secretName Beare
 		found: true,
 		value: 'tok_unapproved',
 		allowedHosts: [],
+		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
 

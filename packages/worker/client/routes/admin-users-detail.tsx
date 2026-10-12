@@ -393,7 +393,7 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 			/>
 			<AccountManagementPanel
 				title="Manage plan"
-				description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
+				description="Sets the admin grant (orgs.plan on the personal org). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
 			>
 				<div
 					mix={css({

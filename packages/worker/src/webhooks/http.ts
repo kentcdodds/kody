@@ -12,9 +12,19 @@ import {
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import {
+	buildCredentialPlacementRefusedWebhookError,
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
+import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
+import {
+	listPackageWebhooks,
+	webhookHmacVerification,
+} from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -59,7 +69,10 @@ import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
-import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
+import {
+	resolveWebhookHmacVerificationSecrets,
+	type WebhookHmacVerificationSecret,
+} from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
@@ -185,6 +198,19 @@ function rateLimitedResponse(retryAfterSeconds: number) {
 				'Retry-After': String(retryAfterSeconds),
 			},
 		},
+	)
+}
+
+function enablementNotOnResponse(webhookName: string) {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'enablement_not_on',
+				message: `Webhook "${webhookName}" has no on enablement, so nothing ran. Its enabler may have lost access (it resumes once access is back), or nobody has enabled it.`,
+			},
+		},
+		{ status: 409 },
 	)
 }
 
@@ -329,8 +355,11 @@ async function resolveWebhookChallengeSecret(input: {
 		packageStamp: attestedPackageStamp(input.packageId),
 		baseUrl: input.baseUrl,
 		credential: { use: 'webhook-secret', name: input.secretName },
+	}).catch((error: unknown) => {
+		if (error instanceof PackageSecretAccessDeniedError) return null
+		throw error
 	})
-	if (!resolved.found || !resolved.value) return null
+	if (!resolved?.found || !resolved.value) return null
 	return resolved.value
 }
 
@@ -647,29 +676,45 @@ export async function handleWebhookIngressRequest(
 		}
 	}
 
-	if (declared.verification) {
-		const headerName = declared.verification.header
+	// A declared HMAC scheme never falls back to URL-secret-only auth.
+	// Webhooks that declare no verification are treated as
+	// `{ type: 'url-secret' }` until codemod 0012 makes the declaration
+	// explicit everywhere and publish requires it.
+	// https://github.com/kentcdodds/kody/issues/3477
+	// The log counts requests that rely on the implicit default, even ones a
+	// later check rejects.
+	const verification = webhookHmacVerification(declared.verification)
+	if (!verification) {
+		if (!declared.verification) {
+			console.info('webhook-url-secret-only-authenticated', {
+				endpointId: liveEndpoint.id,
+				ownerId: liveEndpoint.userId,
+				packageId: liveEndpoint.packageId,
+				webhookName: liveEndpoint.webhookName,
+			})
+		}
+	} else {
+		const headerName = verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {
 			return rejectUnauthorized('missing_signature')
 		}
-		let hmacSecret: string
+		let hmacSecrets: Array<WebhookHmacVerificationSecret>
 		try {
-			hmacSecret = await resolveWebhookHmacSigningSecret({
+			hmacSecrets = await resolveWebhookHmacVerificationSecrets({
 				env,
 				userId: liveEndpoint.userId,
 				endpoint: liveEndpoint,
-				verification: declared.verification,
-				allowLegacySecretNameFallback: true,
+				verification,
 			})
 		} catch {
 			return rejectUnauthorized(
-				declared.verification.secretName
-					? `verification_secret_missing:${declared.verification.secretName}`
+				verification.secretName
+					? `verification_secret_missing:${verification.secretName}`
 					: 'verification_secret_missing:package_owned_hmac',
 			)
 		}
-		const signedPayload = declared.verification.signedPayload ?? 'body'
+		const signedPayload = verification.signedPayload ?? 'body'
 		let hmacPayload = bodyBuffer
 		if (signedPayload === 'timestamp.body') {
 			if (!replayTimestampToken) {
@@ -686,29 +731,38 @@ export async function handleWebhookIngressRequest(
 			timestampHeader: declared.replay?.timestampHeader,
 			timestampFormat: declared.replay?.timestampFormat,
 		})
-		let valid = false
-		for (const candidate of providedValues) {
-			if (
-				await verifyWebhookHmacSignature({
-					algorithm: declared.verification.type,
-					secret: hmacSecret,
-					body: hmacPayload,
-					encoding: declared.verification.encoding,
-					prefix: declared.verification.prefix,
-					provided: candidate,
-				})
-			) {
-				valid = true
-				break
+		let matched: WebhookHmacVerificationSecret | null = null
+		for (const secret of hmacSecrets) {
+			for (const candidate of providedValues) {
+				if (
+					await verifyWebhookHmacSignature({
+						algorithm: verification.type,
+						secret: secret.value,
+						body: hmacPayload,
+						encoding: verification.encoding,
+						prefix: verification.prefix,
+						provided: candidate,
+					})
+				) {
+					matched = secret
+					break
+				}
 			}
+			if (matched) break
 		}
-		if (!valid) {
+		if (!matched) {
 			return rejectUnauthorized('invalid_signature')
+		}
+		if (matched.source === 'stored' && hmacSecrets[0]?.source === 'declared') {
+			console.warn('webhook-signature-matched-stored-secret-not-declared', {
+				endpointId: liveEndpoint.id,
+				secretName: verification.secretName,
+			})
 		}
 	}
 
 	const extraAllowedHeaders = [
-		...(declared.verification ? [declared.verification.header] : []),
+		...(verification ? [verification.header] : []),
 		...(declared.replay?.timestampHeader
 			? [declared.replay.timestampHeader]
 			: []),
@@ -791,6 +845,28 @@ export async function handleWebhookIngressRequest(
 			: undefined
 
 	if (declared.responseMode === 'ack') {
+		// Ack mode answers before the queue consumer runs, so the sender learns
+		// here that nothing will run. The consumer checks again.
+		const plan = await planEnablementRuns({
+			env,
+			orgId: liveEndpoint.userId,
+			packageId: liveEndpoint.packageId,
+			trigger: { kind: 'webhook', instanceId: liveEndpoint.id },
+		})
+		if (plan.runs.length === 0) {
+			await recordWebhookDelivery({
+				env,
+				endpoint: liveEndpoint,
+				kodyId: savedPackage.kodyId,
+				outcome: 'rejected',
+				httpStatus: 409,
+				error: 'enablement_not_on',
+				payloadBytes: bodyBytes.byteLength,
+				startedAt: receivedAt,
+				waitUntil,
+			})
+			return enablementNotOnResponse(liveEndpoint.webhookName)
+		}
 		let message = createWebhookDispatchQueueMessage({
 			endpoint: {
 				id: liveEndpoint.id,
@@ -928,13 +1004,20 @@ export async function handleWebhookIngressRequest(
 			return jsonResponse(response.body, { status: 409 })
 		}
 		const ok = response.status >= 200 && response.status < 300
+		const placementRefusal = ok
+			? null
+			: readCredentialPlacementRefusalFromInvocationBody(response.body)
 		await recordWebhookDelivery({
 			env,
 			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: ok ? 'delivered' : 'failed',
 			httpStatus: ok ? response.status : 502,
-			error: ok ? null : `invocation_status_${response.status}`,
+			error: ok
+				? null
+				: placementRefusal
+					? credentialPlacementRefusedCode
+					: `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
 			result: readWebhookInvocationResult(response.body),
@@ -945,10 +1028,12 @@ export async function handleWebhookIngressRequest(
 			return jsonResponse(
 				{
 					ok: false,
-					error: {
-						code: 'invocation_failed',
-						message: 'Bound package export invocation failed.',
-					},
+					error: placementRefusal
+						? buildCredentialPlacementRefusedWebhookError(placementRefusal.slot)
+						: {
+								code: 'invocation_failed',
+								message: 'Bound package export invocation failed.',
+							},
 				},
 				{ status: 502 },
 			)

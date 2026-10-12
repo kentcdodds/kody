@@ -2,7 +2,10 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
 import { listSavedPackagesPage } from '#worker/package-registry/repo.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import {
+	loadPackageManifestForSource,
+	loadPackageSourceRowForUser,
+} from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	collectPublishedPackageArtifactTargets,
@@ -205,14 +208,17 @@ export async function runPublishedImportableArtifactBackfill(input: {
 	let skippedUnpublished = 0
 
 	for (const savedPackage of packages) {
+		let publishedCommit: string | null = null
+		let missingCount = 0
 		try {
-			const loaded = await loadPackageManifestBySourceId({
+			// Read the source row first: loadPackageManifestBySourceId throws on
+			// unpublished packages before a null published_commit check can run.
+			const source = await loadPackageSourceRowForUser({
 				env: input.env,
-				baseUrl: input.baseUrl,
 				userId: savedPackage.userId,
 				sourceId: savedPackage.sourceId,
 			})
-			const publishedCommit = loaded.source.published_commit?.trim() || null
+			publishedCommit = source.published_commit?.trim() || null
 			if (!publishedCommit) {
 				skippedUnpublished += 1
 				outcomes.push({
@@ -227,6 +233,11 @@ export async function runPublishedImportableArtifactBackfill(input: {
 				})
 				continue
 			}
+			const loaded = await loadPackageManifestForSource({
+				env: input.env,
+				userId: savedPackage.userId,
+				source,
+			})
 			publishedPackages += 1
 			const targets = collectPublishedPackageArtifactTargets(loaded.manifest)
 			const missing = await findMissingImportableTargets({
@@ -236,6 +247,7 @@ export async function runPublishedImportableArtifactBackfill(input: {
 				publishedCommit,
 				targets,
 			})
+			missingCount = missing.length
 			if (missing.length === 0) {
 				alreadyBuiltPackages += 1
 				outcomes.push({
@@ -265,6 +277,19 @@ export async function runPublishedImportableArtifactBackfill(input: {
 				})
 				continue
 			}
+			// Re-check before rebuild so a concurrent publish cannot label new
+			// source under the scanned commit.
+			const freshSource = await loadPackageSourceRowForUser({
+				env: input.env,
+				userId: savedPackage.userId,
+				sourceId: savedPackage.sourceId,
+			})
+			const freshCommit = freshSource.published_commit?.trim() || null
+			if (freshCommit !== publishedCommit) {
+				throw new Error(
+					`Published commit changed from "${publishedCommit}" to "${freshCommit ?? 'unpublished'}" during importable artifact backfill; retry this package.`,
+				)
+			}
 			await rebuildPublishedPackageArtifactsViaRepoSession({
 				env: input.env,
 				rpcSessionId: `artifact-backfill-${savedPackage.sourceId}`,
@@ -272,6 +297,7 @@ export async function runPublishedImportableArtifactBackfill(input: {
 				userId: savedPackage.userId,
 				publishedCommit,
 				baseUrl: input.baseUrl,
+				targets: missing,
 			})
 			rebuiltPackages += 1
 			outcomes.push({
@@ -292,8 +318,8 @@ export async function runPublishedImportableArtifactBackfill(input: {
 				packageName: savedPackage.name,
 				kodyId: savedPackage.kodyId,
 				sourceId: savedPackage.sourceId,
-				publishedCommit: null,
-				missingImportableCount: 0,
+				publishedCommit,
+				missingImportableCount: missingCount,
 				outcome: 'failed',
 				error: getErrorMessage(error),
 			})

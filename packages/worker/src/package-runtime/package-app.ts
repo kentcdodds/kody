@@ -1,7 +1,6 @@
-import {
-	personIdFromStored,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import {
 	WorkerEntrypoint,
 	exports as workerExports,
@@ -1018,7 +1017,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 
 type PackageAppRuntimeBridgeProps = {
 	baseUrl: string
+	/** The org that owns the app. */
 	userId: OwnerId
+	orgSlug: string | null
+	/** Who every bridge call acts as. */
+	visitor: RuntimePackageAppVisitor
 	email: string
 	displayName: string
 	packageId: string
@@ -1061,14 +1064,19 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		createExecutionSecretRedactor()
 
 	private async createCallerContext(storageId: string | null) {
+		const { visitor } = this.ctx.props
 		return createMcpCallerContext({
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
 			user: {
-				userId: personIdFromStored(this.ctx.props.userId as string),
+				userId: visitor.userId,
 				email: this.ctx.props.email,
-				username: undefined,
+				username: visitor.username,
 				displayName: this.ctx.props.displayName,
+			},
+			orgBinding: {
+				org: { id: this.ctx.props.userId, slug: this.ctx.props.orgSlug },
+				role: visitor.role,
 			},
 			storageContext: {
 				sessionId: null,
@@ -1484,7 +1492,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	private async resolvePackageSecretMount(input: {
 		alias: string
 		packageId?: string
-		access: 'raw' | 'presence'
+		access?: 'presence' | 'value'
 	}) {
 		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
@@ -1499,27 +1507,26 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			credential: {
 				use: 'package-secret-mount',
 				alias: input.alias,
-				access: input.access,
 				callerContext,
+				...(input.access ? { access: input.access } : {}),
 			},
 		})
 	}
 
 	async packageSecretGet(input: { alias: string; packageId?: string }) {
-		const { value } = await this.resolvePackageSecretMount({
-			...input,
-			access: 'raw',
-		})
-		if (value === null) {
-			throw new Error(`packageSecrets.get("${input.alias}") resolved no value.`)
+		const resolved = await this.resolvePackageSecretMount(input)
+		// Opaque placeholder string only — never track or return plaintext.
+		return {
+			value: resolved.ref,
 		}
-		this.secretRedactor.track(value)
-		return { value }
 	}
 
 	async packageSecretHas(input: { alias: string; packageId?: string }) {
 		try {
-			await this.resolvePackageSecretMount({ ...input, access: 'presence' })
+			await this.resolvePackageSecretMount({
+				...input,
+				access: 'presence',
+			})
 			return {
 				has: true,
 			}
@@ -1665,6 +1672,7 @@ export async function createPackageAppWorkerId(input: {
 
 function createPackageAppWorkerCacheKey(input: {
 	userId: OwnerId
+	visitor: RuntimePackageAppVisitor
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -1680,6 +1688,9 @@ function createPackageAppWorkerCacheKey(input: {
 	}
 	return JSON.stringify([
 		input.userId,
+		input.visitor.userId,
+		input.visitor.username,
+		input.visitor.role,
 		input.packageId,
 		input.kodyId,
 		input.sourceId,
@@ -1690,6 +1701,21 @@ function createPackageAppWorkerCacheKey(input: {
 		input.callerEmail,
 		input.callerDisplayName,
 	])
+}
+
+function packageAppVisitorOf(callerContext: McpCallerContext) {
+	const request = callerContext.request
+	if (!request?.actor) {
+		throw new Error('A package app acts only as a signed-in visitor.')
+	}
+	return {
+		orgSlug: request.org.slug,
+		visitor: {
+			userId: request.actor.userId,
+			username: request.actor.username ?? '',
+			role: request.membership?.role ?? null,
+		} satisfies RuntimePackageAppVisitor,
+	}
 }
 
 function getUsernameFromPackageName(packageName: string) {
@@ -2033,6 +2059,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 				props: {
 					baseUrl: input.baseUrl,
 					userId: input.userId,
+					...packageAppVisitorOf(input.runtime.callerContext),
 					email: input.runtime.callerContext.user?.email ?? '',
 					displayName:
 						input.runtime.callerContext.user?.displayName ??
@@ -2137,6 +2164,7 @@ export async function buildPackageAppWorker(input: {
 		const publicContext = buildPackageAppPublicContext(input)
 		const cacheKey = createPackageAppWorkerCacheKey({
 			userId: input.userId,
+			visitor: packageAppVisitorOf(input.runtime.callerContext).visitor,
 			packageId: input.savedPackage.id,
 			kodyId: input.savedPackage.kodyId,
 			sourceId: input.savedPackage.sourceId,
@@ -2217,24 +2245,34 @@ function schedulePackageAppUniqueWorkerDay(input: {
 	sink(tracked)
 }
 
+/**
+ * A package app acts as its visitor, bound to the org that owns the app, with
+ * the visitor's live role there.
+ */
 export async function createPackageAppCallerContext(input: {
 	baseUrl: string
-	user: {
+	owner: {
 		userId: OwnerId
+		/** The owning org's package scope, which is its slug. */
+		username: string
 		email: string
-		username?: string
 		displayName?: string
 	}
+	visitor: RuntimePackageAppVisitor
 	packageId: string
 }) {
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user: {
-			userId: personIdFromStored(input.user.userId as string),
-			email: input.user.email,
-			username: input.user.username,
-			displayName: input.user.displayName ?? `package:${input.packageId}`,
+			userId: input.visitor.userId,
+			email: input.owner.email,
+			username: input.visitor.username,
+			displayName: input.owner.displayName ?? `package:${input.packageId}`,
+		},
+		orgBinding: {
+			org: { id: input.owner.userId, slug: input.owner.username },
+			role: input.visitor.role,
 		},
 		storageContext: {
 			sessionId: null,

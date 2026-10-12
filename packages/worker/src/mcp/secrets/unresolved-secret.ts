@@ -1,6 +1,7 @@
-import { buildAccountSecretUrl } from '@kody-internal/shared/account-secret-route.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { isSecretExpired } from '@kody-internal/shared/secret-expires-at.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	createMissingSecretMessage,
@@ -8,6 +9,7 @@ import {
 	type SecretScopeUnavailableMatch,
 } from './errors.ts'
 import { isReservedSecretName } from './name-guards.ts'
+import { buildSecretEditorUrl } from './package-approval-url.ts'
 import { listSecretLocationsByNameForUser } from './repo.ts'
 import { getSecretBindingKey } from './secret-bindings.ts'
 import { type SecretScope } from './types.ts'
@@ -78,6 +80,13 @@ async function listInaccessibleSecretMatches(input: {
 				.filter((packageId) => packageId.length > 0),
 		),
 	]
+	const orgSlug = await getOrgById(
+		input.env.APP_DB,
+		ownerIdFromStored(input.userId),
+	).then(
+		(org) => org?.slug.trim() || null,
+		() => null,
+	)
 	const packageNames = new Map<string, string>()
 	await Promise.all(
 		packageIds.map(async (packageId) => {
@@ -109,6 +118,7 @@ async function listInaccessibleSecretMatches(input: {
 				sessionId,
 				editorUrl: buildSecretScopeEditorUrl({
 					baseUrl: input.baseUrl,
+					orgSlug,
 					name: input.name,
 					scope: location.scope,
 					packageId,
@@ -141,14 +151,17 @@ function isSecretVisibleToLookup(input: {
 
 function buildSecretScopeEditorUrl(input: {
 	baseUrl: string
+	orgSlug: string | null
 	name: string
 	scope: SecretScope
 	packageId: string | null
 	sessionId: string | null
 }) {
+	if (!input.orgSlug) return null
 	try {
-		return buildAccountSecretUrl({
+		return buildSecretEditorUrl({
 			baseUrl: input.baseUrl,
+			orgSlug: input.orgSlug,
 			name: input.name,
 			scope: input.scope,
 			packageId: input.packageId,

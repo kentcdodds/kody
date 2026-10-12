@@ -112,15 +112,19 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    `handleWebhookSubscriptionChallenge` and return — no package invoke, no
    delivery row. Non-matching POSTs continue. GET without a matching challenge
    declaration → **405**.
-7. Payload cap 1 MB → **413**. When verification is declared, resolve
-   package-owned HMAC from `webhook_endpoints.hmac_secret_encrypted`, or
-   `verification.secretName` in the secret store (user/package scope via package
-   storage context). Missing secret or HMAC mismatch → **401**, with a clear
-   delivery-log error for missing secrets. When `replay.timestampHeader` is
-   declared, a missing, unparseable, or stale timestamp is rejected with the
-   same generic **401** before dispatch (and before any run record that implies
-   acceptance). When `replay.deliveryIdHeader` is declared, a missing id is
-   rejected the same way; present ids become the invocation idempotency key.
+7. Payload cap 1 MB → **413**. When verification is `{ type: 'url-secret' }` (or
+   omitted, which is treated the same until publish requires it;
+   [#3477](https://github.com/kentcdodds/kody/issues/3477)), the URL secret is
+   the credential and signature headers are ignored. A declared HMAC type never
+   falls back to the URL secret. For HMAC, try `verification.secretName` in the
+   secret store first (user/package scope via package storage context), then the
+   package-owned HMAC on `webhook_endpoints.hmac_secret_encrypted`. Missing
+   secret or HMAC mismatch → **401**, with a clear delivery-log error for
+   missing secrets. When `replay.timestampHeader` is declared, a missing,
+   unparseable, or stale timestamp is rejected with the same generic **401**
+   before dispatch (and before any run record that implies acceptance). When
+   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
+   present ids become the invocation idempotency key.
 8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
 9. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
@@ -159,9 +163,12 @@ consumer attempt (`max_retries`, currently 10) those retries record
 `invocation_retry_exhausted` (with diagnostic logs) and ack instead of falling
 through to the dead-letter queue. Terminal package errors are recorded with logs
 and acknowledged. A missing spilled body is a terminal failure
-(`ack_queue_payload_missing`). The package export sandbox retains its normal
-~90s budget, so genuinely longer package work ends as an explicit timeout rather
-than an unknown interrupted outcome.
+(`ack_queue_payload_missing`). The consumer runs the export with
+`backgroundExecutorTimeoutMs` (5 minutes), so genuinely longer package work ends
+as an explicit timeout rather than an unknown interrupted outcome. Sync
+deliveries keep the 90s interactive budget behind the 30s
+`webhookSyncInvocationTimeoutMs` race. `webhook` run records use a 10-minute
+stale-`running` TTL so a full-length ack run is not reconciled early.
 
 The Queue consumer batch size is one. Processing is sequential and one export
 can consume the full sandbox budget, so larger batches could exceed the Queue

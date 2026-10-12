@@ -20,6 +20,7 @@ import {
 	accountFieldNoteCss,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import { createOrgMembersInviteLinks } from '#client/routes/org-members-invite-links.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import {
 	type OrgMembersLoaderData,
@@ -42,6 +43,7 @@ import { UserAvatar } from '#universal/user-avatar.tsx'
 type MembersPayload = OrgMembersLoaderData & {
 	error?: string
 	invite?: { prompt: string }
+	inviteLink?: { url: string; token: string }
 }
 
 const memberRoles = ['owner', 'member', 'billing'] as const
@@ -115,6 +117,23 @@ export function OrgMembersRoute(handle: Handle) {
 	let messageTone: 'info' | 'error' = 'info'
 	let invitePrompt: string | null = null
 
+	const inviteLinksUi = createOrgMembersInviteLinks(handle, {
+		createLink: async (body) => {
+			const payload = await postMember('invite-link', body)
+			return payload ?? null
+		},
+		revokeLink: async (linkId) => {
+			await postMember('revoke-link', { linkId })
+		},
+		onMessage: (nextMessage, tone) => {
+			message = nextMessage
+			messageTone = tone
+		},
+		onBeforeMutate: () => {
+			message = null
+		},
+	})
+
 	function removeCheckFor(userId: string) {
 		const existing = removeChecks.get(userId)
 		if (existing) return existing
@@ -145,7 +164,7 @@ export function OrgMembersRoute(handle: Handle) {
 	}
 
 	async function postMember(
-		path: 'role' | 'remove' | 'invite',
+		path: 'role' | 'remove' | 'invite' | 'invite-link' | 'revoke-link',
 		body: Record<string, unknown>,
 		options: { reload?: boolean } = {},
 	) {
@@ -157,7 +176,15 @@ export function OrgMembersRoute(handle: Handle) {
 				? routes.orgMembersRolePost.href({ orgSlug: data.org.slug })
 				: path === 'remove'
 					? routes.orgMembersRemovePost.href({ orgSlug: data.org.slug })
-					: routes.orgMembersInvitePost.href({ orgSlug: data.org.slug })
+					: path === 'invite'
+						? routes.orgMembersInvitePost.href({ orgSlug: data.org.slug })
+						: path === 'invite-link'
+							? routes.orgMembersInviteLinksPost.href({
+									orgSlug: data.org.slug,
+								})
+							: routes.orgMembersInviteLinksRevokePost.href({
+									orgSlug: data.org.slug,
+								})
 		const response = await fetch(href, {
 			method: 'POST',
 			headers: {
@@ -236,6 +263,7 @@ export function OrgMembersRoute(handle: Handle) {
 		inviting = true
 		message = null
 		invitePrompt = null
+		inviteLinksUi.clearCopiedLink()
 		handle.update()
 		try {
 			const payload = await postMember('invite', {
@@ -398,76 +426,80 @@ export function OrgMembersRoute(handle: Handle) {
 							</ul>
 						</AccountManagementPanel>
 						{data.canManage ? (
-							<AccountManagementPanel title="Invite">
-								<form
-									data-testid="org-invite-form"
-									mix={[
-										css(formCss),
-										on('submit', (event) => void invite(event)),
-									]}
-								>
-									<label mix={css(accountFieldCss)}>
-										<span mix={css(accountFieldLabelCss)}>
-											Email or username
-										</span>
-										<input
-											value={invitee}
-											required
-											data-field-ring
-											autoComplete="off"
-											mix={[
-												css(accountInputCss),
-												on('input', (event) => {
-													invitee = (event.currentTarget as HTMLInputElement)
-														.value
-													handle.update()
-												}),
-											]}
-										/>
-										<p mix={css(accountFieldNoteCss)}>
-											They accept by pasting the invite prompt into their agent.
-										</p>
-									</label>
-									<label mix={css(accountFieldCss)}>
-										<span mix={css(accountFieldLabelCss)}>Role</span>
-										<select
-											value={inviteRole}
-											mix={[
-												css(selectCss),
-												on('change', (event) => {
-													const next = (
-														event.currentTarget as HTMLSelectElement
-													).value
-													if (
-														next === 'owner' ||
-														next === 'member' ||
-														next === 'billing'
-													) {
-														inviteRole = next
+							<>
+								{inviteLinksUi.render(data.inviteLinks)}
+								<AccountManagementPanel title="Invite by email or username">
+									<form
+										data-testid="org-invite-form"
+										mix={[
+											css(formCss),
+											on('submit', (event) => void invite(event)),
+										]}
+									>
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>
+												Email or username
+											</span>
+											<input
+												value={invitee}
+												required
+												data-field-ring
+												autoComplete="off"
+												mix={[
+													css(accountInputCss),
+													on('input', (event) => {
+														invitee = (event.currentTarget as HTMLInputElement)
+															.value
 														handle.update()
-													}
-												}),
-											]}
-										>
-											{memberRoles.map((role) => (
-												<option key={role} value={role}>
-													{orgRoleLabel(role)}
-												</option>
-											))}
-										</select>
-									</label>
-									<div mix={css(accountActionsCss)}>
-										<button
-											type="submit"
-											disabled={inviting || invitee.trim().length === 0}
-											mix={css(getPillButtonCss({ size: 'sm' }))}
-										>
-											{renderIcon('plus', { size: '1.05rem' })}
-											{inviting ? 'Inviting…' : 'Send invite'}
-										</button>
-									</div>
-								</form>
-							</AccountManagementPanel>
+													}),
+												]}
+											/>
+											<p mix={css(accountFieldNoteCss)}>
+												They accept by pasting the invite prompt into their
+												agent.
+											</p>
+										</label>
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>Role</span>
+											<select
+												value={inviteRole}
+												mix={[
+													css(selectCss),
+													on('change', (event) => {
+														const next = (
+															event.currentTarget as HTMLSelectElement
+														).value
+														if (
+															next === 'owner' ||
+															next === 'member' ||
+															next === 'billing'
+														) {
+															inviteRole = next
+															handle.update()
+														}
+													}),
+												]}
+											>
+												{memberRoles.map((role) => (
+													<option key={role} value={role}>
+														{orgRoleLabel(role)}
+													</option>
+												))}
+											</select>
+										</label>
+										<div mix={css(accountActionsCss)}>
+											<button
+												type="submit"
+												disabled={inviting || invitee.trim().length === 0}
+												mix={css(getPillButtonCss({ size: 'sm' }))}
+											>
+												{renderIcon('plus', { size: '1.05rem' })}
+												{inviting ? 'Inviting…' : 'Send invite'}
+											</button>
+										</div>
+									</form>
+								</AccountManagementPanel>
+							</>
 						) : null}
 						{data.canManage && data.invites.length > 0 ? (
 							<AccountManagementPanel title="Pending invites">

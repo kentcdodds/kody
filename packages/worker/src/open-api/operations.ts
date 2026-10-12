@@ -201,6 +201,9 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'packagePublishExternalPush',
 		],
 		['GET', '/v1/package-subscriptions', 'packageSubscriptionsList'],
+		['GET', '/v1/enablements', 'enablementList'],
+		['POST', '/v1/enablements', 'enablementEnable'],
+		['POST', '/v1/enablements/{enablementId}/disable', 'enablementDisable'],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],
@@ -234,7 +237,6 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/jobs', 'jobList'],
 		['GET', '/v1/jobs/{id}', 'jobGet'],
 		['PATCH', '/v1/jobs/{id}', 'jobUpdate'],
-		['DELETE', '/v1/jobs/{id}', 'jobDelete'],
 		['POST', '/v1/jobs/{id}/run', 'jobRunNow'],
 		['GET', '/v1/workflow-runs', 'workflowRunList'],
 		['POST', '/v1/workflow-runs/{id}/cancel', 'workflowRunCancel'],

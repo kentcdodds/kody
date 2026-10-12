@@ -71,7 +71,7 @@ accept. Invites expire after 7 days; `inviteRevoke` cancels a pending one.
 Use `kind: "membership"` to add someone to the whole **team** org instead (with
 a role and optional teams). Members hold the org-level basics plus what they are
 granted. Owners hold everything. Membership invites are refused on a personal
-(signup) org — create a team org to invite people.
+(signup) org; create a team org to invite people.
 
 Personal orgs can still grant Use/Contribute/Manage on packages via
 `accessGrant` / `inviteCreate` `kind: "grant"` and revoke with `accessRevoke`.
@@ -92,30 +92,54 @@ package unless the grant says so.
 
 ### Who pays when a Use collaborator runs your package
 
-Bind the agent to the **owning** org first. Then meters split:
+The org is the billing boundary, and a connection is billed to the org it is
+bound to. Jesse connects with the **owning** org selected, so everything his
+runs use is charged there:
 
-| Meter                                                       | Charged to                      |
-| ----------------------------------------------------------- | ------------------------------- |
-| Usage events, credits, org/per-user budgets, outbound fetch | **Owning org** (the bound org)  |
-| Daily/weekly **execute** entitlement                        | **Grantee's personal org** plan |
+| Meter                                                                | Charged to                     |
+| -------------------------------------------------------------------- | ------------------------------ |
+| Usage events, credits, org and per-user budgets, outbound fetch      | **Owning org** (the bound org) |
+| Daily and weekly **execute** limits (unique execute workers per day) | **Owning org's** execute pool  |
+
+Execute limits are one org-wide pool that grows with the org's paid seats. A
+grant-only collaborator draws from the owning org's pool but is not a seat, so
+granting someone Use does not change your seat count or grow your pool. Nothing
+from these runs is charged to the collaborator's personal plan.
 
 Example: Jesse has Use on `@acme/bot`. Connected as `@acme`, a run debits acme's
-credits and budgets; Jesse's own Free/Pro execute-per-day cap still counts
-against Jesse.
+credits and budgets and counts against acme's execute pool. Jesse's own
+personal-org limits are untouched. See
+[Organizations](/docs/organizations#execute-limits-one-org-wide-pool) for how
+the pool is sized.
 
 ### Secrets and integrations on a granted run
 
-When Jesse runs **your** stamped package in your org:
+Every run acts as a person, and a credential resolves only when that person
+holds Use on it. When Jesse runs **your** package in your org:
 
 - Secret **values** and integration tokens come from **your** org
 - Jesse never gets `secret:read` from a Use grant
-- Package-authority runs skip ambient `secret:use`; the package still needs
-  `package:execute`, and each secret/integration must allow that package (host
-  allowlist, `allowed_packages`, or self-authored rules for user secrets)
-- Ad-hoc `{{secret:…}}` in Jesse's own code needs a separate `secret:use` /
-  `integration:use` grant on that credential
+- Each secret or integration the package reads needs Jesse's own `secret:use` or
+  `integration:use` on it. A Use grant on the package does not include them;
+  grant them on the credential: `accessGrant` with `resource_type: "credential"`
+  and the `credential_id` from `secretList` (or `integrationList`,
+  `mcpServerList`, `secretProviderList`). The grant follows the credential if it
+  is renamed, and ends if it is deleted
+- The package rules then narrow that use: `package:execute` on the package, and
+  each secret or integration must allow that package (host allowlist,
+  `allowed_packages`, or self-authored rules for user secrets)
+- The same applies to `{{secret:…}}` in Jesse's own ad hoc code
 
 See [Secrets](/docs/secrets) for placeholders and allowlists.
+
+### Triggers in a shared package
+
+A package's jobs, subscriptions, and webhooks run only for people who turn them
+on for themselves with `enablementEnable`, and each run acts as that person with
+their live access. If Jesse turns on the nightly job in `@acme/bot`, it runs as
+Jesse, with Jesse's grants, and pauses if he loses access. Usage still counts
+against `@acme`. See
+[Organizations](/docs/organizations#automation-runs-as-the-person-who-turned-it-on).
 
 ## Cross-org imports
 

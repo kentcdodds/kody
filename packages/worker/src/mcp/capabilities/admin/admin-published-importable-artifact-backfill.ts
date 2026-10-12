@@ -14,7 +14,7 @@ import {
 } from './admin-shared.ts'
 
 const pagingHint =
-	'One page per execute/sandbox. Resume with the returned nextCursor until null. dryRun default is true (scan only); set dryRun false to rebuild missing importable-module artifacts at the current published commit with no content change.'
+	'One page per execute/sandbox. Resume with the returned nextCursor until null — a filtered scan can return empty outcomes with a non-null nextCursor after exhausting the underlying page budget, so keep paging until nextCursor is null. dryRun default is true (scan only); set dryRun false to rebuild only missing importable-module artifacts at the current published commit with no content change.'
 
 const outcomeSchema = z.discriminatedUnion('outcome', [
 	z.object({
@@ -97,7 +97,12 @@ const outputSchema = z.object({
 	failedPackages: z.number().int().nonnegative(),
 	alreadyBuiltPackages: z.number().int().nonnegative(),
 	skippedUnpublished: z.number().int().nonnegative(),
-	nextCursor: z.string().nullable(),
+	nextCursor: z
+		.string()
+		.nullable()
+		.describe(
+			'Resume cursor (saved_packages.id). May be non-null even when outcomes is empty if packageId/ownerUserId filters skipped a full underlying scan budget; keep paging until null.',
+		),
 	outcomes: z.array(outcomeSchema),
 })
 

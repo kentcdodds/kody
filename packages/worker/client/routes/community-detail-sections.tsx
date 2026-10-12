@@ -68,6 +68,9 @@ export type OwnerPackageSectionProps = {
 	ownerPackage: AccountPackageDetail
 	lockInFlight: boolean
 	ownerDetailsMessage: string | null
+	viewerCanPublish: boolean
+	viewerCanDelete: boolean
+	viewerCanAdoptCommunityFork: boolean
 	onToggleLock: () => void
 	onPackagesPayload: (payload: AccountPackagesLoaderData) => void
 }
@@ -93,6 +96,9 @@ export function renderOwnerPackageSection(props: OwnerPackageSectionProps) {
 				ownerUsername={props.ownerUsername}
 				packageDetail={props.ownerPackage}
 				lockInFlight={props.lockInFlight}
+				viewerCanPublish={props.viewerCanPublish}
+				viewerCanDelete={props.viewerCanDelete}
+				viewerCanAdoptCommunityFork={props.viewerCanAdoptCommunityFork}
 				onToggleLock={props.onToggleLock}
 				onPackagesPayload={props.onPackagesPayload}
 			/>

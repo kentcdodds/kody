@@ -8,6 +8,7 @@ import { deleteUserAccount } from '#app/account-deletion.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { deleteOrgTransferBackupsForOwner } from '#worker/org-transfer/backup.ts'
 import { hardPurgeDataTargets } from './data-targets.ts'
 import {
 	logOrgAuditEvent,
@@ -32,6 +33,12 @@ export async function hardPurgeOrg(input: {
 				.bind(...params)
 				.run(),
 		)
+	}
+	if (input.env.OPERATOR_BACKUPS) {
+		await deleteOrgTransferBackupsForOwner({
+			bucket: input.env.OPERATOR_BACKUPS,
+			ownerId: input.orgId,
+		})
 	}
 	const orgDelete = await runD1WithRetry(() =>
 		db.prepare(`DELETE FROM orgs WHERE id = ?`).bind(input.orgId).run(),

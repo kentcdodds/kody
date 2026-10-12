@@ -118,11 +118,6 @@ const bootstrapAccess: ArtifactBootstrapAccess = {
 	expiresAt: '2025-10-09T08:53:20.000Z',
 }
 
-const jobFiles = {
-	'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
-	'src/job.ts': 'export default async function main() { return { ok: true } }',
-}
-
 const packageJson =
 	'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}'
 
@@ -143,12 +138,12 @@ function sourceRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
 		user_id: ownerIdFromStored('user-1'),
-		entity_kind: 'job',
-		entity_id: 'job-1',
-		repo_id: 'job-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-1',
 		published_commit: null,
 		indexed_commit: null,
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 		source_root: '/',
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
@@ -156,8 +151,13 @@ function sourceRow(overrides: Record<string, unknown> = {}) {
 	}
 }
 
+const packageFiles = {
+	'package.json': packageJson,
+	'src/index.ts': 'export const ready = true\n',
+}
+
 const packageSource = {
-	entity_kind: 'package',
+	entity_kind: 'package' as const,
 	entity_id: 'package-1',
 	repo_id: 'package-1',
 	manifest_path: 'package.json',
@@ -259,15 +259,23 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 		bootstrapSource: bootstrapped('commit-bootstrap-1'),
 	})
 	await expect(
-		syncArtifactSourceSnapshot({ ...syncInput, files: jobFiles }),
+		syncArtifactSourceSnapshot({ ...syncInput, files: packageFiles }),
 	).resolves.toBe('commit-bootstrap-1')
 	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		sourceId: 'source-1',
 		userId: ownerIdFromStored('user-1'),
 		edits: [
-			{ kind: 'write', path: 'kody.json', content: jobFiles['kody.json'] },
-			{ kind: 'write', path: 'src/job.ts', content: jobFiles['src/job.ts'] },
+			{
+				kind: 'write',
+				path: 'package.json',
+				content: packageFiles['package.json'],
+			},
+			{
+				kind: 'write',
+				path: 'src/index.ts',
+				content: packageFiles['src/index.ts'],
+			},
 		],
 		bootstrapAccess: null,
 	})
@@ -281,7 +289,7 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 		syncArtifactSourceSnapshot({
 			...syncInput,
 			bootstrapAccess,
-			files: { 'kody.json': jobFiles['kody.json'] },
+			files: { 'package.json': packageFiles['package.json'] },
 		}),
 	).resolves.toBe('commit-bootstrap-2')
 	expect(withAccess.bootstrapSource).toHaveBeenCalledWith(
@@ -305,7 +313,7 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	await expect(
 		syncArtifactSourceSnapshot({
 			...syncInput,
-			files: { 'kody.json': jobFiles['kody.json'] },
+			files: { 'package.json': packageFiles['package.json'] },
 		}),
 	).resolves.toBe('commit-session-2')
 	expect(session.bootstrapSource).not.toHaveBeenCalled()
@@ -323,18 +331,41 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 			rollbackOnError: true,
 		}),
 	)
-	// Jobs still force-publish without package runChecks.
-	expect(session.runChecks).not.toHaveBeenCalled()
+	expect(session.runChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
+	)
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: ownerIdFromStored('user-1'),
-		force: true,
 	})
+	expect(session.publishSession.mock.calls[0]?.[0]).not.toHaveProperty('force')
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(session.discardSession).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 	)
+
+	const plainRepo = setupSync(
+		sourceRow({
+			entity_kind: 'repo',
+			entity_id: 'repo-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-existing-1',
+		}),
+		publishingSession('commit-session-repo'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'README.md': '# repo\n' },
+		}),
+	).resolves.toBe('commit-session-repo')
+	expect(plainRepo.runChecks).not.toHaveBeenCalled()
+	expect(plainRepo.publishSession).toHaveBeenCalledWith({
+		sessionId: expect.stringMatching(/^source-sync-source-1-/),
+		userId: ownerIdFromStored('user-1'),
+		force: true,
+	})
 })
 
 test('syncArtifactSourceSnapshot runs package checks before updating a published package', async () => {

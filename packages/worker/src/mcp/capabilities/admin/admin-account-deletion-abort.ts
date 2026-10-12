@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { abortAccountDeletingByStableUserId } from '#worker/account/deletion-state.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -35,11 +36,23 @@ export const adminAccountDeletionAbortCapability = defineDomainCapability(
 				ctx,
 				'adminAccountDeletionAbort',
 				async () => {
-					await abortAccountDeletingByStableUserId({
-						db: ctx.env.APP_DB,
-						stableUserId: adminStableOwnerId(args.stable_user_id),
-						env: ctx.env,
-					})
+					try {
+						await abortAccountDeletingByStableUserId({
+							db: ctx.env.APP_DB,
+							stableUserId: adminStableOwnerId(args.stable_user_id),
+							env: ctx.env,
+						})
+					} catch (error) {
+						// Missing target is caller-supplied; keep off Sentry via McpCallerError.
+						if (
+							error instanceof Error &&
+							error.message === 'User not found.' &&
+							!(error instanceof McpCallerError)
+						) {
+							throw new McpCallerError(error.message, { cause: error })
+						}
+						throw error
+					}
 					return { aborted: true as const }
 				},
 				{

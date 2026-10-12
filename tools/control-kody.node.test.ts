@@ -13,12 +13,15 @@ import {
 	credentialsForOrigin,
 	defaultFeaturesDir,
 	defaultRoutesPath,
-	formatFeatureMap,
 	loginToOrigin,
 	localSeedEmail,
 	parseControlArgs,
 	isGitAncestor,
+	loadHealthCommitInfo,
+	mergeCommitMessageNamesHead,
+	readGithubHealthCommitInfo,
 	readHealth,
+	readLocalHealthCommitInfo,
 	repoRootFromHere,
 	requestAsSession,
 	runCommand,
@@ -273,6 +276,26 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			},
 		],
 		[
+			['execute', '--code-file', 'fixture.ts', '--org', '@X-Org'],
+			{
+				command: 'execute',
+				codeFile: 'fixture.ts',
+				orgSlug: 'x-org',
+			},
+		],
+		[
+			['search', '--query', 'packageSave', '--org', 'x-org'],
+			{ command: 'search', query: 'packageSave', orgSlug: 'x-org' },
+		],
+		[
+			['package-create', '--package-name', 'preview-pkg', '--org', 'x-org'],
+			{
+				command: 'package-create',
+				kodyId: 'preview-pkg',
+				orgSlug: 'x-org',
+			},
+		],
+		[
 			[
 				'browse',
 				'--origin',
@@ -314,6 +337,14 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		[
 			'search --query packageSave --limit 1.5',
 			/--limit must be a positive integer/,
+		],
+		['execute --org', /--org requires a value/],
+		['execute --org --json', /--org requires a value/],
+		['execute --code-file fixture.ts --org no_slug', /organization slug/],
+		['execute --code-file fixture.ts --org ab', /organization slug/],
+		[
+			'request GET /account --org x-org',
+			/--org is only valid for execute, search, and package-create/,
 		],
 		['browse --close-after -1', /--close-after requires a value/],
 		['browse --path account', /same-origin path/],
@@ -365,9 +396,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	})
 	expect(report.issues).toEqual([])
 	expect(report.ok).toBe(true)
-	expect(formatFeatureMap(featureCatalog)).toContain(
-		'waiting\t/@:orgSlug/-/waiting(/*rest)',
-	)
 	expect(
 		readdirSync(defaultFeaturesDir(root)).filter((name) =>
 			name.endsWith('.md'),
@@ -602,6 +630,187 @@ test('readHealth accepts a unique short SHA and a descendant live SHA', async ()
 	expect(
 		isGitAncestor('parent', 'child', { execFile: () => Buffer.from('') }),
 	).toBe(true)
+})
+
+test('mergeCommitMessageNamesHead matches a preview merge of the expected head', () => {
+	const head = '7263d875b65f628a49ce0d1969dae90054f94143'
+	expect(
+		mergeCommitMessageNamesHead(`Merge ${head} into the preview base`, head),
+	).toBe(true)
+	expect(
+		mergeCommitMessageNamesHead(
+			`Merge ${head.slice(0, 7)} into the preview base`,
+			head,
+		),
+	).toBe(true)
+	expect(
+		mergeCommitMessageNamesHead(
+			`Merge ${head} into the preview base\n\nMore`,
+			head.slice(0, 7),
+		),
+	).toBe(true)
+	expect(
+		mergeCommitMessageNamesHead('Merge other into the preview base', head),
+	).toBe(false)
+})
+
+test('readHealth accepts a preview merge commit that is not in the local git database', async () => {
+	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	await withAuthServer(
+		(_request, response) => {
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: true, commitSha: mergeSha }),
+			)
+		},
+		async (origin) => {
+			const byParent = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => false,
+				loadCommitInfo: (sha) =>
+					sha === mergeSha
+						? {
+								parents: ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', headSha],
+								message: 'unrelated subject',
+							}
+						: null,
+			})
+			expect(byParent.ok).toBe(true)
+			expect(byParent.detail).toContain('merge of')
+
+			const byMessage = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => false,
+				loadCommitInfo: (sha) =>
+					sha === mergeSha
+						? {
+								parents: ['cccccccccccccccccccccccccccccccccccccccc'],
+								message: `Merge ${headSha} into the preview base`,
+							}
+						: null,
+			})
+			expect(byMessage.ok).toBe(true)
+			expect(byMessage.detail).toContain(`merge of ${headSha}`)
+
+			const unseen = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => false,
+				loadCommitInfo: () => null,
+			})
+			expect(unseen.ok).toBe(false)
+		},
+	)
+})
+
+test('readHealth ignores a non-hex health commitSha before git lookups', async () => {
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	let loaded = 0
+	await withAuthServer(
+		(_request, response) => {
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: true, commitSha: '--oops' }),
+			)
+		},
+		async (origin) => {
+			const result = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => {
+					throw new Error('should not run isAncestor')
+				},
+				loadCommitInfo: () => {
+					loaded += 1
+					return null
+				},
+			})
+			expect(result.ok).toBe(false)
+			expect(loaded).toBe(0)
+		},
+	)
+})
+
+test('readHealth does not accept a merge subject when /health ok is false', async () => {
+	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	await withAuthServer(
+		(_request, response) => {
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: false, commitSha: mergeSha }),
+			)
+		},
+		async (origin) => {
+			const result = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => false,
+				loadCommitInfo: () => ({
+					parents: ['cccccccccccccccccccccccccccccccccccccccc'],
+					message: `Merge ${headSha} into the preview base`,
+				}),
+			})
+			expect(result.ok).toBe(false)
+			expect(result.detail).toContain('ok is not true')
+		},
+	)
+})
+
+test('loadHealthCommitInfo uses local git when present and GitHub when the merge object is missing', () => {
+	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	expect(
+		readLocalHealthCommitInfo(mergeSha, {
+			execFile: () => {
+				throw new Error('not in local git database')
+			},
+		}),
+	).toBeNull()
+	expect(
+		readLocalHealthCommitInfo(mergeSha, {
+			execFile: () =>
+				`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ${headSha}\0Merge ${headSha} into the preview base\n`,
+		}),
+	).toEqual({
+		parents: ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', headSha],
+		message: `Merge ${headSha} into the preview base`,
+	})
+	expect(
+		readGithubHealthCommitInfo(mergeSha, {
+			execFile: (_file, args) => {
+				if (args.includes('repo')) {
+					return JSON.stringify({ nameWithOwner: 'kentcdodds/kody' })
+				}
+				expect(args.at(-1)).toBe(`repos/kentcdodds/kody/commits/${mergeSha}`)
+				return JSON.stringify({
+					parents: [{ sha: headSha }],
+					commit: { message: `Merge ${headSha} into the preview base` },
+				})
+			},
+		}),
+	).toEqual({
+		parents: [headSha],
+		message: `Merge ${headSha} into the preview base`,
+	})
+	expect(
+		loadHealthCommitInfo(mergeSha, {
+			readLocal: () => null,
+			readGithub: () => ({
+				parents: [headSha],
+				message: `Merge ${headSha} into the preview base`,
+			}),
+		}),
+	).toEqual({
+		parents: [headSha],
+		message: `Merge ${headSha} into the preview base`,
+	})
 })
 
 test('control-kody request --dump writes the raw body and --contains asserts HTML and JSON text', async () => {

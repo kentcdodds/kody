@@ -21,6 +21,13 @@ const mocks = vi.hoisted(() => ({
 	resolveArtifactSourceHead: vi.fn(),
 	runRepoChecks: vi.fn(),
 	dispatchPackageCodemodSubscriptionEvent: vi.fn(),
+	getPackageScopeByUserId: vi.fn(
+		async (_db: D1Database, userId: string) => userId,
+	),
+}))
+
+vi.mock('#worker/package-registry/user-scope.ts', () => ({
+	getPackageScopeByUserId: mocks.getPackageScopeByUserId,
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -539,6 +546,48 @@ test('package codemod revert skips when HEAD no longer matches applied afterComm
 	})
 	expect(revert.items[0]?.status).toBe('skipped_drift')
 	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+})
+
+test('codemod context takes the scope from the owner, not the saved package name', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	const movedFiles = {
+		'package.json': `${JSON.stringify({
+			name: '@old-owner/moved',
+			exports: { '.': './index.ts' },
+			kody: { id: 'moved', description: 'Package for codemod tests.' },
+		})}\n`,
+		'index.ts': "export { helper } from 'kody:@old-owner/helper'\n",
+	}
+	mocks.listSavedPackagesByUserId.mockResolvedValue([
+		{ ...savedPackage('pkg-moved'), name: '@old-owner/moved' },
+	])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: movedFiles,
+			publishedCommit: 'commit-repo-moved',
+			repoId: 'repo-moved',
+			sourceId: 'source-moved',
+			userId: 'user-1',
+		}),
+	)
+
+	const scan = await step(env, {
+		codemodId: '0011-owner-scope-follows-registry',
+	})
+	expect(mocks.getPackageScopeByUserId).toHaveBeenCalledWith(
+		env.APP_DB,
+		'user-1',
+	)
+	expect(scan.items[0]).toMatchObject({
+		status: 'detected',
+		packageId: 'pkg-moved',
+	})
+	expect(scan.items[0]?.findings.map((finding) => finding.path)).toEqual([
+		'index.ts',
+		'package.json',
+	])
+	expect(scan.items[0]?.findings[0]?.message).toContain('@user-1/moved')
 })
 
 test('fleet apply on a locked package commits HEAD without promoting published_commit', async () => {

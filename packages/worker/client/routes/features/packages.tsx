@@ -3,6 +3,8 @@ import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { PackagePublishArt, PackageShareArt } from './packages-art.tsx'
 import { FeatureRelated } from './feature-related.tsx'
 
+const examplePackageSource = 'README.md\nAGENTS.md\npackage.json\nsrc/brief.ts'
+
 export function PackagesFeature(handle: Handle) {
 	let tab = 'intent'
 	let questions = false
@@ -73,9 +75,7 @@ export function PackagesFeature(handle: Handle) {
 								</p>
 							) : tab === 'source' ? (
 								<>
-									<pre>
-										{'README.md\nAGENTS.md\npackage.json\nsrc/brief.ts'}
-									</pre>
+									<pre>{examplePackageSource}</pre>
 									<a href="/docs/package-skills">
 										Packages can also include Agent Skills
 									</a>
@@ -92,6 +92,13 @@ export function PackagesFeature(handle: Handle) {
 								</>
 							)}
 						</div>
+						{/* Tab panels need JS; keep example source readable without it. */}
+						<noscript>
+							<div class="contents" id="package-source-fallback">
+								<small>Example source</small>
+								<pre>{examplePackageSource}</pre>
+							</div>
+						</noscript>
 						<div class="stamp">
 							<small id="publish-state">Current published code</small>
 							<a href="#package-publishing">Try a source change ↓</a>

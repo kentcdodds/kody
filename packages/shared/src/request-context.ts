@@ -55,11 +55,14 @@ export type RequestCredential = {
 
 export type RequestContext = {
 	org: RequestOrg
-	/** Null only for Automation (webhook, schedule, email, event). */
+	/**
+	 * Null only for a trigger event with no enablement, which holds no
+	 * permissions and runs nothing.
+	 */
 	actor: RequestActor | null
 	attribution: RequestAttribution
 	credential: RequestCredential
-	/** Null for Automation and for outside collaborators. */
+	/** Null for a request with no person and for outside collaborators. */
 	membership: { role: OrgRole } | null
 }
 
@@ -71,7 +74,8 @@ export type RequestContext = {
  * `membership` is the starter's role in `credential.orgId`. Downstream runs
  * execute as the org's own identity, whose role is Owner, so without it a
  * Member actor would inherit Owner. Lineage written before it existed omits
- * it and keeps the role of the identity the run uses.
+ * it; such a run keeps the role of the identity it uses only when the actor is
+ * that identity (a personal org's owner), and otherwise gets no role.
  */
 export type RequestLineage = Pick<
 	RequestContext,

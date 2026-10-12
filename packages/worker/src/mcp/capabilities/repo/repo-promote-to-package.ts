@@ -12,6 +12,7 @@ import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import {
 	getSavedPackageById,
 	resolveSavedPackageRef,
@@ -234,11 +235,17 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)
 			}
-			await stampFirstSavedPackage(
+			const stamped = await stampFirstSavedPackage(
 				ctx.env.APP_DB,
 				{ stableUserId: owner.actorUserId, at: now },
 				ctx.env,
 			)
+			if (stamped) {
+				scheduleKitSubscriberSync({
+					env: ctx.env,
+					stableUserId: owner.actorUserId,
+				})
+			}
 			// Best-effort projections after the publish committed: a vector or
 			// search-projection failure must not strand a half-promoted repo.
 			// Reindex lanes converge both later.
@@ -251,6 +258,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				packageId,
 				sourceId: source.id,
 			}).catch(() => undefined)

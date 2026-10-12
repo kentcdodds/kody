@@ -78,6 +78,7 @@ import {
 	deleteAccountCommunityAssetPrefixes,
 	deleteAccountEmailBlobPrefixes,
 } from '#app/account-r2-prefix-cleanup.ts'
+import { deleteOrgTransferBackupsForOwner } from '#worker/org-transfer/backup.ts'
 import {
 	listMcpAgentSessionsForUser,
 	type McpAgentSession,
@@ -1787,6 +1788,18 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 	result.deletedEmailBlobs = emailCleanup.deletedEmailBlobs
+	if (input.env.OPERATOR_BACKUPS) {
+		try {
+			await deleteOrgTransferBackupsForOwner({
+				bucket: input.env.OPERATOR_BACKUPS,
+				ownerId: input.mcpUserId,
+			})
+		} catch (error) {
+			warnings.push(
+				`Org transfer backup cleanup failed: ${getErrorMessage(error)}`,
+			)
+		}
+	}
 
 	const discordConnection = await input.env.APP_DB.prepare(
 		`SELECT provider_id FROM oauth_connections

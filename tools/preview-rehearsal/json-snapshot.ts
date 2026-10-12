@@ -1,5 +1,9 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
-import { openRehearsalSession, type RehearsalSession } from './kody-session.ts'
+import {
+	openRehearsalSession,
+	type OpenRehearsalSession,
+	type RehearsalSession,
+} from './kody-session.ts'
 import {
 	rehearsalOrg,
 	type RehearsalOrigins,
@@ -62,7 +66,7 @@ function normalizeErrorMessage(message: string) {
 	return message.replace(/conversationId: \S+/g, 'conversationId: <id>')
 }
 
-export type SnapshotCheckFailure = { check: string; error: string }
+type SnapshotCheckFailure = { check: string; error: string }
 
 type Capture = (check: string, fn: () => Promise<unknown>) => Promise<unknown>
 
@@ -209,44 +213,35 @@ async function snapshotPerson(
 	}
 }
 
+async function captureOpenFailure(
+	capture: Capture,
+	check: string,
+	error: unknown,
+) {
+	return {
+		session: await capture(check, async () => {
+			throw error
+		}),
+	}
+}
+
 /**
  * The org owner's MCP connection binds to the rehearsal org only while the
  * owner membership is live; its package list is the org's, not the owner's.
  */
-async function snapshotOrg(
-	origins: RehearsalOrigins,
-	owner: SnapshotUser,
-	capture: Capture,
-) {
+async function snapshotOrg(session: RehearsalSession, capture: Capture) {
 	const check = (name: string) => `org.${name}`
-	let session: RehearsalSession
-	try {
-		session = await openRehearsalSession(origins.app, owner, {
-			orgSlug: rehearsalOrg.slug,
-		})
-	} catch (error) {
-		return {
-			slug: rehearsalOrg.slug,
-			session: await capture(check('session'), async () => {
-				throw error
-			}),
-		}
-	}
-	try {
-		return {
-			slug: rehearsalOrg.slug,
-			me: await capture(check('me'), () =>
-				callCapability(session, 'metaGetCurrentUser'),
-			),
-			packages: await capture(check('packages'), () =>
-				callCapability(session, 'packageList'),
-			),
-			grants: await capture(check('grants'), () =>
-				callCapability(session, 'accessList'),
-			),
-		}
-	} finally {
-		await session.close()
+	return {
+		slug: rehearsalOrg.slug,
+		me: await capture(check('me'), () =>
+			callCapability(session, 'metaGetCurrentUser'),
+		),
+		packages: await capture(check('packages'), () =>
+			callCapability(session, 'packageList'),
+		),
+		grants: await capture(check('grants'), () =>
+			callCapability(session, 'accessList'),
+		),
 	}
 }
 
@@ -256,52 +251,24 @@ async function snapshotOrg(
  * so a migration that drops or mis-keys those grants records a failure.
  */
 async function snapshotCredentialGrantee(
-	origins: RehearsalOrigins,
+	session: RehearsalSession,
+	ownerSession: RehearsalSession,
 	grantee: SnapshotUser,
 	owner: SnapshotUser,
+	origins: RehearsalOrigins,
 	capture: Capture,
 ) {
 	const check = (name: string) => `grantee.${name}`
-	let session: RehearsalSession
-	let ownerSession: RehearsalSession
-	try {
-		session = await openRehearsalSession(origins.app, grantee, {
-			orgSlug: owner.orgSlug,
-		})
-	} catch (error) {
-		return {
-			session: await capture(check('session'), async () => {
-				throw error
+	return {
+		grantee: grantee.role,
+		org: owner.orgSlug,
+		proofs: await capture(check('credentialProofs'), () =>
+			credentialGranteeProofs({
+				grantee: session,
+				owner: ownerSession,
+				echoUrl: `${origins.mockCloudflare}/__mocks/rehearsal/echo`,
 			}),
-		}
-	}
-	try {
-		ownerSession = await openRehearsalSession(origins.app, owner, {
-			orgSlug: owner.orgSlug,
-		})
-	} catch (error) {
-		await session.close()
-		return {
-			session: await capture(check('ownerSession'), async () => {
-				throw error
-			}),
-		}
-	}
-	try {
-		return {
-			grantee: grantee.role,
-			org: owner.orgSlug,
-			proofs: await capture(check('credentialProofs'), () =>
-				credentialGranteeProofs({
-					grantee: session,
-					owner: ownerSession,
-					echoUrl: `${origins.mockCloudflare}/__mocks/rehearsal/echo`,
-				}),
-			),
-		}
-	} finally {
-		await session.close()
-		await ownerSession.close()
+		),
 	}
 }
 
@@ -333,14 +300,20 @@ export function findPackagesListedByMoreThanOneOwner(
 		.map(([id, owners]) => ({ id, owners }))
 }
 
+type SnapshotOpenFailure = { session: unknown }
+
 export type JsonSnapshot = {
 	version: 1
 	takenAt: string
 	origins: RehearsalOrigins
 	admin: Record<string, unknown>
 	people: Array<Awaited<ReturnType<typeof snapshotPerson>>>
-	org: Awaited<ReturnType<typeof snapshotOrg>>
-	grantee: Awaited<ReturnType<typeof snapshotCredentialGrantee>>
+	org:
+		| Awaited<ReturnType<typeof snapshotOrg>>
+		| ({ slug: typeof rehearsalOrg.slug } & SnapshotOpenFailure)
+	grantee:
+		| Awaited<ReturnType<typeof snapshotCredentialGrantee>>
+		| SnapshotOpenFailure
 	failures: Array<SnapshotCheckFailure>
 }
 
@@ -355,8 +328,10 @@ export async function takeJsonSnapshot(input: {
 	users: ReadonlyArray<SnapshotUser>
 	now?: () => Date
 	log?: (line: string) => void
+	openSession?: OpenRehearsalSession
 }): Promise<JsonSnapshot> {
 	const log = input.log ?? (() => {})
+	const openSession = input.openSession ?? openRehearsalSession
 	const adminUser = input.users.find((user) => user.role === 'admin')
 	if (!adminUser)
 		throw new Error('Snapshot needs the rehearsal admin credentials.')
@@ -365,7 +340,12 @@ export async function takeJsonSnapshot(input: {
 	// Bind every session to an org. After P8, users who also own another org
 	// (for example bob after a scope-grant conversion) must pass ?org= or
 	// consent refuses with "Choose an organization".
-	const admin = await openRehearsalSession(input.origins.app, adminUser, {
+	//
+	// Each open is POST /auth + POST /oauth/authorize, and those share the
+	// per-IP 10/60s auth bucket. Reuse person cookies for later org-bound
+	// connections, and reuse alice's person session for the grantee owner
+	// proofs, so a single snapshot stays under the limit.
+	const admin = await openSession(input.origins.app, adminUser, {
 		orgSlug: adminUser.orgSlug,
 	})
 	const adminView: Record<string, unknown> = {}
@@ -383,61 +363,96 @@ export async function takeJsonSnapshot(input: {
 	} finally {
 		await admin.close()
 	}
-	const people: JsonSnapshot['people'] = []
-	for (const user of input.users.filter((entry) => entry.role !== 'admin')) {
-		log(`Snapshotting ${user.role}...`)
-		const session = await openRehearsalSession(input.origins.app, user, {
-			orgSlug: user.orgSlug,
-		})
-		try {
+	const opened: Array<RehearsalSession> = []
+	const personSessions = new Map<SnapshotUser['role'], RehearsalSession>()
+	try {
+		const people: JsonSnapshot['people'] = []
+		for (const user of input.users.filter((entry) => entry.role !== 'admin')) {
+			log(`Snapshotting ${user.role}...`)
+			const session = await openSession(input.origins.app, user, {
+				orgSlug: user.orgSlug,
+			})
+			opened.push(session)
+			personSessions.set(user.role, session)
 			people.push(await snapshotPerson(session, user, input.origins, capture))
-		} finally {
-			await session.close()
 		}
-	}
-	const orgOwner = input.users.find((user) => user.role === rehearsalOrg.owner)
-	if (!orgOwner) {
-		throw new Error(
-			`Snapshot needs the rehearsal org owner (${rehearsalOrg.owner}) credentials.`,
+		const orgOwner = input.users.find(
+			(user) => user.role === rehearsalOrg.owner,
 		)
-	}
-	log(`Snapshotting @${rehearsalOrg.slug} as ${orgOwner.role}...`)
-	const org = await snapshotOrg(input.origins, orgOwner, capture)
-	const carol = input.users.find((user) => user.role === 'carol')
-	const alice = input.users.find((user) => user.role === 'alice')
-	if (!carol || !alice) {
-		throw new Error('Snapshot needs the alice and carol credentials.')
-	}
-	log('Snapshotting carol using alice credentials through her grants...')
-	const grantee = await snapshotCredentialGrantee(
-		input.origins,
-		carol,
-		alice,
-		capture,
-	)
-	const shared = findPackagesListedByMoreThanOneOwner({
-		...Object.fromEntries(
-			people.map((person) => [person.role, person.packages]),
-		),
-		[`@${rehearsalOrg.slug}`]: 'packages' in org ? org.packages : null,
-	})
-	if (shared.length > 0) {
-		failures.push({
-			check: 'packages.ownedByOneOrg',
-			error: shared
-				.map(({ id, owners }) => `${id} is listed by ${owners.join(', ')}`)
-				.join('; '),
+		if (!orgOwner) {
+			throw new Error(
+				`Snapshot needs the rehearsal org owner (${rehearsalOrg.owner}) credentials.`,
+			)
+		}
+		log(`Snapshotting @${rehearsalOrg.slug} as ${orgOwner.role}...`)
+		let org: JsonSnapshot['org']
+		try {
+			const orgSession = await openSession(input.origins.app, orgOwner, {
+				orgSlug: rehearsalOrg.slug,
+				cookieHeader: personSessions.get(orgOwner.role)?.cookieHeader,
+			})
+			opened.push(orgSession)
+			org = await snapshotOrg(orgSession, capture)
+		} catch (error) {
+			org = {
+				slug: rehearsalOrg.slug,
+				...(await captureOpenFailure(capture, 'org.session', error)),
+			}
+		}
+		const carol = input.users.find((user) => user.role === 'carol')
+		const alice = input.users.find((user) => user.role === 'alice')
+		if (!carol || !alice) {
+			throw new Error('Snapshot needs the alice and carol credentials.')
+		}
+		log('Snapshotting carol using alice credentials through her grants...')
+		let grantee: JsonSnapshot['grantee']
+		try {
+			const aliceSession = personSessions.get('alice')
+			if (!aliceSession) {
+				throw new Error('Snapshot needs the alice person session.')
+			}
+			const carolInAlice = await openSession(input.origins.app, carol, {
+				orgSlug: alice.orgSlug,
+				cookieHeader: personSessions.get('carol')?.cookieHeader,
+			})
+			opened.push(carolInAlice)
+			grantee = await snapshotCredentialGrantee(
+				carolInAlice,
+				aliceSession,
+				carol,
+				alice,
+				input.origins,
+				capture,
+			)
+		} catch (error) {
+			grantee = await captureOpenFailure(capture, 'grantee.session', error)
+		}
+		const shared = findPackagesListedByMoreThanOneOwner({
+			...Object.fromEntries(
+				people.map((person) => [person.role, person.packages]),
+			),
+			[`@${rehearsalOrg.slug}`]: 'packages' in org ? org.packages : null,
 		})
-	}
-	return {
-		version: 1,
-		takenAt: (input.now ?? (() => new Date()))().toISOString(),
-		origins: input.origins,
-		admin: adminView,
-		people,
-		org,
-		grantee,
-		failures,
+		if (shared.length > 0) {
+			failures.push({
+				check: 'packages.ownedByOneOrg',
+				error: shared
+					.map(({ id, owners }) => `${id} is listed by ${owners.join(', ')}`)
+					.join('; '),
+			})
+		}
+		return {
+			version: 1,
+			takenAt: (input.now ?? (() => new Date()))().toISOString(),
+			origins: input.origins,
+			admin: adminView,
+			people,
+			org,
+			grantee,
+			failures,
+		}
+	} finally {
+		await Promise.allSettled(opened.map((session) => session.close()))
 	}
 }
 

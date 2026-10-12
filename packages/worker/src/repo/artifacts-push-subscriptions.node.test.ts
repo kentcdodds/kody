@@ -78,7 +78,7 @@ function createDb() {
 			repo_id TEXT NOT NULL,
 			published_commit TEXT,
 			indexed_commit TEXT,
-			manifest_path TEXT NOT NULL DEFAULT 'kody.json',
+			manifest_path TEXT NOT NULL DEFAULT 'package.json',
 			source_root TEXT NOT NULL DEFAULT '/',
 			last_external_check_at TEXT,
 			external_check_until TEXT,

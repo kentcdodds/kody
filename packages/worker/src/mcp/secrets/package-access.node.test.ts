@@ -71,6 +71,7 @@ const adoptedFork = {
 	adoptionNote: 'Reviewed source; trusted for my use.',
 }
 const userSecretResolved = {
+	credentialId: 'cred-user-token',
 	found: true as const,
 	value: 'secret',
 	scope: 'user' as const,

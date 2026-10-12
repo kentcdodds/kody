@@ -2,6 +2,15 @@ import * as Sentry from '@sentry/cloudflare'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
+import {
+	commitOrgAuditOutbox,
+	enqueueOrgAuditOutbox,
+	orgAuditOutboxInsertStatement,
+	planOrgAuditOutbox,
+	redactOrgAuditOutboxActorIdsForDeletedUser,
+	type OrgAuditOutboxEvent,
+	type OrgAuditWriter,
+} from './org-audit-outbox.ts'
 
 export const orgAuditEventResults = ['success', 'failure', 'denied'] as const
 
@@ -10,6 +19,7 @@ export type OrgAuditEventResult = (typeof orgAuditEventResults)[number]
 export type LogOrgAuditEventInput = {
 	env?: Env
 	db?: D1Database | null | undefined
+	id?: string
 	orgId: string
 	action: string
 	result: OrgAuditEventResult
@@ -59,7 +69,7 @@ export async function logOrgAuditEvent(input: LogOrgAuditEventInput) {
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
-				crypto.randomUUID(),
+				input.id ?? crypto.randomUUID(),
 				input.orgId,
 				input.actorUserId ?? null,
 				input.actorUsername ?? null,
@@ -78,37 +88,45 @@ export async function logOrgAuditEvent(input: LogOrgAuditEventInput) {
 	)
 }
 
-export async function redactOrgAuditActorIdsForDeletedUser(input: {
-	env: Env
-	userId: string
-}) {
-	const db = auditDatabaseFromEnvOrThrow(input.env)
+async function redactOrgAuditEventsActorIds(
+	auditDb: D1Database,
+	userId: string,
+) {
 	await runD1WithRetry(() =>
-		db
+		auditDb
 			.prepare(
 				`UPDATE org_audit_events
 				SET actor_user_id = 'deleted-user'
 				WHERE actor_user_id = ?`,
 			)
-			.bind(input.userId)
+			.bind(userId)
 			.run(),
 	)
 }
 
-/** Who is acting and where org audit rows go; built once per request. */
-export type OrgAuditWriter = {
-	db: D1Database
-	actorUserId: string | null
-	actorUsername: string | null
-	credentialKind: string | null
-	credentialId: string | null
+export async function redactOrgAuditActorIdsForDeletedUser(input: {
+	env: Env
+	userId: string
+}) {
+	const db = auditDatabaseFromEnvOrThrow(input.env)
+	// Outbox first so a concurrent drain re-read picks up deleted-user.
+	await redactOrgAuditOutboxActorIdsForDeletedUser({
+		appDb: input.env.APP_DB,
+		userId: input.userId,
+	})
+	await redactOrgAuditEventsActorIds(db, input.userId)
+	// Catch a drain that delivered a pre-redaction payload mid-purge.
+	await redactOrgAuditEventsActorIds(db, input.userId)
 }
+
+export type { OrgAuditWriter } from './org-audit-outbox.ts'
 
 export function orgAuditWriterFromRequest(
 	env: Env,
 	request: RequestContext,
 ): OrgAuditWriter {
 	return {
+		appDb: env.APP_DB,
 		db: auditDatabaseFromEnvOrThrow(env),
 		actorUserId: request.actor?.userId ?? null,
 		actorUsername: request.actor?.username ?? null,
@@ -122,6 +140,7 @@ export function orgAuditWriterForPerson(
 	actor: { userId: string | null; username?: string | null },
 ): OrgAuditWriter {
 	return {
+		appDb: env.APP_DB,
 		db: auditDatabaseFromEnvOrThrow(env),
 		actorUserId: actor.userId,
 		actorUsername: actor.username ?? null,
@@ -131,38 +150,58 @@ export function orgAuditWriterForPerson(
 }
 
 /**
- * Records an access change that has already committed to APP_DB. An AUDIT_DB
- * failure is reported loudly but never rethrown: the access change is durable
- * and the caller may still have dependent writes to apply.
+ * Commits an APP_DB mutation and its org audit outbox row in one batch, then
+ * delivers to AUDIT_DB inline (scheduled drain is backup).
  */
+export async function runAppDbBatchWithOrgAudit(input: {
+	appDb: D1Database
+	audit: OrgAuditWriter
+	statements: Array<{ run(): Promise<unknown> }>
+	event: OrgAuditOutboxEvent
+}) {
+	const plan = planOrgAuditOutbox(input.audit, input.event)
+	if (typeof input.appDb.batch === 'function') {
+		await input.appDb.batch([
+			...input.statements,
+			orgAuditOutboxInsertStatement(input.appDb, plan),
+		] as Array<D1PreparedStatement>)
+	} else {
+		for (const statement of [
+			...input.statements,
+			orgAuditOutboxInsertStatement(input.appDb, plan),
+		]) {
+			await statement.run()
+		}
+	}
+	// Deliver against the same APP_DB the outbox row was written to.
+	await commitOrgAuditOutbox({ ...input.audit, appDb: input.appDb }, plan)
+}
+
+/**
+ * Transitional: records audit after APP_DB already committed (member
+ * offboarding, invite acceptance, MCP server OAuth). Prefer
+ * `runAppDbBatchWithOrgAudit` for new access writes. Enqueue failures fail the
+ * request so audit is not silently lost.
+ */
+export type {
+	OrgAuditOutboxEvent,
+	OrgAuditOutboxPlan,
+} from './org-audit-outbox.ts'
+export {
+	orgAuditOutboxInsertStatement,
+	planOrgAuditOutbox,
+	commitOrgAuditOutbox,
+} from './org-audit-outbox.ts'
+
 export async function recordOrgAuditEvent(
 	writer: OrgAuditWriter,
-	event: {
-		orgId: string
-		action: string
-		resourceType?: string | null
-		resourceId?: string | null
-		targetUserId?: string | null
-		details?: Record<string, unknown>
-	},
+	event: OrgAuditOutboxEvent,
 ) {
 	try {
-		await logOrgAuditEvent({
-			db: writer.db,
-			orgId: event.orgId,
-			action: event.action,
-			result: 'success',
-			actorUserId: writer.actorUserId,
-			actorUsername: writer.actorUsername,
-			credentialKind: writer.credentialKind,
-			credentialId: writer.credentialId,
-			resourceType: event.resourceType ?? null,
-			resourceId: event.resourceId ?? null,
-			targetUserId: event.targetUserId ?? null,
-			details: event.details,
-		})
+		const plan = await enqueueOrgAuditOutbox(writer, event)
+		await commitOrgAuditOutbox(writer, plan)
 	} catch (error) {
-		console.error('Failed to record org audit event:', {
+		console.error('Failed to enqueue org audit outbox row:', {
 			orgId: event.orgId,
 			action: event.action,
 			resourceType: event.resourceType ?? null,
@@ -179,5 +218,6 @@ export async function recordOrgAuditEvent(
 			})
 			Sentry.captureException(error)
 		})
+		throw error
 	}
 }

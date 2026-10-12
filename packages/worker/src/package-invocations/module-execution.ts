@@ -24,7 +24,9 @@ import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
+import { authorize } from '#worker/authorization/authorize.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
+import { backgroundRunBilledActor } from '#worker/request-context/request-context.ts'
 import {
 	automationInvocationsPerDayResource,
 	shouldConsumeAutomationInvocationEntitlement,
@@ -184,18 +186,26 @@ export async function runSavedPackageModuleOnce(
 							: input.actor.request.kind === 'inbound-email'
 								? 'email'
 								: 'event'
+				const billedActor = backgroundRunBilledActor(input.actor.request)
 				await consumeDailyEntitlement({
 					db: input.env.APP_DB,
 					env: input.env,
 					userId: input.actor.orgId,
 					email: user.email,
 					resource: automationInvocationsPerDayResource,
-					orgBudget: {
-						orgId: input.actor.orgId,
-						orgSlug,
-						automationSource,
-						actorUserId: null,
-					},
+					orgBudget: billedActor
+						? {
+								orgId: input.actor.orgId,
+								orgSlug,
+								actorUserId: billedActor.userId,
+								actorUsername: billedActor.username,
+							}
+						: {
+								orgId: input.actor.orgId,
+								orgSlug,
+								automationSource,
+								actorUserId: null,
+							},
 				})
 			} catch (error) {
 				if (
@@ -234,6 +244,12 @@ export async function runSavedPackageModuleOnce(
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
 			source: input.actor.request,
 		})
+		// A run reads org mail only with its person's email:read.
+		const requireRunEmailRead = () =>
+			authorize(
+				{ env: input.env, request: callerContext.request },
+				'email:read',
+			)
 		const runtimeSurface = resolveInvocationRuntimeSurface({
 			selector: input.moduleSelector,
 			source: input.source,
@@ -308,6 +324,7 @@ export async function runSavedPackageModuleOnce(
 					}),
 				emailTools: {
 					getMessage: async (messageId) => {
+						await requireRunEmailRead()
 						const loaded = await getEmailMessageWithAttachmentsById({
 							env: input.env,
 							db: input.env.APP_DB,
@@ -360,6 +377,7 @@ export async function runSavedPackageModuleOnce(
 						}
 					},
 					getAttachment: async (attachmentId) => {
+						await requireRunEmailRead()
 						const attachment = await getEmailAttachmentById({
 							env: input.env,
 							db: input.env.APP_DB,

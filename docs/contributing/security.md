@@ -550,12 +550,22 @@ guarded by a bearer secret comparison.
   backup SQL, manifests, or repository files.
 - Outbound secret use goes through the fetch gateway
   (`packages/worker/src/mcp/fetch-gateway.ts`), which is deny-by-default: a
-  secret placeholder is only substituted for a host the user explicitly approved
-  in the account UI, only in a request header, and only over HTTPS
-  (`packages/worker/src/mcp/secrets/secret-placement.ts` refuses the URL, body,
-  plain HTTP, and, for a package with `kody.credentials`, any header but the
-  slot's declared placement). Policy writes (allowed hosts/capabilities/
-  packages) are only reachable through the authenticated account UI.
+  credential placeholder is filled only for a host the credential allows (a
+  secret's hosts the user approved in the account UI, an integration's
+  `requiredHosts` and `apiBaseUrl` host, a vault item's websites) and only over
+  HTTPS. It may sit in a header, the URL path or query, or a text body (JSON
+  values are JSON-escaped, form values form-encoded); multipart and non-UTF-8
+  bodies are forwarded byte for byte. A placeholder on plain HTTP, in the URL
+  host or user info, or bound for a host the credential does not allow is
+  refused before anything resolves
+  (`packages/worker/src/mcp/secrets/secret-placement.ts` and the credential
+  door), so none is sent unfilled. The values are redacted from echoes in the
+  response (also URL-, form-, and JSON-encoded) and from fetch errors.
+  `x-kody-secret-resolution: headers-only` fills headers only, for a body that
+  quotes the syntax; `off` skips resolution entirely. The control header is
+  stripped before the request leaves, on both the gateway and local native fetch
+  paths. Policy writes (allowed hosts/capabilities/ packages) are only reachable
+  through the authenticated account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.
 - The DR control-plane Admin UI is protected by Cloudflare Access plus in-worker
@@ -702,23 +712,17 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
-- **Admin roles apply to package code running as an admin owner — including
-  mutations with cross-user / fleet blast.** Jobs, inbound webhook handlers,
-  package subscriptions, and other background package invocations resolve the
-  owner's current roles (`packages/worker/src/identity/background-mcp-user.ts`),
-  and admin capability checks do not require an interactive session. That reach
-  is not read-only: admin-owned package, job, and webhook code can invoke admin
-  mutations (anything that uses `adminMutationCapabilityAccess`, plus other
-  admin-gated write paths). The concrete cross-user blast includes
-  `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
-  users' published package trees), and the same unattended path can call other
-  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`, and
-  `adminSystemEmailSend`. Installing an untrusted package on an admin account
-  therefore carries that blast radius. This is accepted residual, not a silent
-  interactive-only mutation gate. Deferred alternatives include gating admin
-  mutations on `executionOrigin: 'interactive'`, and/or separate service
-  principals ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
-  [Background and package callers](./architecture/authorization.md#background-and-package-callers).
+- **Site-admin, role, membership, and billing actions need a live person.**
+  Background package runs still resolve the owner's current roles
+  (`packages/worker/src/identity/background-mcp-user.ts`), but every site-admin
+  capability and every member, role, invite, or member/billing grant change
+  declares `requiresLivePerson`, so a job, webhook, subscription, or inbound
+  email run (and package code it starts) is denied even when its enabler is an
+  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). The
+  one exception is `adminUserVerify` `mint_verify_url`. It is still admin-only,
+  but a job, webhook, or subscription that an admin enabled on their own package
+  may run it, and each mint is audited with its trigger. See
+  [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

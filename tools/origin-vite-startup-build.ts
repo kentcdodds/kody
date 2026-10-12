@@ -10,13 +10,13 @@ const execFileAsync = promisify(execFile)
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const workerDir = path.join(repoRoot, 'packages/worker')
 
-export const originProductionEntryPath = './src/production-worker.ts'
-export const originStartupWranglerConfigPath = path.join(
+const originProductionEntryPath = './src/production-worker.ts'
+const originStartupWranglerConfigPath = path.join(
 	workerDir,
 	'wrangler-origin-startup.generated.json',
 )
 
-export const originViteDeferredAssetPatterns = {
+const originViteDeferredAssetPatterns = {
 	guideCatalog: /^guide-catalog-[^/]+\.js$/,
 	workerBundler: /^worker-bundler-[^/]+\.js$/,
 	oauthProvider: /^oauth-provider-[^/]+\.js$/,

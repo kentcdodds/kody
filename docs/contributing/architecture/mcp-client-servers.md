@@ -108,9 +108,14 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    and the page navigates through a `rel="noreferrer"` link so providers that
    check authorized origins on Referer do not see Kody's.
 4. The provider redirects back to the callback route. The worker authenticates
-   the browser session cookie, forwards the full callback URL to that user's hub
-   DO, and the SDK exchanges the code (matching the `state` parameter to the
-   pending authorization) and establishes the connection.
+   the browser session cookie and picks the hub from the `state` parameter
+   (`<nonce>.<serverId>`): the hub of the org that owns that server, when the
+   person can bind to that org and has `integration:write` there (the consent
+   page's check). Otherwise it uses the session's org, as the callback URL has
+   no slug. It forwards the full callback URL to that hub DO, and the SDK
+   exchanges the code (matching `state` to the pending authorization) and
+   establishes the connection. The redirect after the callback goes to that
+   org's MCP servers page.
 5. The hub only treats the callback as successful when the connection reaches
    `ready`. After the SDK accepts the authorization code, the hub establishes
    the connection and, if the transport is `connected`, runs
@@ -180,8 +185,11 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    Tokens live only in the DO storage; they never reach D1 or the client.
 
 Because the callback is resolved through the session cookie, the OAuth state is
-always looked up in the hub belonging to the signed-in user — cross-user
-callback replay finds no matching state.
+looked up in the hub of the org that owns the server when the signed-in person
+can bind to that org and has `integration:write` there, and in the session org's
+hub otherwise. The callback succeeds only when that hub holds a pending
+authorization matching `state`. A person outside the org finds no matching
+state; people with `integration:write` in the same org share its hub.
 
 Providers that allowlist client origins or redirect URIs must permit the
 canonical app origin and the callback path above. CIMD-capable servers also

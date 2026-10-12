@@ -475,6 +475,14 @@ const routeDocumentHeads = {
 		'reset-password',
 		'Reset password',
 	),
+	[routePattern(routes.orgInviteJoin)]: ({ loaderData }) => {
+		const join = loaderData?.orgInviteJoin
+		if (join?.ok) {
+			const name = join.org.displayName?.trim() || join.org.slug
+			return titleOnly(`Join ${name}`)
+		}
+		return titleOnly('Invite link')
+	},
 	[routePattern(routes.verify)]: titleOnly('Two-factor authentication'),
 	[routePattern(routes.verifyEmail)]: ({ loaderData }) => {
 		const verification = loaderData?.emailVerification
@@ -542,6 +550,7 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
 	[routePattern(routes.orgMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.orgMemories)]: titleOnly('Memories'),
+	[routePattern(routes.orgOverview)]: titleOnly('Overview'),
 	[routePattern(routes.orgPackages)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
 	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),

@@ -27,6 +27,18 @@ export type RehearsalSession = {
 	close: () => Promise<void>
 }
 
+export type OpenRehearsalSessionOptions = {
+	orgSlug?: string
+	/** Skip `/auth` when this session cookie is still valid. */
+	cookieHeader?: string
+}
+
+export type OpenRehearsalSession = (
+	origin: string,
+	credentials: RehearsalCredentials,
+	options?: OpenRehearsalSessionOptions,
+) => Promise<RehearsalSession>
+
 export async function postJson(
 	url: string,
 	body: unknown,
@@ -71,9 +83,10 @@ export function describeFailure(
 export async function openRehearsalSession(
 	origin: string,
 	credentials: RehearsalCredentials,
-	options: { orgSlug?: string } = {},
+	options: OpenRehearsalSessionOptions = {},
 ): Promise<RehearsalSession> {
-	const cookieHeader = await loginToApp(origin, credentials)
+	const cookieHeader =
+		options.cookieHeader ?? (await loginToApp(origin, credentials))
 	const connection = await connectAppMcpClient(origin, credentials, {
 		cookieHeader,
 		clientName: 'kody-preview-rehearsal',

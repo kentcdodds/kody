@@ -11,6 +11,7 @@ import {
 } from '#mcp/secrets/crypto.ts'
 import {
 	getIntegrationCredentialCiphertexts,
+	getIntegrationCredentialId,
 	getOauthAppClientSecretCiphertext,
 	clearIntegrationAuthFailure,
 	updateIntegrationCredentialCiphertexts,
@@ -98,22 +99,47 @@ export async function persistUserOauthAppClientSecret(input: {
 	})
 }
 
+export type IntegrationAccessToken = {
+	/** Credential id of the connection row the token was read from. */
+	credentialId: string
+	accessToken: string | null
+}
+
+/** Null when no connection has this name. */
 export async function resolveIntegrationAccessToken(input: {
 	env: CredentialEnv
 	userId: OwnerId
 	name: string
-}): Promise<string | null> {
+}): Promise<IntegrationAccessToken | null> {
 	const ciphertexts = await getIntegrationCredentialCiphertexts({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		name: input.name,
 	})
-	if (!ciphertexts?.accessTokenEncrypted) return null
-	return decryptUserOauthAccessToken(
-		input.env,
-		ciphertexts.accessTokenEncrypted,
-		userIntegrationCredentialContext(input.userId, input.name),
-	)
+	if (!ciphertexts) return null
+	return {
+		credentialId: ciphertexts.credentialId,
+		accessToken: ciphertexts.accessTokenEncrypted
+			? await decryptUserOauthAccessToken(
+					input.env,
+					ciphertexts.accessTokenEncrypted,
+					userIntegrationCredentialContext(input.userId, input.name),
+				)
+			: null,
+	}
+}
+
+/** The connection's credential id, without reading its tokens. */
+export async function findIntegrationCredentialId(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: OwnerId
+	name: string
+}): Promise<string | null> {
+	return await getIntegrationCredentialId({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name: input.name,
+	})
 }
 
 export async function resolveIntegrationRefreshToken(input: {

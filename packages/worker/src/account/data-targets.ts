@@ -286,6 +286,18 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		reason:
 			'Fleet/canary filter payloads may list the deleted user in userIds; deletion rewrites that id to deleted-user. Export reaches package_codemod_runs through scope/initiator columns instead.',
 	},
+	// A person's org grants of their personal credentials.
+	{ kind: 'user_id', table: 'credential_org_grants' },
+	// Inventory items are per-package results owned by the package owner; runs
+	// are operator ledger rows whose initiator is attribution only.
+	{ kind: 'user_id', table: 'credential_inventory_items' },
+	{
+		kind: 'replace_user_column',
+		table: 'credential_inventory_runs',
+		matchColumn: 'initiated_by_user_id',
+		setColumn: 'initiated_by_user_id',
+		value: 'deleted-user',
+	},
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
@@ -338,10 +350,9 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'connected_by_user_id',
 		value: 'deleted-user',
 	},
-	// Job rows (`jobs`, `archived_job_artifacts`) live in the jobs worker's
-	// database (ADR 0016); account deletion reaches them through the JOBS
-	// service binding's purgeUser and export through listArchivedJobArtifacts /
-	// listJobsForUser.
+	// Job rows live in the jobs worker's database (ADR 0016). Account deletion
+	// reaches them through the JOBS service binding's purgeUser, and export
+	// reads them through listJobsForUser.
 	{ kind: 'user_id', table: 'published_bundle_artifacts' },
 	{
 		kind: 'user_id',
@@ -588,6 +599,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'invites',
 		columns: ['invited_by_user_id', 'accepted_by_user_id'],
 	},
+	{
+		kind: 'replace_user_column',
+		table: 'org_invite_links',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'org_invite_link_redemptions' },
 	{
 		kind: 'replace_user_column',
 		table: 'teams',
@@ -925,6 +944,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	api_tokens: ['token_hash'],
 	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
+	org_invite_links: ['token_hash'],
 	mcp_event_subscriptions: ['secret_encrypted', 'previous_secret_encrypted'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
@@ -959,8 +979,10 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
+	credential_inventory_runs: ['initiated_by_user_id'],
 	grants: ['created_by_user_id'],
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
+	org_invite_links: ['created_by_user_id'],
 	org_memberships: ['invited_by_user_id'],
 	org_user_budgets: ['set_by_user_id'],
 	org_limit_overrides: ['set_by_user_id'],

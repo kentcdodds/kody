@@ -47,7 +47,8 @@ export async function executeAppMcp(input: {
 	params?: Record<string, unknown>
 	cookieHeader?: string
 	oauth?: AppMcpOAuthSession
-	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
+	orgSlug?: string | null
+	connect?: AppMcpConnect
 }): Promise<AppMcpCallReport> {
 	if (isProductionKodyOrigin(input.origin)) {
 		throw new Error('execute refuses to run against https://kody.codes')
@@ -64,6 +65,7 @@ export async function executeAppMcp(input: {
 		readResult: readExecuteResult,
 		cookieHeader: input.cookieHeader,
 		oauth: input.oauth,
+		orgSlug: input.orgSlug,
 		connect: input.connect,
 	})
 }
@@ -78,7 +80,8 @@ export async function searchAppMcp(input: {
 	limit?: number
 	cookieHeader?: string
 	oauth?: AppMcpOAuthSession
-	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
+	orgSlug?: string | null
+	connect?: AppMcpConnect
 }): Promise<AppMcpCallReport> {
 	if (isProductionKodyOrigin(input.origin)) {
 		throw new Error('search refuses to run against https://kody.codes')
@@ -97,8 +100,33 @@ export async function searchAppMcp(input: {
 		readResult: readSearchResult,
 		cookieHeader: input.cookieHeader,
 		oauth: input.oauth,
+		orgSlug: input.orgSlug,
 		connect: input.connect,
 	})
+}
+
+type AppMcpConnectOptions = {
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
+	orgSlug?: string
+}
+
+type AppMcpConnect = (
+	origin: string,
+	user: AppAuthUser,
+	options: AppMcpConnectOptions,
+) => Promise<McpCallConnection>
+
+function mcpConnectOptions(input: {
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
+	orgSlug?: string | null
+}): AppMcpConnectOptions {
+	return {
+		cookieHeader: input.cookieHeader,
+		oauth: input.oauth,
+		...(input.orgSlug ? { orgSlug: input.orgSlug } : {}),
+	}
 }
 
 async function callAppMcpTool(input: {
@@ -110,19 +138,18 @@ async function callAppMcpTool(input: {
 	readResult: (toolResult: unknown) => unknown
 	cookieHeader?: string
 	oauth?: AppMcpOAuthSession
-	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
+	orgSlug?: string | null
+	connect?: AppMcpConnect
 }): Promise<AppMcpCallReport> {
 	const user: AppAuthUser = {
 		email: input.email,
 		password: input.password,
 		username: usernameFromEmail(input.email),
 	}
+	const connectOptions = mcpConnectOptions(input)
 	const connection = input.connect
-		? await input.connect(input.origin, user)
-		: await connectAppMcpClient(input.origin, user, {
-				cookieHeader: input.cookieHeader,
-				oauth: input.oauth,
-			})
+		? await input.connect(input.origin, user, connectOptions)
+		: await connectAppMcpClient(input.origin, user, connectOptions)
 	try {
 		const toolResult = await connection.client.callTool(
 			{

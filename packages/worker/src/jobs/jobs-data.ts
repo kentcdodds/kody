@@ -21,12 +21,11 @@ export function jobsService(env: JobsDataEnv): JobsServiceContract | null {
 
 /**
  * Jobs-data access for the main worker. In deployed environments the JOBS
- * service binding reaches the jobs worker, which owns the `jobs` and
- * `archived_job_artifacts` tables in the dedicated jobs D1 database. In
- * tests (and local setups without the jobs worker running) the binding is
- * absent and jobs data falls back to the same tables in APP_DB (created by
- * test fixtures; the production APP_DB copies were dropped after the
- * migration).
+ * service binding reaches the jobs worker, which owns the `jobs` table in
+ * the dedicated jobs D1 database. In tests (and local setups without the
+ * jobs worker running) the binding is absent and jobs data falls back to
+ * the same table in APP_DB (created by test fixtures; the production APP_DB
+ * copy was dropped after the migration).
  */
 export function jobsData(env: JobsDataEnv): JobsStore {
 	return jobsService(env) ?? createD1JobsStore(env.APP_DB)

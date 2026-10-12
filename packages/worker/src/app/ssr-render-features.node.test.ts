@@ -89,11 +89,6 @@ test.each([
 	expect(response.status).toBe(200)
 	const html = await response.text()
 
-	expect(html).toContain('/feature-pages.css')
-	expect(html).toContain(`href="https://example.com/features${suffix}"`)
-	expect(html).toContain(
-		`/og/${suffix ? `feature-${suffix.slice(1)}` : 'features'}.png`,
-	)
 	expect(html).not.toContain('Loading page')
 	expect(html.match(/<h1[ >]/g)).toHaveLength(1)
 	expect(html.match(/<main[ >]/g)).toHaveLength(1)
@@ -101,4 +96,16 @@ test.each([
 		expect(html).toContain(
 			`/images/lantern/kody-primitives-orb-${suffix.slice(1)}.webp`,
 		)
+	if (suffix === '/secrets') {
+		expect(html).toContain('href="/onboarding"')
+		expect(html).toContain('Connect your agent')
+	}
+	if (suffix === '/packages') {
+		expect(html).toContain('id="package-source-fallback"')
+		expect(html).toContain('src/brief.ts')
+	}
+	if (suffix === '/memory') {
+		expect(html).toContain('id="ms-hero-note"')
+		expect(html).toContain('Lead with the decision. Keep updates short.')
+	}
 })

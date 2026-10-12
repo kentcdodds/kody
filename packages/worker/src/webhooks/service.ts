@@ -2,17 +2,29 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
+import {
 	decryptWebhookUrlSecret,
 	encryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+	checkPermission,
+	computeEffectivePermissions,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
 	type PackageWebhookManifestEntry,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackage } from '#worker/package-invocations/module-artifacts.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -42,7 +54,10 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import { resolveHmacCiphertextForMint } from './signing-secret.ts'
+import {
+	defaultWebhookVerification,
+	resolveHmacCiphertextForMint,
+} from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
@@ -195,16 +210,27 @@ async function loadDeclaredWebhook(input: {
 	return declared
 }
 
+/** Declared webhooks on the owner's packages that the caller may read. */
 export async function listWebhooksForUser(input: {
 	env: Env
+	request: RequestContext
 	baseUrl: string
 	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
-	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: input.request,
 	})
+	const packages = (
+		await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.userId,
+		})
+	).filter(
+		(entry) =>
+			checkPermission(access, 'package:read', packageResource(entry)).allowed,
+	)
 	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
 	const filteredPackages = packageFilter
 		? packages.filter(
@@ -319,6 +345,9 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
+	const verification =
+		webhookHmacVerification(declared.verification) ?? defaultWebhookVerification
+
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
 	const existing = await getWebhookEndpointByKey({
@@ -342,7 +371,7 @@ export async function mintWebhookUrlForUser(input: {
 			userId: input.userId,
 			endpointId,
 			packageId: savedPackage.id,
-			verification: declared.verification,
+			verification,
 			existingHmacEncrypted: existing?.hmacSecretEncrypted,
 		})
 		try {
@@ -379,6 +408,13 @@ export async function mintWebhookUrlForUser(input: {
 	if (!stored) {
 		throw new Error('Unable to persist webhook URL secret.')
 	}
+	await ensureWebhookEnablementForMinter({
+		env: input.env,
+		request: input.request,
+		savedPackage,
+		endpointId: stored.id,
+		webhookName,
+	})
 
 	return {
 		packageId: savedPackage.id,
@@ -690,6 +726,7 @@ export type SyntheticWebhookDispatchResult = {
  */
 export async function dispatchSyntheticWebhookForUser(input: {
 	env: Env
+	requestContext: RequestContext
 	userId: OwnerId
 	baseUrl: string
 	packageId?: string
@@ -715,6 +752,11 @@ export async function dispatchSyntheticWebhookForUser(input: {
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
+	await authorize(
+		{ env: input.env, request: input.requestContext },
+		'package:execute',
+		packageResource(savedPackage),
+	)
 	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -812,8 +854,9 @@ export async function dispatchSyntheticWebhookForUser(input: {
 				`Invalid request fixture method: ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
+		const hmacVerification = webhookHmacVerification(declared.verification)
 		const extraAllowedHeaders = [
-			...(declared.verification ? [declared.verification.header] : []),
+			...(hmacVerification ? [hmacVerification.header] : []),
 			...(declared.replay?.timestampHeader
 				? [declared.replay.timestampHeader]
 				: []),
@@ -937,13 +980,20 @@ export async function dispatchSyntheticWebhookForUser(input: {
 					| Record<string, unknown>
 					| undefined)
 			: undefined
+	const placementRefused = Boolean(
+		readCredentialPlacementRefusalFromInvocationBody(response.body),
+	)
 	return await finish({
 		status: response.status,
 		outcome: 'failed',
-		error: `invocation_status_${response.status}`,
+		error: placementRefused
+			? credentialPlacementRefusedCode
+			: `invocation_status_${response.status}`,
 		result,
 		errorBody: {
-			code: String(errorRecord?.['code'] ?? 'invocation_failed'),
+			code: placementRefused
+				? credentialPlacementRefusedCode
+				: String(errorRecord?.['code'] ?? 'invocation_failed'),
 			message: String(
 				errorRecord?.['message'] ??
 					`Webhook export invocation failed with HTTP ${response.status}.`,

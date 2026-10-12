@@ -1,4 +1,7 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { insertEnablement } from '#worker/enablements/repo.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { ensurePersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -193,4 +196,29 @@ export async function assignAdminRole(input: {
 		)
 		.bind(input.userId)
 		.run()
+}
+
+/**
+ * Turns a saved package's subscription on for the owner of the personal org
+ * that saved it, so its events run as that person.
+ */
+export async function enableSubscriptionForOwner(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	topic: string
+}) {
+	await ensureOrgsTestSchema(input.db)
+	return await insertEnablement({
+		db: input.db,
+		enablement: {
+			orgId: ownerIdFromStored(input.userId),
+			packageId: input.packageId,
+			triggerKind: 'subscription',
+			triggerName: input.topic,
+			instanceId: input.packageId,
+			enablerUserId: input.userId,
+			origin: 'enabled',
+		},
+	})
 }

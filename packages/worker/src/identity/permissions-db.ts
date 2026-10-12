@@ -59,6 +59,30 @@ export async function getUserRolesAndPermissions(
 	return parseUserRolesAndPermissionRows(result.results)
 }
 
+/**
+ * Whether the live, unsuspended person `stableUserId` holds `role` right now.
+ * Reads D1 directly, unlike the background caller's cached roles.
+ */
+export async function stableUserHoldsRole(
+	db: D1Database,
+	stableUserId: string,
+	role: RoleName,
+): Promise<boolean> {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS held
+			 FROM users u
+			 INNER JOIN user_roles ur ON ur.user_id = u.id
+			 INNER JOIN roles r ON r.id = ur.role_id
+			 WHERE u.stable_user_id = ? AND r.name = ?
+			   AND u.suspended_at IS NULL AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
+			 LIMIT 1`,
+		)
+		.bind(stableUserId, role)
+		.first<{ held: number }>()
+	return row !== null
+}
+
 function isMissingRbacTableError(error: unknown) {
 	if (!(error instanceof Error)) return false
 	const message = error.message.toLowerCase()

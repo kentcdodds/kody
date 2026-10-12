@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -38,6 +41,7 @@ import {
 import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -75,6 +79,20 @@ import {
 } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+
+const packageStorageClearAttempts = 3
+
+export class PackageStorageCleanupError extends Error {
+	readonly failedStorageIds: ReadonlyArray<string>
+
+	constructor(failedStorageIds: ReadonlyArray<string>) {
+		super(
+			`Package storage cleanup failed for ${failedStorageIds.length} bucket(s); the package was not deleted. Retry after storage is reachable.`,
+		)
+		this.name = 'PackageStorageCleanupError'
+		this.failedStorageIds = failedStorageIds
+	}
+}
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -172,25 +190,33 @@ export async function clearPackageOwnedStorageBucket(input: {
 	storageId: string
 }): Promise<boolean> {
 	let storageCleared = false
-	try {
-		await storageRunnerRpc({
-			env: input.env,
-			userId: input.userId,
-			storageId: input.storageId,
-		}).clearStorage()
-		storageCleared = true
-	} catch (error) {
+	let lastClearError: unknown
+	for (let attempt = 1; attempt <= packageStorageClearAttempts; attempt++) {
+		try {
+			await storageRunnerRpc({
+				env: input.env,
+				userId: input.userId,
+				storageId: input.storageId,
+			}).clearStorage()
+			storageCleared = true
+			break
+		} catch (error) {
+			lastClearError = error
+		}
+	}
+	if (!storageCleared) {
 		console.warn(
 			JSON.stringify({
 				message: 'package storage clear failed',
 				userId: input.userId,
 				packageId: input.packageId,
 				storageId: input.storageId,
-				error: getErrorMessage(error),
+				attempts: packageStorageClearAttempts,
+				error: getErrorMessage(lastClearError),
 			}),
 		)
+		return false
 	}
-	if (!storageCleared) return false
 	try {
 		await input.env.APP_DB.prepare(
 			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
@@ -240,6 +266,7 @@ export async function refreshSavedPackageProjection(input: {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	actorUserId?: PersonId
 	userEmail?: string | null
 	packageId: string
 	sourceId: string
@@ -334,6 +361,10 @@ export async function refreshSavedPackageProjection(input: {
 						: null,
 				}),
 			})
+			// Team packages are owned by the org (`userId`); the acting person
+			// gets the first-package stamp and Kit "activated" tag. Actor-free
+			// projection refreshes (publish, codemod) must not stamp anyone.
+			const activationUserId = input.actorUserId ?? input.userId
 			if (existing) {
 				await updateSavedPackage(input.env.APP_DB, {
 					userId: input.userId,
@@ -358,6 +389,22 @@ export async function refreshSavedPackageProjection(input: {
 					oldSlug: getPackageNameLeaf(existing.name),
 					newSlug: getPackageNameLeaf(row.name),
 				})
+				// A member's first save can be an update to an existing team
+				// package. Personal saves already stamped on insert; this only
+				// claims when an actor is present and still unstamped.
+				if (input.actorUserId) {
+					const stamped = await stampFirstSavedPackage(
+						input.env.APP_DB,
+						{ stableUserId: input.actorUserId },
+						input.env,
+					)
+					if (stamped) {
+						scheduleKitSubscriberSync({
+							env: input.env,
+							stableUserId: input.actorUserId,
+						})
+					}
+				}
 			} else {
 				await assertWithinEntitlement({
 					db: input.env.APP_DB,
@@ -365,24 +412,19 @@ export async function refreshSavedPackageProjection(input: {
 					email: input.userEmail,
 					resource: 'saved_packages',
 				})
-				let isFirstSavedPackage = false
-				try {
-					const beforePackage = await input.env.APP_DB.prepare(
-						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-					)
-						.bind(input.userId)
-						.first<{ first_saved_package_at: string | null }>()
-					isFirstSavedPackage = !beforePackage?.first_saved_package_at
-				} catch (error) {
-					console.warn('kit-first-package-pre-read-failed', error)
-					isFirstSavedPackage = true
-				}
-				await insertSavedPackage(input.env.APP_DB, row, input.env)
-				if (isFirstSavedPackage) {
+				const stamped = await insertSavedPackage(
+					input.env.APP_DB,
+					row,
+					input.env,
+					{ actorUserId: input.actorUserId },
+				)
+				if (stamped) {
 					scheduleKitSubscriberSync({
 						env: input.env,
-						stableUserId: input.userId,
-						email: input.userEmail,
+						stableUserId: activationUserId,
+						...(activationUserId === input.userId
+							? { email: input.userEmail }
+							: {}),
 					})
 				}
 				// A brand new package claims its slug outright, so an earlier
@@ -621,7 +663,60 @@ export async function deleteSavedPackageProjection(input: {
 				buildPackageStorageId(input.packageId),
 				input.packageId,
 			])
-			let packageJobsRemoved = false
+			let packageJobRows: Array<{ id: string; storage_id?: string | null }> = []
+			if (savedPackage) {
+				const jobs = jobsData(input.env)
+				const existingRows = await jobs.listJobsForUser({
+					userId: input.userId,
+				})
+				packageJobRows = existingRows.filter(
+					(row) => row.source_id === savedPackage.sourceId,
+				)
+				for (const row of packageJobRows) {
+					if (row.storage_id) {
+						packageOwnedStorageIds.add(row.storage_id)
+					}
+				}
+			}
+			try {
+				const inventoryIds = await listPackageOwnedStorageIdsFromInventory({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+				for (const storageId of inventoryIds) {
+					packageOwnedStorageIds.add(storageId)
+				}
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'package storage inventory lookup failed',
+						userId: input.userId,
+						packageId: input.packageId,
+						error: getErrorMessage(error),
+					}),
+				)
+				// Fail closed: an incomplete inventory must not let delete proceed
+				// while inventory-only buckets stay uncleared.
+				throw new PackageStorageCleanupError([
+					`storage-inventory:${input.packageId}`,
+				])
+			}
+			// Clear owned buckets before irreversible source/job/listing work so a
+			// failed clear leaves a still-usable package (and package:<id> ACL).
+			const failedStorageIds: Array<string> = []
+			for (const storageId of packageOwnedStorageIds) {
+				const cleared = await clearPackageOwnedStorageBucket({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+					storageId,
+				})
+				if (!cleared) failedStorageIds.push(storageId)
+			}
+			if (failedStorageIds.length > 0) {
+				throw new PackageStorageCleanupError(failedStorageIds)
+			}
 			if (savedPackage) {
 				const listing = await getCommunityListingByOwnerAndPackage(
 					input.env.APP_DB,
@@ -685,47 +780,11 @@ export async function deleteSavedPackageProjection(input: {
 					)
 				})
 				const jobs = jobsData(input.env)
-				const existingRows = await jobs.listJobsForUser({
-					userId: input.userId,
-				})
-				const packageRows = existingRows.filter(
-					(row) => row.source_id === savedPackage.sourceId,
-				)
-				for (const row of packageRows) {
-					if (row.storage_id) {
-						packageOwnedStorageIds.add(row.storage_id)
-					}
+				for (const row of packageJobRows) {
 					await jobs.deleteJob({ userId: input.userId, jobId: row.id })
 				}
-				packageJobsRemoved = packageRows.length > 0
 			}
-			try {
-				const inventoryIds = await listPackageOwnedStorageIdsFromInventory({
-					env: input.env,
-					userId: input.userId,
-					packageId: input.packageId,
-				})
-				for (const storageId of inventoryIds) {
-					packageOwnedStorageIds.add(storageId)
-				}
-			} catch (error) {
-				console.warn(
-					JSON.stringify({
-						message: 'package storage inventory lookup failed',
-						userId: input.userId,
-						packageId: input.packageId,
-						error: getErrorMessage(error),
-					}),
-				)
-			}
-			for (const storageId of packageOwnedStorageIds) {
-				await clearPackageOwnedStorageBucket({
-					env: input.env,
-					userId: input.userId,
-					packageId: input.packageId,
-					storageId,
-				})
-			}
+			const packageJobsRemoved = packageJobRows.length > 0
 			await deleteAllPackageScopedSecrets({
 				env: input.env,
 				userId: input.userId,

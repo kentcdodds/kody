@@ -176,10 +176,11 @@ export function toJoinedIntegrationConfig(
 			}
 		}
 	})()
+	const withId = { ...config, credentialId: joined.connection.credentialId }
 	const snapshot = joined.connection.lastAuthFailure
-	if (!snapshot) return config
+	if (!snapshot) return withId
 	return {
-		...config,
+		...withId,
 		lastAuthFailure: toIntegrationAuthFailureView({
 			name: joined.connection.name,
 			accountLabel: joined.connection.accountLabel,

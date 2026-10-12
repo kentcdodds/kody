@@ -25,10 +25,6 @@ import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import * as credentialDoor from '#worker/credentials/resolve-credential.ts'
 import { type JobRecord } from '#worker/jobs/types.ts'
-import {
-	insertRepoSession,
-	listRepoSessionsBySource,
-} from '#worker/repo/repo-sessions.ts'
 import { createD1JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import {
 	createFakeRunLogNamespace,
@@ -36,8 +32,6 @@ import {
 	createJobMutationKv,
 	createRunKodyRegistryTestEnv,
 	createJobRow,
-	createEntitySourceRow,
-	createRepoSessionRow,
 } from '#worker/test-support/run-kody-registry.ts'
 
 vi.mock('#worker/package-runtime/module-graph.ts', async () => {
@@ -402,12 +396,8 @@ export default async function main() {
 	}
 })
 
-test('buildKodyFns updates and deletes jobs through production-shaped bindings', async () => {
-	// Deleting the job also best-effort deletes its artifact repo, which fails
-	// against this test's stub fetch and logs a JSON warning.
-	silenceIncidentalRuntimeWarnings([
-		/^\{"message":"artifact repo delete failed"/,
-	])
+test('buildKodyFns updates package jobs through production-shaped bindings', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const user = {
 		userId: personIdFromStored('user-123'),
 		email: 'user@example.com',
@@ -425,7 +415,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		},
 	})
 	const userId = user.userId
-	const jobId = '504513c3-f29e-47f0-9ea1-402569ebef54'
+	const jobId = 'package-job:pkg-1:hrv-discord-reaction-poller'
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
@@ -439,7 +429,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
@@ -450,14 +439,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	}
 	const db = createJobMutationDatabase({
 		jobs: [createJobRow(job, { ...callerContext, user })],
-		entitySources: [
-			createEntitySourceRow({
-				userId,
-				jobId,
-				sourceId: job.sourceId,
-				repoId: `job-${jobId}`,
-			}),
-		],
+		entitySources: [],
 	})
 	const repoSessionAccesses: Array<string> = []
 	const jobManagerSyncPayloads: Array<{ userId: string; source?: string }> = []
@@ -487,35 +469,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 				return { ok: true as const, userId: input.userId, nextRunAt: null }
 			},
 		},
-		STORAGE_RUNNER: {
-			idFromName(name: string) {
-				return name as unknown as DurableObjectId
-			},
-			get() {
-				return { clearStorage: async () => ({ ok: true as const }) }
-			},
-		},
 	})
-	await insertRepoSession(
-		env,
-		createRepoSessionRow({
-			id: 'session-1',
-			userId,
-			sourceId: job.sourceId,
-			sourceRepoId: `job-${jobId}-session`,
-		}),
-	)
-	vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-		new Response(
-			JSON.stringify({
-				success: true,
-				result: { id: 'artifact-repo-1' },
-				errors: [],
-				messages: [],
-			}),
-			{ status: 200 },
-		),
-	)
 	const readJobRow = () =>
 		db
 			.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
@@ -534,20 +488,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	expect(repoSessionAccesses).toEqual([])
 	expect(jobManagerSyncPayloads).toMatchObject([{ userId }])
 	await expect(readJobRow()).resolves.toMatchObject({ enabled: 0 })
-
-	await expect(requireFn(kody, 'jobDelete')({ id: jobId })).resolves.toEqual({
-		job_id: jobId,
-		deleted: true,
-	})
-	expect(repoSessionAccesses).toEqual([])
-	expect(jobManagerSyncPayloads).toMatchObject([{ userId }, { userId }])
-	await expect(readJobRow()).resolves.toBeNull()
-	await expect(
-		listRepoSessionsBySource(env, {
-			userId: personalOrgId(userId),
-			sourceId: job.sourceId,
-		}),
-	).resolves.toEqual([])
 })
 
 test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts them from cyclic results and logs', async () => {
@@ -673,6 +613,55 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 	)
 })
 
+test('packageStorage keys StorageRunner by the bound org, not the caller person', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.spyOn(registryModule, 'getCapabilityRegistryForContext').mockResolvedValue(
+		emptyRegistry,
+	)
+	const names: Array<string> = []
+	const env = {
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => {
+				names.push(name)
+				return name
+			},
+			get: () => ({
+				getValue: async ({ key }: { key: string }) => ({ key, value: 'v' }),
+			}),
+		},
+	} as unknown as Env
+	const user = {
+		userId: personIdFromStored('person-1'),
+		email: 'member@example.com',
+		displayName: 'Member',
+	}
+	const storageNameFor = async (orgId: string | null) => {
+		names.length = 0
+		const fns = await buildKodyFns(
+			env,
+			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://kody.codes',
+				user,
+				orgBinding: orgId
+					? { org: { id: orgId, slug: 'team' }, role: 'member' }
+					: null,
+			}),
+			{ packageStorageTools: { grantedPackageIds: new Set(['pkg-1']) } },
+		)
+		await (fns as Record<string, (args: unknown) => Promise<unknown>>)
+			.packageStorageGet!({ packageId: 'pkg-1', key: 'k' })
+		return names.at(-1)
+	}
+
+	expect(await storageNameFor('team-org-1')).toBe(
+		JSON.stringify(['team-org-1', 'package:pkg-1']),
+	)
+	expect(await storageNameFor(null)).toBe(
+		JSON.stringify([personalOrgId(user.userId), 'package:pkg-1']),
+	)
+})
+
 test('runModuleWithRegistry forwards package context and resolves package secrets as the trusted package', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
@@ -694,14 +683,15 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	vi.spyOn(registryModule, 'getCapabilityRegistryForContext').mockResolvedValue(
 		emptyRegistry,
 	)
-	const mountedValue = 'discord-bot-token-value'
+	const mountedRef =
+		'{{secret:discordBotTokenKentPersonalAutomation|scope=user}}'
 	const resolveMountedSpy = vi
 		.spyOn(credentialDoor, 'resolveCredential')
 		.mockImplementation(async ({ credential }) => {
 			if (credential.use !== 'package-secret-mount') {
 				throw new Error(`Unexpected credential use: ${credential.use}`)
 			}
-			const { alias, access } = credential
+			const { alias } = credential
 			if (alias === 'missing-token') {
 				throw new PackageSecretMountError(
 					'Secret "missing-token" was not found.',
@@ -710,7 +700,7 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 			return {
 				alias,
 				name: 'discordBotTokenKentPersonalAutomation',
-				value: access === 'raw' ? mountedValue : null,
+				ref: mountedRef,
 				scope: 'user',
 				packageId: 'package-123',
 				kodyId: 'discord-gateway',
@@ -753,7 +743,7 @@ export default async function run() {
 	]) {
 		resolveMountedSpy.mockClear()
 		await expect(packageSecretGet(args)).resolves.toEqual({
-			value: mountedValue,
+			value: mountedRef,
 		})
 		expect(resolveMountedSpy).toHaveBeenCalledExactlyOnceWith({
 			env,
@@ -764,7 +754,6 @@ export default async function run() {
 			credential: {
 				use: 'package-secret-mount',
 				alias: 'token',
-				access: 'raw',
 				callerContext,
 			},
 		})
@@ -905,7 +894,7 @@ export default async function main(params) { return { other: true, ...params } }
 				mainModule: 'executor.js',
 				modules: {
 					...(call.input.modules as Record<string, string>),
-					'executor.js': mcpExecutor.createExecutorModuleSource({
+					'executor.js': await mcpExecutor.createExecutorModuleSource({
 						code: call.source,
 						providers: [{ name: 'kody', fns: {} }],
 						shadowGlobalThis: false,

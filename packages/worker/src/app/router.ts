@@ -299,8 +299,14 @@ import {
 } from '#app/handlers/org-section.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
 import {
+	createOrgInviteJoinHandler,
+	createOrgInviteJoinPostHandler,
+} from '#app/handlers/org-invite-join.ts'
+import {
 	createOrgMembersApiHandler,
 	createOrgMembersHandler,
+	createOrgMembersInviteLinksPostHandler,
+	createOrgMembersInviteLinksRevokePostHandler,
 	createOrgMembersInvitePostHandler,
 	createOrgMembersRemovePostHandler,
 	createOrgMembersRolePostHandler,
@@ -321,6 +327,7 @@ import {
 	createOrgCollaboratorsApiHandler,
 	createOrgCollaboratorsHandler,
 } from '#app/handlers/org-collaborators.ts'
+import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
@@ -610,6 +617,7 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgOverview: createOrgOverviewHandler(env),
 			orgPackages: createOrgSectionHandler(env, 'packages'),
 			orgPackagesApi: createOrgPackagesApiHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
@@ -628,6 +636,11 @@ export function createAppRouter(env: Env) {
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),
 			orgMembersRemovePost: createOrgMembersRemovePostHandler(env),
 			orgMembersInvitePost: createOrgMembersInvitePostHandler(env),
+			orgMembersInviteLinksPost: createOrgMembersInviteLinksPostHandler(env),
+			orgMembersInviteLinksRevokePost:
+				createOrgMembersInviteLinksRevokePostHandler(env),
+			orgInviteJoin: createOrgInviteJoinHandler(env),
+			orgInviteJoinPost: createOrgInviteJoinPostHandler(env),
 			orgTeams: createOrgTeamsHandler(env),
 			orgTeamsApi: createOrgTeamsApiHandler(env),
 			orgTeamsCreatePost: createOrgTeamsCreatePostHandler(env),

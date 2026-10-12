@@ -694,4 +694,19 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 	expect(filterBrowserSentryEvent(cspEvalCrossValueEvent)).toBe(
 		cspEvalCrossValueEvent,
 	)
+
+	// Bare event.message / originalException without exception.values must
+	// stay visible — no frames to prove anonymous/Sentry-only provenance
+	// (CodeRabbit on #3204). Regression that dropped these would be silent.
+	const messageOnlyCspEvent = { message: cspUnsafeEvalMessage }
+	expect(filterBrowserSentryEvent(messageOnlyCspEvent)).toBe(
+		messageOnlyCspEvent,
+	)
+	const emptyEvent = {}
+	expect(
+		filterBrowserSentryEvent(emptyEvent, new EvalError(cspUnsafeEvalMessage)),
+	).toBe(emptyEvent)
+	expect(filterBrowserSentryEvent(emptyEvent, cspUnsafeEvalMessage)).toBe(
+		emptyEvent,
+	)
 })

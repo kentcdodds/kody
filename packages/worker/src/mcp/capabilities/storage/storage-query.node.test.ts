@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -6,6 +9,8 @@ import { buildPackageStorageId } from '#worker/storage-ids.ts'
 
 const mockModule = vi.hoisted(() => ({
 	sqlQuery: vi.fn(),
+	getSavedPackageById: vi.fn(),
+	authorizePackageWrite: vi.fn(),
 }))
 
 vi.mock('#worker/storage-runner.ts', () => ({
@@ -13,7 +18,7 @@ vi.mock('#worker/storage-runner.ts', () => ({
 	isReadOnlyStorageSqlQuery: (query: string) =>
 		query.trim().toLowerCase().startsWith('select'),
 	storageRunnerRpc: () => ({
-		sqlQuery: (...args: Array<unknown>) => mockModule.sqlQuery(...args),
+		sqlQuery: mockModule.sqlQuery,
 	}),
 }))
 
@@ -22,8 +27,16 @@ vi.mock('#worker/entitlements/service.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: vi.fn(async () => null),
+	getSavedPackageById: mockModule.getSavedPackageById,
 }))
+
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		authorizePackageWrite: mockModule.authorizePackageWrite,
+	}
+})
 
 const { storageQueryCapability } = await import('./storage-query.ts')
 
@@ -59,6 +72,8 @@ function createPackageCallerContext(packageId: string) {
 }
 
 test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platform failures', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.authorizePackageWrite.mockResolvedValue(undefined)
 	mockModule.sqlQuery.mockRejectedValueOnce(
 		new Error('no such table: articles: SQLITE_ERROR'),
 	)
@@ -148,6 +163,12 @@ test('storageQuery denies package runtimes buckets their package does not own', 
 	)
 	expect(mockModule.sqlQuery).not.toHaveBeenCalled()
 
+	mockModule.getSavedPackageById.mockResolvedValueOnce({
+		id: packageId,
+		userId: ownerIdFromStored('user-1'),
+		name: '@user/pkg',
+		kodyId: 'pkg',
+	})
 	mockModule.sqlQuery.mockResolvedValueOnce({
 		columns: ['id'],
 		rows: [{ id: 1 }],
@@ -167,4 +188,5 @@ test('storageQuery denies package runtimes buckets their package does not own', 
 		} as never,
 	)
 	expect(ownBucketResult.storage_id).toBe(buildPackageStorageId(packageId))
+	expect(mockModule.authorizePackageWrite).toHaveBeenCalled()
 })

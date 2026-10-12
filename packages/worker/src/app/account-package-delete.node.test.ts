@@ -7,19 +7,42 @@ import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
-	getSavedPackageById: vi.fn(),
+	writablePackage: null as ReturnType<typeof createSavedPackage> | null,
 	deleteSavedPackageProjection: vi.fn(),
 }))
 
-vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+vi.mock('#app/account-package-write-access.ts', () => ({
+	loadWritableAccountSavedPackage: vi.fn(
+		async (input: { user: { mcpUser: { userId: string } } }) => {
+			if (!mockModule.writablePackage) {
+				return {
+					ok: false as const,
+					response: new Response(
+						JSON.stringify({ ok: false, error: 'Package not found.' }),
+						{ status: 404 },
+					),
+				}
+			}
+			return {
+				ok: true as const,
+				package: {
+					savedPackage: mockModule.writablePackage,
+					ownerUserId: mockModule.writablePackage.userId,
+					actorUserId: input.user.mcpUser.userId,
+				},
+			}
+		},
+	),
 }))
 
-vi.mock('#worker/package-registry/service.ts', () => ({
-	deleteSavedPackageProjection: (...args: Array<unknown>) =>
-		mockModule.deleteSavedPackageProjection(...args),
-}))
+vi.mock('#worker/package-registry/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		deleteSavedPackageProjection: (...args: Array<unknown>) =>
+			mockModule.deleteSavedPackageProjection(...args),
+	}
+})
 
 const { handleAccountPackageDeleteAction } =
 	await import('./account-package-delete.ts')
@@ -87,7 +110,7 @@ test('account package delete requires the typed package name then removes the pa
 		error: 'Package id is required.',
 	})
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
+	mockModule.writablePackage = null
 	const missingPackage = await handleAccountPackageDeleteAction({
 		env,
 		user,
@@ -100,7 +123,7 @@ test('account package delete requires the typed package name then removes the pa
 	})
 	expect(mockModule.deleteSavedPackageProjection).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.writablePackage = createSavedPackage()
 	const wrongName = await handleAccountPackageDeleteAction({
 		env,
 		user,
@@ -127,10 +150,6 @@ test('account package delete requires the typed package name then removes the pa
 	await expect(deleted?.json()).resolves.toEqual({
 		ok: true,
 		deleted: true,
-		packageId: 'pkg-1',
-	})
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(env.APP_DB, {
-		userId: ownerIdFromStored('stable-user-1'),
 		packageId: 'pkg-1',
 	})
 	expect(mockModule.deleteSavedPackageProjection).toHaveBeenCalledWith({

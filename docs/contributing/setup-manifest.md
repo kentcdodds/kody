@@ -16,6 +16,12 @@ This project uses the following resources:
     workflow is dispatched on `main`. The dedicated
     `.github/workflows/nx-cache-deploy.yml` workflow does the same on its own
     `workflow_dispatch` without a full production deploy.
+- R2 bucket for operator rollback snapshots
+  - `binding`: `OPERATOR_BACKUPS` (origin and platform workers)
+  - `bucket_name`: `kody-operator-backups`; previews use
+    `{worker}-operator-backups`
+  - Production and preview deploys ensure the bucket. Written only by admin
+    operations such as [org resource transfer](./org-resource-transfer.md).
 - KV namespace for OAuth/session storage
   - `binding`: `OAUTH_KV`
   - `title`: `<app-name>-oauth`

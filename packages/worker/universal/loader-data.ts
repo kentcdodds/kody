@@ -249,6 +249,9 @@ type CommunityDetailShellLoaderData = {
 	kodyId: string
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	viewerCanPublish?: boolean
+	viewerCanDelete?: boolean
+	viewerCanAdoptCommunityFork?: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
 }
@@ -267,7 +270,8 @@ export type ProfileLoaderData = {
 	ok: true
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	/** Null when the profile has no activity source (e.g. team org repositories). */
+	activity: Array<PublicCommunityActivityItem> | null
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
@@ -277,7 +281,7 @@ export type ProfileLoaderData = {
 export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
-	activity: Array<PublicCommunityActivityItem>
+	activity: Array<PublicCommunityActivityItem> | null
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -335,14 +339,14 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
-	/** Manual grant (`users.plan`). Manage plan writes this column. */
+	/** Manual grant (`orgs.plan` on the personal org). */
 	plan: AdminPlanName
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
-	/** Raw `users.second_agent_standard_gift_expires_at`, or null. */
+	/** Raw `orgs.second_agent_standard_gift_expires_at`, or null. */
 	secondAgentGiftExpiresAt: string | null
-	/** Raw `users.referral_standard_credit_expires_at`, or null. */
+	/** Raw `orgs.referral_standard_credit_expires_at`, or null. */
 	referralCreditExpiresAt: string | null
 	/**
 	 * Later of the two overlay expiry columns (or null). Same value
@@ -414,7 +418,7 @@ export type AdminCreditWalletSummary = {
 	plan: AdminPlanName
 	/** Purchasable Pro: credits unlock limits and debit usage. */
 	eligible: boolean
-	/** `users.admin_credits_eligible`: admin-set, never touched by Stripe. */
+	/** `orgs.admin_credits_eligible`: admin-set, never touched by Stripe. */
 	adminCreditsEligible: boolean
 	unlocked: boolean
 	balanceMicroUsd: number
@@ -1254,13 +1258,54 @@ export type OrgInviteView = {
 	expiresAt: string
 }
 
+export type OrgInviteLinkView = {
+	id: string
+	role: 'member' | 'billing'
+	roleLabel: string
+	allowedEmailDomains: Array<string>
+	maxUses: number | null
+	useCount: number
+	expiresAt: string
+	createdAt: string
+	createdByUsername: string | null
+	createdByDisplayName: string | null
+}
+
 export type OrgMembersLoaderData = {
 	ok: true
 	org: OrgManagementOrg
 	members: Array<OrgMemberView>
 	invites: Array<OrgInviteView>
+	inviteLinks: Array<OrgInviteLinkView>
 	canManage: boolean
 }
+
+export type OrgInviteJoinLoaderData =
+	| {
+			ok: true
+			token: string
+			org: {
+				slug: string
+				displayName: string | null
+				avatarUrl: string | null
+			}
+			role: 'member' | 'billing'
+			roleLabel: string
+			alreadyMember: boolean
+			authenticated: boolean
+	  }
+	| {
+			ok: false
+			error: string
+			reason:
+				| 'missing'
+				| 'invalid'
+				| 'revoked'
+				| 'expired'
+				| 'exhausted'
+				| 'org_inactive'
+				| 'personal_org'
+	  }
 
 export type OrgTeamMemberView = {
 	userId: string
@@ -1482,14 +1527,17 @@ export type AccountConnectedAgentsLoaderData = {
 	}>
 }
 
-type PackageWebhookVerification = {
-	type: 'hmac-sha256' | 'hmac-sha1'
-	header: string
-	secretName?: string
-	encoding: 'hex' | 'base64'
-	prefix?: string
-	signedPayload?: 'body' | 'timestamp.body'
-} | null
+type PackageWebhookVerification =
+	| {
+			type: 'hmac-sha256' | 'hmac-sha1'
+			header: string
+			secretName?: string
+			encoding: 'hex' | 'base64'
+			prefix?: string
+			signedPayload?: 'body' | 'timestamp.body'
+	  }
+	| { type: 'url-secret' }
+	| null
 
 type PackageWebhookReplay = {
 	timestampHeader?: string
@@ -2114,12 +2162,6 @@ export type AccountSecretsLoaderData = {
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
 		currentAllowedPackages: Array<string>
-		/** Package approvals only: what the package may do with each secret. */
-		packageCredentials: Array<{
-			name: string
-			allowedHosts: Array<string>
-			raw: boolean
-		}>
 	} | null
 	approvalError: string | null
 }
@@ -2151,8 +2193,6 @@ export type AccountValuesLoaderData = {
 	selectedValueId: string | null
 }
 
-type AccountJobOwnership = 'ad-hoc' | 'package'
-
 /**
  * JSON-safe blob for job params (and similar free-form payloads). Remix
  * entry props require SerializableValue; `unknown` is not allowed.
@@ -2173,8 +2213,7 @@ type AccountJobSchedule =
 export type AccountJobListItem = {
 	id: string
 	name: string
-	ownership: AccountJobOwnership
-	packageId: string | null
+	packageId: string
 	packageName: string | null
 	packageKodyId: string | null
 	scheduleSummary: string
@@ -2182,7 +2221,6 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
-	preserved: boolean
 	expiresAt: string | null
 	expired: boolean
 	dueNow: boolean
@@ -2234,16 +2272,6 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
-	retention: {
-		successOnceDays: number
-		failedOrNeverRanOnceDays: number
-		disabledRecurringDays: number
-		defaults: {
-			successOnce: number
-			failedOrNeverRanOnce: number
-			disabledRecurring: number
-		}
-	}
 }
 
 type AccountWorkflowSourceType = 'package' | 'inline'
@@ -2569,6 +2597,7 @@ export type AppLoaderData = {
 	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
 	orgSettings?: OrgSettingsLoaderData
 	orgMembers?: OrgMembersLoaderData
+	orgInviteJoin?: OrgInviteJoinLoaderData
 	orgTeams?: OrgTeamsLoaderData
 	orgGrants?: OrgGrantsLoaderData
 	orgCollaborators?: OrgCollaboratorsLoaderData

@@ -55,7 +55,6 @@ const run: PackageWebhookListItem = {
 
 const secretUrl =
 	'https://kody.example/@jane/webhooks/raycast/list-commands/s3cr3t-url-secret'
-
 function listPayload(
 	webhooks: Array<PackageWebhookListItem>,
 ): PackageWebhooksLoaderData {
@@ -214,6 +213,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		'aria-label="Hide URL for raycast/list-commands"',
 	)
 	expect(mintedHtml).not.toContain('data-testid="package-webhook-mint"')
+	expect(mintedHtml).not.toContain('package-webhook-signing-secret')
 	// The other card is untouched: still hidden until its own reveal.
 	expect(mintedHtml).toContain('aria-label="Reveal URL for raycast/run"')
 	expect(
@@ -235,7 +235,9 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		intent: 'reveal',
 		webhookName: 'list-commands',
 	})
-	expect(await render()).toContain(secretUrl)
+	const revealedHtml = await render()
+	expect(revealedHtml).toContain(secretUrl)
+	expect(revealedHtml).not.toContain('package-webhook-signing-secret')
 	await controller.ensureLoaded({ username: 'jane', kodyId: 'other' })
 	const otherHtml = await render({ username: 'jane', kodyId: 'other' })
 	expect(otherHtml).not.toContain(secretUrl)

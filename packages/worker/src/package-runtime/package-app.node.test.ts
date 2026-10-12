@@ -1,7 +1,6 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
-import { redactedSecretText } from '#mcp/secrets/execution-secret-redactor.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
@@ -619,6 +618,24 @@ const {
 
 type BuildInput = Parameters<typeof buildPackageAppWorker>[0]
 
+/** The request of an Owner visiting their own org's app. */
+function appVisitorRequest(key: string) {
+	const id = `user-${key}`
+	return {
+		org: { id, slug: key },
+		actor: { userId: id, username: key },
+		attribution: { kind: 'user', userId: id },
+		credential: {
+			kind: 'package-app',
+			id: null,
+			orgId: id,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'owner' },
+	}
+}
+
 /** `key` keeps user/package ids unique so the in-memory build cache never leaks between tests. */
 function makeBuildInput(
 	env: Env,
@@ -641,6 +658,7 @@ function makeBuildInput(
 					email: `${key}@example.com`,
 					displayName: `${key} User`,
 				},
+				request: appVisitorRequest(key),
 			},
 		} as never,
 		...rest,
@@ -666,6 +684,8 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 			props: {
 				baseUrl: 'https://example.com',
 				userId: ownerIdFromStored('user-1'),
+				orgSlug: 'user',
+				visitor: { userId: 'user-1', username: 'user', role: 'owner' },
 				email: 'user@example.com',
 				displayName: 'User',
 				packageId: 'package-1',
@@ -803,6 +823,7 @@ test('package app worker exposes its public mount and records fetch query and re
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://packages.kody.test',
@@ -846,6 +867,7 @@ test('package app public mount uses the name leaf when kodyId diverges', async (
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://packages.kody.test',
@@ -900,6 +922,7 @@ test('package app worker exposes the fingerprinted client module URL when kody.a
 			runtime: {
 				callerContext: {
 					user: { email: 'owner@example.com', displayName: 'Owner' },
+					request: appVisitorRequest('owner'),
 				} as never,
 				servingUsername: 'serving-owner',
 				hostedOrigin: 'https://serving-owner.kody.run',
@@ -1056,12 +1079,12 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 })
 
-test('package app runtime bridge redacts a raw slot value from run records and merges metadata via waitUntil', async () => {
-	const rawValue = 'raw-api-token-value'
+test('package app runtime bridge returns opaque secret refs and merges metadata via waitUntil', async () => {
+	const opaqueRef = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
-		value: rawValue,
+		ref: opaqueRef,
 		scope: 'user',
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -1089,19 +1112,14 @@ test('package app runtime bridge redacts a raw slot value from run records and m
 		},
 	}
 	const logs = [
-		{ level: 'log' as const, message: `token=${rawValue}` },
-		`also ${rawValue}`,
+		{ level: 'log' as const, message: `token=${opaqueRef}` },
+		`also ${opaqueRef}`,
 	]
-	const error = { name: 'Error', message: `boom ${rawValue}` }
+	const error = { name: 'Error', message: `boom ${opaqueRef}` }
 
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token' }),
-	).resolves.toEqual({ value: rawValue })
-	expect(packageAppRuntimeMock.resolveCredential).toHaveBeenCalledWith(
-		expect.objectContaining({
-			credential: expect.objectContaining({ access: 'raw' }),
-		}),
-	)
+	).resolves.toEqual({ value: opaqueRef })
 
 	await expect(
 		bridge.packageRuntimeRunFinish({
@@ -1133,20 +1151,17 @@ test('package app runtime bridge redacts a raw slot value from run records and m
 			},
 		},
 		status: 'error',
-		logs: [
-			{ level: 'log', message: `token=${redactedSecretText}` },
-			`also ${redactedSecretText}`,
-		],
-		error: { name: 'Error', message: `boom ${redactedSecretText}` },
+		logs,
+		error,
 	})
 })
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
-	const value = 'raw-api-token-value'
+	const ref = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
-		value,
+		ref,
 		scope: 'user',
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -1170,7 +1185,7 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 	for (const [input, resolvedPackageId] of cases) {
 		packageAppRuntimeMock.resolveCredential.mockClear()
 		await expect(bridge.packageSecretGet(input)).resolves.toEqual({
-			value,
+			value: ref,
 		})
 		expect(packageAppRuntimeMock.resolveCredential).toHaveBeenCalledWith(
 			expect.objectContaining({

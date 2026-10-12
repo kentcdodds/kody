@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
@@ -489,7 +490,7 @@ async function handleUserSubdomainRequest(input: {
 			)
 		: null
 
-	if (!owner) {
+	if (!owner || !parsedSession) {
 		return createPackageAppSessionRequiredResponse({
 			request,
 			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
@@ -507,6 +508,12 @@ async function handleUserSubdomainRequest(input: {
 			: request,
 		env,
 		owner,
+		// Only a person's own personal-org apps serve here, so they are its Owner.
+		visitor: {
+			userId: personIdFromStored(parsedSession.session.stableUserId),
+			username: owner.username,
+			role: 'owner',
+		},
 		packagePath,
 		serverTiming,
 	})

@@ -1,0 +1,12 @@
+diff --git a/node_modules/acorn/package.json b/node_modules/acorn/package.json
+index 7984614..9577eb4 100644
+--- a/node_modules/acorn/package.json
++++ b/node_modules/acorn/package.json
+@@ -17,6 +17,7 @@
+     "./package.json": "./package.json"
+   },
+   "version": "8.17.0",
++  "sideEffects": false,
+   "engines": {
+     "node": ">=0.4.0"
+   },

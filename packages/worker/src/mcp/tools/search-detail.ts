@@ -183,7 +183,12 @@ export async function resolveEntityDetail(input: {
 			userId: input.userId,
 			name: ref.id,
 		})
-		if (!joined) {
+		const visible =
+			joined &&
+			input.searchRows.userIntegrationRows.some(
+				(row) => row.connection.name === joined.connection.name,
+			)
+		if (!joined || !visible) {
 			throw new McpCallerError('Saved integration not found for this user.')
 		}
 		const config = toJoinedIntegrationConfig(joined)

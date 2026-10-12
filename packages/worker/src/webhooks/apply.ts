@@ -740,7 +740,7 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		savedPackage: input.savedPackage,
 		webhookName: input.webhookName,
 	})
-	if (!declared?.verification) {
+	if (!declared) {
 		throw new McpCallerError(
 			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification declaration.`,
 		)
@@ -749,7 +749,6 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		env: input.env,
 		userId: input.userId,
 		endpoint: input.endpoint,
-		verification: declared.verification,
 	})
 }
 

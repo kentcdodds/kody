@@ -26,8 +26,8 @@ permissions:
 # (overprovisions the whole secrets context). Nx treats an
 # unreachable self-hosted cache as a fatal error, so setup-validate
 # probes before setting the server URL. Cached npm scripts then run
-# through tools/run-nx.ts so a mid-run /v1/cache transport flake
-# cannot fail the job after tasks already succeeded.
+# through tools/run-nx.ts so a rejected token or a mid-run /v1/cache
+# transport flake cannot fail the job after tasks already succeeded.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
@@ -36,11 +36,16 @@ env:
     github.event.pull_request.head.repo.fork != true &&
     secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || '' }}
 
+# PR and manual runs cancel superseded runs. `main` pushes queue instead: a
+# busy `main` cancelled every run and starved production deploys (#3380). One
+# run stays in progress and GitHub replaces the pending one with the newest
+# push; deploy.yml's sha-guard can deploy any completed run that is ahead of
+# production, though its own queue may replace an older pending deploy.
 concurrency:
   group: >-
     validate-${{ github.event_name }}-${{ github.event.pull_request.number ||
     github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
 # (node/workers unit, Playwright E2E, MCP E2E, typecheck) do not contend on one
@@ -54,6 +59,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -160,6 +166,9 @@ jobs:
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
+          # Advisory open-PR migration prefix scan. Missing auth skips it and
+          # does not fail this step.
+          GH_TOKEN: ${{ github.token }}
 
       - name: 🔒 Lockfile peer drift
         if: ${{ !cancelled() }}
@@ -332,8 +341,10 @@ jobs:
       # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Vite +
       # @cloudflare/vite-plugin can also die on first start with
       # `ReferenceError: __LOAD__ is not defined` during live export-type
-      # inspection (Validate #36669175020). Retry the whole suite once
-      # with a fresh server, but only when the failure matches that
+      # inspection (Validate #36669175020), or restart workerd after
+      # "The Workers runtime crashed unexpectedly" while the webServer
+      # process stays up (Validate #38206666510). Retry the whole suite
+      # once with a fresh server, but only when the failure matches that
       # crash signature — genuine test failures never retry.
       - name: 🎭 Playwright E2E
         run: |

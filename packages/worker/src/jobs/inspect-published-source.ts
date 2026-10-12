@@ -6,10 +6,6 @@ import {
 	loadPublishedEntitySource,
 	type PublishedEntitySource,
 } from '#worker/repo/published-source.ts'
-import {
-	getManifestEntrypointPath,
-	parseRepoManifest,
-} from '#worker/repo/manifest.ts'
 import { formatJobError } from './schedule.ts'
 import {
 	type JobRecord,
@@ -27,7 +23,7 @@ export type PublishedJobSourceResolution = {
 		packageId: string
 		kodyId: string
 		sourceId: string
-	} | null
+	}
 }
 
 export async function resolvePublishedJobSource(input: {
@@ -47,31 +43,15 @@ export async function resolvePublishedJobSource(input: {
 	if (!publishedSource) {
 		throw new Error(`Published source "${input.job.sourceId}" was not found.`)
 	}
+	if (publishedSource.entity_kind !== 'package') {
+		throw new Error(
+			`Job "${input.job.id}" source "${input.job.sourceId}" is not a package source (ADR 0032).`,
+		)
+	}
 	const manifestPath = publishedSource.manifest_path.replace(/^\/+/, '')
 	const manifestContent = published.files[manifestPath]
 	if (!manifestContent) {
 		throw new Error(`Job manifest "${manifestPath}" was not found.`)
-	}
-	const artifactName =
-		publishedSource.entity_kind === 'package' ? input.job.name : input.job.id
-	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
-		const manifest = parseRepoManifest({
-			content: manifestContent,
-			manifestPath,
-		})
-		if (manifest.kind !== 'job') {
-			throw new Error(
-				`Repo source "${input.job.sourceId}" is not a job manifest.`,
-			)
-		}
-		return {
-			source: publishedSource,
-			files: published.files,
-			artifactName,
-			entryPoint: getManifestEntrypointPath(manifest),
-			emittedEventTopics: [],
-			packageContext: null,
-		}
 	}
 
 	const manifest = parseAuthoredPackageJson({
@@ -88,7 +68,7 @@ export async function resolvePublishedJobSource(input: {
 	return {
 		source: publishedSource,
 		files: published.files,
-		artifactName,
+		artifactName: input.job.name,
 		entryPoint: normalizePackageWorkspacePath(jobDefinition.entry),
 		emittedEventTopics: Object.keys(manifest.kody.emits ?? {}),
 		packageContext: {

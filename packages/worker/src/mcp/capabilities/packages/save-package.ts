@@ -51,6 +51,7 @@ import {
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
@@ -63,6 +64,7 @@ import {
 	packageSummarySchema,
 	pendingPackageSecretApprovalsSchema,
 } from './shared.ts'
+import { credentialPatternNoticeForFiles } from '#worker/repo/credential-pattern-check.ts'
 
 function parseSavedPackageManifest(input: {
 	content: string
@@ -134,6 +136,7 @@ function normalizeFiles(files: Array<z.infer<typeof packageFileSchema>>) {
 export function buildPackageSaveNextSteps(input: {
 	packageId: string
 	pendingSecretApprovalsGuidance?: string | null
+	credentialPatternsNotice?: string | null
 }) {
 	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
@@ -145,7 +148,10 @@ export function buildPackageSaveNextSteps(input: {
 	if (guidance) {
 		steps.push(guidance)
 	}
-	return steps.join(' ')
+	const next = steps.join(' ')
+	return input.credentialPatternsNotice
+		? `${next}\n\n${input.credentialPatternsNotice}`
+		: next
 }
 
 /**
@@ -413,7 +419,10 @@ export const savePackageCapability = defineDomainCapability(
 			if (!existing) {
 				const now = new Date().toISOString()
 				try {
-					await insertSavedPackage(
+					// Stamp happens here; projection refresh below sees an existing
+					// row and will not Kit-sync. Sync now when the actor was newly
+					// activated.
+					const stamped = await insertSavedPackage(
 						ctx.env.APP_DB,
 						{
 							id: packageId,
@@ -432,7 +441,14 @@ export const savePackageCapability = defineDomainCapability(
 							updated_at: now,
 						},
 						ctx.env,
+						{ actorUserId: owner.actorUserId },
 					)
+					if (stamped) {
+						scheduleKitSubscriberSync({
+							env: ctx.env,
+							stableUserId: owner.actorUserId,
+						})
+					}
 				} catch (error) {
 					const message = getErrorMessage(error)
 					// Pre-check covers the common path; this catches races where
@@ -466,6 +482,7 @@ export const savePackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				userEmail: packageOwnerEntitlementEmail(owner),
 				packageId,
 				sourceId: ensuredSource.id,
@@ -523,6 +540,11 @@ export const savePackageCapability = defineDomainCapability(
 								pendingSecretApprovals,
 							)
 						: null,
+					// An existing package keeps files this save omits, so scan the
+					// published set the projection loaded.
+					credentialPatternsNotice: credentialPatternNoticeForFiles(
+						refreshed.files ?? files,
+					),
 				}),
 			}
 		},

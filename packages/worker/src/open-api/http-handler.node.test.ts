@@ -77,7 +77,7 @@ test('runs capability operations under the token scope and slides expiry', async
 
 test('writes secrets through path params and never returns the value', async () => {
 	const api = await createApi()
-	const token = await api.mint(['secret:use', 'secret:write'])
+	const token = await api.mint(['secret:use', 'secret:write', 'secret:create'])
 	const saved = await api.call('PUT', '/v1/secrets/user/api-test-secret', {
 		token,
 		body: { value: 'super-secret-value', description: 'from the api' },

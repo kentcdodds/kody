@@ -1,4 +1,4 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { loadWritableAccountSavedPackage } from '#app/account-package-write-access.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
@@ -6,11 +6,8 @@ import {
 	unpublishCommunityListing,
 } from '#worker/community/service.ts'
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
-import {
-	getSavedPackageById,
-	updateSavedPackage,
-} from '#worker/package-registry/repo.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import { updateSavedPackage } from '#worker/package-registry/repo.ts'
+import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 
@@ -40,17 +37,14 @@ export async function handleAccountPackageVisibilityAction(input: {
 		)
 	}
 
-	const userId = ownerIdFromCaller({
-		request: input.user.request,
-		user: input.user.mcpUser,
-	})
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId,
+	const resolved = await loadWritableAccountSavedPackage({
+		env: input.env,
+		user: input.user,
 		packageId,
+		permission: 'package:publish',
 	})
-	if (!savedPackage) {
-		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
-	}
+	if (!resolved.ok) return resolved.response
+	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 
 	try {
 		if (visibility === 'public' && savedPackage.isPrivate) {
@@ -66,8 +60,8 @@ export async function handleAccountPackageVisibilityAction(input: {
 			await publishCommunityListing({
 				env: input.env,
 				baseUrl: new URL(input.request.url).origin,
-				userId,
-				actorUserId: userId,
+				userId: ownerUserId,
+				actorUserId,
 				packageId,
 			})
 		} else if (visibility === 'private' && !savedPackage.isPrivate) {
@@ -83,20 +77,20 @@ export async function handleAccountPackageVisibilityAction(input: {
 			const listing = await getCommunityListingByOwnerAndPackage(
 				input.env.APP_DB,
 				{
-					ownerUserId: userId,
+					ownerUserId,
 					packageId,
 				},
 			)
 			if (listing && listing.status === 'active') {
 				await unpublishCommunityListing({
 					env: input.env,
-					userId,
-					actorUserId: userId,
+					userId: ownerUserId,
+					actorUserId,
 					listingId: listing.id,
 				})
 			} else {
 				const changed = await updateSavedPackage(input.env.APP_DB, {
-					userId,
+					userId: ownerUserId,
 					packageId,
 					isPrivate: true,
 				})
@@ -113,11 +107,12 @@ export async function handleAccountPackageVisibilityAction(input: {
 	}
 
 	return jsonResponse(
-		await loadAccountPackagesData({
+		await reloadAccountPackagesAfterWrite({
 			env: input.env,
 			request: input.request,
 			user: input.user,
-			pathPackageId: packageId,
+			packageId,
+			ownerUserId,
 		}),
 	)
 }

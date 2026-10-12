@@ -65,11 +65,15 @@
 				"node_modules/.kody-generated/oauth-provider.mjs",
 				"node_modules/.kody-generated/local-execute-runtime-support.mjs",
 				"node_modules/.kody-generated/isomorphic-git.mjs",
+				"node_modules/.kody-generated/postal-mime.mjs",
+				"node_modules/.kody-generated/codemode-normalize.mjs",
 				"./node_modules/.kody-generated/worker-bundler.mjs",
 				"./node_modules/.kody-generated/worker-bundler-typescript.mjs",
 				"./node_modules/.kody-generated/oauth-provider.mjs",
 				"./node_modules/.kody-generated/local-execute-runtime-support.mjs",
 				"./node_modules/.kody-generated/isomorphic-git.mjs",
+				"./node_modules/.kody-generated/postal-mime.mjs",
+				"./node_modules/.kody-generated/codemode-normalize.mjs",
 			],
 			"fallthrough": true,
 		},
@@ -256,6 +260,10 @@
 				{
 					"binding": "REPO_SESSION_BLOBS",
 					"bucket_name": "kody-repo-session-blobs",
+				},
+				{
+					"binding": "OPERATOR_BACKUPS",
+					"bucket_name": "kody-operator-backups",
 				},
 			],
 			"queues": {
@@ -465,6 +473,10 @@
 				{
 					"binding": "REPO_SESSION_BLOBS",
 					"bucket_name": "kody-preview-repo-session-blobs",
+				},
+				{
+					"binding": "OPERATOR_BACKUPS",
+					"bucket_name": "kody-preview-operator-backups",
 				},
 			],
 			// Kept in lockstep with origin env.preview producers.

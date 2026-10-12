@@ -127,6 +127,12 @@ export type PublicProfilePackageItem = {
 	isPrivate?: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */
 	hidden?: boolean
+	/**
+	 * When false, the row name is not a link to the package page (viewer can
+	 * see the package for invoke, but lacks `package:read` to open the page).
+	 * Omitted or true means link as usual.
+	 */
+	canOpenDetail?: boolean
 }
 
 /** GET query contract for the `/@username` package list. */

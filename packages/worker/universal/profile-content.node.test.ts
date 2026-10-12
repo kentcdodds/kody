@@ -301,3 +301,24 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
 })
+
+test('profile omits the activity section when activity is null', async () => {
+	const html = await render({
+		packages: [listedPackage],
+		isSelf: true,
+		activity: null,
+	})
+	expect(html).not.toContain(testId('profile-activity'))
+	expect(html).not.toContain('Recent activity')
+	expect(html).not.toContain('No public activity yet.')
+})
+
+test('execute-only package rows render the name without a package page link', async () => {
+	const html = await render({
+		packages: [{ ...unpublishedPackage, canOpenDetail: false }],
+		isSelf: true,
+	})
+	expect(html).toContain(testId('profile-package-name-nolink'))
+	expect(html).toContain('notes')
+	expect(html).not.toContain('href="/@kody/notes"')
+})

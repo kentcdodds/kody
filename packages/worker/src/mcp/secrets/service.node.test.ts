@@ -108,6 +108,7 @@ test('resolveSecret returns the first scope hit in precedence order and ignores 
 		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
 	})
 	const sessionHit = {
+		credentialId: expect.any(String),
 		found: true,
 		value: 'session-value',
 		scope: 'session',

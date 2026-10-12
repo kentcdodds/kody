@@ -14,6 +14,9 @@ type EmailAction = {
 
 export type EmailAfterActionBlock = string | { kind: 'quote'; text: string }
 
+/** A body paragraph, or one that ends in a link (rendered as an anchor in HTML). */
+export type EmailBodyBlock = string | { text: string; link: EmailAction }
+
 type EmailIllustration = {
 	/** Site-relative path resolved against `appBaseUrl`. */
 	src: string
@@ -32,7 +35,7 @@ export type TransactionalEmailContent = {
 	/** Large headline at the top of the card. */
 	heading: string
 	/** Body paragraphs shown above the action button. */
-	body: Array<string>
+	body: Array<EmailBodyBlock>
 	/** Primary call to action. */
 	action?: EmailAction
 	/** Quieter second action under the primary button. */
@@ -68,13 +71,27 @@ const fontStack =
 const displayFontStack =
 	"'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 
-function paragraphs(values: Array<string>, className: string, style: string) {
+function paragraphs(
+	values: Array<EmailBodyBlock>,
+	className: string,
+	style: string,
+) {
 	return values
-		.map(
-			(value) =>
-				`<p class="${className}" style="${style}">${escapeHtml(value)}</p>`,
-		)
+		.map((value) => {
+			if (typeof value === 'string') {
+				return `<p class="${className}" style="${style}">${escapeHtml(value)}</p>`
+			}
+			return `<p class="${className}" style="${style}">${escapeHtml(value.text)} <a href="${escapeHtml(value.link.url)}" class="kody-link" style="color: ${colors.accent};">${escapeHtml(value.link.label)}</a></p>`
+		})
 		.join('\n                ')
+}
+
+function bodyText(values: Array<EmailBodyBlock>) {
+	return values.map((value) =>
+		typeof value === 'string'
+			? value
+			: `${value.text} ${value.link.label}: ${value.link.url}`,
+	)
 }
 
 function afterActionBlocks(
@@ -208,7 +225,7 @@ export function renderTransactionalEmail(
 
 	const text = [
 		content.heading,
-		...content.body,
+		...bodyText(content.body),
 		...(action ? [`${action.label}: ${action.url}`] : []),
 		...(secondaryAction
 			? [`${secondaryAction.label}: ${secondaryAction.url}`]

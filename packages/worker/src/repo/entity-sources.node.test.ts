@@ -164,8 +164,8 @@ test('external reconcile selects token-pending packages and the daily backstop c
 				'2026-05-02T00:00:00.000Z', '2026-05-02T00:00:00.000Z'
 			),
 			(
-				'job', 'user-1', 'job', 'job-1', 'repo-3',
-				'commit-3', NULL, 'kody.json', '/', NULL, NULL,
+				'plain-repo', 'user-1', 'repo', 'repo-1', 'repo-3',
+				'commit-3', NULL, 'package.json', '/', NULL, NULL,
 				'2026-05-04T04:00:00.000Z',
 				'2026-05-03T00:00:00.000Z', '2026-05-03T00:00:00.000Z'
 			);

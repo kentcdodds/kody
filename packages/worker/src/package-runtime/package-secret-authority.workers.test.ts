@@ -9,7 +9,6 @@ import { communityForkAdoptCapability } from '#mcp/capabilities/community/adopt.
 import { communityDomain } from '#mcp/capabilities/community/domain.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
-import { redactedSecretText } from '#mcp/secrets/execution-secret-redactor.ts'
 import {
 	lockSecretToPackage,
 	saveSecret,
@@ -90,10 +89,12 @@ async function ensureSecretAuthorityTestSchema() {
 		UNIQUE(user_id, scope, binding_key)
 	)`)
 	await runSql(`CREATE TABLE IF NOT EXISTS secret_entries (
+		id TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
 		bucket_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
 		encrypted_value TEXT NOT NULL,
+		kind TEXT NOT NULL DEFAULT 'secret',
 		allowed_hosts TEXT NOT NULL DEFAULT '[]',
 		allowed_packages TEXT NOT NULL DEFAULT '[]',
 		lookup_hash TEXT,
@@ -238,14 +239,8 @@ async function publishForkedPackage(input: {
 	return { packageId, sourceId, kodyId: input.kodyId }
 }
 
-const wakeSlot = (slot: Record<string, unknown> = {}) => ({
-	wakeToken: {
-		kind: 'secret',
-		provider: 'grok',
-		description: 'Wake token.',
-		raw: true,
-		...slot,
-	},
+const wakeMount = (scope: 'user' | 'package' = 'user') => ({
+	wakeToken: { name: 'wakeToken', scope },
 })
 
 function manifest(name: string, kody: Record<string, unknown>, extra = {}) {
@@ -255,7 +250,7 @@ function manifest(name: string, kody: Record<string, unknown>, extra = {}) {
 async function publishGrokBotWake(
 	userId: string,
 	wakeSource: string,
-	slot: Record<string, unknown> = {},
+	scope: 'user' | 'package' = 'user',
 ) {
 	return await publishForkedPackage({
 		userId,
@@ -267,7 +262,7 @@ async function publishGrokBotWake(
 				{
 					id: 'grok-bot',
 					description: 'Wake helper',
-					credentials: wakeSlot(slot),
+					secretMounts: wakeMount(scope),
 				},
 				{ exports: { './wake': './src/wake.ts' } },
 			),
@@ -394,8 +389,7 @@ async function runModule(
 	)
 }
 
-/** A raw read comes back redacted in run output. */
-const wakeRead = redactedSecretText
+const wakeRef = '{{secret:wakeToken|scope=user}}'
 const notAllowed = expect.stringMatching(/not allowed for package/i)
 
 const tryStealSource = `import { packageSecrets } from 'kody:runtime'
@@ -464,7 +458,7 @@ export default async function wake() {
 		const importer = await publishDependent(
 			userId,
 			{ 'src/call-wake.ts': importWakeEntry, 'src/steal.ts': tryStealSource },
-			{ credentials: wakeSlot() },
+			{ secretMounts: wakeMount() },
 		)
 		await saveWakeTokenLockedTo(userId, wake.packageId)
 
@@ -476,7 +470,7 @@ export default async function wake() {
 			{
 				'package.json': manifest(
 					'@kentcdodds/grok-bot',
-					{ id: 'grok-bot', credentials: wakeSlot() },
+					{ id: 'grok-bot', secretMounts: wakeMount() },
 					{ exports: { './wake': './src/wake.ts' } },
 				),
 				'src/wake.ts': wakeSource,
@@ -496,7 +490,7 @@ export default async function wake() {
 		)
 		for (const run of [executeImport, enterAsA, runAsBImportA]) {
 			expect(run.error).toBeUndefined()
-			expect(run.result).toEqual({ token: wakeRead })
+			expect(run.result).toEqual({ token: wakeRef })
 			expect(JSON.stringify(run.result)).not.toContain('wake-secret-value')
 		}
 
@@ -506,7 +500,7 @@ export default async function wake() {
 				'package.json': manifest('@kentcdodds/dependent', {
 					id: 'dependent',
 					description: 'Dependent',
-					credentials: wakeSlot(),
+					secretMounts: wakeMount(),
 				}),
 				'src/steal.ts': tryStealSource,
 			},
@@ -524,7 +518,7 @@ export default async function wake() {
 					id: 'dependent',
 					description: 'Dependent',
 					dependencies: { '@kentcdodds/grok-bot': '*' },
-					credentials: wakeSlot(),
+					secretMounts: wakeMount(),
 				}),
 				'src/steal.ts': `import wake from 'kody:@kentcdodds/grok-bot/wake'
 import { kody } from 'kody:runtime'
@@ -542,7 +536,7 @@ export default async function steal() {
 		)
 		expect(runAsBRequestA.error).toBeUndefined()
 		expect(runAsBRequestA.result).toEqual({
-			stamped: { token: wakeRead },
+			stamped: { token: wakeRef },
 			error: notAllowed,
 		})
 		expect(JSON.stringify(runAsBRequestA.result)).not.toContain(
@@ -640,7 +634,7 @@ export default async function stealAuthority() {
 	}
 }`,
 			},
-			{ credentials: wakeSlot() },
+			{ secretMounts: wakeMount() },
 		)
 		await saveWakeTokenLockedTo(userId, wake.packageId)
 
@@ -654,7 +648,7 @@ export default async function stealAuthority() {
 		expect(stolenResult.importedWake).toBe('function')
 		const attack = stolenResult.attack
 		expect(attack.legit).toEqual({
-			token: wakeRead,
+			token: wakeRef,
 			duringStamp: wake.packageId,
 		})
 		// Shared stamp ALS makes Symbol.for('kody.getSecretAuthority') a live
@@ -764,7 +758,7 @@ export default async function forge() {
 		const forgedResult = forged.result as ForgeryExecuteResult
 		expect(forgedResult.importedWake).toBe('function')
 		expect(forgedResult.attack).toEqual({
-			legit: { value: { token: wakeRead, duringStamp: wake.packageId } },
+			legit: { value: { token: wakeRef, duringStamp: wake.packageId } },
 			exportedInternals: [],
 			viaNamespace: { value: 'no-helper' },
 			viaComputedImport: internalModule,
@@ -885,13 +879,8 @@ test(
 					{
 						id: 'evil-fork',
 						description: 'Fork that tries to adopt itself',
-						credentials: {
-							userToken: {
-								kind: 'secret',
-								provider: 'kody',
-								description: 'User token.',
-								raw: true,
-							},
+						secretMounts: {
+							userToken: { name: 'userToken', scope: 'user' },
 						},
 					},
 					{ exports: { './self-adopt': './src/self-adopt.ts' } },
@@ -995,7 +984,7 @@ export default async function wake(probe) {
 	try {
 		const response = await fetch("https://example.com/wake", {
 			method: "POST",
-			headers: { Authorization: "Bearer {{secret:wakeToken}}" },
+			headers: { Authorization: \`Bearer \${token}\` },
 		})
 		fetchOutcome = { ok: true, status: response.status }
 	} catch (error) {
@@ -1006,7 +995,7 @@ export default async function wake(probe) {
 	}
 	return { token, duringStamp, fetchOutcome }
 }`,
-			{ placement: { header: 'Authorization', template: 'Bearer {value}' } },
+			'package',
 		)
 		const storageContext = {
 			sessionId: null,
@@ -1061,7 +1050,7 @@ export default async function main() {
 			duringStamp: string | null
 			fetchOutcome: { ok: true; status: number } | { ok: false; error: string }
 		}
-		expect(result.token).toBe(redactedSecretText)
+		expect(result.token).toBe('{{secret:wakeToken|scope=package}}')
 		expect(JSON.stringify(result)).not.toContain('package-wake-secret-value')
 		expect(result.duringStamp).toBe(wake.packageId)
 		// Stamp must make the package-scoped secret visible to outbound fetch.

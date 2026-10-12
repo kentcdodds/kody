@@ -50,8 +50,8 @@ export async function processDueJobs(input: {
 		}
 
 		if (job.schedule.type === 'once') {
-			// Keep completed once jobs for platform/account retention. The
-			// retention sweeper deletes aged rows later unless preserved.
+			// Completed once jobs stay on their package (disabled) until the
+			// package drops them.
 			const updated = applyExecutionOutcome(job, outcome, {
 				updatedAt: now.toISOString(),
 				enabled: false,
@@ -141,7 +141,6 @@ export function applyExecutionOutcome(
 	return {
 		...job,
 		updatedAt: overrides.updatedAt ?? outcome.finishedAt,
-		// Retention ages from execution time and classifies once jobs by status.
 		lastRunAt: outcome.finishedAt,
 		lastRunStatus: status,
 		nextRunAt: overrides.nextRunAt ?? job.nextRunAt,

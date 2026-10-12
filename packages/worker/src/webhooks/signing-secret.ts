@@ -9,62 +9,130 @@ import {
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
-import { type PackageWebhookManifestEntry } from '#worker/package-registry/manifest.ts'
+import { type PackageWebhookHmacVerificationEntry } from '#worker/package-registry/manifest.ts'
 import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 /**
- * Package-owned HMAC plaintext for apply injection and inbound verify.
- * Prefer ciphertext on the webhook endpoint (package-scoped).
+ * Shape of the signing secret mint gives a webhook that declares no HMAC
+ * scheme (url-secret or no verification): HMAC-SHA256 of the body, hex
+ * encoded in `X-Kody-Signature` as `sha256=<hex>`. Ingress does not require
+ * it; such webhooks are authenticated by their URL secret.
+ */
+export const defaultWebhookVerification = {
+	type: 'hmac-sha256',
+	header: 'x-kody-signature',
+	encoding: 'hex',
+	prefix: 'sha256=',
+} as const satisfies PackageWebhookHmacVerificationEntry
+
+/**
+ * Package-owned HMAC plaintext for apply injection (`{{webhookSecret}}`).
  *
- * Apply (`{{webhookSecret}}`) uses package-owned material only — never a
- * live `verification.secretName` lookup — so changing secretName after a
+ * Apply reads only the ciphertext on the endpoint — never a live
+ * `verification.secretName` lookup — so changing secretName after a
  * destination Allow cannot swap which credential is injected.
- *
- * Inbound verify may fall back to a provider-issued `secretName` (Sentry).
- * Legacy GitHub-style secretName values are copied onto the endpoint at
- * mint/rotate when present (`resolveHmacCiphertextForMint`).
  */
 export async function resolveWebhookHmacSigningSecret(input: {
 	env: Env
 	userId: OwnerId
 	endpoint: WebhookEndpointRecord
-	verification: NonNullable<PackageWebhookManifestEntry['verification']>
-	/**
-	 * When true (inbound delivery), allow falling back to verification.secretName
-	 * in the secret store. Apply must leave this false.
-	 */
-	allowLegacySecretNameFallback?: boolean
 }): Promise<string> {
-	if (input.endpoint.hmacSecretEncrypted) {
-		return decryptWebhookHmacSecret(
-			input.env,
-			input.endpoint.hmacSecretEncrypted,
-			userWebhookHmacSecretContext(input.userId, input.endpoint.id),
-		)
-	}
-
-	const secretName = input.verification.secretName?.trim() ?? ''
-	if (!input.allowLegacySecretNameFallback || !secretName) {
+	if (!input.endpoint.hmacSecretEncrypted) {
 		throw new McpCallerError(
 			`Webhook "${input.endpoint.webhookName}" declares HMAC verification but has no package-owned signing secret. Call webhookUrlMint (or webhookUrlRotate) so Kody can mint or migrate one onto the webhook URL record.`,
 		)
 	}
+	return decryptWebhookHmacSecret(
+		input.env,
+		input.endpoint.hmacSecretEncrypted,
+		userWebhookHmacSecretContext(input.userId, input.endpoint.id),
+	)
+}
 
-	const resolved = await resolveCredential({
-		env: input.env,
-		orgId: input.userId,
-		actor: null,
-		packageStamp: attestedPackageStamp(input.endpoint.packageId),
-		baseUrl: getAppBaseUrl({ env: input.env }),
-		credential: { use: 'webhook-secret', name: secretName },
-	})
-	if (!resolved.found || !resolved.value) {
+export type WebhookHmacVerificationSecret = {
+	value: string
+	source: 'declared' | 'stored'
+}
+
+/**
+ * Secrets an inbound signature may match, in order. A declared
+ * `verification.secretName` comes first: the endpoint may still hold a
+ * Kody-generated secret from before the manifest declared one (enablement
+ * migration or an earlier mint), and that must not shadow it. The stored
+ * secret stays as a fallback so deliveries that verify today keep verifying.
+ * Throws when neither exists.
+ */
+export async function resolveWebhookHmacVerificationSecrets(input: {
+	env: Env
+	userId: OwnerId
+	endpoint: WebhookEndpointRecord
+	verification: PackageWebhookHmacVerificationEntry
+}): Promise<Array<WebhookHmacVerificationSecret>> {
+	const secrets: Array<WebhookHmacVerificationSecret> = []
+	const secretName = input.verification.secretName?.trim() ?? ''
+	if (secretName) {
+		const declared = await resolveDeclaredWebhookSecret({
+			env: input.env,
+			userId: input.userId,
+			packageId: input.endpoint.packageId,
+			secretName,
+		})
+		if (declared !== null) secrets.push({ value: declared, source: 'declared' })
+	}
+	if (input.endpoint.hmacSecretEncrypted) {
+		let stored: string | null = null
+		try {
+			stored = await decryptWebhookHmacSecret(
+				input.env,
+				input.endpoint.hmacSecretEncrypted,
+				userWebhookHmacSecretContext(input.userId, input.endpoint.id),
+			)
+		} catch (error) {
+			if (secrets.length === 0) throw error
+			console.warn('webhook-stored-secret-decrypt-failed', {
+				endpointId: input.endpoint.id,
+				error,
+			})
+		}
+		if (stored !== null && !secrets.some((secret) => secret.value === stored)) {
+			secrets.push({ value: stored, source: 'stored' })
+		}
+	}
+	if (secrets.length === 0) {
 		throw new McpCallerError(
-			`Secret "${secretName}" was not found for this user. Prefer omitting verification.secretName so Kody mints a package-owned HMAC on webhookUrlMint, or restore the named secret.`,
+			secretName
+				? `Secret "${secretName}" was not found for this user.`
+				: `Webhook "${input.endpoint.webhookName}" declares HMAC verification but has no package-owned signing secret.`,
 		)
 	}
-	return resolved.value
+	return secrets
+}
+
+async function resolveDeclaredWebhookSecret(input: {
+	env: Env
+	userId: OwnerId
+	packageId: string
+	secretName: string
+}): Promise<string | null> {
+	try {
+		const resolved = await resolveCredential({
+			env: input.env,
+			orgId: input.userId,
+			actor: null,
+			packageStamp: attestedPackageStamp(input.packageId),
+			baseUrl: getAppBaseUrl({ env: input.env }),
+			credential: { use: 'webhook-secret', name: input.secretName },
+		})
+		return resolved.found && resolved.value ? resolved.value : null
+	} catch (error) {
+		console.warn('webhook-declared-secret-resolve-failed', {
+			packageId: input.packageId,
+			secretName: input.secretName,
+			error,
+		})
+		return null
+	}
 }
 
 /** Mint ciphertext for a new package-owned HMAC (verification without secretName). */
@@ -87,6 +155,10 @@ export async function mintPackageOwnedWebhookHmacCiphertext(input: {
  * HMAC yet. Fresh mint when secretName is omitted; legacy copy from the named
  * secret when present (so apply no longer needs a live secrets-list lookup).
  * Returns undefined to leave the column unset / unchanged.
+ *
+ * An existing ciphertext is never replaced: destination grants approved
+ * `{{webhookSecret}}` for that value, and a rotated URL's grace window still
+ * receives deliveries signed with it.
  */
 export async function resolveHmacCiphertextForMint(input: {
 	env: Env
@@ -95,7 +167,7 @@ export async function resolveHmacCiphertextForMint(input: {
 	userId: OwnerId
 	endpointId: string
 	packageId: string
-	verification: PackageWebhookManifestEntry['verification'] | null | undefined
+	verification: PackageWebhookHmacVerificationEntry | null | undefined
 	existingHmacEncrypted: string | null | undefined
 }): Promise<string | undefined> {
 	if (input.existingHmacEncrypted) return undefined
@@ -127,16 +199,4 @@ export async function resolveHmacCiphertextForMint(input: {
 		resolved.value,
 		userWebhookHmacSecretContext(input.userId, input.endpointId),
 	)
-}
-
-/**
- * Whether mint should create package-owned HMAC: verification is declared and
- * there is no provider-issued secretName (those stay in the secret store until
- * optionally copied at mint via resolveHmacCiphertextForMint).
- */
-export function shouldMintPackageOwnedWebhookHmac(
-	verification: PackageWebhookManifestEntry['verification'] | null | undefined,
-) {
-	if (!verification) return false
-	return !(verification.secretName?.trim() ?? '')
 }

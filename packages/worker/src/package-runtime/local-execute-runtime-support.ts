@@ -99,7 +99,7 @@ export function __kodyGetSecretAuthority() {
 }
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// opaque {{secret:…}} refs). Local isolate wraps globalThis.fetch
+// opaque refs from packageSecrets.get). Local isolate wraps globalThis.fetch
 // with __kodyGatewayFetch so secret-bearing calls hop through CapabilityProxy
 // (same as cloud), including frozen dependency copies that call
 // globalThis.fetch instead of free \`fetch\`. Non-secret requests still use
@@ -372,25 +372,134 @@ export async function __kodyGatewayFetch(input, init) {
 	return __kodyGatewayFetchCall(input, init, authority);
 }
 
-function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
-	const probe = (value) => {
-		if (typeof value !== "string" || !value.includes("{{")) return false;
-		return (
-			// Escape the scope pipe (| in generated source): bare | is regex
-			// alternation and would miss {{secret:name|scope=user}} from
-			// __kodySecretRef.
-			/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
-				value,
-			) ||
-			/{{secret-basic:[^}]+}}/.test(value) ||
-			/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
-			/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
-		);
-	};
-	if (probe(url)) return true;
-	if (probe(bodyText)) return true;
+function __kodyHasPlaceholderText(value) {
+	if (typeof value !== "string" || !value.includes("{{")) return false;
+	return (
+		// Escape the scope pipe (| in generated source): bare | is regex
+		// alternation and would miss {{secret:name|scope=user}} from
+		// __kodySecretRef.
+		/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
+			value,
+		) ||
+		/{{secret-basic:[^}]+}}/.test(value) ||
+		/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
+		/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
+	);
+}
+
+// Request.url percent-encodes braces in the path, and URLSearchParams encodes
+// every placeholder character in the query, so decode before checking.
+function __kodyRequestHasSecretPlaceholders(url, headers) {
+	if (
+		typeof url === "string" &&
+		__kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(url))
+	) {
+		return true;
+	}
 	for (const value of Object.values(headers ?? {})) {
-		if (probe(value)) return true;
+		if (__kodyHasPlaceholderText(value)) return true;
+	}
+	return false;
+}
+
+function __kodyDecodePlaceholderPunctuation(text) {
+	return text.replace(/%(7B|7D|3A|2F|3D|2C|7C)/gi, (_, hex) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	);
+}
+
+function __kodyIsVerbatimBodyMode(resolutionMode) {
+	return resolutionMode === "off" || resolutionMode === "headers-only";
+}
+
+// The fetch gateway fills a placeholder in a text body, so a body that holds
+// one hops through it. A multipart body is opaque to the gateway, so its
+// content never causes a hop. x-kody-secret-resolution: headers-only or off
+// sends the body as written.
+function __kodyBodyIsFillSite(headers, resolutionMode) {
+	if (__kodyIsVerbatimBodyMode(resolutionMode)) return false;
+	const contentType = Object.entries(headers ?? {}).find(
+		([key]) => key.toLowerCase() === "content-type",
+	)?.[1];
+	return !__kodyIsMultipartType(contentType);
+}
+
+function __kodyIsMultipartType(contentType) {
+	return (
+		typeof contentType === "string" &&
+		contentType.toLowerCase().startsWith("multipart/")
+	);
+}
+
+// A placeholder is short, so scanning overlapping windows finds one that
+// straddles a chunk boundary without holding a large body as text.
+const __kodyBodyScanOverlap = 8192;
+const __kodyBodyScanChunkBytes = 64 * 1024;
+
+function __kodyCreateBodyScanner() {
+	let tail = "";
+	return (bytes) => {
+		const text = tail + __kodyBytesToAscii(bytes);
+		tail = text.slice(-__kodyBodyScanOverlap);
+		return __kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(text));
+	};
+}
+
+function __kodyBytesHoldPlaceholder(bytes) {
+	const scan = __kodyCreateBodyScanner();
+	for (
+		let offset = 0;
+		offset < bytes.byteLength;
+		offset += __kodyBodyScanChunkBytes
+	) {
+		if (scan(bytes.subarray(offset, offset + __kodyBodyScanChunkBytes))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function __kodyStreamHoldsPlaceholder(stream) {
+	const reader = stream.getReader();
+	const scan = __kodyCreateBodyScanner();
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) return false;
+			if (scan(value instanceof Uint8Array ? value : new Uint8Array(value))) {
+				return true;
+			}
+		}
+	} finally {
+		// A cloned body is a tee branch, and cancelling one branch settles only
+		// after the other is cancelled too, so this must not be awaited.
+		reader.cancel().catch(() => {});
+	}
+}
+
+// Scans the caller's in-memory body where it is, so a large upload is not
+// copied just to decide the hop. Multipart (FormData, or a Blob typed
+// multipart) is opaque to the gateway, so it is never read.
+async function __kodyBodyValueHoldsPlaceholder(body) {
+	if (typeof body === "string") {
+		return __kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(body));
+	}
+	if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+		return __kodyHasPlaceholderText(
+			__kodyDecodePlaceholderPunctuation(body.toString()),
+		);
+	}
+	if (typeof Blob !== "undefined" && body instanceof Blob) {
+		if (__kodyIsMultipartType(body.type)) return false;
+		return await __kodyStreamHoldsPlaceholder(body.stream());
+	}
+	if (body instanceof ArrayBuffer) {
+		return __kodyBytesHoldPlaceholder(new Uint8Array(body));
+	}
+	if (ArrayBuffer.isView(body)) {
+		return __kodyBytesHoldPlaceholder(
+			new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
+		);
 	}
 	return false;
 }
@@ -444,7 +553,7 @@ function __kodyBytesToAscii(bytes) {
 
 function __kodyStreamingSecretError() {
 	return new Error(
-		"Local execute secret-aware fetch cannot expand secret placeholders in a streaming body. Buffer the body or remove {{secret:…}} placeholders.",
+		"Local execute secret-aware fetch cannot fill secret placeholders in a streaming body. Buffer the body (a string, Blob, or bytes) so it hops through the fetch gateway, or remove the {{secret:…}} placeholders.",
 	);
 }
 
@@ -477,7 +586,7 @@ function __kodyUnclosedCouldBeSecret(tail) {
 }
 
 function __kodyStreamingDecision(text) {
-	if (__kodyRequestHasSecretPlaceholders("", {}, text)) {
+	if (__kodyHasPlaceholderText(text)) {
 		return { reject: "secret", hold: 0 };
 	}
 	const lastClose = text.lastIndexOf("}}");
@@ -496,6 +605,9 @@ function __kodyStreamingDecision(text) {
 	return { reject: null, hold: tail.length };
 }
 
+// A caller stream cannot be replayed, so it cannot hop to the gateway. Scan it
+// with a bounded holdback as it is sent, and fail instead of sending a
+// placeholder unfilled.
 function __kodyScanStreamingBody(source) {
 	const reader = source.getReader();
 	let carry = new Uint8Array(0);
@@ -553,7 +665,7 @@ function __kodyScanStreamingBody(source) {
 }
 
 function __kodyEofHasUnresolvedSecret(text) {
-	if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
+	if (__kodyHasPlaceholderText(text)) return true;
 	const lastClose = text.lastIndexOf("}}");
 	const rest = lastClose === -1 ? text : text.slice(lastClose + 2);
 	const open = rest.lastIndexOf("{{");
@@ -565,33 +677,51 @@ function __kodyEofHasUnresolvedSecret(text) {
 	return __kodyUnclosedCouldBeSecret(tail);
 }
 
-async function __kodyBlobHasSecretPlaceholder(blob) {
-	const reader = blob.stream().getReader();
-	let carry = "";
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) return __kodyEofHasUnresolvedSecret(carry);
-		const chunk =
-			value instanceof Uint8Array ? value : new Uint8Array(value);
-		const text = carry + __kodyBytesToAscii(chunk);
-		if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
-		const decision = __kodyStreamingDecision(text);
-		if (decision.reject === "window") {
-			throw __kodyStreamingWindowError();
-		}
-		carry =
-			decision.hold > 0 ? text.slice(text.length - decision.hold) : "";
+function __kodyStreamingBodyFor(body, resolutionMode) {
+	return __kodyIsVerbatimBodyMode(resolutionMode)
+		? body
+		: __kodyScanStreamingBody(body);
+}
+
+const __kodySecretResolutionHeader = "x-kody-secret-resolution";
+
+// init.headers replaces a Request's headers outright, matching new Request().
+function __kodyReadSecretResolutionHeader(input, init) {
+	if (init?.headers != null) {
+		return new Headers(init.headers).get(__kodySecretResolutionHeader);
 	}
+	if (input instanceof Request) {
+		return input.headers.get(__kodySecretResolutionHeader);
+	}
+	return null;
+}
+
+function __kodyWithoutSecretResolutionHeader(headers) {
+	const stripped = new Headers(headers);
+	stripped.delete(__kodySecretResolutionHeader);
+	return stripped;
 }
 
 async function __kodyGatewayFetchCall(input, init, packageId) {
+	// The resolution mode instructs the fetch gateway. It is never sent to the
+	// remote on a native fetch, and only the gateway hop carries it.
+	const resolutionHeader = __kodyReadSecretResolutionHeader(input, init);
+	const resolutionMode = String(resolutionHeader ?? "")
+		.trim()
+		.toLowerCase();
+	if (resolutionHeader != null && init?.headers != null) {
+		init = {
+			...init,
+			headers: __kodyWithoutSecretResolutionHeader(init.headers),
+		};
+	}
 	let url;
 	let method = "GET";
 	let headers = {};
 	let bodyBytes = null;
 	let streamingBody = null;
-	// Prefer ambient fetch(input, init) when the probe did not consume the
-	// original body - that keeps implicit Content-Type from string /
+	// Prefer ambient fetch(input, init) when nothing consumed the original
+	// body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
 	let reuseOriginal = true;
 	let preservedRequest = null;
@@ -601,84 +731,26 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
 			const body = init.body;
-			// FormData cannot be byte-probed / gateway-serialized. Detect
-			// placeholders in field strings; otherwise reuse ambient fetch so
-			// non-secret multipart POSTs keep working under --local.
-			if (typeof FormData !== "undefined" && body instanceof FormData) {
-				let formText = "";
-				for (const [name, value] of body.entries()) {
-					formText += name + "\\n";
-					if (typeof value === "string") {
-						formText += value + "\\n";
-					} else if (value && typeof value.name === "string") {
-						formText += value.name + "\\n";
-					}
+			if (__kodyIsCallerByteStream(body)) {
+				if (__kodyRequestHasSecretPlaceholders(url, headers)) {
+					throw __kodyStreamingHeaderError();
 				}
-				// Secrets inside multipart field names/values cannot be expanded
-				// by the fetch gateway (body is opaque). Header/URL secrets with
-				// a clean FormData body still hop like cloud.
-				if (
-					__kodyRequestHasSecretPlaceholders("", {}, formText)
-				) {
-					throw new Error(
-						"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
-					);
-				}
-				if (
-					!__kodyRequestHasSecretPlaceholders(url, headers, null)
-				) {
-					return __kodyNativeFetch(input, init);
-				}
-				const encoded = new Request(url, {
-					method,
-					headers,
-					body,
-				});
+				streamingBody = __kodyStreamingBodyFor(body, resolutionMode);
+				reuseOriginal = false;
+			} else if (
+				__kodyRequestHasSecretPlaceholders(url, headers) ||
+				(__kodyBodyIsFillSite(headers, resolutionMode) &&
+					(await __kodyBodyValueHoldsPlaceholder(body)))
+			) {
+				// The hop copy carries the implicit Content-Type (and multipart
+				// boundary) of a string, URLSearchParams, Blob, or FormData body.
 				// Keep the pre-Request url string so path {{secret:…}}
 				// placeholders are not percent-encoded by Request.
+				const encoded = new Request(url, { method, headers, body });
 				method = encoded.method;
 				headers = Object.fromEntries(encoded.headers.entries());
 				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
 				reuseOriginal = false;
-			} else if (__kodyIsCallerByteStream(body)) {
-				// Streams cannot be replayed. Scan with a bounded holdback and
-				// forward the same bytes as a stream. A placeholder fails closed
-				// instead of buffering the body for a gateway hop.
-				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
-					throw __kodyStreamingHeaderError();
-				}
-				streamingBody = __kodyScanStreamingBody(body);
-				reuseOriginal = false;
-			} else if (typeof Blob !== "undefined" && body instanceof Blob) {
-				const blobHasSecret = await __kodyBlobHasSecretPlaceholder(body);
-				if (
-					!blobHasSecret &&
-					!__kodyRequestHasSecretPlaceholders(url, headers, null)
-				) {
-					streamingBody = body;
-					reuseOriginal = false;
-					if (body.type) {
-						const hasContentType = Object.keys(headers).some(
-							(key) => key.toLowerCase() === "content-type",
-						);
-						if (!hasContentType) {
-							headers["content-type"] = body.type;
-						}
-					}
-				} else {
-					bodyBytes = await __kodyBodyToBytes(body);
-					reuseOriginal = false;
-					if (body.type) {
-						const hasContentType = Object.keys(headers).some(
-							(key) => key.toLowerCase() === "content-type",
-						);
-						if (!hasContentType) {
-							headers["content-type"] = body.type;
-						}
-					}
-				}
-			} else {
-				bodyBytes = await __kodyBodyToBytes(body);
 			}
 		}
 	} else {
@@ -689,23 +761,38 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			(init == null || init.body == null) &&
 			inputRequest != null &&
 			__kodyIsNonByteStream(inputRequest.body);
-		const merged = new Request(input, init);
+		let merged = new Request(input, init);
+		if (merged.headers.has(__kodySecretResolutionHeader)) {
+			merged = new Request(merged, {
+				headers: __kodyWithoutSecretResolutionHeader(merged.headers),
+			});
+			// The caller's Request still carries the header, so only the
+			// stripped copy may be forwarded.
+			reuseOriginal = false;
+		}
 		url = merged.url;
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
 		if (method !== "GET" && method !== "HEAD" && merged.body) {
 			if (__kodyIsCallerByteStream(init?.body) || requestStream) {
-				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+				if (__kodyRequestHasSecretPlaceholders(url, headers)) {
 					throw __kodyStreamingHeaderError();
 				}
-				streamingBody = __kodyScanStreamingBody(merged.body);
+				streamingBody = __kodyStreamingBodyFor(merged.body, resolutionMode);
 				reuseOriginal = false;
 			} else {
 				// String, bytes, and URLSearchParams become streams inside a
-				// Request. Probe a clone and forward the original Request so
-				// cache, credentials, and redirect replay stay intact. Caller
-				// ReadableStream bodies are handled above.
-				bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
+				// Request. A clone is scanned chunk by chunk to decide the hop,
+				// and only a hop buffers the body. Otherwise the original Request
+				// is forwarded so cache, credentials, and redirect replay stay
+				// intact. Caller ReadableStream bodies are handled above.
+				if (
+					__kodyRequestHasSecretPlaceholders(url, headers) ||
+					(__kodyBodyIsFillSite(headers, resolutionMode) &&
+						(await __kodyStreamHoldsPlaceholder(merged.clone().body)))
+				) {
+					bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
+				}
 				reuseOriginal = false;
 				preservedRequest = merged;
 			}
@@ -713,8 +800,6 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			preservedRequest = merged;
 		}
 	}
-	const bodyText =
-		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (streamingBody != null) {
 		const fallbackInit = {
 			method,
@@ -753,18 +838,14 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		}
 		return __kodyNativeFetch(url, fallbackInit);
 	}
-	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
+	if (bodyBytes == null && !__kodyRequestHasSecretPlaceholders(url, headers)) {
 		if (reuseOriginal) {
 			return __kodyNativeFetch(input, init);
 		}
 		if (preservedRequest) {
 			return __kodyNativeFetch(preservedRequest);
 		}
-		const fallbackInit = {
-			method,
-			headers,
-			...(bodyBytes != null ? { body: bodyBytes } : {}),
-		};
+		const fallbackInit = { method, headers };
 		const signal =
 			init?.signal ?? (input instanceof Request ? input.signal : null);
 		if (signal != null) fallbackInit.signal = signal;
@@ -773,28 +854,15 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		if (redirect != null) fallbackInit.redirect = redirect;
 		return __kodyNativeFetch(url, fallbackInit);
 	}
-	const contentType = Object.entries(headers).find(
-		([key]) => key.toLowerCase() === "content-type",
-	)?.[1];
-	// Multipart bodies are opaque to the fetch gateway. Fail closed only when
-	// placeholders are in the body itself; header/URL secrets still hop so
-	// authenticated uploads match cloud executeGatewayFetch.
-	if (
-		typeof contentType === "string" &&
-		contentType.toLowerCase().includes("multipart/") &&
-		bodyText != null &&
-		__kodyRequestHasSecretPlaceholders("", {}, bodyText)
-	) {
-		throw new Error(
-			"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
-		);
-	}
 	const result = await kody.gatewayFetch({
 		...(packageId ? { packageId } : {}),
 		request: {
 			url,
 			method,
-			headers,
+			headers:
+				resolutionHeader != null
+					? { ...headers, [__kodySecretResolutionHeader]: resolutionHeader }
+					: headers,
 			...(bodyBytes != null
 				? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
 				: {}),
@@ -868,6 +936,49 @@ export function __kodyCreatePackageBoundSecrets(packageId) {
 			return result?.has === true;
 		},
 	};
+}
+
+// Artifacts published before the shared runtime was externalized inline a
+// full cloud runtime copy, and later consumers compose them verbatim, so that
+// copy survives with no \`// virtual:\` banner for the rewrite to strip. It
+// resolves stamped packageStorage / packageSecrets through the shared runtime
+// ALS store (\`__kodyPackageStorage(packageId)\`), as hosted runs do. The CLI
+// host enters that ALS with its own runtime object, so expose a view of the
+// store that adds the CapabilityProxy-backed factories.
+const __kodyRuntimeStorageSymbol = Symbol.for("kody.runtimeStorage");
+const __kodyLocalRuntimeStorageViewSymbol = Symbol.for(
+	"kody.localExecuteRuntimeStorageView",
+);
+{
+	const __globalAny = /** @type {any} */ (globalThis);
+	const hostStorage =
+		__globalAny[__kodyRuntimeStorageSymbol] ?? new AsyncLocalStorage();
+	if (!hostStorage[__kodyLocalRuntimeStorageViewSymbol]) {
+		const views = new WeakMap();
+		const viewOf = (store) => {
+			if (store == null || typeof store !== "object") return store;
+			let view = views.get(store);
+			if (!view) {
+				view = Object.freeze({
+					...store,
+					__kodyPackageStorage:
+						store.__kodyPackageStorage ??
+						((packageId) => __kodyCreatePackageBoundStorage(packageId)()),
+					__kodyPackageSecrets:
+						store.__kodyPackageSecrets ??
+						((packageId) => __kodyCreatePackageBoundSecrets(packageId)),
+				});
+				views.set(store, view);
+			}
+			return view;
+		};
+		__globalAny[__kodyRuntimeStorageSymbol] = Object.freeze({
+			[__kodyLocalRuntimeStorageViewSymbol]: true,
+			getStore: () => viewOf(hostStorage.getStore()),
+			run: (store, callback, ...args) =>
+				hostStorage.run(store, callback, ...args),
+		});
+	}
 }
 
 /**

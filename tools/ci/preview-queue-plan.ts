@@ -30,7 +30,7 @@ const originWranglerConfigPath = fileURLToPath(
 	new URL('../../packages/worker/wrangler.jsonc', import.meta.url),
 )
 
-export type PreviewQueueBinding = {
+type PreviewQueueBinding = {
 	binding: string
 	queue: string
 	deadLetterQueue: string
@@ -38,7 +38,7 @@ export type PreviewQueueBinding = {
 
 let cachedOriginProducers: Array<ProductionBoundQueueProducer> | undefined
 
-export function loadOriginProductionQueueProducers(
+function loadOriginProductionQueueProducers(
 	configPath = originWranglerConfigPath,
 ) {
 	if (configPath === originWranglerConfigPath && cachedOriginProducers) {

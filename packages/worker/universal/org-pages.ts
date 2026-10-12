@@ -1,3 +1,4 @@
+import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 
 /**
@@ -44,8 +45,6 @@ export type OrgSwitcherEntry =
 	| { kind: 'create' }
 	| { kind: 'invites'; count: number }
 
-const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
-
 /**
  * GitLab-style separator between an organization slug and its section pages.
  * Keeps `/@owner/<kody-id>` free for canonical package URLs. Bare `-` is not a
@@ -53,8 +52,9 @@ const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
  */
 const orgPageSeparator = '-'
 
+/** Organization slugs use {@link dnsSafeUsernamePattern} (3–32, DNS-safe). */
 export function isOrganizationSlug(value: string) {
-	return slugPattern.test(value)
+	return dnsSafeUsernamePattern.test(value)
 }
 
 function isOrgOwnedAccountSection(
@@ -151,6 +151,23 @@ export function parseOrgBillingPath(pathname: string): { slug: string } | null {
 
 export function orgBillingPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/billing`
+}
+
+/**
+ * `/@acme/-/overview`: the workspace landing that links every section the
+ * organization owns. A team org's overview is its home at `/@slug`, so the
+ * server redirects there.
+ */
+export function parseOrgOverviewPath(
+	pathname: string,
+): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/overview\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgOverviewPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/overview`
 }
 
 /**
@@ -281,8 +298,8 @@ export function parseOrgManagementPath(
 }
 
 /**
- * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing, or
- * management). Same parse order as the server request binder. Public `/@slug`
+ * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing,
+ * management, or overview). Same parse order as the server request binder. Public `/@slug`
  * and `/@owner/pkg` paths are not org-owned pages — they return null so chrome
  * does not adopt a stranger's handle.
  */
@@ -292,6 +309,7 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
+		parseOrgOverviewPath(pathname)?.slug ??
 		null
 	)
 }

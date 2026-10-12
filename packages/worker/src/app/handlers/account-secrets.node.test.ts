@@ -6,7 +6,6 @@ import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
 import type * as valuesService from '#mcp/values/service.ts'
-import type * as packageAccess from '#mcp/secrets/package-access.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
 import type * as platformApps from '#worker/integrations/platform-apps.ts'
 import type * as packageSubscriptions from '#worker/integrations/package-subscriptions.ts'
@@ -83,16 +82,12 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn<
 		typeof packageRepo.listSavedPackagesByUserId
 	>(async () => []),
-	loadPackageSecretMounts: vi.fn<typeof packageAccess.loadPackageSecretMounts>(
-		async () => {
-			throw new Error('loadPackageSecretMounts is not mocked for this test.')
-		},
-	),
 	listSecrets: vi.fn<typeof secretsService.listSecrets>(async () => []),
 	listPackageSecretsByPackageIds: vi.fn<
 		typeof secretsService.listPackageSecretsByPackageIds
 	>(async () => new Map()),
 	resolveSecret: vi.fn<typeof secretsService.resolveSecret>(async () => ({
+		credentialId: null,
 		found: false,
 		value: null,
 		scope: null,
@@ -201,6 +196,7 @@ const mockModule = vi.hoisted(() => ({
 				},
 				connection: {
 					userId: ownerIdFromStored('stable-user-1'),
+					credentialId: 'cred-integration',
 					name,
 					appSlug: name,
 					platformAppSlug: null,
@@ -356,13 +352,6 @@ vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#mcp/secrets/package-access.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof packageAccess>()),
-	loadPackageSecretMounts: (
-		...args: Parameters<typeof packageAccess.loadPackageSecretMounts>
-	) => mockModule.loadPackageSecretMounts(...args),
-}))
-
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: (
 		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
@@ -399,6 +388,7 @@ const approve = (search: string) => postRequest({ action: 'approve' }, search)
 
 function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
 	return {
+		credentialId: `cred-${name}`,
 		name,
 		scope: 'user' as const,
 		description: '',
@@ -1017,30 +1007,10 @@ test('package approval reject and approve handle missing secrets and deduplicate
 test('bulk package approval view and approve grant the package on every listed secret', async () => {
 	const call = createHandler()
 	mockSecretsListing([
-		makeSecret('discordBotToken', { allowedHosts: ['discord.com'] }),
+		makeSecret('discordBotToken'),
 		makeSecret('xAccessToken'),
 		makeSecret('githubAccessToken', { allowedPackages: ['pkg-release'] }),
 	])
-	mockModule.loadPackageSecretMounts.mockResolvedValue({
-		manifest: {
-			kody: {
-				credentials: {
-					discordBotToken: {
-						kind: 'secret',
-						provider: 'discord',
-						description: 'Bot token.',
-						placement: { header: 'Authorization', template: 'Bot {value}' },
-					},
-					xAccessToken: {
-						kind: 'secret',
-						provider: 'x',
-						description: 'Signs requests.',
-						raw: true,
-					},
-				},
-			},
-		},
-	} as never)
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
 		{
 			id: 'pkg-release',
@@ -1061,10 +1031,6 @@ test('bulk package approval view and approve grant the package on every listed s
 			names: ['discordBotToken', 'xAccessToken'],
 			requestedPackageId: 'pkg-release',
 			scope: 'user',
-			packageCredentials: [
-				{ name: 'discordBotToken', allowedHosts: ['discord.com'], raw: false },
-				{ name: 'xAccessToken', allowedHosts: [], raw: true },
-			],
 		},
 	})
 

@@ -155,6 +155,7 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 	{
 		name: 'orgMemberUpdate',
 		orgPermission: 'member:write',
+		requiresLivePerson: true,
 		description:
 			'Change the role of a live member of the organization this request is bound to. Only an Owner can grant or change the Owner role. The last Owner cannot be demoted.',
 		keywords: ['member', 'role', 'owner', 'billing'],
@@ -235,6 +236,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 	{
 		name: 'orgMemberRemove',
 		orgPermission: 'member:delete',
+		requiresLivePerson: true,
 		description:
 			'Remove a member from the organization this request is bound to. Revokes org-bound credentials, disconnects integrations they connected, and keeps their jobs running, the same as when they leave. A retry finishes that cleanup when the membership is already tombstoned. Their team memberships in this organization end too. The last Owner cannot be removed.',
 		keywords: ['member', 'remove', 'kick'],

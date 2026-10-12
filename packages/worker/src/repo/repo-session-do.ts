@@ -73,6 +73,7 @@ import {
 	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
+import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -86,9 +87,7 @@ import {
 	type IsolatedCheckPhaseOutcome,
 	type IsolatedCheckPhaseRequest,
 } from './isolated-check-phases.ts'
-import { parseRepoManifest } from './manifest.ts'
 import {
-	type EntityKind,
 	type EntitySourceRow,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -619,7 +618,6 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async readManifestFromWorkspace(
 		manifestPath: string,
-		entityKind: EntityKind,
 		expectedPackageScope?: string,
 	) {
 		const manifestContent = await this.workspace.readFile(
@@ -628,16 +626,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${manifestPath}" was not found.`)
 		}
-		if (entityKind === 'package') {
-			return parseAuthoredPackageJson({
-				content: manifestContent,
-				manifestPath,
-				expectedPackageScope,
-			})
-		}
-		return parseRepoManifest({
+		return parseAuthoredPackageJson({
 			content: manifestContent,
 			manifestPath,
+			expectedPackageScope,
 		})
 	}
 
@@ -1757,10 +1749,17 @@ class RepoSessionBase extends DurableObject<Env> {
 				if (!commit) {
 					throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 				}
-				await this.readManifestFromWorkspace(
-					source.manifest_path,
-					source.entity_kind,
-				)
+				switch (source.entity_kind) {
+					case 'package':
+						await this.readManifestFromWorkspace(source.manifest_path)
+						break
+					case 'repo':
+						break
+					default: {
+						const entityKind: never = source.entity_kind
+						throw new Error(`Unsupported entity kind: ${String(entityKind)}`)
+					}
+				}
 				return commit
 			},
 		)
@@ -3107,13 +3106,20 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		if (source.entity_kind === 'repo') {
-			return await this.publishPlainRepoSession({
-				sessionRow,
-				source,
-				sessionAccess,
-				commitMessage: input.commitMessage,
-			})
+		switch (source.entity_kind) {
+			case 'repo':
+				return await this.publishPlainRepoSession({
+					sessionRow,
+					source,
+					sessionAccess,
+					commitMessage: input.commitMessage,
+				})
+			case 'package':
+				break
+			default: {
+				const entityKind: never = source.entity_kind
+				throw new Error(`Unsupported entity kind: ${String(entityKind)}`)
+			}
 		}
 		const sessionBranch = sessionRow.session_branch
 		const checkStatus = await this.readCheckStatus()
@@ -3184,7 +3190,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			)) ?? (await this.getHeadCommit())
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
-			source.entity_kind,
 			input.expectedPackageScope,
 		)
 		await (
@@ -3222,6 +3227,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		// snapshot collected once above for the published source KV write.
 		const snapshotFiles = workspaceSnapshot.files
 		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		const credentialNotice =
+			source.entity_kind === 'package'
+				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
+				: null
+		const withCredentialNotice = (message: string) =>
+			credentialNotice ? `${message}\n\n${credentialNotice}` : message
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3251,6 +3262,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					packageId: lockedPackage.id,
 					packageName: lockedPackage.name,
 					message: error.message,
+					credentialNotice,
 				}
 			}
 		}
@@ -3310,7 +3322,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			status: 'ok',
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
-			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
+			message: withCredentialNotice(
+				`Published session ${sessionRow.id} to ${source.repo_id}.`,
+			),
 		}
 	}
 

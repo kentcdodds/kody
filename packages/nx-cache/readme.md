@@ -44,11 +44,14 @@ example
 A read-only or failed write never fails the run; it is the signal that the token
 or the worker secret needs fixing before any hit can happen. Cached npm scripts
 (`test:node`, `test:workers`, `test:e2e:run`, `test:mcp`, `test`, and
-`typecheck`) run through `tools/run-nx.ts`. A transport error talking to
-`/v1/cache/{hash}` after Nx already printed `Successfully ran target` is treated
-as success. The same transport error before tasks finish retries once with
+`typecheck`) run through `tools/run-nx.ts`. Before Nx starts, that wrapper
+probes the cache the same way CI does and unsets
+`NX_SELF_HOSTED_REMOTE_CACHE_SERVER` when the token cannot read, so a stale or
+rotated token degrades to the local cache with a warning. A transport error
+talking to `/v1/cache/{hash}`, or Nx's `Misconfigured remote cache endpoint` /
+`Unauthorized` cache error, after Nx already printed `Successfully ran target`
+is treated as success. The same failure before tasks finish retries once with
 `--skipRemoteCache` and without `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`.
-Unauthorized or misconfigured-cache errors still fail.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
 runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
@@ -57,20 +60,23 @@ without re-running the command.
 
 ## Interpreting hit rates
 
-A PR that **introduces or renames Nx tasks** (or expands their `inputs`) will
-show `Cache: 0/N` on first run even when remote cache is enabled — those hashes
-have never been stored. Same-repo validate uses the write token (decision 0040),
-so that first run **PUTs**; the next identical tree on `main` or another PR
-should show `[remote cache]` hits. Example after parallel typecheck (#3209): the
-PR logged `0/12`, and the following `main` validate logged `12/12`.
+A PR that **introduces or renames Nx tasks** (or expands their `inputs`) makes
+those tasks' hashes cold. Nx checks each task hash independently, so unaffected
+tasks can still hit. You only see `Cache: 0/N` when every counted task misses
+(for example a first run where all N hashes are new). Same-repo validate uses
+the write token (decision 0040), so that first run **PUTs**; the next identical
+tree on `main` or another PR should show `[remote cache]` hits. Example after
+parallel typecheck (#3209): the PR logged `0/12`, and the following `main`
+validate logged `12/12`.
 
 Do **not** treat a cold `0/N` alone as a token, Nx Cloud, or `--skip-nx-cache`
 bug. Check the setup step for
 `Nx remote cache enabled (https://nx-cache.kody.codes)` first. Fork PRs use the
 read token only and cannot populate new hashes. Suite targets that hash
 `{workspaceRoot}/**/*` (notably `test-node` after #3207) miss whenever any
-workspace file changes — that is intentional correctness, not a transport
-failure.
+non-gitignored workspace file matched by the input changes — that is intentional
+correctness, not a transport failure. Nx leaves `.gitignore`d paths out of
+fileset inputs unless a fileset sets `includeIgnored: true`.
 
 ## Retention
 

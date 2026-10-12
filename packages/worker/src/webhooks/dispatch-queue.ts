@@ -1,3 +1,8 @@
+import {
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/infrastructure-codes.ts'
 import {
 	buildWebhookDispatchFailureLogs,
@@ -108,6 +113,7 @@ export async function processWebhookDispatch(
 		...(resolved.idempotencyHashParams
 			? { idempotencyHashParams: resolved.idempotencyHashParams }
 			: {}),
+		executorTimeoutMs: backgroundExecutorTimeoutMs,
 	})
 	const retryableCode = readPreExecutionPackageInvocationInfrastructureCode({
 		status: response.status,
@@ -143,13 +149,20 @@ export async function processWebhookDispatch(
 
 	const ok = response.status >= 200 && response.status < 300
 	const invocationError = readWebhookInvocationError(response.body)
+	const placementRefused =
+		!ok &&
+		Boolean(readCredentialPlacementRefusalFromInvocationBody(response.body))
 	await recordWebhookDelivery({
 		env,
 		endpoint: message.endpoint,
 		kodyId: message.packageKodyId,
 		outcome: ok ? 'delivered' : 'failed',
 		httpStatus: ok ? 202 : 502,
-		error: ok ? null : `invocation_status_${response.status}`,
+		error: ok
+			? null
+			: placementRefused
+				? credentialPlacementRefusedCode
+				: `invocation_status_${response.status}`,
 		payloadBytes: message.payloadBytes,
 		invocationId: message.deliveryId,
 		result: readWebhookInvocationResult(response.body),
@@ -158,7 +171,9 @@ export async function processWebhookDispatch(
 		...(ok
 			? {}
 			: {
-					invocationErrorCode: invocationError.code,
+					invocationErrorCode: placementRefused
+						? credentialPlacementRefusedCode
+						: invocationError.code,
 					logs: buildWebhookDispatchFailureLogs({
 						httpStatus: response.status,
 						body: response.body,

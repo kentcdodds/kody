@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { trustedSyntheticSubscriptionDispatch } from './subscription-envelope.ts'
 
@@ -11,6 +14,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./idempotent-module-invocation.ts', () => ({
 	invokeSavedPackageModule: mocks.invokeSavedPackageModule,
+}))
+
+const enablement = {
+	id: 'enablement-1',
+	enabler: { userId: personIdFromStored('user-1'), username: 'user-1' },
+	role: 'owner' as const,
+}
+
+vi.mock('#worker/enablements/run-gate.ts', () => ({
+	planEnablementRuns: async () => ({ runs: [enablement], skipped: [] }),
 }))
 
 const { invokePackageSubscriptionWithToolFactories } =
@@ -60,8 +73,14 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 			actor: {
 				sourceId: 'internal:email-subscriptions',
 				orgId: ownerIdFromStored('user-1'),
-				request: { kind: 'platform-event', sourceId: 'test' },
+				request: {
+					kind: 'platform-event',
+					sourceId: 'internal:email-subscriptions',
+					enablement,
+				},
 			},
+			idempotencyKey:
+				'email:message-1:pkg-1:email.message.received:enablement:enablement-1',
 		}),
 	)
 })

@@ -15,10 +15,9 @@ category: platform
 
 A secret is a credential stored on your Kody account — an API key, a personal
 access token, a webhook signing secret, a private key. Your agent can write code
-that uses a secret. It can never read one. The single exception is a package
-credential slot that declares `"raw": true`: `packageSecrets.get` returns that
-slot's value to the package's own code, the consent page says so in its own
-line, and the value is redacted from run output.
+that uses a secret. It can never read one — including via `packageSecrets.get`,
+which returns only an opaque `{{secret:…}}` placeholder for platform use sites
+(fetch, `secretHeaders`, `secretJwtSign`) to resolve.
 
 Watch:
 [Make your agent safe and autonomous](https://www.youtube.com/watch?v=_EJTrJFLa3g)
@@ -48,16 +47,19 @@ the value is shared with none of them.
 Code refers to a secret by name. Kody substitutes the value at the network
 boundary, on the final serialized request, and only for hosts you approved.
 
-- **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` in a request
-  header of an outbound HTTPS `fetch` resolves when the request leaves Kody. One
-  in the URL, query string, or body, or on plain `http://`, is refused. External
-  providers use the same boundary; see
+- **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` anywhere in an
+  outbound HTTPS `fetch` (a header, the URL path or query, or a text body)
+  resolves when the request leaves Kody, if the host is one you approved for
+  that secret. On plain `http://` or an unapproved host the request is refused
+  with an error naming the secret and host; a placeholder is never sent
+  unfilled. External providers use the same boundary; see
   [Custom secret providers](./secret-providers.md). This is not general string
   interpolation; it works only in secret-aware `fetch`.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,
   `secretHeaders.basic({ usernameSecret, passwordSecret })` from `kody:runtime`
   produces the header without exposing either half. Each secret argument accepts
-  a saved secret name **or** an opaque `{{secret:<name>}}` ref.
+  a saved secret name **or** an opaque `{{secret:…}}` ref from
+  `packageSecrets.get`.
 - **Signed JWTs** — `secretJwtSign` signs a JWT with a stored key and returns
   the compact token, never the key. HMAC (`HS256` / `HS384` / `HS512`) reads key
   material from the saved secret (`key_encoding` defaults to `base64`) and

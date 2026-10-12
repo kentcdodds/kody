@@ -1,6 +1,8 @@
 /**
  * Workers-unit D1 does not apply migrations. Suites that call packageGet
- * (which lists package-scoped secret metadata) need these tables.
+ * (which lists package-scoped secret metadata) need these tables. Production
+ * assigns credential ids with an insert trigger (migration 0110); a column
+ * default gives inserts and upserts the same ids here.
  */
 export async function ensureSecretBucketsTestSchema(db: D1Database) {
 	await db
@@ -21,10 +23,12 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS secret_entries (
+				id TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
 				bucket_id TEXT NOT NULL,
 				name TEXT NOT NULL,
 				description TEXT NOT NULL DEFAULT '',
 				encrypted_value TEXT NOT NULL,
+				kind TEXT NOT NULL DEFAULT 'secret',
 				allowed_hosts TEXT NOT NULL DEFAULT '[]',
 				allowed_packages TEXT NOT NULL DEFAULT '[]',
 				lookup_hash TEXT,
@@ -39,6 +43,7 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS secret_provider_bindings (
+				id TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
 				user_id TEXT NOT NULL,
 				provider_id TEXT NOT NULL,
 				package_id TEXT NOT NULL,

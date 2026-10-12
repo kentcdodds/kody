@@ -6,6 +6,7 @@ import {
 } from '#universal/feature-flags/registry.ts'
 import { usageEventTypes } from '#universal/usage-event-types.ts'
 import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { stableUserIdSchema } from './admin-shared.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -86,12 +87,14 @@ export async function resolveTargetUser(
 	input: { stableUserId?: string; username?: string },
 ): Promise<{ dbUserId: number; stableUserId: string }> {
 	if (input.stableUserId !== undefined && input.username !== undefined) {
-		throw new Error('Provide either stableUserId or username, not both.')
+		throw new McpCallerError(
+			'Provide either stableUserId or username, not both.',
+		)
 	}
 	if (input.stableUserId !== undefined) {
 		const stableUserId = parsePersonId(input.stableUserId)
 		if (!stableUserId) {
-			throw new Error('stableUserId must be a valid stable user id.')
+			throw new McpCallerError('stableUserId must be a valid stable user id.')
 		}
 		const row = await db
 			.prepare(
@@ -100,14 +103,16 @@ export async function resolveTargetUser(
 			.bind(stableUserId)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
-			throw new Error(`User not found for stableUserId ${stableUserId}.`)
+			throw new McpCallerError(
+				`User not found for stableUserId ${stableUserId}.`,
+			)
 		}
 		return { dbUserId: row.id, stableUserId: row.stable_user_id }
 	}
 	if (input.username !== undefined) {
 		const username = input.username.trim().toLowerCase()
 		if (!username) {
-			throw new Error('username must not be empty.')
+			throw new McpCallerError('username must not be empty.')
 		}
 		const row = await db
 			.prepare(
@@ -116,9 +121,9 @@ export async function resolveTargetUser(
 			.bind(username)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
-			throw new Error(`User not found for username "${username}".`)
+			throw new McpCallerError(`User not found for username "${username}".`)
 		}
 		return { dbUserId: row.id, stableUserId: row.stable_user_id }
 	}
-	throw new Error('Provide either stableUserId or username.')
+	throw new McpCallerError('Provide either stableUserId or username.')
 }
