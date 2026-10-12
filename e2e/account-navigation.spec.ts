@@ -142,7 +142,7 @@ test('MCP servers are one click from /account and two from the account menu', as
 	})
 	for (const [label, section] of [
 		['Overview', 'overview'],
-		['Repositories', 'packages'],
+		['Repositories', 'repositories'],
 		['Connections', 'connections'],
 		['Secrets', 'secrets'],
 		['Jobs', 'jobs'],
