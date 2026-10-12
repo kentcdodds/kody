@@ -31,7 +31,11 @@ function migrationStatements(sql: string) {
 }
 
 const schemaStatements = [
-	...migrationStatements(jobsInitSql),
+	// 0005 drops `jobs.preserved` and this index. Re-applying 0001 cannot
+	// recreate the index once the column is gone, and tests do not query it.
+	...migrationStatements(jobsInitSql).filter(
+		(statement) => !/idx_jobs_retention_candidates/i.test(statement),
+	),
 	...migrationStatements(jobsSoftDeleteSql),
 	...migrationStatements(jobsEnabledBeforeSoftDeleteSql),
 	...migrationStatements(jobsDropPreservedSql),
