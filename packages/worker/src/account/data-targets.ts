@@ -286,6 +286,16 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		reason:
 			'Fleet/canary filter payloads may list the deleted user in userIds; deletion rewrites that id to deleted-user. Export reaches package_codemod_runs through scope/initiator columns instead.',
 	},
+	// Inventory items are per-package results owned by the package owner; runs
+	// are operator ledger rows whose initiator is attribution only.
+	{ kind: 'user_id', table: 'credential_inventory_items' },
+	{
+		kind: 'replace_user_column',
+		table: 'credential_inventory_runs',
+		matchColumn: 'initiated_by_user_id',
+		setColumn: 'initiated_by_user_id',
+		value: 'deleted-user',
+	},
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
@@ -968,6 +978,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
+	credential_inventory_runs: ['initiated_by_user_id'],
 	grants: ['created_by_user_id'],
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
 	org_invite_links: ['created_by_user_id'],

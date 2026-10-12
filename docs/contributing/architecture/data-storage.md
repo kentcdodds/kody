@@ -1500,6 +1500,18 @@ on write unless a migration backfills existing rows.
   `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
   its OAuth app's provider, written on connect and backfilled by the migration.
   Nothing reads these yet; placeholders keep resolving as before.
+- `credential_inventory_runs` and `credential_inventory_items`
+  (`0112-credential-inventory.sql`,
+  `packages/worker/src/credentials/credential-inventory.ts`) hold the admin
+  fleet inventory of credential placeholders in published package source.
+  `adminCredentialInventoryScan` pages saved packages into a run; each item's
+  `result_json` holds credential ids, placement shapes, slot providers, and
+  placeholder counts (every placeholder, including ones that match a declared
+  slot), never a credential name or value. `adminCredentialBackfill` reads a
+  complete run and writes `provider` and `inject_json` only where they are still
+  unset: `provider` when every slot naming the credential agrees on one provider
+  slug, `inject_json` when every placement is the same header or the same query
+  param.
 
 ### Durable Object id contracts
 

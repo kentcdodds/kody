@@ -439,6 +439,10 @@
 		{
 			"filename": "0111-credential-provider-inject-source.sql",
 			"sha256": "eceb55fbafd5ea18a109706a8e3e849a090b03b21c44032595d41092d13bf817"
+		},
+		{
+			"filename": "0112-credential-inventory.sql",
+			"sha256": "57e56179562397063d6f3f14745e43fec24149dfc98d518893009aa550f818b7"
 		}
 	]
 }

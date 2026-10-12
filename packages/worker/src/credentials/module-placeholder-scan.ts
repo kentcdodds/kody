@@ -76,6 +76,68 @@ export function findPlaceholders(text: string) {
 	return placeholders
 }
 
+export type PlaceholderMatchKind =
+	| 'secret'
+	| 'secret-basic'
+	| 'integration-token'
+	| 'vault'
+	| 'computed'
+
+const placeholderMatchKindByOpener: Record<
+	string,
+	Exclude<PlaceholderMatchKind, 'computed'>
+> = {
+	'secret:': 'secret',
+	'secret-basic:': 'secret-basic',
+	'secret/': 'vault',
+	'integration-token:': 'integration-token',
+}
+
+export type PlaceholderMatch = {
+	kind: PlaceholderMatchKind
+	/** Names the placeholder reads; empty for vault and computed. */
+	names: Array<string>
+	/** Literal `|scope=` suffix, or null when it has none. */
+	scope: string | null
+	start: number
+	end: number
+}
+
+/**
+ * Every placeholder in `text` with its position. Prose that names nothing is
+ * skipped; anything else that opens a placeholder but does not complete one
+ * is `computed`.
+ */
+export function findPlaceholderMatches(text: string) {
+	const matches: Array<PlaceholderMatch> = []
+	for (const match of text.matchAll(placeholderOpenerPattern)) {
+		const opener = match[1]!
+		const complete = completePlaceholderPatterns[opener]!
+		complete.pattern.lastIndex = match.index
+		const found = complete.pattern.exec(text)
+		if (found) {
+			matches.push({
+				kind: placeholderMatchKindByOpener[opener]!,
+				names: complete.kind ? found.slice(1) : [],
+				scope: /\|scope=([a-z]+)\}\}$/.exec(found[0])?.[1] ?? null,
+				start: match.index,
+				end: match.index + found[0].length,
+			})
+			continue
+		}
+		prosePlaceholderPattern.lastIndex = match.index
+		if (prosePlaceholderPattern.test(text)) continue
+		matches.push({
+			kind: 'computed',
+			names: [],
+			scope: null,
+			start: match.index,
+			end: match.index + opener.length + 2,
+		})
+	}
+	return matches
+}
+
 export type AstNode = ModuleAstNode & {
 	computed?: boolean
 	name?: unknown

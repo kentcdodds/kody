@@ -55,6 +55,8 @@ import { adminReservedUsernameRemoveCapability } from './admin-reserved-username
 import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-account-purge-run.ts'
 import { adminSoftDeletePurgeRunCapability } from './admin-soft-delete-purge-run.ts'
 import { adminPublishedImportableArtifactBackfillCapability } from './admin-published-importable-artifact-backfill.ts'
+import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
+import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -105,6 +107,8 @@ export const adminDomain = defineDomain({
 		'org limits',
 		'org transfer',
 		'move org resources',
+		'credential inventory',
+		'credential backfill',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -135,6 +139,8 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodRevertCapability,
 		adminPackageCodemodOwnerNoticeCapability,
 		adminPublishedImportableArtifactBackfillCapability,
+		adminCredentialInventoryScanCapability,
+		adminCredentialBackfillCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
 		adminCreditWalletGetCapability,
