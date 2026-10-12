@@ -1,7 +1,8 @@
 /**
  * The `signing` credential kind (ADR 0068): the value is key material that
- * never leaves the host. Code asks for a signature (a JWT over its claims, or
- * an HMAC over its message) and gets back only the signature.
+ * never leaves the host. A caller asks for a signature (a JWT over its claims,
+ * or an HMAC over its message) for a request to one of the credential's hosts
+ * and gets back only the signature.
  */
 import {
 	signJwtWithSecret,
@@ -12,6 +13,10 @@ import {
 	type WebhookHmacAlgorithm,
 	type WebhookSignatureEncoding,
 } from '#worker/webhooks/types.ts'
+import {
+	credentialHostsAllow,
+	CredentialRequestRefusedError,
+} from './credential-request.ts'
 import { type CredentialResolver } from './credential-resolver.ts'
 import {
 	authorizeStoredCredential,
@@ -61,6 +66,7 @@ export const signingCredentialResolver: CredentialResolver<'signing'> = {
 		name: credential.credentialId,
 		credentialId: null,
 		details: {
+			host: credential.requestHost,
 			operation: credential.operation.type,
 			algorithm: credential.operation.algorithm,
 		},
@@ -70,12 +76,18 @@ export const signingCredentialResolver: CredentialResolver<'signing'> = {
 		const lookup = await findStoredCredential(call, credential.credentialId)
 		return {
 			async authorize() {
-				await authorizeStoredCredential(
+				const found = await authorizeStoredCredential(
 					call,
 					credential.credentialId,
 					lookup,
 					'signing',
 				)
+				if (!credentialHostsAllow(found.allowedHosts, credential.requestHost)) {
+					throw new CredentialRequestRefusedError(
+						'host_not_allowed',
+						'This signing credential does not sign requests to that host.',
+					)
+				}
 			},
 			async apply(): Promise<SigningResult> {
 				// `authorize` returned, so the lookup found a usable credential.

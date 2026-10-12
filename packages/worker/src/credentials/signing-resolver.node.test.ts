@@ -153,6 +153,7 @@ async function setup() {
 	const sign = (input: {
 		actor: ReturnType<typeof requestAs>
 		credentialId: string
+		requestHost?: string
 		operation?: SigningOperation
 	}) =>
 		resolveCredential({
@@ -163,6 +164,7 @@ async function setup() {
 			credential: {
 				use: 'signing',
 				credentialId: input.credentialId,
+				requestHost: input.requestHost ?? 'api.example.com',
 				operation: input.operation ?? hmac,
 			},
 		})
@@ -275,4 +277,26 @@ test('only signing credentials with hosts sign, and nothing is read otherwise', 
 		CredentialRequestRefusedError,
 	)
 	expect(valueReads.count).toBe(0)
+})
+
+test('a signature is only made for a request to one of the credential hosts', async () => {
+	const t = await setup()
+	const actor = t.requestAs('bea', 'owner')
+	const id = await t.storeCredential({
+		name: 'webhook-key',
+		value: hmacKey,
+		hosts: ['*.example.com'],
+	})
+	await expect(
+		t.sign({ actor, credentialId: id, requestHost: 'evil.example.net' }),
+	).rejects.toMatchObject({ code: 'host_not_allowed' })
+	expect(valueReads.count).toBe(0)
+	await expect(
+		t.sign({ actor, credentialId: id, requestHost: 'eu.example.com' }),
+	).resolves.toHaveProperty('signature')
+	const rows = await t.audits()
+	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(JSON.parse(rows[0]!.details_json)).toMatchObject({
+		host: 'evil.example.net',
+	})
 })
