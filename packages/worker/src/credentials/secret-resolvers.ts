@@ -269,11 +269,7 @@ export const vaultSecretResolver: CredentialResolver<'provider-secret'> = {
 			// provider invoke. A missing binding fails inside resolveProviderSecret.
 			async authorize() {
 				if (!binding) return
-				await authorizeActorUse(
-					call,
-					binding.credentialId,
-					binding.doorSecretName,
-				)
+				await authorizeActorUse(call, binding.credentialId)
 			},
 			async apply() {
 				const resolved = await resolveProviderSecret({

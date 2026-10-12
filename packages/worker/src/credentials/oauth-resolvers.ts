@@ -37,6 +37,24 @@ async function authorizeIntegrationUse(
 	})
 }
 
+/**
+ * Tokens are read by name, so a connection replaced after the Use check
+ * could hand over the replacement's token. Refuse when the name no longer
+ * names the credential that was authorized.
+ */
+async function assertIntegrationUnchanged(
+	call: ResolverCall<
+		CredentialTargetFor<'integration-token' | 'integration-refresh'>
+	>,
+	authorizedId: string | null,
+) {
+	if ((await findIntegrationId(call)) !== authorizedId) {
+		throw new Error(
+			createMissingIntegrationAccessTokenMessage(call.credential.name),
+		)
+	}
+}
+
 async function findIntegrationId(
 	call: ResolverCall<
 		CredentialTargetFor<'integration-token' | 'integration-refresh'>
@@ -90,6 +108,7 @@ export const integrationTokenResolver: CredentialResolver<'integration-token'> =
 						userId: input.orgId,
 						name: credential.name,
 					})
+					await assertIntegrationUnchanged(call, credentialId)
 					return resolved?.accessToken ?? null
 				},
 			}
@@ -110,14 +129,18 @@ export const integrationRefreshResolver: CredentialResolver<'integration-refresh
 			const credentialId = await findIntegrationId(call)
 			return {
 				authorize: () => authorizeIntegrationUse(call, credentialId),
-				apply: () =>
-					refreshIntegrationTokens({
+				async apply() {
+					// A refresh hands back no token; checking first keeps an old
+					// grant from refreshing a replacement connection.
+					await assertIntegrationUnchanged(call, credentialId)
+					return await refreshIntegrationTokens({
 						env: input.env,
 						userId: input.orgId,
 						userEmail: credential.userEmail,
 						name: credential.name,
 						waitUntil: credential.waitUntil,
-					}),
+					})
+				},
 			}
 		},
 		isFound: () => true,
