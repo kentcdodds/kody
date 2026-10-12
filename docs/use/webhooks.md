@@ -566,8 +566,10 @@ rejected with the same generic 401 as a bad HMAC.
 
 Declare `url-secret` when the sender has no way to sign requests (Telegram,
 Microsoft Graph, Azure DevOps, PostHog, a cron service). The URL secret is then
-the only credential: any POST to the minted URL runs the export, and signature
-headers are ignored. This is a supported, permanent verification type:
+the only credential and signature headers are ignored: a POST to the minted URL
+runs the export once it passes any declared `replay` checks (a matching
+`challenge` POST is answered without running it). This is a supported, permanent
+verification type:
 
 ```json
 {
@@ -630,7 +632,8 @@ extension, social-launch client) mints a webhook URL and POSTs JSON. No
 	"export": "./dispatch-message-created",
 	"responseMode": "sync",
 	"inputMode": "params",
-	"rateLimitPerMinute": 600
+	"rateLimitPerMinute": 600,
+	"verification": { "type": "url-secret" }
 }
 ```
 
