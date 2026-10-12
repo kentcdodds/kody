@@ -93,6 +93,11 @@ curl -fsS -X DELETE \
   -H "Authorization: Bearer $STATUS_INCIDENT_EVENT_SECRET"
 ```
 
+The secret lives only in GitHub Actions, so the usual way to run this is the
+`🧹 Status Incident Delete` workflow (`status-incident-delete.yml`) from main
+with `incident_id` and `confirm: delete status incident <id>`. Agents dispatch
+it through `@kentcdodds/github` as kody-bot.
+
 The delete removes the incident row and recomputes `daily_stats.failed` for the
 days it covered, so the day bar loses its amber or red marker. Days no other
 incident covers drop to zero failed. Days shared with another incident only lose

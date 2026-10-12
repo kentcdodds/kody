@@ -1,0 +1,95 @@
+name: 🧹 Status Incident Delete
+
+# Deletes one resolved, health-check-only status incident through
+# DELETE https://status.kody.codes/__maintenance/incidents/:id. The bearer is
+# the STATUS_INCIDENT_EVENT_SECRET Actions secret, which no operator shell
+# holds. Record the impact-check evidence before running this (see the
+# Retrospectives section of packages/status/readme.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      incident_id:
+        description: Status incident id (from /status.json)
+        required: true
+        type: string
+      confirm:
+        description: Type "delete status incident <id>"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: status-incident-delete
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    name: 🧹 Delete status incident ${{ inputs.incident_id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: 🛂 Check inputs and actor
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          REF: ${{ github.ref }}
+          INCIDENT_ID: ${{ inputs.incident_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Run from main only, got $REF." >&2
+            exit 1
+          fi
+          # Cloud Agent gh cannot dispatch workflows, so agents dispatch
+          # through @kentcdodds/github as kody-bot.
+          case "$ACTOR" in
+            kentcdodds|cursor|kody-bot) ;;
+            *)
+              echo "Approved actors only (kentcdodds, cursor, or kody-bot); got $ACTOR." >&2
+              exit 1
+              ;;
+          esac
+          if ! [[ "$INCIDENT_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "incident_id must be a positive integer, got '$INCIDENT_ID'." >&2
+            exit 1
+          fi
+          if [ "$CONFIRM" != "delete status incident $INCIDENT_ID" ]; then
+            echo "confirm must be \"delete status incident $INCIDENT_ID\"." >&2
+            exit 1
+          fi
+
+      - name: 🧹 Delete the incident
+        shell: bash
+        env:
+          INCIDENT_ID: ${{ inputs.incident_id }}
+          STATUS_INCIDENT_EVENT_SECRET:
+            ${{ secrets.STATUS_INCIDENT_EVENT_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STATUS_INCIDENT_EVENT_SECRET:-}" ]; then
+            echo "Missing GitHub Actions secret STATUS_INCIDENT_EVENT_SECRET." >&2
+            exit 1
+          fi
+          status=$(curl -sS -o response.json -w '%{http_code}' -X DELETE \
+            "https://status.kody.codes/__maintenance/incidents/${INCIDENT_ID}" \
+            -H "Authorization: Bearer ${STATUS_INCIDENT_EVENT_SECRET}")
+          cat response.json
+          echo
+          {
+            echo "## 🧹 Status incident ${INCIDENT_ID}"
+            echo ""
+            echo "HTTP ${status}"
+            echo ""
+            echo '```json'
+            cat response.json
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" != "200" ]; then
+            exit 1
+          fi
