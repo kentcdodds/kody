@@ -287,7 +287,10 @@ async function resolvePlainRepoGitTarget(input: {
 	| { kind: 'unavailable'; message: string }
 > {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source || source.entity_kind !== 'repo' || !source.repo_id) {
+	// Accept both plain repos and packages: promote flips entity_kind to
+	// `package` while keeping the same entity_sources.id + Artifacts repo_id,
+	// so minted `/git/sources/{id}.git` remotes must keep working.
+	if (!source || !source.repo_id) {
 		return { kind: 'not_found' }
 	}
 

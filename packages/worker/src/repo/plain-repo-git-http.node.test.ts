@@ -306,3 +306,54 @@ test('proxy requires auth and 404s unknown repos', async () => {
 	)
 	expect(missingRepo!.status).toBe(404)
 })
+
+test('proxy keeps working after promote flips entity_kind to package', async () => {
+	resetMocks()
+	seedPlainRepo()
+	getEntitySourceById.mockResolvedValue({
+		id: sourceId,
+		user_id: ownerIdFromStored('owner-1'),
+		entity_kind: 'package',
+		entity_id: 'saved-package-1',
+		repo_id: 'plain-notes',
+		published_commit: 'abc123',
+		indexed_commit: 'abc123',
+		manifest_path: 'package.json',
+		source_root: '.',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: '2026-01-01T00:00:00.000Z',
+		updated_at: '2026-01-02T00:00:00.000Z',
+	})
+	const packResult = '000eunpack ok\n0000'
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, async ({ request }) => {
+			expect(request.headers.get('Authorization')).toBe(
+				`Bearer ${artifactToken}`,
+			)
+			return HttpResponse.text(packResult, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-receive-pack-result',
+				},
+			})
+		}),
+	])
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+				},
+				body: 'PACK',
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response).not.toBeNull()
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+})
