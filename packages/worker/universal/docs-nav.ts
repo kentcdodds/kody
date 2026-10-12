@@ -196,6 +196,10 @@ export const legacyDocSlugAliases: Readonly<
 		slug: 'package-apps',
 		fragment: 'after-an-integration-smoke-test',
 	},
+	webhooks: {
+		slug: 'triggers',
+		fragment: 'inbound-webhooks-the-external-http-knock',
+	},
 }
 
 /**

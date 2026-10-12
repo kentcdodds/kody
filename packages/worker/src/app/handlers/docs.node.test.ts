@@ -154,6 +154,11 @@ test('legacy /guides URLs resolve to their /docs twins and merged doc slugs 308 
 			'/docs/package-apps#after-an-integration-smoke-test',
 		],
 		['/guides/integration-backed-app-happy-path.md', '/docs/package-apps.md'],
+		[
+			'/guides/webhooks',
+			'/docs/triggers#inbound-webhooks-the-external-http-knock',
+		],
+		['/guides/webhooks.md', '/docs/triggers.md'],
 		['/guides/nope', '/docs/nope'],
 	]
 	expect(
