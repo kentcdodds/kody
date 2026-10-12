@@ -458,7 +458,10 @@ test('a rate-limited pull request read retries and still publishes', async () =>
 		},
 	})
 	expect(code).toBe(0)
-	expect(sleeps[0]).toBe(2_000)
+	// Rate-limit wait is Date.now()+retryAfter, then the next loop sleeps
+	// pausedUntil-Date.now(), which can lose a millisecond.
+	expect(sleeps[0]).toBeGreaterThanOrEqual(1_990)
+	expect(sleeps[0]).toBeLessThanOrEqual(2_000)
 	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 	expect(
 		github.calls.filter((call) => call.url.endsWith('/pulls/12')),
