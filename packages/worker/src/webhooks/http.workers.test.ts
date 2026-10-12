@@ -28,7 +28,7 @@ import { webhookRateLimitConfig } from './types.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -845,11 +845,21 @@ test('a webhook that declares no verification runs on its URL secret alone, with
 		}),
 	).toBe(202)
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const urlSecretOnlyLogs = () =>
+		consoleInfo.mock.calls.filter(
+			([message]) => message === 'webhook-url-secret-only-accepted',
+		)
+	expect(urlSecretOnlyLogs()).toHaveLength(3)
+	expect(urlSecretOnlyLogs()[2]?.[1]).toMatchObject({
+		endpointId: 'mint-plain',
+		webhookName: 'plain',
+	})
 
 	expect(
 		await statusOf('plain', { body, unsigned: true, urlSecret: 'wrong' }),
 	).toBe(404)
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(urlSecretOnlyLogs()).toHaveLength(3)
 	expect(
 		(await listDeliveries(userId, 'plain')).filter(
 			(run) => run.status === 'error',
@@ -911,6 +921,10 @@ test('a declared verification.secretName wins over the stored generated secret, 
 		}),
 	)
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(consoleInfo).not.toHaveBeenCalledWith(
+		'webhook-url-secret-only-accepted',
+		expect.anything(),
+	)
 
 	const endpoint = await env.APP_DB.prepare(
 		`SELECT url_secret_hash FROM webhook_endpoints WHERE id = 'mint-stripe'`,
