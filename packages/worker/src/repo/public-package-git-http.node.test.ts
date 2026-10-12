@@ -345,7 +345,7 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 	expect(fetchCalls).toHaveLength(2)
 })
 
-test('public package git HTTP rejects push and hides private packages', async () => {
+test('public package git HTTP rejects push and challenges auth for private packages', async () => {
 	resetMocks()
 
 	const receivePack = await handlePublicPackageGitHttpRequest(
@@ -374,8 +374,9 @@ test('public package git HTTP rejects push and hides private packages', async ()
 		),
 		envStub(),
 	)
-	expect(missing!.status).toBe(404)
-	expect(await missing!.text()).toBe('Not Found')
+	// Non-public paths challenge for credentials so `git` invokes the helper.
+	expect(missing!.status).toBe(401)
+	expect(missing!.headers.get('WWW-Authenticate')).toMatch(/Basic/i)
 	expect(getCommunityListingById).not.toHaveBeenCalled()
 })
 

@@ -465,6 +465,10 @@
 			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
 		},
 		{
+			"filename": "0119-user-owned-tokens-and-git-credentials.sql",
+			"sha256": "31cd56dd8d4a10afcb92089d6bbd7304f2d5dcf6058453b605e9a7ac741758e3"
+		},
+		{
 			"filename": "0123-webhook-apply-destination-credential-ids.sql",
 			"sha256": "0983c5748af6554e9bde5dbc502726ce86f22ca42395dbf4825069cfc84421d1"
 		},

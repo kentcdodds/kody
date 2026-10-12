@@ -1,8 +1,18 @@
+import {
+	parseGitAccessToken,
+	readBearerApiToken,
+} from '@kody-internal/shared/api-token-format.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import { getCommunityPackageGitHref } from '#universal/community-links.ts'
+import {
+	authenticateGitAccessToken,
+	gitAccessTokenMatchesRepo,
+	touchGitAccessToken,
+} from '#worker/api-tokens/git-access-tokens.ts'
 import { resolveCommunityPackageUrl } from '#worker/community/package-url.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
+import { buildMcpUserContextFromGrantProps } from '#worker/mcp-auth-user-context.ts'
 import { kodyPackageIdPattern } from '#worker/package-registry/types.ts'
 import {
 	buildAuthenticatedArtifactsRemote,
@@ -15,14 +25,18 @@ import {
 	rewriteUploadPackAdvertisement,
 	uploadPackWantsOnlySnapshot,
 } from '#worker/repo/git-pkt-line.ts'
+import { resolveReadableGitHttpTarget } from '#worker/repo/git-http-target.ts'
 
 const gitUploadPackService = 'git-upload-pack'
 const gitReceivePackService = 'git-receive-pack'
 const publicGitProxyAgent = 'kody-public-git'
+const authenticatedGitProxyAgent = 'kody-git'
 const publicGitTokenTtlSeconds = 300
 const publicGitRateLimit = { maxRequests: 120, windowSeconds: 60 } as const
 /** Anonymous upload-pack bodies are tiny (want/have negotiation). Cap memory. */
 const publicGitUploadPackMaxBodyBytes = 256 * 1024
+/** Authenticated live clones may send larger want/have negotiation. */
+const authenticatedGitUploadPackMaxBodyBytes = 1024 * 1024
 
 const hopByHopResponseHeaders = new Set([
 	'connection',
@@ -138,7 +152,7 @@ function methodNotAllowedResponse(allow: string) {
 
 function pushRejectedResponse() {
 	return new Response(
-		'Public package git remotes are read-only. Push (git-receive-pack) is not allowed.',
+		'Kody git remotes are read-only. Push (git-receive-pack) is not allowed.',
 		{
 			status: 403,
 			headers: {
@@ -147,6 +161,17 @@ function pushRejectedResponse() {
 			},
 		},
 	)
+}
+
+function authRequiredResponse() {
+	return new Response('Authentication required', {
+		status: 401,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+			'WWW-Authenticate': 'Basic realm="kody-git"',
+		},
+	})
 }
 
 function wantRejectedResponse() {
@@ -350,14 +375,12 @@ function artifactsAuthHeaders(tokenPlaintext: string): HeadersInit {
 
 async function readUploadPackRequestBody(
 	request: Request,
+	maxBodyBytes: number = publicGitUploadPackMaxBodyBytes,
 ): Promise<{ ok: true; body: Uint8Array } | { ok: false; response: Response }> {
 	const contentLengthHeader = request.headers.get('Content-Length')
 	if (contentLengthHeader != null) {
 		const contentLength = Number.parseInt(contentLengthHeader, 10)
-		if (
-			Number.isFinite(contentLength) &&
-			contentLength > publicGitUploadPackMaxBodyBytes
-		) {
+		if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
 			return { ok: false, response: payloadTooLargeResponse() }
 		}
 	}
@@ -374,7 +397,7 @@ async function readUploadPackRequestBody(
 		if (done) break
 		if (!value || value.byteLength === 0) continue
 		size += value.byteLength
-		if (size > publicGitUploadPackMaxBodyBytes) {
+		if (size > maxBodyBytes) {
 			try {
 				await reader.cancel()
 			} catch {
@@ -394,8 +417,33 @@ async function readUploadPackRequestBody(
 	return { ok: true, body }
 }
 
+type ProxiedGitTarget = {
+	username: string
+	kodyId: string
+	defaultBranch: string
+	remote: string
+	tokenPlaintext: string
+	/** Snapshot mode pins advertisement and wants; null = live HEAD. */
+	snapshotCommit: string | null
+	agent: string
+}
+
+function toProxiedPublicTarget(
+	target: ResolvedPublicGitTarget,
+): ProxiedGitTarget {
+	return {
+		username: target.username,
+		kodyId: target.kodyId,
+		defaultBranch: target.defaultBranch,
+		remote: target.remote,
+		tokenPlaintext: target.tokenPlaintext,
+		snapshotCommit: target.snapshotCommit,
+		agent: publicGitProxyAgent,
+	}
+}
+
 async function proxyArtifactsUploadPack(input: {
-	target: ResolvedPublicGitTarget
+	target: ProxiedGitTarget
 	request: Request
 }): Promise<Response> {
 	// Authenticated URL builder validates the remote protocol; credentials go
@@ -415,16 +463,24 @@ async function proxyArtifactsUploadPack(input: {
 	// header that would make Artifacts mis-parse the want body.
 	headers.set('Git-Protocol', 'version=1')
 
-	const bodyResult = await readUploadPackRequestBody(input.request)
+	const maxBodyBytes = input.target.snapshotCommit
+		? publicGitUploadPackMaxBodyBytes
+		: authenticatedGitUploadPackMaxBodyBytes
+	const bodyResult = await readUploadPackRequestBody(
+		input.request,
+		maxBodyBytes,
+	)
 	if (!bodyResult.ok) return bodyResult.response
 
-	if (
-		!uploadPackWantsOnlySnapshot({
-			body: bodyResult.body,
-			snapshotCommit: input.target.snapshotCommit,
-		})
-	) {
-		return wantRejectedResponse()
+	if (input.target.snapshotCommit) {
+		if (
+			!uploadPackWantsOnlySnapshot({
+				body: bodyResult.body,
+				snapshotCommit: input.target.snapshotCommit,
+			})
+		) {
+			return wantRejectedResponse()
+		}
 	}
 
 	const upstream = await fetch(upstreamUrl, {
@@ -441,9 +497,7 @@ async function proxyArtifactsUploadPack(input: {
 	})
 }
 
-async function proxyArtifactsInfoRefs(input: {
-	target: ResolvedPublicGitTarget
-}) {
+async function proxyArtifactsInfoRefs(input: { target: ProxiedGitTarget }) {
 	buildAuthenticatedArtifactsRemote({
 		remote: input.target.remote,
 		token: input.target.tokenPlaintext,
@@ -455,11 +509,35 @@ async function proxyArtifactsInfoRefs(input: {
 		'Git-Protocol': 'version=1',
 	})
 
+	if (!input.target.snapshotCommit) {
+		try {
+			const upstream = await fetch(upstreamUrl, {
+				method: 'GET',
+				headers,
+				signal: AbortSignal.timeout(15_000),
+			})
+			if (upstream.ok) {
+				return new Response(upstream.body, {
+					status: 200,
+					headers: {
+						'Content-Type': 'application/x-git-upload-pack-advertisement',
+						'Cache-Control': 'no-store',
+					},
+				})
+			}
+		} catch {
+			// Fall through to 503 via caller.
+		}
+		return serviceUnavailableResponse(
+			'Failed to advertise refs for the artifact repository.',
+		)
+	}
+
 	const localAdvertisement = () =>
 		buildUploadPackAdvertisement({
-			commit: input.target.snapshotCommit,
+			commit: input.target.snapshotCommit!,
 			defaultBranch: input.target.defaultBranch,
-			agent: publicGitProxyAgent,
+			agent: input.target.agent,
 		})
 
 	try {
@@ -474,7 +552,7 @@ async function proxyArtifactsInfoRefs(input: {
 				upstreamBody,
 				commit: input.target.snapshotCommit,
 				defaultBranch: input.target.defaultBranch,
-				agent: publicGitProxyAgent,
+				agent: input.target.agent,
 			})
 			return new Response(Uint8Array.from(advertisement), {
 				status: 200,
@@ -498,13 +576,217 @@ async function proxyArtifactsInfoRefs(input: {
 	})
 }
 
+/**
+ * Read a `kody_gt_…` password from Basic or Bearer Authorization.
+ * Returns null when the header is absent (anonymous). Invalid present
+ * credentials are distinguished via `{ kind: 'invalid' }`.
+ */
+export function readGitHttpCredential(
+	authorization: string | null,
+):
+	| { kind: 'absent' }
+	| { kind: 'invalid' }
+	| { kind: 'git_token'; token: string } {
+	if (!authorization?.trim()) return { kind: 'absent' }
+	const bearer = readBearerApiToken(authorization)
+	if (bearer) {
+		if (parseGitAccessToken(bearer)) {
+			return { kind: 'git_token', token: bearer }
+		}
+		return { kind: 'invalid' }
+	}
+	const basic = /^Basic\s+(\S+)\s*$/i.exec(authorization)
+	if (!basic?.[1]) return { kind: 'invalid' }
+	try {
+		const decoded = atob(basic[1])
+		const colon = decoded.indexOf(':')
+		const password = colon >= 0 ? decoded.slice(colon + 1) : decoded
+		if (parseGitAccessToken(password)) {
+			return { kind: 'git_token', token: password }
+		}
+		return { kind: 'invalid' }
+	} catch {
+		return { kind: 'invalid' }
+	}
+}
+
+async function resolveAuthenticatedGitTarget(input: {
+	env: Env
+	username: string
+	kodyId: string
+	gitToken: string
+}): Promise<
+	| { kind: 'ok'; target: ProxiedGitTarget }
+	| { kind: 'not_found' }
+	| { kind: 'unauthorized' }
+	| { kind: 'unavailable'; message: string }
+> {
+	const authentication = await authenticateGitAccessToken({
+		db: input.env.APP_DB,
+		token: input.gitToken,
+	})
+	if (!authentication.ok) {
+		return authentication.reason === 'malformed' ||
+			authentication.reason === 'unknown'
+			? { kind: 'unauthorized' }
+			: { kind: 'unauthorized' }
+	}
+	const { record } = authentication
+	if (
+		!gitAccessTokenMatchesRepo({
+			record,
+			ownerHandle: input.username,
+			repoName: input.kodyId,
+		})
+	) {
+		return { kind: 'not_found' }
+	}
+	const authContext = await buildMcpUserContextFromGrantProps(input.env, {
+		userId: record.user_id,
+	})
+	if (!authContext?.user) return { kind: 'unauthorized' }
+
+	const readable = await resolveReadableGitHttpTarget({
+		env: input.env,
+		viewer: authContext.user,
+		ownerHandle: record.owner_handle,
+		repoName: record.repo_name,
+		scopes: ['package:read'],
+	})
+	if (
+		!readable ||
+		readable.resourceKind !== record.resource_kind ||
+		readable.resourceId !== record.resource_id
+	) {
+		return { kind: 'not_found' }
+	}
+
+	const repo = await resolveExistingArtifactSourceRepo(
+		input.env,
+		readable.repoId,
+	)
+	if (!repo) return { kind: 'not_found' }
+
+	let info: Awaited<ReturnType<typeof repo.info>>
+	try {
+		info = await repo.info()
+	} catch {
+		return {
+			kind: 'unavailable',
+			message: 'Artifact repository is temporarily unavailable.',
+		}
+	}
+	if (!info?.remote) {
+		return {
+			kind: 'unavailable',
+			message: 'Artifact repository remote is unavailable.',
+		}
+	}
+
+	let token: Awaited<ReturnType<typeof repo.createToken>>
+	try {
+		token = await repo.createToken('read', publicGitTokenTtlSeconds)
+	} catch {
+		return {
+			kind: 'unavailable',
+			message: 'Failed to mint a read token for the artifact repository.',
+		}
+	}
+	if (typeof token.plaintext !== 'string' || token.plaintext.length === 0) {
+		return {
+			kind: 'unavailable',
+			message: 'Artifact read token was empty.',
+		}
+	}
+
+	void touchGitAccessToken({
+		db: input.env.APP_DB,
+		tokenId: record.id,
+	}).catch(() => {})
+
+	return {
+		kind: 'ok',
+		target: {
+			username: readable.ownerHandle,
+			kodyId: readable.repoName,
+			defaultBranch: info.defaultBranch?.trim() || 'main',
+			remote: info.remote,
+			tokenPlaintext: token.plaintext,
+			snapshotCommit: null,
+			agent: authenticatedGitProxyAgent,
+		},
+	}
+}
+
+async function resolveGitHttpProxyTarget(input: {
+	env: Env
+	username: string
+	kodyId: string
+	authorization: string | null
+}): Promise<
+	| { kind: 'ok'; target: ProxiedGitTarget }
+	| { kind: 'not_found' }
+	| { kind: 'redirect'; to: string }
+	| { kind: 'auth_required' }
+	| { kind: 'unauthorized' }
+	| { kind: 'unavailable'; message: string }
+> {
+	const credential = readGitHttpCredential(input.authorization)
+	const publicResolved = await resolvePublicGitTarget({
+		env: input.env,
+		username: input.username,
+		kodyId: input.kodyId,
+	})
+	if (publicResolved.kind === 'ok') {
+		return {
+			kind: 'ok',
+			target: toProxiedPublicTarget(publicResolved.target),
+		}
+	}
+	if (publicResolved.kind === 'redirect') return publicResolved
+	if (publicResolved.kind === 'unavailable') return publicResolved
+
+	if (credential.kind === 'absent') return { kind: 'auth_required' }
+	if (credential.kind === 'invalid') return { kind: 'unauthorized' }
+	return resolveAuthenticatedGitTarget({
+		env: input.env,
+		username: input.username,
+		kodyId: input.kodyId,
+		gitToken: credential.token,
+	})
+}
+
 function stripTrailingSlash(value: string) {
 	return value.endsWith('/') ? value.slice(0, -1) : value
 }
 
+function responseForGitResolve(
+	resolved: Awaited<ReturnType<typeof resolveGitHttpProxyTarget>>,
+) {
+	switch (resolved.kind) {
+		case 'ok':
+			return null
+		case 'redirect':
+			return null
+		case 'not_found':
+			return notFoundResponse()
+		case 'auth_required':
+		case 'unauthorized':
+			return authRequiredResponse()
+		case 'unavailable':
+			return serviceUnavailableResponse(resolved.message)
+		default: {
+			const exhaustive: never = resolved
+			throw new Error(`Unexpected git resolve: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /**
- * Read-only smart HTTP Git proxy for public community package listings.
- * Private packages 404. Push (receive-pack) is rejected with 403.
+ * Read-only smart HTTP Git proxy for `kody.codes/@owner/name.git`.
+ * Anonymous clients get public community package listings (published snapshot).
+ * Authenticated `kody_gt_…` credentials (from `POST /v1/git/credentials`) can
+ * clone private packages and plain repos the user can read. Push is 403.
  */
 export async function handlePublicPackageGitHttpRequest(
 	request: Request,
@@ -546,21 +828,21 @@ export async function handlePublicPackageGitHttpRequest(
 			return methodNotAllowedResponse('GET, HEAD')
 		}
 
-		const resolved = await resolvePublicGitTarget({
+		const resolved = await resolveGitHttpProxyTarget({
 			env,
 			username: parsed.username,
 			kodyId: parsed.kodyId,
+			authorization: request.headers.get('Authorization'),
 		})
-		if (resolved.kind === 'not_found') return notFoundResponse()
 		if (resolved.kind === 'redirect') {
 			const location = new URL(resolved.to, url.origin)
 			location.pathname = `${location.pathname}/info/refs`
 			location.search = url.search
 			return Response.redirect(location.toString(), 301)
 		}
-		if (resolved.kind === 'unavailable') {
-			return serviceUnavailableResponse(resolved.message)
-		}
+		const early = responseForGitResolve(resolved)
+		if (early) return early
+		if (resolved.kind !== 'ok') return notFoundResponse()
 
 		if (request.method === 'HEAD') {
 			return new Response(null, {
@@ -577,10 +859,15 @@ export async function handlePublicPackageGitHttpRequest(
 				target: resolved.target,
 			})
 		} catch {
+			if (!resolved.target.snapshotCommit) {
+				return serviceUnavailableResponse(
+					'Failed to advertise refs for the artifact repository.',
+				)
+			}
 			const advertisement = buildUploadPackAdvertisement({
 				commit: resolved.target.snapshotCommit,
 				defaultBranch: resolved.target.defaultBranch,
-				agent: publicGitProxyAgent,
+				agent: resolved.target.agent,
 			})
 			return new Response(Uint8Array.from(advertisement), {
 				status: 200,
@@ -596,20 +883,20 @@ export async function handlePublicPackageGitHttpRequest(
 		if (request.method !== 'POST') {
 			return methodNotAllowedResponse('POST')
 		}
-		const resolved = await resolvePublicGitTarget({
+		const resolved = await resolveGitHttpProxyTarget({
 			env,
 			username: parsed.username,
 			kodyId: parsed.kodyId,
+			authorization: request.headers.get('Authorization'),
 		})
-		if (resolved.kind === 'not_found') return notFoundResponse()
 		if (resolved.kind === 'redirect') {
 			const location = new URL(resolved.to, url.origin)
 			location.pathname = `${location.pathname}/git-upload-pack`
 			return Response.redirect(location.toString(), 301)
 		}
-		if (resolved.kind === 'unavailable') {
-			return serviceUnavailableResponse(resolved.message)
-		}
+		const early = responseForGitResolve(resolved)
+		if (early) return early
+		if (resolved.kind !== 'ok') return notFoundResponse()
 		try {
 			return await proxyArtifactsUploadPack({
 				target: resolved.target,
@@ -626,21 +913,23 @@ export async function handlePublicPackageGitHttpRequest(
 		if (request.method !== 'GET' && request.method !== 'HEAD') {
 			return methodNotAllowedResponse('GET, HEAD')
 		}
-		const resolved = await resolvePublicGitTarget({
+		const resolved = await resolveGitHttpProxyTarget({
 			env,
 			username: parsed.username,
 			kodyId: parsed.kodyId,
+			authorization: request.headers.get('Authorization'),
 		})
-		if (resolved.kind === 'not_found') return notFoundResponse()
 		if (resolved.kind === 'redirect') {
 			return Response.redirect(new URL(resolved.to, url.origin).toString(), 301)
 		}
+		const early = responseForGitResolve(resolved)
+		if (early) return early
+		if (resolved.kind !== 'ok') return notFoundResponse()
 		const cloneUrl = `${url.origin}${getCommunityPackageGitHref({
-			username:
-				resolved.kind === 'ok' ? resolved.target.username : parsed.username,
-			kodyId: resolved.kind === 'ok' ? resolved.target.kodyId : parsed.kodyId,
+			username: resolved.target.username,
+			kodyId: resolved.target.kodyId,
 		})}`
-		const body = `This is a read-only public Kody package git repository.\nClone with: git clone ${cloneUrl}\n`
+		const body = `This is a read-only Kody git repository.\nClone with: git clone ${cloneUrl}\n`
 		return new Response(request.method === 'HEAD' ? null : body, {
 			status: 200,
 			headers: {

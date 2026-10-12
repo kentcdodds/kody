@@ -35,6 +35,7 @@ export const softDeleteAppTables = [
 	'entity_sources',
 	'community_listings',
 	'api_tokens',
+	'git_access_tokens',
 ] as const
 
 export type SoftDeleteAppTable = (typeof softDeleteAppTables)[number]

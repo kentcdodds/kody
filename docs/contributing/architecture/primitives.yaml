@@ -194,14 +194,19 @@ primitives:
     name: Scoped API tokens
     summary:
       Short-lived, scoped, sliding-TTL `kody_at_` bearer tokens for the Open API
-      and CapabilityProxy; a separate credential class from MCP OAuth.
+      and CapabilityProxy; a separate credential class from MCP OAuth. Tokens
+      are org-bound (`org_binding=org`) or person-owned (`org_binding=user` with
+      per-request `?org=`). Short-lived `kody_gt_` git credentials are minted
+      for one repo via `/v1/git/credentials`.
     code:
       - packages/worker/src/api-tokens/
       - packages/shared/src/api-token-format.ts
     docs:
       - docs/contributing/architecture/open-api.md
+      - docs/guides/auth-setup-git.md
       - docs/contributing/decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md
       - docs/contributing/decisions/0055-cli-mcp-oauth-local-execute-http.md
+      - docs/contributing/decisions/0069-user-owned-api-tokens-and-git-credentials.md
 
   - id: rbac
     group: auth

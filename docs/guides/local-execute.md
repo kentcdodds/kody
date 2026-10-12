@@ -27,7 +27,9 @@ and package-graph routes.
 **Agents already on MCP:** call `cliCredentialBootstrap` with a required
 lifetime (single-task agents use `short`). It returns a one-shot `kody_bc_…`
 code and a `cli_command` that already includes lifetime flags (**not** a
-`kody_at_…`). Run the CLI command (no second OAuth, no `tokenCreate`):
+`kody_at_…`). New bootstraps mint person-owned tokens (`org_binding: user`);
+pass `?org=<slug>` on API calls to act in a team org (default: personal). Run
+the CLI command (no second OAuth, no `tokenCreate`):
 
 ```json
 {

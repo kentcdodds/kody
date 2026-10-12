@@ -152,6 +152,10 @@ export function resolveApiTokenLifetime(input: {
 export const apiTokenCreatedVia = ['api', 'mcp-api', 'cli-bootstrap'] as const
 export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
 
+/** How the token picks an org on each request. */
+export const apiTokenOrgBindings = ['org', 'user'] as const
+export type ApiTokenOrgBinding = (typeof apiTokenOrgBindings)[number]
+
 const apiTokenRowSchema = object({
 	id: string(),
 	user_id: string(),
@@ -175,6 +179,11 @@ type ApiTokenRow = InferOutput<typeof apiTokenRowSchema>
 
 export type ApiTokenRecord = Omit<ApiTokenRow, 'scopes_json'> & {
 	scopes: Array<ApiTokenScope>
+	/**
+	 * `org`: fixed to `org_id` (legacy / explicit). `user`: person-owned; each
+	 * request picks an org via `?org=` (default personal).
+	 */
+	org_binding: ApiTokenOrgBinding
 }
 
 export type ApiTokenStatus = 'active' | 'expired' | 'revoked'
@@ -184,6 +193,7 @@ export type ApiTokenView = {
 	id: string
 	name: string
 	org_id: string
+	org_binding: ApiTokenOrgBinding
 	scopes: Array<ApiTokenScope>
 	status: ApiTokenStatus
 	idle_ttl_seconds: number
@@ -201,6 +211,11 @@ export type ApiTokenSecretView = ApiTokenView & {
 	/** Shown once. Store it; Kody keeps only a hash. */
 	token: string
 	token_type: 'Bearer'
+}
+
+function readOrgBinding(value: unknown): ApiTokenOrgBinding {
+	if (value === 'user') return 'user'
+	return 'org'
 }
 
 function mapRow(row: Record<string, unknown>): ApiTokenRecord {
@@ -222,6 +237,7 @@ function mapRow(row: Record<string, unknown>): ApiTokenRecord {
 	const { scopes_json, ...rest } = parsed.value
 	return {
 		...rest,
+		org_binding: readOrgBinding(row.org_binding),
 		scopes: normalizeApiTokenScopes(JSON.parse(scopes_json) as Array<unknown>),
 	}
 }
@@ -242,6 +258,7 @@ export function toApiTokenView(
 		id: record.id,
 		name: record.name,
 		org_id: record.org_id,
+		org_binding: record.org_binding,
 		scopes: record.scopes,
 		status: getApiTokenStatus(record, now),
 		idle_ttl_seconds: record.idle_ttl_seconds,
@@ -449,8 +466,17 @@ export type ApiTokenMintParent = {
 export async function mintApiToken(input: {
 	db: D1Database
 	userId: string
-	/** Org this token is bound to. Defaults to the caller's personal org (`userId`). */
+	/**
+	 * Org this token is bound to when `orgBinding` is `org`. Defaults to the
+	 * caller's personal org (`userId`). Ignored for auth when `orgBinding` is
+	 * `user` (still stored as the personal org for NOT NULL / display).
+	 */
 	orgId?: string
+	/**
+	 * `org` (default): fixed org from `orgId`. `user`: person-owned; each
+	 * request selects an org via `?org=` (default personal).
+	 */
+	orgBinding?: ApiTokenOrgBinding
 	name: string
 	scopes: ReadonlyArray<unknown>
 	idleTtlSeconds: number
@@ -464,7 +490,10 @@ export async function mintApiToken(input: {
 }): Promise<ApiTokenSecretView> {
 	const now = input.now ?? new Date()
 	const name = readTokenName(input.name)
-	const orgId = input.orgId?.trim() || input.userId
+	const orgBinding: ApiTokenOrgBinding =
+		input.orgBinding === 'user' ? 'user' : 'org'
+	const orgId =
+		orgBinding === 'user' ? input.userId : input.orgId?.trim() || input.userId
 	let scopes: Array<ApiTokenScope>
 	try {
 		scopes = normalizeApiTokenScopes(input.scopes)
@@ -537,6 +566,7 @@ export async function mintApiToken(input: {
 		id: tokenId,
 		user_id: input.userId,
 		org_id: orgId,
+		org_binding: orgBinding,
 		name,
 		token_hash: await hashSecret(secret),
 		scopes,
@@ -557,6 +587,7 @@ export async function mintApiToken(input: {
 				id,
 				user_id,
 				org_id,
+				org_binding,
 				name,
 				token_hash,
 				scopes_json,
@@ -567,12 +598,13 @@ export async function mintApiToken(input: {
 				created_at,
 				updated_at,
 				profile_name
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			record.id,
 			record.user_id,
 			record.org_id,
+			record.org_binding,
 			record.name,
 			record.token_hash,
 			JSON.stringify(record.scopes),
