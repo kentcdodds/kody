@@ -314,7 +314,7 @@ test('org switcher keeps every org-owned section when switching between orgs', a
 		'jobs',
 		'mcp-servers',
 		'memories',
-		'packages',
+		'repositories',
 		'secret-providers',
 		'secrets',
 		'values',

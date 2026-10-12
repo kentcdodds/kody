@@ -105,13 +105,21 @@ function orgBoundRoutes(entries: Array<RouteEntry>) {
 	return entries.filter(({ href }) => isOrgBoundPath(href))
 }
 
+/** Legacy `/@slug/-/packages` (+ `.json`) only 301 to `/repositories`. */
+const legacyOrgListRedirectRoutes = new Set(['orgPackages', 'orgPackagesApi'])
+
 test('every org-scoped route in the route table is bound to its org', () => {
 	const entries = routeEntries()
 	const orgRoutes = entries.filter(({ source }) =>
 		source.startsWith('/@:orgSlug/'),
 	)
 	expect(
-		orgRoutes.filter(({ href }) => !isOrgBoundPath(href)).map((r) => r.name),
+		orgRoutes
+			.filter(
+				({ name, href }) =>
+					!isOrgBoundPath(href) && !legacyOrgListRedirectRoutes.has(name),
+			)
+			.map((r) => r.name),
 	).toEqual([])
 
 	const accountRoutes = accountRoutesNamedLikeOrgSections(entries)
