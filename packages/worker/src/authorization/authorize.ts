@@ -64,6 +64,11 @@ export class AuthorizationError extends McpCallerError {
 	readonly permission: OrgPermission
 	readonly orgId: OwnerId | null
 	readonly resource: OrgResource | null
+	/**
+	 * For `credential_scope`: the credential's scopes plus the missing one, so
+	 * callers can mint a replacement token without guessing the full list.
+	 */
+	readonly mintScopes: ReadonlyArray<OrgPermission> | null
 
 	constructor(input: {
 		code: AuthorizationDenialCode
@@ -71,6 +76,7 @@ export class AuthorizationError extends McpCallerError {
 		orgId: OwnerId | null
 		resource: OrgResource | null
 		message: string
+		mintScopes?: ReadonlyArray<OrgPermission> | null
 	}) {
 		super(input.message)
 		this.name = 'AuthorizationError'
@@ -78,6 +84,7 @@ export class AuthorizationError extends McpCallerError {
 		this.permission = input.permission
 		this.orgId = input.orgId
 		this.resource = input.resource
+		this.mintScopes = input.mintScopes ?? null
 	}
 }
 
@@ -236,8 +243,20 @@ function deny(input: {
 			orgId: input.access.orgId,
 			resource: input.resource ?? null,
 			message: input.message,
+			mintScopes:
+				input.code === 'credential_scope'
+					? credentialMintScopes(input.access, input.permission)
+					: null,
 		}),
 	}
+}
+
+/** The credential's scopes plus `permission`, sorted for a stable command. */
+function credentialMintScopes(
+	access: EffectivePermissions,
+	permission: OrgPermission,
+): Array<OrgPermission> {
+	return [...new Set([...(access.credentialScopes ?? []), permission])].sort()
 }
 
 function denialCode(
@@ -262,6 +281,7 @@ function denialMessage(
 	code: AuthorizationDenialCode,
 	permission: OrgPermission,
 	resource: OrgResource | undefined,
+	mintScopes: ReadonlyArray<OrgPermission> = [permission],
 ) {
 	const target = resource ? ` on ${describeResource(resource)}` : ''
 	switch (code) {
@@ -272,7 +292,7 @@ function denialMessage(
 		case 'missing_permission':
 			return `Missing ${permission}${target}. An org Owner can grant it.`
 		case 'credential_scope':
-			return `This credential is not scoped for ${permission}${target}. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.`
+			return `This credential is not scoped for ${permission}${target}. Mint a token that adds it: from Kody MCP, call cliCredentialBootstrap({ lifetime: "short", scopes: [${mintScopes.map((scope) => JSON.stringify(scope)).join(', ')}] }) and run the returned cli_command; or after \`kody login\`, run \`npx @kodycodes/cli auth bootstrap --lifetime short --scopes ${mintScopes.join(',')}\`. Use those scopes with tokenCreate only for CI/headless.`
 		case 'connection_profile': {
 			if (permission === 'package:create') {
 				return 'This connection profile cannot create packages.'
@@ -303,7 +323,12 @@ export function checkPermission(
 		permission,
 		access,
 		resource,
-		message: denialMessage(code, permission, resource),
+		message: denialMessage(
+			code,
+			permission,
+			resource,
+			credentialMintScopes(access, permission),
+		),
 	})
 }
 
@@ -421,15 +446,19 @@ export async function authorizeOrgWide(
 		access.credentialScopes && !access.credentialScopes.has(permission)
 			? 'credential_scope'
 			: 'missing_permission'
+	const mintScopes =
+		code === 'credential_scope'
+			? credentialMintScopes(access, permission)
+			: null
 	throw new AuthorizationError({
 		code,
 		permission,
 		orgId: access.orgId,
 		resource: null,
-		message:
-			code === 'credential_scope'
-				? denialMessage(code, permission, undefined)
-				: `Missing ${permission} across this org. A grant on one resource does not cover org-wide reads. An org Owner can grant it.`,
+		mintScopes,
+		message: mintScopes
+			? denialMessage(code, permission, undefined, mintScopes)
+			: `Missing ${permission} across this org. A grant on one resource does not cover org-wide reads. An org Owner can grant it.`,
 	})
 }
 

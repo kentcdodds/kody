@@ -146,6 +146,9 @@ export function toApiError(error: unknown): ApiError {
 			details: {
 				required_permission: error.permission,
 				denial: error.code,
+				...(error.mintScopes
+					? { required_scope: error.permission, mint_scopes: error.mintScopes }
+					: {}),
 			},
 			headers: {
 				'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${error.permission}"`,

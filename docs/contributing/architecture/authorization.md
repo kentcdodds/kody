@@ -233,7 +233,13 @@ does not declare it.
 
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
-write-implies-read hierarchy and no separate `x-kody-scope` check.
+write-implies-read hierarchy and no separate `x-kody-scope` check. A scope
+denial (`credential_scope`) carries `mintScopes`: the credential's scopes plus
+the missing one. Its message prints the exact
+`cliCredentialBootstrap({ lifetime, scopes })` call and the matching
+`kody auth bootstrap --scopes` command. Open API adds `required_scope` and
+`mint_scopes` to the 403 `insufficient_scope` details so clients can print the
+same commands. Default bootstrap scopes stay least-privilege; callers opt in.
 
 Connection profiles remain an org-bound narrowing layer (not folded into
 scopes). A profile is stored with `org_id` and limits package resources listed

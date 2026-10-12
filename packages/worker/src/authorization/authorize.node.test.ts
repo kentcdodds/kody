@@ -254,16 +254,37 @@ test('delegation, shares, and platform packages are stored packages, so another 
 	).resolves.toBeUndefined()
 })
 
-test('credential scopes narrow what the role grants', () => {
-	const scoped = access({ credentialScopes: new Set(['package:read']) })
+test('credential scopes narrow what the role grants and name the exact scopes to mint', () => {
+	const scoped = access({
+		credentialScopes: new Set(['package:read', 'org:execute']),
+	})
 	expect(checkPermission(scoped, 'package:read').allowed).toBe(true)
 	const error = denial(
 		checkPermission(scoped, 'package:write', packageResource()),
 	)
 	expect(error.code).toBe('credential_scope')
+	expect(error.mintScopes).toEqual([
+		'org:execute',
+		'package:read',
+		'package:write',
+	])
 	expect(error.message).toBe(
-		'This credential is not scoped for package:write on package @kent/invoices. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.',
+		'This credential is not scoped for package:write on package @kent/invoices. Mint a token that adds it: from Kody MCP, call cliCredentialBootstrap({ lifetime: "short", scopes: ["org:execute", "package:read", "package:write"] }) and run the returned cli_command; or after `kody login`, run `npx @kodycodes/cli auth bootstrap --lifetime short --scopes org:execute,package:read,package:write`. Use those scopes with tokenCreate only for CI/headless.',
 	)
+})
+
+test('role denials do not suggest minting a token', () => {
+	const member = access({
+		isOwner: false,
+		permissions: new Set(['package:read']),
+		credentialScopes: new Set(['package:read', 'package:write']),
+	})
+	const error = denial(
+		checkPermission(member, 'package:write', packageResource()),
+	)
+	expect(error.code).toBe('missing_permission')
+	expect(error.mintScopes).toBeNull()
+	expect(error.message).not.toContain('cliCredentialBootstrap')
 })
 
 test('a connection profile narrows the package resources it lists', () => {

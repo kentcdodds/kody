@@ -44,6 +44,24 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 pass both `--idle-ttl-seconds` and `--max-lifetime-seconds`. Lifetime is
 required; missing it fails with the exact flag syntax.
 
+**Opt-in scopes:** bootstrap defaults stay least-privilege (no `package:write`,
+for example). When a task needs more, pass `scopes` when minting. The list
+replaces the defaults, so include every scope you need:
+
+```bash
+# Agents on MCP: cliCredentialBootstrap({ lifetime: "short", scopes: ["org:execute", "org:read", "package:execute", "package:read", "package:write"] })
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
+
+# After `kody login`, the CLI mints the code itself and stores the token:
+npx @kodycodes/cli auth bootstrap --lifetime short \
+  --scopes org:execute,org:read,package:execute,package:read,package:write
+```
+
+`--scopes` mints with `--token` when given, else the `kody login` session (any
+scope your org role grants), else `KODY_API_TOKEN` or the stored token (only
+scopes that token already holds). `--code` with `--scopes` is an error because a
+code's scopes are fixed when it is minted.
+
 **Interactive humans:** `kody login` once per machine, then run `--local`
 without `KODY_API_TOKEN`.
 
@@ -113,6 +131,12 @@ not subject to this deadline.
 - Bootstrap or redeem rejects a missing lifetime. Pass `--lifetime short|long`
   (or both idle/max flags). Call `cliCredentialBootstrap` again with
   `lifetime: "short"` if the code expired.
+- `insufficient_scope` on a token means it lacks a scope. The error names the
+  scope and prints both mint commands with the full list (the token's scopes
+  plus the missing one); run one and retry. Open API errors carry the same list
+  as `details.mint_scopes`. When your org role lacks the permission
+  (`denial: missing_permission`), a new token cannot help; an org Owner has to
+  grant it.
 - The module imports `kody:@…`. Keep `--local`.
 - Auth priority for `--local`: `--token` / `KODY_API_TOKEN`, then the stored
   bootstrap token, then `kody login`.
