@@ -62,15 +62,15 @@ package code one of those started or a package app's server code:
 - Role and membership changes: adding or removing members, changing a role,
   invites, and grants that carry member or billing permissions.
 - Billing changes: plan, seats, payment, wallet, budgets, and promo codes.
-- Site-admin tools. One exception: `adminUserVerify` with `mint_verify_url` runs
-  from a job, webhook, or subscription that a site admin turned on for a package
-  they own, and every such mint is audited with the trigger type and enablement
-  id.
 
 Do these from the web app, an MCP or CLI call you make yourself, or an execute
 you run. A triggered run that tries one fails with
 `Capability "<name>" needs a live person`, naming the capability it tried.
 Everything else runs unattended with the enabler's live permissions.
+
+Site-admin tools run unattended too, but only for a site admin: a job, webhook,
+subscription, or inbound email handler in a site admin's personal org may call
+them, and every such call is audited with its trigger type and id.
 
 Publishing a package never turns anything on, and nobody can enable a trigger
 for someone else. `enablementList` shows your enablements (an Owner can list the

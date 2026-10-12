@@ -650,38 +650,51 @@ export function isLivePersonRequest(request: RequestContext | null): boolean {
 	}
 }
 
-export type AutomationTrigger = {
-	type: 'job' | 'webhook' | 'subscription'
-	/** The enablement the run acts under; its row names the trigger instance. */
-	enablementId: string
+export type NonInteractiveTriggerType =
+	| 'job'
+	| 'webhook'
+	| 'subscription'
+	| 'email'
+	| 'package-app'
+	/** A person's credential with no person resolved behind it. */
+	| 'unattended'
+
+export type NonInteractiveTrigger = {
+	type: NonInteractiveTriggerType
+	/**
+	 * The run's credential id: the enablement id when an enablement runs it
+	 * (its row names the job, endpoint, topic, or address), else the job,
+	 * webhook, or event source id. Null for a package app.
+	 */
+	credentialId: string | null
 }
 
 /**
- * The job, webhook, or subscription enablement behind `request`, including
- * package code one of those started (lineage keeps the trigger credential).
- * Null for live requests, package apps, inbound email, and trigger sources
- * nobody turned on.
+ * The trigger behind a request no live person made, including package code
+ * one started (lineage keeps the trigger credential). Null when a live person
+ * is behind `request` ({@link isLivePersonRequest}) or there is no request.
  */
-export function automationTriggerOf(
+export function nonInteractiveTriggerOf(
 	request: RequestContext | null,
-): AutomationTrigger | null {
-	if (!request?.actor || request.attribution.kind !== 'user') return null
+): NonInteractiveTrigger | null {
+	if (!request || isLivePersonRequest(request)) return null
 	const { kind, id } = request.credential
-	if (!id) return null
 	switch (kind) {
 		case 'schedule':
-			return { type: 'job', enablementId: id }
+			return { type: 'job', credentialId: id }
 		case 'webhook':
-			return { type: 'webhook', enablementId: id }
+			return { type: 'webhook', credentialId: id }
 		case 'platform-event':
-			return { type: 'subscription', enablementId: id }
+			return { type: 'subscription', credentialId: id }
+		case 'inbound-email':
+			return { type: 'email', credentialId: id }
+		case 'package-app':
+			return { type: 'package-app', credentialId: id }
 		case 'session':
 		case 'mcp-oauth':
 		case 'cli':
 		case 'api-token':
-		case 'package-app':
-		case 'inbound-email':
-			return null
+			return { type: 'unattended', credentialId: id }
 		default: {
 			const exhaustive: never = kind
 			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)

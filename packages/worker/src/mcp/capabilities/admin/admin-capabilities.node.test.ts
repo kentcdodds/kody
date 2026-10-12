@@ -7,7 +7,6 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { LivePersonRequiredError } from '#worker/authorization/authorize.ts'
 import {
 	deriveRequestContext,
 	type EnablementRun,
@@ -776,39 +775,21 @@ const adminEnablement: EnablementRun = {
 	enabler: { userId: adminPersonId, username: 'admin' },
 	role: 'owner',
 }
-const automatedMintAudit = (trigger: string) =>
-	`trigger=${trigger};enablement_id=${adminEnablement.id};package_id=${automationPackageId}`
-
-type EnablementSeed = {
-	state?: 'on' | 'paused' | 'off'
-	packageId?: string
-	enablerUserId?: string
+const bea: SeedUser = {
+	username: 'bea',
+	roles: ['user'],
+	createdAt: '2026-01-04 00:00:00',
 }
-
-function seedEnablement(
-	t: ReturnType<typeof createAdminCapabilityTest>,
-	seed: EnablementSeed = {},
-) {
-	const packageId = seed.packageId ?? automationPackageId
-	const now = '2026-10-12T00:00:00.000Z'
-	t.sqlite
-		.prepare(
-			`INSERT INTO enablements (
-				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
-				enabler_user_id, state, origin, enabled_at, updated_at
-			) VALUES (?, ?, ?, 'subscription', 'user.email_verification.stalled', ?, ?, ?, 'enabled', ?, ?)`,
-		)
-		.run(
-			adminEnablement.id,
-			adminPersonId,
-			packageId,
-			packageId,
-			seed.enablerUserId ?? adminPersonId,
-			seed.state ?? 'on',
-			now,
-			now,
-		)
+const beaEnablement: EnablementRun = {
+	...adminEnablement,
+	enabler: {
+		userId: personIdFromStored(testStableUserIdFromEmail('bea@example.com')),
+		username: 'bea',
+	},
+	role: 'member',
 }
+const triggerAudit = (trigger: string, triggerId = adminEnablement.id) =>
+	`trigger=${trigger};trigger_id=${triggerId};actor=${adminPersonId};package_id=${automationPackageId}`
 
 const subscriptionRun = (
 	enablement: EnablementRun = adminEnablement,
@@ -818,43 +799,55 @@ const subscriptionRun = (
 	enablement,
 })
 
-test('adminUserVerify mint_verify_url runs from a job, webhook, or subscription an admin enabled, and audits the trigger', async () => {
-	const cases: Array<{ source: RequestSource; trigger: string }> = [
-		{
-			source: { kind: 'schedule', jobId: 'job-1', enablement: adminEnablement },
-			trigger: 'job',
+const triggeredAdminRuns: Array<{
+	name: string
+	source: RequestSource
+	trigger: string
+}> = [
+	{
+		name: 'job',
+		source: { kind: 'schedule', jobId: 'job-1', enablement: adminEnablement },
+		trigger: 'job',
+	},
+	{
+		name: 'webhook',
+		source: { kind: 'webhook', sourceId: 'ep-1', enablement: adminEnablement },
+		trigger: 'webhook',
+	},
+	{ name: 'subscription', source: subscriptionRun(), trigger: 'subscription' },
+	{
+		name: 'inbound email',
+		source: {
+			kind: 'inbound-email',
+			sourceId: 'message-1',
+			sender: { kind: 'inbox-owner' },
+			enablement: adminEnablement,
 		},
-		{
-			source: {
-				kind: 'webhook',
-				sourceId: 'ep-1',
-				enablement: adminEnablement,
-			},
-			trigger: 'webhook',
-		},
-		{ source: subscriptionRun(), trigger: 'subscription' },
-		{
-			source: inheritRequest(
-				deriveRequestContext({
-					user: adminEnablement.enabler,
-					source: subscriptionRun(),
-				}),
-			),
-			trigger: 'subscription',
-		},
-	]
-	for (const { source, trigger } of cases) {
+		trigger: 'email',
+	},
+	{
+		name: 'package code a subscription started',
+		source: inheritRequest(
+			deriveRequestContext({
+				user: adminEnablement.enabler,
+				source: subscriptionRun(),
+			}),
+		),
+		trigger: 'subscription',
+	},
+]
+
+test.each(triggeredAdminRuns)(
+	'a $name run an admin enabled may call site-admin capabilities, and each call audits the trigger',
+	async ({ source, trigger }) => {
 		const t = createAdminCapabilityTest([admin, jane], undefined, ['admin'], {
 			source,
 		})
-		seedEnablement(t)
-		const minted = await adminUserVerifyCapability.handler(
-			{ email: 'jane@example.com', action: 'mint_verify_url' },
+		const verified = await adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mark_verified' },
 			t.ctx,
 		)
-		expect(minted.verifyUrl).toMatch(
-			/^https:\/\/example.com\/verify-email\?token=/,
-		)
+		expect(verified.user.email_verified).toBe(true)
 		await expect(
 			adminUserVerifyCapability.handler(
 				{ email: 'missing@example.com', action: 'mint_verify_url' },
@@ -865,127 +858,105 @@ test('adminUserVerify mint_verify_url runs from a job, webhook, or subscription 
 			{
 				action: 'adminUserVerify',
 				result: 'success',
-				reason: `target_stable_user_id=${janeStableId};action=mint_verify_url;${automatedMintAudit(trigger)}`,
+				reason: `target_stable_user_id=${janeStableId};action=mark_verified`,
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: triggerAudit(trigger),
 			},
 			{
 				action: 'adminUserVerify',
 				result: 'failure',
-				reason: `User not found.;${automatedMintAudit(trigger)}`,
+				reason: 'User not found.',
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'failure',
+				reason: `${triggerAudit(trigger)};error=User not found.`,
 			},
 		])
-	}
-})
+	},
+)
 
-const automatedMintRefusals: Array<{
+const triggeredAdminRefusals: Array<{
 	name: string
 	source?: RequestSource
 	roles?: Array<string>
-	args?: { email: string; action: 'mark_verified' | 'mint_verify_url' }
-	packageId?: string | null
-	enablement?: EnablementSeed | null
-	revokeAdmin?: boolean
-	error: RegExp | typeof LivePersonRequiredError
+	prepare?: (sqlite: DatabaseSync) => void
+	error: RegExp
+	denial: string
 }> = [
 	{
-		name: 'non-admin enabler',
+		name: 'caller lacks the admin role',
 		roles: ['user'],
-		error: /lacks required role "admin" for capability "adminUserVerify"/,
+		error:
+			/MCP user lacks required role "admin" for capability "adminUserVerify"/,
+		denial: 'role',
 	},
 	{
-		name: 'admin role revoked in D1 while cached roles still say admin',
-		revokeAdmin: true,
-		error: LivePersonRequiredError,
+		name: 'enabler admin role revoked in D1 while cached roles still say admin',
+		prepare: (sqlite) =>
+			sqlite
+				.prepare('DELETE FROM user_roles WHERE user_id = 1 AND role_id = ?')
+				.run(roleIds.admin),
+		error:
+			/This subscription run acts for a person who lacks required role "admin" for capability "adminUserVerify"/,
+		denial: 'role',
 	},
 	{
-		name: 'mark_verified stays live-person only',
-		args: { email: 'jane@example.com', action: 'mark_verified' },
-		error: LivePersonRequiredError,
+		name: 'enabler is not an admin',
+		source: subscriptionRun(beaEnablement),
+		error: /acts for a person who lacks required role "admin"/,
+		denial: 'role',
 	},
 	{
-		name: 'enabler is not the package owner',
-		source: subscriptionRun({
-			...adminEnablement,
-			enabler: { userId: personIdFromStored('other-user'), username: 'bea' },
-		}),
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'enabler is not an Owner',
-		source: subscriptionRun({ ...adminEnablement, role: 'member' }),
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'enablement turned off',
-		enablement: { state: 'off' },
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'enablement belongs to another package',
-		enablement: { packageId: 'pkg-other' },
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'enablement row missing',
-		enablement: null,
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'run has no package',
-		packageId: null,
-		error: LivePersonRequiredError,
+		name: 'enabler is suspended',
+		prepare: (sqlite) =>
+			sqlite
+				.prepare("UPDATE users SET suspended_at = '2026-10-01' WHERE id = 1")
+				.run(),
+		error: /This subscription run acts for no active person/,
+		denial: 'no_user',
 	},
 	{
 		name: 'trigger nobody turned on',
 		source: { kind: 'platform-event', sourceId: 'event-1' },
-		error: LivePersonRequiredError,
+		error: /This subscription run acts for no active person/,
+		denial: 'no_user',
 	},
 	{
-		name: 'package app',
+		name: 'package app visitor',
 		source: { kind: 'package-app' },
-		error: LivePersonRequiredError,
-	},
-	{
-		name: 'inbound email',
-		source: {
-			kind: 'inbound-email',
-			sourceId: 'message-1',
-			sender: { kind: 'inbox-owner' },
-			enablement: adminEnablement,
-		},
-		error: LivePersonRequiredError,
+		roles: [],
+		error: /MCP user lacks required role "admin"/,
+		denial: 'role',
 	},
 ]
 
-test.each(automatedMintRefusals)(
-	'adminUserVerify refuses an automated call: $name',
+test.each(triggeredAdminRefusals)(
+	'site-admin capabilities refuse a non-interactive run: $name',
 	async (refusal) => {
 		const t = createAdminCapabilityTest(
-			[admin, jane],
+			[admin, jane, bea],
 			undefined,
 			refusal.roles ?? ['admin'],
-			{
-				source: refusal.source ?? subscriptionRun(),
-				packageId: refusal.packageId,
-			},
+			{ source: refusal.source ?? subscriptionRun() },
 		)
-		if (refusal.enablement !== null) seedEnablement(t, refusal.enablement)
-		if (refusal.revokeAdmin) {
-			t.sqlite
-				.prepare('DELETE FROM user_roles WHERE user_id = 1 AND role_id = ?')
-				.run(roleIds.admin)
-		}
+		refusal.prepare?.(t.sqlite)
 		await expect(
 			adminUserVerifyCapability.handler(
-				refusal.args ?? {
-					email: 'jane@example.com',
-					action: 'mint_verify_url',
-				},
+				{ email: 'jane@example.com', action: 'mark_verified' },
 				t.ctx,
 			),
 		).rejects.toThrow(refusal.error)
-		expect(
-			t.auditEvents().filter((row) => row.action === 'adminUserVerify'),
-		).toEqual([])
+		expect(t.auditEvents()).toEqual([
+			{
+				action: 'mcp_capability_denied',
+				result: 'failure',
+				reason: refusal.denial,
+			},
+		])
 		expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
 	},
 )

@@ -584,11 +584,8 @@ Use this topic for notifier packages that email or page an operator when
 signup/verify mail bounces or otherwise fails at the provider. Silent drops that
 stay `accepted` use `user.email_verification.stalled`. `user.created` still
 fires for every new person account, including accounts that later verify
-themselves. Do not treat this topic as permission to mark the account verified —
-call `adminUserVerify` `mark_verified` from an admin session when ownership is
-proven. A handler may mint a one-time link with `adminUserVerify`
-`mint_verify_url` (see
-[Rescuing a stalled signup from a handler](#rescuing-a-stalled-signup-from-a-handler)).
+themselves. To rescue the signup from a handler, see
+[Rescuing a stalled signup from a handler](#rescuing-a-stalled-signup-from-a-handler).
 
 ## `user.email_verification.stalled` (admins)
 
@@ -638,28 +635,20 @@ Use this topic for notifier packages that email or page an operator when a
 signup is stranded without a bounce. SimpleLogin-style aliases can drop `kody@`
 mail without a terminal Cloudflare event. Terminal failures still use
 `user.email_verification.failed`. `/admin/users` and `adminUserList` accept
-`verification=stalled` for the same derived set. Do not treat this topic as
-permission to mark the account verified — call `adminUserVerify` `mark_verified`
-from an admin session when ownership is proven.
+`verification=stalled` for the same derived set.
 
 ### Rescuing a stalled signup from a handler
 
 A subscription handler for this topic (or for `user.email_verification.failed`)
-may call `adminUserVerify` with `action: 'mint_verify_url'` and send the
-one-time link over a path that is not `kody.codes`. A job or webhook may do the
-same. The run is allowed only when all of these hold:
-
-- it acts as its enabler (an enablement run, or package code one started);
-- that enablement is on for the package whose code is running;
-- the enabler owns the package and is the Owner of that org;
-- the enabler holds the site `admin` role at call time (read fresh, so a revoked
-  admin is refused at once).
-
-Each automated mint writes an `adminUserVerify` audit row whose reason adds
-`trigger=job|webhook|subscription;enablement_id=<id>;package_id=<id>`. Failed
-mints get the same suffix. `mark_verified` still needs a live person, and so do
-package apps, inbound email handlers, and every other site-admin capability. A
-non-admin automation is refused with
+may call `adminUserVerify`: `mint_verify_url` returns a one-time link to send
+over a path that is not `kody.codes`, and `mark_verified` verifies the account
+outright once ownership is proven. A job or webhook may do the same. Like every
+site-admin capability, it runs only when the person the run acts for holds the
+site `admin` role at call time (read fresh, so a revoked admin is refused at
+once), and each call writes an extra audit row naming the trigger type and id
+(see
+[Site-admin capabilities from triggered runs](../contributing/architecture/authorization.md#site-admin-capabilities-from-triggered-runs)).
+A non-admin automation is refused with
 `MCP user lacks required role "admin" for capability "adminUserVerify"`.
 
 ## `user.email_outbound.paused` (admins)

@@ -712,17 +712,19 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
-- **Site-admin, role, membership, and billing actions need a live person.**
-  Background package runs still resolve the owner's current roles
-  (`packages/worker/src/identity/background-mcp-user.ts`), but every site-admin
-  capability and every member, role, invite, or member/billing grant change
-  declares `requiresLivePerson`, so a job, webhook, subscription, or inbound
-  email run (and package code it starts) is denied even when its enabler is an
-  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). The
-  one exception is `adminUserVerify` `mint_verify_url`. It is still admin-only,
-  but a job, webhook, or subscription that an admin enabled on their own package
-  may run it, and each mint is audited with its trigger. See
+- **Role, membership, and billing actions need a live person.** Every member,
+  role, invite, or member/billing grant change declares `requiresLivePerson`, so
+  a job, webhook, subscription, or inbound email run (and package code it
+  starts) is denied even when its enabler is an Owner
+  ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
   [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
+- **Site-admin tools run from automation only for a site admin, and are
+  audited.** Background package runs resolve the owner's roles with a short
+  cache (`packages/worker/src/identity/background-mcp-user.ts`), so a triggered
+  run that calls a site-admin capability also re-reads the role for the person
+  it acts for from D1, and every such call writes an `admin` audit row naming
+  the trigger type and id. See
+  [Site-admin capabilities from triggered runs](./architecture/authorization.md#site-admin-capabilities-from-triggered-runs).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

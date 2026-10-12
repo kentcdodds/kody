@@ -266,33 +266,42 @@ execute started from an MCP call is. A denial throws `LivePersonRequiredError`,
 which names the capability; Open API maps it to 403 `insufficient_scope` with
 `denial: 'live_person_required'`.
 
-Declared today: every site-admin capability (through `adminCapabilityAccess` and
-`adminMutationCapabilityAccess`, plus `communitySetFeatured`),
-`orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`, `inviteAccept`,
-`inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member or billing
-grants. Org billing writes are session-only web handlers.
-`registry.node.test.ts` fails when a site-admin or member-changing capability
-does not declare it.
+Declared today: `orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`,
+`inviteAccept`, `inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member
+or billing grants. Org billing writes are session-only web handlers.
+`registry.node.test.ts` fails when a member-changing capability does not declare
+it, and when a site-admin capability does.
 
-One site-admin action may run unattended: `adminUserVerify` with
-`mint_verify_url`, so admin-event packages can rescue a stalled signup. Its
-predicate skips the live-person check only when `automationTriggerOf` (same
-file) finds a job (`schedule`), webhook, or subscription (`platform-event`)
-enablement behind the request, or package code one started, and:
+### Site-admin capabilities from triggered runs
 
-- that enablement row is `on`, belongs to the running package, and names the
-  same enabler;
-- the enabler is the package owner (`callerContext.user`) and holds the Owner
-  role in that org;
-- the enabler holds the site `admin` role in D1 right now
-  (`stableUserHoldsRole`). The background caller's roles are cached for up to a
-  minute, so they are not trusted after a revocation.
+Site-admin capabilities (`requiredRole` or `requiredPermission`) do not need a
+live person. A job, webhook, subscription, or inbound email run, or package code
+one of those started, may call them when the person the run acts for (its
+enabler) is a site admin. `defineCapability` adds two steps when
+`nonInteractiveTriggerOf` (`packages/worker/src/authorization/authorize.ts`)
+finds no live person behind the request:
 
-Every automated mint writes an `adminUserVerify` audit row whose reason adds
-`trigger=job|webhook|subscription`, `enablement_id`, and `package_id`, on
-success and on failure. `mark_verified`, package apps, inbound email, trigger
-sources nobody turned on, and every other site-admin capability still need a
-live person.
+- after the usual role check against the caller's roles, the run's actor must
+  hold the role or permission in D1 right now
+  (`getActiveStableUserRolesAndPermissions`), and must not be suspended or
+  deleted. The background caller's roles are cached for up to a minute and name
+  the org's identity, so they are not trusted on their own. A run with no actor
+  (a trigger nobody turned on) is refused.
+- every call that passes writes one `admin` audit row, on success or failure,
+  whose action is the capability name and whose reason is
+  `trigger=<job|webhook|subscription|email|package-app|unattended>;trigger_id=<id>;actor=<stable id>;package_id=<id>`,
+  plus `;error=<message>` on failure. `trigger_id` is the enablement id when an
+  enablement runs it, otherwise the job, webhook, or event source id. This row
+  is in addition to any audit row the capability writes itself.
+
+Both steps live in
+`packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
+calls are unchanged.
+
+A team org's runs call as the org's identity, which holds no site role, so the
+role check still refuses them even when the enabler is an admin. Site-admin
+automation runs from the admin's personal org. Package app visitors carry no
+site roles and are refused the same way.
 
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
@@ -586,11 +595,10 @@ seconds, so a revoked role can still pass background checks until that entry
 expires and the owner is resolved again. Interactive MCP and browser requests
 reload roles on every request.
 
-`requiredRole` / `requiredPermission` checks compare against those roles. Every
-site-admin capability also declares `requiresLivePerson`, so a background run
-owned by an admin still cannot call one: the call fails with
-`LivePersonRequiredError` (see
-[Capabilities that need a live person](#capabilities-that-need-a-live-person)).
+`requiredRole` / `requiredPermission` checks compare against those roles. A
+background run also re-checks the role against D1 for the person it acts for and
+audits the call (see
+[Site-admin capabilities from triggered runs](#site-admin-capabilities-from-triggered-runs)).
 Other interactive-only gates exist on a few specific non-admin capabilities (for
 example `communityForkAdopt`, `packageAppFetch`, `packageSubscriptionDispatch`,
 and platform-feedback submit); they are per-capability contracts, not part of

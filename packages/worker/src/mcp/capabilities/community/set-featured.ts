@@ -26,7 +26,6 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: false,
 		requiredRole: 'admin',
-		requiresLivePerson: true,
 		inputSchema: z.object({
 			listing_id: z
 				.string()

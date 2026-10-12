@@ -20,8 +20,14 @@ import {
 import { assertCallerCanAccessCapability } from './access-control.ts'
 import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
 import {
+	assertTriggeredRunCanAccessSiteCapability,
+	auditTriggeredSiteCapabilityCall,
+	requiresSiteAccess,
+} from './triggered-site-access.ts'
+import {
 	assertLivePerson,
 	authorizeSurface,
+	nonInteractiveTriggerOf,
 } from '#worker/authorization/authorize.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
@@ -126,6 +132,17 @@ export function defineCapability<
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
 			})
+			const siteAccessTrigger = requiresSiteAccess(definition)
+				? nonInteractiveTriggerOf(ctx.callerContext.request)
+				: null
+			if (siteAccessTrigger) {
+				await assertTriggeredRunCanAccessSiteCapability({
+					env: ctx.env,
+					callerContext: ctx.callerContext,
+					capability: definition,
+					trigger: siteAccessTrigger,
+				})
+			}
 			await authorizeSurface(
 				{ env: ctx.env, request: ctx.callerContext.request },
 				definition.orgPermission,
@@ -168,7 +185,17 @@ export function defineCapability<
 
 			let result: Awaited<ReturnType<typeof definition.handler>>
 			try {
-				result = await definition.handler(parsedArgs, ctx)
+				result = siteAccessTrigger
+					? await auditTriggeredSiteCapabilityCall(
+							{
+								env: ctx.env,
+								callerContext: ctx.callerContext,
+								capabilityName: definition.name,
+								trigger: siteAccessTrigger,
+							},
+							() => definition.handler(parsedArgs, ctx),
+						)
+					: await definition.handler(parsedArgs, ctx)
 			} catch (error) {
 				const { errorName, errorMessage } = errorFields(error)
 				logMcpEvent({

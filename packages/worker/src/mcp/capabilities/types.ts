@@ -80,8 +80,8 @@ export type CapabilityDefinition<
 	 */
 	orgPermission: SurfacePermission
 	/**
-	 * The capability needs a live person: role and membership changes, billing
-	 * changes, and site-admin tools. It never runs from a triggered run (cron
+	 * The capability needs a live person: role, membership, and invite
+	 * changes. It never runs from a triggered run (cron
 	 * job, webhook, subscription, inbound email) or package code one started,
 	 * whatever the enabler's role. `true` always applies; a function decides
 	 * from the parsed input. Checked at dispatch by `assertLivePerson`.

@@ -14,7 +14,7 @@ import {
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	assertLivePerson,
-	automationTriggerOf,
+	nonInteractiveTriggerOf,
 	authorize,
 	authorizeSurface,
 	isLivePersonRequest,
@@ -589,13 +589,13 @@ test('only a person behind the request is live; a triggered run and anything it 
 	).not.toThrow()
 })
 
-test('automationTriggerOf names the job, webhook, or subscription enablement a run acts under', () => {
+test('nonInteractiveTriggerOf names the trigger behind a run no live person made', () => {
 	const person = { userId: personIdFromStored('user-1'), username: 'ada' }
 	const enablement = { id: 'en-1', enabler: person, role: 'owner' as const }
 	const request = (source: RequestSource) =>
 		deriveRequestContext({ user: person, source })
 	const trigger = (source: RequestSource) =>
-		automationTriggerOf(request(source))
+		nonInteractiveTriggerOf(request(source))
 	const subscriptionRun = request({
 		kind: 'platform-event',
 		sourceId: 'event-1',
@@ -609,13 +609,24 @@ test('automationTriggerOf names the job, webhook, or subscription enablement a r
 				{ kind: 'webhook', sourceId: 'ep-1', enablement },
 				{ kind: 'platform-event', sourceId: 'event-1', enablement },
 				inheritRequest(subscriptionRun),
+				{
+					kind: 'inbound-email',
+					sourceId: 'message-1',
+					sender: { kind: 'inbox-owner' },
+					enablement,
+				},
+				{ kind: 'schedule', jobId: 'job-1' },
+				{ kind: 'package-app' },
 			] satisfies Array<RequestSource>
 		).map(trigger),
 	).toEqual([
-		{ type: 'job', enablementId: 'en-1' },
-		{ type: 'webhook', enablementId: 'en-1' },
-		{ type: 'subscription', enablementId: 'en-1' },
-		{ type: 'subscription', enablementId: 'en-1' },
+		{ type: 'job', credentialId: 'en-1' },
+		{ type: 'webhook', credentialId: 'en-1' },
+		{ type: 'subscription', credentialId: 'en-1' },
+		{ type: 'subscription', credentialId: 'en-1' },
+		{ type: 'email', credentialId: 'en-1' },
+		{ type: 'job', credentialId: 'job-1' },
+		{ type: 'package-app', credentialId: null },
 	])
 
 	expect(
@@ -625,18 +636,12 @@ test('automationTriggerOf names the job, webhook, or subscription enablement a r
 				{ kind: 'mcp-oauth' },
 				{ kind: 'cli' },
 				{ kind: 'api-token', tokenId: 'token-1' },
-				{ kind: 'package-app' },
-				{ kind: 'schedule', jobId: 'job-1' },
-				{ kind: 'webhook', sourceId: 'ep-1' },
-				{ kind: 'platform-event', sourceId: 'event-1' },
-				{
-					kind: 'inbound-email',
-					sourceId: 'message-1',
-					sender: { kind: 'inbox-owner' },
-					enablement,
-				},
+				{ kind: 'inherited', lineage: request({ kind: 'cli' }) },
 			] satisfies Array<RequestSource>
 		).map(trigger),
-	).toEqual([null, null, null, null, null, null, null, null, null])
-	expect(automationTriggerOf(null)).toBeNull()
+	).toEqual([null, null, null, null, null])
+	expect(nonInteractiveTriggerOf(null)).toBeNull()
+	expect(
+		nonInteractiveTriggerOf({ ...request({ kind: 'cli' }), actor: null }),
+	).toEqual({ type: 'unattended', credentialId: null })
 })

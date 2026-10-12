@@ -119,18 +119,25 @@ test('every capability declares a real org permission, and site-admin tools decl
 	}
 })
 
-test('site-admin tools and member, role, and invite changes need a live person', async () => {
+test('member, role, and invite changes need a live person; site-admin tools do not', async () => {
 	const registry = await getStaticRegistry()
 	const missing = registry.capabilityList
 		.filter(
 			(capability) =>
-				(capability.requiredRole ||
-					capability.requiredPermission ||
-					capability.orgPermission === 'member:write' ||
-					capability.orgPermission === 'member:delete' ||
-					capability.domain === 'admin') &&
+				(capability.orgPermission === 'member:write' ||
+					capability.orgPermission === 'member:delete') &&
 				capability.requiresLivePerson === 'never',
 		)
 		.map((capability) => capability.name)
 	expect(missing).toEqual([])
+	const gatedSiteAdmin = registry.capabilityList
+		.filter(
+			(capability) =>
+				(capability.requiredRole ||
+					capability.requiredPermission ||
+					capability.domain === 'admin') &&
+				capability.requiresLivePerson !== 'never',
+		)
+		.map((capability) => capability.name)
+	expect(gatedSiteAdmin).toEqual([])
 })

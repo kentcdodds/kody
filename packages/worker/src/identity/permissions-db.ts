@@ -60,27 +60,27 @@ export async function getUserRolesAndPermissions(
 }
 
 /**
- * Whether the live, unsuspended person `stableUserId` holds `role` right now.
- * Reads D1 directly, unlike the background caller's cached roles.
+ * The site roles and permissions person `stableUserId` holds right now, read
+ * from D1 (the background caller's roles are cached). Null when that person
+ * is missing, deleted, being deleted, or suspended.
  */
-export async function stableUserHoldsRole(
+export async function getActiveStableUserRolesAndPermissions(
 	db: D1Database,
 	stableUserId: string,
-	role: RoleName,
-): Promise<boolean> {
-	const row = await db
+): Promise<{
+	roles: Array<RoleName>
+	permissions: Array<PermissionString>
+} | null> {
+	const user = await db
 		.prepare(
-			`SELECT 1 AS held
-			 FROM users u
-			 INNER JOIN user_roles ur ON ur.user_id = u.id
-			 INNER JOIN roles r ON r.id = ur.role_id
-			 WHERE u.stable_user_id = ? AND r.name = ?
-			   AND u.suspended_at IS NULL AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-			 LIMIT 1`,
+			`SELECT id FROM users
+			 WHERE stable_user_id = ?
+			   AND suspended_at IS NULL AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
-		.bind(stableUserId, role)
-		.first<{ held: number }>()
-	return row !== null
+		.bind(stableUserId)
+		.first<{ id: number }>()
+	if (!user) return null
+	return await getUserRolesAndPermissions(db, user.id)
 }
 
 function isMissingRbacTableError(error: unknown) {

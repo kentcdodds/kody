@@ -213,11 +213,10 @@ Operators can unblock a stranded signup without a raw D1 write:
 - `mint_verify_url` returns a one-time `/verify-email?token=...` link so the
   operator can send it over a path that is not `kody.codes`
 - both paths audit the actor and `target_stable_user_id`
-- `mark_verified` needs a live person. `mint_verify_url` may also run from a
-  job, webhook, or subscription that an admin enabled on a package they own
-  (admin-event auto-rescue). Those audit rows add `trigger`, `enablement_id`,
-  and `package_id`; see
-  [Capabilities that need a live person](./authorization.md#capabilities-that-need-a-live-person)
+- both actions also run from a job, webhook, or subscription a site admin
+  enabled (admin-event auto-rescue), with an extra audit row naming the trigger;
+  see
+  [Site-admin capabilities from triggered runs](./authorization.md#site-admin-capabilities-from-triggered-runs)
 
 Unverified accounts can still use browser sessions (sign in, manage account,
 resend verification), but they must verify before MCP OAuth authorization or
