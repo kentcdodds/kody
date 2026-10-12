@@ -498,12 +498,15 @@ step matched zero packages.
 | `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, commit and push (see [Drift and applyMode](#drift-and-applymode)), refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before the write.                                    |
 | `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify the publish tip is still safe to restore (HEAD match for `head-and-published`; published-commit match for `published-only`), write the snapshot tree back, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.      |
 
-Locked packages (`saved_packages.locked_at` set) still run apply and revert when
-HEAD matches published: the engine commits and pushes HEAD and does **not**
-advance `published_commit`. The owner reviews that HEAD commit later at
-`/@username/:kodyId/approve-publish?commit=…`. A **drifted** locked package on a
-`published-only` codemod fails instead of applying — a pending commit on
-`kody-published` would not show in the approval UI (which loads HEAD).
+Locked packages (`saved_packages.locked_at` set) still run apply and revert for
+`head-and-published` codemods when HEAD matches published: the engine commits
+and pushes HEAD and does **not** advance `published_commit`. The owner reviews
+that HEAD commit later at `/@username/:kodyId/approve-publish?commit=…`.
+`published-only` codemods **skip locked packages entirely** (aligned or
+drifted): an aligned locked apply would leave HEAD at `afterCommit` while
+`published_commit` stayed behind (revert cannot open a RepoSession), and a
+drifted locked apply would hide the pending tip on `kody-published` (approval UI
+loads HEAD).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
@@ -546,9 +549,14 @@ Codemods that set `applyMode: 'published-only'` (today: `0012`) change only the
 5. Call `finalizePublishedEntitySource` to advance `published_commit` + KV.
 
 When HEAD already matches published, published-only codemods still use
-`syncArtifactSourceSnapshot` so HEAD and published stay aligned. Revert for a
-published-only apply restores the prior published tree the same way (no HEAD
-match required; default-branch tip is not moved).
+`syncArtifactSourceSnapshot` so HEAD and published stay aligned.
+`syncPublishedSourceSnapshotOnly` requires `expectedPublishedCommit` and refuses
+when `published_commit` moved (concurrent owner publish). On a non-fast-forward
+`kody-published` push it re-reads `published_commit`: still equal → force-push
+(recover leftover tips after a push that never finalized); moved → refuse.
+Revert chooses the lane from tip state: if HEAD still equals the apply
+`afterCommit`, restore via `syncArtifactSourceSnapshot`; otherwise restore via
+published-only (no HEAD match required; default-branch tip is not moved).
 
 ### Safety rails
 

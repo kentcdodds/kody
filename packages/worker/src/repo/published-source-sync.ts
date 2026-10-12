@@ -51,8 +51,10 @@ export type SyncPublishedSourceOnlyInput = {
 	allowLockedPublish?: boolean
 	/**
 	 * When false, push the durable ref but do not advance published_commit.
-	 * Used by fleet codemods on locked packages that still share HEAD with
-	 * published (aligned). Drifted locked packages must not use this path.
+	 * Published-only fleet apply skips locked packages entirely (aligned
+	 * locked applies leave HEAD unrestorable; drifted ones hide the pending
+	 * tip on kody-published). Kept for callers that intentionally stage a
+	 * published-only tip without promoting.
 	 */
 	promotePublished?: boolean
 }
@@ -282,6 +284,12 @@ async function pushKodyPublishedRef(input: {
 	token: string
 	commitOid: string
 	expectedPublishedCommit: string
+	/**
+	 * Re-read durable published_commit on non-fast-forward. When it still
+	 * matches expected, force-updating recovers leftover tips after a push that
+	 * never finalized. When it moved, a concurrent winner already finalized.
+	 */
+	readPublishedCommit: () => Promise<string | null>
 	onAuth: () => { username: string; password: string }
 }) {
 	// Point a local branch at the new commit, then push only that ref so the
@@ -318,39 +326,18 @@ async function pushKodyPublishedRef(input: {
 				{ cause: error },
 			)
 		}
-		// Concurrent published-only apply: remote tip is still our expected
-		// parent or a descendant of it. Never force — that would drop the
-		// winner's OID while it may still be the live published_commit.
-		if (remoteTip === input.expectedPublishedCommit) {
+		// TOCTOU: a concurrent apply may have pushed + finalized since the
+		// caller's expectedPublishedCommit check. Re-read before force.
+		const livePublishedCommit = await input.readPublishedCommit()
+		if (livePublishedCommit !== input.expectedPublishedCommit) {
 			throw new Error(
-				`Artifacts git push non-fast-forward for ${input.remote} (${kodyPublishedRef}): concurrent published-only update (remote tip still at expected published commit ${input.expectedPublishedCommit}).`,
+				`Artifacts git push non-fast-forward for ${input.remote} (${kodyPublishedRef}): concurrent published-only update (published_commit moved from ${input.expectedPublishedCommit} to ${livePublishedCommit ?? 'null'}; remote tip ${remoteTip}).`,
 				{ cause: error },
 			)
 		}
-		let remoteIsDescendantOfExpected = false
-		try {
-			remoteIsDescendantOfExpected = await input.git.isDescendent({
-				fs: input.fs,
-				dir: input.dir,
-				oid: remoteTip,
-				ancestor: input.expectedPublishedCommit,
-			})
-		} catch (ancestryError) {
-			// Fail closed: an unverified tip must not reach force-push.
-			throw new Error(
-				`Artifacts git push failed for ${input.remote} (${kodyPublishedRef}): could not verify remote tip ${remoteTip} lineage; refusing to force-push. ${getErrorMessage(ancestryError)}`,
-				{ cause: error },
-			)
-		}
-		if (remoteIsDescendantOfExpected) {
-			throw new Error(
-				`Artifacts git push non-fast-forward for ${input.remote} (${kodyPublishedRef}): concurrent published-only update (remote tip ${remoteTip} descends from expected published commit ${input.expectedPublishedCommit}).`,
-				{ cause: error },
-			)
-		}
-		// Stale platform tip from a prior published era (owner later published
-		// elsewhere). Force-updating keeps the *current* published OID reachable
-		// without dropping a concurrent winner.
+		// published_commit still at expected: remote tip is a leftover after a
+		// push that never finalized, a mid-flight sibling, or a stale tip from
+		// a prior published era. Force so retries can recover.
 		try {
 			await input.git.push({
 				fs: input.fs,
@@ -467,6 +454,13 @@ export async function syncPublishedSourceSnapshotOnly(
 			token: access.token,
 			commitOid: newCommit,
 			expectedPublishedCommit: input.expectedPublishedCommit,
+			readPublishedCommit: async () => {
+				const latest = await getEntitySourceById(
+					input.env.APP_DB,
+					input.sourceId,
+				)
+				return latest?.published_commit ?? null
+			},
 			onAuth,
 		})
 	}

@@ -803,11 +803,12 @@ async function processPackageForMode(input: {
 					checkSummary: gated.checkSummary,
 				})
 			}
-			// Locked + drifted published-only would push a pending commit only
-			// onto kody-published; the approval UI loads HEAD and would never
-			// show it. Fail closed instead of reporting applied.
+			// Published-only codemods skip locked packages entirely: a locked
+			// aligned apply leaves HEAD at afterCommit while published stays
+			// behind, and revert cannot open a RepoSession (HEAD != published).
+			// A locked drifted apply would hide the pending tip on kody-published.
 			if (
-				publishedOnlyApply &&
+				applyMode === 'published-only' &&
 				isSavedPackageLocked(input.savedPackage.lockedAt)
 			) {
 				return emptyItemResult({
@@ -821,7 +822,7 @@ async function processPackageForMode(input: {
 					beforeCommit: publishedCommit,
 					checkSummary: gated.checkSummary,
 					error:
-						'Published-only apply cannot leave a locked drifted package pending: unlock the package (or align HEAD with published_commit) before applying.',
+						'Published-only apply skips locked packages: unlock the package before applying so HEAD and published_commit stay restorable.',
 				})
 			}
 

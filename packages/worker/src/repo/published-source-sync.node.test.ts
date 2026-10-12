@@ -295,7 +295,7 @@ test('syncPublishedSourceSnapshotOnly refuses when published_commit moved', asyn
 	).rejects.toThrow(/published commit moved/i)
 })
 
-test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip', async () => {
+test('syncPublishedSourceSnapshotOnly force-pushes leftover tips when published_commit is unchanged', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow)
 	setupRepoAccess()
 	mockModule.loopback = false
@@ -303,8 +303,42 @@ test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip'
 	mockModule.git.push
 		.mockRejectedValueOnce(new Error('non-fast-forward'))
 		.mockResolvedValueOnce(undefined)
-	mockModule.git.resolveRef.mockResolvedValue('commit-published')
-	mockModule.git.isDescendent.mockResolvedValue(false)
+	// Leftover tip after a prior push that never finalized (descendant of expected).
+	mockModule.git.resolveRef.mockResolvedValue('commit-leftover-tip')
+
+	const commit = await syncPublishedSourceSnapshotOnly({
+		env: createEnv(),
+		userId: ownerIdFromStored('user-1'),
+		baseUrl: 'https://kody.codes',
+		sourceId: 'source-1',
+		files: { 'package.json': '{"name":"@user/pkg"}\n' },
+		expectedPublishedCommit: 'commit-published',
+		commitMessage: 'codemod(0012): recover leftover',
+	})
+
+	expect(commit).toBe('commit-new-published')
+	expect(mockModule.git.push).toHaveBeenCalledTimes(2)
+	expect(mockModule.git.push.mock.calls[1]?.[0]).toEqual(
+		expect.objectContaining({ force: true }),
+	)
+	// Re-read published_commit on NFF (initial load + race check).
+	expect(
+		mockModule.getEntitySourceById.mock.calls.length,
+	).toBeGreaterThanOrEqual(2)
+})
+
+test('syncPublishedSourceSnapshotOnly refuses force-push when published_commit moved', async () => {
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(sourceRow)
+		.mockResolvedValueOnce({
+			...sourceRow,
+			published_commit: 'commit-concurrent-winner',
+		})
+	setupRepoAccess()
+	mockModule.loopback = false
+	mockModule.git.push.mockReset()
+	mockModule.git.push.mockRejectedValueOnce(new Error('non-fast-forward'))
+	mockModule.git.resolveRef.mockResolvedValue('commit-concurrent-winner')
 
 	await expect(
 		syncPublishedSourceSnapshotOnly({
@@ -314,7 +348,7 @@ test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip'
 			sourceId: 'source-1',
 			files: { 'package.json': '{"name":"@user/pkg"}\n' },
 			expectedPublishedCommit: 'commit-published',
-			commitMessage: 'codemod(0012): concurrent',
+			commitMessage: 'codemod(0012): concurrent finalize',
 		}),
 	).rejects.toThrow(/concurrent published-only update/i)
 
@@ -322,36 +356,4 @@ test('syncPublishedSourceSnapshotOnly does not force-push over a concurrent tip'
 	expect(mockModule.git.push.mock.calls[0]?.[0]).not.toEqual(
 		expect.objectContaining({ force: true }),
 	)
-})
-
-test('syncPublishedSourceSnapshotOnly refuses to force-push when ancestry check throws', async () => {
-	mockModule.getEntitySourceById.mockResolvedValue(sourceRow)
-	setupRepoAccess()
-	mockModule.loopback = false
-	mockModule.git.push.mockReset()
-	mockModule.git.push.mockRejectedValueOnce(new Error('non-fast-forward'))
-	mockModule.git.resolveRef.mockResolvedValue('commit-unrelated-tip')
-	mockModule.git.isDescendent.mockRejectedValueOnce(new Error('missing object'))
-
-	await expect(
-		syncPublishedSourceSnapshotOnly({
-			env: createEnv(),
-			userId: ownerIdFromStored('user-1'),
-			baseUrl: 'https://kody.codes',
-			sourceId: 'source-1',
-			files: { 'package.json': '{"name":"@user/pkg"}\n' },
-			expectedPublishedCommit: 'commit-published',
-			commitMessage: 'codemod(0012): ancestry unknown',
-		}),
-	).rejects.toThrow(/refusing to force-push/i)
-
-	expect(
-		mockModule.git.push.mock.calls.some(
-			(call) =>
-				call[0] != null &&
-				typeof call[0] === 'object' &&
-				'force' in call[0] &&
-				(call[0] as { force?: boolean }).force === true,
-		),
-	).toBe(false)
 })
