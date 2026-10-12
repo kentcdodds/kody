@@ -50,6 +50,37 @@ it to leave an existing expiry unchanged; pass `null` to clear. Updates that
 only change description or expiry may omit **`value`**. Package runtimes cannot
 change expiry on a user secret.
 
+### Opt-in credential fields
+
+A saved secret is a **Key** by default, and Keys keep working through
+placeholders and host approval as described here. A user-scope **`secretSet`**
+from execute or the API (not from a package runtime) can also set fields for the
+opt-in credential types (ADR 0068):
+
+- **`kind`**: `secret` (a Key, the default), `url` (a whole webhook URL),
+  `login` (a JSON object of login fields), or `signing` (a signing key). The
+  opt-in kinds are never placed by a placeholder; a package reaches them only
+  through a scoped credential client.
+- **`hosts`**: where an opt-in kind may be sent, as exact hosts or one wildcard
+  level (`*.example.com`). Required for `url`, `login`, and `signing`; a `url`
+  value's own host must be one of them. Keys refuse `hosts` and keep using host
+  approval.
+- **`login_exchange`**: for `login`, how the fields become a session token. Its
+  url must be on one of the hosts.
+- **`provider`** and **`inject`**: which package credential needs the credential
+  can satisfy (for example `github`), and how a scoped client places it (a
+  header with a `{value}` format, basic auth, or a query parameter). The default
+  placement is `Authorization: Bearer {value}`. Placeholders ignore both.
+
+`kind`, `hosts`, and `login_exchange` are set only together with a value:
+whoever supplies the value decides where it may go. A new value for an existing
+opt-in credential is checked against its stored hosts. Setting `kind: "secret"`
+turns an opt-in credential back into a Key and clears its hosts. **`provider`**
+and **`inject`** can change without a value, and **`credentialUpdate`** sets
+them by credential id on secrets, OAuth connections, and MCP servers (OAuth
+connections and MCP servers always use `Authorization: Bearer`, so only their
+provider changes). Every change needs Write on the credential and is audited.
+
 The account create/edit form has the same optional expiry field. Agents
 prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query
 parameter so the human pastes the token without typing the date. See

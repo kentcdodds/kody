@@ -96,6 +96,8 @@ type UpdateSecretInput = SecretOwnerContext & {
 	value?: string | null
 	description?: string | null
 	expiresAt?: string | null
+	/** The call changes only the credential's provider or inject. */
+	credentialFieldsOnly?: boolean
 }
 
 type DeleteSecretInput = SecretOwnerContext & {
@@ -894,7 +896,8 @@ export async function updateSecret(
 	if (
 		!hasValueUpdate &&
 		input.description == null &&
-		input.expiresAt === undefined
+		input.expiresAt === undefined &&
+		input.credentialFieldsOnly !== true
 	) {
 		throw new Error(
 			'Provide a new secret value, description, or expires_at to update.',

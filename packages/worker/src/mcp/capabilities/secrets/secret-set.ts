@@ -16,6 +16,11 @@ import {
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecretSet } from './authorize-secret.ts'
+import {
+	applyOptInCredentialFields,
+	optInCredentialInputFields,
+	planOptInCredentialFields,
+} from './secret-set-opt-in.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetInputSchema = z
@@ -42,17 +47,23 @@ const secretSetInputSchema = z
 		scope: z
 			.enum(secretScopeValues)
 			.describe('Storage scope that owns the secret.'),
+		...optInCredentialInputFields,
 	})
 	.superRefine((value, ctx) => {
 		if (
 			(typeof value.value !== 'string' || value.value.length === 0) &&
 			value.description === undefined &&
-			value.expires_at === undefined
+			value.expires_at === undefined &&
+			value.provider === undefined &&
+			value.inject === undefined &&
+			value.kind === undefined &&
+			value.hosts === undefined &&
+			value.login_exchange === undefined
 		) {
 			ctx.addIssue({
 				code: 'custom',
 				message:
-					'Provide a secret value, or a description / expires_at update for an existing secret.',
+					'Provide a secret value, or a description / expires_at / provider / inject update for an existing secret.',
 				path: ['value'],
 			})
 		}
@@ -91,6 +102,10 @@ export const secretSetCapability = defineDomainCapability(
 				name: parsed.name,
 				scope: parsed.scope,
 				storageContext,
+			})
+			const optIn = await planOptInCredentialFields(ctx, {
+				input: parsed,
+				authorityPackageId,
 			})
 			let saved
 			if (parsed.scope === 'user' && authorityPackageId) {
@@ -156,10 +171,15 @@ export const secretSetCapability = defineDomainCapability(
 					name: parsed.name,
 					description: parsed.description,
 					expiresAt: parsed.expires_at,
+					credentialFieldsOnly: optIn.fields !== null,
 					storageContext,
 				})
 			}
-			return toSecretCapabilityOutput(saved)
+			return await applyOptInCredentialFields(ctx, {
+				plan: optIn,
+				name: parsed.name,
+				saved: toSecretCapabilityOutput(saved),
+			})
 		},
 	},
 )
