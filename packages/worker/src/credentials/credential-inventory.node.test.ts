@@ -45,9 +45,10 @@ function seedFleet() {
 		published: true,
 		files: {
 			'index.ts': `
+				const stripeKey = '{{secret:STRIPE_KEY}}'
 				await fetch('https://api.stripe.com/v1/charges', {
 					headers: {
-						'X-Api-Key': '{{secret:STRIPE_KEY}}',
+						'X-Api-Key': stripeKey,
 						Authorization: 'Bearer {{integration-token:orgGitHub}}',
 					},
 				})
@@ -197,10 +198,10 @@ test('the inventory counts every placeholder and attributes it to credential ids
 		},
 		unparsedModules: 0,
 		references: {
-			total: 6,
-			attributed: 6,
+			total: 7,
+			attributed: 7,
 			unattributed: 0,
-			byPlacement: { ...noPlacements, header: 3, query: 2, binding: 1 },
+			byPlacement: { ...noPlacements, header: 3, query: 2, binding: 2 },
 			unattributedByPlacement: noPlacements,
 			otherByContext: expect.objectContaining({ other: 0 }),
 			bodyByEndpoint: { login: 0, other: 0, unknown: 0 },
@@ -245,7 +246,9 @@ test('the inventory counts every placeholder and attributes it to credential ids
 			(reference: { credentialIds: Array<string> }) => reference.credentialIds,
 		),
 	).toEqual([
-		// Another org's package row for this package, plus the owner org's row.
+		// Another org's package row for this package, plus the owner org's row,
+		// for the binding and for its read.
+		['s-stripe-b', 's-stripe'],
 		['s-stripe-b', 's-stripe'],
 		['i-github'],
 		['s-weather'],
@@ -306,8 +309,8 @@ test('the backfill fills only unset provider and inject columns from consistent 
 				alreadySet: 1,
 				default: 1,
 				mixed: 1,
-				unsupported: 1,
-				unused: 1,
+				unsupported: 0,
+				unused: 2,
 			},
 		},
 		writtenRows: 0,

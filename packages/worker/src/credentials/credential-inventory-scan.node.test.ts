@@ -221,3 +221,79 @@ test('classifies signing keys, SDK options, arguments, and login bodies', () => 
 	])
 	expect(result.jwtSignCalls).toBe(1)
 })
+
+test('a name resolves to its nearest declaration, so shadows and reassigned bindings are not followed', () => {
+	expect(
+		placementsByName(`
+		const key = '{{secret:OUTER_KEY}}'
+		let token = '{{secret:TOP_LET}}'
+		var hook = '{{secret:TOP_VAR}}'
+		let moved = '{{secret:MOVED}}'
+		moved = 'https://other.example.com'
+		function send(key) {
+			fetch('https://x.example.com', { headers: { 'x-api-key': key } })
+		}
+		function local() {
+			const key = 'not a credential'
+			try {
+				fetch('https://x.example.com', { headers: { 'x-api-key': key } })
+			} catch (token) {
+				fetch(\`https://x.example.com/?k=\${token}\`)
+			}
+			fetch(\`https://x.example.com/?k=\${key}\`)
+		}
+		fetch('https://x.example.com', {
+			headers: { Authorization: \`Bearer \${token}\`, 'x-hook': hook },
+		})
+		fetch(moved)
+	`),
+	).toEqual({
+		OUTER_KEY: [other('unused-binding')],
+		TOP_LET: [
+			{ type: 'binding' },
+			{ type: 'header', name: 'authorization', format: 'Bearer {value}' },
+		],
+		TOP_VAR: [
+			{ type: 'binding' },
+			{ type: 'header', name: 'x-hook', format: '{value}' },
+		],
+		MOVED: [other('reassigned-binding')],
+	})
+})
+
+test('reads of a binding add placements, not placeholder occurrences', () => {
+	const result = scan(`
+		const key = '{{secret:KEY}}'
+		const vault = '{{secret/1password:op://v/i/f}}'
+		fetch('https://x.example.com', { headers: { Authorization: key } })
+		fetch('https://x.example.com', { headers: { Authorization: key } })
+		fetch(\`https://x.example.com/?k=\${vault}\`)
+	`)
+	expect(result.placeholders).toMatchObject({ secret: 1, vault: 1 })
+	expect(result.references).toHaveLength(3)
+	expect(result.vaultPlacements).toEqual([
+		{ type: 'binding' },
+		{ type: 'query', param: 'k' },
+	])
+})
+
+test('only the key argument of a signing call is signing key material', () => {
+	expect(
+		placementsByName(`
+		jwt.sign({ aud: '{{secret:AUDIENCE}}' }, '{{secret:JWT_KEY}}')
+		await new SignJWT({ sub: '{{secret:SUBJECT}}' }).sign('{{secret:JOSE_KEY}}')
+		crypto.subtle.sign('HMAC', '{{secret:SUBTLE_KEY}}', '{{secret:SIGNED_DATA}}')
+		crypto.createHmac('sha256', '{{secret:NODE_KEY}}')
+		toString('{{secret:PROTOTYPE_NAME}}')
+	`),
+	).toEqual({
+		AUDIENCE: [other('sdk-option', 'aud', 'sign')],
+		JWT_KEY: [{ type: 'signing' }],
+		SUBJECT: [other('sdk-option', 'sub', 'SignJWT')],
+		JOSE_KEY: [{ type: 'signing' }],
+		SUBTLE_KEY: [{ type: 'signing' }],
+		SIGNED_DATA: [other('argument', null, 'sign')],
+		NODE_KEY: [{ type: 'signing' }],
+		PROTOTYPE_NAME: [other('argument', null, 'toString')],
+	})
+})

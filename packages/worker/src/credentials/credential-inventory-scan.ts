@@ -7,7 +7,11 @@
  *
  * A placeholder bound to a variable is followed to each place the variable is
  * used, so `const key = '{{secret:x}}'` then `headers: { 'x-api-key': key }`
- * counts as a header. The binding itself is recorded as `binding`.
+ * counts as a header. The binding itself is recorded as `binding`. A name
+ * resolves to its nearest declaration, so a parameter or local that shadows a
+ * placeholder binding is not followed, and a binding that is reassigned is
+ * not followed either. Placeholder counts are source occurrences: following a
+ * binding adds references, not occurrences.
  */
 import {
 	type PackageCredentialKind,
@@ -53,6 +57,8 @@ export type CredentialOtherContext =
 	| 'comparison'
 	/** Bound to a variable that is never read. */
 	| 'unused-binding'
+	/** Bound to a variable that is reassigned, so its reads are not followed. */
+	| 'reassigned-binding'
 	/** A piece of a template whose other parts are computed. */
 	| 'template-computed'
 	/** In a URL host, which the gateway never fills. */
@@ -111,6 +117,7 @@ export const credentialOtherContexts = [
 	'default-param',
 	'comparison',
 	'unused-binding',
+	'reassigned-binding',
 	'template-computed',
 	'url-host',
 	'unparsed',
@@ -154,23 +161,29 @@ const loginPathPattern =
 	/(?:^|[/_.-])(?:login|log-in|signin|sign-in|sign_in|session|sessions|auth|authenticate|authorize|token|tokens|oauth2?)(?:$|[/_.?-])/i
 
 /**
- * Calls whose arguments are signing key material. `encode` and `from` are
- * deliberately absent: they only count inside one of these.
+ * Calls that take signing key material, with which argument holds the key
+ * for a call with `argumentCount` arguments. Payload and option arguments are
+ * classified like any other call argument.
  */
-const signingCallees = new Set([
-	'importKey',
-	'createHmac',
-	'hmac',
-	'HmacSHA1',
-	'HmacSHA256',
-	'HmacSHA512',
-	'sign',
-	'signJwt',
-	'jwtSign',
-	'SignJWT',
-	'createSigner',
-	'createSign',
-	'setSigningKey',
+const signingKeyArgument = new Map<string, (argumentCount: number) => number>([
+	// crypto.subtle.importKey(format, keyData, …)
+	['importKey', () => 1],
+	// crypto.createHmac(algorithm, key)
+	['createHmac', () => 1],
+	// hmac(hash, key, message) or hmac(key, message)
+	['hmac', (count) => (count >= 3 ? 1 : 0)],
+	// CryptoJS.HmacSHA256(message, key)
+	['HmacSHA1', () => 1],
+	['HmacSHA256', () => 1],
+	['HmacSHA512', () => 1],
+	// jwt.sign(payload, key), crypto.subtle.sign(algorithm, key, data),
+	// new SignJWT(payload).sign(key), signer.sign(key)
+	['sign', (count) => (count === 1 ? 0 : 1)],
+	['signJwt', () => 1],
+	['jwtSign', () => 1],
+	// createSigner({ key })
+	['createSigner', () => 0],
+	['setSigningKey', () => 0],
 ])
 
 const transparentExpressionTypes = new Set([
@@ -179,6 +192,12 @@ const transparentExpressionTypes = new Set([
 	'TSSatisfiesExpression',
 	'TSNonNullExpression',
 	'TSTypeAssertion',
+])
+
+const loopScopeTypes = new Set([
+	'ForStatement',
+	'ForInStatement',
+	'ForOfStatement',
 ])
 
 const functionTypes = new Set([
@@ -250,13 +269,29 @@ function otherPlacement(
 	return { type: 'other', context, key, callee }
 }
 
+function countPlaceholders(texts: Iterable<string>) {
+	const counts = emptyPlaceholderCounts()
+	for (const text of texts) {
+		for (const match of findPlaceholderMatches(text)) counts[match.kind] += 1
+	}
+	return counts
+}
+
+/**
+ * Records each placeholder in `text`. `counted` holds, by kind, how many of
+ * them came from a bound variable and were counted at its declaration: they
+ * add placements but are not counted again.
+ */
 function recordPlaceholders(
 	text: string,
 	placementOf: (match: PlaceholderMatch) => CredentialPlacement,
 	scan: PackageCredentialScan,
+	counted: Record<PlaceholderMatchKind, number> = emptyPlaceholderCounts(),
 ) {
+	const skip = { ...counted }
 	for (const match of findPlaceholderMatches(text)) {
-		scan.placeholders[match.kind] += 1
+		if (skip[match.kind] > 0) skip[match.kind] -= 1
+		else scan.placeholders[match.kind] += 1
 		if (match.kind === 'vault') {
 			scan.vaultPlacements.push(placementOf(match))
 			continue
@@ -297,66 +332,176 @@ function withoutCredentialNames(
 	}
 }
 
-type Binding = { text: string; scope: AstNode }
+type Binding = { text: string; scope: AstNode; reassigned: boolean }
 
 /**
- * Variables bound to a string that holds a placeholder: the module's
- * constants (top-level and imported) plus `const`/`let` declarations inside
- * functions. Shadowing inside a scope is not tracked.
+ * Lexical scopes and the variables bound to a placeholder string in them:
+ * the module's constants (top-level and imported) plus `const`, `let`, and
+ * `var` declarations at any depth. Every declared name is tracked, so lookup
+ * stops at the nearest declaration even when it holds no placeholder.
  */
-function collectBindings(
+type ModuleScopes = {
+	declared: Map<AstNode, Set<string>>
+	bindings: Map<AstNode, Map<string, Binding>>
+}
+
+function collectScopes(
 	parsed: AstNode,
 	constants: ReadonlyMap<string, string>,
-) {
-	const bindings = new Map<string, Array<Binding>>()
-	const add = (name: string, binding: Binding) => {
-		const list = bindings.get(name) ?? []
-		list.push(binding)
-		bindings.set(name, list)
+): ModuleScopes {
+	const declared = new Map<AstNode, Set<string>>()
+	const bindings = new Map<AstNode, Map<string, Binding>>()
+	const declare = (scope: AstNode, name: string | null) => {
+		if (!name) return
+		const names = declared.get(scope) ?? new Set<string>()
+		names.add(name)
+		declared.set(scope, names)
 	}
-	for (const [name, text] of constants) {
-		if (findPlaceholderMatches(text).length > 0)
-			add(name, { text, scope: parsed })
+	const bind = (scope: AstNode, name: string, text: string) => {
+		const scoped = bindings.get(scope) ?? new Map<string, Binding>()
+		scoped.set(name, { text, scope, reassigned: false })
+		bindings.set(scope, scoped)
+	}
+	for (const statement of parsed.program?.body ?? []) {
+		if (statement.type !== 'ImportDeclaration') continue
+		for (const specifier of statement.specifiers ?? []) {
+			declare(parsed, getNodeName(specifier.local))
+		}
 	}
 	walkAst(parsed, (node, ancestors) => {
-		if (node.type !== 'VariableDeclarator' || node.id?.type !== 'Identifier') {
+		if (functionTypes.has(node.type)) {
+			if (node.type === 'FunctionDeclaration') {
+				declare(blockScope(ancestors, parsed), getNodeName(node.id))
+			} else if (node.id) {
+				declare(node, getNodeName(node.id))
+			}
+			for (const param of node.params ?? []) {
+				for (const name of boundNames(param)) declare(node, name)
+			}
 			return
 		}
-		const scope = enclosingScope(ancestors)
-		if (scope === parsed) return
+		if (node.type === 'ClassDeclaration') {
+			declare(blockScope(ancestors, parsed), getNodeName(node.id))
+			return
+		}
+		if (node.type === 'CatchClause') {
+			for (const name of boundNames(node.param)) declare(node, name)
+			return
+		}
+		if (node.type !== 'VariableDeclarator') return
+		const declaration = ancestors.at(-1)
+		const scope =
+			declaration?.kind === 'var'
+				? functionScope(ancestors, parsed)
+				: blockScope(ancestors, parsed)
+		for (const name of boundNames(node.id)) declare(scope, name)
+		if (node.id?.type !== 'Identifier') return
 		const name = getNodeName(node.id)
-		const text = resolveStringExpression(node.init, constants)
-		if (!name || text == null || findPlaceholderMatches(text).length === 0) {
-			return
+		const text =
+			scope === parsed && declaration?.kind === 'const' && name
+				? constants.get(name)
+				: resolveStringExpression(node.init, constants)
+		if (name && text != null && findPlaceholderMatches(text).length > 0) {
+			bind(scope, name, text)
 		}
-		add(name, { text, scope })
 	})
-	return bindings
+	for (const [name, text] of constants) {
+		if (declared.get(parsed)?.has(name) !== true) continue
+		if (bindings.get(parsed)?.has(name)) continue
+		if (findPlaceholderMatches(text).length > 0) bind(parsed, name, text)
+	}
+	const scopes = { declared, bindings }
+	walkAst(parsed, (node, ancestors) => {
+		const target =
+			node.type === 'AssignmentExpression'
+				? node.left
+				: node.type === 'UpdateExpression'
+					? node.argument
+					: null
+		if (target?.type !== 'Identifier') return
+		const binding = bindingInScope(scopes, getNodeName(target), ancestors)
+		if (binding) binding.reassigned = true
+	})
+	return scopes
 }
 
-function enclosingScope(ancestors: ReadonlyArray<AstNode>) {
+function boundNames(pattern: AstNode | null | undefined): Array<string> {
+	if (!pattern) return []
+	switch (pattern.type) {
+		case 'Identifier': {
+			const name = getNodeName(pattern)
+			return name ? [name] : []
+		}
+		case 'AssignmentPattern':
+			return boundNames(pattern.left)
+		case 'RestElement':
+			return boundNames(pattern.argument)
+		case 'ArrayPattern':
+			return (pattern.elements ?? []).flatMap((element) => boundNames(element))
+		case 'ObjectPattern':
+			return (pattern.properties ?? []).flatMap((property) =>
+				boundNames(
+					property.type === 'RestElement'
+						? property
+						: (property.value as AstNode | undefined),
+				),
+			)
+		case 'TSParameterProperty':
+			return boundNames(pattern.parameter)
+		default:
+			return []
+	}
+}
+
+function isScope(node: AstNode) {
+	return (
+		node.type === 'Program' ||
+		node.type === 'BlockStatement' ||
+		node.type === 'CatchClause' ||
+		node.type === 'StaticBlock' ||
+		loopScopeTypes.has(node.type) ||
+		functionTypes.has(node.type)
+	)
+}
+
+/** The block, loop, or function a `let`, `const`, or declaration is in. */
+function blockScope(ancestors: ReadonlyArray<AstNode>, parsed: AstNode) {
 	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
 		const ancestor = ancestors[index]!
-		if (functionTypes.has(ancestor.type)) return ancestor
+		if (ancestor.type === 'File') return parsed
+		if (isScope(ancestor))
+			return ancestor.type === 'Program' ? parsed : ancestor
 	}
-	return ancestors[0]!
+	return parsed
 }
 
+/** The function a `var` is hoisted to, or the module. */
+function functionScope(ancestors: ReadonlyArray<AstNode>, parsed: AstNode) {
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		if (functionTypes.has(ancestors[index]!.type)) return ancestors[index]!
+	}
+	return parsed
+}
+
+/** The binding `name` reads at `ancestors`: its nearest declaration's. */
 function bindingInScope(
-	bindings: ReadonlyMap<string, Array<Binding>>,
+	scopes: ModuleScopes,
+	name: string | null,
+	ancestors: ReadonlyArray<AstNode>,
+) {
+	const scope = declaringScope(scopes, name, ancestors)
+	return scope && name ? (scopes.bindings.get(scope)?.get(name) ?? null) : null
+}
+
+function declaringScope(
+	scopes: ModuleScopes,
 	name: string | null,
 	ancestors: ReadonlyArray<AstNode>,
 ) {
 	if (!name) return null
-	const candidates = bindings.get(name)
-	if (!candidates) return null
-	const inScope = new Set(ancestors)
-	// The innermost scope wins, as it does at runtime.
 	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-		const found = candidates.find(
-			(binding) => binding.scope === ancestors[index],
-		)
-		if (found && inScope.has(found.scope)) return found
+		const ancestor = ancestors[index]!
+		if (scopes.declared.get(ancestor)?.has(name)) return ancestor
 	}
 	return null
 }
@@ -397,11 +542,11 @@ function scanParsedModule(
 	constants: ReadonlyMap<string, string>,
 	scan: PackageCredentialScan,
 ) {
-	const bindings = collectBindings(parsed, constants)
+	const scopes = collectScopes(parsed, constants)
 	const readCount = new Map<Binding, number>()
 	walkAst(parsed, (node, ancestors) => {
 		if (node.type !== 'Identifier' || !isVariableRead(node, ancestors)) return
-		const binding = bindingInScope(bindings, getNodeName(node), ancestors)
+		const binding = bindingInScope(scopes, getNodeName(node), ancestors)
 		if (binding) readCount.set(binding, (readCount.get(binding) ?? 0) + 1)
 	})
 	const exportedNames = new Set<string>()
@@ -416,11 +561,19 @@ function scanParsedModule(
 			if (name) exportedNames.add(name)
 		}
 	}
+	const boundNamesInModule = new Set(
+		[...scopes.bindings.values()].flatMap((scoped) => [...scoped.keys()]),
+	)
 	const constantsIn = (ancestors: ReadonlyArray<AstNode>) => {
-		const inScope = new Map(constants)
-		for (const [name] of bindings) {
-			const binding = bindingInScope(bindings, name, ancestors)
-			if (binding) inScope.set(name, binding.text)
+		const inScope = new Map<string, string>()
+		for (const name of new Set([...constants.keys(), ...boundNamesInModule])) {
+			const scope = declaringScope(scopes, name, ancestors)
+			const binding = scope ? scopes.bindings.get(scope)?.get(name) : null
+			if (binding) {
+				if (!binding.reassigned) inScope.set(name, binding.text)
+			} else if (scope === parsed && constants.has(name)) {
+				inScope.set(name, constants.get(name)!)
+			}
 		}
 		return inScope
 	}
@@ -437,23 +590,37 @@ function scanParsedModule(
 		const placementFor = (text: string) => (match: PlaceholderMatch) =>
 			classifyPlacement(text, match, node, ancestors, {
 				constants: constantsIn(ancestors),
-				bindingReads: (declarator) => {
+				binding: (declarator) => {
 					const name = getNodeName(declarator.id)
-					const binding = bindingInScope(bindings, name, [
+					const binding = bindingInScope(scopes, name, [
 						...ancestors,
 						declarator,
 					])
-					if (name && exportedNames.has(name) && binding?.scope === parsed) {
-						return 1
-					}
-					return binding ? (readCount.get(binding) ?? 0) : 0
+					if (!binding) return 'unused'
+					if (binding.reassigned) return 'reassigned'
+					const exported =
+						name != null && exportedNames.has(name) && binding.scope === parsed
+					return exported || (readCount.get(binding) ?? 0) > 0
+						? 'read'
+						: 'unused'
 				},
 			})
 		if (isCompositeString(node)) {
-			const resolved = resolveStringExpression(node, constantsIn(ancestors))
+			const inScope = constantsIn(ancestors)
+			const resolved = resolveStringExpression(node, inScope)
 			if (resolved != null) {
-				walkAst(node, (piece) => resolvedPieces.add(piece))
-				recordPlaceholders(resolved, placementFor(resolved), scan)
+				const substituted: Array<string> = []
+				walkAst(node, (piece) => {
+					resolvedPieces.add(piece)
+					const name = piece.type === 'Identifier' ? getNodeName(piece) : null
+					if (name && inScope.has(name)) substituted.push(inScope.get(name)!)
+				})
+				recordPlaceholders(
+					resolved,
+					placementFor(resolved),
+					scan,
+					countPlaceholders(substituted),
+				)
 				return
 			}
 		}
@@ -479,9 +646,14 @@ function scanParsedModule(
 			}
 			case 'Identifier': {
 				if (!isVariableRead(node, ancestors)) return
-				const binding = bindingInScope(bindings, getNodeName(node), ancestors)
-				if (!binding) return
-				recordPlaceholders(binding.text, placementFor(binding.text), scan)
+				const binding = bindingInScope(scopes, getNodeName(node), ancestors)
+				if (!binding || binding.reassigned) return
+				recordPlaceholders(
+					binding.text,
+					placementFor(binding.text),
+					scan,
+					countPlaceholders([binding.text]),
+				)
 				return
 			}
 			default:
@@ -517,8 +689,8 @@ function safeIdentifier(value: string | null) {
 
 type ClassifyContext = {
 	constants: ReadonlyMap<string, string>
-	/** How many times the variable a declarator binds is read. */
-	bindingReads: (declarator: AstNode) => number
+	/** Whether the variable a declarator binds is read, reassigned, or unused. */
+	binding: (declarator: AstNode) => 'read' | 'reassigned' | 'unused'
 }
 
 function classifyPlacement(
@@ -535,11 +707,21 @@ function classifyPlacement(
 		parent.node.id?.type === 'Identifier' &&
 		node !== parent.node.id
 	) {
-		return context.bindingReads(parent.node) > 0
-			? { type: 'binding' }
-			: otherPlacement('unused-binding')
+		const binding = context.binding(parent.node)
+		switch (binding) {
+			case 'read':
+				return { type: 'binding' }
+			case 'reassigned':
+				return otherPlacement('reassigned-binding')
+			case 'unused':
+				return otherPlacement('unused-binding')
+			default: {
+				const unexpected: never = binding
+				return unexpected
+			}
+		}
 	}
-	if (isSigningKey(ancestors)) return { type: 'signing' }
+	if (isSigningKey(ancestors, node)) return { type: 'signing' }
 	if (parent?.node.type === 'ObjectProperty') {
 		const key = propertyKey(parent.node)
 		const object = parentOf(ancestors, parent.index)
@@ -587,14 +769,23 @@ function classifyPlacement(
 	return otherContext(ancestors, node, call, argumentIndex)
 }
 
-function isSigningKey(ancestors: ReadonlyArray<AstNode>) {
-	return ancestors.some(
-		(ancestor) =>
-			(ancestor.type === 'CallExpression' ||
-				ancestor.type === 'OptionalCallExpression' ||
-				ancestor.type === 'NewExpression') &&
-			signingCallees.has(getCalleeName(ancestor.callee) ?? ''),
-	)
+/** Whether the placeholder is inside the key argument of a signing call. */
+function isSigningKey(ancestors: ReadonlyArray<AstNode>, node: AstNode) {
+	return ancestors.some((ancestor, index) => {
+		if (
+			ancestor.type !== 'CallExpression' &&
+			ancestor.type !== 'OptionalCallExpression' &&
+			ancestor.type !== 'NewExpression'
+		) {
+			return false
+		}
+		const keyArgument = signingKeyArgument.get(
+			getCalleeName(ancestor.callee) ?? '',
+		)
+		if (!keyArgument) return false
+		const args = ancestor.arguments ?? []
+		return args[keyArgument(args.length)] === (ancestors[index + 1] ?? node)
+	})
 }
 
 /** `fetch(url)`, `new URL(url)`, `new Request(url)`, and `x.fetch(url)`. */

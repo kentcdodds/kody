@@ -163,6 +163,13 @@ export type AstNode = ModuleAstNode & {
 	operator?: unknown
 	declaration?: AstNode
 	declarations?: Array<AstNode>
+	params?: Array<AstNode>
+	body?: AstNode | Array<AstNode>
+	elements?: Array<AstNode | null | undefined>
+	argument?: AstNode
+	param?: AstNode
+	parameter?: AstNode
+	kind?: unknown
 	program?: { body?: Array<AstNode> }
 }
 

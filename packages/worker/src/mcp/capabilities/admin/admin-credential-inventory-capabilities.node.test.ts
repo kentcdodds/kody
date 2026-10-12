@@ -72,6 +72,7 @@ const fullReport = {
 			'default-param': 0,
 			comparison: 0,
 			'unused-binding': 0,
+			'reassigned-binding': 0,
 			'template-computed': 0,
 			'url-host': 0,
 			unparsed: 0,

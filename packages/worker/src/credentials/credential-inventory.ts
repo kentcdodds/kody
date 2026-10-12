@@ -657,9 +657,10 @@ function collectUsage(items: ReadonlyArray<StoredItem>) {
 		if (!item.result) continue
 		for (const reference of item.result.references) {
 			for (const id of reference.credentialIds) {
-				entry(id, reference.table).placements.add(
-					placementKey(reference.placement),
-				)
+				const usage = entry(id, reference.table)
+				// Each read of a binding carries the placement the value lands in.
+				if (reference.placement.type === 'binding') continue
+				usage.placements.add(placementKey(reference.placement))
 			}
 		}
 		for (const slot of item.result.slots) {
