@@ -110,6 +110,7 @@ async function resolveWith<U extends CredentialUse>(
 				orgId: input.orgId,
 				enablementId,
 				error,
+				credentialResourceType: subject.resourceType,
 			})
 		}
 		throw error

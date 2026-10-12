@@ -163,7 +163,9 @@ gate every trigger passes:
   pause keeps the credential's family and name (what the waiting queue and
   `enablementList` show) and its id in `paused_credential_id`, which the resume
   check uses. A pause on a name that matched no credential has no id and
-  resolves the name on each check (old lane).
+  resolves the name on each check (old lane). A pause on a vault with no binding
+  is recorded as `secret-provider` and resolves the provider id to its live
+  binding on each check, never to a stored secret of the same name.
 - The next event checks again and resumes a paused enablement once access is
   back. There is never a fallback to another person, credential, or Owner.
 - No `on` enablement means nothing runs: a scheduled tick is skipped, a webhook

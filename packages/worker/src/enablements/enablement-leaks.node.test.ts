@@ -692,7 +692,7 @@ test('a pause keeps the credential name people read and its id, and a pause on a
 	})
 })
 
-test('a run that references a vault with no binding pauses the enablement on Use, like other credentials', async () => {
+test('a run that references a vault with no binding pauses the enablement on Use and resumes on Use of the binding', async () => {
 	const t = await setup()
 	const cys = await t.enable('cy', 'subscription', emailTopic)
 	t.setPackageCode(async (callerContext, packageId) => {
@@ -720,10 +720,58 @@ test('a run that references a vault with no binding pauses the enablement on Use
 		state: 'paused',
 		pause: {
 			reason: 'credential_access',
-			resourceType: 'secret',
+			resourceType: 'secret-provider',
 			resourceId: '1password',
 			credentialId: null,
 		},
+	})
+
+	// A stored secret with the provider's name is not the vault.
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: '1password',
+		value: 'not-the-vault',
+	})
+	await t.grant(t.people.cy.userId, 'secret', '1password')
+	t.runs.splice(0)
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toEqual([])
+
+	await t.db
+		.prepare(
+			`INSERT INTO secret_provider_bindings (
+				user_id, provider_id, package_id, door_secret_name, config_json
+			) VALUES (?, '1password', 'pkg-shared', 'opToken', '{}')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toEqual([])
+
+	const binding = await t.db
+		.prepare(`SELECT id FROM secret_provider_bindings WHERE user_id = ?`)
+		.bind(t.orgId)
+		.first<{ id: string }>()
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: binding?.id ?? '',
+		family: 'secret',
+		subject: { type: 'user', id: t.people.cy.userId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.people.owner.userId,
+		audit: createTestOrgAuditWriter(),
+	})
+	t.setPackageCode(async () => {})
+	await t.sendEmail('cy@acme.example')
+	expect(t.runs).toHaveLength(1)
+	await expect(t.enablement(cys.id)).resolves.toMatchObject({
+		state: 'on',
+		pause: null,
 	})
 })
 
