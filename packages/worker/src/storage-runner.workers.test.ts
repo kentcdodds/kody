@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -33,12 +33,9 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
-beforeAll(async () => {
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-})
-
 async function ensureStorageRunnerTestSchema() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 }
 
@@ -54,6 +51,7 @@ async function seedPlannedStorageUser(
 	meterBytes: number,
 ) {
 	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)

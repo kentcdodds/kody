@@ -3,7 +3,7 @@ import {
 	ownerIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
@@ -37,13 +37,10 @@ function createPackageCallerContext(input: {
 	})
 }
 
-beforeAll(async () => {
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-})
-
 test('storage capabilities keep a package out of another package bucket', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 
