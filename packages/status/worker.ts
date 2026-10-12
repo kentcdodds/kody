@@ -1,6 +1,8 @@
 import { faviconIcoRedirectLocation } from './favicon.ts'
 import {
+	handleIncidentDeleteRequest,
 	handleIncidentRetrospectiveRequest,
+	parseIncidentPath,
 	parseIncidentRetrospectivePath,
 	unknownStatusMaintenanceResponse,
 } from './retrospective-maintenance.ts'
@@ -23,16 +25,28 @@ async function handleMaintenance(
 	env: StatusWorkerEnv,
 	pathname: string,
 ): Promise<Response> {
-	const incidentId = parseIncidentRetrospectivePath(pathname)
-	if (incidentId === null) return unknownStatusMaintenanceResponse()
-	const store = getStore(env)
-	return handleIncidentRetrospectiveRequest({
-		request,
-		incidentId,
-		secret: env.STATUS_INCIDENT_EVENT_SECRET,
-		setRetrospective: (id, retrospective) =>
-			store.setIncidentRetrospective(id, retrospective),
-	})
+	const retrospectiveIncidentId = parseIncidentRetrospectivePath(pathname)
+	if (retrospectiveIncidentId !== null) {
+		const store = getStore(env)
+		return handleIncidentRetrospectiveRequest({
+			request,
+			incidentId: retrospectiveIncidentId,
+			secret: env.STATUS_INCIDENT_EVENT_SECRET,
+			setRetrospective: (id, retrospective) =>
+				store.setIncidentRetrospective(id, retrospective),
+		})
+	}
+	const incidentId = parseIncidentPath(pathname)
+	if (incidentId !== null) {
+		const store = getStore(env)
+		return handleIncidentDeleteRequest({
+			request,
+			incidentId,
+			secret: env.STATUS_INCIDENT_EVENT_SECRET,
+			deleteIncident: (id) => store.deleteIncident(id),
+		})
+	}
+	return unknownStatusMaintenanceResponse()
 }
 
 export default {

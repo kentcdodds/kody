@@ -404,9 +404,11 @@ Worker secrets:
   which fans `status.incident.opened` / `status.incident.resolved` to admin
   package subscriptions, and for status
   `POST /__maintenance/incidents/:id/retrospective`, which attaches a public
-  writeup to a resolved probe-derived incident. When unset, the origin endpoint
-  returns not-configured, the status worker skips emit, and the retrospective
-  route returns 503; packages can reconcile open/resolve from public
+  writeup to a resolved probe-derived incident, and status
+  `DELETE /__maintenance/incidents/:id`, which removes a resolved
+  health-check-only incident. When unset, the origin endpoint returns
+  not-configured, the status worker skips emit, and both incident maintenance
+  routes return 503; packages can reconcile open/resolve from public
   `/status.json`. Synced from the GitHub Actions secret of the same name on
   production deploy.
 

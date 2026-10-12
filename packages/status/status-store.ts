@@ -2,10 +2,12 @@ import { DurableObject } from 'cloudflare:workers'
 import { sendAlertEmail } from './alert-email.ts'
 import { incidentMinutesForDay, type IncidentSpan } from './day-bars.ts'
 import {
+	dailyFailedAfterIncidentDelete,
 	dailyFailedIncrement,
 	daysFromFirstSample,
 	daysToClearNonIncidentFailures,
 	nonIncidentFailuresRetiredMetaKey,
+	utcDaysInSpan,
 } from './incident-rollups.ts'
 import {
 	composeStatusEmail,
@@ -717,6 +719,71 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		const updated = this.loadIncidentById(id)
 		if (!updated) return { ok: false, error: 'not-found' }
 		return { ok: true, incident: updated }
+	}
+
+	async deleteIncident(
+		id: number,
+	): Promise<
+		| { ok: true; incident: IncidentView }
+		| { ok: false; error: 'not-found' | 'not-resolved' }
+	> {
+		const row = this.ctx.storage.sql
+			.exec<IncidentRow>(selectIncidentByIdSql, id)
+			.toArray()[0]
+		const incident = row ? incidentRowToView(row) : null
+		if (!row || !incident) return { ok: false, error: 'not-found' }
+		if (row.resolved_at === null) return { ok: false, error: 'not-resolved' }
+		const resolvedAt = row.resolved_at
+		const now = Date.now()
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec(`DELETE FROM incidents WHERE id = ?`, id)
+			const days = utcDaysInSpan(row.started_at, resolvedAt)
+			const placeholders = days.map(() => '?').join(', ')
+			const stats = this.ctx.storage.sql
+				.exec<{ day: string; failed: number }>(
+					`SELECT day, failed FROM daily_stats
+					WHERE component = ? AND day IN (${placeholders})`,
+					row.component,
+					...days,
+				)
+				.toArray()
+			const removedFailedSamplesByDay = new Map<string, number>()
+			for (const sample of this.ctx.storage.sql
+				.exec<{ checked_at: number }>(
+					`SELECT checked_at FROM samples
+					WHERE component = ? AND ok = 0 AND checked_at >= ? AND checked_at < ?`,
+					row.component,
+					row.started_at,
+					resolvedAt,
+				)
+				.toArray()) {
+				const day = toDay(sample.checked_at)
+				removedFailedSamplesByDay.set(
+					day,
+					(removedFailedSamplesByDay.get(day) ?? 0) + 1,
+				)
+			}
+			const remainingSpans =
+				this.loadIncidentSpans(0, now).get(incident.component) ?? []
+			for (const stat of dailyFailedAfterIncidentDelete({
+				stats,
+				removedFailedSamplesByDay,
+				remainingSpans,
+				now,
+			})) {
+				this.ctx.storage.sql.exec(
+					`UPDATE daily_stats SET failed = ? WHERE component = ? AND day = ?`,
+					stat.failed,
+					row.component,
+					stat.day,
+				)
+			}
+		})
+		console.info(
+			'status-incident-deleted',
+			JSON.stringify({ id, component: row.component }),
+		)
+		return { ok: true, incident }
 	}
 
 	async getSnapshot(): Promise<StatusSnapshot> {
