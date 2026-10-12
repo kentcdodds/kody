@@ -142,8 +142,8 @@ export type PublicProfilePackage = {
 	 */
 	needsRepublish: boolean
 	/**
-	 * True when this row is a saved package. Profile lists currently only
-	 * include saved packages, so this is always true there.
+	 * True when this row is a saved package (package extension). Plain repos
+	 * from `user_repos` set this false.
 	 */
 	hasPackage: boolean
 	/** True when the saved package declares a package app. */
@@ -160,6 +160,11 @@ export type PublicProfilePackage = {
 	publishedCommit: string | null
 	/** Listing icon commit when an active community listing exists. */
 	listingIconCommit: string | null
+	/**
+	 * Plain-repo list mark commit (`indexed_commit` or `published_commit`).
+	 * When set with `hasPackage: false`, `packageId` is the `user_repos.id`.
+	 */
+	repoIconCommit: string | null
 }
 
 /** Internal list row: `sourceId` is used to attach job counts, then stripped. */

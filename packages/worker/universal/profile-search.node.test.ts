@@ -41,13 +41,33 @@ const privateNoApp = {
 	communityListingKodyId: null,
 	communityPublishedAt: null,
 	needsRepublish: false,
-	hasPackage: false,
+	hasPackage: true,
 	hasApp: false,
 	webhookCount: 0,
 	jobCount: 0,
 	iconUrl: null,
 	isPrivate: true,
 	hidden: true,
+} satisfies PublicProfilePackageItem
+
+const plainRepo = {
+	name: '@kody/notes-repo',
+	kodyId: 'notes-repo',
+	description: 'Plain repo without a package.',
+	tags: [],
+	updatedAt: '2026-06-15T00:00:00.000Z',
+	createdAt: '2026-03-01T00:00:00.000Z',
+	communityListingId: null,
+	communityListingKodyId: null,
+	communityPublishedAt: null,
+	needsRepublish: false,
+	hasPackage: false,
+	hasApp: false,
+	webhookCount: 0,
+	jobCount: 0,
+	iconUrl: null,
+	isPrivate: true,
+	hidden: false,
 } satisfies PublicProfilePackageItem
 
 const privateListed = {
@@ -196,7 +216,7 @@ test('chip and search profile href changes skip the loader', () => {
 
 test('profile package chips, search, and sort filter the already-loaded list', () => {
 	const packages = [listedApp, privateNoApp]
-	const inventory = [listedApp, privateNoApp, privateListed]
+	const inventory = [listedApp, privateNoApp, privateListed, plainRepo]
 	const ids = (
 		list: Array<PublicProfilePackageItem>,
 		overrides: Partial<ProfileFilters>,
@@ -216,8 +236,8 @@ test('profile package chips, search, and sort filter the already-loaded list', (
 		[packages, { hidden: 'yes' }, ['secret']],
 		[packages, { app: 'yes' }, ['notes-app']],
 		[packages, { app: 'no' }, ['secret']],
-		[packages, { package: 'yes' }, ['notes-app']],
-		[packages, { package: 'no' }, ['secret']],
+		[packages, { package: 'yes' }, ['notes-app', 'secret']],
+		[inventory, { package: 'no' }, ['notes-repo']],
 		[packages, { listing: 'unpublished' }, ['secret']],
 		[inventory, { listing: 'unpublished' }, ['secret']],
 		[inventory, { listing: 'published' }, ['notes-app', 'secret-app']],

@@ -12,6 +12,7 @@ import {
 } from '#universal/community-public-types.ts'
 import {
 	buildCommunityIconUrl,
+	buildRepoIdentityIconUrl,
 	resolvePackageListIconUrl,
 } from '#universal/identity-icon-urls.ts'
 import {
@@ -82,15 +83,22 @@ export function toPublicProfilePackageItem(
 		hasApp: pkg.hasApp,
 		webhookCount: pkg.webhookCount,
 		jobCount: pkg.jobCount,
-		iconUrl: options?.username
-			? resolvePackageListIconUrl({
-					username: options.username,
-					kodyId: pkg.kodyId,
-					listingId: pkg.communityListingId,
-					listingIconCommit: pkg.listingIconCommit,
-					publishedCommit: pkg.publishedCommit,
-				})
-			: null,
+		iconUrl: !pkg.hasPackage
+			? pkg.repoIconCommit
+				? buildRepoIdentityIconUrl({
+						repoId: pkg.packageId,
+						iconCommit: pkg.repoIconCommit,
+					})
+				: null
+			: options?.username
+				? resolvePackageListIconUrl({
+						username: options.username,
+						kodyId: pkg.kodyId,
+						listingId: pkg.communityListingId,
+						listingIconCommit: pkg.listingIconCommit,
+						publishedCommit: pkg.publishedCommit,
+					})
+				: null,
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),
