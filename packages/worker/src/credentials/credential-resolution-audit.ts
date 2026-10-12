@@ -14,6 +14,10 @@ import {
 	SecretProviderGrantDeniedError,
 	SecretProviderHostDeniedError,
 } from '#mcp/secrets/secret-providers/errors.ts'
+import {
+	CredentialNotFoundError,
+	CredentialRequestRefusedError,
+} from './credential-request.ts'
 import { type PackageStamp } from './package-stamp.ts'
 
 export const credentialResolveAuditAction = 'credential.resolve'
@@ -43,6 +47,12 @@ export function credentialResolutionOutcomeForError(
 ): CredentialResolutionOutcome {
 	if (error instanceof AuthorizationError) {
 		return { result: 'denied', reason: error.code }
+	}
+	if (error instanceof CredentialRequestRefusedError) {
+		return { result: 'denied', reason: error.code }
+	}
+	if (error instanceof CredentialNotFoundError) {
+		return { result: 'failure', reason: 'not_found' }
 	}
 	if (
 		error instanceof PackageSecretAccessDeniedError ||

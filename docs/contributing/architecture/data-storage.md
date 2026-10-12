@@ -1499,6 +1499,11 @@ on write unless a migration backfills existing rows.
   `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
   its OAuth app's provider, written on connect and backfilled by the migration.
   Request placement does not read them; placeholders still decide it.
+- `secret_entries.kind` (`0117-credential-kinds.sql`) is the credential's kind
+  from ADR 0068: `secret` (every existing row and the default), `url`, `login`,
+  or `signing`. Placeholders fill only `secret` rows. A `url` value is a whole
+  HTTPS URL that `resolveCredential` hands to the gateway only for one of the
+  row's `allowed_hosts`; package code sends a relative path, never the URL.
 - `credential_inventory_runs` and `credential_inventory_items`
   (`0112-credential-inventory.sql`,
   `packages/worker/src/credentials/credential-inventory.ts`) hold the admin

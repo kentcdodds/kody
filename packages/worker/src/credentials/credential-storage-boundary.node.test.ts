@@ -21,6 +21,7 @@ const doorModules = new Set([
 	'packages/worker/src/credentials/secret-resolvers.ts',
 	'packages/worker/src/credentials/oauth-resolvers.ts',
 	'packages/worker/src/credentials/mcp-resolver.ts',
+	'packages/worker/src/credentials/url-resolver.ts',
 ])
 
 type StorageRule = {
@@ -39,8 +40,14 @@ const accountSecretsData = 'packages/worker/src/app/account-secrets-data.ts'
 const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/mcp/secrets/service.ts',
-		symbols: ['resolveSecret', 'findSecretForUse'],
+		symbols: [
+			'resolveSecret',
+			'findSecretForUse',
+			'findStoredCredentialForUse',
+		],
 		allowed: {
+			'packages/worker/src/credentials/stored-credential.ts':
+				'Later-kind lookup; only door resolvers call its readValue, after authorizing.',
 			'packages/worker/src/mcp/secrets/secret-providers/service.ts':
 				'Vault door key read inside resolveProviderSecret, which only the door calls.',
 			[accountSecretsHandler]:
@@ -51,7 +58,7 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	},
 	{
 		module: 'packages/worker/src/mcp/secrets/repo.ts',
-		symbols: ['getSecretEntry'],
+		symbols: ['getSecretEntry', 'getStoredCredentialEntry'],
 		allowed: {
 			'packages/worker/src/mcp/secrets/service.ts': 'Secret storage layer.',
 		},
@@ -131,6 +138,16 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/credentials/mcp-resolver.ts',
 		symbols: ['mcpConnectionResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/stored-credential.ts',
+		symbols: ['findStoredCredential'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/url-resolver.ts',
+		symbols: ['urlCredentialResolver'],
 		allowed: {},
 	},
 ]

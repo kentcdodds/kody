@@ -32,6 +32,7 @@ import {
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
+	getStoredCredentialEntry,
 	listPackageScopeSecretMetadata,
 	listSecretBucketsByScope,
 	listSecretMetadataForBucket,
@@ -51,6 +52,7 @@ import {
 	type ListedSecret,
 	type SecretMetadata,
 	type SecretScope,
+	type StoredCredentialKind,
 } from './types.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
@@ -669,7 +671,8 @@ async function findSecretEntry(input: ResolveSecretInput) {
 				bucketId: bucket.id,
 				name: input.name,
 			})
-			if (!entry) return null
+			// A later kind places its own value; a placeholder never fills it.
+			if (!entry || entry.kind !== 'secret') return null
 			if (!input.includeExpired && isSecretExpired(entry.expires_at)) {
 				return null
 			}
@@ -751,6 +754,48 @@ export async function findSecretForUse(input: ResolveSecretInput): Promise<{
 				userSecretContext(input.userId),
 			),
 		}),
+	}
+}
+
+export type StoredCredential = {
+	credentialId: string
+	name: string
+	kind: StoredCredentialKind
+	allowedHosts: Array<string>
+}
+
+/**
+ * A stored credential by id for a later-kind resolver: its metadata, and a
+ * `readValue` that decrypts only when the door calls it after authorizing.
+ * Null when `ownerId` has no live, unexpired user-scope entry with that id.
+ */
+export async function findStoredCredentialForUse(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	ownerId: OwnerId
+	credentialId: string
+}): Promise<{
+	found: StoredCredential
+	readValue: () => Promise<string>
+} | null> {
+	const row = await getStoredCredentialEntry({
+		db: input.env.APP_DB,
+		ownerId: input.ownerId,
+		credentialId: input.credentialId,
+	})
+	if (!row) return null
+	return {
+		found: {
+			credentialId: row.id,
+			name: row.name,
+			kind: row.kind,
+			allowedHosts: parseAllowedHosts(row.allowed_hosts),
+		},
+		readValue: () =>
+			decryptSecretValue(
+				input.env,
+				row.encrypted_value,
+				userSecretContext(input.ownerId),
+			),
 	}
 }
 
