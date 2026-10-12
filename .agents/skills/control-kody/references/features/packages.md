@@ -29,7 +29,6 @@ only) for package or repo, private, hidden, published to Community or not
 published to Community (packages only), webhook count, job count, and whether it
 has an app. Private repositories do not also get a “not published to Community”
 signifier — the private icon is enough. List marks come from
-<<<<<<< HEAD
 `/@username/:kodyId/icon/:iconCommit` for both packages and plain repos (the
 route falls back to `entity_kind:'repo'` with the same access as the detail
 page). `/account/repos/:repoId/icon/:iconCommit` remains the MCP/owner-only
@@ -37,25 +36,13 @@ lane. Each repository lives at `/@username/:kodyId` (the URL slug is the package
 or repo name leaf; **Repo** tab: description, tags, license, badges),
 `/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
 (README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (**Settings** tab for packages: lock, visibility,
-webhooks, delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD
-review). Opening an allowlisted image or video in the tree renders a preview;
-the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree).
-`/account/packages` 404s. `/account/packages/:packageId` redirects to the
-=======
-`/@username/:kodyId/icon/:iconCommit` (packages) and
-`/account/repos/:repoId/icon/:iconCommit` (plain repos). Each repository lives
-at `/@username/:kodyId` (the URL slug is the package or repo name leaf; **Repo**
-tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
-(**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
-published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab for
-packages: lock, forkable visibility, internet-visible, webhooks, delete),
+`/@username/:kodyId/settings` (**Settings** tab for packages: lock, forkable
+visibility, internet-visible, webhooks, delete),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
 internet-visible). Opening an allowlisted image or video in the tree renders a
 preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the
 tree). `/account/packages` 404s. `/account/packages/:packageId` redirects to the
->>>>>>> 182fedf14 (docs: document internet-visible and capability approval in packages map)
 canonical package page.
 
 ## Drive it
