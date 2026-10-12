@@ -1,3 +1,4 @@
+import { preferLocalCliExecuteGuidance } from '#mcp/instructions/prefer-local-cli-execute-guidance.ts'
 import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 
 /**
@@ -7,6 +8,8 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
  * guidance belong in skills / guides, not this stub.
  *
  * Copy is Kent-locked; change only with an explicit server-instructions update.
+ * Prefer-local one-liner is {@link preferLocalCliExecuteGuidance} (shared with
+ * execute + api tool descriptions).
  */
 export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's personal software platform of primitives including:
 
@@ -17,9 +20,11 @@ export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's
 - triggers
 - apps
 
+${preferLocalCliExecuteGuidance}
+
 With these primitives you can do a wide variety of things. When the user asks you to do something, start by calling the \`search\` tool, then use \`execute\` to write code and have it evaluated in an isolated environment in the cloud in Kody.
 
-If you have access to a computer with Node v22+, you can use Kody more efficiently and cheaply using the CLI. This is the preferred interaction layer. Learn more with \`search({ entity: "guide:local_execute" })\`.`
+Learn more with \`search({ entity: "guide:local_execute" })\`.`
 
 /** Soft budget for the always-on stub (excluding user overlay). */
 export const maxBaseMcpServerInstructionsChars = 800

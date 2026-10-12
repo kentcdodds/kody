@@ -6,6 +6,7 @@ import {
 	formatLimitedExecutionOutput,
 	limitExecutionResultValue,
 } from '#mcp/executor.ts'
+import { preferLocalCliExecuteGuidance } from '#mcp/instructions/prefer-local-cli-execute-guidance.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { callerContextFields, logMcpEvent } from '#mcp/observability.ts'
 import { createApiInvocationContext } from '#worker/open-api/context.ts'
@@ -37,7 +38,8 @@ export const apiToolDescription = [
 	'',
 	'Use `execute` instead when you need to compose several calls, transform results, fetch external URLs, or call an execute-only capability.',
 	'',
-	'Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available. Agents already on this MCP session: call `cliCredentialBootstrap` with `lifetime: "short"` (single-task) or `"long"` (returns a one-shot `kody_bc_…` code + `cli_command` that includes lifetime flags, never a `kody_at_…`), run that CLI command, then `npx @kodycodes/cli execute --local --code \'…\'` — no second interactive OAuth and no `tokenCreate`. Interactive humans: `kody login` then `--local`. Mint `tokenCreate` only for CI/headless without an MCP session (include a required lifetime; set `KODY_API_TOKEN` in the environment, never paste into chat). If `--local` cannot run, use Open API / MCP `api` or fix the environment. See https://kody.codes/docs/local-execute and https://kody.codes/docs/open-api.',
+	preferLocalCliExecuteGuidance,
+	'Agents already on this MCP session: call `cliCredentialBootstrap` with `lifetime: "short"` (single-task) or `"long"` (returns a one-shot `kody_bc_…` code + `cli_command` that includes lifetime flags, never a `kody_at_…`), run that CLI command, then `npx @kodycodes/cli execute --local --code \'…\'` — no second interactive OAuth and no `tokenCreate`. Interactive humans: `kody login` then `--local`. Mint `tokenCreate` only for CI/headless without an MCP session (include a required lifetime; set `KODY_API_TOKEN` in the environment, never paste into chat). If `--local` cannot run, use Open API / MCP `api` or fix the environment. See https://kody.codes/docs/local-execute and https://kody.codes/docs/open-api.',
 ].join('\n')
 
 export const apiToolAnnotations = {
