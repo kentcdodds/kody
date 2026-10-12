@@ -4,7 +4,7 @@
  * thresholds keep a single lucky probe from resolving one.
  */
 
-export const failureThreshold = 2
+export const failureThreshold = 3
 export const recoveryThreshold = 2
 
 export type ComponentProbeState = {
