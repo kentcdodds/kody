@@ -52,7 +52,32 @@ vi.mock('cloudflare:workers', async (importOriginal) => ({
 
 const integrationHooks = vi.hoisted(() => ({
 	beforeTokenRead: null as null | (() => Promise<void>),
+	duringRefresh: null as null | (() => Promise<void>),
 }))
+
+vi.mock('#worker/integrations/token-refresh.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/integrations/token-refresh.ts')
+		>()
+	return {
+		...actual,
+		refreshIntegrationTokens: async (
+			...args: Parameters<typeof actual.refreshIntegrationTokens>
+		) => {
+			const during = integrationHooks.duringRefresh
+			if (!during) return await actual.refreshIntegrationTokens(...args)
+			integrationHooks.duringRefresh = null
+			await during()
+			return {
+				refreshed: false,
+				skippedReason: 'refresh_not_applicable',
+				refreshedAt: null,
+				refreshTokenRotated: false,
+			} as const
+		},
+	}
+})
 
 vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
 	const actual =
@@ -1084,4 +1109,39 @@ test('a connection replaced after the Use check never hands its token to the old
 			credential: { use: 'integration-token', name: 'orgGoogle' },
 		}),
 	).rejects.toThrow(/orgGoogle/)
+
+	integrationHooks.duringRefresh = async () => {
+		await t.db
+			.prepare(`DELETE FROM user_integrations WHERE name = 'orgGoogle'`)
+			.run()
+		await insertConnection()
+	}
+	const replacementId =
+		(
+			await t.db
+				.prepare(`SELECT id FROM user_integrations WHERE name = 'orgGoogle'`)
+				.first<{ id: string }>()
+		)?.id ?? ''
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'credential',
+		resourceId: replacementId,
+		family: 'integration',
+		subject: { type: 'user', id: t.collaboratorId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: t.ownerStableId,
+		audit: createTestOrgAuditWriter(),
+	})
+	await expect(
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: t.personRequest(t.collaboratorId, 'collab', null),
+			baseUrl: 'https://example.com',
+			credential: { use: 'integration-refresh', name: 'orgGoogle' },
+		}),
+	).rejects.toThrow(/orgGoogle/)
+	expect(integrationHooks.duringRefresh).toBeNull()
 })
