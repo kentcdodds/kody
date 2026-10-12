@@ -1491,6 +1491,15 @@ on write unless a migration backfills existing rows.
   `user_oauth_apps`. Those columns are the only credential store — there are no
   `*_secret_name` pointers and the values are not in `secret_entries`. Account
   export redacts the ciphertext columns.
+- `provider`, `inject_json`, and `source_json` on `secret_entries`,
+  `user_integrations`, `mcp_server_settings`, and `secret_provider_bindings`
+  (`0111-credential-provider-inject-source.sql`) are the credential fields from
+  [ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md).
+  `inject_json` is a header, basic, or query rule and defaults to
+  `Authorization: Bearer {value}`. `source_json` is `"stored"`, or
+  `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
+  its OAuth app's provider, written on connect and backfilled by the migration.
+  Nothing reads these yet; placeholders keep resolving as before.
 
 ### Durable Object id contracts
 

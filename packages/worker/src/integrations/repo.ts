@@ -451,12 +451,19 @@ export async function upsertIntegrationConnection(input: {
 			`INSERT INTO user_integrations (
 				user_id, name, app_slug, platform_app_slug, account_label, description,
 				scopes_json, required_hosts_json, connected_at, token_refreshed_at,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				created_at, updated_at, provider
+			) VALUES (
+				?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+				COALESCE(
+					(SELECT provider FROM platform_oauth_apps WHERE slug = ?4),
+					(SELECT provider FROM user_oauth_apps WHERE user_id = ?1 AND slug = ?3)
+				)
+			)
 			ON CONFLICT(user_id, name)
 			DO UPDATE SET
 				app_slug = excluded.app_slug,
 				platform_app_slug = excluded.platform_app_slug,
+				provider = excluded.provider,
 				account_label = excluded.account_label,
 				description = excluded.description,
 				scopes_json = excluded.scopes_json,
