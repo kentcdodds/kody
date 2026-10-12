@@ -668,12 +668,7 @@ async function resolveVaultSecret(
 	// The binding is the credential: Use on it before any decrypt or provider
 	// invoke. A missing binding fails inside resolveProviderSecret.
 	if (binding) {
-		await authorizeActorUse(
-			input,
-			subject,
-			binding.credentialId,
-			binding.doorSecretName,
-		)
+		await authorizeActorUse(input, subject, binding.credentialId)
 	}
 	const resolved = await resolveProviderSecret({
 		env: input.env,
@@ -712,15 +707,12 @@ async function resolveIntegrationToken(
 	credential: Extract<CredentialTarget, { use: 'integration-token' }>,
 	subject: CredentialAuditSubject,
 ): Promise<string | null> {
-	await authorizeActorUse(
-		input,
-		subject,
-		await findIntegrationCredentialId({
-			env: input.env,
-			userId: input.orgId,
-			name: credential.name,
-		}),
-	)
+	const credentialId = await findIntegrationCredentialId({
+		env: input.env,
+		userId: input.orgId,
+		name: credential.name,
+	})
+	await authorizeActorUse(input, subject, credentialId)
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -756,7 +748,28 @@ async function resolveIntegrationToken(
 		userId: input.orgId,
 		name: credential.name,
 	})
+	await assertIntegrationUnchanged(input, credential.name, credentialId)
 	return resolved?.accessToken ?? null
+}
+
+/**
+ * Tokens are read by name, so a connection replaced after the Use check
+ * could hand over the replacement's token. Refuse when the name no longer
+ * names the credential that was authorized.
+ */
+async function assertIntegrationUnchanged(
+	input: ResolveCredentialInput<CredentialTarget>,
+	name: string,
+	authorizedId: string | null,
+) {
+	const currentId = await findIntegrationCredentialId({
+		env: input.env,
+		userId: input.orgId,
+		name,
+	})
+	if (currentId !== authorizedId) {
+		throw new Error(createMissingIntegrationAccessTokenMessage(name))
+	}
 }
 
 async function refreshIntegration(
@@ -764,15 +777,12 @@ async function refreshIntegration(
 	credential: Extract<CredentialTarget, { use: 'integration-refresh' }>,
 	subject: CredentialAuditSubject,
 ): Promise<IntegrationTokenRefreshResult> {
-	await authorizeActorUse(
-		input,
-		subject,
-		await findIntegrationCredentialId({
-			env: input.env,
-			userId: input.orgId,
-			name: credential.name,
-		}),
-	)
+	const credentialId = await findIntegrationCredentialId({
+		env: input.env,
+		userId: input.orgId,
+		name: credential.name,
+	})
+	await authorizeActorUse(input, subject, credentialId)
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -781,6 +791,9 @@ async function refreshIntegration(
 		packageId: input.packageStamp?.packageId ?? null,
 		packageKodyId: credential.packageKodyId,
 	})
+	// A refresh hands back no token; checking first keeps an old grant from
+	// refreshing a replacement connection.
+	await assertIntegrationUnchanged(input, credential.name, credentialId)
 	return await refreshIntegrationTokens({
 		env: input.env,
 		userId: input.orgId,

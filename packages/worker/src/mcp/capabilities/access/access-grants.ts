@@ -6,6 +6,7 @@ import {
 	requireMcpRequest,
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
+import { findCredentialIdByLegacyName } from '#worker/credentials/credential-ids.ts'
 import {
 	getGrantById,
 	isGrantResourceType,
@@ -299,13 +300,13 @@ export const accessListCapability = defineDomainCapability(
 				}
 				let resourceId = args.resource_id
 				if (legacyFamily && resourceId) {
-					const target = await resolveGrantTarget(ctx, {
-						type: legacyFamily,
-						id: resourceId,
-					}).catch(() => null)
-					if (!target) return { grants: [] }
-					resourceType = target.resourceType
-					resourceId = target.resourceId
+					const credentialId = await findCredentialIdByLegacyName(
+						db,
+						request.org.id,
+						{ type: legacyFamily, name: resourceId },
+					)
+					if (!credentialId) return { grants: [] }
+					resourceId = credentialId
 				}
 				const grants = await listGrants({
 					db,

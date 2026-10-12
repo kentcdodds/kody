@@ -23,6 +23,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import {
 	findCredentialIdByLegacyName,
+	getOrgCredential,
 	isLegacyNamedCredentialTarget,
 } from '#worker/credentials/credential-ids.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
@@ -111,9 +112,11 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
 }
 
 /**
- * What a credential pause waits on. The credential's stable id when it
- * existed at the denial; otherwise its name resolves now (old lane), and a
- * name that still names nothing only Owners and org-wide holders pass.
+ * What a credential pause waits on. The credential's stable id while it is
+ * still live; otherwise its name resolves now (old lane), so a grant on a
+ * deleted credential never resumes the enablement. A vault binding has no
+ * name lane. A name that still names nothing only Owners and org-wide
+ * holders pass.
  */
 async function storedPauseResource(
 	db: D1Database,
@@ -123,13 +126,20 @@ async function storedPauseResource(
 	if (pause?.reason !== 'credential_access') return null
 	if (!isOrgPermission(pause.permission)) return null
 	if (pause.credentialId) {
-		return {
-			permission: pause.permission,
-			resource: {
-				type: 'credential',
-				id: pause.credentialId,
-				orgId: enablement.orgId,
-			},
+		const credential = await getOrgCredential(
+			db,
+			enablement.orgId,
+			pause.credentialId,
+		)
+		if (credential?.live || credential?.kind === 'vault') {
+			return {
+				permission: pause.permission,
+				resource: {
+					type: 'credential',
+					id: credential.live ? pause.credentialId : '',
+					orgId: enablement.orgId,
+				},
+			}
 		}
 	}
 	if (!pause.resourceId) return null
