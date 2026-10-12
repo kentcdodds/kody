@@ -25,6 +25,8 @@ import {
 import { staticCallMeterRuntimeBridgeProviderName } from '#mcp/evaluation-side-effects.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
 import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
+import { createCredentialClientKodyTools } from './credential-client-tools.ts'
+import { createCredentialClientRuntimeSource } from './execute-modules/credential-client-source.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -60,6 +62,18 @@ export type PackageSecretToolOptions = {
 	 * imports still reach the factory.
 	 */
 	runPackageId?: string | null
+}
+
+export type CredentialClientToolOptions = {
+	/** The run (or CapabilityProxy credential) client handles are bound to. */
+	binding: string
+	/**
+	 * The package whose needs and sharing apply to a client open: the run's
+	 * package when hosted; for CapabilityProxy, a package id the call claims,
+	 * verified per call. Null for ad hoc code.
+	 */
+	resolvePackageId: (requested: unknown) => Promise<string | null>
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 export type EmailToolOptions = {
@@ -153,6 +167,7 @@ export type RuntimeHelperManifestContext = {
 	provider?: ResolvedProvider | undefined
 	packageStorageTools?: PackageStorageToolOptions | undefined
 	packageSecretTools?: PackageSecretToolOptions | undefined
+	credentialClientTools?: CredentialClientToolOptions | undefined
 	emailTools?: EmailToolOptions | undefined
 	workflowTools?: PackageWorkflowTools | undefined
 	packageEventTools?: PackageEventTools | undefined
@@ -218,6 +233,15 @@ function createPackageSecretsBindingPrelude() {
 const packageSecrets = __kodyTrustedPackageId
   ? __kodyPackageSecrets(__kodyTrustedPackageId)
   : null;
+	`.trim()
+}
+
+function createCredentialClientPrelude() {
+	return `
+${createCredentialClientRuntimeSource()}
+const { credential, credentials } = __kodyCreateCredentialRuntime(
+  (name, args) => ${kodyCallDispatcherName}(name, args),
+);
 	`.trim()
 }
 
@@ -530,6 +554,24 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		createPrelude: () => createPackageSecretsBindingPrelude(),
 	},
 	{
+		runtimeName: 'credential',
+		runtimeBindings: [
+			{ runtimeName: 'credential', absentValue: 'undefined' },
+			{ runtimeName: 'credentials', absentValue: 'undefined' },
+		],
+		unboundNames: ['credential', 'credentials'],
+		isBound: (context) => Boolean(context.credentialClientTools),
+		createPrelude: () => createCredentialClientPrelude(),
+		createKodyTools: (context) =>
+			context.credentialClientTools
+				? createCredentialClientKodyTools({
+						env: context.env,
+						callerContext: context.callerContext,
+						options: context.credentialClientTools,
+					})
+				: {},
+	},
+	{
 		runtimeName: 'email',
 		runtimeBindings: [{ runtimeName: 'email', absentValue: 'null' }],
 		unboundNames: ['email'],
@@ -613,6 +655,7 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'execute',
 	'packageSecretsFactory',
 	'packageSecrets',
+	'credential',
 	'email',
 	'workflows',
 	'packages',

@@ -73,6 +73,11 @@ import {
 	type PackageStamp,
 } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
+import {
+	placeCredentialClient,
+	withCredentialClientHint,
+} from './credential-client-gateway.ts'
 import { createMissingIntegrationAccessTokenMessage } from '#worker/integrations/credentials.ts'
 import { IntegrationHostNotAllowedError } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -119,6 +124,11 @@ type FetchGatewayProps = {
 	 * this to stay closed-world. Defaults to true.
 	 */
 	allowOutboundFetch?: boolean
+	/**
+	 * The run (or CapabilityProxy credential) `credential()` client handles
+	 * must be bound to. Without it, a client fetch is refused.
+	 */
+	credentialClientBinding?: string | null
 }
 export type { FetchGatewayProps }
 
@@ -219,15 +229,29 @@ export async function executeGatewayFetch(input: {
 				resource: 'outbound_fetches_per_day',
 			})
 		}
-		const {
-			request: transformed,
-			substitutedValues,
-			bodyFillDone,
-		} = await expandSecretPlaceholders({
+		const credentialClientToken = input.request.headers.get(
+			credentialClientHeaderName,
+		)
+		const expanded = await expandSecretPlaceholders({
 			request: input.request,
 			props: input.props,
 			env: input.env,
 		})
+		const { bodyFillDone } = expanded
+		let transformed = expanded.request
+		let substitutedValues = expanded.substitutedValues
+		let credentialClientShape: string | null = null
+		if (credentialClientToken !== null) {
+			const placed = await placeCredentialClient({
+				env: input.env,
+				props: input.props,
+				token: credentialClientToken,
+				request: transformed,
+			})
+			transformed = placed.request
+			substitutedValues = [...substitutedValues, ...placed.substitutedValues]
+			credentialClientShape = placed.shape
+		}
 		meteredEntityId = readMeteredRequestHostname(
 			input.request.url,
 			transformed.url,
@@ -252,7 +276,10 @@ export async function executeGatewayFetch(input: {
 				substitutedValues,
 			)
 		}
-		return redactEchoedSecrets(response, substitutedValues)
+		const redacted = redactEchoedSecrets(response, substitutedValues)
+		return credentialClientShape === null
+			? redacted
+			: withCredentialClientHint(redacted, credentialClientShape)
 	} catch (error) {
 		deadline?.fail()
 		throw asCallerFacingBodyFillError(error)
@@ -338,6 +365,8 @@ export async function expandSecretPlaceholders(input: {
 	bodyFillDone: Promise<void>
 }> {
 	const headers = new Headers(input.request.headers)
+	// A client handle is for the gateway only; it never leaves.
+	headers.delete(credentialClientHeaderName)
 	// Several APIs (GitHub most prominently) reject requests without a
 	// User-Agent outright, and workerd sends none by default — bare sandbox
 	// fetches hit opaque 403s. Callers that set their own keep it.

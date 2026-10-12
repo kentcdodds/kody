@@ -309,6 +309,24 @@ async function buildStampContent(
 				'utf8',
 			),
 		)
+		.update(
+			await readFile(
+				path.join(
+					repoRoot,
+					'packages/worker/src/mcp/execute-modules/credential-client-source.ts',
+				),
+				'utf8',
+			),
+		)
+		.update(
+			await readFile(
+				path.join(
+					repoRoot,
+					'packages/worker/src/credentials/credential-client-header.ts',
+				),
+				'utf8',
+			),
+		)
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')
 }

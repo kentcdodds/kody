@@ -698,6 +698,21 @@ export const kody =
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
+// \`credential\` carries \`credential.named\`, so it forwards the property too.
+export const credential = __kodyOptionalRuntimeFunctionExport('credential') &&
+	Object.freeze(Object.assign(
+		__kodyCreateRuntimeFunctionExport('credential'),
+		{
+			named: (...args) => {
+				const runtimeExport = __kodyReadRuntimeExport('credential');
+				if (typeof runtimeExport?.named !== 'function') {
+					throw new Error('kody:runtime export "credential" is not callable in this execution context.');
+				}
+				return runtimeExport.named(...args);
+			},
+		},
+	));
+export const credentials = __kodyOptionalRuntimeFunctionExport('credentials');
 export const packageContext = __kodyCreateRuntimeRecordExport('packageContext');
 export const packageSecrets = __kodyCreateRuntimeObjectProxy('packageSecrets');
 export const email = __kodyOptionalRuntimeObjectExport('email', null);
@@ -711,6 +726,8 @@ const __kodyRuntimeNamedExports = {
 	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,
+	credential,
+	credentials,
 	packageContext,
 	packageSecrets,
 	email,
@@ -848,6 +865,8 @@ const kodyRuntimeSharedExportNames = [
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',
+	'credential',
+	'credentials',
 	'packageContext',
 	'email',
 	'workflows',
