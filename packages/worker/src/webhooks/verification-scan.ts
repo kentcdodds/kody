@@ -12,13 +12,16 @@ import {
 const endpointPageSize = 1_000
 
 /**
- * `url_secret_only`: the manifest declares the webhook without `verification`.
- * `signature`: it declares `verification`. `undeclared`: the manifest no longer
+ * `implicit_url_secret`: the manifest declares the webhook without
+ * `verification`, so ingress falls back to URL-secret-only auth.
+ * `url_secret`: it declares `verification: { type: 'url-secret' }`.
+ * `signature`: it declares an HMAC scheme. `undeclared`: the manifest no longer
  * declares it, so ingress refuses deliveries. `manifest_unavailable`: the
  * package or its manifest could not be read.
  */
 export type WebhookVerificationStatus =
-	| 'url_secret_only'
+	| 'implicit_url_secret'
+	| 'url_secret'
 	| 'signature'
 	| 'undeclared'
 	| 'manifest_unavailable'
@@ -34,7 +37,7 @@ export type WebhookVerificationScanEndpoint = {
 	status: WebhookVerificationStatus
 	verification: {
 		type: string
-		header: string
+		header: string | null
 		secretName: string | null
 	} | null
 	delivered: number
@@ -47,8 +50,8 @@ export type WebhookVerificationScan = {
 	ownersFailed: Array<OwnerId>
 	truncated: boolean
 	totals: Record<WebhookVerificationStatus, number> & {
-		urlSecretOnlyOwners: number
-		urlSecretOnlyDelivered: number
+		implicitUrlSecretOwners: number
+		implicitUrlSecretDelivered: number
 	}
 	endpoints: Array<WebhookVerificationScanEndpoint>
 }
@@ -93,7 +96,7 @@ async function listWebhookEndpoints(db: D1Database, includeDisabled: boolean) {
 }
 
 /**
- * Which live webhook URLs still rely on URL-secret-only auth, judged from each
+ * Which live webhook URLs rely on URL-secret-only auth, judged from each
  * package's current manifest the same way ingress reads it, with successful
  * deliveries since `since` from each owner's RunLog. The rescan for
  * https://github.com/kentcdodds/kody/issues/3477.
@@ -158,9 +161,11 @@ export async function scanWebhookVerification(input: {
 			? 'manifest_unavailable'
 			: !declared
 				? 'undeclared'
-				: declared.verification
-					? 'signature'
-					: 'url_secret_only'
+				: !declared.verification
+					? 'implicit_url_secret'
+					: declared.verification.type === 'url-secret'
+						? 'url_secret'
+						: 'signature'
 		return {
 			ownerId: row.user_id as OwnerId,
 			ownerSlug: row.owner_slug,
@@ -170,13 +175,15 @@ export async function scanWebhookVerification(input: {
 			webhookName: row.webhook_name,
 			enabled: row.enabled === 1,
 			status,
-			verification: declared?.verification
-				? {
-						type: declared.verification.type,
-						header: declared.verification.header,
-						secretName: declared.verification.secretName ?? null,
-					}
-				: null,
+			verification: !declared?.verification
+				? null
+				: declared.verification.type === 'url-secret'
+					? { type: 'url-secret', header: null, secretName: null }
+					: {
+							type: declared.verification.type,
+							header: declared.verification.header,
+							secretName: declared.verification.secretName ?? null,
+						},
 			delivered: 0,
 			lastDeliveredAt: null,
 		}
@@ -228,8 +235,8 @@ export async function scanWebhookVerification(input: {
 		},
 	)
 
-	const urlSecretOnly = endpoints.filter(
-		(endpoint) => endpoint.status === 'url_secret_only',
+	const implicitUrlSecret = endpoints.filter(
+		(endpoint) => endpoint.status === 'implicit_url_secret',
 	)
 	const countStatus = (status: WebhookVerificationStatus) =>
 		endpoints.filter((endpoint) => endpoint.status === status).length
@@ -249,13 +256,15 @@ export async function scanWebhookVerification(input: {
 			.map((scan) => scan.ownerId),
 		truncated: deliveryScans.some((scan) => scan.truncated),
 		totals: {
-			url_secret_only: urlSecretOnly.length,
+			implicit_url_secret: implicitUrlSecret.length,
+			url_secret: countStatus('url_secret'),
 			signature: countStatus('signature'),
 			undeclared: countStatus('undeclared'),
 			manifest_unavailable: countStatus('manifest_unavailable'),
-			urlSecretOnlyOwners: new Set(urlSecretOnly.map((row) => row.ownerId))
-				.size,
-			urlSecretOnlyDelivered: urlSecretOnly.reduce(
+			implicitUrlSecretOwners: new Set(
+				implicitUrlSecret.map((row) => row.ownerId),
+			).size,
+			implicitUrlSecretDelivered: implicitUrlSecret.reduce(
 				(sum, row) => sum + row.delivered,
 				0,
 			),

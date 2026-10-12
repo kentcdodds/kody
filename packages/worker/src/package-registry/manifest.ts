@@ -396,6 +396,25 @@ export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
 
+export type PackageWebhookHmacVerificationEntry = {
+	type: 'hmac-sha256' | 'hmac-sha1'
+	header: string
+	secretName?: string
+	encoding: 'hex' | 'base64'
+	prefix?: string
+	signedPayload?: 'body' | 'timestamp.body'
+}
+
+export type PackageWebhookUrlSecretVerificationEntry = { type: 'url-secret' }
+
+/** The declared HMAC scheme, or null for url-secret and undeclared webhooks. */
+export function webhookHmacVerification(
+	verification: PackageWebhookManifestEntry['verification'] | undefined,
+): PackageWebhookHmacVerificationEntry | null {
+	if (!verification || verification.type === 'url-secret') return null
+	return verification
+}
+
 export type PackageWebhookManifestEntry = {
 	name: string
 	exportName: string
@@ -403,14 +422,10 @@ export type PackageWebhookManifestEntry = {
 	responseMode: 'ack' | 'sync'
 	inputMode: 'request' | 'params'
 	rateLimitPerMinute: number
-	verification: {
-		type: 'hmac-sha256' | 'hmac-sha1'
-		header: string
-		secretName?: string
-		encoding: 'hex' | 'base64'
-		prefix?: string
-		signedPayload?: 'body' | 'timestamp.body'
-	} | null
+	verification:
+		| PackageWebhookHmacVerificationEntry
+		| PackageWebhookUrlSecretVerificationEntry
+		| null
 	replay: {
 		timestampHeader?: string
 		timestampFormat?:
@@ -436,22 +451,24 @@ export function listPackageWebhooks(
 			inputMode: webhook.inputMode ?? 'request',
 			rateLimitPerMinute:
 				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
-			verification: webhook.verification
-				? {
-						type: webhook.verification.type,
-						header: webhook.verification.header,
-						...(webhook.verification.secretName !== undefined
-							? { secretName: webhook.verification.secretName }
-							: {}),
-						encoding: webhook.verification.encoding,
-						...(webhook.verification.prefix !== undefined
-							? { prefix: webhook.verification.prefix }
-							: {}),
-						...(webhook.verification.signedPayload !== undefined
-							? { signedPayload: webhook.verification.signedPayload }
-							: {}),
-					}
-				: null,
+			verification: !webhook.verification
+				? null
+				: webhook.verification.type === 'url-secret'
+					? { type: 'url-secret' as const }
+					: {
+							type: webhook.verification.type,
+							header: webhook.verification.header,
+							...(webhook.verification.secretName !== undefined
+								? { secretName: webhook.verification.secretName }
+								: {}),
+							encoding: webhook.verification.encoding,
+							...(webhook.verification.prefix !== undefined
+								? { prefix: webhook.verification.prefix }
+								: {}),
+							...(webhook.verification.signedPayload !== undefined
+								? { signedPayload: webhook.verification.signedPayload }
+								: {}),
+						},
 			replay: webhook.replay
 				? {
 						...(webhook.replay.timestampHeader !== undefined
@@ -1606,7 +1623,12 @@ export function buildPackageSearchDocument(
 			webhook.rateLimitPerMinute !== webhookDefaultRateLimitPerMinute
 				? `rate:${webhook.rateLimitPerMinute}`
 				: '',
-			webhook.verification ? `verify:${webhook.verification.header}` : '',
+			webhook.verification?.type === 'url-secret'
+				? 'verify:url-secret'
+				: webhook.verification
+					? `verify:${webhook.verification.header}`
+					: '',
+			webhook.verification?.type !== 'url-secret' &&
 			webhook.verification?.signedPayload
 				? `signed:${webhook.verification.signedPayload}`
 				: '',

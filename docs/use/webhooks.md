@@ -60,6 +60,10 @@ Rules:
   `params` (see [Trusted clients](#trusted-clients)).
 - `rateLimitPerMinute` is optional. Default **60**. Maximum **600** (gateway
   fan-in). A leaked URL is still bounded; there is no unlimited setting.
+- `verification.type` is `hmac-sha256`, `hmac-sha1`, or `url-secret` for senders
+  that cannot sign (see
+  [Senders that cannot sign](#senders-that-cannot-sign-url-secret)). The
+  remaining `verification` fields apply to the HMAC types only.
 - `verification.secretName` is **optional**. Omit it for GitHub-style hooks
   where Kody mints package-owned HMAC onto the webhook URL record at
   `webhookUrlMint` (not listed in account secrets, no host Allow). Set it only
@@ -558,15 +562,33 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
-### Webhooks without `verification`
+### Senders that cannot sign: `url-secret`
 
-When the manifest declares no `verification`, the URL secret is the only
-credential: any POST to the minted URL runs the export, and signature headers
-are ignored. Declare `verification` when the sender can sign. URL-secret-only
-webhooks are accepted through January 9, 2027
-([#3477](https://github.com/kentcdodds/kody/issues/3477)). The webhook runs as
-its enabler, the person who turned it on; with no `on` enablement the delivery
-answers 409 `enablement_not_on`.
+Declare `url-secret` when the sender has no way to sign requests (Telegram,
+Microsoft Graph, Azure DevOps, PostHog, a cron service). The URL secret is then
+the only credential: any POST to the minted URL runs the export, and signature
+headers are ignored. This is a supported, permanent verification type:
+
+```json
+{
+	"name": "events",
+	"export": "./handle-events",
+	"verification": { "type": "url-secret" }
+}
+```
+
+A webhook that declares an HMAC type never falls back to the URL secret: a
+request without a valid signature is refused with 401, even on the right URL.
+Prefer an HMAC type whenever the sender can sign.
+
+A webhook that declares no `verification` is treated as `url-secret` for now.
+Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
+declaration to existing packages; once none are left, publish will require
+`verification` on every webhook
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+Either way, the webhook runs as its enabler, the person who turned it on; with
+no `on` enablement the delivery answers 409 `enablement_not_on`.
 
 ## Synthetic smoke test
 

@@ -10,7 +10,8 @@ import {
 const runLogRetentionMs = 30 * 24 * 60 * 60 * 1000
 
 const statusSchema = z.enum([
-	'url_secret_only',
+	'implicit_url_secret',
+	'url_secret',
 	'signature',
 	'undeclared',
 	'manifest_unavailable',
@@ -34,7 +35,7 @@ const inputSchema = z.object({
 		.boolean()
 		.default(false)
 		.describe(
-			'Also list webhooks that already declare verification. Totals always count them.',
+			'Also list webhooks that declare an HMAC signature scheme. Totals always count them.',
 		),
 })
 
@@ -48,12 +49,13 @@ const outputSchema = z.object({
 		.boolean()
 		.describe('True when a RunLog page cap cut an owner delivery count short.'),
 	totals: z.object({
-		url_secret_only: z.number().int().nonnegative(),
+		implicit_url_secret: z.number().int().nonnegative(),
+		url_secret: z.number().int().nonnegative(),
 		signature: z.number().int().nonnegative(),
 		undeclared: z.number().int().nonnegative(),
 		manifest_unavailable: z.number().int().nonnegative(),
-		urlSecretOnlyOwners: z.number().int().nonnegative(),
-		urlSecretOnlyDelivered: z.number().int().nonnegative(),
+		implicitUrlSecretOwners: z.number().int().nonnegative(),
+		implicitUrlSecretDelivered: z.number().int().nonnegative(),
 	}),
 	endpoints: z.array(
 		z.object({
@@ -68,7 +70,7 @@ const outputSchema = z.object({
 			verification: z
 				.object({
 					type: z.string(),
-					header: z.string(),
+					header: z.string().nullable(),
 					secretName: z.string().nullable(),
 				})
 				.nullable(),
@@ -88,7 +90,7 @@ export const adminWebhookVerificationScanCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminWebhookVerificationScan',
 		description:
-			'List every live minted webhook URL across owners whose current package manifest declares no `verification` (URL-secret-only auth), with successful deliveries since a time. Also counts webhooks that declare verification, are no longer declared, or whose manifest could not be read. The rescan for retiring URL-secret-only webhook auth. Reads manifests and each owner RunLog, so it is slow. Returns ids, slugs, names, header names, secret names, and counts only; never secrets or payloads. Admin-only.',
+			'List every live minted webhook URL across owners that authenticates by URL secret only, split into `implicit_url_secret` (manifest declares no `verification`) and `url_secret` (declares `verification: { type: "url-secret" }`), with successful deliveries since a time. Also counts webhooks that declare an HMAC scheme, are no longer declared, or whose manifest could not be read. The rescan before `verification` becomes required on publish. Reads manifests and each owner RunLog, so it is slow. Returns ids, slugs, names, header names, secret names, and counts only; never secrets or payloads. Admin-only.',
 		keywords: [
 			'admin',
 			'webhook',
@@ -114,7 +116,7 @@ export const adminWebhookVerificationScanCapability = defineDomainCapability(
 					}),
 				{
 					successReason: (result) =>
-						`endpoints=${String(result.endpointsScanned)};url_secret_only=${String(result.totals.url_secret_only)};owners=${String(result.totals.urlSecretOnlyOwners)}`,
+						`endpoints=${String(result.endpointsScanned)};implicit_url_secret=${String(result.totals.implicit_url_secret)};owners=${String(result.totals.implicitUrlSecretOwners)}`,
 				},
 			)
 		},

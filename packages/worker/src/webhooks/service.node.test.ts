@@ -444,53 +444,68 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(second).not.toHaveProperty('url')
 })
 
-test('an unsigned webhook keeps a stored signing secret that reveal does not expose', async () => {
-	const owner = await setupOwner('signer@example.com', 'signer')
-	const { env, userId } = owner
-	const sentryManifest = vi
-		.mocked(loadPackageManifestBySourceId)
-		.getMockImplementation()!
-	const unsignedManifest = async () => ({
-		manifest: {
-			name: '@owner/sentry-bridge',
-			exports: { './handle-sentry-webhook': './src/handle-sentry-webhook.ts' },
-			kody: {
-				id: 'sentry-bridge',
-				description: 'Sentry bridge',
-				webhooks: [
-					{
-						name: 'sentry',
-						export: './handle-sentry-webhook',
-						responseMode: 'ack',
-					},
-				],
+test.each([
+	{ label: 'no verification', handle: 'signer', verification: {} },
+	{
+		label: 'url-secret verification',
+		handle: 'url-signer',
+		verification: { verification: { type: 'url-secret' } },
+	},
+])(
+	'an unsigned webhook ($label) keeps a stored signing secret that reveal does not expose',
+	async ({ handle, verification }) => {
+		const owner = await setupOwner(`${handle}@example.com`, handle)
+		const { env, userId } = owner
+		const sentryManifest = vi
+			.mocked(loadPackageManifestBySourceId)
+			.getMockImplementation()!
+		const unsignedManifest = async () => ({
+			manifest: {
+				name: '@owner/sentry-bridge',
+				exports: {
+					'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+				},
+				kody: {
+					id: 'sentry-bridge',
+					description: 'Sentry bridge',
+					webhooks: [
+						{
+							name: 'sentry',
+							export: './handle-sentry-webhook',
+							responseMode: 'ack',
+							...verification,
+						},
+					],
+				},
 			},
-		},
-	})
-	vi.mocked(loadPackageManifestBySourceId).mockImplementation(
-		unsignedManifest as never,
-	)
-	const reveal = () =>
-		revealWebhookUrlForWebsite({
-			env,
-			userId: ownerIdFromStored(userId),
-			username: 'signer',
-			target: sentryHook,
 		})
-	try {
-		const minted = await owner.mint()
-		const endpointId = parseWebhookUrlHandle(minted.handle)!
-		const stored = await owner.readEndpoint<{
-			hmac_secret_encrypted: string | null
-		}>(endpointId, 'hmac_secret_encrypted')
-		expect(stored?.hmac_secret_encrypted).toBeTruthy()
-		expect(await reveal()).not.toHaveProperty('signingSecret')
-		await owner.rotate()
-		expect(await reveal()).not.toHaveProperty('signingSecret')
-	} finally {
-		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
-	}
-})
+		vi.mocked(loadPackageManifestBySourceId).mockImplementation(
+			unsignedManifest as never,
+		)
+		const reveal = () =>
+			revealWebhookUrlForWebsite({
+				env,
+				userId: ownerIdFromStored(userId),
+				username: handle,
+				target: sentryHook,
+			})
+		try {
+			const minted = await owner.mint()
+			const endpointId = parseWebhookUrlHandle(minted.handle)!
+			const stored = await owner.readEndpoint<{
+				hmac_secret_encrypted: string | null
+			}>(endpointId, 'hmac_secret_encrypted')
+			expect(stored?.hmac_secret_encrypted).toBeTruthy()
+			expect(await reveal()).not.toHaveProperty('signingSecret')
+			await owner.rotate()
+			expect(await reveal()).not.toHaveProperty('signingSecret')
+		} finally {
+			vi.mocked(loadPackageManifestBySourceId).mockImplementation(
+				sentryManifest,
+			)
+		}
+	},
+)
 
 test('listing webhooks loads package manifests concurrently', async () => {
 	const userId = testStableUserIdFromEmail('many@example.com')

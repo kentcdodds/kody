@@ -58,6 +58,16 @@ function delivery(input: {
 test('the scan lists live webhooks that rely on the URL secret alone, with their recent deliveries', async () => {
 	const endpointRows = [
 		{
+			id: 'ep-relay',
+			enabled: 1,
+			user_id: 'org-kent',
+			package_id: 'pkg-desk',
+			webhook_name: 'relay',
+			owner_slug: 'kentcdodds',
+			kody_id: 'pr-desk',
+			source_id: 'src-desk',
+		},
+		{
 			id: 'ep-stripe',
 			enabled: 1,
 			user_id: 'org-kent',
@@ -142,6 +152,11 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 								prefix: 'sha256=',
 							},
 						},
+						{
+							name: 'relay',
+							export: './relay',
+							verification: { type: 'url-secret' },
+						},
 					])
 				case 'src-planner':
 					return manifest([{ name: 'upload', export: './upload' }])
@@ -197,16 +212,17 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 	)
 	expect(scan).toMatchObject({
 		since: '2026-10-11T06:00:00.000Z',
-		endpointsScanned: 5,
+		endpointsScanned: 6,
 		ownersFailed: [],
 		truncated: false,
 		totals: {
-			url_secret_only: 2,
+			implicit_url_secret: 2,
+			url_secret: 1,
 			signature: 1,
 			undeclared: 1,
 			manifest_unavailable: 1,
-			urlSecretOnlyOwners: 2,
-			urlSecretOnlyDelivered: 2,
+			implicitUrlSecretOwners: 2,
+			implicitUrlSecretDelivered: 2,
 		},
 	})
 	expect(
@@ -219,9 +235,10 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		]),
 	).toEqual([
 		['ada', 'broken', 'hook', 'manifest_unavailable', 0],
-		['ada', 'feature-planner', 'upload', 'url_secret_only', 0],
+		['ada', 'feature-planner', 'upload', 'implicit_url_secret', 0],
+		['kentcdodds', 'pr-desk', 'relay', 'url_secret', 0],
 		['kentcdodds', 'pr-desk', 'removed', 'undeclared', 0],
-		['kentcdodds', 'stripe-alerts', 'stripe', 'url_secret_only', 2],
+		['kentcdodds', 'stripe-alerts', 'stripe', 'implicit_url_secret', 2],
 	])
 	expect(
 		scan.endpoints.find((row) => row.endpointId === 'ep-stripe'),
@@ -229,6 +246,9 @@ test('the scan lists live webhooks that rely on the URL secret alone, with their
 		verification: null,
 		lastDeliveredAt: '2026-10-12T05:10:30.000Z',
 	})
+	expect(
+		scan.endpoints.find((row) => row.endpointId === 'ep-relay')?.verification,
+	).toEqual({ type: 'url-secret', header: null, secretName: null })
 
 	expect(
 		scan.endpoints.find((row) => row.endpointId === 'ep-upload')?.enabled,

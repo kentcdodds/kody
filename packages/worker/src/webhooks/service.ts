@@ -24,6 +24,7 @@ import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
 	type PackageWebhookManifestEntry,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackage } from '#worker/package-invocations/module-artifacts.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -344,7 +345,8 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
-	const verification = declared.verification ?? defaultWebhookVerification
+	const verification =
+		webhookHmacVerification(declared.verification) ?? defaultWebhookVerification
 
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
@@ -852,8 +854,9 @@ export async function dispatchSyntheticWebhookForUser(input: {
 				`Invalid request fixture method: ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
+		const hmacVerification = webhookHmacVerification(declared.verification)
 		const extraAllowedHeaders = [
-			...(declared.verification ? [declared.verification.header] : []),
+			...(hmacVerification ? [hmacVerification.header] : []),
 			...(declared.replay?.timestampHeader
 				? [declared.replay.timestampHeader]
 				: []),

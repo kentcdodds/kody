@@ -867,6 +867,53 @@ test('a webhook that declares no verification runs on its URL secret alone, with
 	).toEqual([])
 })
 
+test('explicit url-secret verification runs on the URL secret; a declared HMAC scheme never falls back to it', async () => {
+	const userId = await setupOwnerWithWebhooks(['explicit', 'signed'])
+	const body = JSON.stringify({ event: 'ping' })
+
+	declareWebhook({ name: 'explicit', verification: { type: 'url-secret' } })
+	expect(await statusOf('explicit', { body, unsigned: true })).toBe(202)
+	expect(
+		await statusOf('explicit', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
+		}),
+	).toBe(202)
+	expect(
+		await statusOf('explicit', { body, unsigned: true, urlSecret: 'wrong' }),
+	).toBe(404)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(
+		consoleInfo.mock.calls.filter(
+			([message]) => message === 'webhook-url-secret-only-authenticated',
+		),
+	).toEqual([])
+
+	declareWebhook({
+		name: 'signed',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-kody-signature',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+	})
+	const unsigned = await sendWebhook('signed', { body, unsigned: true })
+	expect(unsigned.status).toBe(401)
+	expect(
+		await statusOf('signed', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
+		}),
+	).toBe(401)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(
+		(await listDeliveries(userId, 'signed')).map((run) => run.errorMessage),
+	).toEqual(expect.arrayContaining(['missing_signature', 'invalid_signature']))
+	expect(await statusOf('signed', { body })).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(3)
+})
+
 test('a declared verification.secretName wins over the stored generated secret, on the same URL', async () => {
 	const userId = await setupOwnerWithWebhooks(['stripe'])
 	const generated = defaultSigningSecrets.get('stripe')!

@@ -21,7 +21,10 @@ import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
+import {
+	listPackageWebhooks,
+	webhookHmacVerification,
+} from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -673,20 +676,23 @@ export async function handleWebhookIngressRequest(
 		}
 	}
 
-	// URL-secret-only auth for webhooks that declare no verification is a
-	// migration lane. It stays on until 2027-01-09 (users are told URL-only
-	// webhooks keep working until then); no enforcement before that date, even
-	// if a rescan reaches zero. https://github.com/kentcdodds/kody/issues/3477
-	// The log counts every request removal would refuse, even ones a later
-	// check rejects; adminWebhookVerificationScan counts successful deliveries.
-	const verification = declared.verification
+	// A declared HMAC scheme never falls back to URL-secret-only auth.
+	// Webhooks that declare no verification are treated as
+	// `{ type: 'url-secret' }` until codemod 0012 makes the declaration
+	// explicit everywhere and publish requires it.
+	// https://github.com/kentcdodds/kody/issues/3477
+	// The log counts requests that rely on the implicit default, even ones a
+	// later check rejects.
+	const verification = webhookHmacVerification(declared.verification)
 	if (!verification) {
-		console.info('webhook-url-secret-only-authenticated', {
-			endpointId: liveEndpoint.id,
-			ownerId: liveEndpoint.userId,
-			packageId: liveEndpoint.packageId,
-			webhookName: liveEndpoint.webhookName,
-		})
+		if (!declared.verification) {
+			console.info('webhook-url-secret-only-authenticated', {
+				endpointId: liveEndpoint.id,
+				ownerId: liveEndpoint.userId,
+				packageId: liveEndpoint.packageId,
+				webhookName: liveEndpoint.webhookName,
+			})
+		}
 	} else {
 		const headerName = verification.header
 		const provided = request.headers.get(headerName)

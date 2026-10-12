@@ -28,6 +28,7 @@ import { packageIdFromJobId } from '#worker/jobs/package-job-id.ts'
 import {
 	listPackageSubscriptions,
 	listPackageWebhooks,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -402,7 +403,8 @@ export async function planOrgEnablements(input: {
 			packageName: packagesById.get(endpoint.package_id)?.name ?? null,
 			...enablerFor(endpoint.created_by_user_id),
 			unsignedWebhook:
-				!declared.verification && !endpoint.hmac_secret_encrypted,
+				!webhookHmacVerification(declared.verification) &&
+				!endpoint.hmac_secret_encrypted,
 		})
 	}
 

@@ -1527,14 +1527,17 @@ export type AccountConnectedAgentsLoaderData = {
 	}>
 }
 
-type PackageWebhookVerification = {
-	type: 'hmac-sha256' | 'hmac-sha1'
-	header: string
-	secretName?: string
-	encoding: 'hex' | 'base64'
-	prefix?: string
-	signedPayload?: 'body' | 'timestamp.body'
-} | null
+type PackageWebhookVerification =
+	| {
+			type: 'hmac-sha256' | 'hmac-sha1'
+			header: string
+			secretName?: string
+			encoding: 'hex' | 'base64'
+			prefix?: string
+			signedPayload?: 'body' | 'timestamp.body'
+	  }
+	| { type: 'url-secret' }
+	| null
 
 type PackageWebhookReplay = {
 	timestampHeader?: string

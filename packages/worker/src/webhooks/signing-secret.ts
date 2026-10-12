@@ -9,22 +9,22 @@ import {
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
-import { type PackageWebhookManifestEntry } from '#worker/package-registry/manifest.ts'
+import { type PackageWebhookHmacVerificationEntry } from '#worker/package-registry/manifest.ts'
 import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 /**
- * Shape of the signing secret mint gives a webhook that declares no
- * verification: HMAC-SHA256 of the body, hex encoded in `X-Kody-Signature`
- * as `sha256=<hex>`. Ingress does not require it; such webhooks are
- * authenticated by their URL secret.
+ * Shape of the signing secret mint gives a webhook that declares no HMAC
+ * scheme (url-secret or no verification): HMAC-SHA256 of the body, hex
+ * encoded in `X-Kody-Signature` as `sha256=<hex>`. Ingress does not require
+ * it; such webhooks are authenticated by their URL secret.
  */
 export const defaultWebhookVerification = {
 	type: 'hmac-sha256',
 	header: 'x-kody-signature',
 	encoding: 'hex',
 	prefix: 'sha256=',
-} as const satisfies NonNullable<PackageWebhookManifestEntry['verification']>
+} as const satisfies PackageWebhookHmacVerificationEntry
 
 /**
  * Package-owned HMAC plaintext for apply injection (`{{webhookSecret}}`).
@@ -67,7 +67,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 	env: Env
 	userId: OwnerId
 	endpoint: WebhookEndpointRecord
-	verification: NonNullable<PackageWebhookManifestEntry['verification']>
+	verification: PackageWebhookHmacVerificationEntry
 }): Promise<Array<WebhookHmacVerificationSecret>> {
 	const secrets: Array<WebhookHmacVerificationSecret> = []
 	const secretName = input.verification.secretName?.trim() ?? ''
@@ -167,7 +167,7 @@ export async function resolveHmacCiphertextForMint(input: {
 	userId: OwnerId
 	endpointId: string
 	packageId: string
-	verification: PackageWebhookManifestEntry['verification'] | null | undefined
+	verification: PackageWebhookHmacVerificationEntry | null | undefined
 	existingHmacEncrypted: string | null | undefined
 }): Promise<string | undefined> {
 	if (input.existingHmacEncrypted) return undefined
