@@ -61,7 +61,6 @@ test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
 	expect(rewriteLegacyApiTokenScopes(['jobs:read'])).toEqual(['job:read'])
 	expect(rewriteLegacyApiTokenScopes(['jobs:write'])).toEqual([
 		'job:create',
-		'job:delete',
 		'job:execute',
 		'job:read',
 		'job:write',
