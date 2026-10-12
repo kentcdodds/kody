@@ -284,6 +284,9 @@ test('only the key argument of a signing call is signing key material', () => {
 		await new SignJWT({ sub: '{{secret:SUBJECT}}' }).sign('{{secret:JOSE_KEY}}')
 		crypto.subtle.sign('HMAC', '{{secret:SUBTLE_KEY}}', '{{secret:SIGNED_DATA}}')
 		crypto.createHmac('sha256', '{{secret:NODE_KEY}}')
+		createSign('RSA-SHA256').sign('{{secret:SIGNER_KEY}}', 'hex')
+		await new SignJWT(claims).sign('{{secret:JOSE_OPTIONS_KEY}}', { crit: {} })
+		jwt.sign(claims, '{{secret:JWT_VAR_PAYLOAD_KEY}}')
 		toString('{{secret:PROTOTYPE_NAME}}')
 	`),
 	).toEqual({
@@ -294,6 +297,9 @@ test('only the key argument of a signing call is signing key material', () => {
 		SUBTLE_KEY: [{ type: 'signing' }],
 		SIGNED_DATA: [other('argument', null, 'sign')],
 		NODE_KEY: [{ type: 'signing' }],
+		SIGNER_KEY: [{ type: 'signing' }],
+		JOSE_OPTIONS_KEY: [{ type: 'signing' }],
+		JWT_VAR_PAYLOAD_KEY: [{ type: 'signing' }],
 		PROTOTYPE_NAME: [other('argument', null, 'toString')],
 	})
 })

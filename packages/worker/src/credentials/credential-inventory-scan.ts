@@ -160,31 +160,62 @@ const identifierPattern = /^[A-Za-z_$][A-Za-z0-9_$-]{0,63}$/
 const loginPathPattern =
 	/(?:^|[/_.-])(?:login|log-in|signin|sign-in|sign_in|session|sessions|auth|authenticate|authorize|token|tokens|oauth2?)(?:$|[/_.?-])/i
 
+const signingOutputEncodings = new Set([
+	'hex',
+	'base64',
+	'base64url',
+	'latin1',
+	'binary',
+])
+
 /**
- * Calls that take signing key material, with which argument holds the key
- * for a call with `argumentCount` arguments. Payload and option arguments are
- * classified like any other call argument.
+ * Calls that take signing key material, with which of the call's arguments
+ * holds the key. Payload and option arguments are classified like any other
+ * call argument.
  */
-const signingKeyArgument = new Map<string, (argumentCount: number) => number>([
+const signingKeyArgument = new Map<
+	string,
+	(args: ReadonlyArray<AstNode>) => number
+>([
 	// crypto.subtle.importKey(format, keyData, …)
 	['importKey', () => 1],
 	// crypto.createHmac(algorithm, key)
 	['createHmac', () => 1],
 	// hmac(hash, key, message) or hmac(key, message)
-	['hmac', (count) => (count >= 3 ? 1 : 0)],
+	['hmac', (args) => (args.length >= 3 ? 1 : 0)],
 	// CryptoJS.HmacSHA256(message, key)
 	['HmacSHA1', () => 1],
 	['HmacSHA256', () => 1],
 	['HmacSHA512', () => 1],
-	// jwt.sign(payload, key), crypto.subtle.sign(algorithm, key, data),
-	// new SignJWT(payload).sign(key), signer.sign(key)
-	['sign', (count) => (count === 1 ? 0 : 1)],
+	['sign', signKeyArgument],
 	['signJwt', () => 1],
 	['jwtSign', () => 1],
 	// createSigner({ key })
 	['createSigner', () => 0],
 	['setSigningKey', () => 0],
 ])
+
+/**
+ * `signer.sign(key)`, `signer.sign(key, 'hex')`, and
+ * `new SignJWT(payload).sign(key, options)` take the key first;
+ * `jwt.sign(payload, key)` and `crypto.subtle.sign(algorithm, key, data)`
+ * take it second.
+ */
+function signKeyArgument(args: ReadonlyArray<AstNode>) {
+	if (args.length === 1) return 0
+	if (args.length === 2 && args[0]?.type !== 'ObjectExpression') {
+		const second = args[1]
+		const encoding =
+			second?.type === 'StringLiteral' ? getNodeName(second) : null
+		if (
+			second?.type === 'ObjectExpression' ||
+			(encoding != null && signingOutputEncodings.has(encoding))
+		) {
+			return 0
+		}
+	}
+	return 1
+}
 
 const transparentExpressionTypes = new Set([
 	'ParenthesizedExpression',
@@ -784,7 +815,7 @@ function isSigningKey(ancestors: ReadonlyArray<AstNode>, node: AstNode) {
 		)
 		if (!keyArgument) return false
 		const args = ancestor.arguments ?? []
-		return args[keyArgument(args.length)] === (ancestors[index + 1] ?? node)
+		return args[keyArgument(args)] === (ancestors[index + 1] ?? node)
 	})
 }
 
