@@ -40,3 +40,7 @@ declare module '*/node_modules/.kody-generated/isomorphic-git.mjs' {
 declare module '*/node_modules/.kody-generated/postal-mime.mjs' {
 	export { PostalMime } from './email/postal-mime-module.ts'
 }
+
+declare module '*/node_modules/.kody-generated/codemode-normalize.mjs' {
+	export { normalizeCode } from './mcp/codemode-normalize-module.ts'
+}

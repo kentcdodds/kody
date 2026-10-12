@@ -1,5 +1,4 @@
 import {
-	normalizeCode,
 	sanitizeToolName,
 	ToolDispatcher,
 	type ExecuteResult,
@@ -11,6 +10,7 @@ import {
 } from '@kody-internal/shared/error-message.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
+import { loadNormalizeCode } from '#worker/codemode-normalize-load.ts'
 import {
 	dynamicWorkerUsageTailLoaderIdSuffix,
 	type DynamicWorkerUsageTailProps,
@@ -699,8 +699,9 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				providers,
 				invocation,
 			)
+			const normalizeCode = await loadNormalizeCode()
 			const executorModule = createExecutorModule({
-				code,
+				normalizedCode: normalizeCode(code),
 				providers,
 				shadowGlobalThis: Object.keys(modules).length === 0,
 				timeoutMs: input.timeout,
@@ -1035,14 +1036,14 @@ function createSandboxRunFetchSource(allowOutboundFetch: boolean) {
 }
 
 function createExecutorModule(input: {
-	code: string
+	normalizedCode: string
 	providers: Array<ResolvedProvider>
 	shadowGlobalThis: boolean
 	timeoutMs: number
 	excludedHostname?: string
 	allowOutboundFetch?: boolean
 }) {
-	const normalized = normalizeCode(input.code)
+	const normalized = input.normalizedCode
 	const excludedHostname = JSON.stringify(input.excludedHostname ?? '')
 	const sandboxGlobalLines = input.shadowGlobalThis
 		? [
@@ -1145,7 +1146,10 @@ function createExecutorModule(input: {
 	].join('\n')
 }
 
-export function createExecutorModuleSource(input: {
+export async function createExecutorModuleSource({
+	code,
+	...input
+}: {
 	code: string
 	providers: Array<ResolvedProvider>
 	shadowGlobalThis: boolean
@@ -1153,7 +1157,8 @@ export function createExecutorModuleSource(input: {
 	excludedHostname?: string
 	allowOutboundFetch?: boolean
 }) {
-	return createExecutorModule(input)
+	const normalizeCode = await loadNormalizeCode()
+	return createExecutorModule({ ...input, normalizedCode: normalizeCode(code) })
 }
 
 function createProviderProxySource(provider: ResolvedProvider) {

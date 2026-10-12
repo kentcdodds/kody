@@ -22,6 +22,7 @@ export const kodyGeneratedEsModuleNames = [
 	'local-execute-runtime-support.mjs',
 	'isomorphic-git.mjs',
 	'postal-mime.mjs',
+	'codemode-normalize.mjs',
 ] as const
 
 export const kodyGeneratedWasmNames = ['esbuild.wasm'] as const

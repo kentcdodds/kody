@@ -151,6 +151,7 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			'/node_modules/isomorphic-git/',
 			'/node_modules/@cloudflare/shell/dist/git/',
 			'/node_modules/postal-mime/',
+			'/node_modules/acorn/',
 		],
 	},
 	{
@@ -169,6 +170,7 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			'/node_modules/isomorphic-git/',
 			'/node_modules/@cloudflare/shell/dist/git/',
 			'/node_modules/postal-mime/',
+			'/node_modules/acorn/',
 		],
 	},
 ]
