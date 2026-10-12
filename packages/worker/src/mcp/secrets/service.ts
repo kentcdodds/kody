@@ -224,6 +224,7 @@ export async function saveSecret(
 			previousPlaintext,
 			nextPlaintext: value,
 			now,
+			...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
 		})
 	}
 	if (existingEntry == null && input.scope === 'user') {
@@ -477,6 +478,31 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		throw error
 	}
 
+	for (const entry of prepared) {
+		let previousPlaintext: string | null = null
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				entry.existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			continue
+		}
+		const nextValue = input.secrets.find(
+			(secret) => secret.name.trim() === entry.name,
+		)?.value
+		if (!nextValue || previousPlaintext === nextValue.trim()) continue
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: entry.name,
+			previousPlaintext,
+			nextPlaintext: nextValue.trim(),
+			now,
+		})
+	}
+
 	return prepared.map((entry) =>
 		toSecretMetadata({
 			name: entry.name,
@@ -640,6 +666,7 @@ async function saveSecretsAtomically(input: {
 				previousPlaintext,
 				nextPlaintext: trimmedNext,
 				now,
+				...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
 			})
 		}
 	}
@@ -1009,6 +1036,7 @@ export async function updateSecret(
 			previousPlaintext,
 			nextPlaintext: nextValue!,
 			now,
+			...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
 		})
 	}
 	return toSecretMetadata({

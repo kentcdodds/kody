@@ -63,6 +63,12 @@ export type WebhookHmacVerificationSecret = {
 	source: 'declared' | 'stored' | 'previous'
 }
 
+export type WebhookHmacVerificationSecretsResult = {
+	secrets: Array<WebhookHmacVerificationSecret>
+	/** Ciphertext of the live previous_* offered for CAS retirement. */
+	previousHmacSecretEncrypted: string | null
+}
+
 /**
  * Secrets an inbound signature may match, in order. A declared
  * `verification.secretName` comes first: the endpoint may still hold a
@@ -82,7 +88,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 	endpoint: WebhookEndpointRecord
 	verification: PackageWebhookHmacVerificationEntry
 	now?: Date | string
-}): Promise<Array<WebhookHmacVerificationSecret>> {
+}): Promise<WebhookHmacVerificationSecretsResult> {
 	const secrets: Array<WebhookHmacVerificationSecret> = []
 	const secretName = input.verification.secretName?.trim() ?? ''
 	let endpoint = input.endpoint
@@ -113,6 +119,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 			db: input.env.APP_DB,
 			userId: endpoint.userId,
 			endpointId: endpoint.id,
+			previousHmacSecretEncrypted: endpoint.previousHmacSecretEncrypted,
 		})
 		endpoint = {
 			...endpoint,
@@ -122,6 +129,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 		}
 	}
 
+	let previousHmacSecretEncrypted: string | null = null
 	if (isWebhookPreviousHmacLive(endpoint, now)) {
 		try {
 			const previous = await decryptWebhookVerificationSnapshot({
@@ -132,6 +140,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 			})
 			if (!secrets.some((secret) => secret.value === previous)) {
 				secrets.push({ value: previous, source: 'previous' })
+				previousHmacSecretEncrypted = endpoint.previousHmacSecretEncrypted
 			}
 		} catch (error) {
 			console.warn('webhook-previous-secret-decrypt-failed', {
@@ -167,7 +176,7 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 				: `Webhook "${endpoint.webhookName}" declares HMAC verification but has no package-owned signing secret.`,
 		)
 	}
-	return secrets
+	return { secrets, previousHmacSecretEncrypted }
 }
 
 async function resolveDeclaredWebhookSecret(input: {

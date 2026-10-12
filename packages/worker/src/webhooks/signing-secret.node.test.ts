@@ -30,6 +30,12 @@ import {
 	type WebhookEndpointRecord,
 } from './types.ts'
 
+async function resolveSecrets(
+	...args: Parameters<typeof resolveWebhookHmacVerificationSecrets>
+) {
+	return (await resolveWebhookHmacVerificationSecrets(...args)).secrets
+}
+
 vi.mock('#mcp/secrets/service.ts', () => {
 	const resolveSecret = vi.fn(async (_input: unknown) => ({
 		found: true,
@@ -138,7 +144,7 @@ test('inbound verification tries a declared secretName before the stored generat
 		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId: ownerIdFromStored('user-1'),
 		endpoint: await trackedDeclaredEndpoint({
@@ -166,7 +172,7 @@ test('inbound verification lists a stored copy of the declared secret once', asy
 		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId: ownerIdFromStored('user-1'),
 		endpoint: await trackedDeclaredEndpoint({
@@ -182,7 +188,7 @@ test('inbound verification lists a stored copy of the declared secret once', asy
 test('inbound verification keeps the stored secret when the declared one cannot be read', async () => {
 	consoleWarn.mockImplementation(() => {})
 	vi.mocked(findSecretForUse).mockRejectedValueOnce(new Error('not found'))
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId: ownerIdFromStored('user-1'),
 		endpoint: await trackedDeclaredEndpoint({
@@ -204,7 +210,7 @@ test('inbound verification keeps the stored secret when the declared one cannot 
 
 	vi.mocked(findSecretForUse).mockRejectedValueOnce(new Error('not found'))
 	await expect(
-		resolveWebhookHmacVerificationSecrets({
+		resolveSecrets({
 			env,
 			userId: ownerIdFromStored('user-1'),
 			endpoint: endpoint(),
@@ -227,7 +233,7 @@ test('an unreadable stored secret does not block a resolved declared secret', as
 		hmacSecretEncrypted: 'not-a-ciphertext',
 	})
 	expect(
-		await resolveWebhookHmacVerificationSecrets({
+		await resolveSecrets({
 			env,
 			userId: ownerIdFromStored('user-1'),
 			endpoint: unreadable,
@@ -241,7 +247,7 @@ test('an unreadable stored secret does not block a resolved declared secret', as
 
 	const { secretName: _secretName, ...withoutName } = stripeVerification
 	await expect(
-		resolveWebhookHmacVerificationSecrets({
+		resolveSecrets({
 			env,
 			userId: ownerIdFromStored('user-1'),
 			endpoint: unreadable,
@@ -254,7 +260,7 @@ test('inbound verification without secretName uses the stored secret and no look
 	vi.mocked(resolveSecret).mockClear()
 	const { secretName: _secretName, ...withoutName } = stripeVerification
 	expect(
-		await resolveWebhookHmacVerificationSecrets({
+		await resolveSecrets({
 			env,
 			userId: ownerIdFromStored('user-1'),
 			endpoint: endpoint({
@@ -401,7 +407,7 @@ test('signing-secret rotation: previous value verifies within the 24h grace wind
 		userId,
 		endpointId: record.id,
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId,
 		endpoint: withinGrace!,
@@ -447,7 +453,7 @@ test('signing-secret rotation: previous value is rejected after the grace window
 		userId,
 		endpointId: record.id,
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId,
 		endpoint: endpoint!,
@@ -489,7 +495,7 @@ test('signing-secret rotation: new secret verifies and an unrelated secret does 
 		userId,
 		endpointId: record.id,
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId,
 		endpoint: endpoint!,
@@ -515,7 +521,7 @@ test('secretName rename records previous identity and accepts the old value with
 		allowedPackages: ['pkg-1'],
 		scope: 'user',
 	})
-	const secrets = await resolveWebhookHmacVerificationSecrets({
+	const secrets = await resolveSecrets({
 		env,
 		userId,
 		endpoint: record,

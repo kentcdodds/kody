@@ -321,12 +321,33 @@ export async function setWebhookEndpointHmacVerificationState(input: {
 	})
 }
 
-/** Drop an expired (or retired) previous signing secret. */
+/**
+ * Drop an expired (or retired) previous signing secret. When
+ * `previousHmacSecretEncrypted` is provided, only clear if that exact
+ * ciphertext is still the live previous (compare-and-swap against a newer
+ * concurrent rotation).
+ */
 export async function clearWebhookEndpointPreviousHmacSecret(input: {
 	db: D1Database
 	userId: string
 	endpointId: string
+	previousHmacSecretEncrypted?: string | null
 }) {
+	const observed = input.previousHmacSecretEncrypted
+	if (observed) {
+		await input.db
+			.prepare(
+				`UPDATE webhook_endpoints
+				SET previous_hmac_secret_name = NULL,
+					previous_hmac_secret_encrypted = NULL,
+					previous_hmac_secret_expires_at = NULL
+				WHERE user_id = ? AND id = ? AND previous_hmac_secret_encrypted = ?
+				${andLiveDeletedAtSql()}`,
+			)
+			.bind(input.userId, input.endpointId, observed)
+			.run()
+		return
+	}
 	await input.db
 		.prepare(
 			`UPDATE webhook_endpoints
@@ -344,14 +365,20 @@ export async function listWebhookEndpointsByHmacSecretName(input: {
 	db: D1Database
 	userId: string
 	hmacSecretName: string
+	/** When set, only endpoints for this package (package-scoped secrets). */
+	packageId?: string
 }): Promise<Array<WebhookEndpointRecord>> {
+	const packageFilter = input.packageId ? ' AND package_id = ?' : ''
+	const bindings = input.packageId
+		? [input.userId, input.hmacSecretName, input.packageId]
+		: [input.userId, input.hmacSecretName]
 	const result = await input.db
 		.prepare(
 			`SELECT *
 			FROM webhook_endpoints
-			WHERE user_id = ? AND hmac_secret_name = ?${andLiveDeletedAtSql()}`,
+			WHERE user_id = ? AND hmac_secret_name = ?${packageFilter}${andLiveDeletedAtSql()}`,
 		)
-		.bind(input.userId, input.hmacSecretName)
+		.bind(...bindings)
 		.all<WebhookEndpointRow>()
 	return (result.results ?? []).map(mapEndpointRow)
 }

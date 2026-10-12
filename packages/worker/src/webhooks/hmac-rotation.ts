@@ -58,6 +58,11 @@ export async function rotateWebhookHmacSecretsForSecretValueChange(input: {
 	/** When known, advance the verification snapshot so ingress does not
 	 * treat the same value change as a second rotation. */
 	nextPlaintext?: string
+	/**
+	 * Package-scoped secret updates must pass the package id so another
+	 * package's webhook with the same secretName is not rotated.
+	 */
+	packageId?: string
 	now?: Date | string
 }): Promise<number> {
 	const now = input.now ?? new Date()
@@ -67,17 +72,18 @@ export async function rotateWebhookHmacSecretsForSecretValueChange(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		hmacSecretName: secretName,
+		...(input.packageId ? { packageId: input.packageId } : {}),
 	})
 	let updated = 0
 	for (const endpoint of endpoints) {
-		const previousEncrypted =
-			endpoint.hmacVerificationSecretEncrypted ??
-			(await encryptWebhookVerificationSnapshot({
-				env: input.env,
-				userId: input.userId,
-				endpointId: endpoint.id,
-				plaintext: input.previousPlaintext,
-			}))
+		// Always encrypt the known outgoing plaintext. Reusing a concurrent
+		// ingress snapshot can store the new value as previous_* and drop grace.
+		const previousEncrypted = await encryptWebhookVerificationSnapshot({
+			env: input.env,
+			userId: input.userId,
+			endpointId: endpoint.id,
+			plaintext: input.previousPlaintext,
+		})
 		const nextSnapshot = input.nextPlaintext
 			? await encryptWebhookVerificationSnapshot({
 					env: input.env,
@@ -125,6 +131,7 @@ export async function reconcileWebhookHmacVerificationRotation(input: {
 			db: input.env.APP_DB,
 			userId: endpoint.userId,
 			endpointId: endpoint.id,
+			previousHmacSecretEncrypted: endpoint.previousHmacSecretEncrypted,
 		})
 		endpoint = {
 			...endpoint,

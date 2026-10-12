@@ -138,6 +138,31 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 	})
 }
 
+/**
+ * Retire signing-secret grace only after a delivery that verified under the
+ * current declared key is accepted for dispatch. Compare-and-swap against the
+ * observed previous ciphertext so a concurrent rotation is not wiped.
+ */
+async function retirePreviousWebhookHmacIfConfirmed(input: {
+	env: Env
+	endpoint: { id: string; userId: OwnerId }
+	matchedSource: WebhookHmacVerificationSecret['source'] | null
+	previousHmacSecretEncrypted: string | null
+}) {
+	if (
+		input.matchedSource !== 'declared' ||
+		!input.previousHmacSecretEncrypted
+	) {
+		return
+	}
+	await clearWebhookEndpointPreviousHmacSecret({
+		db: input.env.APP_DB,
+		userId: input.endpoint.userId,
+		endpointId: input.endpoint.id,
+		previousHmacSecretEncrypted: input.previousHmacSecretEncrypted,
+	})
+}
+
 function notFoundResponse() {
 	return jsonResponse(
 		{
@@ -685,6 +710,8 @@ export async function handleWebhookIngressRequest(
 	// The log counts requests that rely on the implicit default, even ones a
 	// later check rejects.
 	const verification = webhookHmacVerification(declared.verification)
+	let matchedHmacSource: WebhookHmacVerificationSecret['source'] | null = null
+	let observedPreviousHmacCiphertext: string | null = null
 	if (!verification) {
 		if (!declared.verification) {
 			console.info('webhook-url-secret-only-authenticated', {
@@ -701,13 +728,16 @@ export async function handleWebhookIngressRequest(
 			return rejectUnauthorized('missing_signature')
 		}
 		let hmacSecrets: Array<WebhookHmacVerificationSecret>
+		let previousHmacSecretEncrypted: string | null = null
 		try {
-			hmacSecrets = await resolveWebhookHmacVerificationSecrets({
+			const resolved = await resolveWebhookHmacVerificationSecrets({
 				env,
 				userId: liveEndpoint.userId,
 				endpoint: liveEndpoint,
 				verification,
 			})
+			hmacSecrets = resolved.secrets
+			previousHmacSecretEncrypted = resolved.previousHmacSecretEncrypted
 		} catch {
 			return rejectUnauthorized(
 				verification.secretName
@@ -760,18 +790,8 @@ export async function handleWebhookIngressRequest(
 				secretName: verification.secretName,
 			})
 		}
-		// A delivery that verifies under the current key retires the previous
-		// signing secret early (same idea as URL overlap on the new URL).
-		if (
-			matched.source !== 'previous' &&
-			hmacSecrets.some((secret) => secret.source === 'previous')
-		) {
-			await clearWebhookEndpointPreviousHmacSecret({
-				db: env.APP_DB,
-				userId: liveEndpoint.userId,
-				endpointId: liveEndpoint.id,
-			})
-		}
+		matchedHmacSource = matched.source
+		observedPreviousHmacCiphertext = previousHmacSecretEncrypted
 	}
 
 	const extraAllowedHeaders = [
@@ -977,6 +997,12 @@ export async function handleWebhookIngressRequest(
 			endpoint: liveEndpoint,
 			secretMatch,
 		})
+		await retirePreviousWebhookHmacIfConfirmed({
+			env,
+			endpoint: liveEndpoint,
+			matchedSource: matchedHmacSource,
+			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
+		})
 		return jsonResponse({ ok: true }, { status: 202 })
 	}
 
@@ -985,6 +1011,12 @@ export async function handleWebhookIngressRequest(
 			env,
 			endpoint: liveEndpoint,
 			secretMatch,
+		})
+		await retirePreviousWebhookHmacIfConfirmed({
+			env,
+			endpoint: liveEndpoint,
+			matchedSource: matchedHmacSource,
+			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
 		})
 		const response = await runWithTimeout(
 			dispatchWebhookInvocation({
