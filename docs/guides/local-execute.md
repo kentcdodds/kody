@@ -118,8 +118,12 @@ until the response body ends. The response is also aborted after 60s with no
 bytes. `--local` has no run cap, so a long streamed response, such as an AI
 completion, can finish. Origin buffers the whole response before returning it,
 so your code receives nothing until the body ends, and a body over 4 MiB fails.
-The CLI's own HTTP client also waits at most 5 minutes for origin's reply, so
-leave a few seconds of margin. Use cloud execute or a workflow for larger
+From `@kodycodes/cli` 1.13.1, the CLI's CapabilityProxy client waits up to 7
+minutes for origin's reply, so the gateway's 5-minute deadline is what ends a
+slow fetch, with its own error. Older CLIs stop waiting after Node's default 300
+seconds (`UND_ERR_HEADERS_TIMEOUT`) and need a few seconds of margin. With
+`NODE_USE_ENV_PROXY=1` or `--use-env-proxy`, these requests still go through
+`HTTP_PROXY` / `HTTPS_PROXY`. Use cloud execute or a workflow for larger
 payloads. A `fetch` without placeholders goes straight from local workerd and is
 not subject to this deadline.
 
