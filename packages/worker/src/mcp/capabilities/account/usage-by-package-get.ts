@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -10,6 +11,10 @@ import { routes } from '#universal/routes.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -57,7 +62,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 		name: 'usageByPackageGet',
 		orgPermission: 'billing:read',
 		description:
-			'Read the signed-in user’s current UTC month past-include credit attribution by package (Where it went): Worker compute and Rows read credits only — not execute, jobs, or package exports. Optional packageId returns that package’s slice of the same period breakdown.',
+			'Read the current UTC month past-include credit attribution for the org this connection is bound to (personal or team) by package (Where it went): Worker compute and Rows read credits only — not execute, jobs, or package exports. Optional packageId returns that package’s slice of the same period breakdown.',
 		keywords: [
 			'account',
 			'usage',
@@ -98,25 +103,31 @@ export const usageByPackageGetCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const db = ctx.env.APP_DB
 			const now = new Date()
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
+			const teamSlug =
+				ownerId === personalOrgId(user.userId)
+					? null
+					: ctx.callerContext.request?.org.slug?.trim() || null
 			const entitlement = await getUserEntitlement(db, {
-				userId: user.userId,
-				email: user.email,
+				userId: ownerId,
+				email: entitlementEmailForOwner(ctx.callerContext, ownerId),
 			})
 			const [computeOverage, username] = await Promise.all([
 				readAccountComputeOverage({
 					db,
-					stableUserId: user.userId,
+					stableUserId: ownerId,
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
 					creditWallet: entitlement.creditWallet,
 					limitOverrides: entitlement.limitOverrides,
 					now,
 				}),
-				resolvePublicUsername({
-					db,
-					username: user.username,
-					email: user.email,
-				}),
+				teamSlug ??
+					resolvePublicUsername({
+						db,
+						username: user.username,
+						email: user.email,
+					}),
 			])
 			if (!username) {
 				throw new Error(
@@ -125,7 +136,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 			}
 			const breakdown = await loadCreditAttributionBreakdown({
 				db,
-				stableUserId: user.userId,
+				stableUserId: ownerId,
 				username,
 				computeOverage,
 				now,
@@ -146,7 +157,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 				rows: [
 					await enrichUnspentPackageAttributionRow({
 						db,
-						stableUserId: user.userId,
+						stableUserId: ownerId,
 						username,
 						row,
 					}),

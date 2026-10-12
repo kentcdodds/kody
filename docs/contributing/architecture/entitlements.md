@@ -573,12 +573,15 @@ instead of one RPC per resource:
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
-- `usageGet` MCP capability
+- `usageGet` MCP capability — plan, limits, and usage of the connection's bound
+  org (`ownerIdFromCaller`), the same org execute and package-cap checks enforce
+  against. A team-bound connection reports the team plan, not the caller's
+  personal org.
 - `usageTrendGet` MCP / Open API capability (`GET /v1/account/usage/trend`) —
-  signed-in daily UserMeter series (`readDailyTrend`) plus a cheap
+  bound-org daily UserMeter series (`readDailyTrend`) plus a cheap
   `usage_rollups` monthly series for hosted execute and unique Worker days
 - `usageByPackageGet` MCP / Open API capability
-  (`GET /v1/account/usage/by-package`) — signed-in current-UTC-month
+  (`GET /v1/account/usage/by-package`) — bound-org current-UTC-month
   past-include credit attribution by package (`loadCreditAttributionBreakdown` /
   account usage `whereItWent`). Meters are Worker compute and Rows read credits
   only; optional `packageId` returns that package’s slice. Does not add a

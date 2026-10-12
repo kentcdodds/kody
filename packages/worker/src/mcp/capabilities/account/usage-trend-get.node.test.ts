@@ -288,3 +288,32 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 		uniqueWorkerDays: 1,
 	})
 })
+
+test('usageTrendGet on a team-bound connection reads the team org meter', async () => {
+	const { env, stableUserId } = createTrendEnv()
+	const teamOrgId = 'b'.repeat(64)
+	const now = new Date()
+	await admitExecuteCalls(env, stableUserId, now, 2)
+	await admitExecuteCalls(env, teamOrgId, now, 6)
+
+	const result = await usageTrendGetCapability.handler(
+		{},
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+				user: {
+					userId: personIdFromStored(stableUserId),
+					email,
+					displayName: 'Usage Trend',
+				},
+				orgBinding: {
+					org: { id: ownerIdFromStored(teamOrgId), slug: 'usage-trend-team' },
+					role: 'owner',
+				},
+			}),
+		},
+	)
+	expect(result.days.find((day) => day.day === utcDayKey(now))?.execute).toBe(6)
+})

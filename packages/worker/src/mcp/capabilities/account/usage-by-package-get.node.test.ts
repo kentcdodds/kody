@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test } from 'vitest'
@@ -264,4 +267,56 @@ test('usageByPackageGet packageId returns that package slice of the period', asy
 		cumulative: [],
 		isAdHoc: false,
 	})
+})
+
+test('usageByPackageGet on a team-bound connection attributes the team org packages', async () => {
+	const { env, stableUserId, sqlite } = createAttributionEnv()
+	const teamOrgId = 'c'.repeat(64)
+	const teamSlug = 'usage-by-pkg-team'
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES (?, ?, 'free', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z')`,
+		)
+		.run(teamOrgId, teamSlug)
+	sqlite
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES ('pkg-team', ?, 'Team Bot', 'team-bot', '', 'src-team')`,
+		)
+		.run(teamOrgId)
+	seedAttributionUnits({
+		sqlite,
+		stableUserId: teamOrgId,
+		day: utcDayKey(new Date()),
+		packageId: 'pkg-team',
+		meter: 'unique_worker_days',
+		units: 55,
+	})
+
+	const result = await usageByPackageGetCapability.handler(
+		{},
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+				user: {
+					userId: personIdFromStored(stableUserId),
+					email,
+					username,
+					displayName: 'Usage By Package',
+				},
+				orgBinding: {
+					org: { id: ownerIdFromStored(teamOrgId), slug: teamSlug },
+					role: 'owner',
+				},
+			}),
+		},
+	)
+	expect(result.totalCreditsMicroUsd).toBeGreaterThan(0)
+	expect(result.rows.find((row) => row.packageId === 'pkg-team')).toMatchObject(
+		{ name: 'Team Bot', href: `/@${teamSlug}/team-bot`, share: 1 },
+	)
+	expect(result.rows.some((row) => row.packageId === 'pkg-alpha')).toBe(false)
 })
