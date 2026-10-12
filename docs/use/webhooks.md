@@ -64,7 +64,10 @@ Rules:
   where Kody mints package-owned HMAC onto the webhook URL record at
   `webhookUrlMint` (not listed in account secrets, no host Allow). Set it only
   for **provider-issued** signing secrets that must live in the secret store
-  (for example Sentry). Never put an inline secret value in the manifest.
+  (for example Sentry or Stripe). Inbound signatures are checked against the
+  named secret first, on the same URL; a signing secret Kody stored on the
+  endpoint earlier (generated, or copied at mint) is still accepted as a
+  fallback. Never put an inline secret value in the manifest.
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
@@ -160,14 +163,14 @@ required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
 stored on the minted webhook URL record (not a user secrets-list entry, and not
 host-gated). When a package declares `verification.secretName`, reminting (or
 rotating) the URL copies that value onto the endpoint when the named secret
-exists — apply never does a live `secretName` lookup for `{{webhookSecret}}` (so
-changing the name after destination Allow cannot swap credentials). Destination
-`secretName` / `integration` Bearer auth requires host approval / integration
-allowlists. Destination URLs must be `https://`. Redirects are not followed.
-Auth is optional via `secretName` or `integration` (Bearer), or a
-caller-supplied `Authorization` header — not both. Destination `secretName` /
-`integration` authorize the outbound request; they are not the webhook HMAC
-signing secret.
+exists, replacing any Kody-generated secret the endpoint held — apply never does
+a live `secretName` lookup for `{{webhookSecret}}` (so changing the name after
+destination Allow cannot swap credentials). Destination `secretName` /
+`integration` Bearer auth requires host approval / integration allowlists.
+Destination URLs must be `https://`. Redirects are not followed. Auth is
+optional via `secretName` or `integration` (Bearer), or a caller-supplied
+`Authorization` header — not both. Destination `secretName` / `integration`
+authorize the outbound request; they are not the webhook HMAC signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package

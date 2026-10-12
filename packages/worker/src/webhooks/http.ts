@@ -66,7 +66,10 @@ import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
-import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
+import {
+	resolveWebhookHmacVerificationSecrets,
+	type WebhookHmacVerificationSecret,
+} from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
@@ -680,14 +683,13 @@ export async function handleWebhookIngressRequest(
 		if (!provided) {
 			return rejectUnauthorized('missing_signature')
 		}
-		let hmacSecret: string
+		let hmacSecrets: Array<WebhookHmacVerificationSecret>
 		try {
-			hmacSecret = await resolveWebhookHmacSigningSecret({
+			hmacSecrets = await resolveWebhookHmacVerificationSecrets({
 				env,
 				userId: liveEndpoint.userId,
 				endpoint: liveEndpoint,
 				verification,
-				allowLegacySecretNameFallback: true,
 			})
 		} catch {
 			return rejectUnauthorized(
@@ -713,24 +715,33 @@ export async function handleWebhookIngressRequest(
 			timestampHeader: declared.replay?.timestampHeader,
 			timestampFormat: declared.replay?.timestampFormat,
 		})
-		let valid = false
-		for (const candidate of providedValues) {
-			if (
-				await verifyWebhookHmacSignature({
-					algorithm: verification.type,
-					secret: hmacSecret,
-					body: hmacPayload,
-					encoding: verification.encoding,
-					prefix: verification.prefix,
-					provided: candidate,
-				})
-			) {
-				valid = true
-				break
+		let matched: WebhookHmacVerificationSecret | null = null
+		for (const secret of hmacSecrets) {
+			for (const candidate of providedValues) {
+				if (
+					await verifyWebhookHmacSignature({
+						algorithm: verification.type,
+						secret: secret.value,
+						body: hmacPayload,
+						encoding: verification.encoding,
+						prefix: verification.prefix,
+						provided: candidate,
+					})
+				) {
+					matched = secret
+					break
+				}
 			}
+			if (matched) break
 		}
-		if (!valid) {
+		if (!matched) {
 			return rejectUnauthorized('invalid_signature')
+		}
+		if (matched.source === 'stored' && hmacSecrets[0]?.source === 'declared') {
+			console.warn('webhook-signature-matched-stored-secret-not-declared', {
+				endpointId: liveEndpoint.id,
+				secretName: verification.secretName,
+			})
 		}
 	}
 
