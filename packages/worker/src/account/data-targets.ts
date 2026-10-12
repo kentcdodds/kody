@@ -365,6 +365,11 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
 	{
+		kind: 'user_columns',
+		table: 'package_capability_approvals',
+		columns: ['owner_user_id', 'approved_by_user_id'],
+	},
+	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
 		includeInExport: false,

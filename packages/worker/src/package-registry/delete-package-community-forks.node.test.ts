@@ -120,6 +120,7 @@ function createDeleteForkDb() {
 			has_skills INTEGER NOT NULL DEFAULT 0,
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
+			is_internet_visible INTEGER NOT NULL DEFAULT 0,
 			locked_at TEXT,
 			deleted_at TEXT,
 
