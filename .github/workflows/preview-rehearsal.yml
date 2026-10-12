@@ -57,8 +57,13 @@ permissions:
   contents: read
   actions: read
 
+# Prefix before jobs run so `cig-0110` and `kody-branch-cig-0110` share a lock.
+# Same rule as rehearsalConcurrencyGroup in tools/preview-rehearsal/d1-rehearsal.ts
+# (GHA expressions cannot lowercase or cut the slug to 32).
 concurrency:
-  group: preview-rehearsal-${{ inputs.preview_name }}
+  group: >-
+    preview-rehearsal-${{ startsWith(inputs.preview_name, 'kody-branch-') &&
+    inputs.preview_name || format('kody-branch-{0}', inputs.preview_name) }}
   cancel-in-progress: false
 
 jobs:
@@ -98,7 +103,8 @@ jobs:
               return 1
             fi
             if [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
-              printf '%s\n' "kody-branch-$name"
+              # Same 32-character cut as preview.yml before it prefixes.
+              printf '%s\n' "kody-branch-$(printf '%s' "$name" | cut -c1-32)"
               return
             fi
             echo "preview_name must be a branch preview (kody-branch-<slug> or the slug preview.yml uses), got '$raw'." >&2

@@ -40,6 +40,9 @@ const branchPreviewPattern = /^kody-branch-[a-z0-9]+(?:-[a-z0-9]+)*$/
 const previewSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const pullRequestPreviewPattern = /^kody-pr-\d+$/
 
+/** Same cap as `preview.yml` (`cut -c1-32`) before it prefixes `kody-branch-`. */
+export const previewBranchSlugMaxLength = 32
+
 /**
  * Rehearsals run only on dedicated branch previews (`kody-branch-*`): PR
  * previews redeploy and reseed on every push, and a restore there would race
@@ -73,11 +76,22 @@ export function resolveRehearsalWorkerName(input: string) {
 		)
 	}
 	if (previewSlugPattern.test(workerName)) {
-		return assertRehearsalWorkerName(`kody-branch-${workerName}`)
+		return assertRehearsalWorkerName(
+			`kody-branch-${workerName.slice(0, previewBranchSlugMaxLength)}`,
+		)
 	}
 	throw new Error(
 		`Refusing to rehearse on "${input}": rehearsals run only on branch previews named kody-branch-<slug> or the slug preview.yml uses.`,
 	)
+}
+
+/**
+ * Workflow concurrency key for a dispatch input. Slug and full worker name
+ * lock the same preview. GitHub Actions evaluates `concurrency.group` before
+ * jobs run, so the workflow expression prefixes the same way.
+ */
+export function rehearsalConcurrencyGroup(input: string) {
+	return `preview-rehearsal-${resolveRehearsalWorkerName(input)}`
 }
 
 function rehearsalDatabaseNames(workerName: string) {
