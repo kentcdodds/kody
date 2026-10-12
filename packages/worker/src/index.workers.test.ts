@@ -20,6 +20,14 @@ const mocks = vi.hoisted(() => ({
 		status: 'below_threshold',
 		count: 0,
 	})),
+	checkWebhookAuthRegressionsAndAlert: vi.fn(async () => ({
+		ownersScanned: 0,
+		ownersFailed: 0,
+		candidates: 0,
+		regressions: [],
+		alerted: 0,
+		cooldown: 0,
+	})),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	runCreditDebits: vi.fn(async () => ({
 		scanned: 0,
@@ -79,6 +87,11 @@ vi.mock('#app/retention.ts', () => ({
 
 vi.mock('#app/auth-denial-alerts.ts', () => ({
 	checkAuthDenialBurstAndNotify: mocks.checkAuthDenialBurstAndNotify,
+}))
+
+vi.mock('#worker/webhooks/auth-regression-alert.ts', () => ({
+	checkWebhookAuthRegressionsAndAlert:
+		mocks.checkWebhookAuthRegressionsAndAlert,
 }))
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
@@ -167,6 +180,7 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		mocks.sweepStaleInboundDeliveries,
 		mocks.refreshAdminInsightsRunLogSnapshot,
 		mocks.checkAuthDenialBurstAndNotify,
+		mocks.checkWebhookAuthRegressionsAndAlert,
 		mocks.backfillStorageBucketEstimates,
 		mocks.pruneRetention,
 	]) {

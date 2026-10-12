@@ -30,6 +30,7 @@ import { aggregateCreditAttributionDaily } from '#worker/usage/credit-attributio
 import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
 import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 import { drainOrgAuditOutbox } from '#worker/orgs/org-audit-outbox.ts'
+import { checkWebhookAuthRegressionsAndAlert } from '#worker/webhooks/auth-regression-alert.ts'
 
 export {
 	isScheduledLaneName,
@@ -180,11 +181,25 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'auth_denial_alert':
-			return checkAuthDenialBurstAndNotify({
+		case 'auth_denial_alert': {
+			const authDenials = await checkAuthDenialBurstAndNotify({
 				env: input.env,
 				now: input.scheduledAt,
 			})
+			let webhookAuthRegressions:
+				| Awaited<ReturnType<typeof checkWebhookAuthRegressionsAndAlert>>
+				| { status: 'failed' }
+			try {
+				webhookAuthRegressions = await checkWebhookAuthRegressionsAndAlert({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('webhook-auth-regression-lane-failed', error)
+				webhookAuthRegressions = { status: 'failed' }
+			}
+			return { ...authDenials, webhookAuthRegressions }
+		}
 		case 'email_delivery_alert':
 			return checkEmailDeliveryBurstAndNotify({
 				env: input.env,

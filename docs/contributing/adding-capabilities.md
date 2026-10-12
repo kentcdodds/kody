@@ -248,6 +248,7 @@ rule.
 - `adminUserList`
 - `adminUserGet`
 - `adminHandleGet`
+- `adminWebhookRejectionReport`
 - `adminUserCreate`
 - `adminUserUpdate`
 - `adminUserVerify`

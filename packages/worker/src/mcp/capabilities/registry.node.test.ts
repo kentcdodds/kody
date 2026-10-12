@@ -48,6 +48,7 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 
 	expect(adminRegistry.capabilityMap.adminUserList).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminHandleGet).toBeTruthy()
+	expect(adminRegistry.capabilityMap.adminWebhookRejectionReport).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminUserMeterParity).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminRunLogSqlBilling).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminAccountDeletionAbort).toBeTruthy()
@@ -66,6 +67,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	).toBe(true)
 	expect(regularRegistry.capabilityMap.adminUserList).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminHandleGet).toBeUndefined()
+	expect(
+		regularRegistry.capabilityMap.adminWebhookRejectionReport,
+	).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminUserMeterParity).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminRunLogSqlBilling).toBeUndefined()
 	expect(
