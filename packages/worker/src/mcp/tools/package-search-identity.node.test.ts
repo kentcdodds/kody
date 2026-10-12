@@ -35,6 +35,7 @@ function createSavedPackage(input?: { hidden?: boolean; userId?: string }) {
 		hasApp: true,
 		hidden: input?.hidden ?? false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-02T00:00:00.000Z',
 	}

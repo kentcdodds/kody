@@ -73,6 +73,7 @@ function pkg(name: string, userId = 'admin-stable-1') {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-07-19T00:00:00.000Z',
 		updatedAt: '2026-07-19T00:00:00.000Z',
 	}

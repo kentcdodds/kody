@@ -175,6 +175,10 @@ Open these before proposing a new primitive, surface, or storage home.
   or saved bindings; the fleet codemod is an owner-approved suggestion
   (supersedes scoped-client credential authority in 0021 and credentials plan v4
   sections 3.3 and 3.4)
+- [0069 — Internet-visible apps pin an approved capability snapshot](./0069-internet-visible-capability-pinning.md)
+  — **proposed** amendment to 0001; do not treat as accepted until Kent
+  approves. Narrow exception for internet-visible serving and approved-bundle
+  retention only; no semver or import pin syntax
 
 ## Historical / UI / implementation
 

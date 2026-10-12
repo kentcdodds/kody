@@ -43,6 +43,7 @@ const listedPublic = {
 	readmeContent: '# Demo',
 	hasAgentsDocs: true,
 	isPrivate: false,
+	isInternetVisible: false,
 	ownerProfilePublic: true,
 	invocationUrlOrigin: 'https://example.com',
 }

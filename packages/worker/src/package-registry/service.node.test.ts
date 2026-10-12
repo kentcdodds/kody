@@ -194,6 +194,7 @@ function createProjection() {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 	}
 }
 
@@ -210,6 +211,7 @@ function savedPackageRecord(overrides: Record<string, unknown> = {}) {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 		...overrides,
@@ -562,6 +564,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	mockModule.buildPackageSearchProjection.mockReturnValue({
 		...createProjection(),
 		isPrivate: true,
+		isInternetVisible: false,
 		description: 'Updated description',
 	})
 	mockSource({
@@ -589,6 +592,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	expect(refreshed.record).toMatchObject({
 		hidden: true,
 		isPrivate: false,
+		isInternetVisible: false,
 		description: 'Updated description',
 	})
 })

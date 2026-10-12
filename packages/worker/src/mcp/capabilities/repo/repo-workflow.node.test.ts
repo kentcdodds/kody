@@ -142,6 +142,7 @@ function stubPackageLookup(sourceOverrides: Record<string, unknown> = {}) {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-18T00:00:00.000Z',
 		updatedAt: '2026-04-18T00:00:00.000Z',
 	})

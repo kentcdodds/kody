@@ -49,8 +49,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		'communityPackageAsset',
 		'communityDetailAsset',
 		'communityPackageApprovePublish',
+		'communityPackageApproveCapabilities',
 		'accountPackageDetail',
 		'accountPackageApprovePublish',
+		'accountPackageApproveCapabilities',
 		'accountPackageFiles',
 		'communityDetail',
 		'communityDetailFiles',
@@ -68,8 +70,16 @@ test('router prefers static nested paths and package files over dynamic siblings
 		[`/community/${uuid}/raw/docs/logo.png`, 'communityDetailRaw'],
 		[`/community/${uuid}/assets/docs/poster.png`, 'communityDetailAsset'],
 		['/@kentcdodds/devin/approve-publish', 'communityPackageApprovePublish'],
+		[
+			'/@kentcdodds/devin/approve-capabilities',
+			'communityPackageApproveCapabilities',
+		],
 		['/account/packages/pkg-1', 'accountPackageDetail'],
 		['/account/packages/pkg-1/approve-publish', 'accountPackageApprovePublish'],
+		[
+			'/account/packages/pkg-1/approve-capabilities',
+			'accountPackageApproveCapabilities',
+		],
 		['/account/packages/pkg-1/files/README.md', 'accountPackageFiles'],
 		[`/community/${uuid}/files/src/lib.ts`, 'communityDetailFiles'],
 	]

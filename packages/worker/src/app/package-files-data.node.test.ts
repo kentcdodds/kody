@@ -415,6 +415,7 @@ test('listed package tree chrome marks the owner, links only a public owner prof
 		kodyId: 'sentry',
 		viewerIsOwner: true,
 		isPrivate: false,
+		isInternetVisible: false,
 		backHref: '/@kentcdodds/sentry',
 		filesBasePath: '/@kentcdodds/sentry/tree/main',
 		imageBaseHref: '/@kentcdodds/sentry/assets',
@@ -528,6 +529,7 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 		contentType: 'image/png',
 		filename: 'logo.png',
 		isPrivate: false,
+		isInternetVisible: false,
 	})
 
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(
@@ -552,6 +554,7 @@ test('community raw 404s a hex that only has the listing pin snapshot', async ()
 		contentType: 'image/png',
 		filename: 'logo.png',
 		isPrivate: false,
+		isInternetVisible: false,
 	})
 	expect(pinRaw.kind === 'ok' && [...pinRaw.bytes]).toEqual([...pngBytes])
 })

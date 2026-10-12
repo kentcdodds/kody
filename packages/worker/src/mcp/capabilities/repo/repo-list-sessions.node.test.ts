@@ -112,6 +112,7 @@ function stubSources({ missingSourceId }: { missingSourceId?: string } = {}) {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-28T00:00:00.000Z',
 		updatedAt: '2026-04-28T00:00:00.000Z',
 	})

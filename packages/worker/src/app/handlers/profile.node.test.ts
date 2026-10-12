@@ -92,6 +92,7 @@ const packageFixture = [
 		webhookCount: 0,
 		jobCount: 0,
 		isPrivate: false,
+		isInternetVisible: false,
 		hidden: false,
 		publishedCommit: 'abc1234567890',
 		listingIconCommit: 'abc1234567890',

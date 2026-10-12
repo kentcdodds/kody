@@ -141,6 +141,7 @@ function savedPackage(
 		hasApp: false,
 		hidden: false,
 		isPrivate: true,
+		isInternetVisible: false,
 		lockedAt: null as string | null,
 		createdAt: '2026-07-30T00:00:00.000Z',
 		updatedAt: '2026-07-30T00:00:00.000Z',

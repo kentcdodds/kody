@@ -47,6 +47,8 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountPackageDetail: 'package authz, not request org',
 	accountPackageApprovePublish: 'package authz, not request org',
 	accountPackageApprovePublishApi: 'package authz, not request org',
+	accountPackageApproveCapabilities: 'package authz, not request org',
+	accountPackageApproveCapabilitiesApi: 'package authz, not request org',
 	accountPackageFiles: 'package authz, not request org',
 	accountPackageFilesApi: 'package authz, not request org',
 	accountWebhooksApproveApplyApi: 'approval link carries the webhook owner',

@@ -78,6 +78,10 @@ import {
 	createAccountPackageApprovePublishHandler,
 } from '#app/handlers/account-package-approve-publish.ts'
 import {
+	createAccountPackageApproveCapabilitiesApiHandler,
+	createAccountPackageApproveCapabilitiesHandler,
+} from '#app/handlers/account-package-approve-capabilities.ts'
+import {
 	createAccountPackagesApiHandler,
 	createAccountPackagesHandler,
 } from '#app/handlers/account-packages.ts'
@@ -462,10 +466,18 @@ export function createAppRouter(env: Env) {
 				createAccountPackageApprovePublishHandler(env),
 			accountPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			accountPackageApproveCapabilities:
+				createAccountPackageApproveCapabilitiesHandler(env),
+			accountPackageApproveCapabilitiesApi:
+				createAccountPackageApproveCapabilitiesApiHandler(env),
 			communityPackageApprovePublish:
 				createAccountPackageApprovePublishHandler(env),
 			communityPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			communityPackageApproveCapabilities:
+				createAccountPackageApproveCapabilitiesHandler(env),
+			communityPackageApproveCapabilitiesApi:
+				createAccountPackageApproveCapabilitiesApiHandler(env),
 			communityPackageWebhooksApi:
 				createCommunityPackageWebhooksApiHandler(env),
 			communityPackageWebhooksApiPost:

@@ -23,6 +23,11 @@ import {
 	unpublishCommunityListing,
 } from '#worker/community/service.ts'
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import {
+	clearInternetVisible,
+	loadCapabilityApprovalSummary,
+} from '#worker/package-capabilities/capability-approval-service.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
 const packageUpdateChangesSchema = z
@@ -43,14 +48,21 @@ const packageUpdateChangesSchema = z
 			.enum(['public', 'private'])
 			.optional()
 			.describe(
-				'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Before setting public, review the package for overly personal content (package_authoring visibility). If anything looks personal, stop, tell the user, suggest generalizing, and wait for explicit go-ahead. Private is owner-only. Changing to private unlists the catalog entry; existing forks keep their copies.',
+				'Repo visibility / forkable. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Before setting public, review the package for overly personal content (package_authoring visibility). If anything looks personal, stop, tell the user, suggest generalizing, and wait for explicit go-ahead. Private is owner-only. Changing to private unlists the catalog entry; existing forks keep their copies. Independent of internet_visible.',
+			),
+		internet_visible: z
+			.boolean()
+			.optional()
+			.describe(
+				'Internet-visible app serving. Independent of visibility/forkable. Agents cannot approve capabilities: setting true returns an approval_url for the owner website. Setting false turns off public app serving (requires confirm_name).',
 			),
 	})
 	.refine(
 		(changes) =>
 			changes.hidden !== undefined ||
 			changes.locked !== undefined ||
-			changes.visibility !== undefined,
+			changes.visibility !== undefined ||
+			changes.internet_visible !== undefined,
 		{
 			message: 'Provide at least one supported package change.',
 		},
@@ -62,7 +74,7 @@ export const packageUpdateCapability = defineDomainCapability(
 		name: 'packageUpdate',
 		orgPermission: 'package:write',
 		description:
-			'Update mutable settings for a saved package: hidden search-discovery, publish lock (`changes.locked: true`; agents cannot unlock), and repo visibility (`changes.visibility`). Making a package public lists it on /community with full source and fork. Before setting visibility public, review source, README, Intent, description, tags, examples, and hardcoded identifiers for overly personal material. If anything looks personal or household-specific, do not publish yet — tell the user what you found, suggest how to generalize, and wait for explicit go-ahead. No MIT, logo, or Intent platform gates. Making it private unlists it (public URLs 404; forks keep their copies) — pass confirm_name matching the package slug after the owner typed that name. Canonical package metadata such as name, description, and tags remains derived from package.json. Visibility is not package.json#private.',
+			'Update mutable settings for a saved package: hidden search-discovery, publish lock (`changes.locked: true`; agents cannot unlock), repo visibility / forkable (`changes.visibility`), and internet-visible app serving (`changes.internet_visible`). Making a package public lists it on /community with full source and fork. Before setting visibility public, review source, README, Intent, description, tags, examples, and hardcoded identifiers for overly personal material. If anything looks personal or household-specific, do not publish yet — tell the user what you found, suggest how to generalize, and wait for explicit go-ahead. No MIT, logo, or Intent platform gates. Making it private unlists it (public URLs 404; forks keep their copies) — pass confirm_name matching the package slug after the owner typed that name. Internet-visible is independent of forkable and requires owner capability approval on the website. Canonical package metadata such as name, description, and tags remains derived from package.json. Visibility is not package.json#private.',
 		keywords: [
 			'package',
 			'update',
@@ -70,6 +82,8 @@ export const packageUpdateCapability = defineDomainCapability(
 			'visibility',
 			'public',
 			'private',
+			'forkable',
+			'internet-visible',
 			'search',
 			'lock',
 		],
@@ -84,7 +98,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Required when changes.visibility is private. Must equal the package slug (URL name). Confirm with the user first: going private 404s public URLs and unlists the catalog; existing forks keep their copies.',
+					'Required when changes.visibility is private or changes.internet_visible is false. Must equal the package slug (URL name). Confirm with the user first.',
 				),
 		}),
 		outputSchema: z.object({
@@ -181,12 +195,68 @@ export const packageUpdateCapability = defineDomainCapability(
 						userId: owner.ownerUserId,
 						packageId: args.package_id,
 						isPrivate: true,
+						isInternetVisible: false,
 					})
 					if (!changed) {
 						throw new McpCallerError('Saved package not found for this user.')
 					}
 				}
 			}
+
+			if (
+				args.changes.internet_visible === true &&
+				!existing.isInternetVisible
+			) {
+				const approvalUrl = buildPackageCapabilityApprovalUrl({
+					baseUrl: ctx.callerContext.baseUrl,
+					username: owner.ownerScope,
+					kodyId: existing.kodyId,
+				})
+				const summary = await loadCapabilityApprovalSummary({
+					env: ctx.env,
+					ownerUserId: owner.ownerUserId,
+					savedPackage: existing,
+					requestUrl: ctx.callerContext.baseUrl,
+				})
+				if (!summary.publishedCommit) {
+					throw new McpCallerError(
+						`Publish the package before making it internet-visible. Then send the owner to approve capabilities: ${approvalUrl}`,
+					)
+				}
+				if (!summary.fingerprintMatchesApproval) {
+					throw new McpCallerError(
+						`Internet-visible requires owner approval of the credential and capability summary. Send them to ${approvalUrl}`,
+					)
+				}
+				const changed = await updateSavedPackage(ctx.env.APP_DB, {
+					userId: owner.ownerUserId,
+					packageId: args.package_id,
+					isInternetVisible: true,
+				})
+				if (!changed) {
+					throw new McpCallerError('Saved package not found for this user.')
+				}
+			}
+			if (
+				args.changes.internet_visible === false &&
+				existing.isInternetVisible
+			) {
+				const expectedName = existing.kodyId
+				if (args.confirm_name?.trim() !== expectedName) {
+					throw new McpCallerError(
+						`Turning off internet-visible returns the app to owner-session serving. Confirm with the user, then pass confirm_name: "${expectedName}" (the package slug).`,
+					)
+				}
+				const changed = await clearInternetVisible({
+					env: ctx.env,
+					ownerUserId: owner.ownerUserId,
+					packageId: args.package_id,
+				})
+				if (!changed) {
+					throw new McpCallerError('Saved package not found for this user.')
+				}
+			}
+
 			const savedPackage = await getSavedPackageById(ctx.env.APP_DB, {
 				userId: owner.ownerUserId,
 				packageId: args.package_id,

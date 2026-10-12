@@ -528,6 +528,7 @@ export const savePackageCapability = defineDomainCapability(
 				visibility: saved.isPrivate
 					? ('private' as const)
 					: ('public' as const),
+				internet_visible: saved.isInternetVisible,
 				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,

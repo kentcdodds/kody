@@ -188,6 +188,7 @@ function toListItem(
 		updatedAt: record.updatedAt,
 		hidden: record.hidden,
 		isPrivate: record.isPrivate,
+		isInternetVisible: record.isInternetVisible,
 		hasCommunityListing: false,
 		listingAhead,
 		forkAhead,

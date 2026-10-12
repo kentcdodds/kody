@@ -105,6 +105,7 @@ function savedPackage(overrides?: { hasApp?: boolean }) {
 		hasApp: overrides?.hasApp ?? true,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-08-08T00:00:00.000Z',
 		updatedAt: '2026-08-08T00:00:00.000Z',
 	}

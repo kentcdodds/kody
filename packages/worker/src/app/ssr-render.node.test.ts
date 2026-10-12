@@ -1590,6 +1590,7 @@ test('listed package rename does not 301 anonymous visitors to the unpublished i
 			kodyId: 'github-triage-two',
 			hidden: false,
 			isPrivate: false,
+			isInternetVisible: false,
 		},
 	})
 	const listingUrl = await runPackagePage(env, 'kentcdodds', 'github-triage')

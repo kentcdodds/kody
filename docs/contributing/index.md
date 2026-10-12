@@ -83,6 +83,8 @@ style, tests, MCP capabilities, and runtime architecture.
   (stamp/grant model when imports resolve only in the caller's org)
 - [Package codemods](./package-codemods.md)
 - [Public packages](./community-packages.md)
+- [Internet-visible packages](./internet-visible-packages.md) (forkable vs
+  internet-visible; capability approval; proposed ADR 0069)
 - [Inbound webhooks](../use/webhooks.md) (external HTTP knock)
 - [Adding capabilities](./adding-capabilities.md)
 - [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,

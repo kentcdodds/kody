@@ -52,6 +52,10 @@ export {
 	accountPackageApprovePublishRouteLoader,
 } from './account-package-approve-publish.tsx'
 export {
+	AccountPackageApproveCapabilitiesRoute,
+	accountPackageApproveCapabilitiesRouteLoader,
+} from './account-package-approve-capabilities.tsx'
+export {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'

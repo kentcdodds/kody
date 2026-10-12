@@ -262,6 +262,7 @@ registerPreloadPatterns(
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountExperiments),
 		routePattern(routes.communityPackageApprovePublish),
+		routePattern(routes.communityPackageApproveCapabilities),
 		routePattern(routes.accountPasskeys),
 		routePattern(routes.accountMcpOauthClients),
 		routePattern(routes.accountTwoFactor),

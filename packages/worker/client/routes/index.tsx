@@ -57,6 +57,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountPackageApprovePublishRouteLoader,
 	),
+	[routePattern(routes.communityPackageApproveCapabilities)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountPackageApproveCapabilitiesRouteLoader,
+	),
 	[routePattern(routes.accountPackageFiles)]: lazyRouteLoader(
 		packageFilesArea,
 		(m) => m.packageFilesRouteLoader,
@@ -282,6 +286,11 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.communityPackageApprovePublish)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPackageApprovePublishRoute />} />
+	),
+	[routePattern(routes.communityPackageApproveCapabilities)]: (
+		<LazyAccountRoute
+			render={(m) => <m.AccountPackageApproveCapabilitiesRoute />}
+		/>
 	),
 	[routePattern(routes.accountPackageFiles)]: (
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />

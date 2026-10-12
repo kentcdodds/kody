@@ -244,7 +244,10 @@ function toSavedPackageInsertRow(input: {
 	sourceId: string
 	manifest: AuthoredPackageJson
 	hasSkills?: boolean
-}): Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> {
+}): Omit<
+	SavedPackageRow,
+	'created_at' | 'updated_at' | 'locked_at' | 'is_internet_visible'
+> {
 	const projection = buildPackageSearchProjection(input.manifest)
 	return {
 		id: input.packageId,
@@ -451,6 +454,7 @@ export async function refreshSavedPackageProjection(input: {
 				hidden: existing?.hidden ?? false,
 				// Visibility is a repo setting, not a manifest field.
 				isPrivate: existing?.isPrivate ?? true,
+				isInternetVisible: existing?.isInternetVisible ?? false,
 				// Website lock is not a projection field; keep the stored timestamp.
 				lockedAt: existing?.lockedAt ?? null,
 				createdAt: existing?.createdAt ?? refreshedAt,

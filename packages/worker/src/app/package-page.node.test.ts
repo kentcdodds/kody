@@ -190,6 +190,7 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 			kodyId: 'notes-two',
 			hidden: false,
 			isPrivate: false,
+			isInternetVisible: false,
 		},
 	}
 	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail)
