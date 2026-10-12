@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { build, type Plugin } from 'esbuild'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
 	moduleGraphMockModule as mockModule,
@@ -48,10 +48,6 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 		loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
 			mockModule.loadPublishedBundleArtifactByIdentity(...args),
 	}
-})
-
-beforeEach(() => {
-	vi.clearAllMocks()
 })
 
 const env = { APP_DB: {}, REPO_SESSION: {} } as Env
@@ -358,6 +354,7 @@ function createFakePackageStorageBridge() {
 }
 
 test('execute --local binds packageStorage per package identity through nested imports of legacy artifacts', async () => {
+	vi.clearAllMocks()
 	const artifacts = new Map<string, ReturnType<typeof artifactHit>>()
 	installRegistry(artifacts)
 
