@@ -81,7 +81,7 @@ export async function resolveGrantTarget(
 			}
 			if (others.length > 0) {
 				throw new McpCallerError(
-					`"${target.id}" names more than one integration in this organization. Pass resource_type credential with the credential_id from integrationList or mcpServerList.`,
+					`${target.id} names more than one integration; pass resource_type credential with the credential_id from integrationList or mcpServerList.`,
 				)
 			}
 			return { resourceType: 'credential', resourceId: credentialId }
