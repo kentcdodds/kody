@@ -337,3 +337,43 @@ test('the backfill fills only unset provider and inject columns from consistent 
 	expect(again.counts.provider).toMatchObject({ write: 0, alreadySet: 4 })
 	expect(again.counts.inject).toMatchObject({ write: 0, alreadySet: 3 })
 })
+
+test('an apply with failed packages proceeds only when it acknowledges exactly those packages', async () => {
+	const { sqlite, env } = seedFleet()
+	const runId = await scanFleet(env)
+	const before = credentialFields(sqlite)
+	const failed = (
+		sqlite
+			.prepare(
+				`SELECT package_id FROM credential_inventory_items WHERE run_id = ? AND status = 'failed'`,
+			)
+			.all(runId) as Array<{ package_id: string }>
+	).map((row) => row.package_id)
+	expect(failed).toHaveLength(1)
+
+	for (const acknowledgedFailedPackageIds of [
+		[],
+		['some-other-package'],
+		[...failed, 'some-other-package'],
+	]) {
+		await expect(
+			runCredentialBackfill({
+				env,
+				runId,
+				dryRun: false,
+				acknowledgedFailedPackageIds,
+			}),
+		).rejects.toThrow('acknowledgedFailedPackageIds')
+	}
+	expect(credentialFields(sqlite)).toEqual(before)
+
+	const applied = await runCredentialBackfill({
+		env,
+		runId,
+		dryRun: false,
+		acknowledgedFailedPackageIds: failed,
+	})
+	expect(applied.counts.failedPackages).toBe(1)
+	expect(applied.writtenRows).toBeGreaterThan(0)
+	expect(credentialFields(sqlite)).not.toEqual(before)
+})

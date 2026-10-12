@@ -683,13 +683,15 @@ export type CredentialBackfillCounts = {
  * Fills `provider` and `inject_json` from a complete inventory run. With
  * `dryRun` it only counts. A package the run failed to scan may use any
  * credential in a way the run never saw, so an apply refuses a run with
- * failed packages. Each write re-checks that the column is still unset, so a
- * value set by anyone since the scan is never overwritten.
+ * failed packages unless `acknowledgedFailedPackageIds` names exactly those
+ * packages. Each write re-checks that the column is still unset, so a value
+ * set by anyone since the scan is never overwritten.
  */
 export async function runCredentialBackfill(input: {
 	env: Env
 	runId: string
 	dryRun: boolean
+	acknowledgedFailedPackageIds?: ReadonlyArray<string>
 }) {
 	const db = input.env.APP_DB
 	const run = await getRun(db, input.runId)
@@ -699,10 +701,19 @@ export async function runCredentialBackfill(input: {
 		)
 	}
 	const items = await loadRunItems(db, run.id)
-	const failedPackages = items.filter((item) => item.status === 'failed').length
-	if (!input.dryRun && failedPackages > 0) {
+	const failedIds = new Set(
+		items
+			.filter((item) => item.status === 'failed')
+			.map((item) => item.packageId),
+	)
+	const failedPackages = failedIds.size
+	const acknowledged = new Set(input.acknowledgedFailedPackageIds ?? [])
+	const acknowledgesExactly =
+		acknowledged.size === failedIds.size &&
+		[...failedIds].every((id) => acknowledged.has(id))
+	if (!input.dryRun && failedPackages > 0 && !acknowledgesExactly) {
 		throw new Error(
-			`Credential inventory run ${run.id} failed to scan ${failedPackages} package(s); fix them and scan again before applying the backfill.`,
+			`Credential inventory run ${run.id} failed to scan ${failedPackages} package(s); fix them and scan again, or pass their ids in acknowledgedFailedPackageIds, before applying the backfill.`,
 		)
 	}
 	const usage = collectUsage(items)

@@ -18,6 +18,12 @@ const inputSchema = z.object({
 		.boolean()
 		.optional()
 		.describe('When true (default), count the writes without making them.'),
+	acknowledgedFailedPackageIds: z
+		.array(z.string().min(1))
+		.optional()
+		.describe(
+			'Package ids the run failed to scan that you accept may use credentials the run never saw. An apply with failed packages proceeds only when this lists exactly those packages (see the scan report failures).',
+		),
 })
 
 const outputSchema = z.object({
@@ -25,7 +31,7 @@ const outputSchema = z.object({
 	dryRun: z.boolean(),
 	counts: z.object({
 		failedPackages: count.describe(
-			'Packages the run could not scan. An apply refuses while any remain.',
+			'Packages the run could not scan. An apply refuses while any remain unless acknowledgedFailedPackageIds lists exactly those packages.',
 		),
 		credentials: count.describe('Credential ids the run attributed usage to.'),
 		missingRows: count,
@@ -57,7 +63,7 @@ export const adminCredentialBackfillCapability = defineDomainCapability(
 		idempotent: true,
 		name: 'adminCredentialBackfill',
 		description:
-			'Fill credential `provider` and `inject` from a complete inventory run (ADR 0068). provider is written only when every slot naming the credential agrees on one provider slug; inject only when every placement is the same header or the same query param. Only unset columns are written, and nothing reads them yet. An apply refuses a run with failed packages (counts.failedPackages). Never reads a credential value. dryRun defaults to true.',
+			'Fill credential `provider` and `inject` from a complete inventory run (ADR 0068). provider is written only when every slot naming the credential agrees on one provider slug; inject only when every placement is the same header or the same query param. Only unset columns are written, and nothing reads them yet. An apply refuses a run with failed packages (counts.failedPackages) unless acknowledgedFailedPackageIds lists exactly those packages. Never reads a credential value. dryRun defaults to true.',
 		keywords: [
 			'admin',
 			'credential',
@@ -79,10 +85,11 @@ export const adminCredentialBackfillCapability = defineDomainCapability(
 						env: ctx.env,
 						runId: args.runId,
 						dryRun: args.dryRun !== false,
+						acknowledgedFailedPackageIds: args.acknowledgedFailedPackageIds,
 					}),
 				{
 					successReason: (result) =>
-						`run=${result.runId};dry_run=${result.dryRun};provider=${result.counts.provider.write};inject=${result.counts.inject.write};written=${result.writtenRows}`,
+						`run=${result.runId};dry_run=${result.dryRun};acknowledged_failed=${args.acknowledgedFailedPackageIds?.length ?? 0};provider=${result.counts.provider.write};inject=${result.counts.inject.write};written=${result.writtenRows}`,
 				},
 			)
 		},
