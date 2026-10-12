@@ -3,16 +3,23 @@ import {
 	authorize,
 	authorizeOrgWide,
 	loadResourceListScope,
-	orgResource,
 } from '#worker/authorization/authorize.ts'
+import {
+	credentialResource,
+	missingCredentialResource,
+} from '#worker/credentials/credential-ids.ts'
+import { findIntegrationCredentialId } from '#worker/integrations/credentials.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 
 type IntegrationPermission = Extract<OrgPermission, `integration:${string}`>
 
 /**
- * Integrations and MCP servers are both `integration` resources keyed by
- * their stored name, the same key `resolveCredential` checks.
+ * An OAuth integration is checked as the `credential` resource of the
+ * connection `name` names (the key `resolveCredential` checks). A missing
+ * connection is checked against a target no grant names, so only org-wide
+ * holders pass.
  */
 export async function authorizeIntegration(
 	ctx: CapabilityContext,
@@ -20,10 +27,31 @@ export async function authorizeIntegration(
 	name: string,
 ) {
 	const request = requireMcpRequest(ctx.callerContext)
+	const credentialId = await findIntegrationCredentialId({
+		env: ctx.env,
+		userId: ownerIdFromCaller(ctx.callerContext),
+		name,
+	})
 	await authorize(
 		{ env: ctx.env, request },
 		permission,
-		orgResource(request, 'integration', name),
+		credentialId
+			? credentialResource(request.org.id, { id: credentialId, name })
+			: missingCredentialResource(request.org.id, name),
+	)
+}
+
+/** An MCP server's row id is its credential id. */
+export async function authorizeMcpServer(
+	ctx: CapabilityContext,
+	permission: IntegrationPermission,
+	server: { id: string; name: string },
+) {
+	const request = requireMcpRequest(ctx.callerContext)
+	await authorize(
+		{ env: ctx.env, request },
+		permission,
+		credentialResource(request.org.id, server),
 	)
 }
 
@@ -34,7 +62,7 @@ export async function loadIntegrationListScope(
 	return await loadResourceListScope(
 		{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
 		permission,
-		'integration',
+		'credential',
 	)
 }
 

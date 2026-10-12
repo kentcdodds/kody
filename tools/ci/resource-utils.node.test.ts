@@ -96,6 +96,7 @@ const productionArgs = (outConfigPath: string) => ({
 	communityAssetsBucketName: 'kody-community-assets',
 	emailBlobsBucketName: 'kody-email-blobs',
 	repoSessionBlobsBucketName: 'kody-repo-session-blobs',
+	operatorBackupsBucketName: 'kody-operator-backups',
 })
 
 type GeneratedEnv = {
@@ -173,6 +174,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			false,
 		],
 		[
+			isRetryableCloudflareFailure,
+			'Received a malformed response from the API\nGET /accounts/acct/workers/scripts/kody-platform/deployments -> 200 OK',
+			true,
+		],
+		[
 			isPermanentCloudflareAuthFailure,
 			'Authentication error [code: 10000]',
 			true,
@@ -248,6 +254,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		{ binding: 'COMMUNITY_ASSETS', bucket_name: 'kody-community-assets' },
 		{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
 		{ binding: 'REPO_SESSION_BLOBS', bucket_name: 'kody-repo-session-blobs' },
+		{ binding: 'OPERATOR_BACKUPS', bucket_name: 'kody-operator-backups' },
 	])
 	// Routes are generated from the base-URL vars rather than committed (a
 	// committed route would make `wrangler dev` resolve every local request as
@@ -275,6 +282,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		communityAssetsBucketName: 'kody-pr-123-community-assets',
 		emailBlobsBucketName: 'kody-pr-123-email-blobs',
 		repoSessionBlobsBucketName: 'kody-pr-123-repo-session-blobs',
+		operatorBackupsBucketName: 'kody-pr-123-operator-backups',
 		queueBindings: [
 			{
 				binding: 'WEBHOOK_DISPATCH_QUEUE',
@@ -312,6 +320,10 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		{
 			binding: 'REPO_SESSION_BLOBS',
 			bucket_name: 'kody-pr-123-repo-session-blobs',
+		},
+		{
+			binding: 'OPERATOR_BACKUPS',
+			bucket_name: 'kody-pr-123-operator-backups',
 		},
 	])
 	expect(preview?.queues).toEqual(

@@ -23,9 +23,6 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				second_agent_standard_gift_expires_at TEXT,
 				referral_standard_credit_expires_at TEXT,
 				signup_welcome_credits_pending INTEGER NOT NULL DEFAULT 0,
-				job_retention_success_once_days INTEGER,
-				job_retention_failed_once_days INTEGER,
-				job_retention_disabled_recurring_days INTEGER,
 				email_outbound_paused_at TEXT,
 				default_user_budget_micro_usd INTEGER,
 				automation_budget_micro_usd INTEGER,
@@ -152,18 +149,6 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
-			`CREATE TABLE IF NOT EXISTS enablement_org_migrations (
-				org_id TEXT PRIMARY KEY,
-				state TEXT NOT NULL,
-				notice_sent_at TEXT,
-				migrated_at TEXT,
-				notice_plan_json TEXT,
-				updated_at TEXT NOT NULL
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
 			`CREATE TABLE IF NOT EXISTS enablements (
 				id TEXT PRIMARY KEY NOT NULL,
 				org_id TEXT NOT NULL,
@@ -177,6 +162,7 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				paused_permission TEXT,
 				paused_resource_type TEXT,
 				paused_resource_id TEXT,
+				paused_credential_id TEXT,
 				paused_at TEXT,
 				credential_mapping_json TEXT,
 				origin TEXT NOT NULL,

@@ -938,6 +938,49 @@ export function __kodyCreatePackageBoundSecrets(packageId) {
 	};
 }
 
+// Artifacts published before the shared runtime was externalized inline a
+// full cloud runtime copy, and later consumers compose them verbatim, so that
+// copy survives with no \`// virtual:\` banner for the rewrite to strip. It
+// resolves stamped packageStorage / packageSecrets through the shared runtime
+// ALS store (\`__kodyPackageStorage(packageId)\`), as hosted runs do. The CLI
+// host enters that ALS with its own runtime object, so expose a view of the
+// store that adds the CapabilityProxy-backed factories.
+const __kodyRuntimeStorageSymbol = Symbol.for("kody.runtimeStorage");
+const __kodyLocalRuntimeStorageViewSymbol = Symbol.for(
+	"kody.localExecuteRuntimeStorageView",
+);
+{
+	const __globalAny = /** @type {any} */ (globalThis);
+	const hostStorage =
+		__globalAny[__kodyRuntimeStorageSymbol] ?? new AsyncLocalStorage();
+	if (!hostStorage[__kodyLocalRuntimeStorageViewSymbol]) {
+		const views = new WeakMap();
+		const viewOf = (store) => {
+			if (store == null || typeof store !== "object") return store;
+			let view = views.get(store);
+			if (!view) {
+				view = Object.freeze({
+					...store,
+					__kodyPackageStorage:
+						store.__kodyPackageStorage ??
+						((packageId) => __kodyCreatePackageBoundStorage(packageId)()),
+					__kodyPackageSecrets:
+						store.__kodyPackageSecrets ??
+						((packageId) => __kodyCreatePackageBoundSecrets(packageId)),
+				});
+				views.set(store, view);
+			}
+			return view;
+		};
+		__globalAny[__kodyRuntimeStorageSymbol] = Object.freeze({
+			[__kodyLocalRuntimeStorageViewSymbol]: true,
+			getStore: () => viewOf(hostStorage.getStore()),
+			run: (store, callback, ...args) =>
+				hostStorage.run(store, callback, ...args),
+		});
+	}
+}
+
 /**
  * Local counterpart of cloud \`__kodyMeterStaticPackageExport\`: wrap function
  * exports so their bodies run under the callee package stamp ALS. Usage

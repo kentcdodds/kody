@@ -1,0 +1,223 @@
+/**
+ * The contract every credential kind implements behind `resolveCredential`.
+ *
+ * A resolver's `resolve` step reads metadata only and returns a handle. The
+ * door then calls the handle's `authorize` and, only when that returns,
+ * `apply`, which is the one step that reads credential material. The door
+ * writes the audit row for every outcome from the resolver's audit subject.
+ */
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { authorize } from '#worker/authorization/authorize.ts'
+import { type IntegrationTokenRefreshResult } from '#worker/integrations/token-refresh.ts'
+import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
+import { type ResolvedSecret } from '#mcp/secrets/service.ts'
+import { type SecretScope } from '#mcp/secrets/types.ts'
+import { type StorageContext } from '#mcp/storage.ts'
+import { type CredentialAuditSubject } from './credential-resolution-audit.ts'
+import {
+	credentialResource,
+	missingCredentialResource,
+} from './credential-ids.ts'
+import { type PackageStamp } from './package-stamp.ts'
+import { type ResolvedCredentialUrl } from './url-resolver.ts'
+
+/**
+ * Normalized host the value is about to be sent to. When set, the door
+ * enforces the credential's host allowlist, so an unapproved host is an
+ * audited denial instead of a successful resolution the caller then rejects.
+ * Only pass a host that placeholder expansion cannot change.
+ */
+type RequestHost = string | null
+
+/** What is being resolved. `use` picks the package rules that apply. */
+export type CredentialTarget =
+	/** `{{secret:…}}` / `secret-basic` placeholders and `secretJwtSign`. */
+	| {
+			use: 'secret'
+			name: string
+			scope?: SecretScope | null
+			storageContext: StorageContext
+			/** Org slug for approval links in denial messages. */
+			orgSlug?: string | null
+			requestHost?: RequestHost
+	  }
+	/** `packageSecrets.get` / `.has`: a declared `kody.secretMounts` alias. */
+	| {
+			use: 'package-secret-mount'
+			alias: string
+			callerContext: McpCallerContext
+			/**
+			 * `.has` uses `presence`: find the row and run package-access
+			 * without decrypting. `.get` keeps the default `value` path.
+			 */
+			access?: 'presence' | 'value'
+	  }
+	/**
+	 * Webhook `verification.secretName`, challenge `secretName`, and the apply
+	 * `destination.secretName`. Read in the stamped package's buckets.
+	 */
+	| { use: 'webhook-secret'; name: string }
+	/** `{{secret/provider:ref}}` vault references. */
+	| {
+			use: 'provider-secret'
+			provider: string
+			ref: string
+			storageContext: StorageContext
+			requestHost?: RequestHost
+	  }
+	/** `{{integration-token:…}}` and webhook apply integration auth. */
+	| {
+			use: 'integration-token'
+			name: string
+			packageKodyId?: string | null
+			requestHost?: RequestHost
+	  }
+	/** `integrationTokenRefresh` and webhook apply 401 retry. */
+	| {
+			use: 'integration-refresh'
+			name: string
+			userEmail?: string
+			packageKodyId?: string | null
+			waitUntil?: (promise: Promise<unknown>) => void
+	  }
+	/** `kody.mcp.<server>.<tool>`: a tool call on the org's MCP hub. */
+	| {
+			use: 'mcp-connection'
+			serverId: string
+			serverName: string
+			waitUntil?: (promise: Promise<unknown>) => void
+	  }
+	/**
+	 * A `url` credential picked by id: the relative path and query code sends
+	 * to the credential's own URL. Not reachable from package code until the
+	 * credential clients ship (T).
+	 */
+	| { use: 'url'; credentialId: string; path: string }
+
+export type CredentialUse = CredentialTarget['use']
+
+export type ResolvedPackageSecretMount = {
+	alias: string
+	name: string
+	/** Opaque `{{secret:…}}` ref. Plaintext never leaves the host. */
+	ref: string
+	scope: SecretScope
+	packageId: string
+	kodyId: string
+}
+
+export type McpServerConnection = {
+	callTool(input: {
+		toolName: string
+		args: Record<string, unknown>
+	}): Promise<CallToolResult>
+}
+
+export type ResolvedCredentialByUse = {
+	secret: ResolvedSecret
+	'package-secret-mount': ResolvedPackageSecretMount
+	'webhook-secret': ResolvedSecret
+	'provider-secret': ResolvedProviderSecret
+	'integration-token': string | null
+	'integration-refresh': IntegrationTokenRefreshResult
+	'mcp-connection': McpServerConnection
+	url: ResolvedCredentialUrl
+}
+
+export type ResolvedCredential<T extends CredentialTarget> =
+	ResolvedCredentialByUse[T['use']]
+
+export type ResolveCredentialInput<T extends CredentialTarget> = {
+	env: Env
+	/** The org that owns the credential. */
+	orgId: OwnerId
+	/**
+	 * The run's request context. Null only on platform paths that have no
+	 * run (webhook ingress verification); those need an attested stamp.
+	 */
+	actor: RequestContext | null
+	packageStamp?: PackageStamp | null
+	/** App origin for approval links in denial messages. */
+	baseUrl: string
+	credential: T
+}
+
+export type CredentialTargetFor<U extends CredentialUse> = Extract<
+	CredentialTarget,
+	{ use: U }
+>
+
+export type ResolverCall<C extends CredentialTarget = CredentialTarget> = {
+	input: ResolveCredentialInput<CredentialTarget>
+	credential: C
+	/** Audit subject the door writes; resolvers fill in the credential id. */
+	subject: CredentialAuditSubject
+}
+
+/** Metadata for one resolution. It never holds a credential value. */
+export type CredentialHandle<Result> = {
+	/** The actor's Use on the credential id, then package and host rules. */
+	authorize(): Promise<void>
+	/** The only step that reads credential material. */
+	apply(): Promise<Result>
+}
+
+export type CredentialResolver<U extends CredentialUse> = {
+	auditSubject(credential: CredentialTargetFor<U>): CredentialAuditSubject
+	/** Finds the credential by metadata; never reads a value. */
+	resolve(
+		call: ResolverCall<CredentialTargetFor<U>>,
+	): Promise<CredentialHandle<ResolvedCredentialByUse[U]>>
+	/** Whether a result audits as success rather than not found. */
+	isFound(result: ResolvedCredentialByUse[U]): boolean
+}
+
+export function permissionForUse(use: CredentialUse): OrgPermission {
+	switch (use) {
+		case 'secret':
+		case 'package-secret-mount':
+		case 'webhook-secret':
+		case 'provider-secret':
+		case 'url':
+			return 'secret:use'
+		case 'integration-token':
+		case 'integration-refresh':
+		case 'mcp-connection':
+			return 'integration:use'
+		default: {
+			const exhaustive: never = use
+			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Every run needs its person's Use on the concrete credential, by its stable
+ * id, saved package or not: package rules (allowed packages, integration
+ * usage mode) only narrow it further. A trigger resolves an org credential
+ * only while its enabler has Use on it. A credential that was not found is
+ * checked against a target no grant names, so a non-holder sees a denial
+ * rather than learning whether the name exists.
+ */
+export async function authorizeActorUse(
+	call: ResolverCall,
+	credentialId: string | null,
+	label: string = call.subject.name,
+) {
+	const { input, subject } = call
+	subject.credentialId = credentialId
+	// Webhook ingress verifies a signature before any run exists; the secret
+	// never reaches package code.
+	if (!input.actor && call.credential.use === 'webhook-secret') return
+	await authorize(
+		{ env: input.env, request: input.actor },
+		permissionForUse(call.credential.use),
+		credentialId
+			? credentialResource(input.orgId, { id: credentialId, name: label })
+			: missingCredentialResource(input.orgId, label),
+	)
+}

@@ -7,16 +7,18 @@ const ansiEscapePattern = new RegExp(`${'\u001b'}\\[[0-9;]*m`, 'g')
  * Cloudflare upload and secret-bulk failures that are worth a bounded retry.
  * 10021 (startup CPU) is treated as retryable because production uploads of
  * the same script often pass on the next attempt; persistent over-limit
- * still fails after the workflow's attempt budget. Secret bulk hits the
- * same edge 502/503 "malformed response" / connection-reset class as
- * `isRetryableCloudflareApiError` in resource-utils.
+ * still fails after the workflow's attempt budget. Wrangler "Received a
+ * malformed response from the API" is the same edge flake class as
+ * `isRetryableCloudflareApiError` in resource-utils — including a 200 on
+ * GET /deployments whose JSON body is truncated. Secret-bulk 5xx stays
+ * covered even when that wrangler phrase is absent.
  */
 const retryableDeployFailurePatterns = [
 	/workflows\.api\.error\.internal_server/i,
 	/Cloudflare API[\s\S]*\[code:\s*10001\]/i,
 	/Cloudflare API[\s\S]*\[code:\s*10021\]/i,
 	/Script startup exceeded CPU time limit/i,
-	/Received a malformed response from the API[\s\S]*-> 5\d\d/i,
+	/Received a malformed response from the API/i,
 	/upstream connect error or disconnect\/reset/i,
 	/Secrets failed to upload[\s\S]*-> 5\d\d/i,
 ] as const

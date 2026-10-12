@@ -36,6 +36,7 @@ type NullablePrefixed<TRow, TPrefix extends string> = {
 type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
 	NullablePrefixed<PlatformOauthAppRow, 'p_'> & {
 		user_id: string
+		connection_id: string
 		connection_name: string
 		app_slug: string | null
 		platform_app_slug: string | null
@@ -125,6 +126,7 @@ const joinedSelectColumns = `
 	p.logo_content_type AS p_logo_content_type,
 	p.created_at AS p_created_at,
 	p.updated_at AS p_updated_at,
+	i.id AS connection_id,
 	i.name AS connection_name,
 	i.app_slug AS app_slug,
 	i.platform_app_slug AS platform_app_slug,
@@ -438,7 +440,7 @@ export async function deleteOauthApp(input: {
 
 export async function upsertIntegrationConnection(input: {
 	db: D1Database
-	row: Omit<UserIntegrationRow, 'created_at' | 'updated_at'> & {
+	row: Omit<UserIntegrationRow, 'id' | 'created_at' | 'updated_at'> & {
 		created_at?: string
 		updated_at?: string
 	}
@@ -449,12 +451,19 @@ export async function upsertIntegrationConnection(input: {
 			`INSERT INTO user_integrations (
 				user_id, name, app_slug, platform_app_slug, account_label, description,
 				scopes_json, required_hosts_json, connected_at, token_refreshed_at,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				created_at, updated_at, provider
+			) VALUES (
+				?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+				COALESCE(
+					(SELECT provider FROM platform_oauth_apps WHERE slug = ?4),
+					(SELECT provider FROM user_oauth_apps WHERE user_id = ?1 AND slug = ?3)
+				)
+			)
 			ON CONFLICT(user_id, name)
 			DO UPDATE SET
 				app_slug = excluded.app_slug,
 				platform_app_slug = excluded.platform_app_slug,
+				provider = excluded.provider,
 				account_label = excluded.account_label,
 				description = excluded.description,
 				scopes_json = excluded.scopes_json,
@@ -521,28 +530,46 @@ export async function deleteIntegrationConnection(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function getIntegrationCredentialId(input: {
+	db: D1Database
+	userId: string
+	name: string
+}): Promise<string | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT id FROM user_integrations
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()} LIMIT 1`,
+		)
+		.bind(input.userId, input.name)
+		.first<{ id: string }>()
+	return row?.id ?? null
+}
+
 export async function getIntegrationCredentialCiphertexts(input: {
 	db: D1Database
 	userId: string
 	name: string
 }): Promise<{
+	credentialId: string
 	accessTokenEncrypted: string | null
 	refreshTokenEncrypted: string | null
 } | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT access_token_encrypted, refresh_token_encrypted
+			`SELECT id, access_token_encrypted, refresh_token_encrypted
 			FROM user_integrations
 			WHERE user_id = ? AND name = ?
 			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.name)
 		.first<{
+			id: string
 			access_token_encrypted: string | null
 			refresh_token_encrypted: string | null
 		}>()
 	if (!row) return null
 	return {
+		credentialId: row.id,
 		accessTokenEncrypted: row.access_token_encrypted,
 		refreshTokenEncrypted: row.refresh_token_encrypted,
 	}
@@ -676,6 +703,7 @@ export function mapIntegrationRow(
 		? row.refresh_policy
 		: null
 	return {
+		credentialId: row.id,
 		userId: row.user_id,
 		name: row.name,
 		appSlug: row.app_slug,
@@ -881,6 +909,7 @@ function mapLastAuthFailure(
 
 function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 	const connection = mapIntegrationRow({
+		id: row.connection_id,
 		user_id: row.user_id,
 		name: row.connection_name,
 		app_slug: row.app_slug,

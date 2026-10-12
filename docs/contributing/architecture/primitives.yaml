@@ -92,8 +92,7 @@ primitives:
     summary:
       Independently deployed jobs worker owning the JobManager Durable Object,
       the cron/scheduled dispatch lane and queue, and the dedicated kody-jobs D1
-      database (jobs + archived_job_artifacts), calling back into the main
-      worker for job execution.
+      database (jobs), calling back into the main worker for job execution.
     code:
       - packages/jobs-worker/
     docs:
@@ -139,7 +138,6 @@ primitives:
       - packages/worker/src/index.ts
       - packages/worker/src/scheduled/
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
-      - packages/worker/src/jobs/job-retention-cleanup.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
       - packages/worker/src/app/retention.ts
       - packages/worker/src/account/unverified-account-purge.ts
@@ -566,7 +564,7 @@ primitives:
   - id: artifacts-repos
     group: storage
     name: Artifacts repos
-    summary: Canonical published git source for packages and jobs.
+    summary: Canonical published git source for packages.
     code:
       - packages/worker/src/repo/artifacts.ts
       - packages/worker/src/repo/public-package-git-http.ts
@@ -754,7 +752,7 @@ invariants:
       - docs/contributing/architecture/integrations.md
 
   - id: canonical-repo-source
-    summary: Artifacts repos are canonical package/job source; D1 is metadata.
+    summary: Artifacts repos are canonical package source; D1 is metadata.
     docs:
       - docs/contributing/architecture/data-storage.md
 

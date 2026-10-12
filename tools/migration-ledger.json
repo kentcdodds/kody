@@ -431,6 +431,34 @@
 		{
 			"filename": "0109-org-audit-outbox.sql",
 			"sha256": "7aa9ed97631a0162e7251b08f95ef64f6f0b67694fd52414761c7623a66cec3c"
+		},
+		{
+			"filename": "0110-credential-ids-and-grants.sql",
+			"sha256": "bfd319f9e3f530930cea060c6abfe740d8cac6143ea7b462974dc3d1153b682a"
+		},
+		{
+			"filename": "0111-credential-provider-inject-source.sql",
+			"sha256": "eceb55fbafd5ea18a109706a8e3e849a090b03b21c44032595d41092d13bf817"
+		},
+		{
+			"filename": "0112-credential-inventory.sql",
+			"sha256": "57e56179562397063d6f3f14745e43fec24149dfc98d518893009aa550f818b7"
+		},
+		{
+			"filename": "0114-drop-org-job-retention.sql",
+			"sha256": "c8f82d6f0604d07f6f0a81e735579d92a5f11b69b62957d1bf68621cd6f0af1c"
+		},
+		{
+			"filename": "0115-drop-enablement-org-migrations.sql",
+			"sha256": "6e1c066fc7df114176741744e678b13b2db7f8ad7f3059059874bd35eb6b13c9"
+		},
+		{
+			"filename": "0116-credential-org-grants.sql",
+			"sha256": "88f8a994e1b1f99b872a7ad10fcf55f53987a7359e427d9e7cb9bdd05583fd16"
+		},
+		{
+			"filename": "0117-credential-kinds.sql",
+			"sha256": "9299e404d3c3f1ca437c471b176507bd89dd0c11bbf9315b435753a8cc4b2260"
 		}
 	]
 }

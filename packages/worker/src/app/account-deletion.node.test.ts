@@ -294,9 +294,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'pba-1', user_id: userAaa, kv_key: 'bundle-artifact:v1:src-1' },
 			{ id: 'pba-2', user_id: userBbb, kv_key: 'bundle-artifact:v1:src-2' },
 		],
-		archived_job_artifacts: [
-			{ id: 'aja-1', user_id: userAaa, storage_id: 'job:archived-1' },
-		],
 		entity_sources: [
 			{
 				id: 'src-1',
@@ -685,7 +682,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.secret_entries).toEqual([])
 	expect(rows.value_buckets).toEqual([])
 	expect(rows.value_entries).toEqual([])
-	expect(rows.archived_job_artifacts).toEqual([])
 	expect(rows.entity_sources).toEqual([
 		{
 			id: 'src-2',
@@ -767,7 +763,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobVectorId(packageJobId),
 		'package_pkg-1',
 	])
-	expect(clearStorageMock).toHaveBeenCalledTimes(3)
+	expect(clearStorageMock).toHaveBeenCalledTimes(2)
 	expect(purgeJobManagerMock).toHaveBeenCalledTimes(1)
 	expect(purgeRepoSessionMock).toHaveBeenCalledWith({
 		sessionId: 'rs-1',
@@ -850,7 +846,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		]),
 	)
 	expect(result.clearedDurableObjects).toMatchObject({
-		storageRunners: 3,
+		storageRunners: 2,
 		runLogs: 1,
 		userMeters: 1,
 		stripePlanRefreshes: 1,

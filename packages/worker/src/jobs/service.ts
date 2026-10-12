@@ -20,6 +20,7 @@ import {
 } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import {
 	abandonRunRecord,
@@ -61,7 +62,7 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
+import { createJobStorageId } from '#worker/storage-runner.ts'
 import { stampFirstJob } from '#worker/identity/activation-stamps.ts'
 import {
 	isBudgetLimitError,
@@ -95,19 +96,13 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
-import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
-import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
-	deleteEntitySource,
 	getEntitySourceById,
 	getEntitySourceByIdForUser,
 } from '#worker/repo/entity-sources.ts'
-import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
-import { deleteRepoSessionsBySourceForUser } from '#worker/repo/repo-sessions.ts'
 import {
-	deletePublishedArtifactsForSource,
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -119,22 +114,17 @@ import {
 	listJobs,
 } from './inspect.ts'
 import {
-	deletePublishedSourceSnapshot,
 	type PublishedBundleArtifact,
 	bundleArtifactVersion,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
-	logJobSchedulerError,
 	logJobSchedulerEvent,
-	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
 import {
-	isPackageOwnedJobId,
-	packageOwnedJobDeleteErrorMessage,
-} from './job-retention.ts'
-import { buildPackageJobId, packageIdFromJobId } from './package-job-id.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+	buildPackageJobId,
+	requirePackageIdFromJobId,
+} from './package-job-id.ts'
 
 export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 
@@ -169,36 +159,16 @@ function runNowRequestSource(
 	return { kind: 'inherited', lineage }
 }
 
-function serializeCallerContext(callerContext: PersistedJobCallerContext) {
+export function serializeCallerContext(
+	callerContext: PersistedJobCallerContext,
+) {
 	return JSON.stringify(callerContext)
-}
-
-function normalizeJobName(name: string) {
-	const trimmed = name.trim()
-	if (!trimmed) {
-		throw new McpCallerError('Jobs require a non-empty name.')
-	}
-	return trimmed
 }
 
 function normalizeOptionalParams(
 	params: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
 	return params === null || params === undefined ? undefined : params
-}
-
-function normalizeJobRepoCheckPolicy(
-	policy: JobRepoCheckPolicy | null | undefined,
-): JobRepoCheckPolicy | undefined {
-	if (!policy) {
-		return undefined
-	}
-	if (policy.allowTypecheckFailures === true) {
-		return {
-			allowTypecheckFailures: true,
-		}
-	}
-	return undefined
 }
 
 async function buildPublishedJobBundle(input: {
@@ -353,19 +323,17 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		artifactCacheHit: false,
 		reason: 'bundle_not_found',
 	})
-	if (resolved.packageContext) {
-		const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
-			sourceFiles: resolved.files,
-			entryPoints: [
-				{
-					path: resolved.entryPoint,
-				},
-			],
-			emittedEventTopics: resolved.emittedEventTopics,
-		})
-		if (!typecheckResult.ok) {
-			throw new Error(typecheckResult.message)
-		}
+	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
+		sourceFiles: resolved.files,
+		entryPoints: [
+			{
+				path: resolved.entryPoint,
+			},
+		],
+		emittedEventTopics: resolved.emittedEventTopics,
+	})
+	if (!typecheckResult.ok) {
+		throw new Error(typecheckResult.message)
 	}
 	await persistPublishedJobBundleArtifact({
 		env: input.env,
@@ -523,6 +491,7 @@ async function executePublishedJobArtifact(input: {
 		input.job.params,
 		{
 			...(packageContext ? { packageContext } : {}),
+			executorTimeoutMs: backgroundExecutorTimeoutMs,
 			runRecord,
 			runRecordHandle: input.runRecordHandle,
 			...packageRuntimeTools,
@@ -534,133 +503,7 @@ async function executePublishedJobArtifact(input: {
 	}))
 }
 
-async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
-	const due = await jobsData(input.env).listArchivedJobArtifactsDueBefore({
-		retainUntil: (input.now ?? new Date()).toISOString(),
-	})
-	for (const artifact of due) {
-		try {
-			const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
-				id: artifact.sourceId,
-				userId: artifact.userId,
-			})
-			if (
-				source &&
-				source.entity_kind === 'job' &&
-				source.entity_id === artifact.jobId
-			) {
-				const artifactCleanup = await cleanupArtifactReposForSource({
-					env: input.env,
-					userId: artifact.userId,
-					sourceId: source.id,
-				})
-				if (
-					source.repo_id.trim() &&
-					artifactCleanup.deleted === 0 &&
-					!artifactCleanup.artifactAccessUnavailable
-				) {
-					throw new Error(
-						`Artifact repo cleanup failed for source ${source.id}.`,
-					)
-				}
-				await deleteRepoSessionsBySourceForUser(input.env, {
-					userId: artifact.userId,
-					sourceId: source.id,
-				})
-				await deletePublishedArtifactsForSource({
-					env: input.env,
-					userId: artifact.userId,
-					sourceId: source.id,
-				})
-				await deletePublishedSourceSnapshot({
-					env: input.env,
-					sourceId: source.id,
-					publishedCommit: source.published_commit,
-				})
-				await deleteEntitySource(input.env, {
-					id: source.id,
-					userId: artifact.userId,
-				})
-			}
-			await storageRunnerRpc({
-				env: input.env,
-				userId: artifact.userId,
-				storageId: artifact.storageId,
-			}).clearStorage()
-			await jobsData(input.env).deleteArchivedJobArtifact({ id: artifact.id })
-			logJobSchedulerEvent({
-				event: 'job_artifact_cleanup_completed',
-				userId: artifact.userId,
-				jobId: artifact.jobId,
-				sourceId: artifact.sourceId,
-				reason: 'retention_elapsed',
-			})
-		} catch (error) {
-			logJobSchedulerError({
-				event: 'job_artifact_cleanup_failed',
-				userId: artifact.userId,
-				jobId: artifact.jobId,
-				sourceId: artifact.sourceId,
-				reason: 'retention_elapsed',
-				...schedulerErrorFields(error),
-			})
-		}
-	}
-}
-
-async function cleanupAdHocJobSource(input: {
-	env: Env
-	userId: OwnerId
-	jobId: string
-	sourceId: string | null | undefined
-}) {
-	if (!input.sourceId) {
-		return
-	}
-	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
-		id: input.sourceId,
-		userId: input.userId,
-	})
-	if (
-		!source ||
-		source.entity_kind !== 'job' ||
-		source.entity_id !== input.jobId
-	) {
-		return
-	}
-	const artifactCleanup = await cleanupArtifactReposForSource({
-		env: input.env,
-		userId: input.userId,
-		sourceId: source.id,
-	})
-	if (
-		source.repo_id.trim() &&
-		artifactCleanup.deleted === 0 &&
-		!artifactCleanup.artifactAccessUnavailable
-	) {
-		throw new Error(`Artifact repo cleanup failed for source ${source.id}.`)
-	}
-	await deleteRepoSessionsBySourceForUser(input.env, {
-		userId: input.userId,
-		sourceId: source.id,
-	})
-	await deletePublishedArtifactsForSource({
-		env: input.env,
-		userId: input.userId,
-		sourceId: source.id,
-	})
-	await deletePublishedSourceSnapshot({
-		env: input.env,
-		sourceId: source.id,
-		publishedCommit: source.published_commit,
-	})
-	await deleteEntitySource(input.env, {
-		id: source.id,
-		userId: input.userId,
-	})
-}
-
-async function createPackageJobCallerContext(input: {
+export async function createPackageJobCallerContext(input: {
 	env: Env
 	db: D1Database
 	baseUrl: string
@@ -923,7 +766,6 @@ export async function syncPackageJobsForPackage(input: {
 					timezone,
 					enabled,
 					killSwitchEnabled: false,
-					preserved: false,
 					expiresAt: null,
 					createdAt: now,
 					updatedAt: now,
@@ -1013,85 +855,6 @@ function resolvePackageJobEnabled(input: {
 	return input.existingEnabled || manifestEnabled
 }
 
-function resolveUpdatedShape(input: {
-	existing: JobRecord
-	body: JobUpdateInput
-}) {
-	const nextSourceId =
-		input.body.sourceId === undefined
-			? input.existing.sourceId
-			: input.body.sourceId
-	const nextPublishedCommit =
-		input.body.publishedCommit === undefined
-			? input.existing.publishedCommit
-			: input.body.publishedCommit
-	const nextRepoCheckPolicy =
-		nextSourceId == null
-			? undefined
-			: input.body.repoCheckPolicy === undefined
-				? input.existing.repoCheckPolicy
-				: normalizeJobRepoCheckPolicy(input.body.repoCheckPolicy)
-	if (!nextSourceId) {
-		throw new Error('Jobs require a repo-backed source.')
-	}
-	return {
-		sourceId: nextSourceId,
-		publishedCommit: nextPublishedCommit ?? null,
-		repoCheckPolicy: nextRepoCheckPolicy,
-	}
-}
-
-function shouldSyncJobSourceForUpdate(body: JobUpdateInput) {
-	return (
-		body.name !== undefined ||
-		body.schedule !== undefined ||
-		body.timezone !== undefined ||
-		body.sourceId !== undefined ||
-		body.publishedCommit !== undefined
-	)
-}
-
-function jobUpdateSharesPackageSource(input: {
-	jobId: string
-	source: { entity_kind: string } | null
-}) {
-	return (
-		packageIdFromJobId(input.jobId) != null ||
-		input.source?.entity_kind === 'package'
-	)
-}
-
-function assertJobUpdateRejectsCode(body: JobUpdateInput) {
-	if (body.code === undefined) {
-		return
-	}
-	throw new McpCallerError('Job code cannot be changed via jobUpdate.')
-}
-
-function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
-	existing: Pick<JobRecord, 'id' | 'name' | 'publishedCommit'>
-	body: JobUpdateInput
-}) {
-	const nameChanges =
-		input.body.name !== undefined &&
-		normalizeJobName(input.body.name) !== input.existing.name
-	const publishedCommitChanges =
-		input.body.publishedCommit !== undefined &&
-		input.body.publishedCommit !== input.existing.publishedCommit
-	if (!nameChanges && !publishedCommitChanges) {
-		return
-	}
-	throw new McpCallerError(
-		'Package-owned jobs cannot change name or published source via jobUpdate. Change the job entry in the package repo and publish the package.',
-	)
-}
-
-export function assertJobDeleteAllowsJobId(jobId: string) {
-	if (isPackageOwnedJobId(jobId)) {
-		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
-	}
-}
-
 export async function updateJob(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -1114,7 +877,7 @@ export async function updateJob(input: {
 				throw new McpCallerError(`Job "${input.body.id}" was not found.`)
 			}
 			const existing = existingRow.record
-			assertJobUpdateRejectsCode(input.body)
+			requirePackageIdFromJobId(existing.id)
 			const nextSchedule =
 				input.body.schedule !== undefined
 					? normalizeJobSchedule(input.body.schedule)
@@ -1150,28 +913,8 @@ export async function updateJob(input: {
 				scheduleChanged ||
 				nextTimezone !== existing.timezone ||
 				(existing.enabled === false && nextEnabled === true)
-			const shape = resolveUpdatedShape({
-				existing,
-				body: input.body,
-			})
-			if (
-				input.body.sourceId !== undefined &&
-				existing.sourceId != null &&
-				input.body.sourceId !== existing.sourceId
-			) {
-				throw new Error(
-					`Job "${existing.id}" cannot change sourceId after it is assigned.`,
-				)
-			}
 			const updated: JobRecord = {
 				...existing,
-				name:
-					input.body.name === undefined
-						? existing.name
-						: normalizeJobName(input.body.name),
-				sourceId: shape.sourceId,
-				publishedCommit: shape.publishedCommit ?? null,
-				repoCheckPolicy: shape.repoCheckPolicy,
 				params:
 					input.body.params === undefined
 						? existing.params
@@ -1181,7 +924,6 @@ export async function updateJob(input: {
 				enabled: nextEnabled,
 				killSwitchEnabled:
 					input.body.killSwitchEnabled ?? existing.killSwitchEnabled,
-				preserved: input.body.preserved ?? existing.preserved,
 				expiresAt: nextExpiresAt,
 				updatedAt: nowIso,
 				nextRunAt: shouldRecomputeNextRunAt
@@ -1190,39 +932,6 @@ export async function updateJob(input: {
 							timezone: nextTimezone,
 						})
 					: existing.nextRunAt,
-			}
-			if (shouldSyncJobSourceForUpdate(input.body)) {
-				const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
-					id: updated.sourceId,
-					userId: ownerId,
-				})
-				// Package-owned jobs share the package entity source. Metadata
-				// updates (schedule, timezone, params, enabled) must not
-				// force-publish that source: the overwrite safety policy refuses
-				// it, and writing kody.json / src/job.ts into the package repo
-				// would be destructive. Name and publishedCommit stay with the
-				// package repo + publish. Code is rejected for every job above.
-				if (jobUpdateSharesPackageSource({ jobId: existing.id, source })) {
-					assertPackageOwnedJobUpdateAllowsIdentityFields({
-						existing,
-						body: input.body,
-					})
-				} else {
-					const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-						env: input.env,
-						userId: ownerId,
-						baseUrl: callerContext.baseUrl,
-						sourceId: updated.sourceId,
-						bootstrapAccess: null,
-						files: buildJobSourceFiles({
-							job: toJobView(updated),
-							moduleSource: null,
-						}),
-					})
-					if (syncedPublishedCommit) {
-						updated.publishedCommit = syncedPublishedCommit
-					}
-				}
 			}
 			const nextCallerContextJson = serializeCallerContext(callerContext)
 			const didUpdate = await jobsData(input.env).updateJob({
@@ -1248,84 +957,6 @@ export async function updateJob(input: {
 				userId: ownerId,
 			})
 			return toJobView(updated)
-		},
-	})
-}
-
-export async function deleteJob(input: {
-	env: Env
-	userId: OwnerId
-	jobId: string
-}) {
-	assertJobDeleteAllowsJobId(input.jobId)
-	return await withAccountWriteLease({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-		env: input.env,
-		async write() {
-			const row = await jobsData(input.env).getJobById({
-				userId: input.userId,
-				jobId: input.jobId,
-			})
-			if (!row) {
-				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
-			}
-			await cleanupAdHocJobSource({
-				env: input.env,
-				userId: input.userId,
-				jobId: input.jobId,
-				sourceId: row.record.sourceId,
-			})
-			const storageId = row.record.storageId
-			await jobsData(input.env).deleteJob({
-				userId: input.userId,
-				jobId: input.jobId,
-			})
-			await deleteJobVector(input.env, input.jobId)
-			let storageCleared = false
-			try {
-				await storageRunnerRpc({
-					env: input.env,
-					userId: input.userId,
-					storageId,
-				}).clearStorage()
-				storageCleared = true
-			} catch (error) {
-				logJobSchedulerError({
-					event: 'job_storage_clear_failed',
-					userId: input.userId,
-					jobId: input.jobId,
-					reason: 'jobDelete',
-					...schedulerErrorFields(error),
-				})
-			}
-			// Keep the bucket registration when clear fails so storage_bytes
-			// still accounts for orphaned DO data and a later sweep can retry.
-			if (storageCleared) {
-				try {
-					await input.env.APP_DB.prepare(
-						`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
-					)
-						.bind(input.userId, storageId)
-						.run()
-				} catch (error) {
-					logJobSchedulerError({
-						event: 'job_storage_bucket_unregister_failed',
-						userId: input.userId,
-						jobId: input.jobId,
-						reason: 'jobDelete',
-						...schedulerErrorFields(error),
-					})
-				}
-			}
-			await syncJobManagerAlarm({
-				env: input.env,
-				userId: input.userId,
-			})
-			return {
-				id: input.jobId,
-				deleted: true as const,
-			}
 		},
 	})
 }
@@ -1659,15 +1290,7 @@ async function resolveScheduledJobRunAttribution(input: {
 	env: Env
 	job: JobRecord
 }) {
-	const packageId = packageIdFromJobId(input.job.id)
-	if (!packageId) {
-		return {
-			sourceId: input.job.sourceId,
-			publishedCommit: input.job.publishedCommit ?? null,
-			packageId: null,
-			kodyId: null,
-		}
-	}
+	const packageId = requirePackageIdFromJobId(input.job.id)
 	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
 		id: input.job.sourceId,
 		userId: input.job.userId,
@@ -1706,7 +1329,7 @@ async function planScheduledJobRuns(input: {
 	const plan = await planEnablementRuns({
 		env: input.env,
 		orgId: input.job.userId,
-		packageId: packageIdFromJobId(input.job.id),
+		packageId: requirePackageIdFromJobId(input.job.id),
 		trigger: { kind: 'cron', instanceId: input.job.id },
 	})
 	if (plan.runs.length === 0) {
@@ -1725,6 +1348,7 @@ async function planScheduledJobRuns(input: {
 async function executeClaimedScheduledJob(input: {
 	env: Env
 	row: JobRow
+	claimToken: string
 	scheduledFor: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<JobExecutionOutcome | null> {
@@ -1740,7 +1364,19 @@ async function executeClaimedScheduledJob(input: {
 	})
 	if (runs.length === 0) return null
 	let selected: JobExecutionOutcome | null = null
-	for (const run of runs) {
+	for (const [index, run] of runs.entries()) {
+		// Enablement runs share one claim, and several background-budget runs
+		// can outlast a single lease. Stop once another runner owns the slot;
+		// finalization is fenced on the same token.
+		if (index > 0) {
+			const renewed = await jobsData(input.env).renewClaimedJob({
+				userId: input.row.record.userId,
+				jobId: input.row.id,
+				claimToken: input.claimToken,
+				nowMs: Date.now(),
+			})
+			if (!renewed) break
+		}
 		const outcome = await executeClaimedScheduledJobRun({ ...input, ...run })
 		if (!selected || selected.execution.ok) selected = outcome
 	}
@@ -1934,6 +1570,7 @@ export async function runDueJobsForUser(input: {
 					const outcome = await executeClaimedScheduledJob({
 						env: input.env,
 						row,
+						claimToken,
 						scheduledFor: row.claimed_scheduled_for,
 						waitUntil: input.waitUntil,
 					})
@@ -2017,10 +1654,6 @@ export async function runDueJobsForUser(input: {
 					})
 				}
 			}
-			await cleanupArchivedJobArtifacts({
-				env: input.env,
-				now,
-			})
 			return {
 				dueJobCount: claimedJobCount,
 				successCount,

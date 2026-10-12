@@ -8,11 +8,17 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	lockIntegrationToPackage: vi.fn(),
+	findIntegrationCredentialId: vi.fn(),
 }))
 
 vi.mock('#worker/integrations/service.ts', () => ({
 	lockIntegrationToPackage: (...args: Array<unknown>) =>
 		mockModule.lockIntegrationToPackage(...args),
+}))
+
+vi.mock('#worker/integrations/credentials.ts', () => ({
+	findIntegrationCredentialId: (...args: Array<unknown>) =>
+		mockModule.findIntegrationCredentialId(...args),
 }))
 
 const { integrationLockCapability } = await import('./integration-lock.ts')
@@ -22,6 +28,7 @@ test('integrationLock grants a package and rejects missing packages', async () =
 		name: 'google',
 		allowedPackageIds: ['pkg-drafts'],
 	})
+	mockModule.findIntegrationCredentialId.mockResolvedValue('cred-google')
 
 	const ctx = {
 		env: {} as Env,

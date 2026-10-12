@@ -15,6 +15,7 @@ import {
 	updateUserSecretForPackage,
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
+import { authorizeSecretSet } from './authorize-secret.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetInputSchema = z
@@ -86,6 +87,11 @@ export const secretSetCapability = defineDomainCapability(
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
 				})
+			await authorizeSecretSet(ctx, {
+				name: parsed.name,
+				scope: parsed.scope,
+				storageContext,
+			})
 			let saved
 			if (parsed.scope === 'user' && authorityPackageId) {
 				if (parsed.expires_at !== undefined) {

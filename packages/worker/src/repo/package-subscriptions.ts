@@ -103,8 +103,6 @@ async function resolveRepoSubscriptionEntity(input: {
 			kodyId = savedPackage?.kodyId ?? null
 			break
 		}
-		case 'job':
-			break
 		default: {
 			const exhaustive: never = input.source.entity_kind
 			throw new Error(`Unsupported entity kind: ${exhaustive}`)

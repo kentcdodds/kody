@@ -1,12 +1,4 @@
 import {
-	deleteArchivedJobArtifact,
-	listAllArchivedJobArtifactStorageOwnerRows,
-	listArchivedJobArtifactsDueBefore,
-	listArchivedJobArtifactsForUser,
-	upsertArchivedJobArtifact,
-	type ArchivedJobArtifactRecord,
-} from './archived-artifacts-repo.ts'
-import {
 	claimJobRow,
 	countJobRowsBySourceId,
 	countJobRowsForUser,
@@ -20,15 +12,16 @@ import {
 	listAllJobStorageOwnerRows,
 	listDueJobRows,
 	listJobIdRowsForUser,
-	listJobRetentionCandidateRows,
 	listJobRowsByUserId,
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
 	refreshPackageJobRowIdentity,
+	renewClaimedJobRow,
 	restoreJobRowsForUser,
 	retryClaimedJobRow,
 	softDeleteJobRowsForUser,
 	sumJobRowsStorageBytesForUser,
+	transferJobRowsOwner,
 	updateJobRow,
 	type JobCountBySourceId,
 	type JobRow,
@@ -37,12 +30,12 @@ import { type JobRecord } from './types.ts'
 
 /**
  * Coarse-grained jobs-data contract between the main worker and the jobs
- * worker (ADR 0016). The jobs worker owns the `jobs` and
- * `archived_job_artifacts` tables in its dedicated D1 database and exposes
- * these operations over a typed service binding (`JobsService`). The main
- * worker never queries the jobs tables directly in production; in local dev
- * and tests without the binding it falls back to {@link createD1JobsStore}
- * over its own database (see `jobsStore` in the main worker).
+ * worker (ADR 0016). The jobs worker owns the `jobs` table in its dedicated
+ * D1 database and exposes these operations over a typed service binding
+ * (`JobsService`). The main worker never queries the jobs table directly in
+ * production; in local dev and tests without the binding it falls back to
+ * {@link createD1JobsStore} over its own database (see `jobsStore` in the
+ * main worker).
  *
  * Every operation is user-scoped (or an explicitly bounded cross-user
  * maintenance page) — implementations must preserve the per-user isolation
@@ -76,6 +69,12 @@ export type JobsStore = {
 		nowMs: number
 		claimToken: string
 	}): Promise<JobRow | null>
+	renewClaimedJob(input: {
+		userId: string
+		jobId: string
+		claimToken: string
+		nowMs: number
+	}): Promise<boolean>
 	finalizeClaimedJob(input: {
 		userId: string
 		job: JobRecord
@@ -101,23 +100,6 @@ export type JobsStore = {
 		userId: string
 		nowIso: string
 	}): Promise<number>
-	listJobRetentionCandidates(input: {
-		afterId: string | null
-		limit: number
-	}): Promise<Array<JobRow>>
-	upsertArchivedJobArtifact(input: {
-		jobId: string
-		userId: string
-		sourceId: string
-		publishedCommit: string
-		storageId: string
-		retainUntil: string
-	}): Promise<string>
-	listArchivedJobArtifactsDueBefore(input: {
-		retainUntil: string
-		limit?: number
-	}): Promise<Array<ArchivedJobArtifactRecord>>
-	deleteArchivedJobArtifact(input: { id: string }): Promise<void>
 	countJobsForUser(input: { userId: string }): Promise<number>
 	/**
 	 * Per-`source_id` job counts for one user. Used by profile signifiers
@@ -133,28 +115,21 @@ export type JobsStore = {
 	sumJobsStorageBytesForUser(input: { userId: string }): Promise<number>
 	/**
 	 * Job ids owned by the user, for deriving job vector ids during account
-	 * deletion. Vectors are only written for live `jobs` rows; archived
-	 * artifact `job_id`s are included as an idempotent superset so a vector
-	 * whose row was already deleted (but whose vector delete failed) is still
-	 * swept.
+	 * deletion. Vectors are written for live `jobs` rows.
 	 */
 	listJobIdsForUser(input: { userId: string }): Promise<Array<string>>
-	/** Storage ids referenced by the user's jobs and archived artifacts. */
+	/** Storage ids referenced by the user's jobs. */
 	listJobStorageIdsForUser(input: { userId: string }): Promise<Array<string>>
-	listArchivedJobArtifactsForUser(input: {
-		userId: string
-	}): Promise<Array<ArchivedJobArtifactRecord>>
 	/**
-	 * Platform-wide (userId, storageId) pairs across jobs and archived
-	 * artifacts. Operator-level DR inventory only — never expose on
-	 * user-facing paths.
+	 * Platform-wide (userId, storageId) pairs across jobs. Operator-level DR
+	 * inventory only — never expose on user-facing paths.
 	 */
 	listAllJobStorageOwners(): Promise<
 		Array<{ userId: string; storageId: string }>
 	>
 	/** Platform-wide job totals for admin insights. */
 	getJobInsights(): Promise<{ total: number; enabled: number }>
-	/** Deletes every job and archived-artifact row for the user. */
+	/** Deletes every job row for the user. */
 	purgeUserJobsData(input: { userId: string }): Promise<void>
 	/** Soft-delete live jobs for an org/user owner (Teams P7). */
 	softDeleteJobsForUser(input: {
@@ -167,6 +142,17 @@ export type JobsStore = {
 		deletedAt: string
 		restoredAt: string
 	}): Promise<number>
+	/**
+	 * Operator org resource transfer: re-point live, unclaimed jobs from one
+	 * owner to another in one batch, rewriting each caller context. Refuses
+	 * (and changes nothing) unless every listed job matches.
+	 */
+	transferJobsOwner(input: {
+		fromUserId: string
+		toUserId: string
+		jobs: Array<{ jobId: string; callerContextJson: string }>
+		updatedAt: string
+	}): Promise<{ transferred: number }>
 }
 
 /** D1-backed {@link JobsStore} used by the jobs worker (and dev/test fallback). */
@@ -190,6 +176,7 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 				now: new Date(input.nowMs),
 				claimToken: input.claimToken,
 			}),
+		renewClaimedJob: (input) => renewClaimedJobRow({ db, ...input }),
 		finalizeClaimedJob: (input) => finalizeClaimedJobRow({ db, ...input }),
 		retryClaimedJob: (input) => retryClaimedJobRow({ db, ...input }),
 		refreshPackageJobIdentity: (input) =>
@@ -197,57 +184,16 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		deleteJob: (input) => deleteJobRow(db, input.userId, input.jobId),
 		disableExpiredJobsForUser: (input) =>
 			disableExpiredJobRowsForUser({ db, ...input }),
-		listJobRetentionCandidates: (input) =>
-			listJobRetentionCandidateRows(db, input),
-		upsertArchivedJobArtifact: (input) =>
-			upsertArchivedJobArtifact({ db, ...input }),
-		listArchivedJobArtifactsDueBefore: (input) =>
-			listArchivedJobArtifactsDueBefore(db, input.retainUntil, input.limit),
-		deleteArchivedJobArtifact: async (input) => {
-			await deleteArchivedJobArtifact(db, input.id)
-		},
 		countJobsForUser: (input) => countJobRowsForUser(db, input.userId),
 		countJobsBySourceId: (input) => countJobRowsBySourceId(db, input.userId),
 		sumJobsStorageBytesForUser: (input) =>
 			sumJobRowsStorageBytesForUser(db, input.userId),
-		listJobIdsForUser: async (input) => {
-			const [jobIds, archived] = await Promise.all([
-				listJobIdRowsForUser(db, input.userId),
-				listArchivedJobArtifactsForUser(db, input.userId),
-			])
-			return Array.from(
-				new Set([...jobIds, ...archived.map((artifact) => artifact.jobId)]),
-			)
-		},
-		listJobStorageIdsForUser: async (input) => {
-			const [jobIds, archived] = await Promise.all([
-				listJobStorageIdRowsForUser(db, input.userId),
-				listArchivedJobArtifactsForUser(db, input.userId),
-			])
-			return Array.from(
-				new Set([
-					...jobIds,
-					...archived
-						.map((artifact) => artifact.storageId)
-						.filter((storageId) => storageId.length > 0),
-				]),
-			)
-		},
-		listArchivedJobArtifactsForUser: (input) =>
-			listArchivedJobArtifactsForUser(db, input.userId),
-		listAllJobStorageOwners: async () => {
-			const [jobRows, archivedRows] = await Promise.all([
-				listAllJobStorageOwnerRows(db),
-				listAllArchivedJobArtifactStorageOwnerRows(db),
-			])
-			return [...jobRows, ...archivedRows]
-		},
+		listJobIdsForUser: (input) => listJobIdRowsForUser(db, input.userId),
+		listJobStorageIdsForUser: (input) =>
+			listJobStorageIdRowsForUser(db, input.userId),
+		listAllJobStorageOwners: () => listAllJobStorageOwnerRows(db),
 		getJobInsights: () => getJobRowInsights(db),
 		purgeUserJobsData: async (input) => {
-			await db
-				.prepare(`DELETE FROM archived_job_artifacts WHERE user_id = ?`)
-				.bind(input.userId)
-				.run()
 			await db
 				.prepare(`DELETE FROM jobs WHERE user_id = ?`)
 				.bind(input.userId)
@@ -256,5 +202,6 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		softDeleteJobsForUser: (input) =>
 			softDeleteJobRowsForUser({ db, ...input }),
 		restoreJobsForUser: (input) => restoreJobRowsForUser({ db, ...input }),
+		transferJobsOwner: (input) => transferJobRowsOwner({ db, ...input }),
 	}
 }

@@ -357,9 +357,10 @@ function requireLocalCanonicalRef(providerId: string, ref: string) {
 }
 
 /**
- * Vault storage read. Only `resolveCredential` calls this; it checks Use on
- * the door key first. `authorityPackageId` is the stamped package (attested or
- * claimed), whose provider grant is checked here.
+ * Vault storage read. Only `resolveCredential` calls this; it reads the
+ * binding and checks Use on it first, then passes that same binding.
+ * `authorityPackageId` is the stamped package (attested or claimed), whose
+ * provider grant is checked here.
  */
 export async function resolveProviderSecret(input: {
 	env: Env
@@ -368,6 +369,8 @@ export async function resolveProviderSecret(input: {
 	/** The fetching run; the provider export inherits it. */
 	request: RequestContext
 	provider: string
+	/** The org's binding for `provider`, or null when it has none. */
+	binding: SecretProviderBindingRecord | null
 	ref: string
 	storageContext?: StorageContext | null
 	authorityPackageId?: string | null
@@ -377,11 +380,8 @@ export async function resolveProviderSecret(input: {
 	const rawRef = normalizeProviderRef(input.ref)
 	const authorityPackageId = input.authorityPackageId?.trim() || null
 	const ownerUserId = input.userId
-	const binding = await getSecretProviderBinding(input.env.APP_DB, {
-		userId: ownerUserId,
-		providerId,
-	})
-	if (!binding) {
+	const binding = input.binding
+	if (!binding || binding.providerId !== providerId) {
 		throw new SecretProviderError(
 			createMissingProviderBindingMessage(providerId),
 		)

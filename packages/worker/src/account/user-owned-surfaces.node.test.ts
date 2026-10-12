@@ -53,10 +53,10 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		),
 	).toBe(true)
 	expect(
-		accountUserOwnedR2Surfaces.every(
-			(entry) => entry.export === 'chunked_bytes',
-		),
-	).toBe(true)
+		accountUserOwnedR2Surfaces
+			.filter((entry) => entry.export === 'exclude')
+			.map((entry) => [entry.id, entry.binding]),
+	).toEqual([['org_transfer_backup', 'OPERATOR_BACKUPS']])
 	expect([...coverage.r2SurfaceIds]).toEqual(
 		expect.arrayContaining(['email_raw_mime', 'user_avatar', 'identity_icon']),
 	)
@@ -142,6 +142,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		'source-manifest-snapshot:v1:',
 		'cancelActiveWorkflowRunsForUser',
 		'mcpOAuthRefreshFamilyUserKvPrefixes',
+		'deleteOrgTransferBackupsForOwner',
 		...deletionResultKeys,
 	]) {
 		expect(accountDeletionSource).toContain(snippet)

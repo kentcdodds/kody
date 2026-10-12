@@ -434,15 +434,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
   [Run records](./run-records.md)).
-- There is no `jobs` or `archived_job_artifacts` table in `APP_DB` — those live
-  in the jobs worker's `JOBS_DB` (see [D1 (`JOBS_DB`)](#d1-jobs_db)).
+- There is no `jobs` table in `APP_DB` — it lives in the jobs worker's `JOBS_DB`
+  (see [D1 (`JOBS_DB`)](#d1-jobs_db)). `archived_job_artifacts` was dropped from
+  `JOBS_DB`.
 - There is no `repo_sessions` table in `APP_DB` (dropped in migration `0013`).
   The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
   only the thin `repo_session_due_owners` hint and the platform-owned
   `repo_session_storage_bucket_cursor`.
-- `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
-  or `repo`) to Artifacts repos and their latest published commit (packages
-  only; plain repos are live-at-HEAD without a publish pointer)
+- `entity_sources`: durable mapping from user-facing entities (`package` or
+  `repo`) to Artifacts repos and their latest published commit (packages only;
+  plain repos are live-at-HEAD without a publish pointer)
 - `user_repos`: plain-repo discovery metadata (`name`, optional `description`);
   one row per user-owned plain repo, keyed by `entity_sources.entity_id` when
   `entity_kind = 'repo'`
@@ -546,21 +547,16 @@ Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
 [ADR 0016](../decisions/0016-mono-worker-extraction.md) and the
 [jobs worker migration runbook](./jobs-worker-migration-runbook.md).
 
-- `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
-  (UTC ISO; when reached the scheduler skips the job and auto-disables it with
-  `enabled = 0`). Account retention windows live on `APP_DB` `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed job
-  rows that are not package-owned or preserved are cleaned by the hourly
-  `job_retention` sweeper on the jobs worker; package-owned and preserved jobs
-  are not. `expires_at` stops scheduling only — it does not delete rows and is
-  independent of `preserved`. This database keeps schedule fields
-  (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
-  retention anchors only; terminal run error, duration, and counters for
-  observability live in the per-user `RunLog` `job_run_observability` table (see
-  [Run records](./run-records.md)).
-- `archived_job_artifacts`: retained job artifact rows with per-row
-  `retain_until` cleanup (exempt from the global age prunes on `APP_DB`).
+- `jobs`: persisted package job metadata, caller context, schedule state,
+  package source pointers, and optional `expires_at` (UTC ISO; when reached the
+  scheduler skips the job and auto-disables it with `enabled = 0`). Every row id
+  is a `package-job:` id (asserted by migration `0004`, ADR 0032). Rows are
+  created, updated, and removed by package publish sync, package deletion, and
+  account deletion; `expires_at` stops scheduling only — it does not delete
+  rows. This database keeps schedule fields (`next_run_at`, `schedule_json`, …)
+  and `last_run_at` / `last_run_status`; terminal run error, duration, and
+  counters for observability live in the per-user `RunLog`
+  `job_run_observability` table (see [Run records](./run-records.md)).
 
 ## Analytics Engine reporting
 
@@ -609,7 +605,7 @@ Two D1 reporting projections deliberately remain:
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
 OAuth provider state is stored in `OAUTH_KV` through the
-`@cloudflare/workers-oauth-provider` integration. Published package/job source
+`@cloudflare/workers-oauth-provider` integration. Published package source
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
 platform-owned `platform-settings:v1:reserved-usernames` runtime
@@ -1181,6 +1177,8 @@ script owns no Durable Object classes.
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
+- `OPERATOR_BACKUPS` (R2, operator rollback snapshots such as org resource
+  transfer backups)
 - `REPO_SESSION_BLOBS` (R2, ephemeral RepoSession Workspace spill; not a DR
   canonical store)
 - `MCP_OBJECT` (Durable Objects; class hosted on the platform worker)
@@ -1360,22 +1358,22 @@ Artifacts tokens.
 
 Reconcile runs through the registry in
 `packages/worker/src/scheduled/scheduled-lanes.ts`, alongside repo-session
-cleanup, system-email retention, general retention, job retention, hourly
-usage-rollup aggregation, hourly Durable Object duration attribution, and
-bounded USER inbound Mailbox reconciliation (active-user discovery from the
-users/config index followed by owner-point Mailbox due-work RPCs; no shared
-graph scan). Each production queue message preserves `scheduled_lane_failed` /
-D1 lock-contention log and Sentry context. D1 lock contention is replay-safe
-(the write did not commit) and retries on `kody-scheduled-dispatch` with bounded
-backoff (`max_retries` 3, then the dedicated DLQ plus a
-`scheduled_lane_retry_exhausted` alert). Other handled lane failures are
-acknowledged as terminal so partial external side effects are not replayed; the
-next eligible cron cadence is the next automatic attempt. A failed enqueue is
-reported and runs through the inline fallback after all sibling enqueue attempts
-finish; multiple failed enqueues fall back sequentially to avoid D1 lock
-contention. Inline fallback is one-shot and logs a non-completed outcome; it
-does not invent extra retries. Consumer transport failures retain the configured
-retry/DLQ behavior. No failure can abort or mask a sibling invocation.
+cleanup, system-email retention, general retention, hourly usage-rollup
+aggregation, hourly Durable Object duration attribution, and bounded USER
+inbound Mailbox reconciliation (active-user discovery from the users/config
+index followed by owner-point Mailbox due-work RPCs; no shared graph scan). Each
+production queue message preserves `scheduled_lane_failed` / D1 lock-contention
+log and Sentry context. D1 lock contention is replay-safe (the write did not
+commit) and retries on `kody-scheduled-dispatch` with bounded backoff
+(`max_retries` 3, then the dedicated DLQ plus a `scheduled_lane_retry_exhausted`
+alert). Other handled lane failures are acknowledged as terminal so partial
+external side effects are not replayed; the next eligible cron cadence is the
+next automatic attempt. A failed enqueue is reported and runs through the inline
+fallback after all sibling enqueue attempts finish; multiple failed enqueues
+fall back sequentially to avoid D1 lock contention. Inline fallback is one-shot
+and logs a non-completed outcome; it does not invent extra retries. Consumer
+transport failures retain the configured retry/DLQ behavior. No failure can
+abort or mask a sibling invocation.
 
 Production note:
 
@@ -1492,6 +1490,41 @@ on write unless a migration backfills existing rows.
   `user_oauth_apps`. Those columns are the only credential store — there are no
   `*_secret_name` pointers and the values are not in `secret_entries`. Account
   export redacts the ciphertext columns.
+- `provider`, `inject_json`, and `source_json` on `secret_entries`,
+  `user_integrations`, `mcp_server_settings`, and `secret_provider_bindings`
+  (`0111-credential-provider-inject-source.sql`) are the credential fields from
+  [ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md).
+  `inject_json` is a header, basic, or query rule and defaults to
+  `Authorization: Bearer {value}`. `source_json` is `"stored"`, or
+  `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
+  its OAuth app's provider, written on connect and backfilled by the migration.
+  Request placement does not read them; placeholders still decide it.
+- `secret_entries.kind` (`0117-credential-kinds.sql`) is the credential's kind
+  from ADR 0068: `secret` (every existing row and the default), `url`, `login`,
+  or `signing`. Placeholders fill only `secret` rows. A `url` value is a whole
+  HTTPS URL that `resolveCredential` hands to the gateway only for one of the
+  row's `allowed_hosts`; package code sends a relative path, never the URL.
+- `credential_inventory_runs` and `credential_inventory_items`
+  (`0112-credential-inventory.sql`,
+  `packages/worker/src/credentials/credential-inventory.ts`) hold the admin
+  fleet inventory of credential placeholders in published package source.
+  `adminCredentialInventoryScan` pages saved packages into a run; each item's
+  `result_json` holds credential ids, placement shapes, slot providers, and
+  placeholder counts (every placeholder, including ones that match a declared
+  slot), never a credential name or value. Placement shapes may carry package
+  identifiers (a body field, an SDK option key, a callee name) but never one
+  that spells a credential name. A failed item holds only its load error, and
+  the report lists failed package ids. `adminCredentialBackfill` reads a
+  complete run with no failed packages (or whose failed packages the caller
+  lists exactly in `acknowledgedFailedPackageIds`) and writes `provider` and
+  `inject_json` only where they are still unset: `provider` when every slot
+  naming the credential agrees on one provider slug, `inject_json` when every
+  placement is the same header or the same query param.
+- `credential_org_grants` (`0116-credential-org-grants.sql`,
+  `packages/worker/src/credentials/personal-credentials.ts`) records which org
+  each personal credential is granted to. `credential_id` is a credential in the
+  owner's personal org, `user_id` is the owner's person id, and the row is
+  hard-deleted when the owner leaves that org.
 
 ### Durable Object id contracts
 
@@ -1523,9 +1556,8 @@ to `durableObjectNameFromParts`).
 Storage ids are also stable strings. Changing a form strands the old bucket:
 
 - `exec:{uuid}` — ad hoc execute storage bound on the call.
-- `job:{jobId}` — non-package job scratch storage (and the generic job id form).
-- `job:package-job:{packageId}:{encodeURIComponent(jobName)}` — package-owned
-  job run scratch.
+- `job:package-job:{packageId}:{encodeURIComponent(jobName)}` — package job run
+  scratch (`job:{jobId}`; every job id is a package job id).
 - `package:{encodeURIComponent(packageId)}` — package bucket behind
   `packageStorage()` / `buildPackageStorageId(packageId)`.
 - `{packageId}:facet:{facetName}` — package-app facet StorageRunner buckets.
@@ -1633,6 +1665,13 @@ App-owned R2 keys are:
   Object. This scratch is excluded from the `r2_object` account-export section;
   canonical repo bytes stay in Artifacts.
 
+- `org-resource-transfers/{fromOrgId}/{toOrgId}/{stamp}-{uuid}.json` in
+  `OPERATOR_BACKUPS` — rollback snapshot written by
+  [org resource transfer](../org-resource-transfer.md) apply. Encrypted columns
+  stay sealed. Account deletion and org hard purge delete every backup naming
+  the owner as source or target; account export skips it because the same rows
+  export from D1.
+
 New R2 key prefixes must add corresponding account-deletion coverage or a
 deliberate retention note, same as KV. Exportable registered R2 surfaces
 (`EMAIL_BLOBS`, `COMMUNITY_ASSETS`) use the bounded `r2_object` account-export
@@ -1699,11 +1738,12 @@ restored fingerprints cannot skip an empty index.
 `entity_sources` is the durable repo pointer table:
 `(user_id, entity_kind, entity_id) -> source_id`. Child tables store
 `source_id = entity_sources.id`; KV snapshots use that same source id plus the
-published commit. `entity_kind` accepts `job`, `package`, and `repo`.
-`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+published commit. `entity_kind` accepts `package` and `repo`. `manifest_path`,
+`source_root`, `published_commit`, `indexed_commit`, and
 `last_external_check_at` are part of the repo-source synchronization contract
-for jobs and packages; plain `repo` sources are live-at-HEAD, have no manifest
-requirement, and are skipped by the external-push reconcile lane.
+for packages; plain `repo` sources are live-at-HEAD, have no manifest
+requirement, and are skipped by the external-push reconcile lane. Package-owned
+jobs live in the package repo.
 
 Saved package imports in user code use `kody:@scope/name/export` specifiers:
 
@@ -1849,10 +1889,7 @@ The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user
 composite indexes cannot serve those ordered scans.
 
-Documented exemptions: `archived_job_artifacts` is exempt because job artifact
-cleanup is driven by each row's `retain_until` value, `jobs` are cleaned by the
-hourly `job_retention` sweeper (account/platform retention windows; package and
-preserved jobs stay until explicit delete, package sync, or account deletion),
-and `mcp_memories` is exempt because memories are durable user-curated content
-removed by explicit user action or account deletion rather than by time-based
-retention.
+Documented exemptions: `jobs` are package-owned and stay until package sync,
+package deletion, or account deletion, and `mcp_memories` is exempt because
+memories are durable user-curated content removed by explicit user action or
+account deletion rather than by time-based retention.

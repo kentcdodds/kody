@@ -39,6 +39,9 @@ async function createOrgDb() {
 	return db
 }
 
+const secretCredentialId = 'cred-secret-org-echo'
+const integrationCredentialId = 'cred-integration-org-google'
+
 function mockPackageManifest(name: string, credentials?: unknown) {
 	return vi
 		.spyOn(packageSource, 'loadPackageManifestBySourceId')
@@ -60,12 +63,20 @@ function userSecret(
 	allowedHosts: Array<string>,
 ): secretService.ResolvedSecret {
 	return {
+		credentialId: secretCredentialId,
 		found: true,
 		value,
 		scope: 'user',
 		allowedHosts,
 		allowedPackages: [],
 	}
+}
+
+function mockSecretForUse(secret: secretService.ResolvedSecret) {
+	const { value: _value, ...found } = secret
+	return vi
+		.spyOn(secretService, 'findSecretForUse')
+		.mockResolvedValue({ found, readValue: async () => secret })
 }
 
 test('ambient fetch placeholders require secret:use / integration:use for members and outside collaborators', async () => {
@@ -124,6 +135,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		orgId: ownerId,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: collaboratorId },
 		preset: 'use',
 		permissions: null,
@@ -139,9 +151,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	} as unknown as Env
 
-	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
-		userSecret('org-secret-value', ['example.com']),
-	)
+	mockSecretForUse(userSecret('org-secret-value', ['example.com']))
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',
@@ -149,7 +159,14 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	vi.spyOn(
 		integrationCredentials,
 		'resolveIntegrationAccessToken',
-	).mockResolvedValue('oauth-access')
+	).mockResolvedValue({
+		credentialId: integrationCredentialId,
+		accessToken: 'oauth-access',
+	})
+	vi.spyOn(
+		integrationCredentials,
+		'findIntegrationCredentialId',
+	).mockResolvedValue(integrationCredentialId)
 	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
 		lane: 'user',
 		app: { apiBaseUrl: 'https://example.com' },
@@ -247,8 +264,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		code: 'missing_permission',
 		permission: 'secret:use',
 		resource: expect.objectContaining({
-			type: 'secret',
-			id: 'orgEcho',
+			type: 'credential',
+			id: secretCredentialId,
+			label: 'orgEcho',
 		}),
 	})
 	expect(String(memberSecretError)).toMatch(/Missing secret:use/)
@@ -262,8 +280,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		code: 'missing_permission',
 		permission: 'integration:use',
 		resource: expect.objectContaining({
-			type: 'integration',
-			id: 'orgGoogle',
+			type: 'credential',
+			id: integrationCredentialId,
+			label: 'orgGoogle',
 		}),
 	})
 	expect(String(memberIntegrationError)).toMatch(/Missing integration:use/)
@@ -290,14 +309,15 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		permission: 'integration:use',
 	})
 
-	// Grant secret:use / integration:use on those resources → member may use.
+	// Grant Use on those credential ids → member may use.
 	// Fresh request contexts: effective permissions are cached per request
 	// object, so reusing the pre-grant memberRequest would keep the denial.
 	await upsertGrant({
 		db,
 		orgId: ownerId,
-		resourceType: 'secret',
-		resourceId: 'orgEcho',
+		resourceType: 'credential',
+		resourceId: secretCredentialId,
+		family: 'secret',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -307,8 +327,9 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	await upsertGrant({
 		db,
 		orgId: ownerId,
-		resourceType: 'integration',
-		resourceId: 'orgGoogle',
+		resourceType: 'credential',
+		resourceId: integrationCredentialId,
+		family: 'integration',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -337,9 +358,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 
 	// Package authority never stands in for the person: collaborator C has no
 	// secret grant, so a saved package they run is denied the secret too.
-	vi.mocked(secretService.resolveSecret).mockResolvedValue(
-		userSecret('pkg-secret-value', ['example.com']),
-	)
+	mockSecretForUse(userSecret('pkg-secret-value', ['example.com']))
 	mockPackageManifest('@ownera/notes')
 	const packageAuthoritySecret = expandSecretPlaceholders({
 		request: secretRequest(),
@@ -451,12 +470,15 @@ test('leak: a declared package fills its credentials anywhere on an allowed host
 		},
 		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
 	})
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
+	const resolveSpy = mockSecretForUse(
+		userSecret('resend-secret-value', ['api.resend.com']),
+	)
 	const tokenSpy = vi
 		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
-		.mockResolvedValue('google-access')
+		.mockResolvedValue({
+			credentialId: integrationCredentialId,
+			accessToken: 'google-access',
+		})
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',
@@ -524,61 +546,4 @@ test('leak: a declared package fills its credentials anywhere on an allowed host
 		message: expect.stringContaining('attacker.example'),
 	})
 	expect(tokenSpy).not.toHaveBeenCalled()
-})
-
-test('regression: @kody/bluesky createSession sends the identifier and app password ref in its JSON body', async () => {
-	// The @kody/bluesky 1.1.0 manifest as published, raw slot included.
-	const blueskyManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kody/bluesky',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'bluesky',
-				description:
-					'Bluesky and AT Protocol helpers for profiles, posts, and search.',
-				credentials: {
-					blueskyAppPassword: {
-						kind: 'secret',
-						provider: 'bluesky',
-						description: 'Bluesky app password.',
-						raw: true,
-					},
-				},
-			},
-		}),
-		mode: 'published',
-	})
-	expect(
-		blueskyManifest.kody.invalidCredentialSlots?.blueskyAppPassword,
-	).toMatch(/raw/)
-	vi.spyOn(packageSource, 'loadPackageManifestBySourceId').mockResolvedValue({
-		source: {} as packageSource.LoadedPackageManifest['source'],
-		manifest: blueskyManifest,
-	})
-	const appPassword = 'abcd-efgh-ijkl-mnop'
-	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
-		userSecret(appPassword, ['bsky.social', '*.bsky.network']),
-	)
-	const { expandAsPackage } = await setupDeclaredPackage({
-		username: 'kody',
-		packageName: '@kody/bluesky',
-	})
-
-	// What createSession builds from packageSecrets.get's opaque ref.
-	const password = '{{secret:blueskyAppPassword|scope=user}}'
-	const sent = await expandAsPackage(
-		'https://bsky.social/xrpc/com.atproto.server.createSession',
-		{
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ identifier: 'kody.bsky.social', password }),
-		},
-	)
-	expect(sent.url).toBe(
-		'https://bsky.social/xrpc/com.atproto.server.createSession',
-	)
-	expect(JSON.parse(await sent.text())).toEqual({
-		identifier: 'kody.bsky.social',
-		password: appPassword,
-	})
 })

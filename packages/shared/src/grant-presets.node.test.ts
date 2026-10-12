@@ -35,7 +35,7 @@ test('billing and secret:read are never grantable', () => {
 test('resolveGrantPermissions rejects a non-grantable advanced list', () => {
 	expect(() =>
 		resolveGrantPermissions({
-			resourceType: 'package',
+			family: 'package',
 			preset: null,
 			permissions: ['billing:write'],
 		}),

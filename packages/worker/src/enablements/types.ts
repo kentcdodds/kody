@@ -42,8 +42,12 @@ export type EnablementPausedReason = (typeof enablementPausedReasons)[number]
 export type EnablementPause = {
 	reason: EnablementPausedReason
 	permission: string | null
+	/** For a credential, its permission family (`secret` or `integration`). */
 	resourceType: string | null
+	/** For a credential, its name: what people and the run know it by. */
 	resourceId: string | null
+	/** The denied credential's stable id; null when it did not exist. */
+	credentialId: string | null
 	pausedAt: string
 }
 
@@ -64,5 +68,3 @@ export type EnablementRecord = {
 	disabledAt: string | null
 	updatedAt: string
 }
-
-export type EnablementOrgMigrationState = 'legacy' | 'notified' | 'migrated'

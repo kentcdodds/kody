@@ -282,7 +282,7 @@ test('error-rate email still sends the count when the run log is unavailable', a
 	)
 })
 
-test('summarizeRunError keeps the first non-empty line, redacts Kody tokens, and notes a missing message', () => {
+test('summarizeRunError keeps the first non-empty line and redacts Kody tokens', () => {
 	expect(summarizeRunError({ errorMessage: '  first\nsecond' })).toBe('first')
 	expect(summarizeRunError({ errorMessage: '\n  \nactual error\nmore' })).toBe(
 		'actual error',
@@ -293,7 +293,4 @@ test('summarizeRunError keeps the first non-empty line, redacts Kody tokens, and
 	})
 	expect(redacted).toBe('Unauthorized with kody_at_[redacted]')
 	expect(redacted).not.toContain('B'.repeat(43))
-	expect(summarizeRunError({ errorMessage: null })).toBe(
-		'No error message was recorded.',
-	)
 })

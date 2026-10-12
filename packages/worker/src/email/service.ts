@@ -1,7 +1,7 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
-import PostalMime from 'postal-mime'
+import { loadPostalMime } from '#worker/postal-mime-load.ts'
 import {
 	putEmailRawMime,
 	RetryableInboundStorageError,
@@ -307,6 +307,7 @@ export async function loadEmailAttachmentContent(input: {
 			contentBase64: null,
 		}
 	}
+	const PostalMime = await loadPostalMime()
 	const parsed = await PostalMime.parse(rawMime, {
 		attachmentEncoding: 'arraybuffer',
 	})

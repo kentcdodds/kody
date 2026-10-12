@@ -1,3 +1,8 @@
+import {
+	listOrgCredentialsByIds,
+	type CredentialKind,
+	type OrgCredential,
+} from '#worker/credentials/credential-ids.ts'
 import { listGrants, type GrantView } from '#worker/orgs/access-writes.ts'
 
 export type ListedOrgGrant = {
@@ -28,9 +33,27 @@ function presetLabel(preset: string | null) {
 	}
 }
 
+function credentialKindLabel(kind: CredentialKind) {
+	switch (kind) {
+		case 'secret':
+			return 'Secret'
+		case 'integration':
+			return 'Integration'
+		case 'mcp-server':
+			return 'MCP server'
+		case 'vault':
+			return 'Vault'
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /**
  * Grants for an organization with display labels for subjects and common
- * resources (packages by kody id / name).
+ * resources (packages by kody id / name, credentials by kind and current
+ * name).
  */
 export async function listOrgGrantsForView(
 	db: D1Database,
@@ -61,7 +84,11 @@ export async function listOrgGrantsForView(
 		),
 	]
 
-	const [users, teams, packages] = await Promise.all([
+	const credentialIds = grants
+		.filter((grant) => grant.resourceType === 'credential')
+		.map((grant) => grant.resourceId)
+
+	const [users, teams, packages, credentials] = await Promise.all([
 		userIds.length === 0
 			? Promise.resolve(
 					[] as Array<{
@@ -123,6 +150,7 @@ export async function listOrgGrantsForView(
 						kody_id: string | null
 					}>()
 					.then((result) => result.results ?? []),
+		listOrgCredentialsByIds(db, orgId, credentialIds),
 	])
 
 	const userById = new Map(users.map((row) => [row.user_id, row]))
@@ -130,7 +158,7 @@ export async function listOrgGrantsForView(
 	const packageById = new Map(packages.map((row) => [row.id, row]))
 
 	return grants.map((grant) =>
-		toOrgGrantView(grant, userById, teamById, packageById),
+		toOrgGrantView(grant, userById, teamById, packageById, credentials),
 	)
 }
 
@@ -145,6 +173,7 @@ function toOrgGrantView(
 		string,
 		{ id: string; name: string | null; kody_id: string | null }
 	>,
+	credentialById: Map<string, OrgCredential>,
 ): ListedOrgGrant {
 	let subjectLabel = grant.subjectId
 	if (grant.subjectType === 'user') {
@@ -162,6 +191,11 @@ function toOrgGrantView(
 		const pkg = packageById.get(grant.resourceId)
 		if (pkg?.kody_id) resourceLabel = pkg.name?.trim() || pkg.kody_id
 		else if (pkg?.name?.trim()) resourceLabel = pkg.name.trim()
+	} else if (grant.resourceType === 'credential') {
+		const credential = credentialById.get(grant.resourceId)
+		resourceLabel = credential
+			? `${credentialKindLabel(credential.kind)} ${credential.name}`
+			: 'Deleted credential'
 	} else if (grant.resourceType === 'org') {
 		resourceLabel = 'Organization'
 	}

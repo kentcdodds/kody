@@ -50,8 +50,27 @@ every run acts as them:
   Use on a credential the run needs), the enablement pauses and its events are
   dropped. It resumes by itself once access is back. A run never falls back to
   another person or to Owner.
+- A paused enablement shows on its enabler's own Waiting page for that org, with
+  what the run needed. Other members and Owners do not get that card.
 - Usage counts against the org that owns the trigger, and the run is audited to
   the enabler.
+
+Some actions need a live person, even when the enabler is an Owner. No job,
+webhook, subscription, or inbound email handler can do them, and neither can
+package code one of those started or a package app's server code:
+
+- Role and membership changes: adding or removing members, changing a role,
+  invites, and grants that carry member or billing permissions.
+- Billing changes: plan, seats, payment, wallet, budgets, and promo codes.
+- Site-admin tools. One exception: `adminUserVerify` with `mint_verify_url` runs
+  from a job, webhook, or subscription that a site admin turned on for a package
+  they own, and every such mint is audited with the trigger type and enablement
+  id.
+
+Do these from the web app, an MCP or CLI call you make yourself, or an execute
+you run. A triggered run that tries one fails with
+`Capability "<name>" needs a live person`, naming the capability it tried.
+Everything else runs unattended with the enabler's live permissions.
 
 Publishing a package never turns anything on, and nobody can enable a trigger
 for someone else. `enablementList` shows your enablements (an Owner can list the
@@ -59,9 +78,10 @@ whole org's). `enablementDisable` turns one off; its enabler or an Owner may do
 that.
 
 Example: Bea is a Member of `@acme` with Use on `@acme/digest`. She turns on its
-nightly job. Each night it runs as Bea, with Bea's grants. It cannot change
-roles or read a secret Bea has no Use on. If an Owner removes Bea from `@acme`,
-the job pauses until someone else turns it on for themselves.
+nightly job. Each night it runs as Bea, with Bea's grants. It cannot read a
+secret Bea has no Use on, and it cannot change roles even if Bea becomes an
+Owner. If an Owner removes Bea from `@acme`, the job pauses until someone else
+turns it on for themselves.
 
 ## Execute limits: one org-wide pool
 

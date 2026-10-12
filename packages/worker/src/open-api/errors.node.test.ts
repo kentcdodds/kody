@@ -1,5 +1,9 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
+import {
+	AuthorizationError,
+	LivePersonRequiredError,
+} from '#worker/authorization/authorize.ts'
 import { wrapArtifactsGitHttpError } from '#worker/repo/artifacts-git-retry.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ApiError, toApiError } from './errors.ts'
@@ -135,5 +139,60 @@ test('toApiError does not remap bare TimeoutError or source-recovery wraps as Ar
 		status: 500,
 		code: 'internal_error',
 		message: 'Internal error. Retry later or report it if it persists.',
+	})
+})
+
+test('toApiError maps a live-person denial to 403 naming the capability', () => {
+	const apiError = toApiError(new LivePersonRequiredError('orgMemberUpdate'))
+
+	expect(apiError).toMatchObject({
+		status: 403,
+		code: 'insufficient_scope',
+		details: {
+			capability: 'orgMemberUpdate',
+			denial: 'live_person_required',
+		},
+	})
+	expect(apiError.message).toContain('"orgMemberUpdate" needs a live person')
+})
+
+test('toApiError adds required_scope and mint_scopes to credential-scope denials', () => {
+	const apiError = toApiError(
+		new AuthorizationError({
+			code: 'credential_scope',
+			permission: 'package:write',
+			orgId: null,
+			resource: null,
+			message: 'This credential is not scoped for package:write.',
+			mintScopes: ['org:execute', 'package:write'],
+		}),
+	)
+
+	expect(apiError).toMatchObject({
+		status: 403,
+		code: 'insufficient_scope',
+		details: {
+			required_permission: 'package:write',
+			denial: 'credential_scope',
+			required_scope: 'package:write',
+			mint_scopes: ['org:execute', 'package:write'],
+		},
+	})
+})
+
+test('toApiError leaves role denials without mint scopes', () => {
+	const apiError = toApiError(
+		new AuthorizationError({
+			code: 'missing_permission',
+			permission: 'package:write',
+			orgId: null,
+			resource: null,
+			message: 'Missing package:write. An org Owner can grant it.',
+		}),
+	)
+
+	expect(apiError.details).toEqual({
+		required_permission: 'package:write',
+		denial: 'missing_permission',
 	})
 })

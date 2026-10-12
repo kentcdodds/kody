@@ -40,6 +40,13 @@ const inputSchema = z.object({
 		.min(1)
 		.optional()
 		.describe('Optional job id to list runs for one scheduled job.'),
+	workflow_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"Optional workflow run id (dynwf-… or pkgwf-…) from workflows.create. Returns that workflow's run, whose metadata.result holds the return value once it succeeds.",
+		),
 	since: z
 		.string()
 		.min(1)
@@ -124,6 +131,7 @@ export const runListCapability = defineDomainCapability(
 					status: args.status ?? null,
 					packageId: args.package_id ?? null,
 					jobId: args.job_id ?? null,
+					workflowId: args.workflow_id ?? null,
 					since: args.since ?? null,
 					errorTriage: args.error_triage ?? 'open',
 				},

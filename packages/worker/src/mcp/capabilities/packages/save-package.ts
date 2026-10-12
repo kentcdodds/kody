@@ -51,6 +51,7 @@ import {
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
@@ -418,7 +419,10 @@ export const savePackageCapability = defineDomainCapability(
 			if (!existing) {
 				const now = new Date().toISOString()
 				try {
-					await insertSavedPackage(
+					// Stamp happens here; projection refresh below sees an existing
+					// row and will not Kit-sync. Sync now when the actor was newly
+					// activated.
+					const stamped = await insertSavedPackage(
 						ctx.env.APP_DB,
 						{
 							id: packageId,
@@ -439,6 +443,12 @@ export const savePackageCapability = defineDomainCapability(
 						ctx.env,
 						{ actorUserId: owner.actorUserId },
 					)
+					if (stamped) {
+						scheduleKitSubscriberSync({
+							env: ctx.env,
+							stableUserId: owner.actorUserId,
+						})
+					}
 				} catch (error) {
 					const message = getErrorMessage(error)
 					// Pre-check covers the common path; this catches races where

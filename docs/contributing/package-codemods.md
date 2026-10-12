@@ -329,8 +329,8 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 
 ### `0010-detect-legacy-credential-patterns`
 
-This detect-only codemod measures which packages still reference credentials the
-old way, ahead of `kody.credentials` slots (see
+This detect-only codemod lists leftover credential patterns in package source
+and the root `package.json` (see
 [Credential slots](../use/packages.md#credential-slots-kodycredentials)).
 `transform` writes nothing; dry-run and apply return the findings as
 `needs_manual`. Run it with `adminPackageCodemodScan`.
@@ -358,10 +358,15 @@ An integration name needs an `oauth` slot: `{{integration-token:NAME}}`,
 names no slot, so it stays a finding.
 
 A known string is a literal, a top-level `const` string (including one imported
-from a relative module), or a template or `+` chain of those. Placeholder-shaped
-text that names nothing, such as `{{secret:<name>}}` in help or redaction text,
-is ignored. Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/`)
-are skipped.
+from a relative module), or a template or `+` chain of those. A local binding
+that shadows a module constant is not treated as that constant.
+Placeholder-shaped text that names nothing, such as `{{secret:<name>}}` in help
+or redaction text, is ignored. Test files (`*.test.*`, `*.spec.*`, and anything
+under `__tests__/`) are skipped unless a runtime entry points at them: `exports`
+(import/default, not types-only), `main` / `module` / `browser`, `kody.app`
+entries, job entries, subscription handlers, or a module those entries reach
+through a bundler-resolved import (`import` / `export … from`, `import()`,
+`require()`).
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
@@ -402,6 +407,54 @@ It counts packages and files per pattern, per org, and per package, plus
 private packages. Keep them out of public issues; public issues get the pattern
 counts only.
 
+### `0011-owner-scope-follows-registry`
+
+This codemod runs after an [org resource transfer](./org-resource-transfer.md).
+The transfer moves each package to the new org, but package sources still name
+the old scope. The engine builds `context.packageName` from the owning org's
+package scope and the package leaf, not from `saved_packages.name` (that column
+mirrors the published `package.json`, so a revert or projection refresh puts the
+old scope back). When the scope of the `package.json` `name` differs from the
+owner scope, the codemod replaces every `@<oldScope>/` with `@<newScope>/` in
+every file. That covers the manifest name, `kody.dependencies` keys,
+`kody:@oldScope/...` imports, and docs.
+
+- A match must be followed by `/`, so `@oldScopeish/x`, a bare `@oldScope`
+  handle, and email addresses are left alone. It shares
+  `rewriteScopedReferences` with the community fork self-reference rewrite.
+- Every package in the old scope moved together, so references to sibling
+  packages are rewritten too.
+- Packages whose scope already matches, unscoped names, and unparseable or
+  missing manifests are clean. The codemod is idempotent.
+
+Once the transfer has committed, run `adminPackageCodemodDryRun`, then
+`adminPackageCodemodApply`, with `userIds` set to the new org id.
+`adminPackageCodemodRevert` undoes it like any other codemod. A revert puts the
+old scope back in the sources, so the next scan detects the package again.
+Reverting a package whose `kody:@oldScope/...` dependencies no longer exist
+under the old scope fails the publish checks and leaves the package applied.
+Re-applying after a revert can report `dry_run_new_failures` for a package whose
+sibling dependency is still registered under the old scope. Run apply again once
+the sibling is applied.
+
+### `0012-explicit-webhook-url-secret-verification`
+
+This one-shot manifest-format codemod adds
+`"verification": { "type": "url-secret" }` to every `package.json#kody.webhooks`
+entry that declares no `verification`. Ingress already authenticates those
+webhooks by URL secret alone, so the rewrite changes no behavior (see
+[Senders that cannot sign](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
+Once a rescan finds no webhook without `verification`, publish requires it
+([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+
+- Appends `verification` to each undeclared entry. Entries that already declare
+  any verification type are left unchanged, and the codemod is idempotent.
+- Packages without `kody.webhooks` are clean.
+- Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
+  that is not an array of objects, and a `verification` that is not an object.
+- Does not touch the stored signing secret. Mint still gives these webhooks the
+  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
@@ -413,12 +466,12 @@ and `nextCursor` until `nextCursor` is null.
 The admin UI walks those pages as separate HTTP requests. MCP `execute` and
 inline workflow sandboxes do not: dry-run, apply, and revert are check-heavy
 enough that a second page in the same sandbox typically exceeds the workflow
-observer (~270s, under the Cloudflare Workflow step timeout). Those modes take
-one page per execute or workflow sandbox. When `nextCursor` is set, start a new
-`execute` or `workflows.create` with that `runId` and cursor. Omitted filters
-inherit from the stored run. Capability results include a `nextStep` string that
-restates this. Scan pages are cheaper and can often continue in the same
-sandbox.
+observer (5-minute sandbox budget, under the Cloudflare Workflow step timeout).
+Those modes take one page per execute or workflow sandbox. When `nextCursor` is
+set, start a new `execute` or `workflows.create` with that `runId` and cursor.
+Omitted filters inherit from the stored run. Capability results include a
+`nextStep` string that restates this. Scan pages are cheaper and can often
+continue in the same sandbox.
 
 ### Step limits
 

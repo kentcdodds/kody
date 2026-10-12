@@ -3,6 +3,7 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import type * as InfrastructureCodes from '#worker/package-invocations/infrastructure-codes.ts'
+import type * as PackageManifest from '#worker/package-registry/manifest.ts'
 import type * as WebhookDelivery from './delivery.ts'
 import type * as WebhookHeaders from './headers.ts'
 import type * as WebhookParams from './params.ts'
@@ -65,7 +66,8 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		mocks.loadPackageManifestBySourceId(...args),
 }))
 
-vi.mock('#worker/package-registry/manifest.ts', () => ({
+vi.mock('#worker/package-registry/manifest.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof PackageManifest>()),
 	listPackageWebhooks: (...args: Array<unknown>) =>
 		mocks.listPackageWebhooks(...args),
 }))

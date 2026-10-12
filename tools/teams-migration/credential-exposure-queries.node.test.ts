@@ -62,7 +62,7 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 				'g1', 'owner-id', 'package', 'pkg-1', 'user', 'collab-id',
 				'use', 'owner-id', ?, ?
 			), (
-				'g2', 'owner-id', 'secret', 'api-key', 'user', 'member-id',
+				'g2', 'owner-id', 'credential', 'cred-api-key', 'user', 'member-id',
 				'use', 'owner-id', ?, ?
 			)`,
 		)
@@ -86,12 +86,12 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 
 	const grants = sqlite.prepare(liveCredentialGrantsSql).all() as Array<{
 		subject_id: string
-		resource_type: string
+		resource_id: string
 	}>
 	expect(grants).toEqual([
 		expect.objectContaining({
 			subject_id: 'member-id',
-			resource_type: 'secret',
+			resource_id: 'cred-api-key',
 		}),
 	])
 })
@@ -104,8 +104,8 @@ test('audit candidate SQL embeds the truncation limit', () => {
 
 test('audit filter keeps only actors who are neither owners nor granted subjects', () => {
 	const ownerKeys = new Set(['org-a:owner-a'])
-	const userGrantKeys = new Set(['org-a:secret:s1:user:granted-u'])
-	const teamGrantByResource = new Map([['org-a:integration:i1', ['team-1']]])
+	const userGrantKeys = new Set(['org-a:s1:user:granted-u'])
+	const teamGrantByResource = new Map([['org-a:i1', ['team-1']]])
 	const teamMemberKeys = new Set(['team-1:team-user'])
 	const kept = filterNonOwnerOrGrantedCredentialAudit({
 		candidates: [

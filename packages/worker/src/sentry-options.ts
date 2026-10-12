@@ -143,7 +143,8 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
  * code exceeds `timeoutMs` (`packages/worker/src/mcp/executor.ts`). The
  * executor injects the enforced budget after this phrase (`Execution timed
  * out after 90s: …` via `createExecutorSandboxTimeoutMessage`) so consumers
- * can tell a 90s ad hoc execute cut from a 270s workflow-step cut.
+ * can tell a 90s ad hoc execute cut from a 300s background (job, async
+ * webhook, workflow-step) cut.
  */
 export const executorSandboxTimeoutMessagePrefix = 'Execution timed out'
 

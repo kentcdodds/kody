@@ -14,14 +14,17 @@ export const webhookPackageRefSchema = {
 }
 
 export const webhookVerificationPublicSchema = z
-	.object({
-		type: z.enum(['hmac-sha256', 'hmac-sha1']),
-		header: z.string(),
-		secretName: z.string().optional(),
-		encoding: z.enum(['hex', 'base64']),
-		prefix: z.string().optional(),
-		signedPayload: z.enum(['body', 'timestamp.body']).optional(),
-	})
+	.discriminatedUnion('type', [
+		z.object({
+			type: z.enum(['hmac-sha256', 'hmac-sha1']),
+			header: z.string(),
+			secretName: z.string().optional(),
+			encoding: z.enum(['hex', 'base64']),
+			prefix: z.string().optional(),
+			signedPayload: z.enum(['body', 'timestamp.body']).optional(),
+		}),
+		z.object({ type: z.literal('url-secret') }),
+	])
 	.nullable()
 
 export const webhookReplayPublicSchema = z

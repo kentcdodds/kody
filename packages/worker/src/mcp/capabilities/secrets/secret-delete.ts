@@ -9,6 +9,7 @@ import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.t
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { deleteSecret, findSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
+import { authorizeSecret } from './authorize-secret.ts'
 
 export const secretDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
@@ -36,6 +37,11 @@ export const secretDeleteCapability = defineDomainCapability(
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
 				})
+			await authorizeSecret(ctx, 'secret:delete', {
+				name: args.name,
+				scope: args.scope,
+				storageContext,
+			})
 			if (args.scope === 'user' && authorityPackageId) {
 				const existing = await findSecret({
 					env: ctx.env,

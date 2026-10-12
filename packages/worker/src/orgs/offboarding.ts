@@ -7,6 +7,7 @@
 
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { deletePersonalCredentialOrgGrantsForMember } from '#worker/credentials/personal-credentials.ts'
 import {
 	listUserOAuthGrants,
 	revokeOAuthGrant,
@@ -484,6 +485,12 @@ export async function offboardOrgMember(input: {
 		memberUserId: input.memberUserId,
 		nowIso,
 		resumeDeletedAt: input.resumeDeletedAt,
+	})
+
+	await deletePersonalCredentialOrgGrantsForMember({
+		db: input.appDb,
+		orgId: input.orgId,
+		personId: input.memberUserId,
 	})
 
 	const credentials = await revokeOrgBoundCredentials({

@@ -10,7 +10,7 @@
  */
 import {
 	isOrgPermission,
-	isOrgResourceType,
+	isOrgGrantResourceType,
 	orgPermissions,
 	type OrgPermission,
 } from '@kody-internal/shared/org-permissions.ts'
@@ -21,11 +21,21 @@ import {
 	type EffectivePermissions,
 	type OrgResource,
 } from '#worker/authorization/authorize.ts'
+import {
+	findCredentialIdsByLegacyName,
+	getOrgCredential,
+	isLegacyNamedCredentialTarget,
+} from '#worker/credentials/credential-ids.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import {
 	deriveRequestContext,
 	type EnablementRun,
 } from '#worker/request-context/request-context.ts'
+import {
+	getSecretProviderBinding,
+	normalizeProviderId,
+} from '#mcp/secrets/secret-providers/service.ts'
+import { vaultPauseResourceType } from './pause-on-denial.ts'
 import {
 	listEnablementsForInstance,
 	pauseEnablement,
@@ -81,13 +91,16 @@ export function enablerCanSee(
 	if (access.isOwner) return true
 	if (!audience.resource) return false
 	const resource: OrgResource = { ...audience.resource, orgId: access.orgId }
-	const prefix = `${resource.type}:`
-	return orgPermissions.some(
-		(permission) =>
-			permission.startsWith(prefix) &&
-			permission !== `${resource.type}:create` &&
-			checkPermission(access, permission, resource).allowed,
-	)
+	const families: ReadonlyArray<string> =
+		resource.type === 'credential' ? ['secret', 'integration'] : [resource.type]
+	return orgPermissions.some((permission) => {
+		const [family, action] = permission.split(':')
+		return (
+			families.includes(family ?? '') &&
+			action !== 'create' &&
+			checkPermission(access, permission, resource).allowed
+		)
+	})
 }
 
 type EnablerRow = { stable_user_id: string; username: string }
@@ -103,20 +116,85 @@ async function loadLiveEnabler(db: D1Database, userId: string) {
 		.first<EnablerRow>()
 }
 
-function storedPauseResource(
+/**
+ * What a credential pause waits on. The credential's stable id while it is
+ * still live; once soft-deleted, its name resolves now (old lane), so a
+ * grant on a deleted credential never resumes the enablement. A vault
+ * binding, or an id whose row is gone (vault bindings are hard-deleted), has
+ * no name lane. A vault that had no binding resolves its provider id to the
+ * live binding now. A name that still names nothing only Owners and org-wide
+ * holders pass, and a name that names two integrations resumes on Use of
+ * either.
+ */
+async function storedPauseResource(
+	db: D1Database,
 	enablement: EnablementRecord,
-): { permission: OrgPermission; resource: OrgResource } | null {
+): Promise<{
+	permission: OrgPermission
+	resources: Array<OrgResource>
+} | null> {
 	const pause = enablement.pause
 	if (pause?.reason !== 'credential_access') return null
 	if (!isOrgPermission(pause.permission)) return null
-	if (!isOrgResourceType(pause.resourceType) || !pause.resourceId) return null
+	if (pause.credentialId) {
+		const credential = await getOrgCredential(
+			db,
+			enablement.orgId,
+			pause.credentialId,
+		)
+		if (!credential || credential.live || credential.kind === 'vault') {
+			return {
+				permission: pause.permission,
+				resources: [
+					{
+						type: 'credential',
+						id: credential?.live ? pause.credentialId : '',
+						orgId: enablement.orgId,
+					},
+				],
+			}
+		}
+	}
+	if (!pause.resourceId) return null
+	if (pause.resourceType === vaultPauseResourceType) {
+		const binding = await getSecretProviderBinding(db, {
+			userId: enablement.orgId,
+			providerId: normalizeProviderId(pause.resourceId),
+		})
+		return {
+			permission: pause.permission,
+			resources: [
+				{
+					type: 'credential',
+					id: binding?.credentialId ?? '',
+					orgId: enablement.orgId,
+				},
+			],
+		}
+	}
+	if (isLegacyNamedCredentialTarget(pause.resourceType)) {
+		const credentialIds = await findCredentialIdsByLegacyName(
+			db,
+			enablement.orgId,
+			{ type: pause.resourceType, name: pause.resourceId },
+		)
+		return {
+			permission: pause.permission,
+			resources: (credentialIds.length > 0 ? credentialIds : ['']).map(
+				(id) => ({ type: 'credential', id, orgId: enablement.orgId }),
+			),
+		}
+	}
+	if (!isOrgGrantResourceType(pause.resourceType)) return null
 	return {
 		permission: pause.permission,
-		resource: {
-			type: pause.resourceType,
-			id: pause.resourceId,
-			orgId: enablement.orgId,
-		},
+		resources: [
+			{
+				type: pause.resourceType,
+				id: pause.resourceId,
+				orgId: enablement.orgId,
+			},
+		],
 	}
 }
 
@@ -127,7 +205,7 @@ type AccessCheck =
 async function checkEnablerAccess(input: {
 	env: Env
 	enablement: EnablementRecord
-	packageResource: OrgResource | null
+	packageResource: OrgResource
 }): Promise<AccessCheck> {
 	const { enablement } = input
 	const db = input.env.APP_DB
@@ -156,29 +234,30 @@ async function checkEnablerAccess(input: {
 		orgBinding: binding,
 	})
 	const access = await computeEffectivePermissions({ env: input.env, request })
-	if (input.packageResource) {
-		const decision = checkPermission(
-			access,
-			'package:execute',
-			input.packageResource,
-		)
-		if (!decision.allowed) {
-			return {
-				ok: false,
-				pause: {
-					reason: 'package_access',
-					permission: 'package:execute',
-					resourceType: input.packageResource.type,
-					resourceId: input.packageResource.id,
-				},
-			}
+	const packageDecision = checkPermission(
+		access,
+		'package:execute',
+		input.packageResource,
+	)
+	if (!packageDecision.allowed) {
+		return {
+			ok: false,
+			pause: {
+				reason: 'package_access',
+				permission: 'package:execute',
+				resourceType: input.packageResource.type,
+				resourceId: input.packageResource.id,
+			},
 		}
 	}
-	const stored = storedPauseResource(enablement)
+	const stored = await storedPauseResource(db, enablement)
 	if (stored) {
-		const decision = checkPermission(access, stored.permission, stored.resource)
 		// Still blocked on the same credential: stay paused as is.
-		if (!decision.allowed) return { ok: false, pause: null }
+		const allowed = stored.resources.some(
+			(resource) =>
+				checkPermission(access, stored.permission, resource).allowed,
+		)
+		if (!allowed) return { ok: false, pause: null }
 	}
 	return { ok: true, run, access }
 }
@@ -195,7 +274,7 @@ async function checkEnablerAccess(input: {
 export async function planEnablementRuns(input: {
 	env: Env
 	orgId: string
-	packageId: string | null
+	packageId: string
 	trigger: EnablementTrigger
 	onlyEnablerId?: string | null
 	audience?: EnablementAudience | null
@@ -227,13 +306,11 @@ export async function planEnablementRuns(input: {
 		const check = await checkEnablerAccess({
 			env: input.env,
 			enablement,
-			packageResource: input.packageId
-				? {
-						type: 'package',
-						id: input.packageId,
-						orgId: enablement.orgId,
-					}
-				: null,
+			packageResource: {
+				type: 'package',
+				id: input.packageId,
+				orgId: enablement.orgId,
+			},
 		})
 		if (!check.ok) {
 			if (check.pause && enablement.state === 'on') {

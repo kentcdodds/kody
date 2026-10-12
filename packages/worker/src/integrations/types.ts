@@ -36,6 +36,8 @@ export const userOauthAppSchema = z.object({
 export type UserOauthApp = z.infer<typeof userOauthAppSchema>
 
 export const userIntegrationConnectionSchema = z.object({
+	/** Stable credential id, assigned by the database on insert. */
+	credentialId: z.string().min(1),
 	userId: z.string().min(1),
 	name: z.string().min(1),
 	/** User-owned OAuth app slug; null for platform-app connections. */
@@ -106,6 +108,7 @@ export type UserOauthAppRow = {
 }
 
 export type UserIntegrationRow = {
+	id: string
 	user_id: string
 	name: string
 	app_slug: string | null

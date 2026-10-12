@@ -261,7 +261,6 @@ async function revealForUi(input: {
 		}),
 		handle: revealed.handle,
 		url: revealed.url,
-		signingSecret: revealed.signingSecret,
 	}
 }
 

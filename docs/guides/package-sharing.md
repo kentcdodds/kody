@@ -121,7 +121,10 @@ holds Use on it. When Jesse runs **your** package in your org:
 - Jesse never gets `secret:read` from a Use grant
 - Each secret or integration the package reads needs Jesse's own `secret:use` or
   `integration:use` on it. A Use grant on the package does not include them;
-  grant them on the credential
+  grant them on the credential: `accessGrant` with `resource_type: "credential"`
+  and the `credential_id` from `secretList` (or `integrationList`,
+  `mcpServerList`, `secretProviderList`). The grant follows the credential if it
+  is renamed, and ends if it is deleted
 - The package rules then narrow that use: `package:execute` on the package, and
   each secret or integration must allow that package (host allowlist,
   `allowed_packages`, or self-authored rules for user secrets)

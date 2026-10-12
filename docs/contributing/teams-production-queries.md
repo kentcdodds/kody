@@ -57,7 +57,7 @@ Previews have no Stripe account, so that run reports Stripe as skipped.
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
 | OAuth grants with and without `orgId` | `OAUTH_KV` `grant:*` values: plaintext `metadata.orgId` only (props stay encrypted)                                                  | `oauthGrants`                     |
 | Live Stripe subscriptions by price id | Stripe `GET /v1/subscriptions?status=all`, excluding `canceled` and `incomplete_expired`. Skipped when `STRIPE_SECRET_KEY` is unset. | `stripeSubscriptions`             |
-| Credential exposure surface           | APP_DB multi-member orgs + outside grants; AUDIT_DB secret/integration rows filtered in JS                                           | `credential-exposure.sealed.json` |
+| Credential exposure surface           | APP_DB multi-member orgs + outside grants; AUDIT_DB credential rows filtered in JS                                                   | `credential-exposure.sealed.json` |
 
 Stripe prices are classified with the worker's own billing config
 (`packages/worker/src/billing/billing-config.ts` and the production
@@ -71,30 +71,26 @@ means the §7.2 seat mapping does not cover it yet.
 
 `credential-exposure.sealed.json` answers:
 
-| Question                                                                   | Source                                                                                              | Report field                          |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Orgs with more than one live member, or any outside grant                  | APP_DB `orgs` / `org_memberships` / `grants`                                                        | `orgsWithExposureSurface`             |
-| Multi-member org rows                                                      | APP_DB                                                                                              | `multiMemberOrgs`                     |
-| Outside grants (subject not a live member)                                 | APP_DB `grants`                                                                                     | `outsideGrants`                       |
-| Secret / integration (MCP) audit where actor ≠ owner and ≠ granted subject | AUDIT_DB `org_audit_events` + APP_DB owners / grants / `team_members` (JS filter; DBs are separate) | `nonOwnerOrGrantedCredentialAudit`    |
-| Grant and grant-invite totals by resource type and state                   | APP_DB `grants` / `grant_permissions` / `invites`                                                   | `credentialGrantIds.grantTotals`      |
-| Does every name-keyed credential grant map to exactly one credential row?  | APP_DB `grants` / `invites` against secrets, vault bindings, integrations, MCP servers              | `credentialGrantIds.nameKeyed*`       |
-| Does every id-keyed `credential` grant resolve to exactly one row?         | APP_DB `grants` by credential id (`not-migrated` before the id columns exist)                       | `credentialGrantIds.credentialGrants` |
+| Question                                                              | Source                                                                                              | Report field                          |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Orgs with more than one live member, or any outside grant             | APP_DB `orgs` / `org_memberships` / `grants`                                                        | `orgsWithExposureSurface`             |
+| Multi-member org rows                                                 | APP_DB                                                                                              | `multiMemberOrgs`                     |
+| Outside grants (subject not a live member)                            | APP_DB `grants`                                                                                     | `outsideGrants`                       |
+| Credential audit where actor ≠ owner and ≠ granted subject of that id | AUDIT_DB `org_audit_events` + APP_DB owners / grants / `team_members` (JS filter; DBs are separate) | `nonOwnerOrGrantedCredentialAudit`    |
+| Grant and grant-invite totals by resource type and state              | APP_DB `grants` / `grant_permissions` / `invites`                                                   | `credentialGrantIds.grantTotals`      |
+| Does every `credential` grant resolve to exactly one credential row?  | APP_DB `grants` by credential id against secrets, vault bindings, integrations, MCP servers         | `credentialGrantIds.credentialGrants` |
 
-`credentialGrantIds` is the before/after evidence for the stable credential id
-migration. Each name-keyed row has an `outcome`: `mapped`, `orphan` (no
-credential carries the name), `ambiguous` (more than one credential row carries
-the name), `shared-with-vault` (the secret is also a vault door key, so the name
-grant covered vault use too), or `also-scoped` (a package or session secret in
-the org shares the name, so the name grant covered it too). The migration aborts
-on anything but `mapped`.
+The report is version 4. Credential grants are keyed by stable credential id
+(migration `0110-credential-ids-and-grants.sql`), so the totals have no `secret`
+or `integration` rows. Each credential grant row has an `outcome`: `resolved`,
+`orphan` (its credential was deleted since), or `ambiguous`. The migration's own
+before and after counts were checked inside the migration, which aborts on any
+mismatch.
 
-Ambient placeholder expansion did not write `org_audit_events` historically, so
-the audit section is a capability-surface check when rows exist. MCP servers
-authorize as `integration` resources. Saved packages keep implicit self-authored
-credential access for now; the credentials redesign series removes it. The full
-`resolveCredential(orgId, actor, packageStamp?)` choke point is the first PR of
-that series (not a separate GitHub issue).
+`credential.resolve` audit rows carry the credential id as their resource id and
+are matched to grants by it. Rows written before stable ids carry a name instead
+and never match a grant. Saved packages keep implicit self-authored credential
+access for now; the credentials redesign series removes it.
 
 ## Read-only guarantees
 

@@ -172,7 +172,7 @@ export const webhookTimestampFormatValues = [
 export type WebhookTimestampFormat =
 	(typeof webhookTimestampFormatValues)[number]
 
-export const packageWebhookVerificationSchema = z.object({
+export const packageWebhookHmacVerificationSchema = z.object({
 	type: z.enum(['hmac-sha256', 'hmac-sha1']),
 	header: z.string().regex(httpFieldNamePattern),
 	/**
@@ -186,6 +186,24 @@ export const packageWebhookVerificationSchema = z.object({
 	prefix: z.string().optional(),
 	signedPayload: z.enum(webhookSignedPayloadValues).optional(),
 })
+
+/**
+ * For senders that cannot sign: the minted URL's secret path segment is the
+ * only credential. A webhook that declares an HMAC type never falls back to
+ * this; requests without a valid signature are refused.
+ */
+export const packageWebhookUrlSecretVerificationSchema = z.object({
+	type: z.literal('url-secret'),
+})
+
+export const packageWebhookVerificationSchema = z.discriminatedUnion('type', [
+	packageWebhookHmacVerificationSchema,
+	packageWebhookUrlSecretVerificationSchema,
+])
+
+export type PackageWebhookHmacVerification = z.infer<
+	typeof packageWebhookHmacVerificationSchema
+>
 
 export type PackageWebhookVerification = z.infer<
 	typeof packageWebhookVerificationSchema
@@ -420,6 +438,7 @@ export const packageWebhookDefinitionSchema = z
 	})
 	.superRefine((webhook, ctx) => {
 		if (
+			webhook.verification?.type !== 'url-secret' &&
 			webhook.verification?.signedPayload === 'timestamp.body' &&
 			!webhook.replay?.timestampHeader
 		) {

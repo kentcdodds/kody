@@ -6,7 +6,9 @@ dedicated **branch preview** before it runs in production. Rehearsal tooling is
 hold Cloudflare or site-admin credentials.
 
 Everything here runs on `kody-branch-<slug>` previews only. PR previews redeploy
-and reseed on every push; the scripts and workflow refuse them.
+and reseed on every push; the scripts and workflow refuse them. `preview.yml`
+takes the slug (`cig-0110`); `preview-rehearsal.yml` accepts that same slug or
+the full worker name (`kody-branch-cig-0110`).
 
 Cloudflare workflow binding names are capped at 64 characters. Long
 `preview_name` values still deploy: the runtime/platform generators truncate the
@@ -57,17 +59,19 @@ anything differs; each difference must be expected by the migration (new tables,
 rewritten scopes) or it is a bug.
 
 The D1 diff always has some noise. Every bookmark changes. Each JSON snapshot
-also writes a fixed set of rows: about 20 `audit_events` (five logins, five MCP
+also writes a fixed set of rows: about 22 `audit_events` (five logins, seven MCP
 authorizations, and 10 audited admin reads) and 4
 `agent_package_conversation_uses` (one per non-admin user's package execute).
 Restore rewinds data only, so after a restore the JSON diff still shows whatever
 the deployed code changed.
 
 Keep the preview quiet while this runs: one step at a time, no other deploys to
-it, and no manual sign-ins during a `snapshot` or `restore`. The workflow runs
-one action at a time per preview, but it does not lock against `preview.yml`.
-The D1 bookmarks are taken one database after another, so a write landing
-between them makes the restore point inconsistent.
+it, and no manual sign-ins during a `snapshot` or `restore`. Extra `/auth` or
+`/oauth/authorize` traffic from the same GitHub Actions IP shares the preview's
+10-per-60s auth bucket and can 429 a snapshot. The workflow runs one action at a
+time per preview, but it does not lock against `preview.yml`. The D1 bookmarks
+are taken one database after another, so a write landing between them makes the
+restore point inconsistent.
 
 ## Workflow actions
 
@@ -97,7 +101,7 @@ still refuses to write into a non-empty roster.
 | Who        | How                                                                       | Holds                                                                                                                                                          |
 | ---------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rh-admin` | Seed SQL path (`buildSeedUserSql`, legacy `sha256(email)` id), site admin | Runs every admin step                                                                                                                                          |
-| `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, $25 grant                                                                                                                  |
+| `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, and on her user secret and integration by credential id; $25 grant                                                         |
 | `rh-bob`   | Seed SQL path (legacy id)                                                 | Owner of `@rh-org`; published there                                                                                                                            |
 | `rh-carol` | `adminUserCreate` + setup link (random id), Pro                           | Ran alice's package, and used alice's user secret and integration, through her `use` grants (bound to alice's org); pending grant invite to alice; auto-refill |
 | `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing                                                                                                                                         |

@@ -7,6 +7,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { readDeclaredSecretProviderId } from './declared-provider.ts'
+import { getSecretProviderBinding } from './repo.ts'
 import { clearProviderSecretCacheForTests } from './cache.ts'
 import {
 	createBrokenProviderRefMessage,
@@ -117,7 +118,7 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 		sqlite,
 		env,
 		invokeProvider,
-		resolve: (
+		resolve: async (
 			overrides: Partial<Parameters<typeof resolveProviderSecret>[0]> = {},
 		) =>
 			resolveProviderSecret({
@@ -126,6 +127,10 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 				userId: ownerIdFromStored(userId),
 				request: sessionRequestContext(userId),
 				provider: providerId,
+				binding: await getSecretProviderBinding(env.APP_DB, {
+					userId,
+					providerId,
+				}),
 				ref: canonicalRef,
 				invokeProvider,
 				...overrides,

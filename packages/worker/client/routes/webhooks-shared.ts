@@ -76,7 +76,9 @@ export function webhookModeLabel(
 export function webhookVerificationLabel(
 	webhook: Pick<PackageWebhookListItem, 'verification'>,
 ) {
-	if (!webhook.verification) return 'URL secret only'
+	if (!webhook.verification || webhook.verification.type === 'url-secret') {
+		return 'URL secret only'
+	}
 	return `${webhook.verification.type} · ${webhook.verification.header}`
 }
 

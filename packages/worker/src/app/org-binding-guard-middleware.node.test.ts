@@ -264,7 +264,7 @@ test('the guard hands off to the route for orgs the person can use', async () =>
 		.prepare(
 			`INSERT INTO grants (id, org_id, resource_type, resource_id, subject_type,
 			   subject_id, preset, created_by_user_id, created_at, updated_at)
-			 VALUES ('grant-1', 'org-ghost', 'secret', 'secret-1', 'user', ?, 'use', 'org-ghost', ?, ?)`,
+			 VALUES ('grant-1', 'org-ghost', 'credential', 'secret-1', 'user', ?, 'use', 'org-ghost', ?, ?)`,
 		)
 		.run(adaPersonId, now, now)
 	const guard = createOrgBindingGuardMiddleware(env)

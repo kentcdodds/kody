@@ -29,10 +29,13 @@ import {
 	storageValueNotCloneableMessage,
 } from './storage-runner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+
 async function ensureStorageRunnerTestSchema() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 }
 
@@ -48,6 +51,7 @@ async function seedPlannedStorageUser(
 	meterBytes: number,
 ) {
 	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)

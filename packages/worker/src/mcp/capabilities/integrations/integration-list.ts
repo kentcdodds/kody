@@ -47,7 +47,7 @@ export const integrationListCapability = defineDomainCapability(
 			])
 			return {
 				integrations: integrations.filter((integration) =>
-					listScopeIncludes(scope, integration.name),
+					listScopeIncludes(scope, integration.credentialId ?? ''),
 				),
 			}
 		},

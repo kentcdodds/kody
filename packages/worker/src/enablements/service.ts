@@ -16,6 +16,7 @@ import { resolveSavedPackage } from '#worker/package-invocations/module-artifact
 import {
 	listPackageSubscriptions,
 	listPackageWebhooks,
+	webhookHmacVerification,
 } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -65,7 +66,7 @@ type ResolvedTrigger = {
 	triggerName: string
 	/** A webhook already enabled by someone else: one enabler per endpoint. */
 	webhookEnablers?: Array<EnablementRecord>
-	/** A webhook URL with no signing secret whose manifest declares no verification. */
+	/** A webhook URL with no signing secret whose manifest declares no HMAC scheme. */
 	unsignedWebhookEndpointId?: string
 }
 
@@ -131,7 +132,8 @@ async function resolveDeclaredTrigger(input: {
 					triggerKind: 'webhook',
 					instanceId: endpoint.id,
 				}),
-				...(!declared.verification && !endpoint.hmacSecretEncrypted
+				...(!webhookHmacVerification(declared.verification) &&
+				!endpoint.hmacSecretEncrypted
 					? { unsignedWebhookEndpointId: endpoint.id }
 					: {}),
 			}
@@ -188,8 +190,8 @@ export async function enableTriggerForCaller(input: {
 			`Webhook "${trigger.triggerName}" is already on for another person. Each webhook URL runs as one enabler.`,
 		)
 	}
-	// Inbound delivery checks X-Kody-Signature on unsigned webhooks, so a URL
-	// that never got a signing secret gets one now.
+	// Keeps every enabled URL holding a signing secret, so requiring
+	// X-Kody-Signature later would not need a re-mint. Ingress does not check it.
 	if (trigger.unsignedWebhookEndpointId) {
 		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
 			env: input.env,

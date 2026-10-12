@@ -14,7 +14,22 @@ export type SecretBucketRow = {
 	updated_at: string
 }
 
+/**
+ * What a stored credential is (migration 0117). Placeholders fill only a
+ * `secret`; each later kind has its own resolver behind `resolveCredential`.
+ */
+export const storedCredentialKinds = [
+	'secret',
+	'url',
+	'login',
+	'signing',
+] as const
+
+export type StoredCredentialKind = (typeof storedCredentialKinds)[number]
+
 export type SecretEntryRow = {
+	/** Stable credential id, assigned by the database on insert. */
+	id: string
 	bucket_id: string
 	name: string
 	description: string
@@ -39,9 +54,12 @@ export type SecretMetadata = {
 	ttlMs: number | null
 }
 
+/** Listed secrets carry the credential id that grants are keyed by. */
+export type ListedSecret = SecretMetadata & { credentialId: string }
+
 export type SecretSearchRow = Pick<
 	SecretMetadata,
 	'name' | 'scope' | 'description' | 'packageId' | 'updatedAt'
->
+> & { credentialId: string }
 
 export type { StorageContext }

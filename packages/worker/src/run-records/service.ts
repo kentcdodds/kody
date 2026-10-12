@@ -74,6 +74,21 @@ function normalizeOptionalString(value: string | null | undefined) {
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
+/**
+ * Lexical `started_at` compares need canonical UTC ISO strings (with
+ * milliseconds). Offset forms and second-precision stamps sort wrong against
+ * stored `toISOString()` values.
+ */
+function normalizeOptionalIsoTimestamp(value: string | null | undefined) {
+	const trimmed = normalizeOptionalString(value)
+	if (!trimmed) return null
+	const ms = Date.parse(trimmed)
+	if (!Number.isFinite(ms)) {
+		throw new Error(`Invalid ISO timestamp filter: "${trimmed}"`)
+	}
+	return new Date(ms).toISOString()
+}
+
 function truncateUtf8(value: string, maxBytes: number) {
 	if (textEncoder.encode(value).length <= maxBytes) return value
 	const suffix = '... [truncated]'
@@ -526,8 +541,10 @@ export async function listRunRecords(input: {
 		status: input.filter?.status ?? null,
 		packageId: normalizeOptionalString(input.filter?.packageId),
 		jobId: normalizeOptionalString(input.filter?.jobId),
+		workflowId: normalizeOptionalString(input.filter?.workflowId),
 		name: normalizeOptionalString(input.filter?.name),
-		since: normalizeOptionalString(input.filter?.since),
+		since: normalizeOptionalIsoTimestamp(input.filter?.since),
+		until: normalizeOptionalIsoTimestamp(input.filter?.until),
 		errorTriage: input.filter?.errorTriage ?? null,
 		limit,
 		cursor: input.cursor ?? null,

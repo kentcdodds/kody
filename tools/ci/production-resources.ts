@@ -52,6 +52,7 @@ type ResolvedProductionBindings = {
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	repoSessionBlobsBucketName: string
+	operatorBackupsBucketName: string
 	emailDeliveryQueueName: string
 	emailDeliveryDeadLetterQueueName: string
 	artifactsRepoEventsQueueName: string
@@ -448,6 +449,11 @@ async function resolveProductionBindings({
 		binding: 'REPO_SESSION_BLOBS',
 		wranglerConfigPath,
 	})
+	const operatorBackupsBucketName = readProductionR2BucketName({
+		r2Buckets,
+		binding: 'OPERATOR_BACKUPS',
+		wranglerConfigPath,
+	})
 
 	let queueResources: ReturnType<typeof parseProductionQueueResources>
 	try {
@@ -541,6 +547,7 @@ async function resolveProductionBindings({
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
+		operatorBackupsBucketName,
 		committedUserEmailDomain,
 		packageAppHostname,
 		packageAppLegacyHostnames,
@@ -587,6 +594,10 @@ async function ensureProductionResources(options: CliOptions) {
 	})
 	const repoSessionBlobs = ensureR2Bucket({
 		name: bindings.repoSessionBlobsBucketName,
+		dryRun: options.dryRun,
+	})
+	const operatorBackups = ensureR2Bucket({
+		name: bindings.operatorBackupsBucketName,
 		dryRun: options.dryRun,
 	})
 	const communityAssets = ensureR2Bucket({
@@ -759,6 +770,7 @@ async function ensureProductionResources(options: CliOptions) {
 		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
 		repoSessionBlobsBucketName: repoSessionBlobs.name,
+		operatorBackupsBucketName: operatorBackups.name,
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
 			APP_LEGACY_HOSTS: process.env.APP_LEGACY_HOSTS,
@@ -839,6 +851,7 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 	console.log(`repo_session_blobs_bucket_name=${repoSessionBlobs.name}`)
+	console.log(`operator_backups_bucket_name=${operatorBackups.name}`)
 	console.log(`email_delivery_queue_name=${emailDeliveryQueue.name}`)
 	console.log(
 		`email_delivery_dead_letter_queue_name=${emailDeliveryDeadLetterQueue.name}`,

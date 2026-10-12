@@ -127,11 +127,10 @@ hard-code a previous `@{username}` scope need updates from their owners.
 the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
 secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
 `NAME`, with the same package access rules as a package without slots. Name each
-slot after the secret or integration the code already references, and keep those
-references as they are. There is no way yet for an org to choose which
-credential fills a slot; see
+slot after the secret or integration the code references. The leftover name lane
+is tracked in
 [planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-for the switch to assignments.
+([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
 
 ```json
 {
@@ -164,15 +163,15 @@ for the switch to assignments.
 - Publish rejects any other key or a missing field and names the slot. If a
   later rule rejects a slot in a version that is already published, the package
   still loads with its other slots.
-- Slots take no `placement`. Publish rejects one with a message to remove it;
-  versions published while it was required load with it ignored. The fetch
-  gateway fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a
-  request (a header, the URL path or query, or a text body) when the request is
-  HTTPS and its host is one the secret or integration allows, the same as for a
+- Slots take no `placement`. Publish rejects one with a message to remove it.
+  Published versions that include it load with it ignored. The fetch gateway
+  fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request
+  (a header, the URL path or query, or a text body) when the request is HTTPS
+  and its host is one the secret or integration allows, the same as for a
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
-To see which old-style credential references a package still has, run
+To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
 pattern labels it matches (for example `- src/index.ts: literal secret`),
 without credential names. `repoPublishSession` and `packageSave` repeat that
@@ -319,9 +318,10 @@ To run someone else's live package, they
 
 ## Package storage
 
-Every saved package owns one durable storage bucket per user
+Every saved package owns one durable storage bucket in the org that owns it
 (`storageId = package:{encodeURIComponent(packageId)}`), reached via
-`packageStorage()` from `kody:runtime`. One rule per context:
+`packageStorage()` from `kody:runtime`. Every member, job, and app of that org
+reads the same bucket. One rule per context:
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — from package apps, exports, subscriptions, jobs, and workflows. Retrievers
@@ -557,7 +557,7 @@ snapshot. Recovery to ready dispatches `mcp.server.reconnected` with the same
 episode id. The payload is metadata-first (server id/name/state, `account_url`).
 See the [package subscriptions guide](../guides/package-subscriptions.md).
 
-Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
+Artifacts-backed plain repos and packages also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
 lifecycle events. Session workspace branch pushes (`sessions/<id>`) and publish
 git-notes (`refs/notes/commits`) do not fan out. See [Plain repos](./repos.md)
@@ -587,6 +587,9 @@ Recurring schedules belong on a saved package:
 - Package config (secrets and manifest mounts) stays keyed by the saved package
   id
 - Shared durable data goes through `packageStorage()`
+- Each run, including `jobRunNow`, gets a 5-minute sandbox budget on every plan,
+  including package exports the job imports. Outbound `fetch` keeps its own
+  5-minute deadline and 60s idle timeout
 
 Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see
@@ -594,12 +597,10 @@ Jobs are part of the package definition. Deferred one-shot work uses
 
 `jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
-clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `jobDelete` is rejected for
-package-owned jobs for the same reason. `jobRunNow` triggers an existing package
-job immediately for debugging. When `expires_at` is reached the platform stops
-scheduling and auto-disables the job; that is separate from `preserved`, which
-only skips retention deletion.
+clears). Jobs keep name and source in the package repo — change, add, or remove
+the job entry there and publish. `jobRunNow` triggers an existing package job
+immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job.
 
 ## Save and edit packages
 

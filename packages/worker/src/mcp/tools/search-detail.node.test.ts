@@ -144,6 +144,7 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 		},
 		connection: {
 			userId: ownerIdFromStored('user-1'),
+			credentialId: 'cred-integration',
 			name,
 			appSlug: name,
 			platformAppSlug: null,

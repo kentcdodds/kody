@@ -7,8 +7,8 @@
 import {
 	isOrgPermission,
 	orgPermissions,
+	type OrgGrantResourceType,
 	type OrgPermission,
-	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
@@ -51,7 +51,7 @@ export type CompiledAccess = {
 }
 
 export function resourceGrantKey(
-	resourceType: OrgResourceType | 'org',
+	resourceType: OrgGrantResourceType | 'org',
 	resourceId: string,
 ) {
 	return `${resourceType}:${resourceId}`
@@ -141,7 +141,7 @@ function applyGrantRows(
 			continue
 		}
 		const key = resourceGrantKey(
-			row.resource_type as OrgResourceType,
+			row.resource_type as OrgGrantResourceType,
 			row.resource_id,
 		)
 		let set = resourcePermissionsOut.get(key)

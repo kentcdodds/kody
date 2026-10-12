@@ -4,7 +4,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
+import { authorizeMcpServer } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { buildMcpServerUsageUrl } from '#worker/mcp-client/package-access.ts'
 import { lockMcpServerToPackage } from '#worker/mcp-client/settings-service.ts'
@@ -56,7 +56,7 @@ export const mcpServerLockCapability = defineDomainCapability(
 				userId: ownerIdFromCaller(ctx.callerContext),
 				server: args.server,
 			})
-			await authorizeIntegration(ctx, 'integration:use', setting.name)
+			await authorizeMcpServer(ctx, 'integration:use', setting)
 			try {
 				const updated = await lockMcpServerToPackage({
 					env: ctx.env,

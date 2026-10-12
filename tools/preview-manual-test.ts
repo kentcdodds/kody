@@ -122,6 +122,8 @@ export type ParsedPreviewComment = {
 	runtimeUrl: string | null
 	platformWorkerName: string | null
 	platformUrl: string | null
+	apiWorkerName: string | null
+	apiUrl: string | null
 	d1DatabaseName: string | null
 	oauthKvTitle: string | null
 	mocks: Array<string>
@@ -138,6 +140,8 @@ export type PreviewSnapshot = {
 	runtimeUrl: string | null
 	platformWorkerName: string | null
 	platformUrl: string | null
+	apiWorkerName: string | null
+	apiUrl: string | null
 	d1DatabaseName: string | null
 	oauthKvTitle: string | null
 	mocks: Array<string>
@@ -731,6 +735,9 @@ export function parsePreviewComment(body: string): ParsedPreviewComment | null {
 	const platformLine = body.match(
 		/Platform worker:\s*`([^`]+)`\s*(?:\((https?:\/\/[^)\s]+)\))?/i,
 	)
+	const apiLine = body.match(
+		/API worker:\s*`([^`]+)`\s*(?:\((https?:\/\/[^)\s]+)\))?/i,
+	)
 	const d1DatabaseName = matchFirst(body, /D1:\s*`([^`]+)`/)
 	const oauthKvTitle = matchFirst(body, /KV:\s*`([^`]+)`/)
 	const mocks: Array<string> = []
@@ -750,6 +757,8 @@ export function parsePreviewComment(body: string): ParsedPreviewComment | null {
 		runtimeUrl: runtimeLine?.[2] ?? null,
 		platformWorkerName: platformLine?.[1] ?? null,
 		platformUrl: platformLine?.[2] ?? null,
+		apiWorkerName: apiLine?.[1] ?? null,
+		apiUrl: apiLine?.[2] ?? null,
 		d1DatabaseName,
 		oauthKvTitle,
 		mocks,
@@ -784,6 +793,15 @@ export function deriveSiblingWorkerUrl(
 		return url.origin
 	} catch {
 		return null
+	}
+}
+
+function sameOrigin(a: string, b: string | null) {
+	if (!b) return false
+	try {
+		return new URL(a).origin === new URL(b).origin
+	} catch {
+		return false
 	}
 }
 
@@ -993,6 +1011,11 @@ function healthMatchDetail(
 	return `ok, commitSha ${commitSha}`
 }
 
+/** Single-quote for paste-into-shell briefing lines (blocks metacharacters). */
+export function shellQuote(value: string) {
+	return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 export function formatBriefing(result: PreviewManualTestResult): string {
 	const lines = [
 		result.ok
@@ -1011,6 +1034,12 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 			: null,
 		result.snapshot.platformUrl
 			? `Platform: ${result.snapshot.platformUrl}${result.snapshot.platformWorkerName ? ` (\`${result.snapshot.platformWorkerName}\`)` : ''}`
+			: null,
+		result.snapshot.apiUrl
+			? `API: ${result.snapshot.apiUrl}${result.snapshot.apiWorkerName ? ` (\`${result.snapshot.apiWorkerName}\`)` : ''}`
+			: null,
+		result.snapshot.apiUrl
+			? `CLI (auth bootstrap / execute --local) API host: export KODY_API_URL=${shellQuote(result.snapshot.apiUrl)}`
 			: null,
 		result.smoke?.commitSha
 			? `Deployed commit: ${result.smoke.commitSha}`
@@ -1305,6 +1334,7 @@ async function loadSnapshot(
 		const workerName = workerNameFromPreviewUrl(options.previewUrl)
 		const runtimeWorkerName = workerName ? `${workerName}-runtime` : null
 		const platformWorkerName = workerName ? `${workerName}-platform` : null
+		const apiWorkerName = workerName ? `${workerName}-api` : null
 		return {
 			prNumber: null,
 			prUrl: null,
@@ -1328,6 +1358,15 @@ async function loadSnapshot(
 							options.previewUrl,
 							workerName,
 							platformWorkerName,
+						)
+					: null,
+			apiWorkerName,
+			apiUrl:
+				workerName && apiWorkerName
+					? deriveSiblingWorkerUrl(
+							options.previewUrl,
+							workerName,
+							apiWorkerName,
 						)
 					: null,
 			d1DatabaseName: null,
@@ -1365,6 +1404,24 @@ async function loadSnapshot(
 		(previewUrl && workerName && platformWorkerName
 			? deriveSiblingWorkerUrl(previewUrl, workerName, platformWorkerName)
 			: null)
+	// The CLI must redeem on the same preview the smoke tests, so a `--url`
+	// that overrides the comment's preview ignores the comment's API host.
+	const apiFromComment =
+		parsed?.apiUrl &&
+		(!options.previewUrl || sameOrigin(options.previewUrl, parsed.previewUrl))
+			? parsed
+			: null
+	const previewWorkerName = previewUrl
+		? workerNameFromPreviewUrl(previewUrl)
+		: null
+	const apiWorkerName =
+		apiFromComment?.apiWorkerName ??
+		(previewWorkerName ? `${previewWorkerName}-api` : null)
+	const apiUrl =
+		apiFromComment?.apiUrl ??
+		(previewUrl && previewWorkerName && apiWorkerName
+			? deriveSiblingWorkerUrl(previewUrl, previewWorkerName, apiWorkerName)
+			: null)
 
 	return {
 		prNumber: pr.number,
@@ -1377,6 +1434,8 @@ async function loadSnapshot(
 		runtimeUrl,
 		platformWorkerName,
 		platformUrl,
+		apiWorkerName,
+		apiUrl,
 		d1DatabaseName: parsed?.d1DatabaseName ?? null,
 		oauthKvTitle: parsed?.oauthKvTitle ?? null,
 		mocks: parsed?.mocks ?? [],

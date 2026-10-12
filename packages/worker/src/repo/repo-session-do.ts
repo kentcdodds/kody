@@ -87,9 +87,7 @@ import {
 	type IsolatedCheckPhaseOutcome,
 	type IsolatedCheckPhaseRequest,
 } from './isolated-check-phases.ts'
-import { parseRepoManifest } from './manifest.ts'
 import {
-	type EntityKind,
 	type EntitySourceRow,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -620,7 +618,6 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async readManifestFromWorkspace(
 		manifestPath: string,
-		entityKind: EntityKind,
 		expectedPackageScope?: string,
 	) {
 		const manifestContent = await this.workspace.readFile(
@@ -629,16 +626,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${manifestPath}" was not found.`)
 		}
-		if (entityKind === 'package') {
-			return parseAuthoredPackageJson({
-				content: manifestContent,
-				manifestPath,
-				expectedPackageScope,
-			})
-		}
-		return parseRepoManifest({
+		return parseAuthoredPackageJson({
 			content: manifestContent,
 			manifestPath,
+			expectedPackageScope,
 		})
 	}
 
@@ -1758,10 +1749,17 @@ class RepoSessionBase extends DurableObject<Env> {
 				if (!commit) {
 					throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 				}
-				await this.readManifestFromWorkspace(
-					source.manifest_path,
-					source.entity_kind,
-				)
+				switch (source.entity_kind) {
+					case 'package':
+						await this.readManifestFromWorkspace(source.manifest_path)
+						break
+					case 'repo':
+						break
+					default: {
+						const entityKind: never = source.entity_kind
+						throw new Error(`Unsupported entity kind: ${String(entityKind)}`)
+					}
+				}
 				return commit
 			},
 		)
@@ -3108,13 +3106,20 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		if (source.entity_kind === 'repo') {
-			return await this.publishPlainRepoSession({
-				sessionRow,
-				source,
-				sessionAccess,
-				commitMessage: input.commitMessage,
-			})
+		switch (source.entity_kind) {
+			case 'repo':
+				return await this.publishPlainRepoSession({
+					sessionRow,
+					source,
+					sessionAccess,
+					commitMessage: input.commitMessage,
+				})
+			case 'package':
+				break
+			default: {
+				const entityKind: never = source.entity_kind
+				throw new Error(`Unsupported entity kind: ${String(entityKind)}`)
+			}
 		}
 		const sessionBranch = sessionRow.session_branch
 		const checkStatus = await this.readCheckStatus()
@@ -3185,7 +3190,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			)) ?? (await this.getHeadCommit())
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
-			source.entity_kind,
 			input.expectedPackageScope,
 		)
 		await (

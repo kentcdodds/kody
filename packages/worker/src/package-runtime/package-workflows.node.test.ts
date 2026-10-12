@@ -13,11 +13,11 @@ import {
 import { type PackageInvocationStoredResponse } from '#worker/package-invocations/repo.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
 import { UserCodeError, isUserCodeError } from '#worker/user-code-error.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import {
 	DynamicCallableWorkflowBase,
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
-	workflowExecutorTimeoutMs,
 	type DynamicCallableWorkflowPayload,
 } from './package-workflows.ts'
 import {
@@ -167,6 +167,7 @@ async function queueWorkflow(
 	})
 	const queued = binding.instances.get(created.id)
 	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	const step = createInlineStep()
 	const run = (payload: unknown = queued.params, instanceId = created.id) =>
 		new DynamicCallableWorkflowBase(
 			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
@@ -178,9 +179,9 @@ async function queueWorkflow(
 				instanceId,
 				workflowName: 'dynamic-callable-workflow',
 			},
-			createInlineStep(),
+			step,
 		)
-	return { env, binding, created, queued, run }
+	return { env, binding, created, queued, run, step }
 }
 
 const findRun = (id: string) =>
@@ -263,7 +264,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		vi.setSystemTime(new Date(runAt))
 		const code =
 			'export default async function main(p){ return { ok: true, p }; }'
-		const { created, run } = await queueWorkflow({
+		const { created, run, step } = await queueWorkflow({
 			code,
 			runAt,
 			idempotencyKey: 'execute-smoke',
@@ -289,9 +290,16 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			{ greeting: 'hello' },
 			{
 				packageContext: null,
-				executorTimeoutMs: workflowExecutorTimeoutMs,
+				executorTimeoutMs: backgroundExecutorTimeoutMs,
 				runSurface: 'workflow',
 			},
+		)
+		// The step outlasts the 5-minute sandbox so the sandbox timeout and run
+		// finish land before the engine would cut the step.
+		expect(step.do).toHaveBeenCalledWith(
+			'execute inline workflow code',
+			expect.objectContaining({ timeout: '6 minutes' }),
+			expect.any(Function),
 		)
 		expect(findRun(created.id)).toMatchObject({
 			status: 'complete',
@@ -394,7 +402,7 @@ test('package-created inline workflows retain package secret authorization conte
 		undefined,
 		{
 			packageContext,
-			executorTimeoutMs: workflowExecutorTimeoutMs,
+			executorTimeoutMs: backgroundExecutorTimeoutMs,
 			runSurface: 'workflow',
 		},
 	)
@@ -541,7 +549,7 @@ test('package and inline workflows each record exactly one workflow run with wor
 	})
 	invocationMocks.invokePackageExport.mockResolvedValueOnce({
 		status: 200,
-		body: { result: { ok: true } },
+		body: { result: { ok: true, source: 'package' }, logs: ['[log] pkg'] },
 	})
 	await packageRun.run()
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
@@ -562,7 +570,11 @@ test('package and inline workflows each record exactly one workflow run with wor
 	)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({ status: 'success' }),
+		expect.objectContaining({
+			status: 'success',
+			logs: ['[log] pkg'],
+			result: { ok: true, source: 'package' },
+		}),
 	)
 	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -579,8 +591,8 @@ test('package and inline workflows each record exactly one workflow run with wor
 		idempotencyKey: 'inline-single-run-record',
 	})
 	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
+		result: { ok: true, source: 'inline' },
+		logs: ['[log] inline'],
 	})
 	await inlineRun.run()
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
@@ -596,7 +608,11 @@ test('package and inline workflows each record exactly one workflow run with wor
 	)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({ status: 'success' }),
+		expect.objectContaining({
+			status: 'success',
+			logs: ['[log] inline'],
+			result: { ok: true, source: 'inline' },
+		}),
 	)
 })
 

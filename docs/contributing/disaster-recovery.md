@@ -78,13 +78,13 @@ through its lifecycle.
 
 ## Objectives
 
-| Scope                         | RPO    | Notes                                                                                                                                                                                                                            |
-| ----------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| All canonical stores          | 24h    | APP_DB, JOBS_DB, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots. `REPO_SESSION_BLOBS` is ephemeral session scratch and is not a canonical store. |
-| APP_DB (`kody`)               | 24h    | Nightly control-plane D1 export; hourly size/ETag freshness; deep checksum via restore drill. Production size is ~117 MB — far below the 4.5 GB export ceiling (`BACKUP_MAX_SOURCE_BYTES`, not raisable above 4,500,000,000).    |
-| JOBS_DB (`kody-jobs`)         | 24h    | Nightly control-plane D1 export of scheduled-job definitions (`jobs`) and `archived_job_artifacts`; hourly freshness; isolated drill via `--database kody-jobs`. Job definitions do not live in APP_DB.                          |
-| Selected RunLog state         | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded                                                                                     |
-| D1 freshness (both databases) | hourly | Control-plane size/ETag freshness for every configured source; deep checksum via drill                                                                                                                                           |
+| Scope                         | RPO    | Notes                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All canonical stores          | 24h    | APP_DB, JOBS_DB, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package source snapshots. `REPO_SESSION_BLOBS` is ephemeral session scratch and `OPERATOR_BACKUPS` holds operator rollback snapshots; neither is a canonical store. |
+| APP_DB (`kody`)               | 24h    | Nightly control-plane D1 export; hourly size/ETag freshness; deep checksum via restore drill. Production size is ~117 MB — far below the 4.5 GB export ceiling (`BACKUP_MAX_SOURCE_BYTES`, not raisable above 4,500,000,000).                                                          |
+| JOBS_DB (`kody-jobs`)         | 24h    | Nightly control-plane D1 export of scheduled-job definitions (`jobs`); hourly freshness; isolated drill via `--database kody-jobs`. Job definitions do not live in APP_DB.                                                                                                             |
+| Selected RunLog state         | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded                                                                                                                                           |
+| D1 freshness (both databases) | hourly | Control-plane size/ETag freshness for every configured source; deep checksum via drill                                                                                                                                                                                                 |
 
 RTO is whatever the operator can achieve with the UI restore workflow after a
 successful sealed-day drill. There is no provider-level cross-store atomic
@@ -347,13 +347,12 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   sealed dump. Storage ids absent from the inventory are not deleted by restore.
 - R2 restore puts sealed objects back by key; it does not sweep orphans that
   appeared after the sealed day.
-- **StorageRunner inventory** unions authoritative sources: `jobs` and
-  `archived_job_artifacts` storage ids from the jobs worker (`JOBS_DB` via the
-  `JOBS` / `JobsStore` path), plus `APP_DB` `user_storage_buckets` (including
-  ad-hoc / execute buckets). Buckets known only inside a user's `RunLog` (and
-  never registered in `user_storage_buckets` or an entity table) remain outside
-  DR inventory by design; the selective RunLog lane does not export
-  run-associated storage ids.
+- **StorageRunner inventory** unions authoritative sources: `jobs` storage ids
+  from the jobs worker (`JOBS_DB` via the `JOBS` / `JobsStore` path), plus
+  `APP_DB` `user_storage_buckets` (including ad-hoc / execute buckets). Buckets
+  known only inside a user's `RunLog` (and never registered in
+  `user_storage_buckets` or an entity table) remain outside DR inventory by
+  design; the selective RunLog lane does not export run-associated storage ids.
 
 ## Credentials and Access
 

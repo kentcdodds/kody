@@ -11,7 +11,6 @@ import type * as Artifacts from './artifacts.ts'
 import type * as Checks from './checks.ts'
 import type * as EntitySources from './entity-sources.ts'
 import type * as ExternalPublishClone from './external-publish-clone.ts'
-import type * as Manifest from './manifest.ts'
 import type * as RepoSessions from './repo-sessions.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
@@ -24,6 +23,7 @@ import type * as StorageBuckets from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionMockModule as mockModule,
 	restoreRepoSessionMockBaseline,
+	checkedPublishState,
 	createDurableObjectState,
 	createExternalClone,
 	createFakeRepoSessionBlobs,
@@ -182,12 +182,6 @@ vi.mock('./artifacts.ts', async () => {
 	}
 })
 
-vi.mock('./manifest.ts', () => ({
-	parseRepoManifest: (...args: Parameters<typeof Manifest.parseRepoManifest>) =>
-		mockModule.parseRepoManifest(...args),
-	normalizeRepoWorkspacePath: (path: string) => path.trim().replace(/^\/+/, ''),
-}))
-
 vi.mock('./checks.ts', () => ({
 	runRepoChecks: (...args: Parameters<typeof Checks.runRepoChecks>) =>
 		mockModule.runRepoChecks(...args),
@@ -323,7 +317,6 @@ const { maxRepoSourceFileBytes, maxRepoSourceFileDiffLines } =
 type RepoSessionInstance = InstanceType<typeof RepoSession>
 
 const session = { sessionId: 'session-1', userId: ownerIdFromStored('user-1') }
-const jobManifest = '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
 const demoPackageJson =
 	'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
 const userPackageJson =
@@ -422,8 +415,9 @@ function preparePublish(
 function publish(
 	options: Partial<Parameters<RepoSessionInstance['publishSession']>[0]> = {},
 	env: Env = kvEnv(),
+	state = createDurableObjectState(),
 ) {
-	return repoSession(env).publishSession({
+	return repoSession(env, state).publishSession({
 		...session,
 		force: true,
 		...options,
@@ -531,7 +525,8 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	// environment and logs a warning; it is asserted at the end of the test.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
-	const repo = repoSession()
+	const packageFile = { 'package.json': userPackageJson }
+	const repo = repoSession(createEnv(), await checkedPublishState(packageFile))
 	const artifactsAuth = { username: 'x', password: 'art_source_secret' }
 	const noToken = expect.not.objectContaining({ token: expect.anything() })
 
@@ -557,7 +552,18 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	mockModule.git.pull.mockClear()
 	mockModule.git.push.mockClear()
 	mockModule.rawPush.mockClear()
-	await repo.publishSession({ ...session, force: true })
+	seedWorkspace(packageFile)
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(
+		publishedSnapshot(packageFile, {
+			repoId: 'source-repo',
+			publishedCommit: 'commit-base',
+		}),
+	)
+	await repo.publishSession({
+		...session,
+		force: true,
+		destructiveOverwriteConfirmed: true,
+	})
 	expect(mockModule.git.push).toHaveBeenCalledTimes(1)
 	expect(mockModule.git.push).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -1172,12 +1178,12 @@ test('openSession wraps packfile corruption but leaves opaque Cloudflare interna
 
 test('readFile retries D1 reads and falls back to cached sessions when replicas lag', async () => {
 	setCommonSessionFixtures()
-	const jobSource = sourceRow({
-		entity_kind: 'job',
-		entity_id: 'job-1',
-		repo_id: 'job-job-1',
+	const packageSource = sourceRow({
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
 		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 	})
 	mockModule.getRepoSessionById
 		.mockResolvedValueOnce(null)
@@ -1191,18 +1197,18 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 		)
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(null)
-		.mockResolvedValueOnce(jobSource)
-	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
+		.mockResolvedValueOnce(packageSource)
+	mockModule.workspaceReadFile.mockResolvedValue(userPackageJson)
 
 	await expect(
 		repoSession().readFile({
 			sessionId: 'job-runtime-session-replica-lag',
 			userId: ownerIdFromStored('user-1'),
-			path: 'kody.json',
+			path: 'package.json',
 		}),
 	).resolves.toEqual({
-		path: 'kody.json',
-		content: '{"version":1,"kind":"job"}',
+		path: 'package.json',
+		content: userPackageJson,
 	})
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
@@ -1213,9 +1219,11 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 	const initialSource = {
 		id: 'source-1',
 		user_id: ownerIdFromStored('user-1'),
+		entity_kind: 'package' as const,
+		entity_id: 'package-1',
 		repo_id: 'source-repo',
 		published_commit: 'commit-initial',
-		manifest_path: 'kody.json',
+		manifest_path: 'package.json',
 		source_root: '/',
 	}
 	const sessionAt = (commit: string) =>
@@ -1245,8 +1253,8 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 		.mockResolvedValueOnce(null)
 		.mockResolvedValueOnce(null)
 	mockModule.getEntitySourceById
-		.mockResolvedValueOnce(jobSource)
-		.mockResolvedValueOnce(jobSource)
+		.mockResolvedValueOnce(packageSource)
+		.mockResolvedValueOnce(packageSource)
 		.mockResolvedValueOnce(null)
 	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
@@ -1262,21 +1270,40 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 		cachedFallbackSession.readFile({
 			sessionId: 'job-runtime-session-1',
 			userId: ownerIdFromStored('user-1'),
-			path: 'kody.json',
+			path: 'src/index.ts',
 		}),
-	).resolves.toEqual({ path: 'kody.json', content: 'export default {}' })
+	).resolves.toEqual({ path: 'src/index.ts', content: 'export default {}' })
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for downstream readers and never leaves inconsistent published commits when snapshot collection or persistence fails', async () => {
-	preparePublish(
-		'commit-published-fail',
-		{ 'kody.json': jobManifest },
-		jobManifest,
-	)
-	mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
-		new Error('kv write failed'),
-	)
-	await expect(publish()).rejects.toThrow('kv write failed')
+	const packageFiles = {
+		'package.json': userPackageJson,
+		'src/index.ts': 'export default {}',
+	}
+	const publishChecked = async (
+		headCommit: string,
+		files: Record<string, string | null>,
+		options: { fallback?: string | null; setup?: () => void } = {},
+	) => {
+		preparePublish(headCommit, files, options.fallback ?? '')
+		options.setup?.()
+		const hashed = Object.fromEntries(
+			Object.entries(files).filter(
+				(entry): entry is [string, string] => typeof entry[1] === 'string',
+			),
+		)
+		return publish({ force: false }, kvEnv(), await checkedPublishState(hashed))
+	}
+
+	await expect(
+		publishChecked('commit-published-fail', packageFiles, {
+			setup() {
+				mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
+					new Error('kv write failed'),
+				)
+			},
+		}),
+	).rejects.toThrow('kv write failed')
 	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
@@ -1291,46 +1318,50 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 		expect.objectContaining({ id: 'source-1', publishedCommit: 'commit-base' }),
 	)
 
-	preparePublish(
-		'commit-published-double-fail',
-		{ 'kody.json': jobManifest },
-		jobManifest,
-	)
-	mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
-		new Error('kv write failed'),
-	)
-	mockModule.updateEntitySource
-		.mockResolvedValueOnce(undefined)
-		.mockRejectedValueOnce(new Error('d1 revert failed'))
-	await expect(publish()).rejects.toThrow('kv write failed')
+	await expect(
+		publishChecked('commit-published-double-fail', packageFiles, {
+			setup() {
+				mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
+					new Error('kv write failed'),
+				)
+				mockModule.updateEntitySource
+					.mockResolvedValueOnce(undefined)
+					.mockRejectedValueOnce(new Error('d1 revert failed'))
+			},
+		}),
+	).rejects.toThrow('kv write failed')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
 
-	preparePublish(
-		'commit-published-collect-fail',
-		{ 'kody.json': jobManifest, 'src/index.ts': null },
-		null,
-	)
-	await expect(publish()).rejects.toThrow(/Failed to read repo session file/)
+	await expect(
+		publishChecked(
+			'commit-published-collect-fail',
+			{ 'package.json': userPackageJson, 'src/index.ts': null },
+			{ fallback: null },
+		),
+	).rejects.toThrow(/Failed to read repo session file/)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
 	consoleWarn.mockImplementation(() => {})
 	const files = {
-		'kody.json': jobManifest,
-		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
-		'src/index.ts': 'export default {}',
+		...packageFiles,
+		'.git/config': '',
 	}
-	preparePublish('commit-published-new', { ...files, '.git/config': '' })
+	preparePublish('commit-published-new', files)
 	mockModule.workspaceGlob.mockClear()
 	mockModule.workspaceReadFileBytes.mockClear()
-	await publish()
+	await publish(
+		{ force: false },
+		kvEnv(),
+		await checkedPublishState(packageFiles),
+	)
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			source: expect.objectContaining({
 				id: 'source-1',
 				published_commit: 'commit-published-new',
 			}),
-			files,
+			files: packageFiles,
 		}),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
@@ -1342,7 +1373,7 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	)
 	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
 	expect(mockModule.workspaceReadFileBytes).toHaveBeenCalledTimes(
-		Object.keys(files).length,
+		Object.keys(packageFiles).length,
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('publish_git_note'),
@@ -1369,8 +1400,6 @@ test('publishFromExternalRef rejects stale expected HEAD values and checks fast-
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue(
 		sourceRow({
-			entity_kind: 'job',
-			entity_id: 'job-1',
 			repo_id: 'source-repo',
 			published_commit: 'commit-old',
 		}),
@@ -1749,16 +1778,9 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 			{ name: 'PushRejectedError', code: 'PushRejectedError' },
 		),
 	)
-	const state = createDurableObjectState()
-	// Empty workspace → SHA-256 of '' so checks are not stale without force.
-	await state.storage.put('repo-session:last-check-status', {
-		runId: 'run-1',
-		treeHash:
-			'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-		checkedAt: '2026-04-18T00:00:00.000Z',
-		ok: true,
-		results: [],
-	})
+	const packageFile = { 'package.json': userPackageJson }
+	seedWorkspace(packageFile)
+	const state = await checkedPublishState(packageFile)
 	// Post-rejection tip refresh (precheck uses D1 published_commit only).
 	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
 		branch: 'main',

@@ -140,6 +140,8 @@ type WebhookInvocationInput = {
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
 	idempotencyHashParams?: Record<string, unknown>
+	/** Ack-queue deliveries pass the background budget; sync omits it. */
+	executorTimeoutMs?: number
 }
 
 /**
@@ -205,5 +207,8 @@ async function invokeWebhookExport(
 			source: 'webhook',
 			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 		},
+		...(input.executorTimeoutMs === undefined
+			? {}
+			: { executorTimeoutMs: input.executorTimeoutMs }),
 	})
 }

@@ -339,14 +339,14 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
-	/** Manual grant (`users.plan`). Manage plan writes this column. */
+	/** Manual grant (`orgs.plan` on the personal org). */
 	plan: AdminPlanName
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
-	/** Raw `users.second_agent_standard_gift_expires_at`, or null. */
+	/** Raw `orgs.second_agent_standard_gift_expires_at`, or null. */
 	secondAgentGiftExpiresAt: string | null
-	/** Raw `users.referral_standard_credit_expires_at`, or null. */
+	/** Raw `orgs.referral_standard_credit_expires_at`, or null. */
 	referralCreditExpiresAt: string | null
 	/**
 	 * Later of the two overlay expiry columns (or null). Same value
@@ -418,7 +418,7 @@ export type AdminCreditWalletSummary = {
 	plan: AdminPlanName
 	/** Purchasable Pro: credits unlock limits and debit usage. */
 	eligible: boolean
-	/** `users.admin_credits_eligible`: admin-set, never touched by Stripe. */
+	/** `orgs.admin_credits_eligible`: admin-set, never touched by Stripe. */
 	adminCreditsEligible: boolean
 	unlocked: boolean
 	balanceMicroUsd: number
@@ -1527,14 +1527,17 @@ export type AccountConnectedAgentsLoaderData = {
 	}>
 }
 
-type PackageWebhookVerification = {
-	type: 'hmac-sha256' | 'hmac-sha1'
-	header: string
-	secretName?: string
-	encoding: 'hex' | 'base64'
-	prefix?: string
-	signedPayload?: 'body' | 'timestamp.body'
-} | null
+type PackageWebhookVerification =
+	| {
+			type: 'hmac-sha256' | 'hmac-sha1'
+			header: string
+			secretName?: string
+			encoding: 'hex' | 'base64'
+			prefix?: string
+			signedPayload?: 'body' | 'timestamp.body'
+	  }
+	| { type: 'url-secret' }
+	| null
 
 type PackageWebhookReplay = {
 	timestampHeader?: string
@@ -1675,8 +1678,6 @@ export type PackageWebhookRevealedUrl = {
 	id: string
 	handle: string
 	url: string
-	/** Set when deliveries must carry `X-Kody-Signature` with this secret. */
-	signingSecret: string | null
 }
 
 export type PackageWebhooksActionPayload = PackageWebhooksLoaderData & {
@@ -2192,8 +2193,6 @@ export type AccountValuesLoaderData = {
 	selectedValueId: string | null
 }
 
-type AccountJobOwnership = 'ad-hoc' | 'package'
-
 /**
  * JSON-safe blob for job params (and similar free-form payloads). Remix
  * entry props require SerializableValue; `unknown` is not allowed.
@@ -2214,8 +2213,7 @@ type AccountJobSchedule =
 export type AccountJobListItem = {
 	id: string
 	name: string
-	ownership: AccountJobOwnership
-	packageId: string | null
+	packageId: string
 	packageName: string | null
 	packageKodyId: string | null
 	scheduleSummary: string
@@ -2223,7 +2221,6 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
-	preserved: boolean
 	expiresAt: string | null
 	expired: boolean
 	dueNow: boolean
@@ -2275,16 +2272,6 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
-	retention: {
-		successOnceDays: number
-		failedOrNeverRanOnceDays: number
-		disabledRecurringDays: number
-		defaults: {
-			successOnce: number
-			failedOrNeverRanOnce: number
-			disabledRecurring: number
-		}
-	}
 }
 
 type AccountWorkflowSourceType = 'package' | 'inline'

@@ -4,7 +4,7 @@ import { expect, test, vi } from 'vitest'
 import type * as memoryRepo from '#mcp/memory/repo.ts'
 import { type McpMemoryRow } from '#mcp/memory/types.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
-import { type SecretMetadata } from '#mcp/secrets/types.ts'
+import { type ListedSecret } from '#mcp/secrets/types.ts'
 import type * as guildMembership from '#worker/discord/guild-membership.ts'
 import { persistIntegrationTokens } from '#worker/integrations/credentials.ts'
 import { inferIntegrationRefreshPolicy } from '#worker/integrations/refresh-policy.ts'
@@ -257,6 +257,7 @@ const githubIntegration: JoinedIntegration = {
 	},
 	connection: {
 		userId: ownerIdFromStored('user-aaa'),
+		credentialId: 'cred-integration',
 		name: 'github',
 		appSlug: 'github',
 		platformAppSlug: null,
@@ -274,7 +275,8 @@ const githubIntegration: JoinedIntegration = {
 	},
 }
 
-const apiKeySecret: SecretMetadata = {
+const apiKeySecret: ListedSecret = {
+	credentialId: 'cred-api-key',
 	name: 'apiKey',
 	scope: 'user',
 	description: '',

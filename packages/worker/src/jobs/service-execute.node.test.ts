@@ -7,6 +7,7 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
@@ -19,13 +20,13 @@ import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
 import { persistPublishedBundleArtifact } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import * as repoKodyExecution from '#worker/repo/repo-kody-execution.ts'
-import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
+import { buildPackageJobId } from './package-job-id.ts'
 import * as schedule from './schedule.ts'
 import { executeJobOnce, runJobNow, updateJob } from './service.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
@@ -40,7 +41,7 @@ import {
 	createBundleArtifactsKv,
 	insertPublishedEntitySource,
 	createBaseCallerContext,
-	insertLeftoverJob,
+	insertPackageJob,
 	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 
@@ -124,7 +125,6 @@ function createJob(
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
-		preserved: false,
 		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
@@ -136,30 +136,17 @@ function createJob(
 	}
 }
 
-function kodyJobManifest(title: string, description: string) {
-	return JSON.stringify({
-		version: 1,
-		kind: 'job',
-		title,
-		description,
-		sourceRoot: '/',
-		entrypoint: 'src/job.ts',
-	})
-}
-
-/** Leftover (non-package) job with a published kody.json snapshot. */
-async function publishLeftoverJob(input: {
+/** Package job inserted with a published package.json snapshot. */
+async function publishInsertedPackageJob(input: {
 	env: Env
 	callerContext: PersistedJobCallerContext
 	name: string
 	code: string
 	params?: Record<string, unknown>
 	schedule?: JobRecord['schedule']
-	publishedCommit?: string
-	description?: string
 }) {
 	mockRepoPersistence()
-	const jobView = await insertLeftoverJob({
+	const jobView = await insertPackageJob({
 		env: input.env,
 		callerContext: input.callerContext,
 		body: {
@@ -167,23 +154,6 @@ async function publishLeftoverJob(input: {
 			code: input.code,
 			params: input.params,
 			schedule: input.schedule ?? onceSchedule,
-		},
-	})
-	await insertPublishedEntitySource({
-		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
-		env: input.env,
-		userId: input.callerContext.user.userId,
-		sourceId: jobView.sourceId,
-		entityKind: 'job',
-		entityId: jobView.id,
-		publishedCommit: input.publishedCommit ?? 'published-commit-1',
-		manifestPath: 'kody.json',
-		files: {
-			'kody.json': kodyJobManifest(
-				input.name,
-				input.description ?? 'Runs once at 2026-04-17T15:00:00.000Z',
-			),
-			'src/job.ts': input.code,
 		},
 	})
 	const row = await getJobRowById(
@@ -326,7 +296,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 	expect(recordUsageSpy).not.toHaveBeenCalled()
 })
 
-test('interactive-origin leftover jobs run in the background with writable storage and execute-style invoke tools', async () => {
+test('interactive-origin package jobs run in the background with writable storage and execute-style invoke tools', async () => {
 	// Usage rollup writes are best-effort and fail against this fake env.
 	silenceIncidentalRuntimeWarnings()
 	const { env } = createExecuteEnv()
@@ -336,10 +306,10 @@ test('interactive-origin leftover jobs run in the background with writable stora
 	}
 	const code =
 		'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }'
-	const { jobView, row } = await publishLeftoverJob({
+	const { jobView, row } = await publishInsertedPackageJob({
 		env,
 		callerContext,
-		name: 'Storage bridge',
+		name: 'storage-bridge',
 		code,
 		params: { stepCount: 2 },
 	})
@@ -379,61 +349,9 @@ test('interactive-origin leftover jobs run in the background with writable stora
 			packageInvokeTools: expect.anything(),
 		}),
 	)
-})
-
-test('leftover kody.json jobs execute the bundled published entry with job run-record context', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const { env } = createExecuteEnv()
-	const callerContext = createBaseCallerContext()
-	const name = 'Capability-created one-off job'
-	const { jobView, row } = await publishLeftoverJob({
-		env,
-		callerContext,
-		name,
-		code: 'export default async () => ({ ok: true, adHoc: true })',
-		params: { step: 'lights-off' },
+	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+		executorTimeoutMs: backgroundExecutorTimeoutMs,
 	})
-	const executeSpy = vi
-		.spyOn(registry, 'runBundledModuleWithRegistry')
-		.mockResolvedValue({
-			result: { ok: true, adHoc: true },
-			logs: ['ad hoc job executed'],
-		})
-
-	const outcome = await executeJobOnce({
-		env,
-		job: row.record,
-		callerContext,
-		source: { kind: 'schedule', jobId: 'test-job' },
-	})
-
-	expect(outcome.execution).toEqual({
-		ok: true,
-		result: { ok: true, adHoc: true },
-		logs: ['ad hoc job executed'],
-	})
-	expect(executeSpy).toHaveBeenCalledTimes(1)
-	const [, runCaller, bundle, , runOptions] = executeSpy.mock.calls[0]!
-	expect(runCaller).toMatchObject({
-		repoContext: expect.objectContaining({
-			entityKind: 'job',
-			entityId: jobView.id,
-			manifestPath: 'kody.json',
-		}),
-	})
-	expect(bundle).toMatchObject({ mainModule: 'dist/bundled-entry.js' })
-	expect(runOptions).toMatchObject({
-		runRecord: {
-			surface: 'job',
-			name,
-			jobId: jobView.id,
-			storageId: `job:${jobView.id}`,
-			sourceId: jobView.sourceId,
-			publishedCommit: 'published-commit-1',
-		},
-	})
-	expect(runOptions).not.toHaveProperty('runRecord.packageId')
-	expect(runOptions).not.toHaveProperty('runRecord.kodyId')
 })
 
 test('executeJobOnce records job_run usage for success and failure', async () => {
@@ -442,10 +360,10 @@ test('executeJobOnce records job_run usage for success and failure', async () =>
 		.mockResolvedValue(undefined)
 	const { env } = createExecuteEnv()
 	const callerContext = createBaseCallerContext()
-	const { jobView, row } = await publishLeftoverJob({
+	const { jobView, row } = await publishInsertedPackageJob({
 		env,
 		callerContext,
-		name: 'Usage-metered job',
+		name: 'usage-metered-job',
 		code: 'export default async () => ({ ok: true, metered: true })',
 	})
 	vi.spyOn(registry, 'runBundledModuleWithRegistry')
@@ -712,20 +630,18 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 			db,
 			userId: ownerIdFromStored('user-123'),
 			sourceId: 'source-stale-bundle',
-			entityKind: 'job',
-			entityId: 'job-stale-bundle',
+			entityKind: 'package',
+			entityId: 'pkg-stale-bundle',
 			publishedCommit: commit,
-			manifestPath: 'kody.json',
+			manifestPath: 'package.json',
 			kv: bundleKv,
 			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Stale bundle job',
+				'package.json': createPackageJobManifestText({
+					packageName: '@kody/stale-bundle',
+					kodyId: 'stale-bundle',
 					description: 'Runs stale bundle test',
-					keywords: ['job'],
-					searchText: 'Runs stale bundle test',
-					entrypoint: 'src/job.ts',
+					jobName: 'stale-bundle-job',
+					exportPath: './src/job.ts',
 				}),
 				'src/job.ts': jobSource,
 			},
@@ -738,7 +654,7 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 		userId: ownerIdFromStored('user-123'),
 		source,
 		kind: 'job',
-		artifactName: 'job-stale-bundle',
+		artifactName: 'stale-bundle-job',
 		entryPoint: 'src/job.ts',
 		mainModule: 'dist/bundled-entry.js',
 		modules: {
@@ -746,7 +662,11 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 				'export default async () => ({ version: "old-bundle" })',
 		},
 		dependencies: [],
-		packageContext: null,
+		packageContext: {
+			packageId: 'pkg-stale-bundle',
+			kodyId: 'stale-bundle',
+			sourceId: 'source-stale-bundle',
+		},
 	})
 	await publish(
 		'commit-2',
@@ -763,8 +683,8 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job: createJob({
-			id: 'job-stale-bundle',
-			name: 'Stale bundle job',
+			id: buildPackageJobId('pkg-stale-bundle', 'stale-bundle-job'),
+			name: 'stale-bundle-job',
 			sourceId: 'source-stale-bundle',
 			publishedCommit: 'commit-2',
 		}),
@@ -862,14 +782,12 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 	silenceIncidentalRuntimeWarnings()
 	const { env } = createExecuteEnv()
 	const callerContext = createBaseCallerContext()
-	const { row } = await publishLeftoverJob({
+	const { row } = await publishInsertedPackageJob({
 		env,
 		callerContext,
-		name: 'Platform blip retry job',
+		name: 'platform-blip-retry-job',
 		code: 'export default async () => ({ ok: true })',
 		schedule: { type: 'interval', every: '15m' },
-		publishedCommit: 'published-commit-platform-blip',
-		description: 'Retries claimed platform blips',
 	})
 	const estimateError = createStorageEstimateReadError({
 		storageId: 'package:estimate-target',
@@ -927,14 +845,10 @@ test('runJobNow refuses a run that has no person', async () => {
 	const { env } = createExecuteEnv()
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const jobView = await insertLeftoverJob({
+	const jobView = await insertPackageJob({
 		env,
 		callerContext,
-		body: {
-			name: 'Runs as nobody',
-			code: 'export default async () => ({ ok: true })',
-			schedule: onceSchedule,
-		},
+		body: { name: 'runs-as-nobody', schedule: onceSchedule },
 	})
 	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
 	const actorless = {
@@ -968,7 +882,7 @@ test('runJobNow refuses a run that has no person', async () => {
 	expect(executeSpy).not.toHaveBeenCalled()
 })
 
-test('runJobNow retains once jobs for retention cleanup instead of deleting them', async () => {
+test('runJobNow keeps once jobs instead of deleting them', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const { db, env: baseEnv } = createExecuteEnv()
 	const deleteByIds = vi.fn(async () => {})
@@ -978,14 +892,10 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 	}
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const jobView = await insertLeftoverJob({
+	const jobView = await insertPackageJob({
 		env,
 		callerContext,
-		body: {
-			name: 'Run once and retain',
-			code: 'export default async () => ({ ok: true })',
-			schedule: onceSchedule,
-		},
+		body: { name: 'run-once-and-retain', schedule: onceSchedule },
 	})
 	const executeSpy = vi
 		.spyOn(registry, 'runBundledModuleWithRegistry')
@@ -1031,42 +941,16 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const { db, env } = createExecuteEnv()
-	await insertPublishedEntitySource({
-		db,
-		userId: ownerIdFromStored('user-123'),
-		sourceId: 'source-run-now-override',
-		entityKind: 'package',
-		entityId: 'job-repo-run-now-override',
-		publishedCommit: 'commit-run-now-override',
-		manifestPath: 'package.json',
-	})
 	const callerContext = createBaseCallerContext()
 	mockRepoPersistence()
-	const jobView = await insertLeftoverJob({
+	const jobView = await insertPackageJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Repo-backed run-now override',
-			code: 'export default async () => ({ ok: true })',
-			sourceId: 'source-run-now-override',
-			publishedCommit: 'commit-run-now-override',
+			name: 'run-now-override',
+			code: 'export default async function run() { return { ok: true, override: true } }',
 			schedule: { type: 'interval', every: '15m' },
 		},
-	})
-	await insertPublishedEntitySource({
-		db,
-		env,
-		userId: callerContext.user.userId,
-		sourceId: jobView.sourceId,
-		entityKind: 'job',
-		entityId: jobView.id,
-		publishedCommit: 'published-commit-1',
-		manifestPath: 'kody.json',
-		files: buildJobSourceFiles({
-			job: jobView,
-			moduleSource:
-				'export default async function run() { return { ok: true, override: true } }',
-		}),
 	})
 	const executeSpy = vi
 		.spyOn(registry, 'runBundledModuleWithRegistry')
@@ -1178,15 +1062,11 @@ test("a team-org job runs for an active member and a run-now uses the member's c
 	)
 	if (!teamContext.request) throw new Error('Expected a request context.')
 	mockRepoPersistence()
-	const jobView = await insertLeftoverJob({
+	const jobView = await insertPackageJob({
 		env,
 		callerContext: teamContext,
 		ownerId: teamOrgId,
-		body: {
-			name: 'Team job',
-			code: 'export default async () => ({ ok: true })',
-			schedule: { type: 'interval', every: '1h' },
-		},
+		body: { name: 'team-job', schedule: { type: 'interval', every: '1h' } },
 	})
 	const row = await getJobRowById(db, teamOrgId, jobView.id)
 	if (!row) throw new Error('Expected the job under the team org.')

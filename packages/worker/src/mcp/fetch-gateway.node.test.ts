@@ -1,11 +1,13 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
+	outboundFetchTimeoutMs,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
 import {
@@ -147,6 +149,7 @@ function userSecret(
 	allowedPackages: Array<string> = [],
 ): secretService.ResolvedSecret {
 	return {
+		credentialId: `cred-${value}`,
 		found: true,
 		value,
 		scope: 'user',
@@ -184,6 +187,10 @@ async function readHostApprovals(promise: Promise<unknown>) {
 const isPackageAccessRequiredFor = (packageName: string) => (error: unknown) =>
 	parsePackageAccessRequiredMessage(getErrorMessage(error))?.packageName ===
 	packageName
+
+beforeEach(() => {
+	lookupSecretsThroughResolveSecret()
+})
 
 test('fetch gateway blocks or expands secret placeholders based on host approval', async () => {
 	const createRequest = () =>
@@ -669,7 +676,10 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		.mockResolvedValue(userSecret('oauth-access', ['example.com'], []))
 	const tokenSpy = vi
 		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
-		.mockResolvedValue('oauth-access')
+		.mockResolvedValue({
+			credentialId: 'cred-integration',
+			accessToken: 'oauth-access',
+		})
 	const grantSpy = vi
 		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
 		.mockResolvedValue(undefined)
@@ -885,6 +895,7 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		name === 'discordBotToken'
 			? userSecret('secret-value', ['discord.com'])
 			: {
+					credentialId: null,
 					found: false,
 					value: null,
 					scope: null,
@@ -976,6 +987,7 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 			name in hostsByName
 				? userSecret(values[name]!, hostsByName[name]!)
 				: {
+						credentialId: null,
 						found: false,
 						value: null,
 						scope: null,
@@ -1069,11 +1081,12 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		.mockResolvedValue(undefined)
 	const fetchStub = vi.fn()
 	const waitUntil = vi.fn()
-	const gatewayFetch = (
+	// Usage is recorded when the body ends, so drain it.
+	const gatewayFetch = async (
 		url: string,
 		extra: Partial<Parameters<typeof executeGatewayFetch>[0]> = {},
-	) =>
-		executeGatewayFetch({
+	) => {
+		const response = await executeGatewayFetch({
 			env,
 			props,
 			request: url.startsWith('/')
@@ -1082,7 +1095,11 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 			globalFetch: fetchStub,
 			...extra,
 		})
-	const takeUsage = () => {
+		await response.arrayBuffer()
+		return response
+	}
+	const takeUsage = async () => {
+		await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalled())
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		const usage = recordUsageSpy.mock.calls[0]
 		recordUsageSpy.mockClear()
@@ -1101,7 +1118,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(fetchStub).toHaveBeenCalledTimes(1)
 	// waitUntil: usage metering only
 	expect(waitUntil).toHaveBeenCalledTimes(1)
-	expect(takeUsage()).toEqual([
+	expect(await takeUsage()).toEqual([
 		env,
 		{
 			userId: ownerIdFromStored('user-123'),
@@ -1116,8 +1133,11 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		},
 	])
 
-	const expectMeteredWithoutBytes = (entityId: string, outcome: string) => {
-		const usage = takeUsage()
+	const expectMeteredWithoutBytes = async (
+		entityId: string,
+		outcome: string,
+	) => {
+		const usage = await takeUsage()
 		expect(usage).toEqual([
 			env,
 			expect.objectContaining({
@@ -1136,17 +1156,17 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		{ waitUntil },
 	)
 	expect(upstreamErrorResponse.status).toBe(502)
-	expectMeteredWithoutBytes('api.example.com', 'success')
+	await expectMeteredWithoutBytes('api.example.com', 'success')
 
 	fetchStub.mockResolvedValue(new Response('ok', { status: 200 }))
 	await gatewayFetch('https://api.example.com/no-length')
-	expectMeteredWithoutBytes('api.example.com', 'success')
+	await expectMeteredWithoutBytes('api.example.com', 'success')
 
 	fetchStub.mockRejectedValue(new Error('network failed'))
 	await expect(gatewayFetch('https://api.example.com/fail')).rejects.toThrow(
 		'network failed',
 	)
-	expectMeteredWithoutBytes('api.example.com', 'error')
+	await expectMeteredWithoutBytes('api.example.com', 'error')
 
 	await expect(
 		gatewayFetch('https://original.example.com/api', {
@@ -1154,7 +1174,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		}),
 	).rejects.toThrow('Fetch gateway requires a non-empty baseUrl in props.')
 	expect(fetchStub).not.toHaveBeenCalled()
-	expectMeteredWithoutBytes('original.example.com', 'error')
+	await expectMeteredWithoutBytes('original.example.com', 'error')
 
 	// Error path with waitUntil available: metering is deferred, never blocks.
 	fetchStub.mockRejectedValue(new Error('network failed with waitUntil'))
@@ -1163,7 +1183,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	).rejects.toThrow('network failed with waitUntil')
 	// waitUntil: usage metering only
 	expect(waitUntil).toHaveBeenCalledTimes(1)
-	expect(takeUsage()?.[1]).toMatchObject({
+	expect((await takeUsage())?.[1]).toMatchObject({
 		entityId: 'api.example.com',
 		outcome: 'error',
 	})
@@ -1181,7 +1201,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
 		'https://example.com/api/status',
 	)
-	expect(takeUsage()?.[1]).toMatchObject({
+	expect((await takeUsage())?.[1]).toMatchObject({
 		entityId: 'example.com',
 		outcome: 'success',
 	})
@@ -1194,7 +1214,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
 		'https://example.com/bottok_path_value/getMe',
 	)
-	const pathUsage = takeUsage()?.[1]
+	const pathUsage = (await takeUsage())?.[1]
 	expect(pathUsage).toMatchObject({
 		entityId: 'example.com',
 		outcome: 'success',
@@ -1277,7 +1297,7 @@ test('leak: a substituted secret the remote echoes back is redacted before the c
 		request: new Request('https://api.example.com/echo'),
 		globalFetch: (async () => plainResponse) as unknown as typeof fetch,
 	})
-	expect(plain).toBe(plainResponse)
+	expect(await plain.text()).toBe('sk_live_echo_123456')
 })
 
 test('leak: a secret filled into the body or URL is redacted from echoes in every encoding and from fetch errors', async () => {
@@ -1362,50 +1382,274 @@ test('leak: a secret filled into the body or URL is redacted from echoes in ever
 	)
 })
 
-test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {
-	const createHungFetch = () =>
-		vi.fn(
-			(request: Request) =>
-				new Promise<Response>((_resolve, reject) => {
-					request.signal.addEventListener(
-						'abort',
-						() => {
-							reject(
-								request.signal.reason ??
-									new DOMException('The operation was aborted.', 'AbortError'),
-							)
-						},
-						{ once: true },
-					)
-				}),
-		)
-	const isAbortOrTimeout = (error: unknown) => {
-		const name =
-			error && typeof error === 'object' && 'name' in error
-				? String(error.name)
-				: ''
-		return name === 'TimeoutError' || name === 'AbortError'
-	}
-
-	for (const [extra, maxElapsedMs] of [
-		[{ timeoutMs: 40 }, 500],
-		[{ props: { ...props, outboundFetchTimeoutMs: 40 } }, Infinity],
-	] as const) {
-		const hungFetch = createHungFetch()
-		const startedAtMs = Date.now()
-		await expect(
-			executeGatewayFetch({
-				env,
-				props,
-				request: new Request('https://example.com/slow'),
-				globalFetch: hungFetch as unknown as typeof fetch,
-				...extra,
+test('fetch gateway aborts a hung outbound fetch before headers at the overall deadline', async () => {
+	const hungFetch = vi.fn(
+		(request: Request) =>
+			new Promise<Response>((_resolve, reject) => {
+				request.signal.addEventListener(
+					'abort',
+					() => {
+						reject(
+							request.signal.reason ??
+								new DOMException('The operation was aborted.', 'AbortError'),
+						)
+					},
+					{ once: true },
+				)
 			}),
-		).rejects.toSatisfy(isAbortOrTimeout)
-		expect(Date.now() - startedAtMs).toBeLessThan(maxElapsedMs)
-		expect(hungFetch).toHaveBeenCalledTimes(1)
-		expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
+	)
+	const startedAtMs = Date.now()
+	await expect(
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://example.com/slow'),
+			globalFetch: hungFetch as unknown as typeof fetch,
+			timeoutMs: 40,
+		}),
+	).rejects.toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch exceeded its 40ms overall deadline.',
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
+	expect(hungFetch).toHaveBeenCalledTimes(1)
+	expect(hungFetch.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
+})
+
+function createTimedBodyFetch(steps: ReadonlyArray<{ afterMs: number }>) {
+	const encoder = new TextEncoder()
+	const upstreamCancel = vi.fn()
+	let index = 0
+	const fetchStub = vi.fn(async () => {
+		const body = new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				const step = steps[index]
+				if (!step) {
+					controller.close()
+					return
+				}
+				index += 1
+				await new Promise((resolve) => {
+					if (Number.isFinite(step.afterMs)) setTimeout(resolve, step.afterMs)
+				})
+				controller.enqueue(encoder.encode(`chunk-${index};`))
+			},
+			cancel: upstreamCancel,
+		})
+		return new Response(body, { status: 200 })
+	})
+	return { fetchStub, upstreamCancel }
+}
+
+const forever = { afterMs: Infinity }
+
+test('fetch gateway idle deadline resets on every body chunk', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	// Six chunks 30ms apart: 180ms total, past the 100ms idle deadline.
+	const { fetchStub } = createTimedBodyFetch(
+		Array.from({ length: 6 }, () => ({ afterMs: 30 })),
+	)
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/stream'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 100,
+	})
+	expect(await response.text()).toBe(
+		'chunk-1;chunk-2;chunk-3;chunk-4;chunk-5;chunk-6;',
+	)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const usage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(usage).toMatchObject({ outcome: 'success' })
+	// Duration covers the streamed body, not just time to headers.
+	expect(usage?.durationMs).toBeGreaterThanOrEqual(150)
+})
+
+test('fetch gateway aborts a silent hang after headers at the idle deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+		{ afterMs: 0 },
+		forever,
+	])
+	const startedAtMs = Date.now()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/hang'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 60,
+	})
+	expect(response.status).toBe(200)
+	const error = await response.text().then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(error).toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch response stalled: no bytes for 60ms.',
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(upstreamCancel).toHaveBeenCalled()
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
+})
+
+test('fetch gateway stops a slow drip at the overall deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	// Every gap is under the idle deadline; only the overall cap can stop it.
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch(
+		Array.from({ length: 100 }, () => ({ afterMs: 20 })),
+	)
+	const startedAtMs = Date.now()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/drip'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 150,
+		idleTimeoutMs: 100,
+	})
+	const reader = response.body!.getReader()
+	const decoder = new TextDecoder()
+	let received = ''
+	const error = await (async () => {
+		try {
+			for (;;) {
+				const { done, value } = await reader.read()
+				if (done) return null
+				received += decoder.decode(value)
+			}
+		} catch (caught) {
+			return caught
+		}
+	})()
+	expect(error).toMatchObject({
+		name: 'TimeoutError',
+		message: 'Outbound fetch exceeded its 150ms overall deadline.',
+	})
+	expect(received).toContain('chunk-1;')
+	expect(received).not.toContain('chunk-100;')
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(upstreamCancel).toHaveBeenCalled()
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	// Headers arrived, so the outcome stays the header-time success.
+	expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+		outcome: 'success',
+	})
+})
+
+test('fetch gateway default deadlines let steady chunks stream past a minute and stop at five minutes', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		const { fetchStub, upstreamCancel } = createTimedBodyFetch(
+			Array.from({ length: 20 }, () => ({ afterMs: 30_000 })),
+		)
+		const response = await executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://api.example.com/ai-stream'),
+			globalFetch: fetchStub as unknown as typeof fetch,
+		})
+		const reader = response.body!.getReader()
+		const decoder = new TextDecoder()
+		let received = ''
+		const reading = (async () => {
+			try {
+				for (;;) {
+					const { done, value } = await reader.read()
+					if (done) return null
+					received += decoder.decode(value)
+				}
+			} catch (caught) {
+				return caught
+			}
+		})()
+		await vi.advanceTimersByTimeAsync(outboundFetchTimeoutMs - 1_000)
+		expect(received).toContain('chunk-9;')
+		await vi.advanceTimersByTimeAsync(2_000)
+		expect(await reading).toMatchObject({
+			name: 'TimeoutError',
+			message: 'Outbound fetch exceeded its 300s overall deadline.',
+		})
+		expect(received).not.toContain('chunk-11;')
+		expect(upstreamCancel).toHaveBeenCalled()
+	} finally {
+		vi.useRealTimers()
 	}
+})
+
+test('fetch gateway meters an abandoned body once, at the overall deadline', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { fetchStub, upstreamCancel } = createTimedBodyFetch([
+		{ afterMs: 0 },
+		forever,
+	])
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/status-only'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 80,
+		idleTimeoutMs: 20,
+	})
+	expect(response.status).toBe(200)
+	await vi.waitFor(() => expect(recordUsageSpy).toHaveBeenCalledTimes(1))
+	const usage = recordUsageSpy.mock.calls[0]?.[1]
+	expect(usage).toMatchObject({ outcome: 'success' })
+	expect(usage?.durationMs).toBeGreaterThanOrEqual(70)
+	expect(upstreamCancel).toHaveBeenCalled()
+})
+
+test('fetch gateway forwards a caller abort after headers', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, forever])
+	const caller = new AbortController()
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/caller-abort', {
+			signal: caller.signal,
+		}),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+	})
+	expect(response.status).toBe(200)
+	const outboundSignal = (
+		fetchStub.mock.calls as unknown as Array<[Request]>
+	)[0]?.[0]?.signal
+	expect(outboundSignal?.aborted).toBe(false)
+	caller.abort(new Error('caller went away'))
+	expect(outboundSignal?.aborted).toBe(true)
+})
+
+test('fetch gateway idle deadline ignores time the consumer spends not reading', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const { fetchStub } = createTimedBodyFetch([{ afterMs: 0 }, { afterMs: 0 }])
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/buffered'),
+		globalFetch: fetchStub as unknown as typeof fetch,
+		timeoutMs: 5_000,
+		idleTimeoutMs: 40,
+	})
+	await new Promise((resolve) => setTimeout(resolve, 120))
+	expect(await response.text()).toBe('chunk-1;chunk-2;')
 })
 
 test('fetch gateway provider placeholders: normalize mixed case, deny wrong host and non-HTTPS without user secrets', async () => {

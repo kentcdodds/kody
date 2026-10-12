@@ -163,6 +163,29 @@ export async function credentialGranteeProofs(input: {
 	return proofs
 }
 
+/** Credential ids of alice's org-level user secret and integration. */
+async function aliceCredentialIds(session: RehearsalSession) {
+	const secrets = readRecord(
+		await callCapability(session, 'secretList', { scope: 'user' }),
+		'secretList',
+	).secrets
+	const integrations = readRecord(
+		await callCapability(session, 'integrationList'),
+		'integrationList',
+	).integrations
+	const secret = (Array.isArray(secrets) ? secrets : []).find(
+		(entry) => readRecord(entry, 'secretList entry').name === userSecretName,
+	)
+	const integration = (Array.isArray(integrations) ? integrations : []).find(
+		(entry) =>
+			readRecord(entry, 'integrationList entry').name === integrationName,
+	)
+	return [
+		readStringAt(secret, ['credential_id'], 'secretList entry'),
+		readStringAt(integration, ['credentialId'], 'integrationList entry'),
+	]
+}
+
 function randomSecretValue() {
 	return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
 		'base64url',
@@ -257,7 +280,7 @@ type SeedInput = {
 async function sessionFor(
 	input: SeedInput,
 	user: RehearsalUser,
-	options: { orgSlug?: string } = {},
+	options: { orgSlug?: string; cookieHeader?: string } = {},
 ) {
 	const password = await deriveRehearsalPassword({
 		key: input.passwordKey,
@@ -269,7 +292,10 @@ async function sessionFor(
 	return openRehearsalSession(
 		input.origins.app,
 		{ email: user.email, username: user.username, password },
-		{ orgSlug: options.orgSlug ?? user.username },
+		{
+			orgSlug: options.orgSlug ?? user.username,
+			cookieHeader: options.cookieHeader,
+		},
 	)
 }
 
@@ -813,6 +839,7 @@ export async function seedRehearsal(
 		const useGrantId = readStringAt(useGrant, ['grant', 'id'], 'accessGrant')
 		const carolInAliceOrg = await sessionFor(input, rehearsalUser('carol'), {
 			orgSlug: rehearsalUser('alice').username,
+			cookieHeader: carolSession.cookieHeader,
 		})
 		sessions.push(carolInAliceOrg)
 		const granteeRun = readRecord(
@@ -826,13 +853,10 @@ export async function seedRehearsal(
 				`carol could not run alice's package: ${JSON.stringify(granteeRun)}`,
 			)
 		}
-		for (const [resourceType, resourceId] of [
-			['secret', userSecretName],
-			['integration', integrationName],
-		] as const) {
+		for (const credentialId of await aliceCredentialIds(alice)) {
 			await callCapability(alice, 'accessGrant', {
-				resource_type: resourceType,
-				resource_id: resourceId,
+				resource_type: 'credential',
+				resource_id: credentialId,
 				subject_type: 'user',
 				username: rehearsalUser('carol').username,
 				preset: 'use',
@@ -873,6 +897,7 @@ export async function seedRehearsal(
 			rehearsalUser(rehearsalOrg.owner),
 			{
 				orgSlug: rehearsalOrg.slug,
+				cookieHeader: bob.cookieHeader,
 			},
 		)
 		sessions.push(bobInOrg)

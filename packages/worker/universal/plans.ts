@@ -15,11 +15,11 @@
  * Standard/Pro ceilings have two ladders: {@link planLimits} is the
  * 2026-09 table (Standard $12 and Pro $49 subscribers, now retired from
  * checkout). {@link legacyPlanLimits} applies only while
- * `users.entitlement_ladder = 'legacy'` and paid access stays continuous.
+ * `orgs.entitlement_ladder = 'legacy'` and paid access stays continuous.
  *
  * The purchasable Pro (Stripe `STRIPE_PRO_PRICE_ID`, $12) uses
  * {@link proCreditsPlanLimits} and carries the prepaid credit wallet
- * (`users.stripe_credits_eligible`). See {@link CreditWalletState}.
+ * (`orgs.stripe_credits_eligible`). See {@link CreditWalletState}.
  */
 
 export const planNames = ['free', 'standard', 'pro', 'max'] as const
@@ -39,7 +39,7 @@ export function parsePlanName(value: unknown): PlanName | null {
 }
 
 /**
- * Parse a plan value read from a stored `users.plan` (or equivalent) column.
+ * Parse a plan value read from a stored `orgs.plan` column.
  *
  * Unlike {@link parsePlanName}, which returns null for expected invalid
  * untrusted input, this helper throws when persisted data violates the schema
@@ -53,7 +53,7 @@ export function parseStoredPlanName(value: unknown): PlanName {
 
 /**
  * Parse a plan name that may come from Stripe subscription metadata
- * (`kody_plan`) or `users.stripe_plan`. `max` is manual-only (never
+ * (`kody_plan`) or `orgs.stripe_plan`. `max` is manual-only (never
  * purchasable or Stripe-sourced); unknown values contribute nothing.
  */
 export function parseStripePlanName(value: unknown): PlanName | null {
@@ -157,7 +157,7 @@ const entitlementLadders = ['public', 'legacy'] as const
 export type EntitlementLadder = (typeof entitlementLadders)[number]
 
 /**
- * Parse a stored `users.entitlement_ladder` value. Missing/blank values
+ * Parse a stored `orgs.entitlement_ladder` value. Missing/blank values
  * (pre-migration test fixtures) resolve to `public`. Unexpected values
  * throw without echoing the raw value.
  */
@@ -184,7 +184,7 @@ function normalizeStripePriceId(value: string | null | undefined): string {
  * Drop `legacy` when continuous paid access ends, or when the granting
  * Stripe subscription changes plan, price, product, or interval. Same-plan
  * auto-renew (same price id) keeps `legacy`. The first Stripe refresh after
- * `users.stripe_price_id` is added writes the current price without treating
+ * `orgs.stripe_price_id` is added writes the current price without treating
  * an empty previous value as a change. Never promotes `public` to `legacy`
  * — only the one-shot backfill writes that marker.
  */
@@ -655,7 +655,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 
 /**
  * Pre-cut Standard/Pro ceilings. Applied only when
- * `users.entitlement_ladder = 'legacy'` and the effective plan is
+ * `orgs.entitlement_ladder = 'legacy'` and the effective plan is
  * `standard` or `pro`. Free and `max` always use {@link planLimits}.
  * Unique-worker-day and Durable Object rows-read includes match the
  * public table. Those allotments are not hard-cut and not charged for

@@ -2,8 +2,8 @@
  * Credential storage is read only behind `resolveCredential`. This test
  * parses every non-test source file under `packages/` and fails when a
  * credential read or decrypt helper is imported (or re-exported, or reached
- * through a namespace import) outside the door, its storage layer, or the
- * explicit account-management list below.
+ * through a namespace import) outside the door and its resolvers, its storage
+ * layer, or the explicit account-management list below.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -16,14 +16,20 @@ const repoRoot = path.resolve(
 	'../../../..',
 )
 const workerRoot = path.join(repoRoot, 'packages/worker')
-const door = 'packages/worker/src/credentials/resolve-credential.ts'
+const doorModules = new Set([
+	'packages/worker/src/credentials/resolve-credential.ts',
+	'packages/worker/src/credentials/secret-resolvers.ts',
+	'packages/worker/src/credentials/oauth-resolvers.ts',
+	'packages/worker/src/credentials/mcp-resolver.ts',
+	'packages/worker/src/credentials/url-resolver.ts',
+])
 
 type StorageRule = {
 	/** Repo-relative module that owns the storage read. */
 	module: string
 	/** Exports that return credential material. */
 	symbols: ReadonlyArray<string>
-	/** Importers allowed besides the door, with why. */
+	/** Importers allowed besides the door and its resolvers, with why. */
 	allowed: Record<string, string>
 }
 
@@ -34,8 +40,14 @@ const accountSecretsData = 'packages/worker/src/app/account-secrets-data.ts'
 const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/mcp/secrets/service.ts',
-		symbols: ['resolveSecret'],
+		symbols: [
+			'resolveSecret',
+			'findSecretForUse',
+			'findStoredCredentialForUse',
+		],
 		allowed: {
+			'packages/worker/src/credentials/stored-credential.ts':
+				'Later-kind lookup; only door resolvers call its readValue, after authorizing.',
 			'packages/worker/src/mcp/secrets/secret-providers/service.ts':
 				'Vault door key read inside resolveProviderSecret, which only the door calls.',
 			[accountSecretsHandler]:
@@ -46,7 +58,7 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	},
 	{
 		module: 'packages/worker/src/mcp/secrets/repo.ts',
-		symbols: ['getSecretEntry'],
+		symbols: ['getSecretEntry', 'getStoredCredentialEntry'],
 		allowed: {
 			'packages/worker/src/mcp/secrets/service.ts': 'Secret storage layer.',
 		},
@@ -65,6 +77,8 @@ const storageRules: ReadonlyArray<StorageRule> = [
 				'Integration token storage layer.',
 			'packages/worker/src/oauth-refresh-family.ts':
 				"Kody's own OAuth refresh-family state, not an org credential.",
+			'packages/worker/src/org-transfer/reencrypt.ts':
+				'Admin org resource transfer re-seals ciphertext from the source to the target owner context; plaintext never leaves the function.',
 		},
 	},
 	{
@@ -102,6 +116,38 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/mcp-client/hub-client.ts',
 		symbols: ['callMcpServerTool'],
+		allowed: {},
+	},
+	// A resolver handle's `apply` reads credential material, so only the door
+	// may hold a resolver: anywhere else would skip the door's checks and audit.
+	{
+		module: 'packages/worker/src/credentials/secret-resolvers.ts',
+		symbols: [
+			'secretResolver',
+			'webhookSecretResolver',
+			'packageSecretMountResolver',
+			'vaultSecretResolver',
+		],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/oauth-resolvers.ts',
+		symbols: ['integrationTokenResolver', 'integrationRefreshResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/mcp-resolver.ts',
+		symbols: ['mcpConnectionResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/stored-credential.ts',
+		symbols: ['findStoredCredential'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/url-resolver.ts',
+		symbols: ['urlCredentialResolver'],
 		allowed: {},
 	},
 ]
@@ -218,7 +264,7 @@ function collectImports(filePath: string, source: string): Array<ImportUse> {
 	return uses
 }
 
-function exportedFunctionNames(relativePath: string) {
+function exportedNames(relativePath: string) {
 	const filePath = path.join(repoRoot, relativePath)
 	const sourceFile = ts.createSourceFile(
 		filePath,
@@ -228,21 +274,28 @@ function exportedFunctionNames(relativePath: string) {
 		ts.ScriptKind.TS,
 	)
 	return new Set(
-		sourceFile.statements.flatMap((statement) =>
-			ts.isFunctionDeclaration(statement) &&
-			statement.name &&
-			statement.modifiers?.some(
-				(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+		sourceFile.statements.flatMap((statement) => {
+			const exported =
+				ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)
+					? statement.modifiers?.some(
+							(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+						)
+					: false
+			if (!exported) return []
+			if (ts.isFunctionDeclaration(statement)) {
+				return statement.name ? [statement.name.text] : []
+			}
+			if (!ts.isVariableStatement(statement)) return []
+			return statement.declarationList.declarations.flatMap((declaration) =>
+				ts.isIdentifier(declaration.name) ? [declaration.name.text] : [],
 			)
-				? [statement.name.text]
-				: [],
-		),
+		}),
 	)
 }
 
 test('every guarded credential read helper still exists', () => {
 	for (const rule of storageRules) {
-		const exported = exportedFunctionNames(rule.module)
+		const exported = exportedNames(rule.module)
 		for (const symbol of rule.symbols) {
 			expect(exported, `${rule.module} exports ${symbol}`).toContain(symbol)
 		}
@@ -260,7 +313,8 @@ test('credential storage is read only behind resolveCredential', () => {
 			readFileSync(filePath, 'utf8'),
 		)) {
 			const rule = rulesByModule.get(use.module)
-			if (!rule || importer === door || importer in rule.allowed) continue
+			if (!rule || doorModules.has(importer) || importer in rule.allowed)
+				continue
 			const reached =
 				use.names === '*'
 					? ['* (namespace import or re-export)']

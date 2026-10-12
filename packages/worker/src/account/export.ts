@@ -541,10 +541,9 @@ async function listUserStorageIds(env: Env, userId: OwnerId) {
 
 /**
  * Entity/registry storage ids used by discovery paging (no manifests):
- * APP_DB registry buckets plus job/archived-artifact ids from the jobs
- * worker (ADR 0016). Job counts are entitlement-bounded, so job ids are
- * merged in memory around bounded keyset SQL pages over the registry
- * buckets.
+ * APP_DB registry buckets plus job storage ids from the jobs worker (ADR
+ * 0016). Job counts are entitlement-bounded, so job ids are merged in
+ * memory around bounded keyset SQL pages over the registry buckets.
  */
 const exportBucketStorageIdSql = `SELECT storage_id AS id FROM user_storage_buckets
 	WHERE user_id = ? AND kind <> 'repo_session'`
@@ -1030,39 +1029,32 @@ async function countOAuthGrants(input: {
 	}
 }
 
-// Job and archived-artifact rows live in the jobs worker's database
-// (ADR 0016); they are exported through the JOBS service contract but keep
-// their `d1.<table>` section names for export-shape continuity.
-const jobsWorkerExportTables = ['archived_job_artifacts', 'jobs'] as const
+// Job rows live in the jobs worker's database (ADR 0016). They are exported
+// through the JOBS service contract but keep the `d1.jobs` section name for
+// export-shape continuity.
+const jobsWorkerExportTables = ['jobs'] as const
 
 async function listJobsWorkerTableRows(
 	env: Env,
 	userId: OwnerId,
-	table: (typeof jobsWorkerExportTables)[number],
 ): Promise<Array<Record<string, unknown>>> {
-	if (table === 'jobs') {
-		const rows = await jobsData(env).listJobsForUser({ userId })
-		return sortRowsByDedupeKey(
-			rows.map((row) => {
-				const {
-					record,
-					callerContext,
-					callerContextJson,
-					schedulerWakeAt,
-					...columns
-				} = row
-				void record
-				void callerContext
-				void callerContextJson
-				void schedulerWakeAt
-				return { ...columns }
-			}),
-		)
-	}
-	const artifacts = await jobsData(env).listArchivedJobArtifactsForUser({
-		userId,
-	})
-	return sortRowsByDedupeKey(artifacts.map((artifact) => ({ ...artifact })))
+	const rows = await jobsData(env).listJobsForUser({ userId })
+	return sortRowsByDedupeKey(
+		rows.map((row) => {
+			const {
+				record,
+				callerContext,
+				callerContextJson,
+				schedulerWakeAt,
+				...columns
+			} = row
+			void record
+			void callerContext
+			void callerContextJson
+			void schedulerWakeAt
+			return { ...columns }
+		}),
+	)
 }
 
 async function collectJobsWorkerTables(input: {
@@ -1079,11 +1071,7 @@ async function collectJobsWorkerTables(input: {
 			warnings: [],
 		}
 		try {
-			section.rows = await listJobsWorkerTableRows(
-				input.env,
-				input.mcpUserId,
-				table,
-			)
+			section.rows = await listJobsWorkerTableRows(input.env, input.mcpUserId)
 		} catch (error) {
 			const warning = `Jobs export failed for ${table}: ${getErrorMessage(error)}`
 			section.warnings.push(warning)
@@ -1166,11 +1154,7 @@ async function collectD1TableCounts(input: {
 	}
 	for (const table of jobsWorkerExportTables) {
 		try {
-			const rows = await listJobsWorkerTableRows(
-				input.env,
-				input.mcpUserId,
-				table,
-			)
+			const rows = await listJobsWorkerTableRows(input.env, input.mcpUserId)
 			sections.push([`d1.${table}`, { count: rows.length, warnings: [] }])
 		} catch (error) {
 			const warning = `Jobs export failed for ${table}: ${getErrorMessage(error)}`
@@ -1205,11 +1189,7 @@ async function readD1TableSectionPage(input: {
 		)
 	) {
 		try {
-			const rows = await listJobsWorkerTableRows(
-				input.env,
-				input.mcpUserId,
-				input.table as (typeof jobsWorkerExportTables)[number],
-			)
+			const rows = await listJobsWorkerTableRows(input.env, input.mcpUserId)
 			const afterIndex = parseRowidCursor(input.startAfter)
 			const items = rows.slice(afterIndex, afterIndex + pageSize)
 			const truncated = afterIndex + pageSize < rows.length

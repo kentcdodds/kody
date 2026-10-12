@@ -59,5 +59,11 @@ test('org home hides management nav for collaborators', async () => {
 	)
 	expect(html).toContain('data-testid="org-home"')
 	expect(html).not.toContain('data-testid="org-home-nav"')
+	// Grant-only collaborators open Connections via the share step; the
+	// workspace step (packages/jobs/secrets) 404s for them, so it stays hidden.
 	expect(html).toContain('href="/@acme/-/connections"')
+	expect(html).not.toContain('href="/@acme/-/packages"')
+	expect(html).not.toContain('href="/@acme/-/jobs"')
+	expect(html).not.toContain('href="/@acme/-/secrets"')
+	expect(html).not.toContain('Repositories, connections, secrets, and jobs')
 })

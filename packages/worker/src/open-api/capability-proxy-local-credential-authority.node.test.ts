@@ -24,6 +24,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { runCapabilityProxyGatewayFetch } from './capability-proxy-gateway-fetch.ts'
 
@@ -42,6 +43,7 @@ function userSecret(
 	allowedHosts: Array<string>,
 ): secretService.ResolvedSecret {
 	return {
+		credentialId: 'cred-secret-org-echo',
 		found: true,
 		value,
 		scope: 'user',
@@ -100,6 +102,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 		orgId: ownerId,
 		resourceType: 'package',
 		resourceId: packageId,
+		family: 'package',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,
@@ -117,6 +120,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
 		userSecret('org-secret-value', ['example.com']),
 	)
+	lookupSecretsThroughResolveSecret()
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',
@@ -124,7 +128,10 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 	vi.spyOn(
 		integrationCredentials,
 		'resolveIntegrationAccessToken',
-	).mockResolvedValue('oauth-access')
+	).mockResolvedValue({
+		credentialId: 'cred-integration-org-google',
+		accessToken: 'oauth-access',
+	})
 	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
 		lane: 'user',
 		app: { apiBaseUrl: 'https://example.com' },
@@ -238,13 +245,14 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 		}),
 	).rejects.toThrow(/package/i)
 
-	// After secret:use grant, stamped local hop expands (ad-hoc Use, not package
+	// After a Use grant on the secret's credential id, stamped local hop expands (ad-hoc Use, not package
 	// attachment).
 	await upsertGrant({
 		db,
 		orgId: ownerId,
-		resourceType: 'secret',
-		resourceId: 'orgEcho',
+		resourceType: 'credential',
+		resourceId: 'cred-secret-org-echo',
+		family: 'secret',
 		subject: { type: 'user', id: memberId },
 		preset: 'use',
 		permissions: null,

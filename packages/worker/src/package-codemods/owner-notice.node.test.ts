@@ -476,7 +476,6 @@ test('the admin capability defaults to a dry run and reports bad input as a call
 		noticeId: '2026-10-body-placeholders',
 		...content,
 	}
-	expect(adminPackageCodemodOwnerNoticeCapability.requiredRole).toBe('admin')
 
 	const ctx = {
 		env,

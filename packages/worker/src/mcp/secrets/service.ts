@@ -32,6 +32,7 @@ import {
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
+	getStoredCredentialEntry,
 	listPackageScopeSecretMetadata,
 	listSecretBucketsByScope,
 	listSecretMetadataForBucket,
@@ -47,7 +48,12 @@ import {
 	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
-import { type SecretMetadata, type SecretScope } from './types.ts'
+import {
+	type ListedSecret,
+	type SecretMetadata,
+	type SecretScope,
+	type StoredCredentialKind,
+} from './types.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
 
@@ -99,6 +105,8 @@ type DeleteSecretInput = SecretOwnerContext & {
 
 export type ResolvedSecret = {
 	found: boolean
+	/** Stable credential id of the entry that resolved; null when not found. */
+	credentialId: string | null
 	value: string | null
 	scope: SecretScope | null
 	allowedHosts: Array<string>
@@ -607,7 +615,7 @@ async function saveSecretsAtomically(input: {
 
 export async function listSecrets(
 	input: ListSecretsInput,
-): Promise<Array<SecretMetadata>> {
+): Promise<Array<ListedSecret>> {
 	const buckets = await getAccessibleBuckets({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -625,8 +633,9 @@ export async function listSecrets(
 	const listed = results
 		.flat()
 		.filter((row) => !isReservedSecretName(row.name))
-		.map((row) =>
-			toSecretMetadata({
+		.map((row) => ({
+			credentialId: row.id,
+			...toSecretMetadata({
 				name: row.name,
 				scope: row.scope,
 				description: row.description,
@@ -637,7 +646,7 @@ export async function listSecrets(
 				updatedAt: row.updated_at,
 				expiresAt: row.expires_at,
 			}),
-		)
+		}))
 	return listed
 }
 
@@ -689,13 +698,105 @@ export async function findSecret(
 ): Promise<FoundSecret> {
 	const found = await findSecretEntry(input)
 	if (!found) {
-		return { found: false, scope: null, allowedHosts: [], allowedPackages: [] }
+		return {
+			found: false,
+			credentialId: null,
+			scope: null,
+			allowedHosts: [],
+			allowedPackages: [],
+		}
 	}
 	return {
 		found: true,
+		credentialId: found.entry.id,
 		scope: found.scope,
 		allowedHosts: parseAllowedHosts(found.entry.allowed_hosts),
 		allowedPackages: parseAllowedPackages(found.entry.allowed_packages),
+	}
+}
+
+/**
+ * One lookup for `resolveCredential`: the metadata it authorizes on, and a
+ * `readValue` that decrypts only when the door calls it after authorizing.
+ * Only a `secret` is found: a later kind places its own value through its
+ * resolver, so a placeholder never fills it.
+ */
+export async function findSecretForUse(input: ResolveSecretInput): Promise<{
+	found: FoundSecret
+	readValue: () => Promise<ResolvedSecret>
+}> {
+	const found = await findSecretEntry(input)
+	if (!found || found.entry.kind !== 'secret') {
+		const missing: ResolvedSecret = {
+			found: false,
+			credentialId: null,
+			value: null,
+			scope: null,
+			allowedHosts: [],
+			allowedPackages: [],
+		}
+		const { value: _value, ...metadata } = missing
+		return { found: metadata, readValue: async () => missing }
+	}
+	const metadata: FoundSecret = {
+		found: true,
+		credentialId: found.entry.id,
+		scope: found.scope,
+		allowedHosts: parseAllowedHosts(found.entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(found.entry.allowed_packages),
+	}
+	return {
+		found: metadata,
+		readValue: async () => ({
+			...metadata,
+			value: await decryptSecretValue(
+				input.env,
+				found.entry.encrypted_value,
+				userSecretContext(input.userId),
+			),
+		}),
+	}
+}
+
+export type StoredCredential = {
+	credentialId: string
+	name: string
+	kind: StoredCredentialKind
+	allowedHosts: Array<string>
+}
+
+/**
+ * A stored credential by id for a later-kind resolver: its metadata, and a
+ * `readValue` that decrypts only when the door calls it after authorizing.
+ * Null when `ownerId` has no live, unexpired user-scope entry with that id.
+ */
+export async function findStoredCredentialForUse(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	ownerId: OwnerId
+	credentialId: string
+}): Promise<{
+	found: StoredCredential
+	readValue: () => Promise<string>
+} | null> {
+	const row = await getStoredCredentialEntry({
+		db: input.env.APP_DB,
+		ownerId: input.ownerId,
+		credentialId: input.credentialId,
+	})
+	if (!row) return null
+	return {
+		found: {
+			credentialId: row.id,
+			name: row.name,
+			kind: row.kind,
+			allowedHosts: parseAllowedHosts(row.allowed_hosts),
+		},
+		readValue: () =>
+			decryptSecretValue(
+				input.env,
+				row.encrypted_value,
+				userSecretContext(input.ownerId),
+			),
 	}
 }
 
@@ -706,6 +807,7 @@ export async function resolveSecret(
 	if (!found) {
 		return {
 			found: false,
+			credentialId: null,
 			value: null,
 			scope: null,
 			allowedHosts: [],
@@ -714,6 +816,7 @@ export async function resolveSecret(
 	}
 	return {
 		found: true,
+		credentialId: found.entry.id,
 		value: await decryptSecretValue(
 			input.env,
 			found.entry.encrypted_value,
@@ -833,6 +936,7 @@ export async function listUserSecretsForSearch(input: {
 	return rows
 		.filter((row) => !isReservedSecretName(row.name))
 		.map((row) => ({
+			credentialId: row.id,
 			name: row.name,
 			scope: row.scope,
 			description: row.description,

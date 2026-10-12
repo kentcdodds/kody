@@ -15,6 +15,7 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
+import { findCredentialIdsByLegacyName } from '#worker/credentials/credential-ids.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { insertEnablement } from '#worker/enablements/repo.ts'
@@ -235,19 +236,8 @@ async function setup() {
 		})
 	}
 
-	// Bea may use the team secret. Each email subscription runs only for the
-	// people who turned it on: Bea for pkg-shared, the Owner for all three.
-	await upsertGrant({
-		db,
-		orgId,
-		resourceType: 'secret',
-		resourceId: 'teamToken',
-		subject: { type: 'user', id: beaId },
-		preset: 'use',
-		permissions: null,
-		createdByUserId: ownerId,
-		audit: createTestOrgAuditWriter(),
-	})
+	// Each email subscription runs only for the people who turned it on: Bea
+	// for pkg-shared, the Owner for all three.
 	const enablementIds = new Map<string, string>()
 	for (const [packageId, enablerUserId] of [
 		['pkg-shared', beaId],
@@ -283,6 +273,23 @@ async function setup() {
 		scope: 'user',
 		name: 'teamToken',
 		value: teamSecretValue,
+	})
+	// Bea may use the team secret.
+	const [teamTokenId] = await findCredentialIdsByLegacyName(db, orgId, {
+		type: 'secret',
+		name: 'teamToken',
+	})
+	await upsertGrant({
+		db,
+		orgId,
+		resourceType: 'credential',
+		resourceId: teamTokenId ?? '',
+		family: 'secret',
+		subject: { type: 'user', id: beaId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 
 	mocks.loadPackageManifestBySourceId.mockImplementation(
@@ -428,6 +435,7 @@ async function setup() {
 	return {
 		db,
 		orgId,
+		teamTokenId,
 		enablementId: (packageId: string, enablerUserId: string) =>
 			enablementIds.get(`${packageId}:${enablerUserId}`),
 		ownerId,
@@ -485,7 +493,7 @@ test('a member email runs as that member, only their packages, audited under the
 		actor_user_id: t.beaId,
 		credential_kind: 'inbound-email',
 		credential_id: enablementId,
-		resource_id: 'teamToken',
+		resource_id: t.teamTokenId,
 		result: 'success',
 	})
 	expect(details(rows[0])).toMatchObject({

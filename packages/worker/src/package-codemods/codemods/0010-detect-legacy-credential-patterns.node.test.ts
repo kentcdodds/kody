@@ -154,6 +154,24 @@ test('0010 flags a computed |scope= suffix', () => {
 	).toEqual([])
 })
 
+test('0010 flags a partially computed |scope= prefix', () => {
+	expect(
+		modulePatterns(
+			'export const p = (ending: string) => `{{secret:KEY|scope=pack${ending}}}`',
+		),
+	).toContain('|scope=')
+	expect(
+		modulePatterns(
+			"export const p = (ending: string) => '{{secret:KEY|scope=pack' + ending + '}}'",
+		),
+	).toContain('|scope=')
+})
+
+test('0010 ignores a bare |scope= delimiter with no continuation', () => {
+	expect(modulePatterns("export const label = '|scope='")).toEqual([])
+	expect(modulePatterns('export const label = `|scope=`')).toEqual([])
+})
+
 test('0010 reads secretMounts and webhook secretName from package.json', () => {
 	expect(
 		patternsByPath({
@@ -323,6 +341,51 @@ test('0010 resolves module-level string constants, including relative imports', 
 	).toEqual(['literal secret', 'computed secret'])
 })
 
+test('0010 does not resolve a shadowed module constant as the credential name', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default (NAME) => createAuthenticatedFetch(NAME)',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default (arg) => {',
+				'\tconst NAME = arg',
+				'\treturn createAuthenticatedFetch(NAME)',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 resolves constants across cyclic relative imports', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'src/a.ts': [
+				"import { B } from './b.js'",
+				"export const A = 'slack'",
+				'export const useB = () => B',
+			].join('\n'),
+			'src/b.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"import { A } from './a.js'",
+				"export const B = 'other'",
+				'export const run = () => createAuthenticatedFetch(A)',
+			].join('\n'),
+		}),
+	).toEqual({})
+})
+
 test('0010 ignores placeholder-shaped prose that names nothing', () => {
 	expect(
 		modulePatterns(
@@ -350,6 +413,36 @@ test('0010 skips package test files', () => {
 			'src/latest.ts': legacy,
 		}),
 	).toEqual({ 'src/latest.ts': ['literal secret'] })
+})
+
+test('0010 scans test-named files that package exports point at', () => {
+	const legacy = "export const h = { a: '{{secret:TOKEN}}' }"
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.test.ts' },
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.test.ts': legacy,
+			'src/other.test.ts': legacy,
+		}),
+	).toEqual({ 'src/index.test.ts': ['literal secret'] })
+})
+
+test('0010 scans test-named files imported from a package export', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.ts' },
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': "export { h } from './helper.test.js'",
+			'src/helper.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+			'src/orphan.test.ts': "export const h = { a: '{{secret:ORPHAN}}' }",
+		}),
+	).toEqual({ 'src/helper.test.ts': ['literal secret'] })
 })
 
 test('0010 falls back to text for unparseable modules', () => {
@@ -472,4 +565,192 @@ test('0010 detect reports a literal secret with its pattern message', () => {
 			message: legacyCredentialPatternMessages['literal secret'],
 		},
 	])
+})
+
+test('0010 scans test-named job and app entry modules', () => {
+	const legacy = "export const h = { a: '{{secret:TOKEN}}' }"
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					description: 'Demo package.',
+					app: { entry: './src/app.test.ts' },
+					jobs: { digest: { entry: './src/digest.test.ts' } },
+					subscriptions: {
+						'topic.a': { handler: './src/sub.test.ts' },
+					},
+				},
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/app.test.ts': legacy,
+			'src/digest.test.ts': legacy,
+			'src/sub.test.ts': legacy,
+			'src/orphan.test.ts': legacy,
+		}),
+	).toEqual({
+		'src/app.test.ts': ['literal secret'],
+		'src/digest.test.ts': ['literal secret'],
+		'src/sub.test.ts': ['literal secret'],
+	})
+})
+
+test('0010 scans test-named modules loaded by dynamic import', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: { '.': './src/index.ts' },
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': "export default async () => import('./worker.test.js')",
+			'src/worker.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+			'src/orphan.test.ts': "export const h = { a: '{{secret:ORPHAN}}' }",
+		}),
+	).toEqual({ 'src/worker.test.ts': ['literal secret'] })
+})
+
+test('0010 does not resolve a for-of loop binding as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default (accountNames) => {',
+				'\tfor (const NAME of accountNames) createAuthenticatedFetch(NAME)',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 ignores types-only export targets for test-named modules', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: {
+					'.': {
+						import: './src/index.ts',
+						types: './src/types.test.ts',
+					},
+				},
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/types.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+		}),
+	).toEqual({})
+})
+
+test('0010 flags |scope= through a TypeScript assertion before concatenation', () => {
+	expect(
+		modulePatterns(
+			"export const p = (ending: string) => ('{{secret:KEY|scope=pack' as string) + ending + '}}'",
+		),
+	).toContain('|scope=')
+})
+
+test('0010 does not resolve a class method parameter as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default class Runner {',
+				'\trun(NAME: string) { return createAuthenticatedFetch(NAME) }',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 does not resolve a nested function declaration name as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default () => {',
+				'\tfunction NAME() { return null }',
+				'\treturn createAuthenticatedFetch(NAME as unknown as string)',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 ignores root types condition on exports', () => {
+	expect(
+		patternsByPath({
+			'package.json': JSON.stringify({
+				name: '@acme/demo',
+				exports: {
+					types: './src/types.test.ts',
+					import: './src/index.ts',
+				},
+				kody: { description: 'Demo package.' },
+			}),
+			'src/index.ts': 'export default () => null',
+			'src/types.test.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+		}),
+	).toEqual({})
+})
+
+test('0010 flags |scope= when the suffix is a later concatenated piece', () => {
+	expect(
+		modulePatterns(
+			"export const p = (ending: string) => '{{secret:KEY' + '|scope=' + ending + '}}'",
+		),
+	).toContain('|scope=')
+})
+
+test('0010 does not resolve a constructor parameter property as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default class Runner {',
+				'\tconstructor(public NAME: string) {',
+				'\t\tcreateAuthenticatedFetch(NAME)',
+				'\t}',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 does not resolve a named function expression id as a module constant', () => {
+	expect(
+		patternsByPath({
+			'package.json': slotManifest,
+			'index.ts': [
+				"import { createAuthenticatedFetch } from 'kody:runtime'",
+				"const NAME = 'slack'",
+				'export default function run() {',
+				'\tconst f = function NAME() {',
+				'\t\treturn createAuthenticatedFetch(NAME as unknown as string)',
+				'\t}',
+				'\treturn f()',
+				'}',
+			].join('\n'),
+		})['index.ts'],
+	).toEqual(['computed integration'])
+})
+
+test('0010 flags |scope= when a constant prefix continues via concatenation', () => {
+	expect(
+		modulePatterns(
+			[
+				"const PREFIX = '{{secret:KEY|scope='",
+				"export const p = (ending: string) => PREFIX + ending + '}}'",
+			].join('\n'),
+		),
+	).toContain('|scope=')
 })

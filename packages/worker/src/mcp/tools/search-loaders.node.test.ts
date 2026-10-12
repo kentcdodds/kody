@@ -170,19 +170,19 @@ test('a grant-only collaborator sees only granted secrets and integrations', asy
 		isOwner: false,
 		permissions: new Set<OrgPermission>(['search:read']),
 		resourcePermissions: new Map<string, ReadonlySet<OrgPermission>>([
-			['secret:granted-secret', new Set(['secret:use'])],
-			['integration:github', new Set(['integration:use'])],
+			['credential:cred-granted-secret', new Set(['secret:use'])],
+			['credential:cred-github', new Set(['integration:use'])],
 		]),
 		credentialScopes: null,
 		profileGrants: null,
 	}
 	mocks.listSecrets.mockResolvedValue([
-		{ name: 'granted-secret' },
-		{ name: 'other-secret' },
+		{ name: 'granted-secret', credentialId: 'cred-granted-secret' },
+		{ name: 'other-secret', credentialId: 'cred-other-secret' },
 	])
 	mocks.listIntegrations.mockResolvedValue([
-		{ connection: { name: 'github' } },
-		{ connection: { name: 'linear' } },
+		{ connection: { name: 'github', credentialId: 'cred-github' } },
+		{ connection: { name: 'linear', credentialId: 'cred-linear' } },
 	])
 	const callerContext = createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },

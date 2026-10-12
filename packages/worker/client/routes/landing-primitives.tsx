@@ -1,4 +1,5 @@
 import { type Handle, ref } from 'remix/component'
+import { docHref } from '#universal/docs-nav.ts'
 import {
 	landingHomePrimitives,
 	landingPrimitivesIntroLead,
@@ -18,11 +19,14 @@ import {
 import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
+/** Locked "What is Kody?" label matches the intro guide, not /features. */
+const landingPrimitivesMoreHref = docHref('what-is-kody')
+
 /**
  * Homepage primitives block: the locked intro line, then the five-orb
- * lantern with the six words listed beside it, then the learn-more line.
- * Orbs highlight a primitive and draw leader lines to its word; each word
- * links to that primitive's feature page.
+ * lantern with the six words listed beside it, then the learn-more line
+ * ("What is Kody?" → intro guide). Orbs highlight a primitive and draw
+ * leader lines to its word; each word links to that primitive's feature page.
  *
  * Leader lines run from each orb to the colored dot before its word. They
  * are measured from layout and redrawn on resize and font load, so they
@@ -216,7 +220,7 @@ export function LandingPrimitives(handle: Handle) {
 			</div>
 			<p class="landing-primitives-more">
 				{landingPrimitivesMoreLead}{' '}
-				<a href="/features" class="landing-inline-link">
+				<a href={landingPrimitivesMoreHref} class="landing-inline-link">
 					{landingPrimitivesMoreLink}
 				</a>
 			</p>

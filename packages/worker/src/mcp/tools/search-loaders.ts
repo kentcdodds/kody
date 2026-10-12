@@ -78,10 +78,10 @@ export async function loadSearchRowsAndRegistry(input: {
 	const reveal = (pkg: { id: string; userId: OwnerId }) =>
 		!access || canSeeResource(access, packageResource(pkg))
 	const revealSecret = access
-		? resourceVisibility(access, 'secret', ['secret:use', 'secret:write'])
+		? resourceVisibility(access, 'credential', ['secret:use', 'secret:write'])
 		: () => true
 	const revealIntegration = access
-		? resourceVisibility(access, 'integration', [
+		? resourceVisibility(access, 'credential', [
 				'integration:use',
 				'integration:read',
 				'integration:write',
@@ -130,7 +130,7 @@ export async function loadSearchRowsAndRegistry(input: {
 							env: input.env,
 							userId,
 						})
-						return secrets.filter((secret) => revealSecret(secret.name))
+						return secrets.filter((secret) => revealSecret(secret.credentialId))
 					},
 					loadUserValues: async () => [],
 					loadUserIntegrations: async () => {
@@ -142,7 +142,7 @@ export async function loadSearchRowsAndRegistry(input: {
 							userId,
 						})
 						return integrations.filter((entry) =>
-							revealIntegration(entry.connection.name),
+							revealIntegration(entry.connection.credentialId),
 						)
 					},
 				}),
@@ -160,7 +160,7 @@ export async function loadSearchRowsAndRegistry(input: {
 									packageId: input.callerContext.storageContext?.packageId,
 								}).catch(() => [])
 							)
-								.filter((ref) => revealIntegration(ref.name))
+								.filter((ref) => revealIntegration(ref.serverId))
 								.map((ref) => ref.serverId),
 						),
 					)

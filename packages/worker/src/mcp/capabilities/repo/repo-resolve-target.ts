@@ -198,8 +198,6 @@ export async function resolveRepoTargetFromSource(input: {
 				name: userRepo.name,
 			}
 		}
-		case 'job':
-			return toResolvedSourceTarget(source)
 		default: {
 			const entityKind: never = source.entity_kind
 			throw new McpCallerError(

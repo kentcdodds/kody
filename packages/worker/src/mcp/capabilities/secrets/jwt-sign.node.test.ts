@@ -10,7 +10,8 @@ import {
 	timingSafeEqual,
 	verify,
 } from 'node:crypto'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { isMcpCallerError, McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -60,6 +61,7 @@ function createEcKeyPair(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1') {
 
 function stubSecret(value: string | null) {
 	return vi.spyOn(secretService, 'resolveSecret').mockResolvedValue({
+		credentialId: value === null ? null : 'cred-signing-key',
 		found: value !== null,
 		value,
 		scope: value === null ? null : 'user',
@@ -112,6 +114,10 @@ function rejectsWithoutLeaking(fragment: string, leaked: string) {
 		return message.includes(fragment) && !message.includes(leaked)
 	}
 }
+
+beforeEach(() => {
+	lookupSecretsThroughResolveSecret()
+})
 
 test('secretJwtSign resolves keys and never leaks key material', async () => {
 	const { privateKey, publicKey } = createKeyPair()

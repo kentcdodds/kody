@@ -28,6 +28,7 @@ import { webhookRateLimitConfig } from './types.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
+import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -56,6 +57,11 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mocks.resolveSecret(...args),
+	findSecretForUse: async (input: unknown) => {
+		const resolved = await mocks.resolveSecret(input)
+		const { value: _value, ...found } = resolved
+		return { found, readValue: async () => resolved }
+	},
 }))
 
 vi.mock('./dispatch-queue-producer.ts', async () => {
@@ -328,10 +334,7 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	return userId
 }
 
-/**
- * Verifies with the manifest's named secret instead: a package-owned secret
- * would win over it.
- */
+/** Leaves the manifest's named secret as the only signing secret. */
 async function useNamedSecret(webhookName: string) {
 	defaultSigningSecrets.delete(webhookName)
 	await env.APP_DB.prepare(
@@ -630,9 +633,14 @@ test('a webhook cannot verify with a secret its package may not read (#3245)', a
 		headers: { 'x-hub-signature-256': await sign(body) },
 	}
 
+	consoleWarn.mockImplementation(() => {})
 	expect(await statusOf('sentry', signed)).toBe(401)
 	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'webhook-declared-secret-resolve-failed',
+		expect.objectContaining({ secretName: 'githubWebhookSecret' }),
+	)
 
 	await env.APP_DB.prepare(
 		`UPDATE community_forks SET adopted_at = ? WHERE id = 'fork-1'`,
@@ -778,6 +786,10 @@ test('a sync webhook whose package was refused for credential placement returns 
 	)
 	expect(failed?.metadata).toMatchObject({ httpStatus: 502 })
 	expect(failed?.errorMessage).toBe('credential_placement_refused')
+	// Sync deliveries keep the interactive sandbox budget.
+	expect(mocks.invokePackageExport.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+		'executorTimeoutMs',
+	)
 })
 
 test('webhook ingress rejects suspended owners before any dispatch', async () => {
@@ -806,29 +818,182 @@ test('webhook ingress rejects suspended owners before any dispatch', async () =>
 	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 })
 
-test('a webhook that declares no verification requires its default signature and an enablement that is on', async () => {
-	const userId = await setupOwnerWithWebhooks(['plain'])
-	const orgId = ownerIdFromStored(userId)
-	declareWebhook({ name: 'plain' })
+test('a webhook that declares no verification runs on its URL secret alone, with no signature', async () => {
+	const userId = await setupOwnerWithWebhooks(['plain', 'plain-sync'])
 	const body = JSON.stringify({ event: 'ping' })
 
-	expect(await statusOf('plain', { body, unsigned: true })).toBe(401)
+	declareWebhook({ name: 'plain-sync', responseMode: 'sync' })
+	const sync = await sendWebhook('plain-sync', { body, unsigned: true })
+	expect(sync.status).toBe(200)
+	await expect(sync.json()).resolves.toEqual({
+		ok: true,
+		result: { handled: true },
+	})
+	expect(mocks.invokePackageExport).toHaveBeenCalledTimes(1)
+	expect(invoked(-1).params.request.json).toEqual({ event: 'ping' })
+	expect((await listDeliveries(userId, 'plain-sync'))[0]).toMatchObject({
+		status: 'success',
+	})
+
+	declareWebhook({ name: 'plain' })
+	expect(await statusOf('plain', { body, unsigned: true })).toBe(202)
+	// A stray signature header is ignored, as it was before signatures existed.
 	expect(
 		await statusOf('plain', {
 			body,
 			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
 		}),
+	).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const urlSecretOnlyLogs = () =>
+		consoleInfo.mock.calls.filter(
+			([message]) => message === 'webhook-url-secret-only-authenticated',
+		)
+	expect(urlSecretOnlyLogs()).toHaveLength(3)
+	expect(urlSecretOnlyLogs()[2]?.[1]).toMatchObject({
+		endpointId: 'mint-plain',
+		webhookName: 'plain',
+	})
+
+	expect(
+		await statusOf('plain', { body, unsigned: true, urlSecret: 'wrong' }),
+	).toBe(404)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(urlSecretOnlyLogs()).toHaveLength(3)
+	expect(
+		(await listDeliveries(userId, 'plain')).filter(
+			(run) => run.status === 'error',
+		),
+	).toEqual([])
+})
+
+test('explicit url-secret verification runs on the URL secret; a declared HMAC scheme never falls back to it', async () => {
+	const userId = await setupOwnerWithWebhooks(['explicit', 'signed'])
+	const body = JSON.stringify({ event: 'ping' })
+
+	declareWebhook({ name: 'explicit', verification: { type: 'url-secret' } })
+	expect(await statusOf('explicit', { body, unsigned: true })).toBe(202)
+	expect(
+		await statusOf('explicit', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
+		}),
+	).toBe(202)
+	expect(
+		await statusOf('explicit', { body, unsigned: true, urlSecret: 'wrong' }),
+	).toBe(404)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(
+		consoleInfo.mock.calls.filter(
+			([message]) => message === 'webhook-url-secret-only-authenticated',
+		),
+	).toEqual([])
+
+	declareWebhook({
+		name: 'signed',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-kody-signature',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+	})
+	const unsigned = await sendWebhook('signed', { body, unsigned: true })
+	expect(unsigned.status).toBe(401)
+	expect(
+		await statusOf('signed', {
+			body,
+			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
+		}),
 	).toBe(401)
-	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(
+		(await listDeliveries(userId, 'signed')).map((run) => run.errorMessage),
+	).toEqual(expect.arrayContaining(['missing_signature', 'invalid_signature']))
+	expect(await statusOf('signed', { body })).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(3)
+})
 
-	expect(await statusOf('plain', { body })).toBe(202)
-	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+test('a declared verification.secretName wins over the stored generated secret, on the same URL', async () => {
+	const userId = await setupOwnerWithWebhooks(['stripe'])
+	const generated = defaultSigningSecrets.get('stripe')!
+	defaultSigningSecrets.delete('stripe')
+	declareWebhook({
+		name: 'stripe',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'stripe-signature',
+			secretName: 'stripeWebhookSecretCancelFarewell',
+			encoding: 'hex',
+			signedPayload: 'timestamp.body',
+		},
+		replay: {
+			timestampHeader: 'Stripe-Signature',
+			timestampFormat: 'stripe-signature',
+			toleranceSeconds: 300,
+		},
+	})
+	mockSecretValue(hmacSecret)
+	const body = JSON.stringify({ type: 'customer.subscription.deleted' })
+	const stripeSigned = async (secret: string) => {
+		const seconds = Math.floor(Date.now() / 1000)
+		const payload = buildWebhookTimestampBodyPayload({
+			timestampToken: String(seconds),
+			body: encodeBody(body),
+		})
+		return {
+			body,
+			headers: {
+				'stripe-signature': `t=${seconds},v1=${await sign(payload, null, secret)}`,
+			},
+		}
+	}
 
-	const enablement = await env.APP_DB.prepare(
-		`SELECT id FROM enablements WHERE instance_id = 'mint-plain'`,
-	).first<{ id: string }>()
-	await disableEnablement({ db: env.APP_DB, orgId, id: enablement!.id })
-	const off = await sendWebhook('plain', { body })
+	expect(await statusOf('stripe', await stripeSigned(hmacSecret))).toBe(202)
+	expect(mocks.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ name: 'stripeWebhookSecretCancelFarewell' }),
+	)
+	expect(await statusOf('stripe', await stripeSigned('not-the-secret'))).toBe(
+		401,
+	)
+
+	// Senders already signing with the stored secret keep verifying.
+	consoleWarn.mockImplementation(() => {})
+	expect(await statusOf('stripe', await stripeSigned(generated))).toBe(202)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'webhook-signature-matched-stored-secret-not-declared',
+		expect.objectContaining({
+			endpointId: 'mint-stripe',
+			secretName: 'stripeWebhookSecretCancelFarewell',
+		}),
+	)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(consoleInfo).not.toHaveBeenCalledWith(
+		'webhook-url-secret-only-authenticated',
+		expect.anything(),
+	)
+
+	const endpoint = await env.APP_DB.prepare(
+		`SELECT url_secret_hash FROM webhook_endpoints WHERE id = 'mint-stripe'`,
+	).first<{ url_secret_hash: string }>()
+	expect(endpoint?.url_secret_hash).toBe(await hashWebhookUrlSecret(urlSecret))
+	expect(
+		(await listDeliveries(userId, 'stripe')).map((run) => run.errorMessage),
+	).toEqual(expect.arrayContaining(['invalid_signature']))
+})
+
+test('a webhook with no enablement on answers 409 instead of running', async () => {
+	const userId = await setupOwnerWithWebhooks(['plain'])
+	const orgId = ownerIdFromStored(userId)
+	declareWebhook({ name: 'plain' })
+	const body = JSON.stringify({ event: 'ping' })
+
+	await disableEnablement({
+		db: env.APP_DB,
+		orgId,
+		id: await enablementIdOf('plain'),
+	})
+	const off = await sendWebhook('plain', { body, unsigned: true })
 	expect(off.status).toBe(409)
 	await expect(off.json()).resolves.toMatchObject({
 		error: { code: 'enablement_not_on' },
@@ -836,16 +1001,14 @@ test('a webhook that declares no verification requires its default signature and
 
 	// Nobody has turned it on: ack mode answers 409 instead of queueing.
 	await env.APP_DB.prepare(`DELETE FROM enablements`).run()
-	expect(await statusOf('plain', { body })).toBe(409)
-	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+	expect(await statusOf('plain', { body, unsigned: true })).toBe(409)
+	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 	const rejected = (await listDeliveries(userId, 'plain')).filter(
 		(run) => run.status === 'error',
 	)
-	expect(rejected.map((run) => run.errorMessage).sort()).toEqual([
+	expect(rejected.map((run) => run.errorMessage)).toEqual([
 		'enablement_not_on',
 		'enablement_not_on',
-		'invalid_signature',
-		'missing_signature',
 	])
 })
 

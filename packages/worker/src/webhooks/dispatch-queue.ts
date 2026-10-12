@@ -2,6 +2,7 @@ import {
 	credentialPlacementRefusedCode,
 	readCredentialPlacementRefusalFromInvocationBody,
 } from '#worker/credentials/placement-refusal.ts'
+import { backgroundExecutorTimeoutMs } from '#mcp/executor-budgets.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/infrastructure-codes.ts'
 import {
 	buildWebhookDispatchFailureLogs,
@@ -112,6 +113,7 @@ export async function processWebhookDispatch(
 		...(resolved.idempotencyHashParams
 			? { idempotencyHashParams: resolved.idempotencyHashParams }
 			: {}),
+		executorTimeoutMs: backgroundExecutorTimeoutMs,
 	})
 	const retryableCode = readPreExecutionPackageInvocationInfrastructureCode({
 		status: response.status,

@@ -71,7 +71,7 @@ export const mcpServerListCapability = defineDomainCapability(
 				loadIntegrationListScope(ctx, 'integration:read'),
 			])
 			const settings = allSettings.filter((setting) =>
-				listScopeIncludes(scope, setting.name),
+				listScopeIncludes(scope, setting.id),
 			)
 			await Promise.all(
 				settings.map((setting) => {

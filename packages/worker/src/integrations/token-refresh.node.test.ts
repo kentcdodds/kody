@@ -176,7 +176,7 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		]) {
 			expect(body).toContain(part)
 		}
-		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+		expect((await resolveIntegrationAccessToken(tokens))?.accessToken).toBe(
 			'fresh-access-token',
 		)
 		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
@@ -414,7 +414,8 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 			'client_secret=user-google-client-secret',
 		)
 		expect(
-			await resolveIntegrationAccessToken({ env, userId, name: 'google' }),
+			(await resolveIntegrationAccessToken({ env, userId, name: 'google' }))
+				?.accessToken,
 		).toBe('fresh-google-token')
 		expect(succeededEvents).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -560,7 +561,7 @@ test('concurrent refreshes from separate isolates make one rotating provider cal
 		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
 			'rotated-refresh-token-1',
 		)
-		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+		expect((await resolveIntegrationAccessToken(tokens))?.accessToken).toBe(
 			'fresh-access-token-1',
 		)
 		expect(succeededEvents).toHaveBeenCalledTimes(1)
@@ -615,7 +616,7 @@ test('a refresher whose lease was taken over cannot overwrite the stored tokens'
 		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
 			'current-refresh-token',
 		)
-		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+		expect((await resolveIntegrationAccessToken(tokens))?.accessToken).toBe(
 			'stale-access-token',
 		)
 		expect(
@@ -786,9 +787,9 @@ test('refresh policy follows each connect: non-expiring grants skip refresh, exp
 			refreshPolicy: 'required',
 			lastAuthFailure: null,
 		})
-		expect(await resolveIntegrationAccessToken({ env, userId, name })).toBe(
-			'ghu_refreshed',
-		)
+		expect(
+			(await resolveIntegrationAccessToken({ env, userId, name }))?.accessToken,
+		).toBe('ghu_refreshed')
 
 		await connect({ access_token: 'gho_non_expiring_again' })
 		expect((await readConnection())?.refreshPolicy).toBe('not_applicable')

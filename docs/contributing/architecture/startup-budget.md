@@ -127,7 +127,19 @@ non-library caller to find which of our modules imported it.
    main byte graph; the generated specifier must stay
    `./node_modules/.kody-generated/…` relative to `packages/worker/src` (a `../`
    path from `repo/` inlines the module). Same pattern as oauth-provider and
-   local-execute-runtime-support.
+   local-execute-runtime-support. postal-mime (`postal-mime-load.ts`) and
+   codemode's acorn-backed `normalizeCode` (`codemode-normalize-load.ts`) use
+   the same lane. `patches/acorn+8.17.0.patch` marks acorn side-effect free so
+   esbuild drops it once `normalizeCode` is off the graph; refresh that patch
+   when codemode bumps acorn.
+8. **Type deferred packages with `typeof import(...)` queries.** esbuild walks
+   `import type` and `import { type … }` edges into Wrangler main, and keeps the
+   target package's side-effecting module code. The lint autofix rewrites
+   `import type` to the inline form. Export the types from the loader as type
+   queries instead (see `postal-mime-load.ts`). The same trap applies to in-repo
+   modules: a type-only import of a module whose top level builds something
+   heavy (for example a validator instance) still evaluates it at startup, so
+   keep such modules free of top-level work.
 
 ## CI tripwire
 

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
+import { authorizeMcpServer } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { buildMcpServerAuthorizeUrl } from '#worker/mcp-client/authorize-consent.ts'
@@ -48,7 +48,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				userId: ownerIdFromCaller(ctx.callerContext),
 				server: args.server,
 			})
-			await authorizeIntegration(ctx, 'integration:write', setting.name)
+			await authorizeMcpServer(ctx, 'integration:write', setting)
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env: ctx.env,
 				requestUrl: ctx.callerContext.baseUrl,

@@ -48,15 +48,59 @@ package access rules as an undeclared package. Slots only drive publish
 validation
 ([credential slots](../use/packages.md#credential-slots-kodycredentials)).
 
-Credentials plan v4 (section 3.3) makes an assignment the grant: an org assigns
-a credential to each slot, a declared package resolves only through its
-assignments, and nothing falls back to a name. Once that ships, a package that
-declares slots and has no assignments fails each use with an assign link, so
-every declared package needs assignments on that deploy. Undeclared packages
-keep the name lane until their migration phase ends.
+[ADR 0068](./decisions/0068-credentials-own-placement-scoped-clients.md)
+replaces this name lane, and supersedes the assignments of credentials plan v4
+section 3.3 and its placeholder grammar in section 3.4: there are no
+assignments. Each credential owns its hosts and placement, package code reaches
+it through a scoped `credential(key)` client, and callers pick among candidates
+with a call map (or an enablement for triggers). A fleet codemod rewrites
+placeholders it can convert identically. The placeholder lane, `secretMounts`,
+`packageSecrets`, `|scope=`, webhook `secretName`, `x-kody-secret-resolution`,
+and package allowlists and usage modes are then removed, at once if a rescan
+finds no old patterns, otherwise when the remaining packages convert or at T+90
+at the latest.
 
-**Ready when:** assignments, their API and UI, and the fork and install assign
-step are live, and the declared packages in the fleet scan have assignments.
+**Ready when:** the credential clients and call maps are live in production (T),
+every placement the scan finds has a working resolver kind, and the post-codemod
+rescan shows no old patterns (or T+90 for packages that could not be converted).
 
 **Introduced as leftover by:** the `kody.credentials` manifest field (credential
-slots ship before assignments).
+slots ship before credential clients).
+
+## By-name `secret` / `integration` grant targets
+
+`accessGrant` and grant invites accept `secret` and `integration` targets by
+name. The name resolves to a credential id at grant time; the grant is stored
+under `credential`. A name that matches no credential is refused. `accessList`
+accepts the same by-name filters and resolves the name when listing: after a
+rename, the old name finds no grants, though the grant on the credential id
+remains.
+
+Grant by credential id is the durable path
+([authorization](./architecture/authorization.md)). By-name targets go away with
+secret placeholders when the leftover credential lane is removed
+([ADR 0068](./decisions/0068-credentials-own-placement-scoped-clients.md)).
+
+**Ready when:** callers grant by credential id, and the leftover credential lane
+removal in ADR 0068 is ready.
+
+**Introduced as leftover by:** stable credential ids (`#3442`) while name
+targets remain accepted.
+
+## Webhooks without a `verification` declaration
+
+A webhook that declares no `verification` is treated as
+`verification: { type: 'url-secret' }`, which stays a supported type for senders
+that cannot sign
+([inbound webhooks](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
+Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
+declaration to existing packages. Then publish requires `verification` on every
+webhook, and the implicit default goes away
+([#3477](https://github.com/kentcdodds/kody/issues/3477)). No deliveries are
+refused by this change.
+
+**Ready when:** `adminWebhookVerificationScan` reports zero
+`implicit_url_secret` webhooks after codemod 0012 is applied.
+
+**Introduced as leftover by:** restoring URL-secret-only auth (`#3463`) and the
+explicit `url-secret` type.

@@ -16,7 +16,6 @@ import {
 	findOversizedRepoSourceFile,
 } from './large-file-policy.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { parseRepoManifest } from './manifest.ts'
 import {
 	loadLockedSavedPackage,
 	PackagePublishLockedError,
@@ -86,20 +85,20 @@ function validateEntitySourceManifest(input: {
 	content: string
 	manifestPath: string
 }) {
-	if (input.entityKind === 'package') {
-		parseAuthoredPackageJson({
-			content: input.content,
-			manifestPath: input.manifestPath,
-		})
-		return
+	switch (input.entityKind) {
+		case 'package':
+			parseAuthoredPackageJson({
+				content: input.content,
+				manifestPath: input.manifestPath,
+			})
+			return
+		case 'repo':
+			return
+		default: {
+			const entityKind: never = input.entityKind
+			throw new Error(`Unsupported entity kind: ${String(entityKind)}`)
+		}
 	}
-	if (input.entityKind === 'repo') {
-		return
-	}
-	parseRepoManifest({
-		content: input.content,
-		manifestPath: input.manifestPath,
-	})
 }
 
 async function assertPackageBootstrapUnlocked(input: {
