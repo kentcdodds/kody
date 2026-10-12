@@ -150,9 +150,10 @@ Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
 People turn triggers on for themselves with `enablementEnable` and off with
 `enablementDisable` (the enabler or an Owner); `enablementList` lists them.
 Publishing never turns anything on. Minting a webhook URL turns it on for the
-minter when they hold `package:execute` and nobody else has. Webhooks in a
-migrated org always verify a signature: the declared `verification`, else
-`X-Kody-Signature` over the body with the endpoint's own signing secret.
+minter when they hold `package:execute` and nobody else has. A webhook verifies
+a signature only when its manifest declares `verification`; otherwise its URL
+secret is the credential. The generated signing secret on unsigned endpoints is
+stored but not checked.
 
 ### Checking many resources
 

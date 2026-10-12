@@ -810,29 +810,57 @@ test('webhook ingress rejects suspended owners before any dispatch', async () =>
 	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 })
 
-test('a webhook that declares no verification requires its default signature and an enablement that is on', async () => {
-	const userId = await setupOwnerWithWebhooks(['plain'])
-	const orgId = ownerIdFromStored(userId)
-	declareWebhook({ name: 'plain' })
+test('a webhook that declares no verification runs on its URL secret alone, with no signature', async () => {
+	const userId = await setupOwnerWithWebhooks(['plain', 'plain-sync'])
 	const body = JSON.stringify({ event: 'ping' })
 
-	expect(await statusOf('plain', { body, unsigned: true })).toBe(401)
+	declareWebhook({ name: 'plain-sync', responseMode: 'sync' })
+	const sync = await sendWebhook('plain-sync', { body, unsigned: true })
+	expect(sync.status).toBe(200)
+	await expect(sync.json()).resolves.toEqual({
+		ok: true,
+		result: { handled: true },
+	})
+	expect(mocks.invokePackageExport).toHaveBeenCalledTimes(1)
+	expect(invoked(-1).params.request.json).toEqual({ event: 'ping' })
+	expect((await listDeliveries(userId, 'plain-sync'))[0]).toMatchObject({
+		status: 'success',
+	})
+
+	declareWebhook({ name: 'plain' })
+	expect(await statusOf('plain', { body, unsigned: true })).toBe(202)
+	// A stray signature header is ignored, as it was before signatures existed.
 	expect(
 		await statusOf('plain', {
 			body,
 			headers: { 'x-kody-signature': await sign(body, 'sha256=', 'wrong') },
 		}),
-	).toBe(401)
-	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
+	).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
 
-	expect(await statusOf('plain', { body })).toBe(202)
-	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+	expect(
+		await statusOf('plain', { body, unsigned: true, urlSecret: 'wrong' }),
+	).toBe(404)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	expect(
+		(await listDeliveries(userId, 'plain')).filter(
+			(run) => run.status === 'error',
+		),
+	).toEqual([])
+})
 
-	const enablement = await env.APP_DB.prepare(
-		`SELECT id FROM enablements WHERE instance_id = 'mint-plain'`,
-	).first<{ id: string }>()
-	await disableEnablement({ db: env.APP_DB, orgId, id: enablement!.id })
-	const off = await sendWebhook('plain', { body })
+test('a webhook with no enablement on answers 409 instead of running', async () => {
+	const userId = await setupOwnerWithWebhooks(['plain'])
+	const orgId = ownerIdFromStored(userId)
+	declareWebhook({ name: 'plain' })
+	const body = JSON.stringify({ event: 'ping' })
+
+	await disableEnablement({
+		db: env.APP_DB,
+		orgId,
+		id: await enablementIdOf('plain'),
+	})
+	const off = await sendWebhook('plain', { body, unsigned: true })
 	expect(off.status).toBe(409)
 	await expect(off.json()).resolves.toMatchObject({
 		error: { code: 'enablement_not_on' },
@@ -840,16 +868,14 @@ test('a webhook that declares no verification requires its default signature and
 
 	// Nobody has turned it on: ack mode answers 409 instead of queueing.
 	await env.APP_DB.prepare(`DELETE FROM enablements`).run()
-	expect(await statusOf('plain', { body })).toBe(409)
-	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+	expect(await statusOf('plain', { body, unsigned: true })).toBe(409)
+	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 	const rejected = (await listDeliveries(userId, 'plain')).filter(
 		(run) => run.status === 'error',
 	)
-	expect(rejected.map((run) => run.errorMessage).sort()).toEqual([
+	expect(rejected.map((run) => run.errorMessage)).toEqual([
 		'enablement_not_on',
 		'enablement_not_on',
-		'invalid_signature',
-		'missing_signature',
 	])
 })
 

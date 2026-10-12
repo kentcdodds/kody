@@ -2,9 +2,7 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
-	decryptWebhookHmacSecret,
 	decryptWebhookUrlSecret,
-	userWebhookHmacSecretContext,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -213,7 +211,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const revealed = await reveal({ handle: minted.handle })
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
-	expect(revealed.signingSecret).toBeNull()
+	expect(revealed).not.toHaveProperty('signingSecret')
 	// The account UI addresses a webhook by package + name rather than by
 	// handle; both paths resolve the same minted URL.
 	expect(await reveal(sentryHook)).toMatchObject({
@@ -437,7 +435,7 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(second).not.toHaveProperty('url')
 })
 
-test('reveal shows the generated signing secret only when the manifest declares no verification', async () => {
+test('an unsigned webhook keeps a stored signing secret that reveal does not expose', async () => {
 	const owner = await setupOwner('signer@example.com', 'signer')
 	const { env, userId } = owner
 	const sentryManifest = vi
@@ -477,19 +475,9 @@ test('reveal shows the generated signing secret only when the manifest declares 
 			hmac_secret_encrypted: string | null
 		}>(endpointId, 'hmac_secret_encrypted')
 		expect(stored?.hmac_secret_encrypted).toBeTruthy()
-		const signingSecret = (await reveal()).signingSecret
-		expect(signingSecret).toEqual(
-			await decryptWebhookHmacSecret(
-				env,
-				stored!.hmac_secret_encrypted!,
-				userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId),
-			),
-		)
+		expect(await reveal()).not.toHaveProperty('signingSecret')
 		await owner.rotate()
-		expect((await reveal()).signingSecret).toBe(signingSecret)
-
-		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
-		expect((await reveal()).signingSecret).toBeNull()
+		expect(await reveal()).not.toHaveProperty('signingSecret')
 	} finally {
 		vi.mocked(loadPackageManifestBySourceId).mockImplementation(sentryManifest)
 	}
