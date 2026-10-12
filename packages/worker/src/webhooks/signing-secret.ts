@@ -31,9 +31,7 @@ export const defaultWebhookVerification = {
  *
  * Apply reads only the ciphertext on the endpoint — never a live
  * `verification.secretName` lookup — so changing secretName after a
- * destination Allow cannot swap which credential is injected. Mint/rotate
- * refresh that ciphertext from a declared secretName
- * (`resolveHmacCiphertextForMint`).
+ * destination Allow cannot swap which credential is injected.
  */
 export async function resolveWebhookHmacSigningSecret(input: {
 	env: Env
@@ -83,12 +81,21 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 		if (declared !== null) secrets.push({ value: declared, source: 'declared' })
 	}
 	if (input.endpoint.hmacSecretEncrypted) {
-		const stored = await decryptWebhookHmacSecret(
-			input.env,
-			input.endpoint.hmacSecretEncrypted,
-			userWebhookHmacSecretContext(input.userId, input.endpoint.id),
-		)
-		if (!secrets.some((secret) => secret.value === stored)) {
+		let stored: string | null = null
+		try {
+			stored = await decryptWebhookHmacSecret(
+				input.env,
+				input.endpoint.hmacSecretEncrypted,
+				userWebhookHmacSecretContext(input.userId, input.endpoint.id),
+			)
+		} catch (error) {
+			if (secrets.length === 0) throw error
+			console.warn('webhook-stored-secret-decrypt-failed', {
+				endpointId: input.endpoint.id,
+				error,
+			})
+		}
+		if (stored !== null && !secrets.some((secret) => secret.value === stored)) {
 			secrets.push({ value: stored, source: 'stored' })
 		}
 	}
@@ -144,12 +151,14 @@ export async function mintPackageOwnedWebhookHmacCiphertext(input: {
 }
 
 /**
- * Ciphertext to write on mint/rotate. A declared secretName is copied from
- * the named secret every time, replacing whatever the endpoint held (a
- * Kody-generated secret from before the manifest declared one), so apply
- * injects the declared secret without a live secrets-list lookup. Without a
- * secretName, a fresh secret is minted only when the endpoint has none.
+ * Ciphertext to write on mint/rotate when the endpoint has no package-owned
+ * HMAC yet. Fresh mint when secretName is omitted; legacy copy from the named
+ * secret when present (so apply no longer needs a live secrets-list lookup).
  * Returns undefined to leave the column unset / unchanged.
+ *
+ * An existing ciphertext is never replaced: destination grants approved
+ * `{{webhookSecret}}` for that value, and a rotated URL's grace window still
+ * receives deliveries signed with it.
  */
 export async function resolveHmacCiphertextForMint(input: {
 	env: Env
@@ -161,11 +170,11 @@ export async function resolveHmacCiphertextForMint(input: {
 	verification: PackageWebhookManifestEntry['verification'] | null | undefined
 	existingHmacEncrypted: string | null | undefined
 }): Promise<string | undefined> {
+	if (input.existingHmacEncrypted) return undefined
 	if (!input.verification) return undefined
 
 	const secretName = input.verification.secretName?.trim() ?? ''
 	if (!secretName) {
-		if (input.existingHmacEncrypted) return undefined
 		return (
 			await mintPackageOwnedWebhookHmacCiphertext({
 				env: input.env,

@@ -163,8 +163,8 @@ required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
 stored on the minted webhook URL record (not a user secrets-list entry, and not
 host-gated). When a package declares `verification.secretName`, reminting (or
 rotating) the URL copies that value onto the endpoint when the named secret
-exists, replacing any Kody-generated secret the endpoint held — apply never does
-a live `secretName` lookup for `{{webhookSecret}}` (so changing the name after
+exists and the endpoint holds no signing secret yet — apply never does a live
+`secretName` lookup for `{{webhookSecret}}` (so changing the name after
 destination Allow cannot swap credentials). Destination `secretName` /
 `integration` Bearer auth requires host approval / integration allowlists.
 Destination URLs must be `https://`. Redirects are not followed. Auth is

@@ -189,6 +189,33 @@ test('inbound verification keeps the stored secret when the declared one cannot 
 	).rejects.toThrow(/stripeWebhookSecretCancelFarewell/)
 })
 
+test('an unreadable stored secret does not block a resolved declared secret', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const unreadable = endpoint({ hmacSecretEncrypted: 'not-a-ciphertext' })
+	expect(
+		await resolveWebhookHmacVerificationSecrets({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			endpoint: unreadable,
+			verification: stripeVerification,
+		}),
+	).toEqual([{ value: 'legacy-secret-store-value', source: 'declared' }])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'webhook-stored-secret-decrypt-failed',
+		expect.objectContaining({ endpointId: 'ep-1' }),
+	)
+
+	const { secretName: _secretName, ...withoutName } = stripeVerification
+	await expect(
+		resolveWebhookHmacVerificationSecrets({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			endpoint: unreadable,
+			verification: withoutName,
+		}),
+	).rejects.toThrow()
+})
+
 test('inbound verification without secretName uses the stored secret and no lookup', async () => {
 	vi.mocked(resolveSecret).mockClear()
 	const { secretName: _secretName, ...withoutName } = stripeVerification
@@ -243,36 +270,22 @@ test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', 
 	).toBe('legacy-secret-store-value')
 	expect(resolveSecret).toHaveBeenCalled()
 
+	// A stored secret is kept: apply grants and a rotated URL's grace window
+	// still depend on it. Ingress tries the declared secret first instead.
 	const generated = await storedCiphertext('kody-generated-at-migration')
-	const replaced = await resolveHmacCiphertextForMint({
-		env,
-		request: sessionRequestContext('user-1', 'ada'),
-		baseUrl: 'https://example.com',
-		userId: ownerIdFromStored('user-1'),
-		endpointId: 'ep-1',
-		packageId: 'pkg-1',
-		verification: stripeVerification,
-		existingHmacEncrypted: generated,
-	})
-	expect(
-		await decryptWebhookHmacSecret(
-			env,
-			replaced!,
-			userWebhookHmacSecretContext(ownerIdFromStored('user-1'), 'ep-1'),
-		),
-	).toBe('legacy-secret-store-value')
-
 	const { secretName: _secretName, ...withoutName } = stripeVerification
-	expect(
-		await resolveHmacCiphertextForMint({
-			env,
-			request: sessionRequestContext('user-1', 'ada'),
-			baseUrl: 'https://example.com',
-			userId: ownerIdFromStored('user-1'),
-			endpointId: 'ep-1',
-			packageId: 'pkg-1',
-			verification: withoutName,
-			existingHmacEncrypted: generated,
-		}),
-	).toBeUndefined()
+	for (const verification of [stripeVerification, withoutName]) {
+		expect(
+			await resolveHmacCiphertextForMint({
+				env,
+				request: sessionRequestContext('user-1', 'ada'),
+				baseUrl: 'https://example.com',
+				userId: ownerIdFromStored('user-1'),
+				endpointId: 'ep-1',
+				packageId: 'pkg-1',
+				verification,
+				existingHmacEncrypted: generated,
+			}),
+		).toBeUndefined()
+	}
 })
