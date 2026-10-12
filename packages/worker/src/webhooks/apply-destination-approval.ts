@@ -200,7 +200,7 @@ export async function fingerprintDestinationSnapshot(
 	return sha256Hex(material)
 }
 
-/** Pre-0119 pin that keyed auth by secretName / integration string. */
+/** Pre-credential-id pin that keyed auth by secretName / integration string. */
 export async function fingerprintHttpApplyDestinationLegacy(
 	destination: WebhookUrlApplyHttpDestination,
 ) {
@@ -364,7 +364,7 @@ function legacyRowMatchesCredential(
 		return pinned == null
 	}
 	// A pin must equal today's resolved id. Unpinned legacy rows are upgraded
-	// only when migration has not yet attached an id (should be rare after 0119).
+	// only when migration has not yet attached an id (should be rare after 0120).
 	if (pinned == null) return true
 	return pinned === resolvedCredentialId
 }
