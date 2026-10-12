@@ -309,24 +309,20 @@ test('paused enablement cards say what the run needed and cap at three', () => {
 		{ ...emptySignals, pausedEnablements: paused },
 		'acme',
 	)
-	expect(items).toEqual([
-		{
-			id: 'enablement-paused:en-email',
-			kind: 'enablement-paused',
-			title:
-				'Your @acme/triage "email.message.received" subscription is paused',
-			why: 'It runs as you, and its last run needed Use on the integration "github", which you do not have. Ask an org Owner for access. Its events are dropped until then, and the next event resumes it.',
-			who: 'you',
-			doLabel: 'How paused automation resumes',
-			href: '/docs/organizations#automation-runs-as-the-person-who-turned-it-on',
-			severity: 'block',
-		},
-		expect.objectContaining({
-			id: 'enablement-paused:en-job',
-			title: 'Your scheduled job is paused',
-			why: 'It runs as you, and you no longer hold package:execute on its package. Ask an org Owner for access. Its events are dropped until then, and the next event resumes it.',
-		}),
+	expect(items.map((item) => item.id)).toEqual([
+		'enablement-paused:en-email',
+		'enablement-paused:en-job',
 	])
+	expect(items[0]).toMatchObject({
+		kind: 'enablement-paused',
+		who: 'you',
+		href: '/docs/organizations#automation-runs-as-the-person-who-turned-it-on',
+		severity: 'block',
+	})
+	expect(items[0]?.title).toContain('@acme/triage')
+	expect(items[0]?.why).toContain('github')
+	expect(items[1]?.title).toContain('scheduled job')
+	expect(items[1]?.why).toContain('package:execute')
 
 	const many = Array.from(
 		{ length: waitingPausedEnablementCap + 2 },

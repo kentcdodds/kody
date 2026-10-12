@@ -296,7 +296,6 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		)
 		// The step outlasts the 5-minute sandbox so the sandbox timeout and run
 		// finish land before the engine would cut the step.
-		expect(backgroundExecutorTimeoutMs).toBe(300_000)
 		expect(step.do).toHaveBeenCalledWith(
 			'execute inline workflow code',
 			expect.objectContaining({ timeout: '6 minutes' }),

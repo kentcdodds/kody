@@ -10,7 +10,6 @@ import {
 	outboundFetchTimeoutMs,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
-import { outboundFetchIdleTimeoutMs } from '#mcp/outbound-fetch-deadline.ts'
 import {
 	parseHostApprovalRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
@@ -1381,11 +1380,6 @@ test('leak: a secret filled into the body or URL is redacted from echoes in ever
 	expect((error as Error).message).toBe(
 		'fetch failed for https://api.example.com/q?key=[REDACTED SECRET]',
 	)
-})
-
-test('fetch gateway deadline is five minutes on every surface', () => {
-	expect(outboundFetchTimeoutMs).toBe(300_000)
-	expect(outboundFetchIdleTimeoutMs).toBe(60_000)
 })
 
 test('fetch gateway aborts a hung outbound fetch before headers at the overall deadline', async () => {

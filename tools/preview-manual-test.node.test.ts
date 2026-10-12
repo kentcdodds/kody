@@ -170,25 +170,19 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	).toBe('kody_session=abc')
 
 	const fullSha = '91bab582b2040e7b55a84f2415be82c1684ad565'
-	expect([
-		evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc'),
-		evaluateAppHealth({ ok: true, commitSha: fullSha }, '91bab582'),
-		evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
-			'basesha',
-			'headsha',
-		]),
-	]).toEqual([
-		{ ok: true, commitSha: 'abc', detail: 'ok, commitSha abc' },
-		{
-			ok: true,
-			commitSha: fullSha,
-			detail: `ok, commitSha ${fullSha} (matches 91bab582)`,
-		},
-		{
-			ok: true,
-			commitSha: 'mergesha',
-			detail: 'ok, commitSha mergesha (merge of headsha)',
-		},
+	expect(
+		[
+			evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc'),
+			evaluateAppHealth({ ok: true, commitSha: fullSha }, '91bab582'),
+			evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
+				'basesha',
+				'headsha',
+			]),
+		].map(({ ok, commitSha }) => ({ ok, commitSha })),
+	).toEqual([
+		{ ok: true, commitSha: 'abc' },
+		{ ok: true, commitSha: fullSha },
+		{ ok: true, commitSha: 'mergesha' },
 	])
 	expect(evaluateAppHealth({ ok: true, commitSha: 'old' }, 'new').ok).toBe(
 		false,

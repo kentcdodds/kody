@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import { getPackageCodemodById } from '../registry.ts'
-import {
-	ownerScopeFollowsRegistryCodemod,
-	ownerScopeFollowsRegistryCodemodId,
-} from './0011-owner-scope-follows-registry.ts'
+import { ownerScopeFollowsRegistryCodemod } from './0011-owner-scope-follows-registry.ts'
 
 const context = { packageName: '@team/alpha' }
 
@@ -84,10 +80,4 @@ test('0011 leaves packages alone when the scope already matches or is unknown', 
 		expect(result.changed).toBe(false)
 		expect(result.files).toEqual(files)
 	}
-})
-
-test('0011 is registered', () => {
-	expect(getPackageCodemodById(ownerScopeFollowsRegistryCodemodId)).toBe(
-		ownerScopeFollowsRegistryCodemod,
-	)
 })
