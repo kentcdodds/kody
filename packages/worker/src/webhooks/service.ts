@@ -47,13 +47,17 @@ import {
 	webhookUrlHostFromOrigin,
 } from './handle.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
+import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import {
 	getWebhookEndpointByIdForUser,
 	getWebhookEndpointByKey,
 	listWebhookEndpointsForUser,
 	setWebhookEndpointEnabled,
+	setWebhookEndpointHmacVerificationState,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
+import { encryptWebhookVerificationSnapshot } from './hmac-rotation.ts'
 import {
 	defaultWebhookVerification,
 	resolveHmacCiphertextForMint,
@@ -407,6 +411,44 @@ export async function mintWebhookUrlForUser(input: {
 	}
 	if (!stored) {
 		throw new Error('Unable to persist webhook URL secret.')
+	}
+	const declaredSecretName =
+		('secretName' in verification
+			? verification.secretName
+			: undefined
+		)?.trim() ?? ''
+	if (declaredSecretName && !stored.hmacSecretName) {
+		try {
+			const resolved = await resolveCredential({
+				env: input.env,
+				orgId: input.userId,
+				actor: input.request,
+				packageStamp: attestedPackageStamp(savedPackage.id),
+				baseUrl,
+				credential: { use: 'webhook-secret', name: declaredSecretName },
+			})
+			if (resolved.found && resolved.value) {
+				const snapshot = await encryptWebhookVerificationSnapshot({
+					env: input.env,
+					userId: input.userId,
+					endpointId: stored.id,
+					plaintext: resolved.value,
+				})
+				await setWebhookEndpointHmacVerificationState({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					endpointId: stored.id,
+					hmacSecretName: declaredSecretName,
+					hmacVerificationSecretEncrypted: snapshot,
+				})
+			}
+		} catch (error) {
+			console.warn('webhook-mint-verification-seed-failed', {
+				endpointId: stored.id,
+				secretName: declaredSecretName,
+				error,
+			})
+		}
 	}
 	await ensureWebhookEnablementForMinter({
 		env: input.env,

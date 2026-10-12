@@ -208,7 +208,9 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 			'url_secret_hash',
 			'url_secret_encrypted',
 			'hmac_secret_encrypted',
+			'hmac_verification_secret_encrypted',
 			'previous_url_secret_hash',
+			'previous_hmac_secret_encrypted',
 		]),
 	)
 	expect(

@@ -101,7 +101,11 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    24 hours or until the first POST on the new URL that is accepted for dispatch
    (ack enqueue or sync invoke), whichever comes first. HMAC, rate limit,
    payload, declaration rejects, and challenge quizzes do not retire the
-   previous URL. An expired previous hash is treated as unknown.
+   previous URL. An expired previous hash is treated as unknown. Signing-secret
+   rotation (`verification.secretName` rename or a value change for that name)
+   keeps the previous signing material for the same 24h window
+   (`previous_hmac_secret_*`); a delivery that verifies under the current key
+   retires it early.
 5. After a matching URL secret, enforce per-webhook rate limit (declared
    `rateLimitPerMinute` when the name is still live, otherwise the default 60,
    max 600) → **429** (no delivery history on the limited path). Missing
@@ -118,11 +122,12 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    the credential and signature headers are ignored. A declared HMAC type never
    falls back to the URL secret. For HMAC, try `verification.secretName` in the
    secret store first (user/package scope via package storage context), then the
-   package-owned HMAC on `webhook_endpoints.hmac_secret_encrypted`. Missing
-   secret or HMAC mismatch → **401**, with a clear delivery-log error for
-   missing secrets. When `replay.timestampHeader` is declared, a missing,
-   unparseable, or stale timestamp is rejected with the same generic **401**
-   before dispatch (and before any run record that implies acceptance). When
+   previous signing secret during its 24h grace window, then the package-owned
+   HMAC on `webhook_endpoints.hmac_secret_encrypted`. Missing secret or HMAC
+   mismatch → **401**, with a clear delivery-log error for missing secrets. When
+   `replay.timestampHeader` is declared, a missing, unparseable, or stale
+   timestamp is rejected with the same generic **401** before dispatch (and
+   before any run record that implies acceptance). When
    `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
    present ids become the invocation idempotency key.
 8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
@@ -182,13 +187,14 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   immediately re-scopes by the owning user.
 - Account deletion/export include `webhook_endpoints` (minted URL state).
   Delivery history lives in run records and is covered with the rest of `RunLog`
-  export/deletion. Export redacts `url_secret_hash`, `url_secret_encrypted`, and
-  `previous_url_secret_hash`.
+  export/deletion. Export redacts `url_secret_hash`, `url_secret_encrypted`,
+  `hmac_secret_encrypted`, `hmac_verification_secret_encrypted`,
+  `previous_url_secret_hash`, and `previous_hmac_secret_encrypted`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed for ingress and stored encrypted for `webhookUrlApply` and the
   owner reveal in package settings. MCP mint, rotate, list, apply, and synthetic
   dispatch never return the credential URL. Verification secrets stay in the
-  secrets primitive.
+  secrets primitive; previous signing snapshots are platform ciphertext only.
 
 `webhookSyntheticDispatch` is the interactive-MCP smoke test for one minted
 webhook. It skips the public URL and HMAC path, invokes the bound export with a

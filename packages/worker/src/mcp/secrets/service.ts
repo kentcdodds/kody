@@ -22,6 +22,7 @@ import {
 	encryptSecretValue,
 	userSecretContext,
 } from './crypto.ts'
+import { rotateWebhookHmacSecretsForSecretValueChange } from '#worker/webhooks/hmac-rotation.ts'
 import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
 	getSecretBindingKey,
@@ -180,6 +181,18 @@ export async function saveSecret(
 				: null,
 		}),
 	})
+	let previousPlaintext: string | null = null
+	if (existingEntry) {
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			previousPlaintext = null
+		}
+	}
 	const now = new Date().toISOString()
 	const entryExpiresAt = nextSecretExpiresAt({
 		existing: existingEntry?.expires_at,
@@ -199,6 +212,20 @@ export async function saveSecret(
 			updated_at: now,
 		},
 	})
+	if (
+		previousPlaintext !== null &&
+		previousPlaintext !== value &&
+		(input.scope === 'user' || input.scope === 'package')
+	) {
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: name,
+			previousPlaintext,
+			nextPlaintext: value,
+			now,
+		})
+	}
 	if (existingEntry == null && input.scope === 'user') {
 		await stampFirstSecret(
 			input.env.APP_DB,
@@ -587,6 +614,35 @@ async function saveSecretsAtomically(input: {
 			updated_at: now,
 		})),
 	})
+	if (input.scope === 'user' || input.scope === 'package') {
+		for (const entry of prepared) {
+			if (!entry.existingEntry) continue
+			const nextValue = input.secrets.find(
+				(secret) => secret.name.trim() === entry.name,
+			)?.value
+			if (!nextValue) continue
+			let previousPlaintext: string | null = null
+			try {
+				previousPlaintext = await decryptSecretValue(
+					input.env,
+					entry.existingEntry.encrypted_value,
+					userSecretContext(input.userId),
+				)
+			} catch {
+				continue
+			}
+			const trimmedNext = nextValue.trim()
+			if (previousPlaintext === trimmedNext) continue
+			await rotateWebhookHmacSecretsForSecretValueChange({
+				env: input.env,
+				userId: input.userId,
+				secretName: entry.name,
+				previousPlaintext,
+				nextPlaintext: trimmedNext,
+				now,
+			})
+		}
+	}
 	if (input.scope === 'user' && newSecretCount > 0) {
 		await stampFirstSecret(
 			input.env.APP_DB,
@@ -903,6 +959,18 @@ export async function updateSecret(
 	if (hasValueUpdate && !nextValue) {
 		throw new Error('Secret value must not be empty.')
 	}
+	let previousPlaintext: string | null = null
+	if (hasValueUpdate) {
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			previousPlaintext = null
+		}
+	}
 	const now = new Date().toISOString()
 	const entryExpiresAt = nextSecretExpiresAt({
 		existing: existingEntry.expires_at,
@@ -928,6 +996,21 @@ export async function updateSecret(
 			updated_at: now,
 		},
 	})
+	if (
+		hasValueUpdate &&
+		previousPlaintext !== null &&
+		previousPlaintext !== nextValue &&
+		(input.scope === 'user' || input.scope === 'package')
+	) {
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: name,
+			previousPlaintext,
+			nextPlaintext: nextValue!,
+			now,
+		})
+	}
 	return toSecretMetadata({
 		name,
 		scope: input.scope,

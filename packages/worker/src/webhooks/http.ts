@@ -66,6 +66,7 @@ import {
 } from './params.ts'
 import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 import {
+	clearWebhookEndpointPreviousHmacSecret,
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
@@ -757,6 +758,18 @@ export async function handleWebhookIngressRequest(
 			console.warn('webhook-signature-matched-stored-secret-not-declared', {
 				endpointId: liveEndpoint.id,
 				secretName: verification.secretName,
+			})
+		}
+		// A delivery that verifies under the current key retires the previous
+		// signing secret early (same idea as URL overlap on the new URL).
+		if (
+			matched.source !== 'previous' &&
+			hmacSecrets.some((secret) => secret.source === 'previous')
+		) {
+			await clearWebhookEndpointPreviousHmacSecret({
+				db: env.APP_DB,
+				userId: liveEndpoint.userId,
+				endpointId: liveEndpoint.id,
 			})
 		}
 	}

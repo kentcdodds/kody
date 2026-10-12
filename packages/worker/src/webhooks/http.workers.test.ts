@@ -23,8 +23,12 @@ import {
 	disableEnablement,
 	insertEnablement,
 } from '#worker/enablements/repo.ts'
+import { encryptWebhookVerificationSnapshot } from './hmac-rotation.ts'
 import { mintPackageOwnedWebhookHmacCiphertext } from './signing-secret.ts'
-import { webhookRateLimitConfig } from './types.ts'
+import {
+	webhookHmacSecretRotationGraceMs,
+	webhookRateLimitConfig,
+} from './types.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
@@ -187,8 +191,13 @@ async function ensureSchema(db: D1Database) {
 				url_secret_hash TEXT NOT NULL,
 				url_secret_encrypted TEXT,
 				hmac_secret_encrypted TEXT,
+				hmac_secret_name TEXT,
+				hmac_verification_secret_encrypted TEXT,
 				previous_url_secret_hash TEXT,
 				previous_url_secret_expires_at TEXT,
+				previous_hmac_secret_name TEXT,
+				previous_hmac_secret_encrypted TEXT,
+				previous_hmac_secret_expires_at TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				deleted_at TEXT,
 				created_at TEXT NOT NULL,
@@ -980,6 +989,113 @@ test('a declared verification.secretName wins over the stored generated secret, 
 	expect(
 		(await listDeliveries(userId, 'stripe')).map((run) => run.errorMessage),
 	).toEqual(expect.arrayContaining(['invalid_signature']))
+})
+
+test('signing-secret rotation grace accepts the previous key for 24h, then rejects it', async () => {
+	const userId = await setupOwnerWithWebhooks(['stripe-rotate'])
+	await useNamedSecret('stripe-rotate')
+	const orgId = ownerIdFromStored(userId)
+	const previousSecret = 'stripe-signing-secret-v1'
+	const currentSecret = 'stripe-signing-secret-v2'
+	const snapshot = await encryptWebhookVerificationSnapshot({
+		env,
+		userId: orgId,
+		endpointId: 'mint-stripe-rotate',
+		plaintext: currentSecret,
+	})
+	const previousEncrypted = await encryptWebhookVerificationSnapshot({
+		env,
+		userId: orgId,
+		endpointId: 'mint-stripe-rotate',
+		plaintext: previousSecret,
+	})
+	const graceUntil = new Date(
+		Date.now() + webhookHmacSecretRotationGraceMs,
+	).toISOString()
+	await env.APP_DB.prepare(
+		`UPDATE webhook_endpoints
+		 SET hmac_secret_name = ?,
+			 hmac_verification_secret_encrypted = ?,
+			 previous_hmac_secret_name = ?,
+			 previous_hmac_secret_encrypted = ?,
+			 previous_hmac_secret_expires_at = ?
+		 WHERE id = ?`,
+	)
+		.bind(
+			'stripeWebhookSecret',
+			snapshot,
+			'stripeWebhookSecret',
+			previousEncrypted,
+			graceUntil,
+			'mint-stripe-rotate',
+		)
+		.run()
+	declareWebhook({
+		name: 'stripe-rotate',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'stripe-signature',
+			secretName: 'stripeWebhookSecret',
+			encoding: 'hex',
+			signedPayload: 'timestamp.body',
+		},
+		replay: {
+			timestampHeader: 'Stripe-Signature',
+			timestampFormat: 'stripe-signature',
+			toleranceSeconds: 300,
+		},
+	})
+	mockSecretValue(currentSecret)
+	const body = JSON.stringify({ type: 'invoice.paid' })
+	const stripeSigned = async (secret: string) => {
+		const seconds = Math.floor(Date.now() / 1000)
+		const payload = buildWebhookTimestampBodyPayload({
+			timestampToken: String(seconds),
+			body: encodeBody(body),
+		})
+		return {
+			body,
+			headers: {
+				'stripe-signature': `t=${seconds},v1=${await sign(payload, null, secret)}`,
+			},
+		}
+	}
+
+	expect(
+		await statusOf('stripe-rotate', await stripeSigned(previousSecret)),
+	).toBe(202)
+	expect(
+		await statusOf('stripe-rotate', await stripeSigned(currentSecret)),
+	).toBe(202)
+	expect(
+		await statusOf(
+			'stripe-rotate',
+			await stripeSigned('unrelated-other-secret'),
+		),
+	).toBe(401)
+
+	// Re-seed an already-expired previous after the current-key delivery
+	// retired the live grace window early.
+	await env.APP_DB.prepare(
+		`UPDATE webhook_endpoints
+		 SET previous_hmac_secret_name = ?,
+			 previous_hmac_secret_encrypted = ?,
+			 previous_hmac_secret_expires_at = ?
+		 WHERE id = ?`,
+	)
+		.bind(
+			'stripeWebhookSecret',
+			previousEncrypted,
+			new Date(Date.now() - 1_000).toISOString(),
+			'mint-stripe-rotate',
+		)
+		.run()
+	expect(
+		await statusOf('stripe-rotate', await stripeSigned(previousSecret)),
+	).toBe(401)
+	expect(
+		await statusOf('stripe-rotate', await stripeSigned(currentSecret)),
+	).toBe(202)
 })
 
 test('a webhook with no enablement on answers 409 instead of running', async () => {
