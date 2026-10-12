@@ -1436,7 +1436,7 @@ on write unless a migration backfills existing rows.
   `0057-webhook-url-secret-encrypted.sql`,
   `0062-webhook-url-rotation-grace.sql`,
   `0072-webhook-hmac-secret-encrypted.sql`,
-  `0124-webhook-hmac-rotation-grace.sql`) stores per-user minted URL state for
+  `0125-webhook-hmac-rotation-grace.sql`) stores per-user minted URL state for
   `package.json#kody.webhooks`, keyed by `(user_id, package_id, webhook_name)`.
   URL secrets are SHA-256 hashed for ingress and AES-GCM encrypted
   (`url_secret_encrypted`) for server-side apply. Package-owned HMAC signing
