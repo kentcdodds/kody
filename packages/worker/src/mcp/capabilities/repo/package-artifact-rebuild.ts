@@ -408,6 +408,7 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 			sessionId: input.repoSessionId,
 			sourceId: input.sourceId,
 			userId: input.userId,
+			publishedCommit: input.publishedCommit,
 		}))
 	} catch (error) {
 		throwRebuildFailure({

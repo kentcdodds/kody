@@ -167,6 +167,7 @@ export type RepoSessionRpc = {
 		sessionId?: string
 		sourceId?: string
 		userId: string
+		publishedCommit: string
 	}) => Promise<{
 		stagingKey: string
 	}>

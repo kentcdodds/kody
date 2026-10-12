@@ -1024,17 +1024,50 @@ class RepoSessionBase extends DurableObject<Env> {
 		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 	}
 
+	private assertPublishedCommitUnchanged(input: {
+		source: EntitySourceRow
+		publishedCommit: string
+	}) {
+		const currentCommit = input.source.published_commit?.trim() || null
+		if (currentCommit === input.publishedCommit) return
+		throw new Error(
+			`Published commit changed from "${input.publishedCommit}" to "${currentCommit ?? 'unpublished'}" during package artifact rebuild; retry this package.`,
+		)
+	}
+
+	/**
+	 * Load source files for the requested published commit's immutable snapshot.
+	 * Never stages the current source row's commit when the caller asked for a
+	 * different one — that mislabels newer files under an older commit.
+	 * Workspace fallback is only allowed when the source is still at that
+	 * commit (re-checked after a snapshot miss).
+	 */
 	private async collectSourceFilesForPublishedArtifactRebuild(
 		source: EntitySourceRow,
+		publishedCommit: string,
 	) {
+		const sourceAtPublishedCommit = {
+			...source,
+			published_commit: publishedCommit,
+		}
 		const snapshot = await loadPublishedSourceSnapshot({
 			env: this.env,
 			userId: source.user_id,
-			source,
+			source: sourceAtPublishedCommit,
 		})
 		if (snapshot && typeof snapshot.files[source.manifest_path] === 'string') {
 			return snapshot.files
 		}
+		// Snapshot miss: only fall back to the session workspace when the
+		// source is still published at the requested commit.
+		const freshSource = await this.resolvePublishSource({
+			sourceId: source.id,
+			userId: source.user_id,
+		})
+		this.assertPublishedCommitUnchanged({
+			source: freshSource,
+			publishedCommit,
+		})
 		const workspaceFiles = await this.collectWorkspaceFiles()
 		if (typeof workspaceFiles[source.manifest_path] === 'string') {
 			return workspaceFiles
@@ -2621,15 +2654,18 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Collect workspace files once on the long-lived publish session and stage
-	 * the snapshot in KV for throwaway rebuild isolates (see
-	 * isolated-artifact-rebuild.ts). Callers list and filter targets before
-	 * staging so already-built resumes skip this work.
+	 * Collect the requested published commit's immutable snapshot once on the
+	 * long-lived publish session and stage it in KV for throwaway rebuild
+	 * isolates (see isolated-artifact-rebuild.ts). Callers list and filter
+	 * targets before staging so already-built resumes skip this work.
+	 * Rejects when the source's current published commit differs so a
+	 * concurrent publish cannot stage newer files under an older label.
 	 */
 	async stagePublishedPackageArtifactRebuild(input: {
 		sessionId?: string
 		sourceId?: string
 		userId: OwnerId
+		publishedCommit: string
 	}): Promise<{
 		stagingKey: string
 	}> {
@@ -2639,6 +2675,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				'Published bundle artifacts can only be rebuilt for packages.',
 			)
 		}
+		this.assertPublishedCommitUnchanged({
+			source,
+			publishedCommit: input.publishedCommit,
+		})
 		const stagingKv = (this.env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
 			.BUNDLE_ARTIFACTS_KV
 		if (!stagingKv) {
@@ -2647,11 +2687,21 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const sourceFiles =
-			await this.collectSourceFilesForPublishedArtifactRebuild(source)
+			await this.collectSourceFilesForPublishedArtifactRebuild(
+				source,
+				input.publishedCommit,
+			)
 		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
-		await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
-			expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
-		})
+		await stagingKv.put(
+			stagingKey,
+			JSON.stringify({
+				sourceFiles,
+				publishedCommit: input.publishedCommit,
+			}),
+			{
+				expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
+			},
+		)
 		return { stagingKey }
 	}
 
@@ -2725,11 +2775,20 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
 			sourceFiles?: Record<string, string>
+			publishedCommit?: string
 		}>(input.stagingKey, 'json')
 		const sourceFiles = staged?.sourceFiles
 		if (!sourceFiles) {
 			const message =
 				'Isolated artifact rebuild staging data expired or is missing; re-run the publish capability to repair artifacts.'
+			results.push(...failTargets(remaining, message))
+			return { ok: false, message, results }
+		}
+		if (
+			typeof staged.publishedCommit === 'string' &&
+			staged.publishedCommit !== input.publishedCommit
+		) {
+			const message = `Isolated artifact rebuild staging was for commit "${staged.publishedCommit}" but rebuild requested "${input.publishedCommit}".`
 			results.push(...failTargets(remaining, message))
 			return { ok: false, message, results }
 		}
@@ -2744,6 +2803,12 @@ class RepoSessionBase extends DurableObject<Env> {
 				results.push(...failTargets(remaining, message))
 				return { ok: false, message, results }
 			}
+			// Reject before writing so a publish that landed after staging
+			// cannot leave newer files labeled as the caller's older commit.
+			this.assertPublishedCommitUnchanged({
+				source,
+				publishedCommit: input.publishedCommit,
+			})
 			const savedPackage = await getSavedPackageById(this.env.APP_DB, {
 				userId: input.userId,
 				packageId: source.entity_id,
@@ -2829,6 +2894,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				'Published bundle artifacts can only be rebuilt for packages.',
 			)
 		}
+		this.assertPublishedCommitUnchanged({
+			source,
+			publishedCommit: input.publishedCommit,
+		})
 		const savedPackage = await getSavedPackageById(this.env.APP_DB, {
 			userId: input.userId,
 			packageId: source.entity_id,
@@ -2837,9 +2906,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(`Saved package "${source.entity_id}" was not found.`)
 		}
 		const sourceFiles =
-			await this.collectSourceFilesForPublishedArtifactRebuild(source)
+			await this.collectSourceFilesForPublishedArtifactRebuild(
+				source,
+				input.publishedCommit,
+			)
+		// Re-check immediately before persist: staging/collection is not
+		// atomic with a concurrent publish updating the source row.
+		const freshSource = await this.resolvePublishSource(input)
+		this.assertPublishedCommitUnchanged({
+			source: freshSource,
+			publishedCommit: input.publishedCommit,
+		})
 		const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
-			source,
+			source: freshSource,
 			savedPackage,
 			userId: input.userId,
 			publishedCommit: input.publishedCommit,

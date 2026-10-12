@@ -159,6 +159,12 @@ test('isolated rebuild lists then stages once, chunks targets per isolate with b
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		1,
 	)
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledWith({
+		sessionId: undefined,
+		sourceId: 'source-1',
+		userId: ownerIdFromStored('user-1'),
+		publishedCommit: 'commit-1',
+	})
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 	expect(touch).not.toHaveBeenCalled()
 	expect(runTargets(run)).toEqual([
