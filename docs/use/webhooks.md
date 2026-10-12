@@ -175,16 +175,21 @@ Destination URLs must be `https://`. Redirects are not followed. Auth is
 optional via `secretName` or `integration` (Bearer), or a caller-supplied
 `Authorization` header — not both. Destination `secretName` / `integration`
 authorize the outbound request; they are not the webhook HMAC signing secret.
+Owner destination approvals pin that auth to the **stable credential id** the
+name resolves to (same idea as credential grants), plus the destination shape
+(method, URL/host, headers, body). Rotating the credential's value keeps the
+approval; deleting and recreating the same name requires a fresh Allow.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
 grants, and locked-package publish approval: the capability returns an
 `approval_url` to `/connect/webhook-apply` with the exact method, URL,
 `{{webhookUrl}}` / `{{webhookSecret}}` injection sites, headers, body template,
-and auth mode. The signed-in owner Allows on the website (writing a durable
-destination grant); the agent then retries and the outbound request runs.
-Package runtimes cannot use `http` apply. Agents never grant access and never
-see the webhook credential.
+and auth mode (including the credential id when `secretName` / `integration` is
+set). The signed-in owner Allows on the website (writing a durable destination
+grant); the agent then retries and the outbound request runs. Package runtimes
+cannot use `http` apply. Agents never grant access and never see the webhook
+credential.
 
 ```ts
 await kody.webhooks.webhookUrlApply({

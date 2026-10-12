@@ -3,6 +3,7 @@ import {
 	buildWebhookApplyDestinationApprovalRequiredMessage,
 	buildWebhookApplyDestinationApprovalUrl,
 	fingerprintHttpApplyDestination,
+	fingerprintHttpApplyDestinationLegacy,
 	toHttpApplyDestinationSnapshot,
 } from './apply-destination-approval.ts'
 
@@ -30,11 +31,58 @@ test('http apply destination fingerprint is order-stable and change-sensitive', 
 		body: '{"webhookUrl":"{{webhookUrl}}"}',
 	}
 
-	const left = await fingerprintHttpApplyDestination(base)
-	const right = await fingerprintHttpApplyDestination(reordered)
-	const changed = await fingerprintHttpApplyDestination(changedBody)
+	const left = await fingerprintHttpApplyDestination(base, {
+		credentialId: 'cred-hooks',
+	})
+	const right = await fingerprintHttpApplyDestination(reordered, {
+		credentialId: 'cred-hooks',
+	})
+	const changed = await fingerprintHttpApplyDestination(changedBody, {
+		credentialId: 'cred-hooks',
+	})
 	expect(left).toBe(right)
 	expect(changed).not.toBe(left)
+})
+
+test('fingerprint keys auth by credential id, not secret name', async () => {
+	const destination = {
+		type: 'http' as const,
+		url: 'https://hooks.example/register',
+		method: 'POST' as const,
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksToken',
+	}
+	const sameCredential = await fingerprintHttpApplyDestination(
+		{ ...destination, secretName: 'renamedToken' },
+		{ credentialId: 'cred-hooks' },
+	)
+	const original = await fingerprintHttpApplyDestination(destination, {
+		credentialId: 'cred-hooks',
+	})
+	const replacedCredential = await fingerprintHttpApplyDestination(
+		destination,
+		{
+			credentialId: 'cred-hooks-replacement',
+		},
+	)
+	expect(sameCredential).toBe(original)
+	expect(replacedCredential).not.toBe(original)
+})
+
+test('legacy name-keyed fingerprint differs from credential-id fingerprint', async () => {
+	const destination = {
+		type: 'http' as const,
+		url: 'https://hooks.example/register',
+		method: 'POST' as const,
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksToken',
+	}
+	const legacy = await fingerprintHttpApplyDestinationLegacy(destination)
+	const current = await fingerprintHttpApplyDestination(destination, {
+		credentialId: 'cred-hooks',
+	})
+	expect(legacy).not.toBe(current)
 })
 
 test('approval url and message use the shared /connect/webhook-apply owner flow', async () => {
@@ -63,6 +111,29 @@ test('approval url and message use the shared /connect/webhook-apply owner flow'
 	expect(message).toContain(approvalUrl)
 	expect(message).toContain('method: PUT')
 	expect(message).toContain(destination.auth)
+})
+
+test('approval message pins credential id when auth uses a secret', () => {
+	const destination = toHttpApplyDestinationSnapshot(
+		{
+			type: 'http',
+			url: 'https://hooks.example/register',
+			method: 'POST',
+			body: '{"url":"{{webhookUrl}}"}',
+			secretName: 'hooksToken',
+		},
+		{ credentialId: 'cred-hooks' },
+	)
+	const message = buildWebhookApplyDestinationApprovalRequiredMessage({
+		approvalUrl:
+			'https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=abc',
+		destination,
+	})
+	expect(message).toContain('credential cred-hooks')
+	expect(message).toContain('pinned to credential cred-hooks')
+	expect(message).toContain(
+		'replacing it under the same name requires a fresh Allow',
+	)
 })
 
 test('approval message lists form-encoded {{webhookUrl}} body injection sites', async () => {

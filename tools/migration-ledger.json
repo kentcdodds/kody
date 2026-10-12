@@ -463,6 +463,10 @@
 		{
 			"filename": "0118-credential-login-config.sql",
 			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
+		},
+		{
+			"filename": "0119-webhook-apply-destination-credential-ids.sql",
+			"sha256": "83774eb28e390e41b6b15a52be6e51f0bd77d7fb85907500817c6c327e973b6a"
 		}
 	]
 }
