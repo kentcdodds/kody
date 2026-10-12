@@ -96,7 +96,8 @@ it does, permanently:
   ([0021](./0021-publish-gated-package-composition.md)) keep working.
 - Body, other, and computed placements are fine. Publish, `packageGet`, and
   `repoRunChecks` never warn in a way that implies breakage. Where a more secure
-  type fits a placement, they may gently suggest it.
+  type fits a placement, they may gently suggest it (see
+  [Which more secure type fits](#which-more-secure-type-fits)).
 - A Key can also be used through `credential(key)`, which places it by its
   `inject` rule. The same Key keeps filling placeholders.
 
@@ -124,8 +125,10 @@ owners opt into them:
 - `login`: the gateway runs the login exchange and injects only the session
   token; the login response never reaches code.
 - `url`: a whole-URL secret pinned to its own host, over HTTPS.
-- `signing`: signs or verifies requests. Webhook signature verification moves
-  here.
+- `signing`: signs requests (a JWT or an HMAC) for one of its hosts; code gets
+  the signature, never the key. Webhook verification keeps using Keys; a
+  `verify` operation can be added if an owner wants a signing-type webhook
+  secret.
 
 ### Credential fields
 
@@ -396,6 +399,31 @@ gate, publish refusal of placeholders, window, or owner email. The gateway keeps
 parsing placeholders, and by-name grants stay.
 
 **P9:** drop the grant-props fallbacks.
+
+### Which more secure type fits
+
+A guide for suggestions, not a requirement: every placement below keeps working
+as a Key. Publish, `packageGet`, and suggested rewrites use it to point an owner
+at a more secure type when one fits; where none fits, they say nothing.
+
+From the production credential inventory scan of 2026-10-12 (1034 packages, 881
+placeholder references):
+
+| Placement (references)                                                                      | More secure type that fits                            |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Header (355)                                                                                | Key with a `header` inject, through a scoped client   |
+| Query parameter (1)                                                                         | Key with a `query` inject                             |
+| URL path, such as `/bot<token>/` (20)                                                       | `url`                                                 |
+| Body of a login request: a password or a refresh token posted for a session (13)            | `login`, or OAuth when the provider is an integration |
+| Signing key, including `secretJwtSign` (19)                                                 | `signing`                                             |
+| Webhook verification secret (4)                                                             | None needed; Keys verify webhooks                     |
+| Other body fields, mostly identifiers such as a chat id (about 12)                          | None needed                                           |
+| Values the scan cannot follow to a request: objects, returns, arguments, arrays (about 265) | None needed                                           |
+| Computed (256) and vault (10) placeholders                                                  | None needed                                           |
+
+The scan counts each read of a value once; the 213 variable definitions it also
+records are not placements. When a new placement shows up that no type fits, it
+stays a Key, and the revisit-if below applies only if someone wants it covered.
 
 ## Consequences
 
