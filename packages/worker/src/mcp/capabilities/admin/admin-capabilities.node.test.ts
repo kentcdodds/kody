@@ -879,6 +879,34 @@ test.each(triggeredAdminRuns)(
 	},
 )
 
+test('a triggered call that fails input validation still writes its trigger audit row', async () => {
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['admin'], {
+		source: subscriptionRun(),
+	})
+	await expect(
+		adminUserVerifyCapability.handler(
+			{
+				email: 'jane@example.com',
+				username: 'jane',
+				action: 'mark_verified',
+			},
+			t.ctx,
+		),
+	).rejects.toThrow('Invalid input for capability "adminUserVerify"')
+	expect(t.auditEvents()).toEqual([
+		{
+			action: 'adminUserVerify',
+			result: 'failure',
+			reason: expect.stringMatching(
+				new RegExp(
+					`^${triggerAudit('subscription')};error=Invalid input for capability "adminUserVerify"`,
+				),
+			),
+		},
+	])
+	expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
+})
+
 const triggeredAdminRefusals: Array<{
 	name: string
 	source?: RequestSource

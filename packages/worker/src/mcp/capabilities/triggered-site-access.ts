@@ -87,7 +87,10 @@ function describeDenial(
 
 /**
  * Run a site-admin capability called from a non-interactive run and record
- * one `admin` audit row naming the trigger, whether it succeeds or throws.
+ * one `admin` audit row naming the trigger. `run` covers input validation
+ * through output validation; the row's result says whether it returned or
+ * threw. A capability that reports a failure in its returned result records
+ * that verdict in its own audit row.
  */
 export async function auditTriggeredSiteCapabilityCall<TResult>(
 	input: {

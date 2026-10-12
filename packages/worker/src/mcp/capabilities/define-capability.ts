@@ -148,111 +148,114 @@ export function defineCapability<
 				definition.orgPermission,
 			)
 
-			let parsedArgs: InferCapabilitySchema<TInputSchema>
-			try {
-				parsedArgs = inputParser(args) as InferCapabilitySchema<TInputSchema>
-			} catch (error) {
-				const callerError = createCapabilityValidationError(
-					error,
-					definition.name,
-					'input',
-				)
-				const { errorName, errorMessage } = errorFields(callerError)
-				logMcpEvent({
-					category: 'mcp',
-					tool: 'capability',
-					capabilityName: definition.name,
-					domain: definition.domain,
-					capabilitySource: source,
-					outcome: 'failure',
-					durationMs: Math.round(performance.now() - startedAt),
-					...mcpCallerFields,
-					failurePhase: 'parse_input',
-					errorName,
-					errorMessage,
-					cause: callerError,
-				})
-				throw callerError
+			const invoke = async (): Promise<CapabilityOutput<TOutputSchema>> => {
+				let parsedArgs: InferCapabilitySchema<TInputSchema>
+				try {
+					parsedArgs = inputParser(args) as InferCapabilitySchema<TInputSchema>
+				} catch (error) {
+					const callerError = createCapabilityValidationError(
+						error,
+						definition.name,
+						'input',
+					)
+					const { errorName, errorMessage } = errorFields(callerError)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'capability',
+						capabilityName: definition.name,
+						domain: definition.domain,
+						capabilitySource: source,
+						outcome: 'failure',
+						durationMs: Math.round(performance.now() - startedAt),
+						...mcpCallerFields,
+						failurePhase: 'parse_input',
+						errorName,
+						errorMessage,
+						cause: callerError,
+					})
+					throw callerError
+				}
+
+				const livePersonRule = definition.requiresLivePerson
+				if (
+					typeof livePersonRule === 'function' &&
+					(await livePersonRule(parsedArgs, ctx))
+				) {
+					assertLivePerson(ctx.callerContext.request, definition.name)
+				}
+
+				let result: Awaited<ReturnType<typeof definition.handler>>
+				try {
+					result = await definition.handler(parsedArgs, ctx)
+				} catch (error) {
+					const { errorName, errorMessage } = errorFields(error)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'capability',
+						capabilityName: definition.name,
+						domain: definition.domain,
+						capabilitySource: source,
+						outcome: 'failure',
+						durationMs: Math.round(performance.now() - startedAt),
+						...mcpCallerFields,
+						failurePhase: 'handler',
+						errorName,
+						errorMessage,
+						cause: error,
+					})
+					throw error
+				}
+
+				try {
+					const finalized = (
+						outputParser ? outputParser(result) : result
+					) as CapabilityOutput<TOutputSchema>
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'capability',
+						capabilityName: definition.name,
+						domain: definition.domain,
+						capabilitySource: source,
+						outcome: 'success',
+						durationMs: Math.round(performance.now() - startedAt),
+						...mcpCallerFields,
+					})
+					return finalized
+				} catch (error) {
+					const validationError = createCapabilityValidationError(
+						error,
+						definition.name,
+						'output',
+					)
+					const { errorName, errorMessage } = errorFields(validationError)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'capability',
+						capabilityName: definition.name,
+						domain: definition.domain,
+						capabilitySource: source,
+						outcome: 'failure',
+						durationMs: Math.round(performance.now() - startedAt),
+						...mcpCallerFields,
+						failurePhase: 'parse_output',
+						errorName,
+						errorMessage,
+						cause: validationError,
+					})
+					throw validationError
+				}
 			}
 
-			const livePersonRule = definition.requiresLivePerson
-			if (
-				typeof livePersonRule === 'function' &&
-				(await livePersonRule(parsedArgs, ctx))
-			) {
-				assertLivePerson(ctx.callerContext.request, definition.name)
-			}
-
-			let result: Awaited<ReturnType<typeof definition.handler>>
-			try {
-				result = siteAccessTrigger
-					? await auditTriggeredSiteCapabilityCall(
-							{
-								env: ctx.env,
-								callerContext: ctx.callerContext,
-								capabilityName: definition.name,
-								trigger: siteAccessTrigger,
-							},
-							() => definition.handler(parsedArgs, ctx),
-						)
-					: await definition.handler(parsedArgs, ctx)
-			} catch (error) {
-				const { errorName, errorMessage } = errorFields(error)
-				logMcpEvent({
-					category: 'mcp',
-					tool: 'capability',
+			if (!siteAccessTrigger) return await invoke()
+			return await auditTriggeredSiteCapabilityCall(
+				{
+					env: ctx.env,
+					callerContext: ctx.callerContext,
 					capabilityName: definition.name,
-					domain: definition.domain,
-					capabilitySource: source,
-					outcome: 'failure',
-					durationMs: Math.round(performance.now() - startedAt),
-					...mcpCallerFields,
-					failurePhase: 'handler',
-					errorName,
-					errorMessage,
-					cause: error,
-				})
-				throw error
-			}
-
-			try {
-				const finalized = (
-					outputParser ? outputParser(result) : result
-				) as CapabilityOutput<TOutputSchema>
-				logMcpEvent({
-					category: 'mcp',
-					tool: 'capability',
-					capabilityName: definition.name,
-					domain: definition.domain,
-					capabilitySource: source,
-					outcome: 'success',
-					durationMs: Math.round(performance.now() - startedAt),
-					...mcpCallerFields,
-				})
-				return finalized
-			} catch (error) {
-				const validationError = createCapabilityValidationError(
-					error,
-					definition.name,
-					'output',
-				)
-				const { errorName, errorMessage } = errorFields(validationError)
-				logMcpEvent({
-					category: 'mcp',
-					tool: 'capability',
-					capabilityName: definition.name,
-					domain: definition.domain,
-					capabilitySource: source,
-					outcome: 'failure',
-					durationMs: Math.round(performance.now() - startedAt),
-					...mcpCallerFields,
-					failurePhase: 'parse_output',
-					errorName,
-					errorMessage,
-					cause: validationError,
-				})
-				throw validationError
-			}
+					trigger: siteAccessTrigger,
+				},
+				invoke,
+			)
 		},
 	}
 }

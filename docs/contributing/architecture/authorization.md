@@ -291,8 +291,11 @@ finds no live person behind the request:
   whose action is the capability name and whose reason is
   `trigger=<job|webhook|subscription|email|package-app|unattended>;trigger_id=<id>;actor=<stable id>;package_id=<id>`,
   plus `;error=<message>` on failure. `trigger_id` is the enablement id when an
-  enablement runs it, otherwise the job, webhook, or event source id. This row
-  is in addition to any audit row the capability writes itself.
+  enablement runs it, otherwise the job, webhook, or event source id. The row
+  covers input validation through output validation, and its result says whether
+  the call returned or threw. It is in addition to any audit row the capability
+  writes itself, which keeps the capability's own verdict (for example a refused
+  `adminOrgResourceTransfer` that returns normally).
 
 Both steps live in
 `packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
