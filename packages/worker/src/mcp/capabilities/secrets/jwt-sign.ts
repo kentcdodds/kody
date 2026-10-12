@@ -12,12 +12,9 @@ import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
-	decodeHmacKeyMaterial,
-	extractSecretMaterial,
-	isHmacJwtAlgorithm,
 	jwtAlgorithms,
 	jwtKeyEncodings,
-	signJwt,
+	signJwtWithSecret,
 } from './jwt-signing.ts'
 
 const jwtAlgorithmSchema = z.enum(jwtAlgorithms)
@@ -134,37 +131,11 @@ export const jwtSignCapability = defineDomainCapability(
 				)
 			}
 
-			const secretMaterial = extractSecretMaterial({
-				secretValue: resolved.value,
-				jsonField: args.private_key_json_field,
-			})
-
-			if (isHmacJwtAlgorithm(args.algorithm)) {
-				return {
-					jwt: await signJwt({
-						algorithm: args.algorithm,
-						hmacKeyBytes: decodeHmacKeyMaterial({
-							secretValue: secretMaterial,
-							encoding: args.key_encoding ?? 'base64',
-							algorithm: args.algorithm,
-						}),
-						header: args.header,
-						claims: args.claims,
-					}),
-					algorithm: args.algorithm,
-				}
-			}
-
-			if (args.key_encoding !== undefined) {
-				throw new Error(
-					'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
-				)
-			}
-
 			return {
-				jwt: await signJwt({
+				jwt: await signJwtWithSecret(resolved.value, {
 					algorithm: args.algorithm,
-					privateKeyPem: secretMaterial,
+					keyEncoding: args.key_encoding,
+					jsonField: args.private_key_json_field,
 					header: args.header,
 					claims: args.claims,
 				}),

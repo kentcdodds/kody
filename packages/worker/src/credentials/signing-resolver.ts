@@ -1,0 +1,88 @@
+/**
+ * The `signing` credential kind (ADR 0068): the value is key material that
+ * never leaves the host. Code asks for a signature (a JWT over its claims, or
+ * an HMAC over its message) and gets back only the signature.
+ */
+import {
+	signJwtWithSecret,
+	type SignJwtWithSecretInput,
+} from '#mcp/capabilities/secrets/jwt-signing.ts'
+import { computeWebhookHmacSignature } from '#worker/webhooks/crypto.ts'
+import {
+	type WebhookHmacAlgorithm,
+	type WebhookSignatureEncoding,
+} from '#worker/webhooks/types.ts'
+import { type CredentialResolver } from './credential-resolver.ts'
+import {
+	authorizeStoredCredential,
+	findStoredCredential,
+} from './stored-credential.ts'
+
+export type SigningOperation =
+	| ({ type: 'jwt' } & SignJwtWithSecretInput)
+	| {
+			type: 'hmac'
+			algorithm: WebhookHmacAlgorithm
+			message: string | ArrayBuffer
+			encoding: WebhookSignatureEncoding
+			/** Prepended to the encoded digest, e.g. `sha256=`. */
+			prefix?: string
+	  }
+
+export type SigningResult = { signature: string }
+
+async function sign(value: string, operation: SigningOperation) {
+	switch (operation.type) {
+		case 'jwt':
+			return await signJwtWithSecret(value, operation)
+		case 'hmac':
+			return await computeWebhookHmacSignature({
+				algorithm: operation.algorithm,
+				secret: value,
+				body:
+					typeof operation.message === 'string'
+						? (new TextEncoder().encode(operation.message)
+								.buffer as ArrayBuffer)
+						: operation.message,
+				encoding: operation.encoding,
+				prefix: operation.prefix,
+			})
+		default: {
+			const exhaustive: never = operation
+			throw new Error(`Unhandled signing operation: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export const signingCredentialResolver: CredentialResolver<'signing'> = {
+	auditSubject: (credential) => ({
+		use: credential.use,
+		resourceType: 'secret',
+		name: credential.credentialId,
+		credentialId: null,
+		details: {
+			operation: credential.operation.type,
+			algorithm: credential.operation.algorithm,
+		},
+	}),
+	async resolve(call) {
+		const { credential } = call
+		const lookup = await findStoredCredential(call, credential.credentialId)
+		return {
+			async authorize() {
+				await authorizeStoredCredential(
+					call,
+					credential.credentialId,
+					lookup,
+					'signing',
+				)
+			},
+			async apply(): Promise<SigningResult> {
+				// `authorize` returned, so the lookup found a usable credential.
+				const value = await lookup!.readValue()
+				return { signature: await sign(value, credential.operation) }
+			},
+		}
+	},
+	isFound: () => true,
+}

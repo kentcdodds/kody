@@ -58,6 +58,7 @@ import {
 	vaultSecretResolver,
 	webhookSecretResolver,
 } from './secret-resolvers.ts'
+import { signingCredentialResolver } from './signing-resolver.ts'
 import { urlCredentialResolver } from './url-resolver.ts'
 
 const credentialResolvers: {
@@ -71,6 +72,7 @@ const credentialResolvers: {
 	'integration-refresh': integrationRefreshResolver,
 	'mcp-connection': mcpConnectionResolver,
 	url: urlCredentialResolver,
+	signing: signingCredentialResolver,
 }
 
 export async function resolveCredential<T extends CredentialTarget>(
