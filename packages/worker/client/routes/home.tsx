@@ -64,6 +64,7 @@ import {
 	LandingPrimitives,
 	landingPrimitivesSectionId,
 } from '#client/routes/landing-primitives.tsx'
+import { LandingPrimitiveCards } from '#client/routes/landing-primitive-cards.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
@@ -316,6 +317,7 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				<LandingPrimitives />
+				<LandingPrimitiveCards />
 
 				<section aria-labelledby="vs-title" class="landing-vs">
 					<h2 id="vs-title" class="landing-section-heading">
