@@ -1,7 +1,6 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { findSecretForUse } from '#mcp/secrets/service.ts'
+import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	countWebhookSecretPlaceholdersInFormBody,
@@ -257,8 +256,47 @@ export function buildWebhookApplyDestinationApprovalRequiredMessage(input: {
 	].join('\n')
 }
 
+async function lookupLiveSecretCredentialId(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	secretName: string
+}): Promise<string | null> {
+	// Match webhook-secret apply: package bucket first, then user; kind=secret;
+	// live and unexpired only (same filters as findSecretForUse).
+	const now = new Date().toISOString()
+	const packageRow = await input.db
+		.prepare(
+			`SELECT e.id AS id
+			FROM secret_entries e
+			JOIN secret_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ? AND b.scope = 'package' AND b.binding_key = ?
+				AND e.name = ? AND e.kind = 'secret'
+				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+				AND (e.expires_at IS NULL OR e.expires_at > ?)
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.packageId, input.secretName, now)
+		.first<{ id: string }>()
+	if (packageRow?.id) return packageRow.id
+	const userRow = await input.db
+		.prepare(
+			`SELECT e.id AS id
+			FROM secret_entries e
+			JOIN secret_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+				AND e.name = ? AND e.kind = 'secret'
+				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+				AND (e.expires_at IS NULL OR e.expires_at > ?)
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.secretName, now)
+		.first<{ id: string }>()
+	return userRow?.id ?? null
+}
+
 async function resolveDestinationCredentialId(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB'>
 	userId: OwnerId
 	packageId: string
 	destination: WebhookUrlApplyHttpDestination
@@ -269,20 +307,13 @@ async function resolveDestinationCredentialId(input: {
 		throw new Error('Provide either integration or secretName, not both.')
 	}
 	if (secretName) {
-		// Same live lookup as webhook-secret apply: package then user, kind=secret,
-		// unexpired. Pins the credential id that outbound Bearer auth will use.
-		const lookup = await findSecretForUse({
-			env: input.env,
+		const credentialId = await lookupLiveSecretCredentialId({
+			db: input.env.APP_DB,
 			userId: input.userId,
-			name: secretName,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: input.packageId,
-			},
+			packageId: input.packageId,
+			secretName,
 		})
-		const credentialId = lookup.found.credentialId
-		if (!lookup.found.found || !credentialId) {
+		if (!credentialId) {
 			throw new Error(
 				`Secret "${secretName}" was not found. Save a live secret (not expired, kind secret), then retry webhookUrlApply so the owner can approve this destination for that credential.`,
 			)
@@ -290,26 +321,19 @@ async function resolveDestinationCredentialId(input: {
 		return credentialId
 	}
 	if (integrationName) {
-		const canonical = canonicalIntegrationName(integrationName)
-		if (!canonical) {
+		// Same canonical name path as getJoinedIntegration / apply.
+		const joined = await getJoinedIntegration({
+			env: input.env,
+			userId: input.userId,
+			name: integrationName,
+		})
+		const credentialId = joined?.connection.credentialId?.trim() || null
+		if (!credentialId) {
 			throw new Error(
 				`Integration "${integrationName}" was not found. Connect it, then retry webhookUrlApply so the owner can approve this destination for that credential.`,
 			)
 		}
-		const row = await input.env.APP_DB.prepare(
-			`SELECT id
-				FROM user_integrations
-				WHERE user_id = ? AND name = ? AND deleted_at IS NULL
-				LIMIT 1`,
-		)
-			.bind(input.userId, canonical)
-			.first<{ id: string }>()
-		if (!row?.id) {
-			throw new Error(
-				`Integration "${integrationName}" was not found. Connect it, then retry webhookUrlApply so the owner can approve this destination for that credential.`,
-			)
-		}
-		return row.id
+		return credentialId
 	}
 	return null
 }
@@ -700,7 +724,7 @@ export async function loadWebhookApplyDestinationApprovalView(input: {
 }
 
 export async function requireWebhookApplyDestinationGrantOrPending(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB'>
 	userId: OwnerId
 	handle: string
 	destination: WebhookUrlApplyHttpDestination

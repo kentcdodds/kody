@@ -161,10 +161,7 @@ test('backfill preserves access; replaced credential under same name needs appro
 	runMigration(sqlite)
 
 	const db = createD1FromSqlite(sqlite)
-	const env = {
-		APP_DB: db,
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	const env = { APP_DB: db } as Pick<Env, 'APP_DB'>
 	const afterBackfill = await requireWebhookApplyDestinationGrantOrPending({
 		env,
 		userId: 'org-a' as never,
@@ -270,10 +267,7 @@ test("deleted credential's approvals do not transfer to a later recreate", async
 		.run()
 
 	const db = createD1FromSqlite(sqlite)
-	const env = {
-		APP_DB: db,
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	const env = { APP_DB: db } as Pick<Env, 'APP_DB'>
 	const gate = await requireWebhookApplyDestinationGrantOrPending({
 		env,
 		userId: 'org-a' as never,
