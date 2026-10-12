@@ -6,7 +6,7 @@ import { isSamePackageRepoChromeHref } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
 import { isProfilePackageFilterOnlyHrefChange } from '#universal/profile-search.ts'
 import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.ts'
-import { applyDocumentHead } from './document-head.ts'
+import { prepareDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import { syncPasswordManagerPageIgnore } from './password-manager-page-ignore.ts'
 import {
@@ -184,9 +184,13 @@ export function shouldUseViewTransition(input: {
 	canStart: boolean
 	prefersReducedMotion: boolean
 	hasPersistentShell?: boolean
+	historyAction?: RouterHistoryAction
 }) {
 	if (!input.canStart) return false
 	if (input.prefersReducedMotion) return false
+	// Back/Forward lands on a page the user already saw, at its saved scroll
+	// position. Fading and sliding it in reads as the page moving into place.
+	if (input.historyAction === 'pop') return false
 	if (input.from === input.to) return false
 	if (isSameShellAreaNavigation(input.from, input.to)) return false
 	if (isSameOnboardingNavigation(input.from, input.to)) return false
@@ -206,7 +210,18 @@ export function shouldUseViewTransition(input: {
 	return true
 }
 
-function swapDom(onSwapped?: () => void) {
+type SwapHooks = {
+	historyAction?: RouterHistoryAction
+	/**
+	 * Runs in the same task as the DOM update — inside the view transition
+	 * update callback, after the old snapshot was captured.
+	 */
+	beforeSwap?: () => void
+	onSwapped?: () => void
+}
+
+function swapDom({ beforeSwap, onSwapped }: SwapHooks) {
+	beforeSwap?.()
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
 	// `<body>` is outside `#root`, so SPA navigations must add or remove
 	// 1Password's page ignore as the route changes.
@@ -246,7 +261,7 @@ const viewTransitionScheduler = createViewTransitionScheduler(
 	resolveViewTransitionStarter,
 )
 
-function notify(onSwapped?: () => void) {
+function notify(hooks: SwapHooks = {}) {
 	const to = getCurrentDocumentPath()
 	if (
 		!shouldUseViewTransition({
@@ -256,18 +271,19 @@ function notify(onSwapped?: () => void) {
 			prefersReducedMotion: matchMedia('(prefers-reduced-motion: reduce)')
 				.matches,
 			hasPersistentShell: documentHasPersistentShell(),
+			historyAction: hooks.historyAction,
 		})
 	) {
 		// Instant path: drop any in-flight/queued VT so a superseded chain
 		// step cannot restart a transition after this swap.
 		viewTransitionScheduler.cancelPending()
-		void swapDom(onSwapped)
+		void swapDom(hooks)
 		return
 	}
 	// Serialize superseding navigations: skip the active animation, then wait
 	// for its update callback to settle before starting the next transition
 	// (Chrome InvalidStateError / unhandledrejection — KODY-CLOUDFLARE-3Y).
-	viewTransitionScheduler.run(() => swapDom(onSwapped))
+	viewTransitionScheduler.run(() => swapDom(hooks))
 }
 
 function createNavigationEventDetail(
@@ -733,38 +749,39 @@ function shouldReplaceHistory(options?: NavigationRunOptions) {
 	return options?.replace === true || options?.historyAction === 'replace'
 }
 
-function commitNavigation(nextPath: string, onSwapped?: () => void) {
+function commitNavigation(nextPath: string, hooks?: SwapHooks) {
 	window.history.pushState(
 		createScrollRestorationHistoryState(window.history.state),
 		'',
 		nextPath,
 	)
-	notify(onSwapped)
+	notify(hooks)
 }
 
-function commitReplaceNavigation(nextPath: string, onSwapped?: () => void) {
+function commitReplaceNavigation(nextPath: string, hooks: SwapHooks) {
 	window.history.replaceState(
 		createScrollRestorationHistoryState(window.history.state),
 		'',
 		nextPath,
 	)
-	notify(onSwapped)
+	notify(hooks)
 }
 
 function commitHistory(
 	nextPath: string,
-	options?: NavigationRunOptions,
-	onSwapped?: () => void,
+	options: NavigationRunOptions | undefined,
+	hooks: Omit<SwapHooks, 'historyAction'>,
 ) {
+	const swapHooks = { ...hooks, historyAction: options?.historyAction }
 	if (options?.skipPushState) {
-		notify(onSwapped)
+		notify(swapHooks)
 		return
 	}
 	if (shouldReplaceHistory(options)) {
-		commitReplaceNavigation(nextPath, onSwapped)
+		commitReplaceNavigation(nextPath, swapHooks)
 		return
 	}
-	commitNavigation(nextPath, onSwapped)
+	commitNavigation(nextPath, swapHooks)
 }
 
 function commitImmediateNavigation(
@@ -878,6 +895,19 @@ async function runNavigationWithLoader(
 			return
 		}
 
+		// Document head lives outside the hydrated `#root` tree, so SSR
+		// `<title>` / OG / canonical tags would otherwise stick across SPA
+		// navigations. Resolve from the shared registry (+ loader data for
+		// dynamic routes) here so every route stays in sync without per-page
+		// wiring.
+		const commitHead = await prepareDocumentHead(
+			destination.pathname,
+			loadedData,
+			destination.search,
+			signal,
+		)
+		if (signal.aborted) return
+
 		// Store and commit in the same synchronous block so a superseding
 		// navigation can never leave consume-once data behind for a URL the
 		// user did not land on.
@@ -885,15 +915,10 @@ async function runNavigationWithLoader(
 			setPreloadedNavigationData(nextPath, loadedData)
 		}
 
-		// Document head lives outside the hydrated `#root` tree, so SSR
-		// `<title>` / OG / canonical tags would otherwise stick across SPA
-		// navigations. Resolve from the shared registry (+ loader data for
-		// dynamic routes) here so every route stays in sync without per-page
-		// wiring.
-		applyDocumentHead(destination.pathname, loadedData, destination.search)
-
-		const finish = () => dispatchNavigationEnd(navigationEndDetail)
-		commitHistory(nextPath, options, finish)
+		commitHistory(nextPath, options, {
+			beforeSwap: commitHead,
+			onSwapped: () => dispatchNavigationEnd(navigationEndDetail),
+		})
 	} catch {
 		// Promise.all rejects as soon as the loader fails, even if the lazy chunk
 		// retry is still pending. Do not commit under the destination URL until
@@ -912,14 +937,22 @@ async function runNavigationWithLoader(
 			window.location.assign(nextPath)
 			return
 		}
+		const commitHead = await prepareDocumentHead(
+			destination.pathname,
+			undefined,
+			destination.search,
+			signal,
+		)
+		if (signal.aborted) return
 		// The loader failed, so no preloaded data exists for the committed
 		// destination. Same-path refreshes (form POST redirects back to the
 		// current URL) have no href change to trigger a route's fallback
 		// refetch, so mark the destination stale for routes to consume.
 		markNavigationDataStale(nextPath)
-		applyDocumentHead(destination.pathname, undefined, destination.search)
-		const finish = () => dispatchNavigationEnd(navigationEndDetail)
-		commitHistory(nextPath, options, finish)
+		commitHistory(nextPath, options, {
+			beforeSwap: commitHead,
+			onSwapped: () => dispatchNavigationEnd(navigationEndDetail),
+		})
 	} finally {
 		globalThis.clearTimeout(timeoutId)
 		// A superseding navigation owns the marker now; only clear our own.

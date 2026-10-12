@@ -197,6 +197,26 @@ test('view transitions skip shell tab switches, including when from-path was nev
 		),
 	).toEqual([])
 
+	// Back/Forward swaps instantly so the restored page never fades or slides
+	// into its saved scroll position; the same hop as a push still animates.
+	const base = { canStart: true, prefersReducedMotion: false }
+	expect(
+		shouldUseViewTransition({
+			...base,
+			from: '/features/memory',
+			to: '/',
+			historyAction: 'pop',
+		}),
+	).toBe(false)
+	expect(
+		shouldUseViewTransition({
+			...base,
+			from: '/features/memory',
+			to: '/',
+			historyAction: 'push',
+		}),
+	).toBe(true)
+
 	const withRail = {
 		querySelector: (selector: string) =>
 			selector === persistentShellNavSelector ? ({} as Element) : null,

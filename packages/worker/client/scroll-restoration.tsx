@@ -259,6 +259,11 @@ function restoreWindowScroll(
 
 function handleNavigationStart(event: Event) {
 	if (isRouterNavigationEvent(event) && event.detail.historyAction === 'pop') {
+		// `history.state` already names the destination entry while the
+		// previous page is still on screen. A late scroll event (the last
+		// navigation's scroll-to-top, momentum) would save that page's offset
+		// under the destination key and restore it there.
+		restoreInProgress = true
 		return
 	}
 	saveWindowScrollPosition()
