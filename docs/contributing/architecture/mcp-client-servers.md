@@ -185,8 +185,11 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    Tokens live only in the DO storage; they never reach D1 or the client.
 
 Because the callback is resolved through the session cookie, the OAuth state is
-always looked up in the hub belonging to the signed-in user — cross-user
-callback replay finds no matching state.
+looked up in the hub of the org that owns the server when the signed-in person
+can bind to that org and has `integration:write` there, and in the session org's
+hub otherwise. The callback succeeds only when that hub holds a pending
+authorization matching `state`. A person outside the org finds no matching
+state; people with `integration:write` in the same org share its hub.
 
 Providers that allowlist client origins or redirect URIs must permit the
 canonical app origin and the callback path above. CIMD-capable servers also

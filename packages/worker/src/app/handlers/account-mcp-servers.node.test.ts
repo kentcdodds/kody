@@ -637,12 +637,19 @@ test('the OAuth callback finishes in the org that owns the server when the perso
 	await callback('code=abc&state=nonce.server-1')
 	mockModule.getMcpServerOwnerId.mockResolvedValueOnce(null)
 	const unknown = await callback('code=abc&state=nonce.server-9')
+	mockModule.getMcpServerOwnerId.mockRejectedValueOnce(new Error('D1 down'))
+	const lookupFailed = await callback('code=abc&state=nonce.server-1')
 	expect(mockModule.hubOwners.slice(1)).toEqual([
+		userScope.userId,
 		userScope.userId,
 		userScope.userId,
 		userScope.userId,
 	])
 	expect(unknown.location.pathname).toBe('/@test-user/-/mcp-servers/server-1')
+	expect(lookupFailed.response.status).toBe(303)
+	expect(lookupFailed.location.pathname).toBe(
+		'/@test-user/-/mcp-servers/server-1',
+	)
 
 	mockModule.getMcpServerOwnerId.mockResolvedValue(null)
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)

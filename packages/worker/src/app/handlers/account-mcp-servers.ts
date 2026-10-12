@@ -170,7 +170,8 @@ export function createAccountMcpServersApiHandler(env: Env) {
  * org, so the session binds the person's signup org; the pending state lives
  * in the hub of the org that owns the server named in `state`. That org is
  * used when the person can write its integrations, the same check the
- * consent page made before sending them to the provider.
+ * consent page made before sending them to the provider. Rejects when the
+ * person cannot, so the caller falls back to the session request.
  */
 async function callbackRequestForServer(input: {
 	env: Env
@@ -198,12 +199,7 @@ async function callbackRequestForServer(input: {
 		source: { kind: 'session' },
 		orgBinding,
 	})
-	try {
-		await authorize({ env: input.env, request }, 'integration:write')
-	} catch (error) {
-		if (error instanceof AuthorizationError) return fallback
-		throw error
-	}
+	await authorize({ env: input.env, request }, 'integration:write')
 	return request
 }
 
@@ -229,7 +225,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				env,
 				url: new URL(request.url),
 				user,
-			})
+			}).catch(() => user.request)
 			const ownerId = ownerIdFromCaller({
 				request: callbackRequest,
 				user: user.mcpUser,
