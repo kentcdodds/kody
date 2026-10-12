@@ -372,20 +372,14 @@ async function getLivePublishedCommit(
 	}
 }
 
-async function isStalePublishedBundleArtifactWrite(
-	db: D1Database,
-	input: PublishedBundleArtifactUpsertInput,
-) {
-	const liveCommit = await getLivePublishedCommit(db, input)
-	return liveCommit != null && liveCommit !== input.publishedCommit
-}
-
 /**
  * Write one identity row. Isolated rebuilds, overlapping publishes, and
  * hydration can race the same (kind, name, entry) after a source publish
  * already succeeded; a UNIQUE on that index updates the winner instead of
  * aborting later importable-module targets. A persist whose commit is no
- * longer `entity_sources.published_commit` leaves the live identity alone.
+ * longer `entity_sources.published_commit` leaves the live identity alone,
+ * and the UPDATE itself is gated on the live commit so a concurrent publish
+ * cannot be overwritten by a stale rebuild.
  */
 export async function upsertPublishedBundleArtifactRow(
 	db: D1Database,
