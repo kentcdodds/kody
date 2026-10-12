@@ -364,10 +364,19 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
+	// Approvals belong to the package owner org. Deleting a teammate who once
+	// clicked Approve must not wipe the attestation; only owner purge does.
 	{
 		kind: 'user_columns',
 		table: 'package_capability_approvals',
-		columns: ['owner_user_id', 'approved_by_user_id'],
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_capability_approvals',
+		matchColumn: 'approved_by_user_id',
+		setColumn: 'approved_by_user_id',
+		value: 'deleted-user',
 	},
 	{
 		kind: 'user_id',
