@@ -91,12 +91,22 @@ test('listPreviewCandidateNames reads scripts, namespace owners, and paged D1 na
 			})
 		}
 		if (url.pathname.endsWith('/workers/durable_objects/namespaces')) {
+			// A short first page still has more when total_pages says so, and
+			// the listing may wrap its items in `{ namespaces }`.
 			return jsonResponse({
 				success: true,
-				result: [
-					{ script: 'kody-pr-8-platform', name: 'kody-pr-8-platform_MCP' },
-				],
-				result_info: { total_pages: 1 },
+				result:
+					url.searchParams.get('page') === '1'
+						? {
+								namespaces: [
+									{
+										script: 'kody-pr-8-platform',
+										name: 'kody-pr-8-platform_MCP',
+									},
+								],
+							}
+						: [{ script: 'kody-pr-11-platform' }],
+				result_info: { total_pages: 2 },
 			})
 		}
 		if (url.pathname.endsWith('/d1/database')) {
@@ -120,10 +130,11 @@ test('listPreviewCandidateNames reads scripts, namespace owners, and paged D1 na
 		apiToken: 'token',
 		fetcher,
 	})
-	expect(collectPreviewPullRequestNumbers(names)).toEqual([7, 8, 9, 10])
+	expect(collectPreviewPullRequestNumbers(names)).toEqual([7, 8, 9, 10, 11])
 	expect(requested).toEqual([
 		'/client/v4/accounts/acct/workers/scripts',
-		'/client/v4/accounts/acct/workers/durable_objects/namespaces?page=1&per_page=1000',
+		'/client/v4/accounts/acct/workers/durable_objects/namespaces?page=1&per_page=100',
+		'/client/v4/accounts/acct/workers/durable_objects/namespaces?page=2&per_page=100',
 		'/client/v4/accounts/acct/d1/database?page=1&per_page=100',
 		'/client/v4/accounts/acct/d1/database?page=2&per_page=100',
 	])

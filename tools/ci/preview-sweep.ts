@@ -67,6 +67,18 @@ type CloudflareClient = {
 	fetcher?: typeof fetch
 }
 
+/**
+ * The Durable Object namespace listing has answered both `[...]` and
+ * `{ namespaces: [...] }` (see `origin-production-deploy-state.ts`).
+ */
+function readListedItems<T>(result: unknown, pathname: string): Array<T> {
+	if (result === undefined || result === null) return []
+	if (Array.isArray(result)) return result as Array<T>
+	const namespaces = (result as { namespaces?: unknown }).namespaces
+	if (Array.isArray(namespaces)) return namespaces as Array<T>
+	throw new Error(`Cloudflare listing ${pathname} returned a malformed result.`)
+}
+
 async function listPaged<T>(
 	client: CloudflareClient,
 	pathname: string,
@@ -75,19 +87,18 @@ async function listPaged<T>(
 	const items: Array<T> = []
 	for (let page = 1; page <= 100; page += 1) {
 		const separator = pathname.includes('?') ? '&' : '?'
-		const payload = await cloudflareApiRequest<Array<T>>({
+		const payload = await cloudflareApiRequest<unknown>({
 			...client,
 			pathname: `${pathname}${separator}page=${String(page)}&per_page=${String(perPage)}`,
 		})
-		const result = payload.result ?? []
+		const result = readListedItems<T>(payload.result, pathname)
 		items.push(...result)
 		const totalPages = payload.result_info?.total_pages
-		if (
-			result.length < perPage ||
-			(totalPages !== undefined && page >= totalPages)
-		) {
-			break
-		}
+		const lastPage =
+			typeof totalPages === 'number'
+				? page >= totalPages
+				: result.length < perPage
+		if (lastPage) break
 	}
 	return items
 }
@@ -95,7 +106,9 @@ async function listPaged<T>(
 /**
  * Worker scripts, Durable Object namespaces (by owning script), and D1
  * databases. A preview whose Workers are gone but whose D1 cleanup failed is
- * still found through its `kody-pr-<n>-db` names.
+ * still found through its `kody-pr-<n>-db` names. The scripts listing is one
+ * unpaged response; every Worker holding a namespace is also found through
+ * the paged namespace owners.
  */
 export async function listPreviewCandidateNames(client: CloudflareClient) {
 	const scripts = await cloudflareApiRequest<Array<{ id?: string }>>({
@@ -105,7 +118,7 @@ export async function listPreviewCandidateNames(client: CloudflareClient) {
 	const namespaces = await listPaged<{ script?: string; name?: string }>(
 		client,
 		'/workers/durable_objects/namespaces',
-		1000,
+		100,
 	)
 	const databases = await listPaged<{ name?: string }>(
 		client,
