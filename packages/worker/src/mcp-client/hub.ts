@@ -75,6 +75,7 @@ import {
 	sanitizePersistedMcpServerOptions,
 	sanitizeStoredMcpSessions,
 } from './restore.ts'
+import { extractMcpServerIdFromOAuthState } from './oauth-state.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
@@ -106,13 +107,6 @@ const connectionSettleTimeoutMs = 8_000
 const discoverTimeoutMs = 15_000
 const oauthRecoveryMessage =
 	'Authorization needed. Reconnect the MCP server and approve access once more.'
-
-export function extractMcpServerIdFromOAuthState(state: string | null) {
-	if (!state) return null
-	const parts = state.split('.')
-	if (parts.length !== 2) return null
-	return parts[1] || null
-}
 
 export function isRecoverableMcpOAuthStateError(error: string | null) {
 	if (!error) return false
