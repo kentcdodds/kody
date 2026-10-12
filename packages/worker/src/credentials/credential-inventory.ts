@@ -124,7 +124,7 @@ type SecretRow = {
 }
 
 /**
- * Secrets a package's placeholders can fill: the package-scope rows saved for
+ * Live secrets a package's placeholders can fill: the package-scope rows saved for
  * this package (in any org that ran it) and the owner org's org-level row.
  */
 async function loadSecretCandidates(
@@ -139,7 +139,7 @@ async function loadSecretCandidates(
 				`SELECT e.id AS id, e.name AS name, b.scope AS scope, b.user_id AS user_id
 				FROM secret_entries e
 				JOIN secret_buckets b ON b.id = e.bucket_id
-				WHERE e.id IS NOT NULL
+				WHERE e.id IS NOT NULL AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 					AND e.name IN (${placeholders(batch.length)})
 					AND (
 						(b.scope = 'user' AND b.binding_key = '' AND b.user_id = ?)
@@ -163,7 +163,7 @@ async function loadIntegrationIds(
 		const result = await db
 			.prepare(
 				`SELECT id, name FROM user_integrations
-				WHERE id IS NOT NULL AND user_id = ? AND name IN (${placeholders(batch.length)})`,
+				WHERE id IS NOT NULL AND deleted_at IS NULL AND user_id = ? AND name IN (${placeholders(batch.length)})`,
 			)
 			.bind(ownerId, ...batch)
 			.all<{ id: string; name: string }>()
@@ -603,7 +603,7 @@ async function loadRowStates(
 			.prepare(
 				`SELECT id, provider, json(inject_json) = json(?) AS inject_is_default
 				FROM ${credentialTables[table]}
-				WHERE id IN (${placeholders(batch.length)})`,
+				WHERE deleted_at IS NULL AND id IN (${placeholders(batch.length)})`,
 			)
 			.bind(JSON.stringify(defaultCredentialInject), ...batch)
 			.all<{ id: string; provider: string | null; inject_is_default: number }>()
