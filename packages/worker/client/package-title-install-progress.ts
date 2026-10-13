@@ -57,6 +57,12 @@ function setHidden(element: unknown, hidden: boolean) {
 	;(element as { hidden: boolean }).hidden = hidden
 }
 
+function setText(element: unknown, text: string) {
+	if (element == null || typeof element !== 'object') return
+	if (!('textContent' in element)) return
+	;(element as { textContent: string | null }).textContent = text
+}
+
 function canHostProgress(control: StatusControl) {
 	const idle = control.getAttribute('data-package-title-idle')
 	return idle === 'verify'
@@ -84,6 +90,7 @@ function paintProgress(control: StatusControl, word: string) {
 	control.setAttribute('aria-label', word)
 	setHidden(control.querySelector('[data-title-status-icon]'), true)
 	setHidden(control.querySelector('[data-title-status-spinner]'), false)
+	setText(control.querySelector('[data-title-status-label]'), `${word}…`)
 	const tooltip = control.querySelector('[data-title-status-tooltip]')
 	if (tooltip) tooltip.textContent = word
 	const live = control.querySelector('[data-title-status-live]')
@@ -100,6 +107,7 @@ function restoreControl(control: StatusControl) {
 	if (label) control.setAttribute('aria-label', label)
 	setHidden(control.querySelector('[data-title-status-icon]'), false)
 	setHidden(control.querySelector('[data-title-status-spinner]'), true)
+	if (label) setText(control.querySelector('[data-title-status-label]'), label)
 	const tooltip = control.querySelector('[data-title-status-tooltip]')
 	const idleTooltip = control.getAttribute('data-title-idle-tooltip') ?? label
 	if (tooltip) tooltip.textContent = idleTooltip
@@ -118,8 +126,8 @@ function finishRun(run: ProgressRun, restore: boolean) {
 }
 
 /**
- * Reveal the spinner in the package-title status slot and set its tooltip to
- * the live install stage. Only the fork and verify controls host that slot.
+ * Reveal the spinner in the Fork control and show the live install stage in
+ * its visible label and tooltip. Only the fork and verify controls host that slot.
  * An active run paints the control it captured, never a freshly queried one.
  */
 export function showPackageTitleInstallProgress(word: string) {

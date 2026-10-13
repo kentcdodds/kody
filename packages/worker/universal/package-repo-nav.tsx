@@ -5,7 +5,7 @@ import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import { routes } from '#universal/routes.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 
 export type PackageRepoNavActive = 'repo' | 'files' | 'settings'
 
@@ -82,7 +82,8 @@ export function renderPackageRepoChrome(input: {
 	iconName?: string
 	iconTestId?: string
 	animate?: boolean
-	titleActions?: RemixNode
+	/** Labeled controls on the tab row; status icons stay in the title. */
+	actions?: RemixNode
 }) {
 	const backHref = input.viewerIsOwner
 		? routes.profile.href({ username: input.username })
@@ -139,7 +140,6 @@ export function renderPackageRepoChrome(input: {
 					<span mix={css(slashCss)}>/</span>
 					<span data-testid="package-title-name" mix={css(titleNameCss)}>
 						<span mix={css(titleLeafCss)}>{input.kodyId}</span>
-						{input.titleActions}
 						{renderPackageStatusSignifiers({
 							isPrivate: input.isPrivate,
 							isListed,
@@ -153,7 +153,7 @@ export function renderPackageRepoChrome(input: {
 					{input.description}
 				</p>
 			) : null}
-			<div {...rise('3')}>
+			<div {...rise('3')} mix={css(navRowCss)}>
 				{renderPackageRepoNav({
 					username: input.username,
 					kodyId: input.kodyId,
@@ -161,6 +161,16 @@ export function renderPackageRepoChrome(input: {
 					viewerCanManage: input.viewerCanManage,
 					active: input.active,
 				})}
+				{input.actions ? (
+					<div
+						role="group"
+						aria-label="Repository actions"
+						data-testid="package-repo-actions"
+						mix={css(actionsCss)}
+					>
+						{input.actions}
+					</div>
+				) : null}
 			</div>
 		</div>
 	)
@@ -238,11 +248,30 @@ const descriptionCss = {
 	maxWidth: '58ch',
 }
 
+const navRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	flexWrap: 'wrap' as const,
+	gap: '0.75rem 1rem',
+	marginTop: '1.1rem',
+	[mq.mobile]: {
+		flexDirection: 'column-reverse' as const,
+		alignItems: 'stretch',
+	},
+}
+
+const actionsCss = {
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.5rem',
+}
+
 const navCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: spacing.sm,
-	marginTop: '1.1rem',
 }
 
 const tabCss = {

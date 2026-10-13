@@ -9,31 +9,14 @@ import {
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
-import { createDoubleCheck } from '#client/double-check.ts'
-import { on } from '#client/event-mixin.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	installProgressWords,
-	releasePackageTitleInstallProgress,
-	startPackageTitleInstallProgress,
-	stopPackageTitleInstallProgress,
-} from '#client/package-title-install-progress.ts'
-import {
-	createPackageTitleInstallArm,
-	decideCommunityInstallClick,
-	isCommunityInstallConfirmArmed,
-	paintPackageTitleInstallConfirm,
-	shouldResetInstallConfirm,
-	shouldResetInstallOnShellSnapshot,
-} from '#client/routes/community-detail-install.ts'
+import { createCommunityInstallController } from '#client/routes/community-install-controller.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	type CommunityDetailApiPayload,
-	type CommunityInstallApiPayload,
-	type CommunityInstallOutcome,
 	type CommunityPackageMovedPayload,
 	type CommunityShellSnapshot,
 	buildCommunityDetailFrameSrc,
@@ -45,7 +28,6 @@ import {
 	detailArticleCss,
 	renderAdminFeatureSection,
 	renderEmptyReadme,
-	renderInstallStrip,
 	renderMissingListing,
 	renderReadmeSection,
 	renderReportDisclosure,
@@ -59,10 +41,10 @@ import {
  * Files / Settings tabs, tags, quiet meta row) stays server-rendered in the
  * `community-detail` frame — see `src/app/community-detail-content.tsx` —
  * while this shell renders the README as `.prose`, admin tools, and the
- * report disclosure. Fork, verify, open, outdated, and copy-setup live as
- * icons beside the package name in the frame. Other-account listings use
- * the same fork icon and `createDoubleCheck` before the POST. Owner
- * controls live on `/settings`.
+ * report disclosure. Fork, open fork, outdated, and copy-setup live in the
+ * frame's repository action group; `createCommunityInstallController` owns
+ * the confirm-then-POST flow (shared with the Files tab). Owner controls
+ * live on `/settings`.
  */
 
 function getCurrentListingId(handle: Handle) {
@@ -75,16 +57,11 @@ export function CommunityDetailRoute(handle: Handle) {
 	let featured = false
 	let featureState: 'idle' | 'submitting' | 'error' = 'idle'
 	let featureMessage: string | null = null
-	let installState: 'idle' | 'submitting' | 'error' = 'idle'
-	let installMessage: string | null = null
-	let installOutcome: CommunityInstallOutcome | null = null
-	const installConfirm = createDoubleCheck(handle)
-	let installConfirmListingId: string | null = null
-	const installArm = createPackageTitleInstallArm({
-		confirm: installConfirm,
-		getListingId: () => installConfirmListingId,
-		setListingId: (listingId) => {
-			installConfirmListingId = listingId
+	const install = createCommunityInstallController(handle, {
+		getActiveListingId: () => getCurrentListingId(handle),
+		onInstalled: () => {
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) void frame.reload()
 		},
 	})
 	let readmeContent: string | null = null
@@ -148,31 +125,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		featured = snapshot.featured
 		featureState = 'idle'
 		featureMessage = null
-		const releasedProgress = releasePackageTitleInstallProgress(
-			getListingPageRef(pathname)?.listingId ?? null,
-		)
-		// Same-listing snapshots arrive after the fork control is already
-		// clickable. Clearing `submitting` here would let a second click start
-		// another install while the first POST and spinner are still active.
-		if (
-			shouldResetInstallOnShellSnapshot({
-				installState,
-				releasedProgress,
-			})
-		) {
-			installState = 'idle'
-			installMessage = null
-			installOutcome = null
-		}
-		const snapshotListingId = getListingPageRef(pathname)?.listingId ?? null
-		if (
-			shouldResetInstallConfirm({
-				confirmedListingId: installConfirmListingId,
-				listingId: snapshotListingId,
-			})
-		) {
-			installArm.reset()
-		}
+		install.applySnapshot(getListingPageRef(pathname)?.listingId ?? null)
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
 		hasAgentsDocs = snapshot.hasAgentsDocs
@@ -352,162 +305,10 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	async function submitInstall() {
-		const listingId = getCurrentListingId(handle)
-		if (!listingId || installState === 'submitting') return
-
-		installState = 'submitting'
-		installMessage = null
-		startPackageTitleInstallProgress(installProgressWords, listingId)
-		handle.update()
-
-		try {
-			const response = await fetch(
-				routes.communityInstallApiPost.href({ listingId }),
-				{
-					method: 'POST',
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/json',
-					},
-					credentials: 'include',
-					// The title control is the acknowledgement. Third-party installs
-					// still require this flag; the tooltip carries the warning.
-					body: JSON.stringify({ acknowledged: true }),
-				},
-			)
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<CommunityInstallApiPayload>(response)
-			// A late response for a previous listing must not overwrite the
-			// state of the listing currently on screen, or stop a newer run.
-			if (getCurrentListingId(handle) !== listingId) {
-				stopPackageTitleInstallProgress({ listingId, restore: true })
-				return
-			}
-			if (response.status === 409 && payload?.requiresAcknowledgement) {
-				throw new Error(
-					payload.error ?? 'Unable to install this public package.',
-				)
-			}
-			if (
-				!response.ok ||
-				!payload?.ok ||
-				!payload.status ||
-				!payload.targetName ||
-				!payload.agentPrompt
-			) {
-				throw new Error(
-					payload?.error ?? 'Unable to install this public package.',
-				)
-			}
-			installOutcome = {
-				status: payload.status,
-				targetName: payload.targetName,
-				agentPrompt: payload.agentPrompt,
-				packageId:
-					payload.status === 'installed' ? (payload.packageId ?? null) : null,
-				failedChecks: payload.failedChecks ?? [],
-			}
-			installState = 'idle'
-			stopPackageTitleInstallProgress({ listingId, restore: false })
-			handle.update()
-			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
-			if (frame) void frame.reload()
-		} catch (error) {
-			if (getCurrentListingId(handle) !== listingId) {
-				stopPackageTitleInstallProgress({ listingId, restore: true })
-				return
-			}
-			stopPackageTitleInstallProgress({ listingId })
-			installState = 'error'
-			installMessage =
-				error instanceof Error
-					? error.message
-					: 'Unable to install this public package.'
-			handle.update()
-		}
-	}
-
-	function handleCommunityInstallClick(event: Event) {
-		const target = event.target
-		if (!(target instanceof Element)) return
-		const control = target.closest('[data-community-install]')
-		// A click that does not move focus never fires focusout. Drop the
-		// armed flag here so the next click on the fork icon has to arm again.
-		if (!control) {
-			installArm.disarm()
-			return
-		}
-		const loginLink = control instanceof HTMLAnchorElement
-		const listingId = control.getAttribute('data-package-title-listing')
-		const decision = decideCommunityInstallClick({
-			installState: loginLink ? 'idle' : installState,
-			alreadyInstalled: loginLink ? false : installOutcome != null,
-			requiresConfirm: !loginLink,
-			confirmed: isCommunityInstallConfirmArmed({
-				confirmed: installConfirm.doubleCheck,
-				confirmedListingId: installConfirmListingId,
-				listingId,
-			}),
-		})
-		switch (decision) {
-			case 'ignore':
-				if (!loginLink) event.preventDefault()
-				return
-			case 'arm':
-				event.preventDefault()
-				installArm.arm(control, listingId)
-				return
-			case 'submit':
-				if (loginLink) return
-				event.preventDefault()
-				installArm.reset()
-				void submitInstall()
-				return
-			default: {
-				const exhaustive: never = decision
-				throw new Error(`Unhandled install click: ${String(exhaustive)}`)
-			}
-		}
-	}
-
-	function handleCommunityInstallFocusOut(event: FocusEvent) {
-		const target = event.target
-		if (!(target instanceof Element)) return
-		const control = target.closest('[data-community-install]')
-		if (
-			!control ||
-			!isCommunityInstallConfirmArmed({
-				confirmed: installConfirm.doubleCheck,
-				confirmedListingId: installConfirmListingId,
-				listingId: control.getAttribute('data-package-title-listing'),
-			})
-		) {
-			return
-		}
-		const next = event.relatedTarget
-		if (next instanceof Node && control.contains(next)) return
-		installArm.reset()
-		paintPackageTitleInstallConfirm(control, false)
-	}
-
 	listenToRouterNavigation(handle, () => {
 		const ref = getListingPageRef(readRouterPathname(handle))
-		// The path has already changed. Restore the listing that owned the
-		// spinner before a later tick can observe the destination control.
-		if (releasePackageTitleInstallProgress(ref?.listingId ?? null)) {
-			installState = 'idle'
-			installMessage = null
-			installOutcome = null
-		}
-		// Navigation reloads the title frame, so the rebuilt control is idle
-		// Fork even when the listing id is unchanged. Drop the armed flag
-		// here; a same-listing shell snapshot keeps it because that path
-		// does not remount the painted Confirm fork control.
-		installArm.reset()
+		// Navigation reloads the frame, so the rebuilt Fork is idle.
+		install.navigated(ref?.listingId ?? null)
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
@@ -632,25 +433,14 @@ export function CommunityDetailRoute(handle: Handle) {
 					})
 				: null
 		return (
-			<article
-				mix={[
-					css(detailArticleCss),
-					on('click', handleCommunityInstallClick),
-					on('focusout', handleCommunityInstallFocusOut),
-				]}
-			>
+			<article mix={[css(detailArticleCss), ...install.mixins]}>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
 				{renderShellStatus(shellStatusMessage)}
 
 				{showShellReady ? (
 					<>
-						{listingId
-							? renderInstallStrip({
-									installMessage,
-									installOutcome,
-								})
-							: null}
+						{listingId ? install.renderStrip() : null}
 
 						{readmeContent
 							? renderReadmeSection(

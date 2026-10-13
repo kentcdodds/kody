@@ -38,6 +38,7 @@ test('decideCommunityInstallClick starts a fork from idle or error and ignores a
 
 test('other-account confirm paints Confirm fork and stays armed only for that listing', () => {
 	const tooltip = { textContent: 'This listing is from another account.' }
+	const label = { textContent: 'Fork' }
 	const attributes = new Map<string, string>([
 		['data-title-idle-label', 'Fork'],
 		['data-title-idle-tooltip', 'This listing is from another account.'],
@@ -51,16 +52,20 @@ test('other-account confirm paints Confirm fork and stays armed only for that li
 			attributes.set(name, value)
 		},
 		querySelector(selector: string) {
-			return selector === '[data-title-status-tooltip]' ? tooltip : null
+			if (selector === '[data-title-status-tooltip]') return tooltip
+			if (selector === '[data-title-status-label]') return label
+			return null
 		},
 	}
 
 	paintPackageTitleInstallConfirm(control, true)
 	expect(attributes.get('aria-label')).toBe('Confirm fork')
+	expect(label.textContent).toBe('Confirm fork')
 	expect(tooltip.textContent).toBe('Confirm fork')
 
 	paintPackageTitleInstallConfirm(control, false)
 	expect(attributes.get('aria-label')).toBe('Fork')
+	expect(label.textContent).toBe('Fork')
 	expect(tooltip.textContent).toBe('This listing is from another account.')
 
 	for (const [listingId, sameListing] of [
