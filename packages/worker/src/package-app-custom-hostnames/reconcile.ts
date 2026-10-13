@@ -1,10 +1,15 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { CloudflareCustomHostnamesClient } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
+import {
+	CloudflareCustomHostnamesClient,
+	isCloudflareCustomHostnameGone,
+	type CloudflareCustomHostnameResult,
+} from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
 import { isPackageAppCustomHostnameVerified } from '#worker/package-app-custom-hostnames/lookup.ts'
 import {
 	listPackageAppCustomHostnamesForReconcile,
 	removePackageAppCustomHostnameRow,
 } from '#worker/package-app-custom-hostnames/service.ts'
+import { type PackageAppCustomHostnameRow } from '#worker/package-app-custom-hostnames/types.ts'
 
 export const packageAppCustomHostnameGracePeriodMs = 36 * 60 * 60 * 1000
 
@@ -50,6 +55,19 @@ function shouldStartDnsMissingGrace(input: {
 	}
 	if (input.verifiedAt) return true
 	return input.hostnameStatus === 'moved' || input.hostnameStatus === 'deleted'
+}
+
+function deletedCloudflareHostnameResult(
+	row: PackageAppCustomHostnameRow,
+): CloudflareCustomHostnameResult {
+	return {
+		id: row.cloudflareHostnameId ?? row.id,
+		hostname: row.hostname,
+		hostnameStatus: 'deleted',
+		sslStatus: row.sslStatus,
+		ownershipVerification: null,
+		sslValidationRecords: [],
+	}
 }
 
 export async function reconcilePackageAppCustomHostnames(input: {
@@ -100,7 +118,10 @@ export async function reconcilePackageAppCustomHostnames(input: {
 				continue
 			}
 			try {
-				const cf = await client.getCustomHostname({ id: cfId })
+				const cfOrGone = await client.getCustomHostname({ id: cfId })
+				const cf = isCloudflareCustomHostnameGone(cfOrGone)
+					? deletedCloudflareHostnameResult(row)
+					: cfOrGone
 				const verified = isPackageAppCustomHostnameVerified({
 					hostnameStatus: cf.hostnameStatus,
 					sslStatus: cf.sslStatus ?? row.sslStatus,

@@ -69,13 +69,29 @@ export class CloudflareResourceError extends Error {
  * Permanent Cloudflare auth failures must not be retried. 401/403 and
  * wrangler "Authentication error [code: 10000]" stay in this set so a bad
  * token cannot burn the preview cleanup budget.
+ *
+ * Cloudflare also returns HTTP 500 with
+ * "Internal authentication error: internal server error" as a transient
+ * platform blip (seen on scheduled preview sweeps). That phrasing matches a
+ * naive `/authentication error/i` check, so 5xx envelopes and the Internal
+ * wording (when not on 401/403) are excluded here and stay retryable via
+ * `isRetryableCloudflareFailure`. Explicit 401/403 always win over wording.
  */
 export function isPermanentCloudflareAuthFailure(message: string) {
-	return (
+	if (
 		/Cloudflare API request failed \(401\)/.test(message) ||
-		/Cloudflare API request failed \(403\)/.test(message) ||
-		/authentication error/i.test(message) ||
-		/\[code:\s*10000\]/.test(message)
+		/Cloudflare API request failed \(403\)/.test(message)
+	) {
+		return true
+	}
+	if (
+		/Cloudflare API request failed \(5\d\d\)/.test(message) ||
+		/internal authentication error/i.test(message)
+	) {
+		return false
+	}
+	return (
+		/authentication error/i.test(message) || /\[code:\s*10000\]/.test(message)
 	)
 }
 
@@ -90,6 +106,9 @@ export function isRetryableCloudflareFailure(message: string) {
 		message.includes('upstream connect error') ||
 		message.includes('Cloudflare API request failed (429)') ||
 		/Cloudflare API request failed \(5\d\d\)/.test(message) ||
+		// Cloudflare platform blip (also appears in wrangler stderr without an
+		// HTTP status envelope). Distinct from permanent "Authentication error".
+		/internal authentication error/i.test(message) ||
 		/504 Gateway Timeout/i.test(message) ||
 		/Gateway Timeout/i.test(message) ||
 		message.includes('fetch failed') ||
