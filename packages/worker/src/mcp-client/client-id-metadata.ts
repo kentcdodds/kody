@@ -278,6 +278,9 @@ function installMcpOAuthAttemptBinding(
 				pendingNow.personId !== pending.personId ||
 				pendingNow.ownerOrgId !== pending.ownerOrgId ||
 				pendingNow.serverUrl !== pending.serverUrl ||
+				pendingNow.serverOrigin !== pending.serverOrigin ||
+				pendingNow.authorizationServerOrigin !==
+					pending.authorizationServerOrigin ||
 				!oauthAttemptMatchesLiveServer({
 					pending: pendingNow,
 					live,
@@ -416,7 +419,9 @@ async function savePreservedMcpOAuthTokens(input: {
 		// Authorization-code completion after checkState: re-check identity
 		// immediately before the grant write (kody-celld #57 / #65). A refresh
 		// that races while an attempt is pending has no verified flag and must
-		// leave the pending row alone.
+		// leave the pending row alone. Once verified, an actor-less refresh can
+		// still interleave during the code exchange — refuse without clearing
+		// so the grant save keeps its fence.
 		if (!serverId || !input.resolveLiveServerIdentity) {
 			await clearMcpOAuthAttemptIdentity(
 				input.provider.storage,
@@ -425,6 +430,15 @@ async function savePreservedMcpOAuthTokens(input: {
 			throw new McpOAuthAttemptIdentityError()
 		}
 		const live = await input.resolveLiveServerIdentity(serverId)
+		if (!live) {
+			await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
+			throw new McpOAuthAttemptIdentityError()
+		}
+		if (!live.ownerOrgId || !live.personId) {
+			throw new McpOAuthAttemptIdentityError(
+				mcpOAuthAttemptIdentityInvalidMessage(live.name),
+			)
+		}
 		if (
 			!oauthAttemptMatchesLiveServer({
 				pending,
@@ -434,7 +448,7 @@ async function savePreservedMcpOAuthTokens(input: {
 		) {
 			await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
 			throw new McpOAuthAttemptIdentityError(
-				mcpOAuthAttemptIdentityInvalidMessage(live?.name),
+				mcpOAuthAttemptIdentityInvalidMessage(live.name),
 			)
 		}
 	}

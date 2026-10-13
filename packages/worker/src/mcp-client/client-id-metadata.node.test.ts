@@ -443,6 +443,50 @@ test('checkState fails closed when the live server no longer matches the attempt
 	).toBeUndefined()
 })
 
+test('a verified pending attempt survives an actor-less refresh race during grant save', async () => {
+	const { storage, values } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1' as string | null,
+		personId: 'person-1' as string | null,
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId!,
+		personId: live.personId!,
+		discovery: discoveryOnIssuer,
+	})
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+
+	// Actor-less refresh (no ownerOrgId/personId) during the verified window.
+	currentLive = { ...live, ownerOrgId: null, personId: null }
+	await expect(
+		provider.saveTokens(bearer('refresh-at')),
+	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toEqual(pending)
+	expect(
+		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toMatchObject({ verifiedAt: expect.any(Number) })
+
+	currentLive = { ...live }
+	await provider.saveTokens(bearer('grant-at', 'grant-rt'))
+	expect(values.get(tokenKey)).toEqual(bearer('grant-at', 'grant-rt'))
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+})
+
 test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {
 	const { storage } = createMemoryStorage()
 	const live = {
