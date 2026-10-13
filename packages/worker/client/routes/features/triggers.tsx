@@ -253,6 +253,7 @@ export function TriggersFeature(handle: Handle) {
 									checked={scanFlake}
 									mix={on('change', (event) => {
 										scanFlake = event.currentTarget.checked
+										scanResult = ''
 										scanShot += 1
 										handle.update()
 									})}
