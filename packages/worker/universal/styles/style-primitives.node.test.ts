@@ -25,6 +25,13 @@ test('article breakout is viewport-centered and must not be used under the docs 
 
 test('package detail tabs share the extended page box and patterned background', () => {
 	expect(packageDetailPageCss.maxWidth).toBe(layoutMaxWidths.extended)
+	// Content-box like the site header — border-box would shrink Files by
+	// two pageGutters inside maxWidth.
+	expect(
+		'boxSizing' in packageDetailPageCss
+			? packageDetailPageCss.boxSizing
+			: undefined,
+	).toBe(undefined)
 	expect(packageDetailPageCss['&::before']?.maskImage).toBe(
 		'var(--kody-pattern)',
 	)

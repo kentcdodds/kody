@@ -735,17 +735,17 @@ export const pageGutter = 'clamp(1.25rem, 4vw, 2.5rem)'
 
 /**
  * Shared shell for every package detail tab (Repo, Files, Settings, …).
- * Matches the site header's `layoutMaxWidths.extended` box and carries the
- * shirt-pattern whisper so switching tabs does not change page width or
- * background. The app shell leaves these routes unpadded; gutters live here.
+ * Same box model as the site header `navCss`: `maxWidth` on the content box
+ * with `pageGutter` padding outside it (no `border-box`), so Files keeps the
+ * width it already had and lines up with the header. Carries the shirt-pattern
+ * whisper so switching tabs does not change background. The app shell leaves
+ * these routes unpadded; gutters live here.
  */
 export const packageDetailPageCss = {
 	position: 'relative' as const,
 	isolation: 'isolate' as const,
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
-	width: '100%',
-	boxSizing: 'border-box' as const,
 	padding: `${spacing.lg} ${pageGutter} ${spacing['2xl']}`,
 	[mq.tablet]: {
 		padding: `${spacing.md} ${pageGutter} ${spacing.xl}`,

@@ -297,6 +297,18 @@ export function App(handle: Handle<AppProps>) {
 			internalError: handle.props.internalError === true,
 			onSsrUrl: isOnSsrUrl(handle),
 		})
+		// When `<main>` is unpadded (route owns gutters) but the SSR
+		// unauthorized fallback has no page container, restore the generic
+		// main inset on that section so text is not flush to the viewport.
+		const mainGutterPaddingCss = {
+			padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
+			[mq.tablet]: {
+				padding: `${spacing.sm} ${spacing.sm} 0`,
+			},
+			[mq.mobile]: {
+				padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+			},
+		} as const
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
@@ -391,13 +403,7 @@ export function App(handle: Handle<AppProps>) {
 													boxSizing: 'border-box',
 													flex: 1,
 													viewTransitionName: 'page',
-													padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
-													[mq.tablet]: {
-														padding: `${spacing.sm} ${spacing.sm} 0`,
-													},
-													[mq.mobile]: {
-														padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-													},
+													...mainGutterPaddingCss,
 												},
 								),
 							]}
@@ -411,7 +417,13 @@ export function App(handle: Handle<AppProps>) {
 								fallback={<NotFoundPage />}
 								internalErrorFallback={<InternalErrorPage />}
 								unauthorizedFallback={
-									<section>
+									<section
+										mix={
+											routeOwnsItsGutters
+												? css(mainGutterPaddingCss)
+												: undefined
+										}
+									>
 										<h1
 											mix={css({
 												fontSize: typography.fontSize.lg,
