@@ -6,6 +6,7 @@ import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -51,11 +52,10 @@ async function fetchSettings(
 	slug: string,
 	signal: AbortSignal,
 ): Promise<SettingsPayload | 'unauthorized' | 'not-found'> {
-	const response = await fetch(routes.orgSettingsApi.href({ orgSlug: slug }), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+	const response = await fetch(
+		routes.orgSettingsApi.href({ orgSlug: slug }),
+		orgAccountApiFetchInit(`/@${slug}/-/settings`, signal),
+	)
 	if (response.status === 401) return 'unauthorized'
 	if (response.status === 404) return 'not-found'
 	const payload = (await response

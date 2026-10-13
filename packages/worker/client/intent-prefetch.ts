@@ -3,6 +3,36 @@ import { type RouteLoader, type RouteLoaderResult } from './route-loader.ts'
 const routerHrefOrigin = 'https://kody.local'
 
 /**
+ * Nesting depth of intent/render prefetch loader runs. Account JSON fetches
+ * read this so speculative loads do not write `kody_last_org` (#3517).
+ */
+let routePrefetchDepth = 0
+
+export function isRoutePrefetchInFlight() {
+	return routePrefetchDepth > 0
+}
+
+function runRouteLoaderAsPrefetch(
+	loader: RouteLoader,
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	routePrefetchDepth += 1
+	const result = Promise.resolve(loader(url, signal))
+	// Keep settle timing on the loader promise (tests/consumers); only track
+	// depth as a side effect so prefetch headers clear when the load ends.
+	void result
+		.finally(() => {
+			routePrefetchDepth -= 1
+		})
+		.then(
+			() => {},
+			() => {},
+		)
+	return result
+}
+
+/**
  * How long a settled prefetch stays consumable. Covers the usual
  * hover-read-then-click gap while keeping the staleness window bounded:
  * navigations that consume a prefetch skip the loader entirely, so older
@@ -105,7 +135,7 @@ export function prefetchRouteOnIntent(
 	const controller = new AbortController()
 	const nextSlot: PrefetchSlot = {
 		href: normalized,
-		promise: loader(url, controller.signal),
+		promise: runRouteLoaderAsPrefetch(loader, url, controller.signal),
 		controller,
 		settledAt: null,
 		failed: false,
@@ -140,7 +170,11 @@ export function prefetchRoutesOnRender(
 	const firstHref = needed[0]
 	if (!firstHref) return
 	const controller = new AbortController()
-	const promise = loader(urlForHref(firstHref), controller.signal)
+	const promise = runRouteLoaderAsPrefetch(
+		loader,
+		urlForHref(firstHref),
+		controller.signal,
+	)
 	const records = needed.map((href) => {
 		const record: PrefetchSlot = {
 			href,
@@ -175,7 +209,11 @@ export function prefetchEachRouteOnRender(
 		const controller = new AbortController()
 		const record: PrefetchSlot = {
 			href: normalized,
-			promise: loader(urlForHref(normalized), controller.signal),
+			promise: runRouteLoaderAsPrefetch(
+				loader,
+				urlForHref(normalized),
+				controller.signal,
+			),
 			controller,
 			settledAt: null,
 			failed: false,

@@ -348,6 +348,44 @@ test('org-bound account JSON responses remember the Referer org as last-used', a
 	])
 })
 
+test('prefetch account JSON does not set the last-used cookie', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/secrets`,
+			'X-Kody-Prefetch': '1',
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([])
+})
+
+test('org management JSON remembers the path org as last-used', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/@acme/-/settings.json`, {
+		headers: { Cookie: cookie },
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([
+		expect.stringMatching(/^kody_last_org=acme;/),
+	])
+})
+
 test('account JSON without an org Referer does not set the last-used cookie', async () => {
 	const { env } = createEnv()
 	const guard = createOrgBindingGuardMiddleware(env)
