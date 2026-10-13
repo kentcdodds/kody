@@ -122,6 +122,8 @@ style, tests, MCP capabilities, and runtime architecture.
   — native Open API hop for local `kody.gatewayFetchStream`
 - [CLI local credential runtime](./contracts/cli-local-credential-runtime.md) —
   ad hoc `credential()` / `credentials()` on CLI host `kody:runtime`
+- [Credential mappings API contract](./contracts/credential-mappings-api.md) —
+  creation links, credentials list, package mappings, approval, runtime links
 - [Direct-upload host token](./design-notes/direct-upload-host-token.md) —
   two-way door design note; gateway remains the default
 

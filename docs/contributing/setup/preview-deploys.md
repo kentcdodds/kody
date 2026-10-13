@@ -60,11 +60,19 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   [migration rehearsal](../preview-migration-rehearsal.md) can inspect it.
 - `.github/workflows/preview-sweep.yml` runs hourly (and on `workflow_dispatch`,
   with `max` and `dry_run` inputs). It lists the account's Worker scripts,
-  Durable Object namespaces, and D1 databases, picks out `kody-pr-<n>` previews
-  whose PR is closed, and runs the same cleanup for up to 10 of them per run,
-  oldest first (`tools/ci/preview-sweep.ts`). It re-checks the PR state just
-  before each cleanup, skips previews with no matching PR, and never touches
-  `kody-branch-*` previews.
+  Durable Object namespaces, D1 databases, KV namespaces, and R2 buckets, picks
+  out `kody-pr-<n>` previews whose PR is closed, and runs the same cleanup for
+  up to 10 of them per run, oldest first (`tools/ci/preview-sweep.ts`). It
+  re-checks the PR state just before each cleanup and skips previews with no
+  matching PR. It also sweeps `kody-branch-*` previews whose bare Worker script
+  is gone, judging liveness only from the Worker scripts listing (re-fetched
+  again right before cleanup) so a same-named D1/KV/R2 resource from another
+  branch can never read as "live". Branch sweeping is skipped for the whole run
+  if a `preview.yml` deploy is currently queued or in progress, since a deploy
+  provisions D1/KV/R2 before it uploads the bare origin Worker. Both the PR and
+  branch loops share one wall-clock budget per run, so a run that spends it on
+  PR cleanups still defers branch cleanups cleanly instead of running past the
+  job timeout.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
