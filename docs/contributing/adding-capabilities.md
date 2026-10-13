@@ -260,8 +260,6 @@ When adding an admin action, expose a service-layer function from a new
 and audit-log the invocation. Do not duplicate admin workflow SQL in capability
 handlers.
 
-> > > > > > > 2872b50b0 (Document adminPackagePlacementFailures)
-
 Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer consume normalized JSON Schema after
 normalization runs.
