@@ -493,6 +493,52 @@ test('a verified pending attempt survives an actor-less refresh race during gran
 	).toBeUndefined()
 })
 
+test('redirectToAuthorization stamps attempt identity before the SDK commits', async () => {
+	const { storage, values } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1' as string | null,
+		personId: 'person-1' as string | null,
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	const authUrl = new URL('https://auth.example/authorize')
+	authUrl.searchParams.set('client_id', 'client-1')
+	authUrl.searchParams.set('state', 'nonce.server-home')
+	authUrl.searchParams.set('code_challenge', 'challenge')
+
+	await provider.redirectToAuthorization(authUrl)
+	expect(provider.authUrl).toBe(authUrl.toString())
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toMatchObject({
+		serverId: 'server-home',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+	})
+
+	// Actor-less / incomplete live identity must refuse before the SDK commit.
+	currentLive = { ...live, ownerOrgId: null, personId: null }
+	values.delete(mcpOAuthAttemptStorageKey('server-home'))
+	const providerAgain = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	providerAgain.serverId = 'server-home'
+	providerAgain.clientId = 'client-1'
+	await expect(
+		providerAgain.redirectToAuthorization(authUrl),
+	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	expect(providerAgain.authUrl).toBeUndefined()
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+})
+
 test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {
 	const { storage } = createMemoryStorage()
 	const live = {

@@ -225,19 +225,30 @@ function installMcpOAuthAttemptBinding(
 	if (typeof provider.redirectToAuthorization === 'function') {
 		const redirect = provider.redirectToAuthorization.bind(provider)
 		provider.redirectToAuthorization = async (authUrl) => {
-			await redirect(authUrl)
+			// Stamp attempt identity before the SDK commits the authorization
+			// URL / PKCE state. Returning after redirect when identity cannot
+			// be built left users finishing provider consent for a flow
+			// checkState must refuse.
 			const serverId = readProviderString(provider, 'serverId')
-			if (!serverId) return
-			const live = await resolveLive(serverId)
+			const live = serverId ? await resolveLive(serverId) : null
 			const clientId =
 				authUrl.searchParams.get('client_id') ||
 				readProviderString(provider, 'clientId')
-			if (!live || !clientId) return
+			if (
+				!serverId ||
+				!live ||
+				!clientId ||
+				!live.ownerOrgId ||
+				!live.personId
+			) {
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live?.name),
+				)
+			}
 			const discovery =
 				typeof provider.discoveryState === 'function'
 					? await provider.discoveryState()
 					: undefined
-			if (!live.ownerOrgId || !live.personId) return
 			const identity = buildMcpOAuthAttemptIdentity({
 				serverId: live.serverId,
 				serverUrl: live.serverUrl,
@@ -246,8 +257,13 @@ function installMcpOAuthAttemptBinding(
 				personId: live.personId,
 				discovery,
 			})
-			if (!identity) return
+			if (!identity) {
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live.name),
+				)
+			}
 			await writeMcpOAuthAttemptIdentity(provider.storage, identity)
+			await redirect(authUrl)
 		}
 	}
 	if (typeof provider.checkState === 'function') {
