@@ -1,4 +1,9 @@
 import { isPrefetchAbortSignal } from '#client/intent-prefetch.ts'
+import {
+	parseOrgBillingPath,
+	parseOrgManagementPath,
+	parseOrgResourcePath,
+} from '#universal/org-pages.ts'
 
 /**
  * Fetch `referrer` for an org-owned `/account/<section>.json` load. The route
@@ -55,9 +60,10 @@ export function orgAccountApiFetchInit(
 /**
  * After the client router adopts a prefetch and commits that destination, the
  * adopted response was served with `X-Kody-Prefetch` and never wrote
- * `kody_last_org`. Fire a lightweight org-owned JSON GET for this page only
- * (tied to the navigation AbortSignal) so a superseding navigation cannot
- * leave the wrong last-used org (#3517).
+ * `kody_last_org`. Re-hit the same section's JSON (not a fixed waiting.json)
+ * so grant-only collaborators still pass the org guard, tied to the navigation
+ * AbortSignal so a superseding navigation cannot leave the wrong last-used org
+ * (#3517).
  */
 export function commitLastUsedOrgAfterPrefetchAdopt(
 	pageHref: string,
@@ -68,14 +74,10 @@ export function commitLastUsedOrgAfterPrefetchAdopt(
 	// Drop the pending entry either way: this navigation adopted the prefetch.
 	pendingPrefetchLastUsedPages.delete(key)
 	if (signal?.aborted) return
-	const referrer = orgAccountApiReferrer(pageHref)
-	const url = new URL('/account/waiting.json', window.location.origin)
-	void fetch(url, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer,
-		signal,
-	}).then(
+	const pageUrl = new URL(pageHref, window.location.origin)
+	const commit = lastUsedOrgCommitFetch(pageUrl)
+	if (!commit) return
+	void fetch(commit.input, { ...commit.init, signal }).then(
 		() => {},
 		() => {},
 	)
@@ -84,4 +86,48 @@ export function commitLastUsedOrgAfterPrefetchAdopt(
 /** Clears prefetch-skip bookkeeping (tests). */
 export function resetOrgAccountPrefetchCookieState() {
 	pendingPrefetchLastUsedPages.clear()
+}
+
+/**
+ * JSON twin for the committed org page. Prefer the section the user opened so
+ * grant-only collaborators (connections only) are not 404'd by waiting.json.
+ */
+function lastUsedOrgCommitFetch(
+	pageUrl: URL,
+): { input: string; init: RequestInit } | null {
+	const pathname = pageUrl.pathname
+	const resource = parseOrgResourcePath(pathname)
+	if (resource) {
+		return {
+			input: `/account/${resource.section}.json`,
+			init: {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				referrer: pageUrl.href,
+			},
+		}
+	}
+	const management = parseOrgManagementPath(pathname)
+	if (management) {
+		return {
+			input: `/@${management.slug}/-/${management.section}.json`,
+			init: {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				referrer: pageUrl.href,
+			},
+		}
+	}
+	const billing = parseOrgBillingPath(pathname)
+	if (billing) {
+		return {
+			input: `/@${billing.slug}/-/billing.json`,
+			init: {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				referrer: pageUrl.href,
+			},
+		}
+	}
+	return null
 }

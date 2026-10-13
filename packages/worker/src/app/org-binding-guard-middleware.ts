@@ -45,6 +45,9 @@ export function createOrgBindingGuardMiddleware(env: Env): Middleware {
 		if (request.method !== 'GET' || !url.pathname.endsWith('.json')) {
 			return response
 		}
+		// Only remember orgs the client actually loaded. A 4xx/5xx still has the
+		// bound org in scope, but the SPA may stay on the previous page.
+		if (!response.ok) return response
 		const accountSection = orgOwnedAccountApiSection(url.pathname)
 		const orgPageJson = /^\/@[^/]+\/-\//.test(url.pathname)
 		if (accountSection === null && !orgPageJson) return response

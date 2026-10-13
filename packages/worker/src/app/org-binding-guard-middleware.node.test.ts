@@ -368,6 +368,31 @@ test('prefetch account JSON does not set the last-used cookie', async () => {
 	expect(response.headers.getSetCookie()).toEqual([])
 })
 
+test('failed account JSON does not set the last-used cookie', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(
+		async () =>
+			new Response(JSON.stringify({ ok: false }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/secrets`,
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(500)
+	expect(response.headers.getSetCookie()).toEqual([])
+})
+
 test('org management JSON remembers the path org as last-used', async () => {
 	const { env } = createEnv()
 	const guard = createOrgBindingGuardMiddleware(env)

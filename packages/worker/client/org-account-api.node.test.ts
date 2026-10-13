@@ -49,7 +49,7 @@ test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits that page only',
 	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/waiting', navigation.signal)
 	await Promise.resolve()
 	expect(fetchMock).toHaveBeenCalledWith(
-		expect.any(URL),
+		'/account/waiting.json',
 		expect.objectContaining({
 			referrer: acme,
 			credentials: 'include',
@@ -62,6 +62,32 @@ test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits that page only',
 	fetchMock.mockClear()
 	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/waiting', navigation.signal)
 	expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('adopt commits the opened section JSON so grant collaborators are not 404d', async () => {
+	const fetchMock = stubBrowser({ ok: true })
+	const connections = 'https://kody.test/@acme/-/connections'
+	prefetchRouteOnIntent(
+		'/@acme/-/connections',
+		async (_url, signal) => {
+			fetch(
+				'/account/connected-agents.json',
+				orgAccountApiFetchInit(connections, signal),
+			)
+			return {}
+		},
+		new URL(connections),
+	)
+	await Promise.resolve()
+	fetchMock.mockClear()
+	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/connections')
+	expect(fetchMock).toHaveBeenCalledWith(
+		'/account/connections.json',
+		expect.objectContaining({
+			referrer: connections,
+			credentials: 'include',
+		}),
+	)
 })
 
 test('aborted navigation does not commit last-used org', async () => {
