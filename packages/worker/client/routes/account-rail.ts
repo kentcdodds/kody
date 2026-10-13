@@ -440,7 +440,7 @@ export function workspaceRailGroups(input: {
 	const organizationItems: Array<AccountRailItem> = personal
 		? [
 				{
-					href: orgGrantsPath(orgSlug!),
+					href: orgSlug ? orgGrantsPath(orgSlug) : routes.account.href(),
 					label: 'Grants',
 					icon: 'key',
 					description:
