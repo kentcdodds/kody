@@ -2,7 +2,10 @@ import { type Action } from 'remix/router'
 import { authorizeGrantRevoke } from '#mcp/capabilities/access/shared.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import {
 	orgHasPermission,
 	resolveOrgManagementAccess,
@@ -53,9 +56,39 @@ function renderDenied(
 	})
 }
 
+/**
+ * Same resource check as grant revoke. Authorization and caller denials mean
+ * this viewer cannot revoke the grant; anything else still fails the request.
+ */
+async function grantRevokeAllowed(
+	env: Env,
+	user: AuthenticatedAppUser,
+	grant: { resourceType: string; resourceId: string },
+) {
+	if (!isGrantResourceType(grant.resourceType)) return false
+	try {
+		await authorizeGrantRevoke(
+			{
+				env,
+				callerContext: {
+					user: user.mcpUser,
+					request: user.request,
+				},
+			},
+			grant.resourceType,
+			grant.resourceId,
+		)
+		return true
+	} catch (error) {
+		// AuthorizationError is an McpCallerError. Both are denials.
+		if (error instanceof McpCallerError) return false
+		throw error
+	}
+}
+
 async function loadOrgGrantsData(input: {
 	env: Env
-	user: Parameters<typeof orgHasPermission>[1]
+	user: AuthenticatedAppUser
 	org: ManagedOrg
 }): Promise<OrgGrantsLoaderData> {
 	const canManage = await orgHasPermission(
@@ -67,8 +100,13 @@ async function loadOrgGrantsData(input: {
 	return {
 		ok: true,
 		org: input.org,
-		grants,
 		canManage,
+		grants: await Promise.all(
+			grants.map(async (grant) => ({
+				...grant,
+				canRevoke: await grantRevokeAllowed(input.env, input.user, grant),
+			})),
+		),
 	}
 }
 

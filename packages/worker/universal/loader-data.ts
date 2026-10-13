@@ -1354,7 +1354,17 @@ export type OrgGrantView = {
 export type OrgGrantsLoaderData = {
 	ok: true
 	org: OrgManagementOrg
-	grants: Array<OrgGrantView>
+	grants: Array<
+		OrgGrantView & {
+			/**
+			 * True when `authorizeGrantRevoke` allows this viewer to revoke the
+			 * grant. Denial (including a missing resource permission) is false.
+			 * The page still requires `canManage` (`member:write`) before showing
+			 * Revoke, matching the delete handler.
+			 */
+			canRevoke: boolean
+		}
+	>
 	canManage: boolean
 }
 

@@ -179,6 +179,7 @@ test('grants list includes outside collaborator grants; collaborators page lists
 	expect(grantsPayload.grants).toHaveLength(1)
 	expect(grantsPayload.grants[0]?.subjectLabel).toBe('@dan')
 	expect(grantsPayload.grants[0]?.presetLabel).toBe('Use')
+	expect(grantsPayload.grants[0]).toMatchObject({ canRevoke: true })
 
 	const collabReq = new Request(
 		'https://kody.test/@zeta-co/-/collaborators.json',
@@ -223,6 +224,27 @@ test('member:write without manage access on the resource cannot revoke; owner ca
 			 VALUES ('grant-bob-member-write', 'member:write')`,
 		)
 		.run()
+
+	const listReq = new Request('https://kody.test/@zeta-co/-/grants.json')
+	await signIn('bob', listReq)
+	const listed = await createOrgGrantsApiHandler(env).handler({
+		request: listReq,
+	} as never)
+	expect(listed.status).toBe(200)
+	const listedPayload = (await listed.json()) as {
+		canManage: boolean
+		grants: Array<{ id: string; canRevoke: boolean }>
+	}
+	expect(listedPayload.canManage).toBe(true)
+	expect(listedPayload.grants).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ id: 'grant-1', canRevoke: false }),
+			expect.objectContaining({
+				id: 'grant-bob-member-write',
+				canRevoke: true,
+			}),
+		]),
+	)
 
 	const revokeReq = new Request(
 		'https://kody.test/@zeta-co/-/grants/revoke.json',
@@ -315,7 +337,9 @@ test('personal org owner can list and revoke grants', async () => {
 		grants: Array<{ id: string }>
 	}
 	expect(listPayload.canManage).toBe(true)
-	expect(listPayload.grants.map((g) => g.id)).toContain('grant-personal-1')
+	expect(listPayload.grants).toContainEqual(
+		expect.objectContaining({ id: 'grant-personal-1', canRevoke: true }),
+	)
 
 	const revokeReq = new Request('https://kody.test/@ada/-/grants/revoke.json', {
 		method: 'POST',
