@@ -500,6 +500,13 @@ test('Mailbox retention ends after one item so a queued update can save the next
 		expiredRemaining: false,
 	})
 	expect(await env.EMAIL_BLOBS.get(updatedRawKey)).toBeNull()
+	// The finished pass clears the continuation alarm the first turn armed.
+	expect(
+		await runInDurableObject(
+			stubFor(userId),
+			async (_instance: Mailbox, state) => state.storage.getAlarm(),
+		),
+	).toBeNull()
 })
 
 test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {

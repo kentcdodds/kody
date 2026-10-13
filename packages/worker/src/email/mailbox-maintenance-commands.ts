@@ -181,6 +181,9 @@ export class MailboxMaintenanceCommands {
 			nextDueAtMs: this.nextAlarmDueAtMs(nowMs),
 		})
 		if (reschedule.atMs == null) {
+			// runRetentionNow can finish work an earlier turn armed a continuation
+			// for; clear it so idle really means no pending alarm.
+			await this.ctx.storage.deleteAlarm()
 			this.alarmArmed = false
 			this.idleConfirmed = true
 		} else {
