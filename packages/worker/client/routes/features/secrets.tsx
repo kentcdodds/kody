@@ -1,6 +1,12 @@
 import { type Handle, on } from 'remix/component'
 import { SecretsVault } from './secrets-vault.tsx'
 import { FeatureRelated } from './feature-related.tsx'
+import {
+	SecretsAccessScene,
+	SecretsTripScene,
+	type SecretApproval,
+	type SecretHost,
+} from './secrets-scenes.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
 const approvals = {
@@ -11,9 +17,11 @@ const approvals = {
 		'An expired secret stays listed, but Kody stops resolving it. This does not revoke the token at the service that issued it.',
 }
 export function SecretsFeature(handle: Handle) {
-	let host: 'approved' | 'blocked' = 'approved'
+	let host: SecretHost = 'approved'
 	let sent = false
-	let approval: keyof typeof approvals = 'host'
+	let tripShot = 0
+	let approval: SecretApproval = 'host'
+	let approvalShot = 0
 	return () => (
 		<div class="study secrets">
 			<img
@@ -35,56 +43,7 @@ export function SecretsFeature(handle: Handle) {
 			<a class="action" href="/onboarding">
 				Connect your agent
 			</a>
-			<div class="boundary ui-stage">
-				<div class="envelope ui-window">
-					<div class="ui-title">
-						<span class="ui-symbol">⌑</span>
-						<strong>Agent sees</strong>
-						<span class="ui-state">Reference only</span>
-					</div>
-					<div class="ui-row">
-						<small>In prompts</small>
-						<code>{'{{secret:<name>}}'}</code>
-					</div>
-					<div class="ui-row">
-						<small>Allowed host</small>
-						<code>api.example.com</code>
-					</div>
-				</div>
-				<div class="gate">
-					<svg viewBox="0 0 140 80" aria-hidden="true">
-						<path class="ui-request-line" d="M4 40H136" />
-						<path d="m124 32 12 8-12 8" />
-						<rect x="51" y="24" width="34" height="32" rx="5" />
-						<path d="M59 24v-6a9 9 0 0 1 18 0v6" />
-					</svg>
-					<small>Resolved by Kody</small>
-				</div>
-				<div class="envelope ui-window">
-					<div class="ui-title">
-						<span class="ui-symbol">↗</span>
-						<strong>API request</strong>
-					</div>
-					<strong id="destination">
-						{host === 'approved' ? 'Approved API host' : 'Unapproved host'}
-					</strong>
-					<div class="ui-row">
-						<small>Authorization</small>
-						<span id="ui-auth-status">
-							{sent && host === 'approved'
-								? 'Added at request boundary'
-								: 'Not sent'}
-						</span>
-					</div>
-					<p class="result" id="secret-result" role="status">
-						{sent
-							? host === 'approved'
-								? 'Request sent to the approved host.'
-								: 'Blocked. This host is not approved.'
-							: 'Ready to send an example request.'}
-					</p>
-				</div>
-			</div>
+			<SecretsTripScene host={host} sent={sent} shot={tripShot} />
 			<div class="controls">
 				<button
 					type="button"
@@ -92,6 +51,7 @@ export function SecretsFeature(handle: Handle) {
 					mix={on('click', () => {
 						host = 'approved'
 						sent = false
+						tripShot += 1
 						handle.update()
 					})}
 				>
@@ -103,6 +63,7 @@ export function SecretsFeature(handle: Handle) {
 					mix={on('click', () => {
 						host = 'blocked'
 						sent = false
+						tripShot += 1
 						handle.update()
 					})}
 				>
@@ -114,6 +75,7 @@ export function SecretsFeature(handle: Handle) {
 					id="send-request"
 					mix={on('click', () => {
 						sent = true
+						tripShot += 1
 						handle.update()
 					})}
 				>
@@ -146,6 +108,7 @@ export function SecretsFeature(handle: Handle) {
 								aria-pressed={approval === 'host'}
 								mix={on('click', () => {
 									approval = 'host'
+									approvalShot += 1
 									handle.update()
 								})}
 							>
@@ -156,6 +119,7 @@ export function SecretsFeature(handle: Handle) {
 								aria-pressed={approval === 'package'}
 								mix={on('click', () => {
 									approval = 'package'
+									approvalShot += 1
 									handle.update()
 								})}
 							>
@@ -166,6 +130,7 @@ export function SecretsFeature(handle: Handle) {
 								aria-pressed={approval === 'expiry'}
 								mix={on('click', () => {
 									approval = 'expiry'
+									approvalShot += 1
 									handle.update()
 								})}
 							>
@@ -177,36 +142,7 @@ export function SecretsFeature(handle: Handle) {
 						</p>
 						<a href="/docs/secrets">How approvals work</a>
 					</div>
-					<div>
-						<div class="ui-window ui-policy">
-							<div class="ui-title">
-								<span class="ui-symbol">⌑</span>
-								<strong>Credential access</strong>
-								<span class="ui-state">Example</span>
-							</div>
-							<div
-								class={`ms-slip ui-policy-row ${approval === 'host' ? 'ms-active' : ''}`}
-							>
-								<span>Allowed host</span>
-								<code>api.example.com</code>
-								<b>✓</b>
-							</div>
-							<div
-								class={`ms-slip ui-policy-row ${approval === 'package' ? 'ms-active' : ''}`}
-							>
-								<span>Package</span>
-								<code>weekly-brief</code>
-								<b>✓</b>
-							</div>
-							<div
-								class={`ms-slip ui-policy-row ${approval === 'expiry' ? 'ms-active' : ''}`}
-							>
-								<span>Expiry</span>
-								<span>Checked before use</span>
-								<b>✓</b>
-							</div>
-						</div>
-					</div>
+					<SecretsAccessScene approval={approval} shot={approvalShot} />
 				</div>
 			</section>
 			<SecretsVault />
