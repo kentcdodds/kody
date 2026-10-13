@@ -7,6 +7,7 @@ import { resourceRestoreCapability } from './resource-restore.ts'
 import { packageAppCustomHostnameAddCapability } from './package-app-custom-hostname-add.ts'
 import { packageAppCustomHostnameDeleteCapability } from './package-app-custom-hostname-delete.ts'
 import { packageAppCustomHostnameListCapability } from './package-app-custom-hostname-list.ts'
+import { packageAppCustomHostnameSyncCapability } from './package-app-custom-hostname-sync.ts'
 
 export const orgsDomain = defineDomain({
 	name: capabilityDomainNames.orgs,
@@ -29,6 +30,7 @@ export const orgsDomain = defineDomain({
 		resourceRestoreCapability,
 		packageAppCustomHostnameAddCapability,
 		packageAppCustomHostnameListCapability,
+		packageAppCustomHostnameSyncCapability,
 		packageAppCustomHostnameDeleteCapability,
 	],
 })
