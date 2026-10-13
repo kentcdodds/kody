@@ -98,8 +98,14 @@ function lastUsedOrgCommitFetch(
 	const pathname = pageUrl.pathname
 	const resource = parseOrgResourcePath(pathname)
 	if (resource) {
+		// `/account/connections.json` is the person's sign-in providers; the
+		// org Connections page loads `/account/connected-agents.json`.
+		const accountJson =
+			resource.section === 'connections'
+				? '/account/connected-agents.json'
+				: `/account/${resource.section}.json`
 		return {
-			input: `/account/${resource.section}.json`,
+			input: accountJson,
 			init: {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
