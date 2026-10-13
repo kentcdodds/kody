@@ -465,20 +465,20 @@
 			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
 		},
 		{
-			"filename": "0119-user-owned-tokens-and-git-credentials.sql",
-			"sha256": "31cd56dd8d4a10afcb92089d6bbd7304f2d5dcf6058453b605e9a7ac741758e3"
-		},
-		{
-			"filename": "0121-drop-git-access-tokens.sql",
-			"sha256": "512af1c504e4cf5c7a8ad88dcb87bc2ce292a5b7f42f0cce0ca3b9b042194cfa"
-		},
-		{
 			"filename": "0123-webhook-apply-destination-credential-ids.sql",
 			"sha256": "0983c5748af6554e9bde5dbc502726ce86f22ca42395dbf4825069cfc84421d1"
 		},
 		{
 			"filename": "0124-package-internet-visible-capability-approvals.sql",
 			"sha256": "9712703d251e2b43c1ecbb2ed8122d6911179913e4a612126c9d06356e72d3b4"
+		},
+		{
+			"filename": "0125-user-owned-tokens-and-git-credentials.sql",
+			"sha256": "31cd56dd8d4a10afcb92089d6bbd7304f2d5dcf6058453b605e9a7ac741758e3"
+		},
+		{
+			"filename": "0126-drop-git-access-tokens.sql",
+			"sha256": "aa7d6ce8f2ee2d1890182dd2a0194a9066903421bbf4f5ddbcdd7b4dab59b22d"
 		}
 	]
 }
