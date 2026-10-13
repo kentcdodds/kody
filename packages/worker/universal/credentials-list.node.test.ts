@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import { type CredentialListItem } from './credential-contracts.ts'
 import {
-	withLockedPackageFilter,
 	filterCredentialList,
 	readCredentialListFilters,
 	writeCredentialListQuery,
@@ -57,18 +56,40 @@ test('search matches every term across fields, like the old Secrets list', () =>
 	expect(names('stripe test')).toEqual([])
 })
 
-test('choosing a package drops the package-scoped-keys filter', () => {
-	expect(
-		withLockedPackageFilter(
-			{ packageScoped: true, kinds: ['secret'] },
-			'pkg-1',
-		),
-	).toEqual({ packageScoped: undefined, kinds: ['secret'], locked: 'pkg-1' })
-	expect(withLockedPackageFilter({ packageScoped: false }, 'pkg-1')).toEqual({
-		packageScoped: false,
-		locked: 'pkg-1',
-	})
-	expect(
-		withLockedPackageFilter({ packageScoped: true, locked: 'pkg-1' }, ''),
-	).toEqual({ packageScoped: true, locked: undefined })
+test('a chosen package matches its own keys and keys locked to it', () => {
+	const base: CredentialListItem = {
+		id: 'c1',
+		kind: 'secret',
+		name: 'OWN_KEY',
+		scope: 'org',
+		provider: null,
+		description: '',
+		hosts: [],
+		inject: null,
+		packageId: 'pkg-billing',
+		lockedToPackageIds: [],
+		expiresAt: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		status: 'ok',
+		statusMessage: null,
+		mcp: null,
+	}
+	const items: Array<CredentialListItem> = [
+		base,
+		{
+			...base,
+			id: 'c2',
+			name: 'LOCKED_KEY',
+			packageId: null,
+			lockedToPackageIds: ['pkg-billing'],
+		},
+		{ ...base, id: 'c3', name: 'OTHER_KEY', packageId: 'pkg-triage' },
+	]
+	const names = (filters: Parameters<typeof filterCredentialList>[1]) =>
+		filterCredentialList(items, filters).map((item) => item.name)
+	expect(names({ locked: 'pkg-billing' })).toEqual(['OWN_KEY', 'LOCKED_KEY'])
+	expect(names({ locked: 'pkg-billing', packageScoped: true })).toEqual([
+		'OWN_KEY',
+	])
 })

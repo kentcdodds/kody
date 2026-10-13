@@ -39,7 +39,6 @@ import {
 	credentialKindLabel,
 	credentialStatusLabel,
 	filterCredentialList,
-	withLockedPackageFilter,
 } from '#universal/credentials-list.ts'
 import { orgResourcePath, orgSlugFromPathname } from '#universal/org-pages.ts'
 import {
@@ -176,11 +175,7 @@ function packageScopeOption(
 	return 'any'
 }
 
-/**
- * Package-scope choice as filters. A chosen package (`locked: id`) stays,
- * except for package-scoped keys, which belong to a package instead of being
- * locked to one.
- */
+/** Package-scope choice as filters. A chosen package (`locked: id`) stays. */
 function packageScopeFilters(
 	option: PackageScopeOption,
 	current: CredentialListFilters,
@@ -191,7 +186,7 @@ function packageScopeFilters(
 		case 'any':
 			return { ...current, packageScoped: undefined, locked: lockedPackage }
 		case 'scoped':
-			return { ...current, packageScoped: true, locked: undefined }
+			return { ...current, packageScoped: true, locked: lockedPackage }
 		case 'unscoped':
 			return { ...current, packageScoped: false, locked: lockedPackage }
 		case 'locked':
@@ -453,9 +448,10 @@ export function AccountCredentialsRoute(handle: Handle) {
 										value={lockedPackageId}
 										options={packageOptions}
 										onChange={(packageId) =>
-											updateFilters((current) =>
-												withLockedPackageFilter(current, packageId),
-											)
+											updateFilters((current) => ({
+												...current,
+												locked: packageId || undefined,
+											}))
 										}
 									/>
 								</span>
