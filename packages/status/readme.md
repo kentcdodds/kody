@@ -195,9 +195,11 @@ everything is up (for testing).
 The game is progressive enhancement in `public/status-breakout*.js` (plain
 browser modules, no dependencies, nothing loaded from the main worker). Without
 JavaScript the page is unchanged and refreshes through a `<noscript>` meta
-refresh. With JavaScript, `status-breakout.js` owns the 60-second reload so it
-can stop it when a game starts; quitting reloads the page. The pure collision
-math in `status-breakout-physics.js` has node tests, and `tsconfig.browser.json`
+refresh. With JavaScript, a small inline script in `<head>` schedules the
+60-second reload before any module loads (so a slow or failed module never stops
+the refresh) and records the timer id on `<html data-refresh-timer>`; starting a
+game clears it, and quitting reloads the page. The pure collision math in
+`status-breakout-physics.js` has node tests, and `tsconfig.browser.json`
 typechecks the modules against DOM types.
 
 ## Deploy

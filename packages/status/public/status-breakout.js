@@ -2,23 +2,22 @@
    config's browser env does not apply here. */
 // Opt-in "while you wait" Breakout over the live status page: the ball
 // shatters the page's own words, status dots, and day bars. The
-// server-rendered page works without this module. With it, this module owns
-// the 60s auto-refresh (the <meta> refresh only runs inside <noscript>)
-// because a meta refresh cannot be cancelled once a game starts.
+// server-rendered page works without this module. Its 60s auto-refresh is an
+// inline timer whose id sits on `<html data-refresh-timer>`; starting a game
+// cancels it, because a <meta> refresh cannot be cancelled.
 import { createGame } from './status-breakout-game.js'
 
-const refreshMs = 60_000
 const brickZoneRatio = 0.58
 const maxLayoutWidthFactor = 5
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
-const refreshTimer = setTimeout(() => location.reload(), refreshMs)
 
 const pageMain = document.querySelector('main')
 const startButton = document.querySelector('[data-breakout-start]')
 if (
 	pageMain instanceof HTMLElement &&
-	startButton instanceof HTMLButtonElement
+	startButton instanceof HTMLButtonElement &&
+	document.createElement('canvas').getContext('2d')
 ) {
 	const forced = new URLSearchParams(location.search).has('play')
 	if (forced || document.body.dataset.overallStatus !== 'operational') {
@@ -36,7 +35,7 @@ if (
  * @param {HTMLButtonElement} button
  */
 async function startGame(main, button) {
-	clearTimeout(refreshTimer)
+	clearTimeout(Number(document.documentElement.dataset.refreshTimer))
 	button.remove()
 	wrapWords(main)
 	const blocks = Array.from(main.children).filter(

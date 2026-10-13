@@ -79,6 +79,9 @@ export function createHud({ onQuit }) {
 			)
 			toast.hidden = false
 		},
+		hideRecovered() {
+			toast.hidden = true
+		},
 	}
 }
 

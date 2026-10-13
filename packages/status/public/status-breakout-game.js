@@ -97,7 +97,8 @@ export function createGame(
 	collectBricks()
 	serveBall()
 	void pollStatus()
-	const pollTimer = setInterval(() => void pollStatus(), statusPollMs)
+	const originalTitle = document.title
+	setInterval(() => void pollStatus(), statusPollMs)
 	bindInput()
 	requestAnimationFrame(frame)
 
@@ -115,6 +116,8 @@ export function createGame(
 			launchOrResume()
 		})
 		addEventListener('keydown', (event) => {
+			const activatesButton = event.key === ' ' || event.key === 'Enter'
+			if (activatesButton && event.target instanceof HTMLButtonElement) return
 			if (event.key === 'ArrowLeft' || event.key === 'a') keyDirection = -1
 			else if (event.key === 'ArrowRight' || event.key === 'd') {
 				keyDirection = 1
@@ -382,9 +385,14 @@ export function createGame(
 			elapsed += dt
 			runPending()
 			updatePaddle(dt)
-			balls = balls.filter((ball) => updateBall(ball, dt))
-			if (balls.length === 0) loseLife()
-			else if (remainingBricks === 0 && pending.length === 0) finish('won')
+			// Bricks hit this frame can spawn balls; those must survive the filter.
+			const count = balls.length
+			const survivors = balls
+				.slice(0, count)
+				.filter((ball) => updateBall(ball, dt))
+			balls = [...survivors, ...balls.slice(count)]
+			if (remainingBricks === 0 && pending.length === 0) finish('won')
+			else if (balls.length === 0 && pending.length === 0) loseLife()
 		} else if (state === 'serve') {
 			updatePaddle(dt)
 			for (const ball of balls) {
@@ -595,13 +603,17 @@ export function createGame(
 		} catch {
 			next = 'unreachable'
 		}
-		const recovered = liveStatus !== 'operational' && next === 'operational'
+		const wasOperational = liveStatus === 'operational'
+		const isOperational = next === 'operational'
 		liveStatus = next
 		hud.setLiveStatus(next, new Date())
-		if (!recovered) return
-		document.title = 'Kody is back · Kody status'
-		hud.showRecovered()
-		clearInterval(pollTimer)
+		if (!wasOperational && isOperational) {
+			document.title = 'Kody is back · Kody status'
+			hud.showRecovered()
+		} else if (wasOperational && !isOperational) {
+			document.title = originalTitle
+			hud.hideRecovered()
+		}
 	}
 }
 

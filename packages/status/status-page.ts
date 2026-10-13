@@ -13,11 +13,16 @@ import {
 	type StatusSnapshot,
 } from './status-types.ts'
 
-/** Server-rendered public status page. It works without client JavaScript:
- * a `<noscript>` meta refresh keeps an open tab tracking an ongoing incident,
- * including swapping the status-specific favicon when an incident opens or
- * resolves. With JavaScript, `public/status-breakout.js` owns that refresh
- * (so it can pause it) and offers the opt-in "while you wait" game. */
+/** Server-rendered public status page. A 60s reload keeps an open tab
+ * tracking an ongoing incident, including swapping the status-specific
+ * favicon when an incident opens or resolves: a `<noscript>` meta refresh
+ * without JavaScript, otherwise an inline timer. The inline timer runs even
+ * when `public/status-breakout.js` fails to load; the opt-in "while you wait"
+ * game cancels it through `data-refresh-timer` because a meta refresh cannot
+ * be cancelled. */
+
+const refreshTimerScript =
+	'document.documentElement.dataset.refreshTimer = String(setTimeout(() => location.reload(), 60000))'
 
 function escapeHtml(value: string): string {
 	return value
@@ -476,6 +481,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <noscript><meta http-equiv="refresh" content="60" /></noscript>
+<script>${refreshTimerScript}</script>
 <title>Kody status</title>
 ${renderFaviconLinks(snapshot.overallStatus)}
 <style>${pageStyles}</style>

@@ -134,6 +134,11 @@ export function shardGrid(width, height, pieceSize, maxPieces) {
 		cols = Math.max(1, Math.floor(cols * shrink))
 		rows = Math.max(1, Math.floor(rows * shrink))
 	}
+	// The proportional shrink overshoots when one side clamps at 1.
+	while (cols * rows > maxPieces && cols * rows > 1) {
+		if (rows >= cols) rows--
+		else cols--
+	}
 	const pieceWidth = width / cols
 	const pieceHeight = height / rows
 	/** @type {Array<Piece>} */

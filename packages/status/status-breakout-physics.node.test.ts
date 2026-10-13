@@ -77,5 +77,6 @@ test('shards tile the shattered element exactly and respect the piece cap', () =
 	expect(area).toBeCloseTo(400)
 
 	expect(shardGrid(400, 200, 4, 80).length).toBeLessThanOrEqual(80)
+	expect(shardGrid(2, 2000, 16, 80).length).toBeLessThanOrEqual(80)
 	expect(shardGrid(0, 10, 4, 80)).toEqual([])
 })
