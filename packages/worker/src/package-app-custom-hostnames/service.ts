@@ -553,22 +553,14 @@ export async function addPackageAppCustomHostname(input: {
 			`This organization already has ${packageAppCustomHostnameMaxPerOrg} custom domains (abuse limit). Remove one before adding another.`,
 		)
 	}
-	const rateLimit = await checkRateLimit(
-		input.env.APP_DB,
-		packageAppCustomHostnameAddRateLimitKey(input.orgId),
-		packageAppCustomHostnameAddRateLimit,
-	)
-	if (!rateLimit.allowed) {
-		throw new PackageAppCustomHostnameError(
-			`Too many custom domain claims. Try again in about ${rateLimit.retryAfterSeconds ?? packageAppCustomHostnameAddRateLimit.windowSeconds} seconds.`,
-		)
-	}
 	const now = new Date().toISOString()
 	const id = crypto.randomUUID()
 	const sslMethod = input.sslMethod ?? 'http'
 	let packageId: string | null = null
 	let orgId: string | null = null
 
+	// Validate binding before consuming the add rate-limit slot so bad
+	// package_id attempts cannot exhaust the org's claim budget.
 	switch (input.bindingKind) {
 		case 'app': {
 			const resolvedPackageId = input.packageId?.trim()
@@ -606,13 +598,25 @@ export async function addPackageAppCustomHostname(input: {
 		}
 	}
 
-const rateLimitKey = packageAppCustomHostnameAddRateLimitKey(input.orgId)
+	const rateLimitKey = packageAppCustomHostnameAddRateLimitKey(input.orgId)
+	const rateLimit = await checkRateLimit(
+		input.env.APP_DB,
+		rateLimitKey,
+		packageAppCustomHostnameAddRateLimit,
+	)
+	if (!rateLimit.allowed) {
+		throw new PackageAppCustomHostnameError(
+			`Too many custom domain claims. Try again in about ${rateLimit.retryAfterSeconds ?? packageAppCustomHostnameAddRateLimit.windowSeconds} seconds.`,
+		)
+	}
 	const client = createCloudflareClient(input.env)
 	let cf: CloudflareCustomHostnameResult
 	try {
 		cf = await client.addCustomHostname({ hostname, sslMethod })
 	} catch (error) {
-		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(
+			() => undefined,
+		)
 		throw error
 	}
 	const cloudflareZoneId = input.env.PACKAGE_APP_ZONE_ID?.trim() ?? null
@@ -639,7 +643,9 @@ const rateLimitKey = packageAppCustomHostnameAddRateLimitKey(input.orgId)
 			cloudflareHostnameId: cf.id,
 			hostname,
 		})
-		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(
+			() => undefined,
+		)
 		if (error instanceof PackageAppCustomHostnameError) throw error
 		throw new PackageAppCustomHostnameError(
 			`Custom hostname could not be stored (${getErrorMessage(error)}).`,
@@ -657,7 +663,9 @@ const rateLimitKey = packageAppCustomHostnameAddRateLimitKey(input.orgId)
 			cloudflareHostnameId: cf.id,
 			hostname,
 		})
-		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(
+			() => undefined,
+		)
 		throw new PackageAppCustomHostnameError(
 			'Custom hostname row was not stored.',
 		)

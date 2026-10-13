@@ -42,9 +42,7 @@ function createDb() {
 test('cached lookup returns the same mapping within the TTL and refreshes after invalidate', async () => {
 	const { sqlite, db } = createDb()
 	clearCachedPackageAppCustomHostnames(db)
-	await db
-		.prepare(`INSERT INTO orgs (id, slug) VALUES ('org-1', 'acme')`)
-		.run()
+	await db.prepare(`INSERT INTO orgs (id, slug) VALUES ('org-1', 'acme')`).run()
 	await db
 		.prepare(
 			`INSERT INTO package_app_custom_hostnames (
@@ -102,4 +100,47 @@ test('cached lookup stores negative misses', async () => {
 			hostname: 'missing.example.com',
 		}),
 	).toBeNull()
+})
+
+test('clearCachedPackageAppCustomHostnames drops all isolate entries for a db', async () => {
+	const { sqlite, db } = createDb()
+	clearCachedPackageAppCustomHostnames(db)
+	await db.prepare(`INSERT INTO orgs (id, slug) VALUES ('org-1', 'acme')`).run()
+	await db
+		.prepare(
+			`INSERT INTO saved_packages (
+				id, user_id, name, kody_id, deleted_at
+			) VALUES ('pkg-1', 'org-1', '@acme/old', 'old', NULL)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'row-1', 'apps.example.com', 'app', 'pkg-1', NULL,
+				'cf-1', 'zone', 'active', 'active', 'person-1',
+				'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z'
+			)`,
+		)
+		.run()
+	const first = await lookupCachedPackageAppCustomHostname({
+		db,
+		hostname: 'apps.example.com',
+	})
+	expect(first?.kodyId).toBe('old')
+	sqlite
+		.prepare(
+			`UPDATE saved_packages SET name = '@acme/new', kody_id = 'new' WHERE id = 'pkg-1'`,
+		)
+		.run()
+	clearCachedPackageAppCustomHostnames(db)
+	const refreshed = await lookupCachedPackageAppCustomHostname({
+		db,
+		hostname: 'apps.example.com',
+	})
+	expect(refreshed?.kodyId).toBe('new')
 })
