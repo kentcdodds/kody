@@ -86,11 +86,9 @@ test("an imported package's credential() opens with that package's id, not the e
 		{ packageId: 'pkg-imported', key: 'resend', many: true },
 		{ packageId: 'pkg-imported', key: 'github' },
 	])
-})
 
-test('without credential clients in the run, the package runtime has no credential export', async () => {
-	const { module } = await loadPackageRuntime('pkg-plain', {})
-	expect(module.credential).toBeUndefined()
-	expect(module.credentials).toBeUndefined()
-	expect(module.default.credential).toBeUndefined()
+	const { module: plain } = await loadPackageRuntime('pkg-plain', {})
+	expect(plain.credential).toBeUndefined()
+	expect(plain.credentials).toBeUndefined()
+	expect(plain.default.credential).toBeUndefined()
 })

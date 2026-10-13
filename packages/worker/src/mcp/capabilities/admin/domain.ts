@@ -17,6 +17,7 @@ import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry
 import { adminPackageCodemodOwnerNoticeCapability } from './admin-package-codemod-owner-notice.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
 import { adminPackageCodemodScanCapability } from './admin-package-codemod-scan.ts'
+import { adminPackagePlacementFailuresCapability } from './admin-package-placement-failures.ts'
 import { adminPlatformOauthAppDeleteCapability } from './admin-platform-oauth-app-delete.ts'
 import { adminPlatformOauthAppListCapability } from './admin-platform-oauth-app-list.ts'
 import { adminPlatformOauthAppSaveCapability } from './admin-platform-oauth-app-save.ts'
@@ -88,6 +89,7 @@ export const adminDomain = defineDomain({
 		'parity',
 		'run log',
 		'sql billing',
+		'placement refusal',
 		'cutover',
 		'reconcile',
 		'storage bytes',
@@ -123,6 +125,7 @@ export const adminDomain = defineDomain({
 		adminEmailDestinationVerifyCapability,
 		adminUserMeterParityCapability,
 		adminRunLogSqlBillingCapability,
+		adminPackagePlacementFailuresCapability,
 		adminUserMeterStorageReconcileCapability,
 		adminMailboxMaintenanceCapability,
 		adminAccountWriteLeaseListCapability,

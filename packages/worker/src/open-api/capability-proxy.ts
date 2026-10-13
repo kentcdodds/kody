@@ -10,6 +10,11 @@ import {
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
 import {
+	credentialCallMapSchema,
+	normalizeCredentialCallMap,
+	type CredentialCallMap,
+} from '#worker/credentials/credential-call-map.ts'
+import {
 	CredentialClientError,
 	toCredentialClientError,
 } from '#worker/credentials/credential-client.ts'
@@ -56,6 +61,9 @@ export const capabilityProxyLimits = {
 	maxRequestBytes: maxApiRequestBodyBytes,
 } as const
 
+/** Feature flags in the session response, for clients to detect host support. */
+export const capabilityProxyFeatures = ['credential-call-map'] as const
+
 const pathSegmentSchema = z
 	.string()
 	.min(1)
@@ -80,6 +88,11 @@ export const capabilityProxyCallInputSchema = z
 			.max(64)
 			.optional()
 			.describe('Optional MCP conversation id to attribute the call to.'),
+		credentials: credentialCallMapSchema
+			.optional()
+			.describe(
+				'Credential picks for this local run, by need key (CLI `--credential key=name`), read by `kody.credentialClient*` calls. Same shape as `execute` `credentials`. Picks choose only among credentials you can Use.',
+			),
 	})
 	.strict()
 
@@ -99,6 +112,11 @@ export const capabilityProxySessionOutputSchema = z.object({
 	maxExpiresAt: z.string().describe('Absolute expiry of the token.'),
 	idleTtlSeconds: z.number().int(),
 	user: z.object({ userId: z.string(), email: z.string() }),
+	features: z
+		.array(z.string())
+		.describe(
+			'Optional host features this proxy serves, e.g. `credential-call-map` (the `credentials` call field and `kody.credentialClientCheck`).',
+		),
 	limits: z.object({
 		maxPathSegments: z.number().int(),
 		maxArgs: z.number().int(),
@@ -139,11 +157,13 @@ async function invokeCapability<T>(invoke: () => Promise<T> | T) {
  */
 function createCapabilityProxyCredentialClientTools(
 	ctx: ApiInvocationContext,
+	callMap: CredentialCallMap | null,
 ): CredentialClientToolOptions | undefined {
 	const request = ctx.callerContext.request
 	if (!request) return undefined
 	return {
 		binding: capabilityProxyCredentialClientBinding(request),
+		callMap,
 		resolvePackageId: async (requested) => {
 			const packageId = typeof requested === 'string' ? requested.trim() : ''
 			if (!packageId) return null
@@ -175,8 +195,9 @@ async function callKodyPath(input: {
 	path: ReadonlyArray<string>
 	args: ReadonlyArray<unknown>
 	redactor: ExecutionSecretRedactor
+	callMap: CredentialCallMap | null
 }) {
-	const { ctx, path, args, redactor } = input
+	const { ctx, path, args, redactor, callMap } = input
 	const [, name] = path
 	if (path.length === 2 && name === 'authenticatedFetch') {
 		return invokeCapability(() =>
@@ -202,7 +223,7 @@ async function callKodyPath(input: {
 		: {}
 	const credentialClientTools =
 		typeof name === 'string' && name.startsWith('credentialClient')
-			? createCapabilityProxyCredentialClientTools(ctx)
+			? createCapabilityProxyCredentialClientTools(ctx, callMap)
 			: undefined
 	const { tools, mcpServers } = await buildKodyToolContext(
 		ctx.env,
@@ -271,7 +292,13 @@ async function dispatchCapabilityProxyCall(input: {
 	const { ctx, call, redactor } = input
 	const [root, name] = call.path
 	if (root === 'kody') {
-		return callKodyPath({ ctx, path: call.path, args: call.args, redactor })
+		return callKodyPath({
+			ctx,
+			path: call.path,
+			args: call.args,
+			redactor,
+			callMap: normalizeCredentialCallMap(call.credentials),
+		})
 	}
 	if (root === 'workflows' && name === 'create' && call.path.length === 2) {
 		const workflowTools = createWorkflowTools({

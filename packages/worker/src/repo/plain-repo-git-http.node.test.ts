@@ -38,7 +38,6 @@ const {
 	isArtifactsGitReceivePackBusyResponse,
 	parsePlainRepoGitHttpPath,
 	readCappedResponseText,
-	repositoryBusyRetryMessage,
 	repositoryBusyRetryResponse,
 } = await import('./plain-repo-git-http.ts')
 
@@ -156,13 +155,6 @@ test('readCappedResponseText detects busy marker in a truncated error body', asy
 	expect(retry.headers.get('Retry-After')).toBe('5')
 })
 
-test('repositoryBusyRetryResponse is 503 with Retry-After and clear message', () => {
-	const response = repositoryBusyRetryResponse()
-	expect(response.status).toBe(503)
-	expect(response.headers.get('Retry-After')).toBe('5')
-	expect(response.headers.get('Content-Type')).toMatch(/text\/plain/)
-})
-
 test('extractArtifactsTokenFromRequest accepts Bearer and Basic', () => {
 	expect(
 		extractArtifactsTokenFromRequest(
@@ -212,7 +204,7 @@ test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async 
 	expect(response).not.toBeNull()
 	expect(response!.status).toBe(503)
 	expect(response!.headers.get('Retry-After')).toBe('5')
-	expect(await response!.text()).toBe(repositoryBusyRetryMessage)
+	expect(await response!.text()).toBe('repository busy, retry')
 })
 
 test('proxy streams successful receive-pack unchanged', async () => {

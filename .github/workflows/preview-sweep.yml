@@ -1,10 +1,16 @@
 name: 🧹 Preview Sweep
 
 # Removes Cloudflare resources left by PR previews whose PR is closed but whose
-# close-time cleanup never ran or failed (#3396). Leftover preview Workers keep
-# their Durable Object namespaces until the account cap blocks new previews.
-# tools/ci/preview-sweep.ts only deletes kody-pr-<number>* names, through the
-# preview naming guard in tools/ci/preview-resources.ts.
+# close-time cleanup never ran or failed (#3396), and by branch previews whose
+# worker is already gone (#3563). Leftover preview Workers keep their Durable
+# Object namespaces until the account cap blocks new previews.
+# tools/ci/preview-sweep.ts only deletes kody-pr-<number>* and
+# kody-branch-<slug>* names, through the preview naming guard in
+# tools/ci/preview-resources.ts. Branch candidates are discovered from
+# Worker, Durable Object, D1, KV, and R2 names, but liveness is judged only
+# from the Worker scripts listing; branch sweeping is skipped entirely for a
+# run if any preview.yml deploy is queued or in progress, since a deploy
+# provisions D1/KV/R2 before uploading its Worker.
 
 on:
   schedule:
@@ -25,6 +31,9 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # Lets tools/ci/preview-sweep.ts check for an in-progress preview.yml run
+  # before sweeping any branch preview (review follow-up on #3563).
+  actions: read
 
 concurrency:
   group: preview-sweep
@@ -34,8 +43,11 @@ jobs:
   sweep:
     runs-on: ubuntu-latest
     name: 🧹 Sweep closed-PR previews
-    # Each preview cleanup has a 150s budget (previewCleanupBudgetMsDefault);
-    # the default cap of 10 previews fits with room for npm ci.
+    # Each preview cleanup has a 150s budget (previewCleanupBudgetMsDefault).
+    # preview-sweep.ts also tracks its own 30-minute wall-clock budget
+    # (previewSweepWallClockBudgetMsDefault) shared across PR and branch
+    # cleanups in one run, deferring whatever does not fit to the next run,
+    # leaving room here for npm ci and the account-wide listing calls.
     timeout-minutes: 40
     if: github.repository == 'kentcdodds/kody'
     steps:

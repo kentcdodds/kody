@@ -721,8 +721,11 @@ mint; re-enable with `webhookEnable`. Rotate the URL secret with
 `webhookUrlRotate` when a credential may have leaked, then call
 `webhookUrlApply` again with the same handle so providers get the new URL. The
 [settings card](#manage-webhook-urls-in-package-settings) describes the 24-hour
-/ first-accepted-delivery overlap. The same disable, enable, and rotate actions
-are in that Webhooks section.
+/ first-accepted-delivery overlap. Changing `verification.secretName` or
+rotating the secret value it names keeps the previous signing key valid for the
+same 24-hour window (a delivery that verifies under the new key retires it
+early). A webhook that declares HMAC still never falls back to the URL secret.
+The same disable, enable, and rotate actions are in that Webhooks section.
 
 ## Related
 

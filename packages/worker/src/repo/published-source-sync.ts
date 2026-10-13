@@ -51,10 +51,9 @@ export type SyncPublishedSourceOnlyInput = {
 	allowLockedPublish?: boolean
 	/**
 	 * When false, push the durable ref but do not advance published_commit.
-	 * Published-only fleet apply skips locked packages entirely (aligned
-	 * locked applies leave HEAD unrestorable; drifted ones hide the pending
-	 * tip on kody-published). Kept for callers that intentionally stage a
-	 * published-only tip without promoting.
+	 * Published-only fleet apply always promotes (including locked packages
+	 * via {@link allowLockedPublish}) so migrations never leave a pending tip.
+	 * Kept for callers that intentionally stage without promoting.
 	 */
 	promotePublished?: boolean
 }
@@ -149,10 +148,20 @@ async function materializePublishedCommitWorkspace(input: {
 			})
 		}
 		try {
+			// Point a local branch at the OID before checkout. Some Artifacts
+			// fetches leave the commit reachable as an object without a named
+			// ref; checkout-by-OID alone then fails looking up `.git/refs`.
+			await git.branch({
+				fs: next.fs,
+				dir: next.dir,
+				ref: 'kody-published-checkout',
+				object: input.publishedCommit,
+				force: true,
+			})
 			await git.checkout({
 				fs: next.fs,
 				dir: next.dir,
-				ref: input.publishedCommit,
+				ref: 'kody-published-checkout',
 				force: true,
 			})
 		} catch (error) {

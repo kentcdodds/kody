@@ -110,6 +110,8 @@ vi.mock('./artifacts.ts', async (importOriginal) => {
 })
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
+const { PackageCredentialNeedsApprovalError } =
+	await import('#worker/credentials/credential-needs-approval.ts')
 
 const bootstrapAccess: ArtifactBootstrapAccess = {
 	defaultBranch: 'main',
@@ -444,6 +446,44 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 	expect(docsExempt.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
 	)
+})
+
+test('syncArtifactSourceSnapshot keeps the session when the publish pauses for credential needs approval', async () => {
+	const approval = {
+		requestId: 'request-1',
+		packageId: 'package-1',
+		packageName: '@scope/demo',
+		kodyId: 'demo',
+		pendingCommit: 'commit-paused',
+		changes: [],
+		message: 'Package "@scope/demo" changed its credential needs.',
+	}
+	const session = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+			indexed_commit: 'commit-existing-1',
+		}),
+		{
+			...publishingSession('commit-paused'),
+			publishSession: vi.fn(async () => ({
+				status: 'approval_required' as const,
+				sessionId: 'source-sync-source-1-session',
+				publishedCommit: null,
+				currentPublishedCommit: 'commit-existing-1',
+				message: approval.message,
+				approval,
+				credentialNotice: null,
+			})),
+		},
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'package.json': packageJson },
+		}),
+	).rejects.toBeInstanceOf(PackageCredentialNeedsApprovalError)
+	expect(session.discardSession).not.toHaveBeenCalled()
 })
 
 test('syncArtifactSourceSnapshot forwards bootstrap publish flags', async () => {

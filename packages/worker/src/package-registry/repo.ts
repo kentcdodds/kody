@@ -153,22 +153,32 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
  * `users.first_saved_package_at` for the actor (or the owning user when no
  * actor is passed). Callers that stamp before a projection refresh must Kit
  * sync when this returns true — refresh sees an existing row and will not.
+ *
+ * `kody_id` is always the leaf of `name` (#1909 phase 2). Callers must not
+ * invent a second id; an optional leftover `kody_id` field is ignored.
  */
 export async function insertSavedPackage(
 	db: D1Database,
 	row: Omit<
 		SavedPackageRow,
-		'created_at' | 'updated_at' | 'locked_at' | 'is_internet_visible'
+		| 'created_at'
+		| 'updated_at'
+		| 'locked_at'
+		| 'is_internet_visible'
+		| 'kody_id'
 	> & {
 		created_at?: string
 		updated_at?: string
 		/** Defaults to 0 (private app serving). */
 		is_internet_visible?: 0 | 1
+		/** @deprecated Ignored; derived from `name` leaf (#1909 phase 2). */
+		kody_id?: string
 	},
 	telemetry?: OnboardingFunnelEnv | null,
 	options?: { stamp?: boolean; actorUserId?: PersonId },
 ): Promise<boolean> {
 	const now = new Date().toISOString()
+	const kodyId = getPackageNameLeaf(row.name)
 	await db
 		.prepare(
 			`INSERT INTO saved_packages (
@@ -181,7 +191,7 @@ export async function insertSavedPackage(
 			row.id,
 			row.user_id,
 			row.name,
-			row.kody_id,
+			kodyId,
 			row.description,
 			row.tags_json,
 			row.search_text ?? null,
@@ -212,7 +222,6 @@ export async function updateSavedPackage(
 		userId: string
 		packageId: string
 		name?: string
-		kodyId?: string
 		description?: string
 		tagsJson?: string
 		searchText?: string | null
@@ -234,9 +243,8 @@ export async function updateSavedPackage(
 
 	if (input.name !== undefined) {
 		addAssignment('name', input.name)
-	}
-	if (input.kodyId !== undefined) {
-		addAssignment('kody_id', input.kodyId)
+		// Keep the leftover column in lockstep with the name leaf until phase 4.
+		addAssignment('kody_id', getPackageNameLeaf(input.name))
 	}
 	if (input.description !== undefined) {
 		addAssignment('description', input.description)

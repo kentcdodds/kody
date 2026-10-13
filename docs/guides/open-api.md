@@ -31,7 +31,10 @@ separate from Open API; some `/v1` routes exist so the CLI can hop to origin.
 
 With MCP `api` available, mint a token (value returned once). Lifetime is
 required: `short` (1h idle / 24h max), `long` (14d idle / 3mo max), or both
-`idle_ttl_seconds` and `max_lifetime_seconds`.
+`idle_ttl_seconds` and `max_lifetime_seconds`. Tokens default to
+`org_binding: "org"` (fixed to the current request org). Pass
+`"org_binding": "user"` for a person-owned token that selects an org per request
+with `?org=<slug>` (see [Git credential helper](./auth-setup-git.md)).
 
 ```json
 {

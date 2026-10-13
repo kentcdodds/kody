@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -120,12 +120,10 @@ export async function accountMemoriesRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(buildMemoriesApiRequestUrl(url.href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(url.href),
-		signal,
-	})
+	const response = await fetch(
+		buildMemoriesApiRequestUrl(url.href),
+		orgAccountApiFetchInit(url.href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -182,12 +180,10 @@ export function AccountMemoriesRoute(handle: Handle) {
 		key: 'accountMemories',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(buildMemoriesApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				buildMemoriesApiRequestUrl(href),
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountMemoriesLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

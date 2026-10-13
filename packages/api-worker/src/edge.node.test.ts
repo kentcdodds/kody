@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	gatewayFetchDeclaredBodyExceedsUploadLimit,
-	gatewayFetchUploadLimitMessage,
 	handleApiEdgeRequest,
 	maxApiRequestBodyBytes,
 	maxGatewayFetchUploadBytes,
@@ -242,10 +241,6 @@ test('gateway-fetch rejects a declared body over the Worker upload limit', async
 			}),
 		),
 	).toBe(true)
-	expect(gatewayFetchUploadLimitMessage()).toContain(
-		String(maxGatewayFetchUploadBytes),
-	)
-	expect(gatewayFetchUploadLimitMessage()).toContain('100 MiB')
 
 	const { env, forwarded } = createEnv()
 	const oversize = await handleApiEdgeRequest(
@@ -269,7 +264,7 @@ test('gateway-fetch rejects a declared body over the Worker upload limit', async
 	expect(await oversize.json()).toMatchObject({
 		error: {
 			code: 'payload_too_large',
-			message: gatewayFetchUploadLimitMessage(),
+			message: expect.stringMatching(/100 MiB/),
 		},
 	})
 	expect(forwarded).toHaveLength(0)

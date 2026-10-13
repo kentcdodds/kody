@@ -75,6 +75,10 @@ import {
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
+	pausedSessionMovedMessage,
+	requireCredentialNeedsApproval,
+} from '#worker/credentials/credential-needs-approval.ts'
+import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
 	isolatedArtifactRebuildStagingTtlSeconds,
@@ -3179,7 +3183,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		expectedPackageScope?: string
 		commitMessage?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		promotePublished?: boolean
+		/** Refuse unless the session still holds exactly this commit. */
+		expectedHeadCommit?: string
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -3261,12 +3269,24 @@ class RepoSessionBase extends DurableObject<Env> {
 				confirmed: input.privateVisibilityChangeConfirmed,
 			})
 		}
+		// A re-run of a paused publish must publish the commit it paused on, so
+		// it never mints a new history-replacing commit.
 		const sessionHeadCommit =
 			(await this.commitIfDirty(
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionId}`,
-				replaceHistory ? { replaceHistory: true } : undefined,
+				replaceHistory && input.expectedHeadCommit === undefined
+					? { replaceHistory: true }
+					: undefined,
 			)) ?? (await this.getHeadCommit())
+		if (
+			input.expectedHeadCommit !== undefined &&
+			(sessionHeadCommit ?? sessionRow.base_commit) !== input.expectedHeadCommit
+		) {
+			throw new Error(
+				pausedSessionMovedMessage(input.sessionId, input.expectedHeadCommit),
+			)
+		}
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
 			input.expectedPackageScope,
@@ -3280,6 +3300,71 @@ class RepoSessionBase extends DurableObject<Env> {
 			force: true,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
+		// Commit/push do not rewrite workspace file bytes, so reuse the
+		// snapshot collected once above for the published source KV write.
+		const snapshotFiles = workspaceSnapshot.files
+		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		const credentialNotice =
+			source.entity_kind === 'package'
+				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
+				: null
+		const withCredentialNotice = (message: string) =>
+			credentialNotice ? `${message}\n\n${credentialNotice}` : message
+		const lockedPackage =
+			source.entity_kind === 'package' &&
+			input.allowLockedPublish !== true &&
+			input.promotePublished !== false
+				? await loadLockedSavedPackage({
+						db: this.env.APP_DB,
+						userId: input.userId,
+						packageId: source.entity_id,
+					})
+				: null
+		// The pause runs before the source branch moves, so the published commit
+		// stays at HEAD and new sessions open as usual. The session (and its
+		// pushed branch) holds the paused commit until approval re-runs it. A
+		// locked package keeps its locked-publish flow; approving that publish
+		// runs this gate.
+		const approval =
+			input.credentialNeedsApproved === true ||
+			input.promotePublished === false ||
+			lockedPackage
+				? null
+				: await requireCredentialNeedsApproval({
+						env: this.env,
+						source,
+						pendingCommit: publishedCommit,
+						files: snapshotFiles,
+						requestedByUserId: input.requestedByUserId,
+						pausedSession: {
+							sessionId: sessionRow.id,
+							force: input.force === true,
+							destructiveOverwriteConfirmed:
+								input.destructiveOverwriteConfirmed === true,
+							privateVisibilityChangeConfirmed:
+								input.privateVisibilityChangeConfirmed === true,
+							...(input.expectedPackageScope !== undefined
+								? { expectedPackageScope: input.expectedPackageScope }
+								: {}),
+						},
+					})
+		if (approval) {
+			await updateRepoSession(this.env, {
+				id: sessionRow.id,
+				userId: sessionRow.user_id,
+				lastCheckpointCommit: publishedCommit,
+				lastCheckpointAt: nowIso(),
+			})
+			return {
+				status: 'approval_required',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				currentPublishedCommit: source.published_commit,
+				message: approval.message,
+				approval,
+				credentialNotice,
+			}
+		}
 		const forceSourcePush = input.force === true
 		try {
 			await this.pushBranchToRemoteRef({
@@ -3302,16 +3387,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 			throw error
 		}
-		// Commit/push do not rewrite workspace file bytes, so reuse the
-		// snapshot collected once above for the published source KV write.
-		const snapshotFiles = workspaceSnapshot.files
-		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
-		const credentialNotice =
-			source.entity_kind === 'package'
-				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
-				: null
-		const withCredentialNotice = (message: string) =>
-			credentialNotice ? `${message}\n\n${credentialNotice}` : message
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3320,29 +3395,22 @@ class RepoSessionBase extends DurableObject<Env> {
 				message: `Pushed session ${input.sessionId} to ${source.repo_id} without promoting published_commit.`,
 			}
 		}
-		if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
-			const lockedPackage = await loadLockedSavedPackage({
-				db: this.env.APP_DB,
-				userId: input.userId,
-				packageId: source.entity_id,
+		if (lockedPackage) {
+			const error = createPackagePublishLockedError({
+				savedPackage: lockedPackage,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
 			})
-			if (lockedPackage) {
-				const error = createPackagePublishLockedError({
-					savedPackage: lockedPackage,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-				})
-				return {
-					status: 'locked',
-					sessionId: input.sessionId,
-					publishedCommit: null,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-					packageId: lockedPackage.id,
-					packageName: lockedPackage.name,
-					message: error.message,
-					credentialNotice,
-				}
+			return {
+				status: 'locked',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
+				packageId: lockedPackage.id,
+				packageName: lockedPackage.name,
+				message: error.message,
+				credentialNotice,
 			}
 		}
 		await finalizePublishedEntitySource({
@@ -3419,6 +3487,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		deferBundleCheckToRebuild?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
@@ -3509,6 +3579,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 			allowLockedPublish: input.allowLockedPublish,
+			credentialNeedsApproved: input.credentialNeedsApproved,
+			requestedByUserId: input.requestedByUserId,
 			phaseTimings,
 			...(input.deferBundleCheckToRebuild
 				? { deferBundleCheckToRebuild: true }

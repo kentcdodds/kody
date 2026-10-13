@@ -44,6 +44,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	type SavedPackageRecord,
@@ -217,6 +218,28 @@ async function loadPackageExportNames(input: {
 	}
 }
 
+async function resolveOwnerPendingCommit(input: {
+	env: Env
+	requestUrl: string
+	userId: string
+	source: Awaited<ReturnType<typeof getEntitySourceById>>
+}): Promise<{ commit: string | null; known: boolean }> {
+	if (!input.source || input.source.user_id !== input.userId) {
+		return { commit: null, known: true }
+	}
+	if (!input.source.repo_id) return { commit: null, known: true }
+	try {
+		const head = await resolveCachedArtifactSourceHead(
+			input.env,
+			input.source.repo_id,
+			{ request: new Request(input.requestUrl) },
+		)
+		return { commit: head.commit, known: true }
+	} catch {
+		return { commit: null, known: false }
+	}
+}
+
 async function toDetail(input: {
 	env: Env
 	requestUrl: string
@@ -225,15 +248,30 @@ async function toDetail(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 }): Promise<AccountPackageDetail> {
-	const [exports, source, communityFork, creditAttribution] = await Promise.all(
-		[
+	const [exports, sourceAndPending, communityFork, creditAttribution] =
+		await Promise.all([
 			loadPackageExportNames({
 				env: input.env,
 				requestUrl: input.requestUrl,
 				userId: input.userId,
 				sourceId: input.record.sourceId,
 			}),
-			getEntitySourceById(input.env.APP_DB, input.record.sourceId),
+			getEntitySourceById(input.env.APP_DB, input.record.sourceId).then(
+				async (source) => {
+					const ownedSource = source?.user_id === input.userId ? source : null
+					const pending = await resolveOwnerPendingCommit({
+						env: input.env,
+						requestUrl: input.requestUrl,
+						userId: input.userId,
+						source: ownedSource,
+					})
+					return {
+						ownedSource,
+						pendingCommit: pending.commit,
+						pendingCommitKnown: pending.known,
+					}
+				},
+			),
 			input.record.sourceListingId == null
 				? Promise.resolve(null)
 				: getCommunityForkByForkedPackageId(input.env.APP_DB, {
@@ -246,8 +284,7 @@ async function toDetail(input: {
 				username: input.username ?? '',
 				packageId: input.record.id,
 			}),
-		],
-	)
+		])
 	return {
 		...toListItem(
 			input.record,
@@ -257,10 +294,9 @@ async function toDetail(input: {
 		hasCommunityListing: input.hasCommunityListing,
 		searchText: input.record.searchText,
 		exports,
-		publishedCommit:
-			source?.user_id === input.userId
-				? (source.published_commit ?? null)
-				: null,
+		publishedCommit: sourceAndPending.ownedSource?.published_commit ?? null,
+		pendingCommit: sourceAndPending.pendingCommit,
+		pendingCommitKnown: sourceAndPending.pendingCommitKnown,
 		communityFork: communityFork
 			? {
 					listingName: input.record.listingName,

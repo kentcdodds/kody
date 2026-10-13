@@ -184,3 +184,22 @@ test('form, path, and JSON fills leave nested placeholders in values literal', (
 		),
 	).toBe('{"token":"{{secret:apiKey}}","key":"api-key-value"}')
 })
+
+test('buffered fill does not expand placeholder text that only appears inside a stored value', () => {
+	// Mirror of the stream recombination cases: after a single pass, text that
+	// looks like {{secret:apiKey}} but came from a value must stay literal even
+	// when apiKey is also in the replacement map.
+	const replacements = new Map([
+		['{{secret:token}}', 'prefix-{{secret:apiKey}}'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	expect(replaceSecretPlaceholders('{{secret:token}}', replacements)).toBe(
+		'prefix-{{secret:apiKey}}',
+	)
+	expect(
+		replaceSecretPlaceholders(
+			'A={{secret:token}} B={{secret:apiKey}}',
+			replacements,
+		),
+	).toBe('A=prefix-{{secret:apiKey}} B=api-key-value')
+})

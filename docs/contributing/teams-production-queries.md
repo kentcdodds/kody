@@ -17,7 +17,7 @@ From `main`, as an approved actor (`kentcdodds`, `cursor`, or `kody-bot`):
 
 ```bash
 mkdir -p ~/.kody-queries
-node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-queries/key > ~/.kody-queries/key.pub
+node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-queries/key
 gh workflow run teams-production-queries.yml --ref main -f target=production \
   -f recipient_public_key="$(cat ~/.kody-queries/key.pub)" \
   -f confirm="read-only production queries"

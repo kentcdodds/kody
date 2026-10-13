@@ -6,6 +6,7 @@ import {
 	createPackagePublishLockedError,
 	loadLockedSavedPackage,
 } from '#worker/package-registry/package-publish-lock.ts'
+import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
@@ -210,6 +211,9 @@ export async function publishFromExternalRef(input: {
 	rebuildPackageArtifacts?: boolean
 	expectedPackageScope?: string
 	allowLockedPublish?: boolean
+	/** The owner approved this commit's credential needs (or a platform rewrite). */
+	credentialNeedsApproved?: boolean
+	requestedByUserId?: string | null
 	phaseTimings?: PublishPhaseTimings
 	deferBundleCheckToRebuild?: boolean
 }): Promise<RepoExternalPublishResult> {
@@ -297,6 +301,30 @@ export async function publishFromExternalRef(input: {
 			message: error.message,
 			packageId: lockedPackage.id,
 			packageName: lockedPackage.name,
+		}
+	}
+	const approval =
+		input.credentialNeedsApproved === true
+			? null
+			: await requireCredentialNeedsApproval({
+					env: input.env,
+					source,
+					pendingCommit: input.newCommit,
+					files: input.files ?? checks.sourceFiles,
+					requestedByUserId: input.requestedByUserId,
+					pausedExternalPublish: {
+						allowForce: input.allowForce === true,
+						destructiveOverwriteConfirmed:
+							input.destructiveOverwriteConfirmed === true,
+					},
+				})
+	if (approval) {
+		return {
+			status: 'approval_required',
+			previous_commit: source.published_commit,
+			pending_commit: input.newCommit,
+			message: approval.message,
+			approval,
 		}
 	}
 	await finalizePublishedEntitySource({

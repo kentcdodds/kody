@@ -82,9 +82,12 @@ Worker handles it before the anonymous HTML edge cache and Remix. Flow:
 4. Proxy `git-upload-pack` to Artifacts with `Authorization: Bearer …`. Strip
    `Location` / `WWW-Authenticate` / `Set-Cookie` so the Artifacts host and
    credentials never reach the client.
-5. Reject `git-receive-pack` and `?service=git-receive-pack` with 403.
+5. Anonymous `git-receive-pack` / `?service=git-receive-pack` → `401`
+   (credential challenge). Authenticated callers with `package:write` may push
+   (live HEAD only; no auto-publish). See
+   [auth-setup-git](../guides/auth-setup-git.md).
 
-Owner authoring remotes remain `packageGetGitRemote` (signed-in). See
+Owner Artifacts remotes remain `packageGetGitRemote` (signed-in). See
 [Public packages (usage)](../use/community-packages.md#clone-a-public-package-read-only-git).
 
 Profile activity reads stored `community_activity_events` plus public forks from

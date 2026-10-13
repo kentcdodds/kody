@@ -21,51 +21,94 @@ import {
 	runSurfaceSchema,
 } from './shared.ts'
 
-const inputSchema = z.object({
-	surface: runSurfaceSchema
-		.optional()
-		.describe(
-			'Optional runtime surface filter such as job, webhook, execute, app_fetch, or workflow.',
-		),
-	status: runStatusSchema
-		.optional()
-		.describe('Optional status filter: running, success, or error.'),
-	package_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Optional saved package id to scope package-owned runs.'),
-	job_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Optional job id to list runs for one scheduled job.'),
-	workflow_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			"Optional workflow run id (dynwf-… or pkgwf-…) from workflows.create. Returns that workflow's run, whose metadata.result holds the return value once it succeeds.",
-		),
-	since: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional ISO 8601 lower bound on started_at (inclusive), for example 2026-07-01T00:00:00.000Z.',
-		),
-	error_triage: runErrorTriageFilterSchema
-		.optional()
-		.describe(
-			'Soft error-triage filter. Defaults to open (hides ignored/resolved noise). Use ignored, resolved, or all to inspect triaged runs.',
-		),
-	limit: runListLimitSchema,
-	cursor: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Opaque pagination cursor from a previous next_cursor value.'),
-})
+const runListInputKeys = [
+	'surface',
+	'status',
+	'package_id',
+	'job_id',
+	'workflow_id',
+	'since',
+	'error_triage',
+	'limit',
+	'cursor',
+] as const
+
+const runListInputKeySet = new Set<string>(runListInputKeys)
+
+function camelToSnakeCaseKey(key: string) {
+	return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+}
+
+function unknownRunListKeyMessage(key: string) {
+	const snake = camelToSnakeCaseKey(key)
+	if (snake !== key && runListInputKeySet.has(snake)) {
+		return `${key} is not a parameter; did you mean ${snake}?`
+	}
+	return `${key} is not a parameter`
+}
+
+/** Exported for schema-level tests; keep snake_case keys strict for callers. */
+export const runListInputSchema = z
+	.object(
+		{
+			surface: runSurfaceSchema
+				.optional()
+				.describe(
+					'Optional runtime surface filter such as job, webhook, execute, app_fetch, or workflow.',
+				),
+			status: runStatusSchema
+				.optional()
+				.describe('Optional status filter: running, success, or error.'),
+			package_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Optional saved package id to scope package-owned runs.'),
+			job_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Optional job id to list runs for one scheduled job.'),
+			workflow_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					"Optional workflow run id (dynwf-… or pkgwf-…) from workflows.create. Returns that workflow's run, whose metadata.result holds the return value once it succeeds.",
+				),
+			since: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Optional ISO 8601 lower bound on started_at (inclusive), for example 2026-07-01T00:00:00.000Z.',
+				),
+			error_triage: runErrorTriageFilterSchema
+				.optional()
+				.describe(
+					'Soft error-triage filter. Defaults to open (hides ignored/resolved noise). Use ignored, resolved, or all to inspect triaged runs.',
+				),
+			limit: runListLimitSchema,
+			cursor: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Opaque pagination cursor from a previous next_cursor value.',
+				),
+		},
+		{
+			error: (issue) => {
+				if (issue.code !== 'unrecognized_keys') return undefined
+				return {
+					message: issue.keys.map(unknownRunListKeyMessage).join(' '),
+				}
+			},
+		},
+	)
+	.strict()
+
+const inputSchema = runListInputSchema
 
 const outputSchema = z.object({
 	runs: z.array(runRecordSchema),

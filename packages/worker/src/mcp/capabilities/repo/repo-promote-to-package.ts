@@ -177,7 +177,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					id: packageId,
 					user_id: owner.ownerUserId,
 					name: manifest.name,
-					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
 					tags_json: JSON.stringify(manifest.kody.tags ?? []),
 					search_text: manifest.kody.searchText ?? null,
@@ -210,6 +209,8 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sessionId,
 				userId: owner.ownerUserId,
 				expectedPackageScope: packageScope,
+				// The package's first publish: there are no prior needs to change.
+				credentialNeedsApproved: true,
 			})
 			if (publishResult.status !== 'ok') {
 				await ctx.env.APP_DB.prepare(

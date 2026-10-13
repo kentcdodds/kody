@@ -599,6 +599,43 @@ export async function authorize(
 }
 
 /**
+ * Checks only what the request credential allows, for a write the actor makes
+ * on their own data rather than on the request's org: a personal credential's
+ * org grants. A token must carry `permission`, and a token narrowed by a
+ * connection profile can't make such writes at all.
+ */
+export function authorizeCredentialScope(
+	request: RequestContext,
+	permission: OrgPermission,
+): void {
+	if (request.credential.profileName) {
+		throw new AuthorizationError({
+			code: 'connection_profile',
+			permission,
+			orgId: request.org.id,
+			resource: null,
+			message: `This credential is narrowed by a connection profile, so it cannot use ${permission} on your personal credentials. Use your own session or an unprofiled token.`,
+		})
+	}
+	const scopes = request.credential.scopes
+	if (!scopes || scopes.includes(permission)) return
+	const mintScopes = [...new Set([...scopes, permission])].sort()
+	throw new AuthorizationError({
+		code: 'credential_scope',
+		permission,
+		orgId: request.org.id,
+		resource: null,
+		message: denialMessage(
+			'credential_scope',
+			permission,
+			undefined,
+			mintScopes,
+		),
+		mintScopes,
+	})
+}
+
+/**
  * What a capability or Open API operation requires. `none` declares that it
  * touches no org data (who-am-I, static guides, site-admin tools, which
  * `requiredRole` gates instead).

@@ -14,6 +14,8 @@ import { credentialClientHeaderName } from '#worker/credentials/credential-clien
 
 export const credentialClientToolNames = {
 	open: 'credentialClientOpen',
+	openAll: 'credentialClientOpenAll',
+	check: 'credentialClientCheck',
 	sign: 'credentialClientSign',
 	callTool: 'credentialClientCallTool',
 	refresh: 'credentialClientRefresh',
@@ -147,6 +149,7 @@ function __kodyCreateCredentialRuntime(__kodyCredentialCall) {
   };
   const toClient = (opened) => {
     const client = { name: opened.name, scope: opened.scope, kind: opened.kind, hosts: [...opened.hosts] };
+    if (opened.hint) client.hint = opened.hint;
     if (opened.kind === 'mcp') {
       client.callTool = async (tool, args) =>
         await invoke(${JSON.stringify(credentialClientToolNames.callTool)}, { handle: opened.handle, tool, args: args ?? {} });
@@ -169,7 +172,10 @@ function __kodyCreateCredentialRuntime(__kodyCredentialCall) {
   const credential = async (key) => await open({ key });
   credential.named = async (name, options) =>
     await open({ name, scope: options?.scope ?? null });
-  const credentials = async (key) => [await credential(key)];
+  const credentials = async (key) => {
+    const opened = await invoke(${JSON.stringify(credentialClientToolNames.openAll)}, { key });
+    return (Array.isArray(opened) ? opened : []).map(toClient);
+  };
   return { credential: Object.freeze(credential), credentials };
 }
 	`.trim()

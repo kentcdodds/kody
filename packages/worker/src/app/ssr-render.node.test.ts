@@ -918,7 +918,7 @@ test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS
 
 	expectHtml(
 		await renderWithCss(':root { --inline-marker: 1; }'),
-		['<style>:root { --inline-marker: 1; }</style>'],
+		['<style>:root{--inline-marker:1;}</style>'],
 		['href="/styles.css'],
 	)
 	// Comments may mention HTML (`<main>`) without blocking inlining.
@@ -926,7 +926,7 @@ test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS
 		await renderWithCss(
 			'/* The router moves focus to <main> */\n:root { --comment-ok: 1; }',
 		),
-		['<style>:root { --comment-ok: 1; }</style>'],
+		['<style>:root{--comment-ok:1;}</style>'],
 		['href="/styles.css', '<main>'],
 	)
 	// CSS needing HTML escaping must fall back to the <link> (the stream
@@ -1123,6 +1123,8 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expectHtml(missingHtml, [
 		'role="alert"',
 		'data-testid="connect-oauth-incomplete"',
+		'data-error-agent-prompt',
+		'Copy prompt for your agent',
 	])
 	expect(
 		missingHtml.split('Missing required OAuth configuration parameters.')

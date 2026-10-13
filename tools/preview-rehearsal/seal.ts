@@ -1,4 +1,13 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import {
+	access,
+	chmod,
+	mkdir,
+	readFile,
+	rename,
+	rm,
+	writeFile,
+} from 'node:fs/promises'
+import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { fail } from '../ci/resource-utils.ts'
 
@@ -28,6 +37,48 @@ function fromBase64(value: string) {
 	return new Uint8Array(Buffer.from(value.replace(/\s+/g, ''), 'base64'))
 }
 
+const base64Line = /^[A-Za-z0-9+/]+=*$/
+
+export function privateKeyWrittenMessage(privateKeyPath: string) {
+	return `Wrote the private key to ${privateKeyPath} (mode 600).`
+}
+
+export function recipientPublicKeyPath(privateKeyPath: string) {
+	return `${privateKeyPath}.pub`
+}
+
+export function publicKeyWrittenMessage(publicKeyPath: string) {
+	return `Wrote the public key to ${publicKeyPath} (mode 600).`
+}
+
+/**
+ * Agents often paste keygen's stderr banner plus the printed public key into
+ * `recipient_public_key`. Keep the SPKI blob; drop the rest.
+ */
+function isEnoent(error: unknown) {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+async function assertNewKeyPath(filePath: string) {
+	try {
+		await access(filePath)
+	} catch (error) {
+		if (isEnoent(error)) return
+		throw error
+	}
+	throw new Error(`Refusing to overwrite existing key at ${filePath}`)
+}
+
+function normalizeRecipientPublicKey(raw: string) {
+	const keyLines = raw
+		.replace(/\r\n/g, '\n')
+		.split('\n')
+		.map((line) => line.replace(/\s+/g, ''))
+		.filter((line) => line && base64Line.test(line))
+	if (keyLines.length > 0) return keyLines.join('')
+	return raw.replace(/\s+/g, '')
+}
+
 export async function generateSealKeyPair() {
 	const pair = await crypto.subtle.generateKey(
 		{
@@ -46,6 +97,35 @@ export async function generateSealKeyPair() {
 	}
 }
 
+export async function writeSealKeyPair(privateKeyPath: string) {
+	const publicKeyPath = recipientPublicKeyPath(privateKeyPath)
+	const directory = path.dirname(privateKeyPath)
+	await mkdir(directory, { recursive: true, mode: 0o700 })
+	await chmod(directory, 0o700)
+	await assertNewKeyPath(privateKeyPath)
+	await assertNewKeyPath(publicKeyPath)
+	const pair = await generateSealKeyPair()
+	const privateTmp = `${privateKeyPath}.${process.pid}.tmp`
+	const publicTmp = `${publicKeyPath}.${process.pid}.tmp`
+	try {
+		await writeFile(privateTmp, `${pair.privateKey}\n`, {
+			mode: 0o600,
+			flag: 'wx',
+		})
+		await writeFile(publicTmp, `${pair.publicKey}\n`, {
+			mode: 0o600,
+			flag: 'wx',
+		})
+		await rename(publicTmp, publicKeyPath)
+		await rename(privateTmp, privateKeyPath)
+	} catch (error) {
+		await rm(privateTmp, { force: true })
+		await rm(publicTmp, { force: true })
+		throw error
+	}
+	return { ...pair, publicKeyPath }
+}
+
 /** Import before any writes so a bad key fails before the preview changes. */
 export async function importRecipientPublicKey(
 	publicKeyBase64: string,
@@ -53,7 +133,7 @@ export async function importRecipientPublicKey(
 	try {
 		return await crypto.subtle.importKey(
 			'spki',
-			fromBase64(publicKeyBase64),
+			fromBase64(normalizeRecipientPublicKey(publicKeyBase64)),
 			rsaParams,
 			false,
 			['encrypt'],
@@ -140,7 +220,7 @@ export async function openSealedJson(
 
 const usage = [
 	'Usage:',
-	'  node tools/preview-rehearsal/seal.ts keygen --private-key <path>   (prints the public key)',
+	'  node tools/preview-rehearsal/seal.ts keygen --private-key <path>   (writes <path> and <path>.pub; prints the public key)',
 	'  node tools/preview-rehearsal/seal.ts open --private-key <path> --in <sealed.json> --out <plain.json>',
 ].join('\n')
 
@@ -157,9 +237,9 @@ if (isExecutedDirectly(import.meta.url)) {
 	switch (command) {
 		case 'keygen': {
 			const privateKeyPath = readFlag(argv, '--private-key')
-			const pair = await generateSealKeyPair()
-			await writeFile(privateKeyPath, `${pair.privateKey}\n`, { mode: 0o600 })
-			console.error(`Wrote the private key to ${privateKeyPath} (mode 600).`)
+			const pair = await writeSealKeyPair(privateKeyPath)
+			console.error(privateKeyWrittenMessage(privateKeyPath))
+			console.error(publicKeyWrittenMessage(pair.publicKeyPath))
 			console.log(pair.publicKey)
 			break
 		}

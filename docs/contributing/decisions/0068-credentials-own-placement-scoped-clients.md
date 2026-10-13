@@ -10,12 +10,13 @@
   [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 (Kent: unbound
   errors carry a creation-page link; Approve bundles trigger and ad hoc default
   mappings; creation-link kind hint/required; MCP servers are credentials in the
-  same list — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12
-  (Kent: minting a webhook URL no longer turns it on; webhooks go through
-  Approve — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13
-  (trigger credential picks are stored mappings that inherit the defaults, not
-  enable-time snapshots; no `enablementUpdate` — see
-  [Amendment 2026-10-12](#amendment-2026-10-12))
+  same list — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 /
+  2026-10-13 (Kent: minting a webhook URL no longer turns it on; webhook URLs
+  are identities and the declared name is display metadata only — see
+  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
+  default and trigger credential mappings; agents may set a trigger pick only to
+  a value they already proposed, still through approval — see
+  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -88,8 +89,10 @@ There are four:
 4. **Enablement.** The only persisted credential choice, used for triggers
    (cron, subscription, webhook) that have no live caller.
 
-There are no mapping or assignment tables and no saved bindings. Key
-placeholders, package allowlists, and usage modes stay (see
+There are no mapping or assignment tables and no saved bindings. The
+[credential mappings amendment](#amendment-2026-10-13-credential-mappings)
+replaces this rule and item 4: package default mappings and per-trigger mappings
+are stored. Key placeholders, package allowlists, and usage modes stay (see
 [Key credentials](#key-credentials)).
 
 ### Key credentials
@@ -175,7 +178,9 @@ URL, so its client returns redirects unfollowed.
 Personal credentials follow plan v4 3.2: user-owned, granted to orgs one org at
 a time, never usable by Owners or Automation on someone else's behalf. A
 personal OAuth credential minted through an org's OAuth app is pinned to that
-org.
+org. The owner manages grants with `credentialOrgGrant`, `credentialOrgRevoke`,
+and `credentialOrgGrantList` (live person and Write on the credential to change
+one; audited in the owner's personal org).
 
 ### Use grants (`accessGrant` / `accessRevoke`)
 
@@ -247,10 +252,11 @@ credentials: { github: 'work', google: ['work','personal'], x: { name: 'work', s
 ```
 
 The CLI takes `--credential github=work` and `--credential x=org:work`. Triggers
-do not take a map at enable time; their picks are stored mappings set through
-Approve or the package's Credentials tab (see
-[Amendment 2026-10-12](#amendment-2026-10-12)). An admin can disable someone
-else's enablement but cannot point it at different credentials.
+do not take a map at enable time; their picks are stored trigger mappings,
+resolved on each run (see the
+[credential mappings amendment](#amendment-2026-10-13-credential-mappings)). An
+admin can disable someone else's enablement but cannot point it at different
+credentials.
 
 ### Resolution rules
 
@@ -371,7 +377,8 @@ warns as if the placeholder will break.
   affected enablements pause. OAuth credentials pinned to that org are wiped and
   revoked upstream.
 - **Owner deletes a credential:** the value is tombstoned immediately, with no
-  restore.
+  restore. Grants and pending grant invites on its id and its personal org
+  grants are removed in the same batch.
 - **Account deleted:** every value is tombstoned at soft delete and never
   restored; rows are purged per [0066](./0066-soft-delete-and-purge.md).
 - **Account suspended:** resolution is denied and nothing is wiped.
@@ -509,26 +516,106 @@ Kent: manifest credential need `kind` becomes **optional**.
   param for `kind` can be a **hint** (default kind, chooser shown) or
   **required** (kind locked, no chooser UI). The one-pager reuses the existing
   secret-intake or OAuth components, chosen by kind.
-- **Webhooks go through Approve, not mint (Kent, 10:50 PM MT):** minting a
-  webhook URL no longer turns the webhook on for the minter. A webhook runs only
-  after a person approves it on the same approval page as other triggers, with
-  one Approve that also maps its credentials for that instance. The mint returns
-  the approval link while nobody has approved it, and a delivery to a webhook
-  that is not on fails with a clear error that includes the link. Enablements
-  that already exist, including the migrated ones and any an earlier mint
-  created, keep working untouched; remint and rotate never change them.
-  Credential mappings are stored per instance (per enablement), so each instance
-  can use different credentials. Today a declared webhook name has one URL per
-  org, which is one instance; more than one URL per name needs a schema change
-  that is still open.
-- **Trigger picks are mappings, not snapshots (2026-10-13):** a trigger
-  instance's credentials are its `enablement` mapping rows, which inherit the
-  enabler's default, then the org default, then the one usable credential, so a
-  need nobody pinned follows the defaults instead of freezing at enable time.
-  Picks change only through Approve or the package's Credentials tab, and only
-  the enabler's own instances; there is no `enablementUpdate` and no
-  `enablementEnable { credentials }`, so agents can only propose. Before each
-  run, a credential the instance's mapping names that is deleted or no longer
-  usable by the enabler pauses the enablement; the next event resumes it once
-  the credential is usable or the need is remapped. A publish that adds needs
-  while the package has live enablements gets a check note.
+- **Webhooks go through Approve, not mint (Kent, 2026-10-12 ~10:50 PM MT and
+  2026-10-13 ~9:07 AM MT):** minting a webhook URL no longer turns the webhook
+  on for the minter. New webhooks need a separate Approve step on the same
+  approval page as other triggers, with one Approve that also maps credentials
+  for that instance. Kent accepts the extra approval as the long-term design,
+  not an interim step. The mint returns the approval link while nobody has
+  approved it, and a delivery to a webhook that is not on fails with a clear
+  error that includes the link. Existing enablements, including migrated ones
+  and any an earlier mint created, stay untouched; remint and rotate never
+  change them. **Webhook URLs are identities;** the declared webhook name is
+  display metadata only. One name does not map to multiple URLs; each URL is its
+  own instance with its own credential mappings.
+
+## Amendment 2026-10-13: call maps and pinned needs
+
+Kent decided four call-map questions (#3599).
+
+1. **Strict invoke.** In an invoked run, a call-map key that no package in the
+   run declares fails the run before it starts (`credential_need_unknown`). A
+   dependency imported by a computed specifier, whose needs cannot be known up
+   front, is refused in strict mode. Ad hoc `execute` code only warns.
+2. **Pinned needs.** A published app runs against the credential needs
+   snapshotted at its publish (its needs closure), so a dependency cannot
+   quietly gain credentials. Only a change to credential needs, transitive
+   included, pauses a publish for approval; other changes publish freely. A
+   dependency change never rebuilds or republishes a public app on its own.
+3. **Where the map goes.** The `credentials` map is accepted on MCP `execute`
+   (for `code` and `invoke`) and on the CapabilityProxy (CLI `--credential`). It
+   is not accepted on the package-callable `execute` capability: package code
+   would pick credentials by name there, which would bypass `credential.named`'s
+   sharing rules.
+4. **Several picks for one `credential(key)`.** It is an error whose message
+   lists every option by name and scope, with matching `options` and
+   `retryWith`, so an agent can pick one or show them to the user. The same
+   holds for `credential_ambiguous`.
+
+## Amendment 2026-10-13: credential mappings
+
+Kent (voice, 2026-10-12, and 2026-10-13 ~9:07 AM MT): packages get explicit,
+human-approved credential mappings. This changes "no mapping tables" and "there
+is never a default credential" in the sections above, and nothing else. These
+are the long-term design, not an interim step.
+
+- **Default mappings:** a package may store an ad hoc default mapping per need
+  (need key to credential ids). Two layers: an org layer set by package managers
+  (org credentials only) and a per-person layer.
+- **Trigger mappings:** each trigger instance (enablement) may override a need.
+  Trigger credential picks are stored mappings that follow the enabler's
+  default, then the org default, then the single usable credential. They are not
+  frozen at enable time. A need with no override inherits those defaults on each
+  run.
+- **When triggers resolve:** enabling resolves nothing and never fails on needs.
+  Each run resolves every need in the order below, so a need with no trigger
+  override follows the current defaults, and an ambiguous or unbound need fails
+  that run with a creation link. Only a need the trigger mapping pins does not
+  drift with the defaults. Before each run, a deleted or unusable credential
+  named in the instance's trigger mapping pauses the enablement until the need
+  is remapped or the credential is usable again; the next event resumes it.
+  Unusable refs in a default are skipped. A publish that adds needs while the
+  package has live enablements gets a check note.
+- **Resolution order:** call map, then trigger mapping, then the person's
+  default, then the org default, then auto-resolve (rule 3).
+- **Authority is unchanged:** a mapping grants nothing. Runs still need the
+  actor's Use plus `package:execute`, and option lists stay filtered by Use.
+- **How picks change:** agents propose mapping changes. One Approve on the
+  approval page (or the package's Credentials tab for the enabler's own
+  instances) applies them. Agents also get an API that can set a trigger
+  credential pick only to a value that agent already proposed; that write still
+  goes through the same approval path, so no pick changes without approval.
+  There is no open-ended `enablementUpdate` or
+  `enablementEnable { credentials }` that writes arbitrary picks.
+- **Contract:**
+  [credential mappings API](../contracts/credential-mappings-api.md).
+
+## Amendment 2026-10-13: credential needs publish pause
+
+Cole and Kent decided how decision 2's pause works.
+
+- **Scope.** Every published package, public or not. A publish whose credential
+  needs closure (transitive included) adds a need or changes one pauses before
+  the new commit becomes published. The previous published version keeps
+  running. A first publish, a same-commit publish, and a publish that only
+  removes needs do not pause.
+- **Approval.** The owner approves on the package's approval page
+  (`/@<owner>/<package>/approve-capabilities`), which publishes the paused
+  commit. Nothing republishes on its own; a newer push replaces the pending
+  request, and a request whose base commit is no longer published is dropped. A
+  paused session publish leaves the source branch on the published commit and
+  keeps its session; approval re-runs that session's publish at the paused
+  commit. A pushed commit is approved through the external-publish path, with
+  the paused publish's overwrite options, only while it is still HEAD. Approval
+  needs `package:publish` and also counts as the locked-publish approval. A
+  locked package keeps its locked-publish flow first; approving that publish
+  (`package:write`) runs the pause, so a writer cannot publish new needs without
+  the owner.
+- **One queue.** The pause shares ADR 0069's approval mechanism: one
+  `package_approval_requests` queue and one page, with reason
+  `credential_needs_changed` or `went_public`. ADR 0069's own storage-change
+  trigger for public apps is unchanged.
+- **Surfaces.** Publish tools return `approval_required` with `approval_url` and
+  the need changes. Codemods and promote-to-package first publishes skip the
+  pause. If the needs cannot be computed, the publish proceeds and the failure
+  is reported.

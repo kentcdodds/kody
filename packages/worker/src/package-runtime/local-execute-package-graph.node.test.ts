@@ -452,9 +452,23 @@ test('local gateway fetch always hops a credential client request, which carries
 	expect(shim).toContain(
 		'export const credential = __kodyCredentialRuntime.credential;',
 	)
+	expect(shim).toContain(
+		'export const credentials = __kodyCredentialRuntime.credentials;',
+	)
+	// Ad hoc / unpublished local execute imports these from the CLI host
+	// kody:runtime; the shim stays the single source of the client runtime for
+	// published modules and the gateway-fetch hop. Neither surface may embed
+	// secret plaintext helpers — only CapabilityProxy tool names + the opaque
+	// handle header.
+	expect(shim).toContain('credentialClientOpen')
+	expect(shim).toContain('x-kody-credential-client')
+	expect(shim).not.toMatch(/secretValue|plaintextSecret|apiKeyValue/)
 	const packageRuntime = createLocalExecutePackageRuntimeModuleSource('pkg-1')
 	expect(packageRuntime).toContain(
 		'__kodyCreatePackageBoundCredentialRuntime("pkg-1")',
+	)
+	expect(packageRuntime).toContain(
+		'export const credential = __kodyPackageCredentialRuntime.credential;',
 	)
 })
 
@@ -760,6 +774,44 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			).headers.get('content-type'),
 		).toBe('application/json')
 
+		// Non-secret Blob wrapped in a Request reaches ambient fetch without a
+		// clone().arrayBuffer() copy (kody#3152).
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		const wrappedBlob = new Blob(['wrapped-blob-body'], {
+			type: 'application/octet-stream',
+		})
+		const blobRequest = new Request('https://api.example.com/upload', {
+			method: 'POST',
+			body: wrappedBlob,
+		})
+		await __kodyGatewayFetch(blobRequest)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBe(blobRequest)
+		expect(await (ambientCalls[0]?.input as Request).text()).toBe(
+			'wrapped-blob-body',
+		)
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		const largeWrappedBlob = new Blob(['y'.repeat(3 * 1024 * 1024)], {
+			type: 'application/octet-stream',
+		})
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/upload', {
+				method: 'PUT',
+				body: largeWrappedBlob,
+			}),
+		)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBeInstanceOf(Request)
+
 		ambientCalls.length = 0
 		const request = new Request('https://api.example.com/post', {
 			method: 'POST',
@@ -948,6 +1000,8 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		)
 
 		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		await __kodyGatewayFetch(
 			new Request('https://api.example.com/post', {
 				method: 'POST',
@@ -955,7 +1009,28 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			}),
 		)
 		expect(ambientCalls).toHaveLength(0)
+		// Secret Blob-in-Request streams via gatewayFetchStream (no arrayBuffer).
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
+
+		// String/bytes Requests still use the clone probe and hop when needed.
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/post', {
+				method: 'POST',
+				body: '{"note":"{{secret:demoToken}}"}',
+			}),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
 		expect(gatewayCalls).toHaveLength(1)
+		expect(decodeBody(gatewayCalls[0])).toBe('{"note":"{{secret:demoToken}}"}')
 	} finally {
 		globalThis.fetch = originalFetch
 	}

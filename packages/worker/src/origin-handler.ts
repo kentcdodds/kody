@@ -858,7 +858,11 @@ async function fetchWithDynamicWorkerBudget(
 	// cache: `/@owner/pkg.git` can otherwise match the community package route
 	// matcher as a visibility-gated HTML path.
 	if (isPublicPackageGitHttpRequest(url.pathname)) {
-		const gitResponse = await handlePublicPackageGitHttpRequest(request, env)
+		const gitResponse = await handlePublicPackageGitHttpRequest(
+			request,
+			env,
+			(promise) => ctx.waitUntil(promise),
+		)
 		if (gitResponse) return gitResponse
 	}
 

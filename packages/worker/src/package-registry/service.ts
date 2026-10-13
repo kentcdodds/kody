@@ -253,7 +253,8 @@ function toSavedPackageInsertRow(input: {
 		id: input.packageId,
 		user_id: input.userId,
 		name: projection.name,
-		kody_id: projection.kodyId,
+		// Leftover column; insert/update derive the same leaf from `name`.
+		kody_id: getPackageNameLeaf(projection.name),
 		description: projection.description,
 		tags_json: serializeTags(projection.tags),
 		search_text: projection.searchText,
@@ -373,7 +374,6 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 					name: row.name,
-					kodyId: row.kody_id,
 					description: row.description,
 					tagsJson: row.tags_json,
 					searchText: row.search_text,

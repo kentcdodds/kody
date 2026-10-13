@@ -1,5 +1,7 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
+import { buildErrorAgentPrompt } from '#universal/error-agent-prompt.ts'
 import {
 	cardCss,
 	getPrimaryButtonCss,
@@ -86,6 +88,26 @@ export function VerifyEmailRoute(handle: Handle) {
 					>
 						{data.ok ? data.message : data.error}
 					</p>
+					{data.ok ? null : (
+						<>
+							<ErrorAgentPromptButton
+								prompt={buildErrorAgentPrompt({
+									activity: 'Opening an email verification link.',
+									errorCode: 'email_verification_failed',
+									errorMessage: data.error,
+									ids: { path: '/verify-email' },
+									likelyCause:
+										'The verification link expired, was already used, or is invalid.',
+									nextSteps: [
+										'Tell me how to request a new verification email.',
+										'Do not ask me to paste tokens from the URL.',
+									],
+									kodyTools: ['search({ entity: "guide:oauth" })'],
+									docs: ['search({ entity: "guide:connect_your_agent" })'],
+								})}
+							/>
+						</>
+					)}
 					<div
 						mix={css({
 							display: 'flex',

@@ -8,6 +8,8 @@ import {
 } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { buildOauthLoginErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import {
@@ -390,9 +392,10 @@ export function LoginRoute(handle: Handle) {
 			resetAuthState()
 		}
 		const redirectTo = getCurrentRedirectTo(handle)
+		const oauthErrorCode = getSearchParams(handle).get('oauthError')
 		const oauthErrorMessage =
 			!message && status === 'idle'
-				? getOauthLoginErrorMessage(getSearchParams(handle).get('oauthError'))
+				? getOauthLoginErrorMessage(oauthErrorCode)
 				: null
 		const isSignup = mode === 'signup'
 		const isSubmitting = status === 'submitting'
@@ -422,9 +425,21 @@ export function LoginRoute(handle: Handle) {
 						</header>
 
 						{oauthErrorMessage ? (
-							<p aria-live="polite" data-tone="error" mix={css(formMessageCss)}>
-								{oauthErrorMessage}
-							</p>
+							<>
+								<p
+									aria-live="polite"
+									data-tone="error"
+									mix={css(formMessageCss)}
+								>
+									{oauthErrorMessage}
+								</p>
+								<ErrorAgentPromptButton
+									prompt={buildOauthLoginErrorAgentPrompt({
+										errorCode: oauthErrorCode ?? 'provider-error',
+										errorMessage: oauthErrorMessage,
+									})}
+								/>
+							</>
 						) : null}
 
 						{renderAuthForm({

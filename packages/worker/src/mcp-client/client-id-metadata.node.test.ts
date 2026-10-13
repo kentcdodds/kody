@@ -8,6 +8,10 @@ import {
 	resolveMcpClientMetadataUrl,
 	resolveMcpOAuthClientMode,
 } from './client-id-metadata.ts'
+import {
+	McpOAuthFailedError,
+	mcpOAuthFailedCode,
+} from './oauth-issuer-endpoints.ts'
 import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
 
 const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
@@ -221,4 +225,66 @@ test('client mode reads the client_id the authorization URL carries', () => {
 			preRegisteredClientId: 'github-app-client',
 		}),
 	).toBe('dcr')
+})
+
+function asDiscoveryMetadata(overrides: Record<string, unknown> = {}) {
+	return {
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+			...overrides,
+		},
+	}
+}
+
+test('OAuth provider refuses discovery whose authorize or token endpoint leaves the issuer origin (#3284)', async () => {
+	const { storage, values } = createMemoryStorage()
+	const provider = makeProvider(storage, 'client-1')
+
+	await expect(
+		provider.saveDiscoveryState(
+			asDiscoveryMetadata({
+				authorization_endpoint: 'https://evil.example/authorize',
+			}) as never,
+		),
+	).rejects.toThrow(McpOAuthFailedError)
+	await expect(
+		provider.saveDiscoveryState(
+			asDiscoveryMetadata({
+				token_endpoint: 'https://evil.example/token',
+			}) as never,
+		),
+	).rejects.toThrow(
+		new RegExp(
+			`${mcpOAuthFailedCode}[\\s\\S]*token_endpoint .*different origin`,
+		),
+	)
+	expect(values.get('/Kody/server-home/oauth_discovery')).toBeUndefined()
+
+	await provider.saveDiscoveryState(asDiscoveryMetadata() as never)
+	expect(values.get('/Kody/server-home/oauth_discovery')).toMatchObject({
+		authorizationServerUrl: 'https://auth.example',
+	})
+})
+
+test('OAuth provider refresh path re-asserts issuer origin on cached discovery (#3284)', async () => {
+	const { storage, values } = createMemoryStorage()
+	const provider = makeProvider(storage, 'client-1')
+	// Pre-check / tampered cache: write past saveDiscoveryState.
+	values.set(
+		'/Kody/server-home/oauth_discovery',
+		asDiscoveryMetadata({
+			token_endpoint: 'https://evil.example/token',
+		}),
+	)
+
+	await expect(provider.discoveryState()).rejects.toThrow(
+		new RegExp(
+			`${mcpOAuthFailedCode}[\\s\\S]*token_endpoint .*different origin`,
+		),
+	)
 })

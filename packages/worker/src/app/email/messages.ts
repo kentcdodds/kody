@@ -1,6 +1,26 @@
 import { renderTransactionalEmail } from '#app/email/template.ts'
 import { type PlatformFeedbackOutcomeStatus } from '#worker/platform-feedback/types.ts'
+import { ERROR_AGENT_PROMPT_ATTR } from '#universal/error-agent-prompt.ts'
+import { buildBillingFailureAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { formatCappedPercent } from '#universal/usage-presentation.ts'
+
+function billingFailurePromptBlocks(
+	kind: 'payment_failed' | 'past_due',
+	errorMessage: string,
+) {
+	const prompt = buildBillingFailureAgentPrompt({
+		kind,
+		errorMessage,
+		path: '/account/billing',
+	})
+	return {
+		prompt,
+		afterAction: [
+			'Paste this prompt into Claude, ChatGPT, Grok, or Cursor so your agent can help.',
+			{ kind: 'quote' as const, text: prompt },
+		],
+	}
+}
 
 /**
  * Copy for every transactional email, kept free of runtime dependencies so the
@@ -477,15 +497,21 @@ export function buildPaymentFailedEmail(input: {
 	appBaseUrl: string
 	billingUrl: string
 }) {
+	const paymentFailedCopy =
+		'Stripe could not charge the card on your Kody subscription. Update your payment method so your paid limits stay in place.'
+	const { afterAction } = billingFailurePromptBlocks(
+		'payment_failed',
+		paymentFailedCopy,
+	)
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Kody could not process your payment',
 		preheader: 'Update your payment method to keep your paid plan.',
 		heading: 'Your payment did not go through',
-		body: [
-			'Stripe could not charge the card on your Kody subscription. Update your payment method so your paid limits stay in place.',
-		],
+		body: [paymentFailedCopy],
 		action: { label: 'Update billing', url: input.billingUrl },
+		afterAction,
+		htmlComment: ERROR_AGENT_PROMPT_ATTR,
 		illustration: {
 			src: '/images/kody-lantern.png',
 			alt: '',
@@ -501,15 +527,18 @@ export function buildPastDueEmail(input: {
 	appBaseUrl: string
 	billingUrl: string
 }) {
+	const pastDueCopy =
+		'Your Kody subscription is past due. Your paid limits stay in place while Stripe retries the charge, so nothing stops today — but update your payment method soon. If payment stays failed, the subscription ends and the account returns to the free plan.'
+	const { afterAction } = billingFailurePromptBlocks('past_due', pastDueCopy)
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Your Kody subscription is past due',
 		preheader: 'Your paid plan is waiting on a successful payment.',
 		heading: 'Your subscription is past due',
-		body: [
-			'Your Kody subscription is past due. Your paid limits stay in place while Stripe retries the charge, so nothing stops today — but update your payment method soon. If payment stays failed, the subscription ends and the account returns to the free plan.',
-		],
+		body: [pastDueCopy],
 		action: { label: 'Fix billing', url: input.billingUrl },
+		afterAction,
+		htmlComment: ERROR_AGENT_PROMPT_ATTR,
 		illustration: {
 			src: '/images/kody-lantern.png',
 			alt: '',

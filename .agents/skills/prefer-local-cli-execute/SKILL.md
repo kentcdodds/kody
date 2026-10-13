@@ -53,9 +53,9 @@ Saved packages keep `--local` and a static `kody:@…` import.
 - The bootstrap code is rejected. Call `cliCredentialBootstrap` again with
   `lifetime: "short"`. Do not switch to `kody login` or `tokenCreate` while an
   MCP session exists.
-- `search` is forbidden. Default bootstrap scopes restore pre-P4 `local-execute`
-  parity (`org:execute`, `org:read`, package/integration/secret use scopes, … —
-  not `search:read`)
+- `search` is forbidden. Default bootstrap scopes are local-execute use scopes
+  (`org:execute`, `org:read`, package/integration/secret/email/job/app/memory
+  use scopes), plus `package:write` and `token:delete` — not `search:read`
   ([ADR 0056](../../../docs/contributing/decisions/0056-cli-credential-bootstrap.md)).
   `whoami` works. Use MCP `search`, or a token with `search:read`.
 - The module imports `kody:@…`. Keep `--local`. Default bootstrap includes

@@ -66,6 +66,7 @@ import {
 } from './params.ts'
 import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 import {
+	clearWebhookEndpointPreviousHmacSecret,
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
@@ -135,6 +136,41 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 		endpointId: input.endpoint.id,
 		urlSecretHash: input.endpoint.urlSecretHash,
 	})
+}
+
+/**
+ * Retire signing-secret grace only after a delivery that verified under the
+ * current declared key is accepted: ack enqueue succeeded, or sync dispatch
+ * returned 2xx. Compare-and-swap against the observed previous ciphertext so a
+ * concurrent rotation is not wiped.
+ */
+async function retirePreviousWebhookHmacIfConfirmed(input: {
+	env: Env
+	endpoint: { id: string; userId: OwnerId }
+	matchedSource: WebhookHmacVerificationSecret['source'] | null
+	previousHmacSecretEncrypted: string | null
+}) {
+	if (
+		input.matchedSource !== 'declared' ||
+		!input.previousHmacSecretEncrypted
+	) {
+		return
+	}
+	try {
+		await clearWebhookEndpointPreviousHmacSecret({
+			db: input.env.APP_DB,
+			userId: input.endpoint.userId,
+			endpointId: input.endpoint.id,
+			previousHmacSecretEncrypted: input.previousHmacSecretEncrypted,
+		})
+	} catch (error) {
+		// Bookkeeping only: never change the delivery outcome after dispatch
+		// was accepted (ack already enqueued / sync about to invoke).
+		console.error('webhook-previous-hmac-retire-failed', {
+			endpointId: input.endpoint.id,
+			error,
+		})
+	}
 }
 
 function notFoundResponse() {
@@ -684,6 +720,8 @@ export async function handleWebhookIngressRequest(
 	// The log counts requests that rely on the implicit default, even ones a
 	// later check rejects.
 	const verification = webhookHmacVerification(declared.verification)
+	let matchedHmacSource: WebhookHmacVerificationSecret['source'] | null = null
+	let observedPreviousHmacCiphertext: string | null = null
 	if (!verification) {
 		if (!declared.verification) {
 			console.info('webhook-url-secret-only-authenticated', {
@@ -700,13 +738,16 @@ export async function handleWebhookIngressRequest(
 			return rejectUnauthorized('missing_signature')
 		}
 		let hmacSecrets: Array<WebhookHmacVerificationSecret>
+		let previousHmacSecretEncrypted: string | null = null
 		try {
-			hmacSecrets = await resolveWebhookHmacVerificationSecrets({
+			const resolved = await resolveWebhookHmacVerificationSecrets({
 				env,
 				userId: liveEndpoint.userId,
 				endpoint: liveEndpoint,
 				verification,
 			})
+			hmacSecrets = resolved.secrets
+			previousHmacSecretEncrypted = resolved.previousHmacSecretEncrypted
 		} catch {
 			return rejectUnauthorized(
 				verification.secretName
@@ -759,6 +800,8 @@ export async function handleWebhookIngressRequest(
 				secretName: verification.secretName,
 			})
 		}
+		matchedHmacSource = matched.source
+		observedPreviousHmacCiphertext = previousHmacSecretEncrypted
 	}
 
 	const extraAllowedHeaders = [
@@ -964,6 +1007,12 @@ export async function handleWebhookIngressRequest(
 			endpoint: liveEndpoint,
 			secretMatch,
 		})
+		await retirePreviousWebhookHmacIfConfirmed({
+			env,
+			endpoint: liveEndpoint,
+			matchedSource: matchedHmacSource,
+			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
+		})
 		return jsonResponse({ ok: true }, { status: 202 })
 	}
 
@@ -1038,6 +1087,15 @@ export async function handleWebhookIngressRequest(
 				{ status: 502 },
 			)
 		}
+		// Sync: retire only after a successful invocation. A 409/502/timeout
+		// must leave previous_* so providers still retrying the old key keep
+		// working for the rest of the grace window.
+		await retirePreviousWebhookHmacIfConfirmed({
+			env,
+			endpoint: liveEndpoint,
+			matchedSource: matchedHmacSource,
+			previousHmacSecretEncrypted: observedPreviousHmacCiphertext,
+		})
 		return jsonResponse(response.body, { status: response.status })
 	} catch (error) {
 		await recordWebhookDelivery({
