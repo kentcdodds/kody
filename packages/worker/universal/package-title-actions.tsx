@@ -4,11 +4,11 @@ import { type RemixNode, css } from 'remix/component'
 import { type ViewerListingInstall } from '#universal/community-public-types.ts'
 import { getCommunityPackageHrefFromName } from '#universal/community-links.ts'
 import {
+	FORK_AHEAD_TOOLTIP,
 	FORK_OUTDATED_COPY_TOOLTIP,
 	copyPromptTooltipCss,
 } from '#universal/fork-outdated-copy-button.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
-import { routes } from '#universal/routes.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -16,75 +16,168 @@ import {
 	inlineSpinnerCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
-import { colors, typography } from '#universal/styles/tokens.ts'
+import { colors, mq, typography } from '#universal/styles/tokens.ts'
 
 export const PACKAGE_TITLE_STATUS_SELECTOR = '[data-package-title-status]'
 const OTHER_ACCOUNT_FORK_TOOLTIP =
 	'This was built by another user. Verify it before using. Click again to confirm fork.'
-const FORK_TITLE_TOOLTIP = 'Fork'
-const OPEN_FORK_TOOLTIP = 'Open fork'
-const COPY_SETUP_PROMPT_TOOLTIP = 'Copy setup prompt'
+const FORK_LABEL = 'Fork'
+const OPEN_FORK_LABEL = 'Open fork'
+const COPY_SETUP_PROMPT_LABEL = 'Copy setup prompt'
 
-const titleIconSize = '1.15em'
+const actionIconSize = '1.1em'
 const statusTooltipId = 'package-title-status-tooltip'
 const copyTooltipId = 'package-title-copy-tooltip'
 
-type PackageTitleActionsInput = {
-	viewerIsOwner: boolean
-	loggedIn: boolean
-	returnTo: string
+export type PackageRepoForkAction = {
 	listingId: string
 	trusted: boolean
+	loggedIn: boolean
+	loginHref: string
 	viewerInstall: ViewerListingInstall | null
 }
 
 /**
- * One status control beside the package name, plus a clipboard when a setup
- * prompt exists. Steady states are static frame HTML; the install spinner is
- * revealed on the same fork/verify control.
+ * Everything the repository action group can offer on any tab (Repo, Files,
+ * Settings). Built on the server from the package page so each tab renders
+ * the same group; null fields render nothing.
  */
-export function renderPackageTitleActions(input: PackageTitleActionsInput) {
-	if (input.viewerIsOwner) return null
-	const status = renderStatusControl(input)
-	const clipboard = renderSetupPromptControl(input.viewerInstall)
-	if (!status && !clipboard) return null
-	return (
-		<span data-testid="package-title-actions" mix={css(titleActionsCss)}>
-			{status}
-			{clipboard}
-		</span>
+export type PackageRepoActions = {
+	/** Visitors on a listed package. Owners never fork their own listing. */
+	fork: PackageRepoForkAction | null
+	/** Owner: default-branch HEAD is ahead of the last publish. */
+	publishHref: string | null
+	/** Owner: the public listing is pinned behind the published commit. */
+	updateListingHref: string | null
+	/** Owner: the package declares an app. */
+	packageAppHref: string | null
+}
+
+export function hasPackageRepoActions(actions: PackageRepoActions | null) {
+	if (!actions) return false
+	return Boolean(
+		actions.fork ||
+		actions.publishHref ||
+		actions.updateListingHref ||
+		actions.packageAppHref,
 	)
 }
 
-function renderStatusControl(input: PackageTitleActionsInput) {
-	const install = input.viewerInstall
+/**
+ * The action group's contents, in visual order: outlined maintenance and
+ * secondary actions first, then the one filled action the viewer came for
+ * (Fork / Open fork for visitors, Open app for owners). Statuses that are not
+ * actions (Featured, private, package marks) stay out of this group.
+ */
+export function renderPackageRepoActions(
+	actions: PackageRepoActions | null,
+): RemixNode {
+	if (!actions || !hasPackageRepoActions(actions)) return null
+	const install = actions.fork?.viewerInstall ?? null
+	return (
+		<>
+			{actions.publishHref ? (
+				<a
+					href={actions.publishHref}
+					data-testid="community-detail-source-ahead-badge"
+					aria-describedby="package-repo-publish-tooltip"
+					mix={css(packageActionSecondaryCss)}
+				>
+					{renderIcon('arrow-up-right', { size: actionIconSize })}
+					<span>Review &amp; publish</span>
+					<span
+						id="package-repo-publish-tooltip"
+						role="tooltip"
+						aria-hidden="true"
+					>
+						Default-branch HEAD is newer than the last publish. Review the
+						changes, then publish them.
+					</span>
+				</a>
+			) : null}
+			{actions.updateListingHref ? (
+				<a
+					href={actions.updateListingHref}
+					data-testid="community-detail-update-public-listing"
+					aria-describedby="package-repo-update-listing-tooltip"
+					mix={css(packageActionSecondaryCss)}
+				>
+					{renderIcon('refresh', { size: actionIconSize })}
+					<span>Update public listing</span>
+					<span
+						id="package-repo-update-listing-tooltip"
+						role="tooltip"
+						aria-hidden="true"
+					>
+						The public listing is behind your latest publish. Republish it from
+						settings.
+					</span>
+				</a>
+			) : null}
+			{actions.fork ? renderSetupPromptControl(install) : null}
+			{install?.forkAhead && install.listingDiffHref ? (
+				<a
+					href={install.listingDiffHref}
+					data-testid="community-detail-listing-fork-ahead-badge"
+					aria-describedby="package-repo-fork-ahead-tooltip"
+					mix={css(packageActionSecondaryCss)}
+				>
+					{renderIcon('git-fork', { size: actionIconSize })}
+					<span>Fork ahead</span>
+					<span
+						id="package-repo-fork-ahead-tooltip"
+						role="tooltip"
+						aria-hidden="true"
+					>
+						{FORK_AHEAD_TOOLTIP}
+					</span>
+				</a>
+			) : null}
+			{actions.fork ? renderStatusControl(actions.fork) : null}
+			{actions.packageAppHref ? (
+				<a
+					href={actions.packageAppHref}
+					data-testid="open-package-app"
+					data-rmx-document
+					mix={css(packageActionPrimaryCss)}
+				>
+					{renderIcon('share', { size: actionIconSize })}
+					<span>Open app</span>
+				</a>
+			) : null}
+		</>
+	)
+}
+
+function renderStatusControl(fork: PackageRepoForkAction) {
+	const install = fork.viewerInstall
 	if (install?.listingAhead && install.listingAheadPrompt) {
-		return renderOutdatedControl(install)
-	}
-	if (install) {
-		const href =
-			getCommunityPackageHrefFromName(install.targetName) ?? '/account/packages'
-		return renderIconControl({
-			href,
-			status: 'open',
-			icon: 'arrow-up-right',
-			label: OPEN_FORK_TOOLTIP,
-			tooltip: OPEN_FORK_TOOLTIP,
+		return renderLabeledControl({
+			href: install.listingDiffHref,
+			status: 'outdated',
+			icon: 'link-break',
+			label: 'Fork outdated',
+			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
 			testId: 'package-title-status',
+			copyText: install.listingAheadPrompt,
+			outdated: true,
+			primary: false,
 		})
 	}
-	const loginHref = routes.login.href(null, {
-		searchParams: { redirectTo: input.returnTo || routes.community.href() },
-	})
-	return renderInstallControl({
-		icon: 'git-fork',
-		label: FORK_TITLE_TOOLTIP,
-		tooltip: OTHER_ACCOUNT_FORK_TOOLTIP,
-		loggedIn: input.loggedIn,
-		loginHref,
-		trusted: input.trusted,
-		listingId: input.listingId,
-	})
+	if (install) {
+		return renderLabeledControl({
+			href:
+				getCommunityPackageHrefFromName(install.targetName) ??
+				'/account/packages',
+			status: 'open',
+			icon: 'arrow-up-right',
+			label: OPEN_FORK_LABEL,
+			tooltip: `Open your fork, ${install.targetName}.`,
+			testId: 'package-title-status',
+			primary: true,
+		})
+	}
+	return renderInstallControl(fork)
 }
 
 function renderSetupPromptControl(
@@ -94,65 +187,44 @@ function renderSetupPromptControl(
 	if (install.status !== 'adaptation_required') return null
 	const prompt = install.agentPrompt.trim()
 	if (!prompt) return null
-	return renderIconControl({
+	return renderLabeledControl({
 		status: null,
 		icon: 'clipboard',
-		label: COPY_SETUP_PROMPT_TOOLTIP,
-		tooltip: COPY_SETUP_PROMPT_TOOLTIP,
+		label: COPY_SETUP_PROMPT_LABEL,
+		tooltip: 'Copy the prompt that adapts your fork to your account.',
 		testId: 'package-title-copy-setup',
 		copyText: prompt,
+		primary: false,
 	})
 }
 
-function renderOutdatedControl(install: ViewerListingInstall) {
-	const prompt = install.listingAheadPrompt ?? ''
-	return renderIconControl({
-		href: install.listingDiffHref,
-		status: 'outdated',
-		icon: 'link-break',
-		label: 'Fork outdated',
-		tooltip: FORK_OUTDATED_COPY_TOOLTIP,
-		testId: 'package-title-status',
-		copyText: prompt,
-		outdated: true,
-	})
-}
-
-function renderInstallControl(input: {
-	icon: IconName
-	label: string
-	tooltip: string
-	loggedIn: boolean
-	loginHref: string
-	trusted: boolean
-	listingId: string
-}) {
+function renderInstallControl(fork: PackageRepoForkAction) {
 	const shared = {
 		'data-testid': 'community-detail-install',
 		'data-package-title-status': 'verify',
 		'data-package-title-idle': 'verify',
-		'data-package-title-listing': input.listingId,
-		'data-title-idle-label': input.label,
-		'data-title-idle-tooltip': input.tooltip,
+		'data-package-title-listing': fork.listingId,
+		'data-title-idle-label': FORK_LABEL,
+		'data-title-idle-tooltip': OTHER_ACCOUNT_FORK_TOOLTIP,
 		'data-community-install': '',
-		'data-trusted': input.trusted ? 'true' : 'false',
-		'aria-label': input.label,
+		'data-trusted': fork.trusted ? 'true' : 'false',
+		'aria-label': FORK_LABEL,
 		'aria-describedby': statusTooltipId,
 	}
 	const children = (
 		<>
 			<span data-title-status-icon>
-				{renderIcon(input.icon, { size: titleIconSize })}
+				{renderIcon('git-fork', { size: actionIconSize })}
 			</span>
-			<span data-title-status-spinner hidden mix={css(titleSpinnerCss)} />
-			<span data-title-status-label>{input.label}</span>
+			<span data-title-status-spinner hidden mix={css(spinnerCss)} />
+			<span data-title-status-label>{FORK_LABEL}</span>
 			<span
 				id={statusTooltipId}
 				role="tooltip"
 				data-title-status-tooltip
 				aria-hidden="true"
 			>
-				{input.tooltip}
+				{OTHER_ACCOUNT_FORK_TOOLTIP}
 			</span>
 			<span
 				data-title-status-live
@@ -161,9 +233,9 @@ function renderInstallControl(input: {
 			/>
 		</>
 	)
-	if (!input.loggedIn) {
+	if (!fork.loggedIn) {
 		return (
-			<a href={input.loginHref} {...shared} mix={css(packageActionPrimaryCss)}>
+			<a href={fork.loginHref} {...shared} mix={css(packageActionPrimaryCss)}>
 				{children}
 			</a>
 		)
@@ -175,7 +247,7 @@ function renderInstallControl(input: {
 	)
 }
 
-function renderIconControl(input: {
+function renderLabeledControl(input: {
 	href?: string | null
 	status: 'open' | 'outdated' | null
 	icon: IconName
@@ -184,6 +256,7 @@ function renderIconControl(input: {
 	testId: string
 	copyText?: string
 	outdated?: boolean
+	primary: boolean
 }) {
 	const tooltipId = input.copyText ? copyTooltipId : statusTooltipId
 	const copyAttrs = input.copyText
@@ -199,21 +272,22 @@ function renderIconControl(input: {
 		: {}
 	const shared = {
 		'data-testid': input.testId,
-		'aria-label': input.label,
 		'aria-describedby': tooltipId,
 		...statusAttrs,
 		...copyAttrs,
 	}
 	const children = (
 		<>
-			{renderIcon(input.icon, { size: titleIconSize })}
+			{renderIcon(input.icon, { size: actionIconSize })}
 			<span>{input.label}</span>
 			<span id={tooltipId} role="tooltip" aria-hidden="true">
 				{input.tooltip}
 			</span>
 		</>
 	)
-	const mix = css(packageActionSecondaryCss)
+	const mix = css(
+		input.primary ? packageActionPrimaryCss : packageActionSecondaryCss,
+	)
 	if (input.href) {
 		return (
 			<a href={input.href} {...shared} mix={mix}>
@@ -228,17 +302,39 @@ function renderIconControl(input: {
 	)
 }
 
-const titleActionsCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.5rem',
-	flex: 'none',
+/**
+ * The group sits at the right edge of the tab row on desktop, so tooltips
+ * open leftward from the control's right edge. On mobile the group starts at
+ * the left gutter, so they open rightward instead. Centered tooltips ran off
+ * the viewport in both places.
+ */
+const edgeAnchoredTooltipCss = {
+	'& [role="tooltip"]': {
+		...copyPromptTooltipCss['& [role="tooltip"]'],
+		left: 'auto',
+		right: 0,
+		transform: 'none',
+		[mq.mobile]: {
+			left: 0,
+			right: 'auto',
+		},
+	},
+	'& [role="tooltip"]::after': {
+		...copyPromptTooltipCss['& [role="tooltip"]::after'],
+		left: 'auto',
+		right: '1rem',
+		transform: 'none',
+		[mq.mobile]: {
+			left: '1rem',
+			right: 'auto',
+		},
+	},
 }
 
 /**
- * Repo-page actions reuse the account-area pill vocabulary at a tab-row
- * height: one filled pill for the action the page exists for, ghost pills
- * for everything else. Topic tags and status badges never use these.
+ * Repo actions reuse the account-area pill vocabulary at tab-row height: one
+ * filled pill for the action the page exists for, ghost pills for everything
+ * else. Topic tags and status badges never use these.
  */
 function compactActionCss<
 	T extends ReturnType<typeof getPillButtonCss | typeof getGhostButtonCss>,
@@ -246,6 +342,7 @@ function compactActionCss<
 	return {
 		...base,
 		...copyPromptTooltipCss,
+		...edgeAnchoredTooltipCss,
 		position: 'relative' as const,
 		padding: '0.5rem 0.95rem',
 		font: `650 0.875rem/1 ${typography.fontFamilyDisplay}`,
@@ -267,11 +364,11 @@ export const packageActionSecondaryCss = compactActionCss(
 	getGhostButtonCss({ size: 'sm' }),
 )
 
-const titleSpinnerCss = {
+const spinnerCss = {
 	...inlineSpinnerCss,
 	display: 'inline-block',
-	width: titleIconSize,
-	height: titleIconSize,
+	width: actionIconSize,
+	height: actionIconSize,
 	border: '1.5px solid oklch(from currentColor l c h / 0.35)',
 	borderTopColor: 'currentColor',
 	// `inline-block` would otherwise beat the `hidden` attribute in idle.

@@ -239,7 +239,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 		]),
 	).toEqual([])
 	expect(
-		signedIn.html.indexOf('data-testid="package-title-actions"'),
+		signedIn.html.indexOf('data-package-title-status="open"'),
 	).toBeGreaterThan(signedIn.html.indexOf('data-testid="package-repo-actions"'))
 })
 

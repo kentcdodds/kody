@@ -12,6 +12,7 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { createCommunityInstallController } from '#client/routes/community-install-controller.ts'
 import {
 	buildPackageFilesApiHref,
 	normalizePackageFilesPath,
@@ -165,6 +166,11 @@ const messageCss = {
 }
 
 export function PackageFilesRoute(handle: Handle) {
+	let activeListingId: string | null = null
+	const install = createCommunityInstallController(handle, {
+		getActiveListingId: () => activeListingId,
+		onInstalled: () => filesData.reload(handle, readCurrentRouterHref(handle)),
+	})
 	const filesData = createRouteData({
 		key: 'packageFiles',
 		async load(href, signal) {
@@ -241,8 +247,19 @@ export function PackageFilesRoute(handle: Handle) {
 		// arrives. Tearing the explorer down to a loading line for the ~6ms
 		// between renders blinked the whole tree out and back, and made the
 		// page transition run twice per click.
+		const listingId = data.repoActions?.fork?.listingId ?? null
+		if (listingId !== activeListingId) {
+			activeListingId = listingId
+			install.applySnapshot(listingId)
+		}
 		return (
-			<PackageFilesExplorer data={data} busy={snapshot.kind === 'pending'} />
+			<div mix={install.mixins}>
+				<PackageFilesExplorer
+					data={data}
+					busy={snapshot.kind === 'pending'}
+					installStrip={listingId ? install.renderStrip() : null}
+				/>
+			</div>
 		)
 	}
 }

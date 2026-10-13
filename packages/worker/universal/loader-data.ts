@@ -22,6 +22,7 @@ import {
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
+import { type PackageRepoActions } from '#universal/package-title-actions.tsx'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
@@ -224,6 +225,8 @@ export type PackageFilesLoaderData = {
 	description?: string
 	/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 	ownerProfilePublic?: boolean
+	/** Repository action group (same model as the Repo and Settings tabs). */
+	repoActions?: PackageRepoActions | null
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -258,6 +261,8 @@ type CommunityDetailShellLoaderData = {
 	viewerCanAdoptCommunityFork?: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
+	/** Repository action group for client-rendered tabs (Settings). */
+	repoActions?: PackageRepoActions | null
 }
 
 type CommunityPackageUnauthorizedLoaderData = {

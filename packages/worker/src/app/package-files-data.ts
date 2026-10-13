@@ -57,6 +57,7 @@ import {
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
+import { buildPackageRepoActionsForPage } from '#app/package-repo-actions.ts'
 import {
 	getCommunityPackageAssetBaseHref,
 	getCommunityPackageAssetBaseHrefForViewedCommit,
@@ -693,6 +694,7 @@ export async function loadAccessiblePackageFilesData(input: {
 			kodyId: page.kodyId,
 			description: page.listing.listing.description,
 			ownerProfilePublic: page.ownerProfilePublic,
+			repoActions: buildPackageRepoActionsForPage(page),
 		}
 	}
 
@@ -700,7 +702,7 @@ export async function loadAccessiblePackageFilesData(input: {
 
 	if (!page.hasPackage) {
 		// loadPackagePage already gated access for public guests and private members.
-		return loadPlainRepoFilesData({
+		const data = await loadPlainRepoFilesData({
 			env: input.env,
 			request: input.request,
 			ownerUserId: page.ownerUserId,
@@ -717,6 +719,9 @@ export async function loadAccessiblePackageFilesData(input: {
 			viewerCanManage: page.viewerCanManage,
 			ownerProfilePublic: page.ownerProfilePublic,
 		})
+		return data
+			? { ...data, repoActions: buildPackageRepoActionsForPage(page) }
+			: null
 	}
 
 	if (!page.viewerIsOwner) return null
@@ -739,6 +744,7 @@ export async function loadAccessiblePackageFilesData(input: {
 		viewerCanManage: page.viewerCanManage,
 		description: page.ownerPackage.description,
 		ownerProfilePublic: page.ownerProfilePublic,
+		repoActions: buildPackageRepoActionsForPage(page),
 	}
 }
 

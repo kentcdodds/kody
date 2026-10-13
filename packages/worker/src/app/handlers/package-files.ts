@@ -340,8 +340,9 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			// The file tree is viewer-independent; a session cookie alone makes
-			// the response private so an owner's tree never lands in a shared cache.
+			// Anonymous payloads are viewer-independent (the repo actions' fork is
+			// a login link); a session cookie alone makes the response private so
+			// an owner's tree or a viewer's fork state never lands in a shared cache.
 			return jsonResponse(data, {
 				headers: anonymousPersonalizedJsonCacheHeaders({
 					personalized: false,
