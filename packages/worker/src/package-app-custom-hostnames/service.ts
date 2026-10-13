@@ -11,6 +11,7 @@ import {
 	type CustomHostnameSslMethod,
 } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
 import { checkRateLimit, releaseRateLimit } from '#worker/app/rate-limit.ts'
+import { countOrgCustomHostnames } from '#worker/package-app-custom-hostnames/count-org.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	packageAppCustomHostnameAddRateLimit,
@@ -234,23 +235,6 @@ function dnsHint(env: Env, hostname: string): PackageAppCustomHostnameDnsHint {
 		name: hostname,
 		target: dnsTargetHostname(env),
 	}
-}
-
-async function countOrgCustomHostnames(db: D1Database, orgId: string) {
-	// Count every hostname still owned by the org, including app-level rows
-	// whose package was soft-deleted. Soft-delete must not free abuse-cap
-	// slots while the Cloudflare SaaS hostname remains.
-	const row = await db
-		.prepare(
-			`SELECT COUNT(*) AS count FROM package_app_custom_hostnames ch
-			 WHERE ch.org_id = ?
-			    OR ch.package_id IN (
-			      SELECT id FROM saved_packages WHERE user_id = ?
-			    )`,
-		)
-		.bind(orgId, orgId)
-		.first<{ count: number }>()
-	return row?.count ?? 0
 }
 
 /**
