@@ -176,7 +176,9 @@ async function loadDependenciesFromPublishedArtifact(input: {
 	if (!preferred) return null
 	try {
 		const parsed = JSON.parse(preferred.dependenciesJson) as unknown
-		if (!Array.isArray(parsed)) return []
+		// Wrong-shaped dependenciesJson is treated like malformed JSON so
+		// resolveDependencySnapshot falls back to the declared-deps walk.
+		if (!Array.isArray(parsed)) return null
 		const dependencies: Array<BundleArtifactDependency> = []
 		for (const entry of parsed) {
 			if (!entry || typeof entry !== 'object') continue
