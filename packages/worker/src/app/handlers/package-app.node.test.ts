@@ -128,10 +128,15 @@ vi.mock('#app/auth-redirect.ts', () => ({
 	) => mockModule.redirectToLogin(...args),
 }))
 
-vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Parameters<typeof AppBaseUrl.getAppBaseUrl>) =>
-		mockModule.getAppBaseUrl(...args),
-}))
+vi.mock('#worker/app-base-url.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/app-base-url.ts')>()
+	return {
+		...actual,
+		getAppBaseUrl: (...args: Parameters<typeof AppBaseUrl.getAppBaseUrl>) =>
+			mockModule.getAppBaseUrl(...args),
+	}
+})
 
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (
