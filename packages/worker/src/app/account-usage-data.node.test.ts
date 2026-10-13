@@ -143,6 +143,12 @@ async function loadUsage(
 			},
 		} as unknown as Env,
 		userId: input.userId,
+		org: {
+			id: stableUserId as never,
+			slug: 'usage-user',
+			displayName: null,
+			personal: true,
+		},
 		now,
 	})
 	const row = (resource: string) =>
@@ -385,7 +391,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	})
 	expect(empty.data?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
-		action: { label: 'Add credits', href: '/account/usage#credits' },
+		action: { label: 'Add credits', href: '#credits' },
 	})
 	expect(empty.data?.includedCompute[0]).toMatchObject({
 		barPercent: 100,
@@ -418,7 +424,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(noCustomer.data?.canBuyCredits).toBe(false)
 	expect(noCustomer.data?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
-		action: { label: 'Subscribe to Pro', href: '/account/usage#credits' },
+		action: { label: 'Subscribe to Pro', href: '#credits' },
 	})
 	expect(noCustomer.data?.credits).toMatchObject({
 		eligible: true,

@@ -184,7 +184,7 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 	).toMatchObject({
 		kind: 'include_used_no_credits',
 		tone: 'warn',
-		action: { label: 'Add credits', href: '/account/usage#credits' },
+		action: { label: 'Add credits', href: '#credits' },
 	})
 	expect(
 		alarm({

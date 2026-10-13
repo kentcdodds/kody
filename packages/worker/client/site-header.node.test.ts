@@ -1,7 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
-import { dismissOpenPopoverPanel, SiteHeader } from './site-header.tsx'
+import {
+	dismissOpenPopoverPanel,
+	SiteHeader,
+	usageHrefForAccountMenu,
+} from './site-header.tsx'
 
 test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or closed', () => {
 	const unavailableMatches = vi.fn(() => {
@@ -68,7 +72,7 @@ test('logged-in header has an organization switcher and a separate account menu 
 		/href="\/account"[^>]*aria-current="page"[^>]*>[\s\S]*?>Account settings</,
 	)
 	expect(accountPanel).toMatch(
-		/href="\/account\/usage"[^>]*>[\s\S]*?>Usage &amp; credits</,
+		/href="\/@ada\/-\/usage"[^>]*>[\s\S]*?>Usage &amp; credits</,
 	)
 	expect(accountPanel).toContain('action="/logout"')
 	// From an account page, the signup org row opens the overview too, not
@@ -478,4 +482,39 @@ test('logged-out header shows Log in without an Account link', async () => {
 	expect(html).toContain('>Log in</a>')
 	expect(html).not.toContain('data-testid="site-header-account"')
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
+})
+
+test('account menu Usage & credits uses the URL org, never a cookie', () => {
+	const orgs = [
+		{ slug: 'ada', personal: true },
+		{ slug: 'acme', personal: false },
+	]
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/@acme/-/billing',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@acme/-/usage')
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/account',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@ada/-/usage')
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/@acme',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@acme/-/usage')
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/@stranger/pkg',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@ada/-/usage')
 })

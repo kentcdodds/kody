@@ -82,7 +82,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	).toHaveAttribute('href', '/account')
 	await expect(
 		accountGroup.getByRole('link', { name: 'Usage & credits' }),
-	).toHaveAttribute('href', '/account/usage')
+	).toHaveAttribute('href', `/@${user.username}/-/usage`)
 	await expect(
 		accountGroup.getByRole('button', { name: 'Log out' }),
 	).toBeVisible()

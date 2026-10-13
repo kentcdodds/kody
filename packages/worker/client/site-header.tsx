@@ -9,7 +9,10 @@ import {
 	currentSwitcherSlug,
 	orgIdentity,
 	orgRoleLabel,
+	orgSlugFromOrgOwnedPath,
+	orgSlugFromPathname,
 	orgSwitcherEntries,
+	orgUsagePath,
 	organizationsWithSignupFallback,
 	type OrganizationSummary,
 	type OrgSwitcherEntry,
@@ -336,6 +339,7 @@ function OrgSwitcher(
 					{renderAccountGroup({
 						username: handle.props.username,
 						currentPathname: handle.props.currentPathname,
+						organizations,
 						heading: true,
 					})}
 				</div>
@@ -388,9 +392,31 @@ function OrgSwitcher(
 	}
 }
 
+/**
+ * Usage link for the avatar menu: org from the URL only (no last-used
+ * cookie), falling back to the personal org.
+ */
+export function usageHrefForAccountMenu(input: {
+	pathname: string
+	organizations: ReadonlyArray<Pick<OrganizationSummary, 'slug' | 'personal'>>
+	username: string
+}) {
+	const owned = orgSlugFromOrgOwnedPath(input.pathname)
+	if (owned) return orgUsagePath(owned)
+	const fromPath = orgSlugFromPathname(input.pathname)
+	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
+		return orgUsagePath(fromPath)
+	}
+	const personal =
+		input.organizations.find((org) => org.personal)?.slug ??
+		input.username.trim()
+	return personal ? orgUsagePath(personal) : routes.account.href()
+}
+
 function accountRows(input: {
 	username: string
 	currentPathname: string
+	organizations: ReadonlyArray<OrganizationSummary>
 }): Array<SwitcherRow> {
 	const pageCurrent = (href: string) =>
 		input.currentPathname === href ? ('page' as const) : undefined
@@ -409,6 +435,11 @@ function accountRows(input: {
 		leading: renderIconWell(icon),
 		badge: null,
 	})
+	const usageHref = usageHrefForAccountMenu({
+		pathname: input.currentPathname,
+		organizations: input.organizations,
+		username: input.username,
+	})
 	return [
 		...(input.username
 			? [
@@ -421,18 +452,14 @@ function accountRows(input: {
 				]
 			: []),
 		row('account-settings', routes.account.href(), 'Account settings', 'user'),
-		row(
-			'account-usage',
-			routes.accountUsage.href(),
-			'Usage & credits',
-			'chart',
-		),
+		row('account-usage', usageHref, 'Usage & credits', 'chart'),
 	]
 }
 
 function renderAccountGroup(input: {
 	username: string
 	currentPathname: string
+	organizations: ReadonlyArray<OrganizationSummary>
 	heading: boolean
 }) {
 	return (
@@ -459,6 +486,7 @@ function AccountMenu(
 		displayName: string
 		avatarUrl: string | null
 		currentPathname: string
+		organizations?: Array<OrganizationSummary>
 	}>,
 ) {
 	let open = false
@@ -518,6 +546,10 @@ function AccountMenu(
 					{renderAccountGroup({
 						username: handle.props.username,
 						currentPathname: handle.props.currentPathname,
+						organizations: organizationsWithSignupFallback({
+							organizations: handle.props.organizations ?? [],
+							username: handle.props.username,
+						}),
 						heading: false,
 					})}
 				</div>
@@ -601,6 +633,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									displayName={handle.props.displayName}
 									avatarUrl={handle.props.avatarUrl}
 									currentPathname={handle.props.currentPathname}
+									organizations={handle.props.organizations ?? []}
 								/>
 								{handle.props.showDemoIndicator ? (
 									<span

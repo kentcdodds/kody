@@ -1,5 +1,8 @@
+/** Same-page Credits section anchor on `/@:orgSlug/-/usage`. */
+const usageCreditsSectionHref = '#credits'
+
 /**
- * Customer framing shared by `/account/usage` (including its Credits
+ * Customer framing shared by `/@:orgSlug/-/usage` (including its Credits
  * section) and the entitlement-warning emails so they tell one story:
  *
  * 1. Activity (code executions and runs) is the "how busy am I" signal.
@@ -11,7 +14,6 @@
  * and past-include usage never charges or stops a Free account.
  */
 import {
-	accountCreditsPath,
 	computeOverageUnitLabels,
 	computeOverageWarningResourceLabels,
 	type ComputeOverageWarningResource,
@@ -253,7 +255,7 @@ export type CreditsAlarm = {
 	body: string
 	action: {
 		label: 'Add credits' | 'Subscribe to Pro'
-		href: typeof accountCreditsPath
+		href: typeof usageCreditsSectionHref
 	}
 }
 
@@ -305,7 +307,7 @@ export function resolveCreditsAlarm(input: {
 }): CreditsAlarm | null {
 	const action = {
 		label: input.canBuyCredits ? 'Add credits' : 'Subscribe to Pro',
-		href: accountCreditsPath,
+		href: usageCreditsSectionHref,
 	} as const
 	const pastInclude = input.meters.some(
 		(meter) => meter.current > meter.include,
