@@ -8,6 +8,8 @@
  * directly (or via the vitest alias of that generated specifier).
  */
 
+import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
+import { createCredentialClientRuntimeSource } from '#worker/mcp/execute-modules/credential-client-source.ts'
 import {
 	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,
@@ -209,6 +211,22 @@ export function __kodyCreatePackageBoundOauthClientCredentials(packageId) {
 	};
 }
 
+// Scoped credential clients (ADR 0068) open and sign through CapabilityProxy
+// \`kody.credentialClient*\`; their fetches carry only an opaque handle, which
+// the fetch gateway on origin turns into the credential.
+${createCredentialClientRuntimeSource()}
+const __kodyCredentialRuntime = __kodyCreateCredentialRuntime((name, args) =>
+	kody[name](args ?? {}),
+);
+export const credential = __kodyCredentialRuntime.credential;
+export const credentials = __kodyCredentialRuntime.credentials;
+
+export function __kodyCreatePackageBoundCredentialRuntime(packageId) {
+	return __kodyCreateCredentialRuntime((name, args) =>
+		kody[name]({ ...(args ?? {}), packageId }),
+	);
+}
+
 const __kodyNullBodyStatuses = new Set([204, 205, 304]);
 const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 
@@ -390,6 +408,14 @@ function __kodyHasPlaceholderText(value) {
 // Request.url percent-encodes braces in the path, and URLSearchParams encodes
 // every placeholder character in the query, so decode before checking.
 function __kodyRequestHasSecretPlaceholders(url, headers) {
+	if (
+		headers &&
+		Object.keys(headers).some(
+			(name) => name.toLowerCase() === ${JSON.stringify(credentialClientHeaderName)},
+		)
+	) {
+		return true;
+	}
 	if (
 		typeof url === "string" &&
 		__kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(url))
@@ -1041,6 +1067,8 @@ const __kodyLocalRuntimeDefault = Object.freeze({
 	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,
+	credential,
+	credentials,
 	packageContext,
 	packageSecrets,
 	email,
@@ -1074,6 +1102,7 @@ import __kodyBaseRuntimeDefault, {
 	__kodyCreatePackageBoundSecrets,
 	__kodyCreatePackageBoundAuthenticatedFetch,
 	__kodyCreatePackageBoundOauthClientCredentials,
+	__kodyCreatePackageBoundCredentialRuntime,
 } from ${JSON.stringify(baseRuntimeSpecifier)};
 export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
 		packageId,
@@ -1087,6 +1116,11 @@ export const createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFet
 export const oauthClientCredentials = __kodyCreatePackageBoundOauthClientCredentials(${JSON.stringify(
 		packageId,
 	)});
+const __kodyPackageCredentialRuntime = __kodyCreatePackageBoundCredentialRuntime(${JSON.stringify(
+		packageId,
+	)});
+export const credential = __kodyPackageCredentialRuntime.credential;
+export const credentials = __kodyPackageCredentialRuntime.credentials;
 // Local base runtime default is Object.freeze'd. Proxying that frozen target
 // while returning different packageStorage / packageSecrets /
 // createAuthenticatedFetch / oauthClientCredentials values violates Proxy
@@ -1099,6 +1133,8 @@ const __kodyPackageRuntimeDefault = new Proxy(
 		packageSecrets,
 		createAuthenticatedFetch,
 		oauthClientCredentials,
+		credential,
+		credentials,
 	}),
 	{
 		get(target, property, receiver) {
@@ -1106,6 +1142,8 @@ const __kodyPackageRuntimeDefault = new Proxy(
 			if (property === "packageSecrets") return packageSecrets;
 			if (property === "createAuthenticatedFetch") return createAuthenticatedFetch;
 			if (property === "oauthClientCredentials") return oauthClientCredentials;
+			if (property === "credential") return credential;
+			if (property === "credentials") return credentials;
 			return Reflect.get(target, property, receiver);
 		},
 		has(target, property) {
@@ -1114,6 +1152,8 @@ const __kodyPackageRuntimeDefault = new Proxy(
 				property === "packageSecrets" ||
 				property === "createAuthenticatedFetch" ||
 				property === "oauthClientCredentials" ||
+				property === "credential" ||
+				property === "credentials" ||
 				Reflect.has(target, property)
 			);
 		},

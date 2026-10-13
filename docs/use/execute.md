@@ -23,6 +23,9 @@ helpers are runtime exports:
 - use
   **`import { createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
   for OAuth helpers
+- use **`import { credential } from 'kody:runtime'`** for a client that sends
+  one credential to its own hosts without exposing the value; see
+  [Credential clients](./packages.md#opt-in-credential-clients)
 - use **`import { secretHeaders } from 'kody:runtime'`** when an approved
   `fetch` request needs host-derived auth headers from saved secrets, such as
   Basic Auth from a saved client id and client secret

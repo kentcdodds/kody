@@ -30,6 +30,19 @@ import {
 } from './signing-resolver.ts'
 import { type ResolvedCredentialUrl } from './url-resolver.ts'
 
+/** Where a scoped client places a value on one request. */
+export type ClientPlacement =
+	| { kind: 'header'; name: string; value: string }
+	| { kind: 'query'; param: string; value: string }
+
+export type ResolvedClientPlacement = {
+	placement: ClientPlacement
+	/** Texts that carry the value, for echo redaction of the response. */
+	substitutedValues: ReadonlyArray<string>
+	/** The inject shape with no value, for a 401 / 403 hint. */
+	shape: string
+}
+
 /**
  * Normalized host the value is about to be sent to. When set, the door
  * enforces the credential's host allowlist, so an unapproved host is an
@@ -123,6 +136,26 @@ export type CredentialTarget =
 			requestHost: string
 			operation: SigningOperation
 	  }
+	/**
+	 * A Key (`secret` kind) picked by id through a `credential()` client:
+	 * placed by its `inject` for the HTTPS request to `requestUrl`, whose host
+	 * must be one of its hosts. Package allowlists do not apply; the actor's
+	 * Use is the only grant.
+	 */
+	| { use: 'client-key'; credentialId: string; requestUrl: URL }
+	/**
+	 * An OAuth connection picked by id through a `credential()` client: its
+	 * access token as a Bearer header for the HTTPS request to `requestUrl`,
+	 * on one of the connection's hosts.
+	 */
+	| { use: 'client-oauth'; credentialId: string; requestUrl: URL }
+	/** A `credential()` client's OAuth connection refreshing its tokens. */
+	| {
+			use: 'client-oauth-refresh'
+			credentialId: string
+			userEmail?: string
+			waitUntil?: (promise: Promise<unknown>) => void
+	  }
 
 export type CredentialUse = CredentialTarget['use']
 
@@ -154,6 +187,9 @@ export type ResolvedCredentialByUse = {
 	url: ResolvedCredentialUrl
 	login: ResolvedLoginSession
 	signing: SigningResult
+	'client-key': ResolvedClientPlacement
+	'client-oauth': ResolvedClientPlacement
+	'client-oauth-refresh': { refreshed: boolean }
 }
 
 export type ResolvedCredential<T extends CredentialTarget> =
@@ -213,10 +249,13 @@ export function permissionForUse(use: CredentialUse): OrgPermission {
 		case 'url':
 		case 'login':
 		case 'signing':
+		case 'client-key':
 			return 'secret:use'
 		case 'integration-token':
 		case 'integration-refresh':
 		case 'mcp-connection':
+		case 'client-oauth':
+		case 'client-oauth-refresh':
 			return 'integration:use'
 		default: {
 			const exhaustive: never = use

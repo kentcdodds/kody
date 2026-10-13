@@ -11,7 +11,10 @@ import {
 	pickLocalExecutePrimaryRuntimePath,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
-import { createLocalExecuteRuntimeShimSource } from './local-execute-runtime-support.ts'
+import {
+	createLocalExecutePackageRuntimeModuleSource,
+	createLocalExecuteRuntimeShimSource,
+} from './local-execute-runtime-support.ts'
 import {
 	normalizeWorkspaceModulePath,
 	resolveRelativeModulePath,
@@ -397,6 +400,61 @@ test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', (
 		}),
 	).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+})
+
+test('local gateway fetch always hops a credential client request, which carries only a handle', async () => {
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	const start = shim.indexOf('const __kodyNullBodyStatuses')
+	const end = shim.indexOf('export function __kodyCreatePackageBoundStorage')
+	const helpersSource = shim.slice(start, end).replaceAll(/^export /gm, '')
+	const gatewayCalls: Array<unknown> = []
+	const kody = {
+		gatewayFetch: async (args: unknown) => {
+			gatewayCalls.push(args)
+			return { status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }
+		},
+	}
+	const originalFetch = globalThis.fetch
+	const ambientCalls: Array<unknown> = []
+	globalThis.fetch = (async (input: unknown) => {
+		ambientCalls.push(input)
+		return new Response('ambient')
+	}) as typeof fetch
+	try {
+		const { __kodyGatewayFetch } = new Function(
+			'kody',
+			`${helpersSource}; return { __kodyGatewayFetch };`,
+		)(kody) as {
+			__kodyGatewayFetch: (
+				input: RequestInfo | URL,
+				init?: RequestInit,
+			) => Promise<Response>
+		}
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/v1', {
+				headers: { 'x-kody-credential-client': 'kch1.a.b' },
+				redirect: 'manual',
+			}),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toMatchObject([
+			{
+				request: {
+					url: 'https://api.example.com/v1',
+					headers: { 'x-kody-credential-client': 'kch1.a.b' },
+				},
+			},
+		])
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+	expect(shim).toContain(
+		'export const credential = __kodyCredentialRuntime.credential;',
+	)
+	const packageRuntime = createLocalExecutePackageRuntimeModuleSource('pkg-1')
+	expect(packageRuntime).toContain(
+		'__kodyCreatePackageBoundCredentialRuntime("pkg-1")',
 	)
 })
 

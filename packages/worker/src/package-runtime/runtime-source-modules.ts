@@ -698,6 +698,50 @@ export const kody =
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
+// \`credential\` carries \`credential.named\`, so it forwards the property too.
+export const credential = __kodyOptionalRuntimeFunctionExport('credential') &&
+	Object.freeze(Object.assign(
+		__kodyCreateRuntimeFunctionExport('credential'),
+		{
+			named: (...args) => {
+				const runtimeExport = __kodyReadRuntimeExport('credential');
+				if (typeof runtimeExport?.named !== 'function') {
+					throw new Error('kody:runtime export "credential" is not callable in this execution context.');
+				}
+				return runtimeExport.named(...args);
+			},
+		},
+	));
+export const credentials = __kodyOptionalRuntimeFunctionExport('credentials');
+
+// Factory for the per-package virtual runtime modules: an imported package's
+// \`credential(key)\` reads that package's needs, not the entry package's. The
+// host accepts the id only when it is in the run's provenance, and it selects
+// needs only; it grants nothing.
+function __kodyResolvePackageCredentialRuntime(packageId) {
+	const factory = __kodyRuntimeStorage.getStore()?.__kodyCredentialRuntimeFor;
+	if (typeof factory !== 'function') {
+		throw new Error('kody:runtime export "credential" is not callable in this execution context.');
+	}
+	return factory(packageId);
+}
+export function __kodyCreatePackageBoundCredentialRuntime(packageId) {
+	if (typeof __kodyInitialRuntime?.__kodyCredentialRuntimeFor !== 'function') {
+		return { credential: undefined, credentials: undefined };
+	}
+	const credential = Object.assign(
+		(...args) => __kodyResolvePackageCredentialRuntime(packageId).credential(...args),
+		{
+			named: (...args) =>
+				__kodyResolvePackageCredentialRuntime(packageId).credential.named(...args),
+		},
+	);
+	return {
+		credential: Object.freeze(credential),
+		credentials: (...args) =>
+			__kodyResolvePackageCredentialRuntime(packageId).credentials(...args),
+	};
+}
 export const packageContext = __kodyCreateRuntimeRecordExport('packageContext');
 export const packageSecrets = __kodyCreateRuntimeObjectProxy('packageSecrets');
 export const email = __kodyOptionalRuntimeObjectExport('email', null);
@@ -711,6 +755,8 @@ const __kodyRuntimeNamedExports = {
 	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,
+	credential,
+	credentials,
 	packageContext,
 	packageSecrets,
 	email,
@@ -848,12 +894,19 @@ const kodyRuntimeSharedExportNames = [
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',
+	'credential',
+	'credentials',
 	'packageContext',
 	'email',
 	'workflows',
 	'packages',
 	'events',
 ] as const
+
+const packageBoundCredentialExportNames: ReadonlySet<string> = new Set([
+	'credential',
+	'credentials',
+])
 
 /**
  * `kody:runtime` target for modules without saved-package provenance (ad hoc
@@ -895,9 +948,12 @@ export function createPackageRuntimeModuleSource(packageId: string) {
 	// (`.__kody_virtual__/package-runtime/<hex>.js` next to
 	// `.__kody_virtual__/runtime.js`), in every graph or artifact prefix.
 	const baseRuntimeSpecifier = '../runtime.js'
+	const sharedExportNames = kodyRuntimeSharedExportNames.filter(
+		(name) => !packageBoundCredentialExportNames.has(name),
+	)
 	return `
-export { ${kodyRuntimeSharedExportNames.join(', ')} } from ${JSON.stringify(baseRuntimeSpecifier)};
-import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage, __kodyCreatePackageBoundSecrets } from ${JSON.stringify(
+export { ${sharedExportNames.join(', ')} } from ${JSON.stringify(baseRuntimeSpecifier)};
+import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage, __kodyCreatePackageBoundSecrets, __kodyCreatePackageBoundCredentialRuntime } from ${JSON.stringify(
 		baseRuntimeSpecifier,
 	)};
 export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
@@ -906,20 +962,26 @@ export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
 export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
 		packageId,
 	)});
+const __kodyPackageCredentialRuntime = __kodyCreatePackageBoundCredentialRuntime(${JSON.stringify(
+		packageId,
+	)});
+export const credential = __kodyPackageCredentialRuntime.credential;
+export const credentials = __kodyPackageCredentialRuntime.credentials;
 // The default export mirrors the shared runtime default but resolves
-// packageStorage / packageSecrets to this package's bound variants.
+// packageStorage / packageSecrets / credential / credentials to this
+// package's bound variants.
+const __kodyPackageBound = Object.fromEntries(
+	Object.entries({ packageStorage, packageSecrets, credential, credentials }).filter(
+		([, value]) => value !== undefined,
+	),
+);
 const __kodyPackageRuntimeDefault = new Proxy(__kodyBaseRuntimeDefault, {
 	get(target, property, receiver) {
-		if (property === 'packageStorage') return packageStorage;
-		if (property === 'packageSecrets') return packageSecrets;
+		if (Object.hasOwn(__kodyPackageBound, property)) return __kodyPackageBound[property];
 		return Reflect.get(target, property, receiver);
 	},
 	has(target, property) {
-		return (
-			property === 'packageStorage' ||
-			property === 'packageSecrets' ||
-			Reflect.has(target, property)
-		);
+		return Object.hasOwn(__kodyPackageBound, property) || Reflect.has(target, property);
 	},
 });
 export default __kodyPackageRuntimeDefault;

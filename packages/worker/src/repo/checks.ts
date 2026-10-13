@@ -536,6 +536,33 @@ declare module "kody:runtime" {
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;
   export const events: KodyEventsRuntime;
+  /**
+   * A client for one credential. It holds no value: \`fetch\` sends the
+   * credential only to its hosts, and \`sign\` / \`callTool\` run on the host.
+   */
+  export type KodyCredentialClient = {
+    readonly name: string;
+    readonly scope: "org" | "personal";
+    readonly kind: "secret" | "oauth" | "url" | "login" | "mcp" | "signing";
+    readonly hosts: ReadonlyArray<string>;
+    fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    sign?: (operation: Record<string, unknown>) => Promise<string>;
+    callTool?: (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
+  };
+  /**
+   * Open the credential bound to a need declared in package.json
+   * (\`kody.credentials\`). Rejects with an Error carrying \`code\`
+   * (\`credential_unbound\`, \`credential_ambiguous\`, \`credential_denied\`, …)
+   * and \`retryWith\`.
+   */
+  export const credential: ((key: string) => Promise<KodyCredentialClient>) & {
+    /** Ad hoc code and unshared personal packages only. */
+    named(
+      name: string,
+      options?: { scope?: "org" | "personal" | null },
+    ): Promise<KodyCredentialClient>;
+  };
+  export function credentials(key: string): Promise<Array<KodyCredentialClient>>;
   export const packageSecrets:
     | {
         /**
@@ -559,6 +586,8 @@ declare module "kody:runtime" {
       createAuthenticatedFetch: typeof createAuthenticatedFetch;
       secretHeaders: typeof secretHeaders;
       oauthClientCredentials: typeof oauthClientCredentials;
+      credential: typeof credential;
+      credentials: typeof credentials;
       packageContext: typeof packageContext;
       packages: typeof packages;
       packageStorage: typeof packageStorage;

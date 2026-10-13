@@ -178,10 +178,21 @@ export function assertInjectFitsKind(input: {
 }
 
 function parseInject(injectJson: string | null | undefined): CredentialInject {
-	const inject = credentialInjectSchema.safeParse(
-		JSON.parse(injectJson ?? 'null'),
-	)
-	return inject.success ? inject.data : defaultCredentialInject
+	return readCredentialInject(injectJson) ?? defaultCredentialInject
+}
+
+/** A stored `inject_json`, or null when it is not a valid inject. */
+export function readCredentialInject(
+	injectJson: string | null | undefined,
+): CredentialInject | null {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(injectJson ?? 'null')
+	} catch {
+		return null
+	}
+	const inject = credentialInjectSchema.safeParse(parsed)
+	return inject.success ? inject.data : null
 }
 
 export type CredentialFieldsUpdate = {

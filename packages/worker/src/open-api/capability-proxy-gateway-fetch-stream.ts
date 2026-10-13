@@ -3,6 +3,7 @@ import {
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
 import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
+import { capabilityProxyCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { authorizeLocalExecuteOwnedPackageId } from './capability-proxy-package-grants.ts'
 import { type ApiInvocationContext } from './context.ts'
@@ -154,6 +155,11 @@ export async function runCapabilityProxyGatewayFetchStream(input: {
 			request: input.ctx.callerContext.request,
 			storageContext,
 			claimedPackageId: stampedPackageId,
+			credentialClientBinding: input.ctx.callerContext.request
+				? capabilityProxyCredentialClientBinding(
+						input.ctx.callerContext.request,
+					)
+				: null,
 		},
 		request: new Request(call.url, outboundInit),
 		...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),

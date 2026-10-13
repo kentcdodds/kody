@@ -1,0 +1,631 @@
+import { DatabaseSync } from 'node:sqlite'
+import {
+	ownerIdFromStored,
+	personalOrgId,
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OrgRole } from '@kody-internal/shared/request-context.ts'
+import { expect, test, vi } from 'vitest'
+import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
+import { credentialClientHintHeaderName } from '#mcp/credential-client-gateway.ts'
+import { saveSecret } from '#mcp/secrets/service.ts'
+import { upsertGrant } from '#worker/orgs/access-writes.ts'
+import { createOrganization } from '#worker/orgs/create-organization.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { insertSavedPackage } from '#worker/package-registry/repo.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import {
+	createAuditTestDb,
+	createTestOrgAuditWriter,
+} from '#worker/test-support/create-audit-db.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import * as usageModule from '#worker/usage/record-usage.ts'
+import { credentialClientHeaderName } from './credential-client-header.ts'
+import {
+	newRunCredentialClientBinding,
+	signCredentialClientHandle,
+} from './credential-client-handle.ts'
+import {
+	applyCredentialClient,
+	openCredentialClient,
+	type CredentialClientContext,
+} from './credential-client.ts'
+import * as needsClosure from './credential-needs-closure.ts'
+import { type CredentialNeed } from './credential-needs.ts'
+
+const scheduledAudits = vi.hoisted(() => [] as Array<Promise<unknown>>)
+
+vi.mock('cloudflare:workers', async (importOriginal) => ({
+	...(await importOriginal<typeof import('cloudflare:workers')>()),
+	waitUntil: (promise: Promise<unknown>) => {
+		scheduledAudits.push(promise)
+	},
+}))
+
+const now = '2026-10-12T00:00:00.000Z'
+const resendKey = 're_live_secret_value_123'
+
+async function setup() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const auditDb = createAuditTestDb()
+	const env = {
+		APP_DB: db,
+		AUDIT_DB: auditDb,
+		...createInMemoryUserMeterEnv().env,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as unknown as Env
+	const people = Object.fromEntries(
+		(['ann', 'bea'] as const).map((username) => {
+			const stableUserId = testStableUserIdFromEmail(`${username}@example.com`)
+			return [
+				username,
+				{ stableUserId, personId: personIdFromStored(stableUserId) },
+			]
+		}),
+	) as Record<
+		'ann' | 'bea',
+		{ stableUserId: string; personId: ReturnType<typeof personIdFromStored> }
+	>
+	for (const [username, person] of Object.entries(people)) {
+		await provisionPersonalOrg(db, {
+			stableUserId: person.stableUserId,
+			username,
+			createdAt: now,
+		})
+	}
+	// Bea owns Acme; Ann is a member.
+	const created = await createOrganization(
+		db,
+		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+		{
+			personId: people.bea.personId,
+			audit: createTestOrgAuditWriter(),
+			slug: 'acme-clients',
+			displayName: 'Acme',
+		},
+	)
+	if (!created.ok) throw new Error(created.error)
+	const acme = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'acme-clients'`)
+		.first<{ id: string }>()
+	const acmeId = ownerIdFromStored(acme!.id)
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'member', ?)`,
+		)
+		.bind(acmeId, people.ann.stableUserId, now)
+		.run()
+	const storeKey = async (input: {
+		ownerId?: OwnerId
+		name: string
+		value?: string
+		provider?: string | null
+		hosts?: Array<string>
+		inject?: unknown
+	}) => {
+		const ownerId = input.ownerId ?? acmeId
+		await saveSecret({
+			env,
+			userId: ownerId,
+			scope: 'user',
+			name: input.name,
+			value: input.value ?? resendKey,
+		})
+		const row = await db
+			.prepare(
+				`UPDATE secret_entries
+				SET kind = 'secret', provider = ?, allowed_hosts = ?, inject_json = ?
+				WHERE name = ? AND bucket_id IN (
+					SELECT id FROM secret_buckets WHERE user_id = ? AND scope = 'user'
+				)
+				RETURNING id`,
+			)
+			.bind(
+				input.provider === undefined ? 'resend' : input.provider,
+				JSON.stringify(input.hosts ?? ['api.resend.com']),
+				JSON.stringify(
+					input.inject ?? {
+						kind: 'header',
+						name: 'Authorization',
+						format: 'Bearer {value}',
+					},
+				),
+				input.name,
+				ownerId,
+			)
+			.first<{ id: string }>()
+		return row!.id
+	}
+	const savePackage = async (input: { ownerId: OwnerId; name: string }) => {
+		const packageId = crypto.randomUUID()
+		await insertSavedPackage(
+			db,
+			{
+				id: packageId,
+				user_id: input.ownerId,
+				name: input.name,
+				kody_id: input.name.split('/')[1]!,
+				description: 'test package',
+				tags_json: '[]',
+				search_text: null,
+				source_id: `source-${packageId}`,
+				has_app: 0,
+				has_skills: 0,
+				hidden: 0,
+				is_private: 1,
+				created_at: now,
+				updated_at: now,
+			},
+			null,
+			{ stamp: false },
+		)
+		return packageId
+	}
+	const requestAs = (
+		person: keyof typeof people,
+		role: OrgRole | null,
+		orgId: OwnerId = acmeId,
+	) =>
+		deriveRequestContext({
+			user: { userId: people[person].personId, username: person },
+			source: { kind: 'mcp-oauth' },
+			orgBinding: { org: { id: orgId, slug: 'acme-clients' }, role },
+		})
+	const contextFor = (input: {
+		request: ReturnType<typeof requestAs>
+		packageId?: string | null
+		binding?: string
+	}): CredentialClientContext => ({
+		env,
+		callerContext: {
+			baseUrl: 'https://example.com',
+			request: input.request,
+			user: null,
+		} as unknown as McpCallerContext,
+		binding: input.binding ?? 'run:test',
+		packageId: input.packageId ?? null,
+	})
+	const grantUse = (credentialId: string, person: keyof typeof people) =>
+		upsertGrant({
+			db,
+			orgId: acmeId,
+			resourceType: 'credential',
+			resourceId: credentialId,
+			family: 'secret',
+			subject: { type: 'user', id: people[person].stableUserId },
+			preset: 'use',
+			permissions: null,
+			createdByUserId: people.bea.stableUserId,
+			audit: createTestOrgAuditWriter(),
+		})
+	const audits = async () => {
+		await Promise.all(scheduledAudits.splice(0))
+		const { results } = await auditDb
+			.prepare(
+				`SELECT result, details_json FROM org_audit_events
+				 WHERE action = 'credential.resolve' ORDER BY rowid`,
+			)
+			.all<{ result: string; details_json: string }>()
+		return results
+	}
+	scheduledAudits.length = 0
+	return {
+		db,
+		env,
+		people,
+		acmeId,
+		storeKey,
+		savePackage,
+		requestAs,
+		contextFor,
+		grantUse,
+		audits,
+	}
+}
+
+function mockNeeds(needs: Array<Partial<CredentialNeed> & { key: string }>) {
+	return vi
+		.spyOn(needsClosure, 'loadPublishedCredentialNeeds')
+		.mockResolvedValue(
+			needs.map((need) => ({
+				kind: 'secret',
+				provider: need.key,
+				description: '',
+				multiple: false,
+				...need,
+			})),
+		)
+}
+
+async function rejection(promise: Promise<unknown>) {
+	return await promise.then(
+		() => {
+			throw new Error('Expected a rejection.')
+		},
+		(error: unknown) => error as Error & { body?: unknown },
+	)
+}
+
+test('a client opens by key with no value, and the gateway places the key by its inject on its hosts only', async () => {
+	const t = await setup()
+	await t.storeKey({
+		name: 'resend-prod',
+		inject: { kind: 'header', name: 'X-Api-Key', format: '{value}' },
+	})
+	const request = t.requestAs('bea', 'owner')
+	const opened = await openCredentialClient(t.contextFor({ request }), {
+		key: 'resend',
+	})
+	expect(opened).toMatchObject({
+		key: 'resend',
+		name: 'resend-prod',
+		scope: 'org',
+		kind: 'secret',
+		hosts: ['api.resend.com'],
+	})
+	expect(opened.handle).toMatch(/^kch1\./)
+	expect(JSON.stringify(opened)).not.toContain(resendKey)
+
+	const apply = (url: string, binding = 'run:test') =>
+		applyCredentialClient({
+			env: t.env,
+			request,
+			baseUrl: 'https://example.com',
+			binding,
+			token: opened.handle,
+			requestUrl: new URL(url),
+		})
+	const applied = await apply('https://api.resend.com/emails')
+	expect(applied.placement).toEqual({
+		kind: 'header',
+		name: 'X-Api-Key',
+		value: resendKey,
+	})
+	expect(applied.substitutedValues).toContain(resendKey)
+	expect(applied.shape).toBe('header X-Api-Key')
+
+	await expect(apply('https://attacker.example/collect')).rejects.toMatchObject(
+		{ body: { code: 'host_not_allowed' } },
+	)
+	await expect(apply('http://api.resend.com/emails')).rejects.toMatchObject({
+		body: { code: 'insecure_transport' },
+	})
+	// A handle works only in the run that opened it.
+	await expect(
+		apply('https://api.resend.com/emails', newRunCredentialClientBinding()),
+	).rejects.toMatchObject({ body: { code: 'invalid_request' } })
+
+	const rows = await t.audits()
+	expect(rows.map((row) => row.result)).toEqual(['success', 'denied', 'denied'])
+	expect(JSON.stringify(rows)).not.toContain(resendKey)
+})
+
+test('basic and query injects place the value without exposing it', async () => {
+	const t = await setup()
+	await t.storeKey({
+		name: 'basic-key',
+		provider: 'basicco',
+		hosts: ['api.basic.example'],
+		inject: { kind: 'basic', valueAs: 'username', other: '' },
+	})
+	await t.storeKey({
+		name: 'query-key',
+		provider: 'queryco',
+		hosts: ['api.query.example'],
+		inject: { kind: 'query', param: 'api_key' },
+	})
+	const request = t.requestAs('bea', 'owner')
+	const ctx = t.contextFor({ request })
+	const applyFor = async (key: string, url: string) =>
+		applyCredentialClient({
+			env: t.env,
+			request,
+			baseUrl: 'https://example.com',
+			binding: 'run:test',
+			token: (await openCredentialClient(ctx, { key })).handle,
+			requestUrl: new URL(url),
+		})
+	const basic = await applyFor('basicco', 'https://api.basic.example/v1')
+	expect(basic.placement).toEqual({
+		kind: 'header',
+		name: 'Authorization',
+		value: `Basic ${btoa(`${resendKey}:`)}`,
+	})
+	expect(basic.shape).toBe('basic (value as username)')
+	const query = await applyFor('queryco', 'https://api.query.example/v1?x=1')
+	expect(query.placement).toEqual({
+		kind: 'query',
+		param: 'api_key',
+		value: resendKey,
+	})
+	expect(query.shape).toBe('query api_key')
+})
+
+test('open reports unbound and ambiguous picks with ready-to-retry options, listing only usable credentials', async () => {
+	const t = await setup()
+	const bea = t.contextFor({ request: t.requestAs('bea', 'owner') })
+	await expect(
+		rejection(openCredentialClient(bea, { key: 'resend' })),
+	).resolves.toMatchObject({
+		message: expect.stringMatching(/^\[credential_unbound\] /),
+		body: { code: 'credential_unbound', retryWith: [] },
+	})
+
+	const firstId = await t.storeKey({ name: 'resend-a' })
+	await t.storeKey({ name: 'resend-b' })
+	const ambiguous = await rejection(
+		openCredentialClient(bea, { key: 'resend' }),
+	)
+	expect(ambiguous.body).toMatchObject({
+		code: 'credential_ambiguous',
+		retryWith: [
+			{
+				credentials: { resend: { name: 'resend-a', scope: 'org' } },
+				named: { name: 'resend-a', scope: 'org' },
+			},
+			{
+				credentials: { resend: { name: 'resend-b', scope: 'org' } },
+				named: { name: 'resend-b', scope: 'org' },
+			},
+		],
+		options: [
+			expect.objectContaining({ name: 'resend-a', kind: 'secret' }),
+			expect.objectContaining({ name: 'resend-b', kind: 'secret' }),
+		],
+	})
+
+	// Ann has no Use, so neither credential is a candidate for her.
+	const ann = t.contextFor({ request: t.requestAs('ann', 'member') })
+	await expect(
+		rejection(openCredentialClient(ann, { key: 'resend' })),
+	).resolves.toMatchObject({ body: { code: 'credential_unbound' } })
+	await t.grantUse(firstId, 'ann')
+	await expect(
+		openCredentialClient(
+			t.contextFor({ request: t.requestAs('ann', 'member') }),
+			{ key: 'resend' },
+		),
+	).resolves.toMatchObject({ name: 'resend-a' })
+})
+
+test('a declared need picks by its kind and provider, and offers same-kind credentials with no provider', async () => {
+	const t = await setup()
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/mailer',
+	})
+	mockNeeds([{ key: 'MAIL', provider: 'resend' }])
+	await t.storeKey({ name: 'loose-key', provider: null })
+	const ctx = t.contextFor({
+		request: t.requestAs('bea', 'owner'),
+		packageId,
+	})
+	const unbound = await rejection(openCredentialClient(ctx, { key: 'MAIL' }))
+	expect(unbound.body).toMatchObject({
+		code: 'credential_unbound',
+		retryWith: [
+			{
+				credentials: { MAIL: { name: 'loose-key', scope: 'org' } },
+				named: { name: 'loose-key', scope: 'org' },
+			},
+		],
+		possibleMatches: [expect.objectContaining({ name: 'loose-key' })],
+	})
+	await t.storeKey({ name: 'resend-prod' })
+	await expect(
+		openCredentialClient(ctx, { key: 'MAIL' }),
+	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
+})
+
+test('credential.named works in ad hoc code and unshared personal packages only', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const bea = t.requestAs('bea', 'owner')
+	await expect(
+		openCredentialClient(t.contextFor({ request: bea }), {
+			name: 'resend-prod',
+			scope: 'org',
+		}),
+	).resolves.toMatchObject({ key: null, name: 'resend-prod' })
+	await expect(
+		rejection(
+			openCredentialClient(t.contextFor({ request: bea }), {
+				name: 'missing',
+			}),
+		),
+	).resolves.toMatchObject({ body: { code: 'credential_not_found' } })
+
+	const orgPackageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/tool',
+	})
+	await expect(
+		rejection(
+			openCredentialClient(
+				t.contextFor({ request: bea, packageId: orgPackageId }),
+				{ name: 'resend-prod' },
+			),
+		),
+	).resolves.toMatchObject({ body: { code: 'credential_denied' } })
+
+	const beaOrgId = personalOrgId(t.people.bea.personId)
+	await t.storeKey({ ownerId: beaOrgId, name: 'my-key' })
+	const personalPackageId = await t.savePackage({
+		ownerId: beaOrgId,
+		name: '@bea/tool',
+	})
+	const inPersonal = t.contextFor({
+		request: t.requestAs('bea', 'owner', beaOrgId),
+		packageId: personalPackageId,
+	})
+	await expect(
+		openCredentialClient(inPersonal, { name: 'my-key' }),
+	).resolves.toMatchObject({ name: 'my-key' })
+	await t.db
+		.prepare(
+			`INSERT INTO community_listings
+			 (id, owner_user_id, package_id, source_id, kody_id, name, description, license, pinned_commit)
+			 VALUES (?, ?, ?, ?, 'tool', '@bea/tool', 'tool', 'MIT', 'abc')`,
+		)
+		.bind(
+			crypto.randomUUID(),
+			beaOrgId,
+			personalPackageId,
+			`source-${personalPackageId}`,
+		)
+		.run()
+	await expect(
+		rejection(openCredentialClient(inPersonal, { name: 'my-key' })),
+	).resolves.toMatchObject({ body: { code: 'credential_denied' } })
+})
+
+test('a handle is refused when forged, expired, or used by another actor', async () => {
+	const t = await setup()
+	const id = await t.storeKey({ name: 'resend-prod' })
+	await t.grantUse(id, 'ann')
+	const bea = t.requestAs('bea', 'owner')
+	const ann = t.requestAs('ann', 'member')
+	const opened = await openCredentialClient(t.contextFor({ request: bea }), {
+		key: 'resend',
+	})
+	const applyAs = (request: typeof bea, token: string) =>
+		applyCredentialClient({
+			env: t.env,
+			request,
+			baseUrl: 'https://example.com',
+			binding: 'run:test',
+			token,
+			requestUrl: new URL('https://api.resend.com/emails'),
+		})
+	await expect(applyAs(ann, opened.handle)).rejects.toMatchObject({
+		body: { code: 'invalid_request' },
+	})
+	const [prefix, body] = opened.handle.split('.')
+	await expect(
+		applyAs(bea, `${prefix}.${body}.${'A'.repeat(43)}`),
+	).rejects.toMatchObject({ body: { code: 'invalid_request' } })
+	const expired = await signCredentialClientHandle({
+		env: t.env,
+		handle: {
+			id,
+			kind: 'secret',
+			name: 'resend-prod',
+			scope: 'org',
+			org: t.acmeId,
+			actor: t.people.bea.personId,
+			binding: 'run:test',
+		},
+		now: Date.now() - 13 * 60 * 60 * 1000,
+	})
+	await expect(applyAs(bea, expired)).rejects.toMatchObject({
+		body: { code: 'invalid_request' },
+	})
+})
+
+test('the gateway strips the handle, places the key, holds redirects, redacts echoes, and hints the shape on a 401', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const request = t.requestAs('bea', 'owner')
+	const opened = await openCredentialClient(t.contextFor({ request }), {
+		key: 'resend',
+	})
+	const seen: Array<Request> = []
+	const globalFetch = vi.fn(async (outbound: Request) => {
+		seen.push(outbound)
+		return new Response(`echo ${outbound.headers.get('authorization')}`, {
+			status: 401,
+		})
+	})
+	const response = await executeGatewayFetch({
+		env: t.env,
+		props: {
+			baseUrl: 'https://example.com',
+			userId: t.acmeId,
+			email: 'bea@example.com',
+			request,
+			storageContext: null,
+			credentialClientBinding: 'run:test',
+		},
+		request: new Request('https://api.resend.com/emails', {
+			headers: {
+				[credentialClientHeaderName]: opened.handle,
+				Authorization: 'Bearer code-set-value',
+			},
+		}),
+		globalFetch: globalFetch as unknown as typeof fetch,
+	})
+	const [outbound] = seen
+	expect(outbound?.headers.get('authorization')).toBe(`Bearer ${resendKey}`)
+	expect(outbound?.headers.has(credentialClientHeaderName)).toBe(false)
+	expect(outbound?.redirect).toBe('manual')
+	expect(response.status).toBe(401)
+	expect(response.headers.get(credentialClientHintHeaderName)).toBe(
+		'header Authorization Bearer',
+	)
+	const text = await response.text()
+	expect(text).not.toContain(resendKey)
+
+	// Without a binding (no run), a client fetch is refused before any send.
+	seen.length = 0
+	await expect(
+		executeGatewayFetch({
+			env: t.env,
+			props: {
+				baseUrl: 'https://example.com',
+				userId: t.acmeId,
+				email: 'bea@example.com',
+				request,
+				storageContext: null,
+			},
+			request: new Request('https://api.resend.com/emails', {
+				headers: { [credentialClientHeaderName]: opened.handle },
+			}),
+			globalFetch: globalFetch as unknown as typeof fetch,
+		}),
+	).rejects.toMatchObject({ body: { code: 'invalid_request' } })
+	expect(seen).toHaveLength(0)
+})
+
+test('the placed header drops the code value before placeholders expand, so a placeholder there never resolves', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const request = t.requestAs('bea', 'owner')
+	const opened = await openCredentialClient(t.contextFor({ request }), {
+		key: 'resend',
+	})
+	const seen: Array<Request> = []
+	const response = await executeGatewayFetch({
+		env: t.env,
+		props: {
+			baseUrl: 'https://example.com',
+			userId: t.acmeId,
+			email: 'bea@example.com',
+			request,
+			storageContext: null,
+			credentialClientBinding: 'run:test',
+		},
+		request: new Request('https://api.resend.com/emails', {
+			headers: {
+				[credentialClientHeaderName]: opened.handle,
+				Authorization: 'Bearer {{secret:no-such-secret}}',
+			},
+		}),
+		globalFetch: (async (outbound: Request) => {
+			seen.push(outbound)
+			return new Response('ok')
+		}) as unknown as typeof fetch,
+	})
+	expect(response.status).toBe(200)
+	expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${resendKey}`)
+})

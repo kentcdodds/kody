@@ -4,10 +4,17 @@ import {
 	buildKodyToolContext,
 	createWorkflowTools,
 } from '#mcp/run-kody-registry.ts'
+import { type CredentialClientToolOptions } from '#mcp/runtime-helper-manifest.ts'
 import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
+import {
+	CredentialClientError,
+	toCredentialClientError,
+} from '#worker/credentials/credential-client.ts'
+import { capabilityProxyCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	toCapabilityOpenApiPrincipal,
 	type ApiInvocationContext,
@@ -17,7 +24,10 @@ import { maxApiRequestBodyBytes } from './request-params.ts'
 import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
 import { runCapabilityProxyGatewayFetch } from './capability-proxy-gateway-fetch.ts'
 import { runCapabilityProxyOauthClientCredentials } from './capability-proxy-oauth-client-credentials.ts'
-import { createCapabilityProxyPackageHostTools } from './capability-proxy-package-grants.ts'
+import {
+	authorizeLocalExecuteOwnedPackageId,
+	createCapabilityProxyPackageHostTools,
+} from './capability-proxy-package-grants.ts'
 
 /**
  * CapabilityProxy: the cloud half of local execute (`kody execute --local`,
@@ -122,6 +132,44 @@ async function invokeCapability<T>(invoke: () => Promise<T> | T) {
 	}
 }
 
+/**
+ * Local execute has no host run, so handles bind to the CapabilityProxy
+ * credential instead. A package stamp from local workerd is a claim until
+ * `package:execute` on it holds.
+ */
+function createCapabilityProxyCredentialClientTools(
+	ctx: ApiInvocationContext,
+): CredentialClientToolOptions | undefined {
+	const request = ctx.callerContext.request
+	if (!request) return undefined
+	return {
+		binding: capabilityProxyCredentialClientBinding(request),
+		resolvePackageId: async (requested) => {
+			const packageId = typeof requested === 'string' ? requested.trim() : ''
+			if (!packageId) return null
+			try {
+				return await authorizeLocalExecuteOwnedPackageId({
+					db: ctx.env.APP_DB,
+					env: ctx.env,
+					request,
+					orgUserId: ownerIdFromCaller(ctx.callerContext),
+					packageId,
+				})
+			} catch (error) {
+				throw (
+					toCredentialClientError(error) ??
+					new CredentialClientError({
+						code: 'credential_denied',
+						message: 'This package is not one you can execute here.',
+						retryWith: [],
+					})
+				)
+			}
+		},
+		...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+	}
+}
+
 async function callKodyPath(input: {
 	ctx: ApiInvocationContext
 	path: ReadonlyArray<string>
@@ -152,6 +200,10 @@ async function callKodyPath(input: {
 				callerContext: ctx.callerContext,
 			})
 		: {}
+	const credentialClientTools =
+		typeof name === 'string' && name.startsWith('credentialClient')
+			? createCapabilityProxyCredentialClientTools(ctx)
+			: undefined
 	const { tools, mcpServers } = await buildKodyToolContext(
 		ctx.env,
 		ctx.callerContext,
@@ -165,6 +217,7 @@ async function callKodyPath(input: {
 			}),
 			openApiPrincipal: toCapabilityOpenApiPrincipal(ctx.principal),
 			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+			...(credentialClientTools ? { credentialClientTools } : {}),
 		},
 	)
 	if (path[1] === 'mcp') {

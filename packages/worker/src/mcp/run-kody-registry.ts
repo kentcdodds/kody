@@ -61,12 +61,14 @@ import {
 	createRuntimeHelperRuntimePropertySource,
 	createUnboundOptionalRuntimeHelperNames,
 	type AdditionalKodyTools,
+	type CredentialClientToolOptions,
 	type EmailToolOptions,
 	type PackageEventTools,
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
 } from '#mcp/runtime-helper-manifest.ts'
+import { newRunCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
 import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
@@ -372,6 +374,7 @@ export async function buildKodyFns(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -389,6 +392,7 @@ export async function buildKodyToolContext(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -480,6 +484,7 @@ export async function buildKodyToolContext(
 		capabilityMap,
 		packageStorageTools: options?.packageStorageTools,
 		packageSecretTools: options?.packageSecretTools,
+		credentialClientTools: options?.credentialClientTools,
 		emailTools: options?.emailTools,
 		workflowTools: options?.workflowTools,
 	})
@@ -599,6 +604,7 @@ export async function buildKodyProvider(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -1219,6 +1225,21 @@ export async function runBundledModuleWithRegistry(
 		})
 		const closedWorldRetrieverRuntime =
 			options?.closedWorldRetrieverRuntime === true
+		const credentialClientBinding = newRunCredentialClientBinding()
+		const credentialClientTools: CredentialClientToolOptions | undefined =
+			callerContext.user?.userId && !closedWorldRetrieverRuntime
+				? {
+						binding: credentialClientBinding,
+						// A claimed id selects which package's needs apply; only a
+						// package in this run's provenance may be claimed.
+						resolvePackageId: async (requested) =>
+							typeof requested === 'string' &&
+							grantedPackageStorageIds.has(requested)
+								? requested
+								: (options?.packageContext?.packageId ?? null),
+						waitUntil: options?.waitUntil,
+					}
+				: undefined
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -1231,6 +1252,9 @@ export async function runBundledModuleWithRegistry(
 				request: callerContext.request,
 				storageContext: normalizedStorageContext,
 				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
+				credentialClientBinding: credentialClientTools
+					? credentialClientBinding
+					: null,
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -1322,6 +1346,7 @@ export async function runBundledModuleWithRegistry(
 			additionalTools: options?.additionalTools,
 			packageStorageTools,
 			packageSecretTools,
+			credentialClientTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
 			skipCapabilityRegistry:
@@ -1343,6 +1368,7 @@ export async function runBundledModuleWithRegistry(
 			provider,
 			packageStorageTools,
 			packageSecretTools,
+			credentialClientTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
 			packageEventTools: closedWorldRetrieverRuntime

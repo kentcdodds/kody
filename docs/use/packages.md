@@ -159,14 +159,21 @@ into are described in
   64). Prefer naming a slot after its provider (`github`, `resend`); publish
   adds an informational note for a key that is not a provider slug
   (`^[a-z0-9-]+$`) and never fails for it.
-- `kind` is `secret`, `oauth`, `mcp`, or one of the opt-in types `url`, `login`,
-  and `signing`. `provider` is optional and defaults to the key; a second
+- `kind` is optional in the accepted design
+  ([ADR 0068 amendment 2026-10-12](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-12)):
+  omit it for any fetch-capable credential for that provider (Key/secret such as
+  a PAT, oauth, login); declare it only when a specific shape is needed
+  (`secret`, `oauth`, `mcp`, or the opt-in types `url`, `login`, and `signing`).
+  Implementation of optional `kind` is a follow-up; until then matching still
+  requires `kind`. `provider` is optional and defaults to the key; a second
   account from the same provider gets its own key with an explicit `provider`.
-  `description` says what the slot is for. `multiple: true` means the package
-  uses several accounts at once.
-- Publish rejects any other key or a missing field and names the slot. If a
-  later rule rejects a slot in a version that is already published, the package
-  still loads with its other slots.
+  `description` is required, never affects matching, and says why the package
+  wants access. `multiple: true` means the package uses several accounts at
+  once. A typical need looks like
+  `"github": { "description": "Read PRs to summarize them" }`.
+- Publish rejects any other key or a missing required field and names the slot.
+  If a later rule rejects a slot in a version that is already published, the
+  package still loads with its other slots.
 - Each publish stores the package's needs closure: its own slots plus those of
   the packages it statically imports through `kody:@`, as they were at this
   publish. A key that the package and a dependency declare with a different
@@ -187,6 +194,41 @@ into are described in
   and its host is one the secret or integration allows, the same as for a
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
+
+#### Opt-in: credential clients
+
+A package (or ad hoc execute) can ask for a client instead of writing a
+placeholder. The client never holds the value: the credential decides where its
+value goes, and it is sent only to the credential's hosts over HTTPS.
+
+```ts
+import { credential } from 'kody:runtime'
+
+const resend = await credential('RESEND_API_KEY')
+await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
+```
+
+- `credential(key)` picks the one credential you can Use with the need's kind
+  and provider (an undeclared key is read as a provider). It rejects with an
+  Error carrying `code` (`credential_unbound`, `credential_ambiguous`,
+  `credential_not_found`, `credential_denied`, `host_not_allowed`,
+  `insecure_transport`) and `retryWith`, a list of picks to retry with.
+- The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
+  oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
+  MCP server). A relative URL resolves against the first host. A header the
+  credential places replaces one the code set, and a placeholder in that header
+  is never filled. `fetch` follows redirects itself and keeps the credential off
+  any other host; an OAuth client refreshes once on a 401. A `url` credential's
+  client returns a redirect response as it is instead of following it, and its
+  request path and query can't carry placeholders. A 401 or 403 carries
+  `x-kody-credential-hint` naming only the credential's shape (for example
+  `header Authorization Bearer`).
+- `credential.named(name, { scope })` picks by exact name. It works only in ad
+  hoc execute and in packages of your personal org that are not listed in
+  Community.
+- A client works only in the run that opened it. Under `kody execute --local`, a
+  saved package that imports `credential` works the same; ad hoc local code
+  needs a CLI release that adds `credential` to its `kody:runtime`.
 
 To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
