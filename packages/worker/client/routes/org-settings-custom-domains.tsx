@@ -150,8 +150,12 @@ export function createOrgSettingsCustomDomains(
 			if (
 				hostnameBusy === null &&
 				customDomainsOverride !== undefined &&
-				customDomainsOverride !== null &&
-				serverCaughtUpWithOverride(customDomainsOverride, args.customDomains)
+				(args.customDomains === null ||
+					(customDomainsOverride !== null &&
+						serverCaughtUpWithOverride(
+							customDomainsOverride,
+							args.customDomains,
+						)))
 			) {
 				clearCustomDomainsOverride()
 			}
