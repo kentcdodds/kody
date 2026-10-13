@@ -235,6 +235,18 @@ export function readCredentialNeedChanges(
 	return Array.isArray(changes) ? (changes as Array<CredentialNeedChange>) : []
 }
 
+const pausedSessionMovedMarker = 'no longer holds paused commit'
+
+export function pausedSessionMovedMessage(sessionId: string, commit: string) {
+	return `Session ${sessionId} ${pausedSessionMovedMarker} ${commit}.`
+}
+
+export function isPausedSessionMovedError(error: unknown) {
+	return (
+		error instanceof Error && error.message.includes(pausedSessionMovedMarker)
+	)
+}
+
 export function readPausedSessionPublish(
 	details: Record<string, unknown>,
 ): PausedSessionPublish | null {

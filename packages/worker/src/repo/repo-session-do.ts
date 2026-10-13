@@ -74,7 +74,10 @@ import {
 	validatePackageBundles,
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
-import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
+import {
+	pausedSessionMovedMessage,
+	requireCredentialNeedsApproval,
+} from '#worker/credentials/credential-needs-approval.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -3281,7 +3284,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			(sessionHeadCommit ?? sessionRow.base_commit) !== input.expectedHeadCommit
 		) {
 			throw new Error(
-				`Session ${input.sessionId} no longer holds commit ${input.expectedHeadCommit}.`,
+				pausedSessionMovedMessage(input.sessionId, input.expectedHeadCommit),
 			)
 		}
 		await this.readManifestFromWorkspace(
@@ -3307,11 +3310,25 @@ class RepoSessionBase extends DurableObject<Env> {
 				: null
 		const withCredentialNotice = (message: string) =>
 			credentialNotice ? `${message}\n\n${credentialNotice}` : message
+		const lockedPackage =
+			source.entity_kind === 'package' &&
+			input.allowLockedPublish !== true &&
+			input.promotePublished !== false
+				? await loadLockedSavedPackage({
+						db: this.env.APP_DB,
+						userId: input.userId,
+						packageId: source.entity_id,
+					})
+				: null
 		// The pause runs before the source branch moves, so the published commit
 		// stays at HEAD and new sessions open as usual. The session (and its
-		// pushed branch) holds the paused commit until approval re-runs it.
+		// pushed branch) holds the paused commit until approval re-runs it. A
+		// locked package keeps its locked-publish flow; approving that publish
+		// runs this gate.
 		const approval =
-			input.credentialNeedsApproved === true || input.promotePublished === false
+			input.credentialNeedsApproved === true ||
+			input.promotePublished === false ||
+			lockedPackage
 				? null
 				: await requireCredentialNeedsApproval({
 						env: this.env,
@@ -3378,29 +3395,22 @@ class RepoSessionBase extends DurableObject<Env> {
 				message: `Pushed session ${input.sessionId} to ${source.repo_id} without promoting published_commit.`,
 			}
 		}
-		if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
-			const lockedPackage = await loadLockedSavedPackage({
-				db: this.env.APP_DB,
-				userId: input.userId,
-				packageId: source.entity_id,
+		if (lockedPackage) {
+			const error = createPackagePublishLockedError({
+				savedPackage: lockedPackage,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
 			})
-			if (lockedPackage) {
-				const error = createPackagePublishLockedError({
-					savedPackage: lockedPackage,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-				})
-				return {
-					status: 'locked',
-					sessionId: input.sessionId,
-					publishedCommit: null,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-					packageId: lockedPackage.id,
-					packageName: lockedPackage.name,
-					message: error.message,
-					credentialNotice,
-				}
+			return {
+				status: 'locked',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
+				packageId: lockedPackage.id,
+				packageName: lockedPackage.name,
+				message: error.message,
+				credentialNotice,
 			}
 		}
 		await finalizePublishedEntitySource({

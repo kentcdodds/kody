@@ -181,7 +181,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		permission: 'package:write',
 	})
 	if (!resolved.ok) return resolved.response
-	const { savedPackage, ownerUserId } = resolved.package
+	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 
 	if (action === 'lock' || action === 'unlock') {
 		if (action === 'lock' && isSavedPackageLocked(savedPackage.lockedAt)) {
@@ -242,9 +242,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
-		// Approving the exact pending commit is also the owner's approval of
-		// its credential needs.
-		credentialNeedsApproved: true,
+		requestedByUserId: actorUserId,
 		// Owner explicitly chose this commit on approve-publish. If a
 		// published-only fleet migration advanced published_commit to a sibling
 		// of pending HEAD, this is not a fast-forward; allowForce + overwrite

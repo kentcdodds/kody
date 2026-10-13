@@ -401,5 +401,24 @@ test('a publish paused for credential needs keeps the source branch and records 
 			...session,
 			expectedHeadCommit: 'commit-other',
 		}),
-	).rejects.toThrow(/no longer holds commit commit-other/)
+	).rejects.toThrow(/no longer holds paused commit commit-other/)
+})
+
+test('a locked package keeps its locked-publish flow without pausing for credential needs', async () => {
+	setCommonSessionFixtures()
+	const packageFile = { 'package.json': userPackageJson }
+	seedWorkspace(packageFile)
+	const state = await checkedPublishState(packageFile)
+	mockModule.getSavedPackageById.mockResolvedValueOnce({
+		id: 'package-1',
+		name: '@user/demo',
+		lockedAt: '2026-10-13T00:00:00.000Z',
+	} as never)
+	needsGate.requireCredentialNeedsApproval.mockClear()
+
+	await expect(
+		repoSession(createEnv(), state).publishSession(session),
+	).resolves.toMatchObject({ status: 'locked', publishedCommit: null })
+	expect(needsGate.requireCredentialNeedsApproval).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })

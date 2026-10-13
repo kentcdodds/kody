@@ -565,12 +565,16 @@ Cole and Kent decided how decision 2's pause works.
   request, and a request whose base commit is no longer published is dropped. A
   paused session publish leaves the source branch on the published commit and
   keeps its session; approval re-runs that session's publish at the paused
-  commit. A pushed commit is approved through the external-publish path.
+  commit. A pushed commit is approved through the external-publish path, only
+  while it is still HEAD. Approval needs `package:publish` and also counts as
+  the locked-publish approval. A locked package keeps its locked-publish flow
+  first; approving that publish (`package:write`) runs the pause, so a writer
+  cannot publish new needs without the owner.
 - **One queue.** The pause shares ADR 0069's approval mechanism: one
   `package_approval_requests` queue and one page, with reason
   `credential_needs_changed` or `went_public`. ADR 0069's own storage-change
   trigger for public apps is unchanged.
 - **Surfaces.** Publish tools return `approval_required` with `approval_url` and
-  the need changes. Codemods, the publish-lock approval, and promote-to-package
-  first publishes skip the pause. If the needs cannot be computed, the publish
-  proceeds and the failure is reported.
+  the need changes. Codemods and promote-to-package first publishes skip the
+  pause. If the needs cannot be computed, the publish proceeds and the failure
+  is reported.

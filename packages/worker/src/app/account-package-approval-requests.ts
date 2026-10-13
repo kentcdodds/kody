@@ -1,6 +1,9 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	describeCredentialNeedChange,
+	isPausedSessionMovedError,
 	readCredentialNeedChanges,
 	readPausedSessionPublish,
 } from '#worker/credentials/credential-needs-approval.ts'
@@ -13,7 +16,11 @@ import {
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
-import { type RepoSessionPublishResult } from '#worker/repo/types.ts'
+import { getRepoSessionById } from '#worker/repo/repo-sessions.ts'
+import {
+	type RepoExternalPublishResult,
+	type RepoSessionPublishResult,
+} from '#worker/repo/types.ts'
 import { type AccountPackagePendingApproval } from '#universal/loader-data.ts'
 
 function reasonLabel(reason: PackageApprovalReason) {
@@ -80,9 +87,10 @@ export type ApproveCredentialNeedsResult =
 	| { ok: false; status: 400 | 404 | 409; error: string }
 
 /**
- * Publishes a paused commit whose credential needs changed. The click is the
- * owner's approval; every other publish gate (checks, lock, fast-forward)
- * still applies.
+ * Publishes a paused commit whose credential needs changed. The click
+ * (`package:publish`) is the owner's approval of that exact commit, so it also
+ * counts as the locked-publish approval (`package:write`); checks and the
+ * fast-forward rules still apply.
  */
 export async function approveCredentialNeedsRequest(input: {
 	env: Env
@@ -136,8 +144,26 @@ export async function approveCredentialNeedsRequest(input: {
 		})
 		return { ok: true as const }
 	}
+	const sessionGone = async () => {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: approval.id,
+			status: 'superseded',
+			resolvedByUserId: input.actorUserId,
+		})
+		return {
+			ok: false as const,
+			status: 409 as const,
+			error:
+				'This paused publish is no longer available. Publish again to request approval.',
+		}
+	}
 	const pausedSession = readPausedSessionPublish(approval.details)
 	if (pausedSession) {
+		const sessionRow = await getRepoSessionById(input.env, {
+			userId: ownerIdFromStored(input.ownerUserId),
+			sessionId: pausedSession.sessionId,
+		})
+		if (!sessionRow) return await sessionGone()
 		let sessionResult: RepoSessionPublishResult
 		try {
 			sessionResult = await repoSessionRpc(
@@ -154,23 +180,15 @@ export async function approveCredentialNeedsRequest(input: {
 				...(pausedSession.expectedPackageScope !== undefined
 					? { expectedPackageScope: pausedSession.expectedPackageScope }
 					: {}),
+				allowLockedPublish: true,
 				credentialNeedsApproved: true,
 				expectedHeadCommit: approval.pendingCommit,
 				rebuildPackageArtifacts: true,
 			})
-		} catch {
-			// The session ended or changed after the pause.
-			await resolvePackageApprovalRequest(input.env.APP_DB, {
-				id: approval.id,
-				status: 'superseded',
-				resolvedByUserId: input.actorUserId,
-			})
-			return {
-				ok: false,
-				status: 409,
-				error:
-					'This paused publish is no longer available. Publish again to request approval.',
-			}
+		} catch (error) {
+			// Other failures may be transient, so the request stays pending.
+			if (isPausedSessionMovedError(error)) return await sessionGone()
+			throw error
 		}
 		switch (sessionResult.status) {
 			case 'ok':
@@ -179,12 +197,6 @@ export async function approveCredentialNeedsRequest(input: {
 			case 'checks_outdated':
 				return await supersede()
 			case 'locked':
-				return {
-					ok: false,
-					status: 409,
-					error:
-						'This package is locked. Unlock it, or approve the publish from its locked-publish approval page.',
-				}
 			case 'approval_required':
 				return { ok: false, status: 409, error: sessionResult.message }
 			default: {
@@ -194,18 +206,30 @@ export async function approveCredentialNeedsRequest(input: {
 		}
 	}
 	const sessionId = `approve-credential-needs-${input.savedPackage.id}`
-	const result = await repoSessionRpc(
-		input.env,
-		sessionId,
-	).publishFromExternalRef({
-		sessionId,
-		sourceId: source.id,
-		userId: input.ownerUserId,
-		newCommit: approval.pendingCommit,
-		credentialNeedsApproved: true,
-		baseUrl: getAppBaseUrl({ env: input.env, requestUrl: input.request.url }),
-		rebuildPackageArtifacts: true,
-	})
+	let result: RepoExternalPublishResult
+	try {
+		result = await repoSessionRpc(input.env, sessionId).publishFromExternalRef({
+			sessionId,
+			sourceId: source.id,
+			userId: input.ownerUserId,
+			newCommit: approval.pendingCommit,
+			// A newer push replaces this request; never publish an older commit
+			// over it.
+			expectedHead: approval.pendingCommit,
+			allowLockedPublish: true,
+			credentialNeedsApproved: true,
+			baseUrl: getAppBaseUrl({
+				env: input.env,
+				requestUrl: input.request.url,
+			}),
+			rebuildPackageArtifacts: true,
+		})
+	} catch (error) {
+		if (getErrorMessage(error).includes('Artifacts HEAD changed from')) {
+			return await supersede()
+		}
+		throw error
+	}
 	switch (result.status) {
 		case 'published':
 		case 'already_published':
@@ -220,12 +244,6 @@ export async function approveCredentialNeedsRequest(input: {
 					'Publish checks failed for this commit. Fix the package and publish again.',
 			}
 		case 'locked':
-			return {
-				ok: false,
-				status: 409,
-				error:
-					'This package is locked. Unlock it, or approve the publish from its locked-publish approval page.',
-			}
 		case 'approval_required':
 			return { ok: false, status: 409, error: result.message }
 		default: {
