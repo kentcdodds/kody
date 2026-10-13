@@ -55,7 +55,7 @@ function savedPackage(isInternetVisible = false) {
 		userId: ownerIdFromStored('owner-1'),
 		name: '@user/notes',
 		kodyId: 'notes',
-		description: null,
+		description: '',
 		tags: [],
 		searchText: null,
 		sourceId: 'source-1',
