@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
@@ -53,17 +53,20 @@ function packageWebhooksApiHref(input: { username: string; kodyId: string }) {
 	return routes.communityPackageWebhooksApi.href(input)
 }
 
-export function webhookStatusLabel(
-	webhook: Pick<PackageWebhookListItem, 'minted' | 'enabled'>,
-) {
+type WebhookStatusInput = Pick<
+	PackageWebhookListItem,
+	'minted' | 'approved' | 'enabled'
+>
+
+export function webhookStatusLabel(webhook: WebhookStatusInput) {
 	if (!webhook.minted) return 'No URL yet'
+	if (!webhook.approved) return 'Needs approval'
 	return webhook.enabled ? 'Active' : 'Disabled'
 }
 
-export function webhookStatusColor(
-	webhook: Pick<PackageWebhookListItem, 'minted' | 'enabled'>,
-) {
+export function webhookStatusColor(webhook: WebhookStatusInput) {
 	if (!webhook.minted) return colors.textMuted
+	if (!webhook.approved) return colors.warningText
 	return webhook.enabled ? colors.primary : colors.error
 }
 
@@ -82,12 +85,18 @@ export function webhookVerificationLabel(
 	return `${webhook.verification.type} · ${webhook.verification.header}`
 }
 
-export function webhookSuccessMessage(intent: WebhookIntent) {
+const approveStillRequired =
+	' It will not run until you Approve it: use the Approve link on this card.'
+
+export function webhookSuccessMessage(
+	intent: WebhookIntent,
+	approvalUrl?: string | null,
+) {
 	switch (intent) {
 		case 'mint':
-			return 'Webhook URL minted. Copy it now and paste it into the provider.'
+			return `Webhook URL minted. Copy it now and paste it into the provider.${approvalUrl ? approveStillRequired : ''}`
 		case 'rotate':
-			return 'Webhook URL rotated. The previous URL stays active until the new one receives a delivery, or for 24 hours.'
+			return `Webhook URL rotated. The previous URL stays active until the new one receives a delivery, or for 24 hours.${approvalUrl ? approveStillRequired : ''}`
 		case 'reveal':
 			return null
 		case 'enable':
@@ -121,12 +130,10 @@ export function webhookFailureMessage(intent: WebhookIntent) {
 }
 
 export async function fetchAccountWebhooks(href: string, signal: AbortSignal) {
-	const response = await fetch(accountWebhooksApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		accountWebhooksApiPath,
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return { kind: 'unauthorized' as const }
 	const payload = await readJson<AccountWebhooksLoaderData>(response)
 	if (!response.ok || !payload?.ok) {

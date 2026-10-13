@@ -324,13 +324,21 @@ MCP and API tokens cannot reach it.
   `400 { ok: false, error }`.
 - Changes that cannot apply are `400 PackageCredentialsWriteFailure`:
   `{ ok: false, errors: Array<{ needKey, target, code, message, createUrl? }> }`
-  with the approval error codes. Nothing is written.
-- `409 { ok: false, error }` when a trigger was turned on by someone else
-  between reading and writing (webhooks).
+  with the approval error codes. Nothing is written. A trigger that disappears
+  between reading and writing is the same `400` (`trigger_unknown` or
+  `webhook_not_minted`).
+- `409 { ok: false, error }` only when a webhook was turned on by someone else
+  between reading and writing.
+- When one request edits the same need and target more than once, the last edit
+  wins (a set then clear on a trigger that is off never turns it on).
 - A webhook another person enabled shows `enablement.enabledByYou: false`,
   `canEdit: false`, and no `mappings` (its overrides are theirs).
 - `incomplete` lists the default per need, plus each trigger the viewer has
   turned on (a trigger that is off never runs).
+- Every written mapping (create, update, or clear), including Approve, records
+  one `credential.mapping.update` org audit event. The row names the actor and
+  automation credential (kind/id), and details carry package, trigger (when
+  applicable), need, and old/new credential ids — never values.
 
 Who can write:
 
@@ -603,16 +611,15 @@ export type CredentialClientErrorBody = {
 
 ## Redirects
 
-When the credentials list page ships, these old URLs redirect (302, query
-preserved) instead of 404ing:
+Once the new Credentials UI has shipped and been proven, these old URLs redirect
+(302, query preserved) instead of 404ing:
 
-| Old                         | New                                               |
-| --------------------------- | ------------------------------------------------- |
-| `/@:org/-/secrets`          | `/@:org/-/credentials?kind=secret`                |
-| `/@:org/-/integrations`     | `/@:org/-/credentials?kind=oauth`                 |
-| `/@:org/-/mcp-servers`      | `/@:org/-/credentials?kind=mcp`                   |
-| `/@:org/-/secret-providers` | `/@:org/-/credentials` (custom providers section) |
-| `/connect/secret-set`       | `/connect/credential?kind=secret&...`             |
+| Old                     | New                                   |
+| ----------------------- | ------------------------------------- |
+| `/@:org/-/secrets`      | `/@:org/-/credentials?kind=secret`    |
+| `/@:org/-/integrations` | `/@:org/-/credentials?kind=oauth`     |
+| `/@:org/-/mcp-servers`  | `/@:org/-/credentials?kind=mcp`       |
+| `/connect/secret-set`   | `/connect/credential?kind=secret&...` |
 
 Only index pages redirect. Deeper paths that are approval or OAuth flows
 (`/@:org/-/secrets/approve`, `/@:org/-/mcp-servers/:serverId/authorize`,
@@ -624,15 +631,21 @@ new path and query or null so the router and tests share one table. Legacy
 redirect renames it to `allowedPackages` (the creation link uses `forPackage`
 for the package a need belongs to).
 
-Wiring waits on the pages that replace the old ones:
+`/@:org/-/secret-providers` stays its own page and never redirects: granting a
+vault provider access is a different trust decision from using a credential,
+with its own audit trail.
 
-- The four org index routes switch on by wrapping their handlers with
-  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`) in
-  the PR that moves the add forms and row editors off those index pages. Until
-  then the Credentials page links to them, and a redirect would loop.
-- `/connect/secret-set` switches on when `/connect/credential` serves the
-  one-pager. Today `/connect/credential?kind=secret` redirects to
-  `/connect/secret-set`, so redirecting back would loop.
+The redirects are defined and tested but not wired. The old pages keep serving
+until their replacement is proven:
+
+- The three org index routes switch on by wrapping their handlers with
+  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`),
+  only after the new Credentials list has shipped and been proven, including the
+  add forms and row editors that live on those index pages today. Until then the
+  Credentials page links to them, and a redirect would loop.
+- `/connect/secret-set` switches on only after `/connect/credential` serves the
+  one-pager and it has been proven. Today `/connect/credential?kind=secret`
+  redirects to `/connect/secret-set`, so redirecting back would loop.
 
 ## Build order
 

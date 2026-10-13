@@ -27,6 +27,7 @@ export const scheduledLaneNames = [
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
 	'org_audit_outbox',
+	'package_app_custom_hostnames_reconcile',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -249,6 +250,7 @@ export function getScheduledLaneCadence(
 		'd1_storage_reconciliation',
 		'oauth_purge_expired',
 		'org_audit_outbox',
+		'package_app_custom_hostnames_reconcile',
 	]
 	if (shouldRunRetentionCron(scheduledAt)) {
 		lanes.push('retention', 'unverified_account_purge', 'soft_delete_purge')

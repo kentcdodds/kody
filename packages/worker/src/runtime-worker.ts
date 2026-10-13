@@ -19,8 +19,14 @@ import {
 	handlePackageAppRequest,
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
-import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
-import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
+import {
+	handlePackageAppOriginRequest,
+	resolveVerifiedCustomHostnameIfEnabled,
+} from '#app/package-app-origin.ts'
+import {
+	isAllowedRequestHost,
+	refuseNonCanonicalProductionHost,
+} from '#app/canonical-host.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 /**
@@ -99,20 +105,35 @@ const runtimeWorkerHandler = {
 async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
 	const url = new URL(request.url)
 
-	const nonCanonicalHost = refuseNonCanonicalProductionHost({
-		request,
-		env,
-		allowedHealthPath: runtimeWorkerHealthPath,
-	})
-	if (nonCanonicalHost) return nonCanonicalHost
-
-	if (url.pathname === runtimeWorkerHealthPath) {
+	if (
+		url.pathname === runtimeWorkerHealthPath &&
+		isAllowedRequestHost({
+			request,
+			env,
+			allowedHealthPath: runtimeWorkerHealthPath,
+		})
+	) {
 		return Response.json(
 			buildRuntimeWorkerHealth({
 				commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
 				cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
 			}),
 		)
+	}
+
+	const nonCanonicalHost = refuseNonCanonicalProductionHost({
+		request,
+		env,
+		allowedHealthPath: runtimeWorkerHealthPath,
+	})
+	if (nonCanonicalHost) {
+		// Customer custom hostnames are not in the sync allowlist. Let a
+		// verified app binding through; everything else keeps the 404.
+		const customHostname = await resolveVerifiedCustomHostnameIfEnabled(
+			request,
+			env,
+		)
+		if (!customHostname) return nonCanonicalHost
 	}
 
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(

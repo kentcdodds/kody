@@ -28,7 +28,7 @@ function manifest(kodyExtra: Record<string, unknown> = {}, indent = '\t') {
 	)}\n`
 }
 
-test('0012 declares url-secret on webhooks without verification, leaves declared ones alone, and is idempotent', () => {
+test('0012 is detect-only: it reports undeclared webhooks as a recommendation and never rewrites the manifest', () => {
 	const files = {
 		'package.json': manifest(
 			{
@@ -45,39 +45,27 @@ test('0012 declares url-secret on webhooks without verification, leaves declared
 		),
 		'src/telegram.ts': 'export default () => ({ ok: true })\n',
 	}
-	expect(codemod.detect(files)).toEqual([
+	const findings = codemod.detect(files)
+	expect(findings).toEqual([
 		{
 			path: 'package.json',
 			message: expect.stringContaining('without verification'),
 		},
 	])
+	expect(findings[0]?.message).toContain('keeps working on its URL secret')
 
 	const result = codemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['package.json'])
-	expect(result.needsManual).toEqual([])
-	expect(result.files['src/telegram.ts']).toBe(files['src/telegram.ts'])
-	const next = result.files['package.json']!
-	expect(next).toContain('\n  "name"')
-	expect(JSON.parse(next).kody.webhooks).toEqual([
-		{
-			name: 'telegram',
-			export: './telegram',
-			responseMode: 'sync',
-			verification: { type: 'url-secret' },
-		},
-		{ name: 'github', export: './github', verification: githubVerification },
-	])
+	expect(result).toEqual({
+		files,
+		changed: false,
+		changedPaths: [],
+		needsManual: findings,
+	})
 	expect(
-		parseAuthoredPackageJson({ content: next }).kody.webhooks?.map(
-			(webhook) => webhook.verification?.type,
-		),
-	).toEqual(['url-secret', 'hmac-sha256'])
-
-	const secondPass = codemod.transform(result.files)
-	expect(secondPass.changed).toBe(false)
-	expect(secondPass.files['package.json']).toBe(next)
-	expect(codemod.detect(result.files)).toEqual([])
+		parseAuthoredPackageJson({
+			content: result.files['package.json']!,
+		}).kody.webhooks?.map((webhook) => webhook.verification?.type ?? null),
+	).toEqual([null, 'hmac-sha256'])
 })
 
 test('0012 leaves packages without webhooks or with every webhook declared untouched', () => {

@@ -15,8 +15,15 @@ test('own needs default provider to the key and sort by key', () => {
 				provider: 'github',
 				description: 'Bot account.',
 			},
+			github: { description: 'Read PRs to summarize them.' },
 		}),
 	).toEqual([
+		{
+			key: 'github',
+			provider: 'github',
+			description: 'Read PRs to summarize them.',
+			multiple: false,
+		},
 		{
 			key: 'github_bot',
 			kind: 'oauth',
@@ -125,6 +132,85 @@ test('the closure tags inherited needs with the declaring package and refuses ki
 	])
 })
 
+test('omitted kind merges with a fetch-capable declared kind and keeps the declared kind', () => {
+	const merged = mergeCredentialNeeds({
+		own: ownCredentialNeeds({
+			github: { description: 'Read PRs.' },
+		}),
+		dependencies: [
+			{
+				packageName: '@acme/triage',
+				needs: [
+					{
+						key: 'github',
+						kind: 'oauth',
+						provider: 'github',
+						description: 'Issues.',
+						multiple: false,
+					},
+				],
+			},
+		],
+	})
+	expect(merged.conflicts).toEqual([])
+	expect(merged.needs).toEqual([
+		{
+			key: 'github',
+			kind: 'oauth',
+			provider: 'github',
+			description: 'Read PRs.',
+			multiple: false,
+		},
+	])
+
+	const bothOmit = mergeCredentialNeeds({
+		own: ownCredentialNeeds({ github: { description: 'A.' } }),
+		dependencies: [
+			{
+				packageName: '@acme/other',
+				needs: [
+					{
+						key: 'github',
+						provider: 'github',
+						description: 'B.',
+						multiple: true,
+					},
+				],
+			},
+		],
+	})
+	expect(bothOmit.conflicts).toEqual([])
+	expect(bothOmit.needs).toEqual([
+		{
+			key: 'github',
+			provider: 'github',
+			description: 'A.',
+			multiple: true,
+		},
+	])
+
+	const omitVsMcp = mergeCredentialNeeds({
+		own: ownCredentialNeeds({ github: { description: 'A.' } }),
+		dependencies: [
+			{
+				packageName: '@acme/mcp',
+				needs: [
+					{
+						key: 'github',
+						kind: 'mcp',
+						provider: 'github',
+						description: 'MCP.',
+						multiple: false,
+					},
+				],
+			},
+		],
+	})
+	expect(omitVsMcp.conflicts).toEqual([
+		'kody.credentials.github: any fetch-capable kind from provider "github" (declared by this package) conflicts with mcp from provider "github" (declared by @acme/mcp). Give one of them a different key.',
+	])
+})
+
 test('keys that are not provider slugs get a note, never an error', () => {
 	expect(
 		credentialNeedKeyNotes({
@@ -142,4 +228,21 @@ test('a stored closure that does not parse counts as not stored', () => {
 	expect(readStoredCredentialNeeds(null)).toBeNull()
 	expect(readStoredCredentialNeeds([{ key: 'x' }])).toBeNull()
 	expect(readStoredCredentialNeeds([])).toEqual([])
+	expect(
+		readStoredCredentialNeeds([
+			{
+				key: 'github',
+				provider: 'github',
+				description: 'Read PRs.',
+				multiple: false,
+			},
+		]),
+	).toEqual([
+		{
+			key: 'github',
+			provider: 'github',
+			description: 'Read PRs.',
+			multiple: false,
+		},
+	])
 })

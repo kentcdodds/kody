@@ -5,6 +5,7 @@ import {
 	getPackageAppBaseUrl,
 	getPackageAppLegacySubdomainRedirect,
 	getPackageAppOriginConfigurationError,
+	hostnameSharesKodyRegistrableDomain,
 	joinAppUrl,
 	parsePackageAppRequestHost,
 } from './app-base-url.ts'
@@ -271,4 +272,36 @@ test('legacy package-app subdomain redirect is opt-in GET/HEAD only', () => {
 			PACKAGE_APP_LEGACY_REDIRECT: 'false',
 		}),
 	).toBeNull()
+})
+
+test('custom hostnames must not share a registrable domain with Kody origins', () => {
+	const env = {
+		APP_BASE_URL: 'https://kody.codes',
+		PACKAGE_APP_BASE_URL: 'https://kody.run',
+		APP_LEGACY_HOSTS: 'heykody.dev',
+	}
+	expect(
+		hostnameSharesKodyRegistrableDomain({
+			env,
+			hostname: 'evil.kody.codes',
+		}),
+	).toBe(true)
+	expect(
+		hostnameSharesKodyRegistrableDomain({
+			env,
+			hostname: 'apps.kody.run',
+		}),
+	).toBe(true)
+	expect(
+		hostnameSharesKodyRegistrableDomain({
+			env,
+			hostname: 'legacy.heykody.dev',
+		}),
+	).toBe(true)
+	expect(
+		hostnameSharesKodyRegistrableDomain({
+			env,
+			hostname: 'app.customer-test.example',
+		}),
+	).toBe(false)
 })

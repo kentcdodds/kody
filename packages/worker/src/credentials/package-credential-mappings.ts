@@ -27,7 +27,7 @@ import {
 } from '#universal/credential-contracts.ts'
 import {
 	listUsableCredentials,
-	needCandidates,
+	resolveNeedCandidates,
 	type UsableCredential,
 } from './credential-candidates.ts'
 import { listCredentialsForViewer } from './credential-list.ts'
@@ -156,10 +156,10 @@ export function toCredentialRef(credential: UsableCredential): CredentialRef {
 
 /** Kinds that can fill a need: its own, or any fetch-capable kind without one. */
 export function needAcceptsKind(
-	needKind: CredentialKind | null,
+	needKind: CredentialKind | null | undefined,
 	kind: CredentialKind,
 ) {
-	return needKind === null
+	return needKind == null
 		? (fetchCapableCredentialKinds as ReadonlyArray<CredentialKind>).includes(
 				kind,
 			)
@@ -245,7 +245,9 @@ function effectiveMapping(
 		mine: layer({ target: 'mine', personId: scope.actorId }),
 		org: layer({ target: 'org' }),
 		usable: scope.usable,
-		kind: need.kind,
+		accepts: (credential) =>
+			needAcceptsKind(need.kind, credential.kind) &&
+			needAcceptsProvider(need.provider, credential.provider),
 	})
 	const notReady = (
 		status: Exclude<EffectiveCredentialMapping['status'], 'ready'>,
@@ -280,7 +282,7 @@ function effectiveMapping(
 			}
 		}
 	}
-	const candidates = needCandidates(scope.usable, need)
+	const { candidates } = resolveNeedCandidates(need, scope.usable)
 	const [only, second] = candidates
 	if (only && !second) {
 		return {
@@ -354,7 +356,7 @@ export async function buildPackageCredentialsView(
 		}
 		return {
 			key: need.key,
-			kind: need.kind,
+			kind: need.kind ?? null,
 			provider: need.provider,
 			description: need.description,
 			multiple: need.multiple,

@@ -44,10 +44,17 @@ function coerceScalar(value: string, schema: JsonSchema | undefined): unknown {
 }
 
 /**
+ * Reserved query keys consumed by API authentication, not operation inputs.
+ * User-owned tokens select the request org with `?org=<slug>` (ADR 0069).
+ */
+export const apiAuthReservedQueryKeys = new Set(['org'])
+
+/**
  * Turn query parameters into capability input using the input JSON Schema:
  * numbers and booleans are coerced, and array inputs collect repeated keys
  * (`?tags=a&tags=b`). Values that do not fit are passed through so the
- * capability's own validation reports them.
+ * capability's own validation reports them. Auth-reserved keys such as
+ * `org` are skipped so GET/DELETE with `?org=` do not fail strict schemas.
  */
 export function readQueryParams(
 	searchParams: URLSearchParams,
@@ -58,6 +65,7 @@ export function readQueryParams(
 		: {}
 	const params: Record<string, unknown> = {}
 	for (const name of new Set(searchParams.keys())) {
+		if (apiAuthReservedQueryKeys.has(name)) continue
 		const schema = properties[name]
 		const values = searchParams.getAll(name)
 		if (schemaTypes(schema).has('array')) {

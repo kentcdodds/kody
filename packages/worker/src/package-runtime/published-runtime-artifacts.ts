@@ -89,6 +89,13 @@ export type PublishedSourceSnapshot = {
 	 * snapshot now matches HEAD.
 	 */
 	invalidateArtifactsBefore?: string
+	/**
+	 * True when this KV entry was rebuilt from Artifacts git (or the local
+	 * mock API) after a miss — not written by a real publish finalize.
+	 * Loaders must not treat `createdAt` as the publish clock for npm-bundle
+	 * rebuild windows (#3497).
+	 */
+	recoveredFromArtifacts?: true
 }
 
 export type PublishedSourceManifestSnapshot = {
@@ -293,6 +300,8 @@ export async function writePublishedSourceSnapshot(input: {
 	source: EntitySourceRow
 	files: Record<string, string>
 	invalidateExistingArtifacts?: boolean
+	/** Mark this write as a heal/backfill, not a publish finalize. */
+	recoveredFromArtifacts?: boolean
 }) {
 	if (!input.source.published_commit) {
 		return null
@@ -312,6 +321,7 @@ export async function writePublishedSourceSnapshot(input: {
 		...(input.invalidateExistingArtifacts
 			? { invalidateArtifactsBefore: createdAt }
 			: {}),
+		...(input.recoveredFromArtifacts ? { recoveredFromArtifacts: true } : {}),
 	}
 	const key = buildPublishedSourceSnapshotKvKey({
 		sourceId: input.source.id,
@@ -441,13 +451,26 @@ export async function persistPublishedSourceSnapshot(input: {
 	userId: string
 	source: EntitySourceRow
 	snapshot: Pick<PublishedSourceSnapshot, 'files'>
+	recoveredFromArtifacts?: boolean
 }) {
 	void input.userId
 	return await writePublishedSourceSnapshot({
 		env: input.env,
 		source: input.source,
 		files: input.snapshot.files,
+		recoveredFromArtifacts: input.recoveredFromArtifacts,
 	})
+}
+
+/** Publish clock for npm-bundle rebuild windows; recovered heals are not publishes. */
+export function publishedSourceSnapshotCreatedAt(
+	snapshot: Pick<
+		PublishedSourceSnapshot,
+		'createdAt' | 'recoveredFromArtifacts'
+	> | null,
+) {
+	if (!snapshot || snapshot.recoveredFromArtifacts) return null
+	return snapshot.createdAt
 }
 
 export async function persistPublishedSourceManifestSnapshot(input: {

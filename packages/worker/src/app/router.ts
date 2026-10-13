@@ -138,6 +138,7 @@ import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
+import { createAccountLastUsedOrgApiHandler } from '#app/handlers/account-last-used-org.ts'
 import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
@@ -174,6 +175,7 @@ import {
 	createCommunityPackageApiHandler,
 	createCommunityPackageHandler,
 	createCommunityPackageSettingsHandler,
+	createCommunityPackageCredentialApprovalHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
@@ -301,6 +303,7 @@ import {
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
+import { createLegacyOrgConnectionsRedirectHandler } from '#app/handlers/legacy-org-connections-redirect.ts'
 import {
 	createLegacyOrgPackagesApiRedirectHandler,
 	createLegacyOrgPackagesRedirectHandler,
@@ -529,6 +532,7 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountWaitingClickPost: createAccountWaitingClickHandler(env),
+			accountLastUsedOrgApi: createAccountLastUsedOrgApiHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
@@ -615,6 +619,8 @@ export function createAppRouter(env: Env) {
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageSettings: createCommunityPackageSettingsHandler(env),
+			communityPackageApproveCredentials:
+				createCommunityPackageCredentialApprovalHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageRaw: createCommunityPackageRawHandler(env),
@@ -632,12 +638,13 @@ export function createAppRouter(env: Env) {
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
 			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgAgents: createOrgSectionHandler(env, 'agents'),
 			orgBilling: createOrgBillingHandler(env),
 			orgBillingApi: createOrgBillingApiHandler(env),
 			orgBillingCheckoutPost: createOrgBillingCheckoutApiHandler(env),
 			orgBillingSuccess: createOrgBillingSuccessHandler(env),
 			orgBillingPortal: createOrgBillingPortalHandler(env),
-			orgConnections: createOrgSectionHandler(env, 'connections'),
+			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
 			orgEmail: createOrgSectionHandler(env, 'email'),
 			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
 			orgJobs: createOrgSectionHandler(env, 'jobs'),

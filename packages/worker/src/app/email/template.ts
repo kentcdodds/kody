@@ -46,6 +46,8 @@ export type TransactionalEmailContent = {
 	illustration?: EmailIllustration
 	/** Small muted line at the very bottom of the card. */
 	footnote?: string
+	/** Trusted HTML comment stamped into the card (inventory markers). */
+	htmlComment?: string
 	/** Optional one-click opt-out for Kody tips campaign mail only. */
 	unsubscribe?: EmailAction
 }
@@ -198,7 +200,11 @@ export function renderTransactionalEmail(
               <td class="kody-card" style="background-color: ${colors.card}; border: 1px solid ${colors.border}; border-radius: 14px; padding: 32px;">
                 <h1 class="kody-text" style="margin: 0 0 16px; font-family: ${displayFontStack}; font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: ${colors.text};">${escapeHtml(content.heading)}</h1>
                 ${paragraphs(content.body, 'kody-text', bodyStyle)}${actionBlock}
-                ${content.afterAction?.length ? afterActionBlocks(content.afterAction, mutedStyle, quoteStyle) : ''}${illustrationBlock}
+                ${content.afterAction?.length ? afterActionBlocks(content.afterAction, mutedStyle, quoteStyle) : ''}${illustrationBlock}${
+									content.htmlComment
+										? `<!-- ${escapeHtml(content.htmlComment)} -->`
+										: ''
+								}
               </td>
             </tr>
             ${

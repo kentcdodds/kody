@@ -1,5 +1,7 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { buildErrorAgentPrompt } from '#universal/error-agent-prompt.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData } from '#client/route-data.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -147,18 +149,52 @@ export function OrgInviteJoinRoute(handle: Handle) {
 			} satisfies OrgInviteJoinLoaderData)
 
 		if (!data.ok) {
+			const loadErrorMessage =
+				snapshot.kind === 'error'
+					? (snapshot.error?.message ?? 'Unable to load this invite link.')
+					: null
+			const resolvedFailure =
+				(snapshot.data != null && snapshot.data.ok === false) ||
+				loadErrorMessage != null
+			const failureMessage = loadErrorMessage ?? data.error
 			return (
 				<section mix={css(pageCss)}>
 					<header mix={css(pageHeaderCss)}>
 						<h1 mix={css(pageTitleCss)}>Invite link</h1>
 						<p mix={css(pageDescriptionCss)}>
-							This invite link cannot be used.
+							{resolvedFailure
+								? 'This invite link cannot be used.'
+								: 'Loading this invite link…'}
 						</p>
 					</header>
 					<div mix={css(cardCss)}>
-						<p role="alert" mix={css(bodyCss)}>
-							{data.error}
-						</p>
+						{resolvedFailure ? (
+							<>
+								<p role="alert" mix={css(bodyCss)}>
+									{failureMessage}
+								</p>
+								<ErrorAgentPromptButton
+									prompt={buildErrorAgentPrompt({
+										activity: 'Opening an organization invite link.',
+										errorCode: 'org_invite_unusable',
+										errorMessage: failureMessage,
+										ids: { path: '/join' },
+										likelyCause:
+											'The invite expired, was revoked, or the token is invalid.',
+										nextSteps: [
+											'Ask the org owner to send a fresh invite.',
+											'Confirm I am signed in as the invited email.',
+										],
+										kodyTools: ['search({ entity: "guide:organizations" })'],
+										docs: ['search({ entity: "guide:organizations" })'],
+									})}
+								/>
+							</>
+						) : (
+							<p role="status" mix={css(bodyCss)}>
+								Loading…
+							</p>
+						)}
 						<p mix={css(footerCss)}>
 							<a href="/" mix={css(mutedLinkCss)}>
 								Go home
@@ -201,14 +237,36 @@ export function OrgInviteJoinRoute(handle: Handle) {
 						</div>
 					</div>
 					{message ? (
-						<p
-							role={messageTone === 'error' ? 'alert' : 'status'}
-							mix={css(
-								messageTone === 'error' ? errorMessageCss : infoMessageCss,
-							)}
-						>
-							{message}
-						</p>
+						<>
+							<p
+								role={messageTone === 'error' ? 'alert' : 'status'}
+								mix={css(
+									messageTone === 'error' ? errorMessageCss : infoMessageCss,
+								)}
+							>
+								{message}
+							</p>
+							{messageTone === 'error' ? (
+								<>
+									<ErrorAgentPromptButton
+										prompt={buildErrorAgentPrompt({
+											activity: 'Joining an organization from an invite link.',
+											errorCode: 'org_invite_join_failed',
+											errorMessage: message,
+											ids: { path: '/join', orgSlug: data.org.slug },
+											likelyCause:
+												'The invite could not be accepted (expired, already used, or permission issue).',
+											nextSteps: [
+												'Ask the org owner to send a fresh invite.',
+												'Confirm I am signed in as the invited email.',
+											],
+											kodyTools: ['search({ entity: "guide:organizations" })'],
+											docs: ['search({ entity: "guide:organizations" })'],
+										})}
+									/>
+								</>
+							) : null}
+						</>
 					) : null}
 					{data.alreadyMember ? (
 						<p mix={css(footerCss)}>

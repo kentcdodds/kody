@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { accountAliasPath } from '#universal/org-pages.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -137,12 +137,10 @@ export async function accountEmailRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildEmailApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		buildEmailApiRequestUrl(href),
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}

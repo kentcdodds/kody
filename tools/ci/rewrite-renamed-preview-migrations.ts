@@ -7,13 +7,16 @@
  * name (duplicate column).
  *
  * Matching is content-sha only (Wrangler stores names, not hashes). Historical
- * SQL for a missing applied name is recovered from git (`commit^:path` when
- * the last touch deleted/renamed the file). Preview deploy checks out with
- * `fetch-depth: 0`. When history cannot recover the old blob (for example
- * rebase-and-renumber rewrote it away), skip the rewrite and leave apply to
- * fail loudly — use the documented reset-preview-D1 fallback in
- * docs/contributing/setup/preview-deploys.md. Never invent a match from the
- * kebab slug alone: that can mark revised SQL as already applied.
+ * SQL for a missing applied name is recovered from git (`rev-list
+ * --full-history` then `commit^:path` when the last touch deleted/renamed the
+ * file; `--full-history` is required on GitHub PR merge refs). Multi-hop
+ * renumbers (NNNN→NNNN+1→NNNN+2) still recover the original applied blob and
+ * match by sha256, or fall back to walking each current file's rename chain.
+ * Preview deploy checks out with `fetch-depth: 0`. When history cannot recover
+ * the old blob (for example rebase-and-renumber rewrote it away), skip the
+ * rewrite and leave apply to fail loudly — use the documented reset-preview-D1
+ * fallback in docs/contributing/setup/preview-deploys.md. Never invent a match
+ * from the kebab slug alone: that can mark revised SQL as already applied.
  *
  * Never runs against production: requires CLOUDFLARE_ENV=preview, --remote,
  * and a config whose binding resolves to a preview D1 database_name
@@ -192,6 +195,92 @@ export function listMigrationDigests(
 		.sort((left, right) => left.filename.localeCompare(right.filename))
 }
 
+const gitShowMaxBuffer = 16 * 1024 * 1024
+/** Cap how many path-touching commits we probe when recovering a blob. */
+export const historicalRevListProbeLimit = 32
+
+export function historicalMigrationRevListGitArgs(
+	relativePath: string,
+): Array<string> {
+	return [
+		'rev-list',
+		'-n',
+		String(historicalRevListProbeLimit),
+		'--full-history',
+		'HEAD',
+		'--',
+		relativePath,
+	]
+}
+
+function migrationRelativePath(
+	cwd: string,
+	migrationsDir: string,
+	filename: string,
+): string {
+	return path
+		.relative(cwd, path.resolve(cwd, migrationsDir, filename))
+		.split(path.sep)
+		.join('/')
+}
+
+function gitShow(cwd: string, spec: string): string | null {
+	const shown = spawnSync('git', ['show', spec], {
+		cwd,
+		encoding: 'utf8',
+		maxBuffer: gitShowMaxBuffer,
+	})
+	if (shown.status !== 0) {
+		return null
+	}
+	return shown.stdout
+}
+
+/**
+ * Prefer parent trees: the commit that last touched a renamed/deleted path
+ * usually no longer has the old path. Try every parent (merge commits) before
+ * the commit tree itself.
+ */
+function showPathNearCommit(
+	cwd: string,
+	commit: string,
+	relativePath: string,
+): string | null {
+	const parents = spawnSync(
+		'git',
+		['rev-list', '--parents', '-n', '1', commit],
+		{
+			cwd,
+			encoding: 'utf8',
+		},
+	)
+	const tokens =
+		parents.status === 0
+			? parents.stdout.trim().split(/\s+/).filter(Boolean)
+			: []
+	// rev-list --parents prints: <commit> <parent1> <parent2> ...
+	const parentShas = tokens.slice(1)
+	for (const parent of parentShas) {
+		const fromParent = gitShow(cwd, `${parent}:${relativePath}`)
+		if (fromParent !== null) {
+			return fromParent
+		}
+	}
+	// Fallbacks for odd histories / shallow clones where --parents is empty.
+	for (const spec of [
+		`${commit}^:${relativePath}`,
+		`${commit}^1:${relativePath}`,
+		`${commit}^2:${relativePath}`,
+		`${commit}:${relativePath}`,
+	]) {
+		const shown = gitShow(cwd, spec)
+		if (shown !== null) {
+			return shown
+		}
+	}
+	return null
+}
+
 export function resolveHistoricalMigrationContent(input: {
 	migrationsDir: string
 	filename: string
@@ -199,41 +288,128 @@ export function resolveHistoricalMigrationContent(input: {
 }): string | null {
 	assertSafeMigrationFilename(input.filename)
 	const cwd = input.cwd ?? process.cwd()
-	const relativePath = path
-		.relative(cwd, path.resolve(cwd, input.migrationsDir, input.filename))
-		.split(path.sep)
-		.join('/')
+	const relativePath = migrationRelativePath(
+		cwd,
+		input.migrationsDir,
+		input.filename,
+	)
 	// `--full-history`: pull_request workflows check out GitHub's temporary
 	// merge commit (base ← head). Default history simplification drops
 	// side-branch deletes of files that never existed on the first parent
 	// (main), so a renumbered preview migration blob would be unrecoverable.
 	const revList = spawnSync(
 		'git',
-		['rev-list', '-n', '1', '--full-history', 'HEAD', '--', relativePath],
-		{ cwd, encoding: 'utf8' },
+		historicalMigrationRevListGitArgs(relativePath),
+		{
+			cwd,
+			encoding: 'utf8',
+		},
 	)
 	if (revList.status !== 0) {
 		return null
 	}
-	const commit = revList.stdout.trim()
-	if (!commit) {
+	const commits = revList.stdout
+		.trim()
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
+	for (const commit of commits) {
+		const content = showPathNearCommit(cwd, commit, relativePath)
+		if (content !== null) {
+			return content
+		}
+	}
+	return null
+}
+
+/**
+ * When the applied name's own history cannot be shown (edge cases on merge
+ * refs / multi-hop renumbers), walk each current file's rename chain with
+ * `git log --follow` and recover the blob at the applied path if that name
+ * appears as a rename source. Caller must still sha256-match against current
+ * digests — this only recovers content.
+ */
+export function resolveHistoricalMigrationContentViaRenameChain(input: {
+	migrationsDir: string
+	appliedFilename: string
+	currentFilename: string
+	cwd?: string
+}): string | null {
+	assertSafeMigrationFilename(input.appliedFilename)
+	assertSafeMigrationFilename(input.currentFilename)
+	const cwd = input.cwd ?? process.cwd()
+	const appliedPath = migrationRelativePath(
+		cwd,
+		input.migrationsDir,
+		input.appliedFilename,
+	)
+	const currentPath = migrationRelativePath(
+		cwd,
+		input.migrationsDir,
+		input.currentFilename,
+	)
+	const followed = spawnSync(
+		'git',
+		[
+			'log',
+			'--follow',
+			'--name-status',
+			'--pretty=format:%H',
+			'HEAD',
+			'--',
+			currentPath,
+		],
+		{ cwd, encoding: 'utf8', maxBuffer: gitShowMaxBuffer },
+	)
+	if (followed.status !== 0 || !followed.stdout.trim()) {
 		return null
 	}
-	// The last commit that touched a renamed/deleted path is usually the
-	// rename itself, where the old path is already gone. Prefer the parent
-	// tree; fall back to the commit tree for odd "last touch was an edit"
-	// histories.
-	for (const spec of [
-		`${commit}^:${relativePath}`,
-		`${commit}:${relativePath}`,
-	]) {
-		const shown = spawnSync('git', ['show', spec], {
-			cwd,
-			encoding: 'utf8',
-			maxBuffer: 16 * 1024 * 1024,
+	let currentCommit: string | null = null
+	for (const rawLine of followed.stdout.split('\n')) {
+		const line = rawLine.trim()
+		if (!line) continue
+		if (/^[0-9a-f]{7,40}$/i.test(line)) {
+			currentCommit = line
+			continue
+		}
+		if (!currentCommit) continue
+		// name-status rename: R100\told\tnew (tabs); accept any R* similarity.
+		const renameMatch = /^R\d*\t(.+)\t(.+)$/.exec(line)
+		if (!renameMatch) continue
+		const fromPath = renameMatch[1]
+		if (fromPath !== appliedPath) continue
+		const content = showPathNearCommit(cwd, currentCommit, appliedPath)
+		if (content !== null) {
+			return content
+		}
+	}
+	return null
+}
+
+export function resolveHistoricalMigrationContentWithFallback(input: {
+	migrationsDir: string
+	filename: string
+	currentFilenames: ReadonlyArray<string>
+	cwd?: string
+}): string | null {
+	const direct = resolveHistoricalMigrationContent({
+		migrationsDir: input.migrationsDir,
+		filename: input.filename,
+		cwd: input.cwd,
+	})
+	if (direct !== null) {
+		return direct
+	}
+	for (const currentFilename of input.currentFilenames) {
+		if (currentFilename === input.filename) continue
+		const viaChain = resolveHistoricalMigrationContentViaRenameChain({
+			migrationsDir: input.migrationsDir,
+			appliedFilename: input.filename,
+			currentFilename,
+			cwd: input.cwd,
 		})
-		if (shown.status === 0) {
-			return shown.stdout
+		if (viaChain !== null) {
+			return viaChain
 		}
 	}
 	return null
@@ -451,13 +627,15 @@ export function main(argv: ReadonlyArray<string>): void {
 	}
 
 	const currentFiles = listMigrationDigests(options.migrationsDir)
+	const currentFilenames = currentFiles.map((file) => file.filename)
 	const plan = planRenamedMigrationRewrites({
 		appliedNames,
 		currentFiles,
 		resolveHistoricalContent: (filename) =>
-			resolveHistoricalMigrationContent({
+			resolveHistoricalMigrationContentWithFallback({
 				migrationsDir: options.migrationsDir,
 				filename,
+				currentFilenames,
 			}),
 	})
 

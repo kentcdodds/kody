@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { relocateAccountHref } from '#universal/org-pages.ts'
 import { on } from '#client/event-mixin.ts'
@@ -37,12 +37,10 @@ export async function accountWaitingRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(waitingApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(url.href),
-		signal,
-	})
+	const response = await fetch(
+		waitingApiPath,
+		orgAccountApiFetchInit(url.href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -57,12 +55,10 @@ export function AccountWaitingRoute(handle: Handle) {
 	const waitingData = createRouteData({
 		key: 'accountWaiting',
 		async load(href, signal) {
-			const response = await fetch(waitingApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				waitingApiPath,
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountWaitingLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

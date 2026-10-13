@@ -378,6 +378,35 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'approved_by_user_id',
 		value: 'deleted-user',
 	},
+	// Custom hostname rows are owned by package_id / org_id (FK cascade). The
+	// creator is attribution only: deleting that person anonymizes the column
+	// without dropping a still-bound hostname.
+	{
+		kind: 'replace_user_column',
+		table: 'package_app_custom_hostnames',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'user_columns',
+		table: 'package_approval_requests',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'requested_by_user_id',
+		setColumn: 'requested_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'resolved_by_user_id',
+		setColumn: 'resolved_by_user_id',
+		value: 'deleted-user',
+	},
 	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
@@ -1022,6 +1051,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	mcp_server_settings: ['connected_by_user_id'],
 	user_integrations: ['connected_by_user_id'],
 	webhook_endpoints: ['created_by_user_id'],
+	package_app_custom_hostnames: ['created_by_user_id'],
 	referrals: ['referrer_stable_user_id', 'referee_stable_user_id'],
 }
 

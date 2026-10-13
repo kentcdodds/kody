@@ -11,6 +11,7 @@ import {
 	findOauthAppForProviderSetup,
 	getAvailablePlatformApp,
 	getIntegration,
+	getJoinedIntegration,
 	getOauthApp,
 	listAvailablePlatformApps,
 	listIntegrations,
@@ -571,6 +572,44 @@ test('findOauthAppForProviderSetup prefers an exact-slug setup app over family p
 		clientId: 'calendar-only-client',
 		tokenUrl: 'https://oauth2.googleapis.com/token/calendar-only',
 	})
+})
+
+test('listJoinedIntegrations skips orphan OAuth joins; getJoinedIntegration still throws', async () => {
+	const { env, sqlite, save } = createEnv()
+	const userId = ownerIdFromStored('user-orphan-list')
+	await save(userId, baseGoogleConfig)
+	await save(userId, google({ name: 'google-calendar' }))
+	const now = new Date().toISOString()
+	// Soft-delete the shared OAuth app while leaving both connections live.
+	sqlite
+		.prepare(
+			`UPDATE user_oauth_apps SET deleted_at = ? WHERE user_id = ? AND slug = 'google'`,
+		)
+		.run(now, userId)
+	await save(userId, {
+		name: 'notion',
+		tokenUrl: 'https://api.notion.com/v1/oauth/token',
+		apiBaseUrl: 'https://api.notion.com',
+		flow: 'confidential' as const,
+		clientId: 'notion-client',
+		requiredHosts: ['api.notion.com'],
+		authorization: {
+			authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			scopes: [],
+		},
+	})
+
+	const listed = await listJoinedIntegrations({ env, userId })
+	expect(listed.map((entry) => entry.connection.name).sort()).toEqual([
+		'notion',
+	])
+
+	await expect(
+		getJoinedIntegration({ env, userId, name: 'google' }),
+	).rejects.toThrow(/references a missing OAuth app/)
+	await expect(
+		getJoinedIntegration({ env, userId, name: 'google-calendar' }),
+	).rejects.toThrow(/references a missing OAuth app/)
 })
 
 test('upsertPlatformIntegration enforces connect policy, hides secrets, and deletes without orphaning the shared app', async () => {

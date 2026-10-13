@@ -253,6 +253,58 @@ test('needs resolve by kind and provider; a credential with no provider is only 
 	).toMatchObject({ status: 'ambiguous', autoPick: null })
 })
 
+test('omitted kind matches any fetch-capable credential for the provider', async () => {
+	const t = await setup()
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'gh-pat',
+		provider: 'github',
+	})
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+			VALUES (?, 'gh-app', 'github', 'client-id', 'https://github.com/login/oauth/access_token',
+				'https://api.github.com', 'confidential')`,
+		)
+		.bind(t.acmeId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (user_id, name, app_slug, provider, required_hosts_json, connected_at)
+			VALUES (?, 'gh-oauth', 'gh-app', 'github', '[]', ?)`,
+		)
+		.bind(t.acmeId, now)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url, provider)
+			VALUES ('mcp-omit', ?, 'linear-mcp', 'https://mcp.linear.app/sse', 'linear')`,
+		)
+		.bind(t.acmeId)
+		.run()
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'loose-key',
+		provider: null,
+	})
+	const usable = await t.usableAs('bea', 'owner')
+	const omitted = resolveNeedCandidates({ provider: 'github' }, usable)
+	expect(omitted.status).toBe('ambiguous')
+	expect(
+		omitted.candidates.map((credential) => credential.name).sort(),
+	).toEqual(['gh-oauth', 'gh-pat'])
+	expect(omitted.possibleMatches.map((credential) => credential.name)).toEqual([
+		'loose-key',
+	])
+	expect(
+		resolveNeedCandidates({ provider: 'linear' }, usable).candidates,
+	).toEqual([])
+	expect(
+		resolveNeedCandidates({ kind: 'secret', provider: 'github' }, usable)
+			.autoPick?.name,
+	).toBe('gh-pat')
+})
+
 test('a member sees only org credentials they can Use, plus their own granted personal ones', async () => {
 	const t = await setup()
 	const orgKey = await t.storeSecret({

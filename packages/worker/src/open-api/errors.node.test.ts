@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	AuthorizationError,
 	LivePersonRequiredError,
@@ -195,4 +196,22 @@ test('toApiError leaves role denials without mint scopes', () => {
 		required_permission: 'package:write',
 		denial: 'missing_permission',
 	})
+})
+
+test('toApiError maps missing published-snapshot McpCallerError to a clear client error', () => {
+	const apiError = toApiError(
+		new McpCallerError(
+			'Published snapshot for package "@danj/hey-email" at commit "abc" is missing and could not be recovered from the artifact repo. Republish the package to restore it.',
+		),
+	)
+
+	expect(apiError).toMatchObject({
+		status: 400,
+		code: 'invalid_request',
+		message: expect.stringContaining('Published snapshot'),
+	})
+	expect(apiError.code).not.toBe('internal_error')
+	expect(apiError.message).not.toBe(
+		'Internal error. Retry later or report it if it persists.',
+	)
 })

@@ -1,6 +1,5 @@
 import { css, type Handle } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -139,7 +138,6 @@ export function OrgGrantsRoute(handle: Handle) {
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
-		tryConsumeRouteLoaderData(handle, 'orgGrants', href)
 		const snapshot = grantsData.read(handle, href)
 		const data = snapshot.data
 		const pending = snapshot.kind === 'pending'
@@ -193,6 +191,7 @@ export function OrgGrantsRoute(handle: Handle) {
 										<li
 											key={grant.id}
 											data-testid="org-grant"
+											data-grant-id={grant.id}
 											mix={css(rowItemCss)}
 										>
 											<div mix={css(rowCss)}>
@@ -213,9 +212,10 @@ export function OrgGrantsRoute(handle: Handle) {
 															: ` · ${grant.permissions.join(', ') || 'no permissions'}`}
 													</span>
 												</span>
-												{data.canManage ? (
+												{data.canManage && grant.canRevoke ? (
 													<button
 														type="button"
+														data-testid="org-grant-revoke"
 														mix={[
 															css(getDangerPillCss({ size: 'sm' })),
 															...check.getButtonMix({

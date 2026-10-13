@@ -39,8 +39,20 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			})
 			if (page.kind !== 'page') return ''
 			const listing = page.listing?.listing ?? null
+			// Trust only fresh ownerPackage.listingNeedsRepublish — never OR with
+			// the public listing cache pin. A stale cached pin after republish
+			// would keep "Update public listing" visible even when the catalog
+			// already matches published_commit.
+			const listingBehind =
+				page.viewerCanManage &&
+				listing != null &&
+				page.ownerPackage?.listingNeedsRepublish === true
+			const listingForFrame =
+				listingBehind && listing
+					? { ...listing, listingBehind: true as const }
+					: listing
 			return renderCommunityDetailContentHtml({
-				listing,
+				listing: listingForFrame,
 				username: page.username,
 				kodyId: page.kodyId,
 				description:
@@ -53,7 +65,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				returnTo: url.pathname,
 				publishCompareHref: resolvePublishCompareHref({
 					viewerCanManage: page.viewerCanManage,
-					listing,
+					listing: listingForFrame,
 				}),
 				hasApp: page.ownerPackage?.hasApp === true,
 				hasPackage: page.hasPackage,

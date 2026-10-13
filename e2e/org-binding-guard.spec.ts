@@ -14,7 +14,7 @@ const orgSectionApis = [
 	['waiting', 'waiting'],
 	['secrets', 'secrets'],
 	['jobs', 'jobs'],
-	['connected-agents', 'connections'],
+	['connected-agents', 'agents'],
 ] as const
 
 test('an org the person cannot use is a 404 on every section, never their own data', async ({

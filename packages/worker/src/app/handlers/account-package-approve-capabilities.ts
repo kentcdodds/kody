@@ -304,7 +304,12 @@ export function createAccountPackageApproveCapabilitiesApiHandler(env: Env) {
 					body: {
 						...body,
 						// URL package wins: collaborators must approve the page they reviewed.
-						action: 'approve-capabilities',
+						action:
+							'action' in body &&
+							(body.action === 'approve-credential-needs' ||
+								body.action === 'approve-went-public')
+								? body.action
+								: 'approve-capabilities',
 						packageId: packageId.packageId,
 					},
 				})

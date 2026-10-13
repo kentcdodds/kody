@@ -9,8 +9,7 @@ This is a **native Open API route**, not `POST /v1/capability-proxy/call` with
 `path: ['kody', 'gatewayFetch']`. Keep that JSON hop for small buffered bodies.
 
 Hosted gateway streaming fill (origin / `fetch-gateway` in this repo) is out of
-scope for the CLI agent. Direct-upload host tokens are a
-[design note](../design-notes/direct-upload-host-token.md) only; the gateway
+scope for the CLI agent. Direct-upload host tokens are out of scope; the gateway
 remains the default.
 
 ## Route
@@ -235,5 +234,5 @@ the gateway does not fill that way, is refused rather than forwarded unfilled.
 
 - Hosted gateway streaming fill and origin/edge route implementation (kody
   repo).
-- Dropbox-style direct-upload tokens. Design note only; gateway remains the
-  default path for secret-bearing uploads.
+- Dropbox-style direct-upload tokens. Out of scope; gateway remains the default
+  path for secret-bearing uploads.

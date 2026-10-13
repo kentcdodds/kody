@@ -157,6 +157,39 @@ test('making a package public or private requires typing the slug', async () => 
 	expect(publicOk?.status).toBe(200)
 	expect(mockModule.publishCommunityListing).toHaveBeenCalled()
 
+	mockModule.publishCommunityListing.mockClear()
+	mockModule.writablePackage = createSavedPackage(false)
+	const missingRepublishConfirm = await handleAccountPackageVisibilityAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'set-visibility',
+			packageId: 'pkg-1',
+			visibility: 'public',
+		},
+	})
+	expect(missingRepublishConfirm?.status).toBe(400)
+	await expect(missingRepublishConfirm?.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('update the public community listing'),
+	})
+	expect(mockModule.publishCommunityListing).not.toHaveBeenCalled()
+
+	const republishOk = await handleAccountPackageVisibilityAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'set-visibility',
+			packageId: 'pkg-1',
+			visibility: 'public',
+			confirmName: 'notes',
+		},
+	})
+	expect(republishOk?.status).toBe(200)
+	expect(mockModule.publishCommunityListing).toHaveBeenCalled()
+
 	mockModule.writablePackage = createSavedPackage(false)
 	const missingPrivateConfirm = await handleAccountPackageVisibilityAction({
 		env,

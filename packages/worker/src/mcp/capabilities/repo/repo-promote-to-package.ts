@@ -25,9 +25,13 @@ import {
 	packageOwnerEntitlementEmail,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
-import { updateEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	getEntitySourceById,
+	updateEntitySource,
+} from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
 import { publishCommunityListing } from '#worker/community/service.ts'
@@ -177,7 +181,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					id: packageId,
 					user_id: owner.ownerUserId,
 					name: manifest.name,
-					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
 					tags_json: JSON.stringify(manifest.kody.tags ?? []),
 					search_text: manifest.kody.searchText ?? null,
@@ -206,12 +209,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sourceRoot: source.source_root,
 				publishedCommit: opened.base_commit || head.commit,
 			})
-			const publishResult = await session.publishSession({
-				sessionId,
-				userId: owner.ownerUserId,
-				expectedPackageScope: packageScope,
-			})
-			if (publishResult.status !== 'ok') {
+			const revertFailedPromote = async () => {
 				await ctx.env.APP_DB.prepare(
 					`DELETE FROM saved_packages WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 				)
@@ -231,6 +229,53 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				await session
 					.discardSession({ sessionId, userId: owner.ownerUserId })
 					.catch(() => undefined)
+			}
+			let publishResult: Awaited<ReturnType<typeof session.publishSession>>
+			try {
+				publishResult = await session.publishSession({
+					sessionId,
+					userId: owner.ownerUserId,
+					expectedPackageScope: packageScope,
+					// The package's first publish: there are no prior needs to change.
+					credentialNeedsApproved: true,
+				})
+			} catch (error) {
+				// publishSession can throw before finalize (no KV snapshot yet)
+				// or after finalize during session bookkeeping. Revert only when
+				// the tip was never finalized. If finalize already wrote KV,
+				// finish the promote happy path so we do not leave a package
+				// that packageGet can load but promote cannot retry (#3497).
+				const seededCommit = opened.base_commit || head.commit
+				const liveSource = await getEntitySourceById(
+					ctx.env.APP_DB,
+					source.id,
+				).catch(() => null)
+				const finalizedCommit =
+					liveSource?.published_commit?.trim() || seededCommit
+				const finalizedSnapshot = await readPublishedSourceSnapshot({
+					env: ctx.env,
+					sourceId: source.id,
+					publishedCommit: finalizedCommit,
+				}).catch(() => null)
+				if (!finalizedSnapshot) {
+					await revertFailedPromote()
+					throw error
+				}
+				console.error(
+					'repo-promote-to-package-post-finalize-bookkeeping-failed',
+					packageId,
+					error,
+				)
+				publishResult = {
+					status: 'ok',
+					sessionId,
+					publishedCommit: finalizedCommit,
+					message:
+						'Published session recovered after post-finalize bookkeeping failure.',
+				}
+			}
+			if (publishResult.status !== 'ok') {
+				await revertFailedPromote()
 				throw new McpCallerError(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)

@@ -16,6 +16,7 @@
  */
 
 import { type OwnerId, type PersonId } from './owner-person-ids.ts'
+import { type PackageAppMount } from './public-urls.ts'
 import { type OrgRole } from './request-context.ts'
 
 /** Healthcheck endpoint served by the runtime Worker. */
@@ -64,7 +65,8 @@ export type RuntimePackageAppPath = {
 	username: string
 	kodyId: string
 	restPath: string
-	mount: 'user-subdomain' | 'username-path'
+	/** `custom-hostname` serves the bound app at `/` on a customer host. */
+	mount: PackageAppMount
 }
 
 export type RuntimePackageAppServeInput = {

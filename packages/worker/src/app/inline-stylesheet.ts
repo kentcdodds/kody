@@ -9,10 +9,11 @@
  * only offered when the text is escape-safe; callers fall back to the
  * stylesheet `<link>` otherwise.
  *
- * Comments are stripped before the safety check and before inlining. `>`,
- * `<`, and `&` anywhere in that stripped text prevent inlining (selectors,
- * declarations, strings, and URLs). Use a descendant combinator instead of
- * `>`.
+ * Comments are stripped and whitespace is collapsed before the safety check
+ * and before inlining so the homepage HTML budget does not pay for authoring
+ * whitespace. `>`, `<`, and `&` anywhere in that prepared text prevent
+ * inlining (selectors, declarations, strings, and URLs). Use a descendant
+ * combinator instead of `>`.
  */
 
 const STYLESHEET_ASSET_URL = 'https://assets.local/styles.css'
@@ -23,6 +24,83 @@ let stylesheetCache: { buildId: string; css: string | null } | null = null
 
 function stripCssComments(css: string) {
 	return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/**
+ * Collapse authoring whitespace without touching string / url() contents.
+ * Keeps spaces that change tokens: media-query `and (` / `or (` / `not (`,
+ * descendant combinators before `:` (e.g. `[x] :focus-visible`), and calc()
+ * `+` / `-` beside parentheses or values.
+ */
+function minifyCss(css: string) {
+	let out = ''
+	let i = 0
+	while (i < css.length) {
+		const ch = css[i]!
+		if (ch === '"' || ch === "'") {
+			const quote = ch
+			out += ch
+			i += 1
+			while (i < css.length) {
+				const next = css[i]!
+				out += next
+				i += 1
+				if (next === '\\' && i < css.length) {
+					out += css[i]!
+					i += 1
+					continue
+				}
+				if (next === quote) break
+			}
+			continue
+		}
+		if (ch === '(' && out.endsWith('url')) {
+			out += ch
+			i += 1
+			while (i < css.length && /[ \t\n\r\f]/.test(css[i]!)) {
+				out += css[i]!
+				i += 1
+			}
+			// Quoted url("…") / url('…') — let the string branch keep `)` inside.
+			if (i < css.length && (css[i] === '"' || css[i] === "'")) continue
+			while (i < css.length) {
+				const next = css[i]!
+				out += next
+				i += 1
+				if (next === ')') break
+			}
+			continue
+		}
+		// CSS whitespace only (not JS `\s`, which would fold NBSP in identifiers).
+		// Count units, not code points: preprocessing folds a CRLF pair into one newline.
+		if (/[ \t\n\r\f]/.test(ch)) {
+			let ws = 0
+			while (i < css.length && /[ \t\n\r\f]/.test(css[i]!)) {
+				if (css[i] === '\r' && css[i + 1] === '\n') i += 2
+				else i += 1
+				ws += 1
+			}
+			const prev = out.at(-1)
+			const next = css[i]
+			// Drop space around `{ } : ; ,` only. Do not treat `()` or a leading
+			// `:` as glue — that would turn `and (` into the function `and(` and
+			// `[host] :focus-visible` into `[host]:focus-visible`.
+			if (prev && next && !/[{}:;,]/.test(prev) && !/[{};,]/.test(next)) {
+				// A hex escape consumes its first following whitespace unit. Keep a
+				// second space when the author had 2+ units so `.\\31  .child` stays a
+				// descendant selector. One CRLF (`.\\31\r\n.child`) stays compound.
+				out += /\\[0-9a-fA-F]{1,6}$/.test(out) && ws >= 2 ? '  ' : ' '
+			}
+			continue
+		}
+		out += ch
+		i += 1
+	}
+	return out.trim()
+}
+
+function prepareInlineCss(css: string) {
+	return minifyCss(stripCssComments(css))
 }
 
 function isEscapeSafeCss(css: string) {
@@ -52,7 +130,7 @@ export async function getInlineStylesheet(input: {
 	try {
 		const response = await assets.fetch(new Request(STYLESHEET_ASSET_URL))
 		if (response.ok) {
-			const text = stripCssComments(await response.text()).trim()
+			const text = prepareInlineCss(await response.text())
 			css = text && isEscapeSafeCss(text) ? text : null
 		}
 	} catch {

@@ -1,5 +1,5 @@
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { type AccountJobsViewFilter } from '#client/routes/account-jobs-filter.ts'
 import {
@@ -80,12 +80,10 @@ export async function fetchAccountJobsPayload(
 	href: string,
 	signal: AbortSignal,
 ) {
-	const response = await fetch(buildJobsApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		buildJobsApiRequestUrl(href),
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return null
 	const payload = await readJson<AccountJobsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {

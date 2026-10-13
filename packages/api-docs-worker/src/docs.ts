@@ -43,15 +43,36 @@ function notFound() {
 	)
 }
 
+function copyOpenApiProxyHeaders(upstream: Response) {
+	const headers = new Headers()
+	if (upstream.status !== 304) {
+		headers.set(
+			'Content-Type',
+			upstream.headers.get('Content-Type') ?? 'application/json; charset=utf-8',
+		)
+	}
+	headers.set(
+		'Cache-Control',
+		upstream.headers.get('Cache-Control') ?? 'public, max-age=60',
+	)
+	const etag = upstream.headers.get('ETag')
+	if (etag) headers.set('ETag', etag)
+	return headers
+}
+
 async function proxyOpenApiSpec(
 	request: Request,
 	specUrl: string,
 ): Promise<Response> {
+	const upstreamHeaders = new Headers({ Accept: 'application/json' })
+	const ifNoneMatch = request.headers.get('If-None-Match')
+	if (ifNoneMatch) upstreamHeaders.set('If-None-Match', ifNoneMatch)
+
 	let upstream: Response
 	try {
 		upstream = await fetch(specUrl, {
 			method: 'GET',
-			headers: { Accept: 'application/json' },
+			headers: upstreamHeaders,
 			redirect: 'follow',
 		})
 	} catch (error) {
@@ -66,6 +87,15 @@ async function proxyOpenApiSpec(
 				},
 				{ status: 502, headers: { 'Cache-Control': 'no-store' } },
 			),
+		)
+	}
+
+	if (upstream.status === 304) {
+		return withSecurityHeaders(
+			new Response(null, {
+				status: 304,
+				headers: copyOpenApiProxyHeaders(upstream),
+			}),
 		)
 	}
 
@@ -85,19 +115,11 @@ async function proxyOpenApiSpec(
 	}
 
 	const body = request.method === 'HEAD' ? null : await upstream.arrayBuffer()
-	const headers = new Headers()
-	headers.set(
-		'Content-Type',
-		upstream.headers.get('Content-Type') ?? 'application/json; charset=utf-8',
-	)
-	headers.set(
-		'Cache-Control',
-		upstream.headers.get('Cache-Control') ?? 'public, max-age=60',
-	)
-	const etag = upstream.headers.get('ETag')
-	if (etag) headers.set('ETag', etag)
 	return withSecurityHeaders(
-		new Response(body, { status: upstream.status, headers }),
+		new Response(body, {
+			status: upstream.status,
+			headers: copyOpenApiProxyHeaders(upstream),
+		}),
 	)
 }
 

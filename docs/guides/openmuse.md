@@ -127,8 +127,7 @@ There are two ways to do that.
 
 **Approving gives that agent full access to your Kody account**, not a limited
 permission set. Connect it only to an OpenMuse deployment you control, and
-revoke it from Account → Connections (`/@<slug>/-/connections`) when you stop
-using it.
+revoke it from Account → Agents (`/@<slug>/-/agents`) when you stop using it.
 
 ### Option A: add Kody to OpenMuse's built-in agent
 
@@ -166,10 +165,9 @@ Kody authenticates MCP clients with OAuth 2.1; there is no static API key for
 - **Dynamic registration (the default).** The SDK discovers Kody's authorization
   server from the MCP URL and registers a client for you. Agents and tooling can
   also read `/auth.md` on the same origin for the registration details.
-- **A pre-registered client.** Mint a confidential client at Account →
-  Connections → Advanced → MCP OAuth clients (`/account/mcp-oauth-clients`) and
-  return its client ID and secret from `clientInformation()`. Most hosts do not
-  need this.
+- **A pre-registered client.** Mint a confidential client at Account → Agents →
+  Advanced → MCP OAuth clients (`/account/mcp-oauth-clients`) and return its
+  client ID and secret from `clientInformation()`. Most hosts do not need this.
 
 Either way, the first connection opens Kody's authorize page once. Sign in,
 approve, and store the tokens server-side next to OpenMuse's other secrets so
@@ -208,8 +206,8 @@ OpenMuse's browser and computer tools.
    saved. That is the whole point: the phone conversation furnished a home your
    other agents already share. [Second agent](/docs/portability) is the
    playbook.
-4. **Find the connection.** Account → Connections (`/@<slug>/-/connections`)
-   lists the client your OpenMuse deployment registered, with a revoke button.
+4. **Find the connection.** Account → Agents (`/@<slug>/-/agents`) lists the
+   client your OpenMuse deployment registered, with a revoke button.
 
 ## A worked example
 

@@ -13,7 +13,7 @@ npm run control-kody -- request GET /@<slug>/-/waiting --dump --contains 'Waitin
 npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
-npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/agents'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
@@ -84,7 +84,7 @@ session and body own them). The session cookie and re-login work as for any
 other `request`:
 
 ```bash
-npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: http://localhost:3742/@<slug>/-/connections'
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: http://localhost:3742/@<slug>/-/agents'
 ```
 
 The same `--header` works inside a `preview --request` spec.
@@ -141,11 +141,13 @@ not `npm run dev`. See [Local limitations](./cloud-agents.md#local-limitations).
 
 `execute` and `search` use the same OAuth client against a preview or local
 origin. `execute` reads an ESM module from `--code-file` (default export) and
-optional JSON `--params-file`. `search` takes `--query`, and optionally
-`--domain`, `--entity`, and `--limit`. Both refuse `https://kody.codes`. Do not
-hand-write a throwaway MCP client script for preview fixtures. A module that
-calls `packageSave`, publish, or `packageGetGitRemote` must use
-`--origin <preview>`; the local origin cannot persist package repos.
+optional JSON `--params-file`. `--execute-args-file` merges a JSON object into
+the execute call, such as a `credentials` call map. `search` takes `--query`,
+and optionally `--domain`, `--entity`, and `--limit`. Both refuse
+`https://kody.codes`. Do not hand-write a throwaway MCP client script for
+preview fixtures. A module that calls `packageSave`, publish, or
+`packageGetGitRemote` must use `--origin <preview>`; the local origin cannot
+persist package repos.
 
 After the seed user belongs to more than one organization, OAuth authorize
 refuses to approve until an org is chosen. Pass `--org <slug>` on `execute`,

@@ -205,7 +205,10 @@ function setup({
 
 const insertedAs = (isPrivate: 0 | 1) => [
 	expect.anything(),
-	expect.objectContaining({ is_private: isPrivate, kody_id: 'brave-search' }),
+	expect.objectContaining({
+		is_private: isPrivate,
+		name: '@user/brave-search',
+	}),
 	null,
 	{ stamp: false },
 ]
@@ -240,6 +243,9 @@ test('repoPromoteToPackage seeds published_commit from the opened session base s
 	})
 	expect(result).not.toHaveProperty('message')
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(...insertedAs(0))
+	expect(mockModule.insertSavedPackage.mock.calls[0]?.[1]).not.toHaveProperty(
+		'kody_id',
+	)
 	expect(rpc.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('user-1'),

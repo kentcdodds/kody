@@ -197,7 +197,7 @@ test('team org: only owners and billing admins see teammates and Automation', as
 })
 
 test('the org Connections page binds its org through Referer, and non-members get 404', async () => {
-	const fromAcme = { referer: 'https://example.com/@acme/-/connections/usage' }
+	const fromAcme = { referer: 'https://example.com/@acme/-/agents/usage' }
 	const request = new Request(
 		'https://example.com/account/connection-usage.json',
 		{ headers: fromAcme },

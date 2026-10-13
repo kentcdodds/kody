@@ -116,9 +116,14 @@ export async function createOpenApiTestHarness(
 	async function call(
 		method: string,
 		path: string,
-		options: { token?: string; body?: unknown; contentType?: string } = {},
+		options: {
+			token?: string
+			body?: unknown
+			contentType?: string
+			headers?: Record<string, string>
+		} = {},
 	) {
-		const headers = new Headers()
+		const headers = new Headers(options.headers)
 		if (options.token) headers.set('Authorization', `Bearer ${options.token}`)
 		if (options.body !== undefined) {
 			headers.set('Content-Type', options.contentType ?? 'application/json')
@@ -144,7 +149,9 @@ export async function createOpenApiTestHarness(
 		return {
 			status: response.status,
 			headers: response.headers,
-			body: (await response.json()) as OpenApiTestResponseBody,
+			body: (response.status === 304
+				? null
+				: await response.json()) as OpenApiTestResponseBody,
 		}
 	}
 	async function mint(scopes: Array<string>) {

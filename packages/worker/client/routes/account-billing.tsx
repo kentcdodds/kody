@@ -1,6 +1,8 @@
 import { type Handle, css, on } from 'remix/component'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { buildBillingFailureAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
@@ -437,9 +439,22 @@ export function AccountBillingRoute(handle: Handle) {
 							</p>
 						) : null}
 						{statusInfo?.tone === 'action' ? (
-							<AccountManagementMessage tone="error">
-								{statusInfo.detail}
-							</AccountManagementMessage>
+							<>
+								<AccountManagementMessage tone="error">
+									{statusInfo.detail}
+								</AccountManagementMessage>
+								<ErrorAgentPromptButton
+									prompt={buildBillingFailureAgentPrompt({
+										kind:
+											subscriptionStatus === 'past_due'
+												? 'past_due'
+												: 'payment_failed',
+										errorMessage: statusInfo.detail,
+										orgSlug,
+										path: currentHref,
+									})}
+								/>
+							</>
 						) : null}
 
 						<AccountManagementPanel title="Current plan">

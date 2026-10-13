@@ -7,8 +7,9 @@ const providerSlugPattern = /^[a-z0-9-]+$/
 
 /**
  * The creation link for a need. A declared kind is locked; without one the
- * page suggests OAuth when a built-in app exists for the provider (selecting
- * it with `platform`), else a Key, and shows the kind chooser.
+ * page suggests OAuth when a built-in app exists for the provider, else a
+ * Key, and shows the kind chooser. A built-in app is selected with
+ * `platform` whenever the need takes OAuth.
  */
 export async function buildNeedCreateUrl(input: {
 	db: D1Database
@@ -24,7 +25,7 @@ export async function buildNeedCreateUrl(input: {
 		? input.provider
 		: null
 	const builtInOauth =
-		!declaredKind && providerSlug
+		(declaredKind === null || declaredKind === 'oauth') && providerSlug
 			? await getDiscoverablePlatformOauthApp({
 					db: input.db,
 					slug: providerSlug,

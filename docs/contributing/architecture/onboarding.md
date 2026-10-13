@@ -56,12 +56,12 @@ hosts so a return visit cannot hide Cursor or Claude Desktop. A selected-agent
 card names only that host: another client's connection does not mark this one
 connected and does not put its logo on the card. A remembered picker choice is
 not a grant. When a different host actually authorized, Step 2 and Step 3 follow
-that grant instead of the pick. Account → Connections (`/@<slug>/-/connections`)
-lists those inbound hosts grouped by display name, with public logos for known
-kinds, newest-first sort, best-effort labels, per-`clientId` revoke, and **View
-connect steps** for known kinds (same install path as Add connection). That list
-is not `users.mcp_client_name` (first-touch) and not
-`/account/mcp-oauth-clients` (user-minted confidential clients).
+that grant instead of the pick. Account → Agents (`/@<slug>/-/agents`) lists
+those inbound hosts grouped by display name, with public logos for known kinds,
+newest-first sort, best-effort labels, per-`clientId` revoke, and **View connect
+steps** for known kinds (same install path as Connect an agent). That list is
+not `users.mcp_client_name` (first-touch) and not `/account/mcp-oauth-clients`
+(user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers

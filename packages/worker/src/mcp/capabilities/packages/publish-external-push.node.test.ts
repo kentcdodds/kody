@@ -16,6 +16,7 @@ const mockModule = vi.hoisted(() => ({
 	rebuildPublishedPackageArtifact: vi.fn(),
 	isPublishedPackageArtifactBuiltForCommit: vi.fn(),
 	getStaticPackageDependentsSummary: vi.fn(),
+	getCommunityListingByOwnerAndPackage: vi.fn(),
 	runWithDurableEscalation: vi.fn(),
 }))
 
@@ -50,6 +51,11 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
 	getStaticPackageDependentsSummary: (...args: Array<unknown>) =>
 		mockModule.getStaticPackageDependentsSummary(...args),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingByOwnerAndPackage(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
@@ -177,6 +183,7 @@ function setupDefaultMocks({
 		recommended_next_action:
 			'No published bundle artifacts declare a static dependency on this package.',
 	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({
@@ -259,6 +266,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			static_dependents: expect.objectContaining({ total: 0, items: [] }),
 		}),
 	)
+	expect(publishedFirst).not.toHaveProperty('listing')
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
@@ -293,6 +301,53 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 		[rebuildCall('commit-new', targets[0])],
 		[rebuildCall('commit-new', targets[1])],
 	])
+})
+
+test('publishExternalPush includes listing hint when the public catalog pin lags the promoted commit', async () => {
+	setupDefaultMocks({
+		publish: publishedResult({
+			manifest: { version: '1.5.0', name: '@user/demo-package' },
+		}),
+	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
+		id: 'listing-1',
+		status: 'active',
+		pinnedCommit: 'commit-old',
+		version: '1.4.0',
+	})
+
+	const published = await publish()
+	expect(published.status).toBe('published')
+	if (published.status !== 'published') throw new Error('expected published')
+	expect(published.listing).toEqual({
+		pinnedVersion: '1.4.0',
+		promotedVersion: '1.5.0',
+		behind: true,
+		updateHint: expect.stringContaining('communityPublish'),
+		updateUrl:
+			'https://kody.test/@user/demo-package/settings#update-public-listing',
+	})
+})
+
+test('publishExternalPush still succeeds when listing hint lookup rejects', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setupDefaultMocks({
+		publish: publishedResult({
+			manifest: { version: '1.5.0', name: '@user/demo-package' },
+		}),
+	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockRejectedValue(
+		new Error('D1 unavailable'),
+	)
+
+	const published = await publish()
+	expect(published.status).toBe('published')
+	if (published.status !== 'published') throw new Error('expected published')
+	expect(published.listing).toBeUndefined()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('listing-behind-hint'),
+		'D1 unavailable',
+	)
 })
 
 test('publishExternalPush returns forwarded clone and check timings without collapsing bundle and rebuild', async () => {

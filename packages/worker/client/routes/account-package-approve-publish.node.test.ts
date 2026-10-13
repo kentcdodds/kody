@@ -22,8 +22,11 @@ const loaderData: AccountPackageApprovePublishLoaderData = {
 	publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 	pendingCommit: '34f338c19f91c698c3a28edd2992e0ab87dcb4e0',
 	alreadyPublished: false,
+	pendingIsDefaultHead: true,
 	filesHref: '/@kodykoala/gmail-drafts/tree/main',
 	packageHref: '/@kodykoala/gmail-drafts',
+	listing: null,
+	listingWillLagAfterPromote: false,
 	diff: {
 		files: [
 			{
@@ -63,6 +66,62 @@ test('approve-publish SSR renders the promote card without a browser location', 
 	expect(html).toContain('data-testid="package-publish-diff"')
 	expect(html).toContain('README.md')
 	expect(html).toContain('# Gmail drafts')
+	expect(html).not.toContain(
+		'data-testid="approve-publish-update-public-listing"',
+	)
+})
+
+test('approve-publish SSR prompts to update the public listing when it is behind', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: approvePublishHref,
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						listing: {
+							pinnedVersion: '1.4.0',
+							promotedVersion: '1.5.0',
+							behind: true,
+							updateHint: 'Call communityPublish to republish.',
+							updateUrl:
+								'/@kodykoala/gmail-drafts/settings#update-public-listing',
+						},
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain('data-testid="approve-publish-update-public-listing"')
+	expect(html).toContain(
+		'href="/@kodykoala/gmail-drafts/settings#update-public-listing"',
+	)
+	expect(html).toContain('Update public listing')
+})
+
+test('approve-publish SSR warns when promote would leave the listing behind', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: approvePublishHref,
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						listing: null,
+						listingWillLagAfterPromote: true,
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain('data-testid="approve-publish-listing-will-lag"')
+	expect(html).not.toContain(
+		'data-testid="approve-publish-update-public-listing-link"',
+	)
 })
 
 test('unlocked approve-publish SSR offers Publish HEAD', async () => {
@@ -84,4 +143,61 @@ test('unlocked approve-publish SSR offers Publish HEAD', async () => {
 	expect(html).toContain('Publish HEAD')
 	expect(html).toContain('data-testid="approve-package-publish"')
 	expect(html).not.toContain('Promote this commit')
+})
+
+test('approve-publish with nothing pending uses a plain up-to-date title', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '/@kodykoala/gmail-drafts/approve-publish',
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						pendingCommit: loaderData.publishedCommit,
+						alreadyPublished: true,
+						pendingIsDefaultHead: true,
+						diff: { files: [], omittedCount: 0 },
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain(
+		'Nothing to publish: the public version is up to date at aaaaaaa',
+	)
+	expect(html).toContain('No unpublished commit is waiting')
+	expect(html).not.toContain('Public version')
+	expect(html).not.toContain('Current published commit')
+	expect(html).not.toContain('Commit to promote')
+	expect(html).not.toContain('HEAD to publish')
+	expect(html).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	expect(html).toContain('Back to package')
+	expect(html).not.toContain('data-testid="approve-package-publish"')
+})
+
+test('approve-publish for an already-published commit pin does not claim HEAD is up to date', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '/@kodykoala/gmail-drafts/approve-publish?commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						pendingCommit: loaderData.publishedCommit,
+						alreadyPublished: true,
+						pendingIsDefaultHead: false,
+						diff: { files: [], omittedCount: 0 },
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain('This commit is already published at aaaaaaa')
+	expect(html).toContain('Open Approve without a commit pin')
+	expect(html).not.toContain('the public version is up to date')
+	expect(html).not.toContain('No unpublished commit is waiting')
 })

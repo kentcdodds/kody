@@ -5,9 +5,11 @@ import {
 	accountRailOrgSlug,
 	isAccountNavItemActive,
 	isAccountRailPath,
+	railTabsForPath,
 	workspaceRailGroups,
 	type AccountRailGroup,
 } from './account-rail.ts'
+import { organizationsWithSignupFallback } from '#universal/org-pages.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
@@ -29,6 +31,7 @@ import { type SessionInfo } from '#client/session.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
+import { AccountSectionTabs } from './account-section-tabs.tsx'
 import {
 	AccountManagementLinkNav,
 	accountManagementNarrowMq,
@@ -418,10 +421,9 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
 			groups: accountRailGroups({
-				workspaceSlug: accountRailOrgSlug({
-					pathname: input.currentPath,
+				organizations: organizationsWithSignupFallback({
 					organizations,
-					username: input.session?.username,
+					username: input.session?.username ?? '',
 				}),
 			}),
 		}
@@ -478,6 +480,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const session = readAppSession(handle)?.session ?? null
 		const explainer = resolveEntityExplainer(currentPath)
 		const rail = pageRail({ session, currentPath })
+		const tabs = railTabsForPath(rail.groups, currentPath)
 
 		return (
 			<>
@@ -494,6 +497,9 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					actions={handle.props.actions}
 					titleAside={explainer ? <EntityExplainer copy={explainer} /> : null}
 				/>
+				{tabs ? (
+					<AccountSectionTabs label={tabs.label} tabs={tabs.tabs} />
+				) : null}
 			</>
 		)
 	}

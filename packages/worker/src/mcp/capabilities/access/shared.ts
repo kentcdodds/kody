@@ -1,3 +1,4 @@
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	grantPresets,
 	resolveGrantPermissions,
@@ -219,8 +220,20 @@ type GrantTargetCheck = {
 	resource?: OrgResource
 }
 
+/**
+ * What `authorizeGrantTarget` / `authorizeGrantRevoke` need. HTTP handlers
+ * pass the signed-in app user and request; MCP passes a capability context.
+ */
+type GrantChangeContext = {
+	env: Env
+	callerContext: {
+		user?: McpCallerContext['user']
+		request: McpCallerContext['request']
+	}
+}
+
 async function grantTargetCheck(
-	ctx: CapabilityContext,
+	ctx: GrantChangeContext,
 	orgId: OwnerId,
 	resourceType: GrantResourceType,
 	resourceId: string,
@@ -285,7 +298,7 @@ async function grantTargetCheck(
  * resource. A credential must exist and be live in the organization.
  */
 export async function authorizeGrantTarget(
-	ctx: CapabilityContext,
+	ctx: GrantChangeContext,
 	resourceType: GrantResourceType,
 	resourceId: string,
 ) {
@@ -297,7 +310,7 @@ export async function authorizeGrantTarget(
  * longer exists can still be revoked with member:write.
  */
 export async function authorizeGrantRevoke(
-	ctx: CapabilityContext,
+	ctx: GrantChangeContext,
 	resourceType: GrantResourceType,
 	resourceId: string,
 ) {
@@ -305,7 +318,7 @@ export async function authorizeGrantRevoke(
 }
 
 async function authorizeGrantChange(
-	ctx: CapabilityContext,
+	ctx: GrantChangeContext,
 	resourceType: GrantResourceType,
 	resourceId: string,
 	purpose: 'grant' | 'revoke',

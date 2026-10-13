@@ -4,6 +4,8 @@ import {
 	findPackageCapabilityApprovalByFingerprint,
 	getLatestPackageCapabilityApproval,
 	insertPackageCapabilityApproval,
+	isEmptyDependencySnapshotJson,
+	updatePackageCapabilityApprovalSnapshot,
 	type PackageCapabilityApprovalRecord,
 } from './capability-approvals-repo.ts'
 import {
@@ -11,12 +13,28 @@ import {
 	capabilitySetsEqual,
 	type CapabilitySet,
 } from './capability-set.ts'
-import { updateSavedPackage } from '#worker/package-registry/repo.ts'
+import {
+	emptyDependencySnapshot,
+	serializeDependencySnapshot,
+	type PackageDependencySnapshot,
+} from './dependency-snapshot.ts'
+import {
+	getSavedPackageById,
+	nextSavedPackageUpdatedAt,
+	updateSavedPackage,
+} from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import {
+	getPendingPackageApprovalRequest,
+	resolvePackageApprovalRequest,
+	type PackageApprovalRequest,
+} from './approval-requests-repo.ts'
+import { enqueueWentPublicApproval } from './went-public-approval.ts'
 
 export type CapabilityApprovalSummary = {
 	capabilitySet: CapabilitySet
+	dependencySnapshot: PackageDependencySnapshot | null
 	publishedCommit: string | null
 	latestApproval: PackageCapabilityApprovalRecord | null
 	/** Approval row for the current fingerprint, if any (not necessarily latest). */
@@ -62,6 +80,7 @@ export async function loadCapabilityApprovalSummary(input: {
 		])
 		return {
 			capabilitySet,
+			dependencySnapshot: null,
 			publishedCommit: null,
 			latestApproval,
 			matchingApproval: null,
@@ -70,13 +89,14 @@ export async function loadCapabilityApprovalSummary(input: {
 		}
 	}
 
-	const capabilitySet = await computePackageCapabilitySet({
+	const computed = await computePackageCapabilitySet({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
 		packageId: input.savedPackage.id,
 		packageKodyId: input.savedPackage.kodyId,
 		sourceId: input.savedPackage.sourceId,
 		requestUrl: input.requestUrl,
+		publishedCommit,
 	})
 
 	const matchingApproval = await findPackageCapabilityApprovalByFingerprint(
@@ -84,12 +104,13 @@ export async function loadCapabilityApprovalSummary(input: {
 		{
 			packageId: input.savedPackage.id,
 			ownerUserId: input.ownerUserId,
-			fingerprint: capabilitySet.fingerprint,
+			fingerprint: computed.capabilitySet.fingerprint,
 		},
 	)
 
 	return {
-		capabilitySet,
+		capabilitySet: computed.capabilitySet,
+		dependencySnapshot: computed.dependencySnapshot,
 		publishedCommit,
 		latestApproval,
 		matchingApproval,
@@ -106,10 +127,11 @@ export async function approvePackageCapabilitySet(input: {
 	requestUrl: string
 	/** Fingerprint the owner reviewed; must match the live set. */
 	expectedFingerprint: string
-	dependencySnapshotJson?: string
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
+	/** Pending `went_public` request when this approve is the path to going public. */
+	wentPublicRequest: PackageApprovalRequest | null
 }> {
 	const summary = await loadCapabilityApprovalSummary({
 		env: input.env,
@@ -144,44 +166,118 @@ export async function approvePackageCapabilitySet(input: {
 		},
 	)
 	const now = new Date().toISOString()
-	const approval =
-		existing ??
-		(await insertPackageCapabilityApproval(input.env.APP_DB, {
+	const dependencySnapshotJson = serializeDependencySnapshot(
+		summary.dependencySnapshot ??
+			emptyDependencySnapshot({
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+				publishedCommit: summary.publishedCommit,
+			}),
+	)
+	const capabilitySetJson = JSON.stringify(summary.capabilitySet.entries)
+	let approval = existing
+	const existingSnapshotEmpty =
+		existing != null &&
+		isEmptyDependencySnapshotJson(existing.dependencySnapshotJson)
+	const existingSnapshotDrifted =
+		existing != null &&
+		!existingSnapshotEmpty &&
+		existing.dependencySnapshotJson !== dependencySnapshotJson
+	if (existing && existingSnapshotEmpty) {
+		// PR1 rows stored "{}". Backfill the real pin on re-approve so
+		// internet-visible serving can read a lockfile.
+		approval =
+			(await updatePackageCapabilityApprovalSnapshot(input.env.APP_DB, {
+				id: existing.id,
+				dependencySnapshotJson,
+				capabilitySetJson,
+				approvedByUserId: input.actorUserId,
+				approvedAt: now,
+			})) ?? existing
+	} else if (!existing || existingSnapshotDrifted) {
+		// Same capability fingerprint can still pin a newer dependency tree
+		// (decision 4: fingerprint drives re-prompt; the lockfile still moves).
+		// Insert a new row so prior approver history stays intact.
+		approval = await insertPackageCapabilityApproval(input.env.APP_DB, {
 			id: crypto.randomUUID(),
 			package_id: input.savedPackage.id,
 			owner_user_id: input.ownerUserId,
 			published_commit: summary.publishedCommit,
 			fingerprint: summary.capabilitySet.fingerprint,
-			capability_set_json: JSON.stringify(summary.capabilitySet.entries),
-			dependency_snapshot_json: input.dependencySnapshotJson ?? '{}',
+			capability_set_json: capabilitySetJson,
+			dependency_snapshot_json: dependencySnapshotJson,
 			approved_by_user_id: input.actorUserId,
 			approved_at: now,
-		}))
-
-	if (!input.savedPackage.isInternetVisible) {
-		const changed = await updateSavedPackage(input.env.APP_DB, {
-			userId: input.ownerUserId,
-			packageId: input.savedPackage.id,
-			isInternetVisible: true,
 		})
-		if (!changed) {
-			throw new CapabilityApprovalError('Package not found.')
-		}
 	}
 
-	return { approval, capabilitySet: summary.capabilitySet }
+	if (!approval) {
+		throw new CapabilityApprovalError('Could not record capability approval.')
+	}
+
+	// Going public pauses on the shared approval queue (`went_public`). The
+	// owner Approves that request to flip internet-visible. Re-approving an
+	// already-public package only refreshes the capability pin (storage-change
+	// trigger stays on the fingerprint match, not the queue).
+	let wentPublicRequest: PackageApprovalRequest | null = null
+	if (!input.savedPackage.isInternetVisible) {
+		wentPublicRequest = await enqueueWentPublicApproval({
+			env: input.env,
+			ownerUserId: input.ownerUserId,
+			savedPackage: input.savedPackage,
+			publishedCommit: summary.publishedCommit,
+			fingerprint: summary.capabilitySet.fingerprint,
+			requestedByUserId: input.actorUserId,
+		})
+	}
+
+	return {
+		approval,
+		capabilitySet: summary.capabilitySet,
+		wentPublicRequest,
+	}
 }
 
 export async function clearInternetVisible(input: {
 	env: Env
 	ownerUserId: OwnerId | string
 	packageId: string
+	/** Who turned internet-visible off; supersedes a pending went_public. */
+	actorUserId?: string | null
 }): Promise<boolean> {
-	return updateSavedPackage(input.env.APP_DB, {
+	// Supersede first so a concurrent Approve cannot claim the pending row
+	// after we decide to turn public serving off.
+	const pending = await getPendingPackageApprovalRequest(input.env.APP_DB, {
+		packageId: input.packageId,
+		ownerUserId: input.ownerUserId,
+		reason: 'went_public',
+	})
+	if (pending) {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: pending.id,
+			status: 'superseded',
+			resolvedByUserId: input.actorUserId ?? null,
+		})
+	}
+	const live = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: input.packageId,
+	})
+	if (!live) {
+		return pending != null
+	}
+	// Always advance updated_at past the live stamp so a concurrent approve
+	// that claimed the row then CAS-enables on the old stamp fails closed.
+	const changed = await updateSavedPackage(input.env.APP_DB, {
 		userId: input.ownerUserId,
 		packageId: input.packageId,
 		isInternetVisible: false,
+		updatedAt: nextSavedPackageUpdatedAt(live.updatedAt),
 	})
+	// Package missing → false. Already-off with a superseded pending → true so
+	// MCP/settings can cancel a went_public without requiring the flag on.
+	return changed || pending != null
 }
 
 export function approvalMatchesCurrentSet(input: {

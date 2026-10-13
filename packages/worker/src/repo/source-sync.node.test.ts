@@ -4,6 +4,10 @@ import type * as PublishLock from '#worker/package-registry/package-publish-lock
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
 import type * as EntitySources from './entity-sources.ts'
+import {
+	isRepoChecksFailedError,
+	RepoChecksFailedError,
+} from './repo-checks-failed-error.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
@@ -110,6 +114,8 @@ vi.mock('./artifacts.ts', async (importOriginal) => {
 })
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
+const { PackageCredentialNeedsApprovalError } =
+	await import('#worker/credentials/credential-needs-approval.ts')
 
 const bootstrapAccess: ArtifactBootstrapAccess = {
 	defaultBranch: 'main',
@@ -424,7 +430,11 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 			...syncInput,
 			files: { 'package.json': packageJson },
 		}),
-	).rejects.toThrow('update type error')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof RepoChecksFailedError &&
+			error.message === 'update type error',
+	)
 	expect(failing.publishSession).not.toHaveBeenCalled()
 
 	const docsExempt = setupSync(
@@ -444,6 +454,44 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 	expect(docsExempt.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
 	)
+})
+
+test('syncArtifactSourceSnapshot keeps the session when the publish pauses for credential needs approval', async () => {
+	const approval = {
+		requestId: 'request-1',
+		packageId: 'package-1',
+		packageName: '@scope/demo',
+		kodyId: 'demo',
+		pendingCommit: 'commit-paused',
+		changes: [],
+		message: 'Package "@scope/demo" changed its credential needs.',
+	}
+	const session = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+			indexed_commit: 'commit-existing-1',
+		}),
+		{
+			...publishingSession('commit-paused'),
+			publishSession: vi.fn(async () => ({
+				status: 'approval_required' as const,
+				sessionId: 'source-sync-source-1-session',
+				publishedCommit: null,
+				currentPublishedCommit: 'commit-existing-1',
+				message: approval.message,
+				approval,
+				credentialNotice: null,
+			})),
+		},
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'package.json': packageJson },
+		}),
+	).rejects.toBeInstanceOf(PackageCredentialNeedsApprovalError)
+	expect(session.discardSession).not.toHaveBeenCalled()
 })
 
 test('syncArtifactSourceSnapshot forwards bootstrap publish flags', async () => {
@@ -540,7 +588,12 @@ test('syncArtifactSourceSnapshot loopback first-publish runs package checks befo
 			bootstrapAccess: loopbackAccess,
 			files: { 'package.json': packageJson },
 		}),
-	).rejects.toThrow('loopback type error')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			isRepoChecksFailedError(error) &&
+			error instanceof Error &&
+			error.message === 'loopback type error',
+	)
 	expect(mockModule.runRepoChecks).toHaveBeenCalled()
 	expect(mockModule.writeArtifactSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()

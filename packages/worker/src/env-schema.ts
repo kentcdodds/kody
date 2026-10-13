@@ -283,7 +283,7 @@ export const EnvSchema = object({
 	// Operator Discord bot used to assign/remove Kody Discord guild roles
 	// after a Discord social-login connection is stored. Bot token + guild
 	// id plus at least one role id must be set; login still works when they
-	// are unset. Standard/Pro roles follow users.stripe_plan.
+	// are unset. Standard/Pro roles follow orgs.stripe_plan.
 	DISCORD_BOT_TOKEN: optionalNonEmptyStringSchema,
 	DISCORD_GUILD_ID: optionalNonEmptyStringSchema,
 	DISCORD_MEMBER_ROLE_ID: optionalNonEmptyStringSchema,
@@ -291,6 +291,13 @@ export const EnvSchema = object({
 	DISCORD_PRO_ROLE_ID: optionalNonEmptyStringSchema,
 	CLOUDFLARE_ACCOUNT_ID: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
+	// Zone SSL and Certificates Edit, limited to the package-app SaaS zone.
+	// Does not exist yet (#3612). Not CLOUDFLARE_API_TOKEN. Optional so deploys
+	// succeed before the token is minted.
+	CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: optionalNonEmptyStringSchema,
+	// Cloudflare for SaaS zone that owns package-app custom hostnames. Use a
+	// staging copy for proof. Never assume the production kody.run zone.
+	PACKAGE_APP_ZONE_ID: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	// `true` when CLOUDFLARE_API_BASE_URL points at a local Cloudflare API
 	// stand-in that serves whole repo trees by commit. The dev CLI sets it; the

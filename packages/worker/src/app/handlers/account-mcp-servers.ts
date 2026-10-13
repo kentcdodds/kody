@@ -23,6 +23,7 @@ import { getMcpServerOwnerId } from '#worker/mcp-client/settings-repo.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { mcpOAuthAttemptActorFromIds } from '#worker/mcp-client/oauth-attempt.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
 	addMcpServer,
@@ -249,6 +250,10 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				const outcome = await hub.handleOAuthCallback({
 					url: request.url,
 					callbackUrl: oauth.callbackUrl,
+					actor: mcpOAuthAttemptActorFromIds({
+						ownerOrgId: ownerId,
+						personId: user.mcpUser.userId,
+					}),
 				})
 				authSuccess = outcome.authSuccess
 				authError = outcome.authError
@@ -336,6 +341,7 @@ async function handleAddAction(input: {
 			request: input.user.request,
 			user: input.user.mcpUser,
 		}),
+		personId: input.user.mcpUser.userId,
 		name: readTrimmedStringOrEmpty(input.body, 'name'),
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
 		baseUrl: oauth.clientOrigin,
@@ -362,18 +368,24 @@ async function handleConnectionAction(input: {
 	kind: 'reconnect' | 'refresh'
 }) {
 	const setting = await requireSetting(input)
+	const ownerOrgId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
+	const actor = mcpOAuthAttemptActorFromIds({
+		ownerOrgId,
+		personId: input.user.mcpUser.userId,
+	})
 	const hub = createMcpClientHubClient({
 		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
+		userId: ownerOrgId,
 		waitUntil,
 	})
 	const result =
 		input.kind === 'reconnect'
 			? await hub.reconnectServer({
 					serverId: setting.id,
+					actor,
 					callbackUrl: resolveMcpServerOAuthClientUrls({
 						env: input.env,
 						requestUrl: input.request.url,
@@ -540,6 +552,7 @@ async function handleOAuthClientAction(input: {
 			request: input.user.request,
 			user: input.user.mcpUser,
 		}),
+		personId: input.user.mcpUser.userId,
 		id: setting.id,
 		callbackUrl: resolveMcpServerOAuthClientUrls({
 			env: input.env,

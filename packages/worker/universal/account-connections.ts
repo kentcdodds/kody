@@ -1,5 +1,5 @@
 /**
- * `/account/connections` views. The page is one payload
+ * Agents page views (`/@slug/-/agents`, aliased as `/account/agents`). The page is one payload
  * (`/account/connected-agents.json`) rendered four exclusive ways: the
  * connected list, the full client grid on `/new` (Add connection), one
  * host's install steps on `/new/:agent`, and per-connection usage on
@@ -45,7 +45,7 @@ export function isAccountConnectionAgent(
  */
 export function accountConnectionsListHref(pathname?: string | null) {
 	const slug = pathname ? orgSlugFromPathname(pathname) : null
-	return slug ? orgResourcePath(slug, 'connections') : '/account/connections'
+	return slug ? orgResourcePath(slug, 'agents') : '/account/agents'
 }
 
 export function accountConnectionsNewHref(
@@ -54,10 +54,10 @@ export function accountConnectionsNewHref(
 ) {
 	const slug = pathname ? orgSlugFromPathname(pathname) : null
 	if (slug) {
-		return orgResourcePath(slug, 'connections', agent ? `new/${agent}` : 'new')
+		return orgResourcePath(slug, 'agents', agent ? `new/${agent}` : 'new')
 	}
-	if (!agent) return '/account/connections/new'
-	return `/account/connections/new/${encodeURIComponent(agent)}`
+	if (!agent) return '/account/agents/new'
+	return `/account/agents/new/${encodeURIComponent(agent)}`
 }
 
 /**
@@ -70,8 +70,8 @@ export function accountConnectionsUsageHref(
 ) {
 	const slug = pathname ? orgSlugFromPathname(pathname) : null
 	const base = slug
-		? orgResourcePath(slug, 'connections', 'usage')
-		: '/account/connections/usage'
+		? orgResourcePath(slug, 'agents', 'usage')
+		: '/account/agents/usage'
 	return connection
 		? `${base}?connection=${encodeURIComponent(connection)}`
 		: base
@@ -82,12 +82,12 @@ export function parseAccountConnectionsPathname(
 	pathname: string,
 ): AccountConnectionsView | null {
 	pathname = accountAliasPath(pathname)
-	const base = '/account/connections'
+	const base = '/account/agents'
 	if (pathname === base || pathname === `${base}/`) return { kind: 'list' }
 	if (pathname === `${base}/usage` || pathname === `${base}/usage/`) {
 		return { kind: 'usage' }
 	}
-	const newBase = '/account/connections/new'
+	const newBase = '/account/agents/new'
 	if (pathname === newBase || pathname === `${newBase}/`) {
 		return { kind: 'new', agent: null }
 	}

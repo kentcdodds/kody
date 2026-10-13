@@ -17,14 +17,18 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * check would land on a default-branch SHA. Bots often open a pull request
  * before the first unique commit, and main can move on before they push.
  * A compare miss (fork head, flake) still writes the check so a unique
- * pull request is not skipped. A GitHub API rate limit during a
- * default-branch run does not fail this job: the run is recorded on that
- * SHA, and a red job would mark main failed. The head check is written
- * only after mergeability is known, so a quota miss cannot leave an
- * in-progress check on the pull request. Rate-limit waits share one
- * budget for the scan so retries cannot exceed the job timeout. The next
- * pull request update or base push reruns the check. It does not check
- * out or execute pull request code, and it does not run Validate.
+ * pull request is not skipped. When mergeability stays pending after the
+ * poll (including a stale base SHA GitHub never advances), the head check
+ * completes as `neutral` rather than failure so behind PRs do not go red
+ * until GitHub publishes a real mergeable_state. Conflicted stays failure.
+ * A GitHub API rate limit during a default-branch run does not fail this
+ * job: the run is recorded on that SHA, and a red job would mark main
+ * failed. The head check is written only after mergeability is known, so a
+ * quota miss cannot leave an in-progress check on the pull request.
+ * Rate-limit waits share one budget for the scan so retries cannot exceed
+ * the job timeout. The next pull request update or base push reruns the
+ * check. It does not check out or execute pull request code, and it does
+ * not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -62,7 +66,7 @@ export type ResolvedMergeability = {
 type MergeConflictCheckOutput = {
 	title: string
 	summary: string
-	conclusion: 'success' | 'failure'
+	conclusion: 'success' | 'failure' | 'neutral'
 }
 
 type FetchLike = typeof fetch
@@ -113,7 +117,10 @@ export function describeMergeConflictCheck(
 					state,
 					detail: input.detail,
 				}),
-				conclusion: 'failure',
+				// Pending / stale-base results are not conflicts. A red head
+				// check on every behind PR after a main push blocks ship-pr
+				// until someone can re-run the check.
+				conclusion: 'neutral',
 			}
 		default: {
 			const neverKind: never = input.kind
@@ -215,29 +222,26 @@ async function runMergeConflictCheck(
 		)
 		return 0
 	}
+	let knownResult: ResolvedMergeability | null = null
 	try {
 		if (
 			await headHasNoUniqueCommits(client, input.expectedBaseSha, input.headSha)
 		) {
 			return 0
 		}
-		const result = await pollMergeability({
+		knownResult = await pollMergeability({
 			read: () => client.readPullRequest(input.pullNumber),
 			sleep,
 			maxAttempts: input.maxAttempts ?? mergeConflictPollAttempts,
 			delayMs: input.delayMs ?? mergeConflictPollDelayMs,
 			expectedBaseSha: input.expectedBaseSha,
 		})
-		await client.publishCheck(input.headSha, result)
+		await client.publishCheck(input.headSha, knownResult)
 		// This job is recorded on the default-branch SHA. Exit 0 after the
 		// head check is published so a conflict does not fail that commit.
 		// `gh pr checks` reads the head SHA check.
-		const described = describeMergeConflictCheck(result)
-		console.log(
-			result.kind === 'clear'
-				? `Check ${mergeConflictCheckName} passed.`
-				: `Check ${mergeConflictCheckName} failed.`,
-		)
+		const described = describeMergeConflictCheck(knownResult)
+		console.log(mergeConflictCheckLogLine(knownResult.kind))
 		console.log(described.summary)
 		return 0
 	} catch (error) {
@@ -249,13 +253,32 @@ async function runMergeConflictCheck(
 			)
 			return 0
 		}
+		// Never downgrade a known conflicted/clear result to undetermined
+		// (neutral). Retry the known result once; if publication still fails,
+		// exit non-zero without posting a masking neutral check.
+		if (knownResult) {
+			try {
+				await client.publishCheck(input.headSha, knownResult)
+				const described = describeMergeConflictCheck(knownResult)
+				console.log(mergeConflictCheckLogLine(knownResult.kind))
+				console.log(described.summary)
+				return 0
+			} catch (retryError) {
+				console.error(
+					retryError instanceof Error ? retryError.message : String(retryError),
+				)
+				return 1
+			}
+		}
 		const published = await publishCheckAfterError(
 			client,
 			input.headSha,
 			message,
 		)
 		if (published) {
-			console.log(`Check ${mergeConflictCheckName} failed.`)
+			console.log(
+				`Check ${mergeConflictCheckName} deferred (mergeability unavailable).`,
+			)
 			return 0
 		}
 		return 1
@@ -359,6 +382,21 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 	}
 }
 
+function mergeConflictCheckLogLine(kind: ResolvedMergeability['kind']): string {
+	switch (kind) {
+		case 'clear':
+			return `Check ${mergeConflictCheckName} passed.`
+		case 'conflicted':
+			return `Check ${mergeConflictCheckName} failed.`
+		case 'undetermined':
+			return `Check ${mergeConflictCheckName} deferred (mergeability unavailable).`
+		default: {
+			const neverKind: never = kind
+			throw new Error(`Unhandled mergeability ${String(neverKind)}`)
+		}
+	}
+}
+
 function displayBaseRef(baseRef: string) {
 	return safeBaseRefPattern.test(baseRef) ? baseRef : 'its base branch'
 }
@@ -398,7 +436,7 @@ function undeterminedSummary(input: {
 }) {
 	const lines = [
 		`GitHub has not published mergeability for this pull request yet (mergeable_state: ${input.state}).`,
-		`Re-run the ${mergeConflictCheckName} check. Validate, Preview, and CLA run only after GitHub can build the merge commit with ${input.base}.`,
+		`This check is neutral until GitHub publishes mergeability against ${input.base}; the next pull request update or base-branch push refreshes it. Validate, Preview, and CLA run only after GitHub can build the merge commit.`,
 	]
 	if (input.detail) lines.push(input.detail.slice(0, 500))
 	return lines.join('\n\n')

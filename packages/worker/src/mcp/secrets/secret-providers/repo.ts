@@ -3,6 +3,7 @@ import {
 	type SecretProviderGrantRecord,
 } from './types.ts'
 
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type BindingRow = {
 	id: string
@@ -129,13 +130,16 @@ export async function deleteSecretProviderBinding(
 	input: { userId: string; providerId: string },
 ) {
 	await deleteSecretProviderGrantsForBinding(db, input)
-	await db
-		.prepare(
-			`DELETE FROM secret_provider_bindings
-			WHERE user_id = ? AND provider_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.userId, input.providerId)
-		.run()
+	const liveRowSql = `FROM secret_provider_bindings
+			WHERE user_id = ? AND provider_id = ?${andLiveDeletedAtSql()}`
+	await db.batch([
+		...credentialGrantCleanupStatements(db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.userId, input.providerId],
+		}),
+		db.prepare(`DELETE ${liveRowSql}`).bind(input.userId, input.providerId),
+	])
 }
 
 export async function getSecretProviderBinding(

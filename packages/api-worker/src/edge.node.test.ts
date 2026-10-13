@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	gatewayFetchDeclaredBodyExceedsUploadLimit,
-	gatewayFetchUploadLimitMessage,
 	handleApiEdgeRequest,
 	maxApiRequestBodyBytes,
 	maxGatewayFetchUploadBytes,
@@ -60,6 +59,7 @@ test('forwards API routes with only safe headers and CORS on the response', asyn
 				Cookie: 'kody_session=abc',
 				'X-Kody-Internal': 'spoofed',
 				'CF-Connecting-IP': '203.0.113.9',
+				'If-None-Match': '"abc"',
 			},
 			body: JSON.stringify({ path: ['kody', 'x'], args: [] }),
 		}),
@@ -73,6 +73,10 @@ test('forwards API routes with only safe headers and CORS on the response', asyn
 	expect(request?.headers.get('Authorization')).toBe(`Bearer ${token}`)
 	expect(request?.headers.get('Cookie')).toBeNull()
 	expect(request?.headers.get('X-Kody-Internal')).toBeNull()
+	expect(request?.headers.get('If-None-Match')).toBe('"abc"')
+	expect(response.headers.get('Access-Control-Expose-Headers')).toContain(
+		'ETag',
+	)
 	expect(await request?.json()).toEqual({ path: ['kody', 'x'], args: [] })
 	expect(limited).toEqual(['ip:203.0.113.9', `token:${'a'.repeat(20)}`])
 	expect(limited.join()).not.toContain('B'.repeat(43))
@@ -242,10 +246,6 @@ test('gateway-fetch rejects a declared body over the Worker upload limit', async
 			}),
 		),
 	).toBe(true)
-	expect(gatewayFetchUploadLimitMessage()).toContain(
-		String(maxGatewayFetchUploadBytes),
-	)
-	expect(gatewayFetchUploadLimitMessage()).toContain('100 MiB')
 
 	const { env, forwarded } = createEnv()
 	const oversize = await handleApiEdgeRequest(
@@ -269,7 +269,7 @@ test('gateway-fetch rejects a declared body over the Worker upload limit', async
 	expect(await oversize.json()).toMatchObject({
 		error: {
 			code: 'payload_too_large',
-			message: gatewayFetchUploadLimitMessage(),
+			message: expect.stringMatching(/100 MiB/),
 		},
 	})
 	expect(forwarded).toHaveLength(0)

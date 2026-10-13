@@ -124,6 +124,52 @@ test('one write sets defaults and a trigger mapping, turning the trigger on', as
 	})
 	expect(view.incomplete).toEqual([])
 
+	const afterWrite = await t.mappingAudits()
+	expect(afterWrite).toHaveLength(3)
+	expect(afterWrite.map((row) => row.details)).toEqual([
+		{
+			packageId: t.savedPackage.id,
+			kodyId: 'digest',
+			needKey: 'mail',
+			target: orgDefault,
+			trigger: null,
+			beforeCredentialIds: null,
+			afterCredentialIds: [prod],
+			willEnable: false,
+		},
+		{
+			packageId: t.savedPackage.id,
+			kodyId: 'digest',
+			needKey: 'chat',
+			target: mine,
+			trigger: null,
+			beforeCredentialIds: null,
+			afterCredentialIds: [],
+			willEnable: false,
+		},
+		{
+			packageId: t.savedPackage.id,
+			kodyId: 'digest',
+			needKey: 'mail',
+			target: daily,
+			trigger: daily.trigger,
+			beforeCredentialIds: null,
+			afterCredentialIds: [test_],
+			willEnable: true,
+		},
+	])
+	for (const row of afterWrite) {
+		expect(row).toMatchObject({
+			actorUserId: t.people.bea.personId,
+			actorUsername: 'bea',
+			credentialKind: 'session',
+			resourceType: 'package',
+			resourceId: t.savedPackage.id,
+		})
+		expect(row.details).not.toHaveProperty('value')
+		expect(row.details).not.toHaveProperty('credentials')
+	}
+
 	// A second write reuses the enablement and clearing restores inheritance.
 	await t.apply('bea', 'owner', [
 		{ target: daily, needKey: 'mail', credentials: null },
@@ -136,6 +182,63 @@ test('one write sets defaults and a trigger mapping, turning the trigger on', as
 		override: null,
 		effective: { source: 'org', status: 'ready', credentials: [{ id: prod }] },
 	})
+	const afterClear = await t.mappingAudits()
+	expect(afterClear).toHaveLength(4)
+	expect(afterClear[3]!.details).toEqual({
+		packageId: t.savedPackage.id,
+		kodyId: 'digest',
+		needKey: 'mail',
+		target: daily,
+		trigger: daily.trigger,
+		beforeCredentialIds: [test_],
+		afterCredentialIds: null,
+		willEnable: false,
+	})
+})
+
+test('a set then clear of one trigger mapping never turns the trigger on', async () => {
+	const t = await setup()
+	await t.storeKey('resend-prod', 'resend')
+	const resolved = await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+		{ target: daily, needKey: 'mail', credentials: null },
+	])
+	expect(resolved.map((change) => change.error)).toEqual([null, null])
+	expect(await t.enablementCount()).toBe(0)
+	expect(await t.mappingAudits()).toEqual([])
+})
+
+test('the audit keeps stored ids the editor can no longer use', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.apply('bea', 'owner', [
+		{ target: orgDefault, needKey: 'mail', credentials: [{ id: prod }] },
+	])
+	await t.db
+		.prepare(`UPDATE secret_entries SET deleted_at = ? WHERE id = ?`)
+		.bind(now, prod)
+		.run()
+	await t.apply('bea', 'owner', [
+		{ target: orgDefault, needKey: 'mail', credentials: null },
+	])
+	const audits = await t.mappingAudits()
+	expect(audits[1]!.details).toMatchObject({
+		beforeCredentialIds: [prod],
+		afterCredentialIds: null,
+	})
+})
+
+test('refused mapping changes write no credential.mapping.update audit', async () => {
+	const t = await setup()
+	await t.storeKey('resend-prod', 'resend')
+	await t.apply('ann', 'member', [
+		{
+			target: orgDefault,
+			needKey: 'mail',
+			credentials: [{ name: 'resend-prod' }],
+		},
+	])
+	expect(await t.mappingAudits()).toEqual([])
 })
 
 test('changes that cannot apply carry a coded error and nothing is written', async () => {

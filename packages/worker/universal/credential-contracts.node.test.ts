@@ -174,6 +174,32 @@ test('names that look like prefixes and brackets in names round-trip', () => {
 	})
 })
 
+test('a leading space before a reserved prefix still escapes the name', () => {
+	const href = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'pr-digest',
+		changes: [
+			{
+				target: { type: 'default', layer: 'mine' },
+				needKey: 'google',
+				credentials: [{ name: ' org:bot' }, { name: '  id:abc' }],
+			},
+		],
+	})
+	const url = new URL(href, 'https://kody.codes')
+	expect(url.searchParams.getAll('mine[google]')).toEqual([
+		'name: org:bot',
+		'name:  id:abc',
+	])
+	expect(parseCredentialApprovalQuery(url.searchParams).changes).toEqual([
+		{
+			target: { type: 'default', layer: 'mine' },
+			needKey: 'google',
+			credentials: [{ name: 'org:bot' }, { name: 'id:abc' }],
+		},
+	])
+})
+
 test('approval links round-trip defaults, personal defaults, triggers, and none', () => {
 	const href = buildCredentialApprovalHref({
 		username: 'acme',
