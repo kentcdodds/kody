@@ -209,6 +209,8 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sessionId,
 				userId: owner.ownerUserId,
 				expectedPackageScope: packageScope,
+				// The package's first publish: there are no prior needs to change.
+				credentialNeedsApproved: true,
 			})
 			if (publishResult.status !== 'ok') {
 				await ctx.env.APP_DB.prepare(

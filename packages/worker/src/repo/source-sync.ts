@@ -15,6 +15,7 @@ import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
 } from './large-file-policy.ts'
+import { PackageCredentialNeedsApprovalError } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
@@ -59,6 +60,9 @@ type SyncArtifactSourceInput = {
 	serverTiming?: Array<ServerTimingEntry>
 	/** Website or platform-owned rewrites may promote a locked package. */
 	allowLockedPublish?: boolean
+	/** Platform-owned rewrites skip the credential needs approval pause. */
+	credentialNeedsApproved?: boolean
+	requestedByUserId?: string | null
 	/**
 	 * When false, commit and push HEAD without advancing published_commit.
 	 * Used by fleet codemods on locked packages.
@@ -422,18 +426,33 @@ export async function syncArtifactSourceSnapshot(
 			...(input.allowLockedPublish === true
 				? { allowLockedPublish: true }
 				: {}),
+			...(input.credentialNeedsApproved === true
+				? { credentialNeedsApproved: true }
+				: {}),
+			...(input.requestedByUserId
+				? { requestedByUserId: input.requestedByUserId }
+				: {}),
 			...(input.promotePublished === false ? { promotePublished: false } : {}),
 		})
-		if (publishResult.status === 'locked') {
-			throw new PackagePublishLockedError({
-				packageId: publishResult.packageId,
-				packageName: publishResult.packageName,
-				pendingCommit: publishResult.pendingCommit,
-				currentPublishedCommit: publishResult.currentPublishedCommit,
-			})
-		}
-		if (publishResult.status !== 'ok') {
-			throw new Error(publishResult.message)
+		switch (publishResult.status) {
+			case 'ok':
+				break
+			case 'locked':
+				throw new PackagePublishLockedError({
+					packageId: publishResult.packageId,
+					packageName: publishResult.packageName,
+					pendingCommit: publishResult.pendingCommit,
+					currentPublishedCommit: publishResult.currentPublishedCommit,
+				})
+			case 'approval_required':
+				throw new PackageCredentialNeedsApprovalError(publishResult.approval)
+			case 'checks_outdated':
+			case 'base_moved':
+				throw new Error(publishResult.message)
+			default: {
+				const exhaustive: never = publishResult
+				throw new Error(`Unknown publish status: ${String(exhaustive)}`)
+			}
 		}
 		// publishSession persists the workspace snapshot to
 		// BUNDLE_ARTIFACTS_KV and reverts entity_sources.published_commit

@@ -200,6 +200,8 @@ export type RepoSessionRpc = {
 		expectedPackageScope?: string
 		commitMessage?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		promotePublished?: boolean
 	}) => Promise<RepoSessionPublishResult>
 	publishFromExternalRef: (payload: {
@@ -214,6 +216,8 @@ export type RepoSessionRpc = {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		deferBundleCheckToRebuild?: boolean
 	}) => Promise<RepoExternalPublishResult>
 }

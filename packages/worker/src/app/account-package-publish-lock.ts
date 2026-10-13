@@ -242,6 +242,9 @@ export async function handleAccountPackagePublishLockAction(input: {
 		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
+		// Approving the exact pending commit is also the owner's approval of
+		// its credential needs.
+		credentialNeedsApproved: true,
 		// Owner explicitly chose this commit on approve-publish. If a
 		// published-only fleet migration advanced published_commit to a sibling
 		// of pending HEAD, this is not a fast-forward; allowForce + overwrite
@@ -286,6 +289,8 @@ export async function handleAccountPackagePublishLockAction(input: {
 				},
 				409,
 			)
+		case 'approval_required':
+			return jsonResponse({ ok: false, error: publishResult.message }, 409)
 		default: {
 			const exhaustive: never = publishResult
 			throw new Error(`Unknown approve-publish status: ${String(exhaustive)}`)

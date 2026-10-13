@@ -13,7 +13,10 @@ import {
 	MetadataGrid,
 	accountDisclosureCss,
 } from './account-management-components.tsx'
-import { type AccountPackageApproveCapabilitiesLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountPackageApproveCapabilitiesLoaderData,
+	type AccountPackagePendingApproval,
+} from '#universal/loader-data.ts'
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
@@ -96,6 +99,45 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		},
 	})
 
+	let approvingRequestId: string | null = null
+
+	async function approvePending(approval: AccountPackagePendingApproval) {
+		if (!payload || !approval.approveAction || approvingRequestId) return
+		approvingRequestId = approval.id
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(
+				buildApproveCapabilitiesApiUrl(readCurrentRouterHref(handle)),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({
+						action: approval.approveAction,
+						packageId: payload.package.id,
+						requestId: approval.id,
+					}),
+				},
+			)
+			const body = await readJson<{ ok?: boolean; error?: string }>(response)
+			if (!response.ok || body?.ok === false) {
+				approvingRequestId = null
+				message = body?.error ?? 'Could not approve this publish.'
+				handle.update()
+				return
+			}
+			window.location.reload()
+		} catch {
+			approvingRequestId = null
+			message = 'Could not approve this publish.'
+			handle.update()
+		}
+	}
+
 	async function approveCapabilities() {
 		if (!payload?.publishedCommit || approving) return
 		approving = true
@@ -163,10 +205,16 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		const storageEntries =
 			payload?.entries.filter((entry) => entry.kind === 'storage') ?? []
 
+		const pendingApprovals = payload?.pendingApprovals ?? []
+
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
 				<AccountPageHeader
-					title="Approve internet-visible capabilities"
+					title={
+						pendingApprovals.length > 0
+							? 'Approve package changes'
+							: 'Approve internet-visible capabilities'
+					}
 					description="Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here."
 					currentHref={currentHref}
 				/>
@@ -183,11 +231,95 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						This capability approval could not be loaded.
 					</p>
 				) : null}
+				{payload &&
+				pendingApprovals.length > 0 &&
+				(status === 'ready' || status === 'approving') ? (
+					<section
+						data-testid="package-pending-approvals"
+						mix={css({ display: 'grid', gap: spacing.md })}
+					>
+						<h2
+							mix={css({
+								margin: 0,
+								fontSize: typography.fontSize.lg,
+								fontWeight: typography.fontWeight.semibold,
+							})}
+						>
+							Waiting for your approval
+						</h2>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							The previously published version keeps running until you approve.
+						</p>
+						<ul
+							mix={css({
+								margin: 0,
+								padding: 0,
+								listStyle: 'none',
+								display: 'grid',
+								gap: spacing.sm,
+							})}
+						>
+							{pendingApprovals.map((approval) => (
+								<li
+									key={approval.id}
+									data-testid="package-pending-approval"
+									mix={css(capabilityRowCss)}
+								>
+									<strong mix={css({ color: colors.text })}>
+										{approval.reasonLabel}
+									</strong>
+									<span mix={css({ color: colors.textMuted })}>
+										Paused commit{' '}
+										<IdValue
+											value={approval.pendingCommit}
+											label="paused commit"
+										/>
+									</span>
+									{approval.changes.length > 0 ? (
+										<ul mix={css({ margin: 0, color: colors.textMuted })}>
+											{approval.changes.map((change) => (
+												<li key={change}>{change}</li>
+											))}
+										</ul>
+									) : null}
+									{approval.approveAction ? (
+										<div>
+											<button
+												type="button"
+												disabled={approvingRequestId !== null}
+												data-testid="package-pending-approval-approve"
+												mix={[
+													css(getPrimaryButtonCss()),
+													on('click', () => void approvePending(approval)),
+												]}
+											>
+												{approvingRequestId === approval.id
+													? 'Approving…'
+													: 'Approve and publish'}
+											</button>
+										</div>
+									) : null}
+								</li>
+							))}
+						</ul>
+					</section>
+				) : null}
 				{payload && (status === 'ready' || status === 'approving') ? (
 					<section
 						data-testid="package-approve-capabilities-card"
 						mix={css({ display: 'grid', gap: spacing.lg })}
 					>
+						{pendingApprovals.length > 0 ? (
+							<h2
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+								})}
+							>
+								Internet-visible serving
+							</h2>
+						) : null}
 						<MetadataGrid
 							items={[
 								{

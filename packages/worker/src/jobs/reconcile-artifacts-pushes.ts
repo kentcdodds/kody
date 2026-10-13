@@ -10,6 +10,7 @@ import { revokeStaleArtifactsTokens } from '#worker/repo/artifacts-tokens.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { getSavedPackageLockedAt } from '#worker/package-registry/repo.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
+import { getPendingPackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
 
 export type ReconcileArtifactsPushesResult = {
 	checked: number
@@ -19,6 +20,7 @@ export type ReconcileArtifactsPushesResult = {
 	checksFailed: number
 	notFastForward: number
 	lockedSkipped: number
+	approvalRequiredSkipped: number
 	errors: number
 	tokenCleanupErrors: number
 	tokensRevoked: number
@@ -67,6 +69,7 @@ export async function reconcileArtifactsPushes(input: {
 		checksFailed: 0,
 		notFastForward: 0,
 		lockedSkipped: 0,
+		approvalRequiredSkipped: 0,
 		errors: 0,
 		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
@@ -195,6 +198,24 @@ async function reconcileSource(input: {
 			})
 			return
 		}
+		if (
+			source.entity_kind === 'package' &&
+			(
+				await getPendingPackageApprovalRequest(env.APP_DB, {
+					packageId: source.entity_id,
+					ownerUserId: source.user_id,
+					reason: 'credential_needs_changed',
+				})
+			)?.pendingCommit === head.commit
+		) {
+			result.approvalRequiredSkipped += 1
+			await updateEntitySource(env.APP_DB, {
+				id: source.id,
+				userId: source.user_id,
+				lastExternalCheckAt: now.toISOString(),
+			})
+			return
+		}
 		const sessionId = `external-reconcile-${source.id}`
 		const publishResult = await repoSessionRpc(
 			env,
@@ -223,6 +244,9 @@ async function reconcileSource(input: {
 				break
 			case 'locked':
 				result.lockedSkipped += 1
+				break
+			case 'approval_required':
+				result.approvalRequiredSkipped += 1
 				break
 			default: {
 				const exhaustive: never = publishResult

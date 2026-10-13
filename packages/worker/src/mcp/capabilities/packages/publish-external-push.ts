@@ -53,7 +53,12 @@ import {
 	buildPackagePublishApprovalUrl,
 	createPackagePublishLockedMessage,
 } from '#worker/package-registry/package-publish-lock.ts'
-import { pendingPackageSecretApprovalsSchema } from './shared.ts'
+import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import { createCredentialNeedsApprovalMessage } from '#worker/credentials/credential-needs-approval.ts'
+import {
+	credentialNeedChangeSchema,
+	pendingPackageSecretApprovalsSchema,
+} from './shared.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 import {
 	reportCapabilityProgress,
@@ -339,6 +344,18 @@ const outputSchema = z.discriminatedUnion('status', [
 				'HEAD commit that passed checks. Promote it on the website approval page.',
 			),
 		approval_url: z.string(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('approval_required'),
+		previous_commit: z.string().nullable(),
+		pending_commit: z
+			.string()
+			.describe(
+				'HEAD commit that passed checks. The previously published commit keeps serving until the owner approves this one.',
+			),
+		approval_url: z.string(),
+		credential_need_changes: z.array(credentialNeedChangeSchema),
 		message: z.string(),
 	}),
 	z.object({
@@ -768,6 +785,25 @@ async function runExternalPublishAttempt(input: {
 					approval_url: approvalUrl,
 					message: createPackagePublishLockedMessage({
 						packageName: result.packageName,
+						approvalUrl,
+					}),
+				}
+			}
+			if (result.status === 'approval_required') {
+				const approvalUrl = buildPackageCapabilityApprovalUrl({
+					baseUrl: input.baseUrl,
+					username: input.ownerScope,
+					kodyId: input.kodyId,
+				})
+				return {
+					status: 'approval_required' as const,
+					previous_commit: result.previous_commit,
+					pending_commit: result.pending_commit,
+					approval_url: approvalUrl,
+					credential_need_changes: result.approval.changes,
+					message: createCredentialNeedsApprovalMessage({
+						packageName: result.approval.packageName,
+						changes: result.approval.changes,
 						approvalUrl,
 					}),
 				}

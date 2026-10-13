@@ -1,0 +1,220 @@
+/**
+ * The publish pause for changed credential needs (ADR 0068 amendment
+ * 2026-10-13). A publish whose needs closure gains a key, or changes a key's
+ * kind, provider, or `multiple`, waits for the owner in the shared approval
+ * queue while the previously published commit keeps serving. Dropping a need
+ * or editing its description never pauses, and neither does a first publish.
+ */
+import * as Sentry from '@sentry/cloudflare'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { enqueuePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
+import {
+	computeCredentialNeedsClosure,
+	loadPublishedCredentialNeeds,
+	packageSourceFiles,
+} from './credential-needs-closure.ts'
+import { type CredentialNeed } from './credential-needs.ts'
+
+type NeedShape = Pick<CredentialNeed, 'kind' | 'provider' | 'multiple'>
+
+export type CredentialNeedChange =
+	| { key: string; change: 'added'; after: NeedShape; from?: string }
+	| {
+			key: string
+			change: 'changed'
+			before: NeedShape
+			after: NeedShape
+			from?: string
+	  }
+
+export type CredentialNeedsApprovalRequired = {
+	requestId: string
+	packageId: string
+	packageName: string
+	kodyId: string
+	pendingCommit: string
+	changes: Array<CredentialNeedChange>
+	message: string
+}
+
+function shape(need: CredentialNeed): NeedShape {
+	return { kind: need.kind, provider: need.provider, multiple: need.multiple }
+}
+
+/** Needs `after` adds or reshapes relative to `before`, by key. */
+export function diffCredentialNeeds(
+	before: ReadonlyArray<CredentialNeed>,
+	after: ReadonlyArray<CredentialNeed>,
+): Array<CredentialNeedChange> {
+	const previous = new Map(before.map((need) => [need.key, need]))
+	const changes: Array<CredentialNeedChange> = []
+	for (const need of [...after].sort((a, b) => a.key.localeCompare(b.key))) {
+		const from = need.from ? { from: need.from } : {}
+		const prior = previous.get(need.key)
+		if (!prior) {
+			changes.push({
+				key: need.key,
+				change: 'added',
+				after: shape(need),
+				...from,
+			})
+			continue
+		}
+		if (
+			prior.kind !== need.kind ||
+			prior.provider !== need.provider ||
+			prior.multiple !== need.multiple
+		) {
+			changes.push({
+				key: need.key,
+				change: 'changed',
+				before: shape(prior),
+				after: shape(need),
+				...from,
+			})
+		}
+	}
+	return changes
+}
+
+function describeShape(need: NeedShape) {
+	return `${need.kind} from "${need.provider}"${need.multiple ? ', multiple' : ''}`
+}
+
+/** `MAIL (added: secret from "resend")` */
+export function describeCredentialNeedChange(change: CredentialNeedChange) {
+	const via = change.from ? ` via ${change.from}` : ''
+	switch (change.change) {
+		case 'added':
+			return `${change.key} (added${via}: ${describeShape(change.after)})`
+		case 'changed':
+			return `${change.key} (changed${via}: ${describeShape(change.before)} to ${describeShape(change.after)})`
+		default: {
+			const exhaustive: never = change
+			throw new Error(`Unknown need change: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export function describeCredentialNeedChanges(
+	changes: ReadonlyArray<CredentialNeedChange>,
+) {
+	return changes.map(describeCredentialNeedChange).join(', ')
+}
+
+export function createCredentialNeedsApprovalMessage(input: {
+	packageName: string
+	changes: ReadonlyArray<CredentialNeedChange>
+	approvalUrl: string | null
+}) {
+	const where = input.approvalUrl
+		? `The owner approves it at ${input.approvalUrl}.`
+		: 'The owner approves it on the package approval page.'
+	return `Package "${input.packageName}" changed its credential needs: ${describeCredentialNeedChanges(input.changes)}. This publish waits for approval, and the previously published version keeps running until then. ${where}`
+}
+
+async function computeNeeds(input: {
+	env: Env
+	source: EntitySourceRow
+	files: Record<string, string>
+}) {
+	const { files, manifestContent } = packageSourceFiles(input)
+	if (typeof manifestContent !== 'string') return null
+	const manifest = parseAuthoredPackageJson({
+		content: manifestContent,
+		mode: 'published',
+	})
+	const [before, after] = await Promise.all([
+		loadPublishedCredentialNeeds({
+			env: input.env,
+			userId: input.source.user_id,
+			sourceId: input.source.id,
+		}),
+		computeCredentialNeedsClosure({
+			env: input.env,
+			userId: input.source.user_id,
+			manifest,
+			files,
+		}).then(({ needs }) => needs),
+	])
+	return { before, after }
+}
+
+/**
+ * Queues an approval and returns it when publishing `pendingCommit` would
+ * change the package's credential needs; null when the publish may proceed.
+ * Fails open: a closure that cannot be computed is reported and never blocks
+ * a publish.
+ */
+export async function requireCredentialNeedsApproval(input: {
+	env: Env
+	source: EntitySourceRow
+	pendingCommit: string
+	files: Record<string, string>
+	requestedByUserId?: string | null
+}): Promise<CredentialNeedsApprovalRequired | null> {
+	if (input.source.entity_kind !== 'package') return null
+	if (!input.source.published_commit) return null
+	if (input.source.published_commit === input.pendingCommit) return null
+	let needs: Awaited<ReturnType<typeof computeNeeds>>
+	try {
+		needs = await computeNeeds(input)
+	} catch (error) {
+		Sentry.captureException(error, {
+			tags: { scope: 'credentials.needs-approval.compute' },
+			extra: { sourceId: input.source.id, pendingCommit: input.pendingCommit },
+		})
+		return null
+	}
+	if (!needs) return null
+	const changes = diffCredentialNeeds(needs.before, needs.after)
+	if (changes.length === 0) return null
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.source.user_id as OwnerId,
+		packageId: input.source.entity_id,
+	})
+	if (!savedPackage) return null
+	const request = await enqueuePackageApprovalRequest(input.env.APP_DB, {
+		packageId: savedPackage.id,
+		ownerUserId: input.source.user_id,
+		reason: 'credential_needs_changed',
+		pendingCommit: input.pendingCommit,
+		baseCommit: input.source.published_commit,
+		details: { changes },
+		requestedByUserId: input.requestedByUserId ?? null,
+	})
+	return {
+		requestId: request.id,
+		packageId: savedPackage.id,
+		packageName: savedPackage.name,
+		kodyId: savedPackage.kodyId,
+		pendingCommit: input.pendingCommit,
+		changes,
+		message: createCredentialNeedsApprovalMessage({
+			packageName: savedPackage.name,
+			changes,
+			approvalUrl: null,
+		}),
+	}
+}
+
+/** Thrown by publish lanes that report failures as errors (`packageSave`). */
+export class PackageCredentialNeedsApprovalError extends Error {
+	readonly approval: CredentialNeedsApprovalRequired
+
+	constructor(approval: CredentialNeedsApprovalRequired) {
+		super(approval.message)
+		this.name = 'PackageCredentialNeedsApprovalError'
+		this.approval = approval
+	}
+}
+
+export function readCredentialNeedChanges(
+	details: Record<string, unknown>,
+): Array<CredentialNeedChange> {
+	const changes = details['changes']
+	return Array.isArray(changes) ? (changes as Array<CredentialNeedChange>) : []
+}

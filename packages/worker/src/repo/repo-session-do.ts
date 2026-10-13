@@ -74,6 +74,7 @@ import {
 	validatePackageBundles,
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
+import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -3179,6 +3180,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		expectedPackageScope?: string
 		commitMessage?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		promotePublished?: boolean
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
@@ -3345,6 +3348,27 @@ class RepoSessionBase extends DurableObject<Env> {
 				}
 			}
 		}
+		const approval =
+			input.credentialNeedsApproved === true
+				? null
+				: await requireCredentialNeedsApproval({
+						env: this.env,
+						source,
+						pendingCommit: publishedCommit,
+						files: snapshotFiles,
+						requestedByUserId: input.requestedByUserId,
+					})
+		if (approval) {
+			return {
+				status: 'approval_required',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				currentPublishedCommit: source.published_commit,
+				message: approval.message,
+				approval,
+				credentialNotice,
+			}
+		}
 		await finalizePublishedEntitySource({
 			env: this.env,
 			source,
@@ -3419,6 +3443,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		deferBundleCheckToRebuild?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
@@ -3509,6 +3535,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 			allowLockedPublish: input.allowLockedPublish,
+			credentialNeedsApproved: input.credentialNeedsApproved,
+			requestedByUserId: input.requestedByUserId,
 			phaseTimings,
 			...(input.deferBundleCheckToRebuild
 				? { deferBundleCheckToRebuild: true }

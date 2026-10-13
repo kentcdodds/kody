@@ -2065,8 +2065,22 @@ export type AccountPackageApprovePublishLoaderData = {
 	}
 }
 
+/** A publish waiting in the package's owner approval queue. */
+export type AccountPackagePendingApproval = {
+	id: string
+	reason: 'credential_needs_changed' | 'went_public'
+	reasonLabel: string
+	pendingCommit: string
+	createdAt: string
+	/** One line per credential need the paused publish adds or reshapes. */
+	changes: Array<string>
+	/** The POST action that approves it, or null when this page cannot yet. */
+	approveAction: 'approve-credential-needs' | null
+}
+
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
+	pendingApprovals: Array<AccountPackagePendingApproval>
 	email: string
 	package: {
 		id: string
