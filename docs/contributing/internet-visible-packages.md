@@ -21,10 +21,10 @@ Public-site pinning of an approved dependency snapshot conflicts with
 
 ## Forks (decided 2026-10-12)
 
-**Decided (Kent, 2026-10-12):** a fork does **not** inherit the origin's approval record.
-Credentials are org-local. The forker's approval page starts empty of grants and
-shows the origin capability set as review context only. The forker must approve
-in their own org before their copy can be internet-visible.
+**Decided (Kent, 2026-10-12):** a fork does **not** inherit the origin's
+approval record. Credentials are org-local. The forker's approval page starts
+empty of grants and shows the origin capability set as review context only. The
+forker must approve in their own org before their copy can be internet-visible.
 See [0069](./decisions/0069-internet-visible-capability-pinning.md).
 
 ## Not in this work

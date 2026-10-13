@@ -176,9 +176,9 @@ Open these before proposing a new primitive, surface, or storage home.
   (supersedes scoped-client credential authority in 0021 and credentials plan v4
   sections 3.3 and 3.4)
 - [0069 — Internet-visible apps pin an approved capability snapshot](./0069-internet-visible-capability-pinning.md)
-  — accepted 2026-10-12 amendment to 0001. Narrow exception for
-  internet-visible serving and approved-bundle retention only; no semver or
-  import pin syntax. Forks do not inherit the origin's approval
+  — accepted 2026-10-12 amendment to 0001. Narrow exception for internet-visible
+  serving and approved-bundle retention only; no semver or import pin syntax.
+  Forks do not inherit the origin's approval
 
 ## Historical / UI / implementation
 
