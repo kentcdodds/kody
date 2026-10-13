@@ -8,7 +8,10 @@ import {
 	decryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
-import { insertEnablement } from '#worker/enablements/repo.ts'
+import {
+	disableEnablement,
+	insertEnablement,
+} from '#worker/enablements/repo.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
@@ -188,6 +191,13 @@ test('minting never turns a webhook on: it links to Approve until someone has, a
 		username: 'approver',
 		...sentryHook,
 	}
+	const listNow = () =>
+		listWebhooksForUser({
+			env,
+			request: input.request,
+			baseUrl: 'https://heykody.dev',
+			userId: input.userId,
+		})
 	const webhookEnablements = () =>
 		db
 			.prepare(
@@ -196,11 +206,25 @@ test('minting never turns a webhook on: it links to Approve until someone has, a
 			.all<{ id: string; state: string; origin: string }>()
 			.then((result) => result.results)
 
+	expect(await listNow()).toMatchObject([
+		{ minted: false, approved: false, approvalUrl: null },
+	])
+
 	const minted = await mintWebhookUrlForUser(input)
 	expect(minted.approvalUrl).toBe(
 		'https://heykody.dev/@approver/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
 	)
 	expect(await webhookEnablements()).toEqual([])
+	// The list carries the same Approve link and no approval yet, even though
+	// the endpoint itself is enabled.
+	expect(await listNow()).toMatchObject([
+		{
+			minted: true,
+			enabled: true,
+			approved: false,
+			approvalUrl: minted.approvalUrl,
+		},
+	])
 
 	// Neither a second mint nor a rotate enables it behind the person's back.
 	expect((await mintWebhookUrlForUser(input)).approvalUrl).toBe(
@@ -229,6 +253,19 @@ test('minting never turns a webhook on: it links to Approve until someone has, a
 	expect((await rotateWebhookUrlForUser(input)).approvalUrl).toBeNull()
 	expect(await webhookEnablements()).toEqual([
 		{ id: existing.id, state: 'on', origin: 'migrated' },
+	])
+	expect(await listNow()).toMatchObject([
+		{ minted: true, approved: true, approvalUrl: null },
+	])
+
+	// An off enablement no longer counts as approval.
+	await disableEnablement({
+		db,
+		orgId: ownerIdFromStored(userId),
+		id: existing.id,
+	})
+	expect(await listNow()).toMatchObject([
+		{ approved: false, approvalUrl: minted.approvalUrl },
 	])
 })
 

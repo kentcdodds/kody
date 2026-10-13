@@ -6,7 +6,9 @@
  */
 import {
 	planTriggerEnablementForCaller,
+	runNewEnablementPlans,
 	type DeclaredTrigger,
+	type NewTriggerEnablementPlan,
 } from '#worker/enablements/service.ts'
 import {
 	commitOrgAuditOutbox,
@@ -386,11 +388,13 @@ function mappingAuditPlan(
 
 /**
  * Writes resolved changes in one batch, turning on any trigger a change maps
- * for the first time and every trigger in `enable` that is not on yet, and
- * records one `credential.mapping.update` org audit row per written mapping
- * (actor and automation credential from the request; package, trigger, need,
- * and old/new credential ids in details — never values). Every change and
- * enable must have resolved without an error.
+ * for the first time and every trigger in `enable` that is not on yet. A
+ * webhook turned on lands in its own batch just before, so losing a race to
+ * another enabler throws `webhook_other_enabler` with nothing else written.
+ * Each written mapping also records one `credential.mapping.update` org audit
+ * row (actor and automation credential from the request; package, trigger,
+ * need, and old/new credential ids in details — never values). Every change
+ * and enable must have resolved without an error.
  */
 export async function writeMappingChanges(
 	scope: PackageMappingScope,
@@ -410,8 +414,7 @@ export async function writeMappingChanges(
 	}
 	const db = scope.env.APP_DB
 	const audit = orgAuditWriterFromRequest(scope.env, scope.request)
-	const enableStatements: Array<D1PreparedStatement> = []
-	const prepares: Array<() => Promise<void>> = []
+	const newEnablements: Array<NewTriggerEnablementPlan> = []
 	const enabledIds = new Map<DeclaredTrigger, string>()
 	const statements: Array<D1PreparedStatement> = []
 	const auditPlans: Array<OrgAuditOutboxPlan> = []
@@ -432,8 +435,7 @@ export async function writeMappingChanges(
 			enablementId = plan.enablement.id
 		} else {
 			enablementId = plan.enablementId
-			enableStatements.push(plan.statement)
-			prepares.push(plan.prepare)
+			newEnablements.push(plan)
 		}
 		enabledIds.set(trigger, enablementId)
 		return enablementId
@@ -466,9 +468,19 @@ export async function writeMappingChanges(
 		)
 		auditPlans.push(mappingAuditPlan(audit, scope, change))
 	}
-	for (const prepare of prepares) await prepare()
+	for (const plan of newEnablements) await plan.prepare()
+	// A webhook insert can lose to another enabler without failing. Land those
+	// first and alone: mappings and other enablements are only written once
+	// every webhook is known to be in, so none points at an enablement that
+	// was never inserted.
+	const webhookEnablements = newEnablements.filter(
+		(plan) => plan.kind === 'webhook',
+	)
+	await runNewEnablementPlans({ db, plans: webhookEnablements })
 	const batch = [
-		...enableStatements,
+		...newEnablements
+			.filter((plan) => plan.kind !== 'webhook')
+			.map((plan) => plan.statement),
 		...statements,
 		...auditPlans.map((plan) => orgAuditOutboxInsertStatement(db, plan)),
 	]

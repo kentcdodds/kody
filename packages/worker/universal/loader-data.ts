@@ -20,6 +20,7 @@ import {
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
+import { type PackageCredentialApprovalLoaderData } from '#universal/package-credential-approval-page.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
@@ -1621,6 +1622,10 @@ export type PackageWebhookListItem = {
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
+	/** True once a person approved it (a live enablement exists). */
+	approved: boolean
+	/** Where to approve a minted webhook; null when unminted or approved. */
+	approvalUrl: string | null
 	/**
 	 * False for mints that predate encrypted secret storage. The UI offers
 	 * Rotate instead of Reveal for those, since the hash cannot rebuild the
@@ -2664,6 +2669,7 @@ export type AppLoaderData = {
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
 	accountPackageApproveCapabilities?: AccountPackageApproveCapabilitiesLoaderData
+	packageCredentialApproval?: PackageCredentialApprovalLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData

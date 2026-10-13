@@ -45,6 +45,8 @@ function toPackageWebhookListItem(
 		handle: webhook.handle,
 		urlHost: webhook.urlHost,
 		enabled: webhook.enabled,
+		approved: webhook.approved,
+		approvalUrl: webhook.approvalUrl,
 		urlRecoverable: webhook.urlRecoverable,
 		createdAt: webhook.createdAt,
 		rotatedAt: webhook.rotatedAt,

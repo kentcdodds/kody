@@ -62,9 +62,18 @@ import {
 } from '#mcp/waiting/derive-waiting.ts'
 import { buildWaitingItems } from '#universal/waiting.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
-import { getEnablementById, insertEnablement } from './repo.ts'
+import {
+	buildInsertEnablementStatement,
+	buildInsertWebhookEnablementStatement,
+	getEnablementById,
+	insertEnablement,
+} from './repo.ts'
 import { type EnablementAudience, planEnablementRuns } from './run-gate.ts'
-import { enableTriggerForCaller } from './service.ts'
+import {
+	enableTriggerForCaller,
+	runNewEnablementPlans,
+	TriggerEnablementError,
+} from './service.ts'
 
 const scheduledAudits = vi.hoisted(() => [] as Array<Promise<unknown>>)
 
@@ -1187,7 +1196,7 @@ test('turning a trigger on again keeps one enablement per person', async () => {
 	)
 })
 
-test('turning on a webhook URL that has no signing secret generates one', async () => {
+test('an approved webhook URL that has no signing secret gets one when it is turned on again', async () => {
 	const t = await setup()
 	await t.db
 		.prepare(
@@ -1208,7 +1217,11 @@ test('turning on a webhook URL that has no signing secret generates one', async 
 		)?.hmac_secret_encrypted
 
 	expect(await readSecret()).toBeNull()
+	// Approving (which plans and writes the enablement outside this call)
+	// is what first turns a webhook on; enablementEnable only returns it.
+	const approved = await t.enableWebhook('bea', 'endpoint-off')
 	const enabled = await t.enable('bea', 'webhook', 'incoming')
+	expect(enabled.id).toBe(approved.id)
 	expect(enabled).toMatchObject({
 		instanceId: 'endpoint-off',
 		enablerUserId: t.people.bea.userId,
@@ -1219,6 +1232,106 @@ test('turning on a webhook URL that has no signing secret generates one', async 
 	// Enabling again keeps the same enablement and the same secret.
 	expect((await t.enable('bea', 'webhook', 'incoming')).id).toBe(enabled.id)
 	expect(await readSecret()).toBe(secret)
+})
+
+test('enablementEnable refuses a webhook with no enablement and points at Approve', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints (
+				id, user_id, package_id, webhook_name, url_secret_hash,
+				url_secret_encrypted, created_at, rotated_at
+			) VALUES ('endpoint-new', ?, 'pkg-shared', 'incoming', 'hash', 'ciphertext', ?, ?)`,
+		)
+		.bind(t.orgId, now, now)
+		.run()
+	const webhookEnablements = async () =>
+		(
+			await t.db
+				.prepare(
+					`SELECT COUNT(*) AS n FROM enablements WHERE trigger_kind = 'webhook'`,
+				)
+				.first<{ n: number }>()
+		)?.n
+
+	const refused = await t.enable('bea', 'webhook', 'incoming').then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(refused).toBeInstanceOf(TriggerEnablementError)
+	expect(refused).toMatchObject({ code: 'webhook_approval_required' })
+	expect((refused as Error).message).toContain(
+		'https://kody.example/@quillworks/pkg-shared/approve-credentials?enable=webhook%3Aincoming',
+	)
+	expect(await webhookEnablements()).toBe(0)
+
+	// Someone else's live enablement still blocks, and an existing one is
+	// returned as is.
+	const owners = await t.enableWebhook('owner', 'endpoint-new')
+	await expect(t.enable('bea', 'webhook', 'incoming')).rejects.toMatchObject({
+		code: 'webhook_other_enabler',
+	})
+	expect((await t.enable('owner', 'webhook', 'incoming')).id).toBe(owners.id)
+	expect(await webhookEnablements()).toBe(1)
+})
+
+test('enablementEnable still turns a cron job and a subscription on', async () => {
+	const t = await setup()
+	expect(await t.enable('bea', 'cron', jobName)).toMatchObject({
+		triggerKind: 'cron',
+		state: 'on',
+		enablerUserId: t.people.bea.userId,
+	})
+	expect(await t.enable('bea', 'subscription', eventTopic)).toMatchObject({
+		triggerKind: 'subscription',
+		state: 'on',
+	})
+})
+
+test('a webhook enablement that loses the one-live race is webhook_other_enabler, whether it writes nothing or hits the index', async () => {
+	const t = await setup()
+	const winner = await t.enableWebhook('owner', 'endpoint-race')
+	const planFor = (build: typeof buildInsertWebhookEnablementStatement) => {
+		const { id, statement } = build({
+			db: t.db,
+			enablement: {
+				orgId: t.orgId,
+				packageId: 'pkg-shared',
+				triggerKind: 'webhook',
+				triggerName: 'incoming',
+				instanceId: 'endpoint-race',
+				enablerUserId: t.people.bea.userId,
+				origin: 'enabled',
+			},
+			now,
+		})
+		return {
+			enablement: null,
+			kind: 'webhook' as const,
+			triggerName: 'incoming',
+			enablementId: id,
+			statement,
+			prepare: async () => {},
+		}
+	}
+	await expect(
+		runNewEnablementPlans({
+			db: t.db,
+			plans: [planFor(buildInsertWebhookEnablementStatement)],
+		}),
+	).rejects.toMatchObject({ code: 'webhook_other_enabler' })
+	await expect(
+		runNewEnablementPlans({
+			db: t.db,
+			plans: [planFor(buildInsertEnablementStatement)],
+		}),
+	).rejects.toMatchObject({ code: 'webhook_other_enabler' })
+	const live = await t.db
+		.prepare(
+			`SELECT id FROM enablements WHERE trigger_kind = 'webhook' AND state <> 'off'`,
+		)
+		.all<{ id: string }>()
+	expect(live.results.map((row) => row.id)).toEqual([winner.id])
 })
 
 test('an org-wide event reaches an enabler holding any permission on its resource', async () => {

@@ -5,10 +5,16 @@ import { createDoubleCheck } from '#client/double-check.ts'
 import { renderPackageWebhookCard } from '#client/routes/package-webhook-card.tsx'
 import { createPackageWebhooksController } from '#client/routes/package-webhook-settings.tsx'
 import {
+	webhookStatusColor,
+	webhookStatusLabel,
+	webhookSuccessMessage,
+} from '#client/routes/webhooks-shared.ts'
+import {
 	type PackageWebhookListItem,
 	type PackageWebhooksActionPayload,
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
+import { colors } from '#universal/styles/tokens.ts'
 
 const ref = { username: 'jane', kodyId: 'raycast' }
 const apiPath = '/profiles/jane/packages/raycast/webhooks.json'
@@ -31,6 +37,8 @@ const listCommands: PackageWebhookListItem = {
 	handle: null,
 	urlHost: null,
 	enabled: null,
+	approved: false,
+	approvalUrl: null,
 	urlRecoverable: false,
 	createdAt: null,
 	rotatedAt: null,
@@ -48,11 +56,14 @@ const run: PackageWebhookListItem = {
 	handle: 'whh_11111111-1111-1111-1111-111111111111',
 	urlHost: 'kody.example',
 	enabled: true,
+	approved: true,
 	urlRecoverable: true,
 	createdAt: '2026-09-01T10:00:00.000Z',
 	rotatedAt: '2026-09-05T10:00:00.000Z',
 }
 
+const approveUrl =
+	'https://kody.example/@jane/packages/raycast/credentials/approve?enable=webhook%3Alist-commands'
 const secretUrl =
 	'https://kody.example/@jane/webhooks/raycast/list-commands/s3cr3t-url-secret'
 function listPayload(
@@ -146,6 +157,8 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 				...listCommands,
 				minted: true,
 				enabled: true,
+				approved: false,
+				approvalUrl: approveUrl,
 				urlRecoverable: true,
 				handle: 'whh_22222222-2222-2222-2222-222222222222',
 				urlHost: 'kody.example',
@@ -160,6 +173,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 					handle: listCommandsState.handle!,
 					url: secretUrl,
 				},
+				approvalUrl: approveUrl,
 			}
 			return { status: 200, body: payload }
 		}
@@ -207,6 +221,12 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 	const mintedHtml = await render()
 	expect(mintedHtml).toContain('2 declared · 2 minted')
 	expect(mintedHtml).toContain('Webhook URL minted. Copy it now')
+	expect(mintedHtml).toContain('Approve it')
+	expect(mintedHtml).toContain('>Needs approval<')
+	expect(mintedHtml).toContain('data-testid="package-webhook-approve"')
+	expect(mintedHtml).toContain(`href="${approveUrl}"`)
+	expect(mintedHtml).not.toContain('aria-label="Enable raycast/list-commands"')
+	expect(mintedHtml).not.toContain('aria-label="Disable raycast/list-commands"')
 	expect(mintedHtml).toContain(secretUrl)
 	expect(mintedHtml).toContain('Copy webhook URL')
 	expect(mintedHtml).toContain(
@@ -322,4 +342,77 @@ test('a webhook card shows previous URL overlap until the grace timestamp', asyn
 	const disabledHtml = await renderCard({ ...overlapping, enabled: false })
 	expect(disabledHtml).not.toContain('Previous URL')
 	expect(disabledHtml).toContain('>Disabled<')
+})
+
+test('a minted webhook nobody approved shows Needs approval with an Approve link instead of Enable', async () => {
+	const unapproved = {
+		...run,
+		approved: false,
+		approvalUrl: approveUrl,
+	}
+	const html = await renderCard(unapproved)
+	expect(html).toContain('>Needs approval<')
+	expect(html).not.toContain('>Active<')
+	expect(html).toContain('data-testid="package-webhook-approve"')
+	expect(html).toContain('aria-label="Approve raycast/run"')
+	expect(html).toContain(`href="${approveUrl}"`)
+	expect(html).not.toContain('aria-label="Enable raycast/run"')
+	expect(html).not.toContain('aria-label="Disable raycast/run"')
+	expect(html).toContain('aria-label="Rotate URL for raycast/run"')
+
+	// Even a mint whose endpoint is switched off needs Approve first.
+	const unapprovedDisabled = await renderCard({ ...unapproved, enabled: false })
+	expect(unapprovedDisabled).toContain('>Needs approval<')
+	expect(unapprovedDisabled).not.toContain('aria-label="Enable raycast/run"')
+})
+
+test('an approved webhook keeps the Active status and Disable action with no Approve link', async () => {
+	const html = await renderCard(run)
+	expect(html).toContain('>Active<')
+	expect(html).toContain('aria-label="Disable raycast/run"')
+	expect(html).not.toContain('package-webhook-approve')
+	expect(html).not.toContain('Needs approval')
+})
+
+test('rotate keeps the Approve link on a list that lacks the approval URL', async () => {
+	const unapproved = { ...run, approved: false, approvalUrl: null }
+	using harness = createControllerWithFetch(({ method, body }) => {
+		if (method === 'GET') {
+			return { status: 200, body: listPayload([unapproved]) }
+		}
+		expect((body as { intent: string }).intent).toBe('rotate')
+		const payload: PackageWebhooksActionPayload = {
+			...listPayload([unapproved]),
+			revealed: { id: run.id, handle: run.handle!, url: secretUrl },
+			approvalUrl: approveUrl,
+		}
+		return { status: 200, body: payload }
+	})
+	const { controller, render } = harness
+	await controller.ensureLoaded(ref)
+	expect(await render()).not.toContain('package-webhook-approve')
+	await controller.runIntent(ref, unapproved, 'rotate')
+	const html = await render()
+	expect(html).toContain('Webhook URL rotated.')
+	expect(html).toContain('you Approve it')
+	expect(html).toContain(`href="${approveUrl}"`)
+})
+
+test('webhook status helpers separate unminted, needs approval, active, and disabled', () => {
+	const base = { minted: true, approved: true, enabled: true }
+	expect(webhookStatusLabel({ ...base, minted: false, approved: false })).toBe(
+		'No URL yet',
+	)
+	expect(webhookStatusLabel({ ...base, approved: false })).toBe(
+		'Needs approval',
+	)
+	expect(webhookStatusLabel(base)).toBe('Active')
+	expect(webhookStatusLabel({ ...base, enabled: false })).toBe('Disabled')
+	expect(webhookStatusColor({ ...base, approved: false })).toBe(
+		colors.warningText,
+	)
+	expect(webhookSuccessMessage('mint')).not.toContain('Approve')
+	expect(webhookSuccessMessage('mint', approveUrl)).toContain('Approve')
+	expect(webhookSuccessMessage('rotate', approveUrl)).toContain('Approve')
+	expect(webhookSuccessMessage('enable', approveUrl)).toBe('Webhook enabled.')
 })
