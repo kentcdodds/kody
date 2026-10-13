@@ -2093,9 +2093,15 @@ export type AccountPackageApprovePublishLoaderData = {
 	packageHref: string
 	/**
 	 * When an active community listing pin is behind the current published
-	 * commit (or will be after this promote), how to update the public catalog.
+	 * commit, how to update the public catalog (settings Update public listing).
 	 */
 	listing: AccountPackageListingBehindHint | null
+	/**
+	 * True when promoting the pending commit would leave the catalog pin
+	 * behind. Shown as copy on the promote step; the settings link appears
+	 * only after promote (see promote response `listing`).
+	 */
+	listingWillLagAfterPromote: boolean
 	diff: {
 		files: Array<AccountPackagePublishDiffFile>
 		omittedCount: number

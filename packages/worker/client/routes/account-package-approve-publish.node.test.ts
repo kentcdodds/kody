@@ -26,6 +26,7 @@ const loaderData: AccountPackageApprovePublishLoaderData = {
 	filesHref: '/@kodykoala/gmail-drafts/tree/main',
 	packageHref: '/@kodykoala/gmail-drafts',
 	listing: null,
+	listingWillLagAfterPromote: false,
 	diff: {
 		files: [
 			{
@@ -98,6 +99,29 @@ test('approve-publish SSR prompts to update the public listing when it is behind
 		'href="/@kodykoala/gmail-drafts/settings#update-public-listing"',
 	)
 	expect(html).toContain('Update public listing')
+})
+
+test('approve-publish SSR warns when promote would leave the listing behind', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: approvePublishHref,
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						listing: null,
+						listingWillLagAfterPromote: true,
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain('data-testid="approve-publish-listing-will-lag"')
+	expect(html).not.toContain(
+		'data-testid="approve-publish-update-public-listing-link"',
+	)
 })
 
 test('unlocked approve-publish SSR offers Publish HEAD', async () => {

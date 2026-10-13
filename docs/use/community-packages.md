@@ -85,11 +85,13 @@ Three commits matter for a public package:
 
 Publish and promote do **not** advance the public community listing. The catalog
 keeps serving the last `communityPublish` pin (and its `package.json#version`
-label) until you republish. After a successful publish or promote, MCP/API
-results include a `listing` hint when the pin is behind, with `updateHint` and
-`updateUrl`. On the website, owners see **Update public listing** on the promote
-page and on the package Repo tab (next to **HEAD ahead of published** when that
-badge also applies), linking to
+label) until you republish. Successful `packagePublishExternalPush` results (and
+website approve-publish / promote responses) include a `listing` hint when the
+pin is behind, with `updateHint` and `updateUrl`. `repoPublishSession` does not
+yet attach that field — use the package page or `communityPublish` after a
+session publish. On the website, managers see **Update public listing** on the
+promote page and on the package Repo tab (next to **HEAD ahead of published**
+when that badge also applies), linking to
 `/@username/{kodyId}/settings#update-public-listing`.
 
 To move the listing after promoting a new version:

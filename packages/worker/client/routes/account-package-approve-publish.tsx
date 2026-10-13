@@ -110,13 +110,46 @@ export async function accountPackageApprovePublishRouteLoader(
 	return { accountPackageApprovePublish: payload }
 }
 
-function renderListingBehindPrompt(
-	listing: AccountPackageListingBehindHint | null | undefined,
-) {
-	if (!listing?.behind) return null
+function renderListingBehindPrompt(input: {
+	listing?: AccountPackageListingBehindHint | null
+	willLagAfterPromote?: boolean
+}) {
+	if (input.listing?.behind) {
+		return (
+			<div
+				data-testid="approve-publish-update-public-listing"
+				mix={css({
+					display: 'grid',
+					gap: spacing.xs,
+					padding: spacing.sm,
+					borderRadius: '0.55rem',
+					border: `1px solid ${colors.border}`,
+					backgroundColor: colors.surface,
+				})}
+			>
+				<p mix={css({ margin: 0, color: colors.text })}>
+					The public community listing stays on its pinned snapshot until you
+					republish it. Publish and promote only move the package runtime.
+				</p>
+				<a
+					href={input.listing.updateUrl}
+					data-testid="approve-publish-update-public-listing-link"
+					mix={css({
+						...getPillButtonCss({ size: 'sm' }),
+						display: 'inline-flex',
+						textDecoration: 'none',
+						width: 'fit-content',
+					})}
+				>
+					Update public listing
+				</a>
+			</div>
+		)
+	}
+	if (!input.willLagAfterPromote) return null
 	return (
 		<div
-			data-testid="approve-publish-update-public-listing"
+			data-testid="approve-publish-listing-will-lag"
 			mix={css({
 				display: 'grid',
 				gap: spacing.xs,
@@ -127,21 +160,9 @@ function renderListingBehindPrompt(
 			})}
 		>
 			<p mix={css({ margin: 0, color: colors.text })}>
-				The public community listing stays on its pinned snapshot until you
-				republish it. Publish and promote only move the package runtime.
+				After you promote, the public community listing will still show its
+				pinned snapshot until you update it from package settings.
 			</p>
-			<a
-				href={listing.updateUrl}
-				data-testid="approve-publish-update-public-listing-link"
-				mix={css({
-					...getPillButtonCss({ size: 'sm' }),
-					display: 'inline-flex',
-					textDecoration: 'none',
-					width: 'fit-content',
-				})}
-			>
-				Update public listing
-			</a>
 		</div>
 	)
 }
@@ -326,7 +347,7 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 								<code>{shortCommunityCommit(payload.pendingCommit ?? '')}</code>
 								.
 							</p>
-							{renderListingBehindPrompt(promotedListing)}
+							{renderListingBehindPrompt({ listing: promotedListing })}
 							<div
 								mix={css({
 									display: 'flex',
@@ -370,7 +391,10 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 									: 'This package is not locked. Lock it from the package page if you want later publishes to require approval.'}
 							</p>
 						</div>
-						{renderListingBehindPrompt(payload.listing)}
+						{renderListingBehindPrompt({
+							listing: payload.listing,
+							willLagAfterPromote: payload.listingWillLagAfterPromote,
+						})}
 						<MetadataGrid items={approvePublishMetadataItems(payload)} />
 						<div
 							mix={css({

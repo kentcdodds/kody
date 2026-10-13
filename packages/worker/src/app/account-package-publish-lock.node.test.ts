@@ -274,6 +274,7 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		packageHref: '/@user/notes',
 		package: { id: 'pkg-1', lockedAt: '2026-08-28T12:00:00.000Z' },
 		listing: null,
+		listingWillLagAfterPromote: false,
 		diff: { files: [], omittedCount: 0 },
 	})
 })
@@ -301,7 +302,7 @@ test('approve-publish hrefs use the owning org slug for team packages', async ()
 	expect(loaded.filesHref).toContain('/@acme/shared')
 })
 
-test('approve-publish loader includes listing hint when the catalog pin lags the pending commit', async () => {
+test('approve-publish loader hints when the catalog pin already lags published, and warns when promote would lag', async () => {
 	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 	mockModule.writablePackage = unlockedPackage
@@ -312,18 +313,30 @@ test('approve-publish loader includes listing hint when the catalog pin lags the
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
 		id: 'listing-1',
 		status: 'active',
-		pinnedCommit: publishedCommit,
+		pinnedCommit: 'cccccccccccccccccccccccccccccccccccccccc',
 		version: '1.4.0',
 	})
-	const loaded = await loadApprove(pendingCommit)
-	if (!loaded.ok) throw new Error('expected loader success')
-	expect(loaded.listing).toEqual({
+	const alreadyBehind = await loadApprove(pendingCommit)
+	if (!alreadyBehind.ok) throw new Error('expected loader success')
+	expect(alreadyBehind.listing).toEqual({
 		pinnedVersion: '1.4.0',
 		promotedVersion: null,
 		behind: true,
 		updateHint: expect.stringContaining('communityPublish'),
 		updateUrl: '/@user/notes/settings#update-public-listing',
 	})
+	expect(alreadyBehind.listingWillLagAfterPromote).toBe(false)
+
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
+		id: 'listing-1',
+		status: 'active',
+		pinnedCommit: publishedCommit,
+		version: '1.4.0',
+	})
+	const willLag = await loadApprove(pendingCommit)
+	if (!willLag.ok) throw new Error('expected loader success')
+	expect(willLag.listing).toBeNull()
+	expect(willLag.listingWillLagAfterPromote).toBe(true)
 })
 
 test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {

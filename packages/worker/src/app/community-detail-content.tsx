@@ -136,6 +136,7 @@ export function CommunityDetailContent(
 						loggedIn,
 						returnTo,
 						viewerIsOwner,
+						viewerCanManage,
 						publishCompareHref,
 					})
 				: null}
@@ -245,6 +246,7 @@ function renderListingHead(input: {
 	loggedIn: boolean
 	returnTo: string
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	publishCompareHref?: string | null
 }) {
 	const viewerBadge = renderCommunityViewerInstallBadge({
@@ -255,7 +257,7 @@ function renderListingHead(input: {
 		viewerIsOwner: input.viewerIsOwner,
 	})
 	const updateListingHref =
-		input.viewerIsOwner && input.listing.listingBehind
+		input.viewerCanManage && input.listing.listingBehind
 			? buildUpdatePublicListingHref({
 					username: input.listing.ownerUsername,
 					kodyId: input.listing.kodyId,

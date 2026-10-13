@@ -92,9 +92,12 @@ export function AccountPackageOwnerDetails(
 	}>,
 ) {
 	let confirmName = ''
+	let republishConfirmName = ''
 	let internetVisibleConfirmName = ''
 	let visibilityState: 'idle' | 'submitting' | 'error' = 'idle'
 	let visibilityMessage: string | null = null
+	let republishState: 'idle' | 'submitting' | 'error' = 'idle'
+	let republishMessage: string | null = null
 	let internetVisibleState: 'idle' | 'submitting' | 'error' = 'idle'
 	let internetVisibleMessage: string | null = null
 	let internetVisibleApprovalUrl: string | null = null
@@ -102,14 +105,12 @@ export function AccountPackageOwnerDetails(
 	async function submitVisibility(
 		packageDetail: AccountPackageDetail,
 		visibility: 'public' | 'private',
-		options: { republishListing?: boolean } = {},
 	) {
 		if (visibilityState === 'submitting') return
 		if (confirmName.trim() !== packageDetail.kodyId) {
 			visibilityState = 'error'
-			visibilityMessage = options.republishListing
-				? `Type ${packageDetail.kodyId} to update the public community listing to the current published commit.`
-				: visibility === 'public'
+			visibilityMessage =
+				visibility === 'public'
 					? `Type ${packageDetail.kodyId} to make this package forkable. Anyone will be able to read and fork the default branch on /community.`
 					: `Type ${packageDetail.kodyId} to turn off forkable. Public URLs will 404; existing forks keep their copies.`
 			handle.update()
@@ -151,6 +152,56 @@ export function AccountPackageOwnerDetails(
 				error instanceof Error
 					? error.message
 					: 'Could not update package visibility.'
+			handle.update()
+		}
+	}
+
+	async function submitUpdatePublicListing(
+		packageDetail: AccountPackageDetail,
+	) {
+		if (republishState === 'submitting') return
+		if (republishConfirmName.trim() !== packageDetail.kodyId) {
+			republishState = 'error'
+			republishMessage = `Type ${packageDetail.kodyId} to update the public community listing to the current published commit.`
+			handle.update()
+			return
+		}
+		republishState = 'submitting'
+		republishMessage = null
+		handle.update()
+		try {
+			const response = await fetch('/account/packages.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'set-visibility',
+					packageId: packageDetail.id,
+					visibility: 'public',
+					confirmName: republishConfirmName.trim(),
+				}),
+			})
+			const payload = (await response.json()) as AccountPackagesLoaderData & {
+				error?: string
+			}
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error ?? 'Could not update the public community listing.',
+				)
+			}
+			republishState = 'idle'
+			republishConfirmName = ''
+			handle.props.onPackagesPayload(payload)
+			handle.update()
+		} catch (error) {
+			republishState = 'error'
+			republishMessage =
+				error instanceof Error
+					? error.message
+					: 'Could not update the public community listing.'
 			handle.update()
 		}
 	}
@@ -341,7 +392,7 @@ export function AccountPackageOwnerDetails(
 										Type {packageDetail.kodyId} to update the public listing
 									</span>
 									<input
-										value={confirmName}
+										value={republishConfirmName}
 										placeholder={packageDetail.kodyId}
 										data-testid="package-update-public-listing-confirm"
 										mix={[
@@ -358,7 +409,7 @@ export function AccountPackageOwnerDetails(
 												) {
 													return
 												}
-												confirmName = event.currentTarget.value
+												republishConfirmName = event.currentTarget.value
 												handle.update()
 											}),
 										]}
@@ -366,29 +417,26 @@ export function AccountPackageOwnerDetails(
 								</label>
 								<button
 									type="button"
-									disabled={visibilityState === 'submitting'}
+									disabled={republishState === 'submitting'}
 									data-testid="package-update-public-listing-submit"
 									mix={[
 										css(getPillButtonCss()),
 										on(
 											'click',
-											() =>
-												void submitVisibility(packageDetail, 'public', {
-													republishListing: true,
-												}),
+											() => void submitUpdatePublicListing(packageDetail),
 										),
 									]}
 								>
-									{visibilityState === 'submitting'
+									{republishState === 'submitting'
 										? 'Updating listing…'
 										: 'Update public listing'}
 								</button>
-								{visibilityMessage ? (
+								{republishMessage ? (
 									<p
 										mix={css({ margin: 0, color: colors.danger })}
 										role="alert"
 									>
-										{visibilityMessage}
+										{republishMessage}
 									</p>
 								) : null}
 							</div>
@@ -455,7 +503,7 @@ export function AccountPackageOwnerDetails(
 										? 'Make forkable'
 										: 'Turn off forkable'}
 							</button>
-							{!packageDetail.listingNeedsRepublish && visibilityMessage ? (
+							{visibilityMessage ? (
 								<p mix={css({ margin: 0, color: colors.danger })} role="alert">
 									{visibilityMessage}
 								</p>

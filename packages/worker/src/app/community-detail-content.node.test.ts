@@ -149,7 +149,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 			listingBehind: true,
 			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		},
-		viewerIsOwner: true,
+		viewerIsOwner: false,
 		viewerCanManage: true,
 		publishCompareHref: ownerAheadHref,
 	})
@@ -160,6 +160,18 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'href="/@kentcdodds/github-triage/settings#update-public-listing"',
 	)
 	expect(listingBehindHtml).toContain('Update public listing')
+
+	const visitorBehindHtml = await render({
+		listing: {
+			...sampleListing,
+			listingBehind: true,
+		},
+		viewerIsOwner: false,
+		viewerCanManage: false,
+	})
+	expect(visitorBehindHtml).not.toContain(
+		'data-testid="community-detail-update-public-listing"',
+	)
 
 	expectMarkers(
 		await render({

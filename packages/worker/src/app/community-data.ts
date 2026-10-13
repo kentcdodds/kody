@@ -27,7 +27,6 @@ import {
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
 import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
-import { listingNeedsRepublish } from '#worker/community/listing-needs-republish.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
@@ -429,17 +428,10 @@ async function loadCommunityDetailDataUncached(
 	const listingWithHead = viewerInstall
 		? { ...sourceAheadListing, viewerInstall }
 		: sourceAheadListing
-	const listingBehind =
-		viewerIsOwner &&
-		listingNeedsRepublish({
-			listingPinnedCommit: listing.pinnedCommit,
-			sourcePublishedCommit: publishedCommit,
-		})
-	const listingForViewer = listingBehind
-		? { ...listingWithHead, listingBehind: true as const }
-		: listingWithHead
+	// listingBehind is overlaid on the package-page frame from the owner's
+	// fresh AccountPackageDetail.listingNeedsRepublish (not this public cache).
 	return composeCommunityDetailLoaderData({
-		listing: listingForViewer,
+		listing: listingWithHead,
 		loggedIn: Boolean(user),
 		viewerIsAdmin: user?.roles.includes('admin') ?? false,
 		ownerProfilePublic,

@@ -97,13 +97,11 @@ export async function loadAccountPackageApprovePublishData(input: {
 		ownerUserId,
 	)
 	const ownerUsername = ownerBinding?.org.slug ?? input.user.username
-	// Hint against the commit this page will promote (or the published tip when
-	// already published). Promote moves runtime only; the catalog pin lags until
-	// communityPublish / Update public listing.
-	const listingCommit =
-		!alreadyPublished && pendingCommit ? pendingCommit : publishedCommit
+	// Compare against the current published tip only. Settings Update public
+	// listing keys off listingNeedsRepublish vs published_commit, so a
+	// pending-ahead hint would link to a page that is not yet behind.
 	const listing =
-		listingCommit == null
+		publishedCommit == null
 			? null
 			: await resolveListingBehindPublishHint({
 					db: input.env.APP_DB,
@@ -111,8 +109,20 @@ export async function loadAccountPackageApprovePublishData(input: {
 					packageId: savedPackage.id,
 					ownerUsername,
 					kodyId: savedPackage.kodyId,
-					promotedCommit: listingCommit,
+					promotedCommit: publishedCommit,
 				})
+	const listingWillLagAfterPromote =
+		!alreadyPublished &&
+		pendingCommit != null &&
+		listing == null &&
+		(await resolveListingBehindPublishHint({
+			db: input.env.APP_DB,
+			ownerUserId,
+			packageId: savedPackage.id,
+			ownerUsername,
+			kodyId: savedPackage.kodyId,
+			promotedCommit: pendingCommit,
+		})) != null
 	return {
 		ok: true,
 		email: input.user.email,
@@ -136,6 +146,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 			kodyId: savedPackage.kodyId,
 		}),
 		listing,
+		listingWillLagAfterPromote,
 		diff:
 			unpublishedCompare || pendingMissing
 				? { files: [], omittedCount: 0 }
