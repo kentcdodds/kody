@@ -850,6 +850,15 @@ test('removeCloudflareQueueConsumers treats a 404 after name resolution as alrea
 			),
 		),
 	).toBe(true)
+	// cloudflareApiRequest falls back to the pathname when errors[] has no
+	// message — still a gone queue, must not fail cleanup.
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error(
+				'Cloudflare API request failed (404): /queues/queue-preview/consumers',
+			),
+		),
+	).toBe(true)
 	expect(
 		isCloudflareQueueAlreadyGoneError(
 			new Error('Cloudflare API request failed (500): internal server error'),

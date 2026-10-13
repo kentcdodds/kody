@@ -1464,13 +1464,14 @@ type CloudflareQueueConsumer = {
  * consumer on it) is already gone. Preview cleanup lists queues by name,
  * then addresses them by id; a concurrent delete can 404 the id path even
  * though the name was present a moment earlier (#3693).
+ *
+ * Match only the HTTP 404 envelope: when Cloudflare omits an error message,
+ * `cloudflareApiRequest` falls back to the pathname, so requiring
+ * "not found" would miss a real already-gone response.
  */
 export function isCloudflareQueueAlreadyGoneError(error: unknown) {
 	if (!(error instanceof Error)) return false
-	return (
-		/Cloudflare API request failed \(404\)/.test(error.message) &&
-		/not found/i.test(error.message)
-	)
+	return error.message.startsWith('Cloudflare API request failed (404):')
 }
 
 /**
