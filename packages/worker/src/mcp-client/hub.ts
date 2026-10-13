@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { Lifecycle } from 'agents/lifecycle'
@@ -75,6 +76,13 @@ import {
 	sanitizePersistedMcpServerOptions,
 	sanitizeStoredMcpSessions,
 } from './restore.ts'
+import {
+	mcpOAuthAttemptStorageKey,
+	mcpOAuthAttemptVerifiedStorageKey,
+	readMcpOAuthAttemptIdentity,
+	writeMcpOAuthAttemptIdentity,
+	type McpOAuthAttemptActor,
+} from './oauth-attempt.ts'
 import { extractMcpServerIdFromOAuthState } from './oauth-state.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
@@ -107,6 +115,15 @@ const connectionSettleTimeoutMs = 8_000
 const discoverTimeoutMs = 15_000
 const oauthRecoveryMessage =
 	'Authorization needed. Reconnect the MCP server and approve access once more.'
+
+function clientIdFromStoredAuthUrl(authUrl: string | null) {
+	if (!authUrl) return null
+	try {
+		return new URL(authUrl).searchParams.get('client_id')
+	} catch {
+		return null
+	}
+}
 
 export function isRecoverableMcpOAuthStateError(error: string | null) {
 	if (!error) return false
@@ -174,6 +191,94 @@ class McpClientHubBase extends DurableObject<Env> {
 		return createMcpClientOAuthProvider(this.ctx.storage, callbackUrl, {
 			resolvePreRegisteredClient: (serverId) =>
 				this.resolvePreRegisteredOAuthClient(serverId),
+			resolveLiveServerIdentity: (serverId) =>
+				this.resolveLiveOAuthServerIdentity(serverId),
+		})
+	}
+
+	/**
+	 * Request-scoped OAuth actor. Durable Object I/O can interleave RPCs, so
+	 * this must not be instance state; AsyncLocalStorage keeps each RPC's
+	 * ownerOrgId/personId through awaits without leaking to siblings.
+	 */
+	private static readonly oauthActorStorage =
+		new AsyncLocalStorage<McpOAuthAttemptActor | null>()
+
+	private withOAuthActor<T>(
+		actor: McpOAuthAttemptActor | null | undefined,
+		run: () => Promise<T>,
+	): Promise<T> {
+		const normalized =
+			actor?.ownerOrgId?.trim() && actor.personId?.trim()
+				? {
+						ownerOrgId: actor.ownerOrgId.trim(),
+						personId: actor.personId.trim(),
+					}
+				: null
+		return McpClientHubBase.oauthActorStorage.run(normalized, run)
+	}
+
+	private currentOAuthActor() {
+		return McpClientHubBase.oauthActorStorage.getStore() ?? null
+	}
+
+	/**
+	 * Live hub row + expected OAuth client for an in-flight attempt fence.
+	 * Pre-registered clients win over SQL `client_id` (DCR/CIMD), matching how
+	 * the provider presents credentials to the authorization server. Owner org
+	 * and person come from the current RPC actor (add/reconnect/consent/callback).
+	 */
+	private async resolveLiveOAuthServerIdentity(serverId: string) {
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		if (!row) return null
+		let preRegisteredClientId =
+			this.preRegisteredClientIds.get(serverId) ?? null
+		if (!preRegisteredClientId) {
+			const sealed = await this.readSealedPreRegisteredOAuthClient(serverId)
+			if (sealed) {
+				preRegisteredClientId = sealed.clientId
+				this.preRegisteredClientIds.set(serverId, sealed.clientId)
+			}
+		}
+		const authUrlClientId = clientIdFromStoredAuthUrl(row.auth_url)
+		const actor = this.currentOAuthActor()
+		return {
+			serverId: row.id,
+			serverUrl: row.server_url,
+			clientId: preRegisteredClientId ?? row.client_id ?? authUrlClientId,
+			ownerOrgId: actor?.ownerOrgId ?? null,
+			personId: actor?.personId ?? null,
+			name: row.name,
+		}
+	}
+
+	/**
+	 * Consent Continue rebinds the pending attempt to the person who approved
+	 * leaving Kody for the provider, so a different org admin can finish the
+	 * flow without failing the person-id fence.
+	 */
+	async bindOAuthAttemptActor(input: {
+		serverId: string
+		actor: McpOAuthAttemptActor
+	}): Promise<{ ok: boolean }> {
+		await this.ensureRestored()
+		return this.withOAuthActor(input.actor, async () => {
+			const pending = await readMcpOAuthAttemptIdentity(
+				this.ctx.storage,
+				input.serverId,
+			)
+			const actor = this.currentOAuthActor()
+			if (!pending || !actor) return { ok: false }
+			if (pending.ownerOrgId !== actor.ownerOrgId) {
+				return { ok: false }
+			}
+			await writeMcpOAuthAttemptIdentity(this.ctx.storage, {
+				...pending,
+				personId: actor.personId,
+			})
+			return { ok: true }
 		})
 	}
 
@@ -218,9 +323,11 @@ class McpClientHubBase extends DurableObject<Env> {
 		sanitizeStoredMcpSessions(this.ctx.storage, {
 			keepLegacyHandshakeIds: await this.readLegacyHandshakeServerIds(),
 		})
+		// Hydrate before start so restore-time token refresh sees pre-registered
+		// client ids when fencing an in-flight or refreshed grant.
+		await this.hydratePreRegisteredClientIds()
 		await this.lifecycle.start()
 		await this.hydrateTokenRecoveryErrors()
-		await this.hydratePreRegisteredClientIds()
 	}
 
 	private async hydratePreRegisteredClientIds() {
@@ -364,6 +471,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		name: string
 		url: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 		/**
 		 * Optional static request headers (for example Authorization: Bearer …).
 		 * Persisted in the Agents SDK `server_options` blob alongside the server
@@ -372,42 +480,44 @@ class McpClientHubBase extends DurableObject<Env> {
 		headers?: Record<string, string>
 	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
-		await this.forgetLegacyHandshakeFallback(input.serverId)
-		this.clearIncompleteDiscoverStamp(input.serverId)
-		this.tokenPresence.delete(input.serverId)
-		await this.persistTokenRecoveryLastError(input.serverId, null)
-		const existing = this.manager.mcpConnections[input.serverId]
-		if (existing) {
-			await this.manager.removeServer(input.serverId)
-		}
-		// `registerServer` does not create an OAuth provider on its own (the SDK
-		// Agent class builds one in `addMcpServer`), so build the same
-		// DO-storage-backed provider here or OAuth servers can never surface an
-		// authorization URL. The clientName must match the one passed to
-		// `restoreConnectionsFromStorage` so storage keys line up after restarts.
-		const authProvider = this.createAuthProvider(input.callbackUrl)
-		authProvider.serverId = input.serverId
-		await this.manager.registerServer(input.serverId, {
-			url: input.url,
-			name: input.name,
-			callbackUrl: input.callbackUrl,
-			client: outboundMcpClientOptions(),
-			transport: withStaticTransportHeaders({
-				type: 'auto' as const,
-				authProvider,
-				...(input.headers ? { headers: input.headers } : {}),
-			}),
+		return this.withOAuthActor(input.actor, async () => {
+			await this.forgetLegacyHandshakeFallback(input.serverId)
+			this.clearIncompleteDiscoverStamp(input.serverId)
+			this.tokenPresence.delete(input.serverId)
+			await this.persistTokenRecoveryLastError(input.serverId, null)
+			const existing = this.manager.mcpConnections[input.serverId]
+			if (existing) {
+				await this.manager.removeServer(input.serverId)
+			}
+			// `registerServer` does not create an OAuth provider on its own (the SDK
+			// Agent class builds one in `addMcpServer`), so build the same
+			// DO-storage-backed provider here or OAuth servers can never surface an
+			// authorization URL. The clientName must match the one passed to
+			// `restoreConnectionsFromStorage` so storage keys line up after restarts.
+			const authProvider = this.createAuthProvider(input.callbackUrl)
+			authProvider.serverId = input.serverId
+			await this.manager.registerServer(input.serverId, {
+				url: input.url,
+				name: input.name,
+				callbackUrl: input.callbackUrl,
+				client: outboundMcpClientOptions(),
+				transport: withStaticTransportHeaders({
+					type: 'auto' as const,
+					authProvider,
+					...(input.headers ? { headers: input.headers } : {}),
+				}),
+			})
+			this.clearSessionBeforeConnect(input.serverId)
+			const connected = await this.connectToServerSerialized(input.serverId)
+			if (connected.state === 'connected') {
+				await this.runDiscoverIfConnected(input.serverId)
+			}
+			await this.observeServer({
+				serverId: input.serverId,
+				serverName: input.name,
+			})
+			return this.finalizeConnectResult(input.serverId)
 		})
-		this.clearSessionBeforeConnect(input.serverId)
-		const connected = await this.connectToServerSerialized(input.serverId)
-		if (connected.state === 'connected') {
-			await this.runDiscoverIfConnected(input.serverId)
-		}
-		await this.observeServer({
-			serverId: input.serverId,
-			serverName: input.name,
-		})
-		return this.finalizeConnectResult(input.serverId)
 	}
 
 	/**
@@ -421,23 +531,26 @@ class McpClientHubBase extends DurableObject<Env> {
 	async reconnectServer(input: {
 		serverId: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
-		await this.manager.waitForConnections({
-			timeout: connectionSettleTimeoutMs,
-		})
-		await this.forgetLegacyHandshakeFallback(input.serverId)
-		await this.restartServerAuthorization(input)
-		const row = this.manager
-			.listServers()
-			.find((server) => server.id === input.serverId)
-		if (row) {
-			await this.observeServer({
-				serverId: row.id,
-				serverName: row.name,
+		return this.withOAuthActor(input.actor, async () => {
+			await this.manager.waitForConnections({
+				timeout: connectionSettleTimeoutMs,
 			})
-		}
-		return this.finalizeConnectResult(input.serverId)
+			await this.forgetLegacyHandshakeFallback(input.serverId)
+			await this.restartServerAuthorization(input)
+			const row = this.manager
+				.listServers()
+				.find((server) => server.id === input.serverId)
+			if (row) {
+				await this.observeServer({
+					serverId: row.id,
+					serverName: row.name,
+				})
+			}
+			return this.finalizeConnectResult(input.serverId)
+		})
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -476,6 +589,8 @@ class McpClientHubBase extends DurableObject<Env> {
 			mcpOAuthTokenRecoveryStorageKey(input.serverId),
 			mcpOAuthRefreshTokenStorageKey(input.serverId),
 			mcpPreRegisteredOAuthClientStorageKey(input.serverId),
+			mcpOAuthAttemptStorageKey(input.serverId),
+			mcpOAuthAttemptVerifiedStorageKey(input.serverId),
 		])
 	}
 
@@ -492,76 +607,79 @@ class McpClientHubBase extends DurableObject<Env> {
 		serverId: string
 		callbackUrl: string
 		client: SealedMcpPreRegisteredOAuthClient | null
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpHubOAuthClientChange> {
 		await this.ensureRestored()
-		return this.serializeOAuthClientChange(input.serverId, async () => {
-			const row = this.manager
-				.listServers()
-				.find((server) => server.id === input.serverId)
-			if (!row) {
-				throw new Error(`MCP server "${input.serverId}" is not registered.`)
-			}
-			const previousClientId =
-				this.preRegisteredClientIds.get(input.serverId) ?? null
-			if (!input.client && !previousClientId) {
+		return this.withOAuthActor(input.actor, async () =>
+			this.serializeOAuthClientChange(input.serverId, async () => {
+				const row = this.manager
+					.listServers()
+					.find((server) => server.id === input.serverId)
+				if (!row) {
+					throw new Error(`MCP server "${input.serverId}" is not registered.`)
+				}
+				const previousClientId =
+					this.preRegisteredClientIds.get(input.serverId) ?? null
+				if (!input.client && !previousClientId) {
+					return {
+						changed: false,
+						previousClientId,
+						connection: this.finalizeConnectResult(input.serverId),
+					}
+				}
+				await this.manager.waitForConnections({
+					timeout: connectionSettleTimeoutMs,
+				})
+				const key = mcpPreRegisteredOAuthClientStorageKey(input.serverId)
+				if (input.client) {
+					await this.ctx.storage.put(key, input.client)
+					this.preRegisteredClientIds.set(input.serverId, input.client.clientId)
+				} else {
+					await this.ctx.storage.delete(key)
+					this.preRegisteredClientIds.delete(input.serverId)
+				}
+				this.preRegisteredClients.delete(input.serverId)
+				this.tokenPresence.delete(input.serverId)
+				this.lastDiscoverErrors.delete(input.serverId)
+				// A new client means a new grant: start a fresh connection episode
+				// so the parked approval is not read as a failed token refresh.
+				await this.ctx.storage.delete(
+					mcpConnectionEpisodeStorageKey(input.serverId),
+				)
+				await this.persistTokenRecoveryLastError(input.serverId, null)
+				await this.forgetLegacyHandshakeFallback(input.serverId)
+				try {
+					await this.restartServerAuthorization({
+						serverId: input.serverId,
+						callbackUrl: input.callbackUrl,
+						resetClientRegistration: true,
+					})
+				} catch (error) {
+					const reason = (
+						error instanceof Error ? error.message : String(error)
+					).replace(/\.$/, '')
+					this.lastDiscoverErrors.set(input.serverId, {
+						message: input.client
+							? `The OAuth client was saved, but Kody could not start authorization with it (${reason}). Reconnect the server to try again.`
+							: `The OAuth client was removed, but Kody could not start authorization without it (${reason}). Reconnect the server to try again.`,
+						phase: null,
+						httpStatus: null,
+						httpBodySnippet: null,
+						mcpEndpoint: sanitizePublicUrl(row.server_url),
+						resource: null,
+						authServer: null,
+						attemptId: crypto.randomUUID(),
+						at: new Date().toISOString(),
+					})
+				}
+				await this.observeServer({ serverId: row.id, serverName: row.name })
 				return {
-					changed: false,
+					changed: true,
 					previousClientId,
 					connection: this.finalizeConnectResult(input.serverId),
 				}
-			}
-			await this.manager.waitForConnections({
-				timeout: connectionSettleTimeoutMs,
-			})
-			const key = mcpPreRegisteredOAuthClientStorageKey(input.serverId)
-			if (input.client) {
-				await this.ctx.storage.put(key, input.client)
-				this.preRegisteredClientIds.set(input.serverId, input.client.clientId)
-			} else {
-				await this.ctx.storage.delete(key)
-				this.preRegisteredClientIds.delete(input.serverId)
-			}
-			this.preRegisteredClients.delete(input.serverId)
-			this.tokenPresence.delete(input.serverId)
-			this.lastDiscoverErrors.delete(input.serverId)
-			// A new client means a new grant: start a fresh connection episode
-			// so the parked approval is not read as a failed token refresh.
-			await this.ctx.storage.delete(
-				mcpConnectionEpisodeStorageKey(input.serverId),
-			)
-			await this.persistTokenRecoveryLastError(input.serverId, null)
-			await this.forgetLegacyHandshakeFallback(input.serverId)
-			try {
-				await this.restartServerAuthorization({
-					serverId: input.serverId,
-					callbackUrl: input.callbackUrl,
-					resetClientRegistration: true,
-				})
-			} catch (error) {
-				const reason = (
-					error instanceof Error ? error.message : String(error)
-				).replace(/\.$/, '')
-				this.lastDiscoverErrors.set(input.serverId, {
-					message: input.client
-						? `The OAuth client was saved, but Kody could not start authorization with it (${reason}). Reconnect the server to try again.`
-						: `The OAuth client was removed, but Kody could not start authorization without it (${reason}). Reconnect the server to try again.`,
-					phase: null,
-					httpStatus: null,
-					httpBodySnippet: null,
-					mcpEndpoint: sanitizePublicUrl(row.server_url),
-					resource: null,
-					authServer: null,
-					attemptId: crypto.randomUUID(),
-					at: new Date().toISOString(),
-				})
-			}
-			await this.observeServer({ serverId: row.id, serverName: row.name })
-			return {
-				changed: true,
-				previousClientId,
-				connection: this.finalizeConnectResult(input.serverId),
-			}
-		})
+			}),
+		)
 	}
 
 	private async serializeOAuthClientChange<T>(
@@ -626,78 +744,83 @@ class McpClientHubBase extends DurableObject<Env> {
 	async handleOAuthCallback(input: {
 		url: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpServerOAuthCallbackOutcome> {
 		await this.ensureRestored()
-		const request = new Request(input.url, { method: 'GET' })
-		const stateServerId = extractMcpServerIdFromOAuthState(
-			new URL(request.url).searchParams.get('state'),
-		)
-		if (!this.manager.isCallbackRequest(request)) {
+		return this.withOAuthActor(input.actor, async () => {
+			const request = new Request(input.url, { method: 'GET' })
+			const stateServerId = extractMcpServerIdFromOAuthState(
+				new URL(request.url).searchParams.get('state'),
+			)
+			if (!this.manager.isCallbackRequest(request)) {
+				if (
+					stateServerId &&
+					this.manager
+						.listServers()
+						.some((server) => server.id === stateServerId)
+				) {
+					return await this.restartAfterUnusableCallback({
+						serverId: stateServerId,
+						callbackUrl: input.callbackUrl,
+					})
+				}
+				const pendingServers = this.manager
+					.listServers()
+					.filter((server) => Boolean(server.auth_url))
+				if (pendingServers.length === 1 && pendingServers[0]) {
+					return await this.restartAfterUnusableCallback({
+						serverId: pendingServers[0].id,
+						callbackUrl: input.callbackUrl,
+					})
+				}
+				return {
+					serverId: null,
+					authSuccess: false,
+					authError: oauthRecoveryMessage,
+					serverName: null,
+					authorizationNeeded: true,
+					lastError: null,
+				}
+			}
+			const result = await this.manager.handleCallbackRequest(request)
+			const serverId = result.serverId ?? null
+			const serverName = serverId
+				? (this.manager.listServers().find((server) => server.id === serverId)
+						?.name ?? null)
+				: null
 			if (
-				stateServerId &&
-				this.manager.listServers().some((server) => server.id === stateServerId)
+				serverId &&
+				!result.authSuccess &&
+				isRecoverableMcpOAuthStateError(result.authError ?? null)
 			) {
 				return await this.restartAfterUnusableCallback({
-					serverId: stateServerId,
+					serverId,
 					callbackUrl: input.callbackUrl,
 				})
 			}
-			const pendingServers = this.manager
-				.listServers()
-				.filter((server) => Boolean(server.auth_url))
-			if (pendingServers.length === 1 && pendingServers[0]) {
-				return await this.restartAfterUnusableCallback({
-					serverId: pendingServers[0].id,
-					callbackUrl: input.callbackUrl,
-				})
-			}
-			return {
-				serverId: null,
-				authSuccess: false,
-				authError: oauthRecoveryMessage,
-				serverName: null,
-				authorizationNeeded: true,
-				lastError: null,
-			}
-		}
-		const result = await this.manager.handleCallbackRequest(request)
-		const serverId = result.serverId ?? null
-		const serverName = serverId
-			? (this.manager.listServers().find((server) => server.id === serverId)
-					?.name ?? null)
-			: null
-		if (
-			serverId &&
-			!result.authSuccess &&
-			isRecoverableMcpOAuthStateError(result.authError ?? null)
-		) {
-			return await this.restartAfterUnusableCallback({
-				serverId,
-				callbackUrl: input.callbackUrl,
-			})
-		}
-		if (result.authSuccess && serverId) {
-			const settled = await this.settleAfterOAuthGrant(serverId)
-			if (serverName) {
-				await this.observeServer({
+			if (result.authSuccess && serverId) {
+				const settled = await this.settleAfterOAuthGrant(serverId)
+				if (serverName) {
+					await this.observeServer({
+						serverId,
+						serverName,
+					})
+				}
+				return await this.resolveOAuthCallbackOutcome({
+					sdkAuthSuccess: true,
+					sdkAuthError: result.authError ?? null,
 					serverId,
 					serverName,
+					settleError: settled.error,
+					settleLastError: settled.lastError ?? null,
 				})
 			}
 			return await this.resolveOAuthCallbackOutcome({
-				sdkAuthSuccess: true,
+				sdkAuthSuccess: result.authSuccess,
 				sdkAuthError: result.authError ?? null,
 				serverId,
 				serverName,
-				settleError: settled.error,
-				settleLastError: settled.lastError ?? null,
 			})
-		}
-		return await this.resolveOAuthCallbackOutcome({
-			sdkAuthSuccess: result.authSuccess,
-			sdkAuthError: result.authError ?? null,
-			serverId,
-			serverName,
 		})
 	}
 
@@ -861,6 +984,16 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (sidecarValue !== undefined) {
 			oauthStorageSnapshot.set(sidecarKey, sidecarValue)
 		}
+		const attemptKey = mcpOAuthAttemptStorageKey(input.serverId)
+		const attemptValue = await this.ctx.storage.get(attemptKey)
+		if (attemptValue !== undefined) {
+			oauthStorageSnapshot.set(attemptKey, attemptValue)
+		}
+		const attemptVerifiedKey = mcpOAuthAttemptVerifiedStorageKey(input.serverId)
+		const attemptVerifiedValue = await this.ctx.storage.get(attemptVerifiedKey)
+		if (attemptVerifiedValue !== undefined) {
+			oauthStorageSnapshot.set(attemptVerifiedKey, attemptVerifiedValue)
+		}
 
 		try {
 			await this.manager.removeServer(input.serverId)
@@ -964,6 +1097,11 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (input.clearClientRegistration) {
 			keys.push(mcpOAuthRefreshTokenStorageKey(input.serverId))
 		}
+		// A reconnect or client reset retires any in-flight attempt identity.
+		keys.push(
+			mcpOAuthAttemptStorageKey(input.serverId),
+			mcpOAuthAttemptVerifiedStorageKey(input.serverId),
+		)
 		if (keys.length > 0) {
 			await this.ctx.storage.delete(keys)
 		}

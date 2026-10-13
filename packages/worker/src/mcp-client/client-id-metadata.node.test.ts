@@ -9,6 +9,14 @@ import {
 	resolveMcpOAuthClientMode,
 } from './client-id-metadata.ts'
 import {
+	buildMcpOAuthAttemptIdentity,
+	markMcpOAuthAttemptVerified,
+	mcpOAuthAttemptStorageKey,
+	mcpOAuthAttemptVerifiedStorageKey,
+	McpOAuthAttemptIdentityError,
+	writeMcpOAuthAttemptIdentity,
+} from './oauth-attempt.ts'
+import {
 	McpOAuthFailedError,
 	mcpOAuthFailedCode,
 } from './oauth-issuer-endpoints.ts'
@@ -227,6 +235,17 @@ test('client mode reads the client_id the authorization URL carries', () => {
 	).toBe('dcr')
 })
 
+const discoveryOnIssuer = {
+	authorizationServerUrl: 'https://auth.example',
+	authorizationServerMetadata: {
+		issuer: 'https://auth.example',
+		authorization_endpoint: 'https://auth.example/authorize',
+		token_endpoint: 'https://auth.example/token',
+		response_types_supported: ['code'],
+		code_challenge_methods_supported: ['S256'],
+	},
+}
+
 function asDiscoveryMetadata(overrides: Record<string, unknown> = {}) {
 	return {
 		authorizationServerUrl: 'https://auth.example',
@@ -287,4 +306,305 @@ test('OAuth provider refresh path re-asserts issuer origin on cached discovery (
 			`${mcpOAuthFailedCode}[\\s\\S]*token_endpoint .*different origin`,
 		),
 	)
+})
+
+test('OAuth attempt identity: happy path, remove/re-add, client mismatch, and refresh without pending', async () => {
+	const { storage, values } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	expect(pending).not.toBeNull()
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	await provider.saveTokens(bearer('grant-at', 'grant-rt'))
+	expect(values.get(tokenKey)).toEqual(bearer('grant-at', 'grant-rt'))
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+	expect(
+		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
+
+	// Refresh / later saves without a pending attempt still work (existing grants).
+	await provider.saveTokens(bearer('refreshed-at'))
+	expect(values.get(tokenKey)).toEqual(bearer('refreshed-at', 'grant-rt'))
+
+	// Refresh while an attempt is pending (not yet verified) must not clear it.
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await provider.saveTokens(bearer('refresh-during-attempt'))
+	expect(values.get(tokenKey)).toEqual(
+		bearer('refresh-during-attempt', 'grant-rt'),
+	)
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toEqual(pending)
+
+	// Remove and re-add mid-flow: new stable id, nothing saved from the old attempt.
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	currentLive = {
+		...live,
+		serverId: 'server-readded',
+	}
+	await expect(
+		provider.saveTokens(bearer('stolen-at', 'stolen-rt')),
+	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	expect(values.get(tokenKey)).toEqual(
+		bearer('refresh-during-attempt', 'grant-rt'),
+	)
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+
+	// Client replaced mid-flow.
+	currentLive = { ...live }
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	currentLive = { ...live, clientId: 'other-client' }
+	await expect(
+		provider.saveTokens(bearer('other-at', 'other-rt')),
+	).rejects.toThrow(/Reconnect at \/account\/mcp-servers/)
+	expect(values.get(tokenKey)).toEqual(
+		bearer('refresh-during-attempt', 'grant-rt'),
+	)
+
+	// Person mismatch mid-flow.
+	currentLive = { ...live }
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	currentLive = { ...live, personId: 'person-other' }
+	await expect(
+		provider.saveTokens(bearer('person-at', 'person-rt')),
+	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	expect(values.get(tokenKey)).toEqual(
+		bearer('refresh-during-attempt', 'grant-rt'),
+	)
+})
+
+test('checkState fails closed when the live server no longer matches the attempt', async () => {
+	const { storage } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	const state = await provider.state()
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+
+	expect(await provider.checkState(state)).toMatchObject({
+		valid: true,
+		serverId: 'server-home',
+	})
+	expect(
+		await storage.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toMatchObject({ verifiedAt: expect.any(Number) })
+
+	currentLive = null
+	const refused = await provider.checkState(state)
+	expect(refused.valid).toBe(false)
+	expect(refused.error).toMatch(/Reconnect at \/account\/mcp-servers/)
+	expect(
+		await storage.get(mcpOAuthAttemptStorageKey('server-home')),
+	).toBeUndefined()
+	expect(
+		await storage.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
+})
+
+test('a verified pending attempt survives an actor-less refresh race during grant save', async () => {
+	const { storage, values } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1' as string | null,
+		personId: 'person-1' as string | null,
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId!,
+		personId: live.personId!,
+		discovery: discoveryOnIssuer,
+	})
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	// Existing grant so an actor-less refresh has a refresh_token to preserve.
+	await provider.saveTokens(bearer('seed-at', 'seed-rt'))
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+
+	// Actor-less refresh (no ownerOrgId/personId) during the verified window
+	// must still save — otherwise a failed code exchange wedges every later
+	// refresh while verified stays set. Leave the attempt alone for the grant.
+	currentLive = { ...live, ownerOrgId: null, personId: null }
+	await provider.saveTokens(bearer('refresh-at'))
+	expect(values.get(tokenKey)).toEqual(bearer('refresh-at', 'seed-rt'))
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toEqual(pending)
+	expect(
+		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toMatchObject({ verifiedAt: expect.any(Number) })
+
+	currentLive = { ...live }
+	await provider.saveTokens(bearer('grant-at', 'grant-rt'))
+	expect(values.get(tokenKey)).toEqual(bearer('grant-at', 'grant-rt'))
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+	expect(
+		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
+})
+
+test('redirectToAuthorization validates, commits SDK state, then stamps identity', async () => {
+	const { storage, values } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1' as string | null,
+		personId: 'person-1' as string | null,
+		name: 'docs',
+	}
+	let currentLive: typeof live | null = { ...live }
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	const authUrl = new URL('https://auth.example/authorize')
+	authUrl.searchParams.set('client_id', 'client-1')
+	authUrl.searchParams.set('state', 'nonce.server-home')
+	authUrl.searchParams.set('code_challenge', 'challenge')
+
+	await provider.redirectToAuthorization(authUrl)
+	expect(provider.authUrl).toBe(authUrl.toString())
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toMatchObject({
+		serverId: 'server-home',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+	})
+
+	// Actor-less / incomplete live identity must refuse before the SDK commit.
+	currentLive = { ...live, ownerOrgId: null, personId: null }
+	values.delete(mcpOAuthAttemptStorageKey('server-home'))
+	const providerAgain = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => currentLive,
+	})
+	providerAgain.serverId = 'server-home'
+	providerAgain.clientId = 'client-1'
+	await expect(
+		providerAgain.redirectToAuthorization(authUrl),
+	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	expect(providerAgain.authUrl).toBeUndefined()
+	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+
+	// Storage failure after SDK commit must clear authUrl so callers do not
+	// send the person through consent for an unwired attempt.
+	currentLive = { ...live }
+	const failingStorage = {
+		...storage,
+		put: async () => {
+			throw new Error('storage put failed')
+		},
+	} as unknown as DurableObjectStorage
+	const providerFailWrite = createMcpClientOAuthProvider(
+		failingStorage,
+		callbackUrl,
+		{ resolveLiveServerIdentity: async () => currentLive },
+	)
+	providerFailWrite.serverId = 'server-home'
+	providerFailWrite.clientId = 'client-1'
+	await expect(
+		providerFailWrite.redirectToAuthorization(authUrl),
+	).rejects.toThrow(/storage put failed/)
+	expect(providerFailWrite.authUrl).toBeUndefined()
+})
+
+test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {
+	const { storage } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'docs',
+	}
+	const original = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	const replaced = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: 'client-replaced',
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	await writeMcpOAuthAttemptIdentity(storage, original!)
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => {
+			await writeMcpOAuthAttemptIdentity(storage, replaced!)
+			return { ...live, clientId: 'client-replaced' }
+		},
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	const state = await provider.state()
+
+	const refused = await provider.checkState(state)
+	expect(refused.valid).toBe(false)
+	expect(refused.error).toMatch(/Reconnect at \/account\/mcp-servers/)
+	expect(
+		await storage.get(mcpOAuthAttemptStorageKey('server-home')),
+	).toBeUndefined()
+	expect(
+		await storage.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
 })

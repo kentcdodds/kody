@@ -1,4 +1,17 @@
 import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
+import {
+	buildMcpOAuthAttemptIdentity,
+	clearMcpOAuthAttemptIdentity,
+	isMcpOAuthAttemptVerified,
+	markMcpOAuthAttemptVerified,
+	mcpOAuthAttemptCheckFailure,
+	McpOAuthAttemptIdentityError,
+	oauthAttemptMatchesLiveServer,
+	readMcpOAuthAttemptIdentity,
+	writeMcpOAuthAttemptIdentity,
+	type McpOAuthLiveServerIdentity,
+} from './oauth-attempt.ts'
+import { mcpOAuthAttemptIdentityInvalidMessage } from './oauth-identity.ts'
 import { assertEndpointsOnIssuerOrigin } from './oauth-issuer-endpoints.ts'
 import {
 	clientIdFromMcpOAuthTokenStorageKey,
@@ -108,6 +121,10 @@ type McpOAuthSaveTokens = Parameters<
 	DurableObjectOAuthClientProvider['saveTokens']
 >[0]
 
+export type ResolveMcpOAuthLiveServerIdentity = (
+	serverId: string,
+) => Promise<McpOAuthLiveServerIdentity | null>
+
 /**
  * Agents SDK storage/PKCE provider plus the MCP SDK `clientMetadataUrl`
  * hook. HTTPS callbacks present CIMD; http (local dev) omits it so auth
@@ -121,7 +138,9 @@ type McpOAuthSaveTokens = Parameters<
  * keys and the sidecar so a rejected grant cannot be replayed, and skips a
  * `tokens` wipe when a save completed after the invalidate was requested.
  * With `resolvePreRegisteredClient`, a server's admin-configured OAuth
- * client is presented ahead of CIMD and DCR.
+ * client is presented ahead of CIMD and DCR. With `resolveLiveServerIdentity`,
+ * each authorization attempt is bound to the live server row + client,
+ * re-checked at callback and again immediately before tokens are persisted.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -130,6 +149,7 @@ export function createMcpClientOAuthProvider(
 		resolvePreRegisteredClient?: (
 			serverId: string,
 		) => Promise<McpPreRegisteredOAuthClientInformation | null>
+		resolveLiveServerIdentity?: ResolveMcpOAuthLiveServerIdentity
 	},
 ) {
 	const provider = new DurableObjectOAuthClientProvider(
@@ -137,9 +157,15 @@ export function createMcpClientOAuthProvider(
 		mcpClientName,
 		callbackUrl,
 	) as McpClientOAuthProvider
-	// Before token preservation so its discovery re-write uses the same guard.
+	// Issuer guard before token preservation so discovery re-writes use it.
+	// Attempt binding then wraps redirect / checkState for live-row fencing.
 	installMcpOAuthIssuerEndpointGuard(provider)
-	installMcpOAuthTokenPreservation(provider)
+	installMcpOAuthTokenPreservation(provider, {
+		resolveLiveServerIdentity: options?.resolveLiveServerIdentity,
+	})
+	installMcpOAuthAttemptBinding(provider, {
+		resolveLiveServerIdentity: options?.resolveLiveServerIdentity,
+	})
 	if (options?.resolvePreRegisteredClient) {
 		installMcpPreRegisteredOAuthClient(
 			provider,
@@ -181,8 +207,124 @@ function installMcpOAuthIssuerEndpointGuard(
 	}
 }
 
+/**
+ * Bind an in-flight authorization to the server row and client that minted
+ * it. Callback `checkState` and grant `saveTokens` re-load the live row and
+ * refuse on mismatch. Refresh saves (no pending attempt) are unchanged so
+ * existing grants keep working. Issuer-origin discovery fencing lives in
+ * `installMcpOAuthIssuerEndpointGuard`.
+ */
+function installMcpOAuthAttemptBinding(
+	provider: DurableObjectOAuthClientProvider,
+	options: {
+		resolveLiveServerIdentity?: ResolveMcpOAuthLiveServerIdentity
+	},
+) {
+	const resolveLive = options.resolveLiveServerIdentity
+	if (!resolveLive) return
+	if (typeof provider.redirectToAuthorization === 'function') {
+		const redirect = provider.redirectToAuthorization.bind(provider)
+		provider.redirectToAuthorization = async (authUrl) => {
+			// Pre-validate the attempt stamp, commit SDK auth URL / PKCE, then
+			// write identity. Writing before redirect left the new attempt
+			// visible to a concurrent checkState while the prior PKCE state
+			// was still valid. Redirecting before validate (and returning)
+			// left users finishing consent for a flow checkState must refuse.
+			const serverId = readProviderString(provider, 'serverId')
+			const live = serverId ? await resolveLive(serverId) : null
+			const clientId =
+				authUrl.searchParams.get('client_id') ||
+				readProviderString(provider, 'clientId')
+			if (
+				!serverId ||
+				!live ||
+				!clientId ||
+				!live.ownerOrgId ||
+				!live.personId
+			) {
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live?.name),
+				)
+			}
+			const discovery =
+				typeof provider.discoveryState === 'function'
+					? await provider.discoveryState()
+					: undefined
+			const identity = buildMcpOAuthAttemptIdentity({
+				serverId: live.serverId,
+				serverUrl: live.serverUrl,
+				clientId,
+				ownerOrgId: live.ownerOrgId,
+				personId: live.personId,
+				discovery,
+			})
+			if (!identity) {
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live.name),
+				)
+			}
+			await redirect(authUrl)
+			try {
+				await writeMcpOAuthAttemptIdentity(provider.storage, identity)
+			} catch (error) {
+				clearMcpOAuthProviderAuthUrl(provider)
+				throw error
+			}
+		}
+	}
+	if (typeof provider.checkState === 'function') {
+		const checkState = provider.checkState.bind(provider)
+		provider.checkState = async (state) => {
+			const result = await checkState(state)
+			if (!result.valid || !result.serverId) return result
+			const pending = await readMcpOAuthAttemptIdentity(
+				provider.storage,
+				result.serverId,
+			)
+			const live = await resolveLive(result.serverId)
+			const discovery =
+				typeof provider.discoveryState === 'function'
+					? await provider.discoveryState()
+					: undefined
+			// Re-read after the awaits: a concurrent redirect can replace the
+			// pending attempt (and clear any verified marker). Binding the
+			// marker to the attempt we just checked keeps that race fail-closed.
+			const pendingNow = await readMcpOAuthAttemptIdentity(
+				provider.storage,
+				result.serverId,
+			)
+			if (
+				!pending ||
+				!pendingNow ||
+				pendingNow.clientId !== pending.clientId ||
+				pendingNow.personId !== pending.personId ||
+				pendingNow.ownerOrgId !== pending.ownerOrgId ||
+				pendingNow.serverUrl !== pending.serverUrl ||
+				pendingNow.serverOrigin !== pending.serverOrigin ||
+				pendingNow.authorizationServerOrigin !==
+					pending.authorizationServerOrigin ||
+				!oauthAttemptMatchesLiveServer({
+					pending: pendingNow,
+					live,
+					discovery,
+				})
+			) {
+				await clearMcpOAuthAttemptIdentity(provider.storage, result.serverId)
+				return mcpOAuthAttemptCheckFailure({ serverName: live?.name })
+			}
+			// Only authorization-code completion (after checkState) may consume
+			// the pending attempt in saveTokens; refresh must leave it alone.
+			await markMcpOAuthAttemptVerified(provider.storage, result.serverId)
+			return result
+		}
+	}
+}
+
 function installMcpOAuthTokenPreservation(
 	provider: DurableObjectOAuthClientProvider,
+	options?: {
+		resolveLiveServerIdentity?: ResolveMcpOAuthLiveServerIdentity
+	},
 ) {
 	if (
 		typeof provider.saveTokens !== 'function' ||
@@ -200,6 +342,7 @@ function installMcpOAuthTokenPreservation(
 		typeof provider.invalidateCredentials === 'function'
 			? provider.invalidateCredentials.bind(provider)
 			: null
+	const resolveLive = options?.resolveLiveServerIdentity
 	let saveQueue = Promise.resolve()
 	let tokenWriteGeneration = 0
 	provider.tokens = async (context) => {
@@ -223,6 +366,7 @@ function installMcpOAuthTokenPreservation(
 				readTokens,
 				readDiscovery,
 				writeDiscovery,
+				resolveLiveServerIdentity: resolveLive,
 			})
 			tokenWriteGeneration += 1
 			return result
@@ -254,6 +398,9 @@ function installMcpOAuthTokenPreservation(
 				const serverId = readProviderString(provider, 'serverId')
 				if (!serverId) return
 				await deleteStoredMcpOAuthTokenBlobs(provider, serverId)
+				if (scope === 'all' || scope === 'client') {
+					await clearMcpOAuthAttemptIdentity(provider.storage, serverId)
+				}
 			})
 			saveQueue = run.then(
 				() => {},
@@ -272,15 +419,61 @@ async function savePreservedMcpOAuthTokens(input: {
 	readTokens: DurableObjectOAuthClientProvider['tokens']
 	readDiscovery: DurableObjectOAuthClientProvider['discoveryState']
 	writeDiscovery: DurableObjectOAuthClientProvider['saveDiscoveryState']
+	resolveLiveServerIdentity?: ResolveMcpOAuthLiveServerIdentity
 }) {
 	const stored = await collectStoredMcpOAuthTokenSources(input.provider)
 	if (!readProviderString(input.provider, 'clientId') && stored.clientId) {
 		input.provider.clientId = stored.clientId
 	}
+	const serverId = readProviderString(input.provider, 'serverId')
+	const pending = serverId
+		? await readMcpOAuthAttemptIdentity(input.provider.storage, serverId)
+		: null
+	const completingAuthorization =
+		Boolean(pending) &&
+		Boolean(serverId) &&
+		(await isMcpOAuthAttemptVerified(input.provider.storage, serverId!))
 	const [existing, discovery] = await Promise.all([
 		input.readTokens(input.context).catch(() => undefined),
 		input.readDiscovery(),
 	])
+	// Authorization-code completion after checkState re-checks identity
+	// immediately before the grant write (kody-celld #57 / #65). Refresh has
+	// no OAuth actor, so live.ownerOrgId/personId are null. Treat that as a
+	// normal refresh: save tokens and leave the verified attempt alone so a
+	// concurrent grant (or a later reconnect) can still finish. Throwing here
+	// would wedge every later refresh if the code exchange never persisted a
+	// grant. Only actor-bearing saves consume the pending row.
+	let consumeVerifiedAttempt = false
+	if (completingAuthorization && pending) {
+		if (!serverId || !input.resolveLiveServerIdentity) {
+			await clearMcpOAuthAttemptIdentity(
+				input.provider.storage,
+				pending.serverId,
+			)
+			throw new McpOAuthAttemptIdentityError()
+		}
+		const live = await input.resolveLiveServerIdentity(serverId)
+		if (!live) {
+			await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
+			throw new McpOAuthAttemptIdentityError()
+		}
+		if (live.ownerOrgId && live.personId) {
+			if (
+				!oauthAttemptMatchesLiveServer({
+					pending,
+					live,
+					discovery,
+				})
+			) {
+				await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live.name),
+				)
+			}
+			consumeVerifiedAttempt = true
+		}
+	}
 	const merged = withPreservedMcpOAuthRefreshToken({
 		incoming: input.incoming,
 		sources: [existing, ...stored.sources],
@@ -291,7 +484,6 @@ async function savePreservedMcpOAuthTokens(input: {
 			: input.incoming,
 		input.context,
 	)
-	const serverId = readProviderString(input.provider, 'serverId')
 	const refreshToken = parseStoredMcpOAuthRefreshToken(merged)
 	if (serverId && refreshToken) {
 		await input.provider.storage.put(mcpOAuthRefreshTokenStorageKey(serverId), {
@@ -300,6 +492,9 @@ async function savePreservedMcpOAuthTokens(input: {
 	}
 	if (discovery !== undefined) {
 		await input.writeDiscovery(discovery)
+	}
+	if (consumeVerifiedAttempt && serverId) {
+		await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
 	}
 }
 
@@ -372,4 +567,13 @@ function readProviderString(
 	} catch {
 		return null
 	}
+}
+
+/** Drop a committed auth URL when attempt identity could not be persisted. */
+function clearMcpOAuthProviderAuthUrl(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	// SDK stores authUrl on a private field; clear via unknown so a failed
+	// stamp write cannot leave callers with a sendable authorize URL.
+	;(provider as unknown as { _authUrl_?: string })._authUrl_ = undefined
 }

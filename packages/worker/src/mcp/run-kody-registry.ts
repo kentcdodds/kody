@@ -1290,6 +1290,7 @@ export async function runBundledModuleWithRegistry(
 				map: callMap.map,
 				packageIds: credentialEntryPackageIds,
 				strict: callMap.strict,
+				baseUrl: callerContext.baseUrl,
 			})
 			if (warnings.length > 0) callMap.onWarnings?.(warnings)
 		}

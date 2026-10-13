@@ -504,14 +504,14 @@ test('preview --request sends urlencoded and multipart form bodies', async () =>
 test('preview --request --header parses Name: value pairs and rejects session-managed headers', () => {
 	expect(
 		parseSessionRequest(
-			"GET /account/connected-agents.json --header 'Referer: https://kody.test/@acme/-/connections' --header X-Trace:abc --contains agents",
+			"GET /account/connected-agents.json --header 'Referer: https://kody.test/@acme/-/agents' --header X-Trace:abc --contains agents",
 		),
 	).toEqual({
 		...plainSpec,
 		method: 'GET',
 		path: '/account/connected-agents.json',
 		headers: [
-			{ name: 'Referer', value: 'https://kody.test/@acme/-/connections' },
+			{ name: 'Referer', value: 'https://kody.test/@acme/-/agents' },
 			{ name: 'X-Trace', value: 'abc' },
 		],
 		contains: ['agents'],
@@ -534,7 +534,7 @@ test('preview --request --header parses Name: value pairs and rejects session-ma
 
 test('preview --request --header sends the header with the session cookie and replaces the default Accept', async () => {
 	await using server = await createPreviewFixtureServer()
-	const referer = `${server.origin}/@acme/-/connections`
+	const referer = `${server.origin}/@acme/-/agents`
 	const { exitCode, result } = await runPreviewManualTest(
 		[
 			'--url',

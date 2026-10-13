@@ -66,14 +66,17 @@ test('docs CSP connects to the configured spec origin and is only set on HTML', 
 })
 
 test('openapi proxy forwards the upstream document', async () => {
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockResolvedValue(
-			Response.json(
-				{ openapi: '3.1.0', info: { title: 'Kody API' } },
-				{ headers: { 'Cache-Control': 'public, max-age=300' } },
-			),
-		)
+	const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+		Response.json(
+			{ openapi: '3.1.0', info: { title: 'Kody API' } },
+			{
+				headers: {
+					'Cache-Control': 'public, max-age=300',
+					ETag: '"abc"',
+				},
+			},
+		),
+	)
 
 	const response = await handleApiDocsRequest(
 		new Request(`https://api-docs.kody.codes${openApiProxyPath}`),
@@ -85,11 +88,45 @@ test('openapi proxy forwards the upstream document', async () => {
 		info: { title: 'Kody API' },
 	})
 	expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
+	expect(response.headers.get('ETag')).toBe('"abc"')
 	expect(response.headers.get('Content-Security-Policy')).toBeNull()
 	expect(fetchMock).toHaveBeenCalledWith(
 		'https://api.example.test/openapi.json',
 		expect.objectContaining({ method: 'GET' }),
 	)
+	fetchMock.mockRestore()
+})
+
+test('openapi proxy revalidates with If-None-Match and returns upstream 304', async () => {
+	const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+		new Response(null, {
+			status: 304,
+			headers: {
+				ETag: '"abc"',
+				'Cache-Control': 'public, max-age=300',
+			},
+		}),
+	)
+
+	const response = await handleApiDocsRequest(
+		new Request(`https://api-docs.kody.codes${openApiProxyPath}`, {
+			headers: { 'If-None-Match': '"abc"' },
+		}),
+		createEnv({ OPENAPI_SPEC_URL: 'https://api.example.test/openapi.json' }),
+	)
+	expect(response.status).toBe(304)
+	expect(await response.text()).toBe('')
+	expect(response.headers.get('ETag')).toBe('"abc"')
+	expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
+	expect(fetchMock).toHaveBeenCalledWith(
+		'https://api.example.test/openapi.json',
+		expect.objectContaining({
+			method: 'GET',
+			headers: expect.any(Headers),
+		}),
+	)
+	const upstreamHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+	expect(upstreamHeaders.get('If-None-Match')).toBe('"abc"')
 	fetchMock.mockRestore()
 })
 

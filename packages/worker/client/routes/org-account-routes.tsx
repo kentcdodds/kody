@@ -21,7 +21,7 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountBillingSuccessRouteLoader,
 	),
-	[routePattern(routes.orgConnections)]: lazyRouteLoader(
+	[routePattern(routes.orgAgents)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountConnectionsRouteLoader,
 	),
@@ -120,7 +120,7 @@ export const orgAccountClientRoutes = {
 			render={(module) => <module.AccountBillingSuccessRoute />}
 		/>
 	),
-	[routePattern(routes.orgConnections)]: (
+	[routePattern(routes.orgAgents)]: (
 		<LazyAccountRoute render={(module) => <module.AccountConnectionsRoute />} />
 	),
 	[routePattern(routes.orgEmail)]: (

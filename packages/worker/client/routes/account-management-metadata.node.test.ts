@@ -256,9 +256,8 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).not.toContain('href="/@acme/-/billing"')
 	expect(html).toContain('href="/@acme/-/repositories"')
 	expect(html).toContain('href="/@acme/-/jobs"')
-	expect(html).toContain('href="/@acme/-/workflows"')
 	expect(html).toContain('href="/@acme/-/webhooks"')
-	expect(html).toContain('href="/@acme/-/connections"')
+	expect(html).toContain('href="/@acme/-/agents"')
 	expect(html).toContain('href="/@acme/-/integrations"')
 	expect(html).toContain('href="/@acme/-/mcp-servers"')
 	expect(html).toContain('href="/@acme/-/secrets"')
@@ -266,8 +265,11 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/memories"')
 	expect(html).toContain('href="/@acme/-/email"')
 	expect(html).toContain('href="/@acme/-/activity"')
-	expect(html).toContain('href="/@acme/-/waiting"')
-	expect(html).toContain('href="/account/usage"')
+	// Workflows and Waiting are tabs on the Activity page, and usage is the
+	// person's, so neither is a team rail link.
+	expect(html).not.toContain('href="/@acme/-/workflows"')
+	expect(html).not.toContain('href="/@acme/-/waiting"')
+	expect(html).not.toContain('href="/account/usage"')
 	// No personal workspace links leak onto the team URL.
 	expect(html).not.toContain('href="/@ada/-/')
 })
@@ -275,10 +277,10 @@ test('team settings rail names the URL org when the session list is personal-onl
 test('account page header puts the phone section menu above the heading', async () => {
 	const connectionsHtml = await renderToString(
 		jsx(AccountPageHeader, {
-			title: 'Connections',
+			title: 'Agents',
 			description:
 				'The agents connected to this Kody account, and how to connect another.',
-			currentHref: '/account/connections',
+			currentHref: '/account/agents',
 		}),
 	)
 	const menu = connectionsHtml.indexOf('>Workspace</span>')

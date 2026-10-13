@@ -31,6 +31,7 @@ import { runDurableObjectDurationAttribution } from '#worker/usage/durable-objec
 import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 import { drainOrgAuditOutbox } from '#worker/orgs/org-audit-outbox.ts'
 import { checkWebhookAuthRegressionsAndAlert } from '#worker/webhooks/auth-regression-alert.ts'
+import { reconcilePackageAppCustomHostnames } from '#worker/package-app-custom-hostnames/reconcile.ts'
 
 export {
 	isScheduledLaneName,
@@ -105,6 +106,11 @@ export async function runScheduledLane(input: {
 		}
 		case 'org_audit_outbox':
 			return drainOrgAuditOutbox({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'package_app_custom_hostnames_reconcile':
+			return reconcilePackageAppCustomHostnames({
 				env: input.env,
 				now: input.scheduledAt,
 			})

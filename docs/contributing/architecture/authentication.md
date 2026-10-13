@@ -677,13 +677,13 @@ routed from `packages/worker/src/index.ts`.
   `packages/worker/src/origin-handler.ts`): a client may present an HTTPS URL as
   its `client_id` with no registration step. Signed-in users can also mint a
   confidential pre-registered client from `/account/mcp-oauth-clients` (Account
-  → Connections → Advanced). That page is user-minted clients, not inbound host
-  grants. Account → Connections (`/@<slug>/-/connections`) lists inbound grants
-  from `listUserGrants` (paged) joined with `lookupClient` for a best-effort
-  label, authorized time, and revoke. The account UI groups those unique
-  `clientId`s by display name, shows a public icon when the host kind already
-  has an SVG, and sorts last-used newest-first, then connected time. Timestamps
-  are grant `createdAt` (connected time) plus last-used from UserMeter
+  → Agents → Advanced). That page is user-minted clients, not inbound host
+  grants. Account → Agents (`/@<slug>/-/agents`) lists inbound grants from
+  `listUserGrants` (paged) joined with `lookupClient` for a best-effort label,
+  authorized time, and revoke. The account UI groups those unique `clientId`s by
+  display name, shows a public icon when the host kind already has an SVG, and
+  sorts last-used newest-first, then connected time. Timestamps are grant
+  `createdAt` (connected time) plus last-used from UserMeter
   `inbound_mcp_connection_last_used` (successful `/mcp` bearer validation, keyed
   by inbound OAuth `clientId`, 5-minute Durable Object debounce, `waitUntil` so
   it is not on the awaited hot path). Unknown last-used renders as "never" and

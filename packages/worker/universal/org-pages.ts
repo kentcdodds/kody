@@ -8,7 +8,7 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
  */
 const orgOwnedAccountSections = [
 	'activity',
-	'connections',
+	'agents',
 	'email',
 	'integrations',
 	'jobs',
@@ -68,7 +68,7 @@ function isOrgOwnedAccountSection(
 
 /**
  * `/account/secrets.json` and the other org-owned account JSON routes. The
- * Connections page reads `/account/connected-agents.json` and
+ * Agents page reads `/account/connected-agents.json` and
  * `/account/connection-usage.json`; `/account/connections.json` is the
  * person's sign-in providers. The Memories download is
  * `/account/memories-export.json`. The credentials list
@@ -82,7 +82,7 @@ export function orgOwnedAccountApiSection(
 	const match = /^\/account\/([^/.]+)\.json$/.exec(pathname)
 	const name = match?.[1] ?? ''
 	if (name === 'connected-agents' || name === 'connection-usage') {
-		return 'connections'
+		return 'agents'
 	}
 	if (name === 'memories-export') return 'memories'
 	if (name === 'credentials') return 'secrets'

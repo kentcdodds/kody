@@ -334,12 +334,12 @@ test('org account JSON names the section', () => {
 	expect(orgOwnedAccountApiSection('/account/secrets.json')).toBe('secrets')
 	expect(orgOwnedAccountApiSection('/account/jobs.json')).toBe('jobs')
 	expect(orgOwnedAccountApiSection('/account/connected-agents.json')).toBe(
-		'connections',
+		'agents',
 	)
 	expect(orgOwnedAccountApiSection('/account/connection-usage.json')).toBe(
-		'connections',
+		'agents',
 	)
-	// Sign-in providers belong to the person, not the Connections page.
+	// Sign-in providers belong to the person, not the Agents page.
 	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/packages.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()

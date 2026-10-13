@@ -66,6 +66,55 @@ function operationNeedsAccountWriteLease(resolved: {
 	)
 }
 
+/**
+ * Serialized OpenAPI document per server origin with a strong ETag equal to
+ * the SHA-256 of the body, so clients revalidate by content rather than by
+ * age. Built once per isolate per origin, like the document itself.
+ */
+const openApiResponseMemo = new Map<
+	string,
+	Promise<{ text: string; etag: string }>
+>()
+
+function openApiResponseBody(serverUrl: string) {
+	let memo = openApiResponseMemo.get(serverUrl)
+	if (!memo) {
+		memo = buildOpenApiDocument({ serverUrl }).then(async (document) => {
+			const text = JSON.stringify(document)
+			return { text, etag: `"${await sha256Hex(text)}"` }
+		})
+		memo.catch(() => openApiResponseMemo.delete(serverUrl))
+		openApiResponseMemo.set(serverUrl, memo)
+	}
+	return memo
+}
+
+async function sha256Hex(text: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(text),
+	)
+	return Array.from(new Uint8Array(digest), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
+}
+
+/**
+ * RFC 9110 If-None-Match: `*` or 1#entity-tag. Opaque tags are quoted and may
+ * contain commas, so the list is not split on every comma. Weak and strong
+ * tags compare by opaque value.
+ */
+function etagMatches(ifNoneMatch: string | null, etag: string) {
+	if (!ifNoneMatch) return false
+	const trimmed = ifNoneMatch.trim()
+	if (trimmed === '*') return true
+	const target = etag.trim().replace(/^W\//, '')
+	for (const match of trimmed.matchAll(/(?:W\/)?"[^"]*"/g)) {
+		if (match[0].replace(/^W\//, '') === target) return true
+	}
+	return false
+}
+
 function json(body: unknown, init: ResponseInit = {}) {
 	return Response.json(body ?? null, {
 		...init,
@@ -380,10 +429,14 @@ export async function handleOpenApiRequest(input: {
 					headers: { Allow: 'GET, HEAD' },
 				})
 			}
-			return Response.json(
-				await buildOpenApiDocument({ serverUrl: url.origin }),
-				{ headers: { 'Cache-Control': 'public, max-age=300' } },
-			)
+			const { text, etag } = await openApiResponseBody(url.origin)
+			const headers = { 'Cache-Control': 'public, max-age=300', ETag: etag }
+			if (etagMatches(input.request.headers.get('If-None-Match'), etag)) {
+				return new Response(null, { status: 304, headers })
+			}
+			return new Response(text, {
+				headers: { ...headers, 'Content-Type': 'application/json' },
+			})
 		}
 		if (url.pathname === '/' && input.request.method === 'GET') {
 			return json({

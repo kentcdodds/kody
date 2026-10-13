@@ -395,6 +395,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 	expect(mockModule.addMcpServer).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('stable-user-1'),
+			personId: ownerIdFromStored('stable-user-1'),
 			name: 'notion',
 			url: 'https://mcp.notion.example/mcp',
 			baseUrl: 'https://example.com',
@@ -412,6 +413,10 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 	expect(mockModule.reconnectServer).toHaveBeenCalledWith({
 		serverId: 'server-1',
 		callbackUrl,
+		actor: {
+			ownerOrgId: ownerIdFromStored('stable-user-1'),
+			personId: ownerIdFromStored('stable-user-1'),
+		},
 	})
 
 	const hung = discoveryFailure('attempt-reconnect')
@@ -497,6 +502,10 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 	expect(mockModule.handleOAuthCallback).toHaveBeenCalledWith({
 		url: `${callbackUrl}?code=abc&state=xyz`,
 		callbackUrl,
+		actor: {
+			ownerOrgId: ownerIdFromStored('stable-user-1'),
+			personId: ownerIdFromStored('stable-user-1'),
+		},
 	})
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({

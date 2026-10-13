@@ -958,7 +958,7 @@ test('control-kody request --header sends repeatable headers on the first reques
 				cookieFile,
 				formatCookieFile(origin, 'kody_session=stale'),
 			)
-			const referer = `${origin}/@acme/-/connections`
+			const referer = `${origin}/@acme/-/agents`
 			const options = requestArgv(
 				'GET',
 				'/account/connected-agents.json',

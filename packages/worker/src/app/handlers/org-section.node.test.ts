@@ -112,12 +112,10 @@ test('workspace secrets and connections pass the team-org gate', async () => {
 		params: { orgSlug: 'acme' },
 	} as never)
 	expect(response.status).not.toBe(404)
-	const connections = await createOrgSectionHandler(env, 'connections').handler(
-		{
-			request: new Request('https://kody.test/@acme/-/connections'),
-			params: { orgSlug: 'acme' },
-		} as never,
-	)
+	const connections = await createOrgSectionHandler(env, 'agents').handler({
+		request: new Request('https://kody.test/@acme/-/agents'),
+		params: { orgSlug: 'acme' },
+	} as never)
 	expect(connections.status).not.toBe(404)
 })
 
@@ -141,12 +139,10 @@ test('team Connections are open to every member role and to grant-only collabora
 	const { orgSectionDenial } = await import('#app/org-request-binding.ts')
 	const team = { id: 'org-acme', slug: 'acme' } as never
 	for (const role of ['owner', 'member', 'billing', null] as const) {
-		expect(orgSectionDenial({ org: team, role }, 'connections')).toBeNull()
+		expect(orgSectionDenial({ org: team, role }, 'agents')).toBeNull()
 	}
 	expect(orgSectionDenial({ org: team, role: null }, 'secrets')).toBe(
 		'Organization resources unavailable',
 	)
-	expect(orgSectionDenial('denied', 'connections')).toBe(
-		'Organization unavailable',
-	)
+	expect(orgSectionDenial('denied', 'agents')).toBe('Organization unavailable')
 })

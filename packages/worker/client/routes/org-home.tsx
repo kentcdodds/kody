@@ -76,7 +76,7 @@ export function renderOrgHomeMain(input: {
 							body: `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`,
 							action: (
 								<a
-									href={orgResourcePath(input.slug, 'connections')}
+									href={orgResourcePath(input.slug, 'agents')}
 									mix={css(getGhostButtonCss({ size: 'sm' }))}
 								>
 									Connect an agent
@@ -142,14 +142,14 @@ export function renderOrgHomeMain(input: {
 							),
 						})
 					: null}
-				{/* Grant-only collaborators open Connections only (orgSectionDenial);
+				{/* Grant-only collaborators open Agents only (orgSectionDenial);
 				    members get the full workspace. The collaborator CTA above already
-				    covers Connections, so skip this step for them. */}
+				    covers Agents, so skip this step for them. */}
 				{collaborator
 					? null
 					: renderStep({
 							icon: 'box',
-							title: 'Repositories, connections, secrets, and jobs',
+							title: 'Repositories, agents, secrets, and jobs',
 							body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
 							action: (
 								<div mix={css(stepActionsCss)}>
@@ -166,10 +166,10 @@ export function renderOrgHomeMain(input: {
 										Jobs
 									</a>
 									<a
-										href={orgResourcePath(input.slug, 'connections')}
+										href={orgResourcePath(input.slug, 'agents')}
 										mix={css(getGhostButtonCss({ size: 'sm' }))}
 									>
-										Connections
+										Agents
 									</a>
 									<a
 										href={orgResourcePath(input.slug, 'secrets')}

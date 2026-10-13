@@ -782,6 +782,7 @@ async function ensureProductionResources(options: CliOptions) {
 			SYSTEM_EMAIL_DOMAIN: process.env.SYSTEM_EMAIL_DOMAIN,
 			LEGACY_USER_EMAIL_DOMAINS: process.env.LEGACY_USER_EMAIL_DOMAINS,
 			LEGACY_SYSTEM_EMAIL_DOMAINS: process.env.LEGACY_SYSTEM_EMAIL_DOMAINS,
+			PACKAGE_APP_ZONE_ID: process.env.PACKAGE_APP_ZONE_ID,
 		},
 	})
 

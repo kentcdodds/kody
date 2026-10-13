@@ -3,6 +3,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
+import { type McpOAuthAttemptActor } from './oauth-attempt.ts'
 import { type SealedMcpPreRegisteredOAuthClient } from './preregistered-oauth-client.ts'
 import {
 	type McpClientHubSnapshot,
@@ -58,11 +59,13 @@ export type McpClientHubClient = {
 		name: string
 		url: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult>
 	reconnectServer(input: {
 		serverId: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpServerConnectResult>
 	refreshServer(input: { serverId: string }): Promise<McpServerConnectResult>
 	removeServer(input: { serverId: string }): Promise<void>
@@ -70,11 +73,17 @@ export type McpClientHubClient = {
 		serverId: string
 		callbackUrl: string
 		client: SealedMcpPreRegisteredOAuthClient | null
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpServerOAuthClientChange>
 	handleOAuthCallback(input: {
 		url: string
 		callbackUrl: string
+		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpServerOAuthCallbackOutcome>
+	bindOAuthAttemptActor(input: {
+		serverId: string
+		actor: McpOAuthAttemptActor
+	}): Promise<{ ok: boolean }>
 	getSnapshot(): Promise<McpClientHubSnapshot>
 	readPendingAuthorization(input: {
 		serverId: string
@@ -151,6 +160,9 @@ export function createMcpClientHubClient(
 			const result = await stub.handleOAuthCallback(callbackInput)
 			await emitPendingConnectionEvents(input, stub)
 			return result
+		},
+		async bindOAuthAttemptActor(bindInput) {
+			return await stub.bindOAuthAttemptActor(bindInput)
 		},
 		async getSnapshot() {
 			return getCachedMcpClientHubSnapshot(input)

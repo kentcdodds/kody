@@ -126,9 +126,9 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 	},
 	{
 		id: 'connections',
-		title: 'Connections (connected agents)',
+		title: 'Agents (connected agents)',
 		file: 'connections.md',
-		paths: ['/@:orgSlug/-/connections(/*rest)'],
+		paths: ['/@:orgSlug/-/agents(/*rest)'],
 		apis: ['/account/connected-agents.json'],
 	},
 	{

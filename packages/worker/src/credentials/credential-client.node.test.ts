@@ -530,6 +530,18 @@ test('an unbound link selects a built-in OAuth app, and kinds with no form point
 		ownerId: t.acmeId,
 		name: '@acme/hooks',
 	})
+	mockNeeds([{ key: 'github', kind: 'oauth', provider: 'github' }])
+	const declaredOauth = await rejection(
+		openCredentialClient(t.contextFor({ request: bea, packageId }), {
+			key: 'github',
+		}),
+	)
+	const declaredOauthUrl = new URL(
+		(declaredOauth.body as { createUrl: string }).createUrl,
+	)
+	expect(declaredOauthUrl.searchParams.get('kindMode')).toBe('required')
+	expect(declaredOauthUrl.searchParams.get('platform')).toBe('github')
+
 	mockNeeds([{ key: 'deploy-hook', kind: 'url', provider: 'vercel' }])
 	const urlNeed = await rejection(
 		openCredentialClient(t.contextFor({ request: bea, packageId }), {
@@ -1120,6 +1132,7 @@ test('a call map is validated before code runs: unknown keys fail an invoke and 
 			map: normalizeCredentialCallMap(credentials)!,
 			packageIds,
 			strict,
+			baseUrl: 'https://example.com',
 		})
 	await expect(validate({ MAIL: 'resend-prod' }, true)).resolves.toEqual({
 		warnings: [],
@@ -1134,9 +1147,23 @@ test('a call map is validated before code runs: unknown keys fail an invoke and 
 	expect(adHoc.warnings).toEqual([
 		expect.stringContaining('credentials.resend is not a need of this code'),
 	])
-	await expect(
-		rejection(validate({ MAIL: 'missing' }, true)),
-	).resolves.toMatchObject({ body: { code: 'credential_not_found' } })
+	const missing = await rejection(validate({ MAIL: 'missing' }, true))
+	expect(missing.body).toMatchObject({ code: 'credential_not_found' })
+	expect(
+		Object.fromEntries(
+			new URL((missing.body as { createUrl: string }).createUrl).searchParams,
+		),
+	).toEqual({ kind: 'secret', kindMode: 'required', name: 'missing' })
+	const emptyPick = await rejection(
+		openCredentialClient(
+			t.contextFor({ request, packageId, credentials: { MAIL: [] } }),
+			{ key: 'MAIL' },
+		),
+	)
+	expect(emptyPick.body).toMatchObject({
+		code: 'credential_unbound',
+		createUrl: expect.stringContaining('need=MAIL'),
+	})
 	await expect(
 		rejection(
 			validateCredentialCallMap({
@@ -1145,6 +1172,7 @@ test('a call map is validated before code runs: unknown keys fail an invoke and 
 				map: normalizeCredentialCallMap({ MAIL: 'resend-prod' })!,
 				packageIds: [],
 				strict: false,
+				baseUrl: 'https://example.com',
 			}),
 		),
 	).resolves.toMatchObject({ body: { code: 'credential_denied' } })
@@ -1176,6 +1204,7 @@ test('call map validation keeps the entry package pinned needs over a dependency
 			map: normalizeCredentialCallMap({ MAIL: 'resend-prod' })!,
 			packageIds: [entryId, depId],
 			strict: true,
+			baseUrl: 'https://example.com',
 		}),
 	).resolves.toEqual({ warnings: [] })
 })

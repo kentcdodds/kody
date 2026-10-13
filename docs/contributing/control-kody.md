@@ -13,7 +13,7 @@ npm run control-kody -- request GET /@<slug>/-/waiting --dump --contains 'Waitin
 npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
-npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/agents'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
@@ -84,7 +84,7 @@ session and body own them). The session cookie and re-login work as for any
 other `request`:
 
 ```bash
-npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: http://localhost:3742/@<slug>/-/connections'
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: http://localhost:3742/@<slug>/-/agents'
 ```
 
 The same `--header` works inside a `preview --request` spec.

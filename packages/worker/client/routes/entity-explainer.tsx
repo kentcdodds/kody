@@ -129,10 +129,10 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	},
 	{
 		id: 'connections',
-		question: 'What is a connection?',
-		match: accountSection('/account/connections'),
+		question: 'What is a connected agent?',
+		match: accountSection('/account/agents'),
 		paragraphs: [
-			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
+			'A connected agent is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
 		],
 		learnMore: [
 			{

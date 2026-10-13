@@ -77,6 +77,7 @@ export function createCredentialClientKodyTools(input: {
 					map: callMap,
 					packageIds: packageId ? [packageId] : [],
 					strict: args.strict === true,
+					baseUrl: input.callerContext.baseUrl,
 				})
 			})
 		},

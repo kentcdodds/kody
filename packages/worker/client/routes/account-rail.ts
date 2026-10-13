@@ -12,6 +12,12 @@ import {
 	orgTeamsPath,
 	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
+	orderOrganizations,
+	parseOrgBillingPath,
+	parseOrgManagementPath,
+	parseOrgResourcePath,
+	switchOrgPath,
+	type OrganizationSummary,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
@@ -59,6 +65,12 @@ export function accountRailOrgSlug(input: {
 	)
 }
 
+/** One page of a rail item that has several (Activity → Workflows). */
+export type AccountRailTab = {
+	href: string
+	label: string
+}
+
 export type AccountRailItem = {
 	href: string
 	label: string
@@ -73,6 +85,11 @@ export type AccountRailItem = {
 	 * light it up.
 	 */
 	exact?: boolean
+	/**
+	 * Sibling pages shown as tabs under the page title. Each tab page also
+	 * marks this item current, so the rail lists the group once.
+	 */
+	tabs?: ReadonlyArray<AccountRailTab>
 }
 
 export type AccountRailGroup = {
@@ -99,6 +116,12 @@ const accountRailItems: Array<AccountRailItem> = [
 		],
 	},
 	{
+		href: routes.accountUsage.href(),
+		label: 'Usage & credits',
+		icon: 'chart',
+		alsoActiveFor: [routes.accountCredits.href()],
+	},
+	{
 		href: routes.accountOrganizations.href(),
 		label: 'Organizations',
 		icon: 'users',
@@ -121,29 +144,71 @@ export function isAccountRailPath(pathname: string) {
 }
 
 /**
- * The account rail: person settings, then a Workspace group that opens what
- * the person's own organization holds (everything that lived under `/account`
- * before organizations). Overview links the rest of the workspace.
+ * Where an organization's workspace opens: a team org's home at `/@slug`,
+ * or the signup org's `/@slug/-/overview` (its `/@slug` is the public
+ * profile).
+ */
+export function workspaceHomeHref(org: { slug: string; personal: boolean }) {
+	return org.personal
+		? orgOverviewPath(org.slug)
+		: routes.profile.href({ username: org.slug })
+}
+
+/**
+ * Whether `pathname` (already rewritten into `org`) is a page this role can
+ * open there. Mirrors the server: grant-only collaborators open Agents
+ * only, Billing needs `billing:write`, Teams needs `team:read`, and a
+ * personal org has no Settings, Members, Teams, or Collaborators pages.
+ */
+function orgPathOpensFor(
+	pathname: string,
+	org: Pick<OrganizationSummary, 'personal' | 'role'>,
+) {
+	const section = parseOrgResourcePath(pathname)?.section
+	if (org.role === null) return section === 'agents'
+	if (parseOrgBillingPath(pathname)) return orgRoleManagesBilling(org.role)
+	const management = parseOrgManagementPath(pathname)?.section
+	if (!management) return true
+	if (org.personal) return management === 'grants'
+	if (management === 'teams') return org.role !== 'billing'
+	return true
+}
+
+/**
+ * Where the org switcher sends you: the same page in the target org when
+ * you can open it there, otherwise that org's workspace home.
+ */
+export function workspaceSwitchHref(
+	pathname: string,
+	org: Pick<OrganizationSummary, 'slug' | 'personal' | 'role'>,
+) {
+	const next = switchOrgPath(pathname, org.slug)
+	if (next === routes.profile.href({ username: org.slug })) {
+		return workspaceHomeHref(org)
+	}
+	return orgPathOpensFor(next, org) ? next : workspaceHomeHref(org)
+}
+
+/**
+ * The account rail: settings that belong to the person, then a Workspaces
+ * group with one row per organization they belong to. Each row opens that
+ * workspace, whose own rail lists every section, so any section is two
+ * clicks from `/account`.
  */
 export function accountRailGroups(input: {
-	workspaceSlug: string | null | undefined
+	organizations: ReadonlyArray<OrganizationSummary>
 }): Array<AccountRailGroup> {
 	const person: AccountRailGroup = { label: null, items: accountRailItems }
-	const slug = input.workspaceSlug
-	if (!slug) return [person]
+	if (input.organizations.length === 0) return [person]
 	return [
 		person,
 		{
-			label: 'Workspace',
-			items: [
-				overviewRailItem(slug),
-				repositoriesRailItem(slug),
-				connectionsRailItem(slug),
-				mcpServersRailItem(slug),
-				secretsRailItem(slug),
-				jobsRailItem(slug),
-				memoriesRailItem(slug),
-			],
+			label: 'Workspaces',
+			items: orderOrganizations(input.organizations).map((org) => ({
+				href: workspaceHomeHref(org),
+				label: `@${org.slug}`,
+				icon: org.personal ? 'user' : 'users',
+			})),
 		},
 	]
 }
@@ -274,12 +339,10 @@ function jobsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	}
 }
 
-function connectionsRailItem(
-	orgSlug: string | null | undefined,
-): AccountRailItem {
+function agentsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
-		href: orgSectionHref(orgSlug, 'connections'),
-		label: 'Connections',
+		href: orgSectionHref(orgSlug, 'agents'),
+		label: 'Agents',
 		icon: 'link',
 		alsoActiveFor: [routes.accountMcpOauthClients.href()],
 		description: 'Agents connected to Kody and what they can use.',
@@ -315,21 +378,60 @@ function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	}
 }
 
-function usageRailItem(): AccountRailItem {
+function activityRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	const tabs: Array<AccountRailTab> = [
+		{ href: orgSectionHref(orgSlug, 'activity'), label: 'Activity' },
+		{ href: orgSectionHref(orgSlug, 'workflows'), label: 'Workflows' },
+		{ href: orgSectionHref(orgSlug, 'waiting'), label: 'Waiting' },
+	]
 	return {
-		href: routes.accountUsage.href(),
-		label: 'Usage',
-		icon: 'chart',
-		alsoActiveFor: [routes.accountCredits.href()],
+		href: orgSectionHref(orgSlug, 'activity'),
+		label: 'Activity',
+		icon: 'trending-up',
+		alsoActiveFor: tabs.slice(1).map((tab) => tab.href),
 		description:
-			'Your personal compute usage, plan limits, and credits (not scoped to this organization).',
+			'Recent runs with their logs, long-running workflows, and what is waiting on you.',
+		tabs,
+	}
+}
+
+function grantsRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSlug ? orgGrantsPath(orgSlug) : routes.account.href(),
+		label: 'Grants',
+		icon: 'key',
+		description: 'Who can use packages and other resources in this workspace.',
 	}
 }
 
 /**
- * Shared Build / Access / Data / Activity sections. Personal and team orgs
- * use the same list; the server opens every section for member roles
- * (`orgSectionDenial` only closes grant-only collaborators).
+ * Members of a team org, with Teams, Collaborators, and Grants as tabs. Teams
+ * needs `team:read`, which the Billing role does not have.
+ */
+function membersRailItem(orgSlug: string, role: OrgRole): AccountRailItem {
+	const tabs: Array<AccountRailTab> = [
+		{ href: orgMembersPath(orgSlug), label: 'Members' },
+		...(role === 'owner' || role === 'member'
+			? [{ href: orgTeamsPath(orgSlug), label: 'Teams' }]
+			: []),
+		{ href: orgCollaboratorsPath(orgSlug), label: 'Collaborators' },
+		{ href: orgGrantsPath(orgSlug), label: 'Grants' },
+	]
+	return {
+		href: orgMembersPath(orgSlug),
+		label: 'Members',
+		icon: 'users',
+		alsoActiveFor: tabs.slice(1).map((tab) => tab.href),
+		description: 'People, teams, collaborators, and what each can use.',
+		tabs,
+	}
+}
+
+/**
+ * Sections every organization has, in the same order for personal and team
+ * orgs. The server opens each of them for member roles (`orgSectionDenial`
+ * only closes grant-only collaborators). Credentials are one group: the
+ * kinds of thing Kody uses on your behalf, plus the vaults they can come from.
  */
 function workspaceResourceGroups(
 	orgSlug: string | null | undefined,
@@ -341,12 +443,6 @@ function workspaceResourceGroups(
 				repositoriesRailItem(orgSlug),
 				jobsRailItem(orgSlug),
 				{
-					href: orgSectionHref(orgSlug, 'workflows'),
-					label: 'Workflows',
-					icon: 'refresh',
-					description: 'Deferred and long-running workflow runs.',
-				},
-				{
 					href: orgSectionHref(orgSlug, 'webhooks'),
 					label: 'Webhooks',
 					icon: 'cloud',
@@ -355,9 +451,9 @@ function workspaceResourceGroups(
 			],
 		},
 		{
-			label: 'Access',
+			label: 'Credentials',
 			items: [
-				connectionsRailItem(orgSlug),
+				secretsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'integrations'),
 					label: 'Integrations',
@@ -365,18 +461,18 @@ function workspaceResourceGroups(
 					description: 'Services you connect so Kody can use them.',
 				},
 				mcpServersRailItem(orgSlug),
-			],
-		},
-		{
-			label: 'Data',
-			items: [
-				secretsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',
-					icon: 'key',
+					icon: 'lock',
 					description: 'Bind a package to a provider such as 1password.',
 				},
+			],
+		},
+		{
+			label: 'Agents & data',
+			items: [
+				agentsRailItem(orgSlug),
 				memoriesRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'email'),
@@ -387,33 +483,18 @@ function workspaceResourceGroups(
 				},
 			],
 		},
-		{
-			label: 'Activity',
-			items: [
-				{
-					href: orgSectionHref(orgSlug, 'activity'),
-					label: 'Activity',
-					icon: 'trending-up',
-					description: 'Failures first, then recent runs with their logs.',
-				},
-				{
-					href: orgSectionHref(orgSlug, 'waiting'),
-					label: 'Waiting',
-					icon: 'clock',
-					description: 'Things that need you.',
-				},
-			],
-		},
+		{ label: 'Activity', items: [activityRailItem(orgSlug)] },
 	]
 }
 
 /**
  * The workspace rail: everything the organization owns, grouped by job.
- * Personal and team orgs share the same Build / Access / Data / Activity
- * sections (and Overview). Organization links differ by kind: signup orgs
- * get Billing + Usage; team orgs get Settings / Members / … (role-filtered)
- * plus the same person-scoped Usage link. Grant-only collaborators
- * (`role` null) get Connections only, with a short note explaining why.
+ * Personal and team orgs share every section above Organization. A team
+ * org's Organization group holds Members (with Teams, Collaborators, and
+ * Grants as tabs), Settings, and Billing for roles that manage it. A
+ * personal org has no members or settings of its own (its name and photo
+ * are the person's profile), so it lists Grants and Billing. Grant-only
+ * collaborators (`role` null) get Agents only, with a note.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -430,29 +511,30 @@ export function workspaceRailGroups(input: {
 		if (!orgSlug) return []
 		return [
 			{
-				label: 'Access',
-				items: [connectionsRailItem(orgSlug)],
-				note: 'Only Connections is available with a grant. Ask an owner for membership to open the rest of this workspace.',
+				label: 'Agents & data',
+				items: [agentsRailItem(orgSlug)],
+				note: 'Only Agents is available with a grant. Ask an owner for membership to open the rest of this workspace.',
 			},
 		]
 	}
 
-	const organizationItems: Array<AccountRailItem> = personal
-		? [
-				{
-					href: orgSlug ? orgGrantsPath(orgSlug) : routes.account.href(),
-					label: 'Grants',
-					icon: 'key',
-					description:
-						'Who can use packages and other resources in this workspace.',
-				},
-				{
-					...billingRailItem(orgSlug),
-					description: 'Plan, subscription, and payment method.',
-				},
-				usageRailItem(),
-			]
-		: [...teamOrgManagementItems({ orgSlug, role }), usageRailItem()]
+	const billing: AccountRailItem = {
+		...billingRailItem(orgSlug),
+		description: 'Plan, subscription, and payment method.',
+	}
+	const organizationItems: Array<AccountRailItem> =
+		personal || !orgSlug
+			? [grantsRailItem(orgSlug), billing]
+			: [
+					membersRailItem(orgSlug, role),
+					{
+						href: orgSettingsPath(orgSlug),
+						label: 'Settings',
+						icon: 'edit',
+						description: 'The organization name, photo, and deletion.',
+					},
+					...(orgRoleManagesBilling(role) ? [billing] : []),
+				]
 
 	return [
 		...(orgSlug
@@ -461,6 +543,30 @@ export function workspaceRailGroups(input: {
 		...workspaceResourceGroups(orgSlug),
 		{ label: 'Organization', items: organizationItems },
 	]
+}
+
+/**
+ * Tabs for the page at `currentPath`: those of the rail item it belongs to
+ * (named by that item), or null when that item has a single page.
+ */
+export function railTabsForPath(
+	groups: ReadonlyArray<AccountRailGroup>,
+	currentPath: string,
+): {
+	label: string
+	tabs: Array<AccountRailTab & { active: boolean }>
+} | null {
+	const item = groups
+		.flatMap((group) => group.items)
+		.find((entry) => entry.tabs && isAccountNavItemActive(entry, currentPath))
+	if (!item?.tabs) return null
+	return {
+		label: item.label,
+		tabs: item.tabs.map((tab) => ({
+			...tab,
+			active: matchesRailPath(tab.href, currentPath),
+		})),
+	}
 }
 
 function matchesRailPath(itemPath: string, currentPath: string) {
