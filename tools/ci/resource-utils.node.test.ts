@@ -183,6 +183,26 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			'Authentication error [code: 10000]',
 			true,
 		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			false,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Authentication error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'✘ [ERROR] Internal authentication error: internal server error',
+			true,
+		],
 	]
 	expect(cases.filter(([fn, value, want]) => fn(value) !== want)).toEqual([])
 
@@ -199,6 +219,10 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		['Cloudflare API request failed (429): Rate limited', true],
 		['Cloudflare API request failed (403): Authentication error', false],
 		['Cloudflare API request failed (401): unauthorized', false],
+		[
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
 	]
 	expect(
 		apiErrors.filter(
@@ -800,6 +824,24 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 			),
 			create,
 		],
+		[
+			// Cloudflare platform blip seen on preview-sweep listings: HTTP 500
+			// with "Internal authentication error". Must retry, not treat as a
+			// permanent bad-token failure (which would skip backoff entirely).
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+			{ pathname: '/workers/scripts' },
+		],
 	]
 	for (const [firstResponse, request] of retried) {
 		const result = { queue_id: 'queue-1', queue_name: 'kody-email-delivery' }
@@ -834,6 +876,36 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 		}),
 	).rejects.toThrow('Cloudflare API request failed (403): Authentication error')
 	expect(forbidden).toHaveBeenCalledTimes(1)
+
+	const persistentInternalAuth = vi
+		.fn<typeof fetch>()
+		.mockImplementation(async () =>
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+		)
+	await expect(
+		cloudflareApiRequest({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			pathname: '/workers/scripts',
+			fetcher: persistentInternalAuth,
+			sleep: async () => {},
+			maxAttempts: 3,
+		}),
+	).rejects.toThrow(
+		'Cloudflare API request failed (500): Internal authentication error: internal server error',
+	)
+	expect(persistentInternalAuth).toHaveBeenCalledTimes(3)
 })
 
 test('emptyR2Bucket deletes nested keys with literal slashes', async () => {
