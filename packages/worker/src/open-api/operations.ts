@@ -161,6 +161,21 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/access/invites/{invite_id}/revoke', 'inviteRevoke'],
 		['POST', '/v1/orgs', 'orgCreate'],
 		['PATCH', '/v1/orgs', 'orgUpdate'],
+		[
+			'GET',
+			'/v1/orgs/package-app-custom-hostnames',
+			'packageAppCustomHostnameList',
+		],
+		[
+			'POST',
+			'/v1/orgs/package-app-custom-hostnames',
+			'packageAppCustomHostnameAdd',
+		],
+		[
+			'DELETE',
+			'/v1/orgs/package-app-custom-hostnames/{id}',
+			'packageAppCustomHostnameDelete',
+		],
 		['GET', '/v1/orgs/members', 'orgMemberList'],
 		['PATCH', '/v1/orgs/members/{user_id}', 'orgMemberUpdate'],
 		['DELETE', '/v1/orgs/members/{user_id}', 'orgMemberRemove'],
