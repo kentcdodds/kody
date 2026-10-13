@@ -14,12 +14,15 @@ function fakeVectorizeApi(
 		staleReadsAfterRecreate?: number
 		/** GET index succeeds; metadata_index/list still 410 for N calls. */
 		metadataStaleAfterCreate?: number
+		/** 1-based metadata_index/list calls that answer 410 (readiness flap). */
+		metadataList410OnCalls?: Array<number>
 	} = {},
 ) {
 	const indexes = new Map<string, FakeIndex>()
 	const deleted = new Set<string>()
 	const staleReads = new Map<string, number>()
 	const metadataStaleReads = new Map<string, number>()
+	let metadataListCalls = 0
 	const requests: Array<string> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
 	const fetcher: typeof fetch = async (input, init) => {
@@ -55,6 +58,18 @@ function fakeVectorizeApi(
 				{ success: false, errors: [{ code: 3001, message: 'index deleted' }] },
 				{ status: 410 },
 			)
+		}
+		if (match?.[2] === '/metadata_index/list') {
+			metadataListCalls += 1
+			if (options.metadataList410OnCalls?.includes(metadataListCalls)) {
+				return Response.json(
+					{
+						success: false,
+						errors: [{ code: 3001, message: 'index deleted' }],
+					},
+					{ status: 410 },
+				)
+			}
 		}
 		if (options.lookupStatus) {
 			return Response.json(
@@ -252,6 +267,23 @@ test('ensureVectorizeIndex waits when GET succeeds but metadata_index/list still
 		api.requests.filter((entry) => entry.includes('metadata_index/list'))
 			.length,
 	).toBeGreaterThanOrEqual(3)
+})
+
+test('ensureVectorizeIndex retries metadata setup when readiness flaps back to 410', async () => {
+	consoleError.mockImplementation(() => {})
+	const api = fakeVectorizeApi({ metadataList410OnCalls: [2] })
+	const name = 'kody-pr-13-vectors'
+	await ensureVectorizeIndex({ ...client(api.fetcher), name })
+	expect(api.indexes.get(name)?.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('retrying metadata setup'),
+	)
 })
 
 test('dry-run ensure and delete make no Cloudflare requests', async () => {
