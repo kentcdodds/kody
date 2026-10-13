@@ -212,6 +212,54 @@ npx @kodycodes/cli@latest dev webhook ping --body ./fixtures/ping.json
 npx @kodycodes/cli@latest dev emit user.deleted --body ./fixtures/user-deleted.json
 ```
 
+### Mock outbound `fetch` with `.kody/mocks.ts`
+
+Optional. Under `--target mock` only, put MSW handlers in the package at
+`.kody/mocks.ts`. Package code still runs in workerd; the CLI’s Node-side
+gateway matches outbound fetches against those handlers (no patching inside
+workerd). Packages without the file keep native workerd fetch. The file is
+local-dev only — it is not a publish entrypoint and is ignored on
+`--target prod`.
+
+```ts
+// .kody/mocks.ts
+import { http, HttpResponse } from 'msw'
+
+export const handlers = [
+	http.get('https://api.example.com/v1/me', () =>
+		HttpResponse.json({ id: 'user_mock', name: 'Mock User' }),
+	),
+]
+```
+
+```bash
+npx @kodycodes/cli@latest execute --target mock --invoke ./export --params '…'
+npx @kodycodes/cli@latest dev --passthrough api.stripe.com
+```
+
+Unmatched requests fail closed with structured `unmocked_request` (method +
+URL) and a paste-ready handler stub in `fix` / `details.handlerStub`.
+`--passthrough <host,…>` opts specific hosts into the real network;
+credentials stay fake on mock, so passthrough never carries real secrets.
+Private/local passthrough hosts also need `--allow-private-network`.
+
+Example agent-facing error:
+
+```text
+[unmocked_request] Unmocked GET https://api.example.com/v1/me under --target mock.
+target: mock
+where: GET https://api.example.com/v1/me
+fix: Add a handler in .kody/mocks.ts (or pass --passthrough api.example.com for real network without secrets):
+
+import { http, HttpResponse } from 'msw'
+
+export const handlers = [
+  http.get("https://api.example.com/v1/me", () =>
+    HttpResponse.json({ /* TODO */ }, { status: 200 }),
+  ),
+]
+```
+
 ## Test the scheduled wrapper before enabling its schedule
 
 Scheduled behavior should not be its first real execution. Prefer
