@@ -190,9 +190,15 @@ function publicPageHead(
 	}
 }
 
+/**
+ * Feature pages share `feature-pages.css`. A detail page also loads its own
+ * animated scenes (`/feature-scenes/<feature>.css`), so no page pays for the
+ * other pages' scene styles.
+ */
 function featurePageHead(
 	pageId: PublicOgPageId,
 	title: string,
+	scenes?: string,
 ): DocumentHeadDescriptor {
 	return {
 		...publicPageHead(pageId, title, {
@@ -202,6 +208,15 @@ function featurePageHead(
 					hrefPath: '/feature-pages.css',
 					sameOrigin: true,
 				},
+				...(scenes
+					? [
+							{
+								rel: 'stylesheet',
+								hrefPath: `/feature-scenes/${scenes}.css`,
+								sameOrigin: true,
+							},
+						]
+					: []),
 			],
 		}),
 		description: publicOgPages[pageId].ogDescription,
@@ -457,26 +472,32 @@ const routeDocumentHeads = {
 	[routePattern(routes.featureMemory)]: featurePageHead(
 		'feature-memory',
 		'Shared memory for your AI agents | Kody',
+		'memory',
 	),
 	[routePattern(routes.featureSecrets)]: featurePageHead(
 		'feature-secrets',
 		'API secrets for your AI agents | Kody',
+		'secrets',
 	),
 	[routePattern(routes.featurePackages)]: featurePageHead(
 		'feature-packages',
 		'Reusable packages for your AI agents | Kody',
+		'packages',
 	),
 	[routePattern(routes.featureTriggers)]: featurePageHead(
 		'feature-triggers',
 		'Triggers and automation for your AI agents | Kody',
+		'triggers',
 	),
 	[routePattern(routes.featureIntegrations)]: featurePageHead(
 		'feature-integrations',
 		'Service connections for your AI agents | Kody',
+		'integrations',
 	),
 	[routePattern(routes.featureApps)]: featurePageHead(
 		'feature-apps',
 		'Package apps for your AI agents | Kody',
+		'apps',
 	),
 	[routePattern(routes.business)]: publicPageHead(
 		'business',

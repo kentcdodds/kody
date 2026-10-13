@@ -17,7 +17,7 @@ import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 
 export type PrimitiveWidgetSize = 'full' | 'mini'
 
-export const stageWidth = 360
+const stageWidth = 360
 
 export function PrimitiveWidgetFrame(
 	handle: Handle<{
