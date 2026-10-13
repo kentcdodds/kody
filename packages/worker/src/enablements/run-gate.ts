@@ -46,7 +46,11 @@ import {
 	resumeEnablement,
 	type EnablementPauseInput,
 } from './repo.ts'
-import { type EnablementRecord, type EnablementTriggerKind } from './types.ts'
+import {
+	type EnablementPause,
+	type EnablementRecord,
+	type EnablementTriggerKind,
+} from './types.ts'
 
 export type EnablementTrigger = {
 	kind: EnablementTriggerKind
@@ -274,6 +278,20 @@ async function checkEnablerAccess(input: {
 	return { ok: true, run, access }
 }
 
+function samePause(
+	stored: EnablementPause | null,
+	next: EnablementPauseInput,
+): boolean {
+	return (
+		stored !== null &&
+		stored.reason === next.reason &&
+		stored.permission === (next.permission ?? null) &&
+		stored.resourceType === (next.resourceType ?? null) &&
+		stored.resourceId === (next.resourceId ?? null) &&
+		stored.credentialId === (next.credentialId ?? null)
+	)
+}
+
 /**
  * Decide which enablements of `trigger` run for one event, pausing the ones
  * whose enabler lost access and resuming the ones whose access is back.
@@ -325,12 +343,18 @@ export async function planEnablementRuns(input: {
 			},
 		})
 		if (!check.ok) {
-			if (check.pause && enablement.state === 'on') {
+			// A paused enablement whose cause changed gets the current cause, so
+			// Waiting names what to fix now.
+			if (
+				check.pause &&
+				(enablement.state === 'on' || !samePause(enablement.pause, check.pause))
+			) {
 				await pauseEnablement({
 					db,
 					orgId: input.orgId,
 					id: enablement.id,
 					pause: check.pause,
+					replace: true,
 				})
 			}
 			skip('paused')

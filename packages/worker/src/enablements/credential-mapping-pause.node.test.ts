@@ -141,3 +141,59 @@ test('a need a republish added with no single match never pauses the trigger', a
 	expect((await t.plan()).runs).toHaveLength(1)
 	expect((await t.readEnablement())?.state).toBe('on')
 })
+
+test('a mapping row left by a need a republish removed never pauses the trigger', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue(
+		mappingFixtureNeeds.filter((need) => need.key !== 'chat'),
+	)
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toHaveLength(1)
+	expect((await t.readEnablement())?.state).toBe('on')
+})
+
+test('a pick that no longer fits its need after a republish changed the kind pauses the trigger', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue(
+		mappingFixtureNeeds.map((need) =>
+			need.key === 'chat' ? { ...need, kind: 'oauth' } : need,
+		),
+	)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toMatchObject({
+		state: 'paused',
+		paused_resource_type: 'credential-mapping',
+		paused_resource_id: 'chat',
+		paused_credential_id: slack,
+	})
+})
+
+test('a paused enablement whose cause moved to another need names the new one', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+		{ target: daily, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+	])
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect((await t.readEnablement())?.paused_resource_id).toBe('chat')
+
+	await t.setDeleted(slack, false)
+	await t.setDeleted(prod, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toMatchObject({
+		state: 'paused',
+		paused_resource_id: 'mail',
+		paused_credential_id: prod,
+	})
+})

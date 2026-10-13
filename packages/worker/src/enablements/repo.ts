@@ -304,12 +304,16 @@ export type EnablementPauseInput = {
 	credentialId?: string | null
 }
 
-/** Pause an `on` enablement. Returns false when it was not on. */
+/**
+ * Pause an `on` enablement, or with `replace` also rewrite a paused one's
+ * cause. Returns false when nothing was written.
+ */
 export async function pauseEnablement(input: {
 	db: D1Database
 	orgId: string
 	id: string
 	pause: EnablementPauseInput
+	replace?: boolean
 	now?: string
 }): Promise<boolean> {
 	const now = input.now ?? new Date().toISOString()
@@ -319,7 +323,9 @@ export async function pauseEnablement(input: {
 			 SET state = 'paused', paused_reason = ?, paused_permission = ?,
 			     paused_resource_type = ?, paused_resource_id = ?,
 			     paused_credential_id = ?, paused_at = ?, updated_at = ?
-			 WHERE id = ? AND org_id = ? AND state = 'on'`,
+			 WHERE id = ? AND org_id = ? AND state IN (${
+					input.replace ? `'on', 'paused'` : `'on'`
+				})`,
 		)
 		.bind(
 			input.pause.reason,

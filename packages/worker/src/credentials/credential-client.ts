@@ -260,7 +260,8 @@ function retryFor(key: string | null, credential: UsableCredential) {
 	}
 }
 
-async function loadPackageNeeds(input: {
+/** The credential needs `packageId`'s published source declares. */
+export async function loadPackageNeeds(input: {
 	env: Env
 	request: RequestContext
 	packageId: string
@@ -448,6 +449,14 @@ function mappedCredentialFits(
 			throw new Error(`Unhandled need match: ${String(exhaustive)}`)
 		}
 	}
+}
+
+/** Whether a mapped `credential` still fits declared `need`, as a run checks it. */
+export function mappedCredentialFitsNeed(
+	credential: UsableCredential,
+	need: CredentialNeed,
+): boolean {
+	return mappedCredentialFits(credential, needTarget(need.key, need))
 }
 
 /**

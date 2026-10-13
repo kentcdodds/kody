@@ -44,3 +44,25 @@ test('a republish that adds needs notes how live enablements resolve them', asyn
 		"This publish adds credential needs calendar. 1 live enablement of this package resolves them on each run from its trigger mapping, the enabler's default, the org default, or the one credential the enabler can use; a run that finds none fails with a link to create one. Map them on the package's Credentials page, or propose mappings with credentialMappingPropose.",
 	)
 })
+
+test('a republish that renames the package still notes added needs, found by its source', async () => {
+	const t = await setupPackageCredentialMappingFixture({
+		loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
+	})
+	await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	const renamed = (sourceId: string | null) =>
+		republishedNeedsNote({
+			env: t.env,
+			userId: t.acmeId,
+			sourceId,
+			packageName: '@acme/digest-renamed',
+			needs: [...mappingFixtureNeeds, calendar],
+		})
+	expect(await renamed(null)).toBeNull()
+	expect(await renamed(t.savedPackage.sourceId)).toContain(
+		'This publish adds credential needs calendar.',
+	)
+})

@@ -252,6 +252,7 @@ export async function syncArtifactSourceSnapshot(
 								env: input.env,
 								baseUrl: input.baseUrl,
 								userId: input.userId,
+								sourceId: source.id,
 								...(input.expectedPackageScope !== undefined
 									? { expectedPackageScope: input.expectedPackageScope }
 									: {}),

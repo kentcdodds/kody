@@ -1463,6 +1463,7 @@ async function runChunkedBundleValidation(input: {
 async function buildCredentialNeedsCheck(input: {
 	env?: Env
 	userId?: string
+	sourceId?: string
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 }): Promise<RepoCheckResult | null> {
@@ -1482,6 +1483,7 @@ async function buildCredentialNeedsCheck(input: {
 					? await republishedNeedsNote({
 							env: input.env,
 							userId: input.userId,
+							sourceId: input.sourceId ?? null,
 							packageName: input.manifest.name,
 							needs: closure.needs,
 						})
@@ -1530,6 +1532,8 @@ export async function runRepoChecks(input: {
 	env?: Env
 	baseUrl?: string
 	userId?: string
+	/** The entity source being published, when there is one. */
+	sourceId?: string
 	expectedPackageScope?: string
 	phaseTimings?: PublishPhaseTimings
 	/**
@@ -1657,6 +1661,7 @@ export async function runRepoChecks(input: {
 	const credentialNeedsCheck = await buildCredentialNeedsCheck({
 		env: input.env,
 		userId: input.userId,
+		...(input.sourceId ? { sourceId: input.sourceId } : {}),
 		manifest,
 		sourceFiles,
 	})

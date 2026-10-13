@@ -305,6 +305,7 @@ export async function publishFromExternalRef(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		sourceId: source.id,
 		expectedPackageScope: input.expectedPackageScope,
 		phaseTimings: input.phaseTimings,
 		...(deferBundleCheckToRebuild ? { deferBundleCheckToRebuild: true } : {}),
