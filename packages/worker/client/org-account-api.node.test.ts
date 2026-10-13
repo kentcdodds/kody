@@ -82,7 +82,7 @@ test('adopt commits the opened section JSON so grant collaborators are not 404d'
 	fetchMock.mockClear()
 	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/connections')
 	expect(fetchMock).toHaveBeenCalledWith(
-		'/account/connections.json',
+		'/account/connected-agents.json',
 		expect.objectContaining({
 			referrer: connections,
 			credentials: 'include',
