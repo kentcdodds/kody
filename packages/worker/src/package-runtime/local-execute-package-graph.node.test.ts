@@ -452,9 +452,23 @@ test('local gateway fetch always hops a credential client request, which carries
 	expect(shim).toContain(
 		'export const credential = __kodyCredentialRuntime.credential;',
 	)
+	expect(shim).toContain(
+		'export const credentials = __kodyCredentialRuntime.credentials;',
+	)
+	// Ad hoc / unpublished local execute imports these from the CLI host
+	// kody:runtime; the shim stays the single source of the client runtime for
+	// published modules and the gateway-fetch hop. Neither surface may embed
+	// secret plaintext helpers — only CapabilityProxy tool names + the opaque
+	// handle header.
+	expect(shim).toContain('credentialClientOpen')
+	expect(shim).toContain('x-kody-credential-client')
+	expect(shim).not.toMatch(/secretValue|plaintextSecret|apiKeyValue/)
 	const packageRuntime = createLocalExecutePackageRuntimeModuleSource('pkg-1')
 	expect(packageRuntime).toContain(
 		'__kodyCreatePackageBoundCredentialRuntime("pkg-1")',
+	)
+	expect(packageRuntime).toContain(
+		'export const credential = __kodyPackageCredentialRuntime.credential;',
 	)
 })
 

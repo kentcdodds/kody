@@ -239,15 +239,17 @@ module and does not silently hop to `kody.execute`. See
 - OAuth client-credentials: `path: ['kody','oauthClientCredentials']` with the
   same argument shape as cloud `oauthClientCredentials(...)`. Origin expands
   secret placeholders through the fetch gateway.
-- Credential clients (`credential()` / `credentials()`, ADR 0068): the local
-  shim opens, signs, calls MCP tools, and refreshes OAuth through
+- Credential clients (`credential()` / `credentials()`, ADR 0068): both the CLI
+  host `kody:runtime` (ad hoc / unpublished `--code` / `--file`) and the
+  package-graph shim open, sign, call MCP tools, and refresh OAuth through
   `kody.credentialClientOpen` / `credentialClientSign` /
   `credentialClientCallTool` / `credentialClientRefresh`, which return
   `{ ok: true, value }` or `{ ok: false, error: { code, message, retryWith } }`.
   Handles bind to the CapabilityProxy token, not a run, and a claimed
   `packageId` must pass `package:execute`. A client `fetch` carries only the
   handle in `x-kody-credential-client`, so it always takes the gateway-fetch
-  hop, where origin places the credential.
+  hop, where origin places the credential. See
+  [CLI local credential runtime](../contracts/cli-local-credential-runtime.md).
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
   `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
   `__kodySecretAuthorityPackageId`). Each local hop accepts only package ids
