@@ -442,3 +442,52 @@ test('checkState fails closed when the live server no longer matches the attempt
 		await storage.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
 	).toBeUndefined()
 })
+
+test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {
+	const { storage } = createMemoryStorage()
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://mcp.example/mcp',
+		clientId: 'client-1',
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'docs',
+	}
+	const original = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: live.clientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	const replaced = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: 'client-replaced',
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: discoveryOnIssuer,
+	})
+	await writeMcpOAuthAttemptIdentity(storage, original!)
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => {
+			await writeMcpOAuthAttemptIdentity(storage, replaced!)
+			return { ...live, clientId: 'client-replaced' }
+		},
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	const state = await provider.state()
+
+	const refused = await provider.checkState(state)
+	expect(refused.valid).toBe(false)
+	expect(refused.error).toMatch(/Reconnect at \/account\/mcp-servers/)
+	expect(
+		await storage.get(mcpOAuthAttemptStorageKey('server-home')),
+	).toBeUndefined()
+	expect(
+		await storage.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
+})

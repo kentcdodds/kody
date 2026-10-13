@@ -264,9 +264,22 @@ function installMcpOAuthAttemptBinding(
 				typeof provider.discoveryState === 'function'
 					? await provider.discoveryState()
 					: undefined
+			// Re-read after the awaits: a concurrent redirect can replace the
+			// pending attempt (and clear any verified marker). Binding the
+			// marker to the attempt we just checked keeps that race fail-closed.
+			const pendingNow = await readMcpOAuthAttemptIdentity(
+				provider.storage,
+				result.serverId,
+			)
 			if (
+				!pending ||
+				!pendingNow ||
+				pendingNow.clientId !== pending.clientId ||
+				pendingNow.personId !== pending.personId ||
+				pendingNow.ownerOrgId !== pending.ownerOrgId ||
+				pendingNow.serverUrl !== pending.serverUrl ||
 				!oauthAttemptMatchesLiveServer({
-					pending,
+					pending: pendingNow,
 					live,
 					discovery,
 				})
