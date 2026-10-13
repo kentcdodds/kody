@@ -184,19 +184,20 @@ continuing in the tool-only lane.
 
 ## Local testing before publish
 
-**Prefer `@kodycodes/cli` `kody dev` before the first publish.** From the package
-directory, test all four package surfaces locally. One `--target prod|mock`
-switch decides where server-side calls go (default **`mock` for `kody dev`**,
-**`prod` for `execute` / `search`** so existing workflows stay unchanged).
+**Prefer `@kodycodes/cli` `kody dev` before the first publish.** From the
+package directory, test all four package surfaces locally. One
+`--target prod|mock` switch decides where server-side calls go (default **`mock`
+for `kody dev`**, **`prod` for `execute` / `search`** so existing workflows stay
+unchanged).
 
-| Surface | How to test locally |
-| --- | --- |
-| **Exports** | `kody execute --target mock --invoke ./export --params '…'` (or `--file`) against the working tree; then `--target prod` |
-| **Apps** | `kody dev` / `kody dev fetch /path` — see [Package apps](./package-apps.md#local-testing-with-kody-dev) |
-| **Schedules** | `kody dev job <name>` — runs the job entry **once** with the scheduler’s no-arg contract; never schedules locally |
-| **Webhooks** | `kody dev webhook <name> --body fixture.json` — delivers the platform webhook envelope |
+| Surface           | How to test locally                                                                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Exports**       | `kody execute --target mock --invoke ./export --params '…'` (or `--file`) against the working tree; then `--target prod`                                 |
+| **Apps**          | `kody dev` / `kody dev fetch /path` — see [Package apps](./package-apps.md#local-testing-with-kody-dev)                                                  |
+| **Schedules**     | `kody dev job <name>` — runs the job entry **once** with the scheduler’s no-arg contract; never schedules locally                                        |
+| **Webhooks**      | `kody dev webhook <name> --body fixture.json` — delivers the platform webhook envelope                                                                   |
 | **Subscriptions** | `kody dev emit <event> --body event.json` — delivers the platform subscription envelope (`synthetic: true`); on mock, any declared event type is allowed |
-| **Check** | `kody dev check` — bundle + light publish validations without running |
+| **Check**         | `kody dev check` — bundle + light publish validations without running                                                                                    |
 
 Mock first (safe iteration; scratch storage; no real secrets), then the same
 commands with `--target prod`, then publish. Share previews for unpublished
