@@ -3,6 +3,7 @@ import {
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type SecretBucketRow,
@@ -439,16 +440,20 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 
 export async function deleteSecretEntry(input: {
 	db: D1Database
+	userId: string
 	bucketId: string
 	name: string
 }): Promise<boolean> {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM secret_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.bucketId, input.name)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const liveRowSql = `FROM secret_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`
+	const results = await input.db.batch([
+		...credentialGrantCleanupStatements(input.db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.bucketId, input.name],
+		}),
+		input.db.prepare(`DELETE ${liveRowSql}`).bind(input.bucketId, input.name),
+	])
+	return (results.at(-1)?.meta.changes ?? 0) > 0
 }
 
 export async function listSecretBucketsByScope(input: {

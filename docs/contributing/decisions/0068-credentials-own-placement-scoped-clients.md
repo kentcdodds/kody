@@ -365,7 +365,8 @@ warns as if the placeholder will break.
   affected enablements pause. OAuth credentials pinned to that org are wiped and
   revoked upstream.
 - **Owner deletes a credential:** the value is tombstoned immediately, with no
-  restore.
+  restore. Grants and pending grant invites on its id and its personal org
+  grants are removed in the same batch.
 - **Account deleted:** every value is tombstoned at soft delete and never
   restored; rows are purged per [0066](./0066-soft-delete-and-purge.md).
 - **Account suspended:** resolution is denied and nothing is wiped.

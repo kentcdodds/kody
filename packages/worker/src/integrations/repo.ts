@@ -19,6 +19,7 @@ import {
 	isIntegrationRefreshPolicy,
 	type IntegrationRefreshPolicy,
 } from './refresh-policy.ts'
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type JoinedIntegration,
@@ -520,14 +521,17 @@ export async function deleteIntegrationConnection(input: {
 	userId: string
 	name: string
 }): Promise<boolean> {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM user_integrations
-			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.userId, input.name)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const liveRowSql = `FROM user_integrations
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`
+	const results = await input.db.batch([
+		...credentialGrantCleanupStatements(input.db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.userId, input.name],
+		}),
+		input.db.prepare(`DELETE ${liveRowSql}`).bind(input.userId, input.name),
+	])
+	return (results.at(-1)?.meta.changes ?? 0) > 0
 }
 
 export async function getIntegrationCredentialId(input: {
