@@ -463,7 +463,12 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 				{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
 			],
 		}),
-	).rejects.toThrow('src/index.ts type error')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof Error &&
+			error.name === 'RepoChecksFailedError' &&
+			error.message === 'src/index.ts type error',
+	)
 	expect(mockModule.runRepoChecks).toHaveBeenCalled()
 	expect(mockModule.git.push).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()

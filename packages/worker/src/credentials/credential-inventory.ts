@@ -311,6 +311,7 @@ export async function attributePackageCredentials(input: {
 				case 'url':
 				case 'login':
 				case 'signing':
+				case undefined:
 					return []
 				default: {
 					const exhaustive: never = slot.kind

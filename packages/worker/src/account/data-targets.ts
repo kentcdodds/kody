@@ -379,6 +379,25 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		value: 'deleted-user',
 	},
 	{
+		kind: 'user_columns',
+		table: 'package_approval_requests',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'requested_by_user_id',
+		setColumn: 'requested_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'resolved_by_user_id',
+		setColumn: 'resolved_by_user_id',
+		value: 'deleted-user',
+	},
+	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
 		includeInExport: false,

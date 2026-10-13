@@ -297,6 +297,27 @@ test('0010 does not report references that name a declared slot of their kind', 
 	).toEqual({})
 })
 
+test('0010 treats an omitted slot kind as matching fetch-capable placeholders', () => {
+	const omittedKindManifest = manifest({
+		credentials: {
+			github: { description: 'Read PRs to summarize them.' },
+		},
+	})
+	const declared = (source: string) =>
+		patternsByPath({
+			'package.json': omittedKindManifest,
+			'index.ts': source,
+		})['index.ts'] ?? []
+	expect(
+		declared(
+			"export const h = { Authorization: 'Bearer {{secret:github}}', b: '{{integration-token:github}}' }",
+		),
+	).toEqual([])
+	expect(
+		declared("export const h = { Authorization: '{{secret:other}}' }"),
+	).toEqual(['literal secret'])
+})
+
 test('0010 resolves module-level string constants, including relative imports', () => {
 	expect(
 		modulePatterns(

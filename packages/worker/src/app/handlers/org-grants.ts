@@ -1,6 +1,11 @@
 import { type Action } from 'remix/router'
+import { authorizeGrantRevoke } from '#mcp/capabilities/access/shared.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import {
 	orgHasPermission,
 	resolveOrgManagementAccess,
@@ -8,8 +13,13 @@ import {
 } from '#app/org-management-access.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { softDeleteGrant } from '#worker/orgs/access-writes.ts'
+import {
+	getGrantById,
+	isGrantResourceType,
+	softDeleteGrant,
+} from '#worker/orgs/access-writes.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgGrantsForView } from '#worker/orgs/org-grants-view.ts'
 import { type OrgGrantsLoaderData } from '#universal/loader-data.ts'
@@ -46,20 +56,57 @@ function renderDenied(
 	})
 }
 
+/**
+ * Same resource check as grant revoke. Authorization and caller denials mean
+ * this viewer cannot revoke the grant; anything else still fails the request.
+ */
+async function grantRevokeAllowed(
+	env: Env,
+	user: AuthenticatedAppUser,
+	grant: { resourceType: string; resourceId: string },
+) {
+	if (!isGrantResourceType(grant.resourceType)) return false
+	try {
+		await authorizeGrantRevoke(
+			{
+				env,
+				callerContext: {
+					user: user.mcpUser,
+					request: user.request,
+				},
+			},
+			grant.resourceType,
+			grant.resourceId,
+		)
+		return true
+	} catch (error) {
+		// AuthorizationError is an McpCallerError. Both are denials.
+		if (error instanceof McpCallerError) return false
+		throw error
+	}
+}
+
 async function loadOrgGrantsData(input: {
 	env: Env
-	user: Parameters<typeof orgHasPermission>[1]
+	user: AuthenticatedAppUser
 	org: ManagedOrg
 }): Promise<OrgGrantsLoaderData> {
-	const canManage =
-		!input.org.personal &&
-		(await orgHasPermission(input.env, input.user, 'member:write'))
+	const canManage = await orgHasPermission(
+		input.env,
+		input.user,
+		'member:write',
+	)
 	const grants = await listOrgGrantsForView(input.env.APP_DB, input.org.id)
 	return {
 		ok: true,
 		org: input.org,
-		grants,
 		canManage,
+		grants: await Promise.all(
+			grants.map(async (grant) => ({
+				...grant,
+				canRevoke: await grantRevokeAllowed(input.env, input.user, grant),
+			})),
+		),
 	}
 }
 
@@ -143,16 +190,6 @@ export function createOrgGrantsRevokePostHandler(env: Env) {
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
-			if (access.org.personal) {
-				return jsonResponse(
-					{
-						ok: false,
-						error:
-							'Grants for your personal organization are managed elsewhere.',
-					},
-					400,
-				)
-			}
 			const body = await readJsonObject(request)
 			const grantId =
 				typeof body?.grantId === 'string' ? body.grantId.trim() : ''
@@ -162,11 +199,43 @@ export function createOrgGrantsRevokePostHandler(env: Env) {
 					400,
 				)
 			}
+			const grant = await getGrantById({
+				db: env.APP_DB,
+				orgId: access.org.id,
+				grantId,
+			})
+			if (!grant || !isGrantResourceType(grant.resourceType)) {
+				return jsonResponse(
+					{ ok: false, error: 'Grant was not found in this organization.' },
+					400,
+				)
+			}
+			try {
+				await authorizeGrantRevoke(
+					{
+						env,
+						callerContext: {
+							user: user.mcpUser,
+							request: user.request,
+						},
+					},
+					grant.resourceType,
+					grant.resourceId,
+				)
+			} catch (error) {
+				if (error instanceof AuthorizationError) {
+					return jsonResponse({ ok: false, error: error.message }, 403)
+				}
+				if (error instanceof McpCallerError) {
+					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
+				throw error
+			}
 			try {
 				await softDeleteGrant({
 					db: env.APP_DB,
 					orgId: access.org.id,
-					grantId,
+					grantId: grant.id,
 					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {

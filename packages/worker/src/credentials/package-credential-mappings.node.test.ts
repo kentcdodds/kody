@@ -196,6 +196,38 @@ test('one write sets defaults and a trigger mapping, turning the trigger on', as
 	})
 })
 
+test('a set then clear of one trigger mapping never turns the trigger on', async () => {
+	const t = await setup()
+	await t.storeKey('resend-prod', 'resend')
+	const resolved = await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+		{ target: daily, needKey: 'mail', credentials: null },
+	])
+	expect(resolved.map((change) => change.error)).toEqual([null, null])
+	expect(await t.enablementCount()).toBe(0)
+	expect(await t.mappingAudits()).toEqual([])
+})
+
+test('the audit keeps stored ids the editor can no longer use', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.apply('bea', 'owner', [
+		{ target: orgDefault, needKey: 'mail', credentials: [{ id: prod }] },
+	])
+	await t.db
+		.prepare(`UPDATE secret_entries SET deleted_at = ? WHERE id = ?`)
+		.bind(now, prod)
+		.run()
+	await t.apply('bea', 'owner', [
+		{ target: orgDefault, needKey: 'mail', credentials: null },
+	])
+	const audits = await t.mappingAudits()
+	expect(audits[1]!.details).toMatchObject({
+		beforeCredentialIds: [prod],
+		afterCredentialIds: null,
+	})
+})
+
 test('refused mapping changes write no credential.mapping.update audit', async () => {
 	const t = await setup()
 	await t.storeKey('resend-prod', 'resend')

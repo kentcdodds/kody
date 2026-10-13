@@ -322,13 +322,13 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 					/>
 				</ChartCard>
 				<ChartCard
-					title="Users by plan"
-					sub="Manual grant (`plan`) only — not Stripe or overlays. See Plan sources above."
+					title="Orgs by plan"
+					sub="Manual grant on `orgs.plan` only — not Stripe or overlays. See Plan sources above."
 					span={4}
 				>
 					<DonutChart
-						ariaLabel="Users by plan"
-						centerLabel="users"
+						ariaLabel="Orgs by plan"
+						centerLabel="orgs"
 						slices={data.plans.map((slice, index) => ({
 							label: formatPlanLabel(slice.plan),
 							value: slice.count,

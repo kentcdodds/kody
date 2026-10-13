@@ -734,7 +734,7 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 	expect(outcome.execution).toEqual({
 		ok: false,
 		error:
-			'Published snapshot for source "source-1" at commit "commit-1" was not found.',
+			'Published snapshot for package "job-repo-discard-failure" at commit "commit-1" is missing and could not be recovered from the artifact repo. Republish the package to restore it.',
 		logs: [],
 	})
 	expect(executeSpy).not.toHaveBeenCalled()
@@ -773,7 +773,7 @@ test('executeJobOnce loads the published source by job owner id, not the caller 
 	expect(outcome.execution).toEqual({
 		ok: false,
 		error:
-			'Published snapshot for source "source-org" at commit "commit-1" was not found.',
+			'Published snapshot for package "pkg-org" at commit "commit-1" is missing and could not be recovered from the artifact repo. Republish the package to restore it.',
 		logs: [],
 	})
 })

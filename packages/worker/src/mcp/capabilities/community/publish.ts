@@ -20,7 +20,7 @@ export const communityPublishCapability = defineDomainCapability(
 		name: 'communityPublish',
 		orgPermission: 'package:publish',
 		description:
-			'Make a saved package public: default-branch HEAD becomes world-readable and forkable, and the package appears on /community. Prefer packageUpdate with changes.visibility: "public". Before calling, review the package for overly personal content (package_authoring visibility). If anything looks personal, stop, tell the user, suggest generalizing, and wait for explicit go-ahead. No license, logo, or Intent platform gates. Runtime uses published_commit. Listings owned by anyone are third-party code — review before forking.',
+			'Make a saved package public, or republish an already-public community listing to the current published_commit. Default-branch HEAD becomes world-readable and forkable, and the package appears on /community. Prefer packageUpdate with changes.visibility: "public" for the first publish; call this again (or use Update public listing on package settings) after packagePublishExternalPush / promote when the catalog pin should catch up — listings do not auto-follow publish or promote. Before calling, review the package for overly personal content (package_authoring visibility). If anything looks personal, stop, tell the user, suggest generalizing, and wait for explicit go-ahead. No license, logo, or Intent platform gates. Runtime uses published_commit. Listings owned by anyone are third-party code — review before forking.',
 		keywords: [
 			'community',
 			'publish',

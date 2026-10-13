@@ -1168,6 +1168,8 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 			'- package.json: secretMounts',
 			'- src/index.ts: literal secret, computed integration',
 			'These references keep working; nothing here needs to change. Labels are described under "Credential slots" in the packages docs.',
+			'Optional, if you want a scoped credential type for these (ADR 0068):',
+			"- Header, query, or basic auth placeholders: a Key with an inject (credentialUpdate) can be opened with credential(key), and its client places the value and sends it only to the Key's hosts.",
 		].join('\n'),
 	})
 	expect(credentialPatternFindingsNotice(result.results)).toBe(check!.message)
@@ -1255,6 +1257,63 @@ test('runRepoChecks adds the plain http note only when that pattern is found', a
 		}),
 	)
 	expect(findCheck(https, 'credentials')?.message).not.toContain('plain http:')
+})
+
+test('runRepoChecks offers optional credential types only for placements one fits', async () => {
+	const { result } = await runChecks(
+		packageFiles(manifest('typed-credentials'), {
+			'src/send.ts': [
+				"export const hook = () => fetch('https://hooks.example.com/{{secret:HOOK_PATH}}')",
+				// LOGIN_SECRET, not PASSWORD: a body field that spells the
+				// credential name is dropped, and the login hint needs the field.
+				"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:LOGIN_SECRET}}' }) })",
+				"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
+			].join('\n'),
+		}),
+	)
+	expect(result.ok).toBe(true)
+	const message = findCheck(result, 'credentials')!.message
+	const hints = message
+		.split('\n')
+		.slice(
+			message
+				.split('\n')
+				.indexOf(
+					'Optional, if you want a scoped credential type for these (ADR 0068):',
+				),
+		)
+	expect(hints).toEqual([
+		'Optional, if you want a scoped credential type for these (ADR 0068):',
+		'- Integration token headers: credential(key) for an OAuth connection sends Authorization: Bearer and refreshes the token for you.',
+		'- Path or whole-URL placeholders: a url credential (secretSet kind "url") holds the whole URL, and its client fetches it without the URL entering code.',
+		'- Password or token exchange bodies: a login credential (secretSet kind "login") runs the exchange on the host and places the session token.',
+	])
+	expect(message).toContain(
+		'These references keep working; nothing here needs to change.',
+	)
+	expect(message).not.toMatch(/HOOK_PATH|LOGIN_SECRET|github/)
+
+	const { result: signing } = await runChecks(
+		packageFiles(manifest('signing-credentials'), {
+			'src/sign.ts': [
+				"import { kody } from 'kody:runtime'",
+				"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'APNS_KEY', claims: {} })",
+			].join('\n'),
+		}),
+	)
+	expect(findCheck(signing, 'credentials')?.message).toContain(
+		'- Signing (secretJwtSign or signature key material): a signing credential',
+	)
+
+	const { result: unfit } = await runChecks(
+		packageFiles(manifest('sdk-credentials'), {
+			'src/sdk.ts':
+				"export const client = (make: (o: object) => unknown) => make({ apiKey: '{{secret:SDK_KEY}}' })",
+		}),
+	)
+	const unfitMessage = findCheck(unfit, 'credentials')?.message ?? ''
+	expect(unfitMessage).toContain('- src/sdk.ts: literal secret')
+	expect(unfitMessage).not.toContain('Optional, if you want')
 })
 
 test('credentialPatternNoticeForFiles reads repo paths under the source root', () => {

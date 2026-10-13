@@ -1309,9 +1309,11 @@ test('a webhook enablement that loses the one-live race is webhook_other_enabler
 			enablement: null,
 			kind: 'webhook' as const,
 			triggerName: 'incoming',
+			orgId: t.orgId,
+			instanceId: 'endpoint-race',
 			enablementId: id,
 			statement,
-			prepare: async () => {},
+			prepareStatements: async () => [],
 		}
 	}
 	await expect(

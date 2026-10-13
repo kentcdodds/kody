@@ -15,6 +15,7 @@ import {
 	approveCredentialProposal,
 	resolveCredentialApproval,
 } from './credential-approval.ts'
+import { buildWriteCredentialMappingStatement } from './credential-mappings.ts'
 import { buildPackageCredentialsView } from './package-credential-mappings.ts'
 
 const mocks = vi.hoisted(() => ({ loadPackageManifestBySourceId: vi.fn() }))
@@ -196,6 +197,89 @@ test('a replaced credential with the same name changes the fingerprint', async (
 	expect(after.fingerprint).not.toBe(before.fingerprint)
 })
 
+test('an edit between the final check and the write fails Approve and writes nothing', async () => {
+	const t = await setup()
+	await t.storeKey('resend-prod', 'resend')
+	const proposal = proposalOf([
+		{ target: mine, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+	])
+	const scope = await t.scopeFor('bea', 'owner')
+	const reviewed = (await resolveCredentialApproval(scope, proposal)).view
+	// `scope` still holds the rows read before this edit, as a racing
+	// request would leave them.
+	await t.apply('bea', 'owner', [
+		{ target: mine, needKey: 'mail', credentials: [] },
+	])
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal,
+		fingerprint: reviewed.fingerprint,
+	})
+	expect(outcome.status).toBe('stale')
+	const view = await buildPackageCredentialsView(
+		await t.scopeFor('bea', 'owner'),
+	)
+	expect(view.needs[0]!.defaults.mine?.credentials).toEqual([])
+	expect(await t.mappingAudits()).toHaveLength(1)
+})
+
+test('switching a stored mapping between unusable credentials changes the fingerprint', async () => {
+	const t = await setup()
+	const gone1 = await t.storeKey('resend-old-1', 'resend')
+	const gone2 = await t.storeKey('resend-old-2', 'resend')
+	await t.storeKey('resend-prod', 'resend')
+	await t.db
+		.prepare(`UPDATE secret_entries SET deleted_at = ? WHERE id IN (?, ?)`)
+		.bind(new Date().toISOString(), gone1, gone2)
+		.run()
+	const storeMine = (id: string) =>
+		buildWriteCredentialMappingStatement({
+			db: t.db,
+			orgId: t.acmeId,
+			packageId: t.savedPackage.id,
+			needKey: 'mail',
+			target: { target: 'mine', personId: t.people.bea.personId },
+			credentialIds: [id],
+			updatedByUserId: t.people.bea.personId,
+			now: new Date().toISOString(),
+		}).run()
+	const proposal = proposalOf([
+		{ target: mine, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+	])
+	const fingerprint = async () =>
+		(
+			await resolveCredentialApproval(
+				await t.scopeFor('bea', 'owner'),
+				proposal,
+			)
+		).view.fingerprint
+	await storeMine(gone1)
+	const first = await fingerprint()
+	await storeMine(gone2)
+	expect(await fingerprint()).not.toBe(first)
+})
+
+test('renaming a credential picked by id changes the fingerprint', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	const proposal = proposalOf([
+		{ target: mine, needKey: 'mail', credentials: [{ id: prod }] },
+	])
+	const fingerprint = async () =>
+		(
+			await resolveCredentialApproval(
+				await t.scopeFor('bea', 'owner'),
+				proposal,
+			)
+		).view.fingerprint
+	const before = await fingerprint()
+	await t.db
+		.prepare(`UPDATE secret_entries SET name = 'resend-renamed' WHERE id = ?`)
+		.bind(prod)
+		.run()
+	expect(await fingerprint()).not.toBe(before)
+})
+
 test('a member cannot approve org defaults but can approve their own', async () => {
 	const t = await setup()
 	const prod = await t.storeKey('resend-prod', 'resend')
@@ -328,7 +412,7 @@ test('an enable-only proposal turns a minted webhook on at Approve, once', async
 	expect(bea.enable[0]!.error?.code).toBe('webhook_other_enabler')
 })
 
-test('a webhook another person turns on between resolve and write is a conflict that writes nothing', async () => {
+test('a webhook another person turns on between resolve and write is a conflict that writes nothing, not even its signing secret', async () => {
 	const t = await setup()
 	const prod = await t.storeKey('resend-prod', 'resend')
 	await t.grantUse(prod, 'ann')
@@ -336,7 +420,7 @@ test('a webhook another person turns on between resolve and write is a conflict 
 		.prepare(
 			`INSERT INTO webhook_endpoints
 				(id, user_id, package_id, webhook_name, url_secret_hash, hmac_secret_encrypted, created_at, rotated_at)
-			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', 'sealed', ?, ?)`,
+			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', NULL, ?, ?)`,
 		)
 		.bind(
 			t.acmeId,
@@ -351,12 +435,20 @@ test('a webhook another person turns on between resolve and write is a conflict 
 	} as const
 	const proposal = proposalOf([
 		{ target: incoming, needKey: 'mail', credentials: [{ id: prod }] },
+		{
+			target: { type: 'default', layer: 'mine' },
+			needKey: 'mail',
+			credentials: [{ id: prod }],
+		},
 	])
 	const scope = await t.scopeFor('ann', 'member')
 	const { view } = await resolveCredentialApproval(scope, proposal)
 	expect(view).toMatchObject({
 		canApprove: true,
-		changes: [{ willEnable: true, error: null }],
+		changes: [
+			{ willEnable: true, error: null },
+			{ willEnable: false, error: null },
+		],
 	})
 
 	// Bea's enablement lands after Ann's plan was made and before her batch.
@@ -402,4 +494,10 @@ test('a webhook another person turns on between resolve and write is a conflict 
 		.prepare(`SELECT enabler_user_id FROM enablements`)
 		.first<{ enabler_user_id: string }>()
 	expect(live!.enabler_user_id).toBe(String(t.people.bea.personId))
+	const endpoint = await t.db
+		.prepare(
+			`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = 'ep-incoming'`,
+		)
+		.first<{ hmac_secret_encrypted: string | null }>()
+	expect(endpoint!.hmac_secret_encrypted).toBeNull()
 })

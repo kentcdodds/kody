@@ -21,15 +21,15 @@ export const defaultStubPackageDescription =
 
 export function buildStubPackageFiles(input: {
 	name: string
-	kodyId: string
 	description: string
 }): Record<string, string> {
+	// Authored `kody.id` is leftover identity (#1909). Stubs write `name` only;
+	// the parser derives the leaf when present and accepts a matching authored id.
 	const packageJson = {
 		name: input.name,
 		private: true,
 		exports: { '.': './src/index.ts' },
 		kody: {
-			id: input.kodyId,
 			description: input.description,
 		},
 	}
@@ -110,7 +110,7 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		owner: input.owner,
-		files: buildStubPackageFiles({ name, kodyId, description }),
+		files: buildStubPackageFiles({ name, description }),
 	})
 }
 
@@ -160,7 +160,6 @@ export async function createSavedPackageFromFiles(input: {
 			id: packageId,
 			user_id: input.owner.ownerUserId,
 			name: manifest.name,
-			kody_id: manifest.kody.id,
 			description: manifest.kody.description,
 			tags_json: JSON.stringify(manifest.kody.tags ?? []),
 			search_text: manifest.kody.searchText ?? null,

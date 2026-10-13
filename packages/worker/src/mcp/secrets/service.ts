@@ -1010,6 +1010,7 @@ export async function deleteSecret(input: DeleteSecretInput) {
 	if (!bucket) return false
 	return deleteSecretEntry({
 		db: input.env.APP_DB,
+		userId: input.userId,
 		bucketId: bucket.id,
 		name: input.name,
 	})

@@ -88,6 +88,8 @@ const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'saved_packages',
 	// Kept empty: approvals for moved packages are orphan-deleted (re-approve).
 	'package_capability_approvals',
+	// Kept empty: requests for moved packages are orphan-deleted.
+	'package_approval_requests',
 	'user_repos',
 	'entity_sources',
 	'published_bundle_artifacts',
@@ -648,6 +650,18 @@ export function planOrgTransfer(
 				'delete',
 			)
 		}
+	}
+
+	for (const row of source.package_approval_requests) {
+		orphan(
+			'package_approval_requests',
+			row,
+			text(row, 'id'),
+			packageIds.has(text(row, 'package_id'))
+				? 'approval request is addressed to the source owner'
+				: 'package no longer exists',
+			'delete',
+		)
 	}
 
 	// Enablements and grants (org-keyed).

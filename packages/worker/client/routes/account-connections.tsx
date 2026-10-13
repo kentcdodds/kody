@@ -1,5 +1,5 @@
 import { type Handle, css } from 'remix/component'
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -56,12 +56,10 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 const connectYourAgentDocHref = docHref('connect-your-agent')
 
 async function fetchConnectedAgents(href: string, signal: AbortSignal) {
-	const response = await fetch(connectedAgentsApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		connectedAgentsApiPath,
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return { kind: 'unauthorized' as const }
 	const payload = await readJson<AccountConnectedAgentsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {

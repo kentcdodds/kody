@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/component'
 import { readAppSession } from '#client/app-session-context.tsx'
@@ -84,12 +84,10 @@ export function AccountEmailRoute(handle: Handle) {
 		key: 'accountEmail',
 		locationKey: getDataKey,
 		async load(href, signal) {
-			const response = await fetch(buildEmailApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				buildEmailApiRequestUrl(href),
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountEmailLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

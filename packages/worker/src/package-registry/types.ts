@@ -127,8 +127,33 @@ export const packageCredentialSlotNamePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
 export const retiredCredentialPlacementMessage =
 	'kody.credentials slots take no placement: the fetch gateway fills a credential anywhere in a request (a header, the URL path or query, or the body) to a host the credential allows, over HTTPS. Remove placement.'
 
+/**
+ * Kinds that satisfy a need with no declared `kind`: any fetch-capable
+ * credential for the provider (ADR 0068 amendment 2026-10-12).
+ */
+export const fetchCapableCredentialKindValues = [
+	'secret',
+	'oauth',
+	'login',
+] as const satisfies ReadonlyArray<PackageCredentialKind>
+export type FetchCapableCredentialKind =
+	(typeof fetchCapableCredentialKindValues)[number]
+
+export function isFetchCapableCredentialKind(
+	kind: string,
+): kind is FetchCapableCredentialKind {
+	return (fetchCapableCredentialKindValues as ReadonlyArray<string>).includes(
+		kind,
+	)
+}
+
 export const packageCredentialSlotSchema = z.strictObject({
-	kind: z.enum(packageCredentialKindValues),
+	/**
+	 * Optional. Omit for any fetch-capable credential for the provider
+	 * (secret/Key, oauth, login). Declare only when a specific shape is needed
+	 * (`signing`, `mcp`, `url`, or a provider that truly requires one kind).
+	 */
+	kind: z.enum(packageCredentialKindValues).optional(),
 	/**
 	 * Provider slug a credential must carry to auto-resolve for this need
 	 * (for example `github`). Defaults to the key.

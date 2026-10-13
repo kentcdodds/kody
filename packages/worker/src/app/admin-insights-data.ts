@@ -91,7 +91,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v12',
+		key: 'admin-insights:v13',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -166,12 +166,13 @@ async function queryAdminInsights(
 			.all<UsageMonthRow>(),
 		emailInsightsRows.then((rows) => ({ results: rows.emailRows })),
 		emailInsightsRows.then((rows) => ({ results: rows.deliveryRows })),
+		// Billing lives on orgs after Teams P9 (0100 dropped users.plan).
 		db
 			.prepare(
-				`SELECT COALESCE(plan, 'none') AS plan, COUNT(*) AS n
-				 FROM users
+				`SELECT plan AS plan, COUNT(*) AS n
+				 FROM orgs
 				 WHERE ${liveDeletedAtSql()}
-				 GROUP BY COALESCE(plan, 'none')
+				 GROUP BY plan
 				 ORDER BY n DESC`,
 			)
 			.all<PlanRow>(),

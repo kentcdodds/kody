@@ -76,13 +76,21 @@ export function planOrgAuditOutbox(
 	return { outboxId: payload.id, payload }
 }
 
+/**
+ * With `onlyIfChanged`, the row is written only when the statement run just
+ * before it in the same batch changed a row (SQLite `changes()`).
+ */
 export function orgAuditOutboxInsertStatement(
 	appDb: D1Database,
 	plan: OrgAuditOutboxPlan,
+	options: { onlyIfChanged?: boolean } = {},
 ) {
 	return appDb
 		.prepare(
-			`INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
+			options.onlyIfChanged
+				? `INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
+			 SELECT ?, ?, ?, ? WHERE changes() > 0`
+				: `INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
 			 VALUES (?, ?, ?, ?)`,
 		)
 		.bind(

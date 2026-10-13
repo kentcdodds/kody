@@ -485,6 +485,7 @@ test('workspace rail for a team organization matches the personal section shape'
 		'Email',
 		'Activity',
 		'Waiting',
+		'Grants',
 		'Billing',
 		'Usage',
 	])

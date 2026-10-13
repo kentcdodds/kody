@@ -13,6 +13,16 @@ const mockModule = vi.hoisted(() => ({
 	clearInternetVisible: vi.fn(),
 	reloadAccountPackagesAfterWrite: vi.fn(),
 	loadOrgBindingForOrg: vi.fn(),
+	approveCredentialNeedsRequest: vi.fn(),
+	approveWentPublicRequest: vi.fn(),
+}))
+
+vi.mock('#app/account-package-approval-requests.ts', () => ({
+	approveCredentialNeedsRequest: (...args: Array<unknown>) =>
+		mockModule.approveCredentialNeedsRequest(...args),
+	approveWentPublicRequest: (...args: Array<unknown>) =>
+		mockModule.approveWentPublicRequest(...args),
+	loadPendingPackageApprovals: async () => [],
 }))
 
 vi.mock('#app/account-package-write-access.ts', () => ({
@@ -77,6 +87,8 @@ beforeEach(() => {
 	mockModule.clearInternetVisible.mockReset()
 	mockModule.reloadAccountPackagesAfterWrite.mockReset()
 	mockModule.loadOrgBindingForOrg.mockReset()
+	mockModule.approveCredentialNeedsRequest.mockReset()
+	mockModule.approveWentPublicRequest.mockReset()
 })
 
 function createUser(): AuthenticatedAppUser {
@@ -132,6 +144,7 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: null,
 		publishedCommit: 'deadbeef',
 		latestApproval: null,
 		matchingApproval: null,
@@ -159,7 +172,7 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 })
 
-test('turning on internet-visible with matching approval activates the flag', async () => {
+test('turning on internet-visible with matching approval refreshes pin and enqueues went_public', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
@@ -169,6 +182,16 @@ test('turning on internet-visible with matching approval activates the flag', as
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: {
+			version: 1,
+			root: {
+				packageId: 'pkg-1',
+				kodyId: 'notes',
+				sourceId: 'source-1',
+				publishedCommit: 'deadbeef',
+			},
+			dependencies: [],
+		},
 		publishedCommit: 'deadbeef',
 		latestApproval: { fingerprint: 'other' },
 		matchingApproval: {
@@ -181,8 +204,8 @@ test('turning on internet-visible with matching approval activates the flag', as
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
 		approval: { id: 'approval-1' },
 		capabilitySet: { entries: [], fingerprint: 'abc' },
+		wentPublicRequest: { id: 'req-1' },
 	})
-	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 
 	const response = await handleAccountPackageInternetVisibleAction({
 		env,
@@ -195,7 +218,12 @@ test('turning on internet-visible with matching approval activates the flag', as
 			confirmName: 'notes',
 		},
 	})
-	expect(response?.status).toBe(200)
+	expect(response?.status).toBe(400)
+	await expect(response?.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('internet-visible'),
+		approvalUrl: expect.stringContaining('/approve-capabilities'),
+	})
 	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
 		expect.objectContaining({
 			expectedFingerprint: 'abc',
@@ -214,6 +242,7 @@ test('approve-capabilities binds the reviewed fingerprint', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
 		approval: { id: 'approval-1' },
 		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
+		wentPublicRequest: { id: 'req-1' },
 	})
 	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 
@@ -272,4 +301,94 @@ test('turning off internet-visible requires the slug and clears the flag', async
 	})
 	expect(ok?.status).toBe(200)
 	expect(mockModule.clearInternetVisible).toHaveBeenCalled()
+})
+
+test('approve-credential-needs approves the named request as the acting person', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
+	const approve = (body: Record<string, unknown>) =>
+		handleAccountPackageInternetVisibleAction({
+			env,
+			request,
+			user,
+			body: { action: 'approve-credential-needs', packageId: 'pkg-1', ...body },
+		})
+
+	expect((await approve({}))?.status).toBe(400)
+	expect(mockModule.approveCredentialNeedsRequest).not.toHaveBeenCalled()
+
+	mockModule.approveCredentialNeedsRequest.mockResolvedValueOnce({
+		ok: false,
+		status: 409,
+		error: 'stale',
+	})
+	const stale = await approve({ requestId: 'request-1' })
+	expect(stale?.status).toBe(409)
+	await expect(stale?.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'stale',
+		approvalUrl: expect.stringContaining('/approve-capabilities'),
+	})
+
+	mockModule.approveCredentialNeedsRequest.mockResolvedValueOnce({ ok: true })
+	expect((await approve({ requestId: 'request-1' }))?.status).toBe(200)
+	expect(mockModule.approveCredentialNeedsRequest).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			requestId: 'request-1',
+			ownerUserId: ownerIdFromStored('stable-user-1'),
+			actorUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
+})
+
+test('approve-went-public approves the named request as the acting person', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
+	const approve = (body: Record<string, unknown>) =>
+		handleAccountPackageInternetVisibleAction({
+			env,
+			request,
+			user,
+			body: { action: 'approve-went-public', packageId: 'pkg-1', ...body },
+		})
+
+	expect((await approve({}))?.status).toBe(400)
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+
+	mockModule.approveWentPublicRequest.mockResolvedValueOnce({
+		ok: false,
+		status: 409,
+		error: 'stale',
+	})
+	const stale = await approve({ requestId: 'request-went-public' })
+	expect(stale?.status).toBe(409)
+	await expect(stale?.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'stale',
+		approvalUrl: expect.stringContaining('/approve-capabilities'),
+	})
+
+	mockModule.approveWentPublicRequest.mockResolvedValueOnce({ ok: true })
+	expect((await approve({ requestId: 'request-went-public' }))?.status).toBe(
+		200,
+	)
+	expect(mockModule.approveWentPublicRequest).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			requestId: 'request-went-public',
+			ownerUserId: ownerIdFromStored('stable-user-1'),
+			actorUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
 })

@@ -23,7 +23,7 @@ setup pages.
   per-deploy random `CAPABILITY_REINDEX_SECRET` so builtin capability search
   works on the fresh index (`--force` because APP_DB embed fingerprints can
   outlive the index they described). A per-preview index (instead of a namespace
-  prefix inside a shared index) keeps production namespace logic unchanged and
+  prefix inside a shared index) avoids sharing production's index namespace and
   lets cleanup delete every preview vector in one call; Cloudflare allows 50,000
   indexes per account.
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
@@ -60,11 +60,19 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   [migration rehearsal](../preview-migration-rehearsal.md) can inspect it.
 - `.github/workflows/preview-sweep.yml` runs hourly (and on `workflow_dispatch`,
   with `max` and `dry_run` inputs). It lists the account's Worker scripts,
-  Durable Object namespaces, and D1 databases, picks out `kody-pr-<n>` previews
-  whose PR is closed, and runs the same cleanup for up to 10 of them per run,
-  oldest first (`tools/ci/preview-sweep.ts`). It re-checks the PR state just
-  before each cleanup, skips previews with no matching PR, and never touches
-  `kody-branch-*` previews.
+  Durable Object namespaces, D1 databases, KV namespaces, and R2 buckets, picks
+  out `kody-pr-<n>` previews whose PR is closed, and runs the same cleanup for
+  up to 10 of them per run, oldest first (`tools/ci/preview-sweep.ts`). It
+  re-checks the PR state just before each cleanup and skips previews with no
+  matching PR. It also sweeps `kody-branch-*` previews whose bare Worker script
+  is gone, judging liveness only from the Worker scripts listing (re-fetched
+  again right before cleanup) so a same-named D1/KV/R2 resource from another
+  branch can never read as "live". Branch sweeping is skipped for the whole run
+  if a `preview.yml` deploy is currently queued or in progress, since a deploy
+  provisions D1/KV/R2 before it uploads the bare origin Worker. Both the PR and
+  branch loops share one wall-clock budget per run, so a run that spends it on
+  PR cleanups still defers branch cleanups cleanly instead of running past the
+  job timeout.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
@@ -107,11 +115,16 @@ PR adds `--enable-flag <key>` for keys on
 the exact invocation and
 [Manual preview testing](../preview-manual-testing.md#feature-flags-on-the-preview-seed).
 
-Preview cleanup also deletes the matching GitHub environment
-(`preview-<pr-number>`). That API requires repository administration write
-access, so the repo must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions
-secret with a token that has that permission. Cleanup intentionally fails when
-that secret is missing or under-scoped so permission regressions are visible.
+Preview deploys do **not** set a GitHub Actions `environment:` on the deploy
+job, so they no longer create per-PR `preview-<n>` (or `preview-<run_id>`)
+GitHub Environments. The preview URL is posted as a PR comment instead.
+
+Cleanup still deletes any leftover `preview-<pr-number>` GitHub Environment on
+PR close (legacy entries, or recreations from in-flight deploys before this
+change). That API requires repository administration write access, so the repo
+must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions secret with a token that
+has that permission. Cleanup intentionally fails when that secret is missing or
+under-scoped so permission regressions are visible.
 
 Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV, R2,
 Queues and their consumers, Vectorize indexes, Artifacts namespaces) first
@@ -146,13 +159,14 @@ example `duplicate column name`). Before each preview `d1 migrations apply`, the
 workflow runs `tools/ci/rewrite-renamed-preview-migrations.ts` (requires
 `CLOUDFLARE_ENV=preview`). It rewrites `d1_migrations` rows whose filename is
 gone but whose SQL sha256 still matches a current file on the branch (historical
-SQL is recovered from git via `commit^:path` when the last touch renamed the
-file; the preview deploy job checks out with `fetch-depth: 0`). It does **not**
-guess from the kebab slug alone — that would skip applying revised SQL after a
-rebase that also changed the migration. The script also refuses any wrangler
-config whose binding `database_name` is not a preview name (`kody-pr-*` /
-`kody-branch-*`). That is bookkeeping only — not a schema drop — and never runs
-in production.
+SQL is recovered from git with `rev-list --full-history` then `commit^:path`
+when the last touch renamed the file — `--full-history` is required on GitHub PR
+merge refs — and multi-hop renumbers still match by content sha; the preview
+deploy job checks out with `fetch-depth: 0`). It does **not** guess from the
+kebab slug alone — that would skip applying revised SQL after a rebase that also
+changed the migration. The script also refuses any wrangler config whose binding
+`database_name` is not a preview name (`kody-pr-*` / `kody-branch-*`). That is
+bookkeeping only — not a schema drop — and never runs in production.
 
 If rewrite cannot match (content changed as well as the name, or git cannot
 recover the old file), use the **reset preview D1** fallback for **PR** preview

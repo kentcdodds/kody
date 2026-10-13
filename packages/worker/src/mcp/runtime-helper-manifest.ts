@@ -25,6 +25,8 @@ import {
 import { staticCallMeterRuntimeBridgeProviderName } from '#mcp/evaluation-side-effects.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
 import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
+import { type CredentialCallMap } from '#worker/credentials/credential-call-map.ts'
+import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
 import { createCredentialClientKodyTools } from './credential-client-tools.ts'
 import { createCredentialClientRuntimeSource } from './execute-modules/credential-client-source.ts'
 
@@ -73,6 +75,10 @@ export type CredentialClientToolOptions = {
 	 * verified per call. Null for ad hoc code.
 	 */
 	resolvePackageId: (requested: unknown) => Promise<string | null>
+	/** The caller's credential picks for this run, by need key. */
+	callMap?: CredentialCallMap | null
+	/** The run's pinned needs by key (hosted runs only). */
+	runNeeds?: () => Promise<ReadonlyMap<string, CredentialNeed>>
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 

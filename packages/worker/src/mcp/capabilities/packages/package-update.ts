@@ -25,6 +25,7 @@ import {
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import {
+	approvePackageCapabilitySet,
 	clearInternetVisible,
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
@@ -104,6 +105,18 @@ export const packageUpdateCapability = defineDomainCapability(
 		outputSchema: z.object({
 			ok: z.literal(true),
 			package: packageSummarySchema,
+			approval_url: z
+				.string()
+				.optional()
+				.describe(
+					'Present when internet_visible was requested and is waiting on owner Approve (went_public).',
+				),
+			internet_visible_pending: z
+				.boolean()
+				.optional()
+				.describe(
+					'True when other package changes applied but internet-visible is waiting on owner Approve.',
+				),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -202,11 +215,13 @@ export const packageUpdateCapability = defineDomainCapability(
 				}
 			}
 
+			let internetVisiblePending = false
+			let approvalUrl: string | undefined
 			if (
 				args.changes.internet_visible === true &&
 				!existing.isInternetVisible
 			) {
-				const approvalUrl = buildPackageCapabilityApprovalUrl({
+				approvalUrl = buildPackageCapabilityApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
 					username: owner.ownerScope,
 					kodyId: existing.kodyId,
@@ -227,29 +242,31 @@ export const packageUpdateCapability = defineDomainCapability(
 						`Internet-visible requires owner approval of the credential and capability summary. Send them to ${approvalUrl}`,
 					)
 				}
-				const changed = await updateSavedPackage(ctx.env.APP_DB, {
-					userId: owner.ownerUserId,
-					packageId: args.package_id,
-					isInternetVisible: true,
+				// Record/refresh the pin for the current published commit, then
+				// leave went_public pending for the owner's Approve click.
+				await approvePackageCapabilitySet({
+					env: ctx.env,
+					ownerUserId: owner.ownerUserId,
+					actorUserId: owner.actorUserId,
+					savedPackage: existing,
+					requestUrl: ctx.callerContext.baseUrl,
+					expectedFingerprint: summary.capabilitySet.fingerprint,
 				})
-				if (!changed) {
-					throw new McpCallerError('Saved package not found for this user.')
-				}
+				internetVisiblePending = true
 			}
-			if (
-				args.changes.internet_visible === false &&
-				existing.isInternetVisible
-			) {
+			if (args.changes.internet_visible === false) {
 				const expectedName = existing.kodyId
 				if (args.confirm_name?.trim() !== expectedName) {
 					throw new McpCallerError(
 						`Turning off internet-visible returns the app to owner-session serving. Confirm with the user, then pass confirm_name: "${expectedName}" (the package slug).`,
 					)
 				}
+				// Also runs when already off so a pending went_public is superseded.
 				const changed = await clearInternetVisible({
 					env: ctx.env,
 					ownerUserId: owner.ownerUserId,
 					packageId: args.package_id,
+					actorUserId: owner.actorUserId,
 				})
 				if (!changed) {
 					throw new McpCallerError('Saved package not found for this user.')
@@ -266,6 +283,12 @@ export const packageUpdateCapability = defineDomainCapability(
 			return {
 				ok: true as const,
 				package: toPackageSummary(savedPackage),
+				...(internetVisiblePending && approvalUrl
+					? {
+							approval_url: approvalUrl,
+							internet_visible_pending: true as const,
+						}
+					: {}),
 			}
 		},
 	},

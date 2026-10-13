@@ -4,7 +4,9 @@ import {
 } from '@kody-internal/shared/handle-permanence.ts'
 import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
+import { queueSessionRefresh } from '#client/session.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -47,14 +49,15 @@ type SettingsPayload = OrgSettingsLoaderData & {
 }
 
 async function fetchSettings(
-	slug: string,
+	href: string,
 	signal: AbortSignal,
 ): Promise<SettingsPayload | 'unauthorized' | 'not-found'> {
-	const response = await fetch(routes.orgSettingsApi.href({ orgSlug: slug }), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+	const slug = slugFromHref(href)
+	const response = await fetch(
+		routes.orgSettingsApi.href({ orgSlug: slug }),
+		// Pass the destination href (incl. query) so prefetch pending keys match adopt.
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return 'unauthorized'
 	if (response.status === 404) return 'not-found'
 	const payload = (await response
@@ -77,8 +80,7 @@ export async function orgSettingsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const slug = slugFromHref(url.pathname)
-	const payload = await fetchSettings(slug, signal)
+	const payload = await fetchSettings(url.href, signal)
 	if (payload === 'unauthorized') return routeLoaderRedirect('/login')
 	if (payload === 'not-found') {
 		return routeLoaderRedirect(routes.notFoundPage.href())
@@ -90,7 +92,7 @@ export function OrgSettingsRoute(handle: Handle) {
 	const settingsData = createRouteData({
 		key: 'orgSettings',
 		async load(href, signal) {
-			const payload = await fetchSettings(slugFromHref(href), signal)
+			const payload = await fetchSettings(href, signal)
 			if (payload === 'unauthorized') return routeDataRedirect('/login')
 			if (payload === 'not-found') throw new Error('Organization unavailable.')
 			return payload
@@ -195,6 +197,7 @@ export function OrgSettingsRoute(handle: Handle) {
 			}
 			appliedKey = ''
 			settingsData.reload(handle, readCurrentRouterHref(handle))
+			queueSessionRefresh()
 			message = 'Avatar updated.'
 			messageTone = 'info'
 		} catch (error) {
@@ -235,6 +238,7 @@ export function OrgSettingsRoute(handle: Handle) {
 			}
 			appliedKey = ''
 			settingsData.reload(handle, readCurrentRouterHref(handle))
+			queueSessionRefresh()
 			message = 'Avatar removed.'
 			messageTone = 'info'
 		} catch (error) {

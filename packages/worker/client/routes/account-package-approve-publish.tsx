@@ -1,6 +1,9 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { shortCommunityCommit } from '#universal/community-display.ts'
 import { routes } from '#universal/routes.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -12,7 +15,10 @@ import {
 	IdValue,
 	MetadataGrid,
 } from './account-management-components.tsx'
-import { type AccountPackageApprovePublishLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountPackageApprovePublishLoaderData,
+	type AccountPackageListingBehindHint,
+} from '#universal/loader-data.ts'
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
@@ -29,9 +35,40 @@ const approvePublishMatcher = createMatcher(
 	routes.communityPackageApprovePublish.pattern,
 )
 
-type PageStatus = 'loading' | 'ready' | 'error' | 'promoting'
+type PageStatus = 'loading' | 'ready' | 'error' | 'promoting' | 'promoted'
 
 const loadFailureMessage = 'Unable to load this publish approval.'
+
+function approvePublishMetadataItems(
+	payload: AccountPackageApprovePublishLoaderData,
+) {
+	const items: Array<{ label: string; value: RemixNode }> = [
+		{
+			label: 'Kody id',
+			value: <IdValue value={payload.package.kodyId} label="Kody id" />,
+		},
+	]
+	// Title already names the short public commit when nothing is pending —
+	// do not repeat it in the metadata grid.
+	if (payload.alreadyPublished || !payload.pendingCommit) {
+		return items
+	}
+	items.push(
+		{
+			label: 'Current published commit',
+			value: payload.publishedCommit ? (
+				<IdValue value={payload.publishedCommit} label="published commit" />
+			) : (
+				'None'
+			),
+		},
+		{
+			label: payload.package.lockedAt ? 'Commit to promote' : 'HEAD to publish',
+			value: <IdValue value={payload.pendingCommit} label="pending commit" />,
+		},
+	)
+	return items
+}
 
 function isApprovePublishPath(href: string) {
 	return approvePublishMatcher.match(new URL(href, 'http://localhost')) !== null
@@ -73,10 +110,69 @@ export async function accountPackageApprovePublishRouteLoader(
 	return { accountPackageApprovePublish: payload }
 }
 
+function renderListingBehindPrompt(input: {
+	listing?: AccountPackageListingBehindHint | null
+	willLagAfterPromote?: boolean
+}) {
+	if (input.listing?.behind) {
+		return (
+			<div
+				data-testid="approve-publish-update-public-listing"
+				mix={css({
+					display: 'grid',
+					gap: spacing.xs,
+					padding: spacing.sm,
+					borderRadius: '0.55rem',
+					border: `1px solid ${colors.border}`,
+					backgroundColor: colors.surface,
+				})}
+			>
+				<p mix={css({ margin: 0, color: colors.text })}>
+					The public community listing stays on its pinned snapshot until you
+					republish it. Publish and promote only move the package runtime.
+				</p>
+				<a
+					href={input.listing.updateUrl}
+					data-testid="approve-publish-update-public-listing-link"
+					mix={css({
+						...getPillButtonCss({ size: 'sm' }),
+						display: 'inline-flex',
+						textDecoration: 'none',
+						width: 'fit-content',
+					})}
+				>
+					Update public listing
+				</a>
+			</div>
+		)
+	}
+	if (!input.willLagAfterPromote) return null
+	return (
+		<div
+			data-testid="approve-publish-listing-will-lag"
+			mix={css({
+				display: 'grid',
+				gap: spacing.xs,
+				padding: spacing.sm,
+				borderRadius: '0.55rem',
+				border: `1px solid ${colors.border}`,
+				backgroundColor: colors.surface,
+			})}
+		>
+			<p mix={css({ margin: 0, color: colors.text })}>
+				After you promote, the public community listing will still show its
+				pinned snapshot until you update it from package settings.
+			</p>
+		</div>
+	)
+}
+
 export function AccountPackageApprovePublishRoute(handle: Handle) {
 	/** Payload last applied from the route data; also read by `promoteCommit`. */
 	let payload: AccountPackageApprovePublishLoaderData | null = null
 	let promoting = false
+	let promoted = false
+	let promotedListing: AccountPackageListingBehindHint | null = null
 	let message: string | null = null
 	let appliedError: Error | null = null
 	const approvePublishData = createRouteData({
@@ -115,10 +211,21 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					commit: payload.pendingCommit,
 				}),
 			})
-			const body = await readJson<{ ok?: boolean; error?: string }>(response)
+			const body = await readJson<{
+				ok?: boolean
+				error?: string
+				listing?: AccountPackageListingBehindHint | null
+			}>(response)
 			if (!response.ok || body?.ok === false) {
 				promoting = false
 				message = body?.error ?? 'Could not promote this commit.'
+				handle.update()
+				return
+			}
+			if (body?.listing?.behind) {
+				promoting = false
+				promoted = true
+				promotedListing = body.listing
 				handle.update()
 				return
 			}
@@ -153,27 +260,73 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					? 'loading'
 					: promoting
 						? 'promoting'
-						: 'ready'
+						: promoted
+							? 'promoted'
+							: 'ready'
+		const nothingToPublish =
+			payload != null && (payload.alreadyPublished || !payload.pendingCommit)
+		const upToDateShort =
+			payload?.alreadyPublished && payload.publishedCommit
+				? shortCommunityCommit(payload.publishedCommit)
+				: null
+		const headUpToDate =
+			Boolean(payload?.alreadyPublished) &&
+			Boolean(payload?.pendingIsDefaultHead) &&
+			upToDateShort != null
+		const pinnedCommitAlreadyPublished =
+			Boolean(payload?.alreadyPublished) &&
+			payload?.pendingIsDefaultHead === false &&
+			upToDateShort != null
 
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
 				<AccountPageHeader
 					title={
-						payload?.package.lockedAt
-							? 'Approve package publish'
-							: 'Publish HEAD'
+						status === 'promoted'
+							? 'Published'
+							: headUpToDate
+								? `Nothing to publish: the public version is up to date at ${upToDateShort}`
+								: pinnedCommitAlreadyPublished
+									? `This commit is already published at ${upToDateShort}`
+									: nothingToPublish
+										? 'Nothing to publish'
+										: payload?.package.lockedAt
+											? 'Approve package publish'
+											: 'Publish HEAD'
 					}
 					description={
-						payload?.package.lockedAt
-							? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
-							: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
+						status === 'promoted'
+							? 'The package runtime is on this commit. Update the public community listing if you want the catalog snapshot to match.'
+							: headUpToDate
+								? 'No unpublished commit is waiting. Nothing was approved or changed.'
+								: pinnedCommitAlreadyPublished
+									? 'The commit in this link matches the public version. Open Approve without a commit pin to review default-branch HEAD if it has moved.'
+									: nothingToPublish
+										? 'No commit is available to publish from this page.'
+										: payload?.package.lockedAt
+											? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
+											: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
 					}
 					currentHref={currentHref}
 				/>
 				{message ? (
-					<AccountManagementMessage tone="error">
-						{message}
-					</AccountManagementMessage>
+					<>
+						<AccountManagementMessage tone="error">
+							{message}
+						</AccountManagementMessage>
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Approving a package publish from the browser approval page.',
+								errorMessage: message,
+								ids: {
+									packageName: payload?.package.name,
+									packageKodyId: payload?.package.kodyId,
+									path: currentHref,
+								},
+							})}
+						/>
+					</>
 				) : null}
 				{status === 'loading' ? (
 					<p mix={css({ margin: 0, color: colors.textMuted })}>Loading…</p>
@@ -182,6 +335,39 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						This publish approval could not be loaded.
 					</p>
+				) : null}
+				{payload && status === 'promoted' ? (
+					<section
+						data-testid="package-approve-publish-success"
+						mix={css(getAccentCalloutCss())}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<p mix={css({ margin: 0, color: colors.text })}>
+								{payload.package.name} is published at{' '}
+								<code>{shortCommunityCommit(payload.pendingCommit ?? '')}</code>
+								.
+							</p>
+							{renderListingBehindPrompt({ listing: promotedListing })}
+							<div
+								mix={css({
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: spacing.xs,
+								})}
+							>
+								<a
+									href={payload.packageHref}
+									mix={css({
+										...getPillButtonCss({ size: 'sm' }),
+										display: 'inline-flex',
+										textDecoration: 'none',
+									})}
+								>
+									Back to package
+								</a>
+							</div>
+						</div>
+					</section>
 				) : null}
 				{payload && (status === 'ready' || status === 'promoting') ? (
 					<section
@@ -205,40 +391,11 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 									: 'This package is not locked. Lock it from the package page if you want later publishes to require approval.'}
 							</p>
 						</div>
-						<MetadataGrid
-							items={[
-								{
-									label: 'Kody id',
-									value: (
-										<IdValue value={payload.package.kodyId} label="Kody id" />
-									),
-								},
-								{
-									label: 'Current published commit',
-									value: payload.publishedCommit ? (
-										<IdValue
-											value={payload.publishedCommit}
-											label="published commit"
-										/>
-									) : (
-										'None'
-									),
-								},
-								{
-									label: payload.package.lockedAt
-										? 'Commit to promote'
-										: 'HEAD to publish',
-									value: payload.pendingCommit ? (
-										<IdValue
-											value={payload.pendingCommit}
-											label="pending commit"
-										/>
-									) : (
-										'No unpublished commit'
-									),
-								},
-							]}
-						/>
+						{renderListingBehindPrompt({
+							listing: payload.listing,
+							willLagAfterPromote: payload.listingWillLagAfterPromote,
+						})}
+						<MetadataGrid items={approvePublishMetadataItems(payload)} />
 						<div
 							mix={css({
 								display: 'flex',

@@ -48,6 +48,8 @@ const { PackageNameInputError, normalizePackageNameInput } =
 const { SavedPackageNotFoundError } =
 	await import('#worker/package-runtime/package-import-resolution.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
+const { RepoChecksFailedError, repoChecksFailedErrorName } =
+	await import('#worker/repo/repo-checks-failed-error.ts')
 
 function captureMcpEvents(run: () => void) {
 	sentryMock.captureException.mockClear()
@@ -341,12 +343,28 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				},
 			},
 		),
+		// Failed publish/repo checks (KODY-96). Live class and DO/JSRPC-flattened
+		// name/prefix forms stay off Sentry even before packageSave rewraps.
+		handlerFailure(
+			'packageSave',
+			'packages',
+			repoChecksFailedErrorName,
+			new RepoChecksFailedError('src/receive.js(12,3): type mismatch'),
+		),
+		handlerFailure(
+			'packageSave',
+			'packages',
+			'Error',
+			new Error(
+				`${repoChecksFailedErrorName}: src/receive.js(12,3): type mismatch`,
+			),
+		),
 	]
 	const payloads = captureMcpEvents(() => {
 		for (const event of callerFailures) logMcpEvent(event)
 	})
 
-	expect(payloads).toHaveLength(24)
+	expect(payloads).toHaveLength(26)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

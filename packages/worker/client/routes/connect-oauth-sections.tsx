@@ -1,9 +1,10 @@
 import { type ConnectOauthExistingConnection } from '#universal/loader-data.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { css, ref } from 'remix/component'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
-import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { buildConnectOauthFailureAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
+import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
 import { on } from '#client/event-mixin.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import { colors, spacing } from '#universal/styles/tokens.ts'
@@ -95,7 +96,7 @@ export function renderReplaceConfirmation(input: {
 	)
 }
 
-export function renderCallbackPending() {
+function renderCallbackPending() {
 	return (
 		<section mix={css(cardCss)} data-testid="connect-oauth-callback">
 			<p mix={css({ margin: 0, color: colors.text })}>
@@ -216,7 +217,7 @@ export function renderChooser(input: {
 	)
 }
 
-export function renderIncompleteConfig(provider: string) {
+function renderIncompleteConfig(provider: string) {
 	return (
 		<section mix={css(cardCss)} data-testid="connect-oauth-incomplete">
 			<p mix={css({ margin: 0, color: colors.text })}>
@@ -227,9 +228,8 @@ export function renderIncompleteConfig(provider: string) {
 				Copy this prompt for your agent so it can fill in the authorize and
 				token URLs and send you a complete link.
 			</p>
-			<CopyTextButton
-				value={buildIncompleteConnectOauthPrompt({ provider })}
-				idleLabel="Copy setup prompt"
+			<ErrorAgentPromptButton
+				prompt={buildIncompleteConnectOauthPrompt({ provider })}
 				variant="primary"
 			/>
 			<p mix={css(descriptionCss)}>
@@ -247,6 +247,10 @@ export function renderStatusCallout(input: {
 	statusTone: ConnectOauthStatusTone
 	statusMessage: string
 	currentStep: ConnectOauthStep
+	provider?: string | null
+	connectionName?: string | null
+	/** When false, show the alert text only (incomplete-config owns the prompt). */
+	includePrompt?: boolean
 }) {
 	if (input.statusTone === 'error') {
 		return (
@@ -261,6 +265,15 @@ export function renderStatusCallout(input: {
 				<p mix={css({ margin: 0, color: colors.error })}>
 					{input.statusMessage}
 				</p>
+				{input.includePrompt === false ? null : (
+					<ErrorAgentPromptButton
+						prompt={buildConnectOauthFailureAgentPrompt({
+							statusMessage: input.statusMessage,
+							provider: input.provider,
+							connectionName: input.connectionName,
+						})}
+					/>
+				)}
 			</div>
 		)
 	}
@@ -268,6 +281,47 @@ export function renderStatusCallout(input: {
 		return <p mix={css(pageDescriptionCss)}>{input.statusMessage}</p>
 	}
 	return null
+}
+
+/** Chooser / incomplete / callback body when no resolved connect config. */
+export function renderConnectOauthNoConfigBody(input: {
+	requestedProvider: string | null
+	hasConfigError: boolean
+	statusTone: ConnectOauthStatusTone
+	statusMessage: string
+	currentStep: ConnectOauthStep
+	currentHref: string
+	chooserOptions: Parameters<typeof renderChooser>[0]['chooserOptions']
+	chooserFilter: string
+	onFilterChange: (value: string) => void
+	onFilterInput: (node: HTMLInputElement | null) => void
+	onFilterDetach: (node: HTMLInputElement | null) => void
+}) {
+	const incomplete = Boolean(input.requestedProvider && input.hasConfigError)
+	return (
+		<>
+			{renderStatusCallout({
+				statusTone: input.statusTone,
+				statusMessage: input.statusMessage,
+				currentStep: input.currentStep,
+				provider: input.requestedProvider,
+				includePrompt: !incomplete,
+			})}
+			{incomplete
+				? renderIncompleteConfig(input.requestedProvider ?? '')
+				: isConnectOauthCallbackUrl(
+							new URL(input.currentHref, 'https://kody.local'),
+					  ) && input.statusTone !== 'error'
+					? renderCallbackPending()
+					: renderChooser({
+							chooserOptions: input.chooserOptions,
+							chooserFilter: input.chooserFilter,
+							onFilterChange: input.onFilterChange,
+							onFilterInput: input.onFilterInput,
+							onFilterDetach: input.onFilterDetach,
+						})}
+		</>
+	)
 }
 
 export function connectOauthHeaderTitle(input: {

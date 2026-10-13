@@ -1,7 +1,9 @@
 /**
  * Package credential needs (ADR 0068, `kody.credentials`). A need is a keyed
- * request for a credential of one kind and provider; callers pick which of
- * their credentials fills it, or it auto-resolves to the one candidate.
+ * request for a credential of a provider (and optionally a kind); callers pick
+ * which of their credentials fills it, or it auto-resolves to the one
+ * candidate. Omitting `kind` matches any fetch-capable credential for the
+ * provider (secret/Key, oauth, login).
  *
  * A package's needs closure is its own needs plus those of the packages it
  * statically imports, pinned at its publish (dependencies are snapshotted
@@ -10,13 +12,15 @@
  */
 import { z } from 'zod'
 import {
+	isFetchCapableCredentialKind,
 	packageCredentialKindValues,
 	type AuthoredPackageJson,
+	type PackageCredentialKind,
 } from '#worker/package-registry/types.ts'
 
 export const credentialNeedSchema = z.object({
 	key: z.string(),
-	kind: z.enum(packageCredentialKindValues),
+	kind: z.enum(packageCredentialKindValues).optional(),
 	provider: z.string(),
 	description: z.string(),
 	multiple: z.boolean(),
@@ -39,12 +43,38 @@ export function ownCredentialNeeds(
 	return Object.entries(credentials ?? {})
 		.map(([key, slot]) => ({
 			key,
-			kind: slot.kind,
+			...(slot.kind ? { kind: slot.kind } : {}),
 			provider: slot.provider ?? key,
 			description: slot.description,
 			multiple: slot.multiple === true,
 		}))
 		.sort((left, right) => left.key.localeCompare(right.key))
+}
+
+function describeNeedKind(kind: PackageCredentialKind | undefined): string {
+	return kind ?? 'any fetch-capable kind'
+}
+
+/**
+ * Two needs for the same key agree when providers match and kinds are
+ * compatible: equal kinds, both omitted, or one omitted and the other a
+ * fetch-capable kind (the declared kind is kept).
+ */
+export function credentialNeedKindsCompatible(
+	left: PackageCredentialKind | undefined,
+	right: PackageCredentialKind | undefined,
+): boolean {
+	if (left === right) return true
+	if (left == null) return right != null && isFetchCapableCredentialKind(right)
+	if (right == null) return isFetchCapableCredentialKind(left)
+	return false
+}
+
+export function mergeCredentialNeedKinds(
+	left: PackageCredentialKind | undefined,
+	right: PackageCredentialKind | undefined,
+): PackageCredentialKind | undefined {
+	return left ?? right
 }
 
 /**
@@ -72,7 +102,9 @@ export type DependencyCredentialNeeds = {
 
 /**
  * Own needs first, then each dependency's closure. A key declared twice must
- * agree on kind and provider; any disagreement is returned as a conflict.
+ * agree on provider and compatible kinds; any disagreement is returned as a
+ * conflict. When one side omits `kind` and the other declares a fetch-capable
+ * kind, the declared kind is kept.
  */
 export function mergeCredentialNeeds(input: {
 	own: ReadonlyArray<CredentialNeed>
@@ -81,22 +113,32 @@ export function mergeCredentialNeeds(input: {
 	const byKey = new Map<string, CredentialNeed>()
 	const conflicts: Array<string> = []
 	const describe = (need: CredentialNeed) =>
-		`${need.kind} from provider "${need.provider}" (${need.from ? `declared by ${need.from}` : 'declared by this package'})`
+		`${describeNeedKind(need.kind)} from provider "${need.provider}" (${need.from ? `declared by ${need.from}` : 'declared by this package'})`
 	const add = (need: CredentialNeed) => {
 		const existing = byKey.get(need.key)
 		if (!existing) {
 			byKey.set(need.key, need)
 			return
 		}
-		if (existing.kind !== need.kind || existing.provider !== need.provider) {
+		if (
+			existing.provider !== need.provider ||
+			!credentialNeedKindsCompatible(existing.kind, need.kind)
+		) {
 			conflicts.push(
 				`kody.credentials.${need.key}: ${describe(existing)} conflicts with ${describe(need)}. Give one of them a different key.`,
 			)
 			return
 		}
-		if (need.multiple && !existing.multiple) {
-			byKey.set(need.key, { ...existing, multiple: true })
-		}
+		const kind = mergeCredentialNeedKinds(existing.kind, need.kind)
+		const multiple = need.multiple || existing.multiple
+		byKey.set(need.key, {
+			key: existing.key,
+			provider: existing.provider,
+			description: existing.description,
+			multiple,
+			...(kind ? { kind } : {}),
+			...(existing.from ? { from: existing.from } : {}),
+		})
 	}
 	for (const need of input.own) add(need)
 	for (const dependency of input.dependencies) {

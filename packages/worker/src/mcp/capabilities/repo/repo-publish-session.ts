@@ -26,6 +26,8 @@ import {
 	createPackagePublishLockedMessage,
 } from '#worker/package-registry/package-publish-lock.ts'
 import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
+import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import { createCredentialNeedsApprovalMessage } from '#worker/credentials/credential-needs-approval.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
@@ -68,6 +70,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 			const result = await session.publishSession({
 				sessionId: args.session_id,
 				userId: owner.ownerUserId,
+				requestedByUserId: ctx.callerContext.user?.userId ?? null,
 				rebuildPackageArtifacts: false,
 				expectedPackageScope: isPackageSession ? owner.ownerScope : undefined,
 				privateVisibilityChangeConfirmed:
@@ -171,6 +174,36 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					message: result.credentialNotice
 						? `${lockedMessage}\n\n${result.credentialNotice}`
 						: lockedMessage,
+				}
+			}
+			if (result.status === 'approval_required') {
+				const approvalUrl = buildPackageCapabilityApprovalUrl({
+					baseUrl: ctx.callerContext.baseUrl,
+					username: owner.ownerScope,
+					kodyId: result.approval.kodyId,
+				})
+				const approvalMessage = createCredentialNeedsApprovalMessage({
+					packageName: result.approval.packageName,
+					changes: result.approval.changes,
+					approvalUrl,
+				})
+				await reportCapabilityProgress(ctx.reportProgress, {
+					progress: progressTotal,
+					total: progressTotal,
+					message:
+						'Credential needs changed — the owner approves this publish in the app.',
+				})
+				return {
+					status: 'approval_required' as const,
+					session_id: result.sessionId,
+					published_commit: null,
+					pending_commit: result.approval.pendingCommit,
+					current_published_commit: result.currentPublishedCommit,
+					approval_url: approvalUrl,
+					credential_need_changes: result.approval.changes,
+					message: result.credentialNotice
+						? `${approvalMessage}\n\n${result.credentialNotice}`
+						: approvalMessage,
 				}
 			}
 			if (result.status === 'checks_outdated') {

@@ -477,11 +477,23 @@
 			"sha256": "fee645c4aba4b3a09d1604ee35184d2d09a9dec0a6a5bef42d0a394c489f8fcc"
 		},
 		{
-			"filename": "0130-credential-mappings.sql",
+			"filename": "0128-user-owned-tokens-and-git-credentials.sql",
+			"sha256": "31cd56dd8d4a10afcb92089d6bbd7304f2d5dcf6058453b605e9a7ac741758e3"
+		},
+		{
+			"filename": "0129-drop-git-access-tokens.sql",
+			"sha256": "512af1c504e4cf5c7a8ad88dcb87bc2ce292a5b7f42f0cce0ca3b9b042194cfa"
+		},
+		{
+			"filename": "0132-package-approval-requests.sql",
+			"sha256": "f229ef3ef17673d4ded45153d1ff55a47a694e567b09cd2f613df79b72765310"
+		},
+		{
+			"filename": "0133-credential-mappings.sql",
 			"sha256": "26fe1858ca6ca59fefd18ac9981f2787fe966dcf4d3fddbd5ef3b9f6e434293a"
 		},
 		{
-			"filename": "0131-webhook-enablement-one-live.sql",
+			"filename": "0135-webhook-enablement-one-live.sql",
 			"sha256": "c508612f99a74e7719845ea45d320598d0d07fc2c0b41b16d23fe7ffc1b8045a"
 		}
 	]

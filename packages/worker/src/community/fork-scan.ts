@@ -32,16 +32,18 @@ export function rewritePackageManifestForFork(input: {
 	const parsed = JSON.parse(input.manifestContent) as Record<string, unknown>
 	const scope = normalizePackageScope(input.expectedPackageScope)
 	const targetName = `@${scope}/${input.targetKodyId}`
+	const previousKody =
+		typeof parsed['kody'] === 'object' && parsed['kody'] != null
+			? { ...(parsed['kody'] as Record<string, unknown>) }
+			: {}
+	// Authored `kody.id` is leftover identity (#1909). Forks keep other kody
+	// fields but drop `id`; the parser derives the leaf from `name`.
+	delete previousKody['id']
 	const next = {
 		...parsed,
 		name: targetName,
 		private: true,
-		kody: {
-			...(typeof parsed['kody'] === 'object' && parsed['kody'] != null
-				? (parsed['kody'] as Record<string, unknown>)
-				: {}),
-			id: input.targetKodyId,
-		},
+		kody: previousKody,
 	}
 	return {
 		content: `${JSON.stringify(next, null, '\t')}\n`,

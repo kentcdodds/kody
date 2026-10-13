@@ -10,5 +10,4 @@ test('packages workbench keeps example source available without JavaScript', asy
 	expect(html).toMatch(
 		/<noscript>[\s\S]*README\.md[\s\S]*src\/brief\.ts[\s\S]*<\/noscript>/,
 	)
-	expect(html).toContain('Collect the project updates I choose')
 })

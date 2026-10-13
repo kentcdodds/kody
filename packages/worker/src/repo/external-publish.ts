@@ -6,6 +6,7 @@ import {
 	createPackagePublishLockedError,
 	loadLockedSavedPackage,
 } from '#worker/package-registry/package-publish-lock.ts'
+import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
@@ -59,39 +60,59 @@ export async function finalizePublishedEntitySource(
 	}
 	const previousPublishedCommit = input.source.published_commit
 	let wrotePublishedSnapshot = false
-	await updateEntitySource(input.env.APP_DB, {
-		id: input.source.id,
-		userId: input.source.user_id,
-		publishedCommit: input.publishedCommit,
-		manifestPath: input.source.manifest_path,
-		sourceRoot: input.source.source_root,
-		externalCheckUntil: null,
-	})
+	// Persist the published source snapshot *before* flipping
+	// `published_commit`. Advertising the new tip while KV still lacks the
+	// matching snapshot leaves a window where imports and packageGet fail
+	// with "Published snapshot … was not found" (platform feedback /
+	// promote race). The snapshot key is keyed by commit, so it does not
+	// require the D1 pointer to move first. Previous tip keeps serving until
+	// this write succeeds and D1 advances.
 	if (hasPublishedRuntimeArtifacts(input.env)) {
-		try {
-			await writePublishedSourceSnapshot({
-				env: input.env,
-				source: {
-					...input.source,
-					published_commit: input.publishedCommit,
-				},
-				files: input.files,
-			})
-			wrotePublishedSnapshot = true
-		} catch (snapshotError) {
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: input.publishedCommit,
+			},
+			files: input.files,
+		})
+		wrotePublishedSnapshot = true
+	}
+	try {
+		await updateEntitySource(input.env.APP_DB, {
+			id: input.source.id,
+			userId: input.source.user_id,
+			publishedCommit: input.publishedCommit,
+			manifestPath: input.source.manifest_path,
+			sourceRoot: input.source.source_root,
+			externalCheckUntil: null,
+		})
+	} catch (pointerError) {
+		// Orphan KV for a never-advertised tip is harmless but cheap to
+		// clean when the commit moved. Same-commit rewrites keep the live
+		// key. Re-read D1 first: a concurrent finalize of the same tip may
+		// have already advertised it, and deleting the shared commit-scoped
+		// key would wipe that winner's snapshot.
+		if (
+			wrotePublishedSnapshot &&
+			previousPublishedCommit !== input.publishedCommit
+		) {
 			try {
-				await updateEntitySource(input.env.APP_DB, {
-					id: input.source.id,
-					userId: input.source.user_id,
-					publishedCommit: previousPublishedCommit,
-					manifestPath: input.source.manifest_path,
-					sourceRoot: input.source.source_root,
-					externalCheckUntil: input.source.external_check_until,
-				})
-			} catch (revertError) {
-				Sentry.captureException(revertError, {
+				const live = await getEntitySourceById(
+					input.env.APP_DB,
+					input.source.id,
+				)
+				if (live?.published_commit !== input.publishedCommit) {
+					await deletePublishedSourceSnapshot({
+						env: input.env,
+						sourceId: input.source.id,
+						publishedCommit: input.publishedCommit,
+					})
+				}
+			} catch (cleanupError) {
+				Sentry.captureException(cleanupError, {
 					tags: {
-						scope: 'repo.publishFromExternalRef.revert-after-snapshot-failure',
+						scope: 'repo.publishFromExternalRef.cleanup-after-pointer-failure',
 					},
 					extra: {
 						sourceId: input.source.id,
@@ -100,8 +121,8 @@ export async function finalizePublishedEntitySource(
 					},
 				})
 			}
-			throw snapshotError
 		}
+		throw pointerError
 	}
 	try {
 		await refreshIdentityIconForSource({
@@ -152,7 +173,17 @@ export async function finalizePublishedEntitySource(
 				sourceRoot: input.source.source_root,
 				externalCheckUntil: input.source.external_check_until,
 			})
-			if (wrotePublishedSnapshot) {
+			// Same-commit finalize (no-op publish, promote, published-only
+			// sync with a clean tree) overwrites the live snapshot key. If
+			// projection then fails, deleting that key would leave
+			// published_commit pointing at a commit with no KV snapshot —
+			// permanent in production where the artifact-API fallback is
+			// off (#3497 / KODY-97). Keep the rewritten snapshot when the
+			// commit did not move; D1 still pins that commit.
+			if (
+				wrotePublishedSnapshot &&
+				previousPublishedCommit !== input.publishedCommit
+			) {
 				await deletePublishedSourceSnapshot({
 					env: input.env,
 					sourceId: input.source.id,
@@ -210,6 +241,9 @@ export async function publishFromExternalRef(input: {
 	rebuildPackageArtifacts?: boolean
 	expectedPackageScope?: string
 	allowLockedPublish?: boolean
+	/** The owner approved this commit's credential needs (or a platform rewrite). */
+	credentialNeedsApproved?: boolean
+	requestedByUserId?: string | null
 	phaseTimings?: PublishPhaseTimings
 	deferBundleCheckToRebuild?: boolean
 }): Promise<RepoExternalPublishResult> {
@@ -297,6 +331,30 @@ export async function publishFromExternalRef(input: {
 			message: error.message,
 			packageId: lockedPackage.id,
 			packageName: lockedPackage.name,
+		}
+	}
+	const approval =
+		input.credentialNeedsApproved === true
+			? null
+			: await requireCredentialNeedsApproval({
+					env: input.env,
+					source,
+					pendingCommit: input.newCommit,
+					files: input.files ?? checks.sourceFiles,
+					requestedByUserId: input.requestedByUserId,
+					pausedExternalPublish: {
+						allowForce: input.allowForce === true,
+						destructiveOverwriteConfirmed:
+							input.destructiveOverwriteConfirmed === true,
+					},
+				})
+	if (approval) {
+		return {
+			status: 'approval_required',
+			previous_commit: source.published_commit,
+			pending_commit: input.newCommit,
+			message: approval.message,
+			approval,
 		}
 	}
 	await finalizePublishedEntitySource({

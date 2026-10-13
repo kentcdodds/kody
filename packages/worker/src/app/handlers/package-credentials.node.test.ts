@@ -22,13 +22,19 @@ vi.mock('#worker/credentials/package-credential-mappings.ts', () => ({
 	loadPackageMappingScope: async () => mocks.scope,
 }))
 
-vi.mock('#worker/credentials/package-credential-mapping-changes.ts', () => ({
-	resolveMappingChanges: async () => mocks.resolved,
-	writeMappingChanges: mocks.write,
-}))
+vi.mock(
+	'#worker/credentials/package-credential-mapping-changes.ts',
+	async (importOriginal) => ({
+		...(await importOriginal<object>()),
+		resolveMappingChanges: async () => mocks.resolved,
+		writeMappingChanges: mocks.write,
+	}),
+)
 
 const { createPackageCredentialsApiHandler } =
 	await import('./package-credentials.ts')
+const { MappingWriteRefused } =
+	await import('#worker/credentials/package-credential-mapping-changes.ts')
 
 const url = 'https://kody.test/profiles/acme/packages/digest/credentials.json'
 const call = (init?: RequestInit) =>
@@ -109,4 +115,35 @@ test('writes apply every change or none and return the fresh view', async () => 
 		new McpCallerError('Webhook "incoming" is already on for another person.'),
 	)
 	expect((await post({ changes: [change] })).status).toBe(409)
+
+	const resolvedChange = { ...change, error: null } as never
+	mocks.write.mockRejectedValueOnce(
+		new MappingWriteRefused(
+			resolvedChange,
+			'webhook_other_enabler',
+			'Webhook "incoming" is already on for another person.',
+		),
+	)
+	expect((await post({ changes: [change] })).status).toBe(409)
+
+	mocks.write.mockRejectedValueOnce(
+		new MappingWriteRefused(
+			resolvedChange,
+			'trigger_unknown',
+			'No cron "daily".',
+		),
+	)
+	const gone = await post({ changes: [change] })
+	expect(gone.status).toBe(400)
+	await expect(gone.json()).resolves.toEqual({
+		ok: false,
+		errors: [
+			{
+				needKey: 'mail',
+				target: change.target,
+				code: 'trigger_unknown',
+				message: 'No cron "daily".',
+			},
+		],
+	})
 })

@@ -1310,10 +1310,11 @@ calls `publishFromExternalRef(...)`.
 
 - run manifest, docs (`README.md` + `AGENTS.md`), dependency, bundle, typecheck,
   and lint checks before mutation
-- advance `entity_sources.published_commit`
 - write the `PublishedSourceSnapshot` and manifest snapshot to
-  `BUNDLE_ARTIFACTS_KV`
-- roll the D1 commit pointer back if KV snapshot persistence fails
+  `BUNDLE_ARTIFACTS_KV` for the new commit (key is commit-scoped; previous tip
+  keeps serving until the pointer moves)
+- advance `entity_sources.published_commit` only after that KV write succeeds
+- delete the never-advertised new snapshot key if the D1 pointer update fails
 - rebuild saved package projections, bundle artifacts, vector search entries,
   retriever manifests, and package jobs through
   `refreshSavedPackageProjection(...)`
@@ -1537,7 +1538,7 @@ on write unless a migration backfills existing rows.
   each personal credential is granted to. `credential_id` is a credential in the
   owner's personal org, `user_id` is the owner's person id, and the row is
   hard-deleted when the owner leaves that org.
-- `credential_mappings` (`0130-credential-mappings.sql`,
+- `credential_mappings` (`0133-credential-mappings.sql`,
   `packages/worker/src/credentials/credential-mappings.ts`) stores which
   credentials one package need resolves to: the org-layer default (`target`
   `org`), one person's own default (`mine`, `person_user_id` set), or one

@@ -34,6 +34,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
@@ -415,8 +416,10 @@ export function OrgMembersRoute(handle: Handle) {
 														</button>
 													</span>
 												) : (
-													<span mix={css(quietPillCss)}>
-														{member.roleLabel}
+													<span mix={css(rowActionsCss)}>
+														<span mix={css(quietPillCss)}>
+															{member.roleLabel}
+														</span>
 													</span>
 												)}
 											</div>
@@ -565,6 +568,12 @@ const rowCss = {
 	borderRadius: radius.card,
 	border: `1.5px solid ${colors.border}`,
 	backgroundColor: colors.surface,
+	// A phone row cannot hold the avatar, name, role select, and Remove
+	// button. Stack the actions under the identity so they cannot cover it.
+	[mq.mobile]: {
+		flexWrap: 'wrap',
+		alignItems: 'flex-start',
+	},
 }
 
 const rowTextCss = {
@@ -572,6 +581,11 @@ const rowTextCss = {
 	gap: '0.15rem',
 	minWidth: 0,
 	flex: '1 1 auto',
+	// Zero basis keeps a long detail beside the avatar on a phone row.
+	[mq.mobile]: {
+		flex: '1 1 0%',
+		maxWidth: '100%',
+	},
 }
 
 const rowNameCss = {
@@ -579,11 +593,19 @@ const rowNameCss = {
 	overflow: 'hidden',
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap' as const,
+	[mq.mobile]: {
+		whiteSpace: 'normal',
+		overflowWrap: 'anywhere',
+	},
 }
 
 const rowDetailCss = {
 	fontSize: typography.fontSize.sm,
 	color: colors.textMuted,
+	minWidth: 0,
+	[mq.mobile]: {
+		overflowWrap: 'anywhere',
+	},
 }
 
 const rowActionsCss = {
@@ -592,6 +614,11 @@ const rowActionsCss = {
 	gap: spacing.sm,
 	alignItems: 'center',
 	flexShrink: 0,
+	[mq.mobile]: {
+		flex: '1 0 100%',
+		maxWidth: '100%',
+		minWidth: 0,
+	},
 }
 
 const selectCss = {
@@ -599,6 +626,10 @@ const selectCss = {
 	width: 'auto',
 	minWidth: '8rem',
 	padding: '0.45rem 0.7rem',
+	[mq.mobile]: {
+		minWidth: 'min(100%, 8rem)',
+		maxWidth: '100%',
+	},
 }
 
 const quietPillCss = {
@@ -623,6 +654,7 @@ const inviteIconCss = {
 	justifyContent: 'center',
 	width: '2.75rem',
 	height: '2.75rem',
+	flexShrink: 0,
 	borderRadius: radius.full,
 	color: colors.textMuted,
 	backgroundColor: colors.background,

@@ -13,7 +13,7 @@ const endpointPageSize = 1_000
 
 /**
  * `implicit_url_secret`: the manifest declares the webhook without
- * `verification`, so ingress falls back to URL-secret-only auth.
+ * `verification`, so ingress treats it as `url-secret` (supported).
  * `url_secret`: it declares `verification: { type: 'url-secret' }`.
  * `signature`: it declares an HMAC scheme. `undeclared`: the manifest no longer
  * declares it, so ingress refuses deliveries. `manifest_unavailable`: the
@@ -98,8 +98,8 @@ async function listWebhookEndpoints(db: D1Database, includeDisabled: boolean) {
 /**
  * Which live webhook URLs rely on URL-secret-only auth, judged from each
  * package's current manifest the same way ingress reads it, with successful
- * deliveries since `since` from each owner's RunLog. The rescan for
- * https://github.com/kentcdodds/kody/issues/3477.
+ * deliveries since `since` from each owner's RunLog. Reporting only; nothing
+ * here changes how a webhook authenticates.
  */
 export async function scanWebhookVerification(input: {
 	env: Env

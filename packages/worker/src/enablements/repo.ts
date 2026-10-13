@@ -173,6 +173,23 @@ export function buildInsertWebhookEnablementStatement(input: {
 	return { id, statement }
 }
 
+/**
+ * A batch statement that fails (malformed JSON, so the whole batch rolls back)
+ * unless enablement `id` exists. Follows a webhook's one-live insert, which
+ * writes nothing when another enabler got there first.
+ */
+export function buildEnablementInsertedGuardStatement(input: {
+	db: D1Database
+	id: string
+}): D1PreparedStatement {
+	return input.db
+		.prepare(
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM enablements WHERE id = ?)
+			THEN 1 ELSE json(?) END AS inserted`,
+		)
+		.bind(input.id, 'webhook enablement was not inserted')
+}
+
 /** True for the unique-index error of a second live webhook enablement. */
 export function isWebhookOneLiveConflict(error: unknown) {
 	let current = error

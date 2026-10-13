@@ -438,8 +438,8 @@ export function organizationsWithSignupFallback(input: {
 
 /**
  * Name and avatar every org row shows. The signup organization carries the
- * person's own name and photo; other organizations have no image yet, so
- * their avatar falls back to the initial of the name (or slug). Profile edits
+ * person's own name and photo. Other organizations use their own photo when
+ * they have one, otherwise the initial of the name (or slug). Profile edits
  * rename the person, not the signup organization row, so the person's current
  * name wins there.
  */

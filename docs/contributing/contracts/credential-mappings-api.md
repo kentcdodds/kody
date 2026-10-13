@@ -323,9 +323,13 @@ MCP and API tokens cannot reach it.
   `400 { ok: false, error }`.
 - Changes that cannot apply are `400 PackageCredentialsWriteFailure`:
   `{ ok: false, errors: Array<{ needKey, target, code, message, createUrl? }> }`
-  with the approval error codes. Nothing is written.
-- `409 { ok: false, error }` when a trigger was turned on by someone else
-  between reading and writing (webhooks).
+  with the approval error codes. Nothing is written. A trigger that disappears
+  between reading and writing is the same `400` (`trigger_unknown` or
+  `webhook_not_minted`).
+- `409 { ok: false, error }` only when a webhook was turned on by someone else
+  between reading and writing.
+- When one request edits the same need and target more than once, the last edit
+  wins (a set then clear on a trigger that is off never turns it on).
 - A webhook another person enabled shows `enablement.enabledByYou: false`,
   `canEdit: false`, and no `mappings` (its overrides are theirs).
 - `incomplete` lists the default per need, plus each trigger the viewer has

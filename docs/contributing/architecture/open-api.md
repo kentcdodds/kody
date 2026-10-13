@@ -85,8 +85,7 @@ routes may declare `aliasPaths`: extra HTTP paths for the same capability. They
 are listed in `/openapi.json` with a distinct operationId (`${id}ByPath`) so the
 document stays unique; HTTP still dispatches both paths to the capability. Put
 the preferred client path on `path` (for example `repoGetGitRemote`'s body-only
-`/v1/repos/git-remote`, with legacy `/v1/repos/{repo_id}/git-remote` as an
-alias).
+`/v1/repos/git-remote`, with `/v1/repos/{repo_id}/git-remote` as an alias).
 
 Never in the Open API: `execute`, secret plaintext, the inbound webhook receive
 path, package-app HTTP/WebSocket/realtime traffic, admin capabilities, and
@@ -136,13 +135,12 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
   `kody_at_`) and a `cli_command` that includes required lifetime flags.
   `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no Bearer;
-  rejected for MCP `api`) and mints a normal `kody_at_` with default scopes that
-  restore pre-P4 `local-execute` parity (`org:execute` + `org:read` +
-  package/integration/secret/email/job/app/memory use scopes; migration 0092)
-  plus `package:write` (plain-repo / package pushes) and `token:delete`
-  (self-revoke), and `created_via: cli-bootstrap` for the CLI to store. Existing
-  tokens are unchanged. Lifetime is required on both bootstrap mint and redeem.
-  CLI `whoami` / `GET /v1/tokens/current` surface sliding `expires_at` (the idle
+  rejected for MCP `api`) and mints a normal `kody_at_` with default scopes:
+  `org:execute` + `org:read` + package/integration/secret/email/job/app/memory
+  use scopes (migration 0092), plus `package:write` (plain-repo / package
+  pushes) and `token:delete` (self-revoke), and `created_via: cli-bootstrap` for
+  the CLI to store. Lifetime is required on both bootstrap mint and redeem. CLI
+  `whoami` / `GET /v1/tokens/current` surface sliding `expires_at` (the idle
   window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
@@ -168,12 +166,12 @@ module and does not silently hop to `kody.execute`. See
 [Local CLI execute](../../guides/local-execute.md) and
 [Open API](../../guides/open-api.md).
 
-| Route                                     | Body                                  | 200 response                                                                    |
-| ----------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
-| `GET /v1/capability-proxy/session`        | none                                  | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, limits }` (camelCase) |
-| `POST /v1/capability-proxy/call`          | `{ path, args, conversationId? }`     | `{ result }`                                                                    |
-| `POST /v1/capability-proxy/gateway-fetch` | raw outbound fetch body (streamed)    | upstream HTTP response (status, headers, body), streamed                        |
-| `POST /v1/local-execute/package-graph`    | `{ code, imports?, conversationId? }` | `{ modules: [{ name, esModule }], imports, warnings }`                          |
+| Route                                     | Body                                            | 200 response                                                                              |
+| ----------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET /v1/capability-proxy/session`        | none                                            | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, features, limits }` (camelCase) |
+| `POST /v1/capability-proxy/call`          | `{ path, args, conversationId?, credentials? }` | `{ result }`                                                                              |
+| `POST /v1/capability-proxy/gateway-fetch` | raw outbound fetch body (streamed)              | upstream HTTP response (status, headers, body), streamed                                  |
+| `POST /v1/local-execute/package-graph`    | `{ code, imports?, conversationId? }`           | `{ modules: [{ name, esModule }], imports, warnings }`                                    |
 
 - `path` is the `kody:runtime` property path: `['kody', name]`,
   `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
@@ -242,12 +240,17 @@ module and does not silently hop to `kody.execute`. See
 - Credential clients (`credential()` / `credentials()`, ADR 0068): both the CLI
   host `kody:runtime` (ad hoc / unpublished `--code` / `--file`) and the
   package-graph shim open, sign, call MCP tools, and refresh OAuth through
-  `kody.credentialClientOpen` / `credentialClientSign` /
-  `credentialClientCallTool` / `credentialClientRefresh`, which return
-  `{ ok: true, value }` or `{ ok: false, error: { code, message, retryWith } }`.
-  Handles bind to the CapabilityProxy token, not a run, and a claimed
-  `packageId` must pass `package:execute`. A client `fetch` carries only the
-  handle in `x-kody-credential-client`, so it always takes the gateway-fetch
+  `kody.credentialClientOpen` / `credentialClientOpenAll` /
+  `credentialClientSign` / `credentialClientCallTool` /
+  `credentialClientRefresh`, which return `{ ok: true, value }` or
+  `{ ok: false, error: { code, message, retryWith } }`. The CLI sends its
+  `--credential` picks as the call's top-level `credentials` map (code inside
+  local workerd controls only `args`, so it cannot pick by name), and
+  `kody.credentialClientCheck({ packageId?, strict? })` checks the map before
+  code runs. The session's `features` lists `credential-call-map` when origin
+  serves both. Handles bind to the CapabilityProxy token, not a run, and a
+  claimed `packageId` must pass `package:execute`. A client `fetch` carries only
+  the handle in `x-kody-credential-client`, so it always takes the gateway-fetch
   hop, where origin places the credential. See
   [CLI local credential runtime](../contracts/cli-local-credential-runtime.md).
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as

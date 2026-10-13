@@ -22,11 +22,12 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { buildWebhookApprovalUrl } from '#worker/webhooks/approval.ts'
 import {
+	buildSetWebhookEndpointHmacSecretStatement,
 	getWebhookEndpointByKey,
-	setWebhookEndpointHmacSecret,
 } from '#worker/webhooks/repo.ts'
 import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-secret.ts'
 import {
+	buildEnablementInsertedGuardStatement,
 	buildInsertEnablementStatement,
 	buildInsertWebhookEnablementStatement,
 	disableEnablement,
@@ -240,14 +241,16 @@ export type NewTriggerEnablementPlan = {
 	enablement: null
 	kind: EnablementTriggerKind
 	triggerName: string
+	orgId: string
+	instanceId: string
 	enablementId: string
 	/**
 	 * Inserts the caller's enablement; run it with `runNewEnablementPlans`
 	 * (a webhook insert writes nothing when another enabler got there first).
 	 */
 	statement: D1PreparedStatement
-	/** Side effects that must land before the insert commits. */
-	prepare: () => Promise<void>
+	/** Writes that land in the same batch, just before the insert. */
+	prepareStatements: () => Promise<Array<D1PreparedStatement>>
 }
 
 export type TriggerEnablementPlan =
@@ -262,31 +265,58 @@ function webhookOtherEnablerError(triggerName: string) {
 }
 
 /**
- * Runs new-enablement inserts in one batch. A webhook insert that wrote
- * nothing, or hit the one-live-enablement index, lost a race with another
- * enabler: nothing of that webhook is written and the caller gets
- * `webhook_other_enabler`.
+ * Runs new-enablement inserts in one batch, between `before` and `after`
+ * (related writes such as credential mappings). A webhook insert that lost a
+ * race with another enabler rolls the whole batch back; the caller gets
+ * `webhook_other_enabler` when another live enablement holds the webhook,
+ * and the batch error otherwise.
  */
 export async function runNewEnablementPlans(input: {
 	db: D1Database
 	plans: ReadonlyArray<NewTriggerEnablementPlan>
+	before?: ReadonlyArray<D1PreparedStatement>
+	after?: ReadonlyArray<D1PreparedStatement>
 }) {
-	if (input.plans.length === 0) return
-	const firstWebhook = input.plans.find((plan) => plan.kind === 'webhook')
-	let results: Array<D1Result>
+	const { db, plans } = input
+	const batch: Array<D1PreparedStatement> = [...(input.before ?? [])]
+	for (const plan of plans) {
+		batch.push(...(await plan.prepareStatements()), plan.statement)
+		if (plan.kind === 'webhook') {
+			batch.push(
+				buildEnablementInsertedGuardStatement({ db, id: plan.enablementId }),
+			)
+		}
+	}
+	batch.push(...(input.after ?? []))
+	if (batch.length === 0) return
 	try {
-		results = await input.db.batch(input.plans.map((plan) => plan.statement))
+		await db.batch(batch)
 	} catch (error) {
-		if (firstWebhook && isWebhookOneLiveConflict(error)) {
-			throw webhookOtherEnablerError(firstWebhook.triggerName)
+		const loser = await findWebhookRaceLoser(db, plans)
+		if (loser) throw webhookOtherEnablerError(loser.triggerName)
+		if (isWebhookOneLiveConflict(error)) {
+			const firstWebhook = plans.find((plan) => plan.kind === 'webhook')
+			if (firstWebhook) throw webhookOtherEnablerError(firstWebhook.triggerName)
 		}
 		throw error
 	}
-	for (const [index, plan] of input.plans.entries()) {
-		if (plan.kind === 'webhook' && (results[index]?.meta.changes ?? 0) === 0) {
-			throw webhookOtherEnablerError(plan.triggerName)
-		}
+}
+
+async function findWebhookRaceLoser(
+	db: D1Database,
+	plans: ReadonlyArray<NewTriggerEnablementPlan>,
+) {
+	for (const plan of plans) {
+		if (plan.kind !== 'webhook') continue
+		const live = await listEnablementsForInstance({
+			db,
+			orgId: plan.orgId,
+			triggerKind: 'webhook',
+			instanceId: plan.instanceId,
+		})
+		if (live.length > 0) return plan
 	}
+	return null
 }
 
 /**
@@ -327,22 +357,25 @@ export async function planTriggerEnablementForCaller(input: {
 	}
 	// Keeps every enabled URL holding a signing secret, so requiring
 	// X-Kody-Signature later would not need a re-mint. Ingress does not check it.
-	const prepare = async () => {
-		if (!trigger.unsignedWebhookEndpointId) return
+	const prepareStatements = async () => {
+		if (!trigger.unsignedWebhookEndpointId) return []
 		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
 			env: input.env,
 			userId: orgId,
 			endpointId: trigger.unsignedWebhookEndpointId,
 		})
-		await setWebhookEndpointHmacSecret({
-			db,
-			userId: orgId,
-			endpointId: trigger.unsignedWebhookEndpointId,
-			hmacSecretEncrypted: encrypted,
-		})
+		return [
+			buildSetWebhookEndpointHmacSecretStatement({
+				db,
+				userId: orgId,
+				endpointId: trigger.unsignedWebhookEndpointId,
+				hmacSecretEncrypted: encrypted,
+			}),
+		]
 	}
 	if (webhookEnabler) {
-		await prepare()
+		const statements = await prepareStatements()
+		if (statements.length > 0) await db.batch(statements)
 		return { enablement: webhookEnabler }
 	}
 	const ownExisting = (
@@ -378,9 +411,11 @@ export async function planTriggerEnablementForCaller(input: {
 		enablement: null,
 		kind: input.kind,
 		triggerName: trigger.triggerName,
+		orgId,
+		instanceId: trigger.instanceId,
 		enablementId: id,
 		statement,
-		prepare,
+		prepareStatements,
 	}
 }
 
@@ -438,7 +473,6 @@ export async function enableTriggerForCaller(input: {
 			}; enablementEnable cannot do it.`,
 		)
 	}
-	await plan.prepare()
 	await runNewEnablementPlans({ db: input.env.APP_DB, plans: [plan] })
 	const created = await getEnablementById({
 		db: input.env.APP_DB,

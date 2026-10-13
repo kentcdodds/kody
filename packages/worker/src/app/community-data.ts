@@ -428,6 +428,8 @@ async function loadCommunityDetailDataUncached(
 	const listingWithHead = viewerInstall
 		? { ...sourceAheadListing, viewerInstall }
 		: sourceAheadListing
+	// listingBehind is overlaid on the package-page frame from the owner's
+	// fresh AccountPackageDetail.listingNeedsRepublish (not this public cache).
 	return composeCommunityDetailLoaderData({
 		listing: listingWithHead,
 		loggedIn: Boolean(user),

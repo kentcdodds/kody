@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -115,12 +115,10 @@ export async function accountWorkflowsRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildWorkflowsApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		buildWorkflowsApiRequestUrl(href),
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -233,12 +231,10 @@ export function AccountWorkflowsRoute(handle: Handle) {
 		key: 'accountWorkflows',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(buildWorkflowsApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				buildWorkflowsApiRequestUrl(href),
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountWorkflowsLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

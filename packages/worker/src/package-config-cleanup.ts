@@ -1,16 +1,23 @@
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export async function deleteAllPackageScopedSecrets(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	packageId: string
 }) {
-	const result = await input.env.APP_DB.prepare(
-		`DELETE FROM secret_buckets
-		WHERE user_id = ? AND scope = 'package' AND binding_key = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(input.userId, input.packageId)
-		.run()
-	return result.meta.changes ?? 0
+	const db = input.env.APP_DB
+	const liveBucketSql = `FROM secret_buckets
+		WHERE user_id = ? AND scope = 'package' AND binding_key = ?${andLiveDeletedAtSql()}`
+	const results = await db.batch([
+		...credentialGrantCleanupStatements(db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id FROM secret_entries
+				WHERE bucket_id IN (SELECT id ${liveBucketSql})`,
+			credentialIdBindings: [input.userId, input.packageId],
+		}),
+		db.prepare(`DELETE ${liveBucketSql}`).bind(input.userId, input.packageId),
+	])
+	return results.at(-1)?.meta.changes ?? 0
 }
 
 export async function removeAllSecretApprovalsForPackage(input: {

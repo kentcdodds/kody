@@ -1,4 +1,6 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { buildMcpAuthorizeErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { readAppSession } from '#client/app-session-context.tsx'
@@ -620,6 +622,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							},
 						})
 					: null}
+				{message?.type === 'error' ? (
+					<>
+						<ErrorAgentPromptButton
+							prompt={buildMcpAuthorizeErrorAgentPrompt({
+								errorMessage: message.text,
+							})}
+						/>
+					</>
+				) : null}
 				{renderOauthAuthorizeConsent({
 					needsEmailVerification,
 					resetCompleted,

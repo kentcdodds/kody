@@ -19,6 +19,7 @@ import { readArtifactTreeAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { resolveListingBehindPublishHint } from '#worker/community/resolve-listing-behind-publish-hint.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -51,6 +52,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 	}
 	const requestUrl = new URL(input.request.url)
 	const requestedCommit = requestUrl.searchParams.get('commit')?.trim() ?? ''
+	const pendingIsDefaultHead = !requestedCommit
 	let pendingCommit: string | null = null
 	if (requestedCommit) {
 		if (!isGitCommitSha(requestedCommit)) {
@@ -95,6 +97,32 @@ export async function loadAccountPackageApprovePublishData(input: {
 		ownerUserId,
 	)
 	const ownerUsername = ownerBinding?.org.slug ?? input.user.username
+	// Compare against the current published tip only. Settings Update public
+	// listing keys off listingNeedsRepublish vs published_commit, so a
+	// pending-ahead hint would link to a page that is not yet behind.
+	const listing =
+		publishedCommit == null
+			? null
+			: await resolveListingBehindPublishHint({
+					db: input.env.APP_DB,
+					ownerUserId,
+					packageId: savedPackage.id,
+					ownerUsername,
+					kodyId: savedPackage.kodyId,
+					promotedCommit: publishedCommit,
+				})
+	const listingWillLagAfterPromote =
+		!alreadyPublished &&
+		pendingCommit != null &&
+		listing == null &&
+		(await resolveListingBehindPublishHint({
+			db: input.env.APP_DB,
+			ownerUserId,
+			packageId: savedPackage.id,
+			ownerUsername,
+			kodyId: savedPackage.kodyId,
+			promotedCommit: pendingCommit,
+		})) != null
 	return {
 		ok: true,
 		email: input.user.email,
@@ -108,6 +136,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 		publishedCommit,
 		pendingCommit,
 		alreadyPublished,
+		pendingIsDefaultHead,
 		filesHref: getPackageTreeHref({
 			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
@@ -116,6 +145,8 @@ export async function loadAccountPackageApprovePublishData(input: {
 			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
 		}),
+		listing,
+		listingWillLagAfterPromote,
 		diff:
 			unpublishedCompare || pendingMissing
 				? { files: [], omittedCount: 0 }
@@ -181,7 +212,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		permission: 'package:write',
 	})
 	if (!resolved.ok) return resolved.response
-	const { savedPackage, ownerUserId } = resolved.package
+	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 
 	if (action === 'lock' || action === 'unlock') {
 		if (action === 'lock' && isSavedPackageLocked(savedPackage.lockedAt)) {
@@ -242,6 +273,13 @@ export async function handleAccountPackagePublishLockAction(input: {
 		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
+		requestedByUserId: actorUserId,
+		// Owner explicitly chose this commit on approve-publish. If a
+		// published-only fleet migration advanced published_commit to a sibling
+		// of pending HEAD, this is not a fast-forward; allowForce + overwrite
+		// confirmation (this click) still requires a restorable backup.
+		allowForce: true,
+		destructiveOverwriteConfirmed: true,
 		baseUrl: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
@@ -250,16 +288,33 @@ export async function handleAccountPackagePublishLockAction(input: {
 	})
 	switch (publishResult.status) {
 		case 'published':
-		case 'already_published':
-			return jsonResponse(
-				await reloadAccountPackagesAfterWrite({
-					env: input.env,
-					request: input.request,
-					user: input.user,
-					packageId,
-					ownerUserId,
-				}),
+		case 'already_published': {
+			const packagesPayload = await reloadAccountPackagesAfterWrite({
+				env: input.env,
+				request: input.request,
+				user: input.user,
+				packageId,
+				ownerUserId,
+			})
+			const ownerBinding = await loadOrgBindingForOrg(
+				input.env.APP_DB,
+				input.user.mcpUser.userId,
+				ownerUserId,
 			)
+			const ownerUsername = ownerBinding?.org.slug ?? input.user.username
+			const listing = await resolveListingBehindPublishHint({
+				db: input.env.APP_DB,
+				ownerUserId,
+				packageId,
+				ownerUsername,
+				kodyId: savedPackage.kodyId,
+				promotedCommit: commit,
+			})
+			return jsonResponse({
+				...packagesPayload,
+				listing,
+			})
+		}
 		case 'checks_failed':
 			return jsonResponse(
 				{
@@ -280,6 +335,8 @@ export async function handleAccountPackagePublishLockAction(input: {
 				},
 				409,
 			)
+		case 'approval_required':
+			return jsonResponse({ ok: false, error: publishResult.message }, 409)
 		default: {
 			const exhaustive: never = publishResult
 			throw new Error(`Unknown approve-publish status: ${String(exhaustive)}`)
