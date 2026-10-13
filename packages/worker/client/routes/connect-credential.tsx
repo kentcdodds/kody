@@ -19,6 +19,7 @@ import {
 	buildKeySaveBody,
 	createKeyFormState,
 	credentialCreateAgentPrompt,
+	credentialCreateFormKey,
 	credentialCreateHandoffHref,
 	credentialCreateMode,
 	credentialCreateTitle,
@@ -171,7 +172,7 @@ export function ConnectCredentialRoute(handle: Handle) {
 			new URL(href, 'http://localhost').searchParams,
 		)
 		form = createKeyFormState(query)
-		formForHref = href
+		formForHref = credentialCreateFormKey(href)
 		savedName = null
 		message = null
 		showValue = false
@@ -578,14 +579,17 @@ export function ConnectCredentialRoute(handle: Handle) {
 			href,
 		)
 		if (routeData) data = routeData
-		if (!form || formForHref !== href) resetFor(href)
+		if (!form || formForHref !== credentialCreateFormKey(href)) resetFor(href)
 		const state = form as KeyFormState
 		const search = new URL(href, 'http://localhost').searchParams
 		const query = parseCredentialCreateQuery(search)
-		const orgSlug = data?.orgSlug ?? ''
 		const pathOrgSlug = orgSlugFromPathname(
 			new URL(href, 'http://localhost').pathname,
 		)
+		// After an org switch, the last org's credentials and packages must not
+		// drive matches, replace detection, or link problems here.
+		if (data && pathOrgSlug && data.orgSlug !== pathOrgSlug) data = null
+		const orgSlug = data?.orgSlug ?? ''
 		const selected = query.kind ?? 'secret'
 		const kinds = query.kindLocked && selected ? [selected] : credentialKinds
 		const matches = data ? findMatchingCredentials(data.credentials, query) : []

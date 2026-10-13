@@ -164,6 +164,25 @@ function matchesQuery(item: CredentialListItem, query: string) {
 }
 
 /** Applies the list filters; the page filters live with the same rules. */
+/**
+ * The package filter set to `packageId` (empty clears it). A package key
+ * belongs to a package rather than being locked to one, so choosing a package
+ * drops the package-scoped-keys filter, which would otherwise match nothing.
+ */
+export function withLockedPackageFilter(
+	filters: CredentialListFilters,
+	packageId: string,
+): CredentialListFilters {
+	return {
+		...filters,
+		locked: packageId || undefined,
+		packageScoped:
+			packageId && filters.packageScoped === true
+				? undefined
+				: filters.packageScoped,
+	}
+}
+
 export function filterCredentialList(
 	items: ReadonlyArray<CredentialListItem>,
 	filters: CredentialListFilters,

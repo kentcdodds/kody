@@ -8,6 +8,7 @@ import {
 	buildKeySaveBody,
 	createKeyFormState,
 	credentialCreateAgentPrompt,
+	credentialCreateFormKey,
 	credentialCreateHandoffHref,
 	credentialCreateMode,
 	credentialNeedApprovalHref,
@@ -476,4 +477,14 @@ test('the agent prompt leaves out a login link’s exchange', () => {
 		'https://kody.codes/@acme/-/credentials/new?kind=login&name=SVC_LOGIN',
 	)
 	expect(prompt).toContain('left out the link’s loginExchange')
+})
+
+test('picking Key on a link with no kind keeps the same form', () => {
+	const bare = '/@acme/-/credentials/new?name=STRIPE_KEY'
+	expect(credentialCreateFormKey(bare)).toBe(
+		credentialCreateFormKey(writeCredentialCreateKind(bare, 'secret')),
+	)
+	expect(credentialCreateFormKey(bare)).not.toBe(
+		credentialCreateFormKey(writeCredentialCreateKind(bare, 'url')),
+	)
 })

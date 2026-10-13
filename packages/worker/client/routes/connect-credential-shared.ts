@@ -83,6 +83,17 @@ export function credentialCreateTitle(kind: CredentialKind) {
 	}
 }
 
+/**
+ * Which form an href shows. A link with no kind already shows the Key form, so
+ * picking Key from the chooser keeps what the person typed.
+ */
+export function credentialCreateFormKey(href: string) {
+	const url = new URL(href, 'http://localhost')
+	return url.searchParams.has('kind')
+		? `${url.pathname}${url.search}`
+		: writeCredentialCreateKind(href, 'secret')
+}
+
 /** `href` with `kind` chosen, keeping every other param (including prefill). */
 export function writeCredentialCreateKind(href: string, kind: CredentialKind) {
 	const url = new URL(href, 'http://localhost')

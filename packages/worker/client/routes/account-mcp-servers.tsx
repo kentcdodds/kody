@@ -99,8 +99,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let addName = ''
 	let addUrl = ''
 	let addBearerToken = ''
-	/** The add-server href whose link prefill was applied, so typing is kept. */
-	let prefilledHref: string | null = null
+	/**
+	 * The link prefill (`name` and `url`) last applied to the add-server form.
+	 * Keyed on those values, not the href, so a search (`q`) keeps typing.
+	 */
+	let prefilledKey: string | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	/** Payload last applied to the closure state above. */
@@ -318,11 +321,16 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = mcpServersRoute.getSelection(currentHref)
-		if (selection.isCreating && prefilledHref !== currentHref) {
-			prefilledHref = currentHref
+		if (selection.isCreating) {
 			const prefill = readAddServerPrefill(currentHref)
-			if (prefill.name) addName = prefill.name
-			if (prefill.url) addUrl = prefill.url
+			const prefillKey = `${prefill.name}\n${prefill.url}`
+			if (prefilledKey !== prefillKey) {
+				prefilledKey = prefillKey
+				if (prefill.name) addName = prefill.name
+				if (prefill.url) addUrl = prefill.url
+			}
+		} else {
+			prefilledKey = null
 		}
 		const search = readSearchFilter(currentHref)
 		const filteredServers = filterServers(servers, search)

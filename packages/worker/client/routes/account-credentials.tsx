@@ -39,8 +39,9 @@ import {
 	credentialKindLabel,
 	credentialStatusLabel,
 	filterCredentialList,
+	withLockedPackageFilter,
 } from '#universal/credentials-list.ts'
-import { orgResourcePath } from '#universal/org-pages.ts'
+import { orgResourcePath, orgSlugFromPathname } from '#universal/org-pages.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -242,6 +243,13 @@ export function AccountCredentialsRoute(handle: Handle) {
 				? currentHref
 				: new URL(currentHref, window.location.origin).href
 		if (snapshot.data) payload = snapshot.data
+		const pathOrgSlug = orgSlugFromPathname(
+			new URL(currentHref, 'http://localhost').pathname,
+		)
+		// After an org switch, the last org's list must not stand in for this one.
+		if (payload && pathOrgSlug && payload.orgSlug !== pathOrgSlug) {
+			payload = null
+		}
 		const pending = snapshot.kind === 'pending'
 		const status: AccountStatus =
 			snapshot.kind === 'error'
@@ -445,10 +453,9 @@ export function AccountCredentialsRoute(handle: Handle) {
 										value={lockedPackageId}
 										options={packageOptions}
 										onChange={(packageId) =>
-											updateFilters((current) => ({
-												...current,
-												locked: packageId || undefined,
-											}))
+											updateFilters((current) =>
+												withLockedPackageFilter(current, packageId),
+											)
 										}
 									/>
 								</span>

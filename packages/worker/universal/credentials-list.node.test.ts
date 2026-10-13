@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { type CredentialListItem } from './credential-contracts.ts'
 import {
+	withLockedPackageFilter,
 	filterCredentialList,
 	readCredentialListFilters,
 	writeCredentialListQuery,
@@ -54,4 +55,20 @@ test('search matches every term across fields, like the old Secrets list', () =>
 	expect(names('stripe live')).toEqual(['STRIPE_KEY'])
 	expect(names('pkg-billing')).toEqual(['STRIPE_KEY'])
 	expect(names('stripe test')).toEqual([])
+})
+
+test('choosing a package drops the package-scoped-keys filter', () => {
+	expect(
+		withLockedPackageFilter(
+			{ packageScoped: true, kinds: ['secret'] },
+			'pkg-1',
+		),
+	).toEqual({ packageScoped: undefined, kinds: ['secret'], locked: 'pkg-1' })
+	expect(withLockedPackageFilter({ packageScoped: false }, 'pkg-1')).toEqual({
+		packageScoped: false,
+		locked: 'pkg-1',
+	})
+	expect(
+		withLockedPackageFilter({ packageScoped: true, locked: 'pkg-1' }, ''),
+	).toEqual({ packageScoped: true, locked: undefined })
 })
