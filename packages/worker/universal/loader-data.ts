@@ -1236,11 +1236,34 @@ type OrgManagementOrg = {
 	role: 'owner' | 'member' | 'billing'
 }
 
+export type OrgSettingsCustomHostnameView = {
+	id: string
+	hostname: string
+	bindingKind: 'app' | 'org'
+	packageId: string | null
+	hostnameStatus: string
+	sslStatus: string
+	verifiedAt: string | null
+	dnsMissingSince: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type OrgSettingsCustomDomainsView = {
+	hostnames: Array<OrgSettingsCustomHostnameView>
+	dnsTarget: string | null
+}
+
 export type OrgSettingsLoaderData = {
 	ok: true
 	org: OrgManagementOrg
 	canManage: boolean
 	canDelete: boolean
+	/**
+	 * Present only when `package-app-custom-domains` is on for this
+	 * environment. Null when the flag is off (panel stays hidden).
+	 */
+	customDomains: OrgSettingsCustomDomainsView | null
 }
 
 export type OrgMemberView = {

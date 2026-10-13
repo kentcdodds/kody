@@ -110,6 +110,11 @@ export function OrgSettingsRoute(handle: Handle) {
 	let confirmation = ''
 	let deleting = false
 	let dialogNode: HTMLDialogElement | null = null
+	let hostnameDraft = ''
+	let bindingKindDraft: 'org' | 'app' = 'org'
+	let packageIdDraft = ''
+	let sslMethodDraft: 'http' | 'txt' = 'txt'
+	let hostnameBusy: string | null = null
 
 	function applyPayload(payload: OrgSettingsLoaderData) {
 		const key = `${payload.org.id}:${payload.org.slug}:${payload.org.displayName}`
@@ -292,6 +297,73 @@ export function OrgSettingsRoute(handle: Handle) {
 		}
 	}
 
+	async function mutateCustomHostname(input: {
+		action: 'add' | 'sync' | 'delete'
+		hostname?: string
+		id?: string
+		binding_kind?: 'app' | 'org'
+		package_id?: string
+		ssl_method?: 'http' | 'txt'
+	}) {
+		const snapshot = settingsData.read(handle, readCurrentRouterHref(handle))
+		const data = snapshot.data
+		if (!data?.ok || !data.canManage || !data.customDomains) return
+		hostnameBusy =
+			input.action === 'add'
+				? 'add'
+				: `${input.action}:${input.id ?? input.hostname ?? ''}`
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(
+				routes.orgSettingsCustomHostnamesPost.href({
+					orgSlug: data.org.slug,
+				}),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify(input),
+				},
+			)
+			const payload = (await response
+				.json()
+				.catch(() => null)) as SettingsPayload | null
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to update custom domains.')
+			}
+			appliedKey = ''
+			settingsData.reload(handle, readCurrentRouterHref(handle))
+			if (input.action === 'add') {
+				hostnameDraft = ''
+				packageIdDraft = ''
+			}
+			message =
+				input.action === 'add'
+					? 'Custom domain registered. Publish DNS, then sync.'
+					: input.action === 'sync'
+						? 'Custom domain status refreshed from Cloudflare.'
+						: 'Custom domain removed.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to update custom domains.'
+			messageTone = 'error'
+		} finally {
+			hostnameBusy = null
+			handle.update()
+		}
+	}
+
 	return () => {
 		const href = readCurrentRouterHref(handle)
 		const consumed = tryConsumeRouteLoaderData(handle, 'orgSettings', href)
@@ -465,6 +537,191 @@ export function OrgSettingsRoute(handle: Handle) {
 								</p>
 							)}
 						</AccountManagementPanel>
+						{data.customDomains ? (
+							<AccountManagementPanel title="Custom domains">
+								<p mix={css(accountFieldNoteCss)}>
+									Point a CNAME at{' '}
+									<code mix={css(handleValueCss)}>
+										{data.customDomains.dnsTarget ?? 'the package-app zone'}
+									</code>
+									, then sync until hostname and certificate are both active.
+									Prefer TXT SSL validation so the cert can issue before traffic
+									switches (ADR 0071).
+								</p>
+								{data.customDomains.hostnames.length === 0 ? (
+									<p mix={css(mutedCopyCss)}>No custom domains yet.</p>
+								) : (
+									<ul
+										mix={css(hostnameListCss)}
+										data-testid="org-custom-hostnames"
+									>
+										{data.customDomains.hostnames.map((row) => (
+											<li mix={css(hostnameRowCss)} key={row.id}>
+												<div mix={css(hostnameMetaCss)}>
+													<strong mix={css(handleValueCss)}>
+														{row.hostname}
+													</strong>
+													<span mix={css(identityDetailCss)}>
+														{row.bindingKind === 'app' ? 'App' : 'Org'} · host{' '}
+														{row.hostnameStatus} · ssl {row.sslStatus}
+														{row.verifiedAt ? ' · verified' : ''}
+													</span>
+												</div>
+												{data.canManage ? (
+													<div mix={css(hostnameActionsCss)}>
+														<button
+															type="button"
+															disabled={hostnameBusy !== null}
+															mix={[
+																css(getGhostButtonCss({ size: 'sm' })),
+																on(
+																	'click',
+																	() =>
+																		void mutateCustomHostname({
+																			action: 'sync',
+																			id: row.id,
+																		}),
+																),
+															]}
+														>
+															{hostnameBusy === `sync:${row.id}`
+																? 'Syncing…'
+																: 'Sync'}
+														</button>
+														<button
+															type="button"
+															disabled={hostnameBusy !== null}
+															mix={[
+																css(getGhostButtonCss({ size: 'sm' })),
+																on(
+																	'click',
+																	() =>
+																		void mutateCustomHostname({
+																			action: 'delete',
+																			id: row.id,
+																		}),
+																),
+															]}
+														>
+															{hostnameBusy === `delete:${row.id}`
+																? 'Removing…'
+																: 'Remove'}
+														</button>
+													</div>
+												) : null}
+											</li>
+										))}
+									</ul>
+								)}
+								{data.canManage ? (
+									<form
+										mix={[
+											css(formCss),
+											on('submit', (event) => {
+												event.preventDefault()
+												void mutateCustomHostname({
+													action: 'add',
+													hostname: hostnameDraft,
+													binding_kind: bindingKindDraft,
+													package_id:
+														bindingKindDraft === 'app'
+															? packageIdDraft
+															: undefined,
+													ssl_method: sslMethodDraft,
+												})
+											}),
+										]}
+									>
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>Hostname</span>
+											<input
+												required
+												value={hostnameDraft}
+												placeholder="apps.example.com"
+												data-field-ring
+												mix={[
+													css(accountInputCss),
+													on('input', (event) => {
+														hostnameDraft = (
+															event.currentTarget as HTMLInputElement
+														).value
+														handle.update()
+													}),
+												]}
+											/>
+										</label>
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>Binding</span>
+											<select
+												value={bindingKindDraft}
+												mix={[
+													css(accountInputCss),
+													on('change', (event) => {
+														bindingKindDraft = (
+															event.currentTarget as HTMLSelectElement
+														).value as 'org' | 'app'
+														handle.update()
+													}),
+												]}
+											>
+												<option value="org">
+													Org (private apps at /packages/…)
+												</option>
+												<option value="app">
+													App (one public internet-visible app at /)
+												</option>
+											</select>
+										</label>
+										{bindingKindDraft === 'app' ? (
+											<label mix={css(accountFieldCss)}>
+												<span mix={css(accountFieldLabelCss)}>Package id</span>
+												<input
+													required
+													value={packageIdDraft}
+													data-field-ring
+													mix={[
+														css(accountInputCss),
+														on('input', (event) => {
+															packageIdDraft = (
+																event.currentTarget as HTMLInputElement
+															).value
+															handle.update()
+														}),
+													]}
+												/>
+											</label>
+										) : null}
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>SSL method</span>
+											<select
+												value={sslMethodDraft}
+												mix={[
+													css(accountInputCss),
+													on('change', (event) => {
+														sslMethodDraft = (
+															event.currentTarget as HTMLSelectElement
+														).value as 'http' | 'txt'
+														handle.update()
+													}),
+												]}
+											>
+												<option value="txt">TXT (pre-validate)</option>
+												<option value="http">HTTP</option>
+											</select>
+										</label>
+										<div mix={css(accountActionsCss)}>
+											<button
+												type="submit"
+												disabled={hostnameBusy !== null}
+												mix={css(getPillButtonCss({ size: 'sm' }))}
+											>
+												{hostnameBusy === 'add' ? 'Adding…' : 'Add domain'}
+											</button>
+										</div>
+									</form>
+								) : null}
+							</AccountManagementPanel>
+						) : null}
 						{data.canDelete ? (
 							<AccountManagementPanel title="Delete organization">
 								<p mix={css(accountFieldNoteCss)}>
@@ -640,4 +897,35 @@ const deleteDialogTitleCss = {
 	margin: 0,
 	fontSize: '1.2rem',
 	fontWeight: 700,
+}
+
+const hostnameListCss = {
+	listStyle: 'none',
+	margin: `${spacing.md} 0 0`,
+	padding: 0,
+	display: 'grid',
+	gap: spacing.md,
+}
+
+const hostnameRowCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	paddingBottom: spacing.md,
+	borderBottom: `1px solid ${colors.border}`,
+	'&:last-child': {
+		borderBottom: 'none',
+		paddingBottom: 0,
+	},
+}
+
+const hostnameMetaCss = {
+	display: 'grid',
+	gap: '0.2rem',
+	minWidth: 0,
+}
+
+const hostnameActionsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
 }
