@@ -8,11 +8,14 @@ import {
 	type CredentialKind,
 } from './credential-contracts.ts'
 
-const orgIndexRedirects: Record<string, CredentialKind | null> = {
+/**
+ * Secret providers is not here: granting a vault access is its own trust
+ * decision with its own audit trail, so that page stays separate.
+ */
+const orgIndexRedirects: Record<string, CredentialKind> = {
 	secrets: 'secret',
 	integrations: 'oauth',
 	'mcp-servers': 'mcp',
-	'secret-providers': null,
 }
 
 const orgIndexPattern = /^\/@([^/]+)\/-\/([^/]+)\/?$/
@@ -27,9 +30,8 @@ function orgIndexRedirect(url: URL): string | null {
 	if (!match) return null
 	const [, orgSegment, section] = match
 	if (!section || !Object.hasOwn(orgIndexRedirects, section)) return null
-	const kind = orgIndexRedirects[section]
 	const search = new URLSearchParams(url.searchParams)
-	if (kind) search.set('kind', kind)
+	search.set('kind', orgIndexRedirects[section]!)
 	return withSearch(`/@${orgSegment}/-/credentials`, search)
 }
 

@@ -14,9 +14,6 @@ test('old org index pages go to the Credentials list filtered by kind', () => {
 	expect(redirect('/@acme/-/mcp-servers?url=https%3A%2F%2Fmcp.test')).toBe(
 		'/@acme/-/credentials?url=https%3A%2F%2Fmcp.test&kind=mcp',
 	)
-	expect(redirect('/@acme/-/secret-providers?q=vault')).toBe(
-		'/@acme/-/credentials?q=vault',
-	)
 	expect(redirect('/@acme/-/secrets?kind=oauth&q=x')).toBe(
 		'/@acme/-/credentials?kind=secret&q=x',
 	)
@@ -25,8 +22,10 @@ test('old org index pages go to the Credentials list filtered by kind', () => {
 	)
 })
 
-test('deeper flows, /connect/oauth, and other sections keep serving', () => {
+test('deeper flows, /connect/oauth, Secret providers, and other sections keep serving', () => {
 	for (const path of [
+		'/@acme/-/secret-providers',
+		'/@acme/-/secret-providers?q=vault',
 		'/@acme/-/secrets/approve',
 		'/@acme/-/secrets/approve?token=t',
 		'/@acme/-/mcp-servers/srv-1/authorize',

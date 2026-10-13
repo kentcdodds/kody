@@ -9,6 +9,7 @@ import { saveSecret } from '#mcp/secrets/service.ts'
 import * as needsClosure from '#worker/credentials/credential-needs-closure.ts'
 import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
 import {
+	credentialMappingUpdateAuditAction,
 	resolveMappingChanges,
 	writeMappingChanges,
 } from '#worker/credentials/package-credential-mapping-changes.ts'
@@ -253,6 +254,34 @@ export async function setupPackageCredentialMappingFixture(input: {
 			.prepare(`SELECT COUNT(*) AS n FROM enablements WHERE package_id = ?`)
 			.bind(packageId)
 			.first<{ n: number }>())!.n
+	const mappingAudits = async () => {
+		const rows = await env.AUDIT_DB.prepare(
+			`SELECT actor_user_id, actor_username, credential_kind, credential_id,
+				resource_type, resource_id, details_json
+			 FROM org_audit_events
+			 WHERE action = ? AND org_id = ?
+			 ORDER BY rowid`,
+		)
+			.bind(credentialMappingUpdateAuditAction, acmeId)
+			.all<{
+				actor_user_id: string | null
+				actor_username: string | null
+				credential_kind: string | null
+				credential_id: string | null
+				resource_type: string | null
+				resource_id: string | null
+				details_json: string | null
+			}>()
+		return (rows.results ?? []).map((row) => ({
+			actorUserId: row.actor_user_id,
+			actorUsername: row.actor_username,
+			credentialKind: row.credential_kind,
+			credentialId: row.credential_id,
+			resourceType: row.resource_type,
+			resourceId: row.resource_id,
+			details: row.details_json ? JSON.parse(row.details_json) : null,
+		}))
+	}
 	return {
 		db,
 		env,
@@ -266,5 +295,6 @@ export async function setupPackageCredentialMappingFixture(input: {
 		scopeFor,
 		apply,
 		enablementCount,
+		mappingAudits,
 	}
 }

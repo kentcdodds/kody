@@ -9,10 +9,10 @@ type OrgSectionHandler = {
 }
 
 /**
- * The old Secrets, Integrations, MCP servers, and Secret providers index pages
- * move to the Credentials list. Their deeper paths (approvals, OAuth
- * authorize) still reach `inner`. Wrap a route only once nothing on the
- * Credentials page links back to its index, or the visit loops.
+ * The old Secrets, Integrations, and MCP servers index pages move to the
+ * Credentials list. Their deeper paths (approvals, OAuth authorize) still
+ * reach `inner`. Wrap a route only once the Credentials list has shipped and
+ * been proven and nothing on it links back to that index, or the visit loops.
  */
 export function withCredentialIndexRedirect<Handler extends OrgSectionHandler>(
 	inner: Handler,
