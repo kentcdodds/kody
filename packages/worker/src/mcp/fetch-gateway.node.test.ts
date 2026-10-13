@@ -580,11 +580,74 @@ test('ordinary streamed POST without credentials still follows a 302', async () 
 		globalFetch: fetchStub as unknown as typeof fetch,
 	})
 	expect(response.status).toBe(200)
+	expect(response.redirected).toBe(true)
 	expect(await response.text()).toBe('landed')
 	expect(fetchStub).toHaveBeenCalledTimes(2)
 	expect(fetchStub.mock.calls[0]?.[0]?.redirect).toBe('manual')
 	expect(fetchStub.mock.calls[1]?.[0]?.url).toBe(
 		'https://api.example.com/final',
+	)
+})
+
+test('ordinary redirect follow strips privileged headers across origins', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const fetchStub = vi.fn(async (request: Request) => {
+		if (request.url.includes('other.example.net')) {
+			expect(request.headers.get('authorization')).toBeNull()
+			expect(request.headers.get('cookie')).toBeNull()
+			expect(request.headers.get('proxy-authorization')).toBeNull()
+			expect(request.headers.get('x-custom')).toBe('keep')
+			return new Response('ok', { status: 200 })
+		}
+		return new Response(null, {
+			status: 302,
+			headers: { Location: 'https://other.example.net/next' },
+		})
+	})
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/start', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer caller-token',
+				Cookie: 'session=1',
+				'Proxy-Authorization': 'Basic abc',
+				'X-Custom': 'keep',
+				'Content-Type': 'text/plain',
+			},
+			body: 'ping',
+			redirect: 'follow',
+		}),
+		globalFetch: fetchStub as unknown as typeof fetch,
+	})
+	expect(response.status).toBe(200)
+	expect(fetchStub).toHaveBeenCalledTimes(2)
+})
+
+test('ordinary redirect follow does not downgrade https to http', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const fetchStub = vi.fn(async () => {
+		return new Response(null, {
+			status: 302,
+			headers: { Location: 'http://api.example.com/insecure' },
+		})
+	})
+	const response = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/start', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body: 'ping',
+			redirect: 'follow',
+		}),
+		globalFetch: fetchStub as unknown as typeof fetch,
+	})
+	expect(response.status).toBe(302)
+	expect(fetchStub).toHaveBeenCalledTimes(1)
+	expect(response.headers.get('location')).toBe(
+		'http://api.example.com/insecure',
 	)
 })
 

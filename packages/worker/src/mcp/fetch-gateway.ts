@@ -47,6 +47,7 @@ import { SecretProviderHostDeniedError } from '#mcp/secrets/secret-providers/err
 import {
 	redactEchoedSecrets,
 	redactEchoedSecretsInError,
+	withLanding,
 } from '#mcp/secrets/echo-redaction.ts'
 import {
 	createOutboundFetchDeadline,
@@ -272,10 +273,11 @@ export async function executeGatewayFetch(input: {
 			callerSignal: transformed.signal,
 		})
 		try {
-			response = deadline.track(
-				await globalFetch(
-					new Request(transformed, { signal: deadline.signal }),
-				),
+			// Do not track until after optional redirect follow: cancelling a
+			// tracked 3xx body would settle the outbound deadline and leave
+			// later hops without idle/overall timeouts.
+			let upstream = await globalFetch(
+				new Request(transformed, { signal: deadline.signal }),
 			)
 			// Body placeholders may resolve while the upload streams; wait so
 			// echo redaction and redirect policy see every substituted value.
@@ -287,17 +289,16 @@ export async function executeGatewayFetch(input: {
 			if (
 				deferRedirectFollow &&
 				substitutedValues.length === 0 &&
-				response &&
-				isRedirectStatus(response.status)
+				isRedirectStatus(upstream.status)
 			) {
-				response = await followRedirectsWithoutCredentialReplay({
-					response,
+				upstream = await followRedirectsWithoutCredentialReplay({
+					response: upstream,
 					request: transformed,
 					fetch: globalFetch,
 					signal: deadline.signal,
-					track: (next) => deadline!.track(next),
 				})
 			}
+			response = deadline.track(upstream)
 		} catch (error) {
 			throw redactEchoedSecretsInError(
 				asCallerFacingBodyFillError(error),
@@ -727,45 +728,75 @@ function isRedirectStatus(status: number) {
 	return redirectStatusCodes.has(status)
 }
 
+/**
+ * Fetch redirect method rewrite: 303 always becomes GET (except HEAD);
+ * 301/302 rewrite only POST → GET. PUT/PATCH keep their method (and need a
+ * body for 307/308 replay, which this helper does not buffer).
+ */
 function redirectRewritesToGet(status: number, method: string) {
 	if (status === 303) return method !== 'HEAD'
-	if (status === 301 || status === 302) {
-		return method !== 'GET' && method !== 'HEAD'
-	}
+	if ((status === 301 || status === 302) && method === 'POST') return true
 	return false
+}
+
+const crossOriginFilteredHeaders = [
+	'authorization',
+	'proxy-authorization',
+	'cookie',
+] as const
+
+function sameOrigin(a: URL, b: URL) {
+	return a.origin === b.origin
 }
 
 /**
  * Follow redirects for requests that carried no filled credential, without
  * buffering a streamed upload for 307/308 body replay. Hops that would need
- * that replay are returned as-is (fail closed on replay, not on follow).
+ * that replay, or that would downgrade https→http, are returned as-is.
  */
 async function followRedirectsWithoutCredentialReplay(input: {
 	response: Response
 	request: Request
 	fetch: typeof fetch
 	signal: AbortSignal
-	track: (response: Response) => Response
 }): Promise<Response> {
 	let response = input.response
 	let request = input.request
+	let followed = false
 	for (let hop = 0; hop < 20; hop += 1) {
-		if (!isRedirectStatus(response.status)) return response
+		if (!isRedirectStatus(response.status)) {
+			return followed
+				? withLanding(response, {
+						url: response.url || request.url,
+						redirected: true,
+					})
+				: response
+		}
 		const location = response.headers.get('location')
 		if (!location) return response
 		const rewritesToGet = redirectRewritesToGet(response.status, request.method)
-		const requestHadBody = shouldSendBody(request.method)
-		if (!rewritesToGet && requestHadBody) {
-			// 307/308 with a body would replay bytes already consumed from a
-			// stream. Do not buffer the upload; leave the redirect to the caller.
+		const needsBodyReplay = !rewritesToGet && request.body !== null
+		if (needsBodyReplay) {
+			// 307/308 (or 301/302 PUT) with a body would replay bytes already
+			// consumed from a stream. Do not buffer the upload.
+			return response
+		}
+		const currentUrl = new URL(response.url || request.url)
+		const nextUrl = new URL(location, currentUrl)
+		if (currentUrl.protocol === 'https:' && nextUrl.protocol === 'http:') {
+			// Match browser fail-closed on scheme downgrade for followed hops.
 			return response
 		}
 		await response.body?.cancel().catch(() => {})
-		const nextUrl = new URL(location, response.url || request.url)
 		const headers = new Headers(request.headers)
 		if (rewritesToGet) {
 			headers.delete('content-type')
 			headers.delete('content-length')
+		}
+		if (!sameOrigin(currentUrl, nextUrl)) {
+			for (const name of crossOriginFilteredHeaders) {
+				headers.delete(name)
+			}
 		}
 		request = new Request(nextUrl, {
 			method: rewritesToGet ? 'GET' : request.method,
@@ -773,7 +804,8 @@ async function followRedirectsWithoutCredentialReplay(input: {
 			signal: input.signal,
 			redirect: 'manual',
 		})
-		response = input.track(await input.fetch(request))
+		response = await input.fetch(request)
+		followed = true
 	}
 	throw new TypeError('Too many redirects.')
 }
