@@ -251,11 +251,12 @@ Do not point Playwright at the preview for the repo E2E suite. Local E2E
 - **Workflow still running** — default mode waits (15 minutes). Watch the run
   URL the script prints.
 - **Workflow failed** — open the run, fix the deploy, push, re-run the script.
-- **Stale URL after a push** — `/health` can still match the previous deployment
-  SHA until GitHub records a new preview deployment. The script waits until the
-  🔎 Preview workflow run for this PR head is `completed`/`success` (unless you
-  pass `--url` without `--pr`) and `/health` matches the expected SHA. Do not
-  treat a healthy worker as the new commit until that happens.
+- **Stale URL after a push** — `/health` can still report the previous commit
+  until the new 🔎 Preview deploy finishes. The script waits until the workflow
+  run for this PR head is `completed`/`success` (unless you pass `--url` without
+  `--pr`) and `/health` matches the expected SHA (PR head, or a merge commit
+  that has that head as a parent, or `--sha`). Do not treat a healthy worker as
+  the new commit until that happens.
 
 Do not `gh workflow run preview.yml` with `target=pr` to "force" a PR preview.
 That dispatch checks out the workflow's ref (usually `main`), not the PR head.

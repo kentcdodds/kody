@@ -33,8 +33,8 @@ const usageLines = [
 	'Options:',
 	'  --pr <n>            PR number (default: gh pr view)',
 	'  --url <url>         Skip GitHub discovery; smoke this preview URL',
-	'  --sha <sha>         Expected /health commitSha (default: GitHub',
-	'                      preview deployment SHA, not local HEAD — see docs)',
+	'  --sha <sha>         Expected /health commitSha (default: PR head',
+	'                      SHA from gh; /health may be the merge commit — see docs)',
 	'  --no-wait           Fail immediately if the preview is not ready',
 	'  --timeout-ms <n>    Wait budget in milliseconds (default: 900000)',
 	'  --poll-ms <n>       Poll interval in milliseconds (default: 8000)',
@@ -1045,7 +1045,7 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 			: result.snapshot.expectedSha
 				? `Expected commit: ${result.snapshot.expectedSha}`
 				: result.snapshot.previewUrl
-					? 'Warning: no expected /health commitSha (no GitHub preview deployment SHA and no --sha). Any healthy worker is accepted.'
+					? 'Warning: no expected /health commitSha (no PR head SHA and no --sha). Any healthy worker is accepted.'
 					: null,
 		result.snapshot.headSha &&
 		result.smoke?.commitSha &&
