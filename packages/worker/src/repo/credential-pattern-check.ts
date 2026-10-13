@@ -128,19 +128,17 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 		// Hints are optional; a scan failure must never touch the check or publish.
 		return []
 	}
-	const declared = new Set(
-		scan.slots.map((slot) => declaredSlotKey(slot.kind, slot.name)),
-	)
+	const declaredKinds = declaredSlotKinds(scan.slots)
 	const found = new Set<CredentialTypeHint>()
 	for (const reference of scan.references) {
-		if (referenceNamesDeclaredSlot(reference, declared)) continue
+		if (referenceNamesDeclaredSlot(reference, declaredKinds)) continue
 		const hint = credentialTypeHintFor(reference)
 		if (hint) found.add(hint)
 	}
 	// secretJwtSign takes a secret name string, not a {{secret:…}} placeholder.
 	// Suggest signing only when that name is not already a declared secret slot.
 	for (const name of scan.jwtSignSecretNames) {
-		if (declared.has(declaredSlotKey('secret', name))) continue
+		if (declaredKinds.get(name) === 'secret') continue
 		found.add('signing')
 		break
 	}
@@ -154,21 +152,34 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 	return hints.length > 0 ? [credentialTypeHintsHeading, ...hints] : []
 }
 
-function declaredSlotKey(kind: string, name: string) {
-	return `${kind}:${name}`
+/**
+ * Slot name → declared kind, or `null` when the need omits kind (any
+ * fetch-capable credential). Matches codemod 0010's `readDeclaredSlotKinds`.
+ */
+function declaredSlotKinds(
+	slots: ReadonlyArray<{ name: string; kind?: PackageCredentialKind }>,
+) {
+	const kinds = new Map<string, PackageCredentialKind | null>()
+	for (const slot of slots) {
+		kinds.set(slot.name, slot.kind ?? null)
+	}
+	return kinds
 }
 
 /**
  * True when codemod 0010 would omit this placeholder because it already names
- * a declared slot of the matching kind. Hints follow that list: a type with
- * no visible reference is not a suggestion.
+ * a declared slot of the matching kind (or an omitted-kind fetch-capable
+ * slot). Hints follow that list: a type with no visible reference is not a
+ * suggestion.
  */
 function referenceNamesDeclaredSlot(
 	reference: CredentialReference,
-	declared: ReadonlySet<string>,
+	declared: ReadonlyMap<string, PackageCredentialKind | null>,
 ) {
-	const kind = declaredSlotKindByNameKind[reference.nameKind]
-	return declared.has(declaredSlotKey(kind, reference.name))
+	if (!declared.has(reference.name)) return false
+	const kind = declared.get(reference.name)
+	if (kind == null) return true
+	return kind === declaredSlotKindByNameKind[reference.nameKind]
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -211,13 +222,16 @@ function readDeclaredCredentialSlots(
 function credentialSlotFromManifest(
 	slot: unknown,
 ): PackageCredentialSlot | null {
-	if (!isPlainObject(slot) || typeof slot.kind !== 'string') return null
-	if (!isPackageCredentialKind(slot.kind)) return null
+	if (!isPlainObject(slot)) return null
 	const description =
 		typeof slot.description === 'string' && slot.description.trim().length > 0
 			? slot.description
 			: 'Declared credential slot.'
-	const declared: PackageCredentialSlot = { kind: slot.kind, description }
+	const declared: PackageCredentialSlot = { description }
+	if (typeof slot.kind === 'string') {
+		if (!isPackageCredentialKind(slot.kind)) return null
+		declared.kind = slot.kind
+	}
 	if (typeof slot.provider === 'string' && slot.provider.trim().length > 0) {
 		declared.provider = slot.provider
 	}
