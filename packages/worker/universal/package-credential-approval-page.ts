@@ -90,20 +90,26 @@ export function approvalBeforeLabel(change: CredentialApprovalChangeView) {
 			? 'Inherits your default'
 			: 'Not set'
 	}
-	const unusable = change.beforeUnusableIds.length
-	const unusableLabel =
-		unusable === 1
-			? '1 credential you can no longer use'
-			: `${unusable} credentials you can no longer use`
 	if (change.before.length === 0) {
-		return unusable > 0 ? unusableLabel : 'None on purpose'
+		if (change.beforeUnusableIds.length > 0) {
+			return change.beforeUnusableIds.length === 1
+				? '1 stored credential you can no longer use'
+				: `${change.beforeUnusableIds.length} stored credentials you can no longer use`
+		}
+		return 'None on purpose'
 	}
-	return unusable > 0
-		? `${refsLabel(change.before)}, plus ${unusableLabel}`
-		: refsLabel(change.before)
+	const usable = refsLabel(change.before)
+	if (change.beforeUnusableIds.length === 0) return usable
+	const unusable =
+		change.beforeUnusableIds.length === 1
+			? '1 you can no longer use'
+			: `${change.beforeUnusableIds.length} you can no longer use`
+	return `${usable} (+ ${unusable})`
 }
 
 export function approvalAfterLabel(change: CredentialApprovalChangeView) {
+	// Failed resolves use `after: []`; do not call that "none on purpose".
+	if (change.error) return 'Not resolved'
 	if (change.after.length === 0)
 		return 'None on purpose (runs get no credential)'
 	return refsLabel(change.after)

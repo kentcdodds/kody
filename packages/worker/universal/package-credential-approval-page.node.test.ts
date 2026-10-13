@@ -111,29 +111,44 @@ test('before and after read inherit, none, and credentials', () => {
 		),
 	).toBe('Inherits your default')
 	expect(approvalBeforeLabel(change({ before: [] }))).toBe('None on purpose')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [], beforeUnusableIds: ['gone-1', 'gone-2'] }),
+		),
+	).toBe('2 stored credentials you can no longer use')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [bot], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe('acme-bot (+ 1 you can no longer use)')
 	expect(approvalBeforeLabel(change({ before: [bot, mine] }))).toBe(
 		'acme-bot, openai (yours)',
 	)
 	expect(approvalAfterLabel(change({ after: [] }))).toBe(
 		'None on purpose (runs get no credential)',
 	)
+	expect(
+		approvalAfterLabel(
+			change({
+				after: [],
+				error: {
+					code: 'credential_not_found',
+					message: 'No such credential.',
+				},
+			}),
+		),
+	).toBe('Not resolved')
 	expect(approvalChangeIsNoop(change({ before: [bot] }))).toBe(true)
 	expect(approvalChangeIsNoop(change({ before: null }))).toBe(false)
 	expect(approvalChangeIsNoop(change({ before: [mine] }))).toBe(false)
 	expect(
 		approvalChangeIsNoop(change({ before: [bot, mine], after: [mine, bot] })),
 	).toBe(false)
-})
-
-test('credentials the viewer can no longer use count as the before state', () => {
-	const dead = change({ before: [], beforeUnusableIds: ['cred-gone'] })
-	expect(approvalBeforeLabel(dead)).toBe('1 credential you can no longer use')
-	expect(approvalChangeIsNoop({ ...dead, after: [] })).toBe(false)
 	expect(
-		approvalBeforeLabel(
-			change({ before: [bot], beforeUnusableIds: ['cred-a', 'cred-b'] }),
+		approvalChangeIsNoop(
+			change({ before: [], after: [], beforeUnusableIds: ['gone-1'] }),
 		),
-	).toBe('acme-bot, plus 2 credentials you can no longer use')
+	).toBe(false)
 	expect(
 		approvalChangeIsNoop(
 			change({ before: [bot], beforeUnusableIds: ['cred-gone'] }),
