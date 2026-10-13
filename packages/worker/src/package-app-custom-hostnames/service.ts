@@ -237,12 +237,15 @@ function dnsHint(env: Env, hostname: string): PackageAppCustomHostnameDnsHint {
 }
 
 async function countOrgCustomHostnames(db: D1Database, orgId: string) {
+	// Count every hostname still owned by the org, including app-level rows
+	// whose package was soft-deleted. Soft-delete must not free abuse-cap
+	// slots while the Cloudflare SaaS hostname remains.
 	const row = await db
 		.prepare(
 			`SELECT COUNT(*) AS count FROM package_app_custom_hostnames ch
 			 WHERE ch.org_id = ?
 			    OR ch.package_id IN (
-			      SELECT id FROM saved_packages WHERE user_id = ?${andLiveDeletedAtSql('saved_packages')}
+			      SELECT id FROM saved_packages WHERE user_id = ?
 			    )`,
 		)
 		.bind(orgId, orgId)
@@ -649,6 +652,32 @@ export async function addPackageAppCustomHostname(input: {
 		if (error instanceof PackageAppCustomHostnameError) throw error
 		throw new PackageAppCustomHostnameError(
 			`Custom hostname could not be stored (${getErrorMessage(error)}).`,
+		)
+	}
+
+	// Re-check after insert so concurrent adds cannot permanently exceed the
+	// hard cap. Losers roll back CF + the row and refund the rate-limit slot.
+	const postInsertCount = await countOrgCustomHostnames(
+		input.env.APP_DB,
+		input.orgId,
+	)
+	if (postInsertCount > packageAppCustomHostnameMaxPerOrg) {
+		await input.env.APP_DB.prepare(
+			`DELETE FROM package_app_custom_hostnames WHERE id = ?`,
+		)
+			.bind(id)
+			.run()
+		invalidateCachedPackageAppCustomHostname(input.env.APP_DB, hostname)
+		await compensateCloudflareDelete({
+			client,
+			cloudflareHostnameId: cf.id,
+			hostname,
+		})
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(
+			() => undefined,
+		)
+		throw new PackageAppCustomHostnameError(
+			`This organization already has ${packageAppCustomHostnameMaxPerOrg} custom domains (abuse limit). Remove one before adding another.`,
 		)
 	}
 
