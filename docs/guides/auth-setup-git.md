@@ -104,7 +104,7 @@ https://kody.codes/@owner/name.git
 | Anonymous + private / missing                                  | `401` + `WWW-Authenticate: Basic realm="kody-git"` (so git asks the helper) |
 | Anonymous push                                                 | `401` (challenge)                                                           |
 | Basic/Bearer `kody_at_…` with `package:read` + can read target | Live HEAD upload-pack for that package or plain repo                        |
-| Same + `package:write` + can write target                      | Live HEAD; Artifacts **write** token; `git-receive-pack` allowed            |
+| `package:write` + can write target (read scope optional)       | Live HEAD; Artifacts **write** token; `git-receive-pack` allowed            |
 | Authenticated, can read but not write, push                    | `403` with a clear message (clone ok; need `package:write`)                 |
 | Valid token, no private access, public listed package (read)   | Same published snapshot as anonymous (helper still sends the token)         |
 | Valid token, wrong/private repo with no access                 | `404`                                                                       |

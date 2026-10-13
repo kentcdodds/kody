@@ -62,10 +62,11 @@ export function parseGitCredentialRepoPath(path: string): {
 
 /**
  * Resolve `@owner/name` to a package (preferred) or plain repo the caller may
- * read. Prefers a readable package when both a package and a repo share the
- * name (today's collision); otherwise the readable plain repo. `canWrite` is
- * true when the caller also has `package:write` on that resource (token scope
- * + org permission). Returns null when the caller cannot read.
+ * access. Prefers a package when both a package and a repo share the name
+ * (today's collision) and the caller may access that package. Scopes have no
+ * hierarchy: upload-pack needs `package:read`; receive-pack needs
+ * `package:write` (write-only tokens may push without clone). Returns null
+ * when the caller cannot access for `needWrite`.
  */
 export async function resolveGitHttpTargetAccess(input: {
 	env: Env
@@ -73,8 +74,17 @@ export async function resolveGitHttpTargetAccess(input: {
 	ownerHandle: string
 	repoName: string
 	scopes: ReadonlyArray<ApiTokenScope> | null
+	needWrite: boolean
 }): Promise<ResolvedGitHttpTarget | null> {
-	if (!apiTokenScopesAllow(input.scopes, 'package:read')) return null
+	const hasReadScope = apiTokenScopesAllow(input.scopes, 'package:read')
+	const hasWriteScope = apiTokenScopesAllow(input.scopes, 'package:write')
+	// Receive-pack needs write scope (write-only ok). Upload-pack needs read.
+	// Read-without-write on push still resolves so the caller can return 403.
+	if (input.needWrite) {
+		if (!hasWriteScope && !hasReadScope) return null
+	} else if (!hasReadScope) {
+		return null
+	}
 
 	const identity = await findPublicOwnerIdentityByHandle({
 		db: input.env.APP_DB,
@@ -88,58 +98,71 @@ export async function resolveGitHttpTargetAccess(input: {
 		kodyId: input.repoName,
 	})
 	if (packagePage?.kind === 'package' && packagePage.savedPackage) {
-		const canRead = await viewerCanReadSavedPackage({
+		const access = await loadScopedPackageAccess({
 			env: input.env,
 			viewer: input.viewer,
 			ownerId: packagePage.userId,
-			packageId: packagePage.savedPackage.id,
+			scopes: input.scopes,
 		})
-		if (canRead) {
-			const access = await loadScopedPackageAccess({
+		const resource = packageResource({
+			id: packagePage.savedPackage.id,
+			userId: packagePage.userId,
+		})
+		const canWrite =
+			hasWriteScope &&
+			!!access &&
+			checkPermission(access, 'package:write', resource).allowed
+		const canRead =
+			hasReadScope &&
+			!!access &&
+			checkPermission(access, 'package:read', resource).allowed
+
+		if (input.needWrite) {
+			// Write access, or readable-without-write (caller returns 403).
+			if (canWrite || canRead) {
+				const source = await getEntitySourceByEntity(input.env.APP_DB, {
+					userId: packagePage.userId,
+					entityKind: 'package',
+					entityId: packagePage.savedPackage.id,
+				})
+				if (!source?.repo_id) return null
+				return {
+					ownerHandle: identity.handle,
+					repoName: packagePage.kodyId,
+					resourceKind: 'package',
+					resourceId: packagePage.savedPackage.id,
+					resourceOrgId: packagePage.userId,
+					sourceId: source.id,
+					repoId: source.repo_id,
+					canRead,
+					canWrite,
+				}
+			}
+		} else {
+			const canView = await viewerCanReadSavedPackage({
 				env: input.env,
 				viewer: input.viewer,
 				ownerId: packagePage.userId,
-				scopes: input.scopes,
+				packageId: packagePage.savedPackage.id,
 			})
-			if (
-				!access ||
-				!checkPermission(
-					access,
-					'package:read',
-					packageResource({
-						id: packagePage.savedPackage.id,
-						userId: packagePage.userId,
-					}),
-				).allowed
-			) {
-				return null
-			}
-			const canWrite =
-				apiTokenScopesAllow(input.scopes, 'package:write') &&
-				checkPermission(
-					access,
-					'package:write',
-					packageResource({
-						id: packagePage.savedPackage.id,
-						userId: packagePage.userId,
-					}),
-				).allowed
-			const source = await getEntitySourceByEntity(input.env.APP_DB, {
-				userId: packagePage.userId,
-				entityKind: 'package',
-				entityId: packagePage.savedPackage.id,
-			})
-			if (!source?.repo_id) return null
-			return {
-				ownerHandle: identity.handle,
-				repoName: packagePage.kodyId,
-				resourceKind: 'package',
-				resourceId: packagePage.savedPackage.id,
-				resourceOrgId: packagePage.userId,
-				sourceId: source.id,
-				repoId: source.repo_id,
-				canRead: true,
-				canWrite,
+			if (canView && canRead) {
+				const source = await getEntitySourceByEntity(input.env.APP_DB, {
+					userId: packagePage.userId,
+					entityKind: 'package',
+					entityId: packagePage.savedPackage.id,
+				})
+				if (!source?.repo_id) return null
+				return {
+					ownerHandle: identity.handle,
+					repoName: packagePage.kodyId,
+					resourceKind: 'package',
+					resourceId: packagePage.savedPackage.id,
+					resourceOrgId: packagePage.userId,
+					sourceId: source.id,
+					repoId: source.repo_id,
+					canRead: true,
+					canWrite,
+				}
 			}
 		}
 	}
@@ -157,12 +180,16 @@ export async function resolveGitHttpTargetAccess(input: {
 	})
 	// Plain repos require org-wide package:read/write (same as repoGetGitRemote).
 	// A single-package grant must not open every plain repo under the owner.
-	if (!access || !checkOrgWide(access, 'package:read').allowed) {
+	if (!access) return null
+	const canWrite =
+		hasWriteScope && checkOrgWide(access, 'package:write').allowed
+	const canRead = hasReadScope && checkOrgWide(access, 'package:read').allowed
+	if (input.needWrite) {
+		// Write access, or readable-without-write (caller returns 403).
+		if (!canWrite && !canRead) return null
+	} else if (!canRead) {
 		return null
 	}
-	const canWrite =
-		apiTokenScopesAllow(input.scopes, 'package:write') &&
-		checkOrgWide(access, 'package:write').allowed
 	const source = await getEntitySourceByEntity(input.env.APP_DB, {
 		userId: identity.ownerId,
 		entityKind: 'repo',
@@ -177,7 +204,7 @@ export async function resolveGitHttpTargetAccess(input: {
 		resourceOrgId: identity.ownerId,
 		sourceId: source.id,
 		repoId: source.repo_id,
-		canRead: true,
+		canRead,
 		canWrite,
 	}
 }

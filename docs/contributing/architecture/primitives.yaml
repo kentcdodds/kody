@@ -196,8 +196,8 @@ primitives:
       Short-lived, scoped, sliding-TTL `kody_at_` bearer tokens for the Open API
       and CapabilityProxy; a separate credential class from MCP OAuth. Tokens
       are org-bound (`org_binding=org`) or person-owned (`org_binding=user` with
-      per-request `?org=`). Short-lived `kody_gt_` git credentials are minted
-      for one repo via `/v1/git/credentials`.
+      per-request `?org=`). The same persistent `kody_at_` token authenticates
+      Git HTTPS requests; there is no `kody_gt_` credential or mint endpoint.
     code:
       - packages/worker/src/api-tokens/
       - packages/shared/src/api-token-format.ts

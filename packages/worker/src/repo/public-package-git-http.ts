@@ -734,6 +734,7 @@ async function resolveAuthenticatedGitTarget(input: {
 		ownerHandle: input.username,
 		repoName: input.kodyId,
 		scopes: record.scopes,
+		needWrite: input.needWrite,
 	})
 	if (!access) {
 		return { kind: 'not_found' }
@@ -746,6 +747,9 @@ async function resolveAuthenticatedGitTarget(input: {
 					? 'You can clone this package but not push. Need package:write on the package (token scope and org permission). Pushing a package moves live HEAD only; it does not publish.'
 					: 'You can clone this repository but not push. Need package:write on the repo (token scope and org permission).',
 		}
+	}
+	if (!input.needWrite && !access.canRead) {
+		return { kind: 'not_found' }
 	}
 
 	const repo = await resolveExistingArtifactSourceRepo(input.env, access.repoId)
