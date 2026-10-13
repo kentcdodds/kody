@@ -22,6 +22,7 @@ function fakeControl(input: {
 	const spinner = { hidden: true }
 	const tooltip = { textContent: input.label }
 	const live = { textContent: '' }
+	const label = { textContent: input.label }
 	const attributes = new Map<string, string>([
 		['data-package-title-status', input.status],
 		['data-package-title-idle', input.status],
@@ -48,10 +49,11 @@ function fakeControl(input: {
 			if (selector === '[data-title-status-spinner]') return spinner
 			if (selector === '[data-title-status-tooltip]') return tooltip
 			if (selector === '[data-title-status-live]') return live
+			if (selector === '[data-title-status-label]') return label
 			return null
 		},
 	}
-	return { control, attributes, icon, spinner, tooltip, live }
+	return { control, attributes, icon, spinner, tooltip, live, label }
 }
 
 test('package title install progress names the live stage on the fork slot and restores it', () => {
@@ -71,6 +73,7 @@ test('package title install progress names the live stage on the fork slot and r
 	expect(slot.spinner.hidden).toBe(false)
 	expect(slot.tooltip.textContent).toBe('Bundling')
 	expect(slot.live.textContent).toBe('Bundling')
+	expect(slot.label.textContent).toBe('Bundling…')
 
 	stopPackageTitleInstallProgress()
 	expect(slot.attributes.get('data-package-title-status')).toBe('verify')
@@ -80,6 +83,7 @@ test('package title install progress names the live stage on the fork slot and r
 	expect(slot.spinner.hidden).toBe(true)
 	expect(slot.tooltip.textContent).toBe('Verify before using')
 	expect(slot.live.textContent).toBe('')
+	expect(slot.label.textContent).toBe('Verify before using')
 })
 
 test('install progress stays on the listing that started it', () => {

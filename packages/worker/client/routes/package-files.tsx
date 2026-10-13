@@ -5,13 +5,17 @@ import { type Handle, css } from 'remix/component'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { createMatcher } from 'remix/route-pattern/match'
 import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { createCommunityInstallController } from '#client/routes/community-install-controller.ts'
 import {
 	buildPackageFilesApiHref,
 	normalizePackageFilesPath,
@@ -165,6 +169,12 @@ const messageCss = {
 }
 
 export function PackageFilesRoute(handle: Handle) {
+	let activeListingId: string | null = null
+	let appliedListingId: string | null = null
+	const install = createCommunityInstallController(handle, {
+		getActiveListingId: () => activeListingId,
+		onInstalled: () => filesData.reload(handle, readCurrentRouterHref(handle)),
+	})
 	const filesData = createRouteData({
 		key: 'packageFiles',
 		async load(href, signal) {
@@ -189,8 +199,15 @@ export function PackageFilesRoute(handle: Handle) {
 		},
 	})
 
+	// Files keeps the Fork control across paths (including ones that only show
+	// a placeholder), so every navigation drops an armed confirm.
+	listenToRouterNavigation(handle, () => {
+		install.navigated(activeListingId)
+	})
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		const currentPathname = new URL(currentHref, 'http://localhost').pathname
 		const location = readFilesLocation(new URL(currentHref, 'http://localhost'))
 		if (!location) {
 			return <article />
@@ -224,7 +241,6 @@ export function PackageFilesRoute(handle: Handle) {
 		// A commit without preloaded data (e.g. the router's loader-failure
 		// path) can land here holding another package's explorer; showing it
 		// under the new URL would render the wrong tree with the wrong links.
-		const currentPathname = new URL(currentHref, 'http://localhost').pathname
 		if (
 			snapshot.stale &&
 			currentPathname !== data.filesBasePath &&
@@ -241,8 +257,28 @@ export function PackageFilesRoute(handle: Handle) {
 		// arrives. Tearing the explorer down to a loading line for the ~6ms
 		// between renders blinked the whole tree out and back, and made the
 		// page transition run twice per click.
+		const listingId = data.repoActions?.fork?.listingId ?? null
+		activeListingId = listingId
+		if (listingId !== appliedListingId) {
+			// applySnapshot can update the handle, which must not run mid-render.
+			handle.queueTask(() => {
+				if (activeListingId !== listingId || appliedListingId === listingId) {
+					return
+				}
+				appliedListingId = listingId
+				install.applySnapshot(listingId)
+				// The strip already rendered with the previous listing's outcome.
+				handle.update()
+			})
+		}
 		return (
-			<PackageFilesExplorer data={data} busy={snapshot.kind === 'pending'} />
+			<div mix={install.mixins}>
+				<PackageFilesExplorer
+					data={data}
+					busy={snapshot.kind === 'pending'}
+					installStrip={listingId ? install.renderStrip() : null}
+				/>
+			</div>
 		)
 	}
 }
