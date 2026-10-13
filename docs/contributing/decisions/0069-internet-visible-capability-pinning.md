@@ -1,7 +1,8 @@
 # 0069: Internet-visible apps pin an approved capability snapshot (amends 0001)
 
-- **Status:** proposed (needs Kent approval before treating as accepted)
+- **Status:** accepted
 - **Date:** 2026-10-12
+- **Decided by:** Kent C. Dodds (2026-10-12)
 - **Amends:** [0001](./0001-no-package-versioning.md)
 
 ## Context
@@ -18,7 +19,7 @@ awaits re-approval. That conflicts with pruning non-current bundles at 30 days
 and with reading "always current published_commit" as the only live pointer for
 public serving.
 
-## Decision (proposed)
+## Decision
 
 Keep 0001 for ordinary packages and private runs. Add a narrow exception for
 **internet-visible** package apps only:
@@ -38,10 +39,15 @@ Keep 0001 for ordinary packages and private runs. Add a narrow exception for
 - 0001's "no pins" rule stays the default; this ADR is the only documented
   exception, scoped to internet-visible serving and retention of approved
   bundles.
-- If Kent rejects this amendment, internet-visible must not ship a silent pin or
-  retention change — revisit product requirements instead.
 - Follow-up implementation (transitive snapshot + retention) must link here and
   must not broaden pins to non-internet-visible packages.
+
+## Forks
+
+A fork does **not** inherit the origin's approval record. Credentials are
+org-local: the forker must approve the capability set in their own org before
+their copy can be internet-visible. The origin's approved capability set may be
+shown as review context only.
 
 ## Non-goals (unchanged)
 

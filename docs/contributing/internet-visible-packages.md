@@ -15,17 +15,17 @@ hosts, storage). Secret values never appear on that page or in package code.
 ## ADR conflict
 
 Public-site pinning of an approved dependency snapshot conflicts with
-[ADR 0001](./decisions/0001-no-package-versioning.md). The proposed amendment is
-[0069](./decisions/0069-internet-visible-capability-pinning.md) — **proposed**,
-not accepted, until Kent approves.
+[ADR 0001](./decisions/0001-no-package-versioning.md). The accepted exception is
+[0069](./decisions/0069-internet-visible-capability-pinning.md) (accepted
+2026-10-12, decided by Kent).
 
-## Forks (proposal only — not decided)
+## Forks (decided 2026-10-12)
 
-**Proposal:** a fork does **not** inherit the origin's approval record.
+**Decided (Kent, 2026-10-12):** a fork does **not** inherit the origin's approval record.
 Credentials are org-local. The forker's approval page starts empty of grants and
 shows the origin capability set as review context only. The forker must approve
-in their own org before their copy can be internet-visible. Do not treat this as
-product policy until Kent decides.
+in their own org before their copy can be internet-visible.
+See [0069](./decisions/0069-internet-visible-capability-pinning.md).
 
 ## Not in this work
 
