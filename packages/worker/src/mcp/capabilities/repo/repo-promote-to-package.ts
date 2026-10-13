@@ -28,18 +28,10 @@ import {
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
-<<<<<<< HEAD
 import {
 	getEntitySourceById,
 	updateEntitySource,
 } from '#worker/repo/entity-sources.ts'
-=======
-import { updateEntitySource } from '#worker/repo/entity-sources.ts'
-import {
-	hasPublishedRuntimeArtifacts,
-	readPublishedSourceSnapshot,
-} from '#worker/package-runtime/published-runtime-artifacts.ts'
->>>>>>> 9dded9298 (fix(packages): harden snapshot cleanup and caller-facing errors)
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
 import { publishCommunityListing } from '#worker/community/service.ts'
@@ -248,7 +240,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					credentialNeedsApproved: true,
 				})
 			} catch (error) {
-<<<<<<< HEAD
 				// publishSession can throw before finalize (no KV snapshot yet)
 				// or after finalize during session bookkeeping. Revert only when
 				// the tip was never finalized. If finalize already wrote KV,
@@ -282,30 +273,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					message:
 						'Published session recovered after post-finalize bookkeeping failure.',
 				}
-=======
-				// publishSession can throw after the seeded published_commit
-				// write (git push / Artifacts / finalize). If finalize already
-				// persisted the snapshot, do not unwind the package — only
-				// discard the session. Otherwise restore the plain repo so we
-				// never leave an unsnapshotted package tip (#3497).
-				const seededCommit = opened.base_commit || head.commit
-				const snapshot =
-					seededCommit && hasPublishedRuntimeArtifacts(ctx.env)
-						? await readPublishedSourceSnapshot({
-								env: ctx.env,
-								sourceId: source.id,
-								publishedCommit: seededCommit,
-							}).catch(() => null)
-						: null
-				if (snapshot) {
-					await session
-						.discardSession({ sessionId, userId: owner.ownerUserId })
-						.catch(() => undefined)
-					throw error
-				}
-				await revertFailedPromote()
-				throw error
->>>>>>> 9dded9298 (fix(packages): harden snapshot cleanup and caller-facing errors)
 			}
 			if (publishResult.status !== 'ok') {
 				await revertFailedPromote()
