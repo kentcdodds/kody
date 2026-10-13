@@ -676,14 +676,24 @@ export async function handleWebhookIngressRequest(
 		}
 	}
 
-	// Publish requires `verification`, so only a snapshot published before
-	// that rule can lack it. `url-secret` is the declared way to rely on the
-	// URL secret alone; a declared HMAC scheme never falls back to it.
-	if (!declared.verification) {
-		return rejectUnauthorized('verification_missing')
-	}
+	// A declared HMAC scheme never falls back to URL-secret-only auth.
+	// Webhooks that declare no verification are treated as
+	// `{ type: 'url-secret' }` until codemod 0012 makes the declaration
+	// explicit everywhere and publish requires it.
+	// https://github.com/kentcdodds/kody/issues/3477
+	// The log counts requests that rely on the implicit default, even ones a
+	// later check rejects.
 	const verification = webhookHmacVerification(declared.verification)
-	if (verification) {
+	if (!verification) {
+		if (!declared.verification) {
+			console.info('webhook-url-secret-only-authenticated', {
+				endpointId: liveEndpoint.id,
+				ownerId: liveEndpoint.userId,
+				packageId: liveEndpoint.packageId,
+				webhookName: liveEndpoint.webhookName,
+			})
+		}
+	} else {
 		const headerName = verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {

@@ -223,16 +223,18 @@ async function setupOwner(
 						name: 'sentry',
 						export: './handle-sentry-webhook',
 						responseMode: 'ack',
-						verification: verificationMode
+						...(verificationMode
 							? {
-									type: 'hmac-sha256',
-									header: 'x-hub-signature-256',
-									encoding: 'hex',
-									...(verificationMode === 'secret-name'
-										? { secretName: 'githubWebhookSecret' }
-										: {}),
+									verification: {
+										type: 'hmac-sha256',
+										header: 'x-hub-signature-256',
+										encoding: 'hex',
+										...(verificationMode === 'secret-name'
+											? { secretName: 'githubWebhookSecret' }
+											: {}),
+									},
 								}
-							: { type: 'url-secret' },
+							: {}),
 					},
 				],
 			},
@@ -661,7 +663,7 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
 })
 
-test('webhookUrlApply injects the default signing secret when the manifest declares url-secret verification', async () => {
+test('webhookUrlApply injects the default signing secret when the manifest declares no verification', async () => {
 	const { db, env, handle, userId, apply } = await setupOwner()
 	mockIntegration()
 	const endpointId = parseWebhookUrlHandle(handle)!

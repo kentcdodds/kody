@@ -436,10 +436,10 @@ the sibling is applied.
 
 This one-shot manifest-format codemod adds
 `"verification": { "type": "url-secret" }` to every `package.json#kody.webhooks`
-entry that declares no `verification`. Ingress authenticated those webhooks by
-URL secret alone, so the rewrite changed no behavior (see
+entry that declares no `verification`. Ingress already authenticates those
+webhooks by URL secret alone, so the rewrite changes no behavior (see
 [Senders that cannot sign](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
-It was applied to every package before publish began requiring `verification`
+Once a rescan finds no webhook without `verification`, publish requires it
 ([#3477](https://github.com/kentcdodds/kody/issues/3477)).
 
 - Appends `verification` to each undeclared entry. Entries that already declare

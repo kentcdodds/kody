@@ -112,18 +112,17 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    `handleWebhookSubscriptionChallenge` and return — no package invoke, no
    delivery row. Non-matching POSTs continue. GET without a matching challenge
    declaration → **405**.
-7. Payload cap 1 MB → **413**. Publish requires `verification`, so a published
-   snapshot that lacks it predates that rule and is refused with **401**
-   (`verification_missing`). When verification is `{ type: 'url-secret' }`, the
-   URL secret is the credential and signature headers are ignored. A declared
-   HMAC type never falls back to the URL secret. For HMAC, try
-   `verification.secretName` in the secret store first (user/package scope via
-   package storage context), then the package-owned HMAC on
-   `webhook_endpoints.hmac_secret_encrypted`. Missing secret or HMAC mismatch →
-   **401**, with a clear delivery-log error for missing secrets. When
-   `replay.timestampHeader` is declared, a missing, unparseable, or stale
-   timestamp is rejected with the same generic **401** before dispatch (and
-   before any run record that implies acceptance). When
+7. Payload cap 1 MB → **413**. When verification is `{ type: 'url-secret' }` (or
+   omitted, which is treated the same until publish requires it;
+   [#3477](https://github.com/kentcdodds/kody/issues/3477)), the URL secret is
+   the credential and signature headers are ignored. A declared HMAC type never
+   falls back to the URL secret. For HMAC, try `verification.secretName` in the
+   secret store first (user/package scope via package storage context), then the
+   package-owned HMAC on `webhook_endpoints.hmac_secret_encrypted`. Missing
+   secret or HMAC mismatch → **401**, with a clear delivery-log error for
+   missing secrets. When `replay.timestampHeader` is declared, a missing,
+   unparseable, or stale timestamp is rejected with the same generic **401**
+   before dispatch (and before any run record that implies acceptance). When
    `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
    present ids become the invocation idempotency key.
 8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to

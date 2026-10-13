@@ -12,9 +12,8 @@ import {
 const endpointPageSize = 1_000
 
 /**
- * `implicit_url_secret`: the published manifest declares the webhook without
- * `verification` (published before publish required it), so ingress refuses
- * deliveries until the package declares it.
+ * `implicit_url_secret`: the manifest declares the webhook without
+ * `verification`, so ingress falls back to URL-secret-only auth.
  * `url_secret`: it declares `verification: { type: 'url-secret' }`.
  * `signature`: it declares an HMAC scheme. `undeclared`: the manifest no longer
  * declares it, so ingress refuses deliveries. `manifest_unavailable`: the

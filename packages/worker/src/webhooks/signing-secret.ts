@@ -14,8 +14,8 @@ import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 /**
- * Shape of the signing secret mint gives a webhook that declares
- * `{ type: 'url-secret' }` verification: HMAC-SHA256 of the body, hex
+ * Shape of the signing secret mint gives a webhook that declares no HMAC
+ * scheme (url-secret or no verification): HMAC-SHA256 of the body, hex
  * encoded in `X-Kody-Signature` as `sha256=<hex>`. Ingress does not require
  * it; such webhooks are authenticated by their URL secret.
  */

@@ -51,14 +51,7 @@ export function personalPackageFiles(input: {
 					enabled: true,
 				},
 			},
-			webhooks: [
-				{
-					name: 'inbound',
-					export: './on-hook',
-					responseMode: 'ack',
-					verification: { type: 'url-secret' },
-				},
-			],
+			webhooks: [{ name: 'inbound', export: './on-hook', responseMode: 'ack' }],
 		},
 	}
 	return [

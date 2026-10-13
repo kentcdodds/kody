@@ -10,7 +10,7 @@ export const explicitWebhookUrlSecretVerificationCodemodId =
 const packageManifestPath = 'package.json'
 
 const missingVerificationMessage =
-	'Declares a kody.webhooks entry without verification; add verification: { "type": "url-secret" } to run on the URL secret alone, or an HMAC type if the sender signs.'
+	'Declares a kody.webhooks entry without verification; add verification: { "type": "url-secret" } (current behavior), or an HMAC type if the sender signs.'
 
 const invalidJsonMessage =
 	'package.json is missing or not valid JSON; review kody.webhooks manually.'
@@ -150,7 +150,7 @@ function transformExplicitWebhookUrlSecretVerification(
 export const explicitWebhookUrlSecretVerificationCodemod = {
 	id: explicitWebhookUrlSecretVerificationCodemodId,
 	description:
-		'Add verification: { "type": "url-secret" } to package.json#kody.webhooks entries that declare no verification (how ingress authenticated them before publish required it).',
+		'Add verification: { "type": "url-secret" } to package.json#kody.webhooks entries that declare no verification (what ingress already does for them).',
 	detect: detectExplicitWebhookUrlSecretVerification,
 	transform: transformExplicitWebhookUrlSecretVerification,
 } satisfies PackageCodemod

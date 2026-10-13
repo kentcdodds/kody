@@ -445,21 +445,15 @@ test('concurrent first mints converge on one handle', async () => {
 })
 
 test.each([
+	{ label: 'no verification', handle: 'signer', verification: {} },
 	{
 		label: 'url-secret verification',
 		handle: 'url-signer',
 		verification: { verification: { type: 'url-secret' } },
-		refusal: null,
-	},
-	{
-		label: 'no verification',
-		handle: 'signer',
-		verification: {},
-		refusal: 'kody.webhooks "sentry" must declare verification.',
 	},
 ])(
-	'minting an unsigned webhook ($label)',
-	async ({ handle, verification, refusal }) => {
+	'an unsigned webhook ($label) keeps a stored signing secret that reveal does not expose',
+	async ({ handle, verification }) => {
 		const owner = await setupOwner(`${handle}@example.com`, handle)
 		const { env, userId } = owner
 		const sentryManifest = vi
@@ -496,10 +490,6 @@ test.each([
 				target: sentryHook,
 			})
 		try {
-			if (refusal) {
-				await expect(owner.mint()).rejects.toThrow(refusal)
-				return
-			}
 			const minted = await owner.mint()
 			const endpointId = parseWebhookUrlHandle(minted.handle)!
 			const stored = await owner.readEndpoint<{
