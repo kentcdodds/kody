@@ -13,13 +13,16 @@ import {
 	syncPackageAppCustomHostname,
 } from './service.ts'
 
-const migrationSql = readFileSync(
-	join(
-		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0133-package-app-custom-hostnames.sql',
-	),
-	'utf8',
+const migrationsDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'../../migrations',
 )
+const migrationSql = [
+	'0133-package-app-custom-hostnames.sql',
+	'0134-package-app-custom-hostname-verification.sql',
+]
+	.map((name) => readFileSync(join(migrationsDir, name), 'utf8'))
+	.join('\n')
 
 function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -213,6 +216,12 @@ test('add stores org binding with verification records and list returns it', asy
 		orgId: 'org-1',
 	})
 	expect(listed.hostnames).toHaveLength(1)
+	expect(listed.hostnames[0]?.verification.ownership_verification?.value).toBe(
+		'ownership-token',
+	)
+	expect(
+		listed.hostnames[0]?.verification.ssl_validation_records[0]?.value,
+	).toBe('ssl-token')
 
 	await deletePackageAppCustomHostname({
 		env: { ...createEnv(db), fetcher } as unknown as Env,

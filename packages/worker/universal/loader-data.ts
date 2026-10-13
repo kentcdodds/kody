@@ -1236,6 +1236,12 @@ type OrgManagementOrg = {
 	role: 'owner' | 'member' | 'billing'
 }
 
+export type OrgSettingsCustomHostnameDnsRecord = {
+	type: string
+	name: string
+	value: string
+}
+
 export type OrgSettingsCustomHostnameView = {
 	id: string
 	hostname: string
@@ -1245,6 +1251,8 @@ export type OrgSettingsCustomHostnameView = {
 	sslStatus: string
 	verifiedAt: string | null
 	dnsMissingSince: string | null
+	ownershipVerification: OrgSettingsCustomHostnameDnsRecord | null
+	sslValidationRecords: Array<OrgSettingsCustomHostnameDnsRecord>
 	createdAt: string
 	updatedAt: string
 }

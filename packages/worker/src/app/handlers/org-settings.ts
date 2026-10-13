@@ -87,6 +87,8 @@ async function loadCustomDomainsView(
 				sslStatus: row.ssl_status,
 				verifiedAt: row.verified_at,
 				dnsMissingSince: row.dns_missing_since,
+				ownershipVerification: row.verification.ownership_verification,
+				sslValidationRecords: row.verification.ssl_validation_records,
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 			})),
