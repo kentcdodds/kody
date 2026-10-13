@@ -1,12 +1,20 @@
 import { type Handle, on } from 'remix/component'
+import { type Brief } from './apps-intake.tsx'
+import { AppsShareScene, type AccessRole } from './apps-scenes.tsx'
+
 const roles = {
 	Use: 'Can read the source and run the package.',
 	Contribute: 'Can read the source, run, and edit the package.',
 	Manage:
 		'Can read the source, run, edit, publish, delete, and manage access to the package.',
 }
-export function AppsSharing(handle: Handle) {
-	let role: keyof typeof roles = 'Use'
+export function AppsSharing(
+	handle: Handle<{
+		preview: Brief
+	}>,
+) {
+	let role: AccessRole = 'Use'
+	let shot = 0
 	return () => (
 		<section class="story-section">
 			<div class="story-split">
@@ -42,8 +50,10 @@ export function AppsSharing(handle: Handle) {
 										next === 'Use' ||
 										next === 'Contribute' ||
 										next === 'Manage'
-									)
+									) {
 										role = next
+										shot += 1
+									}
 									handle.update()
 								})}
 							>
@@ -56,30 +66,11 @@ export function AppsSharing(handle: Handle) {
 					<p class="ia-role-description" id="ia-role-description" role="status">
 						{roles[role]}
 					</p>
-					<svg class="ia-share-art" viewBox="0 0 560 185" aria-hidden="true">
-						<path class="ia-track" d="M80 140H480" />
-						<g class="ia-capability">
-							<circle cx="80" cy="80" r="36" />
-							<path d="m66 80 10 10 20-23" />
-							<text x="80" y="174" text-anchor="middle">
-								Read + run
-							</text>
-						</g>
-						<g class="ia-capability" opacity={role === 'Use' ? 0.3 : 1}>
-							<circle cx="280" cy="80" r="36" />
-							<path d="m265 94 6-18 18-18 12 12-18 18Z" />
-							<text x="280" y="174" text-anchor="middle">
-								Edit
-							</text>
-						</g>
-						<g class="ia-capability" opacity={role === 'Manage' ? 1 : 0.3}>
-							<circle cx="480" cy="80" r="36" />
-							<path d="M480 95V64m-12 12 12-12 12 12M464 97h32" />
-							<text x="480" y="174" text-anchor="middle">
-								Publish + access
-							</text>
-						</g>
-					</svg>
+					<AppsShareScene
+						role={role}
+						brief={handle.props.preview}
+						shot={shot}
+					/>
 					<p class="ia-note">Package access does not reveal secret values.</p>
 				</div>
 			</div>
