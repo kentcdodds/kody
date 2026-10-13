@@ -580,7 +580,15 @@ function detectLegacyCredentialPatterns(
 		const scan: Scan = {
 			add,
 			named: (name, kind) => {
-				if (slotKinds.get(name) !== slotKindByNameKind[kind]) {
+				if (!slotKinds.has(name)) {
+					add('literal secret')
+					return
+				}
+				const declared = slotKinds.get(name)
+				const expected = slotKindByNameKind[kind]
+				// Omitted kind matches any fetch-capable placeholder (secret/oauth).
+				if (declared == null) return
+				if (declared !== expected) {
 					add('literal secret')
 				}
 			},
