@@ -12,6 +12,9 @@ const mockModule = vi.hoisted(() => ({
 	requireAuthenticatedPageUser: vi.fn<
 		(...args: Array<unknown>) => Promise<unknown>
 	>(async () => ({ username: 'kentcdodds' })),
+	loadPackageMappingScopeForViewer: vi.fn<
+		(...args: Array<unknown>) => Promise<unknown>
+	>(async () => ({ baseUrl: 'https://example.com' })),
 	renderAppPage: vi.fn<typeof SsrRender.renderAppPage>(
 		async (input) =>
 			new Response('ok', {
@@ -36,6 +39,11 @@ vi.mock('#app/ssr-render.tsx', () => ({
 vi.mock('#app/page-auth.ts', () => ({
 	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
 		mockModule.requireAuthenticatedPageUser(...args),
+}))
+
+vi.mock('#app/package-credentials-access.ts', () => ({
+	loadPackageMappingScopeForViewer: (...args: Array<unknown>) =>
+		mockModule.loadPackageMappingScopeForViewer(...args),
 }))
 
 vi.mock('#app/frame-registrations.ts', () => ({}))
@@ -238,7 +246,7 @@ test('package credential tabs 404 outside the package org or on plain repos and 
 	)
 })
 
-test('the credential approval page needs a session, leaves access to the approval API, and keeps the proposal across a move', async () => {
+test('the credential approval page needs a session and package:execute, and keeps the proposal across a move', async () => {
 	const handler = createCommunityPackageCredentialApprovalHandler({} as Env)
 	const pageUrl =
 		'https://example.com/@kentcdodds/digest/approve-credentials?default%5Bgithub%5D=bot'
@@ -266,10 +274,11 @@ test('the credential approval page needs a session, leaves access to the approva
 		loggedIn: true,
 		invocationUrlOrigin: 'https://example.com',
 	}
-	mockModule.loadPackagePage.mockResolvedValue({ ...page, hasPackage: false })
+	mockModule.loadPackagePage.mockResolvedValue(page)
+	mockModule.loadPackageMappingScopeForViewer.mockResolvedValueOnce(null)
 	expect((await requestPage()).status).toBe(404)
 
-	// The approval API decides access (package:execute), so execute-only
+	// The mapping scope decides access (package:execute), so execute-only
 	// members, who cannot open the package page, still get the page shell.
 	for (const access of [
 		page,
