@@ -255,7 +255,7 @@ test('a trigger turned on and mapped after review fails Approve as stale and kee
 	})
 })
 
-test('switching a stored mapping between unusable credentials changes the fingerprint', async () => {
+test('a stored mapping of unusable credentials shows their ids and changes the fingerprint when switched', async () => {
 	const t = await setup()
 	const gone1 = await t.storeKey('resend-old-1', 'resend')
 	const gone2 = await t.storeKey('resend-old-2', 'resend')
@@ -278,17 +278,21 @@ test('switching a stored mapping between unusable credentials changes the finger
 	const proposal = proposalOf([
 		{ target: mine, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
 	])
-	const fingerprint = async () =>
+	const view = async () =>
 		(
 			await resolveCredentialApproval(
 				await t.scopeFor('bea', 'owner'),
 				proposal,
 			)
-		).view.fingerprint
+		).view
 	await storeMine(gone1)
-	const first = await fingerprint()
+	const first = await view()
+	expect(first.changes[0]).toMatchObject({
+		before: [],
+		beforeUnusableIds: [gone1],
+	})
 	await storeMine(gone2)
-	expect(await fingerprint()).not.toBe(first)
+	expect((await view()).fingerprint).not.toBe(first.fingerprint)
 })
 
 test('renaming a credential picked by id changes the fingerprint', async () => {

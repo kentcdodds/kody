@@ -235,6 +235,8 @@ export type CredentialApprovalChangeView = {
 		multiple: boolean
 	} | null
 	before: Array<CredentialRef> | null
+	/** Stored refs left out of `before` because the viewer can no longer Use them; ids only. */
+	beforeUnusableIds: Array<string>
 	after: Array<CredentialRef>
 	willEnable: boolean
 	error: {

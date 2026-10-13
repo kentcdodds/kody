@@ -494,6 +494,7 @@ const sampleApproval = {
 				multiple: false,
 			},
 			before: null,
+			beforeUnusableIds: [],
 			after: [acmeBot],
 			willEnable: false,
 			error: null,

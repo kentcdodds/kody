@@ -244,6 +244,7 @@ export async function resolveMappingChanges(
 				: null,
 		}
 		let before: Array<CredentialRef> | null = null
+		let beforeUnusableIds: Array<string> = []
 		let beforeCredentialIds: Array<string> | null = null
 		try {
 			if (!need) {
@@ -258,10 +259,15 @@ export async function resolveMappingChanges(
 				: null
 			before = stored ? refsForIds(scope, stored.credentialIds) : null
 			beforeCredentialIds = stored ? [...stored.credentialIds] : null
+			const beforeUsableIds = new Set(before?.map((ref) => ref.id))
+			beforeUnusableIds = (beforeCredentialIds ?? []).filter(
+				(id) => !beforeUsableIds.has(id),
+			)
 			if (change.credentials === null) {
 				return {
 					...base,
 					before,
+					beforeUnusableIds,
 					after: [],
 					willEnable: false,
 					error: null,
@@ -296,6 +302,7 @@ export async function resolveMappingChanges(
 			return {
 				...base,
 				before,
+				beforeUnusableIds,
 				after: unique.map(toCredentialRef),
 				willEnable: target.willEnable,
 				error: null,
@@ -309,6 +316,7 @@ export async function resolveMappingChanges(
 			return {
 				...base,
 				before,
+				beforeUnusableIds,
 				after: [],
 				willEnable: false,
 				error: error.error,

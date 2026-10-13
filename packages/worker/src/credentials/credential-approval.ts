@@ -87,6 +87,7 @@ export async function resolveCredentialApproval(
 				needKey: change.needKey,
 				need: change.need,
 				before: change.before,
+				beforeUnusableIds: change.beforeUnusableIds,
 				after: change.after,
 				willEnable: change.willEnable,
 				error: change.error,
