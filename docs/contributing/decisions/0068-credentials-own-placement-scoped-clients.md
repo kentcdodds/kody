@@ -244,11 +244,12 @@ The keyed map stays. `provider` is optional and defaults to the key.
 credentials: { github: 'work', google: ['work','personal'], x: { name: 'work', scope: 'org' } }
 ```
 
-The CLI takes `--credential github=work` and `--credential x=org:work`. Enable
-takes the same map, resolved once at enable time to credential ids, so ambiguous
-or unbound errors surface when enabling. Only the enabler changes the choice
-(`enablementUpdate { credentials }`, audited). An admin can disable someone
-else's enablement but cannot point it at different credentials.
+The CLI takes `--credential github=work` and `--credential x=org:work`. Triggers
+do not take a map at enable time; their picks are stored trigger mappings,
+resolved on each run (see the
+[credential mappings amendment](#amendment-2026-10-13-credential-mappings)). An
+admin can disable someone else's enablement but cannot point it at different
+credentials.
 
 ### Resolution rules
 
@@ -532,6 +533,12 @@ credential" in the sections above, and nothing else.
   (org credentials only) and a per-person layer.
 - **Trigger mappings:** each trigger instance (enablement) may override a need;
   a need with no override inherits the enabler's default mapping.
+- **When triggers resolve:** enabling resolves nothing and never fails on needs.
+  Each run resolves every need in the order below, so a need with no trigger
+  override follows the current defaults, and an ambiguous or unbound need fails
+  that run with a creation link. Only a need the trigger mapping pins does not
+  drift. Trigger mappings change only through Approve or the package's
+  Credentials tab; there is no `enablementUpdate`.
 - **Resolution order:** call map, then trigger mapping, then the person's
   default, then the org default, then auto-resolve (rule 3). An unusable ref in
   a trigger mapping is an error for that run; unusable refs in a default are
