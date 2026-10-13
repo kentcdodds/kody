@@ -152,6 +152,7 @@ const {
 	loadAccessiblePackageFilesData,
 	loadCommunityPackageFileRaw,
 	loadCommunityPackageFilesData,
+	loadListingFilesData,
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
 	loadPlainRepoFilesData,
@@ -452,6 +453,38 @@ test('listed package tree chrome marks the owner, links only a public owner prof
 		files: { 'README.md': '![poster](./docs/poster.png)\n' },
 	})
 	expect(await loadTree()).toMatchObject({ ok: true, imageBaseHref: null })
+})
+
+test('listing files use the package page payload when it resolves and fall back to the public tree', async () => {
+	const input = {
+		env,
+		request: new Request('https://example.com/community/listing-1/files'),
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+	}
+	publishListing()
+	mockModule.loadPackagePage.mockResolvedValue({ kind: 'not_found' })
+	const fallback = await loadListingFilesData(input)
+	expect(mockModule.loadPackagePage).toHaveBeenLastCalledWith(
+		expect.objectContaining({ username: 'kentcdodds', kodyId: 'sentry' }),
+	)
+	expect(fallback).toMatchObject({ ok: true, kodyId: 'sentry' })
+	expect(fallback?.repoActions).toBeUndefined()
+
+	publishPlainRepo()
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	const viaPage = await loadListingFilesData(input)
+	expect(viaPage).toMatchObject({
+		ok: true,
+		kodyId: 'notes',
+		repoActions: {
+			fork: null,
+			publishHref: null,
+			updateListingHref: null,
+			packageAppHref: null,
+		},
+	})
 })
 
 test('package page reports AGENTS.md only when a non-empty root file exists', async () => {

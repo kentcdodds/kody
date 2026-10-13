@@ -223,11 +223,12 @@ export function createCommunityInstallController(
 		},
 
 		/**
-		 * The path changed and the tab is about to rebuild the action group, so
-		 * the control comes back idle. Restore the spinner's listing first.
+		 * The path changed. Restore the spinner's listing first, then drop an
+		 * armed confirm and repaint the control, which Files keeps across paths.
 		 */
 		navigated(listingId: string | null) {
 			if (releasePackageTitleInstallProgress(listingId)) clearOutcome()
+			installArm.disarm()
 			installArm.reset()
 		},
 

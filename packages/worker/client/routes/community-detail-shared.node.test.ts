@@ -5,8 +5,11 @@ vi.mock('#client/frame-prefetch.ts', () => ({
 	prefetchFrame: async () => {},
 }))
 
-const { communityDetailRouteLoader, packageMoveDestination } =
-	await import('./community-detail-shared.ts')
+const {
+	communityDetailRouteLoader,
+	packageMoveDestination,
+	toPackageSettingsShell,
+} = await import('./community-detail-shared.ts')
 
 async function load(pathname: string, body: unknown, status: number) {
 	vi.stubGlobal(
@@ -82,6 +85,33 @@ test('settings loader 404s for listed packages the viewer does not own', async (
 			listingId: 'listing-1',
 			defaultBranch: 'develop',
 		},
+	})
+})
+
+test('settings loader keeps the repo actions for client navigation', async () => {
+	const repoActions = {
+		fork: null,
+		publishHref: null,
+		updateListingHref: null,
+		packageAppHref: '/@owner/packages/demo',
+	}
+	const result = await load(
+		'/@owner/demo/settings',
+		{
+			...listedPublic,
+			viewerIsOwner: true,
+			viewerCanManage: true,
+			ownerPackage: { id: 'pkg-1', kodyId: 'demo', name: '@owner/demo' },
+			repoActions,
+		},
+		200,
+	)
+	if (isRouteLoaderRedirect(result) || !result.communityDetailShell) {
+		throw new Error('Expected a settings shell.')
+	}
+	expect(toPackageSettingsShell(result.communityDetailShell)).toMatchObject({
+		kind: 'owner',
+		repoActions,
 	})
 })
 

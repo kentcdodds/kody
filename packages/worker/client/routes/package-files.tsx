@@ -167,6 +167,7 @@ const messageCss = {
 
 export function PackageFilesRoute(handle: Handle) {
 	let activeListingId: string | null = null
+	let activePathname: string | null = null
 	const install = createCommunityInstallController(handle, {
 		getActiveListingId: () => activeListingId,
 		onInstalled: () => filesData.reload(handle, readCurrentRouterHref(handle)),
@@ -248,6 +249,10 @@ export function PackageFilesRoute(handle: Handle) {
 		// between renders blinked the whole tree out and back, and made the
 		// page transition run twice per click.
 		const listingId = data.repoActions?.fork?.listingId ?? null
+		if (activePathname !== null && currentPathname !== activePathname) {
+			install.navigated(listingId)
+		}
+		activePathname = currentPathname
 		if (listingId !== activeListingId) {
 			activeListingId = listingId
 			install.applySnapshot(listingId)

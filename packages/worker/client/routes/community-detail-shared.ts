@@ -360,6 +360,7 @@ export async function communityDetailRouteLoader(
 				'',
 			isPrivate: payload.isPrivate ?? payload.ownerPackage?.isPrivate ?? false,
 			invocationUrlOrigin: payload.invocationUrlOrigin,
+			repoActions: payload.repoActions ?? null,
 		},
 	}
 }

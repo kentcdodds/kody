@@ -21,12 +21,10 @@ const mockModule = vi.hoisted(() => ({
 				...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
 			) => Promise<unknown>
 		>(),
-	loadCommunityPackageFilesData:
+	loadListingFilesData:
 		vi.fn<
 			(
-				...args: Parameters<
-					typeof PackageFilesData.loadCommunityPackageFilesData
-				>
+				...args: Parameters<typeof PackageFilesData.loadListingFilesData>
 			) => Promise<unknown>
 		>(),
 	loadAccountPackageFilesData:
@@ -109,9 +107,9 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#app/package-files-data.ts', () => ({
-	loadCommunityPackageFilesData: (
-		...args: Parameters<typeof PackageFilesData.loadCommunityPackageFilesData>
-	) => mockModule.loadCommunityPackageFilesData(...args),
+	loadListingFilesData: (
+		...args: Parameters<typeof PackageFilesData.loadListingFilesData>
+	) => mockModule.loadListingFilesData(...args),
 	loadAccountPackageFilesData: (
 		...args: Parameters<typeof PackageFilesData.loadAccountPackageFilesData>
 	) => mockModule.loadAccountPackageFilesData(...args),
@@ -296,41 +294,30 @@ test('unlisted leftover tree redirects stay private; listed leftovers stay publi
 	}
 })
 
-test('canonical listed tree HTML uses the viewer-aware loader and falls back to the listing', async () => {
+test('canonical listed tree HTML loads listing files with the URL package path', async () => {
 	const handler = createCommunityPackageFilesHandler({} as Env)
-	const target = {
+	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
 		kind: 'listing',
 		listingId: 'listing-1',
 		selectedPath: '',
 		ref: 'main',
 		packagePath: { username: 'owner', kodyId: 'demo' },
-	} as const
-	mockModule.resolveCommunityFilesRoute.mockResolvedValue(target)
+	})
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
-	mockModule.loadCommunityPackageFilesData.mockClear()
 	const withActions = { ...filesPayload, repoActions: null }
-	mockModule.loadAccessiblePackageFilesData.mockResolvedValue(withActions)
+	mockModule.loadListingFilesData.mockResolvedValue(withActions)
 
 	await handler.handler({
 		request: new Request('https://example.com/@owner/demo/tree/main'),
 	} as never)
-	expect(mockModule.loadAccessiblePackageFilesData).toHaveBeenLastCalledWith(
-		expect.objectContaining({ username: 'owner', kodyId: 'demo', ref: 'main' }),
+	expect(mockModule.loadListingFilesData).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			listingId: 'listing-1',
+			ref: 'main',
+			packagePath: { username: 'owner', kodyId: 'demo' },
+		}),
 	)
-	expect(mockModule.loadCommunityPackageFilesData).not.toHaveBeenCalled()
 	expect(mockModule.renderAppPage).toHaveBeenLastCalledWith(
 		expect.objectContaining({ loaderData: { packageFiles: withActions } }),
-	)
-
-	mockModule.loadAccessiblePackageFilesData.mockResolvedValue(null)
-	mockModule.loadCommunityPackageFilesData.mockResolvedValue(filesPayload)
-	await handler.handler({
-		request: new Request('https://example.com/@owner/demo/tree/main'),
-	} as never)
-	expect(mockModule.loadCommunityPackageFilesData).toHaveBeenCalledWith(
-		expect.objectContaining({ listingId: 'listing-1', ref: 'main' }),
-	)
-	expect(mockModule.renderAppPage).toHaveBeenLastCalledWith(
-		expect.objectContaining({ loaderData: { packageFiles: filesPayload } }),
 	)
 })
