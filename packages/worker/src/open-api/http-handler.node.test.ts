@@ -42,6 +42,18 @@ test('revalidates the OpenAPI document by content hash with If-None-Match', asyn
 	})
 	expect(changed.status).toBe(200)
 	expect(changed.body['openapi']).toBe('3.1.0')
+
+	// Opaque tags may contain commas; a substring that looks like our ETag
+	// inside a different quoted validator must not 304.
+	const embedded = await api.call('GET', '/openapi.json', {
+		headers: { 'If-None-Match': `"prefix,${etag?.slice(1, -1)},suffix"` },
+	})
+	expect(embedded.status).toBe(200)
+
+	const weak = await api.call('GET', '/openapi.json', {
+		headers: { 'If-None-Match': `W/${etag}` },
+	})
+	expect(weak.status).toBe(304)
 })
 
 test('rejects missing, invalid, and revoked tokens with 401', async () => {

@@ -99,14 +99,20 @@ async function sha256Hex(text: string) {
 	).join('')
 }
 
-/** RFC 9110 If-None-Match: `*` or a comma-separated list; weak tags compare by opaque value. */
+/**
+ * RFC 9110 If-None-Match: `*` or 1#entity-tag. Opaque tags are quoted and may
+ * contain commas, so the list is not split on every comma. Weak and strong
+ * tags compare by opaque value.
+ */
 function etagMatches(ifNoneMatch: string | null, etag: string) {
 	if (!ifNoneMatch) return false
-	if (ifNoneMatch.trim() === '*') return true
-	return ifNoneMatch
-		.split(',')
-		.map((tag) => tag.trim().replace(/^W\//, ''))
-		.includes(etag)
+	const trimmed = ifNoneMatch.trim()
+	if (trimmed === '*') return true
+	const target = etag.trim().replace(/^W\//, '')
+	for (const match of trimmed.matchAll(/(?:W\/)?"[^"]*"/g)) {
+		if (match[0].replace(/^W\//, '') === target) return true
+	}
+	return false
 }
 
 function json(body: unknown, init: ResponseInit = {}) {
