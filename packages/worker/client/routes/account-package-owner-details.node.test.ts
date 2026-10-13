@@ -27,6 +27,7 @@ function packageDetail(
 		searchText: null,
 		exports: null,
 		publishedCommit: null,
+		pendingCommit: null,
 		communityFork: null,
 		...overrides,
 	}
@@ -94,8 +95,60 @@ test('owner details expose independent forkable and internet-visible controls', 
 	expect(html).toContain('data-testid="package-internet-visible-controls"')
 	expect(html).toContain('data-testid="package-make-public"')
 	expect(html).toContain('Make forkable')
+	expect(html).toContain(
+		"Lists the source on /community so anyone can read and fork it. Doesn't host your app.",
+	)
 	expect(html).toContain('data-testid="package-internet-visible-on"')
 	expect(html).toContain('Make internet-visible')
+	expect(html).toContain(
+		"Kody hosts your app at a public URL anyone can open without signing in. This is separate from Community listing. Don't use it for apps that show your private data.",
+	)
 	expect(html).toContain('data-testid="package-approve-capabilities-link"')
 	expect(html).toContain('/@kentcdodds/demo-app/approve-capabilities')
+})
+
+test('owner details show publish state and demote Approve when up to date', async () => {
+	const upToDate = await renderToString(
+		jsx(AccountPackageOwnerDetails, {
+			ownerUsername: 'kentcdodds',
+			packageDetail: packageDetail({
+				lockedAt: '2026-09-12T00:00:00.000Z',
+				publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				pendingCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			}),
+			lockInFlight: false,
+			viewerCanPublish: true,
+			viewerCanDelete: true,
+			viewerCanAdoptCommunityFork: false,
+			onToggleLock: () => {},
+			onPackagesPayload: () => {},
+		}),
+	)
+
+	expect(upToDate).toContain('data-testid="package-publish-state"')
+	expect(upToDate).toContain('Published version is up to date at aaaaaaa.')
+	expect(upToDate).toContain('data-testid="account-approve-publish"')
+	expect(upToDate).toContain('Approve a publish')
+	expect(upToDate).not.toContain('Unpublished commit pending')
+
+	const pending = await renderToString(
+		jsx(AccountPackageOwnerDetails, {
+			ownerUsername: 'kentcdodds',
+			packageDetail: packageDetail({
+				lockedAt: '2026-09-12T00:00:00.000Z',
+				publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				pendingCommit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			}),
+			lockInFlight: false,
+			viewerCanPublish: true,
+			viewerCanDelete: true,
+			viewerCanAdoptCommunityFork: false,
+			onToggleLock: () => {},
+			onPackagesPayload: () => {},
+		}),
+	)
+
+	expect(pending).toContain('Published at aaaaaaa.')
+	expect(pending).toContain('Unpublished commit pending at bbbbbbb.')
+	expect(pending).toContain('data-testid="account-approve-publish"')
 })

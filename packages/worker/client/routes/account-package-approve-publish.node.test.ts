@@ -85,3 +85,34 @@ test('unlocked approve-publish SSR offers Publish HEAD', async () => {
 	expect(html).toContain('data-testid="approve-package-publish"')
 	expect(html).not.toContain('Promote this commit')
 })
+
+test('approve-publish with nothing pending uses a plain up-to-date title', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '/@kodykoala/gmail-drafts/approve-publish',
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						pendingCommit: loaderData.publishedCommit,
+						alreadyPublished: true,
+						diff: { files: [], omittedCount: 0 },
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain(
+		'Nothing to publish: the public version is up to date at aaaaaaa',
+	)
+	expect(html).toContain('No unpublished commit is waiting')
+	expect(html).not.toContain('Public version')
+	expect(html).not.toContain('Current published commit')
+	expect(html).not.toContain('Commit to promote')
+	expect(html).not.toContain('HEAD to publish')
+	expect(html).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	expect(html).toContain('Back to package')
+	expect(html).not.toContain('data-testid="approve-package-publish"')
+})

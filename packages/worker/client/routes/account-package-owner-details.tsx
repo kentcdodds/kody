@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/component'
 import { buildPackageAppPath } from '@kody-internal/shared/public-urls.ts'
+import { shortCommunityCommit } from '#universal/community-display.ts'
 import { routes } from '#universal/routes.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
@@ -36,6 +37,31 @@ import {
 
 function isPackageLocked(lockedAt: string | null | undefined) {
 	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
+}
+
+function hasUnpublishedPackageCommit(packageDetail: AccountPackageDetail) {
+	const pending = packageDetail.pendingCommit
+	if (!pending) return false
+	return (
+		packageDetail.publishedCommit == null ||
+		packageDetail.publishedCommit !== pending
+	)
+}
+
+function publishStateCopy(packageDetail: AccountPackageDetail) {
+	const published = packageDetail.publishedCommit
+	const pending = packageDetail.pendingCommit
+	if (hasUnpublishedPackageCommit(packageDetail) && pending) {
+		const pendingShort = shortCommunityCommit(pending)
+		if (!published) {
+			return `No published commit yet. Unpublished HEAD is at ${pendingShort}.`
+		}
+		return `Published at ${shortCommunityCommit(published)}. Unpublished commit pending at ${pendingShort}.`
+	}
+	if (published) {
+		return `Published version is up to date at ${shortCommunityCommit(published)}.`
+	}
+	return 'No published commit yet.'
 }
 
 export function AccountPackageOwnerDetails(
@@ -285,8 +311,8 @@ export function AccountPackageOwnerDetails(
 						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								{packageDetail.isPrivate
-									? 'Forkable lists this package on /community so anyone can read and fork the default branch. Independent of internet-visible app serving. Skim source for personal details, then type the slug to confirm.'
-									: 'Turning off forkable unlists the package from /community and 404s public source URLs. Existing forks keep their copies. Internet-visible stays unchanged. Type the slug to confirm.'}
+									? "Lists the source on /community so anyone can read and fork it. Doesn't host your app."
+									: 'Turning off forkable unlists the package from /community and 404s public source URLs. Existing forks keep their copies. Does not change internet-visible app hosting. Type the slug to confirm.'}
 							</p>
 							<label mix={css({ display: 'grid', gap: spacing.xs })}>
 								<span mix={css(visuallyHiddenCss)}>
@@ -356,8 +382,8 @@ export function AccountPackageOwnerDetails(
 						>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								{packageDetail.isInternetVisible
-									? 'Internet-visible serves the hosted package app on the public internet with the approved capability set. Turning it off returns the app to owner-session serving. Independent of forkable.'
-									: 'Internet-visible serves the hosted package app anonymously on the public internet. Requires reviewing and approving credentials and capabilities first. Independent of forkable.'}
+									? 'Turning off internet-visible returns the app to owner-session serving. Community listing stays unchanged.'
+									: "Kody hosts your app at a public URL anyone can open without signing in. This is separate from Community listing. Don't use it for apps that show your private data."}
 							</p>
 							{packageDetail.hasApp ? null : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -515,6 +541,12 @@ export function AccountPackageOwnerDetails(
 					]}
 				/>
 				<div mix={css(getAccentCalloutCss())}>
+					<p
+						mix={css({ margin: 0, color: colors.text })}
+						data-testid="package-publish-state"
+					>
+						{publishStateCopy(packageDetail)}
+					</p>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						{packageDetail.lockedAt
 							? 'Publishes stay on this reviewed tree until you promote a commit on the website. Click the lock icon to unlock.'
@@ -526,22 +558,36 @@ export function AccountPackageOwnerDetails(
 								display: 'flex',
 								flexWrap: 'wrap',
 								gap: spacing.xs,
+								alignItems: 'center',
 							})}
 						>
-							<a
-								href={routes.communityPackageApprovePublish.href({
-									username: handle.props.ownerUsername,
-									kodyId: packageDetail.kodyId,
-								})}
-								data-testid="account-approve-publish"
-								mix={css({
-									...getPillButtonCss({ size: 'sm' }),
-									display: 'inline-flex',
-									textDecoration: 'none',
-								})}
-							>
-								Approve a publish
-							</a>
+							{hasUnpublishedPackageCommit(packageDetail) ? (
+								<a
+									href={routes.communityPackageApprovePublish.href({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="account-approve-publish"
+									mix={css({
+										...getPillButtonCss({ size: 'sm' }),
+										display: 'inline-flex',
+										textDecoration: 'none',
+									})}
+								>
+									Approve a publish
+								</a>
+							) : (
+								<a
+									href={routes.communityPackageApprovePublish.href({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="account-approve-publish"
+									mix={css(approvePublishQuietLinkCss)}
+								>
+									Approve a publish
+								</a>
+							)}
 						</div>
 					) : null}
 				</div>
@@ -646,6 +692,16 @@ const packageAppLinkCss = {
 	color: colors.primaryText,
 	fontWeight: typography.fontWeight.semibold,
 	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
+}
+
+const approvePublishQuietLinkCss = {
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.15em',
 	'&:hover': {
 		color: colors.text,
 	},

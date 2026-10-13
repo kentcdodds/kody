@@ -334,6 +334,7 @@ function plainRepoOwnerPackage(
 		searchText: null,
 		exports: null,
 		publishedCommit: 'idxabc1',
+		pendingCommit: 'idxabc1',
 		communityFork: null,
 		...overrides,
 	}

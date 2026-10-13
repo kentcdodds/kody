@@ -26,6 +26,7 @@ const packageDetail: AccountPackageDetail = {
 	searchText: null,
 	exports: null,
 	publishedCommit: null,
+	pendingCommit: null,
 	communityFork: null,
 }
 

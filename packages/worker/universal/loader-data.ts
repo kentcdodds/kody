@@ -2029,6 +2029,11 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
 	publishedCommit: string | null
+	/**
+	 * Default-branch HEAD when the owner can resolve the artifact source.
+	 * Compared with `publishedCommit` to show whether a publish is pending.
+	 */
+	pendingCommit: string | null
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
 	/**
