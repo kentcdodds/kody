@@ -11,6 +11,7 @@ import {
 	type OnboardingChecklistItemId,
 } from './onboarding-process.ts'
 import { createHref } from 'remix/route-pattern/href'
+import { enablementMappingPauseResourceType } from './credential-contracts.ts'
 import { orgResourcePathForAccountPath } from './org-pages.ts'
 import { routes } from './routes.ts'
 
@@ -499,6 +500,9 @@ function pausedEnablementWhy(signal: WaitingPausedEnablementSignal) {
 		'Its events are dropped until then, and the next event resumes it.'
 	switch (signal.reason) {
 		case 'credential_access': {
+			if (signal.resourceType === enablementMappingPauseResourceType) {
+				return `It runs as you, and the credential mapped to its need "${signal.resourceId ?? 'unknown'}" is gone or you can no longer use it. Map another credential on the package's Credentials page, or get Use back. ${resumes}`
+			}
 			const credential =
 				signal.resourceType && signal.resourceId
 					? `the ${signal.resourceType} "${signal.resourceId}"`

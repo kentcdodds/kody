@@ -278,6 +278,13 @@ export type CredentialApprovalSuccess = {
 	view: CredentialApprovalView
 }
 
+/**
+ * `pause.resourceType` of an enablement paused because a credential its
+ * trigger mapping names is gone or no longer usable by the enabler.
+ * `resourceId` is the need key; `credentialId` the missing credential.
+ */
+export const enablementMappingPauseResourceType = 'credential-mapping'
+
 export function describeCredentialMappingTarget(
 	target: CredentialMappingTarget,
 ): string {

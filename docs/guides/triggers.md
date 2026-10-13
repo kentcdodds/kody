@@ -178,6 +178,11 @@ turns anything on.
 - If you lose access to the package, the org, or a credential the run uses, the
   enablement pauses and events are dropped. It resumes by itself on the next
   event once access is back.
+- A credential your trigger's mapping names is checked before each run. If it is
+  deleted or you can no longer use it, the enablement pauses instead of running;
+  map another credential on the package's Credentials page (or get Use back) and
+  the next event resumes it. Defaults are not checked this way: an unusable
+  default falls through to the next layer.
 - `jobRunNow` does not fire a scheduled run in an org; use `execute` to invoke
   the wrapper as yourself.
 

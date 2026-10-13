@@ -537,6 +537,28 @@ A delivery that runs nothing answers 409:
 }
 ```
 
+### Paused on a trigger mapping
+
+Before each run, the run gate checks the credentials the instance's trigger
+mapping names (not the defaults, and not `[]`). One the enabler can no longer
+Use, or one that was deleted, pauses the enablement instead of running:
+
+```ts
+pause: {
+	reason: 'credential_access'
+	permission: null
+	resourceType: 'credential-mapping' // enablementMappingPauseResourceType
+	resourceId: string // the need key
+	credentialId: string // the missing credential
+}
+```
+
+The next event checks the mapping again and resumes the enablement once every
+named credential is usable, including after the enabler remaps the need. The
+Waiting list says which need to remap. A publish that adds needs while the
+package has live enablements gets a check note saying how those runs resolve
+them.
+
 ## Runtime errors
 
 `CredentialClientError` bodies (`credential()` in package and ad hoc code, CLI
