@@ -193,6 +193,18 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			'Cloudflare API request failed (403): Authentication error',
 			true,
 		],
+		// 401/403 win over "Internal authentication error" wording so a real
+		// unauthorized response is never retried with the same token.
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			true,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (401): Internal authentication error',
+			true,
+		],
 		[
 			isRetryableCloudflareFailure,
 			'Cloudflare API request failed (500): Internal authentication error: internal server error',
@@ -202,6 +214,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			isRetryableCloudflareFailure,
 			'✘ [ERROR] Internal authentication error: internal server error',
 			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
 		],
 	]
 	expect(cases.filter(([fn, value, want]) => fn(value) !== want)).toEqual([])
@@ -222,6 +239,10 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		[
 			'Cloudflare API request failed (500): Internal authentication error: internal server error',
 			true,
+		],
+		[
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
 		],
 	]
 	expect(
@@ -857,25 +878,30 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 		expect(fetcher).toHaveBeenCalledTimes(2)
 	}
 
-	const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
-		Response.json(
-			{
-				success: false,
-				errors: [{ code: 10000, message: 'Authentication error' }],
-			},
-			{ status: 403 },
-		),
-	)
-	await expect(
-		cloudflareApiRequest({
-			accountId: 'account-1',
-			apiToken: 'token-1',
-			pathname: '/queues?page=1&per_page=100',
-			fetcher: forbidden,
-			sleep: async () => {},
-		}),
-	).rejects.toThrow('Cloudflare API request failed (403): Authentication error')
-	expect(forbidden).toHaveBeenCalledTimes(1)
+	for (const authMessage of [
+		'Authentication error',
+		'Internal authentication error',
+	]) {
+		const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
+			Response.json(
+				{
+					success: false,
+					errors: [{ code: 10000, message: authMessage }],
+				},
+				{ status: 403 },
+			),
+		)
+		await expect(
+			cloudflareApiRequest({
+				accountId: 'account-1',
+				apiToken: 'token-1',
+				pathname: '/queues?page=1&per_page=100',
+				fetcher: forbidden,
+				sleep: async () => {},
+			}),
+		).rejects.toThrow(`Cloudflare API request failed (403): ${authMessage}`)
+		expect(forbidden).toHaveBeenCalledTimes(1)
+	}
 
 	const persistentInternalAuth = vi
 		.fn<typeof fetch>()

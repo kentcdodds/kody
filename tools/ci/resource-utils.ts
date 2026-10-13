@@ -73,11 +73,17 @@ export class CloudflareResourceError extends Error {
  * Cloudflare also returns HTTP 500 with
  * "Internal authentication error: internal server error" as a transient
  * platform blip (seen on scheduled preview sweeps). That phrasing matches a
- * naive `/authentication error/i` check, so both the 5xx envelope and the
- * "Internal authentication error" wording are excluded here and stay
- * retryable via `isRetryableCloudflareFailure`.
+ * naive `/authentication error/i` check, so 5xx envelopes and the Internal
+ * wording (when not on 401/403) are excluded here and stay retryable via
+ * `isRetryableCloudflareFailure`. Explicit 401/403 always win over wording.
  */
 export function isPermanentCloudflareAuthFailure(message: string) {
+	if (
+		/Cloudflare API request failed \(401\)/.test(message) ||
+		/Cloudflare API request failed \(403\)/.test(message)
+	) {
+		return true
+	}
 	if (
 		/Cloudflare API request failed \(5\d\d\)/.test(message) ||
 		/internal authentication error/i.test(message)
@@ -85,10 +91,7 @@ export function isPermanentCloudflareAuthFailure(message: string) {
 		return false
 	}
 	return (
-		/Cloudflare API request failed \(401\)/.test(message) ||
-		/Cloudflare API request failed \(403\)/.test(message) ||
-		/authentication error/i.test(message) ||
-		/\[code:\s*10000\]/.test(message)
+		/authentication error/i.test(message) || /\[code:\s*10000\]/.test(message)
 	)
 }
 
