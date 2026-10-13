@@ -57,6 +57,11 @@ function minifyCss(css: string) {
 		if (ch === '(' && out.endsWith('url')) {
 			out += ch
 			i += 1
+			while (i < css.length && /[ \t\n\r\f]/.test(css[i]!)) {
+				out += css[i]!
+				i += 1
+			}
+			// Quoted url("…") / url('…') — let the string branch keep `)` inside.
 			if (i < css.length && (css[i] === '"' || css[i] === "'")) continue
 			while (i < css.length) {
 				const next = css[i]!
@@ -66,8 +71,9 @@ function minifyCss(css: string) {
 			}
 			continue
 		}
-		if (/\s/.test(ch)) {
-			while (i < css.length && /\s/.test(css[i]!)) i += 1
+		// CSS whitespace only (not JS `\s`, which would fold NBSP in identifiers).
+		if (/[ \t\n\r\f]/.test(ch)) {
+			while (i < css.length && /[ \t\n\r\f]/.test(css[i]!)) i += 1
 			const prev = out.at(-1)
 			const next = css[i]
 			// Drop space around `{ } : ; ,` only. Do not treat `()` or a leading

@@ -49,6 +49,16 @@ test('inline stylesheet minify keeps url() and quoted strings intact', async () 
 	)
 })
 
+test('inline stylesheet minify keeps ) inside quoted url() values', async () => {
+	resetInlineStylesheetCache()
+	const css = `.icon { background: url( "/a) b.svg" ); }`
+	const inlined = await getInlineStylesheet({
+		assets: { fetch: async () => new Response(css) },
+		buildId: 'inline-stylesheet-url-quote',
+	})
+	expect(inlined).toBe('.icon{background:url( "/a) b.svg" );}')
+})
+
 test('inline stylesheet minify keeps media and (), descendant :, and calc spaces', async () => {
 	resetInlineStylesheetCache()
 	const css = `
