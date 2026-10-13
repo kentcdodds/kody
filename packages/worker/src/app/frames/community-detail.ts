@@ -11,7 +11,6 @@ import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
 import { createMatcher } from 'remix/route-pattern/match'
-import { listingNeedsRepublish } from '#worker/community/listing-needs-republish.ts'
 
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
 
@@ -40,16 +39,14 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			})
 			if (page.kind !== 'page') return ''
 			const listing = page.listing?.listing ?? null
-			// Fresh published_commit from ownerPackage — not the public listing
-			// cache — so managers see Update public listing right after promote.
+			// Trust only fresh ownerPackage.listingNeedsRepublish — never OR with
+			// the public listing cache pin. A stale cached pin after republish
+			// would keep "Update public listing" visible even when the catalog
+			// already matches published_commit.
 			const listingBehind =
 				page.viewerCanManage &&
 				listing != null &&
-				(page.ownerPackage?.listingNeedsRepublish === true ||
-					listingNeedsRepublish({
-						listingPinnedCommit: listing.pinnedCommit,
-						sourcePublishedCommit: page.ownerPackage?.publishedCommit,
-					}))
+				page.ownerPackage?.listingNeedsRepublish === true
 			const listingForFrame =
 				listingBehind && listing
 					? { ...listing, listingBehind: true as const }
