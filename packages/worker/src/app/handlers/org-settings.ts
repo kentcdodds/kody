@@ -20,6 +20,7 @@ import { softDeleteOrg } from '#worker/orgs/soft-delete.ts'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
+import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	addPackageAppCustomHostname,
@@ -67,17 +68,10 @@ async function loadCustomDomainsView(
 	}
 	try {
 		const listed = await listPackageAppCustomHostnames({ env, orgId })
-		const dnsTarget = (() => {
-			const base = env.PACKAGE_APP_BASE_URL?.trim()
-			if (!base) return null
-			try {
-				return new URL(base).hostname
-			} catch {
-				return null
-			}
-		})()
 		return {
-			dnsTarget,
+			dnsTarget: packageAppCustomDomainsCnameTargetFromBaseUrl(
+				env.PACKAGE_APP_BASE_URL,
+			),
 			hostnames: listed.hostnames.map((row) => ({
 				id: row.id,
 				hostname: row.hostname,

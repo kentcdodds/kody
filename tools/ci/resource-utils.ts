@@ -1197,22 +1197,43 @@ export function packageAppWildcardRoutePattern(packageAppHostname: string) {
 	return `*.${packageAppHostname}/*`
 }
 
+/**
+ * Catch-all route for Cloudflare for SaaS custom hostnames on the package-app
+ * zone (ADR 0071). More-specific `apex/*` and `*.apex/*` routes stay ahead of
+ * this pattern for first-party package-app traffic.
+ */
+export function packageAppCustomHostnameCatchAllRoutePattern() {
+	return '*/*'
+}
+
 function packageAppWildcardDnsRecordName(packageAppHostname: string) {
 	return `*.${packageAppHostname}`
 }
 
 /**
- * DNS record names the package-app zone needs: the apex and the per-user
- * wildcard. Both are served by zone routes, which do not create DNS records,
- * so both need a proxied placeholder record. Neither may be a Workers custom
- * domain: a custom domain in a zone whose route table the deploy also
- * publishes gets detached (and its DNS record deleted) when the routes are
- * replaced.
+ * SaaS origin + customer CNAME target (`domains.<apex>`). Must be an explicit
+ * proxied DNS record — Cloudflare for SaaS rejects a fallback origin that is
+ * only covered by the wildcard.
+ */
+export function packageAppCustomDomainsOriginDnsRecordName(
+	packageAppHostname: string,
+) {
+	return `domains.${packageAppHostname}`
+}
+
+/**
+ * DNS record names the package-app zone needs: the apex, the per-user
+ * wildcard, and the SaaS origin (`domains.<apex>`). All are served by zone
+ * routes, which do not create DNS records, so each needs a proxied
+ * placeholder record. None may be a Workers custom domain: a custom domain in
+ * a zone whose route table the deploy also publishes gets detached (and its
+ * DNS record deleted) when the routes are replaced.
  */
 function packageAppDnsRecordNames(packageAppHostname: string) {
 	return [
 		packageAppHostname,
 		packageAppWildcardDnsRecordName(packageAppHostname),
+		packageAppCustomDomainsOriginDnsRecordName(packageAppHostname),
 	]
 }
 

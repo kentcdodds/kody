@@ -22,6 +22,7 @@ import {
 	packageAppCustomHostnameAddRateLimitKey,
 	packageAppCustomHostnameMaxPerOrg,
 } from '#worker/package-app-custom-hostnames/limits.ts'
+import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
 import { invalidateCachedPackageAppCustomHostname } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import {
 	isPackageAppCustomHostnameVerified,
@@ -223,21 +224,13 @@ function createCloudflareClient(env: Env & { fetcher?: Fetcher }) {
 	})
 }
 
-function dnsTargetHostname(env: Env) {
-	const base = env.PACKAGE_APP_BASE_URL?.trim()
-	if (!base) return null
-	try {
-		return new URL(base).hostname
-	} catch {
-		return null
-	}
-}
-
 function dnsHint(env: Env, hostname: string): PackageAppCustomHostnameDnsHint {
 	return {
 		type: 'CNAME',
 		name: hostname,
-		target: dnsTargetHostname(env),
+		target: packageAppCustomDomainsCnameTargetFromBaseUrl(
+			env.PACKAGE_APP_BASE_URL,
+		),
 	}
 }
 

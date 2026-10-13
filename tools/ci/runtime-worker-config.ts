@@ -3,6 +3,7 @@ import {
 	dynamicCallableWorkflowName,
 	listPackageAppHostnames,
 	packageAppApexRoutePattern,
+	packageAppCustomHostnameCatchAllRoutePattern,
 	packageAppWildcardRoutePattern,
 	parseJsonc,
 	readPackageAppZoneName,
@@ -275,6 +276,8 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 
 	const publishedPatterns = new Set<string>()
 	const newRoutes: Array<Record<string, unknown>> = []
+	const catchAllPattern = packageAppCustomHostnameCatchAllRoutePattern()
+	const zonesWithCatchAll = new Set<string>()
 	for (const hostname of hostnames) {
 		const zoneName = readPackageAppZoneName(hostname)
 		if (!zoneName) {
@@ -291,6 +294,14 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			{ pattern: apexPattern, zone_name: zoneName },
 			{ pattern: wildcardPattern, zone_name: zoneName },
 		)
+		// One `*/*` per package-app zone so Cloudflare for SaaS custom
+		// hostnames hit the runtime Worker (ADR 0071). Apex/wildcard stay
+		// more specific for first-party traffic.
+		if (!zonesWithCatchAll.has(zoneName)) {
+			zonesWithCatchAll.add(zoneName)
+			publishedPatterns.add(catchAllPattern)
+			newRoutes.push({ pattern: catchAllPattern, zone_name: zoneName })
+		}
 	}
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
 		? runtimeEnv.routes.filter((route) => {

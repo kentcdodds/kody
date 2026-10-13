@@ -61,6 +61,7 @@ export const builtInReservedUsernameList = [
 	'doc',
 	'docs',
 	'documentation',
+	'domains',
 	'donotreply',
 	'download',
 	'downloads',

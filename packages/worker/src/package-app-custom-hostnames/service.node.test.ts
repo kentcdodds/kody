@@ -357,7 +357,7 @@ test('add stores org binding with verification records and list returns it', asy
 		sslMethod: 'txt',
 	})
 	expect(added.hostname.hostname).toBe('team.example.com')
-	expect(added.dns.target).toBe('kody.run')
+	expect(added.dns.target).toBe('domains.kody.run')
 	expect(added.verification.ownership_verification?.value).toBe(
 		'ownership-token',
 	)

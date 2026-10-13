@@ -295,6 +295,7 @@ test('generate truncates long branch preview workflow names to 64 chars', async 
 const packageAppRoutes = [
 	{ pattern: 'kody.run/*', zone_name: 'kody.run' },
 	{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+	{ pattern: '*/*', zone_name: 'kody.run' },
 ]
 
 test('generate publishes the package-app custom domain for production', async () => {
@@ -334,5 +335,6 @@ test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone r
 		...packageAppRoutes,
 		{ pattern: 'legacy-apps.example.org/*', zone_name: 'example.org' },
 		{ pattern: '*.legacy-apps.example.org/*', zone_name: 'example.org' },
+		{ pattern: '*/*', zone_name: 'example.org' },
 	])
 })

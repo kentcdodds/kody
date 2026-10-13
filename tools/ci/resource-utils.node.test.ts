@@ -980,6 +980,8 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		ok(aaaa('dns-apex', 'kodyapps.dev')),
 		ok([]),
 		ok(aaaa('dns-wildcard', '*.kodyapps.dev')),
+		ok([]),
+		ok(aaaa('dns-domains', 'domains.kodyapps.dev')),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: createFetcher })
 
@@ -1004,15 +1006,18 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		[records, createRecord('kodyapps.dev')],
 		[`${records}?name=${encodeURIComponent('*.kodyapps.dev')}`, get],
 		[records, createRecord('*.kodyapps.dev')],
+		[`${records}?name=domains.kodyapps.dev`, get],
+		[records, createRecord('domains.kodyapps.dev')],
 	])
 
 	const reuseFetcher = mockFetch(
 		kodyappsZone(),
 		ok([aaaa('dns-existing-apex', 'kodyapps.dev')]),
 		ok([aaaa('dns-existing', '*.kodyapps.dev')]),
+		ok([aaaa('dns-existing-domains', 'domains.kodyapps.dev')]),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: reuseFetcher })
-	expect(reuseFetcher).toHaveBeenCalledTimes(3)
+	expect(reuseFetcher).toHaveBeenCalledTimes(4)
 })
 
 test('ensurePackageAppDnsRecords fails closed on conflicting DNS records', async () => {
