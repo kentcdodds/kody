@@ -42,7 +42,6 @@
 }
 .feature-detail .triggers {
 	--hue: 96;
-	--canvas: light-dark(oklch(0.955 0.004 250), oklch(0.24 0.045 96));
 }
 .feature-detail .integrations {
 	--hue: 148;
@@ -447,7 +446,7 @@
 	gap: 60px;
 	align-items: center;
 }
-.feature-detail .story-section svg {
+.feature-detail .story-section svg:not(.pw-wires) {
 	display: block;
 	width: 100%;
 	height: auto;
@@ -1039,7 +1038,7 @@
 	--ui-stage: color-mix(in oklab, var(--selected) 24%, var(--canvas));
 }
 .feature-detail .triggers {
-	--canvas: light-dark(oklch(0.965 0.045 96), oklch(0.235 0.03 96));
+	--canvas: light-dark(oklch(0.985 0.002 250), oklch(0.235 0.03 96));
 }
 .feature-detail .ui-window {
 	background: var(--surface);

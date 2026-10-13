@@ -313,7 +313,7 @@
 	font-weight: 650;
 }
 
-.pw .pw-scene-int-reuse .pw-wire:not([data-on]) .pw-line {
+.pw.pw-scene-int-reuse .pw-wire:not([data-on]) .pw-line {
 	opacity: 0.45;
 }
 

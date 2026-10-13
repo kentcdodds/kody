@@ -14,11 +14,11 @@
 	margin-bottom: 10px;
 }
 
-.pw-scene-mem-hero p,
-.pw-scene-mem-index p,
-.pw-scene-mem-edit blockquote,
-.pw-scene-mem-hero blockquote {
+.feature-detail .memory :where(.pw) p,
+.feature-detail .memory :where(.pw) blockquote {
+	max-width: none;
 	margin: 0;
+	line-height: inherit;
 }
 
 /* Hero: one agent saves the preference, the next one recalls it. */
