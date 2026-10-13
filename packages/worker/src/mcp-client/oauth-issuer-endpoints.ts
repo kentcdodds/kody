@@ -29,29 +29,43 @@ export function assertEndpointsOnIssuerOrigin(
 	if (!metadata || typeof metadata !== 'object') return
 	const record = metadata as Record<string, unknown>
 	const issuer = record['issuer']
-	if (typeof issuer !== 'string' || !issuer) return
+	if (typeof issuer !== 'string' || !issuer) {
+		throw new McpOAuthFailedError(
+			'Authorization server metadata is missing a usable issuer.',
+		)
+	}
 
-	let issuerOrigin: string
+	let issuerUrl: URL
 	try {
-		issuerOrigin = new URL(issuer).origin
+		issuerUrl = new URL(issuer)
 	} catch {
 		throw new McpOAuthFailedError(
 			`Authorization server issuer (${issuer.slice(0, 200)}) is not a valid URL.`,
 		)
 	}
+	if (issuerUrl.protocol !== 'https:') {
+		throw new McpOAuthFailedError(
+			`Authorization server issuer must use https (got ${issuerUrl.protocol}).`,
+		)
+	}
+	const issuerOrigin = issuerUrl.origin
 
 	for (const field of ['authorization_endpoint', 'token_endpoint'] as const) {
 		const value = record[field]
 		if (typeof value !== 'string' || !value) continue
-		let origin: string | null = null
+		let endpointUrl: URL | null = null
 		try {
-			origin = new URL(value).origin
+			endpointUrl = new URL(value)
 		} catch {
 			/* refused below */
 		}
-		if (origin !== issuerOrigin) {
+		if (
+			endpointUrl == null ||
+			endpointUrl.protocol !== 'https:' ||
+			endpointUrl.origin !== issuerOrigin
+		) {
 			throw new McpOAuthFailedError(
-				`Authorization server ${field} (${origin ?? value.slice(0, 200)}) is on a different origin than its issuer (${issuerOrigin}).`,
+				`Authorization server ${field} (${endpointUrl?.origin ?? value.slice(0, 200)}) is on a different origin than its issuer (${issuerOrigin}).`,
 			)
 		}
 	}

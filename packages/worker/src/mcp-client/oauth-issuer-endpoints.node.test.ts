@@ -29,6 +29,34 @@ test('assertEndpointsOnIssuerOrigin accepts same-origin authorize and token endp
 	expect(() => assertEndpointsOnIssuerOrigin({})).not.toThrow()
 })
 
+test('assertEndpointsOnIssuerOrigin refuses metadata that omits issuer', () => {
+	expect(() =>
+		assertEndpointsOnIssuerOrigin({
+			authorizationServerMetadata: {
+				authorization_endpoint: 'https://evil.example/authorize',
+				token_endpoint: 'https://evil.example/token',
+			},
+		}),
+	).toThrow(/missing a usable issuer/)
+})
+
+test('assertEndpointsOnIssuerOrigin refuses http issuer or token endpoints', () => {
+	expect(() =>
+		assertEndpointsOnIssuerOrigin(
+			discovery({
+				issuer: 'http://auth.example',
+				authorization_endpoint: 'http://auth.example/authorize',
+				token_endpoint: 'http://auth.example/token',
+			}),
+		),
+	).toThrow(/must use https/)
+	expect(() =>
+		assertEndpointsOnIssuerOrigin(
+			discovery({ token_endpoint: 'http://auth.example/token' }),
+		),
+	).toThrow(/token_endpoint .*different origin/)
+})
+
 for (const [field, endpoint] of [
 	['authorization_endpoint', 'https://evil.example/authorize'],
 	['token_endpoint', 'https://evil.example/token'],
