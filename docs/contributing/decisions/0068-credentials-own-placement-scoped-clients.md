@@ -10,7 +10,9 @@
   [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 (Kent: unbound
   errors carry a creation-page link; Approve bundles trigger and ad hoc default
   mappings; creation-link kind hint/required; MCP servers are credentials in the
-  same list — see [Amendment 2026-10-12](#amendment-2026-10-12))
+  same list — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12
+  (Kent: minting a webhook URL no longer turns it on; webhooks go through
+  Approve — see [Amendment 2026-10-12](#amendment-2026-10-12))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -504,3 +506,15 @@ Kent: manifest credential need `kind` becomes **optional**.
   param for `kind` can be a **hint** (default kind, chooser shown) or
   **required** (kind locked, no chooser UI). The one-pager reuses the existing
   secret-intake or OAuth components, chosen by kind.
+- **Webhooks go through Approve, not mint (Kent, 10:50 PM MT):** minting a
+  webhook URL no longer turns the webhook on for the minter. A webhook runs only
+  after a person approves it on the same approval page as other triggers, with
+  one Approve that also maps its credentials for that instance. The mint returns
+  the approval link while nobody has approved it, and a delivery to a webhook
+  that is not on fails with a clear error that includes the link. Enablements
+  that already exist, including the migrated ones and any an earlier mint
+  created, keep working untouched; remint and rotate never change them.
+  Credential mappings are stored per instance (per enablement), so each
+  instance can use different credentials. Today a declared webhook name has one
+  URL per org, which is one instance; more than one URL per name needs a schema
+  change that is still open.
