@@ -94,15 +94,16 @@ function credentialTypeHintFor(
 		case 'path':
 		case 'url':
 			return 'url'
-		case 'body':
+		case 'body': {
 			// A login client exchanges a password or token, then sends the
 			// session. A password field on some other request does not fit,
-			// and neither does an unrelated field on a login URL.
-			return placement.endpoint === 'login' &&
-				placement.field != null &&
-				loginBodyFieldPattern.test(placement.field)
-				? 'login'
-				: null
+			// and neither does an unrelated field on a login URL. When the
+			// scanner nulls a field that matched the secret name (for example
+			// `password: '{{secret:PASSWORD}}'`), fall back to the name.
+			if (placement.endpoint !== 'login') return null
+			const field = placement.field ?? reference.name
+			return loginBodyFieldPattern.test(field) ? 'login' : null
+		}
 		case 'signing':
 			return 'signing'
 		case 'header-custom':
@@ -136,7 +137,13 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 		const hint = credentialTypeHintFor(reference)
 		if (hint) found.add(hint)
 	}
-	if (scan.jwtSignCalls > 0) found.add('signing')
+	// secretJwtSign takes a secret name string, not a {{secret:…}} placeholder.
+	// Suggest signing only when that name is not already a declared secret slot.
+	for (const name of scan.jwtSignSecretNames) {
+		if (declared.has(declaredSlotKey('secret', name))) continue
+		found.add('signing')
+		break
+	}
 	const hints = (Object.keys(credentialTypeHints) as Array<CredentialTypeHint>)
 		.filter((hint) => found.has(hint))
 		.map((hint) => `- ${credentialTypeHints[hint]}`)

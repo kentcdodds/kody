@@ -104,6 +104,14 @@ test('login hints require an exchange endpoint and an exact credential field', (
 	)
 	expect(hintLines(exchange)).toEqual([hintsHeading, loginHint])
 	expect(exchange).not.toMatch(/PASSWORD|REFRESH|CLIENT/)
+
+	// Scanner nulls a body field that matches the secret name; the name still
+	// identifies a password exchange.
+	const redactedPasswordField = message(
+		"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:PASSWORD}}' }) })",
+	)
+	expect(hintLines(redactedPasswordField)).toEqual([hintsHeading, loginHint])
+	expect(redactedPasswordField).not.toMatch(/PASSWORD/)
 })
 
 test('hints skip placeholders a declared slot of the same kind already covers', () => {
@@ -166,4 +174,30 @@ test('hints skip placeholders a declared slot of the same kind already covers', 
 		},
 	)
 	expect(hintLines(urlSlot)).toEqual([hintsHeading, injectHint])
+})
+
+const signingHint =
+	'- Signing (secretJwtSign or signature key material): a signing credential (secretSet kind "signing") signs through credential(key).sign() without exposing the key.'
+
+test('declared signing keys do not get a signing hint from jwtSignCalls', () => {
+	const covered = message(
+		[
+			"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'KEY', claims: {} })",
+			"export const send = () => fetch('https://api.example.com')",
+		].join('\n'),
+		{
+			secretMounts: { token: { name: 'MOUNTED' } },
+			credentials: {
+				KEY: { kind: 'secret', description: 'Signing key.' },
+			},
+		},
+	)
+	expect(covered).toContain('- package.json: secretMounts')
+	expect(hintLines(covered)).toEqual([])
+	expect(covered).not.toMatch(/KEY|MOUNTED/)
+
+	const undeclared = message(
+		"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'APNS_KEY', claims: {} })",
+	)
+	expect(hintLines(undeclared)).toEqual([hintsHeading, signingHint])
 })
