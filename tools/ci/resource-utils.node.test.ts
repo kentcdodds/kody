@@ -142,6 +142,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		[isWranglerNotFoundOutput, 'Worker not found', true],
 		[isWranglerNotFoundOutput, 'No such script exists', true],
 		[isWranglerNotFoundOutput, 'The requested resource does not exist', true],
+		[
+			isWranglerNotFoundOutput,
+			"Couldn't find a D1 DB with name or binding 'kody-pr-3694-db' in your config or the API.",
+			true,
+		],
 		[isWranglerNotFoundOutput, 'Authentication error [code: 10000]', false],
 		[
 			isR2BucketAlreadyExistsOutput,

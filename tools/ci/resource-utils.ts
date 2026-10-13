@@ -597,6 +597,7 @@ export function isWranglerNotFoundOutput(output: string) {
 	const lower = output.toLowerCase()
 	return (
 		lower.includes('not found') ||
+		lower.includes("couldn't find") ||
 		lower.includes('no such') ||
 		lower.includes('does not exist')
 	)
