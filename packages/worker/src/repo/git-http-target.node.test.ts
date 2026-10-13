@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const loadOrgBindingForOrg = vi.fn()
@@ -52,7 +55,7 @@ vi.mock('#worker/authorization/authorize.ts', async () => {
 const { parseGitCredentialRepoPath, resolveGitHttpTargetAccess } =
 	await import('./git-http-target.ts')
 
-const viewerUserId = ownerIdFromStored('viewer-person')
+const viewerUserId = personIdFromStored('viewer-person')
 const resourceOwnerId = ownerIdFromStored('kody-org-owner')
 const packageId = 'pkg-cross-org-1'
 const sourceId = 'source-cross-org-1'
