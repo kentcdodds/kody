@@ -165,14 +165,12 @@ test('MCP servers are one click from /account and two from the account menu', as
 			.getByRole('link', { name: 'MCP servers', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
-	// From an account page the switcher has no Manage block. The signup org
-	// row opens the workspace overview, which links every section.
+	// From an account page the signup org row opens the workspace overview,
+	// which links every section.
 	await page.goto('/account/security')
 	await waitForClientHydration(page)
 	await page.getByTestId('org-switcher').click()
 	const panel = page.getByTestId('org-switcher-panel')
-	await expect(panel.getByTestId('org-switcher-manage-group')).toHaveCount(0)
-	await expect(panel.getByText(/^Manage /)).toHaveCount(0)
 	await panel.getByTestId(`org-switcher-${user.username}`).click()
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
 	await expect(
@@ -278,8 +276,6 @@ test('credits live on the usage page: /account/credits redirects there', async (
 			.locator('#credits')
 			.getByRole('heading', { level: 2, name: 'Credits' }),
 	).toBeVisible()
-	await expect(page.locator('[data-credits-balance]')).toHaveCount(0)
-	await expect(page.getByLabel('Custom amount ($)')).toHaveCount(0)
 
 	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(

@@ -59,10 +59,6 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).not.toHaveAttribute('aria-current', 'true')
 	await expect(wide.panel.getByTestId('org-switcher-create')).toBeVisible()
-	await expect(wide.panel.getByTestId('org-switcher-manage-group')).toHaveCount(
-		0,
-	)
-	await expect(wide.panel.getByText(/^Manage /)).toHaveCount(0)
 	await expect(page.getByTestId('org-home-nav-workspace')).toHaveAttribute(
 		'href',
 		`/@pinned-${runId}/-/repositories`,

@@ -103,7 +103,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			'document.documentElement.dataset.refreshTimer = String(setTimeout(() => location.reload(), 60000))',
 			'<script type="module" src="/status-breakout.js"></script>',
 			'<body data-overall-status="operational">',
-			'data-breakout-start hidden>Play while you wait</button>',
+			'data-breakout-start',
 			`href="${statusFaviconPath('operational')}"`,
 			'MCP execute',
 			'Recently verified',

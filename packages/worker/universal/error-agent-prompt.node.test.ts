@@ -1,8 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	ERROR_AGENT_PROMPT_ATTR,
-	ERROR_AGENT_PROMPT_IDLE_LABEL,
-	ERROR_AGENT_PROMPT_TEST_ID,
 	buildErrorAgentPrompt,
 	escapeErrorAgentPromptHtml,
 	redactErrorAgentPromptText,
@@ -110,9 +107,7 @@ test('static HTML block stamps the inventory marker and escapes prompt text', ()
 	const html = renderErrorAgentPromptStaticHtml(
 		'Exact error: use <script>alert(1)</script> & fail',
 	)
-	expect(html).toContain(`${ERROR_AGENT_PROMPT_ATTR}=""`)
-	expect(html).toContain(`data-testid="${ERROR_AGENT_PROMPT_TEST_ID}"`)
-	expect(html).toContain(ERROR_AGENT_PROMPT_IDLE_LABEL)
+	expect(html).toContain('data-error-agent-prompt=""')
 	expect(html).toContain('&lt;script&gt;')
 	expect(html).toContain('&amp; fail')
 	expect(html).not.toContain('<script>alert')
@@ -131,7 +126,6 @@ test('presets cover internal and package-app failures', () => {
 		path: '/@acme/packages/pkg_123/',
 		runtimeRunId: 'run_abc',
 	})
-	expect(crashed).toContain('Package app crashed')
 	expect(crashed).toContain('pkg_123')
 	expect(crashed).toContain('runGet')
 

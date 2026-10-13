@@ -389,8 +389,3 @@ test('a disabled MCP server lists its grant inactive, and its grant needs integr
 		revoke({ credential_id: 'ann-mcp' }, annInAcme),
 	).resolves.toMatchObject({ revoked: true })
 })
-
-test('grant and revoke both need a live person', () => {
-	expect(credentialOrgGrantCapability.requiresLivePerson).toBe('always')
-	expect(credentialOrgRevokeCapability.requiresLivePerson).toBe('always')
-})

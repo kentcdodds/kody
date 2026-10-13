@@ -16,8 +16,8 @@ import {
 } from './illustrated-error-page.ts'
 import { readRouterUrl } from './router-location.tsx'
 
-export const notFoundPageHeading = "This doesn't quite connect."
-export const notFoundPageImageSrc = '/images/kody-404-disappointed.png'
+const notFoundPageHeading = "This doesn't quite connect."
+const notFoundPageImageSrc = '/images/kody-404-disappointed.png'
 
 /**
  * Shared HTML 404. Generic misses and matched-route misses (a public

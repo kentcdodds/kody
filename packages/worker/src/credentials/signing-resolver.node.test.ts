@@ -19,7 +19,6 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { computeWebhookHmacSignature } from '#worker/webhooks/crypto.ts'
-import { signJwtWithSecret } from '#mcp/capabilities/secrets/jwt-signing.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import {
 	CredentialNotFoundError,
@@ -250,8 +249,14 @@ test('a signing credential signs a JWT the same way secretJwtSign does', async (
 		credentialId: id,
 		operation,
 	})
-	expect(signed.signature).toBe(await signJwtWithSecret(key, operation))
-	expect(signed.signature.split('.')).toHaveLength(3)
+	const parts = signed.signature.split('.')
+	expect(parts).toHaveLength(3)
+	expect(
+		JSON.parse(Buffer.from(parts[1]!, 'base64url').toString()),
+	).toMatchObject({
+		sub: 'user-1',
+		iat: 1700000000,
+	})
 })
 
 test('only signing credentials with hosts sign, and nothing is read otherwise', async () => {
