@@ -1538,6 +1538,15 @@ on write unless a migration backfills existing rows.
   each personal credential is granted to. `credential_id` is a credential in the
   owner's personal org, `user_id` is the owner's person id, and the row is
   hard-deleted when the owner leaves that org.
+- `credential_mappings` (`0134-credential-mappings.sql`,
+  `packages/worker/src/credentials/credential-mappings.ts`) stores which
+  credentials one package need resolves to: the org-layer default (`target`
+  `org`), one person's own default (`mine`, `person_user_id` set), or one
+  trigger instance's override (`enablement`, `enablement_id` set and
+  `person_user_id` the enabler). `credential_ids_json` is an ordered array of
+  credential ids, and `[]` means "none on purpose". Rows hold ids only. A
+  person's rows in an org are hard-deleted when they leave it, and with their
+  account.
 
 ### Durable Object id contracts
 

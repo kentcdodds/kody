@@ -57,6 +57,22 @@ function createUsageTestDb(
 							stripe_customer_id: input.stripeCustomerId ?? null,
 						} as T
 					}
+					if (
+						normalized.includes('from orgs') &&
+						!normalized.includes('from users') &&
+						normalized.includes('where id')
+					) {
+						return {
+							slug: 'acme',
+							display_name: 'Acme',
+							plan: input.plan,
+							stripe_plan: input.stripePlan ?? null,
+							entitlement_ladder: input.entitlementLadder ?? 'public',
+							stripe_credits_eligible: input.creditsEligible ? 1 : 0,
+							second_agent_standard_gift_expires_at: null,
+							stripe_customer_id: input.stripeCustomerId ?? null,
+						} as T
+					}
 					if (normalized.includes('from credit_wallets')) {
 						counters.creditWalletQueries += 1
 						return { balance_micro_usd: input.creditBalanceMicroUsd ?? 0 } as T
@@ -143,6 +159,12 @@ async function loadUsage(
 			},
 		} as unknown as Env,
 		userId: input.userId,
+		org: {
+			id: stableUserId as never,
+			slug: 'usage-user',
+			displayName: null,
+			personal: true,
+		},
 		now,
 	})
 	const row = (resource: string) =>
@@ -385,7 +407,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	})
 	expect(empty.data?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
-		action: { label: 'Add credits', href: '/account/usage#credits' },
+		action: { label: 'Add credits', href: '#credits' },
 	})
 	expect(empty.data?.includedCompute[0]).toMatchObject({
 		barPercent: 100,
@@ -418,7 +440,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(noCustomer.data?.canBuyCredits).toBe(false)
 	expect(noCustomer.data?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
-		action: { label: 'Subscribe to Pro', href: '/account/usage#credits' },
+		action: { label: 'Subscribe to Pro', href: '#credits' },
 	})
 	expect(noCustomer.data?.credits).toMatchObject({
 		eligible: true,
@@ -455,4 +477,56 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 			...(data?.computeOverage.meters ?? []),
 		].filter((entry) => /^add credits/i.test(entry.howToReduce ?? '')),
 	).toEqual([])
+})
+
+test('team org usage loads plan and wallet by org id, not the viewer person', async () => {
+	const teamOrgId = 'org-acme-usage'
+	const input: UsageDbInput = {
+		userId: 40,
+		email: 'team-owner@example.com',
+		plan: 'pro',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		stripeCustomerId: 'cus_acme',
+		creditBalanceMicroUsd: 5_000_000,
+		packageCount: 3,
+	}
+	const db = createUsageTestDb(input, teamOrgId)
+	const meter = createInMemoryUserMeterEnv()
+	const runLog = createInMemoryRunLogUsageEnv()
+	const data = await loadAccountUsageData({
+		env: {
+			APP_DB: db,
+			...meter.env,
+			...runLog.env,
+			REPO_SESSION_INDEX:
+				createInMemoryRepoSessionIndexEnv(db).REPO_SESSION_INDEX,
+			MAILBOX: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({ countMessages: async () => ({ total: 0 }) }),
+			},
+		} as unknown as Env,
+		userId: input.userId,
+		org: {
+			id: teamOrgId as never,
+			slug: 'acme',
+			displayName: 'Acme',
+			personal: false,
+		},
+		now,
+	})
+	expect(data).toMatchObject({
+		ok: true,
+		plan: 'pro',
+		stripePlan: 'pro',
+		canBuyCredits: true,
+	})
+	expect(data?.credits).toMatchObject({
+		eligible: true,
+		balanceMicroUsd: 5_000_000,
+	})
+	expect(
+		data?.entitlementConsumption.find((r) => r.resource === 'saved_packages')
+			?.current,
+	).toBe(3)
 })

@@ -212,6 +212,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/secrets/jwt', 'secretJwtSign'],
 		['PUT', '/v1/secrets/{scope}/{name}', 'secretSet'],
 		['DELETE', '/v1/secrets/{scope}/{name}', 'secretDelete'],
+		['GET', '/v1/credentials', 'credentialList'],
 		['PATCH', '/v1/credentials/{credential_id}', 'credentialUpdate'],
 		['GET', '/v1/personal-credential-grants', 'credentialOrgGrantList'],
 		[

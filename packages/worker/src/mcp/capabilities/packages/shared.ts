@@ -317,6 +317,12 @@ export const packageCredentialNeedSchema = z.object({
 
 export const packageDetailSchema =
 	packageSummaryWithCommunityProvenanceSchema.extend({
+		published_commit: z
+			.string()
+			.nullable()
+			.describe(
+				'Current published Artifacts commit for this package source (same field as `repoShowPublishNote` defaults to). Null when nothing has been published yet.',
+			),
 		exports: z.array(packageExportSurfaceSchema),
 		package_secrets: z
 			.array(secretMetadataSchema)

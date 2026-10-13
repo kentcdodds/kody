@@ -1,5 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import { accountCreditsPath } from '#universal/compute-overage.ts'
+import { orgUsageCreditsPath, orgUsagePath } from '#universal/org-pages.ts'
 import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -53,7 +53,8 @@ export function resolveBillingErrorMessage(
  * (unlike error codes, which fall back to the raw code).
  */
 const billingNoticeMessages: Record<string, string> = {
-	updated: `Your plan change is complete. Limits update within a minute. Add credits at ${accountCreditsPath}.`,
+	updated:
+		'Your plan change is complete. Limits update within a minute. Add credits from Usage & credits.',
 }
 
 export function resolveBillingNoticeMessage(
@@ -275,9 +276,8 @@ export async function loadAccountBillingData(input: {
 		purchasablePlans,
 		creditsEligible:
 			refreshed.stripePlan === 'pro' && refreshed.creditsEligible,
-		// Credits and usage are still metered per person.
-		creditsHref: org.personal ? accountCreditsPath : null,
-		usageHref: org.personal ? '/account/usage' : null,
+		creditsHref: orgUsageCreditsPath(org.slug),
+		usageHref: orgUsagePath(org.slug),
 		referralProgram,
 		org: {
 			slug: org.slug,

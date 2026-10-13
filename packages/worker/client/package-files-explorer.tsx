@@ -32,8 +32,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
-	layoutMaxWidths,
-	pageGutter,
+	packageDetailPageCss,
 	proseCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -530,19 +529,10 @@ function searchIcon() {
 	return renderIcon('search', { size: '14' })
 }
 
-// Same box as the site header (`navCss`): `layoutMaxWidths.extended` centered,
-// inset by `pageGutter`. A container that picks its own padding renders wider
-// than the nav above it.
-// This route owns its gutters — the shell leaves it unpadded (`app.tsx`), so
-// the same box as the site header lines the two up at every width.
-const articleCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `${spacing.lg} ${pageGutter} ${spacing['2xl']}`,
-	[mq.tablet]: {
-		padding: `${spacing.md} ${pageGutter} ${spacing.xl}`,
-	},
-}
+// Shared with Repo / Settings (`packageDetailPageCss`): same extended width,
+// gutters, and shirt-pattern background. The shell leaves package detail tabs
+// unpadded (`app.tsx`), so this box lines up with the site header.
+const articleCss = packageDetailPageCss
 
 const backLinkCss = {
 	// Pinned out of the `page` transition with the rest of the explorer chrome.

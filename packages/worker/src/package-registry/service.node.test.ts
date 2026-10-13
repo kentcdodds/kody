@@ -1165,10 +1165,12 @@ function createEntitlementsDatabase(input: {
 								}
 								return { meta: { changes: before - storageBuckets.length } }
 							}
-							// Deleting a package releases the slugs it retired.
+							// Deleting a package releases the slugs it retired and its
+							// credential mappings.
 							if (
 								query.includes('DELETE FROM package_slug_redirects') ||
-								query.includes('DELETE FROM package_kody_id_redirects')
+								query.includes('DELETE FROM package_kody_id_redirects') ||
+								query.includes('DELETE FROM credential_mappings')
 							) {
 								return { meta: { changes: 0 } }
 							}

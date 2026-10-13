@@ -18,6 +18,7 @@ import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	createAuditTestDb,
 	createTestOrgAuditWriter,
@@ -43,6 +44,12 @@ import {
 	validateCredentialCallMap,
 	type CredentialClientContext,
 } from './credential-client.ts'
+import {
+	buildWriteCredentialMappingStatement,
+	type CredentialMappingRowTarget,
+	deleteCredentialMappingsForMember,
+	deleteCredentialMappingsForPackage,
+} from './credential-mappings.ts'
 import * as needsClosure from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 
@@ -794,6 +801,228 @@ test('the placed header drops the code value before placeholders expand, so a pl
 	})
 	expect(response.status).toBe(200)
 	expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${resendKey}`)
+})
+
+test('stored mappings pick the credential: trigger override, then your default, then the org default, then auto-resolve', async () => {
+	const t = await setup()
+	const keyA = await t.storeKey({ name: 'resend-a' })
+	const keyB = await t.storeKey({ name: 'resend-b' })
+	await t.grantUse(keyA, 'ann')
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme-clients/digest',
+	})
+	mockNeeds([{ key: 'resend' }])
+	const map = (
+		target: CredentialMappingRowTarget,
+		credentialIds: Array<string> | null,
+	) =>
+		buildWriteCredentialMappingStatement({
+			db: t.db,
+			orgId: t.acmeId,
+			packageId,
+			needKey: 'resend',
+			target,
+			credentialIds,
+			updatedByUserId: t.people.bea.personId,
+			now,
+		}).run()
+	const open = (request: ReturnType<typeof t.requestAs>) =>
+		openCredentialClient(t.contextFor({ request, packageId }), {
+			key: 'resend',
+		})
+	const bea = t.requestAs('bea', 'owner')
+	const ann = t.requestAs('ann', 'member')
+
+	await expect(open(bea)).rejects.toMatchObject({
+		body: { code: 'credential_ambiguous' },
+	})
+	await map({ target: 'org' }, [keyB])
+	await expect(open(bea)).resolves.toMatchObject({ name: 'resend-b' })
+	await map({ target: 'mine', personId: t.people.bea.personId }, [keyA])
+	await expect(open(bea)).resolves.toMatchObject({ name: 'resend-a' })
+	await map({ target: 'mine', personId: t.people.bea.personId }, [])
+	const none = await rejection(open(bea))
+	expect(none.body).toMatchObject({
+		code: 'credential_unbound',
+		createUrl: expect.stringContaining('/connect/credential?'),
+	})
+	expect(none.message).toContain('mapped to no credential on purpose')
+
+	// Ann cannot Use the org default, so it is skipped and her one usable Key
+	// auto-resolves. Bea's own default never applies to Ann.
+	await expect(open(ann)).resolves.toMatchObject({ name: 'resend-a' })
+
+	// A trigger run acts as its enabler and its override never falls through.
+	const enablementId = 'enablement-ann-daily'
+	const annTrigger = deriveRequestContext({
+		user: { userId: t.people.ann.personId },
+		source: {
+			kind: 'schedule',
+			jobId: 'job-1',
+			enablement: {
+				id: enablementId,
+				enabler: { userId: t.people.ann.personId },
+				role: 'member',
+			},
+		},
+		orgBinding: { org: { id: t.acmeId, slug: 'acme-clients' }, role: null },
+	})
+	const trigger = {
+		target: 'enablement',
+		enablementId,
+		personId: t.people.ann.personId,
+	} as const
+	await map(trigger, [keyB])
+	const unusable = await rejection(open(annTrigger))
+	expect(unusable.body).toMatchObject({
+		code: 'credential_not_found',
+		createUrl: expect.stringContaining('/connect/credential?'),
+	})
+	await expect(open(ann)).resolves.toMatchObject({ name: 'resend-a' })
+	await map(trigger, [keyA])
+	await expect(open(annTrigger)).resolves.toMatchObject({ name: 'resend-a' })
+	await map(trigger, [])
+	await expect(open(annTrigger)).rejects.toMatchObject({
+		body: { code: 'credential_unbound' },
+	})
+	await map(trigger, null)
+	await expect(open(annTrigger)).resolves.toMatchObject({ name: 'resend-a' })
+
+	// Leaving the org drops Ann's own mappings, not the org default.
+	expect(
+		await deleteCredentialMappingsForMember({
+			db: t.db,
+			orgId: t.acmeId,
+			personId: t.people.ann.personId,
+		}),
+	).toBe(0)
+	await map(trigger, [keyA])
+	expect(
+		await deleteCredentialMappingsForMember({
+			db: t.db,
+			orgId: t.acmeId,
+			personId: t.people.ann.personId,
+		}),
+	).toBe(1)
+	await expect(open(bea)).rejects.toMatchObject({
+		body: { code: 'credential_unbound' },
+	})
+})
+
+test('a stored mapping stops applying when the need changes or is removed, and a corrupt row reads as unset', async () => {
+	const t = await setup()
+	const keyA = await t.storeKey({ name: 'resend-a' })
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url, provider, enabled)
+			 VALUES ('mcp-resend', ?, 'resend-mcp', 'https://mcp.resend.example/sse', 'resend', 1)`,
+		)
+		.bind(t.acmeId)
+		.run()
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme-clients/digest',
+	})
+	const mapOrg = (credentialIds: Array<string>) =>
+		buildWriteCredentialMappingStatement({
+			db: t.db,
+			orgId: t.acmeId,
+			packageId,
+			needKey: 'resend',
+			target: { target: 'org' },
+			credentialIds,
+			updatedByUserId: t.people.bea.personId,
+			now,
+		}).run()
+	const open = () =>
+		openCredentialClient(
+			t.contextFor({ request: t.requestAs('bea', 'owner'), packageId }),
+			{ key: 'resend' },
+		)
+
+	mockNeeds([{ key: 'resend' }])
+	await mapOrg([keyA])
+	await expect(open()).resolves.toMatchObject({ name: 'resend-a' })
+	mockNeeds([{ key: 'resend', provider: 'postmark' }])
+	await expect(open()).rejects.toMatchObject({
+		body: { code: 'credential_unbound' },
+	})
+
+	mockNeeds([{ key: 'resend', kind: undefined }])
+	await mapOrg(['mcp-resend'])
+	await expect(open()).resolves.toMatchObject({
+		name: 'resend-a',
+		kind: 'secret',
+	})
+
+	await mapOrg([])
+	await t.db
+		.prepare(`UPDATE credential_mappings SET credential_ids_json = '{bad'`)
+		.run()
+	consoleError.mockImplementation(() => {})
+	await expect(open()).resolves.toMatchObject({ name: 'resend-a' })
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('corrupt credential ids'),
+	)
+
+	await mapOrg([])
+	await expect(open()).rejects.toMatchObject({
+		body: { code: 'credential_unbound' },
+	})
+	// Removed need: the leftover row is ignored and the key auto-resolves.
+	mockNeeds([])
+	await expect(open()).rejects.toMatchObject({
+		body: { code: 'credential_ambiguous' },
+	})
+
+	expect(
+		await deleteCredentialMappingsForPackage({
+			db: t.db,
+			orgId: t.acmeId,
+			packageId,
+		}),
+	).toBe(1)
+})
+
+test('a call map pick wins over a stored mapping, and credentials() opens every mapped credential', async () => {
+	const t = await setup()
+	const keyA = await t.storeKey({ name: 'resend-a' })
+	const keyB = await t.storeKey({ name: 'resend-b' })
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme-clients/digest',
+	})
+	mockNeeds([{ key: 'resend' }])
+	await buildWriteCredentialMappingStatement({
+		db: t.db,
+		orgId: t.acmeId,
+		packageId,
+		needKey: 'resend',
+		target: { target: 'org' },
+		credentialIds: [keyA, keyB],
+		updatedByUserId: t.people.bea.personId,
+		now,
+	}).run()
+	const request = t.requestAs('bea', 'owner')
+	await expect(
+		openCredentialClient(t.contextFor({ request, packageId }), {
+			key: 'resend',
+		}),
+	).resolves.toMatchObject({ name: 'resend-a' })
+	await expect(
+		openCredentialClient(
+			t.contextFor({ request, packageId, credentials: { resend: 'resend-b' } }),
+			{ key: 'resend' },
+		),
+	).resolves.toMatchObject({ name: 'resend-b' })
+	const all = await openCredentialClients(
+		t.contextFor({ request, packageId }),
+		{
+			key: 'resend',
+		},
+	)
+	expect(all.map((client) => client.name)).toEqual(['resend-a', 'resend-b'])
 })
 
 test('a call map picks by name among several matches, and credentials() opens every pick', async () => {

@@ -1,55 +1,33 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
-import type * as CreditTopUps from '#worker/billing/credit-top-ups.ts'
-import { CreditTopUpError } from '#worker/billing/credit-top-ups.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createAccountUsageHandler } from './account-usage.ts'
 
 const mockModule = vi.hoisted(() => ({
 	requireAuthenticatedPageUser: vi.fn<() => Promise<unknown>>(),
-	loadAccountUsageData: vi.fn<(input: unknown) => Promise<unknown>>(),
-	applyCreditTopUpFromCheckoutSession:
-		vi.fn<(input: unknown) => Promise<unknown>>(),
-	renderAppPage: vi.fn(async ({ loaderData }: { loaderData?: unknown }) =>
-		Response.json({ ok: true, loaderData }),
-	),
+	getOrgById: vi.fn<(db: unknown, id: string) => Promise<unknown>>(),
 }))
 
 vi.mock('#app/page-auth.ts', () => ({
 	requireAuthenticatedPageUser: () => mockModule.requireAuthenticatedPageUser(),
 }))
 
-vi.mock('#app/account-usage-data.ts', () => ({
-	loadAccountUsageData: (input: unknown) =>
-		mockModule.loadAccountUsageData(input),
+vi.mock('#worker/orgs/repo.ts', () => ({
+	getOrgById: (db: unknown, id: string) => mockModule.getOrgById(db, id),
 }))
 
-vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: (input: { loaderData?: unknown }) =>
-		mockModule.renderAppPage(input),
-}))
-
-vi.mock('#worker/billing/credit-top-ups.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof CreditTopUps>()
-	return {
-		...actual,
-		applyCreditTopUpFromCheckoutSession: (input: unknown) =>
-			mockModule.applyCreditTopUpFromCheckoutSession(input),
-	}
-})
-
-const env = {} as Env
+const env = { APP_DB: {} } as Env
 
 beforeEach(() => {
 	vi.clearAllMocks()
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
 		userId: 7,
+		username: 'ada',
 		mcpUser: { userId: ownerIdFromStored('stable-7') },
 	})
-	mockModule.loadAccountUsageData.mockResolvedValue({ ok: true })
+	mockModule.getOrgById.mockResolvedValue({ slug: 'ada' })
 })
 
-async function getUsage(search: string) {
+async function getUsage(search = '') {
 	const request = new Request(`https://kody.codes/account/usage${search}`)
 	return createAccountUsageHandler(env).handler({
 		request,
@@ -58,55 +36,27 @@ async function getUsage(search: string) {
 	} as never)
 }
 
-test('a confirmed Stripe return lands on the Credits section with the added notice', async () => {
-	const response = await getUsage('?topup=success&session_id=cs_123')
-	expect(mockModule.applyCreditTopUpFromCheckoutSession).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sessionId: 'cs_123',
-			expectedStableUserId: 'stable-7',
-		}),
-	)
+test('legacy /account/usage redirects to the personal org usage page', async () => {
+	const response = await getUsage()
 	expect(response.status).toBe(302)
 	expect(response.headers.get('Location')).toBe(
-		'https://kody.codes/account/usage?credits=added#credits',
+		'https://kody.codes/@ada/-/usage',
+	)
+	expect(mockModule.getOrgById).toHaveBeenCalledWith(env.APP_DB, 'stable-7')
+})
+
+test('the redirect keeps Stripe return and notice query params', async () => {
+	const response = await getUsage('?topup=success&session_id=cs_123')
+	expect(response.status).toBe(302)
+	expect(response.headers.get('Location')).toBe(
+		'https://kody.codes/@ada/-/usage?topup=success&session_id=cs_123',
 	)
 })
 
-test('a rejected Stripe return keeps known codes and folds the rest into topup_failed', async () => {
-	consoleError.mockImplementation(() => {})
-	mockModule.applyCreditTopUpFromCheckoutSession.mockRejectedValueOnce(
-		new CreditTopUpError('not_paid', 'Not paid.'),
+test('missing signup org slug falls back to the username', async () => {
+	mockModule.getOrgById.mockResolvedValueOnce(null)
+	const response = await getUsage('?credits=added')
+	expect(response.headers.get('Location')).toBe(
+		'https://kody.codes/@ada/-/usage?credits=added',
 	)
-	const notPaid = await getUsage('?topup=success&session_id=cs_1')
-	expect(notPaid.headers.get('Location')).toBe(
-		'https://kody.codes/account/usage?error=not_paid#credits',
-	)
-
-	mockModule.applyCreditTopUpFromCheckoutSession.mockRejectedValueOnce(
-		new CreditTopUpError('user_not_found', 'Missing.'),
-	)
-	const unknown = await getUsage('?topup=success&session_id=cs_2')
-	expect(unknown.headers.get('Location')).toBe(
-		'https://kody.codes/account/usage?error=topup_failed#credits',
-	)
-	expect(consoleError.mock.calls.map(([message]) => message)).toEqual([
-		'credit_top_up_confirm_failed',
-		'credit_top_up_confirm_failed',
-	])
-})
-
-test('notice and error codes map to messages; unknown and prototype keys map to nothing', async () => {
-	await getUsage('?credits=added&error=not_paid')
-	expect(mockModule.loadAccountUsageData).toHaveBeenLastCalledWith(
-		expect.objectContaining({
-			notice: expect.any(String),
-			error: expect.any(String),
-		}),
-	)
-
-	await getUsage('?credits=__proto__&error=constructor')
-	expect(mockModule.loadAccountUsageData).toHaveBeenLastCalledWith(
-		expect.objectContaining({ notice: undefined, error: undefined }),
-	)
-	expect(mockModule.applyCreditTopUpFromCheckoutSession).not.toHaveBeenCalled()
 })

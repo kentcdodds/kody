@@ -123,6 +123,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	credential_inventory_runs: keep(
 		'Credential inventory results stay with the run that recorded them.',
 	),
+	credential_mappings: keep(
+		'Mappings name source-org credentials and people; rows for moved packages stay behind unmatched and the target org maps its own.',
+	),
 	credential_org_grants: keep(personOwned),
 	credit_debit_progress: keep(usageHistory),
 	credit_ledger_entries: keep(usageHistory),

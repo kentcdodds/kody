@@ -2807,9 +2807,9 @@ export type AccountBillingLoaderData = {
 	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
 	creditsEligible: boolean
 	/** Deep link to the Credits section of the usage page; null off the signup org. */
-	creditsHref: '/account/usage#credits' | null
+	creditsHref: string | null
 	/** Account usage page (limits / consumption); null off the signup org. */
-	usageHref: '/account/usage' | null
+	usageHref: string | null
 	referralProgram: ReferralProgramSummary | null
 	org: AccountBillingOrg
 	error?: string

@@ -79,6 +79,7 @@ import {
 } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { deleteCredentialMappingsForPackage } from '#worker/credentials/credential-mappings.ts'
 
 const packageStorageClearAttempts = 3
 
@@ -815,6 +816,11 @@ export async function deleteSavedPackageProjection(input: {
 			})
 			await deleteSavedPackage(input.env.APP_DB, {
 				userId: input.userId,
+				packageId: input.packageId,
+			})
+			await deleteCredentialMappingsForPackage({
+				db: input.env.APP_DB,
+				orgId: input.userId,
 				packageId: input.packageId,
 			})
 			// Capture retired leaves before deleting redirect rows so the

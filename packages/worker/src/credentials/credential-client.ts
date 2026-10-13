@@ -24,6 +24,7 @@ import {
 	isFetchCapableCredentialKind,
 	type PackageCredentialKind,
 } from '#worker/package-registry/types.ts'
+import { enablementIdOf } from '#worker/request-context/request-context.ts'
 import {
 	buildCredentialCreateUrl,
 	type CredentialCreateLinkInput,
@@ -43,6 +44,11 @@ import {
 	type CredentialCallMap,
 	type CredentialPick,
 } from './credential-call-map.ts'
+import {
+	type CredentialMappingRowTarget,
+	loadCredentialMappings,
+	resolveStoredMapping,
+} from './credential-mappings.ts'
 import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import {
@@ -436,6 +442,95 @@ function pickOne(input: {
 	)
 }
 
+/**
+ * A stored mapping follows the explicit-pick rule: the kind filter must match,
+ * and so must the provider when the credential has one. A need whose kind or
+ * provider changed after mapping no longer takes the old credential.
+ */
+function mappedCredentialFits(
+	credential: UsableCredential,
+	target: NeedTarget,
+): boolean {
+	if (credential.provider && credential.provider !== target.provider) {
+		return false
+	}
+	switch (target.match) {
+		case 'exact':
+			return target.kind === null || credential.kind === target.kind
+		case 'fetch-capable':
+			return isFetchCapableCredentialKind(credential.kind)
+		case 'any':
+			return true
+		default: {
+			const exhaustive: never = target.match
+			throw new Error(`Unhandled need match: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * A package need's stored mapping (trigger override, then the actor's own
+ * default, then the org default), or null to auto-resolve. Interactive runs
+ * have no trigger override; a trigger run acts as its enabler.
+ */
+async function resolveMappedNeed(
+	ctx: CredentialClientContext,
+	input: {
+		request: RequestContext
+		key: string
+		target: NeedTarget
+		usable: ReadonlyArray<UsableCredential>
+		createUrl: () => Promise<string>
+	},
+): Promise<Array<UsableCredential> | null> {
+	if (!ctx.packageId) return null
+	const enablementId = enablementIdOf(input.request)
+	const rows = await loadCredentialMappings({
+		db: ctx.env.APP_DB,
+		orgId: input.request.org.id,
+		packageId: ctx.packageId,
+		personId: input.request.actor!.userId,
+		enablementIds: enablementId ? [enablementId] : [],
+		needKey: input.key,
+	})
+	const layer = (target: CredentialMappingRowTarget['target']) =>
+		rows.find((row) => row.target.target === target)?.credentialIds ?? null
+	const resolved = resolveStoredMapping({
+		trigger: layer('enablement'),
+		mine: layer('mine'),
+		org: layer('org'),
+		usable: input.usable,
+		accepts: (credential) => mappedCredentialFits(credential, input.target),
+	})
+	if (!resolved) return null
+	const where =
+		resolved.source === 'trigger'
+			? 'this trigger'
+			: resolved.source === 'mine'
+				? 'your default'
+				: 'the org default'
+	switch (resolved.status) {
+		case 'ready':
+			return resolved.credentials
+		case 'none':
+			throw refusal(
+				'credential_unbound',
+				`Need "${input.key}" is mapped to no credential on purpose (${where}). Change that mapping in the package's credential settings, or create a credential and map it.`,
+				{ createUrl: await input.createUrl() },
+			)
+		case 'unusable':
+			throw refusal(
+				'credential_not_found',
+				`The credential mapped to need "${input.key}" for ${where} is gone or you can no longer use it. Map another credential to it in the package's trigger settings.`,
+				{ createUrl: await input.createUrl() },
+			)
+		default: {
+			const exhaustive: never = resolved
+			throw new Error(`Unhandled mapping status: ${JSON.stringify(exhaustive)}`)
+		}
+	}
+}
+
 /** With a `link`, a name with no match carries a creation link. */
 function findByName(
 	usable: ReadonlyArray<UsableCredential>,
@@ -527,6 +622,22 @@ async function resolveKey(
 	const target = needTarget(key, need)
 	const picks = ctx.callMap?.get(key)
 	if (!picks) {
+		// Mappings belong to declared needs; a row left by a removed need is ignored.
+		const mapped = need
+			? await resolveMappedNeed(ctx, {
+					request: requireActorRequest(ctx),
+					key,
+					target,
+					usable,
+					createUrl: () =>
+						createUrlForNeed(ctx, { key, provider: target.provider, need }),
+				})
+			: null
+		if (mapped) {
+			return (mode === 'one' ? mapped.slice(0, 1) : mapped).map(
+				(credential) => ({ credential, hint: null }),
+			)
+		}
 		const { candidates, possibleMatches } = need
 			? resolveNeedCandidates(need, usable)
 			: {
