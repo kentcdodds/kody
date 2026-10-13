@@ -850,7 +850,12 @@ export async function loadOwnerPackageReadme(input: {
 	userId: string
 	sourceId: string
 }): Promise<OwnerPackageReadme> {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	let source: Awaited<ReturnType<typeof getEntitySourceById>> = null
+	try {
+		source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	} catch {
+		return { content: null, commit: null }
+	}
 	if (!source || source.user_id !== input.userId) {
 		return { content: null, commit: null }
 	}
@@ -876,7 +881,7 @@ export async function loadOwnerPackageReadme(input: {
 		}
 	}
 	// Plain repos have no publish KV snapshot — Files already reads Artifacts HEAD.
-	return loadOwnerPackageReadmeFromArtifactsHead(input)
+	return loadOwnerPackageReadmeFromArtifactsHead({ ...input, source })
 }
 
 async function loadOwnerPackageReadmeFromArtifactsHead(input: {
@@ -884,10 +889,11 @@ async function loadOwnerPackageReadmeFromArtifactsHead(input: {
 	request: Request
 	userId: string
 	sourceId: string
+	source: NonNullable<Awaited<ReturnType<typeof getEntitySourceById>>>
 }): Promise<OwnerPackageReadme> {
 	try {
-		const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-		if (!source?.repo_id || source.user_id !== input.userId) {
+		const { source } = input
+		if (!source.repo_id || source.user_id !== input.userId) {
 			return { content: null, commit: null }
 		}
 		const liveCommit = source.indexed_commit ?? source.published_commit ?? ''
