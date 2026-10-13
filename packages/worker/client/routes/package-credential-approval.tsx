@@ -23,7 +23,8 @@ import {
 	approvalAfterLabel,
 	approvalBeforeLabel,
 	approvalChangeIsNoop,
-	approvalEnabledTriggers,
+	approvalDoneCopy,
+	approvalEnableStatus,
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
@@ -242,8 +243,10 @@ function renderEnable(
 	entry: CredentialApprovalEnableView,
 	index: number,
 	approved: boolean,
+	turnedOn: boolean,
 ) {
 	const label = describeTrigger(entry.trigger)
+	const status = approvalEnableStatus(entry, { approved, turnedOn })
 	return (
 		<li
 			key={`${entry.trigger.kind}:${entry.trigger.name}`}
@@ -256,15 +259,17 @@ function renderEnable(
 			})}
 		>
 			<strong>{label}</strong>
-			{entry.willEnable ? (
-				<p mix={css({ margin: 0, color: colors.warningText })}>
-					{approved
-						? `${label} is on for you.`
-						: `Approving turns on ${label} for you.`}
+			{status ? (
+				<p
+					mix={css(
+						entry.willEnable || turnedOn
+							? { margin: 0, color: colors.warningText }
+							: mutedCss,
+					)}
+				>
+					{status}
 				</p>
-			) : (
-				<p mix={css(mutedCss)}>{label} is already on for you.</p>
-			)}
+			) : null}
 			{entry.error ? (
 				<p
 					data-testid="approval-enable-error"
@@ -298,21 +303,6 @@ function renderGroup(
 			</ul>
 		</section>
 	)
-}
-
-function approvedCopy(view: CredentialApprovalView) {
-	const count = view.changes.length
-	const parts: Array<string> = []
-	if (count > 0) {
-		parts.push(
-			count === 1 ? '1 mapping is saved' : `${count} mappings are saved`,
-		)
-	}
-	const enables = approvalEnabledTriggers(view)
-	if (enables.length > 0) parts.push(`${enables.join(', ')} is on`)
-	return parts.length > 0
-		? `${parts.join(' and ')}.`
-		: 'Nothing needed to change.'
 }
 
 export function PackageCredentialApprovalRoute(handle: Handle) {
@@ -481,7 +471,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					</section>
 				) : null}
 
-				{approved && view ? (
+				{approved && view && loaded ? (
 					<section
 						role="status"
 						data-testid="credential-approval-done"
@@ -489,7 +479,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					>
 						<h2 mix={css(cardTitleCss)}>Approved</h2>
 						<p mix={css({ margin: 0 })}>
-							{approvedCopy(view)}
+							{approvalDoneCopy(loaded)}
 							{view.changes.length > 0 ? (
 								<>
 									{' '}
@@ -550,7 +540,19 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 						</div>
 						<ul mix={css(listCss)}>
 							{view.enable.map((entry, index) =>
-								renderEnable(entry, index, approved),
+								renderEnable(
+									entry,
+									index,
+									approved,
+									approved &&
+										(loaded?.enable.some(
+											(reviewed) =>
+												reviewed.willEnable &&
+												reviewed.trigger.kind === entry.trigger.kind &&
+												reviewed.trigger.name === entry.trigger.name,
+										) ??
+											false),
+								),
 							)}
 						</ul>
 					</section>

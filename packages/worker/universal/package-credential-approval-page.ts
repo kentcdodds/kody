@@ -6,6 +6,7 @@
  */
 import {
 	type CredentialApprovalChangeView,
+	type CredentialApprovalEnableView,
 	type CredentialApprovalView,
 	type CredentialKind,
 	type CredentialMappingTarget,
@@ -180,6 +181,42 @@ export function approvalEnabledTriggers(
 		if (entry.willEnable) labels.add(describeTrigger(entry.trigger))
 	}
 	return [...labels]
+}
+
+/**
+ * The success line after Approve. `reviewed` is the view the person approved;
+ * the post-write view no longer marks the triggers it turned on.
+ */
+export function approvalDoneCopy(reviewed: CredentialApprovalView) {
+	const count = reviewed.changes.length
+	const parts: Array<string> = []
+	if (count > 0) {
+		parts.push(
+			count === 1 ? '1 mapping is saved' : `${count} mappings are saved`,
+		)
+	}
+	const enables = approvalEnabledTriggers(reviewed)
+	if (enables.length > 0) {
+		parts.push(
+			`${enables.join(', ')} ${enables.length === 1 ? 'is' : 'are'} on`,
+		)
+	}
+	return parts.length > 0
+		? `${parts.join(' and ')}.`
+		: 'Nothing needed to change.'
+}
+
+/** Status line for one `enable[]` entry; null when its error says it all. */
+export function approvalEnableStatus(
+	entry: CredentialApprovalEnableView,
+	input: { approved: boolean; turnedOn: boolean },
+) {
+	const label = describeTrigger(entry.trigger)
+	if (input.turnedOn) return `${label} is on for you.`
+	if (entry.error) return null
+	return entry.willEnable && !input.approved
+		? `Approving turns on ${label} for you.`
+		: `${label} is already on for you.`
 }
 
 export function approvalSummary(view: CredentialApprovalView) {

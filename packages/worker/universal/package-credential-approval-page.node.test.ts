@@ -9,6 +9,8 @@ import {
 	approvalAfterLabel,
 	approvalBeforeLabel,
 	approvalChangeIsNoop,
+	approvalDoneCopy,
+	approvalEnableStatus,
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
@@ -39,6 +41,7 @@ function change(
 		needKey: 'github',
 		need: null,
 		before: null,
+		beforeUnusableIds: [],
 		after: [bot],
 		willEnable: false,
 		error: null,
@@ -221,6 +224,55 @@ test('mappings and enable[] combine without repeating a trigger', () => {
 	expect(approvalSummary(view([change({})], [enableEntry()]))).toBe(
 		'Approve 1 mapping and turn on Webhook “incoming”',
 	)
+})
+
+test('the approved line names what the reviewed view turned on', () => {
+	expect(approvalDoneCopy(view([], [enableEntry()]))).toBe(
+		'Webhook “incoming” is on.',
+	)
+	expect(
+		approvalDoneCopy(
+			view(
+				[
+					change({
+						target: { type: 'trigger', trigger: daily },
+						willEnable: true,
+					}),
+				],
+				[enableEntry()],
+			),
+		),
+	).toBe('1 mapping is saved and Schedule “daily”, Webhook “incoming” are on.')
+	expect(approvalDoneCopy(view([], [enableEntry({ willEnable: false })]))).toBe(
+		'Nothing needed to change.',
+	)
+})
+
+test('an enable entry reads on, turning on, already on, or only its error', () => {
+	const pending = { approved: false, turnedOn: false }
+	expect(approvalEnableStatus(enableEntry(), pending)).toBe(
+		'Approving turns on Webhook “incoming” for you.',
+	)
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), pending),
+	).toBe('Webhook “incoming” is already on for you.')
+	const failed = enableEntry({
+		willEnable: false,
+		error: { code: 'webhook_other_enabler', message: 'Someone else runs it.' },
+	})
+	expect(approvalEnableStatus(failed, pending)).toBeNull()
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), {
+			approved: true,
+			turnedOn: true,
+		}),
+	).toBe('Webhook “incoming” is on for you.')
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), {
+			approved: true,
+			turnedOn: false,
+		}),
+	).toBe('Webhook “incoming” is already on for you.')
 })
 
 test('enable errors are problems too', () => {
