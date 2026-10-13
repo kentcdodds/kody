@@ -29,6 +29,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	package_capability_approvals: keep(
 		'Internet-visible capability approvals are owner attestations. Rows for moved packages are deleted so the destination owner must re-approve; is_internet_visible is cleared on transfer.',
 	),
+	package_app_custom_hostnames: keep(
+		'App-level rows bind by package_id (unchanged on transfer), so the hostname follows the moved package. Org-level rows bind by org_id and stay with the source org. created_by_user_id is attribution only.',
+	),
 	user_repos: move('user_id re-pointed.'),
 	entity_sources: move(
 		'user_id re-pointed for sources of moved packages and repos.',
