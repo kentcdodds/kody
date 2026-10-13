@@ -132,11 +132,26 @@ export function approvalBeforeLabel(change: CredentialApprovalChangeView) {
 			? 'Inherits your default'
 			: 'Not set'
 	}
-	if (change.before.length === 0) return 'None on purpose'
-	return refsLabel(change.before)
+	if (change.before.length === 0) {
+		if (change.beforeUnusableIds.length > 0) {
+			return change.beforeUnusableIds.length === 1
+				? '1 stored credential you can no longer use'
+				: `${change.beforeUnusableIds.length} stored credentials you can no longer use`
+		}
+		return 'None on purpose'
+	}
+	const usable = refsLabel(change.before)
+	if (change.beforeUnusableIds.length === 0) return usable
+	const unusable =
+		change.beforeUnusableIds.length === 1
+			? '1 you can no longer use'
+			: `${change.beforeUnusableIds.length} you can no longer use`
+	return `${usable} (+ ${unusable})`
 }
 
 export function approvalAfterLabel(change: CredentialApprovalChangeView) {
+	// Failed resolves use `after: []`; do not call that "none on purpose".
+	if (change.error) return 'Not resolved'
 	if (change.after.length === 0)
 		return 'None on purpose (runs get no credential)'
 	return refsLabel(change.after)
@@ -144,6 +159,8 @@ export function approvalAfterLabel(change: CredentialApprovalChangeView) {
 
 export function approvalChangeIsNoop(change: CredentialApprovalChangeView) {
 	if (change.before === null) return false
+	// Stored unusable ids are rewritten on Approve even when usable refs match.
+	if (change.beforeUnusableIds.length > 0) return false
 	const before = change.before.map((ref) => ref.id).sort()
 	const after = change.after.map((ref) => ref.id).sort()
 	return (

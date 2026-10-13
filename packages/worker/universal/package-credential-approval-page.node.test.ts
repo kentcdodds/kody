@@ -109,15 +109,41 @@ test('before and after read inherit, none, and credentials', () => {
 		),
 	).toBe('Inherits your default')
 	expect(approvalBeforeLabel(change({ before: [] }))).toBe('None on purpose')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [], beforeUnusableIds: ['gone-1', 'gone-2'] }),
+		),
+	).toBe('2 stored credentials you can no longer use')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [bot], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe('acme-bot (+ 1 you can no longer use)')
 	expect(approvalBeforeLabel(change({ before: [bot, mine] }))).toBe(
 		'acme-bot, openai (yours)',
 	)
 	expect(approvalAfterLabel(change({ after: [] }))).toBe(
 		'None on purpose (runs get no credential)',
 	)
+	expect(
+		approvalAfterLabel(
+			change({
+				after: [],
+				error: {
+					code: 'credential_not_found',
+					message: 'No such credential.',
+				},
+			}),
+		),
+	).toBe('Not resolved')
 	expect(approvalChangeIsNoop(change({ before: [bot] }))).toBe(true)
 	expect(approvalChangeIsNoop(change({ before: null }))).toBe(false)
 	expect(approvalChangeIsNoop(change({ before: [mine] }))).toBe(false)
+	expect(
+		approvalChangeIsNoop(
+			change({ before: [], after: [], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe(false)
 })
 
 test('the approve button names the mappings and each trigger it turns on', () => {
