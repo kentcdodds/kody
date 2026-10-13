@@ -153,7 +153,7 @@ test('only added or reshaped needs count as a change', () => {
 			approvalUrl: 'https://kody.test/approve',
 		}),
 	).toBe(
-		'Package "@acme/mailer" changed its credential needs: MAIL (added: secret from "resend", multiple). This publish waits for approval, and the previously published version keeps running until then. The owner approves it at https://kody.test/approve.',
+		'Package "@acme/mailer" changed its credential needs: MAIL (added: secret, provider "resend", multiple). This publish waits for approval, and the previously published version keeps running until then. The owner approves it at https://kody.test/approve.',
 	)
 })
 
@@ -209,7 +209,7 @@ test('a needs change queues one pending approval per package; unchanged, removed
 			reason: 'credential_needs_changed',
 			reasonLabel: 'Credential needs changed',
 			pendingCommit: 'commit-newer',
-			changes: ['NEW (added: secret from "resend")'],
+			changes: ['NEW (added: secret, provider "resend")'],
 			approveAction: 'approve-credential-needs',
 		}),
 	])
@@ -270,6 +270,7 @@ test('approving publishes the paused commit past the pause; a moved base superse
 		expect.objectContaining({
 			newCommit: 'commit-new',
 			credentialNeedsApproved: true,
+			allowForce: true,
 		}),
 	)
 	expect(

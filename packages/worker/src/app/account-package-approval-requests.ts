@@ -136,6 +136,11 @@ export async function approveCredentialNeedsRequest(input: {
 		userId: input.ownerUserId,
 		newCommit: approval.pendingCommit,
 		credentialNeedsApproved: true,
+		// A packageSave with confirm_destructive_overwrite pauses a commit that
+		// replaced history, so it is not a fast-forward of the base. The base
+		// check above already proved nothing published since the pause.
+		allowForce: true,
+		destructiveOverwriteConfirmed: true,
 		baseUrl: getAppBaseUrl({ env: input.env, requestUrl: input.request.url }),
 		rebuildPackageArtifacts: true,
 	})
