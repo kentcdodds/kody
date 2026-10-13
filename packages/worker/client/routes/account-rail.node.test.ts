@@ -129,15 +129,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	).toEqual([
 		[null, ['/@jane/-/overview']],
 		['Build', ['/@jane/-/repositories', '/@jane/-/jobs', '/@jane/-/webhooks']],
-		[
-			'Credentials',
-			[
-				'/@jane/-/secrets',
-				'/@jane/-/integrations',
-				'/@jane/-/mcp-servers',
-				'/@jane/-/secret-providers',
-			],
-		],
+		['Credentials', ['/@jane/-/credentials', '/@jane/-/secret-providers']],
 		[
 			'Agents & data',
 			['/@jane/-/agents', '/@jane/-/memories', '/@jane/-/email'],
@@ -145,6 +137,22 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		['Activity', ['/@jane/-/activity']],
 		['Organization', ['/@jane/-/grants', '/@jane/-/billing']],
 	])
+	// The Key, OAuth, and MCP server editors still count as Credentials.
+	const credentials = items.find((item) => item.label === 'Credentials')
+	for (const path of [
+		'/@jane/-/credentials',
+		'/@jane/-/secrets/user/OPENAI_API_KEY',
+		'/@jane/-/integrations/github',
+		'/@jane/-/mcp-servers/new',
+	]) {
+		expect(credentials && isAccountNavItemActive(credentials, path), path).toBe(
+			true,
+		)
+	}
+	expect(
+		credentials &&
+			isAccountNavItemActive(credentials, '/@jane/-/secret-providers'),
+	).toBe(false)
 	const billing = items.find((item) => item.label === 'Billing')
 	expect(billing && isAccountNavItemActive(billing, '/@jane/-/billing')).toBe(
 		true,
@@ -198,9 +206,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Repositories',
 		'Jobs',
 		'Webhooks',
-		'Secrets',
-		'Integrations',
-		'MCP servers',
+		'Credentials',
 		'Secret providers',
 		'Agents',
 		'Memories',

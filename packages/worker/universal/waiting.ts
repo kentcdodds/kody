@@ -278,11 +278,11 @@ export function buildWaitingItems(
 		items.push({
 			id: 'secret-expired-more',
 			kind: 'secret-expired',
-			title: `${String(extraExpired)} more expired secrets`,
-			why: 'Open Secrets to paste new values. Do not put them in chat.',
+			title: `${String(extraExpired)} more expired keys`,
+			why: 'Open Credentials to paste new values. Do not put them in chat.',
 			who: 'you',
-			doLabel: 'Open Secrets',
-			href: '/account/secrets',
+			doLabel: 'Open Credentials',
+			href: '/account/credentials?kind=secret',
 			severity: 'degraded',
 		})
 	}
@@ -456,14 +456,14 @@ const waitingFirstUseCopy: Record<
 	integration: {
 		title: 'Connect your first integration',
 		why: 'An integration grant lets your agents call a connected third-party account.',
-		doLabel: 'Open Integrations',
-		href: '/account/integrations',
+		doLabel: 'Connect an account',
+		href: '/connect/credential?kind=oauth',
 	},
 	secret: {
-		title: 'Add your first secret',
-		why: 'User-scope secrets stay out of chat. Add one so your agents can use credentials safely.',
-		doLabel: 'Open Secrets',
-		href: '/account/secrets',
+		title: 'Add your first credential',
+		why: 'Credentials stay out of chat. Add one so your agents can reach your services safely.',
+		doLabel: 'Add a credential',
+		href: '/connect/credential',
 	},
 	discord: {
 		title: 'Join the Kody Discord',

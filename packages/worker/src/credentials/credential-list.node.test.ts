@@ -19,9 +19,9 @@ import { type CredentialListItem } from '#universal/credential-contracts.ts'
 import { findCredentialIdsByLegacyName } from './credential-ids.ts'
 import {
 	filterCredentialList,
-	listCredentialsForViewer,
 	readCredentialListFilters,
-} from './credential-list.ts'
+} from '#universal/credentials-list.ts'
+import { listCredentialsForViewer } from './credential-list.ts'
 import { grantPersonalCredentialToOrg } from './personal-credentials.ts'
 
 const now = '2026-10-13T00:00:00.000Z'

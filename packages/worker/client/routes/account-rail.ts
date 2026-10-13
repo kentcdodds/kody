@@ -349,23 +349,24 @@ function agentsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	}
 }
 
-function mcpServersRailItem(
+/**
+ * One home for every credential kind. The Key, OAuth, and MCP server editors
+ * still live on their own pages, so those count as Credentials too.
+ */
+function credentialsRailItem(
 	orgSlug: string | null | undefined,
 ): AccountRailItem {
 	return {
-		href: orgSectionHref(orgSlug, 'mcp-servers'),
-		label: 'MCP servers',
-		icon: 'server',
-		description: 'Remote MCP servers whose tools Kody can call.',
-	}
-}
-
-function secretsRailItem(orgSlug: string | null | undefined): AccountRailItem {
-	return {
-		href: orgSectionHref(orgSlug, 'secrets'),
-		label: 'Secrets',
+		href: orgSectionHref(orgSlug, 'credentials'),
+		label: 'Credentials',
 		icon: 'key',
-		description: 'API keys and tokens your packages use.',
+		alsoActiveFor: orgSlug
+			? (['secrets', 'integrations', 'mcp-servers'] as const).map((section) =>
+					orgResourcePath(orgSlug, section),
+				)
+			: [],
+		description:
+			'Keys, OAuth connections, MCP servers, and vaults Kody uses for you.',
 	}
 }
 
@@ -453,14 +454,7 @@ function workspaceResourceGroups(
 		{
 			label: 'Credentials',
 			items: [
-				secretsRailItem(orgSlug),
-				{
-					href: orgSectionHref(orgSlug, 'integrations'),
-					label: 'Integrations',
-					icon: 'plug',
-					description: 'Services you connect so Kody can use them.',
-				},
-				mcpServersRailItem(orgSlug),
+				credentialsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',

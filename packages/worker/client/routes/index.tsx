@@ -26,6 +26,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	orgAccountClientLoaders,
 	orgAccountClientRoutes,
+	withCredentialRedirectLoader,
 } from './org-account-routes.tsx'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
@@ -173,6 +174,22 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		communityArea,
 		(m) => m.communityDetailRouteLoader,
 	),
+	[routePattern(routes.communityPackageCredentials)]: lazyRouteLoader(
+		communityArea,
+		(m) => m.packageCredentialsRouteLoader,
+	),
+	[routePattern(routes.communityPackageMappings)]: lazyRouteLoader(
+		communityArea,
+		(m) => m.packageCredentialsRouteLoader,
+	),
+	[routePattern(routes.communityPackageTriggers)]: lazyRouteLoader(
+		communityArea,
+		(m) => m.packageCredentialsRouteLoader,
+	),
+	[routePattern(routes.communityPackageApproveCredentials)]: lazyRouteLoader(
+		communityArea,
+		(m) => m.packageCredentialApprovalRouteLoader,
+	),
 	[routePattern(routes.communityDetailFiles)]: lazyRouteLoader(
 		packageFilesArea,
 		(m) => m.packageFilesRouteLoader,
@@ -238,9 +255,12 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.connectSecretsRouteLoader,
 	),
-	[routePattern(routes.connectSecretSet)]: lazyRouteLoader(
+	[routePattern(routes.connectCredential)]: lazyRouteLoader(
 		onboardingArea,
-		(m) => m.connectSecretSetRouteLoader,
+		(m) => m.connectCredentialRedirectLoader,
+	),
+	[routePattern(routes.connectSecretSet)]: withCredentialRedirectLoader(
+		lazyRouteLoader(onboardingArea, (m) => m.connectSecretSetRouteLoader),
 	),
 	[routePattern(routes.connectWebhookApply)]: lazyRouteLoader(
 		onboardingArea,
@@ -375,6 +395,18 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.communityPackageSettings)]: (
 		<LazyCommunityRoute render={(m) => <m.PackageSettingsRoute />} />
+	),
+	[routePattern(routes.communityPackageCredentials)]: (
+		<LazyCommunityRoute render={(m) => <m.PackageCredentialsRoute />} />
+	),
+	[routePattern(routes.communityPackageMappings)]: (
+		<LazyCommunityRoute render={(m) => <m.PackageCredentialsRoute />} />
+	),
+	[routePattern(routes.communityPackageTriggers)]: (
+		<LazyCommunityRoute render={(m) => <m.PackageCredentialsRoute />} />
+	),
+	[routePattern(routes.communityPackageApproveCredentials)]: (
+		<LazyCommunityRoute render={(m) => <m.PackageCredentialApprovalRoute />} />
 	),
 	[routePattern(routes.communityDetailFiles)]: (
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
@@ -545,6 +577,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.connectSecrets)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectSecretsRoute />} />
+	),
+	[routePattern(routes.connectCredential)]: (
+		<LazyOnboardingRoute render={(m) => <m.ConnectCredentialRoute />} />
 	),
 	[routePattern(routes.connectSecretSet)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectSecretSetRoute />} />

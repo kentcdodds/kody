@@ -105,7 +105,7 @@ test('credentialMappingPropose reports what to fix and refuses package code and 
 	expect(fixable.view.canApprove).toBe(false)
 	expect(fixable.view.changes[0]!.error).toMatchObject({
 		code: 'credential_not_found',
-		createUrl: expect.stringContaining('/connect/credential?'),
+		createUrl: expect.stringContaining('/@acme-clients/-/credentials/new?'),
 	})
 	expect(fixable.message).toContain('cannot be approved yet')
 

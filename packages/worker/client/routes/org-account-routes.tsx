@@ -4,9 +4,22 @@ import {
 	accountArea,
 	lazyRouteLoader,
 } from '#client/lazy-route.tsx'
+import { routeLoaderRedirect } from '#client/route-loader.ts'
+import { credentialRedirectFor } from '#universal/credential-redirects.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { profileRouteLoader } from './profile.tsx'
+
+/**
+ * The old Secrets, Integrations, and MCP servers index pages open Credentials,
+ * and the legacy `/connect/secret-set` intake opens the Key form.
+ */
+export function withCredentialRedirectLoader(loader: RouteLoader): RouteLoader {
+	return async (url, signal) => {
+		const location = credentialRedirectFor(url)
+		return location ? routeLoaderRedirect(location) : loader(url, signal)
+	}
+}
 
 export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.orgActivity)]: lazyRouteLoader(
@@ -25,21 +38,33 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountConnectionsRouteLoader,
 	),
+	[routePattern(routes.orgCredentials)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.accountCredentialsRouteLoader,
+	),
+	[routePattern(routes.orgCredentialNew)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.connectCredentialRouteLoader,
+	),
 	[routePattern(routes.orgEmail)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountEmailRouteLoader,
 	),
-	[routePattern(routes.orgIntegrations)]: lazyRouteLoader(
-		accountArea,
-		(module) => module.accountIntegrationsRouteLoader,
+	[routePattern(routes.orgIntegrations)]: withCredentialRedirectLoader(
+		lazyRouteLoader(
+			accountArea,
+			(module) => module.accountIntegrationsRouteLoader,
+		),
 	),
 	[routePattern(routes.orgJobs)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountJobsRouteLoader,
 	),
-	[routePattern(routes.orgMcpServers)]: lazyRouteLoader(
-		accountArea,
-		(module) => module.accountMcpServersRouteLoader,
+	[routePattern(routes.orgMcpServers)]: withCredentialRedirectLoader(
+		lazyRouteLoader(
+			accountArea,
+			(module) => module.accountMcpServersRouteLoader,
+		),
 	),
 	[routePattern(routes.orgMcpServerAuthorize)]: lazyRouteLoader(
 		accountArea,
@@ -58,9 +83,8 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountSecretProvidersRouteLoader,
 	),
-	[routePattern(routes.orgSecrets)]: lazyRouteLoader(
-		accountArea,
-		(module) => module.accountSecretsRouteLoader,
+	[routePattern(routes.orgSecrets)]: withCredentialRedirectLoader(
+		lazyRouteLoader(accountArea, (module) => module.accountSecretsRouteLoader),
 	),
 	[routePattern(routes.orgValues)]: lazyRouteLoader(
 		accountArea,
@@ -122,6 +146,12 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgAgents)]: (
 		<LazyAccountRoute render={(module) => <module.AccountConnectionsRoute />} />
+	),
+	[routePattern(routes.orgCredentials)]: (
+		<LazyAccountRoute render={(module) => <module.AccountCredentialsRoute />} />
+	),
+	[routePattern(routes.orgCredentialNew)]: (
+		<LazyAccountRoute render={(module) => <module.ConnectCredentialRoute />} />
 	),
 	[routePattern(routes.orgEmail)]: (
 		<LazyAccountRoute render={(module) => <module.AccountEmailRoute />} />

@@ -1,4 +1,5 @@
 import { createRouter } from 'remix/router'
+import { withCredentialIndexRedirect } from '#app/handlers/credential-index-redirect.ts'
 import {
 	createAdminHandler,
 	createAdminUsersApiHandler,
@@ -61,6 +62,7 @@ import { createAccountActivityApiHandler } from '#app/handlers/account-activity.
 import { createAccountJobsApiHandler } from '#app/handlers/account-jobs.ts'
 import { createAccountWorkflowsApiHandler } from '#app/handlers/account-workflows.ts'
 import { createAccountWebhooksApiHandler } from '#app/handlers/account-webhooks.ts'
+import { createAccountCredentialsApiHandler } from '#app/handlers/account-credentials.ts'
 import {
 	createAccountMcpServersApiHandler,
 	createAccountMcpServersOauthCallbackHandler,
@@ -148,7 +150,6 @@ import { createPackageCredentialsApiHandler } from '#app/handlers/package-creden
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
-import { createAccountCredentialsApiHandler } from '#app/handlers/account-credentials.ts'
 import { createAccountSecretsApiHandler } from '#app/handlers/account-secrets.ts'
 import { createAccountSecretProvidersApiHandler } from '#app/handlers/account-secret-providers.ts'
 import { createAccountValuesApiHandler } from '#app/handlers/account-values.ts'
@@ -175,6 +176,8 @@ import {
 	createCommunityPackageApiHandler,
 	createCommunityPackageHandler,
 	createCommunityPackageSettingsHandler,
+	createCommunityPackageCredentialsHandler,
+	createCommunityPackageCredentialApprovalHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
@@ -308,6 +311,7 @@ import {
 	createLegacyOrgPackagesRedirectHandler,
 } from '#app/handlers/legacy-org-packages-redirect.ts'
 import {
+	createOrgCredentialNewHandler,
 	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
@@ -618,6 +622,20 @@ export function createAppRouter(env: Env) {
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageSettings: createCommunityPackageSettingsHandler(env),
+			communityPackageCredentials: createCommunityPackageCredentialsHandler(
+				env,
+				'credentials',
+			),
+			communityPackageMappings: createCommunityPackageCredentialsHandler(
+				env,
+				'mappings',
+			),
+			communityPackageTriggers: createCommunityPackageCredentialsHandler(
+				env,
+				'triggers',
+			),
+			communityPackageApproveCredentials:
+				createCommunityPackageCredentialApprovalHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageRaw: createCommunityPackageRawHandler(env),
@@ -642,10 +660,16 @@ export function createAppRouter(env: Env) {
 			orgBillingSuccess: createOrgBillingSuccessHandler(env),
 			orgBillingPortal: createOrgBillingPortalHandler(env),
 			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
+			orgCredentials: createOrgSectionHandler(env, 'credentials'),
+			orgCredentialNew: createOrgCredentialNewHandler(env),
 			orgEmail: createOrgSectionHandler(env, 'email'),
-			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
+			orgIntegrations: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'integrations'),
+			),
 			orgJobs: createOrgSectionHandler(env, 'jobs'),
-			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
+			orgMcpServers: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'mcp-servers'),
+			),
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
@@ -655,7 +679,9 @@ export function createAppRouter(env: Env) {
 			orgPackages: createLegacyOrgPackagesRedirectHandler(env),
 			orgPackagesApi: createLegacyOrgPackagesApiRedirectHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
-			orgSecrets: createOrgSectionHandler(env, 'secrets'),
+			orgSecrets: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'secrets'),
+			),
 			orgValues: createOrgSectionHandler(env, 'values'),
 			orgWaiting: createOrgSectionHandler(env, 'waiting'),
 			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
@@ -694,7 +720,9 @@ export function createAppRouter(env: Env) {
 			stripeWebhook: createStripeWebhookHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			connectSecrets: createConnectSecretsHandler(env),
-			connectSecretSet: createConnectSecretSetHandler(env),
+			connectSecretSet: withCredentialIndexRedirect(
+				createConnectSecretSetHandler(env),
+			),
 			connectCredential: createConnectCredentialHandler(env),
 			connectWebhookApply: createConnectWebhookApplyHandler(env),
 			auth: createAuthHandler(env),

@@ -283,7 +283,9 @@ export const executeCapability = defineDomainCapability(
 					conversationId,
 					...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 					error: getErrorMessage(cause),
-					errorDetails: getExecutionErrorDetails(cause),
+					errorDetails: getExecutionErrorDetails(cause, {
+						orgSlug: callerContext.request?.org.slug,
+					}),
 					...entitlementStructuredContent(cause),
 					logs: [],
 				}
@@ -304,7 +306,9 @@ export const executeCapability = defineDomainCapability(
 					conversationId,
 					...(runId ? { runId } : {}),
 					error: getErrorMessage(result.error),
-					errorDetails: getExecutionErrorDetails(result.error),
+					errorDetails: getExecutionErrorDetails(result.error, {
+						orgSlug: callerContext.request?.org.slug,
+					}),
 					...entitlementStructuredContent(result.error),
 					logs,
 					...(serverTiming ? { serverTiming } : {}),

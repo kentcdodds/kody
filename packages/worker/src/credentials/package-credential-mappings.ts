@@ -313,6 +313,7 @@ export async function needCreateUrls(scope: PackageMappingScope) {
 					await buildNeedCreateUrl({
 						db: scope.env.APP_DB,
 						baseUrl: scope.baseUrl,
+						orgSlug: scope.request.org.slug,
 						key: need.key,
 						provider: need.provider,
 						need,

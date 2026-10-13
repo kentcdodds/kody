@@ -144,35 +144,24 @@ Agents hand people this link the way they hand out `/connect/secret-set` and
 `/connect/oauth` today. Runtime errors build it (see
 [Runtime errors](#runtime-errors)).
 
-| Param                | Meaning                                                                                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`               | One of `credentialKinds`. Absent: the chooser starts on `secret`.                                                                                                                                                      |
-| `kindMode`           | `hint` (default): `kind` is preselected and the kind chooser is shown. `required`: the kind is locked and no chooser is shown. Ignored without `kind`.                                                                 |
-| `name`               | Prefilled credential name.                                                                                                                                                                                             |
-| `provider`           | Prefilled provider slug (`^[a-z0-9-]+$`).                                                                                                                                                                              |
-| `description`        | Prefilled description.                                                                                                                                                                                                 |
-| `allowedHosts`       | Prefilled hosts, comma separated or repeated (same as `/connect/secret-set`).                                                                                                                                          |
-| `forPackage`, `need` | The package (kody id) and need key this credential is for. After saving, the page offers the approval link that maps it as the default. (`package` is taken: `/connect/secret-set` reads it as an allowed package id.) |
-| anything else        | Passed through unchanged to the reused form: `/connect/secret-set` params (`scope`, `packageId`, `expiresAt`, `allowedPackages`) or `/connect/oauth` params (`authorizeUrl`, `tokenUrl`, `scopes`, `flow`, ...).       |
+| Param                | Meaning                                                                                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`               | One of `credentialKinds`. Absent: the chooser starts on `secret`.                                                                                                                                                                                    |
+| `kindMode`           | `hint` (default): `kind` is preselected and the kind chooser is shown. `required`: the kind is locked and no chooser is shown. Ignored without `kind`.                                                                                               |
+| `name`               | Prefilled credential name.                                                                                                                                                                                                                           |
+| `provider`           | Prefilled provider slug (`^[a-z0-9-]+$`).                                                                                                                                                                                                            |
+| `description`        | Prefilled description.                                                                                                                                                                                                                               |
+| `allowedHosts`       | Prefilled hosts, comma separated or repeated (same as `/connect/secret-set`).                                                                                                                                                                        |
+| `forPackage`, `need` | The package (kody id) and need key this credential is for. After saving, the page offers the approval link that maps it as the default. (`package` is taken: `/connect/secret-set` reads it as an allowed package id.)                               |
+| `loginExchange`      | For `kind=login`: the `login_exchange` JSON (`url`, `bodyFormat`, `body`, `tokenPath`, ...) the need expects. The page asks only for the login fields its `body` names (`{email}`, `{password}`, ...). Without it, the person fills in the exchange. |
+| anything else        | Passed through unchanged to the reused form: `/connect/secret-set` params (`scope`, `packageId`, `expiresAt`, `allowedPackages`) or `/connect/oauth` params (`authorizeUrl`, `tokenUrl`, `scopes`, `flow`, ...).                                     |
 
-The page body reuses the existing secret-intake form for `secret`, `url`,
-`login`, and `signing`, the OAuth connect form for `oauth`, and the MCP server
-add form for `mcp`.
-
-Until the one-pager ships, the server answers `/connect/credential` with a 302
-to the existing page for the kind, carrying the same query:
-
-- `secret` or no kind: `/connect/secret-set`. Saving there also stores
-  `provider` from the link, so the new Key auto-resolves for the need.
-- `oauth`: `/connect/oauth`. When a built-in OAuth app exists for the provider,
-  runtime links add `platform=<slug>` so that page opens the built-in app.
-- `mcp`: `/@<org>/-/mcp-servers`.
-- `url`, `login`, `signing`: the existing forms cannot create these kinds, so
-  the redirect goes to `/@<org>/-/secrets` without a prefilled form. Runtime
-  errors for these kinds also tell the agent to create the credential with
-  `secretSet` and that `kind`.
-
-Links built today keep working when the one-pager replaces the redirect.
+The page saves `secret`, `url`, `login`, and `signing` in place through the
+website save (`POST /account/secrets.json`, `action: "save"`), which accepts
+`kind`, `hosts`, and `loginExchange` and validates them exactly as `secretSet`
+does. The person types the value, so no agent ever holds it. `oauth` hands off
+to `/connect/oauth` with the same query, and `mcp` to
+`/@<org>/-/mcp-servers/new`.
 
 Codecs: `buildCredentialCreateHref(input)` and
 `parseCredentialCreateQuery(url)`.
@@ -528,9 +517,6 @@ export type CredentialClientErrorBody = {
   (`oauth` when a platform OAuth app exists for the provider, plus
   `platform=<slug>`; else `secret`). `provider`, `name` (the need key),
   `description`, `forPackage`, and `need` are prefilled.
-- For a need that declares `url`, `login`, or `signing`, the message also says
-  to create it with `secretSet` and that `kind`, since the website cannot create
-  those kinds until the one-pager ships.
 - `credential_not_found` for `credential.named(name)` links with `name`
   prefilled and no kind.
 - A missing `{{secret:NAME}}` placeholder in a run keeps its `secret_required`
@@ -581,7 +567,8 @@ Each step is a small PR stacked on the previous one:
 
 1. This contract and the ADR amendment.
 2. `universal/credential-contracts.ts`: types and URL codecs, with tests.
-3. Runtime errors carry `createUrl`; `/connect/credential` interim redirect.
+3. Runtime errors carry `createUrl`; `/connect/credential` interim redirect
+   (replaced by the creation one-pager).
 4. Credentials list API and `credentialList` (MCP servers included).
 5. Mapping storage (additive migration) and resolution in `credential()`.
 6. Package credentials API.

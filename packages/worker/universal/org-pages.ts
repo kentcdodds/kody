@@ -9,6 +9,7 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 const orgOwnedAccountSections = [
 	'activity',
 	'agents',
+	'credentials',
 	'email',
 	'integrations',
 	'jobs',

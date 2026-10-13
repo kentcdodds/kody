@@ -216,6 +216,9 @@ export const routes = route({
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
+	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
+	// The credential creation one-pager for this org.
+	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),
 	orgEmail: get('/@:orgSlug/-/email(/*rest)'),
 	orgIntegrations: get('/@:orgSlug/-/integrations(/*rest)'),
 	orgJobs: get('/@:orgSlug/-/jobs(/*rest)'),
@@ -285,6 +288,14 @@ export const routes = route({
 	// public). Third-segment noun so it cannot collide with a kodyId.
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
+	// Package Credentials / Default mappings / Triggers tabs (people with
+	// package:execute); data comes from communityPackageCredentialsApi.
+	communityPackageCredentials: '/@:username/:kodyId/credentials',
+	communityPackageMappings: '/@:username/:kodyId/mappings',
+	communityPackageTriggers: '/@:username/:kodyId/triggers',
+	// Bundled credential mapping approval; the query is the proposal
+	// (buildCredentialApprovalHref). Data: communityPackageApproveCredentialsApi.
+	communityPackageApproveCredentials: '/@:username/:kodyId/approve-credentials',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	communityPackageApproveCapabilities:
 		'/@:username/:kodyId/approve-capabilities',

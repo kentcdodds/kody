@@ -18,7 +18,12 @@ import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import {
+	type PackageCredentialsTab,
+	packageCredentialsTabLabel,
+} from '#universal/package-credentials-page.ts'
 import { type routes } from '#universal/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
@@ -687,6 +692,89 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageSettings>
+}
+
+/**
+ * The package Credentials, Default mappings, and Triggers tabs. The page
+ * renders without loader data so a package whose source cannot load still
+ * shows its chrome; the client fetches the credentials view and reports
+ * failures in place.
+ */
+export function createCommunityPackageCredentialsHandler(
+	env: Env,
+	tab: PackageCredentialsTab,
+) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: `${page.to}/${tab}`,
+					url: new URL(request.url),
+					cache: page.shared ? 'public' : 'private',
+				})
+			}
+			if (page.kind === 'not_found') {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			if (page.kind === 'unauthorized') {
+				return renderPackageUnauthorizedPage({ request, env })
+			}
+			if (!page.viewerIsOwner || !page.hasPackage || !page.ownerPackage) {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			return renderAppPage({
+				request,
+				env,
+				title: `${page.ownerPackage.name} ${packageCredentialsTabLabel(tab).toLowerCase()}`,
+			})
+		},
+	} satisfies Action<typeof routes.communityPackageCredentials>
+}
+
+/**
+ * The bundled credential approval page. It needs a session (login comes back
+ * here with the proposal), and the page follows a moved package with its
+ * query. The client resolves the proposal through the approval API, which
+ * answers not found to anyone without `package:execute`.
+ */
+export function createCommunityPackageCredentialApprovalHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) return user
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: `${page.to}/approve-credentials`,
+					url: new URL(request.url),
+					cache: 'private',
+				})
+			}
+			// Execute-only members cannot open the package page, so read access
+			// is not required here; the approval API checks execute.
+			if (page.kind === 'page' && !page.hasPackage) {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			return renderAppPage({
+				request,
+				env,
+				title: 'Approve credential mappings',
+			})
+		},
+	} satisfies Action<typeof routes.communityPackageApproveCredentials>
 }
 
 /**

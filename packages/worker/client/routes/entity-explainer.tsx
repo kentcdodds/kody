@@ -99,6 +99,18 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
+		id: 'credentials',
+		question: 'What is a credential?',
+		match: accountSection('/account/credentials'),
+		paragraphs: [
+			'A credential is anything Kody uses to reach a service for you: a key (an API key or token), an OAuth connection, an MCP server, a login, a URL secret, a signing key, or a vault. Agents and packages name the credential; Kody places its value at the network boundary and never returns it.',
+		],
+		learnMore: [
+			{ href: docHref('secrets'), label: 'Secrets' },
+			packagesIntegrationsMcpGuide,
+		],
+	},
+	{
 		id: 'secrets',
 		question: 'What is a secret?',
 		match: accountSection('/account/secrets'),

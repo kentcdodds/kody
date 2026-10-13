@@ -687,20 +687,20 @@ export function ConnectSecretSetRoute(handle: Handle) {
 							</div>
 						</div>
 						<a
-							href={'/account/secrets'}
+							href={'/account/credentials'}
 							mix={css(secondaryButtonCss)}
 							data-testid="connect-secret-set-back"
 						>
-							Back to secrets
+							Back to credentials
 						</a>
 					</section>
 				) : view.showBackToSecrets ? (
 					<a
-						href={'/account/secrets'}
+						href={'/account/credentials'}
 						mix={css(secondaryButtonCss)}
 						data-testid="connect-secret-set-back"
 					>
-						Back to secrets
+						Back to credentials
 					</a>
 				) : null}
 			</section>

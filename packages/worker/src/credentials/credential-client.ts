@@ -131,11 +131,12 @@ function refusal(
 
 /**
  * The structured error for a failure from the door, else null. With a
- * `baseUrl`, a not-found error from the door carries a creation link.
+ * `baseUrl`, a not-found error from the door carries a creation link for
+ * `orgSlug`'s org.
  */
 export function toCredentialClientError(
 	error: unknown,
-	options: { baseUrl?: string } = {},
+	options: { baseUrl?: string; orgSlug?: string | null } = {},
 ) {
 	if (error instanceof CredentialClientError) return error
 	if (error instanceof CredentialRequestRefusedError) {
@@ -146,7 +147,11 @@ export function toCredentialClientError(
 			'credential_not_found',
 			error.message,
 			options.baseUrl
-				? { createUrl: buildCredentialCreateUrl(options.baseUrl, {}) }
+				? {
+						createUrl: buildCredentialCreateUrl(options.baseUrl, {
+							orgSlug: options.orgSlug,
+						}),
+					}
 				: {},
 		)
 	}
@@ -302,6 +307,7 @@ async function createUrlForNeed(
 	return buildNeedCreateUrl({
 		db: ctx.env.APP_DB,
 		baseUrl: ctx.callerContext.baseUrl,
+		orgSlug: requireActorRequest(ctx).org.slug,
 		key: input.key,
 		provider: input.provider,
 		need: input.need,
@@ -360,34 +366,11 @@ async function assertNamedAllowed(ctx: CredentialClientContext) {
 	}
 }
 
-/**
- * No page creates these kinds yet, so the creation link lands on the
- * Secrets list; the agent can create one with secretSet instead.
- */
-function secretSetHint(kind: PackageCredentialKind | null, provider: string) {
-	switch (kind) {
-		case 'url':
-		case 'login':
-		case 'signing':
-			return `To create it, call secretSet with kind "${kind}" and provider "${provider}".`
-		case 'secret':
-		case 'oauth':
-		case 'mcp':
-		case null:
-			return null
-		default: {
-			const exhaustive: never = kind
-			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
-		}
-	}
-}
-
 function pickOne(input: {
 	key: string | null
 	candidates: Array<UsableCredential>
 	possibleMatches: Array<UsableCredential>
 	describe: string
-	hint?: string | null
 	/** Set when there are no candidates: the unbound error's creation link. */
 	createUrl?: string
 }) {
@@ -400,7 +383,7 @@ function pickOne(input: {
 				input.possibleMatches.length > 0
 					? ' Some matching credentials have no provider; pick one by name, or set its provider with credentialUpdate so it resolves on its own.'
 					: ''
-			}${input.hint ? ` ${input.hint}` : ''}`,
+			}`,
 			{
 				retryWith: input.possibleMatches.map((match) =>
 					retryFor(input.key, match),
@@ -555,10 +538,12 @@ function pickExplicit(input: {
 	usable: ReadonlyArray<UsableCredential>
 	target: NeedTarget
 	baseUrl: string
+	orgSlug: string | null
 }): Picked {
 	const { kind, provider, match } = input.target
 	const credential = findByName(input.usable, input.pick, input.key, {
 		baseUrl: input.baseUrl,
+		orgSlug: input.orgSlug,
 		...(match === 'exact' && kind
 			? { kind, kindMode: 'required' as const }
 			: {}),
@@ -636,7 +621,6 @@ async function resolveKey(
 			candidates,
 			possibleMatches,
 			describe: target.describe,
-			hint: secretSetHint(target.kind, target.provider),
 			createUrl,
 		})
 		return [{ credential, hint: null }]
@@ -662,6 +646,7 @@ async function resolveKey(
 			usable,
 			target,
 			baseUrl: ctx.callerContext.baseUrl,
+			orgSlug: requireActorRequest(ctx).org.slug,
 		})
 		picked.set(one.credential.id, one)
 	}
@@ -729,6 +714,7 @@ export async function openCredentialClient(
 		return await issueClient(ctx, null, {
 			credential: findByName(usable, pick, null, {
 				baseUrl: ctx.callerContext.baseUrl,
+				orgSlug: request.org.slug,
 			}),
 			hint: null,
 		})
@@ -790,7 +776,7 @@ export async function validateCredentialCallMap(input: {
 	/** Origin for creation links on a pick with no match. */
 	baseUrl: string
 }): Promise<{ warnings: Array<string> }> {
-	return await withClientErrors(input.baseUrl, async () => {
+	return await withClientErrors(input, async () => {
 		const request = input.request
 		if (!request?.actor) {
 			throw refusal(
@@ -825,7 +811,14 @@ export async function validateCredentialCallMap(input: {
 			}
 			const target = needTarget(key, need)
 			for (const pick of picks) {
-				pickExplicit({ key, pick, usable, target, baseUrl: input.baseUrl })
+				pickExplicit({
+					key,
+					pick,
+					usable,
+					target,
+					baseUrl: input.baseUrl,
+					orgSlug: request.org.slug,
+				})
 			}
 		}
 		return { warnings }
@@ -869,13 +862,21 @@ function doorInput<T extends CredentialTarget>(
 }
 
 async function withClientErrors<T>(
-	baseUrl: string | undefined,
+	link: {
+		baseUrl: string | undefined
+		request: RequestContext | null | undefined
+	},
 	run: () => Promise<T>,
 ) {
 	try {
 		return await run()
 	} catch (error) {
-		throw toCredentialClientError(error, { baseUrl }) ?? error
+		throw (
+			toCredentialClientError(error, {
+				baseUrl: link.baseUrl,
+				orgSlug: link.request?.org.slug,
+			}) ?? error
+		)
 	}
 }
 
@@ -883,7 +884,7 @@ export async function signWithCredentialClient(
 	ctx: CredentialClientContext,
 	input: { handle?: unknown; host?: unknown; operation?: unknown },
 ) {
-	return await withClientErrors(ctx.callerContext.baseUrl, async () => {
+	return await withClientErrors(ctx.callerContext, async () => {
 		const handle = await readHandle(ctx, input.handle, ['signing'], 'sign()')
 		const host = readText(input.host, 'sign() host')
 		const operation = input.operation as SigningOperation | undefined
@@ -912,7 +913,7 @@ export async function callToolWithCredentialClient(
 	ctx: CredentialClientContext,
 	input: { handle?: unknown; tool?: unknown; args?: unknown },
 ): Promise<CallToolResult> {
-	return await withClientErrors(ctx.callerContext.baseUrl, async () => {
+	return await withClientErrors(ctx.callerContext, async () => {
 		const handle = await readHandle(ctx, input.handle, ['mcp'], 'callTool()')
 		const toolName = readText(input.tool, 'callTool() tool name')
 		const args =
@@ -942,7 +943,7 @@ export async function refreshCredentialClient(
 	ctx: CredentialClientContext,
 	input: { handle?: unknown },
 ) {
-	return await withClientErrors(ctx.callerContext.baseUrl, async () => {
+	return await withClientErrors(ctx.callerContext, async () => {
 		const handle = await readHandle(ctx, input.handle, ['oauth'], 'refresh')
 		return await resolveCredential(
 			doorInput(ctx, {
@@ -992,7 +993,7 @@ export async function applyCredentialClient(input: {
 	token: string
 	requestUrl: URL
 }): Promise<AppliedCredentialClient> {
-	return await withClientErrors(input.baseUrl, async () => {
+	return await withClientErrors(input, async () => {
 		const handle = await verifyCredentialClientHandle({
 			env: input.env,
 			token: input.token,
