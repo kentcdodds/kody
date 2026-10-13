@@ -57,6 +57,7 @@ import { adminReservedUsernameRemoveCapability } from './admin-reserved-username
 import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-account-purge-run.ts'
 import { adminSoftDeletePurgeRunCapability } from './admin-soft-delete-purge-run.ts'
 import { adminPublishedImportableArtifactBackfillCapability } from './admin-published-importable-artifact-backfill.ts'
+import { adminPublishedSourceSnapshotBackfillCapability } from './admin-published-source-snapshot-backfill.ts'
 import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
 import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
 
@@ -99,7 +100,9 @@ export const adminDomain = defineDomain({
 		'unverified account purge',
 		'soft delete purge',
 		'published importable artifact backfill',
+		'published source snapshot backfill',
 		'missing artifacts',
+		'missing snapshot',
 		'reserved username',
 		'handle',
 		'org slug',
@@ -145,6 +148,7 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodRevertCapability,
 		adminPackageCodemodOwnerNoticeCapability,
 		adminPublishedImportableArtifactBackfillCapability,
+		adminPublishedSourceSnapshotBackfillCapability,
 		adminCredentialInventoryScanCapability,
 		adminCredentialBackfillCapability,
 		adminAuditLogQueryCapability,

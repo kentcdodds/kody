@@ -153,7 +153,17 @@ export async function finalizePublishedEntitySource(
 				sourceRoot: input.source.source_root,
 				externalCheckUntil: input.source.external_check_until,
 			})
-			if (wrotePublishedSnapshot) {
+			// Same-commit finalize (no-op publish, promote, published-only
+			// sync with a clean tree) overwrites the live snapshot key. If
+			// projection then fails, deleting that key would leave
+			// published_commit pointing at a commit with no KV snapshot —
+			// permanent in production where the artifact-API fallback is
+			// off (#3497 / KODY-97). Keep the rewritten snapshot when the
+			// commit did not move; D1 still pins that commit.
+			if (
+				wrotePublishedSnapshot &&
+				previousPublishedCommit !== input.publishedCommit
+			) {
 				await deletePublishedSourceSnapshot({
 					env: input.env,
 					sourceId: input.source.id,

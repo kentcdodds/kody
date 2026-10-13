@@ -143,6 +143,24 @@ export async function persistForkedArtifactRepoContents(input: {
 					targetKodyId: input.targetKodyId,
 				})
 	if (Object.keys(filesToSync).length === 0) {
+		// No rewrite diff means dest HEAD already has the forked tree, but
+		// published_commit must still have a matching KV snapshot. Writing
+		// the tip without a snapshot leaves package loads permanently broken
+		// in production (#3497).
+		const files =
+			(await readArtifactTreeAtCommit({
+				env: input.env,
+				repoId: input.source.repo_id,
+				commit: destHead.commit,
+			})) ?? input.files
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: destHead.commit,
+			},
+			files,
+		})
 		const marked = await updateEntitySource(input.env.APP_DB, {
 			id: input.source.id,
 			userId: input.source.user_id,

@@ -1,13 +1,17 @@
-import { getEntitySourceById } from './entity-sources.ts'
-import { readArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import {
 	loadPublishedSourceManifestSnapshot,
 	loadPublishedSourceSnapshot,
 	persistPublishedSourceManifestSnapshot,
 	persistPublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
+import { readArtifactTreeAtCommit } from './artifact-file.ts'
+import { readArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
+import { getEntitySourceById } from './entity-sources.ts'
 
 export type PublishedEntitySource = {
 	source: Awaited<ReturnType<typeof getEntitySourceById>>
@@ -35,22 +39,70 @@ function assertPublishedCommit(
 	return source.published_commit
 }
 
+async function describeMissingPublishedSnapshot(input: {
+	env: Env
+	source: NonNullable<PublishedEntitySource['source']>
+	publishedCommit: string
+	cause?: unknown
+}) {
+	let packageLabel = `source "${input.source.id}"`
+	if (input.source.entity_kind === 'package') {
+		const saved = await getSavedPackageById(input.env.APP_DB, {
+			userId: input.source.user_id,
+			packageId: input.source.entity_id,
+		}).catch(() => null)
+		packageLabel = saved
+			? `package "${saved.name}" (${saved.id})`
+			: `package "${input.source.entity_id}"`
+	}
+	const causeSuffix = input.cause
+		? ` Recovery failed: ${getErrorMessage(input.cause)}`
+		: ''
+	return new McpCallerError(
+		`Published snapshot for ${packageLabel} at commit "${input.publishedCommit}" is missing and could not be recovered from the artifact repo.${causeSuffix} Republish the package to restore it.`,
+	)
+}
+
+/**
+ * Load the published file tree when the KV snapshot is missing. Production
+ * never enables the mock artifact-API stand-in, so we rebuild from the
+ * Artifacts git tip at `published_commit` and let the caller persist KV.
+ */
 async function loadSourceSnapshotFromArtifacts(input: {
 	env: Env
 	source: NonNullable<PublishedEntitySource['source']>
 }) {
 	const publishedCommit = assertPublishedCommit(input.source)
-	const snapshot = await readArtifactSourceSnapshot({
+	const mockSnapshot = await readArtifactSourceSnapshot({
 		env: input.env,
 		repoId: input.source.repo_id,
 		commit: publishedCommit,
 	})
-	if (!snapshot) {
-		throw new Error(
-			`Published snapshot for source "${input.source.id}" at commit "${publishedCommit}" was not found.`,
-		)
+	if (mockSnapshot?.files) {
+		return mockSnapshot.files
 	}
-	return snapshot.files
+	try {
+		const files = await readArtifactTreeAtCommit({
+			env: input.env,
+			repoId: input.source.repo_id,
+			commit: publishedCommit,
+		})
+		if (files && Object.keys(files).length > 0) {
+			return files
+		}
+	} catch (error) {
+		throw await describeMissingPublishedSnapshot({
+			env: input.env,
+			source: input.source,
+			publishedCommit,
+			cause: error,
+		})
+	}
+	throw await describeMissingPublishedSnapshot({
+		env: input.env,
+		source: input.source,
+		publishedCommit,
+	})
 }
 
 function parsePublishedManifest(input: {
@@ -68,24 +120,14 @@ async function loadManifestSnapshotFromArtifacts(input: {
 	env: Env
 	source: NonNullable<PublishedEntitySource['source']>
 }) {
-	const publishedCommit = assertPublishedCommit(input.source)
-	const snapshot = await readArtifactSourceSnapshot({
-		env: input.env,
-		repoId: input.source.repo_id,
-		commit: publishedCommit,
-	})
-	if (!snapshot) {
-		throw new Error(
-			`Published snapshot for source "${input.source.id}" at commit "${publishedCommit}" was not found.`,
-		)
-	}
-	const content = snapshot.files[input.source.manifest_path]
+	const files = await loadSourceSnapshotFromArtifacts(input)
+	const content = files[input.source.manifest_path]
 	if (!content) {
-		throw new Error(
-			`Published manifest for source "${input.source.id}" at path "${input.source.manifest_path}" was not found.`,
+		throw new McpCallerError(
+			`Published manifest for source "${input.source.id}" at path "${input.source.manifest_path}" was not found. Republish the package to restore it.`,
 		)
 	}
-	return content
+	return { content, files }
 }
 
 export async function loadPublishedEntitySource(input: {
@@ -153,28 +195,44 @@ export async function loadPublishedEntityManifest(input: {
 		userId: input.userId,
 		source,
 	})
-	const content =
-		storedManifest?.manifestContent ??
-		(await loadManifestSnapshotFromArtifacts({
-			env: input.env,
+	if (storedManifest) {
+		return {
 			source,
-		}))
-	if (!storedManifest) {
-		await persistPublishedSourceManifestSnapshot({
-			env: input.env,
-			userId: input.userId,
-			source,
-			snapshot: {
-				manifestContent: content,
-			},
-		})
+			content: storedManifest.manifestContent,
+			manifest: parsePublishedManifest({
+				source,
+				content: storedManifest.manifestContent,
+			}),
+		}
 	}
+	const recovered = await loadManifestSnapshotFromArtifacts({
+		env: input.env,
+		source,
+	})
+	await persistPublishedSourceManifestSnapshot({
+		env: input.env,
+		userId: input.userId,
+		source,
+		snapshot: {
+			manifestContent: recovered.content,
+		},
+	})
+	// Also persist the full tree when recovering from artifacts so the next
+	// source load does not pay another git fetch.
+	await persistPublishedSourceSnapshot({
+		env: input.env,
+		userId: input.userId,
+		source,
+		snapshot: {
+			files: recovered.files,
+		},
+	}).catch(() => undefined)
 	return {
 		source,
-		content,
+		content: recovered.content,
 		manifest: parsePublishedManifest({
 			source,
-			content,
+			content: recovered.content,
 		}),
 	}
 }

@@ -112,7 +112,8 @@ vi.mock(
 	},
 )
 
-const { publishFromExternalRef } = await import('./external-publish.ts')
+const { finalizePublishedEntitySource, publishFromExternalRef } =
+	await import('./external-publish.ts')
 
 const manifest = {
 	name: '@scope/demo',
@@ -399,6 +400,34 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 		sourceId: 'source-1',
 		publishedCommit: 'commit-new',
 	})
+})
+
+test('same-commit finalize keeps the live snapshot when projection fails', async () => {
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.deletePublishedSourceSnapshot.mockClear()
+	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
+		new Error('projection unavailable'),
+	)
+
+	await expect(
+		finalizePublishedEntitySource({
+			env: kvEnv,
+			source: source({
+				published_commit: 'commit-same',
+			}) as ReturnType<typeof source> & { entity_kind: 'package' },
+			publishedCommit: 'commit-same',
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('projection unavailable')
+
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.deletePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ publishedCommit: 'commit-same' }),
+	)
 })
 
 test('locked package finishes checks then withholds published_commit unless allowLockedPublish', async () => {

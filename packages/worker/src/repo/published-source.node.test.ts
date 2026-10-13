@@ -1,9 +1,12 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	readArtifactSourceSnapshot: vi.fn(),
+	readArtifactTreeAtCommit: vi.fn(),
+	getSavedPackageById: vi.fn(),
 	loadPublishedSourceManifestSnapshot: vi.fn(),
 	persistPublishedSourceManifestSnapshot: vi.fn(),
 	loadPublishedSourceSnapshot: vi.fn(),
@@ -18,6 +21,16 @@ vi.mock('./entity-sources.ts', () => ({
 vi.mock('./artifact-source-snapshot.ts', () => ({
 	readArtifactSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.readArtifactSourceSnapshot(...args),
+}))
+
+vi.mock('./artifact-file.ts', () => ({
+	readArtifactTreeAtCommit: (...args: Array<unknown>) =>
+		mockModule.readArtifactTreeAtCommit(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
@@ -89,6 +102,7 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 		1,
 	)
 	expect(mockModule.readArtifactSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
 	expect(
 		mockModule.persistPublishedSourceManifestSnapshot,
 	).not.toHaveBeenCalled()
@@ -127,6 +141,7 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 	const source = await loadPublishedEntitySource(loadInput)
 
 	expect(mockModule.readArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
 	expect(mockModule.persistPublishedSourceSnapshot).toHaveBeenCalledWith({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} },
 		userId: ownerIdFromStored('user-1'),
@@ -139,6 +154,49 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 		'index.js': 'export const value = "ok"',
 	})
 	expect(source.snapshotCreatedAt).toBeNull()
+})
+
+test('loadPublishedEntitySource heals a KV miss from the Artifacts git tip', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactTreeAtCommit.mockResolvedValue({
+		'package.json': manifestJson(),
+		'index.js': 'export const value = "healed"',
+	})
+	mockModule.persistPublishedSourceSnapshot.mockResolvedValue(undefined)
+
+	const source = await loadPublishedEntitySource(loadInput)
+
+	expect(mockModule.readArtifactTreeAtCommit).toHaveBeenCalledWith({
+		env,
+		repoId: 'repo-1',
+		commit: 'commit-1',
+	})
+	expect(mockModule.persistPublishedSourceSnapshot).toHaveBeenCalled()
+	expect(source.files).toMatchObject({
+		'index.js': 'export const value = "healed"',
+	})
+})
+
+test('loadPublishedEntitySource surfaces a caller-facing error when heal fails', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactSourceSnapshot.mockResolvedValue(null)
+	mockModule.readArtifactTreeAtCommit.mockRejectedValue(
+		new Error('git fetch failed'),
+	)
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		name: '@kentcdodds/example-package',
+	})
+
+	await expect(loadPublishedEntitySource(loadInput)).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message.includes('@kentcdodds/example-package') &&
+			error.message.includes('Republish the package'),
+	)
 })
 
 test('loadPublishedEntitySource exposes stored snapshot createdAt as the publish clock', async () => {

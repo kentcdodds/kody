@@ -205,14 +205,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sourceRoot: source.source_root,
 				publishedCommit: opened.base_commit || head.commit,
 			})
-			const publishResult = await session.publishSession({
-				sessionId,
-				userId: owner.ownerUserId,
-				expectedPackageScope: packageScope,
-				// The package's first publish: there are no prior needs to change.
-				credentialNeedsApproved: true,
-			})
-			if (publishResult.status !== 'ok') {
+			const revertFailedPromote = async () => {
 				await ctx.env.APP_DB.prepare(
 					`DELETE FROM saved_packages WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 				)
@@ -232,6 +225,25 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				await session
 					.discardSession({ sessionId, userId: owner.ownerUserId })
 					.catch(() => undefined)
+			}
+			let publishResult: Awaited<ReturnType<typeof session.publishSession>>
+			try {
+				publishResult = await session.publishSession({
+					sessionId,
+					userId: owner.ownerUserId,
+					expectedPackageScope: packageScope,
+					// The package's first publish: there are no prior needs to change.
+					credentialNeedsApproved: true,
+				})
+			} catch (error) {
+				// publishSession can throw (git push / Artifacts / finalize KV)
+				// after the seeded published_commit write. Restore the plain
+				// repo so we never leave an unsnapshotted package tip (#3497).
+				await revertFailedPromote()
+				throw error
+			}
+			if (publishResult.status !== 'ok') {
+				await revertFailedPromote()
 				throw new McpCallerError(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)
