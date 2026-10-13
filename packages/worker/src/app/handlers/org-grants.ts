@@ -1,4 +1,6 @@
 import { type Action } from 'remix/router'
+import { authorizeGrantRevoke } from '#mcp/capabilities/access/shared.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -8,8 +10,13 @@ import {
 } from '#app/org-management-access.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { softDeleteGrant } from '#worker/orgs/access-writes.ts'
+import {
+	getGrantById,
+	isGrantResourceType,
+	softDeleteGrant,
+} from '#worker/orgs/access-writes.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgGrantsForView } from '#worker/orgs/org-grants-view.ts'
 import { type OrgGrantsLoaderData } from '#universal/loader-data.ts'
@@ -154,11 +161,43 @@ export function createOrgGrantsRevokePostHandler(env: Env) {
 					400,
 				)
 			}
+			const grant = await getGrantById({
+				db: env.APP_DB,
+				orgId: access.org.id,
+				grantId,
+			})
+			if (!grant || !isGrantResourceType(grant.resourceType)) {
+				return jsonResponse(
+					{ ok: false, error: 'Grant was not found in this organization.' },
+					400,
+				)
+			}
+			try {
+				await authorizeGrantRevoke(
+					{
+						env,
+						callerContext: {
+							user: user.mcpUser,
+							request: user.request,
+						},
+					},
+					grant.resourceType,
+					grant.resourceId,
+				)
+			} catch (error) {
+				if (error instanceof AuthorizationError) {
+					return jsonResponse({ ok: false, error: error.message }, 403)
+				}
+				if (error instanceof McpCallerError) {
+					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
+				throw error
+			}
 			try {
 				await softDeleteGrant({
 					db: env.APP_DB,
 					orgId: access.org.id,
-					grantId,
+					grantId: grant.id,
 					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
