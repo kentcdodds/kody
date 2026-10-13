@@ -5,7 +5,9 @@
 - **Amended:** 2026-10-12 (Kent: today's secrets are the Key credential type and
   keep working permanently; the other types are opt-in; by-name grants stay; no
   old-lane removal; integration-token placeholders are permanent; the webhook
-  no-actor exception stays unless a proven replacement breaks nothing)
+  no-actor exception stays unless a proven replacement breaks nothing);
+  2026-10-12 (Kent: manifest credential need `kind` is optional — see
+  [Amendment 2026-10-12](#amendment-2026-10-12))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -180,10 +182,12 @@ credential. Nothing is left to remove there.
 ### Manifest (`kody.credentials`)
 
 The keyed map stays. `provider` is optional and defaults to the key.
+`description` is required. `kind` is optional (see
+[Amendment 2026-10-12](#amendment-2026-10-12)).
 
 ```json
 "credentials": {
-  "github":     { "kind": "oauth", "description": "Repos to triage" },
+  "github":     { "description": "Read PRs to summarize them" },
   "github_bot": { "kind": "oauth", "provider": "github", "description": "Bot account" },
   "google":     { "kind": "oauth", "multiple": true, "description": "Calendars" }
 }
@@ -193,6 +197,14 @@ The keyed map stays. `provider` is optional and defaults to the key.
   (`^[a-z0-9-]+$`).
 - A second account from the same provider gets its own key with an explicit
   `provider`. There is no `as` field.
+- Omitting `kind` means any fetch-capable credential for that provider (Key /
+  secret such as a PAT, oauth, or login). The `credential()` client picks the
+  code path (inject header, OAuth refresh on 401, login exchange). Package code
+  is identical for PAT vs OAuth. Declare `kind` only when a specific shape is
+  needed (`signing` for `sign()`, `mcp` for `callTool()`, `url`, or a
+  provider/feature that truly requires one kind, such as oauth for Google user
+  data). A declared `kind` keeps today's narrowing, so published manifests stay
+  valid.
 - There is no hosts, inject, or placement field.
 - **Needs closure:** the package's needs plus those of its snapshotted
   dependencies (pinned at the dependent's publish, per
@@ -234,12 +246,14 @@ else's enablement but cannot point it at different credentials.
 
 ### Resolution rules
 
-1. **Candidates:** credentials with the need's kind and provider that the actor
-   can Use in the run org (org credentials with Use, plus the actor's own
-   personal credentials granted to that org). A null provider never
-   auto-resolves.
-2. **Map entry:** an exact pick. Kind must match; provider must match when both
-   sides have one.
+1. **Candidates:** credentials with the need's provider that the actor can Use
+   in the run org (org credentials with Use, plus the actor's own personal
+   credentials granted to that org). When the need declares `kind`, candidates
+   must also match that kind; when `kind` is omitted, any fetch-capable
+   credential for the provider qualifies (Key/secret, oauth, login). A null
+   provider never auto-resolves.
+2. **Map entry:** an exact pick. Kind must match when the need declares one;
+   provider must match when both sides have one.
 3. **No map entry:** exactly one candidate is used (`[it]` for `multiple`); zero
    is `credential_unbound`; two or more is `credential_ambiguous`. A `multiple`
    need never gets "all of them". An explicit `[]` means none on purpose.
@@ -454,3 +468,25 @@ Key, and the revisit-if below applies only if someone wants it covered.
 
 **Revisit-if** a placement appears that no resolver kind can express without
 returning a value to code.
+
+## Amendment 2026-10-12
+
+Kent: manifest credential need `kind` becomes **optional**.
+
+- **Omitted `kind`:** any fetch-capable credential for that provider qualifies
+  (Key/secret such as a PAT, oauth, login). The `credential()` client picks the
+  code path (inject header, OAuth refresh on 401, login exchange). Package code
+  is identical for PAT vs OAuth.
+- **Declare `kind` only when a specific shape is needed:** `signing` (`sign()`),
+  `mcp` (`callTool()`), `url`, or a provider/feature that truly requires one
+  kind (for example oauth for Google user data). A declared `kind` keeps today's
+  narrowing, so published manifests keep working (non-breaking).
+- **`provider`** still defaults to the key (unchanged). **`description`** stays
+  required; it never affects matching. It explains to the user or agent why the
+  package wants access when mapping or when a need is ambiguous or unbound.
+- **Typical need:** `"github": { "description": "Read PRs to summarize them" }`.
+- **Missing scopes** surface at call time via 401/403 `x-kody-credential-hint`.
+  Declaring scopes is possible future work.
+- **Naming direction:** `credentials` is the umbrella term everywhere (secrets
+  and integrations are credential subtypes). UI/UX is designed separately and is
+  not decided here.

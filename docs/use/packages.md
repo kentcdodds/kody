@@ -159,14 +159,21 @@ into are described in
   64). Prefer naming a slot after its provider (`github`, `resend`); publish
   adds an informational note for a key that is not a provider slug
   (`^[a-z0-9-]+$`) and never fails for it.
-- `kind` is `secret`, `oauth`, `mcp`, or one of the opt-in types `url`, `login`,
-  and `signing`. `provider` is optional and defaults to the key; a second
+- `kind` is optional in the accepted design
+  ([ADR 0068 amendment 2026-10-12](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-12)):
+  omit it for any fetch-capable credential for that provider (Key/secret such as
+  a PAT, oauth, login); declare it only when a specific shape is needed
+  (`secret`, `oauth`, `mcp`, or the opt-in types `url`, `login`, and `signing`).
+  Implementation of optional `kind` is a follow-up; until then matching still
+  requires `kind`. `provider` is optional and defaults to the key; a second
   account from the same provider gets its own key with an explicit `provider`.
-  `description` says what the slot is for. `multiple: true` means the package
-  uses several accounts at once.
-- Publish rejects any other key or a missing field and names the slot. If a
-  later rule rejects a slot in a version that is already published, the package
-  still loads with its other slots.
+  `description` is required, never affects matching, and says why the package
+  wants access. `multiple: true` means the package uses several accounts at
+  once. A typical need looks like
+  `"github": { "description": "Read PRs to summarize them" }`.
+- Publish rejects any other key or a missing required field and names the slot.
+  If a later rule rejects a slot in a version that is already published, the
+  package still loads with its other slots.
 - Each publish stores the package's needs closure: its own slots plus those of
   the packages it statically imports through `kody:@`, as they were at this
   publish. A key that the package and a dependency declare with a different
