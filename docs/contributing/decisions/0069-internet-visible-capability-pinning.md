@@ -53,4 +53,4 @@ shown as review context only.
 
 Visitor login/roles, third-party visitor auth, and cross-package image storage
 remain future work and are out of scope for this amendment. Custom domains are
-decided in [0070](./0070-package-app-custom-domains.md).
+decided in [0071](./0071-package-app-custom-domains.md).
