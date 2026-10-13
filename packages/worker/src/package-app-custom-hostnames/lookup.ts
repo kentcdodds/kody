@@ -111,7 +111,9 @@ function lookupFromRow(
 				packageId: row.package_id,
 				orgId: null,
 				username,
-				kodyId: getPackageNameLeaf(row.package_name),
+				// Lowercase to match lookupVerifiedAppCustomHostnameForPackage
+				// and handoff path binding.
+				kodyId: getPackageNameLeaf(row.package_name).toLowerCase(),
 				hostnameStatus: row.hostname_status,
 				sslStatus: row.ssl_status,
 				verified,

@@ -356,7 +356,7 @@ async function buildCustomHostnameHandoffTarget(input: {
 	env: Env
 	packagePath: PackageAppPath
 	url: URL
-}): Promise<URL | null> {
+}): Promise<{ target: URL; kodyId: string } | null> {
 	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
 	const mapping = await lookupVerifiedAppCustomHostnameForPackage({
 		db: input.env.APP_DB,
@@ -372,7 +372,7 @@ async function buildCustomHostnameHandoffTarget(input: {
 		}),
 	)
 	target.search = withoutHandoffToken(input.url).search
-	return target
+	return { target, kodyId: mapping.kodyId }
 }
 
 /**
@@ -404,9 +404,17 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	})
 	if (retiredRedirect) return retiredRedirect
 
+	const customHandoff = await buildCustomHostnameHandoffTarget({
+		env,
+		packagePath,
+		url,
+	})
 	const target =
-		(await buildCustomHostnameHandoffTarget({ env, packagePath, url })) ??
+		customHandoff?.target ??
 		buildSubdomainTarget({ packageAppOrigin, packagePath, url })
+	// Custom-host consume binds to the mapping leaf/slug (lowercased). Mint
+	// with that id so a mixed-case app-origin URL cannot fail the path check.
+	const handoffKodyId = customHandoff?.kodyId ?? packagePath.kodyId
 
 	// A non-safe method reaching the app origin is not part of the normal flow
 	// (package pages are loaded from, and post back to, the package-app
@@ -449,7 +457,7 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 			claims: {
 				stableUserId: user.mcpUser.userId,
 				username: user.username,
-				kodyId: packagePath.kodyId,
+				kodyId: handoffKodyId,
 			},
 			sessionExpiresAt: getAuthSessionExpiresAtMs({
 				rememberMe: parsedSession.session.rememberMe,
