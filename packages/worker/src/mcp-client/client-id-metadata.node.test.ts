@@ -468,14 +468,17 @@ test('a verified pending attempt survives an actor-less refresh race during gran
 		discovery: discoveryOnIssuer,
 	})
 	await provider.saveDiscoveryState(discoveryOnIssuer as never)
+	// Existing grant so an actor-less refresh has a refresh_token to preserve.
+	await provider.saveTokens(bearer('seed-at', 'seed-rt'))
 	await writeMcpOAuthAttemptIdentity(storage, pending!)
 	await markMcpOAuthAttemptVerified(storage, 'server-home')
 
-	// Actor-less refresh (no ownerOrgId/personId) during the verified window.
+	// Actor-less refresh (no ownerOrgId/personId) during the verified window
+	// must still save — otherwise a failed code exchange wedges every later
+	// refresh while verified stays set. Leave the attempt alone for the grant.
 	currentLive = { ...live, ownerOrgId: null, personId: null }
-	await expect(
-		provider.saveTokens(bearer('refresh-at')),
-	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
+	await provider.saveTokens(bearer('refresh-at'))
+	expect(values.get(tokenKey)).toEqual(bearer('refresh-at', 'seed-rt'))
 	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toEqual(pending)
 	expect(
 		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
@@ -485,6 +488,9 @@ test('a verified pending attempt survives an actor-less refresh race during gran
 	await provider.saveTokens(bearer('grant-at', 'grant-rt'))
 	expect(values.get(tokenKey)).toEqual(bearer('grant-at', 'grant-rt'))
 	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+	expect(
+		values.get(mcpOAuthAttemptVerifiedStorageKey('server-home')),
+	).toBeUndefined()
 })
 
 test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {

@@ -415,13 +415,15 @@ async function savePreservedMcpOAuthTokens(input: {
 		input.readTokens(input.context).catch(() => undefined),
 		input.readDiscovery(),
 	])
+	// Authorization-code completion after checkState re-checks identity
+	// immediately before the grant write (kody-celld #57 / #65). Refresh has
+	// no OAuth actor, so live.ownerOrgId/personId are null. Treat that as a
+	// normal refresh: save tokens and leave the verified attempt alone so a
+	// concurrent grant (or a later reconnect) can still finish. Throwing here
+	// would wedge every later refresh if the code exchange never persisted a
+	// grant. Only actor-bearing saves consume the pending row.
+	let consumeVerifiedAttempt = false
 	if (completingAuthorization && pending) {
-		// Authorization-code completion after checkState: re-check identity
-		// immediately before the grant write (kody-celld #57 / #65). A refresh
-		// that races while an attempt is pending has no verified flag and must
-		// leave the pending row alone. Once verified, an actor-less refresh can
-		// still interleave during the code exchange — refuse without clearing
-		// so the grant save keeps its fence.
 		if (!serverId || !input.resolveLiveServerIdentity) {
 			await clearMcpOAuthAttemptIdentity(
 				input.provider.storage,
@@ -434,22 +436,20 @@ async function savePreservedMcpOAuthTokens(input: {
 			await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
 			throw new McpOAuthAttemptIdentityError()
 		}
-		if (!live.ownerOrgId || !live.personId) {
-			throw new McpOAuthAttemptIdentityError(
-				mcpOAuthAttemptIdentityInvalidMessage(live.name),
-			)
-		}
-		if (
-			!oauthAttemptMatchesLiveServer({
-				pending,
-				live,
-				discovery,
-			})
-		) {
-			await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
-			throw new McpOAuthAttemptIdentityError(
-				mcpOAuthAttemptIdentityInvalidMessage(live.name),
-			)
+		if (live.ownerOrgId && live.personId) {
+			if (
+				!oauthAttemptMatchesLiveServer({
+					pending,
+					live,
+					discovery,
+				})
+			) {
+				await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
+				throw new McpOAuthAttemptIdentityError(
+					mcpOAuthAttemptIdentityInvalidMessage(live.name),
+				)
+			}
+			consumeVerifiedAttempt = true
 		}
 	}
 	const merged = withPreservedMcpOAuthRefreshToken({
@@ -471,7 +471,7 @@ async function savePreservedMcpOAuthTokens(input: {
 	if (discovery !== undefined) {
 		await input.writeDiscovery(discovery)
 	}
-	if (completingAuthorization && serverId) {
+	if (consumeVerifiedAttempt && serverId) {
 		await clearMcpOAuthAttemptIdentity(input.provider.storage, serverId)
 	}
 }
