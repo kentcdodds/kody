@@ -19,7 +19,7 @@ const migrationsDir = join(
 )
 const migrationSql = [
 	'0133-package-app-custom-hostnames.sql',
-	'0134-package-app-custom-hostname-verification.sql',
+	'0135-package-app-custom-hostname-verification.sql',
 ]
 	.map((name) => readFileSync(join(migrationsDir, name), 'utf8'))
 	.join('\n')
