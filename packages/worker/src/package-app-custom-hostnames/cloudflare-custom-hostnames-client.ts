@@ -41,6 +41,10 @@ type CustomHostnameApiResult = {
 		name?: unknown
 		value?: unknown
 	} | null
+	ownership_verification_http?: {
+		http_url?: unknown
+		http_body?: unknown
+	} | null
 	ssl?: {
 		status?: unknown
 		validation_records?: Array<{
@@ -149,17 +153,33 @@ function readCustomHostnameResult(
 	const hostnameStatus = typeof result.status === 'string' ? result.status : ''
 	const sslStatus =
 		typeof result.ssl?.status === 'string' ? result.ssl.status : null
-	const ownership = result.ownership_verification
+	const ownershipTxt = result.ownership_verification
 		? readDnsRecord(result.ownership_verification)
 		: null
+	const ownershipHttp = readOwnershipVerificationHttp(
+		result.ownership_verification_http,
+	)
 	return {
 		id: result.id,
 		hostname,
 		hostnameStatus,
 		sslStatus,
-		ownershipVerification: ownership,
+		// Prefer TXT ownership; fall back to HTTP ownership when CF omits TXT.
+		ownershipVerification: ownershipTxt ?? ownershipHttp,
 		sslValidationRecords: readSslValidationRecords(result.ssl),
 	}
+}
+
+function readOwnershipVerificationHttp(
+	input: CustomHostnameApiResult['ownership_verification_http'],
+): CustomHostnameDnsRecord | null {
+	if (!input) return null
+	const httpUrl =
+		typeof input.http_url === 'string' ? input.http_url.trim() : ''
+	const httpBody =
+		typeof input.http_body === 'string' ? input.http_body.trim() : ''
+	if (!httpUrl || !httpBody) return null
+	return { type: 'http', name: httpUrl, value: httpBody }
 }
 
 export class CloudflareCustomHostnamesClient {
