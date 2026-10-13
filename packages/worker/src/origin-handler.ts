@@ -843,6 +843,12 @@ async function fetchWithDynamicWorkerBudget(
 			env,
 		)
 		if (!customHostname) return nonCanonicalHost
+		// Custom hosts are not in the sync runtime-ownership predicate (D1).
+		// When the binding exists, forward wholesale so handoff HMAC and
+		// package serve stay on kody-runtime.
+		if (env.RUNTIME_WORKER) {
+			return forwardRuntimeWorkerFetch(env.RUNTIME_WORKER, request)
+		}
 	}
 
 	// Package runtime lane extraction (ADR 0016): when the runtime Worker

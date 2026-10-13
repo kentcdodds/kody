@@ -23,6 +23,7 @@ import {
 	getPackageAppBaseUrl,
 	getPackageAppLegacySubdomainRedirect,
 	getPackageAppOriginConfigurationError,
+	hostnameSharesKodyRegistrableDomain,
 	joinAppUrl,
 	parsePackageAppRequestHost,
 } from '#worker/app-base-url.ts'
@@ -340,6 +341,8 @@ export async function resolveVerifiedCustomHostnameIfEnabled(
 	if (appHostnames.includes(hostname)) return null
 	if (hostname.endsWith('.workers.dev')) return null
 	if (parsePackageAppRequestHost({ env, url })) return null
+	// Author code on a customer host must stay cross-site from Kody cookies.
+	if (hostnameSharesKodyRegistrableDomain({ env, hostname })) return null
 	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) return null
 	const mapping = await lookupPackageAppCustomHostname({
 		db: env.APP_DB,

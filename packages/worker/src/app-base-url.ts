@@ -17,6 +17,7 @@ type PackageAppBaseUrlEnv = {
 
 type AppBaseUrlEnv = PackageAppBaseUrlEnv & {
 	APP_BASE_URL?: string | null
+	APP_LEGACY_HOSTS?: string | null
 }
 
 export type PackageAppOriginEnv = AppBaseUrlEnv & {
@@ -70,8 +71,42 @@ export function getPackageAppBaseUrl(input: { env: PackageAppBaseUrlEnv }) {
 	}
 }
 
-function getRegistrableDomain(url: URL) {
+export function getRegistrableDomain(url: URL) {
 	return getDomain(url.hostname) ?? url.hostname.toLowerCase()
+}
+
+/**
+ * True when `hostname` is on the same registrable domain as any configured
+ * app or package-app origin (including legacy dual-serve hosts). Custom
+ * hostnames must stay cross-site from those origins so author code cannot
+ * ride `SameSite=Lax` first-party cookies.
+ */
+export function hostnameSharesKodyRegistrableDomain(input: {
+	env: AppBaseUrlEnv
+	hostname: string
+}): boolean {
+	const hostname = input.hostname.trim().toLowerCase().replace(/\.+$/, '')
+	if (!hostname) return false
+	const candidates: Array<string> = []
+	for (const raw of [
+		input.env.APP_BASE_URL,
+		input.env.PACKAGE_APP_BASE_URL,
+		...parseLegacyHosts(input.env.APP_LEGACY_HOSTS),
+		...parseLegacyHosts(input.env.PACKAGE_APP_LEGACY_HOSTS),
+	]) {
+		if (!raw) continue
+		try {
+			const value = raw.includes('://') ? raw : `https://${raw}`
+			candidates.push(getRegistrableDomain(new URL(value)))
+		} catch {
+			// Ignore unparsable configured hosts.
+		}
+	}
+	const hostnameDomain =
+		getDomain(hostname) ?? hostname.toLowerCase().replace(/\.+$/, '')
+	return candidates.some(
+		(domain) => hostnameDomain === domain || hostname === domain,
+	)
 }
 
 export type PackageAppHostRole = 'canonical' | 'legacy'

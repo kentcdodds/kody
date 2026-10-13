@@ -12,7 +12,7 @@ import {
 } from '@kody-internal/shared/public-urls.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getAppBaseUrl, getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	isPackageAppRuntimeThrownResponse,
 	logPackageAppHttpError,
@@ -607,7 +607,13 @@ export async function servePackageAppRequest(input: {
 			)
 		}
 	}
-	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+	// Custom hostnames are not the app origin. `getAppBaseUrl(requestUrl)`
+	// would otherwise treat the customer Host as first-party and point
+	// package runtime API calls at the custom domain.
+	const baseUrl =
+		packagePath.mount === 'custom-hostname'
+			? getCanonicalAppBaseUrl({ env })
+			: getAppBaseUrl({ env, requestUrl: request.url })
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {

@@ -146,24 +146,21 @@ const hostnameLookupSql = `SELECT
 	ch.hostname_status AS hostname_status,
 	ch.ssl_status AS ssl_status,
 	sp.name AS package_name,
-	h.handle AS owner_handle,
+	live_owner.slug AS owner_handle,
 	live_owner.id AS live_owner_org_id
 FROM package_app_custom_hostnames ch
 LEFT JOIN saved_packages sp
 	ON ch.binding_kind = 'app'
 	AND sp.id = ch.package_id${andLiveDeletedAtSql('sp')}
-LEFT JOIN handles h
-	ON h.org_id = sp.user_id
 LEFT JOIN orgs live_owner
 	ON live_owner.id = sp.user_id${andActiveOrgSql('live_owner')}
 WHERE ch.hostname = ?
-ORDER BY h.handle
 LIMIT 1`
 
 /**
  * Resolve one stored hostname. App bindings join the live package and the
- * owner handle (`handles.org_id` = `saved_packages.user_id`). Returns null
- * when the hostname is unknown or an app binding has no live package owner.
+ * owner org slug (`orgs.id` = `saved_packages.user_id`). Returns null when
+ * the hostname is unknown or an app binding has no live package owner.
  */
 export async function lookupPackageAppCustomHostname(input: {
 	db: D1Database
@@ -187,16 +184,14 @@ const verifiedPackageLookupSql = `SELECT
 	ch.hostname_status AS hostname_status,
 	ch.ssl_status AS ssl_status,
 	sp.name AS package_name,
-	h.handle AS owner_handle,
+	live_owner.slug AS owner_handle,
 	live_owner.id AS live_owner_org_id
 FROM package_app_custom_hostnames ch
 INNER JOIN saved_packages sp
 	ON sp.id = ch.package_id${andLiveDeletedAtSql('sp')}
-INNER JOIN handles h
-	ON h.org_id = sp.user_id
-	AND h.handle = ?
 INNER JOIN orgs live_owner
-	ON live_owner.id = sp.user_id${andActiveOrgSql('live_owner')}
+	ON live_owner.id = sp.user_id
+	AND live_owner.slug = ?${andActiveOrgSql('live_owner')}
 WHERE ch.binding_kind = 'app'
 	AND ch.hostname_status = 'active'
 	AND ch.ssl_status = 'active'

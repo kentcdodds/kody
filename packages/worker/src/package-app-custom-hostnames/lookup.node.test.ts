@@ -190,6 +190,20 @@ test('lookup resolves a verified app binding and ignores unverified or org rows 
 		kodyId: 'demo',
 		username: 'pkg-owner',
 	})
+
+	// A retired handle that sorts first must not replace the live org slug.
+	await db
+		.prepare(
+			`INSERT INTO handles (handle, user_id, org_id, created_at) VALUES ('aaa-retired', 'org-owner', 'org-owner', ?)`,
+		)
+		.bind(now)
+		.run()
+	await expect(
+		lookupPackageAppCustomHostname({
+			db,
+			hostname: 'app.customer-test.example',
+		}),
+	).resolves.toMatchObject({ username: 'pkg-owner' })
 })
 
 test('migration rejects mixed-case hostnames and crossed binding columns', () => {

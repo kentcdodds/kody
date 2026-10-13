@@ -249,13 +249,17 @@ test('a verified app custom hostname serves at / behind the same host-only hando
 	const served = await workerFetch(`${customOrigin}/`, {
 		headers: { Cookie: packageSessionCookie },
 	})
-	expect(served.status).not.toBe(403)
+	// Auth and mount are proven: session accepted on the custom host, no
+	// handoff bounce. Workers-unit D1 does not seed a full package source, so
+	// serve may 404 (missing app) or 500 (host-setup); either means we passed
+	// the session gate. A 403/302 would mean handoff/session failed.
+	expect([404, 500]).toContain(served.status)
 	expect(served.headers.get('X-Kody-Handoff')).toBeNull()
 	expect(served.headers.get('Location')).toBeNull()
 	const servedBody = await served.text()
-	expect(
-		servedBody === buildPackageAppNotFoundMessage() || served.status === 500,
-	).toBe(true)
+	if (served.status === 404) {
+		expect(servedBody).toBe(buildPackageAppNotFoundMessage())
+	}
 
 	await setCustomDomainsFlag(false)
 })
