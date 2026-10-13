@@ -10,7 +10,6 @@ import {
 	approveWentPublicRequest,
 	loadPendingPackageApprovals,
 } from '#app/account-package-approval-requests.ts'
-import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	approvePackageCapabilitySet,
@@ -268,15 +267,16 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 						400,
 					)
 				}
-				// Capability pin already matches: enqueue went_public and send
-				// the owner to Approve on the shared queue page.
-				await enqueueWentPublicApproval({
+				// Refresh the pin for the current published commit (same
+				// fingerprint can still need a new snapshot row), enqueue
+				// went_public, and send the owner to Approve on the page.
+				await approvePackageCapabilitySet({
 					env: input.env,
 					ownerUserId,
+					actorUserId,
 					savedPackage,
-					publishedCommit: summary.publishedCommit,
-					fingerprint: summary.capabilitySet.fingerprint,
-					requestedByUserId: actorUserId,
+					requestUrl: input.request.url,
+					expectedFingerprint: summary.capabilitySet.fingerprint,
 				})
 				return jsonResponse(
 					{
@@ -301,6 +301,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 					env: input.env,
 					ownerUserId,
 					packageId,
+					actorUserId,
 				})
 				if (!changed) {
 					return jsonResponse({ ok: false, error: 'Package not found.' }, 404)

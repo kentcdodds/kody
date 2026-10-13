@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	listPendingPackageApprovalRequests: vi.fn(),
 	resolvePackageApprovalRequest: vi.fn(),
 	loadCapabilityApprovalSummary: vi.fn(),
+	findPackageCapabilityApprovalByFingerprint: vi.fn(),
 	updateSavedPackage: vi.fn(),
 	getEntitySourceById: vi.fn(),
 }))
@@ -20,6 +21,11 @@ vi.mock('#worker/package-capabilities/approval-requests-repo.ts', () => ({
 		mockModule.listPendingPackageApprovalRequests(...args),
 	resolvePackageApprovalRequest: (...args: Array<unknown>) =>
 		mockModule.resolvePackageApprovalRequest(...args),
+}))
+
+vi.mock('#worker/package-capabilities/capability-approvals-repo.ts', () => ({
+	findPackageCapabilityApprovalByFingerprint: (...args: Array<unknown>) =>
+		mockModule.findPackageCapabilityApprovalByFingerprint(...args),
 }))
 
 vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
@@ -45,6 +51,7 @@ beforeEach(() => {
 	mockModule.listPendingPackageApprovalRequests.mockReset()
 	mockModule.resolvePackageApprovalRequest.mockReset()
 	mockModule.loadCapabilityApprovalSummary.mockReset()
+	mockModule.findPackageCapabilityApprovalByFingerprint.mockReset()
 	mockModule.updateSavedPackage.mockReset()
 	mockModule.getEntitySourceById.mockReset()
 })
@@ -125,7 +132,14 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 		published_commit: 'deadbeef',
 	})
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		publishedCommit: 'deadbeef',
 		fingerprintMatchesApproval: true,
+		capabilitySet: { fingerprint: 'fp-1', entries: [] },
+	})
+	mockModule.findPackageCapabilityApprovalByFingerprint.mockResolvedValue({
+		id: 'pin-1',
+		publishedCommit: 'deadbeef',
+		fingerprint: 'fp-1',
 	})
 	mockModule.updateSavedPackage.mockResolvedValue(true)
 	mockModule.resolvePackageApprovalRequest.mockResolvedValue(true)
@@ -139,6 +153,15 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 		requestId: 'req-went',
 	})
 	expect(result).toEqual({ ok: true })
+	expect(
+		mockModule.findPackageCapabilityApprovalByFingerprint,
+	).toHaveBeenCalledWith(
+		env.APP_DB,
+		expect.objectContaining({
+			publishedCommit: 'deadbeef',
+			fingerprint: 'fp-1',
+		}),
+	)
 	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
 		env.APP_DB,
 		expect.objectContaining({
@@ -153,6 +176,39 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 			status: 'approved',
 		}),
 	)
+})
+
+test('approveWentPublicRequest requires a pin for the current published commit', async () => {
+	mockModule.getPackageApprovalRequest.mockResolvedValue({
+		id: 'req-went',
+		reason: 'went_public',
+		status: 'pending',
+		pendingCommit: 'deadbeef',
+		baseCommit: 'deadbeef',
+		details: {},
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'owner-1',
+		published_commit: 'deadbeef',
+	})
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		publishedCommit: 'deadbeef',
+		fingerprintMatchesApproval: true,
+		capabilitySet: { fingerprint: 'fp-1', entries: [] },
+	})
+	mockModule.findPackageCapabilityApprovalByFingerprint.mockResolvedValue(null)
+
+	const result = await approveWentPublicRequest({
+		env: { APP_DB: {} } as Env,
+		request: new Request('https://example.com/approve'),
+		savedPackage: savedPackage(false),
+		ownerUserId: 'owner-1',
+		actorUserId: 'actor-1',
+		requestId: 'req-went',
+	})
+	expect(result).toMatchObject({ ok: false, status: 409 })
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
 test('approveWentPublicRequest supersedes when the published commit moved', async () => {
@@ -202,7 +258,9 @@ test('approveWentPublicRequest requires a matching capability approval', async (
 		published_commit: 'deadbeef',
 	})
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		publishedCommit: 'deadbeef',
 		fingerprintMatchesApproval: false,
+		capabilitySet: { fingerprint: 'fp-1', entries: [] },
 	})
 
 	const result = await approveWentPublicRequest({
@@ -215,4 +273,7 @@ test('approveWentPublicRequest requires a matching capability approval', async (
 	})
 	expect(result).toMatchObject({ ok: false, status: 409 })
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
+	expect(
+		mockModule.findPackageCapabilityApprovalByFingerprint,
+	).not.toHaveBeenCalled()
 })

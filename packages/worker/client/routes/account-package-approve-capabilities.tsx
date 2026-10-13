@@ -167,7 +167,12 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			window.location.assign(payload.settingsHref)
+			if (payload.package.isInternetVisible) {
+				window.location.assign(payload.settingsHref)
+			} else {
+				// Capability pin recorded; went_public is now pending on this page.
+				window.location.reload()
+			}
 		} catch {
 			approving = false
 			message = 'Could not approve capabilities.'
@@ -248,7 +253,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							Waiting for your approval
 						</h2>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							The previously published version keeps running until you approve.
+							{pendingApprovals.some(
+								(approval) => approval.reason === 'credential_needs_changed',
+							)
+								? 'The previously published version keeps running until you approve.'
+								: 'Internet-visible serving stays off until you approve.'}
 						</p>
 						<ul
 							mix={css({
@@ -269,10 +278,16 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 										{approval.reasonLabel}
 									</strong>
 									<span mix={css({ color: colors.textMuted })}>
-										Paused commit{' '}
+										{approval.reason === 'went_public'
+											? 'Published commit '
+											: 'Paused commit '}
 										<IdValue
 											value={approval.pendingCommit}
-											label="paused commit"
+											label={
+												approval.reason === 'went_public'
+													? 'published commit'
+													: 'paused commit'
+											}
 										/>
 									</span>
 									{approval.changes.length > 0 ? (

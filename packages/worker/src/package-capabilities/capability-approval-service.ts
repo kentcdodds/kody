@@ -21,7 +21,11 @@ import {
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { type PackageApprovalRequest } from './approval-requests-repo.ts'
+import {
+	getPendingPackageApprovalRequest,
+	resolvePackageApprovalRequest,
+	type PackageApprovalRequest,
+} from './approval-requests-repo.ts'
 import { enqueueWentPublicApproval } from './went-public-approval.ts'
 
 export type CapabilityApprovalSummary = {
@@ -235,12 +239,28 @@ export async function clearInternetVisible(input: {
 	env: Env
 	ownerUserId: OwnerId | string
 	packageId: string
+	/** Who turned internet-visible off; supersedes a pending went_public. */
+	actorUserId?: string | null
 }): Promise<boolean> {
-	return updateSavedPackage(input.env.APP_DB, {
+	const changed = await updateSavedPackage(input.env.APP_DB, {
 		userId: input.ownerUserId,
 		packageId: input.packageId,
 		isInternetVisible: false,
 	})
+	if (!changed) return false
+	const pending = await getPendingPackageApprovalRequest(input.env.APP_DB, {
+		packageId: input.packageId,
+		ownerUserId: input.ownerUserId,
+		reason: 'went_public',
+	})
+	if (pending) {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: pending.id,
+			status: 'superseded',
+			resolvedByUserId: input.actorUserId ?? null,
+		})
+	}
+	return true
 }
 
 export function approvalMatchesCurrentSet(input: {

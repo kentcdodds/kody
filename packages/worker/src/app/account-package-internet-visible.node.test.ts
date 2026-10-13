@@ -15,7 +15,6 @@ const mockModule = vi.hoisted(() => ({
 	loadOrgBindingForOrg: vi.fn(),
 	approveCredentialNeedsRequest: vi.fn(),
 	approveWentPublicRequest: vi.fn(),
-	enqueueWentPublicApproval: vi.fn(),
 }))
 
 vi.mock('#app/account-package-approval-requests.ts', () => ({
@@ -24,11 +23,6 @@ vi.mock('#app/account-package-approval-requests.ts', () => ({
 	approveWentPublicRequest: (...args: Array<unknown>) =>
 		mockModule.approveWentPublicRequest(...args),
 	loadPendingPackageApprovals: async () => [],
-}))
-
-vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
-	enqueueWentPublicApproval: (...args: Array<unknown>) =>
-		mockModule.enqueueWentPublicApproval(...args),
 }))
 
 vi.mock('#app/account-package-write-access.ts', () => ({
@@ -95,7 +89,6 @@ beforeEach(() => {
 	mockModule.loadOrgBindingForOrg.mockReset()
 	mockModule.approveCredentialNeedsRequest.mockReset()
 	mockModule.approveWentPublicRequest.mockReset()
-	mockModule.enqueueWentPublicApproval.mockReset()
 })
 
 function createUser(): AuthenticatedAppUser {
@@ -179,7 +172,7 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 })
 
-test('turning on internet-visible with matching approval enqueues went_public', async () => {
+test('turning on internet-visible with matching approval refreshes pin and enqueues went_public', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
@@ -208,7 +201,11 @@ test('turning on internet-visible with matching approval enqueues went_public', 
 		fingerprintMatchesApproval: true,
 		isInternetVisible: false,
 	})
-	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'req-1' })
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1' },
+		capabilitySet: { entries: [], fingerprint: 'abc' },
+		wentPublicRequest: { id: 'req-1' },
+	})
 
 	const response = await handleAccountPackageInternetVisibleAction({
 		env,
@@ -227,13 +224,11 @@ test('turning on internet-visible with matching approval enqueues went_public', 
 		error: expect.stringContaining('internet-visible'),
 		approvalUrl: expect.stringContaining('/approve-capabilities'),
 	})
-	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
 		expect.objectContaining({
-			publishedCommit: 'deadbeef',
-			fingerprint: 'abc',
+			expectedFingerprint: 'abc',
 		}),
 	)
-	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 })
 
 test('approve-capabilities binds the reviewed fingerprint', async () => {
@@ -247,6 +242,7 @@ test('approve-capabilities binds the reviewed fingerprint', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
 		approval: { id: 'approval-1' },
 		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
+		wentPublicRequest: { id: 'req-1' },
 	})
 	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 

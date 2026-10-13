@@ -17,6 +17,7 @@ import {
 	resolvePackageApprovalRequest,
 	type PackageApprovalReason,
 } from '#worker/package-capabilities/approval-requests-repo.ts'
+import { findPackageCapabilityApprovalByFingerprint } from '#worker/package-capabilities/capability-approvals-repo.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
@@ -340,12 +341,31 @@ export async function approveWentPublicRequest(input: {
 		savedPackage: input.savedPackage,
 		requestUrl: input.request.url,
 	})
-	if (!summary.fingerprintMatchesApproval) {
+	if (!summary.publishedCommit || !summary.fingerprintMatchesApproval) {
 		return {
 			ok: false,
 			status: 409,
 			error:
 				'Review and approve the credential and capability summary before making this package internet-visible.',
+		}
+	}
+	// Fingerprint match can be from an older commit; internet-visible needs a
+	// pin row for the current published commit (and its dependency snapshot).
+	const currentPin = await findPackageCapabilityApprovalByFingerprint(
+		input.env.APP_DB,
+		{
+			packageId: input.savedPackage.id,
+			ownerUserId: input.ownerUserId,
+			fingerprint: summary.capabilitySet.fingerprint,
+			publishedCommit: summary.publishedCommit,
+		},
+	)
+	if (!currentPin) {
+		return {
+			ok: false,
+			status: 409,
+			error:
+				'Approve the capability set for the current published commit before making this package internet-visible.',
 		}
 	}
 	const changed = await updateSavedPackage(input.env.APP_DB, {
