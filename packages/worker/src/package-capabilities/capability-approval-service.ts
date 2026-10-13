@@ -165,10 +165,14 @@ export async function approvePackageCapabilitySet(input: {
 	)
 	const capabilitySetJson = JSON.stringify(summary.capabilitySet.entries)
 	let approval = existing
-	if (
-		existing &&
+	const existingSnapshotEmpty =
+		existing != null &&
 		isEmptyDependencySnapshotJson(existing.dependencySnapshotJson)
-	) {
+	const existingSnapshotDrifted =
+		existing != null &&
+		!existingSnapshotEmpty &&
+		existing.dependencySnapshotJson !== dependencySnapshotJson
+	if (existing && existingSnapshotEmpty) {
 		// PR1 rows stored "{}". Backfill the real pin on re-approve so
 		// internet-visible serving can read a lockfile.
 		approval =
@@ -179,7 +183,10 @@ export async function approvePackageCapabilitySet(input: {
 				approvedByUserId: input.actorUserId,
 				approvedAt: now,
 			})) ?? existing
-	} else if (!existing) {
+	} else if (!existing || existingSnapshotDrifted) {
+		// Same capability fingerprint can still pin a newer dependency tree
+		// (decision 4: fingerprint drives re-prompt; the lockfile still moves).
+		// Insert a new row so prior approver history stays intact.
 		approval = await insertPackageCapabilityApproval(input.env.APP_DB, {
 			id: crypto.randomUUID(),
 			package_id: input.savedPackage.id,

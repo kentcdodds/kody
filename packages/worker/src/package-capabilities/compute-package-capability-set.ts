@@ -77,10 +77,10 @@ export async function computePackageCapabilitySet(input: {
 	})
 
 	for (const dependency of dependencySnapshot.dependencies) {
-		const packageId = await resolveDependencyPackageId({
-			env: input.env,
-			dependency,
-		})
+		// Only recorded packageId participates in capability union. Legacy
+		// artifacts without packageId still appear in the snapshot pin, but
+		// runtime grants require bundler provenance packageId.
+		const packageId = dependency.packageId?.trim()
 		if (!packageId) continue
 		// Artifact dependency lists are flat (no parent chain). Provenance is
 		// root → dependency kodyId; full intermediate paths need the graph walk
@@ -156,22 +156,6 @@ async function resolveDependencySnapshot(input: {
 		...root,
 		dependencies: fromManifest,
 	})
-}
-
-async function resolveDependencyPackageId(input: {
-	env: Env
-	dependency: BundleArtifactDependency
-}): Promise<string | null> {
-	const explicit = input.dependency.packageId?.trim()
-	if (explicit) return explicit
-	const source = await getEntitySourceById(
-		input.env.APP_DB,
-		input.dependency.sourceId,
-	)
-	if (source?.entity_kind === 'package' && source.entity_id) {
-		return source.entity_id
-	}
-	return null
 }
 
 async function loadDependenciesFromPublishedArtifact(input: {
