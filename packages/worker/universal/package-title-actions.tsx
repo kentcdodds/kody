@@ -29,7 +29,7 @@ const actionIconSize = '1.1em'
 const statusTooltipId = 'package-title-status-tooltip'
 const copyTooltipId = 'package-title-copy-tooltip'
 
-export type PackageRepoForkAction = {
+type PackageRepoForkAction = {
 	listingId: string
 	trusted: boolean
 	loggedIn: boolean
@@ -53,7 +53,7 @@ export type PackageRepoActions = {
 	packageAppHref: string | null
 }
 
-export function hasPackageRepoActions(actions: PackageRepoActions | null) {
+function hasPackageRepoActions(actions: PackageRepoActions | null) {
 	if (!actions) return false
 	return Boolean(
 		actions.fork ||
@@ -357,10 +357,10 @@ function compactActionCss<
 	}
 }
 
-export const packageActionPrimaryCss = compactActionCss(
+const packageActionPrimaryCss = compactActionCss(
 	getPillButtonCss({ size: 'sm' }),
 )
-export const packageActionSecondaryCss = compactActionCss(
+const packageActionSecondaryCss = compactActionCss(
 	getGhostButtonCss({ size: 'sm' }),
 )
 
