@@ -13,7 +13,6 @@ import {
 	packageChanges,
 	packagesScene,
 	type PackageCallerId,
-	PrimitiveWidgetFrame,
 	secretHosts,
 	secretsScene,
 	type SecretHostId,
@@ -21,6 +20,7 @@ import {
 	triggersScene,
 	type TriggerSourceId,
 } from '#client/primitive-widgets.tsx'
+import { PrimitiveWidgetFrame } from '#client/primitive-widget-parts.tsx'
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 
 /**

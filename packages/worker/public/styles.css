@@ -3103,7 +3103,7 @@ html.is-settled {
 
 .pw-stage {
 	position: relative;
-	aspect-ratio: 9 / 5;
+	aspect-ratio: var(--pw-ratio, 9 / 5);
 	font-size: calc(100cqw / 30);
 	line-height: 1.25;
 }

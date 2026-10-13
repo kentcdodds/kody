@@ -1,129 +1,22 @@
-import { type Handle, on, type RemixNode } from 'remix/component'
-import { primitiveWidgetMotion } from '#client/primitive-widget-motion.ts'
+import { type RemixNode } from 'remix/component'
+import {
+	at,
+	choice,
+	icon,
+	wire,
+	wires,
+} from '#client/primitive-widget-parts.tsx'
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 
 /**
  * One small animated scene per primitive, shared by the `/features` cards
  * (`size="full"`, with controls) and the homepage cards (`size="mini"`,
- * decorative). Scenes are plain markup on a 360×200 stage: nodes sit at
- * percentages, wires live in one SVG with the same viewBox, and the type
- * scales with the stage width (`cqw`), so a mini scene is the same picture
- * drawn smaller. Every loop is CSS in `public/styles.css` (`.pw-*`), gated
- * by `data-motion` from `primitiveWidgetMotion`. Without it the scene is a
- * finished still, which is also the reduced-motion and no-JS view.
+ * decorative). Stage, wires, and nodes come from `primitive-widget-parts.tsx`;
+ * every loop is CSS in `public/styles.css` (`.pw-*`).
  *
  * A scene draws `<button>`s only when it gets a pick handler, so the mini
  * copy has nothing to focus.
  */
-
-export type PrimitiveWidgetSize = 'full' | 'mini'
-
-export function PrimitiveWidgetFrame(
-	handle: Handle<{
-		id: LandingPrimitiveId
-		size: PrimitiveWidgetSize
-		children?: RemixNode
-	}>,
-) {
-	const motion = primitiveWidgetMotion()
-	return () => {
-		const { id, size, children } = handle.props
-		return (
-			<div
-				class={`pw pw-${id}`}
-				data-size={size}
-				aria-hidden={size === 'mini' ? 'true' : undefined}
-				style={{ '--pw-accent': `var(--primitive-${id})` }}
-				mix={motion}
-			>
-				<div class="pw-stage">{children}</div>
-			</div>
-		)
-	}
-}
-
-function at(x: number, y: number, extra?: Record<string, string>) {
-	return { left: `${x}%`, top: `${y}%`, ...extra }
-}
-
-function icon(name: string) {
-	return (
-		<span
-			class="pw-icon"
-			aria-hidden="true"
-			style={{ '--pw-icon': `url("/images/icons/${name}.svg")` }}
-		></span>
-	)
-}
-
-function wires(children: RemixNode) {
-	return (
-		<svg
-			class="pw-wires"
-			viewBox="0 0 360 200"
-			aria-hidden="true"
-			focusable={false}
-		>
-			{children}
-		</svg>
-	)
-}
-
-/** One wire: the resting line, the looping pulse, and a one-shot pulse
- *  keyed by `shot` so a click replays it. */
-function wire(options: {
-	d: string
-	i?: number
-	on?: boolean
-	shot?: number
-	key?: string
-}) {
-	const { d, i = 0, on: lit = false, shot = 0, key } = options
-	return (
-		<g
-			key={key}
-			class="pw-wire"
-			data-on={lit ? '' : undefined}
-			style={{ '--i': String(i) }}
-		>
-			<path class="pw-line" d={d} />
-			<path class="pw-pulse" d={d} pathLength="100" />
-			{shot > 0 ? (
-				<path key={`shot-${shot}`} class="pw-shot" d={d} pathLength="100" />
-			) : null}
-		</g>
-	)
-}
-
-function choice(options: {
-	class: string
-	selected: boolean
-	onPick?: () => void
-	style?: Record<string, string>
-	label?: string
-	children: RemixNode
-}) {
-	const { class: className, selected, onPick, style, label, children } = options
-	if (!onPick) {
-		return (
-			<span class={className} data-on={selected ? '' : undefined} style={style}>
-				{children}
-			</span>
-		)
-	}
-	return (
-		<button
-			type="button"
-			class={className}
-			aria-pressed={selected ? 'true' : 'false'}
-			aria-label={label}
-			style={style}
-			mix={on('click', onPick)}
-		>
-			{children}
-		</button>
-	)
-}
 
 // Memory: one saved preference, recalled by whichever agent asks.
 
