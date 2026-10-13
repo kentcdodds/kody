@@ -56,6 +56,7 @@ test('GET resolves the query proposal for the signed-in viewer', async () => {
 				credentials: [{ name: 'resend-prod' }],
 			},
 		],
+		enable: [],
 		reason: 'Digest',
 		errors: [],
 	})

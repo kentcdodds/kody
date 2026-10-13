@@ -117,7 +117,8 @@ export function createPackageCredentialsApiHandler(env: Env) {
 			} catch (error) {
 				if (
 					error instanceof MappingWriteRefused &&
-					error.code !== 'webhook_other_enabler'
+					error.code !== 'webhook_other_enabler' &&
+					error.change
 				) {
 					return jsonResponse(
 						{

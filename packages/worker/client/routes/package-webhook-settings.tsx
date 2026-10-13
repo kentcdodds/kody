@@ -156,12 +156,21 @@ export function createPackageWebhooksController(handle: Handle) {
 				setMessage(result.message || webhookFailureMessage(intent), 'error')
 				break
 			case 'ok': {
-				applyWebhooks(result.payload.webhooks)
+				const { approvalUrl } = result.payload
+				applyWebhooks(
+					approvalUrl
+						? result.payload.webhooks.map((entry) =>
+								entry.id === webhook.id && !entry.approvalUrl
+									? { ...entry, approvalUrl }
+									: entry,
+							)
+						: result.payload.webhooks,
+				)
 				if (intent === 'rotate') revealedUrls.delete(webhook.id)
 				if (result.payload.revealed) {
 					revealedUrls.set(result.payload.revealed.id, result.payload.revealed)
 				}
-				setMessage(webhookSuccessMessage(intent))
+				setMessage(webhookSuccessMessage(intent, approvalUrl))
 				break
 			}
 			default: {

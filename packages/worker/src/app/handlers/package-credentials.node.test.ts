@@ -35,8 +35,6 @@ const { createPackageCredentialsApiHandler } =
 	await import('./package-credentials.ts')
 const { MappingWriteRefused } =
 	await import('#worker/credentials/package-credential-mapping-changes.ts')
-const { TriggerEnablementError } =
-	await import('#worker/enablements/service.ts')
 
 const url = 'https://kody.test/profiles/acme/packages/digest/credentials.json'
 const call = (init?: RequestInit) =>
@@ -122,10 +120,8 @@ test('writes apply every change or none and return the fresh view', async () => 
 	mocks.write.mockRejectedValueOnce(
 		new MappingWriteRefused(
 			resolvedChange,
-			new TriggerEnablementError(
-				'webhook_other_enabler',
-				'Webhook "incoming" is already on for another person.',
-			),
+			'webhook_other_enabler',
+			'Webhook "incoming" is already on for another person.',
 		),
 	)
 	expect((await post({ changes: [change] })).status).toBe(409)
@@ -133,7 +129,8 @@ test('writes apply every change or none and return the fresh view', async () => 
 	mocks.write.mockRejectedValueOnce(
 		new MappingWriteRefused(
 			resolvedChange,
-			new TriggerEnablementError('trigger_unknown', 'No cron "daily".'),
+			'trigger_unknown',
+			'No cron "daily".',
 		),
 	)
 	const gone = await post({ changes: [change] })

@@ -10,6 +10,7 @@ import {
 	parseCredentialApprovalQuery,
 	type CredentialMappingProposalChange,
 } from '#universal/credential-contracts.ts'
+import { insertEnablement } from '#worker/enablements/repo.ts'
 import {
 	approveCredentialProposal,
 	resolveCredentialApproval,
@@ -344,4 +345,196 @@ test('a member cannot approve org defaults but can approve their own', async () 
 		)
 	).view
 	expect(mineView.canApprove).toBe(true)
+})
+
+test('an enable-only proposal turns a minted webhook on at Approve, once', async () => {
+	const t = await setup()
+	const enableIncoming = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'webhook', name: 'incoming' }],
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+
+	const unminted = (
+		await resolveCredentialApproval(
+			await t.scopeFor('ann', 'member'),
+			enableIncoming,
+		)
+	).view
+	expect(unminted.canApprove).toBe(false)
+	expect(unminted.enable).toEqual([
+		{
+			trigger: { kind: 'webhook', name: 'incoming' },
+			willEnable: false,
+			error: {
+				code: 'webhook_not_minted',
+				message:
+					'Webhook "incoming" has no URL yet. Mint its URL first, then approve it here.',
+			},
+		},
+	])
+
+	// A stored signing secret keeps the enable from minting one.
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints
+				(id, user_id, package_id, webhook_name, url_secret_hash, hmac_secret_encrypted, created_at, rotated_at)
+			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', 'sealed', ?, ?)`,
+		)
+		.bind(
+			t.acmeId,
+			t.savedPackage.id,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	expect(await t.enablementCount()).toBe(0)
+
+	const scope = await t.scopeFor('ann', 'member')
+	const { view } = await resolveCredentialApproval(scope, enableIncoming)
+	expect(view).toMatchObject({
+		canApprove: true,
+		changes: [],
+		enable: [
+			{
+				trigger: { kind: 'webhook', name: 'incoming' },
+				willEnable: true,
+				error: null,
+			},
+		],
+	})
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal: enableIncoming,
+		fingerprint: view.fingerprint,
+	})
+	expect(outcome.status).toBe('approved')
+	expect(outcome.view.enable[0]!.willEnable).toBe(false)
+	expect(await t.enablementCount()).toBe(1)
+	const enabled = await t.db
+		.prepare(
+			`SELECT instance_id, enabler_user_id, state FROM enablements WHERE trigger_kind = 'webhook'`,
+		)
+		.first<{ instance_id: string; enabler_user_id: string; state: string }>()
+	expect(enabled).toEqual({
+		instance_id: 'ep-incoming',
+		enabler_user_id: String(t.people.ann.personId),
+		state: 'on',
+	})
+
+	// Approving again writes nothing; someone else cannot take the webhook over.
+	const again = await resolveCredentialApproval(
+		await t.scopeFor('ann', 'member'),
+		enableIncoming,
+	)
+	await approveCredentialProposal({
+		scope: await t.scopeFor('ann', 'member'),
+		proposal: enableIncoming,
+		fingerprint: again.view.fingerprint,
+	})
+	expect(await t.enablementCount()).toBe(1)
+	const bea = (
+		await resolveCredentialApproval(
+			await t.scopeFor('bea', 'owner'),
+			enableIncoming,
+		)
+	).view
+	expect(bea.canApprove).toBe(false)
+	expect(bea.enable[0]!.error?.code).toBe('webhook_other_enabler')
+})
+
+test('a webhook another person turns on between resolve and write is a conflict that writes nothing, not even its signing secret', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.grantUse(prod, 'ann')
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints
+				(id, user_id, package_id, webhook_name, url_secret_hash, hmac_secret_encrypted, created_at, rotated_at)
+			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', NULL, ?, ?)`,
+		)
+		.bind(
+			t.acmeId,
+			t.savedPackage.id,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	const incoming = {
+		type: 'trigger',
+		trigger: { kind: 'webhook', name: 'incoming' },
+	} as const
+	const proposal = proposalOf([
+		{ target: incoming, needKey: 'mail', credentials: [{ id: prod }] },
+		{
+			target: { type: 'default', layer: 'mine' },
+			needKey: 'mail',
+			credentials: [{ id: prod }],
+		},
+	])
+	const scope = await t.scopeFor('ann', 'member')
+	const { view } = await resolveCredentialApproval(scope, proposal)
+	expect(view).toMatchObject({
+		canApprove: true,
+		changes: [
+			{ willEnable: true, error: null },
+			{ willEnable: false, error: null },
+		],
+	})
+
+	// Bea's enablement lands after Ann's plan was made and before her batch.
+	const racingDb = new Proxy(t.db, {
+		get(target, property) {
+			if (property === 'batch') {
+				return async (statements: Array<D1PreparedStatement>) => {
+					await insertEnablement({
+						db: target,
+						enablement: {
+							orgId: t.acmeId,
+							packageId: t.savedPackage.id,
+							triggerKind: 'webhook',
+							triggerName: 'incoming',
+							instanceId: 'ep-incoming',
+							enablerUserId: String(t.people.bea.personId),
+							origin: 'enabled',
+						},
+					})
+					return await target.batch(statements)
+				}
+			}
+			const value = Reflect.get(target, property) as unknown
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	const outcome = await approveCredentialProposal({
+		scope: { ...scope, env: { ...scope.env, APP_DB: racingDb } },
+		proposal,
+		fingerprint: view.fingerprint,
+	})
+	expect(outcome.status).toBe('conflict')
+	if (outcome.status !== 'conflict') return
+	expect(outcome.message).toContain('another person')
+	expect(outcome.view.canApprove).toBe(false)
+	expect(outcome.view.changes[0]!.error?.code).toBe('webhook_other_enabler')
+	expect(await t.enablementCount()).toBe(1)
+	const mappings = await t.db
+		.prepare(`SELECT COUNT(*) AS n FROM credential_mappings`)
+		.first<{ n: number }>()
+	expect(mappings!.n).toBe(0)
+	const live = await t.db
+		.prepare(`SELECT enabler_user_id FROM enablements`)
+		.first<{ enabler_user_id: string }>()
+	expect(live!.enabler_user_id).toBe(String(t.people.bea.personId))
+	const endpoint = await t.db
+		.prepare(
+			`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = 'ep-incoming'`,
+		)
+		.first<{ hmac_secret_encrypted: string | null }>()
+	expect(endpoint!.hmac_secret_encrypted).toBeNull()
 })

@@ -12,6 +12,7 @@ import {
 	type WebhookDeliveryOutcome,
 	type WebhookEndpointRecord,
 } from './types.ts'
+import { describeWebhookNotOn } from './approval.ts'
 
 export async function recordWebhookDelivery(input: {
 	env: Env
@@ -146,8 +147,8 @@ type WebhookInvocationInput = {
 
 /**
  * Run a webhook's bound export as the endpoint's enabler. With no on
- * enablement (paused, off, or never enabled) nothing runs and the delivery
- * fails with 409 `enablement_not_on`.
+ * enablement (paused, off, or never approved) nothing runs and the delivery
+ * fails with 409 `enablement_not_on`, carrying the approval link.
  */
 export async function dispatchWebhookInvocation(
 	input: WebhookInvocationInput,
@@ -160,11 +161,21 @@ export async function dispatchWebhookInvocation(
 	})
 	const [run] = plan.runs
 	if (!run) {
+		const notOn = await describeWebhookNotOn({
+			env: input.env,
+			baseUrl: input.baseUrl ?? getAppBaseUrl({ env: input.env }),
+			endpoint: input.endpoint,
+			packageKodyId: input.packageKodyId,
+			plan,
+		})
 		return buildJsonErrorResponse({
 			status: 409,
 			code: 'enablement_not_on',
-			message: `Webhook "${input.endpoint.webhookName}" has no on enablement, so nothing ran. Its enabler may have lost access (it resumes once access is back), or nobody has enabled it.`,
+			message: notOn.message,
 			idempotencyKey: input.idempotencyKey,
+			...(notOn.approvalUrl
+				? { details: { approvalUrl: notOn.approvalUrl } }
+				: {}),
 		})
 	}
 	return await invokeWebhookExport(
