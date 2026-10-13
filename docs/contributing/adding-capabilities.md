@@ -255,55 +255,12 @@ where operator ergonomics call for lookup. They never accept or return numeric
 only after boundary validation. Admin URLs and audit reasons follow the same
 rule.
 
-<<<<<<< HEAD
 When adding an admin action, expose a service-layer function from a new
 `admin/*` capability file that calls it directly, set `requiredRole: 'admin'`,
 and audit-log the invocation. Do not duplicate admin workflow SQL in capability
 handlers.
-=======
-- `adminUserList`
-- `adminUserGet`
-- `adminHandleGet`
-- `adminUserCreate`
-- `adminUserUpdate`
-- `adminUserVerify`
-- `adminAccountWriteLeaseList`
-- `adminAccountWriteLeaseRepair`
-- `adminAccountDeletionAbort`
-- `adminUnverifiedAccountPurgeRun`
-- `adminAuditLogQuery`
-- `adminUserUsage`
-- `adminRunLogSqlBilling`
-- `adminPackagePlacementFailures`
-- `adminFeatureFlagList`
-- `adminFeatureFlagSet`
-- `adminFeatureFlagOverride`
-- `adminReservedUsernameList`
-- `adminReservedUsernameAdd`
-- `adminReservedUsernameRemove`
-- `adminSystemEmailList`
-- `adminSystemEmailGet`
-- `adminSystemEmailDelete`
-- `adminSystemEmailSend`
-- `adminSystemEmailSenderRuleList`
-- `adminSystemEmailSenderRuleSet`
-- `adminSystemEmailSenderRuleDelete`
-- `adminPlatformFeedbackList`
-- `adminPlatformFeedbackGet`
-- `adminPlatformFeedbackUpdate`
-- `adminCommunityActivityList`
-- `adminCommunityOrphanForksCleanup`
-- `adminPackageCodemodScan`
-- `adminPackageCodemodDryRun`
-- `adminPackageCodemodApply`
-- `adminPackageCodemodRevert`
-- `adminPackageCodemodOwnerNotice`
 
-When adding more admin actions, expose service-layer functions by adding new
-`admin/*` capability files that call those service functions directly, set
-`requiredRole: 'admin'`, and audit-log the invocation. Do not duplicate admin
-workflow SQL in capability handlers.
->>>>>>> 2872b50b0 (Document adminPackagePlacementFailures)
+> > > > > > > 2872b50b0 (Document adminPackagePlacementFailures)
 
 Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer consume normalized JSON Schema after
