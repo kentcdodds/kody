@@ -6,12 +6,12 @@ import { isRoutePrefetchInFlight } from '#client/intent-prefetch.ts'
  * commits the URL, so the default Referer would name the source page (the
  * previous org on an SPA org switch). Name the destination page instead.
  */
-export function orgAccountApiReferrer(href: string) {
+function orgAccountApiReferrer(href: string) {
 	return new URL(href, window.location.origin).href
 }
 
 /** Header the org-binding guard uses to skip last-used cookie on speculative loads. */
-export const orgAccountPrefetchHeader = 'X-Kody-Prefetch'
+const orgAccountPrefetchHeader = 'X-Kody-Prefetch'
 
 /**
  * Shared fetch init for org-owned account JSON. Marks intent/render prefetches
