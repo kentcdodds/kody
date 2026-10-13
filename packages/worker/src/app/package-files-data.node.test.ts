@@ -497,6 +497,18 @@ test('package page README images opt in for listing README and only matching own
 			publishedCommit: 'abc123',
 			expected: '/@kentcdodds/sentry/assets',
 		},
+		{
+			usedListingReadme: false,
+			publishedCommit: 'idxabc1',
+			readmeCommit: 'headlive1',
+			expected: null,
+		},
+		{
+			usedListingReadme: false,
+			publishedCommit: 'abc123',
+			readmeCommit: 'abc123',
+			expected: '/@kentcdodds/sentry/assets',
+		},
 	]
 	for (const { expected, ...input } of cases) {
 		const href = resolvePackagePageReadmeImageBaseHref({
@@ -697,7 +709,10 @@ test('loadOwnerPackageReadme falls back to Artifacts HEAD for plain repos withou
 		userId: ownerIdFromStored('owner-1'),
 		sourceId: 'src-plain-1',
 	})
-	expect(readme).toBe('# Live README from HEAD')
+	expect(readme).toEqual({
+		content: '# Live README from HEAD',
+		commit: 'headlive1',
+	})
 	expect(mockModule.readArtifactTreeAtCommit).toHaveBeenCalledWith(
 		expect.objectContaining({
 			repoId: 'artifacts-repo-1',
@@ -719,7 +734,30 @@ test('loadOwnerPackageReadme prefers the published snapshot when present', async
 		userId: ownerIdFromStored('owner-1'),
 		sourceId: 'src-1',
 	})
-	expect(readme).toBe('# Published README')
+	expect(readme).toEqual({
+		content: '# Published README',
+		commit: 'abc123',
+	})
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
+})
+
+test('loadOwnerPackageReadme does not fall through to HEAD when published snapshot has no README', async () => {
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: entitySource,
+		manifest: { name: 'sentry', version: '1.0.0' },
+		files: { 'package.json': '{"name":"sentry"}\n' },
+		snapshotCreatedAt: '2026-01-01T00:00:00.000Z',
+	} as never)
+	mockModule.readArtifactTreeAtCommit.mockResolvedValue({
+		'README.md': '# Secret HEAD README\n',
+	})
+	const readme = await loadOwnerPackageReadme({
+		env,
+		request: new Request('https://example.com/@kentcdodds/sentry'),
+		userId: ownerIdFromStored('owner-1'),
+		sourceId: 'src-1',
+	})
+	expect(readme).toEqual({ content: null, commit: null })
 	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
 })
 

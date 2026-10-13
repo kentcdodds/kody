@@ -797,6 +797,8 @@ export function resolvePackagePageReadmeImageBaseHref(input: {
 	ownerUsername: string
 	kodyId: string
 	usedListingReadme: boolean
+	/** Commit the README markdown was read from (published snapshot or live HEAD). */
+	readmeCommit?: string | null
 	publishedCommit?: string | null
 	pinnedCommit?: string | null
 }) {
@@ -807,7 +809,8 @@ export function resolvePackagePageReadmeImageBaseHref(input: {
 			kodyId: input.kodyId,
 		})
 	}
-	const viewedReadmeCommit = input.publishedCommit?.trim() || ''
+	const viewedReadmeCommit =
+		input.readmeCommit?.trim() || input.publishedCommit?.trim() || ''
 	const assetCommit = input.pinnedCommit?.trim() || viewedReadmeCommit
 	return getCommunityPackageAssetBaseHrefForViewedCommit({
 		listingId: input.listingId,
@@ -825,6 +828,12 @@ function readmeFromFiles(files: Record<string, string>): string | null {
 	return content ? content : null
 }
 
+export type OwnerPackageReadme = {
+	content: string | null
+	/** Commit the README text was loaded from, when known. */
+	commit: string | null
+}
+
 /**
  * Owner detail README. Prefer the published package snapshot; when that is
  * missing (plain repos have none), read the same Artifacts HEAD tree the
@@ -835,7 +844,7 @@ export async function loadOwnerPackageReadme(input: {
 	request: Request
 	userId: string
 	sourceId: string
-}): Promise<string | null> {
+}): Promise<OwnerPackageReadme> {
 	try {
 		const loaded = await loadPackageSourceBySourceId({
 			env: input.env,
@@ -846,10 +855,17 @@ export async function loadOwnerPackageReadme(input: {
 			userId: input.userId,
 			sourceId: input.sourceId,
 		})
+		const publishedCommit = loaded.source.published_commit?.trim() || null
 		const fromPublished = readmeFromFiles(loaded.files)
-		if (fromPublished) return fromPublished
+		if (fromPublished) {
+			return { content: fromPublished, commit: publishedCommit }
+		}
+		if (publishedCommit) {
+			// Published package with no README in the snapshot — do not leak HEAD.
+			return { content: null, commit: null }
+		}
 	} catch {
-		// Published snapshot missing — fall through to Artifacts HEAD.
+		// No published snapshot (plain repos) — fall through to Artifacts HEAD.
 	}
 	return loadOwnerPackageReadmeFromArtifactsHead(input)
 }
@@ -859,10 +875,12 @@ async function loadOwnerPackageReadmeFromArtifactsHead(input: {
 	request: Request
 	userId: string
 	sourceId: string
-}): Promise<string | null> {
+}): Promise<OwnerPackageReadme> {
 	try {
 		const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-		if (!source?.repo_id || source.user_id !== input.userId) return null
+		if (!source?.repo_id || source.user_id !== input.userId) {
+			return { content: null, commit: null }
+		}
 		const liveCommit = source.indexed_commit ?? source.published_commit ?? ''
 		const resolved = await resolvePublicTreeCommit({
 			env: input.env,
@@ -872,7 +890,7 @@ async function loadOwnerPackageReadmeFromArtifactsHead(input: {
 			pinnedCommit: liveCommit,
 			ref: '',
 		})
-		if (!resolved.commit) return null
+		if (!resolved.commit) return { content: null, commit: null }
 		const loaded = await loadPublicTreeFiles({
 			env: input.env,
 			request: input.request,
@@ -890,9 +908,12 @@ async function loadOwnerPackageReadmeFromArtifactsHead(input: {
 			})
 			if (tree) files = tree
 		}
-		return readmeFromFiles(files)
+		return {
+			content: readmeFromFiles(files),
+			commit: resolved.commit,
+		}
 	} catch {
-		return null
+		return { content: null, commit: null }
 	}
 }
 
