@@ -353,6 +353,7 @@ import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
+	createOrgSettingsCustomHostnamesPostHandler,
 	createOrgSettingsDeletePostHandler,
 	createOrgSettingsHandler,
 	createOrgSettingsPostHandler,
@@ -697,6 +698,8 @@ export function createAppRouter(env: Env) {
 			orgSettingsPost: createOrgSettingsPostHandler(env),
 			orgSettingsAvatarPost: createOrgSettingsAvatarPostHandler(env),
 			orgSettingsDeletePost: createOrgSettingsDeletePostHandler(env),
+			orgSettingsCustomHostnamesPost:
+				createOrgSettingsCustomHostnamesPostHandler(env),
 			orgMembers: createOrgMembersHandler(env),
 			orgMembersApi: createOrgMembersApiHandler(env),
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),

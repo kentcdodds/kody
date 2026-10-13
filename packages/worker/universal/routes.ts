@@ -253,6 +253,9 @@ export const routes = route({
 	orgSettingsPost: post('/@:orgSlug/-/settings.json'),
 	orgSettingsAvatarPost: post('/@:orgSlug/-/settings/avatar.json'),
 	orgSettingsDeletePost: post('/@:orgSlug/-/settings/delete.json'),
+	orgSettingsCustomHostnamesPost: post(
+		'/@:orgSlug/-/settings/custom-hostnames.json',
+	),
 	orgMembers: get('/@:orgSlug/-/members'),
 	orgMembersApi: get('/@:orgSlug/-/members.json'),
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),

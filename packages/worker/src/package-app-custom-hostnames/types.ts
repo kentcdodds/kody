@@ -3,6 +3,13 @@ export const packageAppCustomHostnameBindingKinds = ['app', 'org'] as const
 export type PackageAppCustomHostnameBindingKind =
 	(typeof packageAppCustomHostnameBindingKinds)[number]
 
+/** DNS record shape Cloudflare returns for ownership / SSL validation. */
+export type PackageAppCustomHostnameDnsRecord = {
+	type: string
+	name: string
+	value: string
+}
+
 /** Row shape for `package_app_custom_hostnames`. Hostname is stored lowercased. */
 export type PackageAppCustomHostnameRow = {
 	id: string
@@ -16,6 +23,8 @@ export type PackageAppCustomHostnameRow = {
 	sslStatus: string
 	verifiedAt: string | null
 	dnsMissingSince: string | null
+	ownershipVerification: PackageAppCustomHostnameDnsRecord | null
+	sslValidationRecords: Array<PackageAppCustomHostnameDnsRecord>
 	createdByUserId: string | null
 	createdAt: string
 	updatedAt: string

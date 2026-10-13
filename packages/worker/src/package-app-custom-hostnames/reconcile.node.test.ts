@@ -9,13 +9,16 @@ import {
 	reconcilePackageAppCustomHostnames,
 } from './reconcile.ts'
 
-const migrationSql = readFileSync(
-	join(
-		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0133-package-app-custom-hostnames.sql',
-	),
-	'utf8',
+const migrationsDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'../../migrations',
 )
+const migrationSql = [
+	'0133-package-app-custom-hostnames.sql',
+	'0135-package-app-custom-hostname-verification.sql',
+]
+	.map((name) => readFileSync(join(migrationsDir, name), 'utf8'))
+	.join('\n')
 
 function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
