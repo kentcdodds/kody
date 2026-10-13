@@ -4,6 +4,10 @@ import {
 	type LegacyCredentialPattern,
 	legacyCredentialPatternFromMessage,
 } from '#worker/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
+import {
+	scanPackageCredentials,
+	type CredentialReference,
+} from '#worker/credentials/credential-inventory-scan.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
@@ -22,10 +26,85 @@ const credentialPatternNotes: Partial<Record<LegacyCredentialPattern, string>> =
 			'plain http: the fetch gateway refuses a request that carries a placeholder over http://; use https:// for those requests.',
 	}
 
+type CredentialTypeHint = 'inject' | 'oauth' | 'url' | 'login' | 'signing'
+
+/**
+ * Optional suggestions, one per credential type that fits a placement the
+ * scan found (ADR 0068). They describe a choice, never a problem: nothing is
+ * suggested for a placement no type fits, and placeholders keep working.
+ */
+const credentialTypeHints: Record<CredentialTypeHint, string> = {
+	inject:
+		"Header, query, or basic auth placeholders: a Key with an inject (credentialUpdate) can be opened with credential(key), and its client places the value and sends it only to the Key's hosts.",
+	oauth:
+		'Integration token headers: credential(key) for an OAuth connection sends Authorization: Bearer and refreshes the token for you.',
+	url: 'Path or whole-URL placeholders: a url credential (secretSet kind "url") holds the whole URL, and its client fetches it without the URL entering code.',
+	login:
+		'Password or token exchange bodies: a login credential (secretSet kind "login") runs the exchange on the host and places the session token.',
+	signing:
+		'Signing (secretJwtSign or signature key material): a signing credential (secretSet kind "signing") signs through credential(key).sign() without exposing the key.',
+}
+
+const credentialTypeHintsHeading =
+	'Optional, if you want a scoped credential type for these (ADR 0068):'
+
+const loginBodyFieldPattern = /pass(?:word|wd)?|refresh_?token|client_?secret/i
+
+function credentialTypeHintFor(
+	reference: CredentialReference,
+): CredentialTypeHint | null {
+	const { placement } = reference
+	switch (placement.type) {
+		case 'header':
+			return reference.nameKind === 'integration' ? 'oauth' : 'inject'
+		case 'query':
+		case 'basic':
+			return reference.nameKind === 'integration' ? null : 'inject'
+		case 'path':
+		case 'url':
+			return 'url'
+		case 'body':
+			return placement.endpoint === 'login' ||
+				(placement.field != null && loginBodyFieldPattern.test(placement.field))
+				? 'login'
+				: null
+		case 'signing':
+			return 'signing'
+		case 'header-custom':
+		case 'binding':
+		case 'other':
+			return null
+		default: {
+			const exhaustive: never = placement
+			throw new Error(`Unhandled placement: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function credentialTypeHintLines(sourceFiles: Record<string, string>) {
+	let scan: ReturnType<typeof scanPackageCredentials>
+	try {
+		scan = scanPackageCredentials({ files: sourceFiles, slots: undefined })
+	} catch {
+		// Hints are optional; a scan failure must never touch the check or publish.
+		return []
+	}
+	const found = new Set<CredentialTypeHint>()
+	for (const reference of scan.references) {
+		const hint = credentialTypeHintFor(reference)
+		if (hint) found.add(hint)
+	}
+	if (scan.jwtSignCalls > 0) found.add('signing')
+	const hints = (Object.keys(credentialTypeHints) as Array<CredentialTypeHint>)
+		.filter((hint) => found.has(hint))
+		.map((hint) => `- ${credentialTypeHints[hint]}`)
+	return hints.length > 0 ? [credentialTypeHintsHeading, ...hints] : []
+}
+
 /**
  * Owner-facing codemod 0010: a neutral list of credential placeholder
- * references, as path and pattern label only, with optional notes. Never
- * fails the run.
+ * references, as path and pattern label only, with optional notes and
+ * optional credential type hints. Never fails the run.
  */
 export function buildCredentialPatternCheck(
 	sourceFiles: Record<string, string>,
@@ -66,6 +145,7 @@ export function buildCredentialPatternCheck(
 			...lines,
 			footer,
 			...notes,
+			...credentialTypeHintLines(sourceFiles),
 		].join('\n'),
 	}
 }

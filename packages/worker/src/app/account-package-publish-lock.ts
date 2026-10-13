@@ -242,6 +242,12 @@ export async function handleAccountPackagePublishLockAction(input: {
 		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
+		// Owner explicitly chose this commit on approve-publish. If a
+		// published-only fleet migration advanced published_commit to a sibling
+		// of pending HEAD, this is not a fast-forward; allowForce + overwrite
+		// confirmation (this click) still requires a restorable backup.
+		allowForce: true,
+		destructiveOverwriteConfirmed: true,
 		baseUrl: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,

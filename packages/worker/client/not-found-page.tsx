@@ -1,5 +1,8 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { routes } from '#universal/routes.ts'
+import { buildNotFoundErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -11,6 +14,7 @@ import {
 	illustratedErrorImageCss,
 	illustratedErrorPageCss,
 } from './illustrated-error-page.ts'
+import { readRouterUrl } from './router-location.tsx'
 
 export const notFoundPageHeading = "This doesn't quite connect."
 export const notFoundPageImageSrc = '/images/kody-404-disappointed.png'
@@ -20,7 +24,10 @@ export const notFoundPageImageSrc = '/images/kody-404-disappointed.png'
  * package URL that does not exist) used to pad and title themselves
  * differently; both now render this page.
  */
-export function NotFoundPage(_handle: Handle) {
+export function NotFoundPage(handle: Handle) {
+	const path = normalizeRedirectTo(readRouterUrl(handle)) ?? '/'
+	const prompt = buildNotFoundErrorAgentPrompt({ path })
+
 	return () => (
 		<section data-testid="not-found-page" mix={css(illustratedErrorPageCss)}>
 			<img
@@ -46,6 +53,7 @@ export function NotFoundPage(_handle: Handle) {
 					Browse packages
 				</a>
 			</nav>
+			<ErrorAgentPromptButton prompt={prompt} />
 		</section>
 	)
 }

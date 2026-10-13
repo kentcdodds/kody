@@ -4,6 +4,10 @@ import { packageInvocationStartedLog } from '#worker/caller-disconnect.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
+	type RunLogPackageFailureSummary,
+	type RunLogPackageFailureSummaryInput,
+} from './package-failure-summary.ts'
+import {
 	type ActivationMilestoneRecord,
 	type PackageRunSuccessRecord,
 } from './package-activation-state.ts'
@@ -1214,6 +1218,24 @@ export async function getAdminInsightsSnapshot(input: {
 		env: input.env,
 		userId: input.userId,
 	}).getAdminInsightsSnapshot()
+}
+
+/**
+ * Content-free per-owner failed-run counts for one window. Propagates
+ * binding/RPC errors. Never returns error messages or other user content.
+ */
+export async function summarizePackageFailures(input: {
+	env: Env
+	userId: OwnerId
+	window: RunLogPackageFailureSummaryInput
+}): Promise<RunLogPackageFailureSummary> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).summarizePackageFailures(input.window)
 }
 
 /**

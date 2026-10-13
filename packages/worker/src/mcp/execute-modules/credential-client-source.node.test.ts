@@ -17,6 +17,7 @@ type Client = {
 	name: string
 	kind: string
 	hosts: Array<string>
+	hint?: string
 	fetch?: (
 		input: string | URL | Request,
 		init?: RequestInit,
@@ -218,19 +219,31 @@ test('structured errors come back as Errors with code, retryWith, and options', 
 	})
 })
 
-test('named and credentials open through the same tool, and signing clients sign on the host', async () => {
+test('named opens through the open tool, credentials through open-all, and signing clients sign on the host', async () => {
 	const calls: Array<[string, unknown]> = []
 	const runtime = createRuntime(async (name, args) => {
 		calls.push([name, args])
 		if (name === credentialClientToolNames.sign) {
 			return { ok: true, value: { signature: 'sig' } }
 		}
+		if (name === credentialClientToolNames.openAll) {
+			return {
+				ok: true,
+				value: [
+					openedAs('signing', ['api.example.com']),
+					{ ...openedAs('signing', ['api.example.com']), hint: 'set provider' },
+				],
+			}
+		}
 		return { ok: true, value: openedAs('signing', ['api.example.com']) }
 	})
 	const named = await runtime.credential.named('cred', { scope: 'personal' })
 	expect(named.fetch).toBeUndefined()
 	await expect(named.sign!({ type: 'hmac', data: 'x' })).resolves.toBe('sig')
-	expect(await runtime.credentials('k')).toHaveLength(1)
+	const many = await runtime.credentials('k')
+	expect(many).toHaveLength(2)
+	expect(many[1]!.hint).toBe('set provider')
+	expect(Object.isFrozen(many[0])).toBe(true)
 	expect(calls).toEqual([
 		[credentialClientToolNames.open, { name: 'cred', scope: 'personal' }],
 		[
@@ -241,6 +254,6 @@ test('named and credentials open through the same tool, and signing clients sign
 				operation: { type: 'hmac', data: 'x' },
 			},
 		],
-		[credentialClientToolNames.open, { key: 'k' }],
+		[credentialClientToolNames.openAll, { key: 'k' }],
 	])
 })

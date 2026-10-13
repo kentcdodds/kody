@@ -27,9 +27,11 @@ first-class identity.
 
 Server lookups go through `resolveSavedPackageRef` (leaf, `@scope/leaf`, or
 UUID; slug = leaf of `saved_packages.name`). The `saved_packages.kody_id` and
-`community_listings.kody_id` columns are still written but are not lookup keys.
-Rename redirects dual-write `package_slug_redirects` and the legacy
-`package_kody_id_redirects`. Dropping the columns and the legacy table is
+`community_listings.kody_id` columns are still written but are not lookup keys;
+`insertSavedPackage` / `updateSavedPackage` derive `saved_packages.kody_id` from
+the name leaf. Rename redirects write only `package_slug_redirects`; the legacy
+`package_kody_id_redirects` table is still read as a fallback and cleared on
+release/delete. Dropping the columns and the legacy table is
 [#1909](https://github.com/kentcdodds/kody/issues/1909) phase 4.
 
 **Ready when:** agent transcripts and create/resolve traffic no longer need the

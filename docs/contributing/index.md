@@ -5,7 +5,8 @@ style, tests, MCP capabilities, and runtime architecture.
 
 ## Setup and workflow
 
-- [Engineering principles](../principles/index.md)
+- [Engineering principles](../principles/index.md) (including
+  [error prompt for agents](../principles/error-prompt-for-agents.md))
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (steering veto list: product-shaped
   nos and durable constraints — not an ADR-per-PR log)

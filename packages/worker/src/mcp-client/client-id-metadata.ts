@@ -1,4 +1,5 @@
 import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
+import { assertEndpointsOnIssuerOrigin } from './oauth-issuer-endpoints.ts'
 import {
 	clientIdFromMcpOAuthTokenStorageKey,
 	mcpOAuthRefreshTokenStorageKey,
@@ -110,16 +111,17 @@ type McpOAuthSaveTokens = Parameters<
 /**
  * Agents SDK storage/PKCE provider plus the MCP SDK `clientMetadataUrl`
  * hook. HTTPS callbacks present CIMD; http (local dev) omits it so auth
- * falls back to DCR. `saveTokens` keeps an existing refresh token when
- * the authorization server omits one, writes a server-scoped sidecar so
- * restore can find it when SQL `client_id` is missing, and keeps OAuth
- * discovery so the next authorize URL can still advertise scopes.
- * `invalidateCredentials` for `tokens`, `client`, or `all` infers
- * `clientId` when it is missing, deletes leftover `/token` keys and the
- * sidecar so a rejected grant cannot be replayed, and skips a `tokens`
- * wipe when a save completed after the invalidate was requested. With
- * `resolvePreRegisteredClient`, a server's admin-configured OAuth client is
- * presented ahead of CIMD and DCR.
+ * falls back to DCR. Discovery save/read refuse authorize/token endpoints
+ * off the issuer origin (`mcp_oauth_failed`, #3284). `saveTokens` keeps an
+ * existing refresh token when the authorization server omits one, writes a
+ * server-scoped sidecar so restore can find it when SQL `client_id` is
+ * missing, and keeps OAuth discovery so the next authorize URL can still
+ * advertise scopes. `invalidateCredentials` for `tokens`, `client`, or
+ * `all` infers `clientId` when it is missing, deletes leftover `/token`
+ * keys and the sidecar so a rejected grant cannot be replayed, and skips a
+ * `tokens` wipe when a save completed after the invalidate was requested.
+ * With `resolvePreRegisteredClient`, a server's admin-configured OAuth
+ * client is presented ahead of CIMD and DCR.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -135,6 +137,8 @@ export function createMcpClientOAuthProvider(
 		mcpClientName,
 		callbackUrl,
 	) as McpClientOAuthProvider
+	// Before token preservation so its discovery re-write uses the same guard.
+	installMcpOAuthIssuerEndpointGuard(provider)
 	installMcpOAuthTokenPreservation(provider)
 	if (options?.resolvePreRegisteredClient) {
 		installMcpPreRegisteredOAuthClient(
@@ -147,6 +151,34 @@ export function createMcpClientOAuthProvider(
 		provider.clientMetadataUrl = clientMetadataUrl
 	}
 	return provider
+}
+
+/**
+ * Refuse AS metadata whose authorize/token endpoints leave the issuer origin
+ * (#3284). Discovery save covers authorize start; discovery read re-asserts on
+ * refresh against a cached (or pre-check) blob. Throws `McpOAuthFailedError`
+ * (`mcp_oauth_failed`) so the existing OAuth failure path surfaces it.
+ */
+function installMcpOAuthIssuerEndpointGuard(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	if (
+		typeof provider.saveDiscoveryState !== 'function' ||
+		typeof provider.discoveryState !== 'function'
+	) {
+		return
+	}
+	const writeDiscovery = provider.saveDiscoveryState.bind(provider)
+	const readDiscovery = provider.discoveryState.bind(provider)
+	provider.saveDiscoveryState = async (state) => {
+		assertEndpointsOnIssuerOrigin(state)
+		await writeDiscovery(state)
+	}
+	provider.discoveryState = async () => {
+		const state = await readDiscovery()
+		if (state) assertEndpointsOnIssuerOrigin(state)
+		return state
+	}
 }
 
 function installMcpOAuthTokenPreservation(

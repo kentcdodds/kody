@@ -16,6 +16,7 @@ import {
 	revokeApiToken,
 	rotateApiToken,
 	toApiTokenView,
+	type ApiTokenOrgBinding,
 } from '#worker/api-tokens/service.ts'
 import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
 import { type ApiInvocationContext } from './context.ts'
@@ -49,14 +50,19 @@ const tokenIdSchema = z
 	.min(1)
 	.describe('API token id (the part after `kody_at_` and before `_`).')
 
+const orgBindingSchema = z.enum(['org', 'user'] as const)
+
 const tokenViewSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	org_id: z
 		.string()
 		.describe(
-			'Org this token is bound to. Defaults to the owner personal org.',
+			'For org-bound tokens: the fixed org id. For user-owned tokens: the personal org id (placeholder; each request picks an org via `?org=`).',
 		),
+	org_binding: orgBindingSchema.describe(
+		'`org`: fixed to org_id. `user`: person-owned; pass `?org=<slug>` on each request (default personal org). Membership/grants are checked live.',
+	),
 	scopes: z.array(scopeSchema),
 	status: z.enum(['active', 'expired', 'revoked']),
 	idle_ttl_seconds: z.number().int(),
@@ -106,6 +112,11 @@ const tokenCreateInputSchema = z
 			.min(1)
 			.describe(
 				`Org-permission scopes to grant. There is no write-implies-read hierarchy. A token can only mint tokens with scopes it holds.\n${scopeListDescription}`,
+			),
+		org_binding: orgBindingSchema
+			.optional()
+			.describe(
+				'`org` (default): bind to the current request org. `user`: person-owned token; each call picks an org with `?org=<slug>` (default personal). Existing org-bound tokens stay unchanged.',
 			),
 		profile: z
 			.string()
@@ -330,10 +341,25 @@ export const tokenOperationDefinitions: Record<
 						'This connection profile cannot mint an unlimited API token.',
 				})
 			}
+			const orgBinding: ApiTokenOrgBinding =
+				input.org_binding === 'user' ? 'user' : 'org'
+			if (
+				orgBinding === 'user' &&
+				ctx.principal.kind === 'token' &&
+				ctx.principal.token.org_binding === 'org'
+			) {
+				throw new ApiError({
+					status: 403,
+					code: 'insufficient_scope',
+					message:
+						'An org-bound API token cannot mint a user-owned token. Use an MCP session, cliCredentialBootstrap, or a user-owned parent token.',
+				})
+			}
 			return mintApiToken({
 				db: ctx.env.APP_DB,
 				userId: userIdOf(ctx),
 				orgId: ctx.callerContext.request?.org.id ?? userIdOf(ctx),
+				orgBinding,
 				name: input.name,
 				scopes: input.scopes,
 				idleTtlSeconds: lifetime.idleTtlSeconds,

@@ -4,6 +4,7 @@ import {
 } from '@kody-internal/shared/handle-permanence.ts'
 import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
+import { queueSessionRefresh } from '#client/session.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -195,6 +196,7 @@ export function OrgSettingsRoute(handle: Handle) {
 			}
 			appliedKey = ''
 			settingsData.reload(handle, readCurrentRouterHref(handle))
+			queueSessionRefresh()
 			message = 'Avatar updated.'
 			messageTone = 'info'
 		} catch (error) {
@@ -235,6 +237,7 @@ export function OrgSettingsRoute(handle: Handle) {
 			}
 			appliedKey = ''
 			settingsData.reload(handle, readCurrentRouterHref(handle))
+			queueSessionRefresh()
 			message = 'Avatar removed.'
 			messageTone = 'info'
 		} catch (error) {

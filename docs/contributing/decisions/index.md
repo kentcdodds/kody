@@ -179,6 +179,10 @@ Open these before proposing a new primitive, surface, or storage home.
   — accepted 2026-10-12 amendment to 0001. Narrow exception for internet-visible
   serving and approved-bundle retention only; no semver or import pin syntax.
   Forks do not inherit the origin's approval
+- [0070 — User-owned API tokens and persistent git HTTPS auth](./0070-user-owned-api-tokens-and-git-credentials.md)
+  — CLI bootstrap defaults to person-owned tokens (`?org=` per request);
+  existing org-bound tokens keep working; `kody auth setup-git` stores
+  long-lived `kody_at_…` for clone/fetch/push of `kody.codes/@owner/name.git`
 
 ## Historical / UI / implementation
 

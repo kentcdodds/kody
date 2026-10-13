@@ -39,34 +39,43 @@ function scanAsJane(files: Record<string, string>) {
 	})
 }
 
-test('rewritePackageManifestForFork rewrites scope and kody id while preserving other fields', () => {
+test('rewritePackageManifestForFork rewrites scope and drops authored kody.id', () => {
 	const { content, targetName } = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: 'jane',
 		targetKodyId: 'my-discord-gateway',
 	})
 	expect(targetName).toBe('@jane/my-discord-gateway')
-	expect(JSON.parse(content)).toMatchObject({
+	const rewritten = JSON.parse(content) as {
+		name: string
+		license: string
+		private: boolean
+		exports: Record<string, string>
+		kody: Record<string, unknown>
+	}
+	expect(rewritten).toMatchObject({
 		name: '@jane/my-discord-gateway',
 		license: 'MIT',
 		private: true,
 		exports: { '.': './src/index.ts' },
 		kody: {
-			id: 'my-discord-gateway',
 			tags: ['discord'],
 			dependencies: ['@owner/shared-utils', '@forker/local-lib'],
 		},
 	})
+	expect(rewritten.kody).not.toHaveProperty('id')
 
 	const override = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: '@jane',
 		targetKodyId: 'custom-id',
 	})
-	expect(JSON.parse(override.content)).toMatchObject({
-		name: '@jane/custom-id',
-		kody: { id: 'custom-id' },
-	})
+	const overridden = JSON.parse(override.content) as {
+		name: string
+		kody: Record<string, unknown>
+	}
+	expect(overridden.name).toBe('@jane/custom-id')
+	expect(overridden.kody).not.toHaveProperty('id')
 })
 
 test('scanCrossScopeReferences finds foreign scopes and ignores same-scope references', () => {

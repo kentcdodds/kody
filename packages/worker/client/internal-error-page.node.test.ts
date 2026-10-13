@@ -25,6 +25,8 @@ test('internal-error page shows the zapped illustration and recovery destination
 	expect(html).toContain('href="/"')
 	expect(html).toContain('Try again')
 	expect(html).toContain('Go home')
+	expect(html).toContain('data-error-agent-prompt')
+	expect(html).toContain('Copy prompt for your agent')
 })
 
 test('internal-error Try again stays same-origin for protocol-relative URLs', async () => {
