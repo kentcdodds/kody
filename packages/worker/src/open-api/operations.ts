@@ -195,6 +195,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/credentials', 'credentialList'],
 		['PATCH', '/v1/credentials/{credential_id}', 'credentialUpdate'],
 		['POST', '/v1/credential-proposals', 'credentialMappingPropose'],
+		['PUT', '/v1/credential-trigger-picks', 'credentialTriggerPickSet'],
 		['GET', '/v1/secret-providers', 'secretProviderList'],
 		['PUT', '/v1/secret-providers/{provider}', 'secretProviderBind'],
 		['DELETE', '/v1/secret-providers/{provider}', 'secretProviderUnbind'],

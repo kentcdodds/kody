@@ -44,6 +44,7 @@ import {
 	parseCredentialApprovalQuery,
 	parseCredentialCreateQuery,
 	parseCredentialPick,
+	readCredentialProposalId,
 } from './credential-contracts.ts'
 
 test('creation links lock the kind only when required and round-trip prefill', () => {
@@ -637,5 +638,36 @@ test('a creation link names its org, and the interim redirect lands in that org'
 	const secret = new URLSearchParams({ kind: 'secret', org: 'acme-clients' })
 	expect(credentialCreateInterimHref({ search: secret, orgSlug: 'ada' })).toBe(
 		`/connect/secret-set?${secret}`,
+	)
+})
+
+test('an approval link names the recorded agent proposal without adding a change', () => {
+	const changes: Array<CredentialMappingProposalChange> = [
+		{
+			target: { type: 'trigger', trigger: { kind: 'cron', name: 'daily' } },
+			needKey: 'chat',
+			credentials: [{ name: 'team-slack' }],
+		},
+	]
+	const plain = buildCredentialApprovalHref({
+		username: 'acme-clients',
+		kodyId: 'digest',
+		changes,
+	})
+	const named = buildCredentialApprovalHref({
+		username: 'acme-clients',
+		kodyId: 'digest',
+		changes,
+		proposalId: 'p-1',
+	})
+	const search = new URL(named, 'https://kody.test').searchParams
+	expect(readCredentialProposalId(search)).toBe('p-1')
+	expect(
+		readCredentialProposalId(new URL(plain, 'https://kody.test').searchParams),
+	).toBeNull()
+	expect(parseCredentialApprovalQuery(search)).toEqual(
+		parseCredentialApprovalQuery(
+			new URL(plain, 'https://kody.test').searchParams,
+		),
 	)
 })

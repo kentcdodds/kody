@@ -561,6 +561,9 @@ function buildCredentialProposalSearch(input: {
 	return params
 }
 
+/** The recorded agent proposal an approval link names; not a mapping param. */
+const credentialProposalIdParam = 'proposal'
+
 export function buildCredentialApprovalHref(input: {
 	username: string
 	kodyId: string
@@ -568,10 +571,20 @@ export function buildCredentialApprovalHref(input: {
 	/** Triggers to turn on even when they map nothing (a webhook, say). */
 	enable?: ReadonlyArray<CredentialTriggerRef>
 	reason?: string | null
+	/** The recorded agent proposal this link approves. */
+	proposalId?: string | null
 }): string {
 	const path = credentialApprovalPath(input)
-	const query = buildCredentialProposalSearch(input).toString()
+	const params = buildCredentialProposalSearch(input)
+	if (input.proposalId) params.set(credentialProposalIdParam, input.proposalId)
+	const query = params.toString()
 	return query ? `${path}?${query}` : path
+}
+
+export function readCredentialProposalId(
+	search: URLSearchParams,
+): string | null {
+	return trimmed(search.get(credentialProposalIdParam)) || null
 }
 
 export type ParsedCredentialProposal = {

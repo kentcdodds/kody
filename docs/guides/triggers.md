@@ -171,6 +171,10 @@ turns anything on.
   credentials they use. `credentialMappingPropose` builds the link (`triggers`
   to map, `enable` to turn one on with no mapping). Minting a webhook URL never
   turns it on; the mint returns its approval link.
+- After you approve an agent's link, that same agent can switch your trigger's
+  credentials back to a value it proposed and you approved, with
+  `credentialTriggerPickSet`. It cannot pick anything else or turn a trigger on:
+  it has to propose again.
 - `enablementEnable` turns a job (`cron`), subscription topic, or minted webhook
   on for you. You need execute access to the package.
 - `enablementList` shows yours (`scope: "mine"`); Owners can list the whole org

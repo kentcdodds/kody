@@ -487,6 +487,12 @@ export type CredentialApprovalSuccess = {
     not yet on are written in one batch: `200 CredentialApprovalSuccess`, whose
     view shows the new `before`.
 - One Approve applies trigger mappings and default mappings together.
+- A `proposal=<id>` param names the recorded agent proposal the link came from
+  (see `credentialTriggerPickSet`). The page keeps it on the `.json` GET and
+  POST; it is not a mapping param. Approve records the trigger picks it applied
+  on that proposal only when the viewer is the person the agent acted for and
+  the link still matches the recorded proposal exactly. Otherwise it records
+  nothing and the write is unchanged.
 
 ### `credentialMappingPropose` (MCP / Open API)
 
@@ -511,10 +517,53 @@ Input:
 
 Output: `{ approvalUrl, view: CredentialApprovalView, message }`. It validates
 as the caller would approve and returns the absolute approval URL to send to the
-person. It never writes. `view.canApprove: false` lists what to fix first.
+person. It never writes a mapping. `view.canApprove: false` lists what to fix
+first. When an agent calls it (a signed-in person through an MCP OAuth client,
+the CLI, or an API token) and the proposal can be approved, the proposal is
+recorded under that agent and `approvalUrl` carries its `proposal` param.
 
 Open API: `POST /v1/credential-proposals`. Package code cannot call it, and a
 package the caller cannot run is a caller error ("Package not found").
+
+### `credentialTriggerPickSet` (MCP / Open API)
+
+The one way an agent writes a pick (ADR 0068 amendment 2026-10-13, "How picks
+change"): it sets one need on the caller's own instance of one trigger, only to
+a value that same agent proposed and the person approved from its link. Use it
+to switch a trigger back to an approved pick after it changed.
+
+Input:
+
+```ts
+{
+	packageId?: string
+	kodyId?: string
+	trigger: { kind: CredentialTriggerKind; name: string }
+	needKey: string
+	credentials: CredentialPick | Array<CredentialPick> // [] is none on purpose
+}
+```
+
+Output: `{ trigger, needKey, credentials: Array<CredentialRef>, message }`.
+
+- **Agent.** The person (`actor`) plus the request credential: kind `mcp-oauth`,
+  `cli`, or `api-token`, and its id (the OAuth client or token). A browser
+  session, a triggered run, package code, or a client with no id is refused.
+  Another client or token of the same person is another agent.
+- **Guard.** The picks resolve to credential ids exactly as Approve resolves
+  them. The call is refused unless one of this agent's approved proposals for
+  this package holds the same trigger (and webhook endpoint), need, and ids in
+  the same order. A value the agent proposed but nobody approved, a value the
+  person approved on an edited link, and a value another agent proposed are all
+  refused.
+- **Same path.** The write runs through `approveCredentialProposal`: the same
+  validation (kind, provider, Use, webhook enabler), the same one-batch write,
+  and the same audit as Approve.
+- **Never turns a trigger on.** A trigger that is off for the caller is refused;
+  turning it on needs approval.
+- Open API: `PUT /v1/credential-trigger-picks`. There is still no
+  `enablementUpdate` or `enablementEnable { credentials }` that writes arbitrary
+  picks.
 
 ### Webhook mint and delivery
 
