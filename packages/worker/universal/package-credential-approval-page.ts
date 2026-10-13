@@ -137,7 +137,7 @@ export function approvalProblems(view: CredentialApprovalView): Array<string> {
 }
 
 /** Triggers Approve turns on, whether by a mapping or by `enable[]` alone. */
-export function approvalEnabledTriggers(
+function approvalEnabledTriggers(
 	view: Pick<CredentialApprovalView, 'changes' | 'enable'>,
 ): Array<string> {
 	const labels = new Set<string>()

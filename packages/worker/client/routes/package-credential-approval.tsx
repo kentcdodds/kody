@@ -309,6 +309,8 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 	let latest: {
 		base: CredentialApprovalView
 		view: CredentialApprovalView
+		/** The view on screen when Approve was clicked. */
+		submitted: CredentialApprovalView
 	} | null = null
 	let baseView: CredentialApprovalView | null = null
 	let approving = false
@@ -370,7 +372,9 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 			| CredentialApprovalFailure
 			| { ok: false; error?: string }
 		>(response)
-		if (payload && 'view' in payload) latest = { base, view: payload.view }
+		if (payload && 'view' in payload) {
+			latest = { base, view: payload.view, submitted: view }
+		}
 		if (response.ok && payload?.ok) {
 			approved = true
 		} else {
@@ -398,7 +402,9 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 			approved = false
 			message = null
 		}
-		const view = loaded && latest?.base === loaded ? latest.view : loaded
+		const current = loaded && latest?.base === loaded ? latest : null
+		const view = current ? current.view : loaded
+		const reviewed = current ? current.submitted : loaded
 		const pageUrl =
 			typeof window === 'undefined'
 				? currentHref
@@ -471,7 +477,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					</section>
 				) : null}
 
-				{approved && view && loaded ? (
+				{approved && view && reviewed ? (
 					<section
 						role="status"
 						data-testid="credential-approval-done"
@@ -479,7 +485,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					>
 						<h2 mix={css(cardTitleCss)}>Approved</h2>
 						<p mix={css({ margin: 0 })}>
-							{approvalDoneCopy(loaded)}
+							{approvalDoneCopy(reviewed)}
 							{view.changes.length > 0 ? (
 								<>
 									{' '}
@@ -545,11 +551,11 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 									index,
 									approved,
 									approved &&
-										(loaded?.enable.some(
-											(reviewed) =>
-												reviewed.willEnable &&
-												reviewed.trigger.kind === entry.trigger.kind &&
-												reviewed.trigger.name === entry.trigger.name,
+										(reviewed?.enable.some(
+											(candidate) =>
+												candidate.willEnable &&
+												candidate.trigger.kind === entry.trigger.kind &&
+												candidate.trigger.name === entry.trigger.name,
 										) ??
 											false),
 								),
