@@ -27,8 +27,12 @@ test('features overview gives every primitive card an interactive widget', async
 		'Fire webhook trigger',
 		'Fire schedule trigger',
 		'Fire email trigger',
-		'Use google-work',
-		'Use github',
+		'Invoke from Claude',
+		'Invoke from Cursor',
+		'Invoke from ChatGPT',
+		'Book Tue 10:00',
+		'Book Wed 2:30',
+		'Book Thu 9:15',
 	]) {
 		expect(html).toContain(`aria-label="${label}"`)
 	}
@@ -36,6 +40,7 @@ test('features overview gives every primitive card an interactive widget', async
 		'api.stripe.com',
 		'paste.example',
 		'Publish a change',
+		'Ask for times again',
 		'Project intake',
 		'Reading list',
 		'Habit tracker',
