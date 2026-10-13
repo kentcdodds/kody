@@ -8,6 +8,11 @@ import {
 	scanPackageCredentials,
 	type CredentialReference,
 } from '#worker/credentials/credential-inventory-scan.ts'
+import {
+	type PackageCredentialKind,
+	type PackageCredentialSlot,
+	packageCredentialKindValues,
+} from '#worker/package-registry/types.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
@@ -48,7 +53,22 @@ const credentialTypeHints: Record<CredentialTypeHint, string> = {
 const credentialTypeHintsHeading =
 	'Optional, if you want a scoped credential type for these (ADR 0068):'
 
-const loginBodyFieldPattern = /pass(?:word|wd)?|refresh_?token|client_?secret/i
+/**
+ * Whole field names only. An unanchored `pass` also matches `compass`.
+ * `refresh_token` / `client_secret` stay the same names, including camelCase.
+ */
+const loginBodyFieldPattern =
+	/^(?:pass(?:word|wd)?|refresh_?token|client_?secret)$/i
+
+/** Codemod 0010 lists a secret name unless this slot kind is declared for it. */
+const declaredSlotKindByNameKind = {
+	secret: 'secret',
+	integration: 'oauth',
+} as const satisfies Record<CredentialReference['nameKind'], 'secret' | 'oauth'>
+
+const packageCredentialKinds: ReadonlySet<string> = new Set(
+	packageCredentialKindValues,
+)
 
 function credentialTypeHintFor(
 	reference: CredentialReference,
@@ -56,16 +76,31 @@ function credentialTypeHintFor(
 	const { placement } = reference
 	switch (placement.type) {
 		case 'header':
-			return reference.nameKind === 'integration' ? 'oauth' : 'inject'
+			// The OAuth client always sends Authorization: Bearer. Another
+			// header or scheme would change the request, so it is not a fit.
+			if (reference.nameKind === 'integration') {
+				return placement.name === 'authorization' &&
+					placement.format === 'Bearer {value}'
+					? 'oauth'
+					: null
+			}
+			return 'inject'
 		case 'query':
-		case 'basic':
 			return reference.nameKind === 'integration' ? null : 'inject'
+		case 'basic':
+			// `{{secret-basic:username=…,password=…}}` is two secrets. A Key
+			// basic inject holds one value and a literal, so neither name fits.
+			return null
 		case 'path':
 		case 'url':
 			return 'url'
 		case 'body':
-			return placement.endpoint === 'login' ||
-				(placement.field != null && loginBodyFieldPattern.test(placement.field))
+			// A login client exchanges a password or token, then sends the
+			// session. A password field on some other request does not fit,
+			// and neither does an unrelated field on a login URL.
+			return placement.endpoint === 'login' &&
+				placement.field != null &&
+				loginBodyFieldPattern.test(placement.field)
 				? 'login'
 				: null
 		case 'signing':
@@ -84,13 +119,20 @@ function credentialTypeHintFor(
 function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 	let scan: ReturnType<typeof scanPackageCredentials>
 	try {
-		scan = scanPackageCredentials({ files: sourceFiles, slots: undefined })
+		scan = scanPackageCredentials({
+			files: sourceFiles,
+			slots: readDeclaredCredentialSlots(sourceFiles['package.json']),
+		})
 	} catch {
 		// Hints are optional; a scan failure must never touch the check or publish.
 		return []
 	}
+	const declared = new Set(
+		scan.slots.map((slot) => declaredSlotKey(slot.kind, slot.name)),
+	)
 	const found = new Set<CredentialTypeHint>()
 	for (const reference of scan.references) {
+		if (referenceNamesDeclaredSlot(reference, declared)) continue
 		const hint = credentialTypeHintFor(reference)
 		if (hint) found.add(hint)
 	}
@@ -99,6 +141,77 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 		.filter((hint) => found.has(hint))
 		.map((hint) => `- ${credentialTypeHints[hint]}`)
 	return hints.length > 0 ? [credentialTypeHintsHeading, ...hints] : []
+}
+
+function declaredSlotKey(kind: string, name: string) {
+	return `${kind}:${name}`
+}
+
+/**
+ * True when codemod 0010 would omit this placeholder because it already names
+ * a declared slot of the matching kind. Hints follow that list: a type with
+ * no visible reference is not a suggestion.
+ */
+function referenceNamesDeclaredSlot(
+	reference: CredentialReference,
+	declared: ReadonlySet<string>,
+) {
+	const kind = declaredSlotKindByNameKind[reference.nameKind]
+	return declared.has(declaredSlotKey(kind, reference.name))
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPackageCredentialKind(
+	value: string,
+): value is PackageCredentialKind {
+	return packageCredentialKinds.has(value)
+}
+
+/**
+ * Declared `kody.credentials` slots, read the same way codemod 0010 does:
+ * any plain object with a known kind counts, even when publish would still
+ * ask for a description. Passed into the placement scan so hint filtering
+ * uses the slots the scan recorded.
+ */
+function readDeclaredCredentialSlots(
+	manifestSource: string | undefined,
+): Record<string, PackageCredentialSlot> | undefined {
+	if (manifestSource == null) return undefined
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(manifestSource)
+	} catch {
+		return undefined
+	}
+	if (!isPlainObject(parsed) || !isPlainObject(parsed.kody)) return undefined
+	const credentials = parsed.kody.credentials
+	if (!isPlainObject(credentials)) return undefined
+	const slots: Record<string, PackageCredentialSlot> = {}
+	for (const [name, slot] of Object.entries(credentials)) {
+		const declared = credentialSlotFromManifest(slot)
+		if (declared) slots[name] = declared
+	}
+	return Object.keys(slots).length > 0 ? slots : undefined
+}
+
+function credentialSlotFromManifest(
+	slot: unknown,
+): PackageCredentialSlot | null {
+	if (!isPlainObject(slot) || typeof slot.kind !== 'string') return null
+	if (!isPackageCredentialKind(slot.kind)) return null
+	const description =
+		typeof slot.description === 'string' && slot.description.trim().length > 0
+			? slot.description
+			: 'Declared credential slot.'
+	const declared: PackageCredentialSlot = { kind: slot.kind, description }
+	if (typeof slot.provider === 'string' && slot.provider.trim().length > 0) {
+		declared.provider = slot.provider
+	}
+	if (typeof slot.multiple === 'boolean') declared.multiple = slot.multiple
+	return declared
 }
 
 /**

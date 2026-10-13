@@ -1264,7 +1264,9 @@ test('runRepoChecks offers optional credential types only for placements one fit
 		packageFiles(manifest('typed-credentials'), {
 			'src/send.ts': [
 				"export const hook = () => fetch('https://hooks.example.com/{{secret:HOOK_PATH}}')",
-				"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:PASSWORD}}' }) })",
+				// LOGIN_SECRET, not PASSWORD: a body field that spells the
+				// credential name is dropped, and the login hint needs the field.
+				"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:LOGIN_SECRET}}' }) })",
 				"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
 			].join('\n'),
 		}),
@@ -1289,7 +1291,7 @@ test('runRepoChecks offers optional credential types only for placements one fit
 	expect(message).toContain(
 		'These references keep working; nothing here needs to change.',
 	)
-	expect(message).not.toMatch(/HOOK_PATH|PASSWORD|github/)
+	expect(message).not.toMatch(/HOOK_PATH|LOGIN_SECRET|github/)
 
 	const { result: signing } = await runChecks(
 		packageFiles(manifest('signing-credentials'), {

@@ -255,13 +255,15 @@ list in their output, and `packagePublishExternalPush` includes the result in
 `checks`. It never fails a check or blocks a publish. The labels are described
 in
 [package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
-When the list is shown, it may end with optional credential types that fit where
-the placeholders sit: a Key with an inject for header, query, or basic auth
-placeholders; an OAuth connection's `credential(key)` for integration token
-headers; a `url` credential for path or whole-URL placeholders; a `login`
-credential for password or token exchange bodies; and a `signing` credential for
-`secretJwtSign` or signature keys. They are suggestions only, without credential
-names; nothing is suggested for a placement no type fits.
+When the list is shown, it may end with optional credential types that fit
+placeholders the list did not already cover with a declared slot: a Key with an
+inject for header or query placeholders; an OAuth connection's `credential(key)`
+for an integration token sent as `Authorization: Bearer`; a `url` credential for
+path or whole-URL placeholders; a `login` credential for a password, refresh
+token, or client secret field on a login or token exchange; and a `signing`
+credential for `secretJwtSign` or signature keys. They are suggestions only,
+without credential names; nothing is suggested for a placement no type fits,
+including basic auth that names two secrets.
 
 ### npm dependencies
 
