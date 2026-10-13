@@ -79,6 +79,8 @@ type PackageCodemodTransformResult = {
 type PackageCodemod = {
 	id: string
 	description: string
+	/** Opt-in; default `head-and-published`. See Drift and applyMode. */
+	applyMode?: 'head-and-published' | 'published-only'
 	detect(files: Record<string, string>): Array<PackageCodemodFinding>
 	transform(files: Record<string, string>): PackageCodemodTransformResult
 }
@@ -329,7 +331,7 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 
 ### `0010-detect-legacy-credential-patterns`
 
-This detect-only codemod lists leftover credential patterns in package source
+This detect-only codemod lists credential placeholder patterns in package source
 and the root `package.json` (see
 [Credential slots](../use/packages.md#credential-slots-kodycredentials)).
 `transform` writes nothing; dry-run and apply return the findings as
@@ -358,10 +360,15 @@ An integration name needs an `oauth` slot: `{{integration-token:NAME}}`,
 names no slot, so it stays a finding.
 
 A known string is a literal, a top-level `const` string (including one imported
-from a relative module), or a template or `+` chain of those. Placeholder-shaped
-text that names nothing, such as `{{secret:<name>}}` in help or redaction text,
-is ignored. Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/`)
-are skipped.
+from a relative module), or a template or `+` chain of those. A local binding
+that shadows a module constant is not treated as that constant.
+Placeholder-shaped text that names nothing, such as `{{secret:<name>}}` in help
+or redaction text, is ignored. Test files (`*.test.*`, `*.spec.*`, and anything
+under `__tests__/`) are skipped unless a runtime entry points at them: `exports`
+(import/default, not types-only), `main` / `module` / `browser`, `kody.app`
+entries, job entries, subscription handlers, or a module those entries reach
+through a bundler-resolved import (`import` / `export … from`, `import()`,
+`require()`).
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
@@ -448,7 +455,11 @@ Once a rescan finds no webhook without `verification`, publish requires it
 - Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
   that is not an array of objects, and a `verification` that is not an object.
 - Does not touch the stored signing secret. Mint still gives these webhooks the
-  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
+  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply still fills
+  that secret.
+- Sets `applyMode: 'published-only'` so fleet apply can advance
+  `published_commit` on packages whose Artifacts default-branch HEAD has
+  drifted, without moving that HEAD (owner unpublished work stays put).
 
 ## Engine
 
@@ -485,14 +496,17 @@ step matched zero packages.
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scan`    | Run `detect` only; record findings per package.                                                                                                                                                                                                                                                                                   |
 | `dry-run` | Run `transform` in memory, then run the full publish check suite (`runRepoChecks`) on **both** the original and transformed trees. Pass only when transformed checks introduce **no new failures** compared to the original. Also verifies mechanical idempotency by transforming twice and requiring an unchanged second result. |
-| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, commit and push via `syncArtifactSourceSnapshot` with commit message `codemod(<id>): ...`, refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before the write.            |
-| `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify Artifacts HEAD still matches that item's `afterCommit`, write the snapshot tree back, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.                                                                           |
+| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, commit and push (see [Drift and applyMode](#drift-and-applymode)), refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before the write.                                    |
+| `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify the publish tip is still safe to restore (HEAD match for `head-and-published`; published-commit match for `published-only`), write the snapshot tree back, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.      |
 
-Locked packages (`saved_packages.locked_at` set) still run apply and revert. The
-engine commits and pushes HEAD and does **not** advance `published_commit`. The
-owner reviews that HEAD commit later at
-`/@username/:kodyId/approve-publish?commit=…`. Fleet apply does not skip locked
-packages.
+Locked packages (`saved_packages.locked_at` set) still run apply and revert for
+`head-and-published` codemods when HEAD matches published: the engine commits
+and pushes HEAD and does **not** advance `published_commit`. The owner reviews
+that HEAD commit later at `/@username/:name/approve-publish?commit=…`.
+`published-only` codemods **always finalize** `published_commit`, including on
+locked packages via `allowLockedPublish`. If that creates a sibling of pending
+HEAD, approve-publish promotes that commit: the owner click passes `allowForce`
+with destructive overwrite confirmation (backup required).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
@@ -517,14 +531,44 @@ stops early:
 Abandoned and failed **apply** runs can still hold `applied` items; revert
 accepts them (the admin UI only blocks revert while a run is `running`).
 
+### Drift and applyMode
+
+By default (`applyMode: 'head-and-published'`, or omitted), apply requires
+Artifacts default-branch HEAD to equal `published_commit`, then writes through
+`syncArtifactSourceSnapshot` so HEAD and published stay aligned. Drifted
+packages are `skipped_drift`.
+
+Codemods that set `applyMode: 'published-only'` (today: `0012`) change only the
+**drifted** lane:
+
+1. Load the published tree (same as today).
+2. Run the same transform + check gates.
+3. Commit the transformed files as a **child of** `published_commit`.
+4. Push that commit to the durable non-default ref `refs/heads/kody-published`
+   (never the default-branch tip — owner unpublished work on HEAD is untouched).
+5. Call `finalizePublishedEntitySource` to advance `published_commit` + KV.
+
+When HEAD already matches published, published-only codemods still use
+`syncArtifactSourceSnapshot` so HEAD and published stay aligned.
+`syncPublishedSourceSnapshotOnly` requires `expectedPublishedCommit` and refuses
+when `published_commit` moved (concurrent owner publish). On a non-fast-forward
+`kody-published` push it re-reads `published_commit`: still equal → force-push
+(recover leftover tips after a push that never finalized); moved → refuse.
+Revert chooses the lane from tip state: if HEAD still equals the apply
+`afterCommit`, restore via `syncArtifactSourceSnapshot`; otherwise restore via
+published-only (no HEAD match required; default-branch tip is not moved).
+
 ### Safety rails
 
 - **`skipped_unpublished`** — packages with no published commit are skipped.
 - **`skipped_drift`** — when Artifacts default-branch HEAD does not match
-  `entity_sources.published_commit`, the engine skips and never overwrites.
-  Apply re-checks drift after transform gates pass and before KV snapshot /
-  publish. Revert compares HEAD to the prior apply item's **`afterCommit`**
-  (post-codemod published commit); drift skips revert for that item.
+  `entity_sources.published_commit`, the engine skips and never overwrites
+  **unless** the codemod opts into `applyMode: 'published-only'` (see
+  [Drift and applyMode](#drift-and-applymode)). Apply re-checks drift after
+  transform gates pass and before KV snapshot / publish. Revert for
+  `head-and-published` compares HEAD to the prior apply item's
+  **`afterCommit`**; `published-only` revert compares `published_commit` instead
+  and never moves default-branch HEAD.
 - **Apply snapshots** — before publish, apply writes the pre-codemod published
   tree to `BUNDLE_ARTIFACTS_KV` at `package-codemod-revert:{userId}:{itemId}`
   with a **90-day TTL** and stores that key on the ledger item as
@@ -661,14 +705,18 @@ the run).
 Apply persists the pre-codemod published tree to KV (`revert_snapshot_key`,
 90-day TTL) before republishing the transformed tree. **Revert** mode creates a
 new run with `revert_of_run_id` pointing at the prior apply run, pages through
-source items with status `applied`, loads each KV snapshot, and republishes via
-`syncArtifactSourceSnapshot` with commit message `revert codemod(<id>)`. On
-success it marks the **source apply item** `reverted`, refreshes projections,
+source items with status `applied`, loads each KV snapshot, and republishes with
+commit message `revert codemod(<id>)` — via `syncArtifactSourceSnapshot` for
+`head-and-published`, or `syncPublishedSourceSnapshotOnly` for `published-only`.
+On success it marks the **source apply item** `reverted`, refreshes projections,
 and dispatches `package.codemod.reverted`.
 
-Revert requires published HEAD to still equal the source item's `afterCommit`.
-Missing or expired KV snapshots fail the revert item. Revert does not restore
-Artifacts working-copy edits made after apply.
+For `head-and-published`, revert requires default-branch HEAD to still equal the
+source item's `afterCommit`. For `published-only`, revert requires
+`published_commit` to still equal `afterCommit` (or, for locked non-promoted
+applies, still equal `beforeCommit`) and does not move HEAD. Missing or expired
+KV snapshots fail the revert item. Revert does not restore Artifacts
+working-copy edits made after apply.
 
 Runs are single-pass in every mode: items that fail or are drift-skipped are
 recorded on the run but not retried within it. Because failed or skipped source

@@ -2,13 +2,12 @@ import { FeaturesMenu } from '#client/features-menu.tsx'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	currentSwitcherSlug,
-	orgBillingPath,
 	orgIdentity,
+	orgOverviewPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgSettingsPath,
@@ -188,9 +187,15 @@ function teamOrgSwitchHref(input: {
 	onBillingPage: boolean
 	managesBilling: boolean
 }) {
-	if (input.personal) return switchOrgPath(input.pathname, input.slug)
+	const home = `/@${input.slug}`
+	if (input.personal) {
+		// The signup org's home is the public profile; its workspace door is
+		// the overview.
+		const next = switchOrgPath(input.pathname, input.slug)
+		return next === home ? orgOverviewPath(input.slug) : next
+	}
 	// Grant-only collaborators can open the org home, not Settings/Teams.
-	if (input.role === null) return `/@${input.slug}`
+	if (input.role === null) return home
 	if (input.onBillingPage && !input.managesBilling) {
 		return orgSettingsPath(input.slug)
 	}
@@ -199,22 +204,7 @@ function teamOrgSwitchHref(input: {
 	if (input.role === 'billing' && next === orgTeamsPath(input.slug)) {
 		return orgSettingsPath(input.slug)
 	}
-	if (next === `/@${input.slug}`) return orgSettingsPath(input.slug)
 	return next
-}
-
-/** Prefer the team org already in context; otherwise last-used or first team. */
-function manageOrganization(
-	organizations: ReadonlyArray<OrganizationSummary>,
-	current: OrganizationSummary | undefined,
-	lastUsedSlug: string | null | undefined,
-) {
-	if (current && !current.personal && current.role !== null) return current
-	const teams = organizations.filter(
-		(org) => !org.personal && org.role !== null,
-	)
-	if (teams.length === 0) return null
-	return teams.find((org) => org.slug === lastUsedSlug) ?? teams[0] ?? null
 }
 
 function OrgSwitcher(
@@ -307,9 +297,11 @@ function OrgSwitcher(
 					const selected = entry.org.slug === currentSlug
 					return {
 						key: entry.org.slug,
-						// A team org keeps the current section, repositories and
+						// An org keeps the current section, repositories and
 						// connections included. Pages without an org section open
-						// Settings, as does Billing for roles that do not manage it.
+						// the org's overview (a team org's home, the signup org's
+						// `/-/overview`). Billing opens Settings for roles that do
+						// not manage it.
 						href: teamOrgSwitchHref({
 							pathname: handle.props.currentPathname,
 							slug: entry.org.slug,
@@ -357,47 +349,6 @@ function OrgSwitcher(
 						...orgRowsFromSession,
 					]
 				: orgRowsFromSession
-		// Prefer the team org in context so Settings/Members/… stay one click
-		// away from account pages. Fall back to last-used / first team org.
-		// Personal-only sessions still get Billing for the signup org.
-		const manageOrg = manageOrganization(
-			organizations,
-			current,
-			handle.props.lastUsedOrganization,
-		)
-		const manageIdentity = manageOrg ? orgIdentity(manageOrg, viewer) : null
-		const manageItems = manageOrg
-			? teamOrgManagementItems({
-					orgSlug: manageOrg.slug,
-					role: manageOrg.role,
-				})
-			: current && orgRoleManagesBilling(current.role)
-				? [
-						{
-							href: orgBillingPath(current.slug),
-							label: 'Billing',
-							icon: 'wallet' as const,
-						},
-					]
-				: []
-		const manageDetailHandle =
-			manageIdentity?.handle ?? currentIdentity?.handle ?? null
-		const manageRows: Array<SwitcherRow> =
-			manageDetailHandle && manageItems.length > 0
-				? manageItems.map((item) => ({
-						key: `org-manage-${item.label.toLowerCase()}`,
-						href: item.href,
-						label: item.label,
-						detail: manageDetailHandle,
-						ariaCurrent:
-							handle.props.currentPathname === item.href
-								? ('page' as const)
-								: undefined,
-						selected: false,
-						leading: renderIconWell(item.icon),
-						badge: null,
-					}))
-				: []
 		const actionRows = entries
 			.filter((entry) => entry.kind !== 'org')
 			.map(toRow)
@@ -438,17 +389,6 @@ function OrgSwitcher(
 						<li key={row.key}>{renderSwitcherRow(row)}</li>
 					))}
 				</ul>
-				{manageRows.length > 0 && manageDetailHandle ? (
-					<div
-						role="group"
-						aria-label={`Manage ${manageDetailHandle}`}
-						data-testid="org-switcher-manage-group"
-						mix={css(switcherActionsCss)}
-					>
-						<p mix={css(switcherEyebrowCss)}>Manage {manageDetailHandle}</p>
-						{manageRows.map(renderSwitcherRow)}
-					</div>
-				) : null}
 				{actionRows.length > 0 ? (
 					<div mix={css(switcherActionsCss)}>
 						{actionRows.map(renderSwitcherRow)}
@@ -495,11 +435,7 @@ function OrgSwitcher(
 					type="button"
 					popovertarget={orgSwitcherPanelId}
 					aria-controls={orgSwitcherPanelId}
-					aria-label={
-						manageRows.length > 0
-							? `${label}: organizations, manage, and account`
-							: `${label}: organizations and account`
-					}
+					aria-label={`${label}: organizations and account`}
 					aria-expanded={open ? 'true' : 'false'}
 					data-open={open ? '' : undefined}
 					data-testid="org-switcher"

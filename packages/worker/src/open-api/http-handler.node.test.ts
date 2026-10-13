@@ -3,6 +3,7 @@ import {
 	mintApiToken,
 	apiTokenLifetimeAliases,
 } from '#worker/api-tokens/service.ts'
+import { handleOpenApiRequest } from './http-handler.ts'
 import {
 	createOpenApiTestHarness as createApi,
 	openApiTestApiOrigin as apiOrigin,
@@ -293,6 +294,7 @@ test('capability proxy session matches the CLI preflight contract', async () => 
 		expiresAt: expect.any(String),
 		maxExpiresAt: expect.any(String),
 		user: { userId: api.userId, email: 'api-user@example.com' },
+		features: expect.arrayContaining(['credential-call-map']),
 	})
 
 	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
@@ -384,6 +386,38 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 				point.blobs[1] === 'execute' || point.blobs[1] === 'dynamic_worker_day',
 		),
 	).toBe(false)
+})
+
+test('capability proxy checks a credentials call map before local code runs', async () => {
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+	const noMap = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: { path: ['kody', 'credentialClientCheck'], args: [{}] },
+	})
+	expect(noMap.status).toBe(200)
+	expect(noMap.body).toEqual({ result: { ok: true, value: { warnings: [] } } })
+	const missingPick = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: {
+			path: ['kody', 'credentialClientCheck'],
+			args: [{}],
+			credentials: { github: 'no-such-credential' },
+		},
+	})
+	expect(missingPick.status).toBe(200)
+	expect(missingPick.body).toMatchObject({
+		result: { ok: false, error: { code: 'credential_not_found' } },
+	})
+	const badMap = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: {
+			path: ['kody', 'credentialClientCheck'],
+			args: [{}],
+			credentials: { github: { name: 'x', scope: 'team' } },
+		},
+	})
+	expect(badMap.status).toBe(400)
 })
 
 test('capability proxy runs kody:runtime calls and meters each hop', async () => {
@@ -498,6 +532,49 @@ test('unknown routes and methods use the error envelope', async () => {
 	const method = await api.call('PATCH', '/v1/tokens')
 	expect(method.status).toBe(405)
 	expect(method.headers.get('Allow')).toBe('GET, POST')
+})
+
+test('gateway-fetch stream route is registered and rejects a missing URL', async () => {
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+	const response = await handleOpenApiRequest({
+		request: new Request(`${apiOrigin}/v1/capability-proxy/gateway-fetch`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'text/plain',
+			},
+			body: 'hello',
+		}),
+		env: api.env,
+		appOrigin,
+		waitUntil: () => {},
+	})
+	expect(response.status).toBe(400)
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(await response.json()).toMatchObject({
+		error: {
+			code: 'invalid_request',
+			message: expect.stringMatching(/X-Kody-Gateway-Url/),
+		},
+	})
+
+	const noScope = await handleOpenApiRequest({
+		request: new Request(`${apiOrigin}/v1/capability-proxy/gateway-fetch`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${await api.mint(['org:read'])}`,
+				'X-Kody-Gateway-Url': 'https://example.com/upload',
+			},
+		}),
+		env: api.env,
+		appOrigin,
+		waitUntil: () => {},
+	})
+	expect(noScope.status).toBe(403)
+	expect(await noScope.json()).toMatchObject({
+		error: { code: 'insufficient_scope' },
+	})
 })
 
 test('local-execute package-graph requires scope and meters as api_call prep', async () => {
@@ -680,4 +757,29 @@ test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-exe
 			})
 		).status,
 	).toBe(401)
+})
+
+test('repoGetGitRemote body-only alias accepts name without path repo_id', async () => {
+	const api = await createApi()
+	const token = await api.mint(['package:read', 'package:write'])
+	const byName = await api.call('POST', '/v1/repos/git-remote', {
+		token,
+		body: { name: 'missing-plain-repo' },
+	})
+	// Route + body merge succeed; missing repo is a capability not_found (404).
+	expect(byName.status).toBe(404)
+	expect(byName.body.error?.code).toBe('not_found')
+	expect(byName.body.error?.message).toMatch(
+		/Plain repo "missing-plain-repo" was not found/,
+	)
+
+	const byPathName = await api.call(
+		'POST',
+		'/v1/repos/missing-plain-repo/git-remote',
+		{ token, body: {} },
+	)
+	expect(byPathName.status).toBe(404)
+	expect(byPathName.body.error?.message).toMatch(
+		/Plain repo "missing-plain-repo" was not found/,
+	)
 })

@@ -343,7 +343,7 @@ test('package page URL attaches the saved package when listing kody id lags a re
 	})
 })
 
-test('slug redirects dual-write both tables and read the legacy table as fallback', async () => {
+test('slug redirects write only the slug table and read the legacy table as fallback', async () => {
 	const pkg = await createPublishedPackage('dual-write')
 	await renamePackage(pkg.packageId, 'dual-write-two')
 	await runSql(
@@ -353,7 +353,7 @@ test('slug redirects dual-write both tables and read the legacy table as fallbac
 	await retireSlug(pkg, pkg.packageId, pkg.kodyId, 'dual-write-two')
 	await expect(countRedirects(pkg.packageId)).resolves.toEqual({
 		package_slug_redirects: 1,
-		package_kody_id_redirects: 1,
+		package_kody_id_redirects: 0,
 	})
 
 	// Rows retired before `package_slug_redirects` existed still resolve.
@@ -361,6 +361,17 @@ test('slug redirects dual-write both tables and read the legacy table as fallbac
 		`DELETE FROM package_slug_redirects WHERE package_id = ?`,
 		pkg.packageId,
 	)
+	await runSql(
+		`INSERT INTO package_kody_id_redirects (user_id, old_kody_id, package_id)
+		 VALUES (?, ?, ?)`,
+		pkg.userId,
+		pkg.kodyId,
+		pkg.packageId,
+	)
+	await expect(countRedirects(pkg.packageId)).resolves.toEqual({
+		package_slug_redirects: 0,
+		package_kody_id_redirects: 1,
+	})
 	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
 		kind: 'redirect',
 		listingId: pkg.listingId,

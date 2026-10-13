@@ -151,6 +151,9 @@ export const explicitWebhookUrlSecretVerificationCodemod = {
 	id: explicitWebhookUrlSecretVerificationCodemodId,
 	description:
 		'Add verification: { "type": "url-secret" } to package.json#kody.webhooks entries that declare no verification (what ingress already does for them).',
+	// Fleet apply must advance published_commit on drifted packages without
+	// clobbering owner unpublished HEAD (issue #3477 rollout).
+	applyMode: 'published-only',
 	detect: detectExplicitWebhookUrlSecretVerification,
 	transform: transformExplicitWebhookUrlSecretVerification,
 } satisfies PackageCodemod

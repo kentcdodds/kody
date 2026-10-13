@@ -41,12 +41,15 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountBillingCancellationFeedbackPost: 'feedback from the person',
 	accountMcpServerLogo: 'logos are stored on the signup org',
 	accountMcpServersOauthCallback: 'OAuth state carries the server owner',
-	accountPackagesApi: 'no per-package authz; teams use /@slug/-/packages.json',
+	accountPackagesApi:
+		'no per-package authz; teams use /@slug/-/repositories.json',
 	accountPackagesApiPost:
-		'no per-package authz; teams use /@slug/-/packages.json',
+		'no per-package authz; teams use /@slug/-/repositories.json',
 	accountPackageDetail: 'package authz, not request org',
 	accountPackageApprovePublish: 'package authz, not request org',
 	accountPackageApprovePublishApi: 'package authz, not request org',
+	accountPackageApproveCapabilities: 'package authz, not request org',
+	accountPackageApproveCapabilitiesApi: 'package authz, not request org',
 	accountPackageFiles: 'package authz, not request org',
 	accountPackageFilesApi: 'package authz, not request org',
 	accountWebhooksApproveApplyApi: 'approval link carries the webhook owner',
@@ -104,13 +107,21 @@ function orgBoundRoutes(entries: Array<RouteEntry>) {
 	return entries.filter(({ href }) => isOrgBoundPath(href))
 }
 
+/** Legacy `/@slug/-/packages` (+ `.json`) only 301 to `/repositories`. */
+const legacyOrgListRedirectRoutes = new Set(['orgPackages', 'orgPackagesApi'])
+
 test('every org-scoped route in the route table is bound to its org', () => {
 	const entries = routeEntries()
 	const orgRoutes = entries.filter(({ source }) =>
 		source.startsWith('/@:orgSlug/'),
 	)
 	expect(
-		orgRoutes.filter(({ href }) => !isOrgBoundPath(href)).map((r) => r.name),
+		orgRoutes
+			.filter(
+				({ name, href }) =>
+					!isOrgBoundPath(href) && !legacyOrgListRedirectRoutes.has(name),
+			)
+			.map((r) => r.name),
 	).toEqual([])
 
 	const accountRoutes = accountRoutesNamedLikeOrgSections(entries)
@@ -192,11 +203,10 @@ function deniedRequest(entry: RouteEntry, method: string, cookie: string) {
 		const section =
 			/^\/account\/([^/.]+)/
 				.exec(url.pathname)?.[1]
-				?.replace(/^(connected-agents|connection-usage)$/, 'connections') ?? ''
-		headers.set(
-			'Referer',
-			`${origin}/@ghost/-/${section.replace(/-export$/, '')}`,
-		)
+				?.replace(/^(connected-agents|connection-usage)$/, 'connections')
+				?.replace(/^last-used-org$/, 'waiting')
+				?.replace(/-export$/, '') ?? ''
+		headers.set('Referer', `${origin}/@ghost/-/${section}`)
 	}
 	if (method !== 'GET') {
 		headers.set('Origin', origin)
@@ -313,4 +323,143 @@ test('signed-out requests reach the route for its own login handling', async () 
 	)
 	expect(response.status).toBe(200)
 	expect(next).toHaveBeenCalledOnce()
+})
+
+test('org-bound account JSON responses remember the Referer org as last-used', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/secrets`,
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(next).toHaveBeenCalledOnce()
+	expect(response.headers.getSetCookie()).toEqual([
+		expect.stringMatching(/^kody_last_org=acme;/),
+	])
+})
+
+test('last-used commit JSON remembers the Referer org as last-used', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/account/last-used-org.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/connections`,
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(next).toHaveBeenCalledOnce()
+	expect(response.headers.getSetCookie()).toEqual([
+		expect.stringMatching(/^kody_last_org=acme;/),
+	])
+})
+
+test('prefetch account JSON does not set the last-used cookie', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/secrets`,
+			'X-Kody-Prefetch': '1',
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([])
+})
+
+test('failed account JSON does not set the last-used cookie', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(
+		async () =>
+			new Response(JSON.stringify({ ok: false }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: {
+			Cookie: cookie,
+			Referer: `${origin}/@acme/-/secrets`,
+		},
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(500)
+	expect(response.headers.getSetCookie()).toEqual([])
+})
+
+test('org management JSON remembers the path org as last-used', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/@acme/-/settings.json`, {
+		headers: { Cookie: cookie },
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([
+		expect.stringMatching(/^kody_last_org=acme;/),
+	])
+})
+
+test('account JSON without an org Referer does not set the last-used cookie', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
+	const request = new Request(`${origin}/account/secrets.json`, {
+		headers: { Cookie: cookie },
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([])
+})
+
+test('org page paths do not duplicate the last-used cookie in the guard', async () => {
+	const { env } = createEnv()
+	const guard = createOrgBindingGuardMiddleware(env)
+	const cookie = await adaCookie()
+	const next = vi.fn(async () => new Response('page'))
+	const request = new Request(`${origin}/@acme/-/secrets`, {
+		headers: { Cookie: cookie },
+	})
+	const response = await guard(
+		{ request, url: new URL(request.url) } as never,
+		next,
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.getSetCookie()).toEqual([])
 })

@@ -222,7 +222,7 @@ test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest 
 				'package.json': tabbedJson({
 					name: '@jane/demo',
 					version: '2.0.0',
-					kody: { id: 'demo', extra: true },
+					kody: { extra: true },
 					private: true,
 				}),
 			},

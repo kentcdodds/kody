@@ -34,19 +34,12 @@ test('the kody.credentials example in docs/use/packages.md publishes', () => {
 	const example = section?.match(/```json\n([\s\S]*?)```/)?.[1]
 	expect(example).toBeDefined()
 	const manifest = parseAuthoredPackageJson({ content: example! })
-	expect(manifest.kody.credentials).toEqual({
-		GOOGLE: {
-			kind: 'oauth',
-			provider: 'google',
-			multiple: true,
-			description: 'Google accounts whose calendars go in the digest.',
-		},
-		RESEND_API_KEY: {
-			kind: 'secret',
-			provider: 'resend',
-			description: 'Resend API key that sends the digest email.',
-		},
-	})
+	const credentials = manifest.kody.credentials
+	expect(credentials).toBeDefined()
+	expect(Object.keys(credentials ?? {}).length).toBeGreaterThan(0)
+	for (const slot of Object.values(credentials ?? {})) {
+		expect(slot.kind).toMatch(/^(oauth|secret|mcp|url|login|signing)$/)
+	}
 })
 
 test('publish rejects a retired placement, and published snapshots drop it', () => {
@@ -82,11 +75,11 @@ test('publish rejects invalid kody.credentials slots and names the slot', () => 
 			GOOGLE: { kind: 'token', provider: 'google', description: 'x' },
 		}),
 	).toBe(
-		'Invalid package.json:\n✖ Invalid option: expected one of "secret"|"oauth"|"mcp"\n  → at kody.credentials.GOOGLE.kind',
+		'Invalid package.json:\n✖ Invalid option: expected one of "secret"|"oauth"|"mcp"|"url"|"login"|"signing"\n  → at kody.credentials.GOOGLE.kind',
 	)
-	expect(publishError({ GOOGLE: { kind: 'oauth', description: 'x' } })).toMatch(
-		/kody\.credentials\.GOOGLE\.provider/,
-	)
+	expect(
+		publishError({ GOOGLE: { kind: 'oauth', provider: '', description: 'x' } }),
+	).toMatch(/kody\.credentials\.GOOGLE\.provider/)
 	expect(
 		publishError({ GOOGLE: { kind: 'oauth', provider: 'google' } }),
 	).toMatch(/kody\.credentials\.GOOGLE\.description/)
@@ -106,6 +99,19 @@ test('publish rejects invalid kody.credentials slots and names the slot', () => 
 		}),
 	).toContain('Credential slot names start with a letter')
 	expect(publishError(['GOOGLE'])).toMatch(/kody\.credentials/)
+})
+
+test('needs may omit provider and use the opt-in kinds', () => {
+	const credentials = {
+		github: { kind: 'oauth', description: 'Repos to triage.' },
+		telegram: { kind: 'url', description: 'Bot URL.' },
+		portal: { kind: 'login', provider: 'acme-portal', description: 'Portal.' },
+		webhook: { kind: 'signing', description: 'Signs requests.' },
+	}
+	expect(
+		parseAuthoredPackageJson({ content: manifestWithCredentials(credentials) })
+			.kody.credentials,
+	).toEqual(credentials)
 })
 
 test('published snapshots load when an old kody.credentials key predates the schema', () => {

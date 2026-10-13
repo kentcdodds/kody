@@ -14,7 +14,7 @@ const orgOwnedAccountSections = [
 	'jobs',
 	'mcp-servers',
 	'memories',
-	'packages',
+	'repositories',
 	'secret-providers',
 	'secrets',
 	'values',
@@ -28,7 +28,10 @@ export type OrgOwnedAccountSection = (typeof orgOwnedAccountSections)[number]
 const orgOwnedSectionSet: ReadonlySet<string> = new Set(orgOwnedAccountSections)
 
 /** Sections whose org URL is only the index. Nested paths stay on other routes. */
-const exactOrgSections: ReadonlySet<string> = new Set(['packages', 'webhooks'])
+const exactOrgSections: ReadonlySet<string> = new Set([
+	'repositories',
+	'webhooks',
+])
 
 export type OrganizationSummary = {
 	slug: string
@@ -70,7 +73,7 @@ function isOrgOwnedAccountSection(
  * person's sign-in providers. The Memories download is
  * `/account/memories-export.json`.
  * `/account/packages.json` lists and mutates without per-package authz, so it
- * stays on the person; team Repositories read `/@slug/-/packages.json`.
+ * stays on the person; team Repositories read `/@slug/-/repositories.json`.
  */
 export function orgOwnedAccountApiSection(
 	pathname: string,
@@ -110,7 +113,7 @@ export function parseOrgResourcePath(
 	return { slug, section, rest }
 }
 
-/** `/@acme/-/packages.json`: the JSON twin of an org section page. */
+/** `/@acme/-/repositories.json`: the JSON twin of an org section page. */
 function parseOrgResourceApiPath(
 	pathname: string,
 ): { slug: string; section: OrgOwnedAccountSection } | null {
@@ -154,6 +157,23 @@ export function orgBillingPath(slug: string) {
 }
 
 /**
+ * `/@acme/-/overview`: the workspace landing that links every section the
+ * organization owns. A team org's overview is its home at `/@slug`, so the
+ * server redirects there.
+ */
+export function parseOrgOverviewPath(
+	pathname: string,
+): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/overview\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgOverviewPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/overview`
+}
+
+/**
  * Roles whose preset includes `billing:write`. Only decides which links to
  * show; the billing routes authorize every request.
  */
@@ -192,7 +212,7 @@ export function orgResourcePathForAccountPath(
 	const normalized =
 		pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 	if (normalized === '/account/packages') {
-		return orgResourcePath(personalSlug, 'packages')
+		return orgResourcePath(personalSlug, 'repositories')
 	}
 	if (
 		normalized === '/account/billing' ||
@@ -281,8 +301,8 @@ export function parseOrgManagementPath(
 }
 
 /**
- * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing, or
- * management). Same parse order as the server request binder. Public `/@slug`
+ * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing,
+ * management, or overview). Same parse order as the server request binder. Public `/@slug`
  * and `/@owner/pkg` paths are not org-owned pages — they return null so chrome
  * does not adopt a stranger's handle.
  */
@@ -292,6 +312,7 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
+		parseOrgOverviewPath(pathname)?.slug ??
 		null
 	)
 }
@@ -415,8 +436,8 @@ export function organizationsWithSignupFallback(input: {
 
 /**
  * Name and avatar every org row shows. The signup organization carries the
- * person's own name and photo; other organizations have no image yet, so
- * their avatar falls back to the initial of the name (or slug). Profile edits
+ * person's own name and photo. Other organizations use their own photo when
+ * they have one, otherwise the initial of the name (or slug). Profile edits
  * rename the person, not the signup organization row, so the person's current
  * name wins there.
  */

@@ -13,9 +13,16 @@ import {
 	type StatusSnapshot,
 } from './status-types.ts'
 
-/** Server-rendered public status page. No client JavaScript; the page uses a
- * meta refresh so an open tab keeps tracking an ongoing incident, including
- * swapping the status-specific favicon when an incident opens or resolves. */
+/** Server-rendered public status page. A 60s reload keeps an open tab
+ * tracking an ongoing incident, including swapping the status-specific
+ * favicon when an incident opens or resolves: a `<noscript>` meta refresh
+ * without JavaScript, otherwise an inline timer. The inline timer runs even
+ * when `public/status-breakout.js` fails to load; the opt-in "while you wait"
+ * game cancels it through `data-refresh-timer` because a meta refresh cannot
+ * be cancelled. */
+
+const refreshTimerScript =
+	'document.documentElement.dataset.refreshTimer = String(setTimeout(() => location.reload(), 60000))'
 
 function escapeHtml(value: string): string {
 	return value
@@ -157,6 +164,94 @@ h1 { font-size: 1.5rem; margin: 0; }
 h2 { font-size: 1.1rem; margin: 2rem 0 0.75rem; }
 footer { margin-top: 2.5rem; color: var(--muted); font-size: 0.85rem; }
 footer a { color: inherit; }
+.play-button {
+	display: block;
+	width: 100%;
+	margin: -0.25rem 0 1.25rem;
+	padding: 0.7rem 1rem;
+	border: 1px dashed var(--muted);
+	border-radius: 0.75rem;
+	background: var(--card);
+	color: var(--text);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+.play-button:hover { border-style: solid; }
+.play-button[hidden] { display: none; }
+html.breakout-active,
+html.breakout-active body { overflow: hidden; }
+html.breakout-active body { user-select: none; -webkit-user-select: none; }
+html.breakout-active main {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+	gap: 0.75rem;
+	align-content: start;
+	max-width: none;
+	margin: 0;
+	padding: 1rem;
+	transform-origin: top left;
+}
+html.breakout-active main > * { margin: 0; }
+html.breakout-active main > :is(header, .banner, h2, footer, p, .provider-section) { grid-column: 1 / -1; }
+html.breakout-active .bars { gap: 1px; }
+.breakout-canvas { position: fixed; inset: 0; z-index: 10; touch-action: none; cursor: none; }
+.breakout-hud {
+	position: fixed;
+	inset: auto 0 0;
+	z-index: 11;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1.25rem;
+	align-items: center;
+	padding: 0.4rem 1rem;
+	color: var(--muted);
+	font-size: 0.8rem;
+	pointer-events: none;
+}
+.breakout-live { margin-left: auto; }
+.breakout-hud button,
+.breakout-panel button,
+.breakout-toast button {
+	pointer-events: auto;
+	padding: 0.3rem 0.7rem;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	background: var(--card);
+	color: var(--text);
+	font: inherit;
+	cursor: pointer;
+}
+.breakout-panel,
+.breakout-toast {
+	position: fixed;
+	left: 50%;
+	z-index: 12;
+	transform: translateX(-50%);
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: 0.75rem;
+	box-shadow: 0 20px 50px rgb(0 0 0 / 0.35);
+}
+.breakout-panel { top: 30%; width: min(24rem, 90vw); padding: 1.25rem 1.5rem; text-align: center; }
+.breakout-panel h2 { margin: 0 0 0.25rem; }
+.breakout-panel p { margin: 0 0 1rem; color: var(--muted); }
+.breakout-actions { display: flex; gap: 0.5rem; justify-content: center; }
+.breakout-panel .breakout-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.breakout-toast {
+	top: 1rem;
+	width: max-content;
+	max-width: 90vw;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 0.75rem;
+	align-items: center;
+	padding: 0.6rem 0.9rem;
+	border-color: var(--ok);
+	font-weight: 600;
+}
+.breakout-panel[hidden],
+.breakout-toast[hidden] { display: none; }
 `
 
 function bannerFor(snapshot: StatusSnapshot): { label: string; kind: string } {
@@ -385,18 +480,21 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta http-equiv="refresh" content="60" />
+<noscript><meta http-equiv="refresh" content="60" /></noscript>
+<script>${refreshTimerScript}</script>
 <title>Kody status</title>
 ${renderFaviconLinks(snapshot.overallStatus)}
 <style>${pageStyles}</style>
+<script type="module" src="/status-breakout.js"></script>
 </head>
-<body>
+<body data-overall-status="${snapshot.overallStatus}">
 <main>
 	<header>
 		<h1>kody status</h1>
 		<span class="component-meta">Updated ${escapeHtml(snapshot.generatedAt)}</span>
 	</header>
 	<div class="banner ${banner.kind}">${escapeHtml(banner.label)}</div>
+	<button type="button" class="play-button" data-breakout-start hidden>Play while you wait</button>
 	${renderExecuteHealth(snapshot.executeHealth)}
 	${components}
 	${openIncidents}

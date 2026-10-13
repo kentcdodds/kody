@@ -55,6 +55,7 @@ vi.mock('#worker/audit-log.ts', () => ({
 const {
 	handlePublicPackageGitHttpRequest,
 	parsePublicPackageGitHttpPath,
+	readGitHttpCredential,
 	resolveImmutableSnapshotCommit,
 } = await import('./public-package-git-http.ts')
 
@@ -345,7 +346,7 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 	expect(fetchCalls).toHaveLength(2)
 })
 
-test('public package git HTTP rejects push and hides private packages', async () => {
+test('public package git HTTP challenges auth for anonymous push and private packages', async () => {
 	resetMocks()
 
 	const receivePack = await handlePublicPackageGitHttpRequest(
@@ -355,8 +356,8 @@ test('public package git HTTP rejects push and hides private packages', async ()
 		}),
 		envStub(),
 	)
-	expect(receivePack!.status).toBe(403)
-	expect(await receivePack!.text()).toMatch(/read-only/i)
+	expect(receivePack!.status).toBe(401)
+	expect(receivePack!.headers.get('WWW-Authenticate')).toMatch(/Basic/i)
 	expect(resolveCommunityPackageUrl).not.toHaveBeenCalled()
 
 	const receiveInfo = await handlePublicPackageGitHttpRequest(
@@ -365,7 +366,8 @@ test('public package git HTTP rejects push and hides private packages', async ()
 		),
 		envStub(),
 	)
-	expect(receiveInfo!.status).toBe(403)
+	expect(receiveInfo!.status).toBe(401)
+	expect(receiveInfo!.headers.get('WWW-Authenticate')).toMatch(/Basic/i)
 
 	resolveCommunityPackageUrl.mockResolvedValue(null)
 	const missing = await handlePublicPackageGitHttpRequest(
@@ -374,9 +376,29 @@ test('public package git HTTP rejects push and hides private packages', async ()
 		),
 		envStub(),
 	)
-	expect(missing!.status).toBe(404)
-	expect(await missing!.text()).toBe('Not Found')
+	// Non-public paths challenge for credentials so `git` invokes the helper.
+	expect(missing!.status).toBe(401)
+	expect(missing!.headers.get('WWW-Authenticate')).toMatch(/Basic/i)
 	expect(getCommunityListingById).not.toHaveBeenCalled()
+})
+
+test('readGitHttpCredential accepts Basic/Bearer kody_at_… and rejects others', () => {
+	const token = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
+	expect(readGitHttpCredential(null)).toEqual({ kind: 'absent' })
+	expect(readGitHttpCredential(`Bearer ${token}`)).toEqual({
+		kind: 'api_token',
+		token,
+	})
+	expect(readGitHttpCredential(`Basic ${btoa(`x:${token}`)}`)).toEqual({
+		kind: 'api_token',
+		token,
+	})
+	expect(readGitHttpCredential('Bearer not-a-token')).toEqual({
+		kind: 'invalid',
+	})
+	expect(readGitHttpCredential(`Basic ${btoa('x:kody_gt_nope')}`)).toEqual({
+		kind: 'invalid',
+	})
 })
 
 test('public package git HTTP redirects listing renames and falls back to a local advertisement', async () => {

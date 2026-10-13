@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { withAccessEpochWriteGuard } from '#worker/test-support/access-epoch-write-guard.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	createAuditTestDb,
@@ -34,12 +35,15 @@ const joiner = { id: 2, personId: 'b'.repeat(64) }
 
 let sqlite: DatabaseSync
 let db: D1Database
+/** Unguarded facade for personal-org provisioning (new org rows). */
+let rawDb: D1Database
 let auditDb: D1Database
 let orgId = ''
 
 async function seed() {
 	sqlite = new DatabaseSync(':memory:')
-	db = createD1FromSqlite(sqlite)
+	rawDb = createD1FromSqlite(sqlite)
+	db = rawDb
 	auditDb = createAuditTestDb()
 	await ensureOrgsTestSchema(db)
 	await ensureUsersTestSchema({
@@ -65,6 +69,9 @@ async function seed() {
 			createdAt: now,
 		})
 	}
+	// Personal orgs are provisioned statement by statement (new org rows); from
+	// here on every access-table write must bump access_epoch in its batch.
+	db = withAccessEpochWriteGuard(db)
 	const created = await createOrganization(
 		db,
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
@@ -283,7 +290,7 @@ test('max uses blocks further joins after the limit', async () => {
 			 ) VALUES (?, 'cara', 'cara@partner.org', 'x', ?, ?)`,
 		)
 		.run(third.id, third.personId, '2026-01-01T00:00:00.000Z')
-	await provisionPersonalOrg(db, {
+	await provisionPersonalOrg(rawDb, {
 		stableUserId: third.personId,
 		username: 'cara',
 		createdAt: '2026-01-01T00:00:00.000Z',

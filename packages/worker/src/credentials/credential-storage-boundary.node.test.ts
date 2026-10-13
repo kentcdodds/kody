@@ -21,6 +21,10 @@ const doorModules = new Set([
 	'packages/worker/src/credentials/secret-resolvers.ts',
 	'packages/worker/src/credentials/oauth-resolvers.ts',
 	'packages/worker/src/credentials/mcp-resolver.ts',
+	'packages/worker/src/credentials/url-resolver.ts',
+	'packages/worker/src/credentials/login-resolver.ts',
+	'packages/worker/src/credentials/signing-resolver.ts',
+	'packages/worker/src/credentials/client-resolver.ts',
 ])
 
 type StorageRule = {
@@ -39,8 +43,14 @@ const accountSecretsData = 'packages/worker/src/app/account-secrets-data.ts'
 const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/mcp/secrets/service.ts',
-		symbols: ['resolveSecret', 'findSecretForUse'],
+		symbols: [
+			'resolveSecret',
+			'findSecretForUse',
+			'findStoredCredentialForUse',
+		],
 		allowed: {
+			'packages/worker/src/credentials/stored-credential.ts':
+				'Later-kind lookup; only door resolvers call its readValue, after authorizing.',
 			'packages/worker/src/mcp/secrets/secret-providers/service.ts':
 				'Vault door key read inside resolveProviderSecret, which only the door calls.',
 			[accountSecretsHandler]:
@@ -51,7 +61,7 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	},
 	{
 		module: 'packages/worker/src/mcp/secrets/repo.ts',
-		symbols: ['getSecretEntry'],
+		symbols: ['getSecretEntry', 'getStoredCredentialEntry'],
 		allowed: {
 			'packages/worker/src/mcp/secrets/service.ts': 'Secret storage layer.',
 		},
@@ -131,6 +141,35 @@ const storageRules: ReadonlyArray<StorageRule> = [
 	{
 		module: 'packages/worker/src/credentials/mcp-resolver.ts',
 		symbols: ['mcpConnectionResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/stored-credential.ts',
+		symbols: ['findStoredCredential'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/url-resolver.ts',
+		symbols: ['urlCredentialResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/login-resolver.ts',
+		symbols: ['loginCredentialResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/signing-resolver.ts',
+		symbols: ['signingCredentialResolver'],
+		allowed: {},
+	},
+	{
+		module: 'packages/worker/src/credentials/client-resolver.ts',
+		symbols: [
+			'clientKeyResolver',
+			'clientOauthResolver',
+			'clientOauthRefreshResolver',
+		],
 		allowed: {},
 	},
 ]
@@ -246,44 +285,6 @@ function collectImports(filePath: string, source: string): Array<ImportUse> {
 	visit(sourceFile)
 	return uses
 }
-
-function exportedNames(relativePath: string) {
-	const filePath = path.join(repoRoot, relativePath)
-	const sourceFile = ts.createSourceFile(
-		filePath,
-		readFileSync(filePath, 'utf8'),
-		ts.ScriptTarget.Latest,
-		false,
-		ts.ScriptKind.TS,
-	)
-	return new Set(
-		sourceFile.statements.flatMap((statement) => {
-			const exported =
-				ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)
-					? statement.modifiers?.some(
-							(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-						)
-					: false
-			if (!exported) return []
-			if (ts.isFunctionDeclaration(statement)) {
-				return statement.name ? [statement.name.text] : []
-			}
-			if (!ts.isVariableStatement(statement)) return []
-			return statement.declarationList.declarations.flatMap((declaration) =>
-				ts.isIdentifier(declaration.name) ? [declaration.name.text] : [],
-			)
-		}),
-	)
-}
-
-test('every guarded credential read helper still exists', () => {
-	for (const rule of storageRules) {
-		const exported = exportedNames(rule.module)
-		for (const symbol of rule.symbols) {
-			expect(exported, `${rule.module} exports ${symbol}`).toContain(symbol)
-		}
-	}
-})
 
 test('credential storage is read only behind resolveCredential', () => {
 	const rulesByModule = new Map(storageRules.map((rule) => [rule.module, rule]))

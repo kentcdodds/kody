@@ -553,11 +553,14 @@ guarded by a bearer secret comparison.
   credential placeholder is filled only for a host the credential allows (a
   secret's hosts the user approved in the account UI, an integration's
   `requiredHosts` and `apiBaseUrl` host, a vault item's websites) and only over
-  HTTPS. It may sit in a header, the URL path or query, or a text body (JSON
-  values are JSON-escaped, form values form-encoded); multipart and non-UTF-8
-  bodies are forwarded byte for byte. A placeholder on plain HTTP, in the URL
-  host or user info, or bound for a host the credential does not allow is
-  refused before anything resolves
+  HTTPS. It may sit in a header, the URL path or query, a text body (JSON values
+  are JSON-escaped, form values form-encoded), or a literal `{{…}}` in a
+  `multipart/*` part. Streamed bodies are filled chunk by chunk. A
+  percent-encoded or base64-encoded placeholder form the gateway will not fill
+  is refused. Percent-encoded placeholders in the URL path or query, and in
+  form-urlencoded components the gateway already fills, stay supported. A
+  placeholder on plain HTTP, in the URL host or user info, or bound for a host
+  the credential does not allow is refused before anything resolves
   (`packages/worker/src/mcp/secrets/secret-placement.ts` and the credential
   door), so none is sent unfilled. The values are redacted from echoes in the
   response (also URL-, form-, and JSON-encoded) and from fetch errors.
@@ -712,14 +715,19 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
-- **Site-admin, role, membership, and billing actions need a live person.**
-  Background package runs still resolve the owner's current roles
-  (`packages/worker/src/identity/background-mcp-user.ts`), but every site-admin
-  capability and every member, role, invite, or member/billing grant change
-  declares `requiresLivePerson`, so a job, webhook, subscription, or inbound
-  email run (and package code it starts) is denied even when its enabler is an
-  Owner or admin ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+- **Role, membership, and billing actions need a live person.** Every member,
+  role, invite, or member/billing grant change declares `requiresLivePerson`, so
+  a job, webhook, subscription, or inbound email run (and package code it
+  starts) is denied even when its enabler is an Owner
+  ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
   [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
+- **Site-admin tools run from automation only for a site admin, and are
+  audited.** Background package runs resolve the owner's roles with a short
+  cache (`packages/worker/src/identity/background-mcp-user.ts`), so a triggered
+  run that calls a site-admin capability also re-reads the role for the person
+  it acts for from D1, and every such call writes an `admin` audit row naming
+  the trigger type and id. See
+  [Site-admin capabilities from triggered runs](./architecture/authorization.md#site-admin-capabilities-from-triggered-runs).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

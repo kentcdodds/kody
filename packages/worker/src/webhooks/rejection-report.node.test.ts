@@ -115,10 +115,17 @@ test('the report counts matching rejections per endpoint and owner, with deliver
 		'org-quiet': [],
 	}
 	mocks.listRunRecords.mockImplementation(
-		async (input: { userId: string; filter: { since: string } }) => ({
-			runs: runsByOwner[input.userId]!.filter(
-				(entry) => entry.startedAt >= input.filter.since,
-			),
+		async (input: {
+			userId: string
+			filter: { since: string; until?: string | null }
+		}) => ({
+			runs: runsByOwner[input.userId]!.filter((entry) => {
+				if (entry.startedAt < input.filter.since) return false
+				if (input.filter.until && entry.startedAt >= input.filter.until) {
+					return false
+				}
+				return true
+			}),
 			nextCursor: null,
 		}),
 	)
@@ -187,4 +194,13 @@ test('the report counts matching rejections per endpoint and owner, with deliver
 	expect(
 		untilFix.endpoints.find((row) => row.webhookName === 'wake')?.delivered,
 	).toBe(0)
+	expect(mocks.listRunRecords).toHaveBeenCalledWith(
+		expect.objectContaining({
+			filter: expect.objectContaining({
+				since: '2026-10-11T06:56:00.000Z',
+				until: '2026-10-12T04:00:00.000Z',
+				surface: 'webhook',
+			}),
+		}),
+	)
 })

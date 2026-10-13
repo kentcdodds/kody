@@ -11,7 +11,10 @@ import {
 	pickLocalExecutePrimaryRuntimePath,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
-import { createLocalExecuteRuntimeShimSource } from './local-execute-runtime-support.ts'
+import {
+	createLocalExecutePackageRuntimeModuleSource,
+	createLocalExecuteRuntimeShimSource,
+} from './local-execute-runtime-support.ts'
 import {
 	normalizeWorkspaceModulePath,
 	resolveRelativeModulePath,
@@ -400,6 +403,75 @@ test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', (
 	)
 })
 
+test('local gateway fetch always hops a credential client request, which carries only a handle', async () => {
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	const start = shim.indexOf('const __kodyNullBodyStatuses')
+	const end = shim.indexOf('export function __kodyCreatePackageBoundStorage')
+	const helpersSource = shim.slice(start, end).replaceAll(/^export /gm, '')
+	const gatewayCalls: Array<unknown> = []
+	const kody = {
+		gatewayFetch: async (args: unknown) => {
+			gatewayCalls.push(args)
+			return { status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }
+		},
+	}
+	const originalFetch = globalThis.fetch
+	const ambientCalls: Array<unknown> = []
+	globalThis.fetch = (async (input: unknown) => {
+		ambientCalls.push(input)
+		return new Response('ambient')
+	}) as typeof fetch
+	try {
+		const { __kodyGatewayFetch } = new Function(
+			'kody',
+			`${helpersSource}; return { __kodyGatewayFetch };`,
+		)(kody) as {
+			__kodyGatewayFetch: (
+				input: RequestInfo | URL,
+				init?: RequestInit,
+			) => Promise<Response>
+		}
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/v1', {
+				headers: { 'x-kody-credential-client': 'kch1.a.b' },
+				redirect: 'manual',
+			}),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toMatchObject([
+			{
+				request: {
+					url: 'https://api.example.com/v1',
+					headers: { 'x-kody-credential-client': 'kch1.a.b' },
+				},
+			},
+		])
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+	expect(shim).toContain(
+		'export const credential = __kodyCredentialRuntime.credential;',
+	)
+	expect(shim).toContain(
+		'export const credentials = __kodyCredentialRuntime.credentials;',
+	)
+	// Ad hoc / unpublished local execute imports these from the CLI host
+	// kody:runtime; the shim stays the single source of the client runtime for
+	// published modules and the gateway-fetch hop. Neither surface may embed
+	// secret plaintext helpers — only CapabilityProxy tool names + the opaque
+	// handle header.
+	expect(shim).toContain('credentialClientOpen')
+	expect(shim).toContain('x-kody-credential-client')
+	expect(shim).not.toMatch(/secretValue|plaintextSecret|apiKeyValue/)
+	const packageRuntime = createLocalExecutePackageRuntimeModuleSource('pkg-1')
+	expect(packageRuntime).toContain(
+		'__kodyCreatePackageBoundCredentialRuntime("pkg-1")',
+	)
+	expect(packageRuntime).toContain(
+		'export const credential = __kodyPackageCredentialRuntime.credential;',
+	)
+})
+
 test('local gateway fetch hops scoped secrets and preserves ambient body metadata', async () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	const start = shim.indexOf('const __kodyNullBodyStatuses')
@@ -409,6 +481,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 	const helpersSource = shim.slice(start, end).replaceAll(/^export /gm, '')
 	const ambientCalls: Array<{ input: unknown; init: unknown }> = []
 	const gatewayCalls: Array<unknown> = []
+	const gatewayStreamCalls: Array<unknown> = []
 	const kody = {
 		gatewayFetch: async (args: unknown) => {
 			gatewayCalls.push(args)
@@ -418,6 +491,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				headers: {},
 				bodyBase64: btoa('gw'),
 			}
+		},
+		gatewayFetchStream: async (args: unknown) => {
+			gatewayStreamCalls.push(args)
+			return new Response('stream-gw', { status: 200 })
 		},
 	}
 	const originalFetch = globalThis.fetch
@@ -493,6 +570,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		const straddling = new TextEncoder().encode(
 			`${'x'.repeat(64 * 1024 - 5)}{{secret:demoToken}}`,
 		)
+		gatewayStreamCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/upload', {
 			method: 'PUT',
 			body: straddling,
@@ -501,10 +579,13 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			method: 'PUT',
 			body: new Blob([straddling]),
 		})
-		expect(gatewayCalls).toHaveLength(2)
+		// Bytes buffer into the JSON hop; Blobs stream via gatewayFetchStream.
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const stream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('hello'))
@@ -516,18 +597,19 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: stream,
 		})
 		expect(gatewayCalls).toHaveLength(0)
-		expect(ambientCalls).toHaveLength(1)
-		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
-		const streamedBody = (ambientCalls[0]?.init as RequestInit).body
-		expect(streamedBody).toBeInstanceOf(ReadableStream)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(gatewayStreamCalls[0]).toMatchObject({
+			request: { url: 'https://api.example.com/post', method: 'POST' },
+		})
 		expect(
-			new TextDecoder().decode(
-				await new Response(streamedBody as ReadableStream).arrayBuffer(),
-			),
-		).toBe('hello')
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const secretStream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('before-'))
@@ -541,14 +623,16 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: secretStream,
 		})
 		expect(gatewayCalls).toHaveLength(0)
-		await expect(
-			new Response(
-				(ambientCalls.at(-1)?.init as RequestInit).body as ReadableStream,
-			).arrayBuffer(),
-		).rejects.toThrow(/cannot fill secret placeholders in a streaming body/)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBe(secretStream)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const decodeBody = (call: unknown) =>
 			atob((call as { request: { bodyBase64: string } }).request.bodyBase64)
 		const bodySecretText = '{"note":"{{secret:demoToken|scope=user}}"}'
@@ -575,7 +659,8 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: bigBlobBody,
 		})
 		expect(ambientCalls).toHaveLength(0)
-		expect(gatewayCalls).toHaveLength(4)
+		expect(gatewayCalls).toHaveLength(3)
+		expect(gatewayStreamCalls).toHaveLength(1)
 		expect(decodeBody(gatewayCalls[0])).toBe(bodySecretText)
 		expect(gatewayCalls[1]).toMatchObject({
 			request: {
@@ -588,9 +673,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			'token=%7B%7Bsecret%3AdemoToken%7D%7D',
 		)
 		expect(decodeBody(gatewayCalls[2])).toBe('{{integration-token:github}}')
-		expect(decodeBody(gatewayCalls[3]).endsWith('{{secret:demoToken}}')).toBe(
-			true,
-		)
+		expect(
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
 
 		gatewayCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/post', {
@@ -626,8 +712,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		})
 
-		// The gateway never fills a multipart body, so its content never hops.
+		// Multipart hops through the streaming gateway so part placeholders fill.
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		ambientCalls.length = 0
 		const namedFileForm = new FormData()
 		namedFileForm.set('upload', new Blob(['plain']), '{{secret:demoToken}}.txt')
 		await __kodyGatewayFetch('https://api.example.com/upload', {
@@ -635,28 +723,28 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: namedFileForm,
 		})
 		expect(gatewayCalls).toHaveLength(0)
-		expect((ambientCalls.at(-1)?.init as RequestInit).body).toBe(namedFileForm)
-		ambientCalls.length = 0
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
-		const ambientBeforeHeaderSecret = ambientCalls.length
-		await expect(
-			__kodyGatewayFetch(
-				'https://api.example.com/{{secret:demoToken}}/upload',
-				{
-					method: 'POST',
-					body: new ReadableStream({
-						start(controller) {
-							controller.enqueue(new TextEncoder().encode('plain'))
-							controller.close()
-						},
-					}),
-				},
-			),
-		).rejects.toThrow(/streaming body/)
-		expect(ambientCalls).toHaveLength(ambientBeforeHeaderSecret)
+		gatewayStreamCalls.length = 0
+		await __kodyGatewayFetch(
+			'https://api.example.com/{{secret:demoToken}}/upload',
+			{
+				method: 'POST',
+				body: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('plain'))
+						controller.close()
+					},
+				}),
+			},
+		)
+		expect(ambientCalls).toHaveLength(0)
 		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
 		ambientCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const braceStream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('keep {{not-a-secret}}'))
@@ -667,14 +755,9 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			method: 'POST',
 			body: braceStream,
 		})
-		expect(
-			new TextDecoder().decode(
-				await new Response(
-					(ambientCalls[0]?.init as RequestInit).body as ReadableStream,
-				).arrayBuffer(),
-			),
-		).toBe('keep {{not-a-secret}}')
+		expect(gatewayStreamCalls).toHaveLength(1)
 		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(0)
 
 		ambientCalls.length = 0
 		const typedBlob = new Blob(['blob-body'], { type: 'application/json' })
@@ -690,6 +773,44 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				ambientCalls[0]?.init as RequestInit,
 			).headers.get('content-type'),
 		).toBe('application/json')
+
+		// Non-secret Blob wrapped in a Request reaches ambient fetch without a
+		// clone().arrayBuffer() copy (kody#3152).
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		const wrappedBlob = new Blob(['wrapped-blob-body'], {
+			type: 'application/octet-stream',
+		})
+		const blobRequest = new Request('https://api.example.com/upload', {
+			method: 'POST',
+			body: wrappedBlob,
+		})
+		await __kodyGatewayFetch(blobRequest)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBe(blobRequest)
+		expect(await (ambientCalls[0]?.input as Request).text()).toBe(
+			'wrapped-blob-body',
+		)
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		const largeWrappedBlob = new Blob(['y'.repeat(3 * 1024 * 1024)], {
+			type: 'application/octet-stream',
+		})
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/upload', {
+				method: 'PUT',
+				body: largeWrappedBlob,
+			}),
+		)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBeInstanceOf(Request)
 
 		ambientCalls.length = 0
 		const request = new Request('https://api.example.com/post', {
@@ -708,6 +829,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const wrappedStream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('wrapped-hello'))
@@ -721,19 +843,15 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		} as RequestInit & { duplex: 'half' })
 		await __kodyGatewayFetch(wrappedRequest)
 		expect(gatewayCalls).toHaveLength(0)
-		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
-		const wrappedInit = ambientCalls[0]?.init as RequestInit & {
-			cache?: string
-		}
-		expect(wrappedInit.body).toBeInstanceOf(ReadableStream)
-		expect(wrappedInit.cache).toBeUndefined()
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
 		expect(
-			new TextDecoder().decode(
-				await new Response(wrappedInit.body as ReadableStream).arrayBuffer(),
-			),
-		).toBe('wrapped-hello')
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
 
 		ambientCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const storedStream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('stored'))
@@ -747,9 +865,8 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			duplex: 'half',
 		} as RequestInit & { duplex: 'half' })
 		await __kodyGatewayFetch(storedRequest)
-		expect(
-			(ambientCalls[0]?.init as RequestInit & { cache?: string }).cache,
-		).toBe('no-store')
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(ambientCalls).toHaveLength(0)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
@@ -782,6 +899,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const form = new FormData()
 		form.set('note', 'hello')
 		await __kodyGatewayFetch('https://api.example.com/upload', {
@@ -789,10 +907,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: form,
 		})
 		expect(gatewayCalls).toHaveLength(0)
-		expect(ambientCalls).toHaveLength(1)
-		expect(ambientCalls[0]?.input).toBe('https://api.example.com/upload')
-		expect((ambientCalls[0]?.init as RequestInit).body).toBe(form)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
+		gatewayStreamCalls.length = 0
 		await expect(
 			__kodyGatewayFetch('https://api.example.com/upload', {
 				method: 'POST',
@@ -802,9 +920,10 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				body: form,
 			}),
 		).resolves.toBeInstanceOf(Response)
-		expect(gatewayCalls).toHaveLength(1)
-		expect(ambientCalls).toHaveLength(1) // only the earlier non-secret form
-		expect(gatewayCalls[0]).toMatchObject({
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(gatewayStreamCalls[0]).toMatchObject({
 			request: {
 				url: 'https://api.example.com/upload',
 				headers: {
@@ -813,11 +932,11 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		})
 		expect(
-			(gatewayCalls[0] as { request: { bodyBase64?: string } }).request
-				.bodyBase64,
-		).toEqual(expect.any(String))
+			(gatewayStreamCalls[0] as { request: { body?: unknown } }).request.body,
+		).toBeDefined()
 
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		ambientCalls.length = 0
 		const pathSecretForm = new FormData()
 		pathSecretForm.set('note', 'hello')
@@ -829,14 +948,16 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		)
 		expect(ambientCalls).toHaveLength(0)
-		expect(gatewayCalls).toHaveLength(1)
-		expect(gatewayCalls[0]).toMatchObject({
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(gatewayStreamCalls[0]).toMatchObject({
 			request: {
 				url: 'https://api.example.com/bot{{secret:demoToken|scope=user}}/upload',
 			},
 		})
 
 		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		ambientCalls.length = 0
 		const placeholderForm = new FormData()
 		placeholderForm.set('{{secret:demoToken|scope=user}}', 'field-value')
@@ -845,9 +966,11 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: placeholderForm,
 		})
 		expect(gatewayCalls).toHaveLength(0)
-		expect((ambientCalls[0]?.init as RequestInit).body).toBe(placeholderForm)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
 
 		ambientCalls.length = 0
+		gatewayStreamCalls.length = 0
 		const requestForm = new FormData()
 		requestForm.set('note', '{{secret:demoToken|scope=user}}')
 		await __kodyGatewayFetch(
@@ -858,6 +981,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			}),
 		)
 		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
 		const forwardedForm = ambientCalls[0]?.input as Request
 		expect(forwardedForm.headers.has('x-kody-secret-resolution')).toBe(false)
 
@@ -876,6 +1000,8 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		)
 
 		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
 		await __kodyGatewayFetch(
 			new Request('https://api.example.com/post', {
 				method: 'POST',
@@ -883,7 +1009,28 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			}),
 		)
 		expect(ambientCalls).toHaveLength(0)
+		// Secret Blob-in-Request streams via gatewayFetchStream (no arrayBuffer).
+		expect(gatewayCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(1)
+		expect(
+			(gatewayStreamCalls[0] as { request: { body: ReadableStream } }).request
+				.body,
+		).toBeInstanceOf(ReadableStream)
+
+		// String/bytes Requests still use the clone probe and hop when needed.
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		gatewayStreamCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/post', {
+				method: 'POST',
+				body: '{"note":"{{secret:demoToken}}"}',
+			}),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayStreamCalls).toHaveLength(0)
 		expect(gatewayCalls).toHaveLength(1)
+		expect(decodeBody(gatewayCalls[0])).toBe('{"note":"{{secret:demoToken}}"}')
 	} finally {
 		globalThis.fetch = originalFetch
 	}

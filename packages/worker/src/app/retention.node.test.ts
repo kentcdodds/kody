@@ -558,7 +558,7 @@ test('published bundle artifact retention deletes stale rows, KV blobs, and sour
 	).toEqual({
 		deletedRows: 1,
 		deletedKvKeys: 1,
-		deletedSnapshotKvKeys: 2,
+		deletedSnapshotKvKeys: 3,
 		kvDeleteErrors: 0,
 		hasMore: false,
 	})
@@ -568,6 +568,9 @@ test('published bundle artifact retention deletes stale rows, KV blobs, and sour
 	)
 	expect(kvDelete).toHaveBeenCalledWith(
 		'source-manifest-snapshot:v1:source-stale:commit-old',
+	)
+	expect(kvDelete).toHaveBeenCalledWith(
+		'credential-needs:v1:source-stale:commit-old',
 	)
 	expect(selectColumn(sqlite, 'published_bundle_artifacts', 'id')).toEqual([
 		'artifact-current',

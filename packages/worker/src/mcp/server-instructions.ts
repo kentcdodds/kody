@@ -1,3 +1,4 @@
+import { preferLocalCliExecuteGuidance } from '#mcp/instructions/prefer-local-cli-execute-guidance.ts'
 import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 
 /**
@@ -7,22 +8,26 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
  * guidance belong in skills / guides, not this stub.
  *
  * Copy is Kent-locked; change only with an explicit server-instructions update.
+ * Prefer-local one-liner is {@link preferLocalCliExecuteGuidance} (shared with
+ * execute + api tool descriptions).
  */
 export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's personal software platform of primitives including:
 
 - memory
 - secrets
-- packages (repositories of published code which you as the agent can use and compose together)
+- packages (published code you compose)
 - integrations
 - triggers
 - apps
 
-With these primitives you can do a wide variety of things. When the user asks you to do something, start by calling the \`search\` tool, then use \`execute\` to write code and have it evaluated in an isolated environment in the cloud in Kody.
+${preferLocalCliExecuteGuidance}
 
-If you have access to a computer with Node v22+, you can use Kody more efficiently and cheaply using the CLI. This is the preferred interaction layer. Learn more with \`search({ entity: "guide:local_execute" })\`.`
+When the user asks you to do something, start with \`search\`, then \`execute\` to run code in Kody's cloud.
 
-/** Soft budget for the always-on stub (excluding user overlay). */
-export const maxBaseMcpServerInstructionsChars = 800
+Learn more with \`search({ entity: "guide:local_execute" })\`.`
+
+/** Soft budget for the always-on stub (excluding user overlay). Kent-locked ~300–600. */
+export const maxBaseMcpServerInstructionsChars = 600
 
 const userMcpServerInstructionOverlayHeader = `---
 User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`

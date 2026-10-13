@@ -508,6 +508,31 @@ user's RunLog SQLite. It returns `getSqlBillingStats` per-op counters,
 bodies, errors, or other user-authored content. Look up the target by
 `stableUserId`, email, or username.
 
+### Admin package placement failures
+
+`adminPackagePlacementFailures` is a role-gated fleet read of failed package
+runs in one window (`since` inclusive, `until` exclusive, at most 31 days). It
+exists to find owners whose runs broke while the fetch gateway filled secret
+placeholders only in request headers. It fans out `summarizePackageFailures` to
+the RunLog of every package owner (capped at 1,500, eight at a time) and
+returns, per package, the owner id and handle (`orgs.slug`), the package id and
+kody id, and two counts with first and last `started_at`:
+
+- `placementRefusals`: failed runs whose `error_message` holds one of the fixed
+  header-only refusal texts in `headerOnlyPlacementRefusalMarkers`. Plain-HTTP
+  and disallowed-host refusals do not count; those rules still apply.
+- `failedRuns`: every failed run of a flagged package, whatever the error. Flag
+  packages with `packageIds` or `flaggedByCodemodRun` (a codemod run id and a
+  finding label such as `secret outside header`). This covers a placeholder that
+  went upstream unfilled, which fails with an upstream error no marker can tell
+  apart.
+
+The RunLog classifies messages itself and returns only package ids, counts, and
+timestamps. The read never returns run inputs, outputs, logs, error messages, or
+secrets, and it sends nothing. `complete` is false when an owner's RunLog read
+failed or the owner list hit its cap. Like other RunLog reads, the first RPC to
+an owner with no RunLog writes its empty schema.
+
 ## Related
 
 - [Usage metering](./usage-metering.md)

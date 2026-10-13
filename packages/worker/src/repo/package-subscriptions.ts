@@ -18,6 +18,7 @@ import {
 import {
 	type CloudflareArtifactsRepoEvent,
 	type RepoSubscriptionTopic,
+	isKodyPublishedBranchRef,
 	isPublishGitNotesRef,
 	isSessionArtifactRepoName,
 	isSessionBranchRef,
@@ -366,6 +367,7 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 	if (
 		providerEvent.type === 'cf.artifacts.repo.pushed' &&
 		(isSessionBranchRef(providerEvent.payload.ref) ||
+			isKodyPublishedBranchRef(providerEvent.payload.ref) ||
 			isPublishGitNotesRef(providerEvent.payload.ref))
 	) {
 		return { outcome: 'ignored', providerEvent }

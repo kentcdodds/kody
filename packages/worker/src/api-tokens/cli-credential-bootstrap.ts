@@ -19,14 +19,20 @@ import {
 	mintApiToken,
 	resolveApiTokenLifetime,
 	type ApiTokenMintParent,
+	type ApiTokenOrgBinding,
 	type ApiTokenSecretView,
 	type ResolvedApiTokenLifetime,
 } from './service.ts'
 
-/** Bootstrap defaults = local-execute parity + `org:read` (account reads). */
+/**
+ * Bootstrap defaults = local-execute parity + `org:read` (account reads) +
+ * plain-repo push (`package:write`) + self-revoke (`token:delete`).
+ */
 const cliCredentialBootstrapDefaultScopes = normalizeApiTokenScopes([
 	...localExecuteOrgPermissions,
 	'org:read',
+	'package:write',
+	'token:delete',
 ]) as Array<ApiTokenScope>
 
 /** Distinct from `kody_at_` so chat/logs can show the CLI command safely. */
@@ -48,7 +54,8 @@ export const cliCredentialBootstrapPolicy = {
 	 * CapabilityProxy hops (`org:execute`), account reads (`org:read`), and
 	 * the use-level scopes saved packages need (package-graph
 	 * `package:execute`, `createAuthenticatedFetch` → `integration:read`,
-	 * secrets, email, jobs, …). Do not mint `search:read` or write scopes.
+	 * secrets, email, jobs, …), plus `package:write` (plain-repo / package
+	 * pushes) and `token:delete` (self-revoke). Do not mint `search:read`.
 	 */
 	defaultScopes: cliCredentialBootstrapDefaultScopes,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
@@ -219,8 +226,18 @@ function resolveBootstrapLifetime(input: {
 export async function mintCliCredentialBootstrap(input: {
 	db: D1Database
 	userId: OwnerId
-	/** Org the eventual token is bound to. Defaults to the personal org. */
+	/**
+	 * Stored for org-bound codes only. New CLI bootstraps default to
+	 * user-owned tokens (`orgBinding: 'user'`); `orgId` is kept as the
+	 * personal org placeholder on the code row.
+	 */
 	orgId?: string
+	/**
+	 * Defaults to `user` so new CLI credentials cover every org the person
+	 * can access (selected per request with `?org=`). Pass `org` only when
+	 * deliberately minting a legacy org-bound token.
+	 */
+	orgBinding?: ApiTokenOrgBinding
 	name?: string
 	scopes?: ReadonlyArray<unknown>
 	lifetime?: string | null
@@ -332,18 +349,22 @@ export async function mintCliCredentialBootstrap(input: {
 		now.getTime() + redeemTtlSeconds * 1000,
 	).toISOString()
 
-	const orgId = input.orgId?.trim() || input.userId
+	const orgBinding: ApiTokenOrgBinding =
+		input.orgBinding === 'org' ? 'org' : 'user'
+	const orgId =
+		orgBinding === 'user' ? input.userId : input.orgId?.trim() || input.userId
 	await input.db
 		.prepare(
 			`INSERT INTO cli_credential_bootstrap_codes (
-				id, user_id, org_id, code_hash, name, scopes_json,
+				id, user_id, org_id, org_binding, code_hash, name, scopes_json,
 				idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at, consumed_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
 		)
 		.bind(
 			codeId,
 			input.userId,
 			orgId,
+			orgBinding,
 			codeHash,
 			name,
 			JSON.stringify(scopes),
@@ -407,7 +428,7 @@ export async function redeemCliCredentialBootstrap(input: {
 	const codeHash = await hashBootstrapCode(input.code.trim())
 	const row = await input.db
 		.prepare(
-			`SELECT id, user_id, org_id, code_hash, name, scopes_json,
+			`SELECT id, user_id, org_id, org_binding, code_hash, name, scopes_json,
 			        idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at, consumed_at
 			 FROM cli_credential_bootstrap_codes
 			 WHERE id = ?`,
@@ -417,6 +438,7 @@ export async function redeemCliCredentialBootstrap(input: {
 			id: string
 			user_id: OwnerId
 			org_id: string
+			org_binding: string | null
 			code_hash: string
 			name: string
 			scopes_json: string
@@ -456,6 +478,8 @@ export async function redeemCliCredentialBootstrap(input: {
 	}
 	// Reject before burning so a code with no org binding can be repaired.
 	const orgId = requireBootstrapOrgId(row.org_id)
+	const orgBinding: ApiTokenOrgBinding =
+		row.org_binding === 'user' ? 'user' : 'org'
 
 	const burnAndMint = async () => {
 		const user = await input.db
@@ -508,6 +532,7 @@ export async function redeemCliCredentialBootstrap(input: {
 			db: input.db,
 			userId: row.user_id,
 			orgId,
+			orgBinding,
 			name: row.name,
 			scopes,
 			idleTtlSeconds: requested.idleTtlSeconds,

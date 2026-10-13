@@ -167,9 +167,26 @@ async function softDeleteMembershipGraph(input: {
 	budgetsSoftDeleted: number
 	accessEpochBumped: boolean
 }> {
-	const membership = await input.appDb
-		.prepare(
-			`UPDATE org_memberships
+	// One D1 batch (one transaction): the tombstone, the dependent cleanups
+	// and the access_epoch bump commit together, so no reader can observe the
+	// removed membership behind an epoch that still validates its cached role.
+	// Cleanups and the bump only apply when the membership is tombstoned at
+	// `nowIso` by this call or at `resumeDeletedAt` by an earlier one.
+	const tombstonedAt = [input.nowIso, input.resumeDeletedAt ?? input.nowIso]
+	const tombstonedMembershipSql = `EXISTS (
+		     SELECT 1 FROM org_memberships
+		     WHERE org_id = ? AND user_id = ? AND deleted_at IN (?, ?)
+		   )`
+	const tombstonedMembershipBindings = [
+		input.orgId,
+		input.memberUserId,
+		...tombstonedAt,
+	]
+	const [membership, teamMembers, grants, budgets, epoch] =
+		await input.appDb.batch([
+			input.appDb
+				.prepare(
+					`UPDATE org_memberships
 			 SET deleted_at = ?
 			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL
 			   AND (
@@ -179,10 +196,65 @@ async function softDeleteMembershipGraph(input: {
 			       WHERE org_id = ? AND role = 'owner' AND deleted_at IS NULL
 			     ) > 1
 			   )`,
-		)
-		.bind(input.nowIso, input.orgId, input.memberUserId, input.orgId)
-		.run()
-	const membershipSoftDeleted = (membership.meta.changes ?? 0) > 0
+				)
+				.bind(input.nowIso, input.orgId, input.memberUserId, input.orgId),
+			input.appDb
+				.prepare(
+					`UPDATE team_members
+			 SET deleted_at = ?
+			 WHERE user_id = ?
+			   AND deleted_at IS NULL
+			   AND team_id IN (
+			     SELECT id FROM teams WHERE org_id = ?${andLiveDeletedAtSql()}
+			   )
+			   AND ${tombstonedMembershipSql}`,
+				)
+				.bind(
+					input.nowIso,
+					input.memberUserId,
+					input.orgId,
+					...tombstonedMembershipBindings,
+				),
+			input.appDb
+				.prepare(
+					`UPDATE grants
+			 SET deleted_at = ?, updated_at = ?
+			 WHERE org_id = ?
+			   AND subject_type = 'user'
+			   AND subject_id = ?
+			   AND deleted_at IS NULL
+			   AND ${tombstonedMembershipSql}`,
+				)
+				.bind(
+					input.nowIso,
+					input.nowIso,
+					input.orgId,
+					input.memberUserId,
+					...tombstonedMembershipBindings,
+				),
+			input.appDb
+				.prepare(
+					`UPDATE org_user_budgets
+			 SET deleted_at = ?
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL
+			   AND ${tombstonedMembershipSql}`,
+				)
+				.bind(
+					input.nowIso,
+					input.orgId,
+					input.memberUserId,
+					...tombstonedMembershipBindings,
+				),
+			input.appDb
+				.prepare(
+					`UPDATE orgs
+			 SET access_epoch = access_epoch + 1, updated_at = ?
+			 WHERE id = ?${andLiveDeletedAtSql()}
+			   AND ${tombstonedMembershipSql}`,
+				)
+				.bind(input.nowIso, input.orgId, ...tombstonedMembershipBindings),
+		])
+	const membershipSoftDeleted = (membership?.meta.changes ?? 0) > 0
 	if (!membershipSoftDeleted) {
 		const row = await input.appDb
 			.prepare(
@@ -200,55 +272,12 @@ async function softDeleteMembershipGraph(input: {
 		}
 	}
 
-	const teamMembers = await input.appDb
-		.prepare(
-			`UPDATE team_members
-			 SET deleted_at = ?
-			 WHERE user_id = ?
-			   AND deleted_at IS NULL
-			   AND team_id IN (
-			     SELECT id FROM teams WHERE org_id = ?${andLiveDeletedAtSql()}
-			   )`,
-		)
-		.bind(input.nowIso, input.memberUserId, input.orgId)
-		.run()
-
-	const grants = await input.appDb
-		.prepare(
-			`UPDATE grants
-			 SET deleted_at = ?, updated_at = ?
-			 WHERE org_id = ?
-			   AND subject_type = 'user'
-			   AND subject_id = ?
-			   AND deleted_at IS NULL`,
-		)
-		.bind(input.nowIso, input.nowIso, input.orgId, input.memberUserId)
-		.run()
-
-	const budgets = await input.appDb
-		.prepare(
-			`UPDATE org_user_budgets
-			 SET deleted_at = ?
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(input.nowIso, input.orgId, input.memberUserId)
-		.run()
-
-	const epoch = await input.appDb
-		.prepare(
-			`UPDATE orgs
-			 SET access_epoch = access_epoch + 1, updated_at = ?
-			 WHERE id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.nowIso, input.orgId)
-		.run()
-
 	return {
 		membershipSoftDeleted,
-		teamMembershipsSoftDeleted: teamMembers.meta.changes ?? 0,
-		grantsSoftDeleted: grants.meta.changes ?? 0,
-		budgetsSoftDeleted: budgets.meta.changes ?? 0,
-		accessEpochBumped: (epoch.meta.changes ?? 0) > 0,
+		teamMembershipsSoftDeleted: teamMembers?.meta.changes ?? 0,
+		grantsSoftDeleted: grants?.meta.changes ?? 0,
+		budgetsSoftDeleted: budgets?.meta.changes ?? 0,
+		accessEpochBumped: (epoch?.meta.changes ?? 0) > 0,
 	}
 }
 
@@ -337,11 +366,15 @@ async function revokeOrgBoundCredentials(input: {
 	// still matches via org_id = memberUserId).
 	let revokedApiTokens = 0
 	let revokedCliBootstrapCodes = 0
+	// Only org-bound tokens are revoked on leave. User-owned tokens
+	// (`org_binding = 'user'`) stay; membership/grant checks deny the left org
+	// on the next request.
 	const tokenResult = await input.appDb
 		.prepare(
 			`UPDATE api_tokens
 			 SET revoked_at = ?, updated_at = ?
 			 WHERE user_id = ?
+			   AND org_binding = 'org'
 			   AND COALESCE(org_id, user_id) = ?
 			   AND revoked_at IS NULL
 			   AND deleted_at IS NULL`,
@@ -353,7 +386,9 @@ async function revokeOrgBoundCredentials(input: {
 	const bootstrap = await input.appDb
 		.prepare(
 			`DELETE FROM cli_credential_bootstrap_codes
-			 WHERE user_id = ? AND COALESCE(org_id, user_id) = ?`,
+			 WHERE user_id = ?
+			   AND org_binding = 'org'
+			   AND COALESCE(org_id, user_id) = ?`,
 		)
 		.bind(input.memberUserId, input.orgId)
 		.run()

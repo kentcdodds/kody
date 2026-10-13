@@ -1426,11 +1426,9 @@ test('a member cannot make themselves Owner through a job or webhook in a packag
 	expect(await beasRole()).toBe('member')
 })
 
-test("an Owner's job, webhook, and email handler cannot change roles, billing, or site-admin state (#2393)", async () => {
+test("an Owner's job, webhook, and email handler cannot change roles, and reach site-admin tools only as a site admin (#2393)", async () => {
 	const t = await setup()
 	consoleInfo.mockImplementation(() => {})
-	// The Owner is a site admin too, so only the live-person rule stands in
-	// the way.
 	await t.db
 		.prepare(
 			`INSERT INTO user_roles (user_id, role_id)
@@ -1439,12 +1437,12 @@ test("an Owner's job, webhook, and email handler cannot change roles, billing, o
 		)
 		.bind(t.people.owner.userId)
 		.run()
-	const livePersonCalls = {
-		orgMemberUpdate: (callerContext: McpCallerContext) =>
-			orgMemberUpdateCapability.handler(
-				{ username: 'bea', role: 'owner' },
-				{ env: t.env, callerContext },
-			),
+	const roleChange = (callerContext: McpCallerContext) =>
+		orgMemberUpdateCapability.handler(
+			{ username: 'bea', role: 'owner' },
+			{ env: t.env, callerContext },
+		)
+	const siteAdminCalls = {
 		adminCreditGrant: (callerContext: McpCallerContext) =>
 			adminCreditGrantCapability.handler(
 				{ username: 'bea', amountCents: 100_000 },
@@ -1457,34 +1455,39 @@ test("an Owner's job, webhook, and email handler cannot change roles, billing, o
 			),
 		adminFeatureFlagSet: (callerContext: McpCallerContext) =>
 			adminFeatureFlagSetCapability.handler(
-				{ key: 'jev', enabled: true },
+				{ key: 'demo-indicator', enabled: true },
 				{ env: t.env, callerContext },
 			),
 	}
-	type Attempt = { credential: string | undefined; denials: Array<string> }
+	type Attempt = {
+		credential: string | undefined
+		roleChange: string
+		siteAdmin: Record<string, string>
+	}
 	const attempts: Array<Attempt> = []
+	const outcomeOf = async (call: () => Promise<unknown>) => {
+		try {
+			await call()
+			return 'ok'
+		} catch (error) {
+			if (!(error instanceof Error)) throw error
+			return error.name === 'LivePersonRequiredError'
+				? error.name
+				: error.message
+		}
+	}
 	const tryAll = async (callerContext: McpCallerContext) => {
-		const denials: Array<string> = []
-		for (const [name, call] of Object.entries(livePersonCalls)) {
-			try {
-				await call(callerContext)
-			} catch (error) {
-				if (
-					error instanceof Error &&
-					error.name === 'LivePersonRequiredError' &&
-					error.message.includes(`"${name}"`)
-				) {
-					denials.push(name)
-				}
-			}
+		const siteAdmin: Record<string, string> = {}
+		for (const [name, call] of Object.entries(siteAdminCalls)) {
+			siteAdmin[name] = await outcomeOf(() => call(callerContext))
 		}
 		attempts.push({
 			credential: callerContext.request?.credential.kind,
-			denials,
+			roleChange: await outcomeOf(() => roleChange(callerContext)),
+			siteAdmin,
 		})
 	}
 	t.setPackageCode(tryAll)
-	const everyCall = Object.keys(livePersonCalls)
 
 	await t.enable('owner', 'subscription', emailTopic)
 	await t.enableWebhook('owner', 'endpoint-owner')
@@ -1515,10 +1518,34 @@ test("an Owner's job, webhook, and email handler cannot change roles, billing, o
 			},
 		}),
 	)
+	// A team org's runs call as the org's identity, which holds no site role,
+	// so site-admin tools refuse them. The schedule run below calls as its
+	// admin enabler, so they run, while the role change still needs a person.
+	const lacksAdmin = (name: string) =>
+		`MCP user lacks required role "admin" for capability "${name}".`
+	const refusedAsOrg = Object.fromEntries(
+		Object.keys(siteAdminCalls).map((name) => [name, lacksAdmin(name)]),
+	)
 	expect(attempts).toEqual([
-		{ credential: 'inbound-email', denials: everyCall },
-		{ credential: 'webhook', denials: everyCall },
-		{ credential: 'schedule', denials: everyCall },
+		{
+			credential: 'inbound-email',
+			roleChange: 'LivePersonRequiredError',
+			siteAdmin: refusedAsOrg,
+		},
+		{
+			credential: 'webhook',
+			roleChange: 'LivePersonRequiredError',
+			siteAdmin: refusedAsOrg,
+		},
+		{
+			credential: 'schedule',
+			roleChange: 'LivePersonRequiredError',
+			siteAdmin: {
+				adminCreditGrant: 'ok',
+				adminUserUpdate: 'ok',
+				adminFeatureFlagSet: 'ok',
+			},
+		},
 	])
 	expect(t.runs.map((run) => run.request?.actor?.userId)).toEqual([
 		t.people.owner.userId,
@@ -1537,7 +1564,7 @@ test("an Owner's job, webhook, and email handler cannot change roles, billing, o
 	expect(await roleOf('bea')).toBe('member')
 
 	// The same Owner, live in a web session, may change the role.
-	await livePersonCalls.orgMemberUpdate(
+	await roleChange(
 		createMcpCallerContext({
 			baseUrl: 'https://kody.example',
 			user: {

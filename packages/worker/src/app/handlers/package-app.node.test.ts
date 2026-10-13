@@ -74,6 +74,7 @@ const mockModule = vi.hoisted(() => ({
 			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
+			isInternetVisible: false,
 			lockedAt: null,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),

@@ -226,10 +226,15 @@ test('package chrome is shared for public listings and private owner packages', 
 		],
 		[
 			testId('package-repo-nav-settings'),
-			testId('package-visibility-badge'),
 			'data-signifier="unpublished"',
+			'data-signifier="repo"',
 		],
 	)
+	expectMarkers(await render({ listing: sampleListing, loggedIn: false }), [
+		testId('package-visibility-badge'),
+		'data-signifier="package"',
+		'title="Package"',
+	])
 
 	expect(
 		await render({
@@ -323,6 +328,61 @@ test('package chrome is shared for public listings and private owner packages', 
 		}),
 		['href="/@kentcdodds/github-triage/tree/develop"'],
 		['href="/@kentcdodds/github-triage/tree/main"'],
+	)
+
+	// Plain repos show Repo mark and still expose the Files tab.
+	expectMarkers(
+		await render({
+			listing: null,
+			hasPackage: false,
+			viewerIsOwner: true,
+			description: 'Scratch notes.',
+		}),
+		[
+			testId('package-repo-nav-files'),
+			'data-signifier="repo"',
+			'title="Repo"',
+			'href="/@kentcdodds/github-triage/tree/main"',
+			'Scratch notes.',
+			testId('plain-repo-owner-hints'),
+			testId('plain-repo-git-remote-hint'),
+			'repoGetGitRemote',
+		],
+		[
+			'data-signifier="package"',
+			'data-signifier="unpublished"',
+			testId('plain-repo-promote-prompt'),
+		],
+	)
+
+	expectMarkers(
+		await render({
+			listing: null,
+			hasPackage: false,
+			viewerIsOwner: true,
+			packageShaped: true,
+			kodyId: 'scratch',
+			description: 'Package-shaped scratch.',
+		}),
+		[
+			testId('plain-repo-owner-hints'),
+			testId('plain-repo-promote-prompt'),
+			testId('plain-repo-promote-docs'),
+			'repoPromoteToPackage',
+			'docs/use/repos.md#promote-flow',
+		],
+	)
+
+	expectMarkers(
+		await render({
+			listing: null,
+			hasPackage: false,
+			viewerIsOwner: false,
+			packageShaped: true,
+			description: 'Guest view.',
+		}),
+		['data-signifier="repo"'],
+		[testId('plain-repo-owner-hints'), testId('plain-repo-git-remote-hint')],
 	)
 })
 

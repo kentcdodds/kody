@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import {
+	createCredentialNeedsApprovalMessage,
+	PackageCredentialNeedsApprovalError,
+} from '#worker/credentials/credential-needs-approval.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -51,6 +56,7 @@ import {
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
@@ -397,8 +403,23 @@ export const savePackageCapability = defineDomainCapability(
 					destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 					privateVisibilityChangeConfirmed:
 						args.confirm_private_visibility_change,
+					requestedByUserId: ctx.callerContext.user?.userId ?? null,
 				})
 			} catch (error) {
+				if (error instanceof PackageCredentialNeedsApprovalError) {
+					throw new McpCallerError(
+						createCredentialNeedsApprovalMessage({
+							packageName: error.approval.packageName,
+							changes: error.approval.changes,
+							approvalUrl: buildPackageCapabilityApprovalUrl({
+								baseUrl: ctx.callerContext.baseUrl,
+								username: owner.ownerScope,
+								kodyId: error.approval.kodyId,
+							}),
+						}),
+						{ cause: error },
+					)
+				}
 				if (isPackagePublishLockedError(error)) {
 					throw new McpCallerError(
 						createPackagePublishLockedMessage({
@@ -418,13 +439,15 @@ export const savePackageCapability = defineDomainCapability(
 			if (!existing) {
 				const now = new Date().toISOString()
 				try {
-					await insertSavedPackage(
+					// Stamp happens here; projection refresh below sees an existing
+					// row and will not Kit-sync. Sync now when the actor was newly
+					// activated.
+					const stamped = await insertSavedPackage(
 						ctx.env.APP_DB,
 						{
 							id: packageId,
 							user_id: owner.ownerUserId,
 							name: manifest.name,
-							kody_id: manifest.kody.id,
 							description: manifest.kody.description,
 							tags_json: JSON.stringify(manifest.kody.tags ?? []),
 							search_text: manifest.kody.searchText ?? null,
@@ -439,6 +462,12 @@ export const savePackageCapability = defineDomainCapability(
 						ctx.env,
 						{ actorUserId: owner.actorUserId },
 					)
+					if (stamped) {
+						scheduleKitSubscriberSync({
+							env: ctx.env,
+							stableUserId: owner.actorUserId,
+						})
+					}
 				} catch (error) {
 					const message = getErrorMessage(error)
 					// Pre-check covers the common path; this catches races where
@@ -518,6 +547,7 @@ export const savePackageCapability = defineDomainCapability(
 				visibility: saved.isPrivate
 					? ('private' as const)
 					: ('public' as const),
+				internet_visible: saved.isInternetVisible,
 				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,

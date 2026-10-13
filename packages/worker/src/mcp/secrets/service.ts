@@ -1,4 +1,5 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import {
 	earliestSecretExpiresAt,
 	isSecretExpired,
@@ -6,6 +7,7 @@ import {
 	secretTtlMs,
 } from '@kody-internal/shared/secret-expires-at.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { assertOptInCredentialValue } from '#worker/credentials/opt-in-credential-value.ts'
 import {
 	normalizeAllowedPackages,
 	parseAllowedPackages,
@@ -21,6 +23,7 @@ import {
 	encryptSecretValue,
 	userSecretContext,
 } from './crypto.ts'
+import { rotateWebhookHmacSecretsForSecretValueChange } from '#worker/webhooks/hmac-rotation.ts'
 import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
 	getSecretBindingKey,
@@ -32,10 +35,12 @@ import {
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
+	getStoredCredentialEntry,
 	listPackageScopeSecretMetadata,
 	listSecretBucketsByScope,
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
+	prepareUpsertCredentialSecretEntryStatement,
 	updateApprovedUserSecretEntriesForPackageAtomically,
 	upsertSecretBucket,
 	upsertSecretEntry,
@@ -51,7 +56,13 @@ import {
 	type ListedSecret,
 	type SecretMetadata,
 	type SecretScope,
+	type StoredCredentialKind,
 } from './types.ts'
+import {
+	type OrgAuditOutboxEvent,
+	type OrgAuditWriter,
+	runAppDbBatchWithOrgAudit,
+} from '#worker/orgs/org-audit.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
 
@@ -72,6 +83,25 @@ type SaveSecretInput = SecretOwnerContext & {
 	sessionExpiresAt?: string | null
 	userEmail?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	credential?: SaveSecretCredential
+}
+
+/**
+ * Opt-in credential fields (ADR 0068) committed in the same batch as the
+ * value and its audit event, so a failed call never leaves a new value under
+ * old settings.
+ */
+export type SaveSecretCredential = {
+	kind: StoredCredentialKind
+	/** Null keeps the entry's current hosts (a Key's approved hosts). */
+	allowedHosts: Array<string> | null
+	configJson: string | null
+	provider: string | null
+	injectJson: string
+	audit: {
+		writer: OrgAuditWriter
+		event: (credentialId: string) => OrgAuditOutboxEvent
+	}
 }
 
 type ListSecretsInput = SecretOwnerContext & {
@@ -111,6 +141,23 @@ export type ResolvedSecret = {
 	allowedPackages: Array<string>
 }
 
+/**
+ * A new value for an opt-in credential (ADR 0068) must still fit its kind and
+ * stored hosts, whichever path writes it, so it is never saved in a state
+ * resolution refuses. Keys are unaffected.
+ */
+function assertValueFitsStoredKind(
+	entry: { kind: StoredCredentialKind; allowed_hosts: string } | null,
+	value: string,
+) {
+	if (!entry || entry.kind === 'secret') return
+	assertOptInCredentialValue({
+		kind: entry.kind,
+		value,
+		hosts: parseAllowedHosts(entry.allowed_hosts),
+	})
+}
+
 export async function saveSecret(
 	input: SaveSecretInput,
 ): Promise<SecretMetadata> {
@@ -124,6 +171,10 @@ export async function saveSecret(
 		throw new Error('Secret value is required.')
 	}
 	const description = input.description?.trim() ?? ''
+	const credential = input.credential ?? null
+	if (credential && input.scope !== 'user') {
+		throw new Error('Credential fields apply only to user-scope secrets.')
+	}
 	const bucket = await getOrCreateSecretBucket({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -136,6 +187,8 @@ export async function saveSecret(
 		bucketId: bucket.id,
 		name,
 	})
+	// With credential fields, the caller validated the value for its new kind.
+	if (!credential) assertValueFitsStoredKind(existingEntry, value)
 	if (existingEntry == null) {
 		await assertWithinEntitlement({
 			db: input.env.APP_DB,
@@ -149,6 +202,9 @@ export async function saveSecret(
 		value,
 		userSecretContext(input.userId),
 	)
+	const allowedHostsJson = credential?.allowedHosts
+		? JSON.stringify(credential.allowedHosts)
+		: (existingEntry?.allowed_hosts ?? '[]')
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
 		env: input.env,
@@ -160,7 +216,7 @@ export async function saveSecret(
 				value: {
 					description,
 					encryptedValue,
-					allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+					allowedHosts: allowedHostsJson,
 					allowedPackages: existingEntry?.allowed_packages ?? '[]',
 				},
 			},
@@ -177,25 +233,72 @@ export async function saveSecret(
 				: null,
 		}),
 	})
+	let previousPlaintext: string | null = null
+	if (existingEntry) {
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			previousPlaintext = null
+		}
+	}
 	const now = new Date().toISOString()
 	const entryExpiresAt = nextSecretExpiresAt({
 		existing: existingEntry?.expires_at,
 		requested: input.expiresAt,
 	})
-	await upsertSecretEntry({
-		db: input.env.APP_DB,
-		row: {
-			bucket_id: bucket.id,
-			name,
-			description,
-			encrypted_value: encryptedValue,
-			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
-			allowed_packages: existingEntry?.allowed_packages ?? '[]',
-			expires_at: entryExpiresAt,
-			created_at: existingEntry?.created_at ?? now,
-			updated_at: now,
-		},
-	})
+	const row = {
+		bucket_id: bucket.id,
+		name,
+		description,
+		encrypted_value: encryptedValue,
+		allowed_hosts: allowedHostsJson,
+		allowed_packages: existingEntry?.allowed_packages ?? '[]',
+		expires_at: entryExpiresAt,
+		created_at: existingEntry?.created_at ?? now,
+		updated_at: now,
+	}
+	if (credential) {
+		const credentialId = existingEntry?.id ?? crypto.randomUUID()
+		await runAppDbBatchWithOrgAudit({
+			appDb: input.env.APP_DB,
+			audit: credential.audit.writer,
+			statements: [
+				prepareUpsertCredentialSecretEntryStatement({
+					db: input.env.APP_DB,
+					row,
+					credential: {
+						id: credentialId,
+						kind: credential.kind,
+						config_json: credential.configJson,
+						provider: credential.provider,
+						inject_json: credential.injectJson,
+					},
+				}),
+			],
+			event: credential.audit.event(credentialId),
+		})
+	} else {
+		await upsertSecretEntry({ db: input.env.APP_DB, row })
+	}
+	if (
+		previousPlaintext !== null &&
+		previousPlaintext !== value &&
+		(input.scope === 'user' || input.scope === 'package')
+	) {
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: name,
+			previousPlaintext,
+			nextPlaintext: value,
+			now,
+			...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
+		})
+	}
 	if (existingEntry == null && input.scope === 'user') {
 		await stampFirstSecret(
 			input.env.APP_DB,
@@ -208,9 +311,7 @@ export async function saveSecret(
 		scope: input.scope,
 		description,
 		packageId: input.scope === 'package' ? bucket.binding_key : null,
-		allowedHosts: existingEntry
-			? parseAllowedHosts(existingEntry.allowed_hosts)
-			: [],
+		allowedHosts: parseAllowedHosts(allowedHostsJson),
 		allowedPackages: existingEntry
 			? parseAllowedPackages(existingEntry.allowed_packages)
 			: [],
@@ -387,6 +488,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 			name,
 		})
 		if (!existingEntry) throw new Error('User secret not found.')
+		assertValueFitsStoredKind(existingEntry, value)
 		const description = secret.description?.trim() ?? existingEntry.description
 		const encryptedValue = await encryptSecretValue(
 			input.env,
@@ -445,6 +547,31 @@ export async function updateUserSecretsForPackageAtomically(input: {
 			)
 		}
 		throw error
+	}
+
+	for (const entry of prepared) {
+		let previousPlaintext: string | null = null
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				entry.existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			continue
+		}
+		const nextValue = input.secrets.find(
+			(secret) => secret.name.trim() === entry.name,
+		)?.value
+		if (!nextValue || previousPlaintext === nextValue.trim()) continue
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: entry.name,
+			previousPlaintext,
+			nextPlaintext: nextValue.trim(),
+			now,
+		})
 	}
 
 	return prepared.map((entry) =>
@@ -511,6 +638,7 @@ async function saveSecretsAtomically(input: {
 			bucketId: bucket.id,
 			name,
 		})
+		assertValueFitsStoredKind(existingEntry, value)
 		if (existingEntry == null) {
 			newSecretCount += 1
 		}
@@ -584,6 +712,36 @@ async function saveSecretsAtomically(input: {
 			updated_at: now,
 		})),
 	})
+	if (input.scope === 'user' || input.scope === 'package') {
+		for (const entry of prepared) {
+			if (!entry.existingEntry) continue
+			const nextValue = input.secrets.find(
+				(secret) => secret.name.trim() === entry.name,
+			)?.value
+			if (!nextValue) continue
+			let previousPlaintext: string | null = null
+			try {
+				previousPlaintext = await decryptSecretValue(
+					input.env,
+					entry.existingEntry.encrypted_value,
+					userSecretContext(input.userId),
+				)
+			} catch {
+				continue
+			}
+			const trimmedNext = nextValue.trim()
+			if (previousPlaintext === trimmedNext) continue
+			await rotateWebhookHmacSecretsForSecretValueChange({
+				env: input.env,
+				userId: input.userId,
+				secretName: entry.name,
+				previousPlaintext,
+				nextPlaintext: trimmedNext,
+				now,
+				...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
+			})
+		}
+	}
 	if (input.scope === 'user' && newSecretCount > 0) {
 		await stampFirstSecret(
 			input.env.APP_DB,
@@ -716,13 +874,15 @@ export async function findSecret(
 /**
  * One lookup for `resolveCredential`: the metadata it authorizes on, and a
  * `readValue` that decrypts only when the door calls it after authorizing.
+ * Only a `secret` is found: a later kind places its own value through its
+ * resolver, so a placeholder never fills it.
  */
 export async function findSecretForUse(input: ResolveSecretInput): Promise<{
 	found: FoundSecret
 	readValue: () => Promise<ResolvedSecret>
 }> {
 	const found = await findSecretEntry(input)
-	if (!found) {
+	if (!found || found.entry.kind !== 'secret') {
 		const missing: ResolvedSecret = {
 			found: false,
 			credentialId: null,
@@ -751,6 +911,63 @@ export async function findSecretForUse(input: ResolveSecretInput): Promise<{
 				userSecretContext(input.userId),
 			),
 		}),
+	}
+}
+
+export type StoredCredential = {
+	credentialId: string
+	name: string
+	kind: StoredCredentialKind
+	allowedHosts: Array<string>
+	/** Raw `inject_json`: how the credential's value or session is placed. */
+	injectJson: string
+	/** Raw `config_json`: a login credential's exchange, else null. */
+	configJson: string | null
+	/**
+	 * Digest of the stored ciphertext and `config_json`. Every value write
+	 * re-encrypts with a fresh IV, so any change to the value or exchange
+	 * changes it.
+	 */
+	revision: string
+}
+
+/**
+ * A stored credential by id for a later-kind resolver: its metadata, and a
+ * `readValue` that decrypts only when the door calls it after authorizing.
+ * Null when `ownerId` has no live, unexpired user-scope entry with that id.
+ */
+export async function findStoredCredentialForUse(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	ownerId: OwnerId
+	credentialId: string
+}): Promise<{
+	found: StoredCredential
+	readValue: () => Promise<string>
+} | null> {
+	const row = await getStoredCredentialEntry({
+		db: input.env.APP_DB,
+		ownerId: input.ownerId,
+		credentialId: input.credentialId,
+	})
+	if (!row) return null
+	return {
+		found: {
+			credentialId: row.id,
+			name: row.name,
+			kind: row.kind,
+			allowedHosts: parseAllowedHosts(row.allowed_hosts),
+			injectJson: row.inject_json,
+			configJson: row.config_json,
+			revision: await sha256Hex(
+				JSON.stringify([row.encrypted_value, row.config_json]),
+			),
+		},
+		readValue: () =>
+			decryptSecretValue(
+				input.env,
+				row.encrypted_value,
+				userSecretContext(input.ownerId),
+			),
 	}
 }
 
@@ -793,8 +1010,43 @@ export async function deleteSecret(input: DeleteSecretInput) {
 	if (!bucket) return false
 	return deleteSecretEntry({
 		db: input.env.APP_DB,
+		userId: input.userId,
 		bucketId: bucket.id,
 		name: input.name,
+	})
+}
+
+/** A secret's metadata without writing it; throws when it does not exist. */
+export async function readSecretMetadata(
+	input: SecretOwnerContext & {
+		env: Pick<Env, 'APP_DB'>
+		name: string
+		scope: SecretScope
+	},
+): Promise<SecretMetadata> {
+	const name = input.name.trim()
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+	})
+	const entry = bucket
+		? await getSecretEntry({ db: input.env.APP_DB, bucketId: bucket.id, name })
+		: null
+	if (!bucket || !entry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	return toSecretMetadata({
+		name,
+		scope: input.scope,
+		description: entry.description,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(entry.allowed_packages),
+		createdAt: entry.created_at,
+		updatedAt: entry.updated_at,
+		expiresAt: earliestSecretExpiresAt(entry.expires_at, bucket.expires_at),
 	})
 }
 
@@ -841,6 +1093,19 @@ export async function updateSecret(
 	if (hasValueUpdate && !nextValue) {
 		throw new Error('Secret value must not be empty.')
 	}
+	if (nextValue) assertValueFitsStoredKind(existingEntry, nextValue)
+	let previousPlaintext: string | null = null
+	if (hasValueUpdate) {
+		try {
+			previousPlaintext = await decryptSecretValue(
+				input.env,
+				existingEntry.encrypted_value,
+				userSecretContext(input.userId),
+			)
+		} catch {
+			previousPlaintext = null
+		}
+	}
 	const now = new Date().toISOString()
 	const entryExpiresAt = nextSecretExpiresAt({
 		existing: existingEntry.expires_at,
@@ -866,6 +1131,22 @@ export async function updateSecret(
 			updated_at: now,
 		},
 	})
+	if (
+		hasValueUpdate &&
+		previousPlaintext !== null &&
+		previousPlaintext !== nextValue &&
+		(input.scope === 'user' || input.scope === 'package')
+	) {
+		await rotateWebhookHmacSecretsForSecretValueChange({
+			env: input.env,
+			userId: input.userId,
+			secretName: name,
+			previousPlaintext,
+			nextPlaintext: nextValue!,
+			now,
+			...(input.scope === 'package' ? { packageId: bucket.binding_key } : {}),
+		})
+	}
 	return toSecretMetadata({
 		name,
 		scope: input.scope,

@@ -455,6 +455,38 @@
 		{
 			"filename": "0116-credential-org-grants.sql",
 			"sha256": "88f8a994e1b1f99b872a7ad10fcf55f53987a7359e427d9e7cb9bdd05583fd16"
+		},
+		{
+			"filename": "0117-credential-kinds.sql",
+			"sha256": "9299e404d3c3f1ca437c471b176507bd89dd0c11bbf9315b435753a8cc4b2260"
+		},
+		{
+			"filename": "0118-credential-login-config.sql",
+			"sha256": "7039822e94cca4b39af8c1f0276fca9d9b05407732a8a18aacfe207ca557b09d"
+		},
+		{
+			"filename": "0123-webhook-apply-destination-credential-ids.sql",
+			"sha256": "0983c5748af6554e9bde5dbc502726ce86f22ca42395dbf4825069cfc84421d1"
+		},
+		{
+			"filename": "0124-package-internet-visible-capability-approvals.sql",
+			"sha256": "9712703d251e2b43c1ecbb2ed8122d6911179913e4a612126c9d06356e72d3b4"
+		},
+		{
+			"filename": "0127-webhook-hmac-rotation-grace.sql",
+			"sha256": "fee645c4aba4b3a09d1604ee35184d2d09a9dec0a6a5bef42d0a394c489f8fcc"
+		},
+		{
+			"filename": "0128-user-owned-tokens-and-git-credentials.sql",
+			"sha256": "31cd56dd8d4a10afcb92089d6bbd7304f2d5dcf6058453b605e9a7ac741758e3"
+		},
+		{
+			"filename": "0129-drop-git-access-tokens.sql",
+			"sha256": "512af1c504e4cf5c7a8ad88dcb87bc2ce292a5b7f42f0cce0ca3b9b042194cfa"
+		},
+		{
+			"filename": "0132-package-approval-requests.sql",
+			"sha256": "f229ef3ef17673d4ded45153d1ff55a47a694e567b09cd2f613df79b72765310"
 		}
 	]
 }

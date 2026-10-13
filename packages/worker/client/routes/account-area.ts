@@ -52,6 +52,10 @@ export {
 	accountPackageApprovePublishRouteLoader,
 } from './account-package-approve-publish.tsx'
 export {
+	AccountPackageApproveCapabilitiesRoute,
+	accountPackageApproveCapabilitiesRouteLoader,
+} from './account-package-approve-capabilities.tsx'
+export {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'
@@ -82,6 +86,7 @@ export {
 	accountOrganizationsRouteLoader,
 } from './account-organizations.tsx'
 export { AccountRepositoriesRoute } from './account-repositories.tsx'
+export { OrgOverviewRoute, orgOverviewRouteLoader } from './org-overview.tsx'
 export { OrgSettingsRoute, orgSettingsRouteLoader } from './org-settings.tsx'
 export { OrgMembersRoute, orgMembersRouteLoader } from './org-members.tsx'
 export { OrgTeamsRoute, orgTeamsRouteLoader } from './org-teams.tsx'

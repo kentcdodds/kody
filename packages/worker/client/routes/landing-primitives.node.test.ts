@@ -12,7 +12,11 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('id="primitives"')
-	expect(html).toContain('href="/features"')
+	expect(html).toContain(`href="/docs"`)
+	expect(html).toContain(`>${landingPrimitivesMoreLink}<`)
+	expect(html).not.toMatch(
+		/<p class="landing-primitives-more">[\s\S]*href="\/features"/,
+	)
 	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)

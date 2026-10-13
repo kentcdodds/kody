@@ -8,6 +8,7 @@ import { expect, test } from 'vitest'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { withAccessEpochWriteGuard } from '#worker/test-support/access-epoch-write-guard.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { FreeOrgLimitError } from './billing.ts'
@@ -26,7 +27,7 @@ import {
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	return createD1FromSqlite(sqlite)
+	return withAccessEpochWriteGuard(createD1FromSqlite(sqlite))
 }
 
 test('createOrg and upsertGrant are visible when access is compiled', async () => {

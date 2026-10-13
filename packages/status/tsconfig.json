@@ -7,6 +7,8 @@
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
 		"erasableSyntaxOnly": true,
+		"allowJs": true,
+		"checkJs": true,
 		"types": ["@cloudflare/workers-types", "node"],
 		"skipLibCheck": true
 	},

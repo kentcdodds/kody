@@ -1,0 +1,130 @@
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
+import { type NonInteractiveTrigger } from '#worker/authorization/authorize.ts'
+import { getActiveStableUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
+import { userHasPermission, userHasRole } from '#universal/permissions.ts'
+import {
+	type McpAuthDenialReason,
+	recordMcpAuthDenial,
+} from '#mcp/auth-audit.ts'
+import { type Capability } from './types.ts'
+
+type SiteAccessRequirement = Pick<
+	Capability,
+	'name' | 'requiredRole' | 'requiredPermission'
+>
+
+/** Site-admin capabilities: a site role or permission gates them. */
+export function requiresSiteAccess(capability: SiteAccessRequirement): boolean {
+	return Boolean(capability.requiredRole || capability.requiredPermission)
+}
+
+/**
+ * A site-admin capability called from a run no live person made (a job,
+ * webhook, subscription, or inbound email, or package code one of those
+ * started) acts for the person the run acts as, usually its enabler. That
+ * person must hold the role or permission in D1 right now: the caller's
+ * roles are cached and belong to the org's identity, not the enabler.
+ */
+export async function assertTriggeredRunCanAccessSiteCapability(input: {
+	env: Env
+	callerContext: McpCallerContext
+	capability: SiteAccessRequirement
+	trigger: NonInteractiveTrigger
+}): Promise<void> {
+	const { capability, trigger } = input
+	const actor = input.callerContext.request?.actor
+	const access = actor
+		? await getActiveStableUserRolesAndPermissions(
+				input.env.APP_DB,
+				String(actor.userId),
+			)
+		: null
+	const denial = describeDenial(access, capability, trigger)
+	if (!denial) return
+	await recordMcpAuthDenial({
+		db: auditDatabaseFromEnv(input.env),
+		action: 'mcp_capability_denied',
+		reason: denial.reason,
+		email: input.callerContext.user?.email,
+		path: capability.name,
+	})
+	throw new Error(denial.message)
+}
+
+function describeDenial(
+	access: Awaited<ReturnType<typeof getActiveStableUserRolesAndPermissions>>,
+	capability: SiteAccessRequirement,
+	trigger: NonInteractiveTrigger,
+): { reason: McpAuthDenialReason; message: string } | null {
+	const run = `This ${trigger.type} run`
+	if (!access) {
+		return {
+			reason: 'no_user',
+			message: `${run} acts for no active person, so it cannot call site-admin capability "${capability.name}".`,
+		}
+	}
+	if (
+		capability.requiredRole &&
+		!userHasRole(access, capability.requiredRole)
+	) {
+		return {
+			reason: 'role',
+			message: `${run} acts for a person who lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+		}
+	}
+	if (
+		capability.requiredPermission &&
+		!userHasPermission(access, capability.requiredPermission)
+	) {
+		return {
+			reason: 'permission',
+			message: `${run} acts for a person who lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+		}
+	}
+	return null
+}
+
+/**
+ * Run a site-admin capability called from a non-interactive run and record
+ * one `admin` audit row naming the trigger. `run` covers input validation
+ * through output validation; the row's result says whether it returned or
+ * threw. A capability that reports a failure in its returned result records
+ * that verdict in its own audit row.
+ */
+export async function auditTriggeredSiteCapabilityCall<TResult>(
+	input: {
+		env: Env
+		callerContext: McpCallerContext
+		capabilityName: string
+		trigger: NonInteractiveTrigger
+	},
+	run: () => Promise<TResult>,
+): Promise<TResult> {
+	const { callerContext, trigger } = input
+	const reason = [
+		`trigger=${trigger.type}`,
+		`trigger_id=${trigger.credentialId ?? ''}`,
+		`actor=${callerContext.request?.actor?.userId ?? ''}`,
+		`package_id=${callerContext.storageContext?.packageId ?? ''}`,
+	].join(';')
+	const audit = (result: 'success' | 'failure', detail?: string) =>
+		logAuditEvent({
+			db: auditDatabaseFromEnv(input.env),
+			category: 'admin',
+			action: input.capabilityName,
+			result,
+			email: callerContext.user?.email,
+			path: '/mcp',
+			reason: detail ? `${reason};error=${detail}` : reason,
+		})
+	try {
+		const result = await run()
+		await audit('success')
+		return result
+	} catch (error) {
+		const message = error instanceof Error ? error.message.trim() : ''
+		await audit('failure', message.slice(0, 200) || 'unknown_error')
+		throw error
+	}
+}

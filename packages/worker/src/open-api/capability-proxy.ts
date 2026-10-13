@@ -4,10 +4,22 @@ import {
 	buildKodyToolContext,
 	createWorkflowTools,
 } from '#mcp/run-kody-registry.ts'
+import { type CredentialClientToolOptions } from '#mcp/runtime-helper-manifest.ts'
 import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
+import {
+	credentialCallMapSchema,
+	normalizeCredentialCallMap,
+	type CredentialCallMap,
+} from '#worker/credentials/credential-call-map.ts'
+import {
+	CredentialClientError,
+	toCredentialClientError,
+} from '#worker/credentials/credential-client.ts'
+import { capabilityProxyCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	toCapabilityOpenApiPrincipal,
 	type ApiInvocationContext,
@@ -17,7 +29,10 @@ import { maxApiRequestBodyBytes } from './request-params.ts'
 import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
 import { runCapabilityProxyGatewayFetch } from './capability-proxy-gateway-fetch.ts'
 import { runCapabilityProxyOauthClientCredentials } from './capability-proxy-oauth-client-credentials.ts'
-import { createCapabilityProxyPackageHostTools } from './capability-proxy-package-grants.ts'
+import {
+	authorizeLocalExecuteOwnedPackageId,
+	createCapabilityProxyPackageHostTools,
+} from './capability-proxy-package-grants.ts'
 
 /**
  * CapabilityProxy: the cloud half of local execute (`kody execute --local`,
@@ -46,6 +61,9 @@ export const capabilityProxyLimits = {
 	maxRequestBytes: maxApiRequestBodyBytes,
 } as const
 
+/** Feature flags in the session response, for clients to detect host support. */
+export const capabilityProxyFeatures = ['credential-call-map'] as const
+
 const pathSegmentSchema = z
 	.string()
 	.min(1)
@@ -70,6 +88,11 @@ export const capabilityProxyCallInputSchema = z
 			.max(64)
 			.optional()
 			.describe('Optional MCP conversation id to attribute the call to.'),
+		credentials: credentialCallMapSchema
+			.optional()
+			.describe(
+				'Credential picks for this local run, by need key (CLI `--credential key=name`), read by `kody.credentialClient*` calls. Same shape as `execute` `credentials`. Picks choose only among credentials you can Use.',
+			),
 	})
 	.strict()
 
@@ -89,6 +112,11 @@ export const capabilityProxySessionOutputSchema = z.object({
 	maxExpiresAt: z.string().describe('Absolute expiry of the token.'),
 	idleTtlSeconds: z.number().int(),
 	user: z.object({ userId: z.string(), email: z.string() }),
+	features: z
+		.array(z.string())
+		.describe(
+			'Optional host features this proxy serves, e.g. `credential-call-map` (the `credentials` call field and `kody.credentialClientCheck`).',
+		),
 	limits: z.object({
 		maxPathSegments: z.number().int(),
 		maxArgs: z.number().int(),
@@ -122,13 +150,54 @@ async function invokeCapability<T>(invoke: () => Promise<T> | T) {
 	}
 }
 
+/**
+ * Local execute has no host run, so handles bind to the CapabilityProxy
+ * credential instead. A package stamp from local workerd is a claim until
+ * `package:execute` on it holds.
+ */
+function createCapabilityProxyCredentialClientTools(
+	ctx: ApiInvocationContext,
+	callMap: CredentialCallMap | null,
+): CredentialClientToolOptions | undefined {
+	const request = ctx.callerContext.request
+	if (!request) return undefined
+	return {
+		binding: capabilityProxyCredentialClientBinding(request),
+		callMap,
+		resolvePackageId: async (requested) => {
+			const packageId = typeof requested === 'string' ? requested.trim() : ''
+			if (!packageId) return null
+			try {
+				return await authorizeLocalExecuteOwnedPackageId({
+					db: ctx.env.APP_DB,
+					env: ctx.env,
+					request,
+					orgUserId: ownerIdFromCaller(ctx.callerContext),
+					packageId,
+				})
+			} catch (error) {
+				throw (
+					toCredentialClientError(error) ??
+					new CredentialClientError({
+						code: 'credential_denied',
+						message: 'This package is not one you can execute here.',
+						retryWith: [],
+					})
+				)
+			}
+		},
+		...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+	}
+}
+
 async function callKodyPath(input: {
 	ctx: ApiInvocationContext
 	path: ReadonlyArray<string>
 	args: ReadonlyArray<unknown>
 	redactor: ExecutionSecretRedactor
+	callMap: CredentialCallMap | null
 }) {
-	const { ctx, path, args, redactor } = input
+	const { ctx, path, args, redactor, callMap } = input
 	const [, name] = path
 	if (path.length === 2 && name === 'authenticatedFetch') {
 		return invokeCapability(() =>
@@ -152,6 +221,10 @@ async function callKodyPath(input: {
 				callerContext: ctx.callerContext,
 			})
 		: {}
+	const credentialClientTools =
+		typeof name === 'string' && name.startsWith('credentialClient')
+			? createCapabilityProxyCredentialClientTools(ctx, callMap)
+			: undefined
 	const { tools, mcpServers } = await buildKodyToolContext(
 		ctx.env,
 		ctx.callerContext,
@@ -165,6 +238,7 @@ async function callKodyPath(input: {
 			}),
 			openApiPrincipal: toCapabilityOpenApiPrincipal(ctx.principal),
 			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+			...(credentialClientTools ? { credentialClientTools } : {}),
 		},
 	)
 	if (path[1] === 'mcp') {
@@ -218,7 +292,13 @@ async function dispatchCapabilityProxyCall(input: {
 	const { ctx, call, redactor } = input
 	const [root, name] = call.path
 	if (root === 'kody') {
-		return callKodyPath({ ctx, path: call.path, args: call.args, redactor })
+		return callKodyPath({
+			ctx,
+			path: call.path,
+			args: call.args,
+			redactor,
+			callMap: normalizeCredentialCallMap(call.credentials),
+		})
 	}
 	if (root === 'workflows' && name === 'create' && call.path.length === 2) {
 		const workflowTools = createWorkflowTools({

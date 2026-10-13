@@ -1434,16 +1434,22 @@ on write unless a migration backfills existing rows.
   `package_invocation_tokens` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
   `0057-webhook-url-secret-encrypted.sql`,
-  `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for
+  `0062-webhook-url-rotation-grace.sql`,
+  `0072-webhook-hmac-secret-encrypted.sql`,
+  `0127-webhook-hmac-rotation-grace.sql`) stores per-user minted URL state for
   `package.json#kody.webhooks`, keyed by `(user_id, package_id, webhook_name)`.
   URL secrets are SHA-256 hashed for ingress and AES-GCM encrypted
   (`url_secret_encrypted`) for server-side apply. Package-owned HMAC signing
   material lives on the same row (`hmac_secret_encrypted`) when verification
   omits `secretName`; provider-issued secrets use the secrets primitive via
-  optional `verification.secretName`. MCP capabilities never return the
-  plaintext URL or HMAC. Delivery history is recorded as `webhook` surface run
-  records (see [Run records](./run-records.md) and
-  [Inbound webhooks](./webhooks.md)), not as D1 rows.
+  optional `verification.secretName`. Last-seen signing identity
+  (`hmac_secret_name`) and a verification snapshot
+  (`hmac_verification_secret_encrypted`) track declared-secret rotation;
+  `previous_hmac_secret_*` holds the outgoing key for a 24h grace window (same
+  duration as URL rotate overlap). MCP capabilities never return the plaintext
+  URL or HMAC. Delivery history is recorded as `webhook` surface run records
+  (see [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md)),
+  not as D1 rows.
 - `system_email_daily_counters` (`0001-squashed-init.sql`) stores fixed
   per-local daily receive counters for operator-owned system inboxes. These
   counters are not user entitlements and are pruned by the system-email
@@ -1499,6 +1505,17 @@ on write unless a migration backfills existing rows.
   `{"vault": "<provider>"}` on a vault binding. An integration's `provider` is
   its OAuth app's provider, written on connect and backfilled by the migration.
   Request placement does not read them; placeholders still decide it.
+- `secret_entries.kind` (`0117-credential-kinds.sql`) is the credential's kind
+  from ADR 0068: `secret` (every existing row and the default), `url`, `login`,
+  or `signing`. Placeholders fill only `secret` rows. A `url` value is a whole
+  HTTPS URL that `resolveCredential` hands to the gateway only for one of the
+  row's `allowed_hosts`; package code sends a relative path, never the URL.
+- `secret_entries.config_json` (`0118-credential-login-config.sql`) is a `login`
+  credential's exchange: an HTTPS URL on one of the row's `allowed_hosts`, the
+  body template, and where the session token is in the response. Other kinds
+  leave it NULL. The value holds the login fields as one JSON object, and
+  `inject_json` places the session token. Sessions are kept per isolate, never
+  in storage.
 - `credential_inventory_runs` and `credential_inventory_items`
   (`0112-credential-inventory.sql`,
   `packages/worker/src/credentials/credential-inventory.ts`) hold the admin
@@ -1506,11 +1523,13 @@ on write unless a migration backfills existing rows.
   `adminCredentialInventoryScan` pages saved packages into a run; each item's
   `result_json` holds credential ids, placement shapes, slot providers, and
   placeholder counts (every placeholder, including ones that match a declared
-  slot), never a credential name or value. A failed item holds only its load
-  error, and the report lists failed package ids. `adminCredentialBackfill`
-  reads a complete run with no failed packages (or whose failed packages the
-  caller lists exactly in `acknowledgedFailedPackageIds`) and writes `provider`
-  and `inject_json` only where they are still unset: `provider` when every slot
+  slot), never a credential name or value. Placement shapes may carry package
+  identifiers (a body field, an SDK option key, a callee name) but never one
+  that spells a credential name. A failed item holds only its load error, and
+  the report lists failed package ids. `adminCredentialBackfill` reads a
+  complete run with no failed packages (or whose failed packages the caller
+  lists exactly in `acknowledgedFailedPackageIds`) and writes `provider` and
+  `inject_json` only where they are still unset: `provider` when every slot
   naming the credential agrees on one provider slug, `inject_json` when every
   placement is the same header or the same query param.
 - `credential_org_grants` (`0116-credential-org-grants.sql`,

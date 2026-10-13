@@ -63,3 +63,18 @@ test('artifacts git http aborts a hung request and returns advertisement bytes',
 		'001e# service=git-upload-pack\n',
 	)
 })
+
+test('artifacts git http maps receive-pack 403 to the actionable read-only message', async () => {
+	using _denied = createMswNodeServer([
+		http.post('https://example.test/git/repo.git/git-receive-pack', () =>
+			HttpResponse.text('forbidden', { status: 403, statusText: 'Forbidden' }),
+		),
+	])
+	const client = createArtifactsGitHttp({ timeoutMs: 1_000 })
+	await expect(
+		client.request({
+			url: 'https://example.test/git/repo.git/git-receive-pack',
+			method: 'POST',
+		}),
+	).rejects.toThrow("this remote is read-only; request scope: 'write'")
+})

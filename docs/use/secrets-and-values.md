@@ -50,6 +50,57 @@ it to leave an existing expiry unchanged; pass `null` to clear. Updates that
 only change description or expiry may omit **`value`**. Package runtimes cannot
 change expiry on a user secret.
 
+### Opt-in credential fields
+
+A saved secret is a **Key** by default. Keys fill placeholders and use host
+approval as described here. A user-scope **`secretSet`** from execute or the API
+(not from a package runtime) can also set fields for the opt-in credential types
+(ADR 0068):
+
+- **`kind`**: `secret` (a Key, the default), `url` (a whole webhook URL),
+  `login` (a JSON object of login fields), or `signing` (a signing key). The
+  opt-in kinds are never placed by a placeholder; a package reaches them only
+  through a scoped credential client.
+- **`hosts`**: where an opt-in kind may be sent, as bare exact hosts or one
+  wildcard level under a registrable domain (`*.example.com`, not
+  `*.github.io`); a scheme, port, or path is refused. Required for `url`,
+  `login`, and `signing`; a `url` value's own host must be one of them. Keys
+  refuse `hosts` and keep using host approval.
+- **`login_exchange`**: for `login`, how the fields become a session token. Its
+  url must be on one of the hosts and carry no username or password.
+- **`provider`** and **`inject`**: which package credential needs the credential
+  can satisfy (for example `github`), and how a scoped client places it (a
+  header with a `{value}` format, basic auth, or a query parameter; a `login`
+  session token uses a header or query parameter). The default placement is
+  `Authorization: Bearer {value}`. Placeholders ignore both.
+
+`kind`, `hosts`, and `login_exchange` are set only together with a value:
+whoever supplies the value decides where it may go. A new value for an existing
+opt-in credential is checked against its stored hosts. Setting `kind: "secret"`
+turns an opt-in credential back into a Key and clears its hosts. The value and
+these fields are saved together or not at all. **`provider`** and **`inject`**
+can change without a value (in a call of their own; the secret's value and
+`updated_at` stay as they are), and **`credentialUpdate`** sets them by
+credential id on secrets, OAuth connections, and MCP servers (OAuth connections
+and MCP servers always use `Authorization: Bearer`, so only their provider
+changes). Every change needs Write on the credential and is audited.
+
+### Personal credentials in a team org
+
+A secret, OAuth connection, or MCP server in your personal org is a personal
+credential. Grant it to a team org you belong to with **`credentialOrgGrant`**
+(`credential_id`, and `org` as a slug; `org` defaults to the org the request is
+bound to). It then works in that org only in your own runs, through scoped
+`credential(key)` clients (see [Packages](./packages.md)). Nobody else in that
+org can use it, Owners and Automation included, and `{{secret:name}}`
+placeholders never resolve it. **`credentialOrgRevoke`** removes one org's grant
+at once, and **`credentialOrgGrantList`** lists your grants, with
+`active: false` when one stops working (an expired value, a disconnected OAuth
+connection, a disabled MCP server, or you left the org). Leaving an org deletes
+your grants there. Granting and revoking need a live person (not a job, webhook,
+or package code) and Write on the credential; grants and revokes are audited in
+your personal org.
+
 The account create/edit form has the same optional expiry field. Agents
 prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query
 parameter so the human pastes the token without typing the date. See
@@ -64,8 +115,9 @@ ones. See the [Terms](/terms).
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** anywhere in the request: a header, the
-URL path, the query string, or a text body (JSON, form-encoded, or plain text).
-The gateway fills them only when both hold:
+URL path, the query string, a text body (JSON, form-encoded, or plain text), or
+a literal `{{…}}` in a `multipart/*` part. The gateway fills them only when both
+hold:
 
 - the request is **HTTPS**;
 - the request host is one the credential allows: a saved secret's approved
@@ -79,12 +131,12 @@ refused, so filling one can never change where a request goes. In a JSON body
 each value is JSON-escaped; in a form-encoded body or query string each value is
 form-encoded, and the other keys and values keep their bytes as written. In the
 URL path each value is encoded as segment data, so a `/`, `?`, or `#` in it
-cannot change the route. A placeholder encoded with `encodeURIComponent` is
-found too.
-
-`multipart/*` bodies (file uploads) and bodies that are not UTF-8 text are
-forwarded byte for byte and never filled, so a placeholder there reaches the
-remote as written. Put a credential such an upload needs in a header.
+cannot change the route. A placeholder encoded with `encodeURIComponent` in the
+URL path or query, or in a form-urlencoded component the gateway already fills,
+is found too. Literal `{{…}}` placeholders in `multipart/*` parts are filled the
+same way. Streamed bodies are filled chunk by chunk. A percent-encoded or
+base64-encoded placeholder form the gateway will not fill is refused, with an
+error that names the form.
 
 The `x-kody-secret-resolution` header changes this per request, and Kody strips
 it before the request leaves:
@@ -99,9 +151,10 @@ it before the request leaves:
 See
 [Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
 Local execute sends a request through the cloud gateway when its URL, headers,
-or buffered body hold a placeholder. It cannot replay a caller `ReadableStream`
-body, so it scans that stream as it is sent and fails instead of sending a
-placeholder in it unfilled.
+or body hold a placeholder — including streamed and multipart bodies — so fill
+matches hosted. Small buffered bodies use the JSON CapabilityProxy hop. Streamed
+bodies, multipart bodies, and bodies that would exceed 4 MiB use the
+[streaming hop](../contributing/contracts/cli-streaming-gateway-fetch.md).
 
 If the remote echoes a substituted value back, in a response header, status
 text, the final URL after redirects, or anywhere in the body, the gateway

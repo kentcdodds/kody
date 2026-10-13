@@ -217,6 +217,8 @@ export type PackageFilesLoaderData = {
 	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
+	/** False for plain repos that share package chrome. Defaults to true. */
+	hasPackage?: boolean
 	iconUrl?: string | null
 	imageBaseHref?: string | null
 	description?: string
@@ -245,6 +247,8 @@ type CommunityDetailShellLoaderData = {
 	imageBaseHref: string | null
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
+	/** False for plain repos that share package chrome. Defaults to true. */
+	hasPackage?: boolean
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean
@@ -2003,7 +2007,13 @@ export type AccountPackageListItem = {
 	createdAt: string
 	updatedAt: string
 	hidden: boolean
+	/** Inverse of forkable: private packages are not community-forkable. */
 	isPrivate: boolean
+	/**
+	 * When true, the hosted package app may be served on the public internet
+	 * after capability approval. Independent of forkable/`isPrivate`.
+	 */
+	isInternetVisible: boolean
 	hasCommunityListing: boolean
 	listingAhead: AccountPackageListingAhead | null
 	forkAhead: AccountPackageForkAhead | null
@@ -2019,6 +2029,18 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
 	publishedCommit: string | null
+	/**
+	 * Default-branch HEAD when the owner can resolve the artifact source.
+	 * Compared with `publishedCommit` to show whether a publish is pending.
+	 * Null when there is no HEAD or the lookup failed — see
+	 * `pendingCommitKnown`.
+	 */
+	pendingCommit: string | null
+	/**
+	 * False when the artifact HEAD lookup failed. Do not treat the package as
+	 * up to date or demote Approve until this is true.
+	 */
+	pendingCommitKnown: boolean
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
 	/**
@@ -2047,12 +2069,62 @@ export type AccountPackageApprovePublishLoaderData = {
 	publishedCommit: string | null
 	pendingCommit: string | null
 	alreadyPublished: boolean
+	/**
+	 * True when `pendingCommit` is default-branch HEAD (no `?commit=` pin).
+	 * False when the URL named a specific commit — alreadyPublished then means
+	 * that pin matches the public version, not that HEAD has nothing pending.
+	 */
+	pendingIsDefaultHead: boolean
 	filesHref: string
 	packageHref: string
 	diff: {
 		files: Array<AccountPackagePublishDiffFile>
 		omittedCount: number
 	}
+}
+
+/** A publish waiting in the package's owner approval queue. */
+export type AccountPackagePendingApproval = {
+	id: string
+	reason: 'credential_needs_changed' | 'went_public'
+	reasonLabel: string
+	pendingCommit: string
+	createdAt: string
+	/** One line per credential need the paused publish adds or reshapes. */
+	changes: Array<string>
+	/** The POST action that approves it, or null when this page cannot yet. */
+	approveAction: 'approve-credential-needs' | null
+}
+
+export type AccountPackageApproveCapabilitiesLoaderData = {
+	ok: true
+	pendingApprovals: Array<AccountPackagePendingApproval>
+	email: string
+	package: {
+		id: string
+		name: string
+		kodyId: string
+		sourceId: string
+		hasApp: boolean
+		isInternetVisible: boolean
+	}
+	publishedCommit: string | null
+	fingerprint: string
+	entries: Array<{
+		kind: 'credential' | 'storage'
+		credentialId?: string
+		name?: string
+		credentialKind?: string
+		hosts: Array<string>
+		placement?: string | null
+		via: Array<string>
+		storageId?: string
+	}>
+	fingerprintMatchesApproval: boolean
+	latestApprovedAt: string | null
+	settingsHref: string
+	packageHref: string
+	approveHref: string
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
@@ -2618,6 +2690,7 @@ export type AppLoaderData = {
 	mcpServerAuthorize?: McpServerAuthorizeLoaderData
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
+	accountPackageApproveCapabilities?: AccountPackageApproveCapabilitiesLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData

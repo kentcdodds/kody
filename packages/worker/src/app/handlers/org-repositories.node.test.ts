@@ -12,7 +12,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mocks.readAuthenticatedAppUser(...args),
 }))
 
-const { createOrgPackagesApiHandler } = await import('./org-section.ts')
+const { createOrgRepositoriesApiHandler } = await import('./org-section.ts')
 
 const ownerId = 'person-owner'
 const memberId = 'person-member'
@@ -49,6 +49,12 @@ function createEnv() {
 	insertPackage.run('pkg-secret', teamId, '@acme/secret', 'secret', 'src-2')
 	insertPackage.run('pkg-mine', memberId, '@member/mine', 'mine', 'src-3')
 	sqlite
+		.prepare(
+			`INSERT INTO user_repos (id, user_id, name, description, is_private, created_at, updated_at)
+			 VALUES (?, ?, ?, 'plain repo', 1, ?, ?)`,
+		)
+		.run('repo-notes', teamId, 'plain-notes', now, now)
+	sqlite
 		.prepare(`UPDATE saved_packages SET updated_at = ? WHERE id = ?`)
 		.run('2030-01-01T00:00:00.000Z', 'pkg-secret')
 	const insertGrant = sqlite.prepare(
@@ -68,7 +74,8 @@ function createEnv() {
 		insertPermission.run(grantId, 'package:read')
 		insertPermission.run(grantId, 'package:execute')
 	}
-	// Execute-only: listed via canSeeResource, but the package page needs read.
+	// Execute-only without a listing: listed via canSeeResource, but the owner
+	// package page needs read, so the name stays unlinked.
 	insertPackage.run('pkg-run', teamId, '@acme/run', 'run', 'src-4')
 	insertGrant.run(
 		'grant-member-run',
@@ -80,6 +87,41 @@ function createEnv() {
 		now,
 	)
 	insertPermission.run('grant-member-run', 'package:execute')
+	// Execute-only with a public listing: the canonical URL resolves without
+	// package:read, so the name still links.
+	insertPackage.run('pkg-listed', teamId, '@acme/listed', 'listed', 'src-5')
+	insertGrant.run(
+		'grant-member-listed',
+		teamId,
+		'pkg-listed',
+		memberId,
+		ownerId,
+		now,
+		now,
+	)
+	insertPermission.run('grant-member-listed', 'package:execute')
+	sqlite
+		.prepare(
+			`INSERT INTO community_listings (
+				id, owner_user_id, package_id, source_id, kody_id, name, description,
+				tags_json, license, pinned_commit, status, created_at, updated_at, published_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+		)
+		.run(
+			'listing-listed',
+			teamId,
+			'pkg-listed',
+			'src-5',
+			'listed',
+			'@acme/listed',
+			'listed description',
+			'[]',
+			'MIT',
+			'commit-1',
+			now,
+			now,
+			now,
+		)
 	return {
 		APP_DB: createD1FromSqlite(sqlite),
 		JOBS: undefined,
@@ -92,9 +134,9 @@ async function listAs(env: Env, personId: string, search = '') {
 		mcpUser: { userId: personId, username: personId },
 	})
 	const request = new Request(
-		`https://kody.test/@acme/-/packages.json${search}`,
+		`https://kody.test/@acme/-/repositories.json${search}`,
 	)
-	const response = await createOrgPackagesApiHandler(env).handler({
+	const response = await createOrgRepositoriesApiHandler(env).handler({
 		request,
 		params: { orgSlug: 'acme' },
 		url: new URL(request.url),
@@ -109,6 +151,7 @@ async function listAs(env: Env, personId: string, search = '') {
 				kodyId: string
 				isPrivate?: boolean
 				canOpenDetail?: boolean
+				hasPackage?: boolean
 			}>
 			profile?: { username: string; displayName: string }
 		},
@@ -126,10 +169,15 @@ test('team repositories list what each member role can see', async () => {
 	})
 	expect(owner.body.activity).toBeNull()
 	expect(owner.body.packages?.map((pkg) => pkg.kodyId).sort()).toEqual([
+		'listed',
+		'plain-notes',
 		'run',
 		'secret',
 		'shared',
 	])
+	expect(
+		owner.body.packages?.find((pkg) => pkg.kodyId === 'plain-notes'),
+	).toMatchObject({ hasPackage: false })
 	expect(owner.body.packages?.every((pkg) => pkg.canOpenDetail !== false)).toBe(
 		true,
 	)
@@ -137,19 +185,28 @@ test('team repositories list what each member role can see', async () => {
 	const member = await listAs(env, memberId)
 	expect(member.status).toBe(200)
 	expect(
-		member.body.packages?.map((pkg) => ({
-			kodyId: pkg.kodyId,
-			canOpenDetail: pkg.canOpenDetail,
-		})),
-	).toEqual([
-		{ kodyId: 'run', canOpenDetail: false },
-		{ kodyId: 'shared', canOpenDetail: undefined },
-	])
+		new Map(
+			member.body.packages?.map((pkg) => [
+				pkg.kodyId,
+				{ canOpenDetail: pkg.canOpenDetail, hasPackage: pkg.hasPackage },
+			]),
+		),
+	).toEqual(
+		new Map([
+			// Execute-only + public listing → link (canonical URL resolves).
+			['listed', { canOpenDetail: undefined, hasPackage: true }],
+			// Plain repos have no grant surface; every member sees them.
+			['plain-notes', { canOpenDetail: undefined, hasPackage: false }],
+			// Execute-only, no listing → no link (owner page needs package:read).
+			['run', { canOpenDetail: false, hasPackage: true }],
+			['shared', { canOpenDetail: undefined, hasPackage: true }],
+		]),
+	)
 
 	// The newest org package is one the member cannot see. The cap applies
 	// after the visibility filter, so it does not crowd out theirs.
 	const capped = await listAs(env, memberId, '?limit=1')
-	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['run'])
+	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['listed'])
 	const ownerCapped = await listAs(env, ownerId, '?limit=1')
 	expect(ownerCapped.body.packages?.map((pkg) => pkg.kodyId)).toEqual([
 		'secret',

@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/component'
 import { buildPackageAppPath } from '@kody-internal/shared/public-urls.ts'
+import { shortCommunityCommit } from '#universal/community-display.ts'
 import { routes } from '#universal/routes.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
@@ -38,6 +39,45 @@ function isPackageLocked(lockedAt: string | null | undefined) {
 	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
 }
 
+function hasUnpublishedPackageCommit(packageDetail: AccountPackageDetail) {
+	if (!packageDetail.pendingCommitKnown) return false
+	const pending = packageDetail.pendingCommit
+	if (!pending) return false
+	return (
+		packageDetail.publishedCommit == null ||
+		packageDetail.publishedCommit !== pending
+	)
+}
+
+/** Primary Approve only when unpublished HEAD is known, or HEAD is unknown. */
+function showApprovePublishPrimary(packageDetail: AccountPackageDetail) {
+	return (
+		!packageDetail.pendingCommitKnown ||
+		hasUnpublishedPackageCommit(packageDetail)
+	)
+}
+
+function publishStateCopy(packageDetail: AccountPackageDetail) {
+	const published = packageDetail.publishedCommit
+	const pending = packageDetail.pendingCommit
+	if (!packageDetail.pendingCommitKnown) {
+		return published
+			? `Published at ${shortCommunityCommit(published)}. Could not check for an unpublished commit.`
+			: 'Could not check for an unpublished commit.'
+	}
+	if (hasUnpublishedPackageCommit(packageDetail) && pending) {
+		const pendingShort = shortCommunityCommit(pending)
+		if (!published) {
+			return `No published commit yet. Unpublished HEAD is at ${pendingShort}.`
+		}
+		return `Published at ${shortCommunityCommit(published)}. Unpublished commit pending at ${pendingShort}.`
+	}
+	if (published) {
+		return `Published version is up to date at ${shortCommunityCommit(published)}.`
+	}
+	return 'No published commit yet.'
+}
+
 export function AccountPackageOwnerDetails(
 	handle: Handle<{
 		ownerUsername: string
@@ -51,8 +91,12 @@ export function AccountPackageOwnerDetails(
 	}>,
 ) {
 	let confirmName = ''
+	let internetVisibleConfirmName = ''
 	let visibilityState: 'idle' | 'submitting' | 'error' = 'idle'
 	let visibilityMessage: string | null = null
+	let internetVisibleState: 'idle' | 'submitting' | 'error' = 'idle'
+	let internetVisibleMessage: string | null = null
+	let internetVisibleApprovalUrl: string | null = null
 
 	async function submitVisibility(
 		packageDetail: AccountPackageDetail,
@@ -63,8 +107,8 @@ export function AccountPackageOwnerDetails(
 			visibilityState = 'error'
 			visibilityMessage =
 				visibility === 'public'
-					? `Type ${packageDetail.kodyId} to make this package public. Anyone will be able to read and fork the default branch.`
-					: `Type ${packageDetail.kodyId} to make this package private. Public URLs will 404; existing forks keep their copies.`
+					? `Type ${packageDetail.kodyId} to make this package forkable. Anyone will be able to read and fork the default branch on /community.`
+					: `Type ${packageDetail.kodyId} to turn off forkable. Public URLs will 404; existing forks keep their copies.`
 			handle.update()
 			return
 		}
@@ -104,6 +148,65 @@ export function AccountPackageOwnerDetails(
 				error instanceof Error
 					? error.message
 					: 'Could not update package visibility.'
+			handle.update()
+		}
+	}
+
+	async function submitInternetVisible(
+		packageDetail: AccountPackageDetail,
+		internetVisible: boolean,
+	) {
+		if (internetVisibleState === 'submitting') return
+		if (internetVisibleConfirmName.trim() !== packageDetail.kodyId) {
+			internetVisibleState = 'error'
+			internetVisibleApprovalUrl = null
+			internetVisibleMessage = internetVisible
+				? `Type ${packageDetail.kodyId} to continue. You will review credentials before the app is served publicly.`
+				: `Type ${packageDetail.kodyId} to turn off internet-visible serving.`
+			handle.update()
+			return
+		}
+		internetVisibleState = 'submitting'
+		internetVisibleMessage = null
+		internetVisibleApprovalUrl = null
+		handle.update()
+		try {
+			const response = await fetch('/account/packages.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'set-internet-visible',
+					packageId: packageDetail.id,
+					internetVisible,
+					confirmName: internetVisibleConfirmName.trim(),
+				}),
+			})
+			const payload = (await response.json()) as AccountPackagesLoaderData & {
+				error?: string
+				approvalUrl?: string
+			}
+			if (!response.ok || !payload?.ok) {
+				if (typeof payload?.approvalUrl === 'string' && payload.approvalUrl) {
+					internetVisibleApprovalUrl = payload.approvalUrl
+				}
+				throw new Error(
+					payload?.error ?? 'Could not update internet-visible setting.',
+				)
+			}
+			internetVisibleState = 'idle'
+			internetVisibleConfirmName = ''
+			handle.props.onPackagesPayload(payload)
+			handle.update()
+		} catch (error) {
+			internetVisibleState = 'error'
+			internetVisibleMessage =
+				error instanceof Error
+					? error.message
+					: 'Could not update internet-visible setting.'
 			handle.update()
 		}
 	}
@@ -199,85 +302,202 @@ export function AccountPackageOwnerDetails(
 						<span mix={css(statusBadgeCss)}>Hidden</span>
 					) : null}
 					{packageDetail.isPrivate ? (
-						<span mix={css(statusBadgeCss)}>Private</span>
-					) : null}
+						<span mix={css(statusBadgeCss)}>Not forkable</span>
+					) : (
+						<span mix={css(communityBadgeCss)}>Forkable</span>
+					)}
+					{packageDetail.isInternetVisible ? (
+						<span mix={css(communityBadgeCss)}>Internet-visible</span>
+					) : (
+						<span mix={css(statusBadgeCss)}>Private app</span>
+					)}
 					{packageDetail.hasCommunityListing ? (
-						<span mix={css(communityBadgeCss)}>Public</span>
+						<span mix={css(statusBadgeCss)}>Listed</span>
 					) : (
 						<span mix={css(statusBadgeCss)}>Not listed</span>
 					)}
 				</div>
 				{viewerCanPublish ? (
 					<div
-						mix={css({ display: 'grid', gap: spacing.xs })}
+						mix={css({ display: 'grid', gap: spacing.md })}
 						data-testid="package-visibility-controls"
 					>
-						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							{packageDetail.isPrivate
-								? 'Making this package public lists it on /community. Anyone can read and fork the default branch. Skim source, README, and examples for personal details first, then type the slug to confirm.'
-								: 'Making this package private unlists it from /community and 404s public URLs. Existing forks keep their copies. Type the slug to confirm.'}
-						</p>
-						<label mix={css({ display: 'grid', gap: spacing.xs })}>
-							<span mix={css(visuallyHiddenCss)}>
-								Type {packageDetail.kodyId} to change visibility
-							</span>
-							<input
-								value={confirmName}
-								placeholder={packageDetail.kodyId}
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								{packageDetail.isPrivate
+									? "Lists the source on /community so anyone can read and fork it. Doesn't host your app."
+									: 'Turning off forkable unlists the package from /community and 404s public source URLs. Existing forks keep their copies. Does not change internet-visible app hosting. Type the slug to confirm.'}
+							</p>
+							<label mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css(visuallyHiddenCss)}>
+									Type {packageDetail.kodyId} to change forkable
+								</span>
+								<input
+									value={confirmName}
+									placeholder={packageDetail.kodyId}
+									data-testid={
+										packageDetail.isPrivate
+											? 'package-make-public-confirm'
+											: 'package-make-private-confirm'
+									}
+									mix={[
+										css({
+											padding: spacing.sm,
+											borderRadius: radius.md,
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											color: colors.text,
+										}),
+										on('input', (event) => {
+											if (!(event.currentTarget instanceof HTMLInputElement)) {
+												return
+											}
+											confirmName = event.currentTarget.value
+											handle.update()
+										}),
+									]}
+								/>
+							</label>
+							<button
+								type="button"
+								disabled={visibilityState === 'submitting'}
 								data-testid={
 									packageDetail.isPrivate
-										? 'package-make-public-confirm'
-										: 'package-make-private-confirm'
+										? 'package-make-public'
+										: 'package-make-private'
 								}
 								mix={[
-									css({
-										padding: spacing.sm,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										backgroundColor: colors.surface,
-										color: colors.text,
-									}),
-									on('input', (event) => {
-										if (!(event.currentTarget instanceof HTMLInputElement)) {
-											return
-										}
-										confirmName = event.currentTarget.value
-										handle.update()
-									}),
+									css(getGhostButtonCss()),
+									on(
+										'click',
+										() =>
+											void submitVisibility(
+												packageDetail,
+												packageDetail.isPrivate ? 'public' : 'private',
+											),
+									),
 								]}
-							/>
-						</label>
-						<button
-							type="button"
-							disabled={visibilityState === 'submitting'}
-							data-testid={
-								packageDetail.isPrivate
-									? 'package-make-public'
-									: 'package-make-private'
-							}
-							mix={[
-								css(getGhostButtonCss()),
-								on(
-									'click',
-									() =>
-										void submitVisibility(
-											packageDetail,
-											packageDetail.isPrivate ? 'public' : 'private',
-										),
-								),
-							]}
+							>
+								{visibilityState === 'submitting'
+									? 'Saving…'
+									: packageDetail.isPrivate
+										? 'Make forkable'
+										: 'Turn off forkable'}
+							</button>
+							{visibilityMessage ? (
+								<p mix={css({ margin: 0, color: colors.danger })} role="alert">
+									{visibilityMessage}
+								</p>
+							) : null}
+						</div>
+						<div
+							mix={css({ display: 'grid', gap: spacing.xs })}
+							data-testid="package-internet-visible-controls"
 						>
-							{visibilityState === 'submitting'
-								? 'Saving…'
-								: packageDetail.isPrivate
-									? 'Make public'
-									: 'Make private'}
-						</button>
-						{visibilityMessage ? (
-							<p mix={css({ margin: 0, color: colors.danger })} role="alert">
-								{visibilityMessage}
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								{packageDetail.isInternetVisible
+									? 'Turning off internet-visible returns the app to owner-session serving. Community listing stays unchanged.'
+									: "Kody hosts your app at a public URL anyone can open without signing in. This is separate from Community listing. Don't use it for apps that show your private data."}
 							</p>
-						) : null}
+							{packageDetail.hasApp ? null : (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									This package has no app yet. You can still approve
+									capabilities after publish; serving stays inactive until an
+									app exists.
+								</p>
+							)}
+							<label mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css(visuallyHiddenCss)}>
+									Type {packageDetail.kodyId} to change internet-visible
+								</span>
+								<input
+									value={internetVisibleConfirmName}
+									placeholder={packageDetail.kodyId}
+									data-testid={
+										packageDetail.isInternetVisible
+											? 'package-internet-visible-off-confirm'
+											: 'package-internet-visible-on-confirm'
+									}
+									mix={[
+										css({
+											padding: spacing.sm,
+											borderRadius: radius.md,
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											color: colors.text,
+										}),
+										on('input', (event) => {
+											if (!(event.currentTarget instanceof HTMLInputElement)) {
+												return
+											}
+											internetVisibleConfirmName = event.currentTarget.value
+											handle.update()
+										}),
+									]}
+								/>
+							</label>
+							<div
+								mix={css({
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: spacing.xs,
+								})}
+							>
+								<button
+									type="button"
+									disabled={internetVisibleState === 'submitting'}
+									data-testid={
+										packageDetail.isInternetVisible
+											? 'package-internet-visible-off'
+											: 'package-internet-visible-on'
+									}
+									mix={[
+										css(getGhostButtonCss()),
+										on(
+											'click',
+											() =>
+												void submitInternetVisible(
+													packageDetail,
+													!packageDetail.isInternetVisible,
+												),
+										),
+									]}
+								>
+									{internetVisibleState === 'submitting'
+										? 'Saving…'
+										: packageDetail.isInternetVisible
+											? 'Turn off internet-visible'
+											: 'Make internet-visible'}
+								</button>
+								<a
+									href={routes.communityPackageApproveCapabilities.href({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="package-approve-capabilities-link"
+									mix={css({
+										...getPillButtonCss({ size: 'sm' }),
+										display: 'inline-flex',
+										textDecoration: 'none',
+									})}
+								>
+									Review capabilities
+								</a>
+							</div>
+							{internetVisibleMessage ? (
+								<p mix={css({ margin: 0, color: colors.danger })} role="alert">
+									{internetVisibleMessage}
+									{internetVisibleApprovalUrl ? (
+										<>
+											{' '}
+											<a href={internetVisibleApprovalUrl}>
+												Open approval page
+											</a>
+										</>
+									) : null}
+								</p>
+							) : null}
+						</div>
 					</div>
 				) : null}
 				{packageDetail.tags.length > 0 ? (
@@ -335,6 +555,12 @@ export function AccountPackageOwnerDetails(
 					]}
 				/>
 				<div mix={css(getAccentCalloutCss())}>
+					<p
+						mix={css({ margin: 0, color: colors.text })}
+						data-testid="package-publish-state"
+					>
+						{publishStateCopy(packageDetail)}
+					</p>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						{packageDetail.lockedAt
 							? 'Publishes stay on this reviewed tree until you promote a commit on the website. Click the lock icon to unlock.'
@@ -346,22 +572,36 @@ export function AccountPackageOwnerDetails(
 								display: 'flex',
 								flexWrap: 'wrap',
 								gap: spacing.xs,
+								alignItems: 'center',
 							})}
 						>
-							<a
-								href={routes.communityPackageApprovePublish.href({
-									username: handle.props.ownerUsername,
-									kodyId: packageDetail.kodyId,
-								})}
-								data-testid="account-approve-publish"
-								mix={css({
-									...getPillButtonCss({ size: 'sm' }),
-									display: 'inline-flex',
-									textDecoration: 'none',
-								})}
-							>
-								Approve a publish
-							</a>
+							{showApprovePublishPrimary(packageDetail) ? (
+								<a
+									href={routes.communityPackageApprovePublish.href({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="account-approve-publish"
+									mix={css({
+										...getPillButtonCss({ size: 'sm' }),
+										display: 'inline-flex',
+										textDecoration: 'none',
+									})}
+								>
+									Approve a publish
+								</a>
+							) : (
+								<a
+									href={routes.communityPackageApprovePublish.href({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="account-approve-publish"
+									mix={css(approvePublishQuietLinkCss)}
+								>
+									Approve a publish
+								</a>
+							)}
 						</div>
 					) : null}
 				</div>
@@ -466,6 +706,16 @@ const packageAppLinkCss = {
 	color: colors.primaryText,
 	fontWeight: typography.fontWeight.semibold,
 	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
+}
+
+const approvePublishQuietLinkCss = {
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.15em',
 	'&:hover': {
 		color: colors.text,
 	},

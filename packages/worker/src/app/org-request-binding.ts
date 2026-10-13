@@ -1,4 +1,5 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
+import { isLastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
 import {
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
@@ -51,6 +52,7 @@ export function orgSectionDenial(
 export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
+		isLastUsedOrgCommitApiPath(pathname) ||
 		orgSlugFromPageUrl(pathname) !== null
 	)
 }
@@ -112,9 +114,12 @@ async function resolveRequestOrg(
 	const url = new URL(request.url)
 	const slugOnPage = orgSlugFromPageUrl(url.pathname)
 	const apiSection = orgOwnedAccountApiSection(url.pathname)
+	const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
 	const slug =
 		slugOnPage ??
-		(apiSection ? orgSlugFromAccountApiReferer(request, url.origin) : null)
+		(apiSection || lastUsedCommit
+			? orgSlugFromAccountApiReferer(request, url.origin)
+			: null)
 	if (!slug) return 'personal'
 	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'

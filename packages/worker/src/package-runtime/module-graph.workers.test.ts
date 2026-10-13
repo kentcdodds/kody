@@ -56,12 +56,14 @@ async function ensureSavedPackageArtifactSchema() {
 		has_skills INTEGER NOT NULL DEFAULT 0 CHECK (has_skills IN (0, 1)),
 		hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 		is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
+		is_internet_visible INTEGER NOT NULL DEFAULT 0,
 		locked_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)
 	for (const column of [
 		'is_private INTEGER NOT NULL DEFAULT 1',
+		'is_internet_visible INTEGER NOT NULL DEFAULT 0',
 		'locked_at TEXT',
 	]) {
 		try {

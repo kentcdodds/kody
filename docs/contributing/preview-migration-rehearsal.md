@@ -6,7 +6,9 @@ dedicated **branch preview** before it runs in production. Rehearsal tooling is
 hold Cloudflare or site-admin credentials.
 
 Everything here runs on `kody-branch-<slug>` previews only. PR previews redeploy
-and reseed on every push; the scripts and workflow refuse them.
+and reseed on every push; the scripts and workflow refuse them. `preview.yml`
+takes the slug (`cig-0110`); `preview-rehearsal.yml` accepts that same slug or
+the full worker name (`kody-branch-cig-0110`).
 
 Cloudflare workflow binding names are capped at 64 characters. Long
 `preview_name` values still deploy: the runtime/platform generators truncate the
@@ -27,7 +29,8 @@ P=kody-branch-teams-rehearsal
 gh workflow run preview.yml --ref main -f action=deploy -f target=branch -f preview_name=teams-rehearsal
 
 # 2. Make a key pair for sealed credentials (keep the private key off the repo).
-node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-rehearsal/key > ~/.kody-rehearsal/key.pub
+#    Writes ~/.kody-rehearsal/key and ~/.kody-rehearsal/key.pub.
+node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-rehearsal/key
 
 # 3. Seed (takes a pre-seed D1 bookmark first). Safe to re-run: a complete
 #    roster is a no-op and does not overwrite the pre-seed bookmark.
@@ -50,6 +53,10 @@ node tools/preview-rehearsal/run.ts diff --before before/d1-snapshot.json --afte
 
 # 7. Rehearse rollback: restore the step 4 bookmarks.
 gh workflow run preview-rehearsal.yml -f preview_name=$P -f action=restore -f snapshot_run_id=<before-run-id> -f confirm=$P
+
+# 8. Redeploy main. Restore rewinds D1 but leaves the migration branch's code
+#    deployed, so the worker can read columns the restored D1 lacks (#3550).
+gh workflow run preview.yml --ref main -f action=deploy -f target=branch -f preview_name=teams-rehearsal
 ```
 
 Attach the run links and both diffs to the migration PR. `diff` exits 1 when

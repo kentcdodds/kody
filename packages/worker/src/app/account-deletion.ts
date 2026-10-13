@@ -91,6 +91,7 @@ import {
 } from '#worker/account/deletion-state.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
+	buildPublishedCredentialNeedsKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
@@ -418,6 +419,10 @@ async function listUserBundleKvKeys(input: {
 							publishedCommit: source.publishedCommit,
 						}),
 						buildPublishedSourceManifestSnapshotKvKey({
+							sourceId: source.sourceId,
+							publishedCommit: source.publishedCommit,
+						}),
+						buildPublishedCredentialNeedsKvKey({
 							sourceId: source.sourceId,
 							publishedCommit: source.publishedCommit,
 						}),
@@ -1732,6 +1737,7 @@ export async function deleteUserAccount(input: {
 				...inventory.sourceSnapshots.flatMap((source) => [
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
+					`credential-needs:v1:${source.sourceId}:`,
 				]),
 				...inventory.communityListings.flatMap((listing) =>
 					communityIconKvListingPrefixes(listing.id),

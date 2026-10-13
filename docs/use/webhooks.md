@@ -175,16 +175,21 @@ Destination URLs must be `https://`. Redirects are not followed. Auth is
 optional via `secretName` or `integration` (Bearer), or a caller-supplied
 `Authorization` header — not both. Destination `secretName` / `integration`
 authorize the outbound request; they are not the webhook HMAC signing secret.
+Owner destination approvals pin that auth to the **stable credential id** the
+name resolves to (same idea as credential grants), plus the destination shape
+(method, URL/host, headers, body). Rotating the credential's value keeps the
+approval; deleting and recreating the same name requires a fresh Allow.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
 grants, and locked-package publish approval: the capability returns an
 `approval_url` to `/connect/webhook-apply` with the exact method, URL,
 `{{webhookUrl}}` / `{{webhookSecret}}` injection sites, headers, body template,
-and auth mode. The signed-in owner Allows on the website (writing a durable
-destination grant); the agent then retries and the outbound request runs.
-Package runtimes cannot use `http` apply. Agents never grant access and never
-see the webhook credential.
+and auth mode (including the credential id when `secretName` / `integration` is
+set). The signed-in owner Allows on the website (writing a durable destination
+grant); the agent then retries and the outbound request runs. Package runtimes
+cannot use `http` apply. Agents never grant access and never see the webhook
+credential.
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -489,6 +494,45 @@ export async function handleSentryWebhook(input) {
 
 ## Signature verification examples
 
+### Signing presets
+
+Every webhook should declare `verification`. Pick the row for your sender and
+copy its block into `verification` (full examples follow). Omit `secretName`
+where the table says so: mint then stores a package-owned signing secret on the
+URL record, and `webhookUrlApply` can hand it to the sender as
+`{{webhookSecret}}`.
+
+| Sender                               | `verification`                                                                                                            | Secret                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Stripe                               | `hmac-sha256`, header `Stripe-Signature`, `hex`, `signedPayload: "timestamp.body"`, plus `replay` (see [Stripe](#stripe)) | `secretName` (Stripe's signing secret)       |
+| GitHub                               | `hmac-sha256`, header `x-hub-signature-256`, `hex`, prefix `sha256=`                                                      | Omit `secretName`; apply `{{webhookSecret}}` |
+| Sentry                               | `hmac-sha256`, header `sentry-hook-signature`, `hex`                                                                      | `secretName` (Sentry's client secret)        |
+| X Account Activity                   | `hmac-sha256`, header `X-Twitter-Webhooks-Signature`, `base64`, prefix `sha256=`                                          | `secretName` (consumer secret)               |
+| Bitbucket Cloud                      | `hmac-sha256`, header `X-Hub-Signature`, `hex`, prefix `sha256=`                                                          | Omit `secretName`; apply `{{webhookSecret}}` |
+| Your own caller (script, server, CI) | `hmac-sha256`, header `x-kody-signature`, `hex`, prefix `sha256=`                                                         | Omit `secretName`; apply `{{webhookSecret}}` |
+| A sender that cannot sign            | `{ "type": "url-secret" }` (see [Senders that cannot sign](#senders-that-cannot-sign-url-secret))                         | The URL itself                               |
+
+A caller you control signs each request with
+`x-kody-signature: sha256=<lowercase hex HMAC-SHA256 of the raw request body>`,
+keyed by the secret `webhookUrlApply` delivered as `{{webhookSecret}}`. Kody
+package code cannot compute that signature yet (packages never see secret
+plaintext), so package-to-webhook calls use `url-secret` for now.
+
+Kody cannot verify these senders yet. Declare `url-secret` for them (Discord
+also needs a relay):
+
+- **Discord interactions (Ed25519).** Discord signs with an Ed25519 key pair
+  (`X-Signature-Ed25519` over `X-Signature-Timestamp` + body), and
+  `verification` supports only HMAC. Discord also checks that an interactions
+  endpoint rejects bad signatures, so point Discord at a bot or gateway that
+  verifies them and forwards to the webhook, rather than at the minted URL.
+- **Slack Events.** Slack signs `v0:{timestamp}:{body}`; delivery verification
+  supports only `body` and `timestamp.body`.
+- **Telegram.** Bots send a static `X-Telegram-Bot-Api-Secret-Token` header, not
+  an HMAC.
+- **Gmail Pub/Sub push** (OIDC JWT), **Microsoft Graph** (`clientState`),
+  **Azure DevOps service hooks** (basic auth), and **PostHog** (unsigned).
+
 ### Sentry
 
 ```json
@@ -564,8 +608,9 @@ rejected with the same generic 401 as a bad HMAC.
 
 ### Senders that cannot sign: `url-secret`
 
-Declare `url-secret` when the sender has no way to sign requests (Telegram,
-Microsoft Graph, Azure DevOps, PostHog, a cron service). The URL secret is then
+Declare `url-secret` when the sender has no way to sign requests, or signs in a
+way Kody cannot verify yet (Telegram, Microsoft Graph, Azure DevOps, PostHog, a
+cron service; see [Signing presets](#signing-presets)). The URL secret is then
 the only credential and signature headers are ignored: a POST to the minted URL
 runs the export once it passes any declared `replay` checks (a matching
 `challenge` POST is answered without running it). This is a supported, permanent
@@ -676,8 +721,11 @@ mint; re-enable with `webhookEnable`. Rotate the URL secret with
 `webhookUrlRotate` when a credential may have leaked, then call
 `webhookUrlApply` again with the same handle so providers get the new URL. The
 [settings card](#manage-webhook-urls-in-package-settings) describes the 24-hour
-/ first-accepted-delivery overlap. The same disable, enable, and rotate actions
-are in that Webhooks section.
+/ first-accepted-delivery overlap. Changing `verification.secretName` or
+rotating the secret value it names keeps the previous signing key valid for the
+same 24-hour window (a delivery that verifies under the new key retires it
+early). A webhook that declares HMAC still never falls back to the URL secret.
+The same disable, enable, and rotate actions are in that Webhooks section.
 
 ## Related
 

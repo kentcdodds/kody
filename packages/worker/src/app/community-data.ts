@@ -119,62 +119,72 @@ async function loadCommunityIndexDataUncached(
 		overview,
 	})
 	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
-	const cached = await loadWithCommunityCache(
-		env,
-		request,
-		cacheKey,
-		async () => {
-			if (overview) {
-				const overviewResult = await listCommunityIndexOverview({
-					env,
-					sort,
-				})
-				return {
-					listings: overviewResult.listings.map(toPublicCommunityListing),
-					groups: overviewResult.groups.map((group) => ({
-						category: group.category,
-						listings: group.listings.map(toPublicCommunityListing),
-						total: group.total,
-					})),
-					categoryCounts: overviewResult.categoryCounts,
+	const cached = await recordServerTiming(
+		'community-listings',
+		() =>
+			loadWithCommunityCache(env, request, cacheKey, async () => {
+				if (overview) {
+					const overviewResult = await listCommunityIndexOverview({
+						env,
+						sort,
+					})
+					return {
+						listings: overviewResult.listings.map(toPublicCommunityListing),
+						groups: overviewResult.groups.map((group) => ({
+							category: group.category,
+							listings: group.listings.map(toPublicCommunityListing),
+							total: group.total,
+						})),
+						categoryCounts: overviewResult.categoryCounts,
+					}
 				}
-			}
-			const [rows, categoryCounts] = await Promise.all([
-				query
-					? searchCommunityListings({
-							env,
-							query,
-							limit,
-							sort,
-							category,
-						})
-					: listCommunityListingsWithAggregates({
-							env,
-							includeDelisted: false,
-							limit,
-							offset: 0,
-							sort,
-							category,
-						}),
-				getCommunityCategoryCounts({ env }),
-			])
-			return {
-				listings: rows.map(toPublicCommunityListing),
-				groups: null,
-				categoryCounts,
-			}
-		},
+				const [rows, categoryCounts] = await Promise.all([
+					query
+						? searchCommunityListings({
+								env,
+								query,
+								limit,
+								sort,
+								category,
+							})
+						: listCommunityListingsWithAggregates({
+								env,
+								includeDelisted: false,
+								limit,
+								offset: 0,
+								sort,
+								category,
+							}),
+					getCommunityCategoryCounts({ env }),
+				])
+				return {
+					listings: rows.map(toPublicCommunityListing),
+					groups: null,
+					categoryCounts,
+				}
+			}),
+		request,
 	)
 
-	const user = await viewerPromise
+	const user = await recordServerTiming(
+		'viewer-auth',
+		() => viewerPromise,
+		request,
+	)
 	const visibleListings = overview
 		? (cached.groups ?? []).flatMap((group) => group.listings)
 		: cached.listings
-	const listings = await overlayViewerInstallsOnListings({
-		env,
-		user,
-		listings: visibleListings,
-	})
+	const listings = await recordServerTiming(
+		'viewer-installs',
+		() =>
+			overlayViewerInstallsOnListings({
+				env,
+				user,
+				listings: visibleListings,
+				request,
+			}),
+		request,
+	)
 	const listingById = new Map(listings.map((listing) => [listing.id, listing]))
 	return {
 		ok: true,
@@ -478,6 +488,7 @@ async function overlayViewerInstallsOnListings<
 	env: Env
 	user: McpUserContext | null
 	listings: Array<T>
+	request?: Request
 }): Promise<Array<T>> {
 	if (input.user == null || input.listings.length === 0) {
 		return input.listings
@@ -486,6 +497,7 @@ async function overlayViewerInstallsOnListings<
 		env: input.env,
 		user: input.user,
 		listings: input.listings,
+		request: input.request,
 	})
 	if (viewerInstalls.size === 0) return input.listings
 	return input.listings.map((listing) => {
@@ -508,6 +520,7 @@ async function loadViewerListingInstalls(input: {
 		name?: string
 		pinnedCommit?: string
 	}>
+	request?: Request
 }): Promise<Map<string, ViewerListingInstall>> {
 	if (input.user == null || input.listings.length === 0) {
 		return new Map()
@@ -545,13 +558,18 @@ async function loadViewerListingInstalls(input: {
 						userId: input.user.userId,
 						packageIds: missingPackageIds,
 					})
-		const listingPinIsAncestorByListingId = await resolveViewerListingAncestry({
-			env: input.env,
-			listings: input.listings,
-			packageScope,
-			savedPackages: [...savedByKody, ...savedByForkId],
-			forks,
-		})
+		const listingPinIsAncestorByListingId = await recordServerTiming(
+			'fork-ancestry',
+			() =>
+				resolveViewerListingAncestry({
+					env: input.env,
+					listings: input.listings,
+					packageScope,
+					savedPackages: [...savedByKody, ...savedByForkId],
+					forks,
+				}),
+			input.request,
+		)
 		const resolved = resolveViewerListingInstalls({
 			listings: input.listings,
 			packageScope,

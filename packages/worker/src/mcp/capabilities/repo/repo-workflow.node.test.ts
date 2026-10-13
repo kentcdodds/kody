@@ -142,6 +142,7 @@ function stubPackageLookup(sourceOverrides: Record<string, unknown> = {}) {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-18T00:00:00.000Z',
 		updatedAt: '2026-04-18T00:00:00.000Z',
 	})
@@ -358,6 +359,7 @@ test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild
 		rebuildPackageArtifacts: false,
 		expectedPackageScope: 'user',
 		privateVisibilityChangeConfirmed: false,
+		requestedByUserId: 'user-1',
 	})
 	expect(publishRpc.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sessionId: 'session-1',

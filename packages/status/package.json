@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run *.node.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json"
   },
   "dependencies": {
     "@kody-internal/shared": "file:../shared"

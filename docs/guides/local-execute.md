@@ -27,7 +27,9 @@ and package-graph routes.
 **Agents already on MCP:** call `cliCredentialBootstrap` with a required
 lifetime (single-task agents use `short`). It returns a one-shot `kody_bc_…`
 code and a `cli_command` that already includes lifetime flags (**not** a
-`kody_at_…`). Run the CLI command (no second OAuth, no `tokenCreate`):
+`kody_at_…`). Bootstrap tokens are person-owned (`org_binding: user`); pass
+`?org=<slug>` on API calls to act in a team org (default: personal). Run the CLI
+command (no second OAuth, no `tokenCreate`):
 
 ```json
 {
@@ -44,9 +46,12 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 pass both `--idle-ttl-seconds` and `--max-lifetime-seconds`. Lifetime is
 required; missing it fails with the exact flag syntax.
 
-**Opt-in scopes:** bootstrap defaults stay least-privilege (no `package:write`,
-for example). When a task needs more, pass `scopes` when minting. The list
-replaces the defaults, so include every scope you need:
+**Default scopes:** bootstrap tokens include local-execute use scopes
+(`org:execute`, `org:read`, and package/integration/secret/email/job/app/memory
+use scopes), plus `package:write` (plain-repo / package pushes) and
+`token:delete` (self-revoke). They do not include `search:read`. When a task
+needs a different set, pass `scopes` when minting. The list replaces the
+defaults, so include every scope you need:
 
 ```bash
 # Agents on MCP: cliCredentialBootstrap({ lifetime: "short", scopes: ["org:execute", "org:read", "package:execute", "package:read", "package:write"] })
@@ -110,22 +115,38 @@ static `kody:@owner/name` imports still run locally (package-graph download +
 CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
 ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
 on origin (or fail closed naming the secret) instead of sending them raw.
+`import { credential } from 'kody:runtime'` for ad hoc and unpublished package
+source needs a CLI whose host `kody:runtime` exports `credential` /
+`credentials` per the
+[CLI local credential runtime](../contributing/contracts/cli-local-credential-runtime.md)
+contract (CapabilityProxy opens a handle; gateway placement only — same as
+hosted). Older CLIs fail at import time; upgrade `@kodycodes/cli`.
 
 A `fetch` that carries a placeholder runs on origin with the same 5-minute
 overall deadline as cloud fetches. The deadline starts when origin sends the
 request upstream, after it checks your quota and fills placeholders, and runs
 until the response body ends. The response is also aborted after 60s with no
 bytes. `--local` has no run cap, so a long streamed response, such as an AI
-completion, can finish. Origin buffers the whole response before returning it,
-so your code receives nothing until the body ends, and a body over 4 MiB fails.
+completion, can finish.
+
+Small buffered placeholder-bearing bodies use the JSON CapabilityProxy hop
+(`kody.gatewayFetch`): origin buffers the whole response before returning it, so
+your code receives nothing until the body ends, and a body over 4 MiB fails.
+Streamed bodies, multipart bodies, and bodies that would exceed 4 MiB use the
+streaming hop (`POST /v1/capability-proxy/gateway-fetch` via
+`kody.gatewayFetchStream`): there is no 4 MiB hop cap. That path still respects
+the Cloudflare Worker upload limit (~100 MiB on Free/Pro). A `Content-Length`
+over that limit returns JSON `413 payload_too_large`. See the
+[CLI streaming gateway-fetch contract](../contributing/contracts/cli-streaming-gateway-fetch.md).
+
 From `@kodycodes/cli` 1.13.1, the CLI's CapabilityProxy client waits up to 7
 minutes for origin's reply, so the gateway's 5-minute deadline is what ends a
 slow fetch, with its own error. Older CLIs stop waiting after Node's default 300
 seconds (`UND_ERR_HEADERS_TIMEOUT`) and need a few seconds of margin. With
 `NODE_USE_ENV_PROXY=1` or `--use-env-proxy`, these requests still go through
-`HTTP_PROXY` / `HTTPS_PROXY`. Use cloud execute or a workflow for larger
-payloads. A `fetch` without placeholders goes straight from local workerd and is
-not subject to this deadline.
+`HTTP_PROXY` / `HTTPS_PROXY`. A `fetch` without placeholders, and a multipart
+upload that does not need fill, goes straight from local workerd and is not
+subject to this deadline.
 
 ## Failure
 

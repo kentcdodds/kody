@@ -5,7 +5,7 @@ import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors } from '#universal/styles/tokens.ts'
 
 export type PackageStatusSignifier = {
-	kind: 'private' | 'unpublished'
+	kind: 'package' | 'repo' | 'private' | 'unpublished'
 	name: IconName
 	title: string
 }
@@ -13,25 +13,38 @@ export type PackageStatusSignifier = {
 export type PackageStatusSignifiersInput = {
 	isPrivate: boolean
 	isListed: boolean
+	/**
+	 * Same grammar as the repositories list (`profile-content` box/folder).
+	 * Defaults to true so existing package chrome callers stay package-shaped.
+	 */
+	hasPackage?: boolean
 }
 
 /**
  * Small icon + native tooltip, same grammar as the repositories list
- * package / webhook / job / app signifiers. Private is the lock. Not
- * published is only for unlisted public packages — a private package is
- * already not a community listing, so a second unpublished mark would
- * misread as "never published" when it may have a published commit.
+ * package / webhook / job / app signifiers. Package/Repo marks mirror the
+ * list. Private is the lock. Not published is only for unlisted public
+ * packages — plain repos and private packages skip that mark.
  */
 export function listPackageStatusSignifiers(
 	input: PackageStatusSignifiersInput,
 ): Array<PackageStatusSignifier> {
+	const hasPackage = input.hasPackage !== false
+	const signifiers: Array<PackageStatusSignifier> = hasPackage
+		? [{ kind: 'package' as const, name: 'box' as const, title: 'Package' }]
+		: [{ kind: 'repo' as const, name: 'folder' as const, title: 'Repo' }]
 	if (input.isPrivate) {
-		return [{ kind: 'private', name: 'lock', title: 'Private' }]
+		signifiers.push({ kind: 'private', name: 'lock', title: 'Private' })
+		return signifiers
 	}
-	if (!input.isListed) {
-		return [{ kind: 'unpublished', name: 'file', title: 'Not published' }]
+	if (hasPackage && !input.isListed) {
+		signifiers.push({
+			kind: 'unpublished',
+			name: 'file',
+			title: 'Not published',
+		})
 	}
-	return []
+	return signifiers
 }
 
 export function renderPackageStatusSignifiers(

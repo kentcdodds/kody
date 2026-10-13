@@ -58,6 +58,7 @@ function savedPackage(id: string, kodyId: string): SavedPackageRecord {
 		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		lockedAt: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',

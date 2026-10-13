@@ -300,6 +300,42 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	])
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
+	expect(html).not.toContain('title="Repo"')
+})
+
+test('plain repo rows show the Repo signifier, link to the repo page, and omit Community chips', async () => {
+	const plainRepo = {
+		name: '@kody/stash-files',
+		kodyId: 'stash-files',
+		description: 'Plain Artifacts repo.',
+		tags: [],
+		updatedAt: '2026-08-01T00:00:00.000Z',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		communityListingId: null,
+		communityListingKodyId: null,
+		communityPublishedAt: null,
+		needsRepublish: false,
+		hasPackage: false,
+		hasApp: false,
+		webhookCount: 0,
+		jobCount: 0,
+		iconUrl: '/@kody/stash-files/icon/idx-1',
+		isPrivate: true,
+	} satisfies PublicProfilePackageItem
+	const html = await render({
+		packages: [plainRepo],
+		isSelf: true,
+	})
+	expectAll(html, [
+		'href="/@kody/stash-files"',
+		'title="Repo"',
+		'data-icon="folder"',
+		'/@kody/stash-files/icon/idx-1',
+		'title="Private"',
+	])
+	expect(html).not.toContain('title="Package"')
+	expect(html).not.toContain(unpublishedTitle)
+	expect(html).not.toContain('title="Published to community"')
 })
 
 test('profile omits the activity section when activity is null', async () => {

@@ -156,7 +156,7 @@ export function profilePackageSortIsActive(filters: {
 
 export function buildProfileHref(input: {
 	username: string
-	/** The list's own page when it is not the public profile (`/@slug/-/packages`). */
+	/** The list's own page when it is not the public profile (`/@slug/-/repositories`). */
 	basePath?: string
 	query?: string | null
 	visibility?: ProfilePackageVisibilityFilter
@@ -299,7 +299,8 @@ function matchesListing(
 		case 'published':
 			return pkg.communityListingId != null
 		case 'unpublished':
-			return pkg.communityListingId == null
+			// Plain repos are not unpublished packages.
+			return pkg.hasPackage && pkg.communityListingId == null
 		case 'ahead':
 			return pkg.needsRepublish
 		default: {

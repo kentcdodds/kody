@@ -52,8 +52,23 @@ export type WebhookEndpointRecord = {
 	urlSecretEncrypted: string | null
 	/** Package-owned HMAC signing material (not listed in user secrets). */
 	hmacSecretEncrypted: string | null
+	/**
+	 * Last-seen `verification.secretName` identity. Null when the webhook
+	 * uses package-owned HMAC (no secretName) or has never reconciled.
+	 */
+	hmacSecretName: string | null
+	/**
+	 * Last-seen declared signing value (platform ciphertext). Used to detect
+	 * value rotation and to populate previous_* — not for apply injection.
+	 */
+	hmacVerificationSecretEncrypted: string | null
 	previousUrlSecretHash: string | null
 	previousUrlSecretExpiresAt: string | null
+	/** Previous `verification.secretName` during the signing-secret grace. */
+	previousHmacSecretName: string | null
+	/** Previous signing value ciphertext during the signing-secret grace. */
+	previousHmacSecretEncrypted: string | null
+	previousHmacSecretExpiresAt: string | null
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
@@ -64,13 +79,23 @@ export type WebhookEndpointRecord = {
  * (`webhookDispatchPayloadTtlSeconds`); GitHub-style provider retries cover
  * about the same window. The first POST on the new URL that is accepted for
  * dispatch retires the previous secret earlier.
+ *
+ * Signing-secret rotation (`verification.secretName` rename or value change)
+ * uses the same window so provider retries that still sign with the old key
+ * keep verifying.
  */
 export const webhookUrlRotationGraceMs = 24 * 60 * 60 * 1000
+
+/** Alias: signing-secret grace matches URL rotate overlap. */
+export const webhookHmacSecretRotationGraceMs = webhookUrlRotationGraceMs
 
 export function webhookUrlRotationGraceExpiresAt(now: Date | string) {
 	const nowMs = typeof now === 'string' ? Date.parse(now) : now.getTime()
 	return new Date(nowMs + webhookUrlRotationGraceMs).toISOString()
 }
+
+export const webhookHmacSecretRotationGraceExpiresAt =
+	webhookUrlRotationGraceExpiresAt
 
 export function isWebhookPreviousUrlLive(
 	endpoint: {
@@ -84,6 +109,23 @@ export function isWebhookPreviousUrlLive(
 	}
 	const nowMs = typeof now === 'string' ? Date.parse(now) : now.getTime()
 	return Date.parse(endpoint.previousUrlSecretExpiresAt) > nowMs
+}
+
+export function isWebhookPreviousHmacLive(
+	endpoint: {
+		previousHmacSecretEncrypted: string | null
+		previousHmacSecretExpiresAt: string | null
+	},
+	now: Date | string = new Date(),
+) {
+	if (
+		!endpoint.previousHmacSecretEncrypted ||
+		!endpoint.previousHmacSecretExpiresAt
+	) {
+		return false
+	}
+	const nowMs = typeof now === 'string' ? Date.parse(now) : now.getTime()
+	return Date.parse(endpoint.previousHmacSecretExpiresAt) > nowMs
 }
 
 export type WebhookDeliveryOutcome = 'delivered' | 'rejected' | 'failed'

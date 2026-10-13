@@ -12,6 +12,7 @@ import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import {
 	getSavedPackageById,
 	resolveSavedPackageRef,
@@ -176,7 +177,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					id: packageId,
 					user_id: owner.ownerUserId,
 					name: manifest.name,
-					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
 					tags_json: JSON.stringify(manifest.kody.tags ?? []),
 					search_text: manifest.kody.searchText ?? null,
@@ -209,6 +209,8 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sessionId,
 				userId: owner.ownerUserId,
 				expectedPackageScope: packageScope,
+				// The package's first publish: there are no prior needs to change.
+				credentialNeedsApproved: true,
 			})
 			if (publishResult.status !== 'ok') {
 				await ctx.env.APP_DB.prepare(
@@ -234,11 +236,17 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)
 			}
-			await stampFirstSavedPackage(
+			const stamped = await stampFirstSavedPackage(
 				ctx.env.APP_DB,
 				{ stableUserId: owner.actorUserId, at: now },
 				ctx.env,
 			)
+			if (stamped) {
+				scheduleKitSubscriberSync({
+					env: ctx.env,
+					stableUserId: owner.actorUserId,
+				})
+			}
 			// Best-effort projections after the publish committed: a vector or
 			// search-projection failure must not strand a half-promoted repo.
 			// Reindex lanes converge both later.

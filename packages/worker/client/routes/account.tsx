@@ -18,6 +18,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
+import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'
 import {
 	interpretAccountProfileSave,
@@ -271,6 +272,7 @@ export function AccountRoute(handle: Handle) {
 			}
 			releaseOptimisticAvatar()
 			applyProfileFields(payload)
+			queueSessionRefresh()
 			toast.success('Avatar updated.')
 		} catch (error) {
 			releaseOptimisticAvatar()
@@ -322,6 +324,7 @@ export function AccountRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to remove avatar.')
 			}
 			applyProfileFields(payload)
+			queueSessionRefresh()
 			toast.success('Avatar removed.')
 		} catch (error) {
 			avatarUrl = previousAvatarUrl

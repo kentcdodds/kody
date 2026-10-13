@@ -49,6 +49,14 @@ export type CapabilityApiOperation = ApiOperationBase & {
 	kind: 'capability'
 	/** Inputs that cannot be encoded in this method's query string. */
 	omitInputs?: ReadonlyArray<string>
+	/**
+	 * Extra HTTP paths that invoke this same capability. Advertised in
+	 * `/openapi.json` with a distinct operationId (`${operationId}ByPath`) so
+	 * the document stays unique while legacy path callers keep working.
+	 * Prefer putting the body-friendly path on `path` when identity inputs are
+	 * XOR (e.g. `repo_id` | `name`).
+	 */
+	aliasPaths?: ReadonlyArray<string>
 }
 
 export const nativeApiOperationIds = [
@@ -63,6 +71,7 @@ export const nativeApiOperationIds = [
 	'cliCredentialBootstrapRedeem',
 	'capabilityProxySession',
 	'capabilityProxyCall',
+	'capabilityProxyGatewayFetch',
 	'localExecutePackageGraph',
 ] as const
 
@@ -82,7 +91,7 @@ type CapabilityRoute = [
 	method: ApiOperationMethod,
 	path: string,
 	capabilityName: string,
-	options?: Pick<CapabilityApiOperation, 'omitInputs'>,
+	options?: Pick<CapabilityApiOperation, 'omitInputs' | 'aliasPaths'>,
 ]
 
 function capabilityRoutes(
@@ -183,6 +192,18 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/secrets/jwt', 'secretJwtSign'],
 		['PUT', '/v1/secrets/{scope}/{name}', 'secretSet'],
 		['DELETE', '/v1/secrets/{scope}/{name}', 'secretDelete'],
+		['PATCH', '/v1/credentials/{credential_id}', 'credentialUpdate'],
+		['GET', '/v1/personal-credential-grants', 'credentialOrgGrantList'],
+		[
+			'PUT',
+			'/v1/personal-credential-grants/{credential_id}/{org}',
+			'credentialOrgGrant',
+		],
+		[
+			'DELETE',
+			'/v1/personal-credential-grants/{credential_id}/{org}',
+			'credentialOrgRevoke',
+		],
 		['GET', '/v1/secret-providers', 'secretProviderList'],
 		['PUT', '/v1/secret-providers/{provider}', 'secretProviderBind'],
 		['DELETE', '/v1/secret-providers/{provider}', 'secretProviderUnbind'],
@@ -211,7 +232,19 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/repos/{repo_id}', 'repoGet'],
 		['PATCH', '/v1/repos/{repo_id}', 'repoUpdate'],
 		['DELETE', '/v1/repos/{repo_id}', 'repoDelete'],
-		['POST', '/v1/repos/{repo_id}/git-remote', 'repoGetGitRemote'],
+		[
+			'POST',
+			'/v1/repos/git-remote',
+			'repoGetGitRemote',
+			{
+				// Preferred body-only path so CLI/OpenAPI can pass `name` or
+				// `repo_id` without a path param. Legacy path stays as an HTTP
+				// alias (and a distinct OpenAPI operationId) so existing
+				// `/v1/repos/{repo_id}/git-remote` callers keep working;
+				// `{repo_id}` also accepts a repo name (see resolveOwnedUserRepo).
+				aliasPaths: ['/v1/repos/{repo_id}/git-remote'],
+			},
+		],
 		['POST', '/v1/repos/{repo_id}/promote', 'repoPromoteToPackage'],
 		['GET', '/v1/repo-publish-note', 'repoShowPublishNote'],
 		['GET', '/v1/repo-sessions', 'repoListSessions'],
@@ -371,6 +404,13 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 	),
 	nativeRoute(
 		'POST',
+		'/v1/capability-proxy/gateway-fetch',
+		'capabilityProxyGatewayFetch',
+		'org:execute',
+		capabilityProxyRoute,
+	),
+	nativeRoute(
+		'POST',
 		'/v1/local-execute/package-graph',
 		'localExecutePackageGraph',
 		'org:execute',
@@ -400,24 +440,42 @@ type CompiledRoute = {
 	staticCount: number
 }
 
-const compiledRoutes: ReadonlyArray<CompiledRoute> = apiOperations.map(
-	(operation) => {
-		const segments = operation.path
-			.split('/')
-			.filter(Boolean)
-			.map((segment): RouteSegment => {
-				const param = /^\{([^}]+)\}$/.exec(segment)
-				return param
-					? { kind: 'param', name: param[1]! }
-					: { kind: 'static', value: segment }
-			})
-		return {
-			operation,
-			segments,
-			staticCount: segments.filter((segment) => segment.kind === 'static')
-				.length,
-		}
-	},
+function compileRoutePath(path: string): {
+	segments: Array<RouteSegment>
+	staticCount: number
+} {
+	const segments = path
+		.split('/')
+		.filter(Boolean)
+		.map((segment): RouteSegment => {
+			const param = /^\{([^}]+)\}$/.exec(segment)
+			return param
+				? { kind: 'param', name: param[1]! }
+				: { kind: 'static', value: segment }
+		})
+	return {
+		segments,
+		staticCount: segments.filter((segment) => segment.kind === 'static').length,
+	}
+}
+
+/** Primary path plus capability `aliasPaths` (HTTP + OpenAPI). */
+export function listApiOperationPaths(operation: ApiOperation): Array<string> {
+	const aliasPaths =
+		operation.kind === 'capability' ? (operation.aliasPaths ?? []) : []
+	return [operation.path, ...aliasPaths]
+}
+
+const compiledRoutes: ReadonlyArray<CompiledRoute> = apiOperations.flatMap(
+	(operation) =>
+		listApiOperationPaths(operation).map((path) => {
+			const compiled = compileRoutePath(path)
+			return {
+				operation,
+				segments: compiled.segments,
+				staticCount: compiled.staticCount,
+			}
+		}),
 )
 
 function matchRoute(route: CompiledRoute, pathSegments: ReadonlyArray<string>) {
@@ -449,6 +507,15 @@ export type ApiRouteMatch =
 	  }
 	| { kind: 'method_not_allowed'; allow: Array<ApiOperationMethod> }
 	| { kind: 'not_found' }
+
+export function isCapabilityProxyGatewayFetchOperation(
+	operation: ApiOperation,
+): boolean {
+	return (
+		operation.kind === 'native' &&
+		operation.operationId === 'capabilityProxyGatewayFetch'
+	)
+}
 
 /**
  * Match a request path. Among routes for the request method, the one with

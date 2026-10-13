@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	insertSavedPackage: vi.fn(),
 	upsertSavedPackageVector: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
+	scheduleKitSubscriberSync: vi.fn(),
 }))
 
 vi.mock('#worker/entitlements/service.ts', () => ({
@@ -46,6 +47,11 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 		mockModule.refreshSavedPackageProjection(...args),
 }))
 
+vi.mock('#worker/kit/subscriber-sync.ts', () => ({
+	scheduleKitSubscriberSync: (...args: Array<unknown>) =>
+		mockModule.scheduleKitSubscriberSync(...args),
+}))
+
 const { createStubSavedPackage } = await import('./create-stub-package.ts')
 
 function resetMocks() {
@@ -58,7 +64,7 @@ function resetMocks() {
 		bootstrapAccess: null,
 	})
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
-	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.insertSavedPackage.mockResolvedValue(true)
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.refreshSavedPackageProjection.mockResolvedValue({ record: {} })
 }
@@ -136,23 +142,17 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			email: 'user-1@example.com',
 		}),
 	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-new',
-			userId: ownerIdFromStored('user-1'),
-			files: expect.objectContaining({
-				'package.json': expect.stringContaining('"private": true'),
-				'README.md': expect.stringContaining('## Intent'),
-				'AGENTS.md': expect.stringContaining('## Imports'),
-			}),
-		}),
-	)
+	const syncedFiles = mockModule.syncArtifactSourceSnapshot.mock.calls[0]?.[0]
+		?.files as Record<string, string>
+	expect(syncedFiles['package.json']).toContain('"private": true')
+	expect(syncedFiles['package.json']).not.toContain('"id"')
+	expect(syncedFiles['README.md']).toContain('## Intent')
+	expect(syncedFiles['AGENTS.md']).toContain('## Imports')
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			user_id: ownerIdFromStored('user-1'),
 			name: '@kentcdodds/my-package',
-			kody_id: 'my-package',
 			description: 'Does the thing.',
 			source_id: 'source-new',
 			has_app: 0,
@@ -161,6 +161,9 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 		}),
 		expect.anything(),
 		{ actorUserId: personIdFromStored('user-1') },
+	)
+	expect(mockModule.insertSavedPackage.mock.calls[0]?.[1]).not.toHaveProperty(
+		'kody_id',
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
@@ -193,6 +196,11 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 		expect.anything(),
 		{ actorUserId: personIdFromStored('actor-1') },
 	)
+	// Insert stamps before projection refresh; Kit sync must fire here.
+	expect(mockModule.scheduleKitSubscriberSync).toHaveBeenCalledWith({
+		env: expect.anything(),
+		stableUserId: personIdFromStored('actor-1'),
+	})
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
@@ -200,4 +208,17 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
+})
+
+test('createStubSavedPackage skips Kit sync when the actor was already stamped', async () => {
+	resetMocks()
+	mockModule.insertSavedPackage.mockResolvedValueOnce(false)
+	await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://example.test',
+		owner,
+		kodyId: 'already-activated',
+	})
+	expect(mockModule.insertSavedPackage).toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
 })

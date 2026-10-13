@@ -65,7 +65,7 @@ function sectionHandler(
 			return createAccountMcpServersHandler(env)
 		case 'memories':
 			return createAccountMemoriesHandler(env)
-		case 'packages':
+		case 'repositories':
 			return createProfileHandler(env)
 		case 'secret-providers':
 			return createAccountSecretProvidersHandler(env)
@@ -118,7 +118,7 @@ function sectionParams(
 				return { serverId: first }
 			}
 			return {}
-		case 'packages':
+		case 'repositories':
 		case 'secret-providers':
 		case 'secrets':
 		case 'waiting':
@@ -170,10 +170,10 @@ export function createOrgSectionHandler(
 				...sectionParams(section, ctx.params.rest),
 				// Profile lookup is by users.username, which can diverge from
 				// the immutable personal-org slug after a rename.
-				...(section === 'packages' ? { username: user.username } : {}),
+				...(section === 'repositories' ? { username: user.username } : {}),
 			}
 			const response =
-				section === 'packages' && isTeamOrg(resolution, user.mcpUser.userId)
+				section === 'repositories' && isTeamOrg(resolution, user.mcpUser.userId)
 					? await renderTeamRepositoriesPage({
 							env,
 							request: ctx.request,
@@ -222,12 +222,12 @@ async function renderTeamRepositoriesPage(input: {
 
 /**
  * JSON for the workspace Repositories page, behind the same gate as
- * `/@slug/-/packages`. A team org lists the packages it owns that the viewer
- * can see. The signup org lists the person's own inventory, looked up by their
- * current username because the personal-org slug does not follow a username
- * change.
+ * `/@slug/-/repositories`. A team org lists the packages it owns that the
+ * viewer can see. The signup org lists the person's own inventory, looked up
+ * by their current username because the personal-org slug does not follow a
+ * username change.
  */
-export function createOrgPackagesApiHandler(env: Env) {
+export function createOrgRepositoriesApiHandler(env: Env) {
 	const profileApi = createProfileApiHandler(env)
 	return {
 		middleware: [],
@@ -241,7 +241,7 @@ export function createOrgPackagesApiHandler(env: Env) {
 				user.mcpUser.userId,
 				params.orgSlug,
 			)
-			const denial = orgSectionDenial(binding ?? 'denied', 'packages')
+			const denial = orgSectionDenial(binding ?? 'denied', 'repositories')
 			if (denial || !binding) {
 				return jsonResponse(
 					{ ok: false, error: denial ?? 'Organization unavailable' },
@@ -259,5 +259,5 @@ export function createOrgPackagesApiHandler(env: Env) {
 				url: new URL(request.url),
 			} as never)
 		},
-	} satisfies Action<typeof routes.orgPackagesApi>
+	} satisfies Action<typeof routes.orgRepositoriesApi>
 }

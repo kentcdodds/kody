@@ -76,6 +76,8 @@ import {
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
 import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
 import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
+import { credentialNeedKeyNotes } from '#worker/credentials/credential-needs.ts'
+import { computeCredentialNeedsClosure } from '#worker/credentials/credential-needs-closure.ts'
 
 export const repoCheckKinds = [
 	'manifest',
@@ -534,6 +536,39 @@ declare module "kody:runtime" {
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;
   export const events: KodyEventsRuntime;
+  /**
+   * A client for one credential. It holds no value: \`fetch\` sends the
+   * credential only to its hosts, and \`sign\` / \`callTool\` run on the host.
+   */
+  export type KodyCredentialClient = {
+    readonly name: string;
+    readonly scope: "org" | "personal";
+    readonly kind: "secret" | "oauth" | "url" | "login" | "mcp" | "signing";
+    readonly hosts: ReadonlyArray<string>;
+    /** Set when an explicit pick has no provider and could resolve on its own. */
+    readonly hint?: string;
+    fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    sign?: (operation: Record<string, unknown>) => Promise<string>;
+    callTool?: (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
+  };
+  /**
+   * Open the credential bound to a need declared in package.json
+   * (\`kody.credentials\`). Rejects with an Error carrying \`code\`
+   * (\`credential_unbound\`, \`credential_ambiguous\`, \`credential_denied\`, …)
+   * and \`retryWith\`.
+   */
+  export const credential: ((key: string) => Promise<KodyCredentialClient>) & {
+    /** Ad hoc code and unshared personal packages only. */
+    named(
+      name: string,
+      options?: { scope?: "org" | "personal" | null },
+    ): Promise<KodyCredentialClient>;
+  };
+  /**
+   * Every credential the caller's \`credentials\` map picks for the key, or
+   * the one match when it picks none.
+   */
+  export function credentials(key: string): Promise<Array<KodyCredentialClient>>;
   export const packageSecrets:
     | {
         /**
@@ -557,6 +592,8 @@ declare module "kody:runtime" {
       createAuthenticatedFetch: typeof createAuthenticatedFetch;
       secretHeaders: typeof secretHeaders;
       oauthClientCredentials: typeof oauthClientCredentials;
+      credential: typeof credential;
+      credentials: typeof credentials;
       packageContext: typeof packageContext;
       packages: typeof packages;
       packageStorage: typeof packageStorage;
@@ -1416,6 +1453,55 @@ async function runChunkedBundleValidation(input: {
 	}
 }
 
+/**
+ * `kody.credentials` needs (ADR 0068): a key the package and a dependency
+ * declare with a different kind or provider fails; keys that are not
+ * provider slugs get an informational note. Null when there is nothing to
+ * say. Without env (offline checks) only the package's own needs are read.
+ */
+async function buildCredentialNeedsCheck(input: {
+	env?: Env
+	userId?: string
+	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
+}): Promise<RepoCheckResult | null> {
+	const notes = credentialNeedKeyNotes(input.manifest.kody.credentials)
+	let conflicts: Array<string> = []
+	if (input.env && input.userId) {
+		try {
+			;({ conflicts } = await computeCredentialNeedsClosure({
+				env: input.env,
+				userId: input.userId,
+				manifest: input.manifest,
+				files: input.sourceFiles,
+			}))
+		} catch (error) {
+			// A lookup failure is not a conflict: note it and let publish go on.
+			notes.push(
+				`Dependency credential needs were not checked: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+	if (conflicts.length > 0) {
+		return {
+			kind: 'manifest',
+			ok: false,
+			message: [
+				'kody.credentials needs conflict with a dependency:',
+				...conflicts,
+			].join('\n'),
+		}
+	}
+	if (notes.length === 0) return null
+	return {
+		kind: 'manifest',
+		ok: true,
+		message: ['kody.credentials notes (publish is unaffected):', ...notes].join(
+			'\n',
+		),
+	}
+}
+
 export async function runRepoChecks(input: {
 	workspace: {
 		readFile(path: string): Promise<string | null>
@@ -1556,6 +1642,18 @@ export async function runRepoChecks(input: {
 	const sourceFiles = sourceWalk.collected
 	// Before any gate that returns early, so owners see it while fixing others.
 	results.push(buildCredentialPatternCheck(sourceFiles))
+	const credentialNeedsCheck = await buildCredentialNeedsCheck({
+		env: input.env,
+		userId: input.userId,
+		manifest,
+		sourceFiles,
+	})
+	if (credentialNeedsCheck) {
+		results.push(credentialNeedsCheck)
+		if (!credentialNeedsCheck.ok) {
+			return toRepoCheckRunResult({ results, manifest, sourceFiles })
+		}
+	}
 	// Cheap static gates for the package-app browser surface run before the
 	// heavy phases so a misconfigured manifest fails fast with one message.
 	const packageAppSurfaceChecks = [

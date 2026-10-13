@@ -107,7 +107,14 @@ export type PackageSecretMountDefinition = z.infer<
 	typeof packageSecretMountDefinitionSchema
 >
 
-export const packageCredentialKindValues = ['secret', 'oauth', 'mcp'] as const
+export const packageCredentialKindValues = [
+	'secret',
+	'oauth',
+	'mcp',
+	'url',
+	'login',
+	'signing',
+] as const
 export type PackageCredentialKind = (typeof packageCredentialKindValues)[number]
 
 /**
@@ -122,11 +129,14 @@ export const retiredCredentialPlacementMessage =
 
 export const packageCredentialSlotSchema = z.strictObject({
 	kind: z.enum(packageCredentialKindValues),
-	/** Free-form provider label (for example `google` or `1password`). */
-	provider: z.string().trim().min(1).max(64),
-	/** The package picks among several assigned accounts with `{ account }`. */
+	/**
+	 * Provider slug a credential must carry to auto-resolve for this need
+	 * (for example `github`). Defaults to the key.
+	 */
+	provider: z.string().trim().min(1).max(64).optional(),
+	/** `credentials(key)` returns the caller's picks as an array. */
 	multiple: z.boolean().optional(),
-	/** Shown when someone assigns a credential to this slot. */
+	/** Shown to callers choosing a credential for this need. */
 	description: z.string().trim().min(1).max(500),
 	placement: z.never({ error: retiredCredentialPlacementMessage }).optional(),
 })
@@ -708,6 +718,8 @@ export type SavedPackageRow = {
 	has_skills: 0 | 1
 	hidden: 0 | 1
 	is_private: 0 | 1
+	/** Anonymous public app serving. Independent of forkable (`is_private`). */
+	is_internet_visible: 0 | 1
 	locked_at: string | null
 	created_at: string
 	updated_at: string
@@ -726,6 +738,11 @@ export type SavedPackageRecord = {
 	hasSkills: boolean
 	hidden: boolean
 	isPrivate: boolean
+	/**
+	 * When true, the package app may be served on the public internet after
+	 * capability approval. Independent of `isPrivate` (forkable/public source).
+	 */
+	isInternetVisible: boolean
 	lockedAt: string | null
 	createdAt: string
 	updatedAt: string

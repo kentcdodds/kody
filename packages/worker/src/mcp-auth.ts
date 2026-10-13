@@ -8,7 +8,8 @@ import {
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { auditDatabaseFromEnv, getRequestIp } from '#worker/audit-log.ts'
-import { buildMcpUserContextWithOrgBindingFromGrantProps } from './mcp-auth-user-context.ts'
+import { buildMcpAuthContextCached } from './mcp-auth-user-context.ts'
+import { evictMcpAuthCache } from '#worker/mcp-auth-cache.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -434,6 +435,7 @@ export async function handleMcpRequest({
 
 		tokenSummary = await helpers.unwrapToken(token)
 		if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
+			evictMcpAuthCache(token)
 			return createUnauthorizedResponse(origin, 'invalid_token')
 		}
 		const scopes = tokenSummary.scope ?? tokenSummary.grant.scope ?? []
@@ -446,29 +448,32 @@ export async function handleMcpRequest({
 	}
 
 	const grantProps = tokenSummary.grant.props ?? null
-	// The user row and the grant's org binding are read in one D1 batch (one
-	// transaction, one round trip) and the provider-lane token re-unwrap
+	// The user row, the org access epochs and (on a cache miss) the grant's
+	// org binding and roles are read in one D1 batch (one transaction, one
+	// round trip; see mcp-auth-cache.ts) and the provider-lane token re-unwrap
 	// overlaps that read; every gate below still runs in the same order.
 	const providerHelpers = providerAuth ? (env as OAuthEnv).OAUTH_PROVIDER : null
 	const providerTokenPromise =
 		providerHelpers && accessToken
 			? settle(providerHelpers.unwrapToken(accessToken))
 			: null
-	const authContext = await buildMcpUserContextWithOrgBindingFromGrantProps(
-		env,
+	const authContext = await buildMcpAuthContextCached(env, {
 		grantProps,
-	)
+		accessToken,
+	})
 
 	// Fail-closed email verification gate: every MCP request must map to an
 	// account whose email is verified. Tokens without an identifiable user
 	// are rejected too, since verification cannot be established for them. The
 	// context loader reads identity, verification, and suspension in one query.
 	if (!authContext) {
+		evictMcpAuthCache(accessToken)
 		await recordRejection('unidentified_grant')
 		return createEmailVerificationRequiredResponse(origin)
 	}
 	const { user: mcpUser } = authContext.context
 	if (!authContext.context.emailVerified) {
+		evictMcpAuthCache(accessToken)
 		await recordRejection('email_unverified', mcpUser.email)
 		return createEmailVerificationRequiredResponse(origin)
 	}
@@ -478,6 +483,7 @@ export async function handleMcpRequest({
 	// revoked individually) but every MCP request is rejected until an
 	// admin clears the suspension.
 	if (authContext.context.suspended) {
+		evictMcpAuthCache(accessToken)
 		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
 	}
@@ -497,6 +503,7 @@ export async function handleMcpRequest({
 			storedPasswordChangedAt: authContext.context.passwordChangedAt,
 		})
 	) {
+		evictMcpAuthCache(accessToken)
 		await recordRejection('password_changed', mcpUser.email)
 		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
@@ -505,6 +512,7 @@ export async function handleMcpRequest({
 		readConnectionProfileNameFromGrantProps(grantProps)
 	const { orgBinding } = authContext
 	if (!orgBinding) {
+		evictMcpAuthCache(accessToken)
 		await recordRejection('denied', mcpUser.email)
 		return createUnauthorizedResponse(origin, 'invalid_token')
 	}

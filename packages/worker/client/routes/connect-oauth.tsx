@@ -8,7 +8,6 @@ import {
 	resolveOauthScopeMenu,
 	uniqueOauthScopes,
 } from '#universal/oauth-scopes.ts'
-import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -32,9 +31,7 @@ import {
 import {
 	connectOauthHeaderDescription,
 	connectOauthHeaderTitle,
-	renderCallbackPending,
-	renderChooser,
-	renderIncompleteConfig,
+	renderConnectOauthNoConfigBody,
 	renderStatusCallout,
 	wouldReplaceDifferentApp,
 } from './connect-oauth-sections.tsx'
@@ -77,8 +74,7 @@ import {
 export { connectOauthRouteLoader } from './connect-oauth-shared.ts'
 
 export function ConnectOauthRoute(handle: Handle) {
-	// Stay on "Loading…" until provider config resolves. "Ready to connect."
-	// flashed on slow connections. The fallback only shows on callback returns.
+	// Hold "Loading…" until config resolves so "Ready to connect." does not flash.
 	let statusMessage = 'Loading provider configuration…'
 	let statusTone: ConnectOauthStatusTone = 'info'
 	let currentStep: ConnectOauthStep = 'setup'
@@ -667,27 +663,26 @@ export function ConnectOauthRoute(handle: Handle) {
 							<p mix={css(pageDescriptionCss)}>{description}</p>
 						) : null}
 					</header>
-					{renderStatusCallout({ statusTone, statusMessage, currentStep })}
-					{requestedProvider && hasConfigError
-						? renderIncompleteConfig(requestedProvider)
-						: isConnectOauthCallbackUrl(
-									new URL(currentHref, 'https://kody.local'),
-							  ) && statusTone !== 'error'
-							? renderCallbackPending()
-							: renderChooser({
-									chooserOptions,
-									chooserFilter,
-									onFilterChange: (value) => {
-										chooserFilter = value
-										update()
-									},
-									onFilterInput: (node) => {
-										chooserFilterInput = node
-									},
-									onFilterDetach: (node) => {
-										if (chooserFilterInput === node) chooserFilterInput = null
-									},
-								})}
+					{renderConnectOauthNoConfigBody({
+						requestedProvider,
+						hasConfigError,
+						statusTone,
+						statusMessage,
+						currentStep,
+						currentHref,
+						chooserOptions,
+						chooserFilter,
+						onFilterChange: (value) => {
+							chooserFilter = value
+							update()
+						},
+						onFilterInput: (node) => {
+							chooserFilterInput = node
+						},
+						onFilterDetach: (node) => {
+							if (chooserFilterInput === node) chooserFilterInput = null
+						},
+					})}
 				</section>
 			)
 		}
@@ -709,7 +704,13 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css(pageDescriptionCss)}>{description}</p>
 					) : null}
 				</header>
-				{renderStatusCallout({ statusTone, statusMessage, currentStep })}
+				{renderStatusCallout({
+					statusTone,
+					statusMessage,
+					currentStep,
+					provider: currentConfig.provider,
+					connectionName: currentConfig.providerKey,
+				})}
 				{currentStep === 'setup'
 					? renderRedirectUriCard({
 							config: currentConfig,
@@ -718,9 +719,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					: null}
 				{currentStep === 'setup' ? (
 					<ConnectOauthCredentialsForm
-						// Remount when the connect location changes so uncontrolled
-						// defaultValue fields pick up applySetupState drafts (SPA
-						// provider hops otherwise keep the previous DOM values).
+						// Remount on location change so draft defaultValues refresh.
 						key={resolvedHref ?? currentConfig.providerKey}
 						config={currentConfig}
 						existingIntegrationConfig={existingIntegrationConfig}

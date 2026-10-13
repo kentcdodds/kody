@@ -5,6 +5,8 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	getSecretEntry,
+	getStoredCredentialEntry,
 	listPackageScopeSecretMetadata,
 	listSecretBucketsByScope,
 } from './repo.ts'
@@ -115,4 +117,40 @@ test('listSecretBucketsByScope returns caller-owned package buckets only', async
 			binding_key: 'package-owned',
 		}),
 	])
+})
+
+test('secret reads return the stored kind and exchange config', async () => {
+	const { sqlite, db } = createSecretsDb()
+	sqlite.exec(`
+		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
+		VALUES ('bucket-user', 'org-user', 'user', '');
+		INSERT INTO secret_entries (id, bucket_id, name, encrypted_value)
+		VALUES ('cred-openai', 'bucket-user', 'OPENAI_KEY', 'ct');
+	`)
+	const readStored = () =>
+		getStoredCredentialEntry({
+			db,
+			ownerId: 'org-user',
+			credentialId: 'cred-openai',
+			now: '2026-10-12T00:00:00.000Z',
+		})
+
+	await expect(
+		getSecretEntry({ db, bucketId: 'bucket-user', name: 'OPENAI_KEY' }),
+	).resolves.toEqual(
+		expect.objectContaining({ id: 'cred-openai', kind: 'secret' }),
+	)
+	await expect(readStored()).resolves.toEqual(
+		expect.objectContaining({ kind: 'secret', config_json: null }),
+	)
+
+	sqlite.exec(
+		`UPDATE secret_entries SET kind = 'login', config_json = '{}' WHERE id = 'cred-openai'`,
+	)
+	await expect(
+		getSecretEntry({ db, bucketId: 'bucket-user', name: 'OPENAI_KEY' }),
+	).resolves.toEqual(expect.objectContaining({ kind: 'login' }))
+	await expect(readStored()).resolves.toEqual(
+		expect.objectContaining({ kind: 'login', config_json: '{}' }),
+	)
 })

@@ -56,6 +56,8 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 					listing,
 				}),
 				hasApp: page.ownerPackage?.hasApp === true,
+				hasPackage: page.hasPackage,
+				packageShaped: page.packageShaped === true,
 				iconUrl:
 					listing?.iconUrl ??
 					resolvePackageListIconUrl({

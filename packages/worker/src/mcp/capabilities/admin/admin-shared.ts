@@ -19,13 +19,13 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
- * Site-admin tools: the `admin` role gates them, not org permissions, and a
- * live person must call them (never a job, webhook, subscription, or email).
+ * Site-admin tools: the `admin` role gates them, not org permissions. A job,
+ * webhook, subscription, or package run may call them when the person it acts
+ * for holds the role (see `triggered-site-access.ts`).
  */
 export const adminCapabilityAccess = {
 	orgPermission: 'none',
 	requiredRole: 'admin',
-	requiresLivePerson: true,
 	readOnly: true,
 	idempotent: true,
 	destructive: false,
@@ -34,7 +34,6 @@ export const adminCapabilityAccess = {
 export const adminMutationCapabilityAccess = {
 	orgPermission: 'none',
 	requiredRole: 'admin',
-	requiresLivePerson: true,
 	readOnly: false,
 	idempotent: false,
 	destructive: false,

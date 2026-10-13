@@ -364,6 +364,39 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
+	// Approvals belong to the package owner org. Deleting a teammate who once
+	// clicked Approve must not wipe the attestation; only owner purge does.
+	{
+		kind: 'user_columns',
+		table: 'package_capability_approvals',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_capability_approvals',
+		matchColumn: 'approved_by_user_id',
+		setColumn: 'approved_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'user_columns',
+		table: 'package_approval_requests',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'requested_by_user_id',
+		setColumn: 'requested_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_approval_requests',
+		matchColumn: 'resolved_by_user_id',
+		setColumn: 'resolved_by_user_id',
+		value: 'deleted-user',
+	},
 	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
@@ -960,7 +993,9 @@ export const accountExportRedactedColumnsByTable: Readonly<
 		'url_secret_hash',
 		'url_secret_encrypted',
 		'hmac_secret_encrypted',
+		'hmac_verification_secret_encrypted',
 		'previous_url_secret_hash',
+		'previous_hmac_secret_encrypted',
 	],
 	webhook_apply_destination_pending: ['destination_json'],
 	webhook_apply_destination_grants: ['destination_json'],

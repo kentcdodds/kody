@@ -125,6 +125,7 @@ export default mergeConfig(
 			name: 'node-unit',
 			environment: 'node',
 			include: ['**/*.node.test.ts'],
+			exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
 			globalSetup: [
 				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-guide-catalog-modules.ts'),

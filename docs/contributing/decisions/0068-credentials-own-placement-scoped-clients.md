@@ -1,19 +1,27 @@
-# 0068: Credentials own placement; scoped clients replace slots, assignments, and placeholders
+# 0068: Credentials own placement; scoped clients replace slots and assignments
 
 - **Status:** accepted
 - **Date:** 2026-10-11
+- **Amended:** 2026-10-12 (Kent: today's secrets are the Key credential type and
+  keep working permanently; the other types are opt-in; by-name grants stay; no
+  old-lane removal; integration-token placeholders are permanent; the webhook
+  no-actor exception stays unless a proven replacement breaks nothing);
+  2026-10-12 (Kent: manifest credential need `kind` is optional — see
+  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
+  default and trigger credential mappings, approved by a person — see
+  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
-  (package attachments, slot bindings, and attested package stamps as credential
-  authority), [0042](./0042-no-capability-input-secrets.md) (package grants and
-  `x-kody-secret-resolution` staying), and credentials plan v4 section 3.3
-  (assignments) and section 3.4 (placeholder grammar). The v4 plan lives outside
-  this repo.
+  (credential authority for the opt-in types used through scoped clients), and
+  credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
+  grammar). The v4 plan lives outside this repo.
 
 This record is the source of truth for the credentials model. Credentials plan
 v4 still holds for personal credentials (3.2), enablements, the one
 `resolveCredential` door, audit, and leak tests, except where this record
-changes them. Until the migration below reaches T, runtime behavior follows the
-records it supersedes.
+changes them. The rule is: do not break people while improving things for the
+future. Key credentials (today's secrets and their placeholders) keep working
+exactly as they do, with the authority rules of the records this one supersedes
+in part.
 
 ## Context
 
@@ -28,8 +36,12 @@ Plan v4 answered with manifest slots (`kody.credentials`), org assignments of a
 credential to each slot (3.3), and a placeholder grammar keyed by slot (3.4).
 Assignments add a mapping table, saved bindings, and a package-level grant that
 stands in for the actor's Use. This record replaces that with credentials that
-own their hosts and placement, and a scoped client that is the only surface code
-touches.
+own their hosts and placement, and a scoped client as the surface for the new
+credential types.
+
+The first version of this record also retired placeholders at a cutover. Kent
+amended it on 2026-10-12: placeholders are the Key type and stay, and the new
+types are more secure options that owners opt into.
 
 Baseline: [#3210](https://github.com/kentcdodds/kody/pull/3210) (`77a82ed3`)
 requires the actor's Use on CLI local execute even when a package id is stamped,
@@ -40,17 +52,20 @@ per-resource Use when resolving org credentials. This record builds on both.
 
 In short:
 
-- A credential owns its hosts and how its value is placed (header, basic, or
-  query; never the body). Code never decides where a value goes.
-- Code reaches a credential only through a scoped `credential(key)` client.
-  Placeholders, slots as grants, assignments, saved bindings, and package
-  allowlists go away.
-- The actor's Use plus `package:execute` is the only authority. Package stamps
-  grant nothing.
+- **Key** is today's secret, and it keeps working permanently: placeholders fill
+  anywhere in an HTTPS request to one of its allowed hosts. There is no cutover
+  that removes it.
+- The other types (`header` / `basic` / `query` inject through a scoped
+  `credential(key)` client, OAuth through a client, `url`, `login`, and
+  `signing`) are more secure options, not a forced migration. With them a
+  credential owns its hosts and placement (never the body) and code never
+  decides where a value goes.
+- Through a scoped client, the actor's Use plus `package:execute` is the only
+  authority and package stamps grant nothing.
 - Callers pick among candidates with a call map; triggers store the pick in an
   enablement. Zero or several candidates is a structured error, never a default.
-- The old lane is removed right after the fleet codemod if a rescan finds no old
-  patterns, otherwise when the rest convert, or at T+90 at the latest.
+- Slots as grants, assignments, and saved bindings are not built. By-name grants
+  stay. Nothing is scheduled for removal.
 
 The sections below are the full specification.
 
@@ -62,12 +77,38 @@ There are four:
    server. It owns its hosts and how its value is placed in a request.
 2. **Resolver.** One per credential kind, all behind the one `resolveCredential`
    door.
-3. **Scoped client.** The only credential surface package or user code touches.
+3. **Scoped client.** The credential surface for the opt-in types. Key
+   placeholders stay beside it.
 4. **Enablement.** The only persisted credential choice, used for triggers
    (cron, subscription, webhook) that have no live caller.
 
-Mapping or assignment tables, saved bindings, package allowlists and usage
-modes, and placeholders all go away (see [Migration](#migration)).
+There are no mapping or assignment tables and no saved bindings. The
+[credential mappings amendment](#amendment-2026-10-13-credential-mappings)
+replaces this rule and item 4: package default mappings and per-trigger mappings
+are stored. Key placeholders, package allowlists, and usage modes stay (see
+[Key credentials](#key-credentials)).
+
+### Key credentials
+
+Key is the credential type for today's secrets, and it keeps working exactly as
+it does, permanently:
+
+- `{{secret:NAME}}` placeholders fill anywhere in a request (a header, the URL
+  path or query, or a text body) when the request is HTTPS and its host is one
+  the secret allows.
+- `{{integration-token:NAME}}` placeholders are permanent too, and fill the same
+  way on the integration's allowed hosts. OAuth through a scoped client is an
+  opt-in option beside them, not a replacement.
+- `kody.secretMounts`, `packageSecrets`, `|scope=`, webhook `secretName`,
+  `x-kody-secret-resolution`, package allowlists, usage modes, provider grants,
+  and today's package authority rules
+  ([0021](./0021-publish-gated-package-composition.md)) keep working.
+- Body, other, and computed placements are fine. Publish, `packageGet`, and
+  `repoRunChecks` never warn in a way that implies breakage. Where a more secure
+  type fits a placement, they may gently suggest it (see
+  [Which more secure type fits](#which-more-secure-type-fits)).
+- A Key can also be used through `credential(key)`, which places it by its
+  `inject` rule. The same Key keeps filling placeholders.
 
 ### Resolver interface
 
@@ -82,18 +123,21 @@ modes, and placeholders all go away (see [Migration](#migration)).
 - `apply(handle, request)` injects the credential. It runs only in the gateway
   and only after `authorize` returns `ok`. It is the only step that reads a
   value, so a refused host never triggers a token refresh. For `signing`, it
-  produces or verifies a signature.
+  produces a signature.
 - `audit(outcome)` writes one row per resolution, including denials: person,
   oauthClientId, package, need key, credential id, and outcome. Never a value.
 
-Kinds: `secret`, `oauth`, and `mcp` (the `mcp` client exposes `callTool`, not
-`fetch`). Later kinds are new resolvers in the same door, not new lanes:
+Kinds: `secret` (Key), `oauth`, and `mcp` (the `mcp` client exposes `callTool`,
+not `fetch`). Later kinds are new resolvers in the same door, not new lanes, and
+owners opt into them:
 
 - `login`: the gateway runs the login exchange and injects only the session
   token; the login response never reaches code.
 - `url`: a whole-URL secret pinned to its own host, over HTTPS.
-- `signing`: signs or verifies requests. Webhook signature verification moves
-  here.
+- `signing`: signs requests (a JWT or an HMAC) for one of its hosts; code gets
+  the signature, never the key. Today's webhook verification keeps working with
+  Keys; a `verify` operation can be added if an owner wants a signing-type
+  webhook secret.
 
 ### Credential fields
 
@@ -101,7 +145,9 @@ Kinds: `secret`, `oauth`, and `mcp` (the `mcp` client exposes `callTool`, not
 { id, ownerKind: 'org'|'user', kind, provider: slug|null, name, hosts[], inject, source: 'stored'|{ vault, ref } }
 ```
 
-`inject` never places a value in the body. It is one of:
+`inject` decides placement when a credential is used through a scoped client
+(Key placeholders keep their own placement). It never places a value in the
+body. It is one of:
 
 - `header{ name, format }`. The default is `Authorization: Bearer {value}`.
   OAuth credentials always use Bearer.
@@ -119,27 +165,35 @@ or pre-fills them.
 
 Hosts: no hosts denies every request; entries are exact hosts or a wildcard at
 most one level deep (`*.example.com`); HTTPS only; redirects are followed
-manually and authorized again on every hop.
+manually and authorized again on every hop. A `url` credential owns its whole
+URL, so its client returns redirects unfollowed.
 
 Personal credentials follow plan v4 3.2: user-owned, granted to orgs one org at
 a time, never usable by Owners or Automation on someone else's behalf. A
 personal OAuth credential minted through an org's OAuth app is pinned to that
-org.
+org. The owner manages grants with `credentialOrgGrant`, `credentialOrgRevoke`,
+and `credentialOrgGrantList` (live person and Write on the credential to change
+one; audited in the owner's personal org).
 
 ### Use grants (`accessGrant` / `accessRevoke`)
 
 `accessGrant` and `accessRevoke` keep accepting secret and integration names and
 resolve each name to a credential id at grant time. Granting and revoking by
-credential id is added alongside. By-name grants belong to the old lane and are
-removed with placeholders at old-lane removal.
+credential id is added alongside. By-name grants (including grant invites and
+`accessList` filters) stay permanently; they are not slated for removal.
+
+Use on a vault's door-key secret does not cover the vault, which is its own
+credential. Nothing is left to remove there.
 
 ### Manifest (`kody.credentials`)
 
 The keyed map stays. `provider` is optional and defaults to the key.
+`description` is required. `kind` is optional (see
+[Amendment 2026-10-12](#amendment-2026-10-12)).
 
 ```json
 "credentials": {
-  "github":     { "kind": "oauth", "description": "Repos to triage" },
+  "github":     { "description": "Read PRs to summarize them" },
   "github_bot": { "kind": "oauth", "provider": "github", "description": "Bot account" },
   "google":     { "kind": "oauth", "multiple": true, "description": "Calendars" }
 }
@@ -149,6 +203,14 @@ The keyed map stays. `provider` is optional and defaults to the key.
   (`^[a-z0-9-]+$`).
 - A second account from the same provider gets its own key with an explicit
   `provider`. There is no `as` field.
+- Omitting `kind` means any fetch-capable credential for that provider (Key /
+  secret such as a PAT, oauth, or login). The `credential()` client picks the
+  code path (inject header, OAuth refresh on 401, login exchange). Package code
+  is identical for PAT vs OAuth. Declare `kind` only when a specific shape is
+  needed (`signing` for `sign()`, `mcp` for `callTool()`, `url`, or a
+  provider/feature that truly requires one kind, such as oauth for Google user
+  data). A declared `kind` keeps today's narrowing, so published manifests stay
+  valid.
 - There is no hosts, inject, or placement field.
 - **Needs closure:** the package's needs plus those of its snapshotted
   dependencies (pinned at the dependent's publish, per
@@ -158,10 +220,11 @@ The keyed map stays. `provider` is optional and defaults to the key.
 
 ### Code API (`kody:runtime`)
 
-- `credential(key)` returns `{ fetch, callTool?, sign?, name, scope }`. A
-  relative URL resolves against the credential's first host; an absolute URL
-  must be in `hosts`. If code sets the header the credential injects, the
-  gateway overwrites it.
+- `credential(key)` returns `{ name, scope, kind, hosts }` plus `fetch` (secret,
+  oauth, url, login), `callTool` (mcp), or `sign` (signing). A relative URL
+  resolves against the credential's first host; an absolute URL must be in
+  `hosts`. If code sets the header the credential injects, the gateway
+  overwrites it.
 - `credentials(key)` returns an array, for `multiple: true` needs.
 - An undeclared key (ad hoc execute or author-only code) is treated as the
   provider.
@@ -181,20 +244,23 @@ The keyed map stays. `provider` is optional and defaults to the key.
 credentials: { github: 'work', google: ['work','personal'], x: { name: 'work', scope: 'org' } }
 ```
 
-The CLI takes `--credential github=work` and `--credential x=org:work`. Enable
-takes the same map, resolved once at enable time to credential ids, so ambiguous
-or unbound errors surface when enabling. Only the enabler changes the choice
-(`enablementUpdate { credentials }`, audited). An admin can disable someone
-else's enablement but cannot point it at different credentials.
+The CLI takes `--credential github=work` and `--credential x=org:work`. Triggers
+do not take a map at enable time; their picks are stored trigger mappings,
+resolved on each run (see the
+[credential mappings amendment](#amendment-2026-10-13-credential-mappings)). An
+admin can disable someone else's enablement but cannot point it at different
+credentials.
 
 ### Resolution rules
 
-1. **Candidates:** credentials with the need's kind and provider that the actor
-   can Use in the run org (org credentials with Use, plus the actor's own
-   personal credentials granted to that org). A null provider never
-   auto-resolves.
-2. **Map entry:** an exact pick. Kind must match; provider must match when both
-   sides have one.
+1. **Candidates:** credentials with the need's provider that the actor can Use
+   in the run org (org credentials with Use, plus the actor's own personal
+   credentials granted to that org). When the need declares `kind`, candidates
+   must also match that kind; when `kind` is omitted, any fetch-capable
+   credential for the provider qualifies (Key/secret, oauth, login). A null
+   provider never auto-resolves.
+2. **Map entry:** an exact pick. Kind must match when the need declares one;
+   provider must match when both sides have one.
 3. **No map entry:** exactly one candidate is used (`[it]` for `multiple`); zero
    is `credential_unbound`; two or more is `credential_ambiguous`. A `multiple`
    need never gets "all of them". An explicit `[]` means none on purpose.
@@ -244,8 +310,9 @@ credentials.needs[]: {
 }
 ```
 
-Every option and match is filtered by the actor's Use. From T, `packageGet` also
-warns about remaining legacy patterns.
+Every option and match is filtered by the actor's Use. From T, `packageGet` may
+gently suggest a more secure type where one fits a Key placeholder. It never
+warns as if the placeholder will break.
 
 ### Surfaces
 
@@ -259,14 +326,18 @@ warns about remaining legacy patterns.
   deleted, or a republish adds an ambiguous or unbound need, and resumes on its
   own once the cause clears, notifying the enabler. A need added by a republish
   auto-resolves on each run without storing anything, and the publish response
-  warns when the package has live enablements. Webhook verification goes through
-  the door with the enablement as the actor, retiring the no-actor exception.
+  warns when the package has live enablements. Webhook verification may also go
+  through the door with the enablement as the actor. The no-actor exception for
+  webhook verification stays unless a proven replacement exists and nothing that
+  works today breaks. The webhook URL secret (`url-secret`) is already a
+  permanent, explicit verification type.
 - **Inbound email:** a member sender is the actor. Mail from a non-member runs
   the inbox owner's enablements.
 
 ### Identity and MCP tokens
 
-- Nothing resolves without a `PersonId` actor with a live org binding.
+- Nothing resolves without a `PersonId` actor with a live org binding, except
+  the webhook verification no-actor exception, which stays (see Surfaces).
 - New OAuth grants require `personId`, stamped at consent the same way
   [0064](./0064-oauth-org-binding.md) stamps `orgId`.
 - Legacy grants in a personal org derive the person after a database check (the
@@ -277,18 +348,21 @@ warns about remaining legacy patterns.
 
 ### Security properties
 
-- No credential value enters package or user code, logs, errors, or tool output,
-  and code never decides where a value goes. Placement belongs to the credential
-  and is never the body.
+- No credential value enters package or user code, logs, errors, or tool output.
+- With the opt-in types, code never decides where a value goes. Placement
+  belongs to the credential and is never the body. A Key placeholder goes where
+  code puts it, on the Key's allowed hosts over HTTPS.
 - Publishing, republishing, or forking cannot widen a credential's hosts or
   placement.
-- The actor's Use is the only grant; CLI `--local` stays closed.
+- Through a scoped client, the actor's Use is the only grant; CLI `--local`
+  stays closed.
 - Personal credentials work only in their owner's runs, in orgs the owner
   granted them to.
 - Option lists never reveal credentials the actor cannot use.
 - Echo redaction stays as defense in depth.
 - Remaining risk: a token can do whatever it allows on its allowed hosts. Keep
-  OAuth scopes minimal and visible.
+  hosts narrow and OAuth scopes minimal and visible, and prefer a more secure
+  type where one fits.
 
 ### Lifecycle
 
@@ -296,25 +370,21 @@ warns about remaining legacy patterns.
   affected enablements pause. OAuth credentials pinned to that org are wiped and
   revoked upstream.
 - **Owner deletes a credential:** the value is tombstoned immediately, with no
-  restore.
+  restore. Grants and pending grant invites on its id and its personal org
+  grants are removed in the same batch.
 - **Account deleted:** every value is tombstoned at soft delete and never
   restored; rows are purged per [0066](./0066-soft-delete-and-purge.md).
 - **Account suspended:** resolution is denied and nothing is wiped.
 
-### Migration
+### Rollout
 
-T is the date clients and call maps are live in production.
+T is the date the new credential types are available, opt-in: the client API,
+call maps (invoke, execute, CLI, enable), `packageGet` needs, the stored needs
+closure, and enablement snapshots. Nothing existing changes at T.
 
-**Interim rule (Kent, 2026-10-11):** do not break anyone. Until clients are live
-and packages have migrated, production keeps filling placeholders anywhere on
-allowed hosts over HTTPS. There is no interim switch to header-only.
-
-**Gate on T.** T is not declared until every placement the scan finds in stored
-package source has a working target: headers use `credential()`, query
-placements use `query{ param }`, body placements use `login` (or `signing` where
-the scan finds a signature), and path or whole-URL placements use `url`. Ad hoc
-usage and computed patterns the scan cannot classify get warnings and do not
-hold up T.
+**Key behavior (Kent, 2026-10-11, made permanent 2026-10-12):** production keeps
+filling placeholders anywhere on allowed hosts over HTTPS. There is no switch to
+header-only, before or after T.
 
 **P1 (before T, no visible change):** add `provider`, `inject`, and `source`
 columns. Backfill `provider` from OAuth apps and from the slots that reference
@@ -324,67 +394,188 @@ credentials and org grants (v4 3.2) as backend only: schema, service, and
 resolver candidates, with no public capability or UI until T. Stamp `personId`
 on new OAuth grants.
 
-**T:** ship the client API, call maps (invoke, execute, CLI, enable),
-`packageGet` needs, the stored needs closure, and enablement snapshots, then run
-the fleet codemod. It rewrites a call site only when the result behaves
-identically:
+**T:** ship the opt-in types above. The `login`, `url`, and `signing` kinds ship
+as they are ready; none of them is a prerequisite for anything existing to keep
+working.
 
-- Rewritten: a placeholder in a literal header in the `init` object that matches
-  the credential's backfilled `inject`, where the credential's hosts cover the
-  URL (URLs stay absolute); integration-token placeholders only when the header
-  is exactly `Authorization: Bearer`; query placeholders only when the backfill
-  found one consistent param; secret basic auth with a literal username and a
-  secret password, to `basic{ valueAs: 'password', other }`.
-- Never rewritten (warning only): dynamically built headers; a credential used
-  with two header shapes; placeholders in the body or path; basic auth where
-  both parts are secret; calls that set `x-kody-secret-resolution: off` or
-  `headers-only`; vault placeholders (the codemod creates no credentials).
-- Declared keys named after a secret (for example `RESEND_API_KEY`) are renamed
-  to their provider when that provider is unique in the package.
-- Each package gets one revertable commit. A package is republished only when it
-  is clean, has no drift, and passes its checks; otherwise the change waits as a
-  proposal in the owner's waiting-for-me list. Locked, drifted, and unpublished
-  packages get warnings and email.
+**Suggested rewrites (optional, owner-approved):** the fleet codemod proposes a
+rewrite only when the result behaves identically, as a proposal in the owner's
+waiting-for-me list. Nothing is rewritten or republished without the owner's
+approval, and declining changes nothing.
 
-Package-scoped values each become an org credential named
-`<package-leaf>-<name>` (suffixed if taken; the email says so). The codemod adds
-a manifest need if missing and sets the credential's provider to that need's
-provider so it auto-resolves; `hosts` and `inject` come from the backfill. Use
-goes to whoever wrote the value, and in team orgs also to members who ran the
-package in the last 90 days; the owner email lists those grants and notes they
-work anywhere in the org. `|scope=user` becomes a plain reference;
-`|scope=session` is deleted.
+- It can propose: a placeholder in a literal header in the `init` object that
+  matches the credential's backfilled `inject`, where the credential's hosts
+  cover the URL (URLs stay absolute); integration-token placeholders only when
+  the header is exactly `Authorization: Bearer`; query placeholders only when
+  the backfill found one consistent param; secret basic auth with a literal
+  username and a secret password, to `basic{ valueAs: 'password', other }`.
+- It proposes nothing for dynamically built headers, a credential used with two
+  header shapes, placeholders in the body or path, basic auth where both parts
+  are secret, calls that set `x-kody-secret-resolution`, or vault placeholders.
+  Those stay as they are, with at most a gentle suggestion of a more secure type
+  where one fits.
+- An accepted proposal is one revertable commit, republished only when the
+  package is clean, has no drift, and passes its checks.
+- A proposal may rename a declared key named after a secret (for example
+  `RESEND_API_KEY`) to its provider when that provider is unique in the package.
+- A proposal may convert a package-scoped value into an org credential named
+  `<package-leaf>-<name>` (suffixed if taken), add the matching manifest need,
+  and set the credential's provider so it auto-resolves, with `hosts` and
+  `inject` from the backfill. The proposal lists the Use grants it would add:
+  whoever wrote the value, and in team orgs members who ran the package in the
+  last 90 days. Package-scoped values the owner does not convert keep working.
 
-**Old lane removal (Kent, 2026-10-11):** right after the codemod runs at T,
-rescan every package. The rescan counts every placeholder reference, including
-ones that match a declared key (the codemod 0010 detector skips those, so its
-clean result is not enough). If no old patterns remain, remove the old lane at
-once: publish rejects placeholders, `secretMounts`, `packageSecrets`, `|scope=`,
-and webhook `secretName` (which becomes a need key); the gateway stops parsing
-placeholders; and the `x-kody-secret-resolution` header, package allowlists,
-usage modes, provider grants, by-name `accessGrant` / `accessRevoke`, lock
-capabilities, the attested and claimed authority split (stamps remain for
-storage only), and the webhook no-actor exception are deleted. Only packages the
-codemod could not convert get a window, with warnings in publish responses and
-`packageGet` and email at T and T+60. The lane is removed as soon as a rescan
-shows them gone, or at T+90 at the latest. Two lanes never stay behind.
+**No old-lane removal (Kent, 2026-10-12):** there is no removal date, rescan
+gate, publish refusal of placeholders, window, or owner email. The gateway keeps
+parsing placeholders, and by-name grants stay.
 
 **P9:** drop the grant-props fallbacks.
 
+### Which more secure type fits
+
+A guide for suggestions, not a requirement: every placement below keeps working
+as a Key. Publish, `packageGet`, and suggested rewrites use it to point an owner
+at a more secure type when one fits; where none fits, they say nothing.
+
+From the production credential inventory scan of 2026-10-12 (1034 packages). The
+rows count placeholder references; with the 213 variable definitions the scan
+also records (not placements), they add up to its 881 references.
+
+| Placement (references)                                                                | More secure type that fits                            |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Header (355)                                                                          | Key with a `header` inject, through a scoped client   |
+| Query parameter (1)                                                                   | Key with a `query` inject                             |
+| Basic auth with a literal username and a secret password (0)                          | Key with a `basic` inject                             |
+| URL path, such as `/bot<token>/` (20)                                                 | `url`                                                 |
+| A password or refresh token posted to get a session (13)                              | `login`, or OAuth when the provider is an integration |
+| Signing key (2)                                                                       | `signing`                                             |
+| Webhook verification secret (4)                                                       | None needed; Keys verify webhooks                     |
+| Other body fields, mostly identifiers such as a chat id (19)                          | None needed                                           |
+| Values the scan cannot follow to a request: objects, returns, arguments, arrays (254) | None needed                                           |
+
+Counted separately: 17 `secretJwtSign` calls (`signing` fits them too), and 256
+computed and 10 vault placeholders, whose name or placement is known only at run
+time (none needed). When a new placement shows up that no type fits, it stays a
+Key, and the revisit-if below applies only if someone wants it covered.
+
 ## Consequences
 
-- One door, four primitives, no mapping tables. Placement moves from code to the
-  credential, which closes body and path placement for every package at T.
-- Authority is uniform: the actor's Use plus `package:execute`. Package runs
-  lose the package-attachment grant that
-  [0021](./0021-publish-gated-package-composition.md) records, so a runner needs
-  Use on each credential a run touches.
-- Interactive calls can hit `credential_ambiguous` after a second matching
-  credential is added; the error carries a ready-to-retry call. Enablements do
-  not drift.
-- The `login`, `url`, and `signing` kinds must ship before T can be declared.
-- Kent decides each user-visible step (new refusals, publish failures, owner
-  emails, removing the old lane) before it ships.
+- One door, four primitives, no mapping tables. Owners who opt into the new
+  types get placement owned by the credential, which keeps values out of request
+  bodies and paths for those credentials.
+- Nobody is broken: Key placeholders, by-name grants, and today's package
+  authority keep working, and suggestions are optional.
+- Through a scoped client, authority is uniform: the actor's Use plus
+  `package:execute`. Key placeholders keep the package authority that
+  [0021](./0021-publish-gated-package-composition.md) records.
+- Interactive calls through a client can hit `credential_ambiguous` after a
+  second matching credential is added; the error carries a ready-to-retry call.
+  Enablements do not drift.
+- Two lanes stay side by side on purpose: Key placeholders and scoped clients.
+- Kent decides each user-visible change before it ships.
 
 **Revisit-if** a placement appears that no resolver kind can express without
 returning a value to code.
+
+## Amendment 2026-10-12
+
+Kent: manifest credential need `kind` becomes **optional**.
+
+- **Omitted `kind`:** any fetch-capable credential for that provider qualifies
+  (Key/secret such as a PAT, oauth, login). The `credential()` client picks the
+  code path (inject header, OAuth refresh on 401, login exchange). Package code
+  is identical for PAT vs OAuth.
+- **Declare `kind` only when a specific shape is needed:** `signing` (`sign()`),
+  `mcp` (`callTool()`), `url`, or a provider/feature that truly requires one
+  kind (for example oauth for Google user data). A declared `kind` keeps today's
+  narrowing, so published manifests keep working (non-breaking).
+- **`provider`** still defaults to the key (unchanged). **`description`** stays
+  required; it never affects matching. It explains to the user or agent why the
+  package wants access when mapping or when a need is ambiguous or unbound.
+- **Typical need:** `"github": { "description": "Read PRs to summarize them" }`.
+- **Missing scopes** surface at call time via 401/403 `x-kody-credential-hint`.
+  Declaring scopes is possible future work.
+- **Naming direction:** `credentials` is the umbrella term everywhere (secrets
+  and integrations are credential subtypes). UI/UX is designed separately and is
+  not decided here.
+
+## Amendment 2026-10-13: call maps and pinned needs
+
+Kent decided four call-map questions (#3599).
+
+1. **Strict invoke.** In an invoked run, a call-map key that no package in the
+   run declares fails the run before it starts (`credential_need_unknown`). A
+   dependency imported by a computed specifier, whose needs cannot be known up
+   front, is refused in strict mode. Ad hoc `execute` code only warns.
+2. **Pinned needs.** A published app runs against the credential needs
+   snapshotted at its publish (its needs closure), so a dependency cannot
+   quietly gain credentials. Only a change to credential needs, transitive
+   included, pauses a publish for approval; other changes publish freely. A
+   dependency change never rebuilds or republishes a public app on its own.
+3. **Where the map goes.** The `credentials` map is accepted on MCP `execute`
+   (for `code` and `invoke`) and on the CapabilityProxy (CLI `--credential`). It
+   is not accepted on the package-callable `execute` capability: package code
+   would pick credentials by name there, which would bypass `credential.named`'s
+   sharing rules.
+4. **Several picks for one `credential(key)`.** It is an error whose message
+   lists every option by name and scope, with matching `options` and
+   `retryWith`, so an agent can pick one or show them to the user. The same
+   holds for `credential_ambiguous`.
+
+## Amendment 2026-10-13: credential mappings
+
+Kent (voice, 2026-10-12): packages get explicit, human-approved credential
+mappings. This changes "no mapping tables" and "there is never a default
+credential" in the sections above, and nothing else.
+
+- **Default mappings:** a package may store an ad hoc default mapping per need
+  (need key to credential ids). Two layers: an org layer set by package managers
+  (org credentials only) and a per-person layer.
+- **Trigger mappings:** each trigger instance (enablement) may override a need;
+  a need with no override inherits the enabler's default mapping.
+- **When triggers resolve:** enabling resolves nothing and never fails on needs.
+  Each run resolves every need in the order below, so a need with no trigger
+  override follows the current defaults, and an ambiguous or unbound need fails
+  that run with a creation link. Only a need the trigger mapping pins does not
+  drift. Trigger mappings change only through Approve or the package's
+  Credentials tab; there is no `enablementUpdate`.
+- **Resolution order:** call map, then trigger mapping, then the person's
+  default, then the org default, then auto-resolve (rule 3). An unusable ref in
+  a trigger mapping is an error for that run; unusable refs in a default are
+  skipped.
+- **Authority is unchanged:** a mapping grants nothing. Runs still need the
+  actor's Use plus `package:execute`, and option lists stay filtered by Use.
+- **Agents only propose:** a proposal takes effect only through the approval
+  page, where one Approve applies trigger and default mappings together.
+- **Contract:**
+  [credential mappings API](../contracts/credential-mappings-api.md).
+
+## Amendment 2026-10-13: credential needs publish pause
+
+Cole and Kent decided how decision 2's pause works.
+
+- **Scope.** Every published package, public or not. A publish whose credential
+  needs closure (transitive included) adds a need or changes one pauses before
+  the new commit becomes published. The previous published version keeps
+  running. A first publish, a same-commit publish, and a publish that only
+  removes needs do not pause.
+- **Approval.** The owner approves on the package's approval page
+  (`/@<owner>/<package>/approve-capabilities`), which publishes the paused
+  commit. Nothing republishes on its own; a newer push replaces the pending
+  request, and a request whose base commit is no longer published is dropped. A
+  paused session publish leaves the source branch on the published commit and
+  keeps its session; approval re-runs that session's publish at the paused
+  commit. A pushed commit is approved through the external-publish path, with
+  the paused publish's overwrite options, only while it is still HEAD. Approval
+  needs `package:publish` and also counts as the locked-publish approval. A
+  locked package keeps its locked-publish flow first; approving that publish
+  (`package:write`) runs the pause, so a writer cannot publish new needs without
+  the owner.
+- **One queue.** The pause shares ADR 0069's approval mechanism: one
+  `package_approval_requests` queue and one page, with reason
+  `credential_needs_changed` or `went_public`. ADR 0069's own storage-change
+  trigger for public apps is unchanged.
+- **Surfaces.** Publish tools return `approval_required` with `approval_url` and
+  the need changes. Codemods and promote-to-package first publishes skip the
+  pause. If the needs cannot be computed, the publish proceeds and the failure
+  is reported.

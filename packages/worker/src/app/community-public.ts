@@ -12,6 +12,7 @@ import {
 } from '#universal/community-public-types.ts'
 import {
 	buildCommunityIconUrl,
+	buildPackageIdentityIconUrl,
 	resolvePackageListIconUrl,
 } from '#universal/identity-icon-urls.ts'
 import {
@@ -82,15 +83,26 @@ export function toPublicProfilePackageItem(
 		hasApp: pkg.hasApp,
 		webhookCount: pkg.webhookCount,
 		jobCount: pkg.jobCount,
-		iconUrl: options?.username
-			? resolvePackageListIconUrl({
-					username: options.username,
-					kodyId: pkg.kodyId,
-					listingId: pkg.communityListingId,
-					listingIconCommit: pkg.listingIconCommit,
-					publishedCommit: pkg.publishedCommit,
-				})
-			: null,
+		// Plain repos share `/@:user/:kodyId/icon/:commit` with packages; the
+		// route falls back to entity_kind:'repo' with the same access as the
+		// detail page (public for anyone, private for org members).
+		iconUrl: !pkg.hasPackage
+			? options?.username && pkg.repoIconCommit
+				? buildPackageIdentityIconUrl({
+						username: options.username,
+						kodyId: pkg.kodyId,
+						iconCommit: pkg.repoIconCommit,
+					})
+				: null
+			: options?.username
+				? resolvePackageListIconUrl({
+						username: options.username,
+						kodyId: pkg.kodyId,
+						listingId: pkg.communityListingId,
+						listingIconCommit: pkg.listingIconCommit,
+						publishedCommit: pkg.publishedCommit,
+					})
+				: null,
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),

@@ -266,7 +266,7 @@ test('an integration name shared by an OAuth connection and an MCP server is ref
 	expect(listed.grants.map((grant) => grant.id).sort()).toEqual(granted.sort())
 })
 
-test('a grant on a deleted credential can still be revoked, and a pending invite for it cannot be accepted', async () => {
+test('deleting a credential revokes its grants and pending invites, and a recreate starts with none', async () => {
 	const t = await setup()
 	const granted = await accessGrantCapability.handler(
 		{
@@ -315,11 +315,11 @@ test('a grant on a deleted credential can still be revoked, and a pending invite
 				slug: 'memberuser',
 			}),
 		),
-	).rejects.toThrow(/credential was deleted/)
+	).rejects.toThrow(/invite was revoked/)
 
 	await expect(
 		accessRevokeCapability.handler({ grant_id: granted.grant.id }, t.owner),
-	).resolves.toEqual({ grant_id: granted.grant.id, revoked: true })
+	).rejects.toThrow(/Grant was not found/)
 	const listed = await accessListCapability.handler(
 		{ resource_type: 'credential' },
 		t.owner,

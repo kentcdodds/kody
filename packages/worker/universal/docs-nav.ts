@@ -91,6 +91,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 			{ slug: 'triggers', label: 'Jobs, workflows, and webhooks' },
 			{ slug: 'platform-efficiency', label: 'Runtime and efficiency' },
 			{ slug: 'local-execute', label: 'Local CLI execute' },
+			{ slug: 'auth-setup-git', label: 'Git credential helper' },
 			{ slug: 'open-api', label: 'Open API' },
 		],
 	},
@@ -195,6 +196,10 @@ export const legacyDocSlugAliases: Readonly<
 	'integration-backed-app-happy-path': {
 		slug: 'package-apps',
 		fragment: 'after-an-integration-smoke-test',
+	},
+	webhooks: {
+		slug: 'triggers',
+		fragment: 'inbound-webhooks-the-external-http-knock',
 	},
 }
 

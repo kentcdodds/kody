@@ -14,6 +14,7 @@ import {
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	assertLivePerson,
+	nonInteractiveTriggerOf,
 	authorize,
 	authorizeSurface,
 	isLivePersonRequest,
@@ -586,4 +587,61 @@ test('only a person behind the request is live; a triggered run and anything it 
 	expect(() =>
 		assertLivePerson(request({ kind: 'session' }), 'orgMemberUpdate'),
 	).not.toThrow()
+})
+
+test('nonInteractiveTriggerOf names the trigger behind a run no live person made', () => {
+	const person = { userId: personIdFromStored('user-1'), username: 'ada' }
+	const enablement = { id: 'en-1', enabler: person, role: 'owner' as const }
+	const request = (source: RequestSource) =>
+		deriveRequestContext({ user: person, source })
+	const trigger = (source: RequestSource) =>
+		nonInteractiveTriggerOf(request(source))
+	const subscriptionRun = request({
+		kind: 'platform-event',
+		sourceId: 'event-1',
+		enablement,
+	})
+
+	expect(
+		(
+			[
+				{ kind: 'schedule', jobId: 'job-1', enablement },
+				{ kind: 'webhook', sourceId: 'ep-1', enablement },
+				{ kind: 'platform-event', sourceId: 'event-1', enablement },
+				inheritRequest(subscriptionRun),
+				{
+					kind: 'inbound-email',
+					sourceId: 'message-1',
+					sender: { kind: 'inbox-owner' },
+					enablement,
+				},
+				{ kind: 'schedule', jobId: 'job-1' },
+				{ kind: 'package-app' },
+			] satisfies Array<RequestSource>
+		).map(trigger),
+	).toEqual([
+		{ type: 'job', credentialId: 'en-1' },
+		{ type: 'webhook', credentialId: 'en-1' },
+		{ type: 'subscription', credentialId: 'en-1' },
+		{ type: 'subscription', credentialId: 'en-1' },
+		{ type: 'email', credentialId: 'en-1' },
+		{ type: 'job', credentialId: 'job-1' },
+		{ type: 'package-app', credentialId: null },
+	])
+
+	expect(
+		(
+			[
+				{ kind: 'session' },
+				{ kind: 'mcp-oauth' },
+				{ kind: 'cli' },
+				{ kind: 'api-token', tokenId: 'token-1' },
+				{ kind: 'inherited', lineage: request({ kind: 'cli' }) },
+			] satisfies Array<RequestSource>
+		).map(trigger),
+	).toEqual([null, null, null, null, null])
+	expect(nonInteractiveTriggerOf(null)).toBeNull()
+	expect(
+		nonInteractiveTriggerOf({ ...request({ kind: 'cli' }), actor: null }),
+	).toEqual({ type: 'unattended', credentialId: null })
 })

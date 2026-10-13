@@ -10,6 +10,8 @@ import {
 } from '#app/package-viewer-access.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
+import { normalizeUsername } from '#worker/identity/username.ts'
 import {
 	memoizePerRequest,
 	recordServerTiming,
@@ -18,10 +20,16 @@ import {
 	getCommunityPackageHref,
 	resolvePackagePageUrl,
 } from '#worker/community/package-url.ts'
+import { isPlainRepoPackageShapedAtCommit } from '#mcp/capabilities/repo/plain-repo-package-shaped.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
+import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
+import { getUserRepoByName } from '#worker/repo/user-repos.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type AccountPackageDetail,
 	type CommunityDetailLoaderData,
 } from '#universal/loader-data.ts'
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 export type PackagePageAccess =
 	| { kind: 'redirect'; to: string; shared: boolean }
@@ -33,6 +41,17 @@ export type PackagePageAccess =
 			kodyId: string
 			listing: CommunityDetailLoaderData | null
 			ownerPackage: AccountPackageDetail | null
+			/**
+			 * True when this URL resolves to a saved package (or its listing).
+			 * False for plain `user_repos` pages that share the same chrome.
+			 */
+			hasPackage: boolean
+			/**
+			 * Plain repos only: root `package.json` at the indexed/published
+			 * commit. Computed for org members so the detail chrome can offer
+			 * promote guidance; guests skip the Artifacts read.
+			 */
+			packageShaped?: boolean
 			/** The viewer may open the private view (details, source files). */
 			viewerIsOwner: boolean
 			/** The viewer may change the package (settings, publish). */
@@ -54,6 +73,23 @@ export type PackagePagePrivacySource = {
 
 export function packagePageIsPrivate(page: PackagePagePrivacySource): boolean {
 	return page.ownerPackage?.isPrivate ?? false
+}
+
+/**
+ * Client JSON must not leak internal source ids for plain repos to guests.
+ * Owners keep sourceId for settings/debug surfaces; packages keep current
+ * behavior (source ids already appear on saved-package payloads).
+ */
+export function ownerPackageForClient(input: {
+	ownerPackage: AccountPackageDetail | null
+	hasPackage: boolean
+	viewerIsOwner: boolean
+}): AccountPackageDetail | null {
+	const ownerPackage = input.ownerPackage
+	if (!ownerPackage) return null
+	if (input.hasPackage || input.viewerIsOwner) return ownerPackage
+	if (!ownerPackage.sourceId) return ownerPackage
+	return { ...ownerPackage, sourceId: '' }
 }
 
 function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
@@ -100,6 +136,171 @@ export function loadPackagePage(input: {
 	})
 }
 
+async function viewerCanAccessPlainRepo(input: {
+	env: Env
+	viewer: McpUserContext | null
+	ownerUserId: string
+	isPrivate: boolean
+}) {
+	if (!input.isPrivate) return true
+	if (!input.viewer) return false
+	const membership = await input.env.APP_DB.prepare(
+		`SELECT 1 AS ok FROM org_memberships
+		 WHERE org_id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(input.ownerUserId, input.viewer.userId)
+		.first<{ ok: number }>()
+	return membership != null
+}
+
+function toPlainRepoOwnerPackage(input: {
+	username: string
+	repo: {
+		id: string
+		name: string
+		description: string | null
+		isPrivate: boolean
+		createdAt: string
+		updatedAt: string
+	}
+	sourceId: string
+	iconCommit: string | null
+}): AccountPackageDetail {
+	return {
+		id: input.repo.id,
+		name: `@${input.username}/${input.repo.name}`,
+		kodyId: input.repo.name,
+		description: input.repo.description ?? '',
+		tags: [],
+		hasApp: false,
+		sourceId: input.sourceId,
+		lockedAt: null,
+		createdAt: input.repo.createdAt,
+		updatedAt: input.repo.updatedAt,
+		hidden: false,
+		isPrivate: input.repo.isPrivate,
+		isInternetVisible: false,
+		hasCommunityListing: false,
+		listingAhead: null,
+		forkAhead: null,
+		searchText: null,
+		exports: null,
+		publishedCommit: input.iconCommit,
+		pendingCommit: input.iconCommit,
+		pendingCommitKnown: true,
+		communityFork: null,
+	}
+}
+
+async function loadPlainRepoPage(input: {
+	env: Env
+	request: Request
+	username: string
+	kodyId: string
+	user: Awaited<ReturnType<typeof readAuthenticatedAppUser>>
+}): Promise<PackagePageAccess> {
+	const username = normalizeUsername(input.username.trim())
+	const slug = input.kodyId.trim().toLowerCase()
+	if (!username || !slug) return { kind: 'not_found' }
+	const identity = await findPublicOwnerIdentityByHandle({
+		db: input.env.APP_DB,
+		handle: username,
+	})
+	if (!identity) return { kind: 'not_found' }
+	const repo = await getUserRepoByName(input.env.APP_DB, {
+		userId: identity.ownerId,
+		name: slug,
+	})
+	if (!repo) return { kind: 'not_found' }
+
+	const viewer = input.user?.mcpUser ?? null
+	const canAccess = await viewerCanAccessPlainRepo({
+		env: input.env,
+		viewer,
+		ownerUserId: identity.ownerId,
+		isPrivate: repo.isPrivate,
+	})
+	if (!canAccess) {
+		return repo.isPrivate ? { kind: 'not_found' } : { kind: 'unauthorized' }
+	}
+
+	const source = await getEntitySourceByEntity(input.env.APP_DB, {
+		userId: identity.ownerId,
+		entityKind: 'repo',
+		entityId: repo.id,
+	})
+	const iconCommit = source?.indexed_commit ?? source?.published_commit ?? null
+	const viewerIsMember = viewer
+		? await viewerCanAccessPlainRepo({
+				env: input.env,
+				viewer,
+				ownerUserId: identity.ownerId,
+				isPrivate: true,
+			})
+		: false
+	// Match repoGet: probe package.json at live HEAD (not a possibly stale
+	// indexed icon commit). Fall back to iconCommit when HEAD resolve fails.
+	let headCommit = iconCommit
+	if (source?.repo_id) {
+		try {
+			const head = await resolveCachedArtifactSourceHead(
+				input.env,
+				source.repo_id,
+				{ request: input.request },
+			)
+			headCommit = head.commit
+		} catch {
+			headCommit = iconCommit
+		}
+	}
+	let packageShaped = false
+	if (viewerIsMember && source?.repo_id) {
+		try {
+			packageShaped = await isPlainRepoPackageShapedAtCommit({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: headCommit,
+			})
+		} catch {
+			packageShaped = false
+		}
+	}
+	const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
+		env: input.env,
+		username: identity.handle,
+		listing: null,
+	})
+	return {
+		kind: 'page',
+		username: identity.handle,
+		kodyId: repo.name,
+		listing: null,
+		ownerPackage: toPlainRepoOwnerPackage({
+			username: identity.handle,
+			repo,
+			// Keep sourceId server-side for owner README. Public JSON strips it
+			// (see communityPackageApi) so guests never see internal ids.
+			sourceId: source?.id ?? '',
+			iconCommit,
+		}),
+		hasPackage: false,
+		packageShaped,
+		viewerIsOwner: viewerIsMember,
+		// Plain repos have no package settings/publish/delete surface here.
+		viewerCanManage: false,
+		viewerCanPublish: false,
+		viewerCanDelete: false,
+		viewerCanAdoptCommunityFork: false,
+		loggedIn: Boolean(input.user),
+		invocationUrlOrigin: getAppBaseUrl({
+			env: input.env,
+			requestUrl: input.request.url,
+		}),
+		ownerUserId: identity.ownerId,
+		ownerProfilePublic,
+	}
+}
+
 async function loadPackagePageUncached(input: {
 	env: Env
 	request: Request
@@ -125,7 +326,15 @@ async function loadPackagePageUncached(input: {
 			input.request,
 		),
 	])
-	if (!target) return { kind: 'not_found' }
+	if (!target) {
+		return await loadPlainRepoPage({
+			env: input.env,
+			request: input.request,
+			username: input.username,
+			kodyId: input.kodyId,
+			user,
+		})
+	}
 
 	const viewer = user?.mcpUser ?? null
 
@@ -256,6 +465,7 @@ async function loadPackagePageUncached(input: {
 			kodyId: target.kodyId,
 			listing,
 			ownerPackage,
+			hasPackage: true,
 			viewerIsOwner: true,
 			viewerCanManage,
 			viewerCanPublish,
@@ -281,6 +491,7 @@ async function loadPackagePageUncached(input: {
 			kodyId: target.kodyId,
 			listing,
 			ownerPackage: null,
+			hasPackage: true,
 			viewerIsOwner: false,
 			viewerCanManage: false,
 			viewerCanPublish: false,

@@ -23,12 +23,12 @@ catalog search (`search:read`) plus their grants. See
 
 ## Personal vs team
 
-|                    | Personal                                             | Team                                                                                                                                      |
-| ------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Created            | At signup (slug = username)                          | `orgCreate` or Create organization                                                                                                        |
-| Members / teams    | No. Create a team org to invite people or group them | Yes                                                                                                                                       |
-| Package grants     | `accessGrant` / grant invites                        | Same, plus the Grants web page                                                                                                            |
-| Resource web pages | Secrets, jobs, packages, connections, and the rest   | Every resource page reads the org. Connections shows your agents approved for that org; Repositories shows the org's packages you can see |
+|                    | Personal                                             | Team                                                                                                                                                                         |
+| ------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Created            | At signup (slug = username)                          | `orgCreate` or Create organization                                                                                                                                           |
+| Members / teams    | No. Create a team org to invite people or group them | Yes                                                                                                                                                                          |
+| Package grants     | `accessGrant` / grant invites                        | Same, plus the Grants web page                                                                                                                                               |
+| Resource web pages | Secrets, jobs, packages, connections, and the rest   | Every resource page reads the org. Connections shows your agents approved for that org; Repositories shows the org's packages you can see plus every plain repo the org owns |
 
 Switch orgs in the header, or pick the org at MCP consent. One connection binds
 one org.
@@ -38,10 +38,9 @@ one org.
 A scheduled job, subscription, or webhook runs only after a person turns it on
 for themselves with `enablementEnable`. Minting a webhook URL also turns it on
 for the minter when the URL has no enabler yet and the minter holds
-`package:execute`; a webhook URL runs as one enabler. Triggers that were already
-running when enablements arrived were turned on for their creator, or the
-earliest Owner if the creator had left. That person is the **enabler**, and
-every run acts as them:
+`package:execute`; a webhook URL runs as one enabler. A migrated trigger already
+has an enabler (its creator, or the earliest Owner if the creator left). That
+person is the **enabler**, and every run acts as them:
 
 - The run has the enabler's live access in the org, checked on every run. It can
   do only what the enabler could do by hand at that moment, never more.
@@ -62,12 +61,15 @@ package code one of those started or a package app's server code:
 - Role and membership changes: adding or removing members, changing a role,
   invites, and grants that carry member or billing permissions.
 - Billing changes: plan, seats, payment, wallet, budgets, and promo codes.
-- Site-admin tools.
 
 Do these from the web app, an MCP or CLI call you make yourself, or an execute
 you run. A triggered run that tries one fails with
 `Capability "<name>" needs a live person`, naming the capability it tried.
 Everything else runs unattended with the enabler's live permissions.
+
+Site-admin tools run unattended too, but only for a site admin: a job, webhook,
+subscription, or inbound email handler in a site admin's personal org may call
+them, and every such call is audited with its trigger type and id.
 
 Publishing a package never turns anything on, and nobody can enable a trigger
 for someone else. `enablementList` shows your enablements (an Owner can list the

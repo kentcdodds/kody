@@ -39,6 +39,11 @@ import {
 	type CredentialResolutionOutcome,
 } from './credential-resolution-audit.ts'
 import {
+	clientKeyResolver,
+	clientOauthRefreshResolver,
+	clientOauthResolver,
+} from './client-resolver.ts'
+import {
 	permissionForUse,
 	type CredentialResolver,
 	type CredentialTarget,
@@ -47,6 +52,7 @@ import {
 	type ResolveCredentialInput,
 	type ResolvedCredential,
 } from './credential-resolver.ts'
+import { loginCredentialResolver } from './login-resolver.ts'
 import { mcpConnectionResolver } from './mcp-resolver.ts'
 import {
 	integrationRefreshResolver,
@@ -58,6 +64,8 @@ import {
 	vaultSecretResolver,
 	webhookSecretResolver,
 } from './secret-resolvers.ts'
+import { signingCredentialResolver } from './signing-resolver.ts'
+import { urlCredentialResolver } from './url-resolver.ts'
 
 const credentialResolvers: {
 	[U in CredentialUse]: CredentialResolver<U>
@@ -69,6 +77,12 @@ const credentialResolvers: {
 	'integration-token': integrationTokenResolver,
 	'integration-refresh': integrationRefreshResolver,
 	'mcp-connection': mcpConnectionResolver,
+	url: urlCredentialResolver,
+	login: loginCredentialResolver,
+	signing: signingCredentialResolver,
+	'client-key': clientKeyResolver,
+	'client-oauth': clientOauthResolver,
+	'client-oauth-refresh': clientOauthRefreshResolver,
 }
 
 export async function resolveCredential<T extends CredentialTarget>(

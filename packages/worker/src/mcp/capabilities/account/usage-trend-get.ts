@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -6,6 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { userMeterDailyCounterRetentionDays } from '#worker/entitlements/user-meter-do.ts'
 import { readAccountUsageTrend } from '#worker/entitlements/usage-trend.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 const usageTrendDaySchema = z.object({
 	/** UTC day key (`YYYY-MM-DD`). */
@@ -38,7 +38,7 @@ export const usageTrendGetCapability = defineDomainCapability(
 		name: 'usageTrendGet',
 		orgPermission: 'billing:read',
 		description:
-			'Read the signed-in user’s recent daily usage trend for hosted execute and unique Worker days (plus optional job/automation daily counts), with a cheap monthly rollup series from usage_rollups for charts.',
+			'Read the recent daily usage trend for the org this connection is bound to (personal or team) for hosted execute and unique Worker days (plus optional job/automation daily counts), with a cheap monthly rollup series from usage_rollups for charts.',
 		keywords: [
 			'account',
 			'usage',
@@ -63,11 +63,11 @@ export const usageTrendGetCapability = defineDomainCapability(
 			asOf: z.string(),
 		}),
 		async handler(_args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const trend = await readAccountUsageTrend({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: ownerIdFromCaller(ctx.callerContext),
 			})
 			return {
 				days: trend.days.map((day) => ({

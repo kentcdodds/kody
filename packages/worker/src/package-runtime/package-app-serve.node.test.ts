@@ -140,6 +140,7 @@ function createFixture(options: FixtureOptions = {}) {
 		hasApp: true,
 		hidden: true,
 		isPrivate: true,
+		isInternetVisible: false,
 		createdAt: '2026-08-12T00:00:00.000Z',
 		updatedAt: '2026-08-12T00:00:00.000Z',
 	}
@@ -841,6 +842,8 @@ test('an app past the monthly include with no credits gets a 429 pause page, not
 	const page = await html.text()
 	expect(page).toContain('Monthly include used up')
 	expect(page).toContain('Add credits at /account/usage#credits to keep going')
+	expect(page).toContain('data-error-agent-prompt')
+	expect(page).toContain('Copy prompt for your agent')
 	expect(consoleError).not.toHaveBeenCalled()
 
 	mockModule.buildPackageAppWorker.mockRejectedValueOnce(

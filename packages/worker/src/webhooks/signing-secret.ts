@@ -11,7 +11,15 @@ import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { type PackageWebhookHmacVerificationEntry } from '#worker/package-registry/manifest.ts'
 import { generateWebhookUrlSecret } from './crypto.ts'
-import { type WebhookEndpointRecord } from './types.ts'
+import {
+	decryptWebhookVerificationSnapshot,
+	reconcileWebhookHmacVerificationRotation,
+} from './hmac-rotation.ts'
+import { setWebhookEndpointHmacVerificationState } from './repo.ts'
+import {
+	isWebhookPreviousHmacLive,
+	type WebhookEndpointRecord,
+} from './types.ts'
 
 /**
  * Shape of the signing secret mint gives a webhook that declares no HMAC
@@ -52,46 +60,118 @@ export async function resolveWebhookHmacSigningSecret(input: {
 
 export type WebhookHmacVerificationSecret = {
 	value: string
-	source: 'declared' | 'stored'
+	source: 'declared' | 'stored' | 'previous'
+}
+
+export type WebhookHmacVerificationSecretsResult = {
+	secrets: Array<WebhookHmacVerificationSecret>
+	/** Ciphertext of the live previous_* offered for CAS retirement. */
+	previousHmacSecretEncrypted: string | null
 }
 
 /**
  * Secrets an inbound signature may match, in order. A declared
  * `verification.secretName` comes first: the endpoint may still hold a
  * Kody-generated secret from before the manifest declared one (enablement
- * migration or an earlier mint), and that must not shadow it. The stored
- * secret stays as a fallback so deliveries that verify today keep verifying.
- * Throws when neither exists.
+ * migration or an earlier mint), and that must not shadow it. During the
+ * 24h signing-secret grace window the previous snapshot is accepted next.
+ * The stored secret stays as a fallback so deliveries that verify today keep
+ * verifying. Throws when neither exists.
+ *
+ * Reconciles last-seen secretName / declared value on the endpoint when the
+ * declared secret resolves, so a rename or value rotation records previous_*
+ * with a rotation timestamp.
  */
 export async function resolveWebhookHmacVerificationSecrets(input: {
 	env: Env
 	userId: OwnerId
 	endpoint: WebhookEndpointRecord
 	verification: PackageWebhookHmacVerificationEntry
-}): Promise<Array<WebhookHmacVerificationSecret>> {
+	now?: Date | string
+}): Promise<WebhookHmacVerificationSecretsResult> {
 	const secrets: Array<WebhookHmacVerificationSecret> = []
 	const secretName = input.verification.secretName?.trim() ?? ''
+	let endpoint = input.endpoint
+	const now = input.now ?? new Date()
+
 	if (secretName) {
 		const declared = await resolveDeclaredWebhookSecret({
 			env: input.env,
 			userId: input.userId,
-			packageId: input.endpoint.packageId,
+			packageId: endpoint.packageId,
 			secretName,
 		})
-		if (declared !== null) secrets.push({ value: declared, source: 'declared' })
+		if (declared !== null) {
+			endpoint = await reconcileWebhookHmacVerificationRotation({
+				env: input.env,
+				endpoint,
+				secretName,
+				declaredPlaintext: declared,
+				now,
+			})
+			secrets.push({ value: declared, source: 'declared' })
+		}
+	} else if (
+		endpoint.hmacSecretName ||
+		endpoint.hmacVerificationSecretEncrypted ||
+		endpoint.previousHmacSecretEncrypted
+	) {
+		// Package-owned HMAC (no secretName): drop last-seen declared tracking
+		// so a later rotate of the leftover name cannot rearm previous_*, and
+		// stop offering any prior named-secret grace under this auth model.
+		const cleared = await setWebhookEndpointHmacVerificationState({
+			db: input.env.APP_DB,
+			userId: endpoint.userId,
+			endpointId: endpoint.id,
+			hmacSecretName: null,
+			hmacVerificationSecretEncrypted: null,
+			previousHmacSecretName: null,
+			previousHmacSecretEncrypted: null,
+			previousHmacSecretExpiresAt: null,
+		})
+		endpoint = cleared ?? {
+			...endpoint,
+			hmacSecretName: null,
+			hmacVerificationSecretEncrypted: null,
+			previousHmacSecretName: null,
+			previousHmacSecretEncrypted: null,
+			previousHmacSecretExpiresAt: null,
+		}
 	}
-	if (input.endpoint.hmacSecretEncrypted) {
+
+	let previousHmacSecretEncrypted: string | null = null
+	if (isWebhookPreviousHmacLive(endpoint, now)) {
+		try {
+			const previous = await decryptWebhookVerificationSnapshot({
+				env: input.env,
+				userId: input.userId,
+				endpointId: endpoint.id,
+				encrypted: endpoint.previousHmacSecretEncrypted!,
+			})
+			if (!secrets.some((secret) => secret.value === previous)) {
+				secrets.push({ value: previous, source: 'previous' })
+				previousHmacSecretEncrypted = endpoint.previousHmacSecretEncrypted
+			}
+		} catch (error) {
+			console.warn('webhook-previous-secret-decrypt-failed', {
+				endpointId: endpoint.id,
+				error,
+			})
+		}
+	}
+
+	if (endpoint.hmacSecretEncrypted) {
 		let stored: string | null = null
 		try {
 			stored = await decryptWebhookHmacSecret(
 				input.env,
-				input.endpoint.hmacSecretEncrypted,
-				userWebhookHmacSecretContext(input.userId, input.endpoint.id),
+				endpoint.hmacSecretEncrypted,
+				userWebhookHmacSecretContext(input.userId, endpoint.id),
 			)
 		} catch (error) {
 			if (secrets.length === 0) throw error
 			console.warn('webhook-stored-secret-decrypt-failed', {
-				endpointId: input.endpoint.id,
+				endpointId: endpoint.id,
 				error,
 			})
 		}
@@ -103,10 +183,10 @@ export async function resolveWebhookHmacVerificationSecrets(input: {
 		throw new McpCallerError(
 			secretName
 				? `Secret "${secretName}" was not found for this user.`
-				: `Webhook "${input.endpoint.webhookName}" declares HMAC verification but has no package-owned signing secret.`,
+				: `Webhook "${endpoint.webhookName}" declares HMAC verification but has no package-owned signing secret.`,
 		)
 	}
-	return secrets
+	return { secrets, previousHmacSecretEncrypted }
 }
 
 async function resolveDeclaredWebhookSecret(input: {

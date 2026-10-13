@@ -10,6 +10,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
@@ -20,15 +21,15 @@ export const defaultStubPackageDescription =
 
 export function buildStubPackageFiles(input: {
 	name: string
-	kodyId: string
 	description: string
 }): Record<string, string> {
+	// Authored `kody.id` is leftover identity (#1909). Stubs write `name` only;
+	// the parser derives the leaf when present and accepts a matching authored id.
 	const packageJson = {
 		name: input.name,
 		private: true,
 		exports: { '.': './src/index.ts' },
 		kody: {
-			id: input.kodyId,
 			description: input.description,
 		},
 	}
@@ -109,7 +110,7 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		owner: input.owner,
-		files: buildStubPackageFiles({ name, kodyId, description }),
+		files: buildStubPackageFiles({ name, description }),
 	})
 }
 
@@ -153,13 +154,12 @@ export async function createSavedPackageFromFiles(input: {
 		files,
 	})
 	const now = new Date().toISOString()
-	await insertSavedPackage(
+	const stamped = await insertSavedPackage(
 		input.env.APP_DB,
 		{
 			id: packageId,
 			user_id: input.owner.ownerUserId,
 			name: manifest.name,
-			kody_id: manifest.kody.id,
 			description: manifest.kody.description,
 			tags_json: JSON.stringify(manifest.kody.tags ?? []),
 			search_text: manifest.kody.searchText ?? null,
@@ -174,6 +174,12 @@ export async function createSavedPackageFromFiles(input: {
 		input.env,
 		{ actorUserId: input.owner.actorUserId },
 	)
+	if (stamped) {
+		scheduleKitSubscriberSync({
+			env: input.env,
+			stableUserId: input.owner.actorUserId,
+		})
+	}
 	await upsertSavedPackageVector(input.env, {
 		packageId,
 		userId: input.owner.ownerUserId,

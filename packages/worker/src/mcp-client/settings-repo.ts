@@ -11,6 +11,7 @@ import {
 	type McpServerUsageMode,
 } from './usage-mode.ts'
 
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const selectColumns =
 	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json, last_error'
@@ -62,6 +63,25 @@ export async function getMcpServerSettingRowById(input: {
 		.bind(input.userId, input.id)
 		.first<Record<string, unknown>>()
 	return row ? mapMcpServerSettingRow(row) : null
+}
+
+/**
+ * The org that owns a live MCP server, by its globally unique id. Callers
+ * still authorize the person in that org before acting on it.
+ */
+export async function getMcpServerOwnerId(input: {
+	db: D1Database
+	id: string
+}): Promise<string | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT user_id FROM mcp_server_settings
+			WHERE id = ?${andLiveDeletedAtSql()}
+			LIMIT 1`,
+		)
+		.bind(input.id)
+		.first<{ user_id: string }>()
+	return row?.user_id ?? null
 }
 
 export async function getMcpServerSettingRowByName(input: {
@@ -191,13 +211,16 @@ export async function deleteMcpServerSettingRow(input: {
 	userId: string
 	id: string
 }): Promise<boolean> {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM mcp_server_settings WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.userId, input.id)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const liveRowSql = `FROM mcp_server_settings WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`
+	const results = await input.db.batch([
+		...credentialGrantCleanupStatements(input.db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.userId, input.id],
+		}),
+		input.db.prepare(`DELETE ${liveRowSql}`).bind(input.userId, input.id),
+	])
+	return (results.at(-1)?.meta.changes ?? 0) > 0
 }
 
 function mapLogoSource(value: unknown): McpServerLogoSource | null {

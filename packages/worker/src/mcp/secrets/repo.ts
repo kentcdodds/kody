@@ -3,14 +3,20 @@ import {
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type SecretBucketRow,
 	type SecretEntryRow,
 	type SecretScope,
+	type StoredCredentialKind,
+	storedCredentialKinds,
 } from './types.ts'
 
 const listPackageScopeSecretFixedBindings = 2
+
+const secretEntryColumns =
+	'id, bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages, expires_at, created_at, updated_at'
 
 type SecretMetadataRow = {
 	id: string
@@ -80,17 +86,73 @@ export async function getSecretEntry(input: {
 	db: D1Database
 	bucketId: string
 	name: string
-}): Promise<SecretEntryRow | null> {
+}): Promise<(SecretEntryRow & { kind: StoredCredentialKind }) | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT id, bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages, expires_at, created_at, updated_at
-			FROM secret_entries
+			`SELECT ${secretEntryColumns}, kind FROM secret_entries
 			WHERE bucket_id = ? AND name = ?
 			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.bucketId, input.name)
 		.first<Record<string, unknown>>()
-	return row ? mapSecretEntryRow(row) : null
+	return row
+		? { ...mapSecretEntryRow(row), kind: readStoredCredentialKind(row['kind']) }
+		: null
+}
+
+export function readStoredCredentialKind(value: unknown): StoredCredentialKind {
+	const kind = storedCredentialKinds.find((candidate) => candidate === value)
+	if (!kind) throw new Error(`Unknown stored credential kind: ${String(value)}`)
+	return kind
+}
+
+export type StoredCredentialRow = {
+	id: string
+	name: string
+	kind: StoredCredentialKind
+	encrypted_value: string
+	allowed_hosts: string
+	inject_json: string
+	config_json: string | null
+}
+
+/**
+ * A live, unexpired user-scope entry of `ownerId` by credential id, with the
+ * fields a later-kind resolver reads. Package and session secrets are never
+ * credentials of a kind.
+ */
+export async function getStoredCredentialEntry(input: {
+	db: D1Database
+	ownerId: string
+	credentialId: string
+	now?: string
+}): Promise<StoredCredentialRow | null> {
+	const now = input.now ?? new Date().toISOString()
+	const row = await input.db
+		.prepare(
+			`SELECT e.id AS id, e.name AS name, e.kind AS kind,
+				e.encrypted_value AS encrypted_value, e.allowed_hosts AS allowed_hosts,
+				e.inject_json AS inject_json, e.config_json AS config_json
+			FROM secret_entries e
+			JOIN secret_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+				AND e.id = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+				AND (e.expires_at IS NULL OR e.expires_at > ?)
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+			LIMIT 1`,
+		)
+		.bind(input.ownerId, input.credentialId, now, now)
+		.first<Record<string, unknown>>()
+	if (!row) return null
+	return {
+		id: String(row['id']),
+		name: String(row['name']),
+		kind: readStoredCredentialKind(row['kind']),
+		encrypted_value: String(row['encrypted_value']),
+		allowed_hosts: String(row['allowed_hosts']),
+		inject_json: String(row['inject_json']),
+		config_json: row['config_json'] == null ? null : String(row['config_json']),
+	}
 }
 
 function prepareUpsertSecretEntryStatement(input: {
@@ -125,6 +187,64 @@ function prepareUpsertSecretEntryStatement(input: {
 			input.row.expires_at,
 			input.row.created_at ?? now,
 			input.row.updated_at ?? now,
+		)
+}
+
+export type SecretEntryCredentialColumns = {
+	/** Used only when the upsert inserts; an existing row keeps its id. */
+	id: string
+	kind: StoredCredentialKind
+	config_json: string | null
+	provider: string | null
+	inject_json: string
+}
+
+/**
+ * The upsert for a value saved together with its opt-in credential fields
+ * (ADR 0068), so the value and where it may go change in one statement.
+ */
+export function prepareUpsertCredentialSecretEntryStatement(input: {
+	db: D1Database
+	row: Omit<SecretEntryRow, 'id' | 'created_at' | 'updated_at'> & {
+		created_at: string
+		updated_at: string
+	}
+	credential: SecretEntryCredentialColumns
+}): D1PreparedStatement {
+	return input.db
+		.prepare(
+			`INSERT INTO secret_entries (
+				id, bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages,
+				expires_at, created_at, updated_at, kind, config_json, provider, inject_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(bucket_id, name)
+			DO UPDATE SET
+				description = excluded.description,
+				encrypted_value = excluded.encrypted_value,
+				allowed_hosts = excluded.allowed_hosts,
+				allowed_packages = excluded.allowed_packages,
+				expires_at = excluded.expires_at,
+				updated_at = excluded.updated_at,
+				kind = excluded.kind,
+				config_json = excluded.config_json,
+				provider = excluded.provider,
+				inject_json = excluded.inject_json`,
+		)
+		.bind(
+			input.credential.id,
+			input.row.bucket_id,
+			input.row.name,
+			input.row.description,
+			input.row.encrypted_value,
+			input.row.allowed_hosts,
+			input.row.allowed_packages,
+			input.row.expires_at,
+			input.row.created_at,
+			input.row.updated_at,
+			input.credential.kind,
+			input.credential.config_json,
+			input.credential.provider,
+			input.credential.inject_json,
 		)
 }
 
@@ -320,16 +440,20 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 
 export async function deleteSecretEntry(input: {
 	db: D1Database
+	userId: string
 	bucketId: string
 	name: string
 }): Promise<boolean> {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM secret_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.bucketId, input.name)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const liveRowSql = `FROM secret_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`
+	const results = await input.db.batch([
+		...credentialGrantCleanupStatements(input.db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.bucketId, input.name],
+		}),
+		input.db.prepare(`DELETE ${liveRowSql}`).bind(input.bucketId, input.name),
+	])
+	return (results.at(-1)?.meta.changes ?? 0) > 0
 }
 
 export async function listSecretBucketsByScope(input: {

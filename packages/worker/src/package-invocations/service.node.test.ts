@@ -689,6 +689,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
 		lockedAt: null,

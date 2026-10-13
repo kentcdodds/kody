@@ -213,6 +213,7 @@ const demoPackage: SavedPackageRecord = {
 	hasSkills: false,
 	hidden: false,
 	isPrivate: false,
+	isInternetVisible: false,
 	lockedAt: null,
 	createdAt: fixtureTimestamp,
 	updatedAt: fixtureTimestamp,

@@ -160,6 +160,11 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 	let nextId = 1
 	const users = new Map<string, TestUser>()
 	const db = {
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			const results = []
+			for (const statement of statements) results.push(await statement.run())
+			return results
+		},
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {

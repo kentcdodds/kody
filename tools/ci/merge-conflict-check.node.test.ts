@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	classifyMergeability,
+	describeMergeConflictCheck,
 	githubRateLimitMaxWaitMs,
 	githubRateLimitWaitBudgetMs,
 	isGithubRateLimitError,
@@ -43,6 +44,37 @@ test('only a dirty pull request is treated as a merge conflict', () => {
 	).toEqual([])
 })
 
+test('undetermined mergeability is neutral; only dirty is a failed check', () => {
+	expect(
+		describeMergeConflictCheck({
+			kind: 'conflicted',
+			baseRef: 'main',
+			mergeableState: 'dirty',
+			draft: false,
+		}).conclusion,
+	).toBe('failure')
+	expect(
+		describeMergeConflictCheck({
+			kind: 'clear',
+			baseRef: 'main',
+			mergeableState: 'behind',
+			draft: false,
+		}).conclusion,
+	).toBe('success')
+	expect(
+		describeMergeConflictCheck({
+			kind: 'undetermined',
+			baseRef: 'main',
+			mergeableState: 'unknown',
+			draft: false,
+			detail: `Pull request base ${previousBaseSha}, not ${baseSha}.`,
+		}),
+	).toMatchObject({
+		title: 'Mergeability unavailable',
+		conclusion: 'neutral',
+	})
+})
+
 test('polling prefers a computed state on the expected base tip, then falls back or fails closed', async () => {
 	const unknown = mergeability({ mergeable: null, mergeableState: 'unknown' })
 	const cases = [
@@ -56,7 +88,7 @@ test('polling prefers a computed state on the expected base tip, then falls back
 			expected: { kind: 'clear', mergeableState: 'behind', reads: 2 },
 		},
 		{
-			scenario: 'fails closed when mergeability stays unknown',
+			scenario: 'stays undetermined when mergeability stays unknown',
 			sequence: [unknown],
 			maxAttempts: 3,
 			expected: { kind: 'undetermined', mergeableState: 'unknown', reads: 3 },
@@ -98,6 +130,23 @@ test('polling prefers a computed state on the expected base tip, then falls back
 			maxAttempts: 2,
 			expected: { kind: 'conflicted', mergeableState: 'dirty', reads: 2 },
 		},
+		{
+			scenario: 'records stale-base detail when pending and base never matches',
+			sequence: [
+				mergeability({
+					mergeable: null,
+					mergeableState: 'unknown',
+					baseSha: previousBaseSha,
+				}),
+			],
+			maxAttempts: 2,
+			expected: {
+				kind: 'undetermined',
+				mergeableState: 'unknown',
+				reads: 2,
+				detail: `Pull request base ${previousBaseSha}, not ${baseSha}.`,
+			},
+		},
 	]
 	const results = []
 	for (const { scenario, sequence, maxAttempts } of cases) {
@@ -130,9 +179,11 @@ test('polling prefers a computed state on the expected base tip, then falls back
 	expect(results).toEqual(
 		cases.map(({ scenario, expected }) => ({
 			scenario,
-			...expected,
+			kind: expected.kind,
+			mergeableState: expected.mergeableState,
+			reads: expected.reads,
 			sleeps: Array.from({ length: expected.reads - 1 }, () => 25),
-			detail: undefined,
+			detail: 'detail' in expected ? expected.detail : undefined,
 		})),
 	)
 })
@@ -224,6 +275,27 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	expect(github.calls[2]?.authorization).toBe('Bearer test-token')
 })
 
+test('a known conflict retries publication instead of posting neutral', async () => {
+	const github = fakeGithub({
+		pulls: {
+			91: [pull({ mergeable: false, mergeable_state: 'dirty' })],
+		},
+		failChecks: 1,
+	})
+	consoleError.mockImplementation(() => {})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 91,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'conclusion')).toEqual(['failure', 'failure'])
+	expect(github.bodies('POST', 'conclusion')).not.toContain('neutral')
+	expect(loggedErrors()).toContain('failed (500)')
+})
+
 test('a mergeable pull request completes the check successfully', async () => {
 	const github = fakeGithub({
 		pulls: {
@@ -249,7 +321,7 @@ test('a mergeable pull request completes the check successfully', async () => {
 	})
 })
 
-test('an API error completes the open check as a failure', async () => {
+test('an API error completes the open check as neutral (not a conflict)', async () => {
 	const github = fakeGithub({ pulls: {}, failPulls: true })
 	consoleError.mockImplementation(() => {})
 	const code = await reportMergeConflictCheck({
@@ -261,11 +333,49 @@ test('an API error completes the open check as a failure', async () => {
 	})
 	expect(code).toBe(0)
 	expect(github.calls.at(-1)?.body).toMatchObject({
-		conclusion: 'failure',
+		conclusion: 'neutral',
 		output: { title: 'Mergeability unavailable' },
 	})
 	expect(loggedErrors()).toContain('failed (503)')
 	expect(loggedErrors()).not.toContain('test-token')
+})
+
+test('a stale base SHA with pending mergeability writes a neutral head check', async () => {
+	const github = fakeGithub({
+		pulls: {
+			12: [
+				pull({
+					mergeable: null,
+					mergeable_state: 'unknown',
+					baseSha: previousBaseSha,
+				}),
+			],
+		},
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 2,
+		delayMs: 1,
+	})
+	expect(code).toBe(0)
+	const checkBody = github.calls.at(-1)?.body
+	expect(checkBody).toMatchObject({
+		conclusion: 'neutral',
+		output: { title: 'Mergeability unavailable' },
+	})
+	const summary =
+		typeof checkBody === 'object' &&
+		checkBody !== null &&
+		'output' in checkBody &&
+		typeof checkBody.output === 'object' &&
+		checkBody.output !== null &&
+		'summary' in checkBody.output
+			? String(checkBody.output.summary)
+			: ''
+	expect(summary).toContain(previousBaseSha)
 })
 
 test('a failed check creation still fails the process', async () => {
@@ -458,7 +568,10 @@ test('a rate-limited pull request read retries and still publishes', async () =>
 		},
 	})
 	expect(code).toBe(0)
-	expect(sleeps[0]).toBe(2_000)
+	// Rate-limit wait is Date.now()+retryAfter, then the next loop sleeps
+	// pausedUntil-Date.now(), which can lose a millisecond.
+	expect(sleeps[0]).toBeGreaterThanOrEqual(1_990)
+	expect(sleeps[0]).toBeLessThanOrEqual(2_000)
 	expect(github.bodies('POST', 'conclusion')).toEqual(['success'])
 	expect(
 		github.calls.filter((call) => call.url.endsWith('/pulls/12')),
@@ -680,6 +793,8 @@ function fakeGithub(input: {
 	compareAheadBy?: Record<string, number>
 	failCompare?: boolean
 	failPulls?: boolean
+	/** Fail the first N check-run POSTs with HTTP 500, then succeed. */
+	failChecks?: number
 	rateLimit?: {
 		pulls?: number
 		compare?: number
@@ -694,6 +809,7 @@ function fakeGithub(input: {
 		compare: input.rateLimit?.compare ?? 0,
 		checks: input.rateLimit?.checks ?? 0,
 		list: input.rateLimit?.list ?? 0,
+		failChecks: input.failChecks ?? 0,
 	}
 	const calls: Array<RecordedCall> = []
 	const fetchImpl: typeof fetch = (request, init) => {
@@ -748,6 +864,10 @@ function fakeGithub(input: {
 			if (remaining.checks > 0) {
 				remaining.checks -= 1
 				return Promise.resolve(rateLimitResponse(input.rateLimit))
+			}
+			if (remaining.failChecks > 0) {
+				remaining.failChecks -= 1
+				return Promise.resolve(new Response('unavailable', { status: 500 }))
 			}
 			return Promise.resolve(Response.json({ id: calls.length }))
 		}

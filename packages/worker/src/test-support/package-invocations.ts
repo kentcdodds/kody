@@ -515,6 +515,7 @@ export function seedPackageResolution() {
 		hasApp: true,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
 	})
@@ -666,6 +667,7 @@ export function createSavedPackage(input: {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-05-10T00:00:00.000Z',
 		updatedAt: '2026-05-10T00:00:00.000Z',
 	}

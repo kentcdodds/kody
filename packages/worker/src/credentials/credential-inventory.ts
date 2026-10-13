@@ -13,8 +13,12 @@ import { listSavedPackagesPage } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
+	type CredentialEndpoint,
+	type CredentialOtherContext,
 	type CredentialPlacement,
 	type CredentialPlacementType,
+	credentialOtherContexts,
+	credentialPlacementTypes,
 	emptyPlaceholderCounts,
 	scanPackageCredentials,
 } from './credential-inventory-scan.ts'
@@ -60,6 +64,10 @@ export type InventoryItemResult = {
 	placeholders: Record<PlaceholderMatchKind, number>
 	unparsedModules: number
 	references: Array<InventoryReference>
+	/** Absent on items scanned before vault placements were recorded. */
+	vaultPlacements?: Array<CredentialPlacement>
+	/** Absent on items scanned before `secretJwtSign` calls were counted. */
+	jwtSignCalls?: number
 	slots: Array<InventorySlot>
 }
 
@@ -77,6 +85,22 @@ export type CredentialInventoryReport = {
 		attributed: number
 		unattributed: number
 		byPlacement: Record<CredentialPlacementType, number>
+		unattributedByPlacement: Record<CredentialPlacementType, number>
+		otherByContext: Record<CredentialOtherContext, number>
+		bodyByEndpoint: Record<CredentialEndpoint, number>
+		/** Most common body fields a placeholder fills. */
+		bodyFields: Array<InventoryTally>
+		/** Most common `callee.key` options an SDK placeholder fills. */
+		sdkOptions: Array<InventoryTally>
+		/** Most common callees a placeholder is passed to directly. */
+		argumentCallees: Array<InventoryTally>
+	}
+	vault: { byPlacement: Record<CredentialPlacementType, number> }
+	signing: {
+		/** Placeholders used as signing key material. */
+		placeholderKeys: number
+		jwtSignCalls: number
+		packagesWithSigning: number
 	}
 	slots: {
 		total: number
@@ -89,6 +113,11 @@ export type CredentialInventoryReport = {
 }
 
 export type InventoryFailure = { packageId: string; error: string }
+
+export type InventoryTally = { name: string; count: number }
+
+/** How many entries each tally list in a report keeps. */
+export const credentialInventoryTallyMax = 25
 
 /** How many failed packages a report lists; `packages.failed` counts all. */
 export const credentialInventoryFailureListMax = 50
@@ -247,6 +276,8 @@ export async function attributePackageCredentials(input: {
 	return {
 		placeholders: scan.placeholders,
 		unparsedModules: scan.unparsedModules,
+		vaultPlacements: scan.vaultPlacements,
+		jwtSignCalls: scan.jwtSignCalls,
 		references: scan.references.map((reference) => ({
 			table: reference.nameKind,
 			credentialIds:
@@ -258,16 +289,35 @@ export async function attributePackageCredentials(input: {
 			scope: reference.scope,
 			placement: reference.placement,
 		})),
-		slots: scan.slots.map((slot) => ({
-			kind: slot.kind,
-			provider: slot.provider,
-			credentialIds:
-				slot.kind === 'secret'
-					? secretIdsFor(secretRows, slot.name, null, ownerId)
-					: slot.kind === 'oauth'
-						? integrationIdsFor(slot.name)
-						: [],
-		})),
+		// The inventory counts the kinds it was built for; later kinds are not
+		// placeholder slots.
+		slots: scan.slots.flatMap((slot) => {
+			switch (slot.kind) {
+				case 'secret':
+				case 'oauth':
+				case 'mcp':
+					return [
+						{
+							kind: slot.kind,
+							provider: slot.provider,
+							credentialIds:
+								slot.kind === 'secret'
+									? secretIdsFor(secretRows, slot.name, null, ownerId)
+									: slot.kind === 'oauth'
+										? integrationIdsFor(slot.name)
+										: [],
+						},
+					]
+				case 'url':
+				case 'login':
+				case 'signing':
+					return []
+				default: {
+					const exhaustive: never = slot.kind
+					throw new Error(`Unhandled slot kind: ${String(exhaustive)}`)
+				}
+			}
+		}),
 	}
 }
 
@@ -435,15 +485,30 @@ async function loadRunItems(db: D1Database, runId: string) {
 	})
 }
 
-function emptyPlacementCounts(): Record<CredentialPlacementType, number> {
+function emptyPlacementCounts() {
+	return Object.fromEntries(
+		credentialPlacementTypes.map((type) => [type, 0]),
+	) as Record<CredentialPlacementType, number>
+}
+
+function emptyOtherContextCounts() {
+	return Object.fromEntries(
+		credentialOtherContexts.map((context) => [context, 0]),
+	) as Record<CredentialOtherContext, number>
+}
+
+function createTally() {
+	const counts = new Map<string, number>()
 	return {
-		header: 0,
-		query: 0,
-		'header-custom': 0,
-		basic: 0,
-		path: 0,
-		body: 0,
-		other: 0,
+		add(name: string | null | undefined) {
+			if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+		},
+		top(): Array<InventoryTally> {
+			return [...counts]
+				.map(([name, count]) => ({ name, count }))
+				.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+				.slice(0, credentialInventoryTallyMax)
+		},
 	}
 }
 
@@ -465,12 +530,23 @@ export function summarizeCredentialInventory(
 			attributed: 0,
 			unattributed: 0,
 			byPlacement: emptyPlacementCounts(),
+			unattributedByPlacement: emptyPlacementCounts(),
+			otherByContext: emptyOtherContextCounts(),
+			bodyByEndpoint: { login: 0, other: 0, unknown: 0 },
+			bodyFields: [],
+			sdkOptions: [],
+			argumentCallees: [],
 		},
+		vault: { byPlacement: emptyPlacementCounts() },
+		signing: { placeholderKeys: 0, jwtSignCalls: 0, packagesWithSigning: 0 },
 		slots: { total: 0, attributed: 0, byKind: { secret: 0, oauth: 0, mcp: 0 } },
 		credentialsReferenced: 0,
 		failures: [],
 	}
 	const referenced = new Set<string>()
+	const bodyFields = createTally()
+	const sdkOptions = createTally()
+	const argumentCallees = createTally()
 	for (const item of items) {
 		report.packages[item.status] += 1
 		if (
@@ -494,16 +570,56 @@ export function summarizeCredentialInventory(
 			report.placeholders[kind as PlaceholderMatchKind] += count
 		}
 		report.unparsedModules += result.unparsedModules
+		let signs = (result.jwtSignCalls ?? 0) > 0
+		report.signing.jwtSignCalls += result.jwtSignCalls ?? 0
 		for (const reference of result.references) {
+			const { placement } = reference
 			report.references.total += 1
-			report.references.byPlacement[reference.placement.type] += 1
+			report.references.byPlacement[placement.type] += 1
 			if (reference.credentialIds.length > 0) {
 				report.references.attributed += 1
 			} else {
 				report.references.unattributed += 1
+				report.references.unattributedByPlacement[placement.type] += 1
 			}
 			for (const id of reference.credentialIds) referenced.add(id)
+			switch (placement.type) {
+				case 'body':
+					// Items scanned before body detail have neither field.
+					report.references.bodyByEndpoint[placement.endpoint ?? 'unknown'] += 1
+					bodyFields.add(placement.field)
+					break
+				case 'other': {
+					const context = placement.context ?? 'other'
+					report.references.otherByContext[context] += 1
+					if (context === 'sdk-option') {
+						sdkOptions.add(`${placement.callee ?? '?'}.${placement.key ?? '?'}`)
+					}
+					if (context === 'argument') argumentCallees.add(placement.callee)
+					break
+				}
+				case 'signing':
+					report.signing.placeholderKeys += 1
+					signs = true
+					break
+				case 'header':
+				case 'query':
+				case 'header-custom':
+				case 'basic':
+				case 'path':
+				case 'url':
+				case 'binding':
+					break
+				default: {
+					const exhaustive: never = placement
+					throw new Error(`Unknown placement: ${JSON.stringify(exhaustive)}`)
+				}
+			}
 		}
+		for (const placement of result.vaultPlacements ?? []) {
+			report.vault.byPlacement[placement.type] += 1
+		}
+		if (signs) report.signing.packagesWithSigning += 1
 		for (const slot of result.slots) {
 			report.slots.total += 1
 			report.slots.byKind[slot.kind] += 1
@@ -511,6 +627,9 @@ export function summarizeCredentialInventory(
 		}
 	}
 	report.credentialsReferenced = referenced.size
+	report.references.bodyFields = bodyFields.top()
+	report.references.sdkOptions = sdkOptions.top()
+	report.references.argumentCallees = argumentCallees.top()
 	return report
 }
 
@@ -532,8 +651,15 @@ type CredentialUsage = {
 	placements: Set<string>
 }
 
+/** Only header and query detail decides an inject; other detail is noise. */
 function placementKey(placement: CredentialPlacement) {
-	return JSON.stringify(placement)
+	switch (placement.type) {
+		case 'header':
+		case 'query':
+			return JSON.stringify(placement)
+		default:
+			return JSON.stringify({ type: placement.type })
+	}
 }
 
 function collectUsage(items: ReadonlyArray<StoredItem>) {
@@ -550,9 +676,10 @@ function collectUsage(items: ReadonlyArray<StoredItem>) {
 		if (!item.result) continue
 		for (const reference of item.result.references) {
 			for (const id of reference.credentialIds) {
-				entry(id, reference.table).placements.add(
-					placementKey(reference.placement),
-				)
+				const usage = entry(id, reference.table)
+				// Each read of a binding carries the placement the value lands in.
+				if (reference.placement.type === 'binding') continue
+				usage.placements.add(placementKey(reference.placement))
 			}
 		}
 		for (const slot of item.result.slots) {
@@ -598,7 +725,10 @@ export function decideInject(placements: ReadonlySet<string>): InjectDecision {
 		case 'header-custom':
 		case 'basic':
 		case 'path':
+		case 'url':
 		case 'body':
+		case 'signing':
+		case 'binding':
 		case 'other':
 			return { outcome: 'unsupported' }
 		default: {
@@ -644,7 +774,11 @@ async function loadRowStates(
 				WHERE deleted_at IS NULL AND id IN (${placeholders(batch.length)})`,
 			)
 			.bind(JSON.stringify(defaultCredentialInject), ...batch)
-			.all<{ id: string; provider: string | null; inject_is_default: number }>()
+			.all<{
+				id: string
+				provider: string | null
+				inject_is_default: number
+			}>()
 		for (const row of result.results ?? []) {
 			states.set(row.id, {
 				provider: row.provider,

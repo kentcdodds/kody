@@ -4,6 +4,10 @@ import { packageInvocationStartedLog } from '#worker/caller-disconnect.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
+	type RunLogPackageFailureSummary,
+	type RunLogPackageFailureSummaryInput,
+} from './package-failure-summary.ts'
+import {
 	type ActivationMilestoneRecord,
 	type PackageRunSuccessRecord,
 } from './package-activation-state.ts'
@@ -72,6 +76,21 @@ function runLogOwnerId(ownerId: OwnerId | null | undefined): OwnerId | null {
 function normalizeOptionalString(value: string | null | undefined) {
 	const trimmed = value?.trim()
 	return trimmed && trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * Lexical `started_at` compares need canonical UTC ISO strings (with
+ * milliseconds). Offset forms and second-precision stamps sort wrong against
+ * stored `toISOString()` values.
+ */
+function normalizeOptionalIsoTimestamp(value: string | null | undefined) {
+	const trimmed = normalizeOptionalString(value)
+	if (!trimmed) return null
+	const ms = Date.parse(trimmed)
+	if (!Number.isFinite(ms)) {
+		throw new Error(`Invalid ISO timestamp filter: "${trimmed}"`)
+	}
+	return new Date(ms).toISOString()
 }
 
 function truncateUtf8(value: string, maxBytes: number) {
@@ -528,7 +547,8 @@ export async function listRunRecords(input: {
 		jobId: normalizeOptionalString(input.filter?.jobId),
 		workflowId: normalizeOptionalString(input.filter?.workflowId),
 		name: normalizeOptionalString(input.filter?.name),
-		since: normalizeOptionalString(input.filter?.since),
+		since: normalizeOptionalIsoTimestamp(input.filter?.since),
+		until: normalizeOptionalIsoTimestamp(input.filter?.until),
 		errorTriage: input.filter?.errorTriage ?? null,
 		limit,
 		cursor: input.cursor ?? null,
@@ -1198,6 +1218,24 @@ export async function getAdminInsightsSnapshot(input: {
 		env: input.env,
 		userId: input.userId,
 	}).getAdminInsightsSnapshot()
+}
+
+/**
+ * Content-free per-owner failed-run counts for one window. Propagates
+ * binding/RPC errors. Never returns error messages or other user content.
+ */
+export async function summarizePackageFailures(input: {
+	env: Env
+	userId: OwnerId
+	window: RunLogPackageFailureSummaryInput
+}): Promise<RunLogPackageFailureSummary> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).summarizePackageFailures(input.window)
 }
 
 /**

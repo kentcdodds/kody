@@ -40,6 +40,7 @@ function forkRecord(
 		hasSkills: false,
 		hidden: false,
 		isPrivate: true,
+		isInternetVisible: false,
 		lockedAt: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
@@ -81,7 +82,13 @@ test('package provenance enrichment marks outdated only when the pin is not an a
 		repo_id: 'listing-origin-repo',
 		published_commit: 'unrelated-fork-sha',
 	})
-	mocks.listingPinIsAncestorOfForkTip.mockResolvedValue(true)
+	const resolvedRepoIds: Array<string | null> = []
+	mocks.listingPinIsAncestorOfForkTip.mockImplementation(
+		async (input: { resolveOriginRepoId: () => Promise<string | null> }) => {
+			resolvedRepoIds.push(await input.resolveOriginRepoId())
+			return true
+		},
+	)
 	const ahead = await applySavedPackageForkListingAncestry({
 		env: { APP_DB: {} } as Env,
 		records: [forkRecord({ originCommit: 'commit-tip' })],
@@ -103,11 +110,13 @@ test('package provenance enrichment marks outdated only when the pin is not an a
 	)
 	expect(mocks.listingPinIsAncestorOfForkTip).toHaveBeenCalledWith({
 		env: expect.anything(),
-		repoId: 'listing-origin-repo',
 		listingPinnedCommit: 'commit-new',
 		forkTip: 'commit-tip',
+		resolveOriginRepoId: expect.any(Function),
 	})
+	expect(resolvedRepoIds).toEqual(['listing-origin-repo'])
 
+	mocks.listingPinIsAncestorOfForkTip.mockReset()
 	mocks.listingPinIsAncestorOfForkTip.mockResolvedValue(false)
 	const outdated = await applySavedPackageForkListingAncestry({
 		env: { APP_DB: {} } as Env,

@@ -3,9 +3,9 @@ import { join } from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { fail } from '../ci/resource-utils.ts'
 import {
-	assertRehearsalWorkerName,
 	formatD1SnapshotMarkdown,
 	parseD1RehearsalSnapshot,
+	resolveRehearsalWorkerName,
 	restoreD1RehearsalSnapshot,
 	takeD1RehearsalSnapshot,
 	type CloudflareClient,
@@ -34,14 +34,14 @@ export const rehearsalUsage = [
 	'Usage: node tools/preview-rehearsal/run.ts <command> [flags]',
 	'',
 	'CI commands (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; seed/json-snapshot/credentials also REHEARSAL_PASSWORD_KEY):',
-	'  d1-snapshot  --worker <kody-branch-*> --out <d1-snapshot.json> [--summary <file.md>]',
-	'  d1-restore   --worker <kody-branch-*> --snapshot <d1-snapshot.json> --confirm <kody-branch-*>',
-	'  seed-status  --worker <kody-branch-*> [--out <seed-status.json>]',
-	'  seed         --worker <kody-branch-*> --out-dir <dir> --recipient-public-key <base64 SPKI>',
-	'  credentials  --worker <kody-branch-*> --out <sealed.json> --recipient-public-key <base64 SPKI>',
+	'  d1-snapshot  --worker <kody-branch-*|slug> --out <d1-snapshot.json> [--summary <file.md>]',
+	'  d1-restore   --worker <kody-branch-*|slug> --snapshot <d1-snapshot.json> --confirm <kody-branch-*|slug>',
+	'  seed-status  --worker <kody-branch-*|slug> [--out <seed-status.json>]',
+	'  seed         --worker <kody-branch-*|slug> --out-dir <dir> --recipient-public-key <base64 SPKI>',
+	'  credentials  --worker <kody-branch-*|slug> --out <sealed.json> --recipient-public-key <base64 SPKI>',
 	'               (--lifetime short|long | --idle-ttl-seconds <n> --max-lifetime-seconds <n>)',
-	'  json-snapshot --worker <kody-branch-*> --out <json-snapshot.json>',
-	'  origins      --worker <kody-branch-*>   (prints the app, API, and mock origins as JSON)',
+	'  json-snapshot --worker <kody-branch-*|slug> --out <json-snapshot.json>',
+	'  origins      --worker <kody-branch-*|slug>   (prints the app, API, and mock origins as JSON)',
 	'',
 	'Operator commands (no Cloudflare credentials):',
 	'  json-snapshot --credentials <opened-credentials.json> --out <json-snapshot.json>',
@@ -182,7 +182,9 @@ async function main(argv: ReadonlyArray<string>) {
 	const log = (line: string) => console.error(line)
 	switch (command) {
 		case 'd1-snapshot': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
 			const snapshot = await takeD1RehearsalSnapshot(
 				cloudflareClient(),
 				workerName,
@@ -194,8 +196,12 @@ async function main(argv: ReadonlyArray<string>) {
 			return
 		}
 		case 'd1-restore': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
-			if (requireFlag(flags, 'confirm') !== workerName) {
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
+			if (
+				resolveRehearsalWorkerName(requireFlag(flags, 'confirm')) !== workerName
+			) {
 				fail(`--confirm must equal --worker (${workerName}) to restore.`)
 			}
 			const snapshot = parseD1RehearsalSnapshot(
@@ -216,7 +222,9 @@ async function main(argv: ReadonlyArray<string>) {
 			return
 		}
 		case 'seed-status': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
 			const status = await rehearsalSeedStatus(cloudflareClient(), workerName)
 			const out = flags.get('out')
 			if (out) await writeJson(out, status)
@@ -227,7 +235,9 @@ async function main(argv: ReadonlyArray<string>) {
 			return
 		}
 		case 'seed': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
 			const outDir = requireFlag(flags, 'out-dir')
 			const publicKey = await importRecipientPublicKey(
 				requireFlag(flags, 'recipient-public-key'),
@@ -256,7 +266,9 @@ async function main(argv: ReadonlyArray<string>) {
 			return
 		}
 		case 'credentials': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
 			const lifetime = readTokenLifetime(flags)
 			const publicKey = await importRecipientPublicKey(
 				requireFlag(flags, 'recipient-public-key'),
@@ -314,7 +326,7 @@ async function main(argv: ReadonlyArray<string>) {
 				origins = opened.origins
 				users = snapshotUsersFromOpenedCredentials(opened.users)
 			} else {
-				const workerName = assertRehearsalWorkerName(
+				const workerName = resolveRehearsalWorkerName(
 					requireFlag(flags, 'worker'),
 				)
 				origins = await resolveRehearsalOrigins(cloudflareClient(), workerName)
@@ -333,7 +345,9 @@ async function main(argv: ReadonlyArray<string>) {
 			return
 		}
 		case 'origins': {
-			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const workerName = resolveRehearsalWorkerName(
+				requireFlag(flags, 'worker'),
+			)
 			console.log(
 				JSON.stringify(
 					await resolveRehearsalOrigins(cloudflareClient(), workerName),

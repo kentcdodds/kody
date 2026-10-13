@@ -51,9 +51,11 @@ async function loadOrgGrantsData(input: {
 	user: Parameters<typeof orgHasPermission>[1]
 	org: ManagedOrg
 }): Promise<OrgGrantsLoaderData> {
-	const canManage =
-		!input.org.personal &&
-		(await orgHasPermission(input.env, input.user, 'member:write'))
+	const canManage = await orgHasPermission(
+		input.env,
+		input.user,
+		'member:write',
+	)
 	const grants = await listOrgGrantsForView(input.env.APP_DB, input.org.id)
 	return {
 		ok: true,
@@ -142,16 +144,6 @@ export function createOrgGrantsRevokePostHandler(env: Env) {
 			})
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
-			}
-			if (access.org.personal) {
-				return jsonResponse(
-					{
-						ok: false,
-						error:
-							'Grants for your personal organization are managed elsewhere.',
-					},
-					400,
-				)
 			}
 			const body = await readJsonObject(request)
 			const grantId =

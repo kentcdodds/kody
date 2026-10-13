@@ -109,6 +109,7 @@ function stubSavedPackage(input?: {
 		hasApp: input?.hasApp ?? true,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		lockedAt: null,
 		sourceListingId: forked ? 'listing-1' : null,
 		listingCurrent: forked ? true : null,

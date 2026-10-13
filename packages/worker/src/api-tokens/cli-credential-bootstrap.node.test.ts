@@ -72,6 +72,8 @@ test('bootstrap mint requires a lifetime and embeds it in cli_command', async ()
 	expect(minted.scopes).toContain('integration:read')
 	expect(minted.scopes).toContain('secret:use')
 	expect(minted.scopes).toContain('package:execute')
+	expect(minted.scopes).toContain('package:write')
+	expect(minted.scopes).toContain('token:delete')
 	expect(minted.idle_ttl_seconds).toBe(shortLife.idleTtlSeconds)
 	expect(minted.max_lifetime_seconds).toBe(shortLife.maxLifetimeSeconds)
 	expect(parseApiToken(minted.bootstrap_code)).toBeNull()
@@ -360,8 +362,9 @@ test('bootstrap without explicit scopes intersects defaults with the parent', as
 		},
 		now: start,
 	})
-	expect(minted.scopes).toEqual(['org:execute', 'org:read'])
+	expect(minted.scopes).toEqual(['org:execute', 'org:read', 'token:delete'])
 	expect(minted.scopes).not.toContain('package:execute')
+	expect(minted.scopes).not.toContain('package:write')
 })
 
 test('bootstrap long lifetime clamps absolute max to a shorter API-token parent', async () => {
@@ -405,6 +408,7 @@ test('bootstrap redeem keeps the stored org_id and rejects a missing one', async
 	const minted = await mintCliCredentialBootstrap({
 		db,
 		userId,
+		orgBinding: 'org',
 		orgId: `  ${orgId}  `,
 		lifetime: 'short',
 		now: start,
@@ -416,10 +420,12 @@ test('bootstrap redeem keeps the stored org_id and rejects a missing one', async
 		now: at(10),
 	})
 	expect(redeemed.token.org_id).toBe(orgId)
+	expect(redeemed.token.org_binding).toBe('org')
 
 	const missing = await mintCliCredentialBootstrap({
 		db,
 		userId,
+		orgBinding: 'org',
 		orgId,
 		lifetime: 'short',
 		now: start,

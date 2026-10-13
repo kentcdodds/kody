@@ -35,6 +35,10 @@ export const routes = route({
 	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
 	accountPackageApprovePublishApi:
 		'/account/packages/:packageId/approve-publish.json',
+	accountPackageApproveCapabilities:
+		'/account/packages/:packageId/approve-capabilities',
+	accountPackageApproveCapabilitiesApi:
+		'/account/packages/:packageId/approve-capabilities.json',
 	accountPackageFiles: '/account/packages/:packageId/files(/*relativePath)',
 	accountPackageFilesApi: '/account/packages/:packageId/files.json',
 	accountPackagesApi: '/account/packages.json',
@@ -61,6 +65,9 @@ export const routes = route({
 	accountActivityApi: '/account/activity.json',
 	accountWaitingApi: '/account/waiting.json',
 	accountWaitingClickPost: post('/account/waiting/click.json'),
+	// Prefetch-adopt cookie write for org SPA navigations (#3517). Not a
+	// section twin; keep distinct so navigation e2e does not see a refetch.
+	accountLastUsedOrgApi: '/account/last-used-org.json',
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),
@@ -198,7 +205,7 @@ export const routes = route({
 	communityInstallApiPost: post('/community/:listingId/install.json'),
 	// Organization section pages under `/@:orgSlug/-/…` so they never collide
 	// with a package's canonical public URL at `/@:username/:kodyId`.
-	// `packages` and `webhooks` are index-only so package apps and ingress
+	// `repositories` and `webhooks` are index-only so package apps and ingress
 	// (`/@owner/packages/…`, `/@owner/webhooks/…`) stay put.
 	orgActivity: get('/@:orgSlug/-/activity(/*rest)'),
 	orgBilling: get('/@:orgSlug/-/billing'),
@@ -218,6 +225,10 @@ export const routes = route({
 		'/@:orgSlug/-/mcp-servers/:serverId/authorize',
 	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
+	orgOverview: get('/@:orgSlug/-/overview'),
+	orgRepositories: get('/@:orgSlug/-/repositories'),
+	orgRepositoriesApi: get('/@:orgSlug/-/repositories.json'),
+	// Previous spelling of the repository list. 301 to `/repositories`.
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),
 	orgSecretProviders: get('/@:orgSlug/-/secret-providers(/*rest)'),
@@ -271,12 +282,16 @@ export const routes = route({
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
+	communityPackageApproveCapabilities:
+		'/@:username/:kodyId/approve-capabilities',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
 	communityPackageApprovePublishApi:
 		'/profiles/:username/packages/:kodyId/approve-publish.json',
+	communityPackageApproveCapabilitiesApi:
+		'/profiles/:username/packages/:kodyId/approve-capabilities.json',
 	// Owner-only webhook URL management for one package (the Webhooks section
 	// of package settings): GET lists declared webhooks with minted state,
 	// POST mints / rotates / reveals / enables / disables one. The credential

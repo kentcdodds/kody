@@ -51,12 +51,13 @@ test('logged-in header has one menu: the organization, then your own links and L
 	expect(html).not.toContain('data-testid="site-header-account"')
 	expect(html).not.toContain('data-testid="site-header-profile"')
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
-	expect(html).toContain(
-		'aria-label="@ada: organizations, manage, and account"',
+	expect(html).toContain('aria-label="@ada: organizations and account"')
+	// From an account page, the signup org row opens the overview too, not
+	// the public profile (that is "Your profile").
+	const adaRowAt = html.indexOf('data-testid="org-switcher-ada"')
+	expect(html.slice(html.lastIndexOf('<a', adaRowAt), adaRowAt)).toContain(
+		'href="/@ada/-/overview"',
 	)
-	expect(html).toContain('data-testid="org-switcher-manage-group"')
-	expect(html).toContain('>Manage @ada<')
-	expect(html).toContain('href="/@ada/-/billing"')
 	// The photo is drawn once on the trigger and once on the signup org row
 	// in each panel (desktop popover and phone menu), never as its own link.
 	const trigger = html.slice(
@@ -128,17 +129,9 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain(
-		'aria-label="@acme: organizations, manage, and account"',
-	)
-	expect(menu).toContain('data-testid="org-switcher-manage-group"')
-	expect(menu).toContain('>Manage @acme<')
-	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/members"')
-	expect(menu).toContain('href="/@acme/-/teams"')
-	expect(menu).toContain('href="/@acme/-/grants"')
-	expect(menu).toContain('href="/@acme/-/collaborators"')
-	expect(menu).not.toContain('href="/@acme/-/billing"')
+	expect(html).toContain('aria-label="@acme: organizations and account"')
+	// Secrets stays on the org row. Settings is a different page's row.
+	expect(menu).not.toContain('href="/@acme/-/settings"')
 	expect(menu).toContain('href="/account/organizations#invites"')
 	// The org in the URL is current: checked and announced, the other is not.
 	const acmeRow = menu.slice(
@@ -182,21 +175,14 @@ test('org switcher on team settings stays on the URL org when session lists only
 			lastUsedOrganization: 'ada',
 		}),
 	)
-	expect(html).toContain(
-		'aria-label="@acme: organizations, manage, and account"',
-	)
+	expect(html).toContain('aria-label="@acme: organizations and account"')
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	// Synthesized current appears as its own row (session list was personal-only).
 	expect(menu).toContain('data-testid="org-switcher-acme"')
-	expect(menu).toContain('>Manage @acme<')
 	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/members"')
-	// Member-shaped synthesis: no Billing until the real role loads.
-	expect(menu).not.toContain('href="/@acme/-/billing"')
-	expect(menu).not.toContain('>Manage @ada<')
 })
 
-test('org switcher keeps Manage links for a team org on account pages', async () => {
+test('org switcher from account pages opens the team home and the signup overview', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -225,16 +211,18 @@ test('org switcher keeps Manage links for a team org on account pages', async ()
 		}),
 	)
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	expect(menu).toContain('>Manage @acme<')
-	expect(menu).toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/@acme/-/teams"')
-	expect(menu).toContain('href="/@acme/-/billing"')
-	// Switching into the team org from an account page lands on Settings.
+	// Switching into the team org from an account page lands on its home,
+	// the team overview; the signup org lands on its workspace overview.
 	const acmeRow = menu.slice(
 		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
 		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
 	)
-	expect(acmeRow).toContain('href="/@acme/-/settings"')
+	expect(acmeRow).toContain('href="/@acme"')
+	const adaRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-ada"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-ada"')) + 1,
+	)
+	expect(adaRow).toContain('href="/@ada/-/overview"')
 })
 
 test('org switcher sends collaborators to org home and billing off Teams', async () => {
@@ -276,9 +264,7 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	)
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	// Manage stays on the personal org (Billing), not the collaborator org.
-	expect(collaborator).toContain('>Manage @ada<')
-	expect(collaborator).not.toContain('>Manage @acme<')
+	expect(collaborator).toContain('href="/@ada/-/overview"')
 
 	const billing = await renderToString(
 		jsx(SiteHeader, {
@@ -328,7 +314,7 @@ test('org switcher keeps every org-owned section when switching between orgs', a
 		'jobs',
 		'mcp-servers',
 		'memories',
-		'packages',
+		'repositories',
 		'secret-providers',
 		'secrets',
 		'values',
@@ -366,6 +352,89 @@ test('org switcher keeps every org-owned section when switching between orgs', a
 		expect([section, rowHref('acme')]).toEqual([section, `/@acme/-/${section}`])
 		expect([section, rowHref('ada')]).toEqual([section, `/@ada/-/${section}`])
 	}
+})
+
+test('org switcher draws a team photo on the button and in the open menu', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: '/profiles/ada/avatar/ada.png',
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@kody/-/settings',
+			organizations: [
+				{
+					slug: 'kody',
+					displayName: 'Kody',
+					role: 'owner',
+					personal: false,
+					avatarUrl: '/orgs/kody/avatar/new.png',
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+					avatarUrl: null,
+				},
+			],
+		}),
+	)
+	const trigger = html.slice(
+		html.indexOf('data-testid="org-switcher"'),
+		html.indexOf('data-testid="org-switcher-panel"'),
+	)
+	expect(trigger).toContain('src="/orgs/kody/avatar/new.png"')
+	expect(trigger).not.toContain('/profiles/ada/avatar/ada.png')
+
+	const panel = html.slice(
+		html.indexOf('data-testid="org-switcher-panel"'),
+		html.indexOf('data-testid="org-switcher-menu"'),
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	for (const section of [panel, menu]) {
+		const adaAt = section.indexOf('data-testid="org-switcher-ada"')
+		const kodyAt = section.indexOf('data-testid="org-switcher-kody"')
+		const createAt = section.indexOf('data-testid="org-switcher-create"')
+		const adaRow = section.slice(section.lastIndexOf('<a', adaAt), kodyAt)
+		const kodyRow = section.slice(section.lastIndexOf('<a', kodyAt), createAt)
+		expect(kodyRow).toContain('src="/orgs/kody/avatar/new.png"')
+		expect(adaRow).toContain('src="/profiles/ada/avatar/ada.png"')
+		expect(kodyRow).not.toContain('>K<')
+	}
+})
+
+test('org switcher uses the account photo for the personal organization', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: '/profiles/ada/avatar/ada.png',
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+					avatarUrl: '/orgs/ada/avatar/ignored.png',
+				},
+			],
+		}),
+	)
+	const trigger = html.slice(
+		html.indexOf('data-testid="org-switcher"'),
+		html.indexOf('data-testid="org-switcher-panel"'),
+	)
+	expect(trigger).toContain('src="/profiles/ada/avatar/ada.png"')
+	expect(html).not.toContain('/orgs/ada/avatar/ignored.png')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {

@@ -107,12 +107,17 @@ of MCP tool output). A provider POSTs to it and Kody dispatches the validated
 request to the package export that owns it.
 
 1. Declare it under `package.json#kody.webhooks`: a `name`, the `export` it
-   binds to, and (for vendor senders) `verification` — HMAC header and encoding.
-   Omit `secretName` for GitHub-style hooks so mint stores package-owned HMAC.
-   Set `secretName` only for provider-issued secrets (Sentry, Stripe) and store
-   that value with `secretSet`. Providers that quiz URL ownership (X CRC,
-   WebSub, Meta, Slack) also declare `challenge`; the platform answers that quiz
-   on the minted URL. One webhook name binds one export; there is no wildcard.
+   binds to, and `verification`. Use an HMAC type (header and encoding) when the
+   sender signs, or `{ "type": "url-secret" }` when it cannot; then the URL
+   secret is the only credential. A declared HMAC type never falls back to the
+   URL secret. The [signing presets](../use/webhooks.md#signing-presets) list
+   the block for Stripe, GitHub, Sentry, X, Bitbucket, your own callers, and the
+   senders Kody cannot verify yet (Discord Ed25519, Slack, Telegram). Omit
+   `secretName` for GitHub-style hooks so mint stores package-owned HMAC. Set
+   `secretName` only for provider-issued secrets (Sentry, Stripe) and store that
+   value with `secretSet`. Providers that quiz URL ownership (X CRC, WebSub,
+   Meta, Slack) also declare `challenge`; the platform answers that quiz on the
+   minted URL. One webhook name binds one export; there is no wildcard.
 2. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
    and register it with `webhookUrlApply` (`type: "http"` with `{{webhookUrl}}`
    after the owner Approves the destination at `/connect/webhook-apply`; GitHub

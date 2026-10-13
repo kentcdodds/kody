@@ -156,11 +156,11 @@ export async function listOrgCredentialsByIds(
 }
 
 /**
- * Old lane: `secret` and `integration` name a credential by its name, as
- * placeholders do. By-name grant targets resolve to the credential id once,
- * at grant time; an enablement paused on a credential that did not exist
- * yet resolves its name on each check. They are removed together with
- * secret placeholders when the old credential lane is removed.
+ * By-name targets: `secret` and `integration` name a credential by its name,
+ * as placeholders do. By-name grant targets resolve to the credential id
+ * once, at grant time; an enablement paused on a credential that did not
+ * exist yet resolves its name on each check. They are permanent, beside
+ * grants by credential id (ADR 0068).
  */
 export const legacyNamedCredentialTargets = [
 	'secret',
@@ -179,7 +179,7 @@ export function isLegacyNamedCredentialTarget(
 }
 
 /**
- * The credential ids an old-lane name names: a user-scope secret, or every
+ * The credential ids a by-name target names: a user-scope secret, or every
  * integration (OAuth connection and MCP server) with that stored name. An
  * OAuth connection and an MCP server may share a name, so an integration
  * name can name two credentials. Empty when nothing live has that name.

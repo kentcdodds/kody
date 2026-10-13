@@ -69,10 +69,12 @@ export async function buildWebhookRejectionReport(input: {
 		webhookOwnerScanConcurrency,
 		async (owner) => {
 			try {
+				// Push `until` into RunLog so older windows do not spend the
+				// page budget on newer runs (pages are newest-first).
 				const result = await readWebhookDeliveries({
 					env: input.env,
 					ownerId: owner.ownerId,
-					filter: { since },
+					filter: { since, until },
 				})
 				return { owner, ...result, failed: false }
 			} catch (cause) {
@@ -87,13 +89,10 @@ export async function buildWebhookRejectionReport(input: {
 
 	const endpoints: Array<WebhookRejectionEndpoint> = []
 	for (const scan of scans) {
-		const inWindow = scan.deliveries.filter(
-			(delivery) => until === null || delivery.startedAt < until,
-		)
 		endpoints.push(
 			...tallyOwnerRejections({
 				owner: scan.owner,
-				deliveries: inWindow,
+				deliveries: scan.deliveries,
 				httpStatus: input.httpStatus,
 				error,
 			}),

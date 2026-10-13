@@ -17,6 +17,14 @@ import {
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
+	emptyRunLogFailureCounts,
+	headerOnlyPlacementRefusalMarkers,
+	type RunLogFailureCounts,
+	type RunLogPackageFailureSummary,
+	type RunLogPackageFailureSummaryInput,
+	type RunLogPackageFailureSummaryRow,
+} from './package-failure-summary.ts'
+import {
 	type ActivationMilestone,
 	type ActivationMilestoneRecord,
 	type PackageRunSuccessRecord,
@@ -302,6 +310,7 @@ type ListRunsInput = {
 	workflowId?: string | null
 	name?: string | null
 	since?: string | null
+	until?: string | null
 	errorTriage?: RunErrorTriageFilter | null
 	limit: number
 	cursor?: string | null
@@ -3010,6 +3019,85 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
+	 * Content-free failed-run counts per package in `[since, until)`:
+	 * header-only placement refusals for every package, and all failed runs
+	 * for `packageIds`. Classifies `error_message` here so no message leaves.
+	 */
+	async summarizePackageFailures(
+		input: RunLogPackageFailureSummaryInput,
+	): Promise<RunLogPackageFailureSummary> {
+		type CountRow = {
+			package_id: string | null
+			n: number
+			first_at: string | null
+			last_at: string | null
+		}
+		const toCounts = (row: CountRow): RunLogFailureCounts => ({
+			count: Number(row.n) || 0,
+			firstAt: row.first_at,
+			lastAt: row.last_at,
+		})
+		const refusalMatch = headerOnlyPlacementRefusalMarkers
+			.map(() => 'instr(error_message, ?) > 0')
+			.join(' OR ')
+		const refusalRows = this.ctx.storage.sql
+			.exec<CountRow>(
+				`SELECT package_id, COUNT(*) AS n,
+					MIN(started_at) AS first_at, MAX(started_at) AS last_at
+				FROM runs
+				WHERE status = 'error'
+					AND started_at >= ? AND started_at < ?
+					AND error_message IS NOT NULL
+					AND (${refusalMatch})
+				GROUP BY package_id`,
+				input.since,
+				input.until,
+				...headerOnlyPlacementRefusalMarkers,
+			)
+			.toArray()
+		const packageIds = [...new Set(input.packageIds)]
+		const failedRows =
+			packageIds.length === 0
+				? []
+				: this.ctx.storage.sql
+						.exec<CountRow>(
+							`SELECT package_id, COUNT(*) AS n,
+								MIN(started_at) AS first_at, MAX(started_at) AS last_at
+							FROM runs
+							WHERE status = 'error'
+								AND started_at >= ? AND started_at < ?
+								AND package_id IN (${packageIds.map(() => '?').join(', ')})
+							GROUP BY package_id`,
+							input.since,
+							input.until,
+							...packageIds,
+						)
+						.toArray()
+		const rows = new Map<string | null, RunLogPackageFailureSummaryRow>()
+		const rowFor = (packageId: string | null) => {
+			const existing = rows.get(packageId)
+			if (existing) return existing
+			const created: RunLogPackageFailureSummaryRow = {
+				packageId,
+				placementRefusals: { ...emptyRunLogFailureCounts },
+				failedRuns:
+					packageId != null && packageIds.includes(packageId)
+						? { ...emptyRunLogFailureCounts }
+						: null,
+			}
+			rows.set(packageId, created)
+			return created
+		}
+		for (const row of refusalRows) {
+			rowFor(row.package_id).placementRefusals = toCounts(row)
+		}
+		for (const row of failedRows) {
+			rowFor(row.package_id).failedRuns = toCounts(row)
+		}
+		return { packages: [...rows.values()] }
+	}
+
+	/**
 	 * RunLog-only SQLite billing counters (SqlStorageCursor.rowsRead /
 	 * rowsWritten) for hot ops. Durable totals live in run_log_meta; the
 	 * isolate map is a fast path for the current lifetime.
@@ -3197,6 +3285,10 @@ class RunLogBase extends DurableObject<Env> {
 		if (input.since) {
 			clauses.push('r.started_at >= ?')
 			params.push(input.since)
+		}
+		if (input.until) {
+			clauses.push('r.started_at < ?')
+			params.push(input.until)
 		}
 		const errorTriage = input.errorTriage ?? null
 		if (errorTriage === 'open') {
@@ -4133,6 +4225,9 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		jobIds: Array<string>
 	}) => Promise<Array<JobRunObservabilityRecord>>
 	getAdminInsightsSnapshot: () => Promise<RunLogAdminInsightsSnapshot>
+	summarizePackageFailures: (
+		input: RunLogPackageFailureSummaryInput,
+	) => Promise<RunLogPackageFailureSummary>
 	getSqlBillingStats: () => Promise<RunLogSqlBillingStats>
 	inspectSqlBilling: () => Promise<RunLogSqlBillingInspection>
 	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>

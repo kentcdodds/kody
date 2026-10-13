@@ -7,6 +7,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	deriveRequestContext,
+	type EnablementRun,
+	inheritRequest,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -48,6 +54,10 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 
 const janeStableId = testStableUserIdFromEmail('jane@example.com')
+const adminPersonId = personIdFromStored(
+	testStableUserIdFromEmail('admin@example.com'),
+)
+const automationPackageId = 'pkg-admin-event-notify'
 const roleIds = { user: 1, admin: 2 } as const
 
 type SeedUser = {
@@ -95,7 +105,10 @@ function createAdminCapabilityTest(
 	users: Array<SeedUser>,
 	blobs?: ReturnType<typeof createMemoryEmailBlobs>['blobs'],
 	callerRoles: Array<string> = ['admin'],
+	caller: { source?: RequestSource; packageId?: string | null } = {},
 ) {
+	const callerPackageId =
+		caller.packageId === undefined ? automationPackageId : caller.packageId
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(
 		sqlite,
@@ -164,13 +177,19 @@ function createAdminCapabilityTest(
 			EMAIL_BLOBS: emailBlobs,
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
+			source: caller.source ?? { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
-				userId: personIdFromStored('admin-user'),
+				userId: adminPersonId,
 				email: 'admin@example.com',
 				displayName: 'admin',
 				roles: callerRoles,
+			},
+			storageContext: {
+				sessionId: null,
+				appId: callerPackageId,
+				packageId: callerPackageId,
+				storageId: null,
 			},
 		}),
 	}
@@ -750,3 +769,222 @@ test('adminUserVerify marks verified and mints a one-time url with audit metadat
 		},
 	])
 })
+
+const adminEnablement: EnablementRun = {
+	id: 'enablement-admin-notify',
+	enabler: { userId: adminPersonId, username: 'admin' },
+	role: 'owner',
+}
+const bea: SeedUser = {
+	username: 'bea',
+	roles: ['user'],
+	createdAt: '2026-01-04 00:00:00',
+}
+const beaEnablement: EnablementRun = {
+	...adminEnablement,
+	enabler: {
+		userId: personIdFromStored(testStableUserIdFromEmail('bea@example.com')),
+		username: 'bea',
+	},
+	role: 'member',
+}
+const triggerAudit = (trigger: string, triggerId = adminEnablement.id) =>
+	`trigger=${trigger};trigger_id=${triggerId};actor=${adminPersonId};package_id=${automationPackageId}`
+
+const subscriptionRun = (
+	enablement: EnablementRun = adminEnablement,
+): RequestSource => ({
+	kind: 'platform-event',
+	sourceId: 'email_verification_stall_alert',
+	enablement,
+})
+
+const triggeredAdminRuns: Array<{
+	name: string
+	source: RequestSource
+	trigger: string
+}> = [
+	{
+		name: 'job',
+		source: { kind: 'schedule', jobId: 'job-1', enablement: adminEnablement },
+		trigger: 'job',
+	},
+	{
+		name: 'webhook',
+		source: { kind: 'webhook', sourceId: 'ep-1', enablement: adminEnablement },
+		trigger: 'webhook',
+	},
+	{ name: 'subscription', source: subscriptionRun(), trigger: 'subscription' },
+	{
+		name: 'inbound email',
+		source: {
+			kind: 'inbound-email',
+			sourceId: 'message-1',
+			sender: { kind: 'inbox-owner' },
+			enablement: adminEnablement,
+		},
+		trigger: 'email',
+	},
+	{
+		name: 'package code a subscription started',
+		source: inheritRequest(
+			deriveRequestContext({
+				user: adminEnablement.enabler,
+				source: subscriptionRun(),
+			}),
+		),
+		trigger: 'subscription',
+	},
+]
+
+test.each(triggeredAdminRuns)(
+	'a $name run an admin enabled may call site-admin capabilities, and each call audits the trigger',
+	async ({ source, trigger }) => {
+		const t = createAdminCapabilityTest([admin, jane], undefined, ['admin'], {
+			source,
+		})
+		const verified = await adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mark_verified' },
+			t.ctx,
+		)
+		expect(verified.user.email_verified).toBe(true)
+		await expect(
+			adminUserVerifyCapability.handler(
+				{ email: 'missing@example.com', action: 'mint_verify_url' },
+				t.ctx,
+			),
+		).rejects.toThrow('User not found.')
+		expect(t.auditEvents()).toEqual([
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: `target_stable_user_id=${janeStableId};action=mark_verified`,
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: triggerAudit(trigger),
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'failure',
+				reason: 'User not found.',
+			},
+			{
+				action: 'adminUserVerify',
+				result: 'failure',
+				reason: `${triggerAudit(trigger)};error=User not found.`,
+			},
+		])
+	},
+)
+
+test('a triggered call that fails input validation still writes its trigger audit row', async () => {
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['admin'], {
+		source: subscriptionRun(),
+	})
+	await expect(
+		adminUserVerifyCapability.handler(
+			{
+				email: 'jane@example.com',
+				username: 'jane',
+				action: 'mark_verified',
+			},
+			t.ctx,
+		),
+	).rejects.toThrow('Invalid input for capability "adminUserVerify"')
+	expect(t.auditEvents()).toEqual([
+		{
+			action: 'adminUserVerify',
+			result: 'failure',
+			reason: expect.stringMatching(
+				new RegExp(
+					`^${triggerAudit('subscription')};error=Invalid input for capability "adminUserVerify"`,
+				),
+			),
+		},
+	])
+	expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
+})
+
+const triggeredAdminRefusals: Array<{
+	name: string
+	source?: RequestSource
+	roles?: Array<string>
+	prepare?: (sqlite: DatabaseSync) => void
+	error: RegExp
+	denial: string
+}> = [
+	{
+		name: 'caller lacks the admin role',
+		roles: ['user'],
+		error:
+			/MCP user lacks required role "admin" for capability "adminUserVerify"/,
+		denial: 'role',
+	},
+	{
+		name: 'enabler admin role revoked in D1 while cached roles still say admin',
+		prepare: (sqlite) =>
+			sqlite
+				.prepare('DELETE FROM user_roles WHERE user_id = 1 AND role_id = ?')
+				.run(roleIds.admin),
+		error:
+			/This subscription run acts for a person who lacks required role "admin" for capability "adminUserVerify"/,
+		denial: 'role',
+	},
+	{
+		name: 'enabler is not an admin',
+		source: subscriptionRun(beaEnablement),
+		error: /acts for a person who lacks required role "admin"/,
+		denial: 'role',
+	},
+	{
+		name: 'enabler is suspended',
+		prepare: (sqlite) =>
+			sqlite
+				.prepare("UPDATE users SET suspended_at = '2026-10-01' WHERE id = 1")
+				.run(),
+		error: /This subscription run acts for no active person/,
+		denial: 'no_user',
+	},
+	{
+		name: 'trigger nobody turned on',
+		source: { kind: 'platform-event', sourceId: 'event-1' },
+		error: /This subscription run acts for no active person/,
+		denial: 'no_user',
+	},
+	{
+		name: 'package app visitor',
+		source: { kind: 'package-app' },
+		roles: [],
+		error: /MCP user lacks required role "admin"/,
+		denial: 'role',
+	},
+]
+
+test.each(triggeredAdminRefusals)(
+	'site-admin capabilities refuse a non-interactive run: $name',
+	async (refusal) => {
+		const t = createAdminCapabilityTest(
+			[admin, jane, bea],
+			undefined,
+			refusal.roles ?? ['admin'],
+			{ source: refusal.source ?? subscriptionRun() },
+		)
+		refusal.prepare?.(t.sqlite)
+		await expect(
+			adminUserVerifyCapability.handler(
+				{ email: 'jane@example.com', action: 'mark_verified' },
+				t.ctx,
+			),
+		).rejects.toThrow(refusal.error)
+		expect(t.auditEvents()).toEqual([
+			{
+				action: 'mcp_capability_denied',
+				result: 'failure',
+				reason: refusal.denial,
+			},
+		])
+		expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
+	},
+)

@@ -1,5 +1,6 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
+import { type CredentialNeedsApprovalRequired } from '#worker/credentials/credential-needs-approval.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { type PublishPhaseTimings } from './publish-phase-timing.ts'
@@ -305,6 +306,15 @@ export type RepoSessionPublishResult =
 			packageName: string
 			credentialNotice: string | null
 	  }
+	| {
+			status: 'approval_required'
+			sessionId: string
+			message: string
+			publishedCommit: null
+			currentPublishedCommit: string | null
+			approval: CredentialNeedsApprovalRequired
+			credentialNotice: string | null
+	  }
 
 export type RepoExternalPublishResult =
 	| {
@@ -346,6 +356,13 @@ export type RepoExternalPublishResult =
 			message: string
 			packageId: string
 			packageName: string
+	  }
+	| {
+			status: 'approval_required'
+			previous_commit: string | null
+			pending_commit: string
+			message: string
+			approval: CredentialNeedsApprovalRequired
 	  }
 
 export type RepoSourceBootstrapResult = {

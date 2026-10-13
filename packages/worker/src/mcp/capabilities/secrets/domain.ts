@@ -1,5 +1,11 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	credentialOrgGrantCapability,
+	credentialOrgGrantListCapability,
+	credentialOrgRevokeCapability,
+} from './credential-org-grants.ts'
+import { credentialUpdateCapability } from './credential-update.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { secretDeleteCapability } from './secret-delete.ts'
 import { secretListCapability } from './secret-list.ts'
@@ -33,6 +39,10 @@ export const secretsDomain = defineDomain({
 		secretProviderUnbindCapability,
 		secretProviderLockCapability,
 		secretDeleteCapability,
+		credentialUpdateCapability,
+		credentialOrgGrantCapability,
+		credentialOrgRevokeCapability,
+		credentialOrgGrantListCapability,
 		jwtSignCapability,
 	],
 })

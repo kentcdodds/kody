@@ -13,6 +13,7 @@ import {
 	getUserSocialRowByUsername,
 	listCommunityActivityForActors,
 	listPublicProfilePackages as listPublicProfilePackagesFromDb,
+	listPublicProfileRepos as listPublicProfileReposFromDb,
 	resolveCommunityDisplayName,
 	updateUserProfileFields,
 	type UserSocialRow,
@@ -192,6 +193,58 @@ export async function listPublicProfilePackages(input: {
 		ownerStableUserId: input.ownerStableUserId,
 		packages,
 	})
+}
+
+function compareProfileRepositoryUpdatedDesc(
+	left: PublicProfilePackage,
+	right: PublicProfilePackage,
+) {
+	const byUpdated = right.updatedAt.localeCompare(left.updatedAt)
+	if (byUpdated !== 0) return byUpdated
+	return left.kodyId.localeCompare(right.kodyId)
+}
+
+/**
+ * Saved packages plus plain repos for `/@slug/-/repositories` and the public
+ * profile list. MCP `communityProfileGet` keeps packages-only via
+ * {@link listPublicProfilePackages}; plain repos stay on `repoList`.
+ */
+export async function listProfileRepositories(input: {
+	env: Env
+	ownerStableUserId: string
+	ownerUsername: string
+	query?: string
+	limit?: number
+	includePrivate?: boolean
+}): Promise<Array<PublicProfilePackage>> {
+	// Fetch both uncapped, then merge and apply `limit` so a full package
+	// page cannot crowd out plain repos (and the reverse).
+	const [packages, repos] = await Promise.all([
+		listPublicProfilePackages({
+			env: input.env,
+			ownerStableUserId: input.ownerStableUserId,
+			...(input.query ? { query: input.query } : {}),
+			includePrivate: input.includePrivate,
+		}),
+		listPublicProfileReposFromDb(input.env.APP_DB, {
+			ownerStableUserId: input.ownerStableUserId,
+			ownerUsername: input.ownerUsername,
+			...(input.query ? { query: input.query } : {}),
+			includePrivate: input.includePrivate,
+		}),
+	])
+	// One URL namespace (`/@owner/leaf`): when a saved package and plain repo
+	// share a leaf, keep the package — the page resolver already prefers it.
+	const byLeaf = new Map<string, (typeof packages)[number]>()
+	for (const item of [...packages, ...repos]) {
+		const key = item.kodyId.toLowerCase()
+		const existing = byLeaf.get(key)
+		if (!existing || (item.hasPackage && !existing.hasPackage)) {
+			byLeaf.set(key, item)
+		}
+	}
+	const merged = [...byLeaf.values()].sort(compareProfileRepositoryUpdatedDesc)
+	return input.limit == null ? merged : merged.slice(0, input.limit)
 }
 
 async function attachProfilePackageSignifierCounts(input: {

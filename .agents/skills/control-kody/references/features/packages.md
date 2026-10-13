@@ -4,41 +4,48 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 ## How to get there
 
-`/@username` lists your repositories (saved packages), including private and
-unpublished ones when you view your own profile. The page heading and account
-rail label are **Repositories**; the list routes are `/@username` and
-`/@<slug>/-/packages`. On a team org, `/@<slug>/-/packages` (and
-`/@<slug>/-/packages.json`) lists the packages that org owns, filtered to what
-the member can see (`canSeeResource`), without package-page links or icons. Chip
-filters (`visibility`, `listing`, `hidden`, `package`, `app`) and sort
-(`sort=updated|created|name`, `dir=asc|desc`) run client-side from the
-already-loaded list (behind a `<details>` Filters disclosure; no loader, no view
-transition). Default sort is updated descending (`updated_at DESC`); name
-defaults to ascending. `package=yes|no` is whether the row has the saved-package
-extension — distinct from `app=yes|no` (Has app / No app). Own-profile GET
-params: `visibility=public|private`, `listing=published|unpublished|ahead`
-(ahead = **Needs republish**: the listing pin is behind `published_commit`, not
+`/@username` lists your repositories — saved packages and plain repos —
+including private and unpublished ones when you view your own profile. The page
+heading and account rail label are **Repositories**; the list routes are
+`/@username` and `/@<slug>/-/repositories`. On a team org,
+`/@<slug>/-/repositories` (and `/@<slug>/-/repositories.json`) lists the
+packages that org owns, filtered to what the member can see (`canSeeResource`),
+plus every plain repo the org owns (members who can open the page see all of
+them; there is no per-repo grant). Former `/@<slug>/-/packages` (+ `.json`) URLs
+301 to `/repositories` and keep the query string. Chip filters (`visibility`,
+`listing`, `hidden`, `package`, `app`) and sort (`sort=updated|created|name`,
+`dir=asc|desc`) run client-side from the already-loaded list (behind a
+`<details>` Filters disclosure; no loader, no view transition). Default sort is
+updated descending (`updated_at DESC`); name defaults to ascending.
+`package=yes|no` is whether the row has the saved-package extension — distinct
+from `app=yes|no` (Has app / No app). Own-profile GET params:
+`visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
+**Needs republish**: the listing pin is behind `published_commit`, not
 HEAD-ahead-of-published), `hidden=yes|no`, `package=yes|no`, `app=yes|no`,
 `sort=created|name`, and `dir=asc|desc` (omit `dir` when it matches the sort
 field's default). Guests can use `listing=published|unpublished`,
 `package=yes|no`, `app=yes|no`, `sort`, and `dir`. Owner-only params are ignored
 for them. Search is `q=` and filters the already-loaded list as you type (URL
 `replaceState`, no loader). Each row shows Iconic signifiers (native tooltip
-only) for package, private, hidden, published to Community or not published to
-Community, webhook count, job count, and whether it has an app. Private
-repositories do not also get a “not published to Community” signifier — the
-private icon is enough. List marks come from
-`/@username/:kodyId/icon/:iconCommit` (packages) and
-`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
-lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**
-tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
-(**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
-published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab:
-lock, visibility, webhooks, delete), and `/@username/:kodyId/approve-publish`
-(published-vs-HEAD review). Opening an allowlisted image or video in the tree
-renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
-authz as the tree). `/account/packages` 404s. `/account/packages/:packageId`
-redirects to the canonical package page.
+only) for package or repo, private, hidden, published to Community or not
+published to Community (packages only), webhook count, job count, and whether it
+has an app. Private repositories do not also get a “not published to Community”
+signifier — the private icon is enough. List marks come from
+`/@username/:kodyId/icon/:iconCommit` for both packages and plain repos (the
+route falls back to `entity_kind:'repo'` with the same access as the detail
+page). `/account/repos/:repoId/icon/:iconCommit` remains the MCP/owner-only
+lane. Each repository lives at `/@username/:kodyId` (the URL slug is the package
+or repo name leaf; **Repo** tab: description, tags, license, badges),
+`/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
+(README-relative images from the published or pinned commit),
+`/@username/:kodyId/settings` (**Settings** tab for packages: lock, forkable
+visibility, internet-visible, webhooks, delete),
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
+`/@username/:kodyId/approve-capabilities` (credential/capability summary before
+internet-visible). Opening an allowlisted image or video in the tree renders a
+preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the
+tree). `/account/packages` 404s. `/account/packages/:packageId` redirects to the
+canonical package page.
 
 ## Drive it
 
@@ -69,15 +76,18 @@ fixtures use `control-kody execute` / `search` against the same origin.
 ## APIs
 
 - `GET|POST /account/packages.json` (list / lock, unlock, set-visibility,
-  delete, adopt-community-fork, absorb-listing; no package-create action)
+  set-internet-visible, approve-capabilities, delete, adopt-community-fork,
+  absorb-listing; no package-create action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
-- `GET /@:username/:kodyId/icon/:iconCommit` (package list mark)
-- `GET /account/repos/:repoId/icon/:iconCommit` (owner-only repo list mark)
+- `GET /@:username/:kodyId/icon/:iconCommit` (package or plain-repo list mark)
+- `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
+- `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
+- `GET|POST /account/packages/:packageId/approve-capabilities.json`
 
 ## Gotchas
 
@@ -89,6 +99,11 @@ fixtures use `control-kody execute` / `search` against the same origin.
   first. Agents review that hygiene before `packageUpdate`
   `changes.visibility: "public"`; they pass `confirm_name` only when going
   private.
+- **Forkable** (`visibility` / `is_private`) and **internet-visible** are
+  independent. Internet-visible requires a published commit and owner approval
+  of the credential/capability fingerprint (no secret values). Turning either
+  off requires typing the package slug. Agents requesting
+  `changes.internet_visible: true` get an `approval_url` instead of approving.
 - When default-branch HEAD is newer than the last publish, the Repo tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require

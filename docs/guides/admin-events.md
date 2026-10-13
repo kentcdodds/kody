@@ -584,9 +584,8 @@ Use this topic for notifier packages that email or page an operator when
 signup/verify mail bounces or otherwise fails at the provider. Silent drops that
 stay `accepted` use `user.email_verification.stalled`. `user.created` still
 fires for every new person account, including accounts that later verify
-themselves. Do not treat this topic as permission to mark the account verified
-or mint a link — call `adminUserVerify` from an admin session when ownership is
-proven.
+themselves. To rescue the signup from a handler, see
+[Rescuing a stalled signup from a handler](#rescuing-a-stalled-signup-from-a-handler).
 
 ## `user.email_verification.stalled` (admins)
 
@@ -636,9 +635,21 @@ Use this topic for notifier packages that email or page an operator when a
 signup is stranded without a bounce. SimpleLogin-style aliases can drop `kody@`
 mail without a terminal Cloudflare event. Terminal failures still use
 `user.email_verification.failed`. `/admin/users` and `adminUserList` accept
-`verification=stalled` for the same derived set. Do not treat this topic as
-permission to mark the account verified or mint a link — call `adminUserVerify`
-from an admin session when ownership is proven.
+`verification=stalled` for the same derived set.
+
+### Rescuing a stalled signup from a handler
+
+A subscription handler for this topic (or for `user.email_verification.failed`)
+may call `adminUserVerify`: `mint_verify_url` returns a one-time link to send
+over a path that is not `kody.codes`, and `mark_verified` verifies the account
+outright once ownership is proven. A job or webhook may do the same. Like every
+site-admin capability, it runs only when the person the run acts for holds the
+site `admin` role at call time (read fresh, so a revoked admin is refused at
+once), and each call writes an extra audit row naming the trigger type and id
+(see
+[Site-admin capabilities from triggered runs](../contributing/architecture/authorization.md#site-admin-capabilities-from-triggered-runs)).
+A non-admin automation is refused with
+`MCP user lacks required role "admin" for capability "adminUserVerify"`.
 
 ## `user.email_outbound.paused` (admins)
 

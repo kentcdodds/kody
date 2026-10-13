@@ -179,6 +179,7 @@ function packageRecord(
 		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		lockedAt: null,
 		createdAt: now,
 		updatedAt: now,

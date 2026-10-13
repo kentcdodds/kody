@@ -302,6 +302,7 @@ async function setup({
 				hasApp: false,
 				hidden: false,
 				isPrivate: false,
+				isInternetVisible: false,
 				lockedAt: null,
 				createdAt: now,
 				updatedAt: now,
@@ -687,10 +688,10 @@ test('packageSave responses steer coding agents toward the git lane', async () =
 	expect(result.next_steps).toContain('packagePublishExternalPush')
 	expect(result.next_steps).toContain(JSON.stringify(result.package_id))
 	expect(result.pending_secret_package_approvals).toBeNull()
-	expect(result.next_steps).not.toContain('Old-style credential references')
+	expect(result.next_steps).not.toContain('Credential placeholder references')
 })
 
-test('packageSave responses list old-style credential references by path and pattern', async () => {
+test('packageSave responses list credential placeholder references by path and pattern', async () => {
 	const { save } = await setup({ plan: 'max' })
 
 	const result = await save({
@@ -705,12 +706,12 @@ test('packageSave responses list old-style credential references by path and pat
 	})
 
 	expect(result.next_steps).toContain(
-		'Old-style credential references (codemod 0010-detect-legacy-credential-patterns, does not block publish):\n- src/send.ts: literal secret',
+		'Credential placeholder references (codemod 0010-detect-legacy-credential-patterns, informational; publish is unaffected):\n- src/send.ts: literal secret',
 	)
 	expect(result.next_steps).not.toContain('RESEND_KEY')
 })
 
-test('packageSave lists old-style references from the published files, not only the submitted ones', async () => {
+test('packageSave lists placeholder references from the published files, not only the submitted ones', async () => {
 	const { save } = await setup({ plan: 'max' })
 	const submitted = buildPackageFiles('kept-file-package')
 	const refresh =

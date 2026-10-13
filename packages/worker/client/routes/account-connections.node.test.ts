@@ -14,6 +14,7 @@ import {
 	accountRailOrgSlug,
 	isAccountNavItemActive,
 	isAccountRailPath,
+	workspaceLandingItem,
 	workspaceRailGroups,
 } from '#client/routes/account-rail.ts'
 import { type SessionInfo } from '#client/session.ts'
@@ -103,7 +104,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('aria-label="Workspace sections"')
 	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
 	expect(html).toMatch(
-		/href="\/@jane\/-\/packages"[^>]*>[\s\S]*?Repositories<\/a>/,
+		/href="\/@jane\/-\/repositories"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
 	expect(html).toContain('data-icon="box"')
 })
@@ -321,8 +322,17 @@ test('connection profiles list only granted packages and add more through a pack
 	expect(createForm).not.toContain('pkg-3"')
 })
 
-test('account rail holds only the person: profile, security, organizations, experiments, data', () => {
-	const items = accountRailGroups().flatMap((group) => group.items)
+test('account rail holds the person: profile, security, organizations, experiments, data', () => {
+	const items = accountRailGroups({ workspaceSlug: null }).flatMap(
+		(group) => group.items,
+	)
+	expect(items.map((item) => item.label)).toEqual([
+		'Profile',
+		'Security',
+		'Organizations',
+		'Experiments',
+		'Data & deletion',
+	])
 	const security = items.find((item) => item.label === 'Security')
 	expect(
 		security && isAccountNavItemActive(security, '/account/passkeys'),
@@ -349,9 +359,40 @@ test('account rail holds only the person: profile, security, organizations, expe
 		'/account/credits',
 		'/account/mcp-oauth-clients',
 		'/@jane/-/secrets',
-		'/@jane/-/packages',
+		'/@jane/-/repositories',
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
+	}
+})
+
+test('workspace landing opens Repositories so the rail is one click away', () => {
+	expect(workspaceLandingItem('jane')).toEqual({
+		href: '/@jane/-/repositories',
+		label: 'Workspace',
+		icon: 'box',
+	})
+	expect(workspaceLandingItem(null).href).toBe('/account')
+})
+
+test('account rail opens the signup workspace: overview, repositories, connections, MCP servers, secrets, jobs, memories', () => {
+	const groups = accountRailGroups({ workspaceSlug: 'jane-old' })
+	expect(groups.map((group) => group.label)).toEqual([null, 'Workspace'])
+	expect(
+		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
+	).toEqual([
+		['Overview', '/@jane-old/-/overview', 'home'],
+		['Repositories', '/@jane-old/-/repositories', 'box'],
+		['Connections', '/@jane-old/-/connections', 'link'],
+		['MCP servers', '/@jane-old/-/mcp-servers', 'server'],
+		['Secrets', '/@jane-old/-/secrets', 'key'],
+		['Jobs', '/@jane-old/-/jobs', 'briefcase'],
+		['Memories', '/@jane-old/-/memories', 'book'],
+	])
+	// Workspace links leave the account rail: those pages take the workspace
+	// rail, and nothing in the Workspace group is current on an account page.
+	for (const item of groups[1]?.items ?? []) {
+		expect(isAccountRailPath(item.href), item.href).toBe(false)
+		expect(isAccountNavItemActive(item, '/account'), item.href).toBe(false)
 	}
 })
 
@@ -362,9 +403,32 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		role: 'owner',
 	})
 	const items = groups.flatMap((group) => group.items)
+	// Overview leads the personal rail and is current only on its own page.
+	expect(groups[0]).toEqual({
+		label: null,
+		items: [
+			{
+				href: '/@jane/-/overview',
+				label: 'Overview',
+				icon: 'home',
+				description: 'Every section this workspace owns, one click away.',
+			},
+		],
+	})
+	const overview = items[0]
+	expect(
+		overview && isAccountNavItemActive(overview, '/@jane/-/overview'),
+	).toBe(true)
+	expect(overview && isAccountNavItemActive(overview, '/@jane/-/jobs')).toBe(
+		false,
+	)
+	// Every section the overview page lists carries a one-line description.
+	for (const item of groups.slice(1).flatMap((group) => group.items)) {
+		expect(item.description, item.label).toBeTruthy()
+	}
 	// Repositories is the workspace list, not the public profile.
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@jane/-/packages',
+		'/@jane/-/repositories',
 	)
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
 		'/@jane/-/secret-providers',
@@ -388,17 +452,96 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(accountPackagesNavHref(null)).toBe('/account')
 })
 
-test('workspace rail for a team organization follows each section page gate', () => {
+test('workspace rail for a team organization matches the personal section shape', () => {
+	const personalLabels = workspaceRailGroups({
+		orgSlug: 'ada',
+		personal: true,
+		role: 'owner',
+	})
+		.flatMap((group) => group.items)
+		.map((item) => item.label)
+	const teamOwner = workspaceRailGroups({
+		orgSlug: 'acme',
+		personal: false,
+		role: 'owner',
+	})
+	const teamLabels = teamOwner
+		.flatMap((group) => group.items)
+		.map((item) => item.label)
+	// Same resource sections in the same order; team adds management links
+	// before the shared person-scoped Usage row.
+	expect(personalLabels).toEqual([
+		'Overview',
+		'Repositories',
+		'Jobs',
+		'Workflows',
+		'Webhooks',
+		'Connections',
+		'Integrations',
+		'MCP servers',
+		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
+		'Grants',
+		'Billing',
+		'Usage',
+	])
+	expect(teamLabels).toEqual([
+		'Overview',
+		'Repositories',
+		'Jobs',
+		'Workflows',
+		'Webhooks',
+		'Connections',
+		'Integrations',
+		'MCP servers',
+		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
+		'Settings',
+		'Members',
+		'Teams',
+		'Grants',
+		'Collaborators',
+		'Billing',
+		'Usage',
+	])
 	expect(
-		workspaceRailGroups({
-			orgSlug: 'acme',
-			personal: false,
-			role: 'owner',
-		}).map((group) => [group.label, group.items.map((item) => item.href)]),
+		teamOwner.map((group) => [
+			group.label,
+			group.items.map((item) => item.href),
+		]),
 	).toEqual([
-		['Build', ['/@acme/-/packages', '/@acme/-/jobs']],
-		['Access', ['/@acme/-/connections']],
-		['Data', ['/@acme/-/secrets']],
+		[null, ['/@acme']],
+		[
+			'Build',
+			[
+				'/@acme/-/repositories',
+				'/@acme/-/jobs',
+				'/@acme/-/workflows',
+				'/@acme/-/webhooks',
+			],
+		],
+		[
+			'Access',
+			['/@acme/-/connections', '/@acme/-/integrations', '/@acme/-/mcp-servers'],
+		],
+		[
+			'Data',
+			[
+				'/@acme/-/secrets',
+				'/@acme/-/secret-providers',
+				'/@acme/-/memories',
+				'/@acme/-/email',
+			],
+		],
+		['Activity', ['/@acme/-/activity', '/@acme/-/waiting']],
 		[
 			'Organization',
 			[
@@ -408,6 +551,7 @@ test('workspace rail for a team organization follows each section page gate', ()
 				'/@acme/-/grants',
 				'/@acme/-/collaborators',
 				'/@acme/-/billing',
+				'/account/usage',
 			],
 		],
 	])
@@ -420,15 +564,26 @@ test('workspace rail for a team organization follows each section page gate', ()
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
 	).toEqual([
+		'Overview',
 		'Repositories',
 		'Jobs',
+		'Workflows',
+		'Webhooks',
 		'Connections',
+		'Integrations',
+		'MCP servers',
 		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
 		'Settings',
 		'Members',
 		'Grants',
 		'Collaborators',
 		'Billing',
+		'Usage',
 	])
 	expect(
 		workspaceRailGroups({
@@ -439,28 +594,60 @@ test('workspace rail for a team organization follows each section page gate', ()
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
 	).toEqual([
+		'Overview',
 		'Repositories',
 		'Jobs',
+		'Workflows',
+		'Webhooks',
 		'Connections',
+		'Integrations',
+		'MCP servers',
 		'Secrets',
+		'Secret providers',
+		'Memories',
+		'Email',
+		'Activity',
+		'Waiting',
 		'Settings',
 		'Members',
 		'Teams',
 		'Grants',
 		'Collaborators',
+		'Usage',
 	])
 	// Grant-only collaborators can open Connections (their own agents bound
-	// to the org) but get a 404 on Repositories and the rest.
+	// to the org) but get a 404 on Repositories and the rest — with a note.
+	const collaborator = workspaceRailGroups({
+		orgSlug: 'acme',
+		personal: false,
+		role: null,
+	})
 	expect(
-		workspaceRailGroups({
-			orgSlug: 'acme',
-			personal: false,
-			role: null,
-		}).map((group) => [group.label, group.items.map((item) => item.href)]),
+		collaborator.map((group) => [
+			group.label,
+			group.items.map((item) => item.href),
+		]),
 	).toEqual([['Access', ['/@acme/-/connections']]])
+	expect(collaborator[0]?.note).toMatch(/grant/i)
 	expect(
 		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
 	).toEqual([])
+	// Team Overview is the org home; exact match so section pages stay off.
+	const teamOverview = teamOwner
+		.flatMap((group) => group.items)
+		.find((item) => item.label === 'Overview')
+	expect(teamOverview?.href).toBe('/@acme')
+	expect(teamOverview?.exact).toBe(true)
+	expect(teamOverview && isAccountNavItemActive(teamOverview, '/@acme')).toBe(
+		true,
+	)
+	expect(
+		teamOverview &&
+			isAccountNavItemActive(teamOverview, '/@acme/-/repositories'),
+	).toBe(false)
+	expect(
+		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/overview'),
+	).toBe(true)
 })
 
 test('account rail org slug prefers the path org over username', () => {

@@ -5,11 +5,11 @@ import { routes } from '#universal/routes.ts'
 const profileMatcher = createMatcher(routes.profile.pattern)
 
 /**
- * `/@slug/-/packages` is the signed-in repository list. The capture is
+ * `/@slug/-/repositories` is the signed-in repository list. The capture is
  * {@link dnsSafeUsernamePatternSource}, the same handle shape as usernames.
  */
 const orgRepositoryListPattern = new RegExp(
-	`^/@(${dnsSafeUsernamePatternSource})/-/packages/?$`,
+	`^/@(${dnsSafeUsernamePatternSource})/-/repositories/?$`,
 )
 
 /**

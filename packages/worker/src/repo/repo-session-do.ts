@@ -75,6 +75,10 @@ import {
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
+	pausedSessionMovedMessage,
+	requireCredentialNeedsApproval,
+} from '#worker/credentials/credential-needs-approval.ts'
+import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
 	isolatedArtifactRebuildStagingTtlSeconds,
@@ -1024,17 +1028,50 @@ class RepoSessionBase extends DurableObject<Env> {
 		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 	}
 
+	private assertPublishedCommitUnchanged(input: {
+		source: EntitySourceRow
+		publishedCommit: string
+	}) {
+		const currentCommit = input.source.published_commit?.trim() || null
+		if (currentCommit === input.publishedCommit) return
+		throw new Error(
+			`Published commit changed from "${input.publishedCommit}" to "${currentCommit ?? 'unpublished'}" during package artifact rebuild; retry this package.`,
+		)
+	}
+
+	/**
+	 * Load source files for the requested published commit's immutable snapshot.
+	 * Never stages the current source row's commit when the caller asked for a
+	 * different one — that mislabels newer files under an older commit.
+	 * Workspace fallback is only allowed when the source is still at that
+	 * commit (re-checked after a snapshot miss).
+	 */
 	private async collectSourceFilesForPublishedArtifactRebuild(
 		source: EntitySourceRow,
+		publishedCommit: string,
 	) {
+		const sourceAtPublishedCommit = {
+			...source,
+			published_commit: publishedCommit,
+		}
 		const snapshot = await loadPublishedSourceSnapshot({
 			env: this.env,
 			userId: source.user_id,
-			source,
+			source: sourceAtPublishedCommit,
 		})
 		if (snapshot && typeof snapshot.files[source.manifest_path] === 'string') {
 			return snapshot.files
 		}
+		// Snapshot miss: only fall back to the session workspace when the
+		// source is still published at the requested commit.
+		const freshSource = await this.resolvePublishSource({
+			sourceId: source.id,
+			userId: source.user_id,
+		})
+		this.assertPublishedCommitUnchanged({
+			source: freshSource,
+			publishedCommit,
+		})
 		const workspaceFiles = await this.collectWorkspaceFiles()
 		if (typeof workspaceFiles[source.manifest_path] === 'string') {
 			return workspaceFiles
@@ -2621,15 +2658,18 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Collect workspace files once on the long-lived publish session and stage
-	 * the snapshot in KV for throwaway rebuild isolates (see
-	 * isolated-artifact-rebuild.ts). Callers list and filter targets before
-	 * staging so already-built resumes skip this work.
+	 * Collect the requested published commit's immutable snapshot once on the
+	 * long-lived publish session and stage it in KV for throwaway rebuild
+	 * isolates (see isolated-artifact-rebuild.ts). Callers list and filter
+	 * targets before staging so already-built resumes skip this work.
+	 * Rejects when the source's current published commit differs so a
+	 * concurrent publish cannot stage newer files under an older label.
 	 */
 	async stagePublishedPackageArtifactRebuild(input: {
 		sessionId?: string
 		sourceId?: string
 		userId: OwnerId
+		publishedCommit: string
 	}): Promise<{
 		stagingKey: string
 	}> {
@@ -2639,6 +2679,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				'Published bundle artifacts can only be rebuilt for packages.',
 			)
 		}
+		this.assertPublishedCommitUnchanged({
+			source,
+			publishedCommit: input.publishedCommit,
+		})
 		const stagingKv = (this.env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
 			.BUNDLE_ARTIFACTS_KV
 		if (!stagingKv) {
@@ -2647,11 +2691,21 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const sourceFiles =
-			await this.collectSourceFilesForPublishedArtifactRebuild(source)
+			await this.collectSourceFilesForPublishedArtifactRebuild(
+				source,
+				input.publishedCommit,
+			)
 		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
-		await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
-			expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
-		})
+		await stagingKv.put(
+			stagingKey,
+			JSON.stringify({
+				sourceFiles,
+				publishedCommit: input.publishedCommit,
+			}),
+			{
+				expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
+			},
+		)
 		return { stagingKey }
 	}
 
@@ -2725,11 +2779,20 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
 			sourceFiles?: Record<string, string>
+			publishedCommit?: string
 		}>(input.stagingKey, 'json')
 		const sourceFiles = staged?.sourceFiles
 		if (!sourceFiles) {
 			const message =
 				'Isolated artifact rebuild staging data expired or is missing; re-run the publish capability to repair artifacts.'
+			results.push(...failTargets(remaining, message))
+			return { ok: false, message, results }
+		}
+		if (
+			typeof staged.publishedCommit === 'string' &&
+			staged.publishedCommit !== input.publishedCommit
+		) {
+			const message = `Isolated artifact rebuild staging was for commit "${staged.publishedCommit}" but rebuild requested "${input.publishedCommit}".`
 			results.push(...failTargets(remaining, message))
 			return { ok: false, message, results }
 		}
@@ -2744,6 +2807,12 @@ class RepoSessionBase extends DurableObject<Env> {
 				results.push(...failTargets(remaining, message))
 				return { ok: false, message, results }
 			}
+			// Reject before writing so a publish that landed after staging
+			// cannot leave newer files labeled as the caller's older commit.
+			this.assertPublishedCommitUnchanged({
+				source,
+				publishedCommit: input.publishedCommit,
+			})
 			const savedPackage = await getSavedPackageById(this.env.APP_DB, {
 				userId: input.userId,
 				packageId: source.entity_id,
@@ -2829,6 +2898,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				'Published bundle artifacts can only be rebuilt for packages.',
 			)
 		}
+		this.assertPublishedCommitUnchanged({
+			source,
+			publishedCommit: input.publishedCommit,
+		})
 		const savedPackage = await getSavedPackageById(this.env.APP_DB, {
 			userId: input.userId,
 			packageId: source.entity_id,
@@ -2837,9 +2910,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(`Saved package "${source.entity_id}" was not found.`)
 		}
 		const sourceFiles =
-			await this.collectSourceFilesForPublishedArtifactRebuild(source)
+			await this.collectSourceFilesForPublishedArtifactRebuild(
+				source,
+				input.publishedCommit,
+			)
+		// Re-check immediately before persist: staging/collection is not
+		// atomic with a concurrent publish updating the source row.
+		const freshSource = await this.resolvePublishSource(input)
+		this.assertPublishedCommitUnchanged({
+			source: freshSource,
+			publishedCommit: input.publishedCommit,
+		})
 		const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
-			source,
+			source: freshSource,
 			savedPackage,
 			userId: input.userId,
 			publishedCommit: input.publishedCommit,
@@ -3100,7 +3183,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		expectedPackageScope?: string
 		commitMessage?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		promotePublished?: boolean
+		/** Refuse unless the session still holds exactly this commit. */
+		expectedHeadCommit?: string
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -3182,12 +3269,24 @@ class RepoSessionBase extends DurableObject<Env> {
 				confirmed: input.privateVisibilityChangeConfirmed,
 			})
 		}
+		// A re-run of a paused publish must publish the commit it paused on, so
+		// it never mints a new history-replacing commit.
 		const sessionHeadCommit =
 			(await this.commitIfDirty(
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionId}`,
-				replaceHistory ? { replaceHistory: true } : undefined,
+				replaceHistory && input.expectedHeadCommit === undefined
+					? { replaceHistory: true }
+					: undefined,
 			)) ?? (await this.getHeadCommit())
+		if (
+			input.expectedHeadCommit !== undefined &&
+			(sessionHeadCommit ?? sessionRow.base_commit) !== input.expectedHeadCommit
+		) {
+			throw new Error(
+				pausedSessionMovedMessage(input.sessionId, input.expectedHeadCommit),
+			)
+		}
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
 			input.expectedPackageScope,
@@ -3201,6 +3300,71 @@ class RepoSessionBase extends DurableObject<Env> {
 			force: true,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
+		// Commit/push do not rewrite workspace file bytes, so reuse the
+		// snapshot collected once above for the published source KV write.
+		const snapshotFiles = workspaceSnapshot.files
+		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		const credentialNotice =
+			source.entity_kind === 'package'
+				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
+				: null
+		const withCredentialNotice = (message: string) =>
+			credentialNotice ? `${message}\n\n${credentialNotice}` : message
+		const lockedPackage =
+			source.entity_kind === 'package' &&
+			input.allowLockedPublish !== true &&
+			input.promotePublished !== false
+				? await loadLockedSavedPackage({
+						db: this.env.APP_DB,
+						userId: input.userId,
+						packageId: source.entity_id,
+					})
+				: null
+		// The pause runs before the source branch moves, so the published commit
+		// stays at HEAD and new sessions open as usual. The session (and its
+		// pushed branch) holds the paused commit until approval re-runs it. A
+		// locked package keeps its locked-publish flow; approving that publish
+		// runs this gate.
+		const approval =
+			input.credentialNeedsApproved === true ||
+			input.promotePublished === false ||
+			lockedPackage
+				? null
+				: await requireCredentialNeedsApproval({
+						env: this.env,
+						source,
+						pendingCommit: publishedCommit,
+						files: snapshotFiles,
+						requestedByUserId: input.requestedByUserId,
+						pausedSession: {
+							sessionId: sessionRow.id,
+							force: input.force === true,
+							destructiveOverwriteConfirmed:
+								input.destructiveOverwriteConfirmed === true,
+							privateVisibilityChangeConfirmed:
+								input.privateVisibilityChangeConfirmed === true,
+							...(input.expectedPackageScope !== undefined
+								? { expectedPackageScope: input.expectedPackageScope }
+								: {}),
+						},
+					})
+		if (approval) {
+			await updateRepoSession(this.env, {
+				id: sessionRow.id,
+				userId: sessionRow.user_id,
+				lastCheckpointCommit: publishedCommit,
+				lastCheckpointAt: nowIso(),
+			})
+			return {
+				status: 'approval_required',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				currentPublishedCommit: source.published_commit,
+				message: approval.message,
+				approval,
+				credentialNotice,
+			}
+		}
 		const forceSourcePush = input.force === true
 		try {
 			await this.pushBranchToRemoteRef({
@@ -3223,16 +3387,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 			throw error
 		}
-		// Commit/push do not rewrite workspace file bytes, so reuse the
-		// snapshot collected once above for the published source KV write.
-		const snapshotFiles = workspaceSnapshot.files
-		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
-		const credentialNotice =
-			source.entity_kind === 'package'
-				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
-				: null
-		const withCredentialNotice = (message: string) =>
-			credentialNotice ? `${message}\n\n${credentialNotice}` : message
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3241,29 +3395,22 @@ class RepoSessionBase extends DurableObject<Env> {
 				message: `Pushed session ${input.sessionId} to ${source.repo_id} without promoting published_commit.`,
 			}
 		}
-		if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
-			const lockedPackage = await loadLockedSavedPackage({
-				db: this.env.APP_DB,
-				userId: input.userId,
-				packageId: source.entity_id,
+		if (lockedPackage) {
+			const error = createPackagePublishLockedError({
+				savedPackage: lockedPackage,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
 			})
-			if (lockedPackage) {
-				const error = createPackagePublishLockedError({
-					savedPackage: lockedPackage,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-				})
-				return {
-					status: 'locked',
-					sessionId: input.sessionId,
-					publishedCommit: null,
-					pendingCommit: publishedCommit,
-					currentPublishedCommit: source.published_commit,
-					packageId: lockedPackage.id,
-					packageName: lockedPackage.name,
-					message: error.message,
-					credentialNotice,
-				}
+			return {
+				status: 'locked',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				pendingCommit: publishedCommit,
+				currentPublishedCommit: source.published_commit,
+				packageId: lockedPackage.id,
+				packageName: lockedPackage.name,
+				message: error.message,
+				credentialNotice,
 			}
 		}
 		await finalizePublishedEntitySource({
@@ -3340,6 +3487,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		credentialNeedsApproved?: boolean
+		requestedByUserId?: string | null
 		deferBundleCheckToRebuild?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
@@ -3430,6 +3579,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 			allowLockedPublish: input.allowLockedPublish,
+			credentialNeedsApproved: input.credentialNeedsApproved,
+			requestedByUserId: input.requestedByUserId,
 			phaseTimings,
 			...(input.deferBundleCheckToRebuild
 				? { deferBundleCheckToRebuild: true }

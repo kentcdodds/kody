@@ -155,10 +155,12 @@ Role and permission checks use the authenticated MCP caller context for the
 current request. That context carries the account owner's roles for interactive
 MCP sessions and for background package callers alike (jobs, webhooks,
 subscriptions, and other package invocations), and the checks do not look at
-`executionOrigin`. Site-admin capabilities, and any capability that changes
-roles, membership, or billing, must also declare `requiresLivePerson` (the admin
-access helpers already do) so no triggered run can call them; see
+`executionOrigin`. Any capability that changes roles, membership, or billing
+must also declare `requiresLivePerson` so no triggered run can call it; see
 [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
+Site-admin capabilities must not declare it: triggered runs may call them as a
+site admin, re-checked and audited by `defineCapability`; see
+[Site-admin capabilities from triggered runs](./architecture/authorization.md#site-admin-capabilities-from-triggered-runs).
 Do **not** cache role or permission decisions into Vectorize metadata, OAuth
 grants, package state, or session-scoped data. Interactive requests reload roles
 every time, so revocation takes effect on the next request; background callers
@@ -229,6 +231,12 @@ case-insensitively after the same hyphen and underscore compaction as reserved
 names. The payload is owner kind, id, and `created_at` (plus the stored spelling
 and `deleted_at` so a tombstone is visible). It is not a public search path:
 profile pages, package URLs, and search indexes keep their live-row filters.
+
+`adminPackagePlacementFailures` names packages (id and kody id) and their owner
+handle next to failed-run counts and first/last times in a window. That is the
+only package content it returns: no run inputs, outputs, logs, error messages,
+or secrets. See
+[Run records](./architecture/run-records.md#admin-package-placement-failures).
 
 The `summary` field returned by feedback list/get operations and the `details`
 field returned by the get operation are untrusted user-authored content. Admin

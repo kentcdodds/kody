@@ -4,7 +4,11 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
+import {
+	loadPackagePage,
+	ownerPackageForClient,
+	packagePageIsPrivate,
+} from '#app/package-page.ts'
 import {
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
@@ -193,14 +197,22 @@ async function readmeForPackagePage(
 		ownerSourceId: string | null | undefined
 		viewerIsOwner: boolean
 		ownerUserId?: string
+		/** When false, public guests may still read plain-repo README at HEAD. */
+		isPrivate: boolean
 	},
 	serverTiming?: Array<ServerTimingEntry>,
 ) {
 	let readmeContent = input.listingReadme ?? null
+	let readmeCommit: string | null = null
 	const ownerSourceId = input.ownerSourceId
 	const ownerUserId = input.ownerUserId
-	if (!readmeContent && input.viewerIsOwner && ownerSourceId && ownerUserId) {
-		readmeContent = await recordServerTiming(
+	const canLoadOwnerReadme =
+		!readmeContent &&
+		ownerSourceId &&
+		ownerUserId &&
+		(input.viewerIsOwner || !input.isPrivate)
+	if (canLoadOwnerReadme) {
+		const loaded = await recordServerTiming(
 			'owner-readme',
 			() =>
 				loadOwnerPackageReadme({
@@ -211,9 +223,12 @@ async function readmeForPackagePage(
 				}),
 			input.request,
 		)
+		readmeContent = loaded.content
+		readmeCommit = loaded.commit
 	}
 	return {
 		readmeContent,
+		readmeCommit,
 		readmeFences: await highlightReadmeFences(
 			input.env,
 			readmeContent,
@@ -288,7 +303,7 @@ export function createCommunityPackageHandler(env: Env) {
 
 			if (page.listing?.listing) {
 				const serverTiming: Array<ServerTimingEntry> = []
-				const [readme, hasAgentsDocs, imageBaseHref] = await Promise.all([
+				const [readme, hasAgentsDocs] = await Promise.all([
 					readmeForPackagePage(
 						{
 							env,
@@ -297,6 +312,7 @@ export function createCommunityPackageHandler(env: Env) {
 							ownerSourceId: page.ownerPackage?.sourceId,
 							viewerIsOwner: page.viewerIsOwner,
 							ownerUserId: page.ownerUserId,
+							isPrivate: packagePageIsPrivate(page),
 						},
 						serverTiming,
 					),
@@ -313,15 +329,16 @@ export function createCommunityPackageHandler(env: Env) {
 							}),
 						request,
 					),
-					resolvePackagePageReadmeImageBaseHref({
-						listingId: page.listing.listing.id,
-						ownerUsername: page.username,
-						kodyId: page.kodyId,
-						usedListingReadme: Boolean(page.listing.listing.readmeContent),
-						publishedCommit: page.ownerPackage?.publishedCommit,
-						pinnedCommit: page.listing.listing.pinnedCommit,
-					}),
 				])
+				const imageBaseHref = resolvePackagePageReadmeImageBaseHref({
+					listingId: page.listing.listing.id,
+					ownerUsername: page.username,
+					kodyId: page.kodyId,
+					usedListingReadme: Boolean(page.listing.listing.readmeContent),
+					readmeCommit: readme.readmeCommit,
+					publishedCommit: page.ownerPackage?.publishedCommit,
+					pinnedCommit: page.listing.listing.pinnedCommit,
+				})
 				return renderAppPage({
 					request,
 					env,
@@ -344,7 +361,8 @@ export function createCommunityPackageHandler(env: Env) {
 							hasAgentsDocs,
 							imageBaseHref,
 							viewerInstall: page.listing.viewerInstall,
-							ownerPackage: page.ownerPackage,
+							ownerPackage: ownerPackageForClient(page),
+							hasPackage: page.hasPackage,
 							username: page.username,
 							kodyId: page.kodyId,
 							viewerIsOwner: page.viewerIsOwner,
@@ -364,7 +382,7 @@ export function createCommunityPackageHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const [readme, hasAgentsDocs, imageBaseHref] = await Promise.all([
+			const [readme, hasAgentsDocs] = await Promise.all([
 				readmeForPackagePage(
 					{
 						env,
@@ -373,6 +391,7 @@ export function createCommunityPackageHandler(env: Env) {
 						ownerSourceId: page.ownerPackage?.sourceId,
 						viewerIsOwner: page.viewerIsOwner,
 						ownerUserId: page.ownerUserId,
+						isPrivate: packagePageIsPrivate(page),
 					},
 					serverTiming,
 				),
@@ -389,13 +408,14 @@ export function createCommunityPackageHandler(env: Env) {
 						}),
 					request,
 				),
-				resolvePackagePageReadmeImageBaseHref({
-					ownerUsername: page.username,
-					kodyId: page.kodyId,
-					usedListingReadme: false,
-					publishedCommit: page.ownerPackage?.publishedCommit,
-				}),
 			])
+			const imageBaseHref = resolvePackagePageReadmeImageBaseHref({
+				ownerUsername: page.username,
+				kodyId: page.kodyId,
+				usedListingReadme: false,
+				readmeCommit: readme.readmeCommit,
+				publishedCommit: page.ownerPackage?.publishedCommit,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -419,7 +439,8 @@ export function createCommunityPackageHandler(env: Env) {
 						hasAgentsDocs,
 						imageBaseHref,
 						viewerInstall: null,
-						ownerPackage: page.ownerPackage,
+						ownerPackage: ownerPackageForClient(page),
+						hasPackage: page.hasPackage,
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
@@ -528,7 +549,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const [readme, hasAgentsDocs, imageBaseHref] = await Promise.all([
+			const [readme, hasAgentsDocs] = await Promise.all([
 				readmeForPackagePage(
 					{
 						env,
@@ -537,6 +558,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 						ownerSourceId: page.ownerPackage?.sourceId,
 						viewerIsOwner: page.viewerIsOwner,
 						ownerUserId: page.ownerUserId,
+						isPrivate: packagePageIsPrivate(page),
 					},
 					serverTiming,
 				),
@@ -553,15 +575,16 @@ export function createCommunityPackageApiHandler(env: Env) {
 						}),
 					request,
 				),
-				resolvePackagePageReadmeImageBaseHref({
-					listingId: page.listing?.listing?.id,
-					ownerUsername: page.username,
-					kodyId: page.kodyId,
-					usedListingReadme: Boolean(page.listing?.listing?.readmeContent),
-					publishedCommit: page.ownerPackage?.publishedCommit,
-					pinnedCommit: page.listing?.listing?.pinnedCommit,
-				}),
 			])
+			const imageBaseHref = resolvePackagePageReadmeImageBaseHref({
+				listingId: page.listing?.listing?.id,
+				ownerUsername: page.username,
+				kodyId: page.kodyId,
+				usedListingReadme: Boolean(page.listing?.listing?.readmeContent),
+				readmeCommit: readme.readmeCommit,
+				publishedCommit: page.ownerPackage?.publishedCommit,
+				pinnedCommit: page.listing?.listing?.pinnedCommit,
+			})
 			return jsonResponse(
 				request,
 				{
@@ -581,7 +604,8 @@ export function createCommunityPackageApiHandler(env: Env) {
 					readmeFences: readme.readmeFences,
 					hasAgentsDocs,
 					imageBaseHref,
-					ownerPackage: page.ownerPackage,
+					ownerPackage: ownerPackageForClient(page),
+					hasPackage: page.hasPackage,
 					username: page.username,
 					kodyId: page.kodyId,
 					isPrivate: packagePageIsPrivate(page),
@@ -647,7 +671,8 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						hasAgentsDocs: false,
 						imageBaseHref: null,
 						viewerInstall: null,
-						ownerPackage: page.ownerPackage,
+						ownerPackage: ownerPackageForClient(page),
+						hasPackage: page.hasPackage,
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: true,

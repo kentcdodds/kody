@@ -133,9 +133,16 @@ function stubStripeFetch(input: {
 	subscriptions?: unknown
 	subscriptionsStatus?: number
 }) {
-	return stubFetch((url) => {
+	return stubFetch((url, init) => {
 		if (url.includes('/v1/checkout/sessions/')) {
 			return jsonResponse(input.checkout)
+		}
+		// Checkout link stamps customer metadata in waitUntil after D1 link.
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_metadata' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(
@@ -363,6 +370,12 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 				customer: 'cus_discord_pro',
 				client_reference_id: user.linkReference,
 			})
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_discord_pro' })
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(subscriptionList('sub_discord_pro', 'active'))
@@ -648,6 +661,91 @@ test('refreshStripePlanForOrg defers until the org has a linked Stripe customer'
 		stripe_customer_id: null,
 		stripe_plan: null,
 	})
+})
+
+test('checkout link replay skips Stripe subscription refresh when already linked', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const member = await seedUser('link-replay', { plan: 'free' })
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-replay-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, 'owner', ?)`,
+	)
+		.bind(teamOrgId, member.stableUserId, now.toISOString())
+		.run()
+	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
+	let subscriptionListCalls = 0
+	using _fetch = stubFetch((url, init) => {
+		if (url.includes('/v1/checkout/sessions/')) {
+			return jsonResponse({
+				id: 'cs_replay',
+				customer: 'cus_replay',
+				client_reference_id: orgLinkReference,
+				metadata: { kody_plan: 'pro' },
+			})
+		}
+		if (
+			url.includes('/v1/customers/') &&
+			(init?.method ?? 'GET').toUpperCase() === 'POST'
+		) {
+			return jsonResponse({ id: 'cus_replay' })
+		}
+		if (url.includes('/v1/subscriptions')) {
+			subscriptionListCalls += 1
+			return jsonResponse(subscriptionList('sub_replay', 'active'))
+		}
+		return jsonResponse({ error: 'unexpected stripe path' }, 500)
+	})
+
+	const first = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now,
+	})
+	expect(first.stripePlan).toBe('pro')
+	expect(subscriptionListCalls).toBe(1)
+
+	const second = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now: new Date(now.getTime() + 1000),
+	})
+	expect(second.stripePlan).toBe('pro')
+	expect(second.creditsEligible).toBe(true)
+	// Webhook-then-success: second pass must not list subscriptions again.
+	expect(subscriptionListCalls).toBe(1)
+
+	// Stale stripe_plan_refreshed_at (canceled-then-resubscribe) must refresh.
+	await env.APP_DB.prepare(
+		`UPDATE orgs SET stripe_plan = 'standard',
+		 stripe_plan_refreshed_at = ? WHERE id = ?`,
+	)
+		.bind(new Date(now.getTime() - 60 * 60 * 1000).toISOString(), teamOrgId)
+		.run()
+	const third = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_replay',
+		now: new Date(now.getTime() + 2000),
+	})
+	expect(third.stripePlan).toBe('pro')
+	expect(subscriptionListCalls).toBe(2)
 })
 
 test('a completed checkout with promo metadata records the claim for that person once', async () => {

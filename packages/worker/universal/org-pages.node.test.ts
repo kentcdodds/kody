@@ -8,11 +8,13 @@ import {
 	orgIdentity,
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
+	orgOverviewPath,
 	orgSlugFromOrgOwnedPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
 	parseOrgManagementPath,
+	parseOrgOverviewPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -39,7 +41,7 @@ const billing: OrganizationSummary = {
 
 test('account-shaped section paths become canonical org links', () => {
 	expect(orgResourcePathForAccountPath('/account/packages', 'ada')).toBe(
-		'/@ada/-/packages',
+		'/@ada/-/repositories',
 	)
 	expect(orgResourcePathForAccountPath('/account/secrets', 'ada')).toBe(
 		'/@ada/-/secrets',
@@ -90,11 +92,12 @@ test('org resource paths alias back to account loaders and ignore package apps',
 	expect(parseOrgResourcePath('/@acme/secrets')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/billing')).toBeNull()
 	expect(parseOrgBillingPath('/@acme/billing')).toBeNull()
-	expect(parseOrgResourcePath('/@acme/-/packages')).toEqual({
+	expect(parseOrgResourcePath('/@acme/-/repositories')).toEqual({
 		slug: 'acme',
-		section: 'packages',
+		section: 'repositories',
 		rest: '',
 	})
+	expect(parseOrgResourcePath('/@acme/-/packages')).toBeNull()
 })
 
 test('switching keeps the same kind of page or falls back to organization home', () => {
@@ -120,6 +123,16 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
+	expect(switchOrgPath('/@acme/-/overview', 'other')).toBe('/@other')
+})
+
+test('the workspace overview is an org-owned page under the /- separator', () => {
+	expect(orgOverviewPath('ada')).toBe('/@ada/-/overview')
+	expect(parseOrgOverviewPath('/@ada/-/overview')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/')).toEqual({ slug: 'ada' })
+	expect(parseOrgOverviewPath('/@ada/-/overview/extra')).toBeNull()
+	expect(parseOrgOverviewPath('/@ada/overview')).toBeNull()
+	expect(orgSlugFromOrgOwnedPath('/@ada/-/overview')).toBe('ada')
 })
 
 test('management paths name settings and members under the /- separator', () => {
@@ -339,11 +352,13 @@ test('org account JSON names the section', () => {
 
 test('every org-bound URL names its section, or none for billing and management', () => {
 	expect(orgOwnedSectionForPath('/@acme/-/memories/m-1')).toBe('memories')
-	expect(orgOwnedSectionForPath('/@acme/-/packages.json')).toBe('packages')
+	expect(orgOwnedSectionForPath('/@acme/-/repositories.json')).toBe(
+		'repositories',
+	)
 	expect(orgOwnedSectionForPath('/account/workflows.json')).toBe('workflows')
 	expect(orgOwnedSectionForPath('/@acme/-/settings.json')).toBeNull()
 	expect(orgOwnedSectionForPath('/@acme/-/billing')).toBeNull()
 	expect(orgOwnedSectionForPath('/@acme/-/nope.json')).toBeNull()
-	expect(orgSlugFromOrgOwnedPath('/@acme/-/packages.json')).toBe('acme')
+	expect(orgSlugFromOrgOwnedPath('/@acme/-/repositories.json')).toBe('acme')
 	expect(orgSlugFromOrgOwnedPath('/@acme/packages.json')).toBeNull()
 })

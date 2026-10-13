@@ -5,6 +5,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { stringifyMcpServerLastError } from './oauth-settle-error.ts'
 import {
+	getMcpServerOwnerId,
 	getMcpServerSettingRowById,
 	insertMcpServerSettingRow,
 	updateMcpServerSettingLastErrorRow,
@@ -83,4 +84,35 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 		id: 'server-1',
 	})
 	expect(cleared?.last_error).toBeNull()
+})
+
+test('getMcpServerOwnerId finds the org that owns a live server by id alone', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	await insertMcpServerSettingRow({
+		db,
+		row: {
+			id: 'server-team',
+			user_id: ownerIdFromStored('org-acme'),
+			name: 'linear',
+			url: 'https://mcp.linear.app/mcp',
+			enabled: true,
+			logo_key: null,
+			logo_content_type: null,
+			logo_source: null,
+			favicon_source_host: null,
+			usage_mode: 'any',
+			allowedPackageIds: [],
+			last_error: null,
+		},
+	})
+	expect(await getMcpServerOwnerId({ db, id: 'server-team' })).toBe(
+		ownerIdFromStored('org-acme'),
+	)
+	expect(await getMcpServerOwnerId({ db, id: 'missing' })).toBeNull()
+	sqlite.exec(
+		`UPDATE mcp_server_settings SET deleted_at = '2026-10-01T00:00:00Z' WHERE id = 'server-team'`,
+	)
+	expect(await getMcpServerOwnerId({ db, id: 'server-team' })).toBeNull()
 })

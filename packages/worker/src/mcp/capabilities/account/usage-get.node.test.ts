@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test } from 'vitest'
@@ -12,6 +15,8 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { usageGetCapability } from './usage-get.ts'
 
 const email = 'usage-get@example.com'
+const teamOrgId = ownerIdFromStored('a'.repeat(64))
+const teamOrgSlug = 'usage-team'
 
 function createUsageEnv(input: {
 	plan: string
@@ -19,6 +24,11 @@ function createUsageEnv(input: {
 	entitlementLadder?: 'legacy'
 	packageCount?: number
 	uniqueWorkerDays?: number
+	team?: {
+		plan: string
+		entitlementLadder?: 'legacy'
+		packageCount: number
+	}
 }) {
 	const stableUserId = testStableUserIdFromEmail(email)
 	const sqlite = new DatabaseSync(':memory:')
@@ -50,19 +60,39 @@ function createUsageEnv(input: {
 			'2026-07-01T00:00:00.000Z',
 			'2026-07-01T00:00:00.000Z',
 		)
-	for (let index = 0; index < (input.packageCount ?? 0); index += 1) {
+	const insertPackages = (ownerId: string, count: number) => {
+		for (let index = 0; index < count; index += 1) {
+			sqlite
+				.prepare(
+					`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+					 VALUES (?, ?, ?, ?, '', ?)`,
+				)
+				.run(
+					`${ownerId}-pkg-${index}`,
+					ownerId,
+					`pkg-${index}`,
+					`pkg-${index}`,
+					`${ownerId}-src-${index}`,
+				)
+		}
+	}
+	insertPackages(stableUserId, input.packageCount ?? 0)
+	if (input.team) {
 		sqlite
 			.prepare(
-				`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
-				 VALUES (?, ?, ?, ?, '', ?)`,
+				`INSERT INTO orgs (
+					id, slug, plan, entitlement_ladder, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
-				`pkg-${index}`,
-				stableUserId,
-				`pkg-${index}`,
-				`pkg-${index}`,
-				`src-${index}`,
+				teamOrgId,
+				teamOrgSlug,
+				input.team.plan,
+				input.team.entitlementLadder ?? 'public',
+				'2026-07-01T00:00:00.000Z',
+				'2026-07-01T00:00:00.000Z',
 			)
+		insertPackages(teamOrgId, input.team.packageCount)
 	}
 	if (input.uniqueWorkerDays) {
 		sqlite
@@ -86,7 +116,10 @@ function createUsageEnv(input: {
 	} as unknown as Env
 }
 
-async function readUsage(input: Parameters<typeof createUsageEnv>[0]) {
+async function readUsage(
+	input: Parameters<typeof createUsageEnv>[0],
+	options: { boundToTeam?: boolean } = {},
+) {
 	const result = await usageGetCapability.handler(
 		{},
 		{
@@ -99,6 +132,14 @@ async function readUsage(input: Parameters<typeof createUsageEnv>[0]) {
 					email,
 					displayName: 'Usage',
 				},
+				...(options.boundToTeam
+					? {
+							orgBinding: {
+								org: { id: teamOrgId, slug: teamOrgSlug },
+								role: 'owner' as const,
+							},
+						}
+					: {}),
 			}),
 		},
 	)
@@ -178,4 +219,31 @@ test('usageGet lists Free Worker compute as informational, never as a warning', 
 	expect(
 		result.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(false)
+})
+
+test('usageGet on a team-bound connection reports the team org plan and usage', async () => {
+	const input = {
+		plan: 'free',
+		team: { plan: 'standard', entitlementLadder: 'legacy', packageCount: 14 },
+	} as const
+	const team = await readUsage(input, { boundToTeam: true })
+	expect(team.result.plan).toBe('standard')
+	expect(team.resource('saved_packages')).toMatchObject({
+		current: 14,
+		limit: 100,
+		overEightyPercent: false,
+	})
+	expect(team.resource('execute_unique_workers_per_day')?.limit).toBe(500)
+	expect(team.resource('execute_unique_workers_per_day')?.week).toBeUndefined()
+
+	const personal = await readUsage(input)
+	expect(personal.result.plan).toBe('free')
+	expect(personal.resource('saved_packages')).toMatchObject({
+		current: 0,
+		limit: 10,
+	})
+	expect(personal.resource('execute_unique_workers_per_day')?.limit).toBe(150)
+	expect(personal.resource('execute_unique_workers_per_day')?.week?.limit).toBe(
+		400,
+	)
 })

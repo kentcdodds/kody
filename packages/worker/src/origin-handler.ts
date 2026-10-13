@@ -36,6 +36,10 @@ import {
 	handlePublicPackageGitHttpRequest,
 	isPublicPackageGitHttpRequest,
 } from '#worker/repo/public-package-git-http.ts'
+import {
+	handlePlainRepoGitHttpRequest,
+	isPlainRepoGitHttpRequest,
+} from '#worker/repo/plain-repo-git-http.ts'
 import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkAuthRateLimit } from '#app/rate-limit.ts'
@@ -854,7 +858,18 @@ async function fetchWithDynamicWorkerBudget(
 	// cache: `/@owner/pkg.git` can otherwise match the community package route
 	// matcher as a visibility-gated HTML path.
 	if (isPublicPackageGitHttpRequest(url.pathname)) {
-		const gitResponse = await handlePublicPackageGitHttpRequest(request, env)
+		const gitResponse = await handlePublicPackageGitHttpRequest(
+			request,
+			env,
+			(promise) => ctx.waitUntil(promise),
+		)
+		if (gitResponse) return gitResponse
+	}
+
+	// Plain-repo Artifacts git proxy (repoGetGitRemote remotes). Translates
+	// receive-pack lock contention into a clean 503 + Retry-After.
+	if (isPlainRepoGitHttpRequest(url.pathname)) {
+		const gitResponse = await handlePlainRepoGitHttpRequest(request, env)
 		if (gitResponse) return gitResponse
 	}
 

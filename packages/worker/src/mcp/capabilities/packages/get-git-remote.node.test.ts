@@ -85,7 +85,10 @@ type GitRemoteResult = {
 	setup_commands: Array<string>
 }
 
-function callerContextWithScopes(scopes: Array<OrgPermission> | null) {
+function callerContextWithScopes(
+	scopes: Array<OrgPermission> | null,
+	orgBinding?: { org: { id: string; slug: string | null }; role: 'owner' },
+) {
 	const callerContext = createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
@@ -94,6 +97,7 @@ function callerContextWithScopes(scopes: Array<OrgPermission> | null) {
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 		},
+		orgBinding,
 	})
 	if (!scopes || !callerContext.request) return callerContext
 	return {
@@ -110,7 +114,12 @@ async function getRemote(
 	{
 		snapshot = createPublishedSnapshot(),
 		scopes = null,
-	}: { snapshot?: unknown; scopes?: Array<OrgPermission> | null } = {},
+		orgBinding,
+	}: {
+		snapshot?: unknown
+		scopes?: Array<OrgPermission> | null
+		orgBinding?: { org: { id: string; slug: string | null }; role: 'owner' }
+	} = {},
 ) {
 	const result = await getGitRemoteCapability.handler(args, {
 		env: {
@@ -121,7 +130,7 @@ async function getRemote(
 				},
 			},
 		} as unknown as Env,
-		callerContext: callerContextWithScopes(scopes),
+		callerContext: callerContextWithScopes(scopes, orgBinding),
 	})
 	return result as GitRemoteResult
 }
@@ -203,11 +212,17 @@ function stubCreatedPackage(
 	ownerUserId = 'user-1',
 	name = '@kentcdodds/unleashed-wifi',
 ) {
+	let remote: ReturnType<typeof mockPackageSource> | undefined
 	mockModule.resolveSavedPackageRef.mockResolvedValueOnce(null)
 	mockModule.createStubSavedPackage.mockImplementation(async () => {
-		mockPackageSource(ownerUserId)
+		remote = mockPackageSource(ownerUserId)
 		return { packageId: 'package-1', kodyId: 'unleashed-wifi', name }
 	})
+	return {
+		get createToken() {
+			return remote?.createToken
+		},
+	}
 }
 
 test('get_git_remote rejects invalid input before creating stubs', async () => {
@@ -262,24 +277,24 @@ test('get_git_remote rejects invalid input before creating stubs', async () => {
 	)
 })
 
-test('get_git_remote returns scoped write and read artifact remotes', async () => {
+test('get_git_remote defaults to write when the caller can write', async () => {
 	resetMocks()
 	const { createToken, remote } = mockPackageSource()
 	const before = Date.now()
-	const writeResult = await getRemote({
+	const defaultResult = await getRemote({
 		package_id: 'package-1',
 		ttl_seconds: 1800,
 	})
-	const writeExpiresAt = new Date(writeResult.expires_at).getTime()
+	const defaultExpiresAt = new Date(defaultResult.expires_at).getTime()
 	expect(createToken.mock.calls).toEqual([['write', 1800]])
 	expect(
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).toHaveBeenCalledWith(expect.anything(), {
 		id: 'source-1',
 		userId: ownerIdFromStored('user-1'),
-		tokenExpiresAt: writeResult.expires_at,
+		tokenExpiresAt: defaultResult.expires_at,
 	})
-	expect(writeResult).toMatchObject({
+	expect(defaultResult).toMatchObject({
 		package_id: 'package-1',
 		kody_id: 'unleashed-wifi',
 		slug: 'unleashed-wifi',
@@ -289,12 +304,12 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 		git_extra_header: 'Authorization: Bearer art_v1_write_token',
 		git_author: { name: 'user-1', email: 'user-1@example.com' },
 	})
-	expect(writeExpiresAt).toBeGreaterThanOrEqual(before + 1799 * 1000)
-	expect(writeExpiresAt).toBeLessThanOrEqual(Date.now() + 1801 * 1000)
-	expect(writeResult.authenticated_remote).toContain(
+	expect(defaultExpiresAt).toBeGreaterThanOrEqual(before + 1799 * 1000)
+	expect(defaultExpiresAt).toBeLessThanOrEqual(Date.now() + 1801 * 1000)
+	expect(defaultResult.authenticated_remote).toContain(
 		'https://x:art_v1_write_token@',
 	)
-	expect(writeResult.setup_commands.length).toBeGreaterThan(0)
+	expect(defaultResult.setup_commands.at(-1)).toMatch(/\bpush\b/)
 	expect(mockModule.listServerRefs).toHaveBeenCalledWith(
 		expect.objectContaining({
 			protocolVersion: 1,
@@ -317,29 +332,32 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 	expect(readResult.authenticated_remote).toContain(
 		'https://x:art_v1_read_token@',
 	)
-	expect(readResult.setup_commands[0]).toMatch(/^git -c http\.extraHeader=/)
-	expect(readResult.setup_commands.at(-1)).toContain("HEAD:'main'")
+	expect(readResult.setup_commands.join('\n')).not.toMatch(/\bpush\b/)
 	expect(
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).not.toHaveBeenCalled()
 })
 
-test('get_git_remote mints read remotes with package:read and needs package:write or package:create for more', async () => {
+test('get_git_remote defaults to read for read-only credentials and denies explicit write clearly', async () => {
 	resetMocks()
 	const { createToken } = mockPackageSource()
 	await expect(
-		getRemote(
-			{ package_id: 'package-1', scope: 'read' },
-			{ scopes: ['package:read'] },
-		),
+		getRemote({ package_id: 'package-1' }, { scopes: ['package:read'] }),
 	).resolves.toMatchObject({ scope: 'read' })
+	expect(createToken).toHaveBeenCalledWith('read', 14_400)
 
 	createToken.mockClear()
 	await expect(
-		getRemote({ package_id: 'package-1' }, { scopes: ['package:read'] }),
+		getRemote(
+			{ package_id: 'package-1', scope: 'write' },
+			{ scopes: ['package:read'] },
+		),
 	).rejects.toMatchObject({
 		code: 'credential_scope',
 		permission: 'package:write',
+		message: expect.stringMatching(
+			/You have read access to package @kentcdodds\/unleashed-wifi, not write[\s\S]*scope: 'read'[\s\S]*communityFork/,
+		),
 	})
 	expect(createToken).not.toHaveBeenCalled()
 
@@ -375,6 +393,35 @@ test('get_git_remote retries remote timeouts and write scope blocks without a re
 	).rejects.toThrow('Stop and report this source recovery problem')
 })
 
+test('get_git_remote create mode still requires write to mint a write remote', async () => {
+	resetMocks()
+	const stub = stubCreatedPackage()
+	await expect(
+		getRemote(
+			{ kody_id: 'unleashed-wifi', create: true },
+			{ scopes: ['package:create', 'package:read'] },
+		),
+	).resolves.toMatchObject({ created: true, scope: 'read' })
+	expect(stub.createToken).toHaveBeenCalledWith('read', 14_400)
+
+	resetMocks()
+	stubCreatedPackage()
+	await expect(
+		getRemote(
+			{ kody_id: 'unleashed-wifi', create: true, scope: 'write' },
+			{ scopes: ['package:create', 'package:read'] },
+		),
+	).rejects.toMatchObject({
+		code: 'credential_scope',
+		permission: 'package:write',
+		message: expect.stringMatching(
+			/You have read access to package @kentcdodds\/unleashed-wifi, not write[\s\S]*scope: 'read'/,
+		),
+	})
+	// Mint authorize runs before createStub so a denial leaves no orphan.
+	expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
+})
+
 test('get_git_remote create mode registers stubs for personal and org-bound owners', async () => {
 	resetMocks()
 	stubCreatedPackage()
@@ -395,6 +442,7 @@ test('get_git_remote create mode registers stubs for personal and org-bound owne
 		created: true,
 		package_id: 'package-1',
 		kody_id: 'unleashed-wifi',
+		scope: 'write',
 	})
 	expect(createdResult.setup_commands.length).toBeGreaterThan(0)
 
@@ -438,10 +486,18 @@ test('get_git_remote create mode registers stubs for personal and org-bound owne
 	}
 	mockModule.resolvePackageOwnerContext.mockResolvedValue(orgOwner)
 	stubCreatedPackage('org-owner', '@acme/unleashed-wifi')
-	const orgResult = await getRemote({
-		kody_id: 'unleashed-wifi',
-		create: true,
-	})
+	const orgResult = await getRemote(
+		{
+			kody_id: 'unleashed-wifi',
+			create: true,
+		},
+		{
+			orgBinding: {
+				org: { id: 'org-owner', slug: 'acme' },
+				role: 'owner',
+			},
+		},
+	)
 	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

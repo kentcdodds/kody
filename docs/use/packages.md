@@ -127,10 +127,9 @@ hard-code a previous `@{username}` scope need updates from their owners.
 the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
 secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
 `NAME`, with the same package access rules as a package without slots. Name each
-slot after the secret or integration the code references. The leftover name lane
-is tracked in
-[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
-([ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md)).
+slot after the secret or integration the code references. Placeholders fill Key
+credentials; opt-in types that a package can declare are described in
+[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md).
 
 ```json
 {
@@ -156,13 +155,34 @@ is tracked in
 ```
 
 - Slot names start with a letter and use letters, numbers, `.`, `_`, or `-` (max
-  64).
-- `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
-  `description` says what the slot is for. `multiple: true` means the package
-  picks among several accounts.
-- Publish rejects any other key or a missing field and names the slot. If a
-  later rule rejects a slot in a version that is already published, the package
-  still loads with its other slots.
+  64). Prefer naming a slot after its provider (`github`, `resend`); publish
+  adds an informational note for a key that is not a provider slug
+  (`^[a-z0-9-]+$`) and never fails for it.
+- `kind` is required (`secret`, `oauth`, `mcp`, or the opt-in types `url`,
+  `login`, and `signing`). `provider` is optional and defaults to the key; a
+  second account from the same provider gets its own key with an explicit
+  `provider`. `description` is required, never affects matching, and says why
+  the package wants access. `multiple: true` means the package uses several
+  accounts at once. A typical need looks like
+  `"github": { "kind": "oauth", "description": "Read PRs to summarize them" }`.
+  ADR 0068's accepted design allows omitting `kind` for any fetch-capable
+  credential; publish matching requires it.
+- Publish rejects any other key or a missing required field and names the slot.
+  If a later rule rejects a slot in a version that is already published, the
+  package still loads with its other slots.
+- Each publish stores the package's needs closure: its own slots plus those of
+  the packages it statically imports through `kody:@`, as they were at this
+  publish. A key that the package and a dependency declare with a different
+  `kind` or `provider` fails the publish and names both; give one a different
+  key.
+- `packageGet` returns that closure as `credentials.needs`, each need with how
+  it resolves for you: `status` is `ready` (exactly one credential you can Use
+  has the need's kind and provider; `autoPick` names it), `ambiguous` (several
+  do), or `unbound` (none). `yourOptions` lists what you could pick (name, `org`
+  or `personal` scope, hosts): the matches plus same-kind credentials with no
+  provider, which resolve automatically once their provider is set
+  (`credentialUpdate`). Only credentials you can Use are listed, and needs
+  inherited from a dependency carry `from`.
 - Slots take no `placement`. Publish rejects one with a message to remove it.
   Published versions that include it load with it ignored. The fetch gateway
   fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request
@@ -170,6 +190,58 @@ is tracked in
   and its host is one the secret or integration allows, the same as for a
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
+
+#### Opt-in: credential clients
+
+A package (or ad hoc execute) can ask for a client instead of writing a
+placeholder. The client never holds the value: the credential decides where its
+value goes, and it is sent only to the credential's hosts over HTTPS.
+
+```ts
+import { credential } from 'kody:runtime'
+
+const resend = await credential('RESEND_API_KEY')
+await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
+```
+
+- `credential(key)` picks the one credential you can Use with the need's kind
+  and provider (an undeclared key is read as a provider). It rejects with an
+  Error carrying `code` (`credential_unbound`, `credential_ambiguous`,
+  `credential_not_found`, `credential_denied`, `invalid_request`,
+  `host_not_allowed`, `insecure_transport`) and `retryWith`, a list of picks to
+  retry with.
+- The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
+  oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
+  MCP server). A relative URL resolves against the first host. A header the
+  credential places replaces one the code set, and a placeholder in that header
+  is never filled. `fetch` follows redirects itself and keeps the credential off
+  any other host; an OAuth client refreshes once on a 401. A `url` credential's
+  client returns a redirect response as it is instead of following it, and its
+  request path and query can't carry placeholders. A 401 or 403 carries
+  `x-kody-credential-hint` naming only the credential's shape (for example
+  `header Authorization Bearer`).
+- `credential.named(name, { scope })` picks by exact name. It works only in ad
+  hoc execute and in packages of your personal org that are not listed in
+  Community.
+- The caller picks among several matches with a `credentials` map on `execute`
+  (for `code` or `invoke`):
+  `{ github: 'work', google: ['work', 'personal'], x: { name: 'work', scope: 'org' } }`.
+  A pick's kind must match when the need declares one, and its provider must
+  match when both have one. `credentials(key)` returns every pick for the key
+  (`[]` picks none on purpose); without a map entry it returns the one match,
+  never "all of them". The map is checked before code runs: a key no package in
+  an invoked run declares fails the run with `credential_need_unknown`, and in
+  ad hoc code it is a warning. A package's `credential(key)` resolves the same
+  need the check used, pinned by the entry package. A pick with no provider
+  opens with a `hint` to set one. A pick grants nothing; it chooses only among
+  credentials you can Use.
+- A client works only in the run that opened it. Under `kody execute --local`,
+  published `kody:@…` modules and ad hoc / unpublished `--code` / `--file`
+  modules both use `credential` / `credentials` from `kody:runtime` with the
+  same CapabilityProxy resolution and gateway placement as hosted (secret values
+  never enter local workerd). CLI releases before the
+  [local credential runtime contract](../contributing/contracts/cli-local-credential-runtime.md)
+  lack the host export and fail at import time — upgrade `@kodycodes/cli`.
 
 To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
@@ -179,6 +251,13 @@ list in their output, and `packagePublishExternalPush` includes the result in
 `checks`. It never fails a check or blocks a publish. The labels are described
 in
 [package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
+When the list is shown, it may end with optional credential types that fit where
+the placeholders sit: a Key with an inject for header, query, or basic auth
+placeholders; an OAuth connection's `credential(key)` for integration token
+headers; a `url` credential for path or whole-URL placeholders; a `login`
+credential for password or token exchange bodies; and a `signing` credential for
+`secretJwtSign` or signature keys. They are suggestions only, without credential
+names; nothing is suggested for a placement no type fits.
 
 ### npm dependencies
 
@@ -725,9 +804,14 @@ resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
 Visitors see the badge but not the link. The five-minute reconcile job still
 auto-publishes unlocked packages; this page is the explicit website path.
 
-Fleet package-codemod apply does the same HEAD write on locked packages: the
-transform commits and pushes so you can review it the next time you publish. It
-does not skip locked packages, and it does not move `published_commit`.
+Fleet package-codemod apply for `head-and-published` codemods does the same HEAD
+write on locked packages: the transform commits and pushes so you can review it
+the next time you publish. It does not skip locked packages, and it does not
+move `published_commit`. Codemods with `applyMode: 'published-only'` (today:
+`0012`) finalize `published_commit` even when locked (`allowLockedPublish`). If
+that leaves pending HEAD as a sibling of the new published tip, **Publish HEAD**
+/ approve-publish still promotes that commit (`allowForce` with the owner click
+as overwrite confirmation).
 
 When a provider token is coarser than the job — Gmail has `gmail.send` but no
 drafts-only scope — the lock is the real grant. Worked example:
@@ -737,6 +821,34 @@ Publish lock does not shrink an OAuth token or an MCP connector. To keep a
 connected MCP server off execute and other packages, lock the **server** to this
 package instead:
 [Lock an MCP server to a package](../guides/locked-mcp-server.md).
+
+## Approval when credential needs change
+
+Every published package pauses a publish whose credential needs change, even
+when it is not locked. A change is a need key the new needs closure adds, or a
+key whose `kind`, `provider`, or `multiple` changes. A dependency can cause it:
+the closure includes the needs of the packages it statically imports. Dropping a
+need, editing a description, and a package's first publish never pause.
+
+A paused publish keeps the previously published commit serving and is never
+published again automatically. A paused `repoPublishSession` or `packageSave`
+leaves Artifacts HEAD on the published commit and keeps its session, which holds
+the paused commit until approval; an idle session is swept after seven days, so
+publish again then. A pushed commit (`packagePublishExternalPush`) is already on
+HEAD. `repoPublishSession` and `packagePublishExternalPush` return
+**`approval_required`** with `pending_commit`, `credential_need_changes`, and an
+**`approval_url`**; `packageSave` fails with the same message and URL. The URL
+opens `/@{username}/{package-name}/approve-capabilities`, the package's one
+approval page. Its **Waiting for your approval** section shows each paused
+publish with its reason (**Credential needs changed**) and the needs that
+changed. **Approve and publish** needs `package:publish` and runs the real
+publish (checks, fast-forward) for that exact commit, with the paused publish's
+overwrite options; it also counts as the locked-publish approval. A later
+publish replaces the pending request, and a request whose published base moved,
+or whose pushed commit is no longer HEAD, can no longer be approved, so publish
+again. A locked package keeps its locked-publish flow first: approving that
+publish on approve-publish runs this check and pauses there if the needs
+changed. Platform codemods do not pause.
 
 ## Community fork provenance
 
@@ -836,30 +948,33 @@ publish checks run.
    projections. If the pushed HEAD is already current, the tool returns
    `already_published`. If the package is locked, it returns `locked` with a
    `pending_commit` and `approval_url` after checks pass and leaves
-   `published_commit` unchanged. If checks fail before promotion, it returns
-   `checks_failed` with the failed check entries and leaves the underlying
-   storage state unchanged. Full check-time esbuild is deferred to the later
-   published artifact rebuild (callable and importable targets stay distinct).
-   That rebuild copies unchanged callable, importable, app, job, and
-   subscription artifacts from the previous published commit when the target's
-   entry, reachable source, and bundler root config (`package.json`, wrangler
-   config, vendored `node_modules`) match the new snapshot; a shared-module
-   change dirties every dependent target. Stale captured `kody:@` dependency
-   commits also force a rebuild, so republishing a stale dependent still
-   refreshes inlined snapshots. Missing prior artifacts or snapshots, first
-   publish, force, and `already_published` snapshot-mismatch repairs still
-   rebuild. A published commit always has a complete target set — reuse writes
-   the prior modules under the new commit key rather than leaving holes. A
-   rebuild failure after promotion also returns `checks_failed` with a bundle
-   check — re-run the publish capability to repair artifacts. Successful
-   `published` responses, and `already_published` responses when the metadata is
-   available, include a bounded `static_dependents` summary of direct saved
-   packages whose published bundle artifacts statically reference this package.
-   Stale entries mean the dependent bundle captured a dependency commit that
-   differs from the current published commit. Kody does not automatically
-   republish those dependents; inspect and republish only the ones whose static
-   snapshot should reference the current published commit. Those same success
-   results include `phase_timings` with optional millisecond fields `clone_ms`,
+   `published_commit` unchanged. If its credential needs changed, it returns
+   `approval_required` the same way (see
+   [Approval when credential needs change](#approval-when-credential-needs-change)).
+   If checks fail before promotion, it returns `checks_failed` with the failed
+   check entries and leaves the underlying storage state unchanged. Full
+   check-time esbuild is deferred to the later published artifact rebuild
+   (callable and importable targets stay distinct). That rebuild copies
+   unchanged callable, importable, app, job, and subscription artifacts from the
+   previous published commit when the target's entry, reachable source, and
+   bundler root config (`package.json`, wrangler config, vendored
+   `node_modules`) match the new snapshot; a shared-module change dirties every
+   dependent target. Stale captured `kody:@` dependency commits also force a
+   rebuild, so republishing a stale dependent still refreshes inlined snapshots.
+   Missing prior artifacts or snapshots, first publish, force, and
+   `already_published` snapshot-mismatch repairs still rebuild. A published
+   commit always has a complete target set — reuse writes the prior modules
+   under the new commit key rather than leaving holes. A rebuild failure after
+   promotion also returns `checks_failed` with a bundle check — re-run the
+   publish capability to repair artifacts. Successful `published` responses, and
+   `already_published` responses when the metadata is available, include a
+   bounded `static_dependents` summary of direct saved packages whose published
+   bundle artifacts statically reference this package. Stale entries mean the
+   dependent bundle captured a dependency commit that differs from the current
+   published commit. Kody does not automatically republish those dependents;
+   inspect and republish only the ones whose static snapshot should reference
+   the current published commit. Those same success results include
+   `phase_timings` with optional millisecond fields `clone_ms`,
    `checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`, `dependents_ms`, and
    `total_ms`. Omitted keys did not run on that attempt. `checks_bundle_ms` is
    the publish bundle-check and is omitted when that esbuild pass is deferred to

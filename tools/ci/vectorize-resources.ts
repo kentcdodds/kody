@@ -42,6 +42,13 @@ type VectorizeClient = {
  * Look the index up by name rather than scanning the list endpoint, which
  * pages once the account holds many preview indexes.
  */
+function isTransientVectorizeGone(error: unknown) {
+	const message = error instanceof Error ? error.message : String(error)
+	// A just-deleted (or not-yet-visible) index answers 410
+	// vectorize.index.deleted, not only 404.
+	return /Cloudflare API request failed \((404|410)\)/.test(message)
+}
+
 async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 	try {
 		const response = await cloudflareApiRequest<VectorizeIndexInfo>({
@@ -51,11 +58,26 @@ async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 		})
 		return response.result?.name === name
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		// A just-deleted index answers 410 vectorize.index.deleted, not 404.
-		if (/Cloudflare API request failed \((404|410)\)/.test(message)) {
-			return false
-		}
+		if (isTransientVectorizeGone(error)) return false
+		throw error
+	}
+}
+
+/**
+ * GET can succeed while metadata_index/list still returns 410 after a
+ * recreate. Treat the index as ready only when metadata listing works.
+ */
+async function vectorizeIndexReady(client: VectorizeClient, name: string) {
+	if (!(await vectorizeIndexExists(client, name))) return false
+	try {
+		await cloudflareApiRequest<VectorizeMetadataIndexList>({
+			...client,
+			pathname: `/vectorize/v2/indexes/${encodeURIComponent(name)}/metadata_index/list`,
+			method: 'GET',
+		})
+		return true
+	} catch (error) {
+		if (isTransientVectorizeGone(error)) return false
 		throw error
 	}
 }
@@ -65,8 +87,8 @@ const vectorizeRecreateVisibleDelaysMs = [1_000, 2_000, 4_000, 8_000, 15_000]
 /**
  * Re-creating a name that was deleted minutes earlier (a preview redeploy
  * after its cleanup) succeeds, but reads keep answering 410
- * vectorize.index.deleted for a while. Wait for the new index to be readable
- * before configuring it; if it never shows, the next call reports the error.
+ * vectorize.index.deleted for a while. Wait until the index is operable
+ * (metadata list succeeds) before configuring it.
  */
 async function waitForCreatedVectorizeIndex(
 	client: VectorizeClient,
@@ -75,13 +97,17 @@ async function waitForCreatedVectorizeIndex(
 	const wait =
 		client.sleep ??
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+	if (await vectorizeIndexReady(client, name)) return
 	for (const delayMs of vectorizeRecreateVisibleDelaysMs) {
-		if (await vectorizeIndexExists(client, name)) return
 		console.error(
 			`Waiting ${String(delayMs)}ms for new Vectorize index ${name} to be readable.`,
 		)
 		await wait(delayMs)
+		if (await vectorizeIndexReady(client, name)) return
 	}
+	throw new Error(
+		`Vectorize index ${name} did not become ready (index GET or metadata_index/list kept returning 404/410) past the wait window.`,
+	)
 }
 
 async function ensureVectorizeMetadataIndexes(
@@ -137,8 +163,10 @@ export async function ensureVectorizeIndex(
 				},
 			})
 			console.error(`Created Vectorize index: ${input.name}`)
-			await waitForCreatedVectorizeIndex(input, input.name)
 		}
+		// Wait even when GET already succeeded: metadata_index/list can still
+		// answer 410 briefly after create/recreate on a recycled preview name.
+		await waitForCreatedVectorizeIndex(input, input.name)
 		await ensureVectorizeMetadataIndexes(input, input.name)
 	} catch (error) {
 		if (error instanceof CloudflareResourceError) throw error

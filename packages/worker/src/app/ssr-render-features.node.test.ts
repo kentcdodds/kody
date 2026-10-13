@@ -96,4 +96,16 @@ test.each([
 		expect(html).toContain(
 			`/images/lantern/kody-primitives-orb-${suffix.slice(1)}.webp`,
 		)
+	if (suffix === '/secrets') {
+		expect(html).toContain('href="/onboarding"')
+		expect(html).toContain('Connect your agent')
+	}
+	if (suffix === '/packages') {
+		expect(html).toContain('id="package-source-fallback"')
+		expect(html).toContain('src/brief.ts')
+	}
+	if (suffix === '/memory') {
+		expect(html).toContain('id="ms-hero-note"')
+		expect(html).toContain('Lead with the decision. Keep updates short.')
+	}
 })

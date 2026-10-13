@@ -67,6 +67,7 @@ export default mergeConfig(
 		test: {
 			name: 'workers-unit',
 			include: ['**/*.workers.test.ts'],
+			exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
 			testTimeout: workersTestTimeout,
 			hookTimeout: workersTestTimeout,
 			maxWorkers: workersMaxWorkers,

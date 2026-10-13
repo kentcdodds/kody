@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { credentialInjectSchema } from '#worker/credentials/credential-fields.ts'
 import {
 	type ListedSecret,
 	type SecretMetadata,
@@ -16,6 +17,12 @@ export const secretMetadataSchema = z.object({
 	updated_at: z.string(),
 	expires_at: z.string().nullable(),
 	ttl_ms: z.number().int().nonnegative().nullable(),
+	kind: z
+		.enum(['secret', 'url', 'login', 'signing'])
+		.optional()
+		.describe('Credential kind, returned when this call set opt-in fields.'),
+	provider: z.string().nullable().optional(),
+	inject: credentialInjectSchema.optional(),
 })
 
 export function toSecretCapabilityOutput(secret: SecretMetadata) {

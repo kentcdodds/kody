@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { secretMetadataSchema } from '#mcp/capabilities/secrets/shared.ts'
 import {
+	packageCredentialKindValues,
 	type SavedPackageRecord,
 	type SavedPackageWithCommunityProvenanceRecord,
 } from '#worker/package-registry/types.ts'
@@ -39,7 +40,12 @@ export const packageSummarySchema = z.object({
 	visibility: z
 		.enum(['public', 'private'])
 		.describe(
-			'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only.',
+			'Repo visibility / forkable. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only. Independent of internet_visible.',
+		),
+	internet_visible: z
+		.boolean()
+		.describe(
+			'When true, the hosted package app may be served on the public internet after capability approval. Independent of visibility/forkable. Defaults false.',
 		),
 	locked_at: z
 		.string()
@@ -104,6 +110,35 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			),
 	})
 
+const credentialNeedShapeSchema = z.object({
+	kind: z.enum(packageCredentialKindValues),
+	provider: z.string(),
+	multiple: z.boolean(),
+})
+
+/** One credential need a paused publish adds or reshapes. */
+export const credentialNeedChangeSchema = z.discriminatedUnion('change', [
+	z.object({
+		key: z.string(),
+		change: z.literal('added'),
+		after: credentialNeedShapeSchema,
+		from: z
+			.string()
+			.optional()
+			.describe('The dependency that declared an inherited need.'),
+	}),
+	z.object({
+		key: z.string(),
+		change: z.literal('changed'),
+		before: credentialNeedShapeSchema,
+		after: credentialNeedShapeSchema,
+		from: z
+			.string()
+			.optional()
+			.describe('The dependency that declared an inherited need.'),
+	}),
+])
+
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),
@@ -148,6 +183,7 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 		visibility: savedPackage.isPrivate
 			? ('private' as const)
 			: ('public' as const),
+		internet_visible: savedPackage.isInternetVisible,
 		locked_at: savedPackage.lockedAt ?? null,
 		source_id: savedPackage.sourceId,
 		created_at: savedPackage.createdAt,
@@ -236,6 +272,39 @@ export const packageExportSurfaceSchema = z.object({
 		),
 })
 
+export const packageCredentialNeedSchema = z.object({
+	key: z.string(),
+	kind: z.enum(packageCredentialKindValues),
+	provider: z.string(),
+	description: z.string(),
+	multiple: z.boolean(),
+	from: z
+		.string()
+		.optional()
+		.describe('The imported package that declares this need, when inherited.'),
+	status: z
+		.enum(['ready', 'ambiguous', 'unbound'])
+		.describe(
+			'ready: exactly one of your credentials matches kind and provider and resolves with no call map entry. ambiguous: several match; pick one with a call map. unbound: none match.',
+		),
+	autoPick: z
+		.string()
+		.nullable()
+		.describe('The credential name used when no call map entry is given.'),
+	yourOptions: z
+		.array(
+			z.object({
+				name: z.string(),
+				scope: z.enum(['org', 'personal']),
+				org: z.string().optional(),
+				hosts: z.array(z.string()),
+			}),
+		)
+		.describe(
+			'Credentials you can Use that a call map may pick: the matches, plus same-kind credentials with no provider (set their provider to auto-resolve).',
+		),
+})
+
 export const packageDetailSchema =
 	packageSummaryWithCommunityProvenanceSchema.extend({
 		exports: z.array(packageExportSurfaceSchema),
@@ -243,5 +312,12 @@ export const packageDetailSchema =
 			.array(secretMetadataSchema)
 			.describe(
 				'FYI metadata for package-scoped secrets owned by this package, including package_id. Never plaintext values. These are not execute-usable via search; using them still requires package context.',
+			),
+		credentials: z
+			.object({
+				needs: z.array(packageCredentialNeedSchema),
+			})
+			.describe(
+				'Credential needs (ADR 0068): the published `kody.credentials` closure, including needs inherited from statically imported packages (`from`), each with how it resolves for you. Options list only credentials you can Use; never values.',
 			),
 	})

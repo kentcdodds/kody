@@ -61,12 +61,23 @@ import {
 	createRuntimeHelperRuntimePropertySource,
 	createUnboundOptionalRuntimeHelperNames,
 	type AdditionalKodyTools,
+	type CredentialClientToolOptions,
 	type EmailToolOptions,
 	type PackageEventTools,
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
 } from '#mcp/runtime-helper-manifest.ts'
+import { newRunCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
+import {
+	type CredentialCallMap,
+	type RunCredentialCallMap,
+} from '#worker/credentials/credential-call-map.ts'
+import {
+	loadRunCredentialNeeds,
+	validateCredentialCallMap,
+} from '#worker/credentials/credential-client.ts'
+import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
 import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
@@ -372,6 +383,7 @@ export async function buildKodyFns(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -389,6 +401,7 @@ export async function buildKodyToolContext(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -480,6 +493,7 @@ export async function buildKodyToolContext(
 		capabilityMap,
 		packageStorageTools: options?.packageStorageTools,
 		packageSecretTools: options?.packageSecretTools,
+		credentialClientTools: options?.credentialClientTools,
 		emailTools: options?.emailTools,
 		workflowTools: options?.workflowTools,
 	})
@@ -599,6 +613,7 @@ export async function buildKodyProvider(
 		additionalTools?: AdditionalKodyTools
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		credentialClientTools?: CredentialClientToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
@@ -671,6 +686,7 @@ export async function runModuleWithRegistry(
 		 * human-friendly phase messages aligned with `serverTiming` names.
 		 */
 		reportProgress?: McpReportProgress
+		credentialCallMap?: RunCredentialCallMap | null
 	},
 ): Promise<
 	ExecuteResult & {
@@ -840,6 +856,37 @@ export function collectPackageStorageGrantIds(input: {
 }
 
 /**
+ * The packages whose needs closures pin a run's credential needs, in
+ * precedence order. A run's own package's static imports are pinned by its
+ * closure, so they are not entries; ad hoc code has no closure, so its direct
+ * imports are. A computed import's callee pins its own imports. Literal
+ * dynamic imports are never in a closure, so each is its own entry.
+ */
+export function credentialNeedsEntryPackageIds(input: {
+	packageContext: PackageContextOptions
+	computedImportCalleePackageId: string | null
+	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencyPackageIds: Array<string>
+}): Array<string> {
+	const contextPackageId = input.packageContext?.packageId ?? null
+	const staticEntries = input.computedImportCalleePackageId
+		? [input.computedImportCalleePackageId]
+		: contextPackageId
+			? []
+			: input.dependencies
+					.filter(isDirectBundleDependency)
+					.map((dependency) => dependency.packageId)
+					.filter((packageId): packageId is string => Boolean(packageId))
+	return [
+		...new Set([
+			...(contextPackageId ? [contextPackageId] : []),
+			...staticEntries,
+			...input.dynamicDependencyPackageIds,
+		]),
+	]
+}
+
+/**
  * Host tools for computed `import(specifier)` of caller-owned `kody:@`
  * names. Nested evaluate uses library-load semantics: caller's
  * `packageContext`, callee stamp grants via the importable-module artifact.
@@ -871,6 +918,8 @@ export function createComputedPackageImportTools(input: {
 	 * when a restricted run supplies these tools explicitly.
 	 */
 	closedWorldRetrieverRuntime?: boolean
+	/** The caller's credential picks, which nested library loads keep. */
+	credentialCallMap?: CredentialCallMap | null
 }): ComputedPackageImportTools {
 	const computedImportDepth = input.computedImportDepth ?? 0
 	return {
@@ -944,6 +993,10 @@ export function createComputedPackageImportTools(input: {
 					computedImportDepth: computedImportDepth + 1,
 					computedPackageImportTools: nestedTools,
 					closedWorldRetrieverRuntime: input.closedWorldRetrieverRuntime,
+					credentialCallMap: input.credentialCallMap
+						? { map: input.credentialCallMap, strict: false, checked: true }
+						: null,
+					computedImportCalleePackageId: calleePackageId ?? null,
 					// Library load is not enter-as-package: do not attribute a
 					// package_export usage event to the caller's package id.
 					skipPackageExportUsage: true,
@@ -1041,6 +1094,9 @@ export async function runBundledModuleWithRegistry(
 		 */
 		executeShape?: ExecuteThinGlueClass | null
 		claimWorkerDay?: ClaimWorkerDay
+		credentialCallMap?: RunCredentialCallMap | null
+		/** The package a computed-import library load runs. */
+		computedImportCalleePackageId?: string | null
 	},
 ): Promise<
 	ExecuteResult & {
@@ -1219,6 +1275,51 @@ export async function runBundledModuleWithRegistry(
 		})
 		const closedWorldRetrieverRuntime =
 			options?.closedWorldRetrieverRuntime === true
+		const callMap = options?.credentialCallMap ?? null
+		const credentialEntryPackageIds = credentialNeedsEntryPackageIds({
+			packageContext: options?.packageContext ?? null,
+			computedImportCalleePackageId:
+				options?.computedImportCalleePackageId ?? null,
+			dependencies: bundle.dependencies ?? [],
+			dynamicDependencyPackageIds,
+		})
+		if (callMap && !callMap.checked) {
+			const { warnings } = await validateCredentialCallMap({
+				env,
+				request: callerContext.request ?? null,
+				map: callMap.map,
+				packageIds: credentialEntryPackageIds,
+				strict: callMap.strict,
+			})
+			if (warnings.length > 0) callMap.onWarnings?.(warnings)
+		}
+		const credentialClientBinding = newRunCredentialClientBinding()
+		let runNeeds: Promise<ReadonlyMap<string, CredentialNeed>> | null = null
+		const credentialClientTools: CredentialClientToolOptions | undefined =
+			callerContext.user?.userId && !closedWorldRetrieverRuntime
+				? {
+						binding: credentialClientBinding,
+						// A claimed id selects which package's needs apply; only a
+						// package in this run's provenance may be claimed.
+						resolvePackageId: async (requested) =>
+							typeof requested === 'string' &&
+							grantedPackageStorageIds.has(requested)
+								? requested
+								: (options?.packageContext?.packageId ?? null),
+						callMap: callMap?.map ?? null,
+						runNeeds: () => {
+							const request = callerContext.request
+							if (!request) return Promise.resolve(new Map())
+							runNeeds ??= loadRunCredentialNeeds({
+								env,
+								request,
+								packageIds: credentialEntryPackageIds,
+							})
+							return runNeeds
+						},
+						waitUntil: options?.waitUntil,
+					}
+				: undefined
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -1231,6 +1332,9 @@ export async function runBundledModuleWithRegistry(
 				request: callerContext.request,
 				storageContext: normalizedStorageContext,
 				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
+				credentialClientBinding: credentialClientTools
+					? credentialClientBinding
+					: null,
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -1295,6 +1399,7 @@ export async function runBundledModuleWithRegistry(
 						computedImportDepth: options?.computedImportDepth ?? 0,
 						conversationId: options?.conversationId ?? null,
 						closedWorldRetrieverRuntime,
+						credentialCallMap: callMap?.map ?? null,
 					})
 				: undefined)
 		// Register the package_storage_* tools whenever the run has a user, even
@@ -1322,6 +1427,7 @@ export async function runBundledModuleWithRegistry(
 			additionalTools: options?.additionalTools,
 			packageStorageTools,
 			packageSecretTools,
+			credentialClientTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
 			skipCapabilityRegistry:
@@ -1343,6 +1449,7 @@ export async function runBundledModuleWithRegistry(
 			provider,
 			packageStorageTools,
 			packageSecretTools,
+			credentialClientTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
 			packageEventTools: closedWorldRetrieverRuntime

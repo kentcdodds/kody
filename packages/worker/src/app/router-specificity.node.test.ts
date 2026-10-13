@@ -49,8 +49,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		'communityPackageAsset',
 		'communityDetailAsset',
 		'communityPackageApprovePublish',
+		'communityPackageApproveCapabilities',
 		'accountPackageDetail',
 		'accountPackageApprovePublish',
+		'accountPackageApproveCapabilities',
 		'accountPackageFiles',
 		'communityDetail',
 		'communityDetailFiles',
@@ -68,8 +70,16 @@ test('router prefers static nested paths and package files over dynamic siblings
 		[`/community/${uuid}/raw/docs/logo.png`, 'communityDetailRaw'],
 		[`/community/${uuid}/assets/docs/poster.png`, 'communityDetailAsset'],
 		['/@kentcdodds/devin/approve-publish', 'communityPackageApprovePublish'],
+		[
+			'/@kentcdodds/devin/approve-capabilities',
+			'communityPackageApproveCapabilities',
+		],
 		['/account/packages/pkg-1', 'accountPackageDetail'],
 		['/account/packages/pkg-1/approve-publish', 'accountPackageApprovePublish'],
+		[
+			'/account/packages/pkg-1/approve-capabilities',
+			'accountPackageApproveCapabilities',
+		],
 		['/account/packages/pkg-1/files/README.md', 'accountPackageFiles'],
 		[`/community/${uuid}/files/src/lib.ts`, 'communityDetailFiles'],
 	]
@@ -79,6 +89,8 @@ test('router prefers static nested paths and package files over dynamic siblings
 test('organization section pages use /-/ and leave two-segment package urls free', async () => {
 	const resolve = makeRouter([
 		'orgSecrets',
+		'orgRepositories',
+		'orgRepositoriesApi',
 		'orgPackages',
 		'orgPackagesApi',
 		'orgBilling',
@@ -99,6 +111,8 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/account/billing/portal')).toBe(404)
 	expect(await resolve('/account/packages')).toBe(404)
 	expect(await resolve('/@ada/-/secrets/new')).toBe('orgSecrets')
+	expect(await resolve('/@ada/-/repositories')).toBe('orgRepositories')
+	expect(await resolve('/@ada/-/repositories.json')).toBe('orgRepositoriesApi')
 	expect(await resolve('/@ada/-/packages')).toBe('orgPackages')
 	expect(await resolve('/@ada/-/packages.json')).toBe('orgPackagesApi')
 	// A package whose id equals a former org section name is still a package.

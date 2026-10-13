@@ -26,7 +26,7 @@ test('machine namespaces claim only their multi-segment paths', () => {
 		'/@kody/connectors',
 		'/@kody/webhooks',
 		'/@kody/api',
-		'/@kody/-/packages',
+		'/@kody/-/repositories',
 		'/@kody/-/webhooks',
 		'/@kody/-/billing',
 	]) {

@@ -1,6 +1,9 @@
 import { type RemixNode, css } from 'remix/component'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
-import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
+import {
+	teamOrgManagementItems,
+	workspaceLandingItem,
+} from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import {
 	orgBillingPath,
@@ -33,9 +36,13 @@ export function renderOrgHomeMain(input: {
 		orgSlug: input.slug,
 		role: input.role,
 	})
+	const homeItems =
+		manageItems.length > 0
+			? [workspaceLandingItem(input.slug), ...manageItems]
+			: []
 	return (
 		<div mix={css(mainCss)} data-testid="org-home">
-			{manageItems.length > 0 ? (
+			{homeItems.length > 0 ? (
 				<nav
 					aria-label={`${input.handle} sections`}
 					data-testid="org-home-nav"
@@ -43,7 +50,7 @@ export function renderOrgHomeMain(input: {
 				>
 					<p mix={css(navEyebrowCss)}>Organization</p>
 					<ul mix={css(navListCss)}>
-						{manageItems.map((item) => (
+						{homeItems.map((item) => (
 							<li key={item.href}>
 								<a
 									href={item.href}
@@ -135,39 +142,44 @@ export function renderOrgHomeMain(input: {
 							),
 						})
 					: null}
-				{renderStep({
-					icon: 'box',
-					title: 'Repositories, connections, secrets, and jobs',
-					body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
-					action: (
-						<div mix={css(stepActionsCss)}>
-							<a
-								href={orgResourcePath(input.slug, 'packages')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Repositories
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'jobs')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Jobs
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'connections')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Connections
-							</a>
-							<a
-								href={orgResourcePath(input.slug, 'secrets')}
-								mix={css(getGhostButtonCss({ size: 'sm' }))}
-							>
-								Secrets
-							</a>
-						</div>
-					),
-				})}
+				{/* Grant-only collaborators open Connections only (orgSectionDenial);
+				    members get the full workspace. The collaborator CTA above already
+				    covers Connections, so skip this step for them. */}
+				{collaborator
+					? null
+					: renderStep({
+							icon: 'box',
+							title: 'Repositories, connections, secrets, and jobs',
+							body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
+							action: (
+								<div mix={css(stepActionsCss)}>
+									<a
+										href={orgResourcePath(input.slug, 'repositories')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Repositories
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'jobs')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Jobs
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'connections')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Connections
+									</a>
+									<a
+										href={orgResourcePath(input.slug, 'secrets')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Secrets
+									</a>
+								</div>
+							),
+						})}
 			</ul>
 		</div>
 	)

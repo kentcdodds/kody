@@ -7,6 +7,11 @@
  * the request so the retry loop can fail with an explicit error instead.
  */
 
+import {
+	gitRemoteReadOnlyPushRejectedMessage,
+	mapGitRemotePushAuthFailure,
+} from './git-remote-scope.ts'
+
 export const artifactsGitRequestTimeoutMs = 8_000
 
 export class ArtifactsGitTimeoutError extends Error {
@@ -67,13 +72,22 @@ export function createArtifactsGitHttp(input?: { timeoutMs?: number }) {
 					signal: AbortSignal.timeout(timeoutMs),
 					...(body ? { body } : {}),
 				})
+				const requestUrl = request.url
+				const responseUrl = response.url || requestUrl
+				const pushAuthFailure = mapGitRemotePushAuthFailure({
+					url: responseUrl.includes('git-receive-pack')
+						? responseUrl
+						: requestUrl,
+					statusCode: response.status,
+				})
+				if (pushAuthFailure) throw pushAuthFailure
 				const headers: Record<string, string> = {}
 				response.headers.forEach((value, key) => {
 					headers[key] = value
 				})
 				const bytes = new Uint8Array(await response.arrayBuffer())
 				return {
-					url: response.url,
+					url: responseUrl,
 					method: request.method ?? 'GET',
 					statusCode: response.status,
 					statusMessage: response.statusText,
@@ -82,6 +96,12 @@ export function createArtifactsGitHttp(input?: { timeoutMs?: number }) {
 				}
 			} catch (error) {
 				if (error instanceof ArtifactsGitTimeoutError) throw error
+				if (
+					error instanceof Error &&
+					error.message === gitRemoteReadOnlyPushRejectedMessage
+				) {
+					throw error
+				}
 				if (isFetchDeadline(error)) {
 					throw new ArtifactsGitTimeoutError(timeoutMs, { cause: error })
 				}

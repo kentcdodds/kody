@@ -6,7 +6,8 @@
   `secret:use` / `integration:use`; delete the pre-Teams ambient skip)
 - **Superseded in part by:**
   [0068](./0068-credentials-own-placement-scoped-clients.md) (credential
-  authority; see the note at the end)
+  authority for scoped clients only; Key placeholders keep this record; see the
+  note at the end)
 
 ## Context
 
@@ -94,6 +95,11 @@ authority (`kody.secretMounts`, integration allowlists, provider grants), the
 slot binding or allowlist as the grant for package runs, package-attachment
 semantics for runners, and the `attested` stamp skipping the actor's Use. Under
 0068 the only authority is the actor's Use plus `package:execute`, and package
-stamps select needs and storage only. Runtime follows this record until 0068's
-migration reaches T. The publish-gated, snapshot-isolated composition decision
-is unchanged.
+stamps select needs and storage only. The publish-gated, snapshot-isolated
+composition decision is unchanged.
+
+**Narrowed (2026-10-12):** 0068's authority change applies only to the opt-in
+credential types used through scoped clients. Key credentials (today's secrets
+and their placeholders) keep the authority this record describes, permanently:
+package attachments, `kody.secretMounts`, allowlists, provider grants, and the
+`attested` stamp.

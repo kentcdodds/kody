@@ -54,6 +54,8 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		deleteCommunityForksForPackage: vi.fn(),
 		unpublishCommunityListing: vi.fn(),
 		invalidateCommunityPublicCache: vi.fn(),
+		scheduleKitSubscriberSync: vi.fn(),
+		stampFirstSavedPackage: vi.fn(),
 	}
 	const pickMocks = (...names: Array<keyof typeof mockModule>) =>
 		Object.fromEntries(names.map((name) => [name, mockModule[name]]))
@@ -143,6 +145,12 @@ vi.mock('#app/data-cache.ts', () => pickMocks('invalidateCommunityPublicCache'))
 vi.mock('#worker/community/service.ts', () =>
 	pickMocks('unpublishCommunityListing'),
 )
+vi.mock('#worker/kit/subscriber-sync.ts', () =>
+	pickMocks('scheduleKitSubscriberSync'),
+)
+vi.mock('#worker/identity/activation-stamps.ts', () =>
+	pickMocks('stampFirstSavedPackage'),
+)
 
 const {
 	deleteSavedPackageProjection,
@@ -186,6 +194,7 @@ function createProjection() {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 	}
 }
 
@@ -202,6 +211,7 @@ function savedPackageRecord(overrides: Record<string, unknown> = {}) {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		isInternetVisible: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 		...overrides,
@@ -254,7 +264,7 @@ function setupDefaultMocks() {
 	mockModule.writePackageSkillsIndex.mockResolvedValue(undefined)
 	mockModule.removePackageSkillsIndexEntries.mockResolvedValue(undefined)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
-	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.insertSavedPackage.mockResolvedValue(true)
 	mockModule.deleteEntitySource.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
@@ -266,6 +276,9 @@ function setupDefaultMocks() {
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	mockModule.unpublishCommunityListing.mockResolvedValue(undefined)
 	mockModule.deleteCommunityForksForPackage.mockResolvedValue(0)
+	mockModule.scheduleKitSubscriberSync.mockReset()
+	mockModule.stampFirstSavedPackage.mockReset()
+	mockModule.stampFirstSavedPackage.mockResolvedValue(true)
 }
 
 function refresh(env: Env, overrides: Record<string, unknown> = {}) {
@@ -551,6 +564,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	mockModule.buildPackageSearchProjection.mockReturnValue({
 		...createProjection(),
 		isPrivate: true,
+		isInternetVisible: false,
 		description: 'Updated description',
 	})
 	mockSource({
@@ -570,6 +584,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	>
 	expect(updateArg).not.toHaveProperty('hidden')
 	expect(updateArg).not.toHaveProperty('isPrivate')
+	expect(updateArg).not.toHaveProperty('kodyId')
 	expect(updateArg).toMatchObject({
 		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
@@ -578,8 +593,125 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	expect(refreshed.record).toMatchObject({
 		hidden: true,
 		isPrivate: false,
+		isInternetVisible: false,
 		description: 'Updated description',
 	})
+})
+
+test('refreshSavedPackageProjection Kit-syncs the actor on a team insert, not the owning org', async () => {
+	setupDefaultMocks()
+	const teamId = ownerIdFromStored('acme-org')
+	const actorUserId = 'person-member-1'
+	const env = createEnv(teamId)
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.insertSavedPackage.mockResolvedValueOnce(true)
+
+	await refresh(env, {
+		userId: teamId,
+		actorUserId,
+		userEmail: null,
+		packageId: 'package-team',
+		sourceId: 'source-team',
+	})
+
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		env.APP_DB,
+		expect.objectContaining({ user_id: teamId, id: 'package-team' }),
+		env,
+		{ actorUserId },
+	)
+	expect(mockModule.scheduleKitSubscriberSync).toHaveBeenCalledWith({
+		env,
+		stableUserId: actorUserId,
+	})
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalledWith(
+		expect.objectContaining({ stableUserId: teamId }),
+	)
+})
+
+test('refreshSavedPackageProjection skips Kit sync on insert when the actor was already stamped', async () => {
+	setupDefaultMocks()
+	const teamId = ownerIdFromStored('acme-org')
+	const actorUserId = 'person-member-already'
+	const env = createEnv(teamId)
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.insertSavedPackage.mockResolvedValueOnce(false)
+
+	await refresh(env, {
+		userId: teamId,
+		actorUserId,
+		packageId: 'package-team-2',
+		sourceId: 'source-team-2',
+	})
+
+	expect(mockModule.insertSavedPackage).toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
+})
+
+test('refreshSavedPackageProjection stamps the actor when updating an existing team package', async () => {
+	setupDefaultMocks()
+	const teamId = ownerIdFromStored('acme-org')
+	const actorUserId = 'person-member-2'
+	const env = createEnv(teamId)
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(
+		savedPackageRecord({ userId: teamId }),
+	)
+	mockModule.stampFirstSavedPackage.mockResolvedValueOnce(true)
+
+	await refresh(env, {
+		userId: teamId,
+		actorUserId,
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.updateSavedPackage).toHaveBeenCalled()
+	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.stampFirstSavedPackage).toHaveBeenCalledWith(
+		env.APP_DB,
+		{ stableUserId: actorUserId },
+		env,
+	)
+	expect(mockModule.scheduleKitSubscriberSync).toHaveBeenCalledWith({
+		env,
+		stableUserId: actorUserId,
+	})
+})
+
+test('refreshSavedPackageProjection skips Kit sync when the actor was already stamped on update', async () => {
+	setupDefaultMocks()
+	const teamId = ownerIdFromStored('acme-org')
+	const actorUserId = 'person-member-3'
+	const env = createEnv(teamId)
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(
+		savedPackageRecord({ userId: teamId }),
+	)
+	mockModule.stampFirstSavedPackage.mockResolvedValueOnce(false)
+
+	await refresh(env, {
+		userId: teamId,
+		actorUserId,
+	})
+
+	expect(mockModule.stampFirstSavedPackage).toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
+})
+
+test('refreshSavedPackageProjection does not stamp anyone on actor-free updates', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	mockSource()
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackageRecord())
+
+	await refresh(env)
+
+	expect(mockModule.updateSavedPackage).toHaveBeenCalled()
+	expect(mockModule.stampFirstSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.scheduleKitSubscriberSync).not.toHaveBeenCalled()
 })
 
 test('refreshSavedPackageProjection enforces the saved packages entitlement on insert but not on update', async () => {

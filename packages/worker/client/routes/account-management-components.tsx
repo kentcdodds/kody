@@ -401,6 +401,7 @@ type AccountPageHeaderProps = {
 function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
 	return groups.map((group) => ({
 		label: group.label,
+		note: group.note,
 		items: group.items.map((item) => ({
 			href: item.href,
 			label: item.label,
@@ -411,14 +412,20 @@ function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
 }
 
 function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
+	const organizations = input.session?.organizations ?? []
 	if (isAccountRailPath(input.currentPath)) {
 		return {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
-			groups: accountRailGroups(),
+			groups: accountRailGroups({
+				workspaceSlug: accountRailOrgSlug({
+					pathname: input.currentPath,
+					organizations,
+					username: input.session?.username,
+				}),
+			}),
 		}
 	}
-	const organizations = input.session?.organizations ?? []
 	const orgSlug = accountRailOrgSlug({
 		pathname: input.currentPath,
 		organizations,

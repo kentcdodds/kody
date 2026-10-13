@@ -66,6 +66,50 @@ export async function signJwt(input: SignJwtInput) {
 	return `${signingInput}.${bytesToBase64Url(new Uint8Array(signature))}`
 }
 
+export type SignJwtWithSecretInput = {
+	algorithm: JwtAlgorithm
+	/** HMAC key encoding; only valid for HS* (defaults to base64). */
+	keyEncoding?: JwtKeyEncoding
+	/** JSON object field holding the key, e.g. service-account `private_key`. */
+	jsonField?: string
+	header?: Record<string, unknown>
+	claims: Record<string, unknown>
+}
+
+/** Signs a JWT with key material read from a stored credential value. */
+export async function signJwtWithSecret(
+	secretValue: string,
+	input: SignJwtWithSecretInput,
+) {
+	const secretMaterial = extractSecretMaterial({
+		secretValue,
+		jsonField: input.jsonField,
+	})
+	if (isHmacJwtAlgorithm(input.algorithm)) {
+		return await signJwt({
+			algorithm: input.algorithm,
+			hmacKeyBytes: decodeHmacKeyMaterial({
+				secretValue: secretMaterial,
+				encoding: input.keyEncoding ?? 'base64',
+				algorithm: input.algorithm,
+			}),
+			header: input.header,
+			claims: input.claims,
+		})
+	}
+	if (input.keyEncoding !== undefined) {
+		throw new Error(
+			'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
+		)
+	}
+	return await signJwt({
+		algorithm: input.algorithm,
+		privateKeyPem: secretMaterial,
+		header: input.header,
+		claims: input.claims,
+	})
+}
+
 export function extractSecretMaterial(input: {
 	secretValue: string
 	jsonField?: string | null

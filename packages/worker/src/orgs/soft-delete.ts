@@ -12,6 +12,7 @@ import {
 	clearUserMeterDeletionTombstone,
 	markOrgDeleting,
 } from '#worker/account/deletion-state.ts'
+import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isWithinSoftDeleteRestoreWindow } from '#worker/soft-delete/window.ts'
 import {
@@ -516,12 +517,14 @@ export async function restoreOrg(input: {
 	// cap guard of a concurrent restore never sees a live org whose Owner
 	// membership is still tombstoned. Only people who are still live accounts
 	// are revived: a member who soft-deleted their own account must not regain
-	// access on org restore.
+	// access on org restore. The same statement bumps access_epoch: cached auth
+	// decisions from before the soft-delete must not match the revived org.
 	const [orgUpdate, memberships] = await appDb.batch([
 		appDb
 			.prepare(
 				`UPDATE orgs
-				 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
+				 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?,
+				     access_epoch = access_epoch + 1
 				 WHERE id = ? AND deleted_at = ?${freeOrg ? freeOrgCapRestoreGuardSql : ''}`,
 			)
 			.bind(
@@ -564,6 +567,9 @@ export async function restoreOrg(input: {
 			orgId: input.orgId,
 			deletedAt,
 		}))
+	// teams, team_members and grants came back after the org went live, so a
+	// binding compiled in between saw a partial graph: bump again so it misses.
+	await bumpAccessEpochStatement(appDb, input.orgId).run()
 	const jobsRestored = await jobsData(input.env).restoreJobsForUser({
 		userId: input.orgId,
 		deletedAt,

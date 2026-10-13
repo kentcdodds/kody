@@ -10,7 +10,7 @@ import {
 } from '@kody-internal/shared/account-secret-route.ts'
 import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { accountAliasPath, relocateAccountHref } from '#universal/org-pages.ts'
 import {
 	routeLoaderRedirect,
@@ -318,12 +318,10 @@ export async function fetchAccountSecretsPayload(
 	signal: AbortSignal,
 ) {
 	const requestUrl = buildSecretsApiRequestUrl(href)
-	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		`${requestUrl.pathname}${requestUrl.search}`,
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return null
 	const payload = await readJson<AccountSecretsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {

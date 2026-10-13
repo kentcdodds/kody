@@ -7,7 +7,7 @@
 	"observability": {
 		"enabled": true,
 	},
-	// One probe pass per minute; incidents open after two consecutive failures.
+	// One probe pass per minute; incidents open after three consecutive failures.
 	"triggers": {
 		"crons": ["* * * * *"],
 	},

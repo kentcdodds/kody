@@ -78,6 +78,10 @@ import {
 	createAccountPackageApprovePublishHandler,
 } from '#app/handlers/account-package-approve-publish.ts'
 import {
+	createAccountPackageApproveCapabilitiesApiHandler,
+	createAccountPackageApproveCapabilitiesHandler,
+} from '#app/handlers/account-package-approve-capabilities.ts'
+import {
 	createAccountPackagesApiHandler,
 	createAccountPackagesHandler,
 } from '#app/handlers/account-packages.ts'
@@ -134,6 +138,7 @@ import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
+import { createAccountLastUsedOrgApiHandler } from '#app/handlers/account-last-used-org.ts'
 import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
@@ -294,7 +299,11 @@ import {
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
 import {
-	createOrgPackagesApiHandler,
+	createLegacyOrgPackagesApiRedirectHandler,
+	createLegacyOrgPackagesRedirectHandler,
+} from '#app/handlers/legacy-org-packages-redirect.ts'
+import {
+	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
@@ -327,6 +336,7 @@ import {
 	createOrgCollaboratorsApiHandler,
 	createOrgCollaboratorsHandler,
 } from '#app/handlers/org-collaborators.ts'
+import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
@@ -461,10 +471,18 @@ export function createAppRouter(env: Env) {
 				createAccountPackageApprovePublishHandler(env),
 			accountPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			accountPackageApproveCapabilities:
+				createAccountPackageApproveCapabilitiesHandler(env),
+			accountPackageApproveCapabilitiesApi:
+				createAccountPackageApproveCapabilitiesApiHandler(env),
 			communityPackageApprovePublish:
 				createAccountPackageApprovePublishHandler(env),
 			communityPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			communityPackageApproveCapabilities:
+				createAccountPackageApproveCapabilitiesHandler(env),
+			communityPackageApproveCapabilitiesApi:
+				createAccountPackageApproveCapabilitiesApiHandler(env),
 			communityPackageWebhooksApi:
 				createCommunityPackageWebhooksApiHandler(env),
 			communityPackageWebhooksApiPost:
@@ -501,6 +519,7 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountWaitingClickPost: createAccountWaitingClickHandler(env),
+			accountLastUsedOrgApi: createAccountLastUsedOrgApiHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
@@ -616,8 +635,11 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
-			orgPackages: createOrgSectionHandler(env, 'packages'),
-			orgPackagesApi: createOrgPackagesApiHandler(env),
+			orgOverview: createOrgOverviewHandler(env),
+			orgRepositories: createOrgSectionHandler(env, 'repositories'),
+			orgRepositoriesApi: createOrgRepositoriesApiHandler(env),
+			orgPackages: createLegacyOrgPackagesRedirectHandler(env),
+			orgPackagesApi: createLegacyOrgPackagesApiRedirectHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
 			orgSecrets: createOrgSectionHandler(env, 'secrets'),
 			orgValues: createOrgSectionHandler(env, 'values'),
