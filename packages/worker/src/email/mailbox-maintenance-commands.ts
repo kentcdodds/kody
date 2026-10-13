@@ -174,16 +174,18 @@ export class MailboxMaintenanceCommands {
 		})
 		const after = this.store.countMailbox()
 		const nowMs = Date.now()
+		const nextDueAtMs = this.nextAlarmDueAtMs(nowMs)
 		const reschedule = computeMailboxRetentionReschedule({
 			nowMs,
 			eligibleExpiredWorkRemaining: result.eligibleExpiredWorkRemaining,
 			earliestRetryAtMs: result.earliestRetryAtMs,
-			nextDueAtMs: this.nextAlarmDueAtMs(nowMs),
+			nextDueAtMs,
 		})
 		if (reschedule.atMs == null) {
 			// runRetentionNow can finish work an earlier turn armed a continuation
-			// for; clear it so idle really means no pending alarm.
-			await this.ctx.storage.deleteAlarm()
+			// for; clear it so idle really means no pending alarm. Overdue work
+			// (nextDueAtMs <= now) keeps the alarm that is about to serve it.
+			if (nextDueAtMs == null) await this.ctx.storage.deleteAlarm()
 			this.alarmArmed = false
 			this.idleConfirmed = true
 		} else {
