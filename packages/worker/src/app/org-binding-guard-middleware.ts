@@ -6,7 +6,10 @@ import {
 	isOrgRequestDenied,
 	loadRequestOrgResolution,
 } from '#app/org-request-binding.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
+import {
+	isLastUsedOrgCommitApiPath,
+	serializeLastUsedOrgCookie,
+} from '#universal/org-last-used-cookie.ts'
 import { orgOwnedAccountApiSection } from '#universal/org-pages.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { loadResolvedRequestAuth } from './request-auth-cache.ts'
@@ -50,7 +53,10 @@ export function createOrgBindingGuardMiddleware(env: Env): Middleware {
 		if (!response.ok) return response
 		const accountSection = orgOwnedAccountApiSection(url.pathname)
 		const orgPageJson = /^\/@[^/]+\/-\//.test(url.pathname)
-		if (accountSection === null && !orgPageJson) return response
+		const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
+		if (accountSection === null && !orgPageJson && !lastUsedCommit) {
+			return response
+		}
 		const resolution = await loadRequestOrgResolution(
 			request,
 			env,

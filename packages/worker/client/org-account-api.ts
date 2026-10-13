@@ -1,4 +1,6 @@
 import { isPrefetchAbortSignal } from '#client/intent-prefetch.ts'
+import { lastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
+import { orgSlugFromOrgOwnedPath } from '#universal/org-pages.ts'
 
 /**
  * Fetch `referrer` for an org-owned `/account/<section>.json` load. The route
@@ -14,14 +16,25 @@ function orgAccountApiReferrer(href: string) {
 const orgAccountPrefetchHeader = 'X-Kody-Prefetch'
 
 /**
+ * Destination page keys (`pathname+search`) whose speculative account JSON
+ * skipped `kody_last_org`. A committed navigation that adopts that prefetch
+ * removes its own key and writes the cookie for that page only.
+ */
+const pendingPrefetchLastUsedPages = new Set<string>()
+
+function pageKeyFromHref(href: string, origin = 'https://kody.local') {
+	const url = new URL(
+		href,
+		typeof window !== 'undefined' ? window.location.origin : origin,
+	)
+	return `${url.pathname}${url.search}`
+}
+
+/**
  * Shared fetch init for org-owned account JSON. Marks intent/render prefetches
  * so the server does not treat a hover as a last-used org commit (#3517).
  * Prefetch is detected from the loader's AbortSignal so an overlapping real
  * navigation cannot inherit the header from a global depth counter.
- *
- * Org navigations do not adopt those prefetches: the router re-runs the loader
- * on commit so this init runs without the header and the guard writes
- * `kody_last_org` without a second section JSON round-trip.
  */
 export function orgAccountApiFetchInit(
 	href: string,
@@ -31,6 +44,7 @@ export function orgAccountApiFetchInit(
 	const referrer = orgAccountApiReferrer(href)
 	if (isPrefetchAbortSignal(signal)) {
 		headers[orgAccountPrefetchHeader] = '1'
+		pendingPrefetchLastUsedPages.add(pageKeyFromHref(referrer))
 	}
 	return {
 		headers,
@@ -39,3 +53,40 @@ export function orgAccountApiFetchInit(
 		signal,
 	}
 }
+
+/**
+ * After the client router adopts a prefetch and commits that destination, the
+ * adopted response was served with `X-Kody-Prefetch` and never wrote
+ * `kody_last_org`. Hit the dedicated last-used commit JSON (not the section
+ * twin) so the navigation e2e still sees one section payload, grant-only
+ * collaborators are not section-denied, and a superseding navigation's
+ * AbortSignal can cancel the cookie write (#3517).
+ */
+export function commitLastUsedOrgAfterPrefetchAdopt(
+	pageHref: string,
+	signal?: AbortSignal,
+) {
+	const key = pageKeyFromHref(pageHref)
+	if (!pendingPrefetchLastUsedPages.has(key)) return
+	// Drop the pending entry either way: this navigation adopted the prefetch.
+	pendingPrefetchLastUsedPages.delete(key)
+	if (signal?.aborted) return
+	const pageUrl = new URL(pageHref, window.location.origin)
+	if (orgSlugFromOrgOwnedPath(pageUrl.pathname) == null) return
+	void fetch(lastUsedOrgCommitApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		referrer: pageUrl.href,
+		signal,
+	}).then(
+		() => {},
+		() => {},
+	)
+}
+
+/** Clears prefetch-skip bookkeeping (tests). */
+export function resetOrgAccountPrefetchCookieState() {
+	pendingPrefetchLastUsedPages.clear()
+}
+
+export { lastUsedOrgCommitApiPath }
