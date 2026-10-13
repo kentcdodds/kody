@@ -11,6 +11,10 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
 import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
+import {
+	RepoChecksFailedError,
+	repoChecksFailedErrorName,
+} from '#worker/repo/repo-checks-failed-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -619,6 +623,44 @@ test('packageSave keeps new packages private unless an explicit private:false is
 	})
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 	expect(readSyncedPackageJson()['private']).toBeUndefined()
+})
+
+test('packageSave maps failed publish checks to McpCallerError (live and DO RPC shapes)', async () => {
+	const diagnostic =
+		"src/receive.js(12,3): Argument of type 'string' is not assignable to parameter of type 'EmailMessage'."
+
+	const live = await setup({ plan: 'max' })
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValueOnce(
+		new RepoChecksFailedError(diagnostic),
+	)
+	const liveError = await rejection(
+		live.save({ files: buildPackageFiles('checks-failed-live') }),
+	)
+	expect(liveError).toBeInstanceOf(McpCallerError)
+	expect((liveError as Error).message).toBe(diagnostic)
+
+	const rpcFlattened = await setup({ plan: 'max' })
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValueOnce(
+		new Error(`${repoChecksFailedErrorName}: ${diagnostic}`),
+	)
+	const rpcError = await rejection(
+		rpcFlattened.save({ files: buildPackageFiles('checks-failed-rpc') }),
+	)
+	expect(rpcError).toBeInstanceOf(McpCallerError)
+	expect((rpcError as Error).message).toBe(diagnostic)
+
+	const unrelated = await setup({ plan: 'max' })
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValueOnce(
+		new Error('bundle artifact KV write failed'),
+	)
+	const platformError = await rejection(
+		unrelated.save({ files: buildPackageFiles('checks-failed-platform') }),
+	)
+	expect(platformError).toBeInstanceOf(Error)
+	expect(platformError).not.toBeInstanceOf(McpCallerError)
+	expect((platformError as Error).message).toBe(
+		'bundle artifact KV write failed',
+	)
 })
 
 test('packageSave lock approval keeps the stored kody id during a rename', async () => {

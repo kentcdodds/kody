@@ -4,6 +4,10 @@ import type * as PublishLock from '#worker/package-registry/package-publish-lock
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
 import type * as EntitySources from './entity-sources.ts'
+import {
+	isRepoChecksFailedError,
+	RepoChecksFailedError,
+} from './repo-checks-failed-error.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
@@ -426,7 +430,11 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 			...syncInput,
 			files: { 'package.json': packageJson },
 		}),
-	).rejects.toThrow('update type error')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof RepoChecksFailedError &&
+			error.message === 'update type error',
+	)
 	expect(failing.publishSession).not.toHaveBeenCalled()
 
 	const docsExempt = setupSync(
@@ -580,7 +588,12 @@ test('syncArtifactSourceSnapshot loopback first-publish runs package checks befo
 			bootstrapAccess: loopbackAccess,
 			files: { 'package.json': packageJson },
 		}),
-	).rejects.toThrow('loopback type error')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			isRepoChecksFailedError(error) &&
+			error instanceof Error &&
+			error.message === 'loopback type error',
+	)
 	expect(mockModule.runRepoChecks).toHaveBeenCalled()
 	expect(mockModule.writeArtifactSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()

@@ -73,6 +73,7 @@ import {
 	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
+import { RepoChecksFailedError } from './repo-checks-failed-error.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
 	pausedSessionMovedMessage,
@@ -1828,7 +1829,9 @@ class RepoSessionBase extends DurableObject<Env> {
 							: {}),
 					})
 					if (!checks.ok) {
-						throw new Error(formatFailedRepoCheckMessages(checks.results))
+						throw new RepoChecksFailedError(
+							formatFailedRepoCheckMessages(checks.results),
+						)
 					}
 				},
 			)

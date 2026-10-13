@@ -5,11 +5,8 @@ import {
 	isLoopbackArtifactsRemote,
 } from './artifacts.ts'
 import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
-import {
-	createSnapshotFilesWorkspace,
-	formatFailedRepoCheckMessages,
-	runRepoChecks,
-} from './checks.ts'
+import { createSnapshotFilesWorkspace, runRepoChecks } from './checks.ts'
+import { createRepoChecksFailedError } from './repo-checks-failed-error.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
@@ -263,7 +260,7 @@ export async function syncArtifactSourceSnapshot(
 									: {}),
 							})
 							if (!checks.ok) {
-								throw new Error(formatFailedRepoCheckMessages(checks.results))
+								throw createRepoChecksFailedError(checks.results)
 							}
 						}
 						const snapshot = await writeArtifactSourceSnapshot({
@@ -399,7 +396,7 @@ export async function syncArtifactSourceSnapshot(
 					: {}),
 			})
 			if (!checkRun.ok) {
-				throw new Error(formatFailedRepoCheckMessages(checkRun.results))
+				throw createRepoChecksFailedError(checkRun.results)
 			}
 		} else if (
 			source.entity_kind === 'package' &&
