@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { Lifecycle } from 'agents/lifecycle'
@@ -159,8 +160,6 @@ class McpClientHubBase extends DurableObject<Env> {
 	/** Public ids of stored pre-registered clients, for snapshots. */
 	private readonly preRegisteredClientIds = new Map<string, string>()
 	private readonly oauthClientChangeLocks = new Map<string, Promise<void>>()
-	/** Actor for the current RPC: stamped onto new OAuth attempts and re-checked. */
-	private oauthActor: McpOAuthAttemptActor | null = null
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -197,20 +196,30 @@ class McpClientHubBase extends DurableObject<Env> {
 		})
 	}
 
-	private rememberOAuthActor(actor: McpOAuthAttemptActor | null | undefined) {
-		if (!actor?.ownerOrgId?.trim() || !actor.personId?.trim()) {
-			this.oauthActor = null
-			return
-		}
-		this.oauthActor = {
-			ownerOrgId: actor.ownerOrgId.trim(),
-			personId: actor.personId.trim(),
-		}
+	/**
+	 * Request-scoped OAuth actor. Durable Object I/O can interleave RPCs, so
+	 * this must not be instance state; AsyncLocalStorage keeps each RPC's
+	 * ownerOrgId/personId through awaits without leaking to siblings.
+	 */
+	private static readonly oauthActorStorage =
+		new AsyncLocalStorage<McpOAuthAttemptActor | null>()
+
+	private withOAuthActor<T>(
+		actor: McpOAuthAttemptActor | null | undefined,
+		run: () => Promise<T>,
+	): Promise<T> {
+		const normalized =
+			actor?.ownerOrgId?.trim() && actor.personId?.trim()
+				? {
+						ownerOrgId: actor.ownerOrgId.trim(),
+						personId: actor.personId.trim(),
+					}
+				: null
+		return McpClientHubBase.oauthActorStorage.run(normalized, run)
 	}
 
-	/** Drop request-scoped actor so a later RPC cannot inherit it. */
-	private clearOAuthActor() {
-		this.oauthActor = null
+	private currentOAuthActor() {
+		return McpClientHubBase.oauthActorStorage.getStore() ?? null
 	}
 
 	/**
@@ -234,12 +243,13 @@ class McpClientHubBase extends DurableObject<Env> {
 			}
 		}
 		const authUrlClientId = clientIdFromStoredAuthUrl(row.auth_url)
+		const actor = this.currentOAuthActor()
 		return {
 			serverId: row.id,
 			serverUrl: row.server_url,
 			clientId: preRegisteredClientId ?? row.client_id ?? authUrlClientId,
-			ownerOrgId: this.oauthActor?.ownerOrgId ?? null,
-			personId: this.oauthActor?.personId ?? null,
+			ownerOrgId: actor?.ownerOrgId ?? null,
+			personId: actor?.personId ?? null,
 			name: row.name,
 		}
 	}
@@ -254,24 +264,22 @@ class McpClientHubBase extends DurableObject<Env> {
 		actor: McpOAuthAttemptActor
 	}): Promise<{ ok: boolean }> {
 		await this.ensureRestored()
-		this.rememberOAuthActor(input.actor)
-		try {
+		return this.withOAuthActor(input.actor, async () => {
 			const pending = await readMcpOAuthAttemptIdentity(
 				this.ctx.storage,
 				input.serverId,
 			)
-			if (!pending) return { ok: false }
-			if (pending.ownerOrgId !== this.oauthActor?.ownerOrgId) {
+			const actor = this.currentOAuthActor()
+			if (!pending || !actor) return { ok: false }
+			if (pending.ownerOrgId !== actor.ownerOrgId) {
 				return { ok: false }
 			}
 			await writeMcpOAuthAttemptIdentity(this.ctx.storage, {
 				...pending,
-				personId: this.oauthActor.personId,
+				personId: actor.personId,
 			})
 			return { ok: true }
-		} finally {
-			this.clearOAuthActor()
-		}
+		})
 	}
 
 	private async readSealedPreRegisteredOAuthClient(serverId: string) {
@@ -472,8 +480,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		headers?: Record<string, string>
 	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
-		this.rememberOAuthActor(input.actor)
-		try {
+		return this.withOAuthActor(input.actor, async () => {
 			await this.forgetLegacyHandshakeFallback(input.serverId)
 			this.clearIncompleteDiscoverStamp(input.serverId)
 			this.tokenPresence.delete(input.serverId)
@@ -510,9 +517,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: input.name,
 			})
 			return this.finalizeConnectResult(input.serverId)
-		} finally {
-			this.clearOAuthActor()
-		}
+		})
 	}
 
 	/**
@@ -529,8 +534,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
-		this.rememberOAuthActor(input.actor)
-		try {
+		return this.withOAuthActor(input.actor, async () => {
 			await this.manager.waitForConnections({
 				timeout: connectionSettleTimeoutMs,
 			})
@@ -546,9 +550,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				})
 			}
 			return this.finalizeConnectResult(input.serverId)
-		} finally {
-			this.clearOAuthActor()
-		}
+		})
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -608,9 +610,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpHubOAuthClientChange> {
 		await this.ensureRestored()
-		this.rememberOAuthActor(input.actor)
-		try {
-			return await this.serializeOAuthClientChange(input.serverId, async () => {
+		return this.withOAuthActor(input.actor, async () =>
+			this.serializeOAuthClientChange(input.serverId, async () => {
 				const row = this.manager
 					.listServers()
 					.find((server) => server.id === input.serverId)
@@ -677,10 +678,8 @@ class McpClientHubBase extends DurableObject<Env> {
 					previousClientId,
 					connection: this.finalizeConnectResult(input.serverId),
 				}
-			})
-		} finally {
-			this.clearOAuthActor()
-		}
+			}),
+		)
 	}
 
 	private async serializeOAuthClientChange<T>(
@@ -748,8 +747,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		actor?: McpOAuthAttemptActor | null
 	}): Promise<McpServerOAuthCallbackOutcome> {
 		await this.ensureRestored()
-		this.rememberOAuthActor(input.actor)
-		try {
+		return this.withOAuthActor(input.actor, async () => {
 			const request = new Request(input.url, { method: 'GET' })
 			const stateServerId = extractMcpServerIdFromOAuthState(
 				new URL(request.url).searchParams.get('state'),
@@ -823,9 +821,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverId,
 				serverName,
 			})
-		} finally {
-			this.clearOAuthActor()
-		}
+		})
 	}
 
 	private async restartAfterUnusableCallback(input: {

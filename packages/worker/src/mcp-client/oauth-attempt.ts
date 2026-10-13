@@ -211,6 +211,10 @@ export async function writeMcpOAuthAttemptIdentity(
 	storage: McpOAuthAttemptStorage,
 	identity: McpOAuthAttemptIdentity,
 ) {
+	// A fresh attempt must not inherit a verified marker from a prior
+	// checkState that never completed saveTokens (or from a re-add that
+	// skipped clearOAuthAuthorizationStorage).
+	await storage.delete(mcpOAuthAttemptVerifiedStorageKey(identity.serverId))
 	await storage.put(mcpOAuthAttemptStorageKey(identity.serverId), identity)
 }
 
