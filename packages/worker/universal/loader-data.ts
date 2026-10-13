@@ -1236,13 +1236,13 @@ type OrgManagementOrg = {
 	role: 'owner' | 'member' | 'billing'
 }
 
-export type OrgSettingsCustomHostnameDnsRecord = {
+type OrgSettingsCustomHostnameDnsRecord = {
 	type: string
 	name: string
 	value: string
 }
 
-export type OrgSettingsCustomHostnameView = {
+type OrgSettingsCustomHostnameView = {
 	id: string
 	hostname: string
 	bindingKind: 'app' | 'org'
