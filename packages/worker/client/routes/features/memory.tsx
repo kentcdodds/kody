@@ -1,27 +1,39 @@
 import { type Handle, on } from 'remix/component'
 import { FeatureRelated } from './feature-related.tsx'
+import {
+	MemoryEditScene,
+	MemoryHeroScene,
+	MemoryIndexScene,
+	type MemoryNote,
+	type MemoryNoteId,
+} from './memory-scenes.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
-const notes = {
-	writing: [
-		'Writing preference',
-		'Lead with the decision.',
-		'Draft my weekly update.',
-		"We're moving ahead with the new design. Review starts Thursday.",
-	],
-	projects: [
-		'Project name',
-		'Website refresh: Orchard.',
-		'Help me outline an Orchard update.',
-		'Orchard update: what changed on the website, what needs review, and what comes next.',
-	],
-	people: [
-		'People',
-		'Morgan is my accountant.',
-		'Draft a question for my accountant.',
-		'Hi Morgan, which documents should I have ready before our next meeting?',
-	],
-}
+const notes: ReadonlyArray<MemoryNote> = [
+	{
+		id: 'writing',
+		kind: 'Writing preference',
+		fact: 'Lead with the decision.',
+		task: 'Draft my weekly update.',
+		draft: "We're moving ahead with the new design. Review starts Thursday.",
+	},
+	{
+		id: 'projects',
+		kind: 'Project name',
+		fact: 'Website refresh: Orchard.',
+		task: 'Help me outline an Orchard update.',
+		draft:
+			'Orchard update: what changed on the website, what needs review, and what comes next.',
+	},
+	{
+		id: 'people',
+		kind: 'People',
+		fact: 'Morgan is my accountant.',
+		task: 'Draft a question for my accountant.',
+		draft:
+			'Hi Morgan, which documents should I have ready before our next meeting?',
+	},
+]
 const originalWritingPreference = 'Lead with the decision. Keep updates short.'
 const updatedWritingPreference =
 	'Include the decision, the reason, and the next step.'
@@ -32,12 +44,15 @@ const updatedProjectDraft =
 
 export function MemoryFeature(handle: Handle) {
 	let nextAgent = true
-	let note: keyof typeof notes = 'writing'
+	let heroShot = 0
+	let note: MemoryNoteId = 'writing'
 	let updated = false
+	let editShot = 0
 	return () => {
 		const writingPreference = updated
 			? updatedWritingPreference
 			: originalWritingPreference
+		const selectedNote = notes.find((entry) => entry.id === note) ?? notes[0]!
 		return (
 			<div class="study memory">
 				<div class="split">
@@ -67,6 +82,7 @@ export function MemoryFeature(handle: Handle) {
 								aria-pressed={!nextAgent}
 								mix={on('click', () => {
 									nextAgent = false
+									heroShot += 1
 									handle.update()
 								})}
 							>
@@ -77,6 +93,7 @@ export function MemoryFeature(handle: Handle) {
 								aria-pressed={nextAgent}
 								mix={on('click', () => {
 									nextAgent = true
+									heroShot += 1
 									handle.update()
 								})}
 							>
@@ -84,47 +101,21 @@ export function MemoryFeature(handle: Handle) {
 							</button>
 						</div>
 					</div>
-					<div class="memory-stack ui-stage">
+					<div class="memory-stack">
 						<span class="example">
 							Example memory, shared between connected agents
 						</span>
-						<div class="note ui-window">
-							<div class="ui-title">
-								<span class="ui-symbol">≡</span>
-								<strong>Memories</strong>
-								<span class="ui-state">Saved</span>
-							</div>
-							<div class="ui-memory-entry">
-								<small>Writing preference</small>
-								<blockquote id="ms-hero-note">{writingPreference}</blockquote>
-								<footer>
-									project updates <span>preference</span>
-								</footer>
-							</div>
-						</div>
-						<div class="ui-transfer" aria-hidden="true">
-							<span></span>
-							<i>↓</i>
-							<span></span>
-						</div>
-						<div class="conversation ui-window" aria-live="polite">
-							<h3 id="memory-agent">
-								{nextAgent ? 'Your next connected agent' : 'Your first agent'}
-							</h3>
-							<p id="memory-text">
-								{nextAgent
-									? 'Help me write a project update using my saved preference.'
-									: 'Remember this for my project updates.'}
-							</p>
-							<p id="memory-result">
-								{nextAgent
-									? `Relevant memory: ${writingPreference}`
-									: 'Saved your writing preference in Kody.'}
-							</p>
-							{nextAgent && (
-								<p>{updated ? updatedProjectDraft : originalProjectDraft}</p>
-							)}
-						</div>
+						<MemoryHeroScene
+							mode={nextAgent ? 'recall' : 'save'}
+							preference={writingPreference}
+							draft={updated ? updatedProjectDraft : originalProjectDraft}
+							shot={heroShot}
+						/>
+						<p class="visually-hidden" aria-live="polite">
+							{nextAgent
+								? `Your next connected agent found your saved preference: ${writingPreference}`
+								: 'Your first agent saved your writing preference in Kody.'}
+						</p>
 					</div>
 				</div>
 				<section class="story-section">
@@ -179,40 +170,22 @@ export function MemoryFeature(handle: Handle) {
 							</details>
 						</div>
 						<div class="ms-memory-index">
-							<div class="ms-moving-note ui-window ui-record">
-								<div class="ui-title">
-									<span class="ui-symbol">≡</span>
-									<strong id="ms-note-kind">{notes[note][0]}</strong>
-									<span class="ui-state">Saved</span>
-								</div>
-								<p id="ms-note-line">{notes[note][1]}</p>
-								<div class="ui-record-meta">Available to connected agents</div>
-							</div>
-							<div class="ui-transfer" aria-hidden="true">
-								<i>↓</i>
-							</div>
-							<div class="ms-task-output" aria-live="polite">
-								<span class="example">Example draft</span>
-								<h3 id="ms-task">{notes[note][2]}</h3>
-								<p id="ms-draft">{notes[note][3]}</p>
-							</div>
+							<MemoryIndexScene notes={notes} selected={note} />
+							<p class="visually-hidden" aria-live="polite">
+								{`${selectedNote.kind}: ${selectedNote.fact} Example draft: ${selectedNote.draft}`}
+							</p>
 						</div>
 					</div>
 				</section>
 				<section class="story-section">
 					<div class="story-split">
 						<div class="ms-edit-scene">
-							<div class="ui-history">
-								<span>Find existing preference</span>
-								<span aria-hidden="true">→</span>
-								<span>Update saved entry</span>
-							</div>
-							<div class="ms-live-note">
-								<small>Writing preference · local example</small>
-								<blockquote id="ms-updated-note">
-									{writingPreference}
-								</blockquote>
-							</div>
+							<MemoryEditScene
+								original={originalWritingPreference}
+								updated={updatedWritingPreference}
+								isUpdated={updated}
+								shot={editShot}
+							/>
 							<p class="ms-update-status" id="ms-update-status" role="status">
 								{updated
 									? 'Found your existing writing preference. Updated it to include the decision, the reason, and the next step.'
@@ -237,6 +210,7 @@ export function MemoryFeature(handle: Handle) {
 									disabled={updated}
 									mix={on('click', () => {
 										updated = true
+										editShot += 1
 										handle.update()
 									})}
 								>
@@ -247,6 +221,7 @@ export function MemoryFeature(handle: Handle) {
 									id="ms-reset"
 									mix={on('click', () => {
 										updated = false
+										editShot += 1
 										handle.update()
 									})}
 								>
