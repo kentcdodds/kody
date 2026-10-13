@@ -44,7 +44,7 @@ import { Toaster } from './toaster.tsx'
 import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { isDocsPagePath } from '#universal/docs-nav.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
-import { isPackageFilesPathname } from '#universal/package-files.ts'
+import { isPackageDetailPathname } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
 import { routes } from '#universal/routes.ts'
 import { userHasRole } from '#universal/permissions.ts'
@@ -130,7 +130,7 @@ export function appMainOwnsItsGutters(input: {
 		((input.notFound || input.internalError === true) && input.onSsrUrl) ||
 		isIllustratedErrorPath(input.pathname) ||
 		isRedesignedMarketingPath(input.pathname) ||
-		isPackageFilesPathname(input.pathname) ||
+		isPackageDetailPathname(input.pathname) ||
 		matchRoute(input.pathname, clientRoutes) == null
 	)
 }

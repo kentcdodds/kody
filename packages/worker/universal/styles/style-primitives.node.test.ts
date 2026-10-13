@@ -4,6 +4,8 @@ import {
 	getAuthInputCss,
 	getSelectCss,
 	inputCss,
+	layoutMaxWidths,
+	packageDetailPageCss,
 } from './style-primitives.ts'
 import { colors } from './tokens.ts'
 
@@ -19,4 +21,11 @@ test('article breakout is viewport-centered and must not be used under the docs 
 	expect(breakout.width).toContain('100vw')
 	expect(breakout.marginInline).toContain('50vw')
 	expect(breakout.maxWidth).toBe('none')
+})
+
+test('package detail tabs share the extended page box and patterned background', () => {
+	expect(packageDetailPageCss.maxWidth).toBe(layoutMaxWidths.extended)
+	expect(packageDetailPageCss['&::before']?.maskImage).toBe(
+		'var(--kody-pattern)',
+	)
 })
