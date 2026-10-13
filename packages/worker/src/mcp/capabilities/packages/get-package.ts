@@ -113,7 +113,7 @@ export const getPackageCapability = defineDomainCapability(
 				internet_visible: saved.isInternetVisible,
 				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
-				published_commit: loaded.source.published_commit,
+				published_commit: loaded.source.published_commit ?? null,
 				source_listing_id: saved.sourceListingId,
 				listing_current: saved.listingCurrent,
 				listing_kody_id: saved.listingKodyId,
