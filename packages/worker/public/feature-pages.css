@@ -2138,13 +2138,14 @@
 	}
 }
 
+/* Light mode uses the site's grey canvas tokens; dark keeps its own. */
 .feature-overview {
-	--page: light-dark(#f6f4ec, #181c19);
-	--surface: light-dark(#fffdf7, #222721);
-	--text: light-dark(#252c28, #f3f0e7);
-	--muted: light-dark(#59605a, #bfc6bd);
-	--line: light-dark(#dce0d7, #41483e);
-	--accent: light-dark(#315d3e, #a4d3a2);
+	--page: light-dark(oklch(0.93 0.004 250), #181c19);
+	--surface: light-dark(oklch(0.975 0.002 250), #222721);
+	--text: light-dark(oklch(0.22 0.012 260), #f3f0e7);
+	--muted: light-dark(oklch(0.44 0.014 260), #bfc6bd);
+	--line: light-dark(oklch(0.84 0.008 250), #41483e);
+	--accent: light-dark(oklch(0.455 0.17 145), #a4d3a2);
 	--on-accent: light-dark(#fffdf7, #18261b);
 }
 .feature-overview * {
@@ -2481,7 +2482,7 @@
 
 .feature-overview .demo-control[aria-pressed='true'] {
 	border-color: var(--accent);
-	background: color-mix(in oklch, var(--pw-accent) 16%, var(--surface));
+	background: color-mix(in oklab, var(--pw-accent) 16%, var(--surface));
 }
 
 .feature-overview .demo .receipt {

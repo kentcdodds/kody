@@ -240,23 +240,41 @@ export function secretsScene(state: { host: SecretHostId; shot?: number }) {
 	)
 }
 
-// Packages: code the agent wrote, sealed into a versioned package.
+// Packages: write code once, publish it as a package, then any agent
+// invokes it and gets the result back.
 
 const packageLines = [
-	['export async function ', 'brief', '() {'],
-	['  const days = ', 'calendar', '.week()'],
-	['  return days.', 'map', '(summarize)'],
+	['export default (', 'cal', ') => {'],
+	['  const week = cal.', 'week', '()'],
+	['  return ', 'summarize', '(week)'],
 	['}', '', ''],
 ] as const
 
 export const packageChanges = [
-	'days.sort(byPriority)',
-	'days.filter(isWorkday)',
-	'days.slice(0, 5)',
+	'week.sort(byPriority)',
+	'week.filter(isWorkday)',
+	'week.slice(0, 5)',
 ] as const
 
-export function packagesScene(state: { version: number }) {
-	const { version } = state
+export const packageCallers = [
+	{ id: 'claude', name: 'Claude', y: 36 },
+	{ id: 'cursor', name: 'Cursor', y: 60 },
+	{ id: 'chatgpt', name: 'ChatGPT', y: 84 },
+] as const
+
+export type PackageCallerId = (typeof packageCallers)[number]['id']
+
+/** Package box edges and caller chip edge, in stage units. */
+const packageBox = { left: 204, right: 242, y: 92 }
+const packageCallerEdge = 280
+
+export function packagesScene(state: {
+	version: number
+	caller?: PackageCallerId
+	invoked?: number
+	onCaller?: (id: PackageCallerId) => void
+}) {
+	const { version, caller = 'claude', invoked = 0, onCaller } = state
 	const change =
 		version > 0 ? packageChanges[(version - 1) % packageChanges.length] : null
 	const lines = change
@@ -269,10 +287,53 @@ export function packagesScene(state: { version: number }) {
 			]
 		: packageLines
 	return (
-		<div class="pw-run" key={`v${version}`}>
-			{wires(wire({ d: 'M240 80 L272 80', on: true }))}
-			<div class="pw-node pw-editor" style={at(4, 50)}>
-				<span class="pw-kicker">◇ weekly-brief / src/brief.ts</span>
+		<div
+			class="pw-run"
+			key={`v${version}-${invoked}`}
+			data-invoked={invoked > 0 ? '' : undefined}
+		>
+			{wires(
+				<>
+					{wire({
+						key: 'publish',
+						d: `M173 ${packageBox.y} L${packageBox.left} ${packageBox.y}`,
+						on: true,
+					})}
+					{packageCallers.map((entry) => {
+						const y = (entry.y / 100) * 200
+						const selected = caller === entry.id
+						const out = `M${packageCallerEdge} ${y} C${packageBox.right + 20} ${y} ${packageBox.right + 18} ${packageBox.y} ${packageBox.right} ${packageBox.y}`
+						const back = `M${packageBox.right} ${packageBox.y} C${packageBox.right + 18} ${packageBox.y} ${packageBox.right + 20} ${y} ${packageCallerEdge} ${y}`
+						return (
+							<g
+								key={entry.id}
+								class="pw-wire pw-call-wire"
+								data-on={selected ? '' : undefined}
+							>
+								<path class="pw-line" d={out} />
+								{selected ? (
+									<>
+										<path class="pw-call" d={out} pathLength="100" />
+										<path
+											class="pw-call pw-call-back"
+											d={back}
+											pathLength="100"
+										/>
+									</>
+								) : null}
+							</g>
+						)
+					})}
+				</>,
+			)}
+			<span class="pw-step pw-step-create" style={at(4, 9)}>
+				1 · Create
+			</span>
+			<span class="pw-step pw-step-invoke" style={at(88, 9)}>
+				2 · Invoke
+			</span>
+			<div class="pw-node pw-editor" style={at(4, 56)}>
+				<span class="pw-kicker">◇ weekly-brief / brief.ts</span>
 				<code class="pw-code">
 					{lines.map(([lead, word, tail], i) => (
 						<span
@@ -288,13 +349,36 @@ export function packagesScene(state: { version: number }) {
 					))}
 				</code>
 			</div>
-			<div class="pw-box-wrap" style={at(84, 46)}>
+			<div class="pw-box-wrap" style={at(62, 52)}>
 				<span class="pw-box" aria-hidden="true">
 					<span class="pw-box-lid"></span>
 				</span>
 				<span class="pw-box-name">weekly-brief</span>
 				<span class="pw-badge">Published v1.{version + 2}</span>
 			</div>
+			<span class="pw-run-call" style={at(62, 89)}>
+				› run weekly-brief
+			</span>
+			{packageCallers.map((entry) =>
+				choice({
+					class: 'pw-node pw-caller',
+					selected: caller === entry.id,
+					onPick: onCaller ? () => onCaller(entry.id) : undefined,
+					label: onCaller ? `Invoke from ${entry.name}` : undefined,
+					style: at(77.8, entry.y),
+					children: (
+						<>
+							{icon(entry.id)}
+							{entry.name}
+							{caller === entry.id ? (
+								<span class="pw-ret" aria-hidden="true">
+									✓
+								</span>
+							) : null}
+						</>
+					),
+				}),
+			)}
 		</div>
 	)
 }
@@ -368,135 +452,294 @@ export function triggersScene(state: {
 	)
 }
 
-// Integrations: one package, routed through Kody to the connection you pick.
+// Integrations: a package asks a connection for data through Kody, the
+// answer comes back the same way, and acting on it writes back out.
 
-export const integrationAccounts = [
-	{ id: 'work', name: 'google-work', mark: 'G', y: 24, use: 'Work calendar' },
-	{
-		id: 'personal',
-		name: 'google-personal',
-		mark: 'G',
-		y: 50,
-		use: 'Personal calendar',
-	},
-	{ id: 'github', name: 'github', mark: '', y: 76, use: 'GitHub issues' },
+export const integrationSlots = [
+	{ id: 'tue', label: 'Tue 10:00', short: 'Tue', col: 0, top: 18 },
+	{ id: 'wed', label: 'Wed 2:30', short: 'Wed', col: 1, top: 58 },
+	{ id: 'thu', label: 'Thu 9:15', short: 'Thu', col: 2, top: 8 },
 ] as const
 
-export type IntegrationAccountId = (typeof integrationAccounts)[number]['id']
+export type IntegrationSlotId = (typeof integrationSlots)[number]['id']
+
+const calendarBusy = [
+	{ col: 0, top: 50, height: 30 },
+	{ col: 1, top: 12, height: 34 },
+	{ col: 2, top: 38, height: 26 },
+	{ col: 2, top: 72, height: 20 },
+] as const
 
 export function integrationsScene(state: {
-	account: IntegrationAccountId
+	booked?: IntegrationSlotId | null
 	shot?: number
-	onAccount?: (id: IntegrationAccountId) => void
+	onBook?: (id: IntegrationSlotId) => void
 }) {
-	const { account, shot = 0, onAccount } = state
+	const { booked = null, shot = 0, onBook } = state
+	const slot = integrationSlots.find((entry) => entry.id === booked)
 	return (
-		<>
+		<div class="pw-run" key={`ask-${shot}`} data-booked={slot ? '' : undefined}>
 			{wires(
 				<>
-					{wire({ d: 'M98 100 L140 100', on: true, shot })}
-					{integrationAccounts.map((entry) => {
-						const y = (entry.y / 100) * 200
-						return wire({
-							key: entry.id,
-							d: `M184 100 C208 100 206 ${y} 232 ${y}`,
-							on: account === entry.id,
-							shot: account === entry.id ? shot : 0,
-						})
-					})}
+					{wire({ d: 'M136 82 L242 82', on: true })}
+					{wire({ d: 'M242 118 L136 118', on: true })}
 				</>,
 			)}
-			<div class="pw-node pw-pkg" style={at(15, 50)}>
-				<span class="pw-glyph" aria-hidden="true">
-					◇
+			<div class="pw-node pw-planner" style={at(4, 50)}>
+				<span class="pw-kicker">◇ meet-finder</span>
+				<strong>Sync with Sam</strong>
+				<span class="pw-planner-wait" aria-hidden="true">
+					Checking google-work…
 				</span>
-				weekly-brief
+				{integrationSlots.map((entry, i) =>
+					choice({
+						class: 'pw-slot',
+						selected: booked === entry.id,
+						onPick: onBook ? () => onBook(entry.id) : undefined,
+						label: onBook ? `Book ${entry.label}` : undefined,
+						style: { '--i': String(i) },
+						children: (
+							<>
+								{entry.label}
+								{booked === entry.id ? (
+									<span class="pw-ret" aria-hidden="true">
+										✓
+									</span>
+								) : null}
+							</>
+						),
+					}),
+				)}
 			</div>
-			<div class="pw-hub" style={at(45, 50)}>
+			<div class="pw-hub" style={at(52.4, 50)}>
 				Kody
 			</div>
-			{integrationAccounts.map((entry) =>
-				choice({
-					class: 'pw-node pw-conn',
-					selected: account === entry.id,
-					onPick: onAccount ? () => onAccount(entry.id) : undefined,
-					label: onAccount ? `Use ${entry.name}` : undefined,
-					style: at(81, entry.y),
-					children: (
-						<>
-							{entry.mark ? (
-								<span class="pw-mark" aria-hidden="true">
-									{entry.mark}
-								</span>
-							) : (
-								icon('github')
-							)}
-							{entry.name}
-						</>
-					),
-				}),
-			)}
-		</>
+			<div class="pw-node pw-cal" style={at(96, 50)}>
+				<span class="pw-cal-head">
+					<span class="pw-mark" aria-hidden="true">
+						G
+					</span>
+					google-work
+				</span>
+				<span class="pw-cal-days" aria-hidden="true">
+					<span>Tue</span>
+					<span>Wed</span>
+					<span>Thu</span>
+				</span>
+				<span class="pw-cal-grid" aria-hidden="true">
+					{calendarBusy.map((block, i) => (
+						<span
+							key={`busy-${i}`}
+							class="pw-cal-busy"
+							style={{
+								'--col': String(block.col),
+								top: `${block.top}%`,
+								height: `${block.height}%`,
+							}}
+						></span>
+					))}
+					{integrationSlots.map((entry) => (
+						<span
+							key={entry.id}
+							class="pw-cal-open"
+							data-on={booked === entry.id ? '' : undefined}
+							style={{ '--col': String(entry.col), top: `${entry.top}%` }}
+						></span>
+					))}
+				</span>
+			</div>
+			<div class="pw-lane" style={{ left: '43%', width: '19%', top: '41%' }}>
+				<span class="pw-packet">
+					{slot ? `book ${slot.short}` : 'free times?'}
+				</span>
+			</div>
+			<div
+				class="pw-lane pw-lane-back"
+				style={{ left: '43%', width: '19%', top: '59%' }}
+			>
+				<span class="pw-packet">{slot ? 'booked ✓' : '3 open'}</span>
+			</div>
+		</div>
 	)
 }
 
-// Apps: a prompt turns into a small hosted app.
+// Apps: a prompt turns into a small hosted app with its own look.
 
 export const appPrompts = [
 	{
 		id: 'intake',
 		label: 'Project intake',
 		prompt: 'Make me a project intake form',
-		slug: 'project-intake',
-		fields: ['Project name', 'Due date'],
-		values: ['Autumn launch', 'Nov 14'],
-		action: 'Save brief',
+		action: 'Submit',
+		done: 'Sent to #projects',
 	},
 	{
 		id: 'reading',
 		label: 'Reading list',
 		prompt: 'Build a page to track my reading',
-		slug: 'reading-list',
-		fields: ['Title', 'Author'],
-		values: ['The Overstory', 'R. Powers'],
-		action: 'Add book',
+		action: '+ Add book',
+		done: 'Added to the shelf',
 	},
 	{
 		id: 'habits',
 		label: 'Habit tracker',
 		prompt: 'I want a tiny habit tracker',
-		slug: 'habits',
-		fields: ['Habit', 'Streak'],
-		values: ['Morning walk', '12 days'],
 		action: 'Check in',
+		done: '13-day streak',
 	},
 ] as const
 
 export type AppPromptId = (typeof appPrompts)[number]['id']
+
+type AppPrompt = (typeof appPrompts)[number]
+
+const readingShelf = [
+	{ title: 'Piranesi', hue: 200, read: 100 },
+	{ title: 'Dune', hue: 60, read: 72 },
+	{ title: 'Circe', hue: 20, read: 35 },
+] as const
+
+const habitRows = [
+	{ name: 'Walk', days: [1, 1, 1, 1, 1, 1] },
+	{ name: 'Read', days: [1, 0, 1, 1, 1, 1] },
+	{ name: 'Water', days: [1, 1, 1, 0, 1, 1] },
+	{ name: 'Stretch', days: [0, 1, 1, 1, 0, 1] },
+] as const
+
+function appAction(app: AppPrompt) {
+	return (
+		<span class="pw-app-foot pw-ap-part" style={{ '--i': '4' }}>
+			<span class="pw-app-action">
+				{app.action}
+				<span class="pw-cursor" aria-hidden="true"></span>
+			</span>
+			<span class="pw-toast">{app.done}</span>
+		</span>
+	)
+}
+
+function appBody(app: AppPrompt): RemixNode {
+	switch (app.id) {
+		case 'intake':
+			return (
+				<>
+					<span class="pw-in-head pw-ap-part" style={{ '--i': '0' }}>
+						<strong class="pw-app-title">{app.label}</strong>
+						<span class="pw-in-tag">Q4</span>
+					</span>
+					<span class="pw-in-body">
+						<span class="pw-in-row pw-ap-part" style={{ '--i': '1' }}>
+							<span>Project</span>
+							<span class="pw-input">Autumn launch</span>
+						</span>
+						<span class="pw-in-row pw-ap-part" style={{ '--i': '2' }}>
+							<span>Due</span>
+							<span class="pw-input">Nov 14</span>
+						</span>
+						<span class="pw-in-row pw-ap-part" style={{ '--i': '3' }}>
+							<span>Team</span>
+							<span class="pw-in-team" aria-hidden="true">
+								<span style={{ '--team-hue': '30' }}>AK</span>
+								<span style={{ '--team-hue': '200' }}>SM</span>
+								<span style={{ '--team-hue': '140' }}>JR</span>
+							</span>
+						</span>
+						<span class="pw-in-row pw-ap-part" style={{ '--i': '3' }}>
+							<span>Priority</span>
+							<span class="pw-in-seg">
+								<span>Low</span>
+								<span>Med</span>
+								<span data-on="">High</span>
+							</span>
+						</span>
+						{appAction(app)}
+					</span>
+				</>
+			)
+		case 'reading':
+			return (
+				<>
+					<span class="pw-rd-head pw-ap-part" style={{ '--i': '0' }}>
+						<strong class="pw-app-title">{app.label}</strong>
+						<span>3 of 12 this year</span>
+					</span>
+					<span class="pw-rd-shelf">
+						{readingShelf.map((book, i) => (
+							<span
+								key={book.title}
+								class="pw-rd-book pw-ap-part"
+								style={{
+									'--i': String(i + 1),
+									'--book-hue': String(book.hue),
+									'--read': `${book.read}%`,
+								}}
+							>
+								<b>{book.title}</b>
+							</span>
+						))}
+						<span
+							class="pw-rd-book pw-app-new"
+							style={{ '--book-hue': '150', '--read': '0%' }}
+						>
+							<b>Kindred</b>
+						</span>
+					</span>
+					{appAction(app)}
+				</>
+			)
+		case 'habits':
+			return (
+				<>
+					<span class="pw-hb-head pw-ap-part" style={{ '--i': '0' }}>
+						<strong class="pw-app-title">{app.label}</strong>
+						<span>This week</span>
+					</span>
+					<span class="pw-hb-grid">
+						{habitRows.map((row, i) => (
+							<span
+								key={row.name}
+								class="pw-hb-row pw-ap-part"
+								style={{ '--i': String(i + 1) }}
+							>
+								<span class="pw-hb-name">{row.name}</span>
+								{row.days.map((day, d) => (
+									<span
+										key={`${row.name}-${d}`}
+										class="pw-hb-dot"
+										data-on={day ? '' : undefined}
+									></span>
+								))}
+								<span class="pw-hb-dot pw-hb-today">
+									<span class="pw-hb-fill pw-app-new"></span>
+								</span>
+							</span>
+						))}
+					</span>
+					{appAction(app)}
+				</>
+			)
+		default: {
+			const unknown: never = app
+			throw new Error(`Unknown app: ${String(unknown)}`)
+		}
+	}
+}
 
 export function appsScene(state: { prompt: AppPromptId; shot?: number }) {
 	const app =
 		appPrompts.find((entry) => entry.id === state.prompt) ?? appPrompts[0]
 	return (
 		<div class="pw-run" key={`${app.id}-${state.shot ?? 0}`}>
-			<div class="pw-node pw-prompt" style={at(4, 6)}>
+			<div class="pw-node pw-prompt" style={at(4, 4)}>
 				<span class="pw-prompt-text">› {app.prompt}</span>
 			</div>
-			<div class="pw-node pw-window" style={at(25, 31)}>
+			<div class="pw-node pw-window" data-app={app.id} style={at(18, 22)}>
 				<span class="pw-chrome">
-					<span aria-hidden="true">● ● ●</span> {app.slug}
+					<span class="pw-chrome-dots" aria-hidden="true"></span>
+					kody.app/{app.id}
 				</span>
-				<strong class="pw-app-title">{app.label}</strong>
-				{app.fields.map((field, i) => (
-					<span key={field} class="pw-field" style={{ '--i': String(i) }}>
-						<span>{field}</span>
-						<span class="pw-input">{app.values[i]}</span>
-					</span>
-				))}
-				<span class="pw-app-action">{app.action}</span>
-				<span class="pw-toast">Saved ✓</span>
+				<span class="pw-app">{appBody(app)}</span>
 			</div>
-			<span class="pw-cursor" aria-hidden="true"></span>
 		</div>
 	)
 }
@@ -513,7 +756,7 @@ export function primitiveRestScene(id: LandingPrimitiveId): RemixNode {
 		case 'triggers':
 			return triggersScene({ runs: 12 })
 		case 'integrations':
-			return integrationsScene({ account: 'work' })
+			return integrationsScene({})
 		case 'apps':
 			return appsScene({ prompt: 'intake' })
 		default: {

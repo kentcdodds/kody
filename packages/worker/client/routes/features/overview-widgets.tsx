@@ -3,14 +3,16 @@ import {
 	appPrompts,
 	appsScene,
 	type AppPromptId,
-	integrationAccounts,
+	integrationSlots,
 	integrationsScene,
-	type IntegrationAccountId,
+	type IntegrationSlotId,
 	memoryAgents,
 	memoryScene,
 	type MemoryAgentId,
+	packageCallers,
 	packageChanges,
 	packagesScene,
+	type PackageCallerId,
 	PrimitiveWidgetFrame,
 	secretHosts,
 	secretsScene,
@@ -132,23 +134,40 @@ function SecretsWidget(handle: Handle) {
 
 function PackagesWidget(handle: Handle) {
 	let version = 0
-	return () =>
-		demo({
+	let caller: PackageCallerId = 'claude'
+	let invoked = 0
+	return () => {
+		const name = packageCallers.find((entry) => entry.id === caller)?.name
+		const release = `v1.${version + 2}`
+		return demo({
 			id: 'packages',
 			label: 'Packages example',
-			scene: packagesScene({ version }),
+			scene: packagesScene({
+				version,
+				caller,
+				invoked,
+				onCaller(id) {
+					caller = id
+					invoked += 1
+					handle.update()
+				},
+			}),
 			controls: controlButton({
 				label: 'Publish a change',
 				onPress() {
 					version += 1
+					invoked = 0
 					handle.update()
 				},
 			}),
 			receipt:
-				version > 0
-					? `Published weekly-brief v1.${version + 2} with ${packageChanges[(version - 1) % packageChanges.length]}.`
-					: 'weekly-brief is saved code any connected agent can run.',
+				invoked > 0
+					? `${name} invoked weekly-brief ${release} and got this week's brief back.`
+					: version > 0
+						? `Published weekly-brief ${release} with ${packageChanges[(version - 1) % packageChanges.length]}. Pick an agent to invoke it.`
+						: 'Write it once as a package. Then pick an agent to invoke it.',
 		})
+	}
 }
 
 function TriggersWidget(handle: Handle) {
@@ -179,23 +198,33 @@ function TriggersWidget(handle: Handle) {
 }
 
 function IntegrationsWidget(handle: Handle) {
-	let account: IntegrationAccountId = 'work'
+	let booked: IntegrationSlotId | null = null
 	let shot = 0
 	return () => {
-		const entry = integrationAccounts.find((item) => item.id === account)
+		const slot = integrationSlots.find((entry) => entry.id === booked)
 		return demo({
 			id: 'integrations',
 			label: 'Integrations example',
 			scene: integrationsScene({
-				account,
+				booked,
 				shot,
-				onAccount(id) {
-					account = id
+				onBook(id) {
+					booked = id
 					shot += 1
 					handle.update()
 				},
 			}),
-			receipt: `weekly-brief → ${entry?.use} through ${entry?.name}.`,
+			controls: controlButton({
+				label: 'Ask for times again',
+				onPress() {
+					booked = null
+					shot += 1
+					handle.update()
+				},
+			}),
+			receipt: slot
+				? `Booked ${slot.label} on google-work. The request went out through Kody and the confirmation came back.`
+				: 'meet-finder asked google-work for open times through Kody. Pick one to book it.',
 		})
 	}
 }

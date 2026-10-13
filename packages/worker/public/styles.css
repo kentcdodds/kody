@@ -3265,21 +3265,29 @@ html.is-settled {
  * the widget is off screen.
  */
 
+/* Light mode follows the site's cool grey canvas; dark keeps its graphite. */
 .pw {
-	--pw-surface: light-dark(#fffefb, #252a24);
-	--pw-text: light-dark(#262b28, #f1efe8);
-	--pw-muted: light-dark(#575d58, #bcc2ba);
-	--pw-line: light-dark(#d5d8cf, #474e45);
-	--pw-stage: light-dark(#f3f2ed, #1c201c);
-	--pw-dot: light-dark(#dddcd3, #2f352e);
-	--pw-soft: color-mix(in oklch, var(--pw-accent) 16%, var(--pw-surface));
-	--pw-ink: color-mix(in oklch, var(--pw-accent) 55%, var(--pw-text));
+	--pw-surface: light-dark(oklch(1 0 0), #252a24);
+	--pw-text: light-dark(oklch(0.22 0.012 260), #f1efe8);
+	--pw-muted: light-dark(oklch(0.45 0.014 260), #bcc2ba);
+	--pw-line: light-dark(oklch(0.87 0.008 250), #474e45);
+	--pw-stage: light-dark(oklch(0.955 0.004 250), #1c201c);
+	--pw-dot: light-dark(oklch(0.875 0.006 250), #2f352e);
+	--pw-glow: light-dark(
+		color-mix(in oklab, var(--pw-accent) 9%, transparent),
+		transparent
+	);
+	--pw-shadow: light-dark(oklch(0.3 0.02 260 / 0.08), #0000000f);
+	--pw-on-accent: light-dark(oklch(1 0 0), #161a16);
+	--pw-soft: color-mix(in oklab, var(--pw-accent) 16%, var(--pw-surface));
+	--pw-ink: color-mix(in oklab, var(--pw-accent) 55%, var(--pw-text));
 	--pw-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 	container-type: inline-size;
 	padding: 4%;
 	border-radius: 12px;
 	background:
 		radial-gradient(var(--pw-dot) 1px, transparent 1.4px) 0 0 / 14px 14px,
+		radial-gradient(110% 80% at 50% 0%, var(--pw-glow), transparent 70%),
 		var(--pw-stage);
 	color: var(--pw-text);
 	text-align: left;
@@ -3308,7 +3316,9 @@ html.is-settled {
 	border: 1px solid var(--pw-line);
 	border-radius: 0.55em;
 	background: var(--pw-surface);
-	box-shadow: 0 0.15em 0.5em #0000000f;
+	box-shadow:
+		0 1px 1px var(--pw-shadow),
+		0 0.2em 0.6em var(--pw-shadow);
 	color: inherit;
 	font: inherit;
 	white-space: nowrap;
@@ -3334,7 +3344,7 @@ button.pw-node:hover {
 .pw-node[data-on],
 .pw-node[aria-pressed='true'] {
 	border-color: var(--pw-accent);
-	box-shadow: 0 0 0 0.2em color-mix(in oklch, var(--pw-accent) 28%, transparent);
+	box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--pw-accent) 28%, transparent);
 }
 
 .pw-kicker {
@@ -3724,16 +3734,35 @@ button.pw-node:hover {
 	}
 }
 
-/* Packages */
+/* Packages: 1 create (type, publish), 2 invoke (call out, result back). */
+
+.pw-step {
+	position: absolute;
+	translate: -50% -50%;
+	padding: 0.2em 0.65em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99em;
+	background: var(--pw-surface);
+	color: var(--pw-muted);
+	font-size: 0.7em;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.pw-step-create {
+	translate: 0 -50%;
+}
 
 .pw-editor {
 	translate: 0 -50%;
 	flex-direction: column;
 	align-items: stretch;
 	gap: 0.45em;
-	width: 62%;
-	min-height: 52%;
-	padding: 0.7em 0.85em;
+	width: 44%;
+	min-height: 50%;
+	padding: 0.65em 0.75em;
 	white-space: normal;
 }
 
@@ -3742,7 +3771,7 @@ button.pw-node:hover {
 	flex-direction: column;
 	gap: 0.3em;
 	font:
-		0.8em/1.35 ui-monospace,
+		0.72em/1.35 ui-monospace,
 		monospace;
 	white-space: pre;
 	overflow: hidden;
@@ -3759,7 +3788,7 @@ button.pw-node:hover {
 }
 
 .pw-code-line[data-diff] {
-	background: color-mix(in oklch, var(--pw-accent) 18%, transparent);
+	background: color-mix(in oklab, var(--pw-accent) 18%, transparent);
 }
 
 .pw-code-line[data-diff]::before {
@@ -3794,7 +3823,7 @@ button.pw-node:hover {
 	inset: 0 auto 0 50%;
 	width: 0.5em;
 	translate: -50% 0;
-	background: color-mix(in oklch, var(--pw-accent) 45%, transparent);
+	background: color-mix(in oklab, var(--pw-accent) 45%, transparent);
 }
 
 .pw-box-lid {
@@ -3822,8 +3851,83 @@ button.pw-node:hover {
 	font-size: 0.72em;
 }
 
+.pw-caller {
+	translate: 0 -50%;
+	min-width: 7em;
+	font-size: 0.85em;
+}
+
+.pw-ret {
+	position: absolute;
+	top: -0.55em;
+	right: -0.55em;
+	display: grid;
+	place-items: center;
+	width: 1.45em;
+	height: 1.45em;
+	border-radius: 50%;
+	background: var(--pw-accent);
+	color: var(--pw-on-accent);
+	font-size: 0.72em;
+	font-weight: 800;
+}
+
+.pw-run-call {
+	position: absolute;
+	translate: -50% -50%;
+	padding: 0.25em 0.65em;
+	border-radius: 0.45em;
+	background: var(--pw-text);
+	color: var(--pw-surface);
+	font:
+		0.68em/1.3 ui-monospace,
+		monospace;
+	white-space: nowrap;
+}
+
+.pw[data-motion] .pw-run-call {
+	animation: pw-pk-run-call 10s var(--pw-ease) infinite;
+}
+
+.pw[data-motion] .pw-run[data-invoked] .pw-run-call {
+	animation: pw-pk-run-call-once 0.5s var(--pw-ease) both;
+}
+
+@keyframes pw-pk-run-call-once {
+	from {
+		opacity: 0;
+		transform: translateY(0.4em);
+	}
+}
+
+@keyframes pw-pk-run-call {
+	0%,
+	64% {
+		opacity: 0;
+		transform: translateY(0.4em);
+	}
+	68%,
+	96% {
+		opacity: 1;
+		transform: none;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+.pw-call {
+	fill: none;
+	stroke: var(--pw-accent);
+	stroke-width: 3.5;
+	stroke-linecap: round;
+	stroke-dasharray: 14 200;
+	stroke-dashoffset: 14;
+	opacity: 0;
+}
+
 .pw[data-motion] .pw-code-line {
-	animation: pw-type-0 8s steps(24, end) infinite;
+	animation: pw-type-0 10s steps(24, end) infinite;
 }
 
 .pw[data-motion] .pw-code-line:nth-child(2) {
@@ -3843,19 +3947,67 @@ button.pw-node:hover {
 }
 
 .pw-packages[data-motion] .pw-pulse {
-	animation: pw-pk-pulse 8s linear infinite;
+	animation: pw-pk-pulse 10s linear infinite;
 }
 
 .pw[data-motion] .pw-box-lid {
-	animation: pw-pk-lid 8s var(--pw-ease) infinite;
+	animation: pw-pk-lid 10s var(--pw-ease) infinite;
 }
 
 .pw[data-motion] .pw-box {
-	animation: pw-pk-box 8s var(--pw-ease) infinite;
+	animation: pw-pk-box 10s var(--pw-ease) infinite;
 }
 
 .pw[data-motion] .pw-badge {
-	animation: pw-pk-badge 8s var(--pw-ease) infinite;
+	animation: pw-pk-badge 10s var(--pw-ease) infinite;
+}
+
+.pw[data-motion] .pw-step-create {
+	animation: pw-pk-step-1 10s var(--pw-ease) infinite;
+}
+
+.pw[data-motion] .pw-step-invoke {
+	animation: pw-pk-step-2 10s var(--pw-ease) infinite;
+}
+
+.pw[data-motion] .pw-call {
+	animation: pw-pk-call 10s linear infinite;
+}
+
+.pw[data-motion] .pw-call-back {
+	animation-name: pw-pk-call-back;
+}
+
+.pw-packages[data-motion] .pw-caller[data-on],
+.pw-packages[data-motion] .pw-caller[aria-pressed='true'] {
+	animation: pw-pk-caller 10s var(--pw-ease) infinite;
+}
+
+.pw-packages[data-motion] .pw-ret {
+	animation: pw-pk-ret 10s var(--pw-ease) infinite;
+}
+
+/* After a pick, skip straight to the invoke half and play it once. */
+.pw[data-motion] .pw-run[data-invoked] .pw-code-line,
+.pw[data-motion] .pw-run[data-invoked] .pw-box-lid,
+.pw[data-motion] .pw-run[data-invoked] .pw-badge,
+.pw[data-motion] .pw-run[data-invoked] .pw-pulse,
+.pw[data-motion] .pw-run[data-invoked] .pw-step {
+	animation: none;
+}
+
+.pw-run[data-invoked] .pw-step-invoke {
+	border-color: var(--pw-accent);
+	color: var(--pw-ink);
+}
+
+.pw[data-motion] .pw-run[data-invoked] .pw-box,
+.pw[data-motion] .pw-run[data-invoked] .pw-call,
+.pw[data-motion] .pw-run[data-invoked] .pw-caller,
+.pw[data-motion] .pw-run[data-invoked] .pw-ret {
+	animation-delay: -6.6s;
+	animation-iteration-count: 1;
+	animation-fill-mode: both;
 }
 
 @keyframes pw-type-0 {
@@ -3863,8 +4015,8 @@ button.pw-node:hover {
 	4% {
 		clip-path: inset(0 100% 0 0);
 	}
-	12%,
-	92% {
+	10%,
+	93% {
 		clip-path: inset(0);
 		opacity: 1;
 	}
@@ -3877,11 +4029,11 @@ button.pw-node:hover {
 
 @keyframes pw-type-1 {
 	0%,
-	13% {
+	10% {
 		clip-path: inset(0 100% 0 0);
 	}
-	21%,
-	92% {
+	16%,
+	93% {
 		clip-path: inset(0);
 		opacity: 1;
 	}
@@ -3894,11 +4046,11 @@ button.pw-node:hover {
 
 @keyframes pw-type-2 {
 	0%,
-	22% {
+	16% {
 		clip-path: inset(0 100% 0 0);
 	}
-	30%,
-	92% {
+	22%,
+	93% {
 		clip-path: inset(0);
 		opacity: 1;
 	}
@@ -3911,11 +4063,11 @@ button.pw-node:hover {
 
 @keyframes pw-type-3 {
 	0%,
-	31% {
+	22% {
 		clip-path: inset(0 100% 0 0);
 	}
-	39%,
-	92% {
+	28%,
+	93% {
 		clip-path: inset(0);
 		opacity: 1;
 	}
@@ -3928,11 +4080,11 @@ button.pw-node:hover {
 
 @keyframes pw-type-4 {
 	0%,
-	40% {
+	28% {
 		clip-path: inset(0 100% 0 0);
 	}
-	48%,
-	92% {
+	34%,
+	93% {
 		clip-path: inset(0);
 		opacity: 1;
 	}
@@ -3945,19 +4097,19 @@ button.pw-node:hover {
 
 @keyframes pw-pk-pulse {
 	0%,
-	50% {
+	36% {
 		stroke-dashoffset: 14;
 		opacity: 0;
 	}
-	51% {
+	37% {
 		stroke-dashoffset: 14;
 		opacity: 1;
 	}
-	60% {
+	44% {
 		stroke-dashoffset: -100;
 		opacity: 1;
 	}
-	61%,
+	45%,
 	100% {
 		stroke-dashoffset: -100;
 		opacity: 0;
@@ -3966,10 +4118,10 @@ button.pw-node:hover {
 
 @keyframes pw-pk-lid {
 	0%,
-	58% {
+	42% {
 		transform: translate(0.2em, -0.5em) rotate(-24deg);
 	}
-	64%,
+	48%,
 	100% {
 		transform: none;
 	}
@@ -3977,29 +4129,131 @@ button.pw-node:hover {
 
 @keyframes pw-pk-box {
 	0%,
-	62%,
-	72%,
+	46%,
+	56%,
+	79%,
+	86%,
 	100% {
 		scale: 1;
 	}
-	66% {
+	50% {
 		scale: 1.12;
+	}
+	82% {
+		scale: 1.1;
 	}
 }
 
 @keyframes pw-pk-badge {
 	0%,
-	64% {
+	48% {
 		opacity: 0;
 		scale: 0.8;
 	}
-	69%,
+	53%,
 	96% {
 		opacity: 1;
 		scale: 1;
 	}
 	100% {
 		opacity: 0;
+	}
+}
+
+@keyframes pw-pk-step-1 {
+	0%,
+	56% {
+		border-color: var(--pw-accent);
+		color: var(--pw-ink);
+	}
+	62%,
+	100% {
+		border-color: var(--pw-line);
+		color: var(--pw-muted);
+	}
+}
+
+@keyframes pw-pk-step-2 {
+	0%,
+	62% {
+		border-color: var(--pw-line);
+		color: var(--pw-muted);
+	}
+	66%,
+	97% {
+		border-color: var(--pw-accent);
+		color: var(--pw-ink);
+	}
+	100% {
+		border-color: var(--pw-line);
+		color: var(--pw-muted);
+	}
+}
+
+@keyframes pw-pk-caller {
+	0%,
+	66%,
+	74%,
+	100% {
+		scale: 1;
+	}
+	70% {
+		scale: 1.08;
+	}
+}
+
+@keyframes pw-pk-call {
+	0%,
+	70% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	71% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	80% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	81%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-pk-call-back {
+	0%,
+	83% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	84% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	92% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	93%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-pk-ret {
+	0%,
+	91% {
+		opacity: 0;
+		scale: 0.4;
+	}
+	95%,
+	100% {
+		opacity: 1;
+		scale: 1;
 	}
 }
 
@@ -4114,20 +4368,20 @@ button.pw-node:hover {
 	}
 }
 
-/* Integrations */
+/* Integrations: ask out through Kody, the answer comes back, act on it. */
 
 .pw-hub {
 	position: absolute;
 	translate: -50% -50%;
 	display: grid;
 	place-items: center;
-	width: 3.9em;
-	height: 3.9em;
+	width: 3.6em;
+	height: 3.6em;
 	border-radius: 50%;
 	background: var(--pw-text);
 	color: var(--pw-surface);
 	font-weight: 700;
-	box-shadow: 0 0 0 0.3em color-mix(in oklch, var(--pw-accent) 30%, transparent);
+	box-shadow: 0 0 0 0.3em color-mix(in oklab, var(--pw-accent) 30%, transparent);
 }
 
 .pw-hub::after {
@@ -4137,11 +4391,6 @@ button.pw-node:hover {
 	border: 1.5px solid var(--pw-accent);
 	border-radius: 50%;
 	opacity: 0;
-}
-
-.pw-conn {
-	gap: 0.45em;
-	min-width: 9.2em;
 }
 
 .pw-mark {
@@ -4156,12 +4405,196 @@ button.pw-node:hover {
 	font-weight: 700;
 }
 
-.pw-integrations .pw-wire:not([data-on]) .pw-pulse {
+.pw-integrations .pw-pulse {
 	display: none;
+}
+
+.pw-planner {
+	translate: 0 -50%;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.35em;
+	width: 34%;
+	padding: 0.6em 0.7em;
+}
+
+.pw-planner-wait {
+	position: absolute;
+	left: 0.7em;
+	top: 4.1em;
+	color: var(--pw-muted);
+	font-size: 0.8em;
+	opacity: 0;
+}
+
+.pw-integrations[data-motion] .pw-run:not([data-booked]) .pw-planner-wait {
+	animation: pw-in-wait 8s linear infinite;
+}
+
+@keyframes pw-in-wait {
+	0%,
+	3% {
+		opacity: 0;
+	}
+	6%,
+	62% {
+		opacity: 1;
+	}
+	66%,
+	100% {
+		opacity: 0;
+	}
+}
+
+.pw-planner strong {
+	font-size: 0.95em;
+	font-weight: 650;
+}
+
+.pw-slot {
+	position: relative;
+	display: block;
+	margin: 0;
+	padding: 0.3em 0.6em;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.45em;
+	background: var(--pw-stage);
+	color: inherit;
+	font: inherit;
+	font-size: 0.8em;
+	text-align: left;
+}
+
+button.pw-slot {
+	cursor: pointer;
+	touch-action: manipulation;
+	transition: border-color 0.2s;
+}
+
+button.pw-slot:hover {
+	border-color: var(--pw-ink);
+}
+
+.pw button.pw-slot:focus-visible {
+	outline: 2px solid var(--pw-text);
+	outline-offset: 2px;
+}
+
+.pw-slot[data-on],
+.pw-slot[aria-pressed='true'] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+}
+
+.pw-cal {
+	translate: -100% -50%;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.3em;
+	width: 29%;
+	padding: 0.5em 0.55em 0.55em;
+}
+
+.pw-cal-head {
+	display: flex;
+	align-items: center;
+	gap: 0.35em;
+	font-size: 0.8em;
+	font-weight: 600;
+}
+
+.pw-cal-days {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	color: var(--pw-muted);
+	font-size: 0.62em;
+	text-align: center;
+}
+
+.pw-cal-grid {
+	position: relative;
+	height: 5.4em;
+	border-radius: 0.3em;
+	background:
+		linear-gradient(var(--pw-line) 1px, transparent 1px) 0 0 / 100% 25%,
+		var(--pw-stage);
+}
+
+.pw-cal-busy,
+.pw-cal-open {
+	position: absolute;
+	left: calc(var(--col) * 33.333% + 0.15em);
+	width: calc(33.333% - 0.3em);
+	border-radius: 0.2em;
+}
+
+.pw-cal-busy {
+	background: color-mix(in oklab, var(--pw-muted) 26%, transparent);
+}
+
+.pw-cal-open {
+	height: 22%;
+	border: 1px dashed var(--pw-accent);
+}
+
+.pw-cal-open[data-on] {
+	border-style: solid;
+	background: var(--pw-accent);
 }
 
 .pw[data-motion] .pw-hub::after {
 	animation: pw-ring 2.4s ease-out infinite;
+}
+
+.pw-integrations[data-motion] .pw-lane {
+	animation: pw-in-out 8s var(--pw-ease) infinite;
+}
+
+.pw-integrations[data-motion] .pw-lane .pw-packet {
+	animation: pw-in-out-packet 8s linear infinite;
+}
+
+.pw-integrations[data-motion] .pw-lane-back {
+	animation-name: pw-in-back;
+}
+
+.pw-integrations[data-motion] .pw-lane-back .pw-packet {
+	animation-name: pw-in-back-packet;
+}
+
+.pw-integrations[data-motion] .pw-cal {
+	animation: pw-in-cal 8s var(--pw-ease) infinite;
+}
+
+.pw-integrations[data-motion] .pw-cal-open {
+	animation: pw-in-open 8s var(--pw-ease) infinite;
+}
+
+.pw-integrations[data-motion] .pw-slot {
+	animation: pw-in-slot 8s var(--pw-ease) infinite backwards;
+	animation-delay: calc(var(--i, 0) * 0.2s);
+}
+
+/* After a pick: one booking round trip. */
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-lane,
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-lane .pw-packet,
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-cal {
+	animation-duration: 3.2s;
+	animation-iteration-count: 1;
+	animation-fill-mode: both;
+}
+
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-slot,
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-cal-open {
+	animation: none;
+}
+
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-cal-open[data-on] {
+	animation: pw-in-book 3.2s var(--pw-ease) both;
+}
+
+.pw-integrations[data-motion] .pw-run[data-booked] .pw-ret {
+	animation: pw-pk-ret 3.2s var(--pw-ease) both;
 }
 
 @keyframes pw-ring {
@@ -4175,7 +4608,121 @@ button.pw-node:hover {
 	}
 }
 
-/* Apps: a prompt becomes an app. */
+@keyframes pw-in-out {
+	0%,
+	4% {
+		transform: translateX(0);
+	}
+	30%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-in-out-packet {
+	0%,
+	3% {
+		opacity: 0;
+	}
+	6%,
+	29% {
+		opacity: 1;
+	}
+	33%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-in-back {
+	0%,
+	38% {
+		transform: translateX(100%);
+	}
+	64%,
+	100% {
+		transform: translateX(0);
+	}
+}
+
+@keyframes pw-in-back-packet {
+	0%,
+	37% {
+		opacity: 0;
+	}
+	40%,
+	63% {
+		opacity: 1;
+	}
+	67%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-in-cal {
+	0%,
+	29%,
+	38%,
+	100% {
+		scale: 1;
+	}
+	33% {
+		scale: 1.05;
+	}
+}
+
+@keyframes pw-in-open {
+	0%,
+	31% {
+		opacity: 0;
+	}
+	35%,
+	95% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-in-slot {
+	0%,
+	64% {
+		opacity: 0;
+		transform: translateX(-0.5em);
+	}
+	69%,
+	95% {
+		opacity: 1;
+		transform: none;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-in-book {
+	0%,
+	30% {
+		opacity: 0.35;
+		background: transparent;
+		scale: 1;
+	}
+	36% {
+		opacity: 1;
+		background: var(--pw-accent);
+		scale: 1.15;
+	}
+	44%,
+	100% {
+		opacity: 1;
+		background: var(--pw-accent);
+		scale: 1;
+	}
+}
+
+/* Apps: a prompt becomes an app with a look of its own. */
 
 .pw-prompt {
 	translate: none;
@@ -4194,81 +4741,375 @@ button.pw-node:hover {
 }
 
 .pw-window {
+	--app-bg: var(--pw-surface);
+	--app-text: var(--pw-text);
+	--app-muted: var(--pw-muted);
+	--app-line: var(--pw-line);
 	translate: none;
 	flex-direction: column;
 	align-items: stretch;
-	gap: 0.4em;
-	width: 71%;
-	height: 66%;
-	padding: 0 0 0.5em;
+	gap: 0;
+	width: 78%;
+	height: 76%;
+	padding: 0;
 	overflow: hidden;
+	background: var(--app-bg);
+	color: var(--app-text);
+	box-shadow:
+		0 0.2em 0.5em #0000000d,
+		0 0.8em 2em #0000001a;
 	transform-origin: 0 0;
+	white-space: normal;
 }
 
 .pw-chrome {
-	padding: 0.4em 0.7em;
-	border-bottom: 1px solid var(--pw-line);
-	color: var(--pw-muted);
-	font-size: 0.7em;
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	padding: 0.4em 0.75em;
+	border-bottom: 1px solid var(--app-line);
+	color: var(--app-muted);
+	font-size: 0.62em;
+}
+
+.pw-chrome-dots {
+	flex: none;
+	width: 2.7em;
+	height: 0.65em;
+	background:
+		radial-gradient(circle at 0.32em 50%, #ff6159 0.28em, transparent 0.3em),
+		radial-gradient(circle at 1.35em 50%, #ffbd2e 0.28em, transparent 0.3em),
+		radial-gradient(circle at 2.38em 50%, #28c941 0.28em, transparent 0.3em);
+}
+
+.pw-app {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.45em;
+	min-height: 0;
+	padding: 0.6em 0.85em 0.7em;
+	font-size: 0.8em;
 }
 
 .pw-app-title {
-	padding: 0 0.8em;
-	font-weight: 650;
+	font-family: var(--font-display, inherit);
+	font-size: 1.1em;
+	font-weight: 700;
+	letter-spacing: -0.01em;
 }
 
-.pw-field {
+.pw-app-foot {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	margin-top: auto;
+}
+
+.pw-app-action {
+	position: relative;
+	padding: 0.35em 0.85em;
+	border-radius: 0.45em;
+	background: var(--app-action, var(--pw-accent));
+	color: var(--app-on-action, #fff);
+	font-size: 0.9em;
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.pw-toast {
+	padding: 0.2em 0.65em;
+	border-radius: 99em;
+	background: var(--app-toast-bg, var(--pw-soft));
+	color: var(--app-toast, var(--app-text));
+	font-size: 0.82em;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+/* The cursor rides on the button it clicks, so it lands on it at any size. */
+.pw-cursor {
+	position: absolute;
+	left: 62%;
+	top: 52%;
+	width: 1.15em;
+	height: 1.3em;
+	background: #15171c;
+	clip-path: polygon(0 0, 0 78%, 24% 60%, 42% 100%, 58% 93%, 41% 55%, 72% 55%);
+	filter: drop-shadow(0 0 0.06em #fff) drop-shadow(0 0 0.06em #fff);
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* Project intake: a crisp form with a gradient header. */
+
+.pw-window[data-app='intake'] {
+	--app-action: oklch(0.48 0.17 282);
+	--app-toast-bg: light-dark(oklch(0.95 0.05 150), oklch(0.32 0.06 150));
+	--app-toast: light-dark(oklch(0.4 0.12 150), oklch(0.86 0.12 150));
+}
+
+.pw-in-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: -0.6em -0.85em 0.1em;
+	padding: 0.55em 0.85em;
+	background: linear-gradient(
+		115deg,
+		oklch(0.45 0.16 268),
+		oklch(0.56 0.2 318)
+	);
+	color: #fff;
+}
+
+.pw-in-tag {
+	padding: 0.1em 0.55em;
+	border-radius: 99em;
+	background: #ffffff30;
+	font-size: 0.72em;
+	font-weight: 700;
+}
+
+.pw-in-body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.45em;
+}
+
+.pw-in-row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.6em;
-	padding: 0 0.8em;
-	color: var(--pw-muted);
-	font-size: 0.78em;
+	color: var(--app-muted);
+	font-size: 0.9em;
 }
 
 .pw-input {
-	flex: 0 1 58%;
+	flex: 0 1 62%;
 	overflow: hidden;
-	padding: 0.15em 0.45em;
-	border: 1px solid var(--pw-line);
-	border-radius: 0.3em;
-	color: var(--pw-text);
-	text-overflow: ellipsis;
-}
-
-.pw-app-action {
-	align-self: flex-start;
-	margin: 0.1em 0.8em 0;
-	padding: 0.25em 0.7em;
-	border: 1px solid var(--pw-accent);
+	padding: 0.2em 0.5em;
+	border: 1px solid var(--app-line);
 	border-radius: 0.35em;
-	background: var(--pw-soft);
+	background: var(--pw-stage);
+	color: var(--app-text);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pw-in-team {
+	display: flex;
+	padding-left: 0.3em;
+}
+
+.pw-in-team span {
+	display: grid;
+	place-items: center;
+	width: 2.2em;
+	height: 2.2em;
+	margin-left: -0.45em;
+	border: 0.15em solid var(--app-bg);
+	border-radius: 50%;
+	background: oklch(0.48 0.12 var(--team-hue));
+	color: #fff;
+	font-size: 0.62em;
+	font-weight: 700;
+}
+
+.pw-in-seg {
+	display: flex;
+	overflow: hidden;
+	border: 1px solid var(--app-line);
+	border-radius: 0.4em;
+	font-size: 0.85em;
+}
+
+.pw-in-seg span {
+	padding: 0.15em 0.55em;
+	color: var(--app-text);
+}
+
+.pw-in-seg [data-on] {
+	background: oklch(0.5 0.18 290);
+	color: #fff;
+}
+
+/* Reading list: warm paper, a serif, and a shelf of covers. */
+
+.pw-window[data-app='reading'] {
+	--app-bg: light-dark(#fbf4e6, #2a241d);
+	--app-text: light-dark(#3b2a1a, #f3e7d3);
+	--app-muted: light-dark(#7a6450, #c8b49b);
+	--app-line: light-dark(#e6d6bb, #4a3e31);
+	--app-action: light-dark(#5b3b22, #e9c79a);
+	--app-on-action: light-dark(#fbf4e6, #2a241d);
+	--app-toast-bg: transparent;
+	--app-toast: var(--app-muted);
+}
+
+.pw-window[data-app='reading'] .pw-app-title,
+.pw-window[data-app='reading'] .pw-toast,
+.pw-window[data-app='reading'] .pw-app-action {
+	font-family: Georgia, 'Times New Roman', serif;
+}
+
+.pw-window[data-app='reading'] .pw-app-title {
+	font-size: 1.2em;
+}
+
+.pw-window[data-app='reading'] .pw-toast {
+	font-style: italic;
+}
+
+.pw-rd-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.6em;
+	color: var(--app-muted);
+	font-size: 1em;
+}
+
+.pw-rd-head span {
 	font-size: 0.75em;
-	font-weight: 600;
 }
 
-.pw-toast {
+.pw-rd-head .pw-app-title {
+	color: var(--app-text);
+}
+
+.pw-rd-shelf {
+	display: flex;
+	flex: 1;
+	align-items: flex-end;
+	gap: 0.5em;
+	min-height: 0;
+	padding: 0 0.3em;
+	border-bottom: 0.3em solid light-dark(#c9a578, #6e5236);
+}
+
+.pw-rd-book {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-start;
+	width: 3.6em;
+	height: 92%;
+	max-height: 6.4em;
+	padding: 0.35em 0.3em 0.35em 0.55em;
+	border-radius: 0.15em 0.35em 0.35em 0.15em;
+	background:
+		linear-gradient(90deg, #00000038 0 0.22em, transparent 0.22em),
+		linear-gradient(
+			160deg,
+			oklch(0.6 0.12 var(--book-hue)),
+			oklch(0.45 0.11 var(--book-hue))
+		);
+	color: #fff;
+	box-shadow: 0 0.15em 0.3em #00000026;
+}
+
+.pw-rd-book:nth-child(2) {
+	height: 78%;
+}
+
+.pw-rd-book:nth-child(3) {
+	height: 94%;
+}
+
+.pw-rd-book b {
+	font:
+		700 0.75em/1.15 Georgia,
+		'Times New Roman',
+		serif;
+}
+
+.pw-rd-book::after {
+	content: '';
 	position: absolute;
-	right: 0.7em;
-	bottom: 0.6em;
-	padding: 0.2em 0.6em;
+	left: 0.55em;
+	right: 0.3em;
+	bottom: 0.35em;
+	height: 0.22em;
 	border-radius: 99em;
-	background: var(--pw-text);
-	color: var(--pw-surface);
-	font-size: 0.72em;
+	background: linear-gradient(90deg, #fff var(--read), #ffffff40 var(--read));
 }
 
-.pw-cursor {
-	position: absolute;
-	left: 0;
-	top: 0;
-	width: 1.1em;
+/* Habit tracker: a dark app with a streak grid. */
+
+.pw-window[data-app='habits'] {
+	--app-bg: #15171c;
+	--app-text: #eef0f3;
+	--app-muted: #9aa1ac;
+	--app-line: #2a2e36;
+	--app-action: oklch(0.88 0.2 128);
+	--app-on-action: #15171c;
+	--app-toast-bg: #ffffff12;
+	--app-toast: oklch(0.88 0.2 128);
+	--habit: oklch(0.88 0.2 128);
+}
+
+.pw-hb-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	color: var(--app-muted);
+}
+
+.pw-hb-head span {
+	font-size: 0.75em;
+}
+
+.pw-hb-head .pw-app-title {
+	color: var(--app-text);
+}
+
+.pw-hb-grid {
+	display: grid;
+	flex: 1;
+	align-content: center;
+	gap: 0.55em;
+}
+
+.pw-hb-row {
+	display: grid;
+	grid-template-columns: 3.4em repeat(7, 1fr);
+	align-items: center;
+	gap: 0.3em;
+}
+
+.pw-hb-name {
+	color: var(--app-muted);
+	font-size: 0.85em;
+}
+
+.pw-hb-dot {
+	position: relative;
+	justify-self: center;
+	width: 1.25em;
 	height: 1.25em;
-	background: var(--pw-text);
-	clip-path: polygon(0 0, 0 78%, 24% 60%, 42% 100%, 58% 93%, 41% 55%, 72% 55%);
-	opacity: 0;
-	pointer-events: none;
+	border-radius: 50%;
+	background: #2a2e36;
+}
+
+.pw-hb-dot[data-on] {
+	background: color-mix(in oklab, var(--habit) 75%, #15171c);
+}
+
+.pw-hb-today {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--habit);
+}
+
+.pw-hb-fill {
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	background: var(--habit);
+	box-shadow: 0 0 0.5em color-mix(in oklab, var(--habit) 60%, transparent);
 }
 
 .pw[data-motion] .pw-prompt {
@@ -4283,20 +5124,17 @@ button.pw-node:hover {
 	animation: pw-ap-window 9s var(--pw-ease) infinite;
 }
 
-.pw[data-motion] .pw-app-title {
-	animation: pw-ap-in-1 9s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-field {
-	animation: pw-ap-in-2 9s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-field + .pw-field {
-	animation-name: pw-ap-in-3;
+.pw[data-motion] .pw-ap-part {
+	animation: pw-ap-part 9s var(--pw-ease) infinite backwards;
+	animation-delay: calc(var(--i, 0) * 0.3s);
 }
 
 .pw[data-motion] .pw-app-action {
-	animation: pw-ap-in-4 9s var(--pw-ease) infinite;
+	animation: pw-ap-press 9s var(--pw-ease) infinite;
+}
+
+.pw[data-motion] .pw-app-new {
+	animation: pw-ap-new 9s var(--pw-ease) infinite;
 }
 
 .pw[data-motion] .pw-toast {
@@ -4330,11 +5168,11 @@ button.pw-node:hover {
 
 @keyframes pw-ap-window {
 	0%,
-	23% {
+	22% {
 		opacity: 0;
 		scale: 0.85;
 	}
-	29%,
+	28%,
 	95% {
 		opacity: 1;
 		scale: 1;
@@ -4345,71 +5183,36 @@ button.pw-node:hover {
 	}
 }
 
-@keyframes pw-ap-in-1 {
+@keyframes pw-ap-part {
 	0%,
-	30% {
+	29% {
 		opacity: 0;
-		transform: translateY(0.4em);
+		transform: translateY(0.5em);
 	}
-	35%,
+	34%,
 	100% {
 		opacity: 1;
 		transform: none;
 	}
 }
 
-@keyframes pw-ap-in-2 {
+@keyframes pw-ap-press {
 	0%,
-	38% {
-		opacity: 0;
-		transform: translateY(0.4em);
-	}
-	43%,
-	100% {
-		opacity: 1;
-		transform: none;
-	}
-}
-
-@keyframes pw-ap-in-3 {
-	0%,
-	46% {
-		opacity: 0;
-		transform: translateY(0.4em);
-	}
-	51%,
-	100% {
-		opacity: 1;
-		transform: none;
-	}
-}
-
-@keyframes pw-ap-in-4 {
-	0%,
-	54% {
-		opacity: 0;
-		transform: translateY(0.4em);
-	}
-	59%,
-	74% {
-		opacity: 1;
-		transform: none;
-	}
-	76% {
-		scale: 0.9;
-	}
+	73%,
 	79%,
 	100% {
-		opacity: 1;
 		scale: 1;
+	}
+	76% {
+		scale: 0.92;
 	}
 }
 
-@keyframes pw-ap-toast {
+@keyframes pw-ap-new {
 	0%,
-	77% {
+	76% {
 		opacity: 0;
-		scale: 0.6;
+		scale: 0.4;
 	}
 	81%,
 	100% {
@@ -4418,33 +5221,47 @@ button.pw-node:hover {
 	}
 }
 
+@keyframes pw-ap-toast {
+	0%,
+	78% {
+		opacity: 0;
+		scale: 0.6;
+	}
+	82%,
+	100% {
+		opacity: 1;
+		scale: 1;
+	}
+}
+
 @keyframes pw-ap-cursor {
 	0%,
-	58% {
+	56% {
 		opacity: 0;
-		transform: translate(26em, 15em);
+		transform: translate(7em, -3.5em);
 	}
-	62% {
+	60% {
 		opacity: 1;
+		transform: translate(5.6em, -2.8em);
 	}
-	73% {
-		transform: translate(10.4em, 12.9em);
+	72% {
+		transform: none;
 		scale: 1;
 	}
 	76% {
-		scale: 0.82;
+		scale: 0.8;
 	}
 	79% {
 		scale: 1;
 	}
 	88% {
 		opacity: 1;
-		transform: translate(10.4em, 12.9em);
+		transform: none;
 	}
 	92%,
 	100% {
 		opacity: 0;
-		transform: translate(10.4em, 12.9em);
+		transform: none;
 	}
 }
 
