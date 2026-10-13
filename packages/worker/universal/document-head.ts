@@ -528,9 +528,9 @@ const routeDocumentHeads = {
 
 const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgActivity)]: titleOnly('Activity'),
-	[routePattern(routes.orgConnections)]: ({ pathname }) => {
-		const rest = pathname.split('/-/connections/')[1]?.replace(/\/$/, '') ?? ''
-		if (rest === 'new') return titleOnly('Add connection')
+	[routePattern(routes.orgAgents)]: ({ pathname }) => {
+		const rest = pathname.split('/-/agents/')[1]?.replace(/\/$/, '') ?? ''
+		if (rest === 'new') return titleOnly('Connect an agent')
 		if (rest === 'usage') return titleOnly('Connection usage')
 		if (rest.startsWith('new/')) {
 			const agent = rest.slice('new/'.length).split('/')[0] ?? ''
@@ -543,10 +543,10 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 			return titleOnly(
 				isAccountConnectionAgent(decoded)
 					? `Connect ${onboardingAgentLabel(decoded)}`
-					: 'Add connection',
+					: 'Connect an agent',
 			)
 		}
-		return titleOnly('Connections')
+		return titleOnly('Agents')
 	},
 	[routePattern(routes.orgEmail)]: titleOnly('Email inbox'),
 	[routePattern(routes.orgIntegrations)]: titleOnly('Integrations'),

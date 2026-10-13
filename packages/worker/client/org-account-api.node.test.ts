@@ -89,9 +89,9 @@ test('query-bearing settings prefetch key matches adopt', async () => {
 
 test('adopt commits last-used via dedicated path for Connections pages', async () => {
 	const fetchMock = stubBrowser({ ok: true })
-	const connections = 'https://kody.test/@acme/-/connections'
+	const connections = 'https://kody.test/@acme/-/agents'
 	prefetchRouteOnIntent(
-		'/@acme/-/connections',
+		'/@acme/-/agents',
 		async (_url, signal) => {
 			fetch(
 				'/account/connected-agents.json',
@@ -103,7 +103,7 @@ test('adopt commits last-used via dedicated path for Connections pages', async (
 	)
 	await Promise.resolve()
 	fetchMock.mockClear()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/connections')
+	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/agents')
 	expect(fetchMock).toHaveBeenCalledWith(
 		lastUsedOrgCommitApiPath,
 		expect.objectContaining({

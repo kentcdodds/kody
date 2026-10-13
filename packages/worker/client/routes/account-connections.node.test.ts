@@ -31,7 +31,7 @@ const session: SessionInfo = {
 
 function renderConnectionsPage(
 	accountConnectedAgents: AccountConnectedAgentsLoaderData,
-	url: string = '/account/connections',
+	url: string = '/account/agents',
 ) {
 	return renderToString(
 		jsx(RouterLocationProvider, {
@@ -67,19 +67,19 @@ const connectedCursor: AccountConnectedAgentsLoaderData = {
 test('connections page renders the connected list with Add connection, the MCP URL card, and the rail from SSR data', async () => {
 	const html = await renderConnectionsPage(connectedCursor)
 
-	expect(html).toContain('>Connections</h1>')
+	expect(html).toContain('>Agents</h1>')
 	// The connected list is the panel Overview used to host, plus the entry
 	// point to the client wall.
 	expect(html).toContain('aria-label="Connected agents"')
 	expect(html).toContain('data-agent-label="Cursor"')
 	expect(html).toContain('aria-label="Revoke Cursor"')
 	expect(html).toContain('data-testid="connected-agent-view-steps"')
-	expect(html).toContain('href="/account/connections/new/cursor"')
+	expect(html).toContain('href="/account/agents/new/cursor"')
 	expect(html).toMatch(/Last used <span[^>]*>unknown<\/span>/)
 	expect(html).toMatch(
-		/data-testid="account-connections-add"[^>]*>Add connection</,
+		/data-testid="account-connections-add"[^>]*>Connect an agent</,
 	)
-	expect(html).toContain(`href="${'/account/connections/new'}"`)
+	expect(html).toContain(`href="${'/account/agents/new'}"`)
 	expect(html).toContain('aria-label="MCP URL"')
 	expect(html).toContain('>https://kody.example/mcp<')
 	expect(html).toContain('Copy MCP URL')
@@ -93,7 +93,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	// The workspace rail marks this page current and links Repositories to
 	// the workspace list, not the public profile.
 	expect(html).toContain('aria-label="Workspace sections"')
-	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/agents"[^>]*aria-current="page"/)
 	expect(html).toMatch(
 		/href="\/@jane\/-\/repositories"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
@@ -103,15 +103,15 @@ test('connections page renders the connected list with Add connection, the MCP U
 test('Add connection shows every named client on every viewport; already-connected hosts stay links with a Connected mark', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new',
+		'/account/agents/new',
 	)
 
 	expect(html).toContain('data-testid="account-connections-agent-grid"')
-	expect(html).toContain('aria-label="Add connection"')
+	expect(html).toContain('aria-label="Connect an agent"')
 	expect(html).toMatch(
-		/data-testid="account-connections-back"[^>]*>← back to connections</,
+		/data-testid="account-connections-back"[^>]*>← back to agents</,
 	)
-	expect(html).toContain(`href="${'/account/connections'}"`)
+	expect(html).toContain(`href="${'/account/agents'}"`)
 	// The list is its own page; it does not wrap the grid.
 	expect(html).not.toContain('aria-label="Connected agents"')
 	expect(html).not.toContain('data-testid="account-connections-add"')
@@ -120,13 +120,13 @@ test('Add connection shows every named client on every viewport; already-connect
 	for (const id of accountConnectionAgentIds) {
 		expect(html).toMatch(
 			new RegExp(
-				`href="/account/connections/new/${id}"[^>]*data-testid="onboarding-agent-${id}"`,
+				`href="/account/agents/new/${id}"[^>]*data-testid="onboarding-agent-${id}"`,
 			),
 		)
 	}
 	// Already-connected Cursor keeps a Connected mark and remains a link.
 	expect(html).toMatch(
-		/href="\/account\/connections\/new\/cursor"[^>]*data-greyed="true"/,
+		/href="\/account\/agents\/new\/cursor"[^>]*data-greyed="true"/,
 	)
 	expect(html).toContain('data-greyed-reason="connected"')
 	expect(html).toContain(
@@ -136,7 +136,7 @@ test('Add connection shows every named client on every viewport; already-connect
 	// card `<li>` shares one class whose rules never reach `display: none`.
 	const cards = [
 		...html.matchAll(
-			/<li class="(rmxc-[^"]+)"><a href="\/account\/connections\/new\//g,
+			/<li class="(rmxc-[^"]+)"><a href="\/account\/agents\/new\//g,
 		),
 	]
 	expect(cards).toHaveLength(accountConnectionAgentIds.length)
@@ -158,7 +158,7 @@ test('Add connection shows every named client on every viewport; already-connect
 test('picking a client shows that host’s install steps with a way back to the grid', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new/claude-code',
+		'/account/agents/new/claude-code',
 	)
 
 	expect(html).toContain('aria-label="Connect Claude Code"')
@@ -170,22 +170,22 @@ test('picking a client shows that host’s install steps with a way back to the 
 	expect(html).toContain('data-testid="onboarding-authenticate-callout"')
 	expect(html).toMatch(
 		new RegExp(
-			`href="${'/account/connections/new'}"[^>]*data-testid="account-connections-change-agent"`,
+			`href="${'/account/agents/new'}"[^>]*data-testid="account-connections-change-agent"`,
 		),
 	)
 	expect(html).not.toContain('data-testid="account-connections-agent-grid"')
 	expect(html).toMatch(
-		/data-testid="account-connections-back"[^>]*>← back to connections</,
+		/data-testid="account-connections-back"[^>]*>← back to agents</,
 	)
 	expect(html).not.toContain('aria-label="Connected agents"')
 	// Connections stays the current rail item on the add views.
-	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/agents"[^>]*aria-current="page"/)
 })
 
 test('an unknown agent segment renders the fallback instead of instructions', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new/not-a-client',
+		'/account/agents/new/not-a-client',
 	)
 	expect(html).toContain('>Unknown agent</h2>')
 	expect(html).toContain('data-testid="account-connections-back"')
@@ -197,17 +197,17 @@ test('an unknown agent segment renders the fallback instead of instructions', as
 
 test('connections views parse from the pathname', () => {
 	const cases = [
-		['/account/connections', { kind: 'list' }],
-		['/account/connections/new', { kind: 'new', agent: null }],
-		['/account/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
-		['/account/connections/new/other', null],
-		['/account/connections/new/nope', null],
-		['/account/connections/new/cursor/x', null],
-		['/account/connections/nope', null],
-		['/@jane/-/connections', { kind: 'list' }],
-		['/@jane/-/connections/new', { kind: 'new', agent: null }],
-		['/@jane/-/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
-		['/@jane/-/connections/new/nope', null],
+		['/account/agents', { kind: 'list' }],
+		['/account/agents/new', { kind: 'new', agent: null }],
+		['/account/agents/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/account/agents/new/other', null],
+		['/account/agents/new/nope', null],
+		['/account/agents/new/cursor/x', null],
+		['/account/agents/nope', null],
+		['/@jane/-/agents', { kind: 'list' }],
+		['/@jane/-/agents/new', { kind: 'new', agent: null }],
+		['/@jane/-/agents/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/@jane/-/agents/new/nope', null],
 	] as const
 	expect(
 		cases.map(([pathname]) => [
@@ -215,30 +215,25 @@ test('connections views parse from the pathname', () => {
 			parseAccountConnectionsPathname(pathname),
 		]),
 	).toEqual(cases)
-	expect(accountConnectionsNewHref(null)).toBe('/account/connections/new')
+	expect(accountConnectionsNewHref(null)).toBe('/account/agents/new')
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
-		'/account/connections/new/grok-cli',
+		'/account/agents/new/grok-cli',
 	)
-	expect(accountConnectionsListHref('/@jane/-/connections')).toBe(
-		'/@jane/-/connections',
+	expect(accountConnectionsListHref('/@jane/-/agents')).toBe('/@jane/-/agents')
+	expect(accountConnectionsNewHref(null, '/@jane/-/agents')).toBe(
+		'/@jane/-/agents/new',
 	)
-	expect(accountConnectionsNewHref(null, '/@jane/-/connections')).toBe(
-		'/@jane/-/connections/new',
-	)
-	expect(accountConnectionsNewHref('cursor', '/@jane/-/connections')).toBe(
-		'/@jane/-/connections/new/cursor',
+	expect(accountConnectionsNewHref('cursor', '/@jane/-/agents')).toBe(
+		'/@jane/-/agents/new/cursor',
 	)
 })
 
 test('connections list under /@slug keeps Add and View steps on org paths', async () => {
-	const html = await renderConnectionsPage(
-		connectedCursor,
-		'/@jane/-/connections',
-	)
-	expect(html).toContain('href="/@jane/-/connections/new"')
-	expect(html).toContain('href="/@jane/-/connections/new/cursor"')
-	expect(html).not.toContain('href="/account/connections/new"')
-	expect(html).not.toContain('href="/account/connections/new/cursor"')
+	const html = await renderConnectionsPage(connectedCursor, '/@jane/-/agents')
+	expect(html).toContain('href="/@jane/-/agents/new"')
+	expect(html).toContain('href="/@jane/-/agents/new/cursor"')
+	expect(html).not.toContain('href="/account/agents/new"')
+	expect(html).not.toContain('href="/account/agents/new/cursor"')
 })
 
 test('connections page swaps the copy card for a verify note while the email is unverified', async () => {
@@ -326,13 +321,13 @@ test('the connections loader names the destination org page as referrer', async 
 		// A client navigation from another org: the loader runs before the URL
 		// commits, so the Referer would otherwise name the source org.
 		await accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections'),
+			new URL('https://kody.test/@acme/-/agents'),
 			new AbortController().signal,
 		)
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/account/connected-agents.json',
 			expect.objectContaining({
-				referrer: 'https://kody.test/@acme/-/connections',
+				referrer: 'https://kody.test/@acme/-/agents',
 			}),
 		)
 	} finally {
@@ -362,7 +357,7 @@ test('the connections loader binds usage to the destination org, skips it on Add
 	vi.useFakeTimers()
 	try {
 		const listLoad = accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections'),
+			new URL('https://kody.test/@acme/-/agents'),
 			new AbortController().signal,
 		)
 		await vi.advanceTimersByTimeAsync(1500)
@@ -370,13 +365,13 @@ test('the connections loader binds usage to the destination org, skips it on Add
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/account/connection-usage.json',
 			expect.objectContaining({
-				referrer: 'https://kody.test/@acme/-/connections',
+				referrer: 'https://kody.test/@acme/-/agents',
 			}),
 		)
 
 		fetchMock.mockClear()
 		await accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections/new'),
+			new URL('https://kody.test/@acme/-/agents/new'),
 			new AbortController().signal,
 		)
 		expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([

@@ -18,10 +18,10 @@ the signup org's `/@<slug>/-/overview`, or a team org's `/@<slug>`. Every
 workspace section is on a separate "Workspace sections" rail under
 `/@<slug>/-/…`, so any section is two clicks from `/account`. That rail groups
 Build (Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP
-servers, Secret providers), Agents & data (Connections, Memories, Email),
-Activity, and Organization. Activity has Activity, Workflows, and Waiting as
-tabs under the page title (`data-testid="account-section-tabs"`, labelled
-"Activity pages"); the rail item stays current on all three. Repositories is
+servers, Secret providers), Agents & data (Agents, Memories, Email), Activity,
+and Organization. Activity has Activity, Workflows, and Waiting as tabs under
+the page title (`data-testid="account-section-tabs"`, labelled "Activity
+pages"); the rail item stays current on all three. Repositories is
 `/@<slug>/-/repositories`, distinct from the public profile at `/@<slug>`.
 Former `/@<slug>/-/packages` URLs 301 to `/repositories` (query preserved). The
 signup org's Overview (`/@<slug>/-/overview`) is a card for every workspace
@@ -51,18 +51,19 @@ members, teams, grants, and collaborators are `/@<slug>/-/settings`,
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Secrets, jobs, and the other org resource pages read
-`request.org.id`. Connections lists the viewer's own agents approved for that
-org (members and grant-only collaborators). Repositories
-(`/@<slug>/-/repositories`) lists the packages a team org owns that the member
-can see (Owners see all, other roles see what their grants and teams give them);
-rows do not link to a package page yet. A team org's Organization group lists
-Members (with Members, Teams for owners/members, Collaborators, and Grants as
-tabs), Settings, and Billing (`/@<slug>/-/billing`, owners and billing users). A
-personal org's Organization group lists Grants and Billing. The org home and
-`/account/organizations` also link into those sections. The switcher keeps the
-current page in the destination org when that role can open it there (for
-example Secrets to Secrets); otherwise, and from a page with no org section
-(such as `/account`), it opens that org's home.
+`request.org.id`. Agents (`/@<slug>/-/agents`; old `/-/connections` URLs 301
+there) lists the viewer's own agents approved for that org (members and
+grant-only collaborators). Repositories (`/@<slug>/-/repositories`) lists the
+packages a team org owns that the member can see (Owners see all, other roles
+see what their grants and teams give them); rows do not link to a package page
+yet. A team org's Organization group lists Members (with Members, Teams for
+owners/members, Collaborators, and Grants as tabs), Settings, and Billing
+(`/@<slug>/-/billing`, owners and billing users). A personal org's Organization
+group lists Grants and Billing. The org home and `/account/organizations` also
+link into those sections. The switcher keeps the current page in the destination
+org when that role can open it there (for example Secrets to Secrets);
+otherwise, and from a page with no org section (such as `/account`), it opens
+that org's home.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. `/account/...` resource pages 404, except
@@ -119,7 +120,7 @@ node tools/control-kody.ts request GET /account/connections.json
   `data-testid="account-deleted-notice"` reads "Your Kody account has been
   deleted". Do not delete the shared preview seed to prove this.
 - Connected agents (inbound MCP hosts) are a workspace page:
-  [connections](./connections.md) at `/@<slug>/-/connections`.
+  [connections](./connections.md) at `/@<slug>/-/agents`.
 - Linking a sign-in provider returns to `/account/security?oauthLinked=<id>`.
 - Former-address release is `POST /account/email-claim-release.json`, then
   confirm at `/verify-email-claim-release`. It drops the claim without reminting

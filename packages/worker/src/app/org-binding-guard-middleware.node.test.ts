@@ -107,8 +107,12 @@ function orgBoundRoutes(entries: Array<RouteEntry>) {
 	return entries.filter(({ href }) => isOrgBoundPath(href))
 }
 
-/** Legacy `/@slug/-/packages` (+ `.json`) only 301 to `/repositories`. */
-const legacyOrgListRedirectRoutes = new Set(['orgPackages', 'orgPackagesApi'])
+/** Legacy `/-/packages` (+ `.json`) and `/-/connections` only 301 to the new names. */
+const legacyOrgListRedirectRoutes = new Set([
+	'orgConnections',
+	'orgPackages',
+	'orgPackagesApi',
+])
 
 test('every org-scoped route in the route table is bound to its org', () => {
 	const entries = routeEntries()
@@ -203,7 +207,7 @@ function deniedRequest(entry: RouteEntry, method: string, cookie: string) {
 		const section =
 			/^\/account\/([^/.]+)/
 				.exec(url.pathname)?.[1]
-				?.replace(/^(connected-agents|connection-usage)$/, 'connections')
+				?.replace(/^(connected-agents|connection-usage)$/, 'agents')
 				?.replace(/^last-used-org$/, 'waiting')
 				?.replace(/-export$/, '') ?? ''
 		headers.set('Referer', `${origin}/@ghost/-/${section}`)
@@ -302,12 +306,12 @@ test('the guard hands off to the route for orgs the person can use', async () =>
 	await expect(run('/@ghost')).resolves.toEqual(routed)
 	// A grant opens the org (its pages apply their own section gate) and its
 	// Connections data, not the rest of its account JSON.
-	await expect(run('/@ghost/-/connections')).resolves.toEqual(routed)
+	await expect(run('/@ghost/-/agents')).resolves.toEqual(routed)
 	await expect(
-		run('/account/connected-agents.json', `${origin}/@ghost/-/connections`),
+		run('/account/connected-agents.json', `${origin}/@ghost/-/agents`),
 	).resolves.toEqual(routed)
 	await expect(
-		run('/account/webhooks.json', `${origin}/@ghost/-/connections`),
+		run('/account/webhooks.json', `${origin}/@ghost/-/agents`),
 	).resolves.toEqual(notFound)
 	await expect(run('/@nobody/-/memories')).resolves.toEqual(notFound)
 })
@@ -355,7 +359,7 @@ test('last-used commit JSON remembers the Referer org as last-used', async () =>
 	const request = new Request(`${origin}/account/last-used-org.json`, {
 		headers: {
 			Cookie: cookie,
-			Referer: `${origin}/@acme/-/connections`,
+			Referer: `${origin}/@acme/-/agents`,
 		},
 	})
 	const response = await guard(

@@ -74,7 +74,7 @@ test('account section switches keep the current page on screen (no loading flash
 		[
 			{ link: 'Memories', heading: 'Memories' },
 			{ link: 'Secrets', heading: 'Secrets' },
-			{ link: 'Connections', heading: 'Connections' },
+			{ link: 'Agents', heading: 'Agents' },
 			{ link: 'Activity', heading: 'Activity' },
 			{ link: 'Webhooks', heading: 'Webhooks' },
 			{ link: 'Repositories', heading: 'Repositories' },
@@ -183,7 +183,7 @@ test('every workspace section is two clicks from /account', async ({
 	const overview = page.locator('[data-testid^="org-overview-"]')
 	for (const label of [
 		'Repositories',
-		'Connections',
+		'Agents',
 		'Secrets',
 		'Jobs',
 		'Memories',
@@ -316,11 +316,11 @@ test('Add connection opens its own page with the client wall, then a host step (
 		password: 'connections-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
-	await page.goto(`/@${user.username}/-/connections`)
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/connections$`))
+	await page.goto(`/@${user.username}/-/agents`)
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/agents$`))
 	await waitForClientHydration(page)
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Connections' }),
+		page.getByRole('heading', { level: 1, name: 'Agents' }),
 	).toBeVisible()
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),
@@ -333,9 +333,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	await observeMainTransitions(page)
 	const requests = collectJsonRequests(page)
 	await page.getByTestId('account-connections-add').click()
-	await expect(page).toHaveURL(
-		new RegExp(`/@${user.username}/-/connections/new$`),
-	)
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/agents/new$`))
 	const grid = page.getByTestId('account-connections-agent-grid')
 	await expect(grid).toBeVisible()
 	await expect(page.getByTestId('account-connections-back')).toBeVisible()
@@ -346,8 +344,8 @@ test('Add connection opens its own page with the client wall, then a host step (
 	// shell while the body swaps in one commit.
 	await page.waitForTimeout(250)
 	expectSingleCommitTransition(await readMainTransitions(page), {
-		fromHeading: 'Connections',
-		toHeading: 'Connections',
+		fromHeading: 'Agents',
+		toHeading: 'Agents',
 	})
 	// Like every router hop, the destination loader (or its intent prefetch)
 	// fetches the payload once before commit; the contract here is that the
@@ -366,7 +364,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 
 	await page.getByTestId('onboarding-agent-claude-code').click()
 	await expect(page).toHaveURL(
-		new RegExp(`/@${user.username}/-/connections/new/claude-code$`),
+		new RegExp(`/@${user.username}/-/agents/new/claude-code$`),
 	)
 	await expect(
 		page.getByRole('heading', { level: 2, name: 'Connect Claude Code' }),
@@ -377,11 +375,11 @@ test('Add connection opens its own page with the client wall, then a host step (
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),
 	).toHaveCount(0)
-	// Connections stays current in the rail on the add views.
+	// Agents stays current in the rail on the add views.
 	await expect(
 		page
 			.getByRole('navigation', { name: 'Workspace sections' })
-			.getByRole('link', { name: 'Connections', exact: true }),
+			.getByRole('link', { name: 'Agents', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
@@ -393,7 +391,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	requests.reset()
 
 	await page.getByTestId('account-connections-back').click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/connections$`))
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/agents$`))
 	await expect(page.getByTestId('account-connections-add')).toBeVisible()
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),

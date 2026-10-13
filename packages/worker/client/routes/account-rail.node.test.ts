@@ -140,7 +140,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		],
 		[
 			'Agents & data',
-			['/@jane/-/connections', '/@jane/-/memories', '/@jane/-/email'],
+			['/@jane/-/agents', '/@jane/-/memories', '/@jane/-/email'],
 		],
 		['Activity', ['/@jane/-/activity']],
 		['Organization', ['/@jane/-/grants', '/@jane/-/billing']],
@@ -149,14 +149,13 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(billing && isAccountNavItemActive(billing, '/@jane/-/billing')).toBe(
 		true,
 	)
-	const connections = items.find((item) => item.label === 'Connections')
+	const connections = items.find((item) => item.label === 'Agents')
 	expect(
 		connections &&
 			isAccountNavItemActive(connections, '/account/mcp-oauth-clients'),
 	).toBe(true)
 	expect(
-		connections &&
-			isAccountNavItemActive(connections, '/@jane/-/connections/new'),
+		connections && isAccountNavItemActive(connections, '/@jane/-/agents/new'),
 	).toBe(true)
 	expect(accountPackagesNavHref(null)).toBe('/account')
 })
@@ -203,7 +202,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Integrations',
 		'MCP servers',
 		'Secret providers',
-		'Connections',
+		'Agents',
 		'Memories',
 		'Email',
 		'Activity',
@@ -254,7 +253,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 	).toBe(true)
 })
 
-test('grant-only collaborators see Connections with a note, and no slug means no team rail', () => {
+test('grant-only collaborators see Agents with a note, and no slug means no team rail', () => {
 	const collaborator = workspaceRailGroups({
 		orgSlug: 'acme',
 		personal: false,
@@ -265,7 +264,7 @@ test('grant-only collaborators see Connections with a note, and no slug means no
 			group.label,
 			group.items.map((item) => item.href),
 		]),
-	).toEqual([['Agents & data', ['/@acme/-/connections']]])
+	).toEqual([['Agents & data', ['/@acme/-/agents']]])
 	expect(collaborator[0]?.note).toMatch(/grant/i)
 	expect(
 		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
@@ -289,8 +288,8 @@ test('switching workspaces keeps the page when the role can open it there', () =
 		'/@jane/-/overview',
 	)
 	expect(workspaceSwitchHref('/@acme/-/grants', jane)).toBe('/@jane/-/grants')
-	expect(workspaceSwitchHref('/@jane/-/connections', acmeGuest)).toBe(
-		'/@acme/-/connections',
+	expect(workspaceSwitchHref('/@jane/-/agents', acmeGuest)).toBe(
+		'/@acme/-/agents',
 	)
 	expect(workspaceSwitchHref('/@jane/-/secrets', acmeGuest)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@acme', jane)).toBe('/@jane/-/overview')

@@ -88,6 +88,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	).toBeVisible()
 	await page.keyboard.press('Escape')
 	await expect(accountPanel).toBeHidden()
+	await openSwitcher(page)
 
 	// Arrow keys walk the rows; Escape closes and returns focus to the trigger.
 	await wide.trigger.focus()
@@ -125,7 +126,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		'Integrations',
 		'MCP servers',
 		'Secret providers',
-		'Connections',
+		'Agents',
 		'Memories',
 		'Email',
 		'Activity',
@@ -166,7 +167,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		teamRail.getByRole('link', { name: 'Members', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
-	// Team orgs own their secrets, jobs, connections, and repositories, so the
+	// Team orgs own their secrets, jobs, agents, and repositories, so the
 	// rail opens each of them on the team org.
 	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await rail.getByRole('link', { name: 'Secrets', exact: true }).click()
@@ -189,14 +190,14 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		rail.getByRole('link', { name: 'Settings', exact: true }),
 	).not.toHaveAttribute('aria-current', 'page')
 
-	// Connections list only agents approved for the team org (none yet).
-	await rail.getByRole('link', { name: 'Connections', exact: true }).click()
-	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}/-/connections$`))
+	// Agents lists only agents approved for the team org (none yet).
+	await rail.getByRole('link', { name: 'Agents', exact: true }).click()
+	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}/-/agents$`))
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),
 	).toBeVisible()
 	await expect(
-		rail.getByRole('link', { name: 'Connections', exact: true }),
+		rail.getByRole('link', { name: 'Agents', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
 
@@ -211,10 +212,17 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
 
 	// A full load of each team page is a 200, not the old 404.
-	for (const section of ['connections', 'repositories']) {
+	for (const section of ['agents', 'repositories']) {
 		const response = await page.goto(`/@pinned-${runId}/-/${section}`)
 		expect(response?.status(), section).toBe(200)
 	}
+	const legacyConnections = await page.goto(
+		`/@pinned-${runId}/-/connections/new?q=legacy`,
+	)
+	expect(legacyConnections?.status(), 'legacy /-/connections').toBe(200)
+	await expect(page).toHaveURL(
+		new RegExp(`/@pinned-${runId}/-/agents/new\\?q=legacy$`),
+	)
 	const legacy = await page.goto(`/@pinned-${runId}/-/packages?q=legacy`)
 	expect(legacy?.status(), 'legacy /-/packages').toBe(200)
 	await expect(page).toHaveURL(

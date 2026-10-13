@@ -104,8 +104,8 @@ export async function loadAccountConnectedAgentsData(input: {
 }
 
 /**
- * `/account/connections`, `/account/connections/new`, and
- * `/account/connections/new/:agent` share one payload; the client renders
+ * `/account/agents`, `/account/agents/new`, and
+ * `/account/agents/new/:agent` share one payload; the client renders
  * each pathname as its own page (the list does not wrap the add views).
  * An unknown agent segment is a 404 page.
  */

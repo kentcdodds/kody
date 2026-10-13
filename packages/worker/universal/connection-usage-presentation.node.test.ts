@@ -23,21 +23,18 @@ function totals(
 }
 
 test('usage drill-in stays on the org page and encodes the focused connection', () => {
-	expect(accountConnectionsUsageHref('/account/connections')).toBe(
-		'/account/connections/usage',
+	expect(accountConnectionsUsageHref('/account/agents')).toBe(
+		'/account/agents/usage',
 	)
 	expect(
-		accountConnectionsUsageHref(
-			'/@acme/-/connections',
-			'mcp-oauth:p1:client/a',
-		),
-	).toBe('/@acme/-/connections/usage?connection=mcp-oauth%3Ap1%3Aclient%2Fa')
-	expect(parseAccountConnectionsPathname('/account/connections/usage')).toEqual(
-		{ kind: 'usage' },
-	)
-	expect(
-		parseAccountConnectionsPathname('/@acme/-/connections/usage/'),
-	).toEqual({ kind: 'usage' })
+		accountConnectionsUsageHref('/@acme/-/agents', 'mcp-oauth:p1:client/a'),
+	).toBe('/@acme/-/agents/usage?connection=mcp-oauth%3Ap1%3Aclient%2Fa')
+	expect(parseAccountConnectionsPathname('/account/agents/usage')).toEqual({
+		kind: 'usage',
+	})
+	expect(parseAccountConnectionsPathname('/@acme/-/agents/usage/')).toEqual({
+		kind: 'usage',
+	})
 })
 
 test('quantities pluralize on the rounded value', () => {

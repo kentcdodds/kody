@@ -257,7 +257,7 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/repositories"')
 	expect(html).toContain('href="/@acme/-/jobs"')
 	expect(html).toContain('href="/@acme/-/webhooks"')
-	expect(html).toContain('href="/@acme/-/connections"')
+	expect(html).toContain('href="/@acme/-/agents"')
 	expect(html).toContain('href="/@acme/-/integrations"')
 	expect(html).toContain('href="/@acme/-/mcp-servers"')
 	expect(html).toContain('href="/@acme/-/secrets"')
@@ -277,10 +277,10 @@ test('team settings rail names the URL org when the session list is personal-onl
 test('account page header puts the phone section menu above the heading', async () => {
 	const connectionsHtml = await renderToString(
 		jsx(AccountPageHeader, {
-			title: 'Connections',
+			title: 'Agents',
 			description:
 				'The agents connected to this Kody account, and how to connect another.',
-			currentHref: '/account/connections',
+			currentHref: '/account/agents',
 		}),
 	)
 	const menu = connectionsHtml.indexOf('>Workspace</span>')

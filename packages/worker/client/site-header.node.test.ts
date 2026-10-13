@@ -331,7 +331,7 @@ test('org switcher opens the org home when the current page is not open to that 
 test('org switcher keeps every org-owned section when switching between orgs', async () => {
 	const sections = [
 		'activity',
-		'connections',
+		'agents',
 		'email',
 		'integrations',
 		'jobs',

@@ -77,7 +77,7 @@ export const routes = route({
 	accountMemoriesApi: '/account/memories.json',
 	accountMemoriesApiPost: post('/account/memories.json'),
 	accountEmailApi: '/account/email.json',
-	// The Connections page (`/@:orgSlug/-/connections`) is the home for inbound
+	// The Agents page (`/@:orgSlug/-/agents`) is the home for inbound
 	// MCP hosts. Its data twin is `/account/connected-agents.json`.
 	// `/account/connections.json` is the older sign-in provider (GitHub,
 	// Google, and the rest) list on the Overview page.
@@ -85,7 +85,7 @@ export const routes = route({
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',
 	accountConnectedAgentsApiPost: post('/account/connected-agents.json'),
-	// Per-connection usage for the Connections page (same org binding).
+	// Per-connection usage for the Agents page (same org binding).
 	accountConnectionUsageApi: '/account/connection-usage.json',
 	accountPasskeys: '/account/passkeys',
 	accountPasskeysApi: '/account/passkeys.json',
@@ -208,12 +208,12 @@ export const routes = route({
 	// `repositories` and `webhooks` are index-only so package apps and ingress
 	// (`/@owner/packages/…`, `/@owner/webhooks/…`) stay put.
 	orgActivity: get('/@:orgSlug/-/activity(/*rest)'),
+	orgAgents: get('/@:orgSlug/-/agents(/*rest)'),
 	orgBilling: get('/@:orgSlug/-/billing'),
 	orgBillingApi: get('/@:orgSlug/-/billing.json'),
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
-	orgConnections: get('/@:orgSlug/-/connections(/*rest)'),
 	orgEmail: get('/@:orgSlug/-/email(/*rest)'),
 	orgIntegrations: get('/@:orgSlug/-/integrations(/*rest)'),
 	orgJobs: get('/@:orgSlug/-/jobs(/*rest)'),
@@ -231,6 +231,8 @@ export const routes = route({
 	// Previous spelling of the repository list. 301 to `/repositories`.
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),
+	// Previous name of the Agents page. 301 to `/agents` (rest and query kept).
+	orgConnections: get('/@:orgSlug/-/connections(/*rest)'),
 	orgSecretProviders: get('/@:orgSlug/-/secret-providers(/*rest)'),
 	orgSecrets: get('/@:orgSlug/-/secrets(/*rest)'),
 	orgValues: get('/@:orgSlug/-/values(/*rest)'),

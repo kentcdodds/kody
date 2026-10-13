@@ -156,7 +156,7 @@ export function workspaceHomeHref(org: { slug: string; personal: boolean }) {
 
 /**
  * Whether `pathname` (already rewritten into `org`) is a page this role can
- * open there. Mirrors the server: grant-only collaborators open Connections
+ * open there. Mirrors the server: grant-only collaborators open Agents
  * only, Billing needs `billing:write`, Teams needs `team:read`, and a
  * personal org has no Settings, Members, Teams, or Collaborators pages.
  */
@@ -165,7 +165,7 @@ function orgPathOpensFor(
 	org: Pick<OrganizationSummary, 'personal' | 'role'>,
 ) {
 	const section = parseOrgResourcePath(pathname)?.section
-	if (org.role === null) return section === 'connections'
+	if (org.role === null) return section === 'agents'
 	if (parseOrgBillingPath(pathname)) return orgRoleManagesBilling(org.role)
 	const management = parseOrgManagementPath(pathname)?.section
 	if (!management) return true
@@ -339,12 +339,10 @@ function jobsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	}
 }
 
-function connectionsRailItem(
-	orgSlug: string | null | undefined,
-): AccountRailItem {
+function agentsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
-		href: orgSectionHref(orgSlug, 'connections'),
-		label: 'Connections',
+		href: orgSectionHref(orgSlug, 'agents'),
+		label: 'Agents',
 		icon: 'link',
 		alsoActiveFor: [routes.accountMcpOauthClients.href()],
 		description: 'Agents connected to Kody and what they can use.',
@@ -474,7 +472,7 @@ function workspaceResourceGroups(
 		{
 			label: 'Agents & data',
 			items: [
-				connectionsRailItem(orgSlug),
+				agentsRailItem(orgSlug),
 				memoriesRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'email'),
@@ -496,7 +494,7 @@ function workspaceResourceGroups(
  * Grants as tabs), Settings, and Billing for roles that manage it. A
  * personal org has no members or settings of its own (its name and photo
  * are the person's profile), so it lists Grants and Billing. Grant-only
- * collaborators (`role` null) get Connections only, with a note.
+ * collaborators (`role` null) get Agents only, with a note.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -514,8 +512,8 @@ export function workspaceRailGroups(input: {
 		return [
 			{
 				label: 'Agents & data',
-				items: [connectionsRailItem(orgSlug)],
-				note: 'Only Connections is available with a grant. Ask an owner for membership to open the rest of this workspace.',
+				items: [agentsRailItem(orgSlug)],
+				note: 'Only Agents is available with a grant. Ask an owner for membership to open the rest of this workspace.',
 			},
 		]
 	}

@@ -24,13 +24,13 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
    then approve access. Approving gives that agent full access to this Kody
    account — not a limited permission set.
 
-Once signed in, Account → Connections (`/@<slug>/-/connections`) is the durable
-home for this: it lists every agent that has authorized (with revoke and **View
-connect steps** for known hosts), shows the MCP URL with a copy button, and
-**Add connection** opens `/@<slug>/-/connections/new` with the same per-host
-steps as Get started for every agent Kody knows how to connect — including hosts
-that are already connected, so you can re-view install steps for a second login,
-new machine, or reinstall.
+Once signed in, Account → Agents (`/@<slug>/-/agents`) is the durable home for
+this: it lists every agent that has authorized (with revoke and **View connect
+steps** for known hosts), shows the MCP URL with a copy button, and **Connect an
+agent** opens `/@<slug>/-/agents/new` with the same per-host steps as Get
+started for every agent Kody knows how to connect — including hosts that are
+already connected, so you can re-view install steps for a second login, new
+machine, or reinstall.
 
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from
@@ -161,7 +161,7 @@ you only have the MCP URL.
   in a chat must open the Kody authorize window. If that window never opens on
   one browser or device, retry from another. Hosts that need a pre-registered
   confidential client can use **OAuth 2.1 (Static)** with a client minted at
-  Account → Connections → Advanced → MCP OAuth clients. Register the exact Open
+  Workspace → Agents → Advanced → MCP OAuth clients. Register the exact Open
   WebUI callback (`{open-webui}/oauth/clients/mcp:{connection-id}/callback`) and
   set OAuth Server URL to this deployment’s origin when discovery from the MCP
   URL is not enough.

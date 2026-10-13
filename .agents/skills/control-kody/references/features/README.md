@@ -28,7 +28,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [two-factor](./two-factor.md) — `/account/two-factor`
 - [passkeys](./passkeys.md) — `/account/passkeys`
 - [account](./account.md) — `/account`
-- [connections](./connections.md) — `/@<slug>/-/connections`
+- [connections](./connections.md) — `/@<slug>/-/agents`
 - [packages](./packages.md) — `/@username`
 - [secrets](./secrets.md) — `/@<slug>/-/secrets`
 - [integrations](./integrations.md) — `/@<slug>/-/integrations`

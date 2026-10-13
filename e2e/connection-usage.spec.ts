@@ -58,7 +58,7 @@ INSERT INTO usage_connection_daily (
 	// A member sees their own team connection, not the owner's token,
 	// Automation, or their personal-org CLI usage.
 	await login({ email: member.email, password: member.password, mode: 'login' })
-	const response = await page.goto(`/@${slug}/-/connections`)
+	const response = await page.goto(`/@${slug}/-/agents`)
 	expect(response?.status()).toBe(200)
 	await waitForClientHydration(page)
 	const summary = page.getByTestId('connection-usage-summary-table')
@@ -67,15 +67,15 @@ INSERT INTO usage_connection_daily (
 	await expect(summary).not.toContainText('Kody CLI')
 	await expect(summary).not.toContainText('API token')
 	await page.getByTestId('connection-usage-details-link').click()
-	await expect(page).toHaveURL(new RegExp(`/@${slug}/-/connections/usage$`))
+	await expect(page).toHaveURL(new RegExp(`/@${slug}/-/agents/usage$`))
 	await expect(page.getByTestId('connection-usage-own-only')).toBeVisible()
 	await expect(page.getByTestId('connection-usage-entry')).toHaveCount(1)
 	await expect(page.getByTestId('connection-usage-automations')).toHaveCount(0)
 	await expect(page.getByTestId('connection-usage-people')).toHaveCount(0)
 	await expect(page.locator('body')).not.toContainText('tok_owner_private')
 
-	// The same member's personal Connections page shows only personal usage.
-	await page.goto(`/@${member.username}/-/connections`)
+	// The same member's personal Agents page shows only personal usage.
+	await page.goto(`/@${member.username}/-/agents`)
 	await waitForClientHydration(page)
 	await expect(
 		page.getByTestId('connection-usage-summary-table'),
@@ -87,7 +87,7 @@ INSERT INTO usage_connection_daily (
 	// The owner also sees Automation and the member by username only.
 	await page.context().clearCookies()
 	await login({ email: owner.email, password: owner.password, mode: 'login' })
-	await page.goto(`/@${slug}/-/connections/usage`)
+	await page.goto(`/@${slug}/-/agents/usage`)
 	await waitForClientHydration(page)
 	await expect(page.getByTestId('connection-usage-own-only')).toHaveCount(0)
 	await expect(page.getByTestId('connection-usage-automations')).toContainText(
@@ -104,7 +104,7 @@ INSERT INTO usage_connection_daily (
 
 	// Focusing an automation shows what it ran.
 	await page.goto(
-		`/@${slug}/-/connections/usage?connection=${encodeURIComponent('schedule:job-poll')}`,
+		`/@${slug}/-/agents/usage?connection=${encodeURIComponent('schedule:job-poll')}`,
 	)
 	await waitForClientHydration(page)
 	const automation = page.getByTestId('connection-usage-automation-entry')

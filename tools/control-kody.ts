@@ -147,7 +147,7 @@ const usageLines = [
 	'(POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png).',
 	'Repeat --header for extra headers (not Cookie or Content-Type). Org-bound',
 	'/account/<section>.json routes bind the org from a same-origin Referer:',
-	"GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'.",
+	"GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/agents'.",
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists. --email keys the',

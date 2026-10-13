@@ -635,7 +635,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// server-renders the verify note instead of a copy card.
 	const connections = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections',
+		'/@account-user/-/agents',
 	)
 	expect(connections.response.status).toBe(200)
 	expectHtml(connections.html, [
@@ -651,7 +651,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="account-connections-add"',
 	])
 	expect(connections.html).toMatch(
-		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/agents"[^>]*aria-current="page"/,
 	)
 	expect(connections.loaderData?.accountConnectedAgents).toEqual({
 		ok: true,
@@ -666,7 +666,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// agent segments 404 instead of rendering an empty grid.
 	const addGrid = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections/new',
+		'/@account-user/-/agents/new',
 	)
 	expectHtml(
 		addGrid.html,
@@ -675,7 +675,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 	const addCursor = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections/new/cursor',
+		'/@account-user/-/agents/new/cursor',
 	)
 	expect(addCursor.response.status).toBe(200)
 	expectHtml(addCursor.html, [
@@ -683,11 +683,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Connect Cursor"',
 	])
 	expect(addCursor.html).toMatch(
-		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/agents"[^>]*aria-current="page"/,
 	)
 	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),
-		get('/@account-user/-/connections/new/not-a-client', cookie),
+		get('/@account-user/-/agents/new/not-a-client', cookie),
 	)
 	expect(unknownAgent.response.status).toBe(404)
 
