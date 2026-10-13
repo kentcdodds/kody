@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { CloudflareApiError } from '#worker/mcp/cloudflare/cloudflare-rest-client.ts'
 import { CloudflareCustomHostnamesClient } from './cloudflare-custom-hostnames-client.ts'
 
 const zoneId = 'packageappzoneid123'
@@ -35,16 +36,26 @@ test('custom hostname client adds, reads, and deletes with the dedicated token',
 				authorization: request.headers.get('authorization'),
 				body: await request.text(),
 			})
-			const id = request.url.endsWith('/custom_hostnames')
-				? 'hostname-1'
-				: 'hostname-1'
 			return Response.json({
 				success: true,
 				result: {
-					id,
+					id: 'hostname-1',
 					hostname: 'app.customer.example',
 					status: request.method === 'DELETE' ? 'deleted' : 'pending',
-					ssl: { status: 'pending_validation' },
+					ownership_verification: {
+						type: 'txt',
+						name: '_cf-custom-hostname.app.customer.example',
+						value: 'ownership-token',
+					},
+					ssl: {
+						status: 'pending_validation',
+						validation_records: [
+							{
+								txt_name: '_acme-challenge.app.customer.example',
+								txt_value: 'ssl-token',
+							},
+						],
+					},
 				},
 			})
 		}),
@@ -52,19 +63,35 @@ test('custom hostname client adds, reads, and deletes with the dedicated token',
 
 	const added = await client.addCustomHostname({
 		hostname: 'App.Customer.Example',
+		sslMethod: 'txt',
 	})
 	expect(added).toEqual({
 		id: 'hostname-1',
 		hostname: 'app.customer.example',
 		hostnameStatus: 'pending',
 		sslStatus: 'pending_validation',
+		ownershipVerification: {
+			type: 'txt',
+			name: '_cf-custom-hostname.app.customer.example',
+			value: 'ownership-token',
+		},
+		sslValidationRecords: [
+			{
+				type: 'txt',
+				name: '_acme-challenge.app.customer.example',
+				value: 'ssl-token',
+			},
+		],
 	})
 
 	const fetched = await client.getCustomHostname({ id: 'hostname-1' })
-	expect(fetched.hostnameStatus).toBe('pending')
+	expect(fetched).toMatchObject({
+		hostnameStatus: 'pending',
+		ownershipVerification: { value: 'ownership-token' },
+	})
 
 	const deleted = await client.deleteCustomHostname({ id: 'hostname-1' })
-	expect(deleted.hostnameStatus).toBe('deleted')
+	expect(deleted).toMatchObject({ hostnameStatus: 'deleted' })
 
 	expect(
 		seen.map((entry) => `${entry.method} ${new URL(entry.url).pathname}`),
@@ -78,9 +105,85 @@ test('custom hostname client adds, reads, and deletes with the dedicated token',
 	)
 	expect(JSON.parse(seen[0]?.body ?? '')).toEqual({
 		hostname: 'app.customer.example',
-		ssl: { method: 'http', type: 'dv' },
+		ssl: { method: 'txt', type: 'dv' },
 	})
-	expect(seen[1]?.body).toBe('')
+})
+
+test('custom hostname delete treats Cloudflare 404 as already gone', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'not found', code: 1436 }] },
+				{ status: 404 },
+			),
+		),
+	})
+	await expect(
+		client.deleteCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
+})
+
+test('custom hostname client falls back to HTTP ownership verification', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () =>
+			Response.json({
+				success: true,
+				result: {
+					id: 'hostname-http',
+					hostname: 'app.customer.example',
+					status: 'pending',
+					ownership_verification_http: {
+						http_url:
+							'http://app.customer.example/.well-known/cf-custom-hostname-challenge/token',
+						http_body: 'ownership-http-body',
+					},
+					ssl: { status: 'pending_validation' },
+				},
+			}),
+		),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'hostname-http' }),
+	).resolves.toMatchObject({
+		ownershipVerification: {
+			type: 'http',
+			name: 'http://app.customer.example/.well-known/cf-custom-hostname-challenge/token',
+			value: 'ownership-http-body',
+		},
+	})
+})
+
+test('custom hostname get requires Cloudflare missing-hostname code 1436', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'not found', code: 1436 }] },
+				{ status: 404 },
+			),
+		),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
+})
+
+test('custom hostname delete treats non-JSON 404 as already gone', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(
+			async () => new Response('not found', { status: 404 }),
+		),
+	})
+	await expect(
+		client.deleteCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
 })
 
 test('custom hostname client refuses a missing token or zone', () => {
@@ -98,4 +201,20 @@ test('custom hostname client refuses a missing token or zone', () => {
 				PACKAGE_APP_ZONE_ID: '',
 			}),
 	).toThrow(/PACKAGE_APP_ZONE_ID/)
+})
+
+test('custom hostname get surfaces Cloudflare API errors', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'zone locked' }] },
+				{ status: 403 },
+			),
+		),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'hostname-1' }),
+	).rejects.toBeInstanceOf(CloudflareApiError)
 })

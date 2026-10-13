@@ -1,0 +1,64 @@
+import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
+import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	packageAppCustomHostnameDnsHintSchema,
+	packageAppCustomHostnameRowSchema,
+	packageAppCustomHostnameVerificationSchema,
+} from '#mcp/capabilities/orgs/package-app-custom-hostname-schemas.ts'
+import {
+	PackageAppCustomHostnameError,
+	syncPackageAppCustomHostname,
+} from '#worker/package-app-custom-hostnames/service.ts'
+
+export const packageAppCustomHostnameSyncCapability = defineDomainCapability(
+	capabilityDomainNames.orgs,
+	{
+		name: 'packageAppCustomHostnameSync',
+		orgPermission: 'org:write',
+		description:
+			'Refresh one custom hostname from Cloudflare for SaaS: pull hostname and SSL status, ownership TXT / SSL validation records, and update the local row. Use after the customer publishes DNS (CNAME and optional ownership/SSL TXT). Pass hostname or the row id from packageAppCustomHostnameList.',
+		keywords: [
+			'custom domain',
+			'hostname',
+			'sync',
+			'verify',
+			'DNS',
+			'TXT',
+			'SSL',
+		],
+		readOnly: false,
+		idempotent: true,
+		destructive: false,
+		inputSchema: z.object({
+			hostname: z.string().min(1).optional(),
+			id: z.string().min(1).optional(),
+		}),
+		outputSchema: z.object({
+			hostname: packageAppCustomHostnameRowSchema,
+			dns: packageAppCustomHostnameDnsHintSchema,
+			verification: packageAppCustomHostnameVerificationSchema,
+		}),
+		async handler(args, ctx) {
+			const request = requireMcpRequest(ctx.callerContext)
+			if (!args.hostname && !args.id) {
+				throw new McpCallerError('Pass hostname or id.')
+			}
+			try {
+				return await syncPackageAppCustomHostname({
+					env: ctx.env,
+					orgId: request.org.id,
+					hostname: args.hostname,
+					id: args.id,
+				})
+			} catch (error) {
+				if (error instanceof PackageAppCustomHostnameError) {
+					throw new McpCallerError(error.message)
+				}
+				throw error
+			}
+		},
+	},
+)

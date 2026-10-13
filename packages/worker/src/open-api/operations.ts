@@ -172,6 +172,11 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'packageAppCustomHostnameAdd',
 		],
 		[
+			'POST',
+			'/v1/orgs/package-app-custom-hostnames/{id}/sync',
+			'packageAppCustomHostnameSync',
+		],
+		[
 			'DELETE',
 			'/v1/orgs/package-app-custom-hostnames/{id}',
 			'packageAppCustomHostnameDelete',
