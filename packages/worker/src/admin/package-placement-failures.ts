@@ -260,7 +260,8 @@ async function loadFlaggedPackages(
 	return [...byId.values()]
 }
 
-async function listPackageOwners(
+/** Exported for unit tests of the owner-cap / truncated bookkeeping. */
+export async function listPackageOwners(
 	db: D1Database,
 	flaggedOwnerIds: Iterable<OwnerId>,
 ): Promise<{ ownerIds: Array<OwnerId>; truncated: boolean }> {
@@ -276,13 +277,34 @@ async function listPackageOwners(
 	const owners = (results ?? [])
 		.map((row) => row.user_id)
 		.filter((id) => typeof id === 'string' && id !== '')
-	const truncated = owners.length > packagePlacementFailuresMaxOwners
-	const ownerIds = new Set<OwnerId>(flaggedOwnerIds)
-	for (const owner of owners) {
-		if (ownerIds.size >= packagePlacementFailuresMaxOwners) break
-		ownerIds.add(owner as OwnerId)
+	const liveTruncated = owners.length > packagePlacementFailuresMaxOwners
+	const liveOwners = owners.slice(0, packagePlacementFailuresMaxOwners)
+	// Flagged owners are included first, but they still count toward the cap.
+	// Mark truncated whenever flagged owners alone exceed the cap, or when
+	// adding them causes any live owner to be dropped.
+	const ownerIds: Array<OwnerId> = []
+	const seen = new Set<OwnerId>()
+	let truncated = liveTruncated
+	for (const id of flaggedOwnerIds) {
+		if (seen.has(id)) continue
+		if (ownerIds.length >= packagePlacementFailuresMaxOwners) {
+			truncated = true
+			break
+		}
+		seen.add(id)
+		ownerIds.push(id)
 	}
-	return { ownerIds: [...ownerIds], truncated }
+	for (const owner of liveOwners) {
+		const id = owner as OwnerId
+		if (seen.has(id)) continue
+		if (ownerIds.length >= packagePlacementFailuresMaxOwners) {
+			truncated = true
+			break
+		}
+		seen.add(id)
+		ownerIds.push(id)
+	}
+	return { ownerIds, truncated }
 }
 
 async function loadOwnerHandles(

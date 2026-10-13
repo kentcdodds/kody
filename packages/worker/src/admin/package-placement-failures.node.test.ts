@@ -5,7 +5,11 @@ import {
 	type RunLogPackageFailureSummaryInput,
 } from '#worker/run-records/package-failure-summary.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { loadPackagePlacementFailures } from './package-placement-failures.ts'
+import {
+	listPackageOwners,
+	loadPackagePlacementFailures,
+	packagePlacementFailuresMaxOwners,
+} from './package-placement-failures.ts'
 
 const runLogMocks = vi.hoisted(() => ({
 	summarizePackageFailures:
@@ -229,6 +233,36 @@ test('loadPackagePlacementFailures reports a flagged package with no failures an
 		'admin-package-placement-failures-owner-unavailable',
 		expect.objectContaining({ ownerId: ownerA }),
 	)
+})
+
+test('listPackageOwners marks truncated when flagged owners displace live owners', async () => {
+	const liveOwners = Array.from({ length: 3 }, (_, index) =>
+		ownerIdFromStored(`live-${index}`),
+	)
+	const flagged = Array.from(
+		{ length: packagePlacementFailuresMaxOwners },
+		(_, index) => ownerIdFromStored(`flag-${index}`),
+	)
+	const db = {
+		prepare() {
+			const statement = {
+				bind() {
+					return statement
+				},
+				async all() {
+					return {
+						results: liveOwners.map((user_id) => ({ user_id })),
+					}
+				},
+			}
+			return statement
+		},
+	} as unknown as D1Database
+
+	const listed = await listPackageOwners(db, flagged)
+	expect(listed.truncated).toBe(true)
+	expect(listed.ownerIds).toHaveLength(packagePlacementFailuresMaxOwners)
+	expect(listed.ownerIds.every((id) => id.startsWith('flag-'))).toBe(true)
 })
 
 test('loadPackagePlacementFailures rejects an inverted or oversized window before reading', async () => {
