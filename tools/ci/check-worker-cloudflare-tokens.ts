@@ -25,7 +25,7 @@ export const workerTokenPermissions = {
  */
 export const optionalWorkerTokenPermissions = {
 	CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN:
-		'kody-production, kody-platform, kody-runtime package-app zone: Zone SSL and Certificates Edit (Cloudflare for SaaS custom hostnames).',
+		'kody-production and kody-platform package-app zone: Zone SSL and Certificates Edit (Cloudflare for SaaS custom hostnames). Runtime serves verified hosts from D1 and does not call the SaaS API.',
 } as const
 
 export type WorkerTokenEnvName = keyof typeof workerTokenPermissions
