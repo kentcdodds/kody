@@ -111,7 +111,12 @@ export const packageSummaryWithCommunityProvenanceSchema =
 	})
 
 const credentialNeedShapeSchema = z.object({
-	kind: z.enum(packageCredentialKindValues),
+	kind: z
+		.enum(packageCredentialKindValues)
+		.optional()
+		.describe(
+			'Omitted when the need accepts any fetch-capable credential for the provider.',
+		),
 	provider: z.string(),
 	multiple: z.boolean(),
 })

@@ -31,6 +31,7 @@ import {
 import {
 	findCredentialById,
 	listUsableCredentials,
+	resolveNeedCandidates,
 	type UsableCredential,
 } from './credential-candidates.ts'
 import {

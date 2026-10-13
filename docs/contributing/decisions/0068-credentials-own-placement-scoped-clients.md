@@ -284,15 +284,15 @@ credentials.
 
 Every error is structured and includes `retryWith`.
 
-| Error                                   | Meaning                                                                          |
-| --------------------------------------- | -------------------------------------------------------------------------------- |
-| `credential_unbound{ possibleMatches }` | No candidate. Lists same-kind credentials with a null provider, filtered by Use. |
-| `credential_ambiguous{ options }`       | More than one candidate.                                                         |
-| `credential_not_found`                  | Missing or not usable by the actor; one error for both so it reveals neither.    |
-| `credential_need_unknown`               | The map names a key the package does not declare.                                |
-| `credential_denied`                     | Authorization failed.                                                            |
-| `host_not_allowed`                      | The host is not in the credential's `hosts`.                                     |
-| `insecure_transport`                    | The request is not HTTPS.                                                        |
+| Error                                   | Meaning                                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `credential_unbound{ possibleMatches }` | No candidate. Lists matching-kind credentials with a null provider (fetch-capable when `kind` is omitted), filtered by Use. |
+| `credential_ambiguous{ options }`       | More than one candidate.                                                                                                    |
+| `credential_not_found`                  | Missing or not usable by the actor; one error for both so it reveals neither.                                               |
+| `credential_need_unknown`               | The map names a key the package does not declare.                                                                           |
+| `credential_denied`                     | Authorization failed.                                                                                                       |
+| `host_not_allowed`                      | The host is not in the credential's `hosts`.                                                                                |
+| `insecure_transport`                    | The request is not HTTPS.                                                                                                   |
 
 A 401 or 403 from a client fetch adds a hint naming only the inject shape (for
 example `header Authorization Bearer`), never a value, the hosts, or other
