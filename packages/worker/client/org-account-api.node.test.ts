@@ -1,11 +1,59 @@
 import { afterEach, expect, test, vi } from 'vitest'
+import {
+	commitLastUsedOrgAfterPrefetchAdopt,
+	orgAccountApiFetchInit,
+} from '#client/org-account-api.ts'
 import { accountJobsRouteLoader } from '#client/routes/account-jobs-shared.ts'
 import { accountSecretsRouteLoader } from '#client/routes/account-secrets-shared.ts'
 import { orgAccountClientLoaders } from '#client/routes/org-account-routes.tsx'
 import { orgOwnedAccountApiSection } from '#universal/org-pages.ts'
+import { prefetchRouteOnIntent } from './intent-prefetch.ts'
 
 afterEach(() => {
 	vi.unstubAllGlobals()
+})
+
+test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits last-used', async () => {
+	const fetchMock = stubBrowser({ ok: true })
+	const destination = 'https://kody.test/@acme/-/waiting'
+	prefetchRouteOnIntent(
+		'/@acme/-/waiting',
+		async (_url, signal) => {
+			fetch(
+				'/account/waiting.json',
+				orgAccountApiFetchInit(destination, signal),
+			)
+			return {}
+		},
+		new URL(destination),
+	)
+	await Promise.resolve()
+	expect(fetchMock).toHaveBeenCalled()
+	const prefetchInit = fetchMock.mock.calls[0]?.[1]
+	expect(prefetchInit?.headers).toMatchObject({ 'X-Kody-Prefetch': '1' })
+
+	fetchMock.mockClear()
+	commitLastUsedOrgAfterPrefetchAdopt()
+	await Promise.resolve()
+	expect(fetchMock).toHaveBeenCalledWith(
+		expect.any(URL),
+		expect.objectContaining({
+			referrer: destination,
+			credentials: 'include',
+		}),
+	)
+	const commitInit = fetchMock.mock.calls[0]?.[1]
+	expect(commitInit?.headers).toEqual({ Accept: 'application/json' })
+})
+
+test('a real navigation signal overlapping prefetch is not marked prefetch', () => {
+	stubBrowser({ ok: true })
+	const navigation = new AbortController()
+	const init = orgAccountApiFetchInit(
+		'https://kody.test/@acme/-/secrets',
+		navigation.signal,
+	)
+	expect(init.headers).toEqual({ Accept: 'application/json' })
 })
 
 function stubBrowser(body: unknown, status = 200) {

@@ -9,6 +9,7 @@ import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.t
 import { prepareDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import { syncPasswordManagerPageIgnore } from './password-manager-page-ignore.ts'
+import { commitLastUsedOrgAfterPrefetchAdopt } from './org-account-api.ts'
 import {
 	abortIntentPrefetch,
 	prefetchEachRouteOnRender,
@@ -848,6 +849,7 @@ async function runNavigationWithLoader(
 	// unconditionally (even for loaderless destinations) so a prefetch for a
 	// link the user did not follow never outlives this navigation.
 	const prefetched = takePrefetchedRouteResult(nextPath, signal)
+	if (prefetched) commitLastUsedOrgAfterPrefetchAdopt()
 
 	// Warm the destination lazy route chunk alongside the loader. A failed
 	// chunk import is retried once (transient network blip), then falls back

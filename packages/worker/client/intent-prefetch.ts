@@ -3,13 +3,14 @@ import { type RouteLoader, type RouteLoaderResult } from './route-loader.ts'
 const routerHrefOrigin = 'https://kody.local'
 
 /**
- * Nesting depth of intent/render prefetch loader runs. Account JSON fetches
- * read this so speculative loads do not write `kody_last_org` (#3517).
+ * AbortSignals that belong to intent/render prefetch loader runs. Account
+ * JSON fetches key off the signal (not a global depth) so a real navigation
+ * that overlaps a prefetch does not inherit `X-Kody-Prefetch` (#3517).
  */
-let routePrefetchDepth = 0
+const prefetchAbortSignals = new WeakSet<AbortSignal>()
 
-export function isRoutePrefetchInFlight() {
-	return routePrefetchDepth > 0
+export function isPrefetchAbortSignal(signal: AbortSignal | undefined) {
+	return signal !== undefined && prefetchAbortSignals.has(signal)
 }
 
 function runRouteLoaderAsPrefetch(
@@ -17,19 +18,8 @@ function runRouteLoaderAsPrefetch(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	routePrefetchDepth += 1
-	const result = Promise.resolve(loader(url, signal))
-	// Keep settle timing on the loader promise (tests/consumers); only track
-	// depth as a side effect so prefetch headers clear when the load ends.
-	void result
-		.finally(() => {
-			routePrefetchDepth -= 1
-		})
-		.then(
-			() => {},
-			() => {},
-		)
-	return result
+	prefetchAbortSignals.add(signal)
+	return Promise.resolve(loader(url, signal))
 }
 
 /**
