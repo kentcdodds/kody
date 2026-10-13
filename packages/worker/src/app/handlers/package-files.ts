@@ -88,18 +88,34 @@ async function renderListingFilesPage(input: {
 	listingId: string | null
 	selectedPath: string
 	ref?: string
+	packagePath?: { username: string; kodyId: string }
 }) {
 	const serverTiming: Array<ServerTimingEntry> = []
-	const data = input.listingId
-		? await loadCommunityPackageFilesData({
+	// Same loader as the files API so the first paint carries the viewer's
+	// repo actions; the listing-only loader stays as the fallback.
+	const packageData = input.packagePath
+		? await loadAccessiblePackageFilesData({
 				env: input.env,
 				request: input.request,
-				listingId: input.listingId,
+				username: input.packagePath.username,
+				kodyId: input.packagePath.kodyId,
 				selectedPath: input.selectedPath,
 				ref: input.ref,
 				serverTiming,
 			})
 		: null
+	const data =
+		packageData ??
+		(input.listingId
+			? await loadCommunityPackageFilesData({
+					env: input.env,
+					request: input.request,
+					listingId: input.listingId,
+					selectedPath: input.selectedPath,
+					ref: input.ref,
+					serverTiming,
+				})
+			: null)
 	if (!data) {
 		return renderFilesNotFound({
 			request: input.request,
@@ -194,6 +210,7 @@ async function renderResolvedFilesPage(input: {
 		listingId: target.listingId,
 		selectedPath: target.selectedPath,
 		ref: target.ref,
+		packagePath: target.packagePath,
 	})
 }
 
