@@ -849,7 +849,7 @@ async function runNavigationWithLoader(
 	// unconditionally (even for loaderless destinations) so a prefetch for a
 	// link the user did not follow never outlives this navigation.
 	const prefetched = takePrefetchedRouteResult(nextPath, signal)
-	if (prefetched) commitLastUsedOrgAfterPrefetchAdopt()
+	const adoptedPrefetch = Boolean(prefetched)
 
 	// Warm the destination lazy route chunk alongside the loader. A failed
 	// chunk import is retried once (transient network blip), then falls back
@@ -924,6 +924,12 @@ async function runNavigationWithLoader(
 		// user did not land on.
 		if (loadedData) {
 			setPreloadedNavigationData(nextPath, loadedData)
+		}
+
+		// Prefetched org JSON skipped Set-Cookie; write last-used org only for
+		// this committed destination, aborting if a newer navigation wins.
+		if (adoptedPrefetch) {
+			commitLastUsedOrgAfterPrefetchAdopt(nextPath, signal)
 		}
 
 		commitHistory(nextPath, options, {
