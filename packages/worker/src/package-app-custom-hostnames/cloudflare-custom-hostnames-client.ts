@@ -6,9 +6,8 @@ import {
 /**
  * Zone SSL and Certificates Edit token for Cloudflare for SaaS custom
  * hostnames (`CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN`). This is not
- * `CLOUDFLARE_API_TOKEN`. `PACKAGE_APP_ZONE_ID` is the SaaS zone used for
- * proof (typically a staging copy). Do not point it at the production
- * kody.run zone from this client.
+ * `CLOUDFLARE_API_TOKEN`. `PACKAGE_APP_ZONE_ID` is the SaaS zone id
+ * (staging proof or production `kody.run` once SaaS is enabled there).
  */
 export type CloudflareCustomHostnamesClientEnv = {
 	CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN?: string
@@ -16,23 +15,46 @@ export type CloudflareCustomHostnamesClientEnv = {
 	fetcher?: Fetcher
 }
 
+export type CustomHostnameSslMethod = 'http' | 'txt'
+
+export type CustomHostnameDnsRecord = {
+	type: string
+	name: string
+	value: string
+}
+
 export type CloudflareCustomHostnameResult = {
 	id: string
 	hostname: string
 	hostnameStatus: string
 	sslStatus: string | null
+	ownershipVerification: CustomHostnameDnsRecord | null
+	sslValidationRecords: Array<CustomHostnameDnsRecord>
 }
 
 type CustomHostnameApiResult = {
 	id?: unknown
 	hostname?: unknown
 	status?: unknown
-	ssl?: { status?: unknown } | null
+	ownership_verification?: {
+		type?: unknown
+		name?: unknown
+		value?: unknown
+	} | null
+	ssl?: {
+		status?: unknown
+		validation_records?: Array<{
+			txt_name?: unknown
+			txt_value?: unknown
+			http_url?: unknown
+			http_body?: unknown
+		}> | null
+	} | null
 }
 
 type CustomHostnameApiEnvelope = {
 	success?: unknown
-	errors?: Array<{ message?: unknown }>
+	errors?: Array<{ message?: unknown; code?: unknown }>
 	result?: CustomHostnameApiResult | null
 }
 
@@ -50,7 +72,7 @@ function requireZoneId(zoneId: string | undefined) {
 	const trimmed = zoneId?.trim() ?? ''
 	if (!trimmed) {
 		throw new Error(
-			'PACKAGE_APP_ZONE_ID is not set. Point it at the package-app SaaS zone used for staging proof. Do not assume the production kody.run zone.',
+			'PACKAGE_APP_ZONE_ID is not set. Point it at the package-app SaaS zone. Do not assume the production kody.run zone without enabling Cloudflare for SaaS there.',
 		)
 	}
 	if (!/^[A-Za-z0-9]+$/.test(trimmed)) {
@@ -65,6 +87,44 @@ function assertCustomHostnameId(id: string) {
 		throw new Error('Custom hostname id is invalid.')
 	}
 	return trimmed
+}
+
+function readDnsRecord(input: {
+	type?: unknown
+	name?: unknown
+	value?: unknown
+}): CustomHostnameDnsRecord | null {
+	const type = typeof input.type === 'string' ? input.type.trim() : ''
+	const name = typeof input.name === 'string' ? input.name.trim() : ''
+	const value = typeof input.value === 'string' ? input.value.trim() : ''
+	if (!type || !name || !value) return null
+	return { type, name, value }
+}
+
+function readSslValidationRecords(
+	ssl: CustomHostnameApiResult['ssl'],
+): Array<CustomHostnameDnsRecord> {
+	const records = ssl?.validation_records
+	if (!Array.isArray(records)) return []
+	const out: Array<CustomHostnameDnsRecord> = []
+	for (const record of records) {
+		const txtName =
+			typeof record.txt_name === 'string' ? record.txt_name.trim() : ''
+		const txtValue =
+			typeof record.txt_value === 'string' ? record.txt_value.trim() : ''
+		if (txtName && txtValue) {
+			out.push({ type: 'txt', name: txtName, value: txtValue })
+			continue
+		}
+		const httpUrl =
+			typeof record.http_url === 'string' ? record.http_url.trim() : ''
+		const httpBody =
+			typeof record.http_body === 'string' ? record.http_body.trim() : ''
+		if (httpUrl && httpBody) {
+			out.push({ type: 'http', name: httpUrl, value: httpBody })
+		}
+	}
+	return out
 }
 
 function readCustomHostnameResult(
@@ -90,11 +150,16 @@ function readCustomHostnameResult(
 	const hostnameStatus = typeof result.status === 'string' ? result.status : ''
 	const sslStatus =
 		typeof result.ssl?.status === 'string' ? result.ssl.status : null
+	const ownership = result.ownership_verification
+		? readDnsRecord(result.ownership_verification)
+		: null
 	return {
 		id: result.id,
 		hostname,
 		hostnameStatus,
 		sslStatus,
+		ownershipVerification: ownership,
+		sslValidationRecords: readSslValidationRecords(result.ssl),
 	}
 }
 
@@ -120,10 +185,21 @@ export class CloudflareCustomHostnamesClient {
 
 	async addCustomHostname(input: {
 		hostname: string
+		sslMethod?: CustomHostnameSslMethod
 	}): Promise<CloudflareCustomHostnameResult> {
 		const hostname = input.hostname.trim().toLowerCase()
 		if (!hostname) {
 			throw new Error('hostname is required to add a custom hostname.')
+		}
+		const sslMethod = input.sslMethod ?? 'http'
+		switch (sslMethod) {
+			case 'http':
+			case 'txt':
+				break
+			default: {
+				sslMethod satisfies never
+				throw new Error('sslMethod must be http or txt.')
+			}
 		}
 		const response = await this.client.rawRequest({
 			method: 'POST',
@@ -131,7 +207,7 @@ export class CloudflareCustomHostnamesClient {
 			body: {
 				hostname,
 				ssl: {
-					method: 'http',
+					method: sslMethod,
 					type: 'dv',
 				},
 			},
@@ -149,13 +225,20 @@ export class CloudflareCustomHostnamesClient {
 		return readCustomHostnameResult(response.body, response.status)
 	}
 
+	/**
+	 * Delete a custom hostname. A 404 means Cloudflare already dropped it —
+	 * treat that as success so local cleanup can proceed.
+	 */
 	async deleteCustomHostname(input: {
 		id: string
-	}): Promise<CloudflareCustomHostnameResult> {
+	}): Promise<CloudflareCustomHostnameResult | { alreadyGone: true }> {
 		const response = await this.client.rawRequest({
 			method: 'DELETE',
 			path: this.hostnamePath(input.id),
 		})
+		if (response.status === 404) {
+			return { alreadyGone: true }
+		}
 		return readCustomHostnameResult(response.body, response.status)
 	}
 }
