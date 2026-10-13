@@ -51,5 +51,6 @@ shown as review context only.
 
 ## Non-goals (unchanged)
 
-Custom domains, visitor login/roles, third-party visitor auth, and cross-package
-image storage remain future work and are out of scope for this amendment.
+Visitor login/roles, third-party visitor auth, and cross-package image storage
+remain future work and are out of scope for this amendment. Custom domains are
+decided in [0070](./0070-package-app-custom-domains.md).
