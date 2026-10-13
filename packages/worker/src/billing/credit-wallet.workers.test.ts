@@ -1050,6 +1050,8 @@ test('admin eligibility unlocks a manual Pro wallet without Stripe, survives Str
 			await loadAccountCreditsUser({
 				env,
 				userId: account?.id ?? 0,
+				orgId: userId,
+				personal: true,
 				now,
 			})
 		)?.canBuyCredits,
@@ -1262,7 +1264,13 @@ test('gift and referral Pro overlays keep retired Pro ceilings without a wallet'
 		)
 			.bind(stableUserId)
 			.first<{ id: number }>()
-		return loadAccountCreditsUser({ env, userId: row?.id ?? 0, now })
+		return loadAccountCreditsUser({
+			env,
+			userId: row?.id ?? 0,
+			orgId: stableUserId,
+			personal: true,
+			now,
+		})
 	}
 	const overlayUser = await creditsUser(overlay.stableUserId)
 	expect(overlayUser?.entitlement).toMatchObject({

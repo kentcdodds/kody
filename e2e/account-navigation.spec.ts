@@ -287,7 +287,9 @@ test('credits live on the usage page: /account/credits redirects there', async (
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/credits')
-	await expect(page).toHaveURL(/\/account\/usage#credits$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/-/usage#credits$`),
+	)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Usage' }),
 	).toBeVisible()
@@ -297,7 +299,7 @@ test('credits live on the usage page: /account/credits redirects there', async (
 			.getByRole('heading', { level: 2, name: 'Credits' }),
 	).toBeVisible()
 
-	const rail = page.getByRole('navigation', { name: 'Account sections' })
+	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(
 		rail.getByRole('link', { name: 'Usage & credits', exact: true }),
 	).toHaveAttribute('aria-current', 'page')

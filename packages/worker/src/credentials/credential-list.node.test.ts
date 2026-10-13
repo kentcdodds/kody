@@ -304,13 +304,19 @@ test('a Key in an expired bucket shows as expired at the bucket expiry', async (
 
 test('lists more granted personal credentials than one D1 statement can bind', async () => {
 	const t = await setup()
-	const insertMcp = t.sqlite.prepare(
-		`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled)
-		 VALUES (?, ?, ?, 'https://mcp.example.com/sse', 1)`,
+	t.sqlite
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow, api_base_url)
+			 VALUES (?, 'ann-app', 'github', 'client', 'https://github.com/token', 'confidential', 'https://api.github.com')`,
+		)
+		.run(t.annOrgId)
+	const insertIntegration = t.sqlite.prepare(
+		`INSERT INTO user_integrations (id, user_id, name, app_slug, access_token_encrypted, connected_at)
+		 VALUES (?, ?, ?, 'ann-app', 'ct', ?)`,
 	)
 	for (let index = 0; index < 120; index++) {
-		const id = `mcp-ann-${index}`
-		insertMcp.run(id, t.annOrgId, `annMcp${index}`)
+		const id = `i-ann-${index}`
+		insertIntegration.run(id, t.annOrgId, `annGithub${index}`, now)
 		await grantPersonalCredentialToOrg({
 			db: t.env.APP_DB,
 			ownerPersonId: t.ann.personId,
@@ -323,6 +329,27 @@ test('lists more granted personal credentials than one D1 statement can bind', a
 		request: t.requestAs(t.ann, 'member'),
 	})
 	expect(items.filter((item) => item.scope === 'personal')).toHaveLength(121)
+})
+
+test('a granted personal MCP server is not listed; credential() cannot use it', async () => {
+	const t = await setup()
+	t.sqlite
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled)
+			 VALUES ('mcp-ann', ?, 'annMcp', 'https://mcp.example.com/sse', 1)`,
+		)
+		.run(t.annOrgId)
+	await grantPersonalCredentialToOrg({
+		db: t.env.APP_DB,
+		ownerPersonId: t.ann.personId,
+		credentialId: 'mcp-ann',
+		orgId: t.acmeId,
+	})
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.ann, 'member'),
+	})
+	expect(summary(items)).toEqual(['personal:secret:annToken'])
 })
 
 test('filters by text, kind, scope, package scope, and package lock', async () => {

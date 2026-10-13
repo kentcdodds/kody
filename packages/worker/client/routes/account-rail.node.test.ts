@@ -18,14 +18,13 @@ const organizations: Array<OrganizationSummary> = [
 	{ slug: 'jane-old', displayName: 'Jane', role: 'owner', personal: true },
 ]
 
-test('account rail holds the person: profile, security, usage, organizations, experiments, data', () => {
+test('account rail holds the person: profile, security, organizations, experiments, data', () => {
 	const items = accountRailGroups({ organizations: [] }).flatMap(
 		(group) => group.items,
 	)
 	expect(items.map((item) => item.label)).toEqual([
 		'Profile',
 		'Security',
-		'Usage & credits',
 		'Organizations',
 		'Experiments',
 		'Data & deletion',
@@ -34,8 +33,7 @@ test('account rail holds the person: profile, security, usage, organizations, ex
 	expect(
 		security && isAccountNavItemActive(security, '/account/passkeys'),
 	).toBe(true)
-	const usage = items.find((item) => item.label === 'Usage & credits')
-	expect(usage && isAccountNavItemActive(usage, '/account/credits')).toBe(true)
+	expect(items.find((item) => item.label === 'Usage & credits')).toBeUndefined()
 	const profile = items.find((item) => item.label === 'Profile')
 	expect(profile && isAccountNavItemActive(profile, '/account/security')).toBe(
 		false,
@@ -45,8 +43,6 @@ test('account rail holds the person: profile, security, usage, organizations, ex
 		'/account/security',
 		'/account/two-factor',
 		'/account/passkeys',
-		'/account/usage',
-		'/account/credits',
 		'/account/organizations',
 		'/account/organizations/new',
 		'/account/experiments',
@@ -56,9 +52,12 @@ test('account rail holds the person: profile, security, usage, organizations, ex
 	}
 	for (const path of [
 		'/account/billing',
+		'/account/usage',
+		'/account/credits',
 		'/account/mcp-oauth-clients',
 		'/@jane/-/secrets',
 		'/@jane/-/repositories',
+		'/@jane/-/usage',
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
@@ -135,7 +134,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 			['/@jane/-/agents', '/@jane/-/memories', '/@jane/-/email'],
 		],
 		['Activity', ['/@jane/-/activity']],
-		['Organization', ['/@jane/-/grants', '/@jane/-/billing']],
+		['Organization', ['/@jane/-/grants', '/@jane/-/usage', '/@jane/-/billing']],
 	])
 	// The Key, OAuth, and MCP server editors still count as Credentials.
 	const credentials = items.find((item) => item.label === 'Credentials')
@@ -153,6 +152,9 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		credentials &&
 			isAccountNavItemActive(credentials, '/@jane/-/secret-providers'),
 	).toBe(false)
+	const usage = items.find((item) => item.label === 'Usage & credits')
+	expect(usage && isAccountNavItemActive(usage, '/@jane/-/usage')).toBe(true)
+	expect(usage && isAccountNavItemActive(usage, '/account/usage')).toBe(true)
 	const billing = items.find((item) => item.label === 'Billing')
 	expect(billing && isAccountNavItemActive(billing, '/@jane/-/billing')).toBe(
 		true,
@@ -214,11 +216,13 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Activity',
 		'Members',
 		'Settings',
+		'Usage & credits',
 		'Billing',
 	])
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',
+		'/@acme/-/usage',
 		'/@acme/-/billing',
 	])
 	expect(railTabsForPath(teamOwner, '/@acme/-/grants')?.tabs).toEqual([
@@ -237,7 +241,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 		teamRail('billing')
 			.at(-1)
 			?.items.map((item) => item.label),
-	).toEqual(['Members', 'Settings', 'Billing'])
+	).toEqual(['Members', 'Settings', 'Usage & credits', 'Billing'])
 	expect(
 		teamRail('member')
 			.at(-1)
@@ -289,6 +293,13 @@ test('switching workspaces keeps the page when the role can open it there', () =
 	expect(workspaceSwitchHref('/@jane/-/billing', acmeBilling)).toBe(
 		'/@acme/-/billing',
 	)
+	expect(workspaceSwitchHref('/@jane/-/usage', acmeOwner)).toBe(
+		'/@acme/-/usage',
+	)
+	expect(workspaceSwitchHref('/@jane/-/usage', acmeBilling)).toBe(
+		'/@acme/-/usage',
+	)
+	expect(workspaceSwitchHref('/@acme/-/usage', jane)).toBe('/@jane/-/usage')
 	expect(workspaceSwitchHref('/@acme/-/teams', acmeBilling)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@acme/-/settings', jane)).toBe(
 		'/@jane/-/overview',
@@ -298,6 +309,7 @@ test('switching workspaces keeps the page when the role can open it there', () =
 		'/@acme/-/agents',
 	)
 	expect(workspaceSwitchHref('/@jane/-/secrets', acmeGuest)).toBe('/@acme')
+	expect(workspaceSwitchHref('/@jane/-/usage', acmeGuest)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@acme', jane)).toBe('/@jane/-/overview')
 })
 

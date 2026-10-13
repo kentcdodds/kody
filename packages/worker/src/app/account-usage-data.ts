@@ -3,6 +3,7 @@ import {
 	canBuyCreditsForUser,
 	loadAccountUsageCredits,
 } from '#app/account-credits-data.ts'
+import { type BillingPageOrg } from '#app/account-billing-data.ts'
 import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { isBillingConfigured } from '#worker/billing/billing-config.ts'
 import { readCreditWallet } from '#worker/billing/credit-wallet.ts'
@@ -15,7 +16,10 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type AccountUsageEntitlementConsumption,
@@ -24,46 +28,101 @@ import {
 } from '#universal/loader-data.ts'
 import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
 import { orgBillingPath } from '#universal/org-pages.ts'
-import { getOrgById } from '#worker/orgs/repo.ts'
 
-type UsageUserRow = UserEntitlementRow & {
+type PersonalUsageRow = UserEntitlementRow & {
 	id: number
 	stable_user_id: string
 	username: string
 	stripe_customer_id: string | null
 }
 
-/**
- * Signed-in user's plan, current entitlement consumption, and the Credits
- * section. One account only; cost does not grow with the user base.
- */
-export async function loadAccountUsageData(input: {
-	env: Env
-	userId: number
-	now?: Date
-	notice?: string
-	error?: string
-}): Promise<AccountUsageLoaderData | null> {
-	const now = input.now ?? new Date()
-	const row = await input.env.APP_DB.prepare(
+type TeamUsageRow = UserEntitlementRow & {
+	slug: string
+	display_name: string | null
+	stripe_customer_id: string | null
+}
+
+type ResolvedUsageOrg = {
+	usageUserId: OwnerId
+	username: string
+	stripeCustomerId: string | null
+	row: UserEntitlementRow
+}
+
+async function readPersonalUsageOrg(
+	env: Env,
+	userId: number,
+): Promise<ResolvedUsageOrg | null> {
+	const row = await env.APP_DB.prepare(
 		`SELECT u.id, u.stable_user_id, u.username, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
 		 FROM users u
 		 INNER JOIN orgs o ON o.id = u.stable_user_id
 		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
-		.bind(input.userId)
-		.first<UsageUserRow>()
+		.bind(userId)
+		.first<PersonalUsageRow>()
 	if (!row) return null
+	return {
+		usageUserId: ownerIdFromStored(row.stable_user_id),
+		username: row.username,
+		stripeCustomerId: row.stripe_customer_id?.trim() || null,
+		row,
+	}
+}
 
+async function readTeamUsageOrg(
+	env: Env,
+	org: BillingPageOrg,
+): Promise<ResolvedUsageOrg | null> {
+	const row = await env.APP_DB.prepare(
+		`SELECT slug, display_name, stripe_customer_id, ${userEntitlementColumnsSql()}
+		 FROM orgs
+		 WHERE id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(org.id)
+		.first<TeamUsageRow>()
+	if (!row) return null
+	return {
+		usageUserId: org.id,
+		username: row.slug.trim() || org.slug,
+		stripeCustomerId: row.stripe_customer_id?.trim() || null,
+		row,
+	}
+}
+
+/**
+ * Plan, entitlement consumption, and Credits for one organization. Personal
+ * orgs keep the users⋈orgs join; team orgs read plan columns from `orgs` and
+ * meter against that org's id (the same `user_id` column usage rollups and
+ * credit wallets already use).
+ */
+export async function loadAccountUsageData(input: {
+	env: Env
+	/** `users.id` of the signed-in person (personal-org overlays). */
+	userId: number
+	org: BillingPageOrg
+	now?: Date
+	notice?: string
+	error?: string
+}): Promise<AccountUsageLoaderData | null> {
+	const now = input.now ?? new Date()
+	const resolved = input.org.personal
+		? await readPersonalUsageOrg(input.env, input.userId)
+		: await readTeamUsageOrg(input.env, input.org)
+	if (!resolved) return null
+
+	const { usageUserId, username, stripeCustomerId, row } = resolved
 	const manualPlan = parseStoredPlanName(row.plan)
-	const usageUserId = ownerIdFromStored(row.stable_user_id)
 	// Best-effort: retry a creation-time welcome grant that failed earlier.
 	// No-ops unless signup_welcome_credits_pending is set (no pre-ship backfill).
-	await reconcileSignupWelcomeCreditsIfPending({
-		db: input.env.APP_DB,
-		userId: usageUserId,
-		now,
-	})
+	// Team orgs never receive the signup welcome grant.
+	if (input.org.personal) {
+		await reconcileSignupWelcomeCreditsIfPending({
+			db: input.env.APP_DB,
+			userId: usageUserId,
+			now,
+		})
+	}
 	const { creditsEligible } = resolveUserPlanFromRow(row, now)
 	// One credit_wallets read for entitlement balance + Credits section.
 	const wallet = creditsEligible
@@ -97,10 +156,9 @@ export async function loadAccountUsageData(input: {
 	const canBuyCredits = canBuyCreditsForUser({
 		row,
 		entitlement,
-		stripeCustomerId: row.stripe_customer_id?.trim() || null,
+		stripeCustomerId,
 	})
-	const signupOrg = await getOrgById(input.env.APP_DB, usageUserId)
-	const billingHref = orgBillingPath(signupOrg?.slug?.trim() || row.username)
+	const billingHref = orgBillingPath(input.org.slug)
 	const { credits, wallet: creditsWallet } = await loadAccountUsageCredits({
 		env: input.env,
 		stableUserId: usageUserId,
@@ -125,7 +183,7 @@ export async function loadAccountUsageData(input: {
 		loadCreditAttributionBreakdown({
 			db: input.env.APP_DB,
 			stableUserId: usageUserId,
-			username: row.username,
+			username,
 			computeOverage,
 			now,
 		}),

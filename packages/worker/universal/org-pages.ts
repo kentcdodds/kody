@@ -3,8 +3,9 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 
 /**
  * Account sections that own organization resources. Person pages (login,
- * passkeys, email claims, experiments) stay on `/account`. Billing belongs to
- * the organization itself and has its own routes (see `parseOrgBillingPath`).
+ * passkeys, email claims, experiments) stay on `/account`. Billing and usage
+ * belong to the organization itself and have their own routes (see
+ * `parseOrgBillingPath` and `parseOrgUsagePath`).
  */
 const orgOwnedAccountSections = [
 	'activity',
@@ -131,8 +132,8 @@ function parseOrgResourceApiPath(
 
 /**
  * The org section an org-bound URL belongs to: `/@slug/-/<section>…`, its
- * `.json` twin, or org-owned `/account/<section>.json`. Billing and management
- * URLs are org-bound but are not sections.
+ * `.json` twin, or org-owned `/account/<section>.json`. Billing, usage, and
+ * management URLs are org-bound but are not sections.
  */
 export function orgOwnedSectionForPath(
 	pathname: string,
@@ -157,6 +158,26 @@ export function parseOrgBillingPath(pathname: string): { slug: string } | null {
 
 export function orgBillingPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/billing`
+}
+
+/**
+ * `/@acme/-/usage` and `/@acme/-/usage.json`. Entitlement usage and prepaid
+ * credits are stored per organization (same `user_id` column as billing), so
+ * usage binds team organizations as well as the signup one.
+ */
+export function parseOrgUsagePath(pathname: string): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/usage(?:\.json)?\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgUsagePath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/usage`
+}
+
+/** Credits section of the organization usage page. */
+export function orgUsageCreditsPath(slug: string) {
+	return `${orgUsagePath(slug)}#credits`
 }
 
 /**
@@ -226,6 +247,9 @@ export function orgResourcePathForAccountPath(
 		return step
 			? `${orgBillingPath(personalSlug)}/${step}`
 			: orgBillingPath(personalSlug)
+	}
+	if (normalized === '/account/usage' || normalized === '/account/credits') {
+		return orgUsagePath(personalSlug)
 	}
 	const match = /^\/account\/([^/]+)(\/.*)?$/.exec(normalized)
 	if (!match) return null
@@ -305,15 +329,16 @@ export function parseOrgManagementPath(
 
 /**
  * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing,
- * management, or overview). Same parse order as the server request binder. Public `/@slug`
- * and `/@owner/pkg` paths are not org-owned pages — they return null so chrome
- * does not adopt a stranger's handle.
+ * usage, management, or overview). Same parse order as the server request
+ * binder. Public `/@slug` and `/@owner/pkg` paths are not org-owned pages —
+ * they return null so chrome does not adopt a stranger's handle.
  */
 export function orgSlugFromOrgOwnedPath(pathname: string) {
 	return (
 		parseOrgResourcePath(pathname)?.slug ??
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
+		parseOrgUsagePath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
 		parseOrgOverviewPath(pathname)?.slug ??
 		null
@@ -344,6 +369,7 @@ export function orgCollaboratorsPath(slug: string) {
 export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
 	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
+	if (parseOrgUsagePath(pathname)) return orgUsagePath(targetSlug)
 	const management = parseOrgManagementPath(pathname)
 	if (management) {
 		switch (management.section) {

@@ -104,7 +104,8 @@ export const routes = route({
 	accountBillingCancellationFeedbackPost: post(
 		'/account/billing/cancellation-feedback.json',
 	),
-	// Old `/account/credits` links open the usage page's Credits section.
+	// Old `/account/credits` and `/account/usage` links redirect to the
+	// signed-in person's personal-org usage page (and its Credits section).
 	accountCredits: '/account/credits',
 	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
 	accountCreditsSettingsPost: post('/account/credits/settings.json'),
@@ -219,6 +220,8 @@ export const routes = route({
 	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
 	// The credential creation one-pager for this org.
 	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),
+	orgUsage: get('/@:orgSlug/-/usage'),
+	orgUsageApi: get('/@:orgSlug/-/usage.json'),
 	orgEmail: get('/@:orgSlug/-/email(/*rest)'),
 	orgIntegrations: get('/@:orgSlug/-/integrations(/*rest)'),
 	orgJobs: get('/@:orgSlug/-/jobs(/*rest)'),

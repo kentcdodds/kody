@@ -909,7 +909,7 @@ test('stored mappings pick the credential: trigger override, then your default, 
 	})
 })
 
-test('a stored mapping stops applying when the need changes, and a corrupt row reads as unset', async () => {
+test('a stored mapping stops applying when the need changes or is removed, and a corrupt row reads as unset', async () => {
 	const t = await setup()
 	const keyA = await t.storeKey({ name: 'resend-a' })
 	await t.db
@@ -964,6 +964,16 @@ test('a stored mapping stops applying when the need changes, and a corrupt row r
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.stringContaining('corrupt credential ids'),
 	)
+
+	await mapOrg([])
+	await expect(open()).rejects.toMatchObject({
+		body: { code: 'credential_unbound' },
+	})
+	// Removed need: the leftover row is ignored and the key auto-resolves.
+	mockNeeds([])
+	await expect(open()).rejects.toMatchObject({
+		body: { code: 'credential_ambiguous' },
+	})
 
 	expect(
 		await deleteCredentialMappingsForPackage({

@@ -381,7 +381,13 @@ export async function listCredentialsForViewer(input: {
 		})
 		items.push(
 			...personalRows
-				.filter((row) => row.packageId === null && tokenAllows(row.family))
+				// credential() refuses a personal MCP server, so it is not usable here.
+				.filter(
+					(row) =>
+						row.packageId === null &&
+						row.kind !== 'mcp' &&
+						tokenAllows(row.family),
+				)
 				.map((row) => withScope(row, 'personal')),
 		)
 	}

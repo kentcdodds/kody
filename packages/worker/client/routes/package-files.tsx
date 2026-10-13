@@ -18,11 +18,8 @@ import {
 } from '#universal/package-files.ts'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
-import {
-	layoutMaxWidths,
-	pageGutter,
-} from '#universal/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { packageDetailPageCss } from '#universal/styles/style-primitives.ts'
 
 const communityPackageFilesMatcher = createMatcher(
 	routes.communityPackageFiles.pattern,
@@ -163,9 +160,7 @@ export async function packageFilesRouteLoader(
 }
 
 const messageCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `${spacing.xl} ${pageGutter}`,
+	...packageDetailPageCss,
 	color: colors.textMuted,
 }
 

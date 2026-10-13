@@ -418,18 +418,6 @@ export async function writeMappingChanges(
 	const statements: Array<D1PreparedStatement> = []
 	const auditPlans: Array<OrgAuditOutboxPlan> = []
 	for (const change of finalChanges) {
-		if (options.requireUnchanged && change.rowTarget) {
-			guards.push(
-				buildCredentialMappingUnchangedStatement({
-					db,
-					orgId: scope.savedPackage.userId,
-					packageId: scope.savedPackage.id,
-					needKey: change.needKey,
-					target: change.rowTarget,
-					credentialIds: change.beforeCredentialIds,
-				}),
-			)
-		}
 		let rowTarget = change.rowTarget
 		if (!rowTarget && change.willEnable && change.trigger) {
 			let enablementId = enabledIds.get(change.trigger)
@@ -464,6 +452,20 @@ export async function writeMappingChanges(
 			}
 		}
 		if (!rowTarget) continue
+		// A trigger that was off at resolve may have been turned on and mapped
+		// since; its adopted enablement must still have no row.
+		if (options.requireUnchanged) {
+			guards.push(
+				buildCredentialMappingUnchangedStatement({
+					db,
+					orgId: scope.savedPackage.userId,
+					packageId: scope.savedPackage.id,
+					needKey: change.needKey,
+					target: rowTarget,
+					credentialIds: change.beforeCredentialIds,
+				}),
+			)
+		}
 		statements.push(
 			buildWriteCredentialMappingStatement({
 				db,
