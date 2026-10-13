@@ -243,9 +243,15 @@ const __kodyRequestBlobBodies =
 const __kodyLocalExecuteRequestPatchedSymbol = Symbol.for(
 	"kody.localExecuteRequestPatched",
 );
+const __kodyRequestBaseSymbol = Symbol.for("kody.localExecuteRequestBase");
+// Prefer the pre-patch Request class for instanceof: after we subclass
+// globalThis.Request, native/clone() Requests are not instances of the child.
+/** @type {typeof Request} */
+const __kodyRequestBase =
+	globalThis[__kodyRequestBaseSymbol] ?? globalThis.Request;
 if (!globalThis[__kodyLocalExecuteRequestPatchedSymbol]) {
-	const __kodyOriginalRequest = globalThis.Request;
-	globalThis.Request = class extends __kodyOriginalRequest {
+	globalThis[__kodyRequestBaseSymbol] = __kodyRequestBase;
+	globalThis.Request = class extends __kodyRequestBase {
 		constructor(input, init) {
 			super(input, init);
 			if (
@@ -255,7 +261,7 @@ if (!globalThis[__kodyLocalExecuteRequestPatchedSymbol]) {
 			) {
 				__kodyRequestBlobBodies.set(this, init.body);
 			} else if (
-				input instanceof __kodyOriginalRequest &&
+				input instanceof __kodyRequestBase &&
 				__kodyRequestBlobBodies.has(input) &&
 				(init == null || init.body == null)
 			) {
@@ -275,12 +281,18 @@ if (!globalThis[__kodyLocalExecuteRequestPatchedSymbol]) {
 	globalThis[__kodyLocalExecuteRequestPatchedSymbol] = true;
 }
 
+function __kodyIsRequest(value) {
+	return value instanceof __kodyRequestBase;
+}
+
 function __kodyTrackedRequestBlob(input, init) {
 	if (typeof Blob === "undefined") return null;
 	if (init?.body != null) {
 		return init.body instanceof Blob ? init.body : null;
 	}
-	if (input instanceof Request) {
+	if (__kodyIsRequest(input)) {
+		// A consumed Request must not re-upload a remembered Blob (#3152 review).
+		if (input.bodyUsed) return null;
 		return __kodyRequestBlobBodies.get(input) ?? null;
 	}
 	return null;
@@ -595,11 +607,11 @@ async function __kodyGatewayFetchStreamCall(input) {
 }
 
 function __kodyReadFetchSignal(input, init) {
-	return init?.signal ?? (input instanceof Request ? input.signal : null);
+	return init?.signal ?? (__kodyIsRequest(input) ? input.signal : null);
 }
 
 function __kodyReadFetchRedirect(input, init) {
-	return init?.redirect ?? (input instanceof Request ? input.redirect : null);
+	return init?.redirect ?? (__kodyIsRequest(input) ? input.redirect : null);
 }
 
 function __kodyNativeStreamInit({ method, headers, body, input, init }) {
@@ -679,7 +691,7 @@ function __kodyReadSecretResolutionHeader(input, init) {
 	if (init?.headers != null) {
 		return new Headers(init.headers).get(__kodySecretResolutionHeader);
 	}
-	if (input instanceof Request) {
+	if (__kodyIsRequest(input)) {
 		return input.headers.get(__kodySecretResolutionHeader);
 	}
 	return null;
@@ -778,7 +790,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	} else {
 		// Probe the caller's body before copying it into a new Request. That
 		// copy drops BYOB, so a string body would look like a caller stream.
-		const inputRequest = input instanceof Request ? input : null;
+		const inputRequest = __kodyIsRequest(input) ? input : null;
 		const requestStream =
 			(init == null || init.body == null) &&
 			inputRequest != null &&
@@ -809,10 +821,14 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			}
 			headers = Object.fromEntries(headerList.entries());
 			if (method !== "GET" && method !== "HEAD") {
+				const urlOrHeaderSecrets = __kodyRequestHasSecretPlaceholders(
+					url,
+					headers,
+				);
 				if (
 					typeof trackedBlob.stream === "function" &&
 					!__kodyIsVerbatimBodyMode(resolutionMode) &&
-					(__kodyRequestHasSecretPlaceholders(url, headers) ||
+					(urlOrHeaderSecrets ||
 						(await __kodyBodyValueHoldsPlaceholder(trackedBlob)) ||
 						__kodyIsMultipartType(
 							headerList.get("content-type") ?? trackedBlob.type,
@@ -828,10 +844,15 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					streamingBody = trackedBlob.stream();
 					streamingBodyNeedsFill = true;
 					reuseOriginal = false;
-				} else if (!__kodyRequestHasSecretPlaceholders(url, headers)) {
-					if (reuseOriginal) {
-						return __kodyNativeFetch(input, init);
-					}
+				} else if (urlOrHeaderSecrets) {
+					// URL/header placeholders still need a gateway hop, but a
+					// verbatim (or non-placeholder) Blob body must stay attached.
+					streamingBody = trackedBlob.stream();
+					streamingBodyNeedsFill = false;
+					reuseOriginal = false;
+				} else if (reuseOriginal) {
+					return __kodyNativeFetch(input, init);
+				} else {
 					return __kodyNativeFetch(
 						url,
 						__kodyNativeStreamInit({
