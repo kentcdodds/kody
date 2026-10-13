@@ -10,6 +10,7 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import {
 	orgBillingPath,
 	orgUsageCreditsPath,
+	orgUsagePath,
 	parseOrgUsagePath,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
@@ -376,10 +377,38 @@ function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	)
 }
 
+/**
+ * Legacy `/account/usage` still has a client route so in-app links work.
+ * Follow the server JSON redirect to the personal org usage URL (hash kept).
+ */
+async function legacyAccountUsageRedirect(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const response = await fetch(routes.accountUsageApi.href(), {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+		redirect: 'follow',
+	})
+	if (response.status === 401) {
+		return routeLoaderRedirect('/login')
+	}
+	const finalPath = new URL(response.url).pathname
+	const slug = parseOrgUsagePath(finalPath)?.slug
+	if (!slug) {
+		throw new Error('Unable to resolve usage.')
+	}
+	return routeLoaderRedirect(`${orgUsagePath(slug)}${url.search}${url.hash}`)
+}
+
 export async function accountUsageRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
+	if (!usageSlugFromHref(url.href)) {
+		return legacyAccountUsageRedirect(url, signal)
+	}
 	const response = await fetch(usageApiPathForHref(url.href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
@@ -642,6 +671,7 @@ export function AccountUsageRoute(handle: Handle) {
 						{usage.credits ? (
 							<AccountUsageCreditsSection
 								credits={usage.credits}
+								orgSlug={usageOrgSlug(currentHref)}
 								notice={usage.notice}
 								error={usage.error}
 								onUsageChange={(next) => {

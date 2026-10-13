@@ -129,12 +129,14 @@ export async function applyCreditTopUpFromCheckoutSession(input: {
 			'This top-up does not belong to your account.',
 		)
 	}
-	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
+	// Wallets are keyed by org id (personal org id equals the person id).
+	// Team top-ups must match a live org row, not a users.stable_user_id.
+	const org = await input.env.APP_DB.prepare(
+		`SELECT id FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(stableUserId)
-		.first<{ stable_user_id: string }>()
-	if (!user) {
+		.first<{ id: string }>()
+	if (!org) {
 		throw new CreditTopUpError(
 			'user_not_found',
 			'No Kody account matched this top-up.',
