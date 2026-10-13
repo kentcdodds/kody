@@ -10,10 +10,13 @@ import {
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import {
+	getGhostButtonCss,
+	getPillButtonCss,
+	hoverMq,
 	inlineSpinnerCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
-import { colors } from '#universal/styles/tokens.ts'
+import { colors, typography } from '#universal/styles/tokens.ts'
 
 export const PACKAGE_TITLE_STATUS_SELECTOR = '[data-package-title-status]'
 const OTHER_ACCOUNT_FORK_TOOLTIP =
@@ -142,6 +145,7 @@ function renderInstallControl(input: {
 				{renderIcon(input.icon, { size: titleIconSize })}
 			</span>
 			<span data-title-status-spinner hidden mix={css(titleSpinnerCss)} />
+			<span data-title-status-label>{input.label}</span>
 			<span
 				id={statusTooltipId}
 				role="tooltip"
@@ -159,13 +163,13 @@ function renderInstallControl(input: {
 	)
 	if (!input.loggedIn) {
 		return (
-			<a href={input.loginHref} {...shared} mix={css(titleActionCss)}>
+			<a href={input.loginHref} {...shared} mix={css(packageActionPrimaryCss)}>
 				{children}
 			</a>
 		)
 	}
 	return (
-		<button type="button" {...shared} mix={css(titleActionCss)}>
+		<button type="button" {...shared} mix={css(packageActionPrimaryCss)}>
 			{children}
 		</button>
 	)
@@ -203,12 +207,13 @@ function renderIconControl(input: {
 	const children = (
 		<>
 			{renderIcon(input.icon, { size: titleIconSize })}
+			<span>{input.label}</span>
 			<span id={tooltipId} role="tooltip" aria-hidden="true">
 				{input.tooltip}
 			</span>
 		</>
 	)
-	const mix = css(titleActionCss)
+	const mix = css(packageActionSecondaryCss)
 	if (input.href) {
 		return (
 			<a href={input.href} {...shared} mix={mix}>
@@ -226,42 +231,49 @@ function renderIconControl(input: {
 const titleActionsCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	gap: '0.6rem',
+	gap: '0.5rem',
 	flex: 'none',
 }
 
-const titleActionCss = {
-	...copyPromptTooltipCss,
-	position: 'relative' as const,
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	flex: 'none',
-	padding: 0,
-	margin: 0,
-	border: 'none',
-	background: 'none',
-	color: colors.textMuted,
-	lineHeight: 0,
-	cursor: 'pointer',
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
-	'&:focus-visible': {
-		outline: `2px solid ${colors.primary}`,
-		outlineOffset: '2px',
-		borderRadius: '2px',
-	},
+/**
+ * Repo-page actions reuse the account-area pill vocabulary at a tab-row
+ * height: one filled pill for the action the page exists for, ghost pills
+ * for everything else. Topic tags and status badges never use these.
+ */
+function compactActionCss<
+	T extends ReturnType<typeof getPillButtonCss | typeof getGhostButtonCss>,
+>(base: T) {
+	return {
+		...base,
+		...copyPromptTooltipCss,
+		position: 'relative' as const,
+		padding: '0.5rem 0.95rem',
+		font: `650 0.875rem/1 ${typography.fontFamilyDisplay}`,
+		'&:focus-visible': {
+			outline: `2px solid ${colors.primary}`,
+			outlineOffset: '2px',
+		},
+		[hoverMq]: {
+			...base[hoverMq],
+			...copyPromptTooltipCss[hoverMq],
+		},
+	}
 }
+
+export const packageActionPrimaryCss = compactActionCss(
+	getPillButtonCss({ size: 'sm' }),
+)
+export const packageActionSecondaryCss = compactActionCss(
+	getGhostButtonCss({ size: 'sm' }),
+)
 
 const titleSpinnerCss = {
 	...inlineSpinnerCss,
 	display: 'inline-block',
 	width: titleIconSize,
 	height: titleIconSize,
-	border: `1.5px solid ${colors.border}`,
-	borderTopColor: colors.primary,
+	border: '1.5px solid oklch(from currentColor l c h / 0.35)',
+	borderTopColor: 'currentColor',
 	// `inline-block` would otherwise beat the `hidden` attribute in idle.
 	'&[hidden]': {
 		display: 'none',

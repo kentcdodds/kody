@@ -88,8 +88,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'data-icon="git-fork"',
 		'data-trusted="false"',
 	])
-	expect(installHtml.indexOf(testId('package-title-actions'))).toBeLessThan(
-		installHtml.indexOf(testId('package-repo-nav')),
+	expect(installHtml.indexOf(testId('package-title-actions'))).toBeGreaterThan(
+		installHtml.indexOf(testId('package-repo-actions')),
 	)
 
 	expectMarkers(
@@ -241,8 +241,12 @@ test('package chrome is shared for public listings and private owner packages', 
 	)
 	expect(titleNameAt).toBeGreaterThan(-1)
 	expect(leafNameAt).toBeGreaterThan(titleNameAt)
-	expect(titleActionsAt).toBeGreaterThan(leafNameAt)
-	expect(titleActionsAt).toBeLessThan(publicHtml.indexOf('</h1>', titleNameAt))
+	expect(titleActionsAt).toBeGreaterThan(
+		publicHtml.indexOf('</h1>', titleNameAt),
+	)
+	expect(titleActionsAt).toBeGreaterThan(
+		publicHtml.indexOf(testId('package-repo-actions')),
+	)
 	expectMarkers(
 		publicHtml,
 		[

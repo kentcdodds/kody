@@ -13,7 +13,11 @@ import {
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
 import { renderIcon } from '#universal/icon.tsx'
-import { renderPackageTitleActions } from '#universal/package-title-actions.tsx'
+import {
+	packageActionPrimaryCss,
+	packageActionSecondaryCss,
+	renderPackageTitleActions,
+} from '#universal/package-title-actions.tsx'
 import {
 	communityTagListCss,
 	communityTagPillCss,
@@ -118,16 +122,15 @@ export function CommunityDetailContent(
 				iconUrl: markUrl,
 				iconName: listing?.name ?? kodyId,
 				animate: true,
-				titleActions: listing
-					? renderPackageTitleActions({
-							viewerIsOwner,
-							loggedIn,
-							returnTo,
-							listingId: listing.id,
-							trusted: listing.trusted,
-							viewerInstall: listing.viewerInstall ?? null,
-						})
-					: null,
+				actions: renderRepoActions({
+					listing,
+					viewerIsOwner,
+					viewerCanManage,
+					loggedIn,
+					returnTo,
+					publishCompareHref,
+					packageAppHref,
+				}),
 			})}
 
 			{listing
@@ -147,24 +150,6 @@ export function CommunityDetailContent(
 						packageShaped: packageShaped === true,
 					})
 				: null}
-
-			{packageAppHref ? (
-				<div
-					data-rise
-					style={{ '--rise': '3' }}
-					mix={css(packageAppLinkRowCss)}
-				>
-					<a
-						href={packageAppHref}
-						data-testid="open-package-app"
-						data-rmx-document
-						mix={css(packageAppLinkCss)}
-					>
-						{renderIcon('share', { size: '1em' })}
-						Open Package App
-					</a>
-				</div>
-			) : null}
 
 			{listing ? (
 				<>
@@ -241,6 +226,85 @@ export function CommunityDetailContent(
 	)
 }
 
+function renderRepoActions(input: {
+	listing: PublicCommunityListing | null
+	viewerIsOwner: boolean
+	viewerCanManage: boolean
+	loggedIn: boolean
+	returnTo: string
+	publishCompareHref?: string | null
+	packageAppHref: string | null
+}) {
+	const { listing } = input
+	const visitorActions = listing
+		? renderPackageTitleActions({
+				viewerIsOwner: input.viewerIsOwner,
+				loggedIn: input.loggedIn,
+				returnTo: input.returnTo,
+				listingId: listing.id,
+				trusted: listing.trusted,
+				viewerInstall: listing.viewerInstall ?? null,
+			})
+		: null
+	const publishHref =
+		listing?.sourceAhead && input.publishCompareHref
+			? input.publishCompareHref
+			: null
+	const updateListingHref =
+		input.viewerCanManage && listing?.listingBehind
+			? buildUpdatePublicListingHref({
+					username: listing.ownerUsername,
+					kodyId: listing.kodyId,
+				})
+			: null
+	if (
+		!visitorActions &&
+		!publishHref &&
+		!updateListingHref &&
+		!input.packageAppHref
+	) {
+		return null
+	}
+	return (
+		<>
+			{publishHref ? (
+				<a
+					href={publishHref}
+					data-testid="community-detail-source-ahead-badge"
+					title="Default-branch HEAD is newer than the last publish. Review the changes, then publish them."
+					mix={css(packageActionSecondaryCss)}
+				>
+					{renderIcon('arrow-up-right', { size: '1.1em' })}
+					Review &amp; publish
+				</a>
+			) : null}
+			{updateListingHref ? (
+				<a
+					href={updateListingHref}
+					data-testid="community-detail-update-public-listing"
+					title="Publish and promote do not move the catalog listing. Open settings to republish the public snapshot."
+					mix={css(packageActionSecondaryCss)}
+				>
+					{renderIcon('refresh', { size: '1.1em' })}
+					Update public listing
+				</a>
+			) : null}
+			{visitorActions}
+			{input.packageAppHref ? (
+				<a
+					href={input.packageAppHref}
+					data-testid="open-package-app"
+					data-rmx-document
+					mix={css(packageActionPrimaryCss)}
+				>
+					{renderIcon('share', { size: '1.1em' })}
+					Open app
+				</a>
+			) : null}
+		</>
+	)
+}
+
 function renderListingHead(input: {
 	listing: PublicCommunityListing
 	loggedIn: boolean
@@ -256,53 +320,22 @@ function renderListingHead(input: {
 		returnTo: input.returnTo,
 		viewerIsOwner: input.viewerIsOwner,
 	})
-	const updateListingHref =
-		input.viewerCanManage && input.listing.listingBehind
-			? buildUpdatePublicListingHref({
-					username: input.listing.ownerUsername,
-					kodyId: input.listing.kodyId,
-				})
-			: null
-	if (
-		!input.listing.sourceAhead &&
-		!input.listing.featured &&
-		!viewerBadge &&
-		!updateListingHref
-	) {
+	const showSourceAheadStatus =
+		input.listing.sourceAhead && !input.publishCompareHref
+	if (!showSourceAheadStatus && !input.listing.featured && !viewerBadge) {
 		return null
 	}
 	return (
 		<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
 			<div mix={css(listingBadgeGroupCss)}>
-				{input.listing.sourceAhead ? (
-					input.publishCompareHref ? (
-						<a
-							href={input.publishCompareHref}
-							data-testid="community-detail-source-ahead-badge"
-							title="Review the unpublished HEAD changes, then publish them."
-							mix={css(badgeLinkCss)}
-						>
-							HEAD ahead of published
-						</a>
-					) : (
-						<span
-							data-testid="community-detail-source-ahead-badge"
-							title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
-							mix={css(badgeCss)}
-						>
-							HEAD ahead of published
-						</span>
-					)
-				) : null}
-				{updateListingHref ? (
-					<a
-						href={updateListingHref}
-						data-testid="community-detail-update-public-listing"
-						title="Publish and promote do not move the catalog listing. Open settings to republish the public snapshot."
-						mix={css(badgeLinkCss)}
+				{showSourceAheadStatus ? (
+					<span
+						data-testid="community-detail-source-ahead-badge"
+						title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
+						mix={css(badgeCss)}
 					>
-						Update public listing
-					</a>
+						HEAD ahead of published
+					</span>
 				) : null}
 				{input.listing.featured ? (
 					<span
@@ -349,15 +382,6 @@ const badgeCss = {
 	backgroundColor: colors.surface,
 	border: `1px solid ${colors.border}`,
 	color: colors.textMuted,
-}
-
-const badgeLinkCss = {
-	...badgeCss,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-		borderColor: colors.textMuted,
-	},
 }
 
 function resolvePackageAppHref(input: {
@@ -508,26 +532,6 @@ const plainRepoPromptCss = {
 	font: '500 0.8rem/1.4 ui-monospace, "SF Mono", Menlo, monospace',
 	color: colors.text,
 	whiteSpace: 'pre-wrap' as const,
-}
-
-const packageAppLinkRowCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	gap: '0.65rem 1.15rem',
-	margin: '0.9rem 0 0',
-}
-
-const packageAppLinkCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.35rem',
-	color: colors.primaryText,
-	fontWeight: 550,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
 }
 
 const detailTagListCss = {
