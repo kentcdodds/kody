@@ -1,6 +1,7 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { viewerCanReadSavedPackage } from '#worker/app/package-viewer-access.ts'
 import {
+	checkOrgWide,
 	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
@@ -154,12 +155,14 @@ export async function resolveGitHttpTargetAccess(input: {
 		ownerId: identity.ownerId,
 		scopes: input.scopes,
 	})
-	if (!access || !checkPermission(access, 'package:read').allowed) {
+	// Plain repos require org-wide package:read/write (same as repoGetGitRemote).
+	// A single-package grant must not open every plain repo under the owner.
+	if (!access || !checkOrgWide(access, 'package:read').allowed) {
 		return null
 	}
 	const canWrite =
 		apiTokenScopesAllow(input.scopes, 'package:write') &&
-		checkPermission(access, 'package:write').allowed
+		checkOrgWide(access, 'package:write').allowed
 	const source = await getEntitySourceByEntity(input.env.APP_DB, {
 		userId: identity.ownerId,
 		entityKind: 'repo',

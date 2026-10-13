@@ -106,8 +106,13 @@ https://kody.codes/@owner/name.git
 | Basic/Bearer `kody_at_…` with `package:read` + can read target | Live HEAD upload-pack for that package or plain repo                        |
 | Same + `package:write` + can write target                      | Live HEAD; Artifacts **write** token; `git-receive-pack` allowed            |
 | Authenticated, can read but not write, push                    | `403` with a clear message (clone ok; need `package:write`)                 |
-| Valid token, wrong repo or lost read access                    | `404`                                                                       |
+| Valid token, no private access, public listed package (read)   | Same published snapshot as anonymous (helper still sends the token)         |
+| Valid token, wrong/private repo with no access                 | `404`                                                                       |
 | Invalid / expired / revoked token                              | `401` with a clear message                                                  |
+
+Plain repos need **org-wide** `package:read` / `package:write` (same as
+`repoGetGitRemote`). A single-package grant does not open every plain repo under
+that owner.
 
 ### Push semantics
 

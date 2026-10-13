@@ -821,9 +821,12 @@ async function resolveGitHttpProxyTarget(input: {
 > {
 	const credential = readGitHttpCredential(input.authorization)
 
-	// Credentials present → access-based live HEAD (even for public listings).
+	// Credentials present → prefer access-based live HEAD. If the caller has no
+	// private access, fall back to the public published snapshot for reads so
+	// `kody auth setup-git` (which sends kody_at_ on every kody.codes request)
+	// does not break anonymous-equivalent clones of public packages.
 	if (credential.kind === 'api_token') {
-		return resolveAuthenticatedGitTarget({
+		const authenticated = await resolveAuthenticatedGitTarget({
 			env: input.env,
 			username: input.username,
 			kodyId: input.kodyId,
@@ -831,6 +834,22 @@ async function resolveGitHttpProxyTarget(input: {
 			needWrite: input.needWrite,
 			waitUntil: input.waitUntil,
 		})
+		if (authenticated.kind !== 'not_found') return authenticated
+		if (input.needWrite) return { kind: 'not_found' }
+		const publicFallback = await resolvePublicGitTarget({
+			env: input.env,
+			username: input.username,
+			kodyId: input.kodyId,
+		})
+		if (publicFallback.kind === 'ok') {
+			return {
+				kind: 'ok',
+				target: toProxiedPublicTarget(publicFallback.target),
+			}
+		}
+		if (publicFallback.kind === 'redirect') return publicFallback
+		if (publicFallback.kind === 'unavailable') return publicFallback
+		return { kind: 'not_found' }
 	}
 	if (credential.kind === 'invalid') {
 		return { kind: 'unauthorized', message: 'Invalid API token.' }
