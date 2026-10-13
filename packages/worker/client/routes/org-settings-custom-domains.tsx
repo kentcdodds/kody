@@ -37,6 +37,26 @@ export function createOrgSettingsCustomDomains(
 	let hostnameBusy: string | null = null
 	/** Mutation responses update the list immediately; reload may skip while pending. */
 	let customDomainsOverride: OrgSettingsCustomDomainsView | null | undefined
+	let overrideOrgSlug: string | null = null
+
+	function clearCustomDomainsOverride() {
+		customDomainsOverride = undefined
+		overrideOrgSlug = null
+	}
+
+	function serverCaughtUpWithOverride(
+		override: OrgSettingsCustomDomainsView,
+		server: OrgSettingsCustomDomainsView | null,
+	) {
+		if (!server) return false
+		const byId = new Map(server.hostnames.map((row) => [row.id, row]))
+		return (
+			override.hostnames.every((row) => {
+				const matched = byId.get(row.id)
+				return Boolean(matched && matched.updatedAt >= row.updatedAt)
+			}) && server.hostnames.length === override.hostnames.length
+		)
+	}
 
 	async function mutateCustomHostname(args: {
 		orgSlug: string
@@ -87,6 +107,7 @@ export function createOrgSettingsCustomDomains(
 				throw new Error(payload?.error || 'Unable to update custom domains.')
 			}
 			customDomainsOverride = payload.customDomains
+			overrideOrgSlug = args.orgSlug
 			input.reloadSettings()
 			if (args.action === 'add') {
 				hostnameDraft = ''
@@ -119,6 +140,21 @@ export function createOrgSettingsCustomDomains(
 			canManage: boolean
 			customDomains: OrgSettingsCustomDomainsView | null
 		}) {
+			if (
+				customDomainsOverride !== undefined &&
+				overrideOrgSlug !== null &&
+				overrideOrgSlug !== args.orgSlug
+			) {
+				clearCustomDomainsOverride()
+			}
+			if (
+				hostnameBusy === null &&
+				customDomainsOverride !== undefined &&
+				customDomainsOverride !== null &&
+				serverCaughtUpWithOverride(customDomainsOverride, args.customDomains)
+			) {
+				clearCustomDomainsOverride()
+			}
 			const customDomains =
 				customDomainsOverride !== undefined
 					? customDomainsOverride
