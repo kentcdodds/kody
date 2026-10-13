@@ -25,6 +25,7 @@ import {
 	packageOwnerEntitlementEmail,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { updateEntitySource } from '#worker/repo/entity-sources.ts'
@@ -236,10 +237,19 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					credentialNeedsApproved: true,
 				})
 			} catch (error) {
-				// publishSession can throw (git push / Artifacts / finalize KV)
-				// after the seeded published_commit write. Restore the plain
-				// repo so we never leave an unsnapshotted package tip (#3497).
-				await revertFailedPromote()
+				// publishSession can throw before finalize (no KV snapshot yet)
+				// or after finalize during session bookkeeping. Only revert when
+				// the package tip was never finalized — otherwise keep the live
+				// package and let the caller retry completion (#3497).
+				const seededCommit = opened.base_commit || head.commit
+				const finalizedSnapshot = await readPublishedSourceSnapshot({
+					env: ctx.env,
+					sourceId: source.id,
+					publishedCommit: seededCommit,
+				}).catch(() => null)
+				if (!finalizedSnapshot) {
+					await revertFailedPromote()
+				}
 				throw error
 			}
 			if (publishResult.status !== 'ok') {

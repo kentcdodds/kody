@@ -127,6 +127,7 @@ test('apply rebuilds a missing snapshot from the Artifacts git tip', async () =>
 			published_commit: 'commit-1',
 		}),
 		files: { 'package.json': '{"name":"@scope/demo"}' },
+		recoveredFromArtifacts: true,
 	})
 	expect(result.outcomes[0]).toMatchObject({ outcome: 'rebuilt' })
 })

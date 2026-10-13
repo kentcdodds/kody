@@ -8,6 +8,7 @@ import {
 	loadPublishedSourceSnapshot,
 	persistPublishedSourceManifestSnapshot,
 	persistPublishedSourceSnapshot,
+	publishedSourceSnapshotCreatedAt,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { readArtifactTreeAtCommit } from './artifact-file.ts'
 import { readArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
@@ -73,13 +74,17 @@ async function loadSourceSnapshotFromArtifacts(input: {
 	source: NonNullable<PublishedEntitySource['source']>
 }) {
 	const publishedCommit = assertPublishedCommit(input.source)
-	const mockSnapshot = await readArtifactSourceSnapshot({
-		env: input.env,
-		repoId: input.source.repo_id,
-		commit: publishedCommit,
-	})
-	if (mockSnapshot?.files) {
-		return mockSnapshot.files
+	try {
+		const mockSnapshot = await readArtifactSourceSnapshot({
+			env: input.env,
+			repoId: input.source.repo_id,
+			commit: publishedCommit,
+		})
+		if (mockSnapshot?.files) {
+			return mockSnapshot.files
+		}
+	} catch {
+		// Local mock API is optional; fall through to Artifacts git.
 	}
 	try {
 		const files = await readArtifactTreeAtCommit({
@@ -165,12 +170,13 @@ export async function loadPublishedEntitySource(input: {
 			snapshot: {
 				files,
 			},
+			recoveredFromArtifacts: true,
 		})
 	}
 	return {
 		source,
 		files: freezeFiles(files),
-		snapshotCreatedAt: storedSnapshot?.createdAt ?? null,
+		snapshotCreatedAt: publishedSourceSnapshotCreatedAt(storedSnapshot),
 	}
 }
 
@@ -226,6 +232,7 @@ export async function loadPublishedEntityManifest(input: {
 		snapshot: {
 			files: recovered.files,
 		},
+		recoveredFromArtifacts: true,
 	}).catch(() => undefined)
 	return {
 		source,

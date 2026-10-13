@@ -173,6 +173,7 @@ export async function rebuildPublishedSourceSnapshotFromArtifacts(input: {
 			published_commit: publishedCommit,
 		},
 		files,
+		recoveredFromArtifacts: true,
 	})
 	return 'rebuilt'
 }
