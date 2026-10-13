@@ -4,7 +4,8 @@ title: Package lifecycle: reuse, execute, fork, or create
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
   forking a close public package, deferred workflows, and creating a durable
-  repo-backed package; test package-owned job wrappers safely.
+  repo-backed package; test unpublished packages locally with `kody dev` and
+  package-owned job wrappers safely.
 category: platform
 ---
 
@@ -181,10 +182,42 @@ If the work needs binary assets, broad refactors, or a substantial local
 build/test loop, explain that it fits a coding-capable agent and confirm before
 continuing in the tool-only lane.
 
+## Local testing before publish
+
+**Prefer `@kodycodes/cli` `kody dev` before the first publish.** From the package
+directory, test all four package surfaces locally. One `--target prod|mock`
+switch decides where server-side calls go (default **`mock` for `kody dev`**,
+**`prod` for `execute` / `search`** so existing workflows stay unchanged).
+
+| Surface | How to test locally |
+| --- | --- |
+| **Exports** | `kody execute --target mock --invoke ./export --params '…'` (or `--file`) against the working tree; then `--target prod` |
+| **Apps** | `kody dev` / `kody dev fetch /path` — see [Package apps](./package-apps.md#local-testing-with-kody-dev) |
+| **Schedules** | `kody dev job <name>` — runs the job entry **once** with the scheduler’s no-arg contract; never schedules locally |
+| **Webhooks** | `kody dev webhook <name> --body fixture.json` — delivers the platform webhook envelope |
+| **Subscriptions** | `kody dev emit <event> --body event.json` — delivers the platform subscription envelope (`synthetic: true`); on mock, any declared event type is allowed |
+| **Check** | `kody dev check` — bundle + light publish validations without running |
+
+Mock first (safe iteration; scratch storage; no real secrets), then the same
+commands with `--target prod`, then publish. Share previews for unpublished
+packages are out of scope. `execute --local` without `--target` is unchanged.
+
+```bash
+cd ./my-package
+npx @kodycodes/cli@latest dev check
+npx @kodycodes/cli@latest execute --target mock --invoke ./scheduled-report
+npx @kodycodes/cli@latest dev job heartbeat
+npx @kodycodes/cli@latest dev webhook ping --body ./fixtures/ping.json
+npx @kodycodes/cli@latest dev emit user.deleted --body ./fixtures/user-deleted.json
+```
+
 ## Test the scheduled wrapper before enabling its schedule
 
-Scheduled behavior should not be its first real execution. Package job manifests
-do not supply params to their entrypoints, so structure the package with:
+Scheduled behavior should not be its first real execution. Prefer
+[`kody dev job`](#local-testing-before-publish) while unpublished, then the
+published `execute` import below before enabling the schedule. Package job
+manifests do not supply params to their entrypoints, so structure the package
+with:
 
 - a shared implementation that accepts explicit input
 - an optional callable export that passes representative input to that
