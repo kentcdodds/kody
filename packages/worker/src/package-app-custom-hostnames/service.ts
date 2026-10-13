@@ -10,7 +10,14 @@ import {
 	type CustomHostnameDnsRecord,
 	type CustomHostnameSslMethod,
 } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
+import { checkRateLimit, releaseRateLimit } from '#worker/app/rate-limit.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import {
+	packageAppCustomHostnameAddRateLimit,
+	packageAppCustomHostnameAddRateLimitKey,
+	packageAppCustomHostnameMaxPerOrg,
+} from '#worker/package-app-custom-hostnames/limits.ts'
+import { invalidateCachedPackageAppCustomHostname } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import {
 	isPackageAppCustomHostnameVerified,
 	normalizeCustomHostname,
@@ -537,6 +544,25 @@ export async function addPackageAppCustomHostname(input: {
 	if (!hostname) {
 		throw new PackageAppCustomHostnameError('hostname is not a valid DNS name.')
 	}
+	const existingCount = await countOrgCustomHostnames(
+		input.env.APP_DB,
+		input.orgId,
+	)
+	if (existingCount >= packageAppCustomHostnameMaxPerOrg) {
+		throw new PackageAppCustomHostnameError(
+			`This organization already has ${packageAppCustomHostnameMaxPerOrg} custom domains (abuse limit). Remove one before adding another.`,
+		)
+	}
+	const rateLimit = await checkRateLimit(
+		input.env.APP_DB,
+		packageAppCustomHostnameAddRateLimitKey(input.orgId),
+		packageAppCustomHostnameAddRateLimit,
+	)
+	if (!rateLimit.allowed) {
+		throw new PackageAppCustomHostnameError(
+			`Too many custom domain claims. Try again in about ${rateLimit.retryAfterSeconds ?? packageAppCustomHostnameAddRateLimit.windowSeconds} seconds.`,
+		)
+	}
 	const now = new Date().toISOString()
 	const id = crypto.randomUUID()
 	const sslMethod = input.sslMethod ?? 'http'
@@ -580,8 +606,15 @@ export async function addPackageAppCustomHostname(input: {
 		}
 	}
 
+const rateLimitKey = packageAppCustomHostnameAddRateLimitKey(input.orgId)
 	const client = createCloudflareClient(input.env)
-	const cf = await client.addCustomHostname({ hostname, sslMethod })
+	let cf: CloudflareCustomHostnameResult
+	try {
+		cf = await client.addCustomHostname({ hostname, sslMethod })
+	} catch (error) {
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
+		throw error
+	}
 	const cloudflareZoneId = input.env.PACKAGE_APP_ZONE_ID?.trim() ?? null
 	try {
 		await insertCustomHostnameRow({
@@ -606,6 +639,7 @@ export async function addPackageAppCustomHostname(input: {
 			cloudflareHostnameId: cf.id,
 			hostname,
 		})
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
 		if (error instanceof PackageAppCustomHostnameError) throw error
 		throw new PackageAppCustomHostnameError(
 			`Custom hostname could not be stored (${getErrorMessage(error)}).`,
@@ -623,10 +657,12 @@ export async function addPackageAppCustomHostname(input: {
 			cloudflareHostnameId: cf.id,
 			hostname,
 		})
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(() => undefined)
 		throw new PackageAppCustomHostnameError(
 			'Custom hostname row was not stored.',
 		)
 	}
+	invalidateCachedPackageAppCustomHostname(input.env.APP_DB, hostname)
 	const billingNote = await billingNoteForAdd(input.env.APP_DB, input.orgId)
 	return {
 		hostname: publicRow(rowFromSql(row)),
@@ -684,6 +720,7 @@ export async function syncPackageAppCustomHostname(input: {
 		cf,
 		nowIso,
 	})
+	invalidateCachedPackageAppCustomHostname(input.env.APP_DB, updated.hostname)
 	return {
 		hostname: publicRow(updated),
 		dns: dnsHint(input.env, updated.hostname),
@@ -709,6 +746,7 @@ export async function removePackageAppCustomHostnameRow(input: {
 	)
 		.bind(input.row.id)
 		.run()
+	invalidateCachedPackageAppCustomHostname(input.env.APP_DB, input.row.hostname)
 }
 
 export async function deletePackageAppCustomHostname(input: {

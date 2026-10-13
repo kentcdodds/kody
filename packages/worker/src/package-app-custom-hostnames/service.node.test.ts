@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
+import { packageAppCustomHostnameMaxPerOrg } from './limits.ts'
 import {
 	addPackageAppCustomHostname,
 	deletePackageAppCustomHostname,
@@ -159,6 +160,52 @@ test('add rejects free-plan orgs before calling Cloudflare', async () => {
 			hostname: 'team.example.com',
 		}),
 	).rejects.toThrow(/paid organization plan/)
+	expect(fetcher.fetch).not.toHaveBeenCalled()
+})
+
+test('add rejects when the org is at the abuse hostname cap', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	for (let i = 0; i < packageAppCustomHostnameMaxPerOrg; i += 1) {
+		await db
+			.prepare(
+				`INSERT INTO package_app_custom_hostnames (
+					id, hostname, binding_kind, package_id, org_id,
+					cloudflare_hostname_id, cloudflare_zone_id,
+					hostname_status, ssl_status, created_by_user_id,
+					created_at, updated_at
+				) VALUES (?, ?, 'org', NULL, 'org-1', ?, 'zonetest123', 'pending', 'pending', 'person-1', ?, ?)`,
+			)
+			.bind(
+				`row-${i}`,
+				`host-${i}.example.com`,
+				`cf-${i}`,
+				'2026-10-13T00:00:00.000Z',
+				'2026-10-13T00:00:00.000Z',
+			)
+			.run()
+	}
+	const fetcher = {
+		fetch: vi.fn(async () => cfHostnameResponse()),
+	} as unknown as Fetcher
+	await expect(
+		addPackageAppCustomHostname({
+			env: { ...createEnv(db), fetcher } as unknown as Env,
+			orgId: 'org-1',
+			createdByUserId: 'person-1',
+			bindingKind: 'org',
+			hostname: 'overflow.example.com',
+		}),
+	).rejects.toThrow(/abuse limit/)
 	expect(fetcher.fetch).not.toHaveBeenCalled()
 })
 
