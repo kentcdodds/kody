@@ -85,8 +85,10 @@ test('custom hostname client adds, reads, and deletes with the dedicated token',
 	})
 
 	const fetched = await client.getCustomHostname({ id: 'hostname-1' })
-	expect(fetched.hostnameStatus).toBe('pending')
-	expect(fetched.ownershipVerification?.value).toBe('ownership-token')
+	expect(fetched).toMatchObject({
+		hostnameStatus: 'pending',
+		ownershipVerification: { value: 'ownership-token' },
+	})
 
 	const deleted = await client.deleteCustomHostname({ id: 'hostname-1' })
 	expect(deleted).toMatchObject({ hostnameStatus: 'deleted' })
@@ -123,7 +125,23 @@ test('custom hostname delete treats Cloudflare 404 as already gone', async () =>
 	).resolves.toEqual({ alreadyGone: true })
 })
 
-test('custom hostname get and delete treat non-JSON 404 as already gone', async () => {
+test('custom hostname get requires Cloudflare missing-hostname code 1436', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'not found', code: 1436 }] },
+				{ status: 404 },
+			),
+		),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
+})
+
+test('custom hostname delete treats non-JSON 404 as already gone', async () => {
 	const client = new CloudflareCustomHostnamesClient({
 		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
 		PACKAGE_APP_ZONE_ID: zoneId,
@@ -131,9 +149,6 @@ test('custom hostname get and delete treat non-JSON 404 as already gone', async 
 			async () => new Response('not found', { status: 404 }),
 		),
 	})
-	await expect(
-		client.getCustomHostname({ id: 'missing-hostname' }),
-	).resolves.toEqual({ alreadyGone: true })
 	await expect(
 		client.deleteCustomHostname({ id: 'missing-hostname' }),
 	).resolves.toEqual({ alreadyGone: true })

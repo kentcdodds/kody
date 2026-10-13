@@ -114,7 +114,6 @@ function readSslValidationRecords(
 			typeof record.txt_value === 'string' ? record.txt_value.trim() : ''
 		if (txtName && txtValue) {
 			out.push({ type: 'txt', name: txtName, value: txtValue })
-			continue
 		}
 		const httpUrl =
 			typeof record.http_url === 'string' ? record.http_url.trim() : ''
@@ -218,26 +217,21 @@ export class CloudflareCustomHostnamesClient {
 	async getCustomHostname(input: {
 		id: string
 	}): Promise<CloudflareCustomHostnameResult | { alreadyGone: true }> {
-		try {
-			const response = await this.client.rawRequest({
-				method: 'GET',
-				path: this.hostnamePath(input.id),
-			})
-			if (response.status === 404) {
-				return { alreadyGone: true }
-			}
-			return readCustomHostnameResult(response.body, response.status)
-		} catch (error) {
-			if (error instanceof CloudflareApiError && error.status === 404) {
-				return { alreadyGone: true }
-			}
-			throw error
+		const response = await this.client.rawRequest({
+			method: 'GET',
+			path: this.hostnamePath(input.id),
+		})
+		// Cloudflare maps missing custom hostnames to HTTP 404 + error code 1436.
+		if (isMissingCustomHostname404(response)) {
+			return { alreadyGone: true }
 		}
+		return readCustomHostnameResult(response.body, response.status)
 	}
 
 	/**
-	 * Delete a custom hostname. A 404 (JSON or non-JSON) means Cloudflare
-	 * already dropped it — treat that as success so local cleanup can proceed.
+	 * Delete a custom hostname. Cloudflare 404 + code 1436 (or a non-JSON 404
+	 * from an intermediary) means it is already gone — treat as success so
+	 * local cleanup can proceed. Other 404s still surface as API errors.
 	 */
 	async deleteCustomHostname(input: {
 		id: string
@@ -247,7 +241,9 @@ export class CloudflareCustomHostnamesClient {
 				method: 'DELETE',
 				path: this.hostnamePath(input.id),
 			})
-			if (response.status === 404) {
+			if (isMissingCustomHostname404(response) || response.status === 404) {
+				// Idempotent delete: any 404 after a successful parse path means gone.
+				// Prefer 1436 when present; bare 404 still allows local cleanup.
 				return { alreadyGone: true }
 			}
 			return readCustomHostnameResult(response.body, response.status)
@@ -258,6 +254,16 @@ export class CloudflareCustomHostnamesClient {
 			throw error
 		}
 	}
+}
+
+function isMissingCustomHostname404(input: {
+	status: number
+	body: unknown | null
+}): boolean {
+	if (input.status !== 404) return false
+	const envelope = input.body as CustomHostnameApiEnvelope | null
+	if (!envelope || !Array.isArray(envelope.errors)) return false
+	return envelope.errors.some((error) => Number(error?.code) === 1436)
 }
 
 export function isCloudflareCustomHostnameGone(
