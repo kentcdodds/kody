@@ -2,46 +2,33 @@
 
 .feature-detail {
 	--hue: 148;
-	--page: light-dark(#f6f4ec, #181c19);
-	--surface: light-dark(#fffdf7, #202620);
-	--text: light-dark(#252c28, #f3f0e7);
-	--muted: light-dark(#59605a, #bfc6bd);
-	--border: light-dark(#ced4c9, #465044);
+	--page: light-dark(oklch(0.955 0.004 250), #181c19);
+	--surface: light-dark(oklch(0.99 0.002 250), #202620);
+	--text: light-dark(oklch(0.22 0.012 260), #f3f0e7);
+	--muted: light-dark(oklch(0.44 0.014 260), #bfc6bd);
+	--border: light-dark(oklch(0.8 0.012 250), #465044);
 	--selected: light-dark(#e7ecdf, #303b2e);
 	--accent: light-dark(#315d3e, #a4d3a2);
 	--on-accent: light-dark(#fffdf7, #18261b);
 	--shadow: light-dark(#263e311a, #00000033);
 }
 .feature-detail .study {
-	--canvas: light-dark(
-		oklch(0.97 0.025 var(--hue)),
-		oklch(0.22 0.025 var(--hue))
-	);
-	--surface: light-dark(
-		oklch(0.995 0.009 var(--hue)),
-		oklch(0.265 0.03 var(--hue))
-	);
+	/* Light mode sits on the site's cool grey canvas; the hue stays in the
+	   accents. Dark mode keeps its tinted canvas. */
+	--canvas: light-dark(oklch(0.955 0.004 250), oklch(0.22 0.025 var(--hue)));
+	--surface: light-dark(oklch(0.99 0.002 250), oklch(0.265 0.03 var(--hue)));
 	--selected: light-dark(
-		oklch(0.91 0.055 var(--hue)),
+		oklch(0.93 0.04 var(--hue)),
 		oklch(0.33 0.055 var(--hue))
 	);
-	--text: light-dark(
-		oklch(0.26 0.025 var(--hue)),
-		oklch(0.94 0.015 var(--hue))
-	);
-	--muted: light-dark(
-		oklch(0.44 0.035 var(--hue)),
-		oklch(0.77 0.025 var(--hue))
-	);
+	--text: light-dark(oklch(0.22 0.012 260), oklch(0.94 0.015 var(--hue)));
+	--muted: light-dark(oklch(0.44 0.014 260), oklch(0.77 0.025 var(--hue)));
 	--accent: light-dark(oklch(0.44 0.12 var(--hue)), oklch(0.8 0.12 var(--hue)));
 	--on-accent: light-dark(
 		oklch(0.99 0.005 var(--hue)),
 		oklch(0.2 0.035 var(--hue))
 	);
-	--border: light-dark(
-		oklch(0.72 0.06 var(--hue)),
-		oklch(0.46 0.06 var(--hue))
-	);
+	--border: light-dark(oklch(0.8 0.012 250), oklch(0.46 0.06 var(--hue)));
 	color: var(--text);
 }
 .feature-detail .memory {
@@ -55,7 +42,7 @@
 }
 .feature-detail .triggers {
 	--hue: 96;
-	--canvas: light-dark(oklch(0.91 0.12 96), oklch(0.24 0.045 96));
+	--canvas: light-dark(oklch(0.955 0.004 250), oklch(0.24 0.045 96));
 }
 .feature-detail .integrations {
 	--hue: 148;
@@ -1604,12 +1591,9 @@
 
 /* Product-sized illustrations: thin chrome, concrete state, one action at a time. */
 .feature-detail .study {
-	--canvas: light-dark(
-		oklch(0.983 0.012 var(--hue)),
-		oklch(0.215 0.018 var(--hue))
-	);
-	--ui-line: color-mix(in oklch, var(--border) 55%, var(--surface));
-	--ui-stage: color-mix(in oklch, var(--selected) 24%, var(--canvas));
+	--canvas: light-dark(oklch(0.985 0.002 250), oklch(0.215 0.018 var(--hue)));
+	--ui-line: color-mix(in oklab, var(--border) 55%, var(--surface));
+	--ui-stage: color-mix(in oklab, var(--selected) 24%, var(--canvas));
 }
 .feature-detail .triggers {
 	--canvas: light-dark(oklch(0.965 0.045 96), oklch(0.235 0.03 96));
@@ -1620,7 +1604,7 @@
 	border-radius: 12px;
 	box-shadow:
 		0 3px 7px var(--shadow),
-		0 18px 40px color-mix(in oklch, var(--shadow) 35%, transparent);
+		0 18px 40px color-mix(in oklab, var(--shadow) 35%, transparent);
 	overflow: hidden;
 }
 .feature-detail .ui-stage {
@@ -2381,10 +2365,7 @@
 	--hue: 345;
 }
 .feature-detail {
-	background: light-dark(
-		oklch(0.97 0.025 var(--hue)),
-		oklch(0.22 0.025 var(--hue))
-	);
+	background: light-dark(oklch(0.955 0.004 250), oklch(0.22 0.025 var(--hue)));
 }
 .feature-detail .study {
 	background: transparent;
