@@ -515,3 +515,25 @@ Kent decided four call-map questions (#3599).
    lists every option by name and scope, with matching `options` and
    `retryWith`, so an agent can pick one or show them to the user. The same
    holds for `credential_ambiguous`.
+
+## Amendment 2026-10-13: credential needs publish pause
+
+Cole and Kent decided how decision 2's pause works.
+
+- **Scope.** Every published package, public or not. A publish whose credential
+  needs closure (transitive included) adds a need or changes one pauses before
+  the new commit becomes published. The previous published version keeps
+  running. A first publish, a same-commit publish, and a publish that only
+  removes needs do not pause.
+- **Approval.** The owner approves on the package's approval page
+  (`/@<owner>/<package>/approve-capabilities`), which publishes the paused
+  commit. Nothing republishes on its own; a newer push replaces the pending
+  request, and a request whose base commit is no longer published is dropped.
+- **One queue.** The pause shares ADR 0069's approval mechanism: one
+  `package_approval_requests` queue and one page, with reason
+  `credential_needs_changed` or `went_public`. ADR 0069's own storage-change
+  trigger for public apps is unchanged.
+- **Surfaces.** Publish tools return `approval_required` with `approval_url` and
+  the need changes. Codemods, the publish-lock approval, and promote-to-package
+  first publishes skip the pause. If the needs cannot be computed, the publish
+  proceeds and the failure is reported.
