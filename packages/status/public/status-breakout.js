@@ -9,7 +9,7 @@ import { createGame } from './status-breakout-game.js'
 
 const refreshMs = 60_000
 const brickZoneRatio = 0.58
-const layoutWidthFactors = [1, 1.25, 1.5, 2, 2.5, 3, 4]
+const maxLayoutWidthFactor = 5
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 const refreshTimer = setTimeout(() => location.reload(), refreshMs)
@@ -85,21 +85,35 @@ function wrapWords(root) {
 
 /**
  * Shrink the page so every brick sits in the top of the viewport and the
- * rest is open court for the ball. A wider grid has more columns and a
- * shorter wall, so try a few layout widths and keep whichever one can be
- * drawn largest.
+ * rest is open court for the ball. A wider layout has more grid columns and
+ * a shorter wall, so the height limit on scale rises with width while the
+ * width limit falls. Binary-search the layout width where they cross.
  * @param {HTMLElement} main
  */
 function fitToPlayfield(main) {
 	main.style.transform = 'none'
 	const zoneHeight = innerHeight * brickZoneRatio
-	let best = { width: innerWidth, scale: 0 }
-	for (const factor of layoutWidthFactors) {
-		const width = Math.floor(innerWidth * factor)
+	/** @param {number} width */
+	const scaleAt = (width) => {
 		main.style.width = `${width}px`
-		const height = main.getBoundingClientRect().height
-		const scale = Math.min(zoneHeight / height, innerWidth / width, 1)
-		if (scale > best.scale) best = { width, scale }
+		const heightLimit = zoneHeight / main.getBoundingClientRect().height
+		return {
+			width,
+			heightLimit,
+			scale: Math.min(heightLimit, innerWidth / width, 1),
+		}
+	}
+	let best = scaleAt(innerWidth)
+	let narrow = innerWidth
+	let wide = innerWidth * maxLayoutWidthFactor
+	for (let step = 0; step < 12 && best.heightLimit < 1; step++) {
+		const candidate = scaleAt(Math.round((narrow + wide) / 2))
+		if (candidate.scale > best.scale) best = candidate
+		if (candidate.heightLimit < innerWidth / candidate.width) {
+			narrow = candidate.width
+		} else {
+			wide = candidate.width
+		}
 	}
 	main.style.width = `${best.width}px`
 	main.style.transform = `scale(${best.scale})`
