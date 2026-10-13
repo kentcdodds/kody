@@ -10,13 +10,16 @@
   [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 (Kent: unbound
   errors carry a creation-page link; Approve bundles trigger and ad hoc default
   mappings; creation-link kind hint/required; MCP servers are credentials in the
-  same list — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 /
-  2026-10-13 (Kent: minting a webhook URL no longer turns it on; webhook URLs
-  are identities and the declared name is display metadata only — see
-  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
+  Credentials list — see [Amendment 2026-10-12](#amendment-2026-10-12));
+  2026-10-12 / 2026-10-13 (Kent: minting a webhook URL no longer turns it on;
+  webhook URLs are identities and the declared name is display metadata only —
+  see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
   default and trigger credential mappings; agents may set a trigger pick only to
   a value they already proposed, still through approval — see
-  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings))
+  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings)); 2026-10-13
+  (Kent: creation pages carry org as a URL segment with no org picker; Secret
+  providers stay separate from the Credentials list — see
+  [Amendment 2026-10-12](#amendment-2026-10-12))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -504,7 +507,9 @@ Kent: manifest credential need `kind` becomes **optional**.
   Declaring scopes is possible future work.
 - **Naming direction:** `credentials` is the umbrella term everywhere (secrets
   and integrations are credential subtypes). MCP servers are credentials too and
-  appear in the same credentials list.
+  appear in the Credentials list with other usable credentials. That does not
+  fold Secret providers into that list; vault access stays on its own page (see
+  below).
 - **Unbound / missing at runtime:** when a run hits a missing or unbound
   credential, the agent always surfaces a link to the credential creation page,
   never a bare error. `credential_unbound` and `credential_not_found` errors
@@ -516,6 +521,13 @@ Kent: manifest credential need `kind` becomes **optional**.
   param for `kind` can be a **hint** (default kind, chooser shown) or
   **required** (kind locked, no chooser UI). The one-pager reuses the existing
   secret-intake or OAuth components, chosen by kind.
+- **Creation page has no org picker (Kent, 2026-10-13 ~9:10 AM MT):** each MCP
+  connection and the CLI are attached to a specific organization. Creation pages
+  and agent-generated creation links carry that org as a URL segment, so the
+  page does not offer an org picker.
+- **Secret providers stay separate (Kent, 2026-10-13 ~9:10 AM MT):** the Secret
+  providers page stays separate from the Credentials list, because vault access
+  is a different trust decision with its own audit trail.
 - **Webhooks go through Approve, not mint (Kent, 2026-10-12 ~10:50 PM MT and
   2026-10-13 ~9:07 AM MT):** minting a webhook URL no longer turns the webhook
   on for the minter. New webhooks need a separate Approve step on the same
