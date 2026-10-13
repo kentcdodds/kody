@@ -209,15 +209,19 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
 - The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
   oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
   MCP server). A relative URL resolves against the first host. A header the
-  credential places replaces one the code set. `fetch` follows redirects itself
-  and keeps the credential off any other host; an OAuth client refreshes once on
-  a 401. A 401 or 403 carries `x-kody-credential-hint` naming only the
-  credential's shape (for example `header Authorization Bearer`).
+  credential places replaces one the code set, and a placeholder in that header
+  is never filled. `fetch` follows redirects itself and keeps the credential off
+  any other host; an OAuth client refreshes once on a 401. A `url` credential's
+  client returns a redirect response as it is instead of following it, and its
+  request path and query can't carry placeholders. A 401 or 403 carries
+  `x-kody-credential-hint` naming only the credential's shape (for example
+  `header Authorization Bearer`).
 - `credential.named(name, { scope })` picks by exact name. It works only in ad
   hoc execute and in packages of your personal org that are not listed in
   Community.
-- A client works only in the run that opened it. It works the same under
-  `kody execute --local`.
+- A client works only in the run that opened it. Under `kody execute --local`, a
+  saved package that imports `credential` works the same; ad hoc local code
+  needs a CLI release that adds `credential` to its `kody:runtime`.
 
 To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010

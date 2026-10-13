@@ -159,7 +159,8 @@ or pre-fills them.
 
 Hosts: no hosts denies every request; entries are exact hosts or a wildcard at
 most one level deep (`*.example.com`); HTTPS only; redirects are followed
-manually and authorized again on every hop.
+manually and authorized again on every hop. A `url` credential owns its whole
+URL, so its client returns redirects unfollowed.
 
 Personal credentials follow plan v4 3.2: user-owned, granted to orgs one org at
 a time, never usable by Owners or Automation on someone else's behalf. A

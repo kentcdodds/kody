@@ -285,7 +285,11 @@ test('a client opens by key with no value, and the gateway places the key by its
 			requestUrl: new URL(url),
 		})
 	const applied = await apply('https://api.resend.com/emails')
-	expect(applied.header).toEqual({ name: 'X-Api-Key', value: resendKey })
+	expect(applied.placement).toEqual({
+		kind: 'header',
+		name: 'X-Api-Key',
+		value: resendKey,
+	})
 	expect(applied.substitutedValues).toContain(resendKey)
 	expect(applied.shape).toBe('header X-Api-Key')
 
@@ -331,15 +335,18 @@ test('basic and query injects place the value without exposing it', async () => 
 			requestUrl: new URL(url),
 		})
 	const basic = await applyFor('basicco', 'https://api.basic.example/v1')
-	expect(basic.header).toEqual({
+	expect(basic.placement).toEqual({
+		kind: 'header',
 		name: 'Authorization',
 		value: `Basic ${btoa(`${resendKey}:`)}`,
 	})
 	expect(basic.shape).toBe('basic (value as username)')
 	const query = await applyFor('queryco', 'https://api.query.example/v1?x=1')
-	expect(query.header).toBeNull()
-	expect(query.url.searchParams.get('api_key')).toBe(resendKey)
-	expect(query.url.searchParams.get('x')).toBe('1')
+	expect(query.placement).toEqual({
+		kind: 'query',
+		param: 'api_key',
+		value: resendKey,
+	})
 	expect(query.shape).toBe('query api_key')
 })
 
@@ -587,4 +594,38 @@ test('the gateway strips the handle, places the key, holds redirects, redacts ec
 		}),
 	).rejects.toMatchObject({ body: { code: 'invalid_request' } })
 	expect(seen).toHaveLength(0)
+})
+
+test('the placed header drops the code value before placeholders expand, so a placeholder there never resolves', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const request = t.requestAs('bea', 'owner')
+	const opened = await openCredentialClient(t.contextFor({ request }), {
+		key: 'resend',
+	})
+	const seen: Array<Request> = []
+	const response = await executeGatewayFetch({
+		env: t.env,
+		props: {
+			baseUrl: 'https://example.com',
+			userId: t.acmeId,
+			email: 'bea@example.com',
+			request,
+			storageContext: null,
+			credentialClientBinding: 'run:test',
+		},
+		request: new Request('https://api.resend.com/emails', {
+			headers: {
+				[credentialClientHeaderName]: opened.handle,
+				Authorization: 'Bearer {{secret:no-such-secret}}',
+			},
+		}),
+		globalFetch: (async (outbound: Request) => {
+			seen.push(outbound)
+			return new Response('ok')
+		}) as unknown as typeof fetch,
+	})
+	expect(response.status).toBe(200)
+	expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${resendKey}`)
 })

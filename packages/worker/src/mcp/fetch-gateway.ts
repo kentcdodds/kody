@@ -75,8 +75,10 @@ import {
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
 import {
-	placeCredentialClient,
+	applyCredentialClientPlacement,
+	resolveCredentialClientPlacement,
 	withCredentialClientHint,
+	withoutCodePlacement,
 } from './credential-client-gateway.ts'
 import { createMissingIntegrationAccessTokenMessage } from '#worker/integrations/credentials.ts'
 import { IntegrationHostNotAllowedError } from './execute-modules/integration-host-allowlist.ts'
@@ -232,25 +234,36 @@ export async function executeGatewayFetch(input: {
 		const credentialClientToken = input.request.headers.get(
 			credentialClientHeaderName,
 		)
+		const credentialClient =
+			credentialClientToken === null
+				? null
+				: await resolveCredentialClientPlacement({
+						env: input.env,
+						props: input.props,
+						token: credentialClientToken,
+						request: input.request,
+					})
+		const codeRequest = credentialClient
+			? withoutCodePlacement(input.request, credentialClient.placement)
+			: input.request
 		const expanded = await expandSecretPlaceholders({
-			request: input.request,
+			request: codeRequest,
 			props: input.props,
 			env: input.env,
 		})
 		const { bodyFillDone } = expanded
 		let transformed = expanded.request
 		let substitutedValues = expanded.substitutedValues
-		let credentialClientShape: string | null = null
-		if (credentialClientToken !== null) {
-			const placed = await placeCredentialClient({
-				env: input.env,
-				props: input.props,
-				token: credentialClientToken,
-				request: transformed,
-			})
-			transformed = placed.request
-			substitutedValues = [...substitutedValues, ...placed.substitutedValues]
-			credentialClientShape = placed.shape
+		if (credentialClient) {
+			transformed = applyCredentialClientPlacement(
+				transformed,
+				credentialClient.placement,
+				codeRequest,
+			)
+			substitutedValues = [
+				...substitutedValues,
+				...credentialClient.substitutedValues,
+			]
 		}
 		meteredEntityId = readMeteredRequestHostname(
 			input.request.url,
@@ -277,9 +290,9 @@ export async function executeGatewayFetch(input: {
 			)
 		}
 		const redacted = redactEchoedSecrets(response, substitutedValues)
-		return credentialClientShape === null
-			? redacted
-			: withCredentialClientHint(redacted, credentialClientShape)
+		return credentialClient
+			? withCredentialClientHint(redacted, credentialClient.shape)
+			: redacted
 	} catch (error) {
 		deadline?.fail()
 		throw asCallerFacingBodyFillError(error)

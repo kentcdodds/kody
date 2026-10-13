@@ -1230,8 +1230,13 @@ export async function runBundledModuleWithRegistry(
 			callerContext.user?.userId && !closedWorldRetrieverRuntime
 				? {
 						binding: credentialClientBinding,
-						resolvePackageId: async () =>
-							options?.packageContext?.packageId ?? null,
+						// A claimed id selects which package's needs apply; only a
+						// package in this run's provenance may be claimed.
+						resolvePackageId: async (requested) =>
+							typeof requested === 'string' &&
+							grantedPackageStorageIds.has(requested)
+								? requested
+								: (options?.packageContext?.packageId ?? null),
 						waitUntil: options?.waitUntil,
 					}
 				: undefined

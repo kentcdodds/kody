@@ -113,6 +113,9 @@ function __kodyCreateCredentialRuntime(__kodyCredentialCall) {
         await response.body?.cancel();
         throw new TypeError('The response redirected and redirect is "error".');
       }
+      // A url credential owns its whole URL, so its redirects come back as
+      // they are: following one would need the secret URL as the base.
+      if (opened.kind === 'url') return response;
       const location = response.headers.get('location');
       if (!location) return response;
       if (hop >= maxRedirects) {
@@ -124,10 +127,8 @@ function __kodyCreateCredentialRuntime(__kodyCredentialCall) {
       const rewritesToGet =
         response.status === 303 ||
         ((response.status === 301 || response.status === 302) && request.method === 'POST');
-      // A url credential owns its whole URL; a redirect leaves it. Other
-      // kinds carry the credential only to their own hosts over https.
+      // The credential follows only to its own hosts over https.
       carriesCredential =
-        opened.kind !== 'url' &&
         next.protocol === 'https:' &&
         hostAllowed(opened.hosts, next.hostname);
       const headers = new Headers(replay.headers);

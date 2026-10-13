@@ -110,7 +110,7 @@ test('a client carries the handle on its hosts, follows redirects itself, and dr
 	expect(seen[2]!.headers.has('authorization')).toBe(false)
 })
 
-test('a url credential never follows its handle across a redirect, and manual redirects return as-is', async () => {
+test('a url credential returns its redirects instead of following them', async () => {
 	const runtime = createRuntime(async () => ({
 		ok: true,
 		value: openedAs('url', ['hooks.example.com']),
@@ -124,17 +124,25 @@ test('a url credential never follows its handle across a redirect, and manual re
 			: new Response('ok'),
 	)
 	const client = await runtime.credential('hook')
-	await client.fetch!('https://hooks.example.com/hook', { method: 'POST' })
+	const followed = await client.fetch!('https://hooks.example.com/hook', {
+		method: 'POST',
+	})
+	expect(followed.status).toBe(302)
 	expect(
 		seen.map((request) => request.headers.get(credentialClientHeaderName)),
-	).toEqual(['kch1.handle.sig', null])
-	expect(seen[1]!.method).toBe('GET')
+	).toEqual(['kch1.handle.sig'])
 
 	seen.length = 0
 	const manual = await client.fetch!('https://hooks.example.com/hook', {
 		redirect: 'manual',
 	})
 	expect(manual.status).toBe(302)
+	expect(seen).toHaveLength(1)
+
+	seen.length = 0
+	await expect(
+		client.fetch!('https://hooks.example.com/hook', { redirect: 'error' }),
+	).rejects.toThrow(/redirect is "error"/)
 	expect(seen).toHaveLength(1)
 })
 

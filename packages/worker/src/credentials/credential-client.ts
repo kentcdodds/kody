@@ -461,45 +461,34 @@ export async function refreshCredentialClient(
 	})
 }
 
+/** Where a client fetch's credential goes: a header, a query param, or a whole URL. */
+export type CredentialClientPlacement =
+	| { kind: 'header'; name: string; value: string }
+	| { kind: 'query'; param: string; value: string }
+	| { kind: 'url'; url: URL }
+
 export type AppliedCredentialClient = {
-	url: URL
-	/** A header to set, replacing any header of that name; null for none. */
-	header: { name: string; value: string } | null
+	placement: CredentialClientPlacement
 	substitutedValues: ReadonlyArray<string>
 	/** The inject shape with no value, for a 401 / 403 hint. */
 	shape: string
 }
 
-function placeOn(
-	url: URL,
+function fromResolved(
 	placed: ResolvedClientPlacement,
 ): AppliedCredentialClient {
-	const { placement, substitutedValues, shape } = placed
-	switch (placement.kind) {
-		case 'header':
-			return {
-				url,
-				header: { name: placement.name, value: placement.value },
-				substitutedValues,
-				shape,
-			}
-		case 'query': {
-			const next = new URL(url)
-			next.searchParams.set(placement.param, placement.value)
-			return { url: next, header: null, substitutedValues, shape }
-		}
-		default: {
-			const exhaustive: never = placement
-			throw new Error(`Unhandled placement: ${String(exhaustive)}`)
-		}
+	return {
+		placement: placed.placement,
+		substitutedValues: placed.substitutedValues,
+		shape: placed.shape,
 	}
 }
 
 /**
- * The gateway's half of a client fetch: verify the handle, then place the
- * credential on this request through the door. A header placement replaces
- * any header of that name the code set; a `url` credential replaces the
- * request's origin and base path with its own URL.
+ * The gateway's half of a client fetch: verify the handle, then resolve where
+ * the credential goes on this request through the door. A header or query
+ * placement replaces one of that name the code set; a `url` credential
+ * replaces the request's origin and base path with its own URL.
  */
 export async function applyCredentialClient(input: {
 	env: Env
@@ -526,8 +515,7 @@ export async function applyCredentialClient(input: {
 		const { requestUrl } = input
 		switch (handle.kind) {
 			case 'secret':
-				return placeOn(
-					requestUrl,
+				return fromResolved(
 					await resolveCredential(
 						doorInput(ctx, {
 							use: 'client-key',
@@ -537,8 +525,7 @@ export async function applyCredentialClient(input: {
 					),
 				)
 			case 'oauth':
-				return placeOn(
-					requestUrl,
+				return fromResolved(
 					await resolveCredential(
 						doorInput(ctx, {
 							use: 'client-oauth',
@@ -556,8 +543,7 @@ export async function applyCredentialClient(input: {
 					}),
 				)
 				return {
-					url: resolved.url,
-					header: null,
+					placement: { kind: 'url', url: resolved.url },
 					substitutedValues: resolved.substitutedValues,
 					shape: 'url',
 				}
@@ -571,14 +557,14 @@ export async function applyCredentialClient(input: {
 					}),
 				)
 				const { placement } = session
-				return placeOn(requestUrl, {
+				return {
 					placement,
 					substitutedValues: session.substitutedValues,
 					shape:
 						placement.kind === 'header'
 							? `login session in header ${placement.name}`
 							: `login session in query ${placement.param}`,
-				})
+				}
 			}
 			case 'mcp':
 			case 'signing':

@@ -242,6 +242,10 @@ ${createCredentialClientRuntimeSource()}
 const { credential, credentials } = __kodyCreateCredentialRuntime(
   (name, args) => ${kodyCallDispatcherName}(name, args),
 );
+const __kodyCredentialRuntimeFor = (packageId) =>
+  __kodyCreateCredentialRuntime((name, args) =>
+    ${kodyCallDispatcherName}(name, { ...(args ?? {}), packageId }),
+  );
 	`.trim()
 }
 
@@ -558,6 +562,7 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		runtimeBindings: [
 			{ runtimeName: 'credential', absentValue: 'undefined' },
 			{ runtimeName: 'credentials', absentValue: 'undefined' },
+			{ runtimeName: '__kodyCredentialRuntimeFor', absentValue: 'undefined' },
 		],
 		unboundNames: ['credential', 'credentials'],
 		isBound: (context) => Boolean(context.credentialClientTools),

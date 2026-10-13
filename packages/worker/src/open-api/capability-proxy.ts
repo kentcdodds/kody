@@ -9,6 +9,10 @@ import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
+import {
+	CredentialClientError,
+	toCredentialClientError,
+} from '#worker/credentials/credential-client.ts'
 import { capabilityProxyCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
@@ -143,13 +147,24 @@ function createCapabilityProxyCredentialClientTools(
 		resolvePackageId: async (requested) => {
 			const packageId = typeof requested === 'string' ? requested.trim() : ''
 			if (!packageId) return null
-			return await authorizeLocalExecuteOwnedPackageId({
-				db: ctx.env.APP_DB,
-				env: ctx.env,
-				request,
-				orgUserId: ownerIdFromCaller(ctx.callerContext),
-				packageId,
-			})
+			try {
+				return await authorizeLocalExecuteOwnedPackageId({
+					db: ctx.env.APP_DB,
+					env: ctx.env,
+					request,
+					orgUserId: ownerIdFromCaller(ctx.callerContext),
+					packageId,
+				})
+			} catch (error) {
+				throw (
+					toCredentialClientError(error) ??
+					new CredentialClientError({
+						code: 'credential_denied',
+						message: 'This package is not one you can execute here.',
+						retryWith: [],
+					})
+				)
+			}
 		},
 		...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
 	}
