@@ -2,6 +2,7 @@ import { toApiTokenView } from '#worker/api-tokens/service.ts'
 import {
 	capabilityProxyCallInputSchema,
 	capabilityProxyCallOutputSchema,
+	capabilityProxyFeatures,
 	capabilityProxyLimits,
 	capabilityProxySessionOutputSchema,
 	capabilityProxyUsageEntityId,
@@ -34,6 +35,7 @@ function capabilityProxySessionFromPrincipal(
 		maxArgs: capabilityProxyLimits.maxArgs,
 		maxRequestBytes: capabilityProxyLimits.maxRequestBytes,
 	}
+	const features = [...capabilityProxyFeatures]
 	switch (principal.kind) {
 		case 'token': {
 			const token = toApiTokenView(principal.token)
@@ -43,6 +45,7 @@ function capabilityProxySessionFromPrincipal(
 				maxExpiresAt: token.max_expires_at,
 				idleTtlSeconds: token.idle_ttl_seconds,
 				user,
+				features,
 				limits,
 			}
 		}
@@ -61,6 +64,7 @@ function capabilityProxySessionFromPrincipal(
 				maxExpiresAt: expiresAt,
 				idleTtlSeconds: remainingSeconds,
 				user,
+				features,
 				limits,
 			}
 		}

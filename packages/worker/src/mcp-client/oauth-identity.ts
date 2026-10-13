@@ -1,3 +1,8 @@
+import {
+	assertEndpointsOnIssuerOrigin,
+	type McpOAuthDiscoveryForIssuerEndpoints,
+} from './oauth-issuer-endpoints.ts'
+
 /**
  * Pending MCP OAuth attempts are bound to the server row id and OAuth client
  * id they started with (kody-celld #50, #55 / #57 / #65). One predicate is used
@@ -7,6 +12,9 @@
  * Client identity is the OAuth client **id** only: rotating a secret for the
  * same client id is not an identity change.
  */
+
+export { assertEndpointsOnIssuerOrigin }
+
 export function oauthAttemptIdentityMatches(input: {
 	pendingServerId: string | null | undefined
 	pendingClientId: string | null | undefined
@@ -37,9 +45,8 @@ export function oauthAttemptActorMatches(input: {
 }
 
 /**
- * Where to send the person after a refused grant write. Prefer the shared
- * credential creation page when it exists on main; until then MCP reconnect
- * lives on the account MCP servers list.
+ * Where to send the person after a refused grant write. MCP reconnect still
+ * lives on the account MCP servers list (`/connect/credential` is not on main).
  */
 export function mcpOAuthAttemptReconnectHref() {
 	return '/account/mcp-servers'
@@ -63,58 +70,6 @@ export function sameMcpOAuthServerOrigin(
 	liveUrl: string,
 ) {
 	return mcpOAuthServerOrigin(liveUrl) === pendingOrigin
-}
-
-/**
- * Mix-up defence (kody-celld #53 / #60): authorization and token endpoints must
- * sit on the authorization-server issuer's origin. Registration endpoints are
- * out of scope.
- */
-export function assertEndpointsOnIssuerOrigin(discovery: unknown): void {
-	if (!discovery || typeof discovery !== 'object') return
-	const record = discovery as Record<string, unknown>
-	const metadata =
-		record['authorizationServerMetadata'] &&
-		typeof record['authorizationServerMetadata'] === 'object'
-			? (record['authorizationServerMetadata'] as Record<string, unknown>)
-			: record
-	const issuerValue = metadata['issuer']
-	const endpointFields = ['authorization_endpoint', 'token_endpoint'] as const
-	const hasEndpoint = endpointFields.some((field) => {
-		const value = metadata[field]
-		return typeof value === 'string' && value.length > 0
-	})
-	if (typeof issuerValue !== 'string' || !issuerValue) {
-		if (hasEndpoint) {
-			throw new Error(
-				'Authorization server metadata is missing issuer while advertising authorization or token endpoints.',
-			)
-		}
-		return
-	}
-	let issuerOrigin: string
-	try {
-		issuerOrigin = new URL(issuerValue).origin
-	} catch {
-		throw new Error(
-			`Authorization server issuer (${issuerValue.slice(0, 200)}) is not a valid URL.`,
-		)
-	}
-	for (const field of endpointFields) {
-		const value = metadata[field]
-		if (typeof value !== 'string' || !value) continue
-		let origin: string | null = null
-		try {
-			origin = new URL(value).origin
-		} catch {
-			/* refused below */
-		}
-		if (origin !== issuerOrigin) {
-			throw new Error(
-				`Authorization server ${field} (${origin ?? value.slice(0, 200)}) is on a different origin than its issuer (${issuerOrigin}).`,
-			)
-		}
-	}
 }
 
 /** Issuer / AS origin from stored MCP OAuth discovery, when present. */
@@ -163,7 +118,9 @@ export function discoveryMatchesAttemptAuthorizationServerOrigin(input: {
 	const liveOrigin = authorizationServerOriginFromDiscovery(input.discovery)
 	if (!liveOrigin || liveOrigin !== pending) return false
 	try {
-		assertEndpointsOnIssuerOrigin(input.discovery)
+		assertEndpointsOnIssuerOrigin(
+			input.discovery as McpOAuthDiscoveryForIssuerEndpoints,
+		)
 		return true
 	} catch {
 		return false

@@ -408,6 +408,7 @@ test('bootstrap redeem keeps the stored org_id and rejects a missing one', async
 	const minted = await mintCliCredentialBootstrap({
 		db,
 		userId,
+		orgBinding: 'org',
 		orgId: `  ${orgId}  `,
 		lifetime: 'short',
 		now: start,
@@ -419,10 +420,12 @@ test('bootstrap redeem keeps the stored org_id and rejects a missing one', async
 		now: at(10),
 	})
 	expect(redeemed.token.org_id).toBe(orgId)
+	expect(redeemed.token.org_binding).toBe('org')
 
 	const missing = await mintCliCredentialBootstrap({
 		db,
 		userId,
+		orgBinding: 'org',
 		orgId,
 		lifetime: 'short',
 		now: start,

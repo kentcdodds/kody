@@ -132,6 +132,10 @@ function readOrganizations(value: unknown): Array<OrganizationSummary> {
 			displayName: typeof row.displayName === 'string' ? row.displayName : null,
 			role,
 			personal: row.personal === true,
+			// Team-org photos live on the membership row. Dropping this field
+			// leaves the chooser on the letter avatar after /session refreshes.
+			avatarUrl:
+				typeof row.avatarUrl === 'string' ? row.avatarUrl.trim() || null : null,
 		})
 	}
 	return organizations

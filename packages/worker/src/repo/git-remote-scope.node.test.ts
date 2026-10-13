@@ -4,11 +4,9 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	enhanceGitRemoteReadDenial,
 	enhanceGitRemoteWriteDenial,
-	gitRemoteReadOnlyPushRejectedMessage,
 	isGitReceivePackUrl,
 	mapGitRemotePushAuthFailure,
 	pickGitRemoteAccessScope,
-	readOnlyGitRemotePushRejectedError,
 } from './git-remote-scope.ts'
 
 test('receive-pack URL detection covers info/refs and path forms', () => {
@@ -33,19 +31,13 @@ test('mapGitRemotePushAuthFailure rewrites receive-pack 401/403', () => {
 			url: 'https://example.test/repo.git/git-receive-pack',
 			statusCode: 403,
 		})?.message,
-	).toBe(gitRemoteReadOnlyPushRejectedMessage)
+	).toBe("this remote is read-only; request scope: 'write'")
 	expect(
 		mapGitRemotePushAuthFailure({
 			url: 'https://example.test/repo.git/git-upload-pack',
 			statusCode: 403,
 		}),
 	).toBeNull()
-})
-
-test('readOnlyGitRemotePushRejectedError uses the actionable message', () => {
-	expect(readOnlyGitRemotePushRejectedError().message).toBe(
-		gitRemoteReadOnlyPushRejectedMessage,
-	)
 })
 
 test('pickGitRemoteAccessScope defaults from write access and honors explicit scope', () => {

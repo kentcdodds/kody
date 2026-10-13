@@ -3,6 +3,26 @@ import { type RouteLoader, type RouteLoaderResult } from './route-loader.ts'
 const routerHrefOrigin = 'https://kody.local'
 
 /**
+ * AbortSignals that belong to intent/render prefetch loader runs. Account
+ * JSON fetches key off the signal (not a global depth) so a real navigation
+ * that overlaps a prefetch does not inherit `X-Kody-Prefetch` (#3517).
+ */
+const prefetchAbortSignals = new WeakSet<AbortSignal>()
+
+export function isPrefetchAbortSignal(signal: AbortSignal | undefined) {
+	return signal !== undefined && prefetchAbortSignals.has(signal)
+}
+
+function runRouteLoaderAsPrefetch(
+	loader: RouteLoader,
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	prefetchAbortSignals.add(signal)
+	return Promise.resolve(loader(url, signal))
+}
+
+/**
  * How long a settled prefetch stays consumable. Covers the usual
  * hover-read-then-click gap while keeping the staleness window bounded:
  * navigations that consume a prefetch skip the loader entirely, so older
@@ -105,7 +125,7 @@ export function prefetchRouteOnIntent(
 	const controller = new AbortController()
 	const nextSlot: PrefetchSlot = {
 		href: normalized,
-		promise: loader(url, controller.signal),
+		promise: runRouteLoaderAsPrefetch(loader, url, controller.signal),
 		controller,
 		settledAt: null,
 		failed: false,
@@ -140,7 +160,11 @@ export function prefetchRoutesOnRender(
 	const firstHref = needed[0]
 	if (!firstHref) return
 	const controller = new AbortController()
-	const promise = loader(urlForHref(firstHref), controller.signal)
+	const promise = runRouteLoaderAsPrefetch(
+		loader,
+		urlForHref(firstHref),
+		controller.signal,
+	)
 	const records = needed.map((href) => {
 		const record: PrefetchSlot = {
 			href,
@@ -175,7 +199,11 @@ export function prefetchEachRouteOnRender(
 		const controller = new AbortController()
 		const record: PrefetchSlot = {
 			href: normalized,
-			promise: loader(urlForHref(normalized), controller.signal),
+			promise: runRouteLoaderAsPrefetch(
+				loader,
+				urlForHref(normalized),
+				controller.signal,
+			),
 			controller,
 			settledAt: null,
 			failed: false,

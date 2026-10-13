@@ -8,9 +8,11 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callToolWithCredentialClient,
 	openCredentialClient,
+	openCredentialClients,
 	refreshCredentialClient,
 	signWithCredentialClient,
 	toCredentialClientError,
+	validateCredentialCallMap,
 	type CredentialClientContext,
 } from '#worker/credentials/credential-client.ts'
 import { credentialClientToolNames } from './execute-modules/credential-client-source.ts'
@@ -46,6 +48,8 @@ export function createCredentialClientKodyTools(input: {
 			callerContext: input.callerContext,
 			binding: input.options.binding,
 			packageId: await input.options.resolvePackageId(args.packageId),
+			callMap: input.options.callMap ?? null,
+			runNeeds: input.options.runNeeds,
 			waitUntil: input.options.waitUntil,
 		}) satisfies CredentialClientContext
 	return {
@@ -54,6 +58,27 @@ export function createCredentialClientKodyTools(input: {
 			return await asResult(async () =>
 				openCredentialClient(await context(args), args),
 			)
+		},
+		[credentialClientToolNames.openAll]: async (raw) => {
+			const args = readArgs(raw)
+			return await asResult(async () =>
+				openCredentialClients(await context(args), args),
+			)
+		},
+		[credentialClientToolNames.check]: async (raw) => {
+			const args = readArgs(raw)
+			return await asResult(async () => {
+				const callMap = input.options.callMap ?? null
+				if (!callMap) return { warnings: [] }
+				const packageId = await input.options.resolvePackageId(args.packageId)
+				return await validateCredentialCallMap({
+					env: input.env,
+					request: input.callerContext.request ?? null,
+					map: callMap,
+					packageIds: packageId ? [packageId] : [],
+					strict: args.strict === true,
+				})
+			})
 		},
 		[credentialClientToolNames.sign]: async (raw) => {
 			const args = readArgs(raw)

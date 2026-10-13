@@ -11,10 +11,8 @@ import {
 	writeMcpOAuthAttemptIdentity,
 	type McpOAuthLiveServerIdentity,
 } from './oauth-attempt.ts'
-import {
-	assertEndpointsOnIssuerOrigin,
-	mcpOAuthAttemptIdentityInvalidMessage,
-} from './oauth-identity.ts'
+import { mcpOAuthAttemptIdentityInvalidMessage } from './oauth-identity.ts'
+import { assertEndpointsOnIssuerOrigin } from './oauth-issuer-endpoints.ts'
 import {
 	clientIdFromMcpOAuthTokenStorageKey,
 	mcpOAuthRefreshTokenStorageKey,
@@ -130,18 +128,19 @@ export type ResolveMcpOAuthLiveServerIdentity = (
 /**
  * Agents SDK storage/PKCE provider plus the MCP SDK `clientMetadataUrl`
  * hook. HTTPS callbacks present CIMD; http (local dev) omits it so auth
- * falls back to DCR. `saveTokens` keeps an existing refresh token when
- * the authorization server omits one, writes a server-scoped sidecar so
- * restore can find it when SQL `client_id` is missing, and keeps OAuth
- * discovery so the next authorize URL can still advertise scopes.
- * `invalidateCredentials` for `tokens`, `client`, or `all` infers
- * `clientId` when it is missing, deletes leftover `/token` keys and the
- * sidecar so a rejected grant cannot be replayed, and skips a `tokens`
- * wipe when a save completed after the invalidate was requested. With
- * `resolvePreRegisteredClient`, a server's admin-configured OAuth client is
- * presented ahead of CIMD and DCR. With `resolveLiveServerIdentity`, each
- * authorization attempt is bound to the live server row + client, re-checked
- * at callback and again immediately before tokens are persisted.
+ * falls back to DCR. Discovery save/read refuse authorize/token endpoints
+ * off the issuer origin (`mcp_oauth_failed`, #3284). `saveTokens` keeps an
+ * existing refresh token when the authorization server omits one, writes a
+ * server-scoped sidecar so restore can find it when SQL `client_id` is
+ * missing, and keeps OAuth discovery so the next authorize URL can still
+ * advertise scopes. `invalidateCredentials` for `tokens`, `client`, or
+ * `all` infers `clientId` when it is missing, deletes leftover `/token`
+ * keys and the sidecar so a rejected grant cannot be replayed, and skips a
+ * `tokens` wipe when a save completed after the invalidate was requested.
+ * With `resolvePreRegisteredClient`, a server's admin-configured OAuth
+ * client is presented ahead of CIMD and DCR. With `resolveLiveServerIdentity`,
+ * each authorization attempt is bound to the live server row + client,
+ * re-checked at callback and again immediately before tokens are persisted.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -158,9 +157,9 @@ export function createMcpClientOAuthProvider(
 		mcpClientName,
 		callbackUrl,
 	) as McpClientOAuthProvider
-	// Token preservation binds the raw discovery writer first so refresh can
-	// re-save legacy discovery without the new-issuer-origin fence. Attempt
-	// binding then wraps public saveDiscoveryState / checkState / redirect.
+	// Issuer guard before token preservation so discovery re-writes use it.
+	// Attempt binding then wraps redirect / checkState for live-row fencing.
+	installMcpOAuthIssuerEndpointGuard(provider)
 	installMcpOAuthTokenPreservation(provider, {
 		resolveLiveServerIdentity: options?.resolveLiveServerIdentity,
 	})
@@ -181,10 +180,39 @@ export function createMcpClientOAuthProvider(
 }
 
 /**
+ * Refuse AS metadata whose authorize/token endpoints leave the issuer origin
+ * (#3284). Discovery save covers authorize start; discovery read re-asserts on
+ * refresh against a cached (or pre-check) blob. Throws `McpOAuthFailedError`
+ * (`mcp_oauth_failed`) so the existing OAuth failure path surfaces it.
+ */
+function installMcpOAuthIssuerEndpointGuard(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	if (
+		typeof provider.saveDiscoveryState !== 'function' ||
+		typeof provider.discoveryState !== 'function'
+	) {
+		return
+	}
+	const writeDiscovery = provider.saveDiscoveryState.bind(provider)
+	const readDiscovery = provider.discoveryState.bind(provider)
+	provider.saveDiscoveryState = async (state) => {
+		assertEndpointsOnIssuerOrigin(state)
+		await writeDiscovery(state)
+	}
+	provider.discoveryState = async () => {
+		const state = await readDiscovery()
+		if (state) assertEndpointsOnIssuerOrigin(state)
+		return state
+	}
+}
+
+/**
  * Bind an in-flight authorization to the server row and client that minted
- * it. Discovery saves refuse cross-origin AS endpoints. Callback `checkState`
- * and grant `saveTokens` re-load the live row and refuse on mismatch. Refresh
- * saves (no pending attempt) are unchanged so existing grants keep working.
+ * it. Callback `checkState` and grant `saveTokens` re-load the live row and
+ * refuse on mismatch. Refresh saves (no pending attempt) are unchanged so
+ * existing grants keep working. Issuer-origin discovery fencing lives in
+ * `installMcpOAuthIssuerEndpointGuard`.
  */
 function installMcpOAuthAttemptBinding(
 	provider: DurableObjectOAuthClientProvider,
@@ -193,13 +221,6 @@ function installMcpOAuthAttemptBinding(
 	},
 ) {
 	const resolveLive = options.resolveLiveServerIdentity
-	if (typeof provider.saveDiscoveryState === 'function') {
-		const saveDiscovery = provider.saveDiscoveryState.bind(provider)
-		provider.saveDiscoveryState = async (state) => {
-			assertEndpointsOnIssuerOrigin(state)
-			await saveDiscovery(state)
-		}
-	}
 	if (!resolveLive) return
 	if (typeof provider.redirectToAuthorization === 'function') {
 		const redirect = provider.redirectToAuthorization.bind(provider)

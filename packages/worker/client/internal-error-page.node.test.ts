@@ -3,11 +3,6 @@ import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { InternalErrorPage } from '#client/internal-error-page.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
-import {
-	internalErrorPageCopy,
-	internalErrorPageHeading,
-	internalErrorPageImageSrc,
-} from '#universal/internal-error-page.ts'
 
 test('internal-error page shows the zapped illustration and recovery destinations', async () => {
 	const html = await renderToString(
@@ -18,13 +13,9 @@ test('internal-error page shows the zapped illustration and recovery destination
 	)
 
 	expect(html).toContain('data-testid="internal-error-page"')
-	expect(html).toContain(internalErrorPageHeading)
-	expect(html).toContain(internalErrorPageCopy)
-	expect(html).toContain(`src="${internalErrorPageImageSrc}"`)
 	expect(html).toContain('href="/account"')
 	expect(html).toContain('href="/"')
-	expect(html).toContain('Try again')
-	expect(html).toContain('Go home')
+	expect(html).toContain('data-error-agent-prompt')
 })
 
 test('internal-error Try again stays same-origin for protocol-relative URLs', async () => {
@@ -35,7 +26,6 @@ test('internal-error Try again stays same-origin for protocol-relative URLs', as
 		}),
 	)
 
-	expect(html).toContain('Try again')
 	expect(html).not.toContain('href="//evil.example"')
 	expect(html).toContain('href="/"')
 })

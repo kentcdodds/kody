@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import {
+	createCredentialNeedsApprovalMessage,
+	PackageCredentialNeedsApprovalError,
+} from '#worker/credentials/credential-needs-approval.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -398,8 +403,23 @@ export const savePackageCapability = defineDomainCapability(
 					destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 					privateVisibilityChangeConfirmed:
 						args.confirm_private_visibility_change,
+					requestedByUserId: ctx.callerContext.user?.userId ?? null,
 				})
 			} catch (error) {
+				if (error instanceof PackageCredentialNeedsApprovalError) {
+					throw new McpCallerError(
+						createCredentialNeedsApprovalMessage({
+							packageName: error.approval.packageName,
+							changes: error.approval.changes,
+							approvalUrl: buildPackageCapabilityApprovalUrl({
+								baseUrl: ctx.callerContext.baseUrl,
+								username: owner.ownerScope,
+								kodyId: error.approval.kodyId,
+							}),
+						}),
+						{ cause: error },
+					)
+				}
 				if (isPackagePublishLockedError(error)) {
 					throw new McpCallerError(
 						createPackagePublishLockedMessage({
@@ -428,7 +448,6 @@ export const savePackageCapability = defineDomainCapability(
 							id: packageId,
 							user_id: owner.ownerUserId,
 							name: manifest.name,
-							kody_id: manifest.kody.id,
 							description: manifest.kody.description,
 							tags_json: JSON.stringify(manifest.kody.tags ?? []),
 							search_text: manifest.kody.searchText ?? null,

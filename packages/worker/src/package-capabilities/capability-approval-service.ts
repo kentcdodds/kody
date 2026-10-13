@@ -4,6 +4,8 @@ import {
 	findPackageCapabilityApprovalByFingerprint,
 	getLatestPackageCapabilityApproval,
 	insertPackageCapabilityApproval,
+	isEmptyDependencySnapshotJson,
+	updatePackageCapabilityApprovalSnapshot,
 	type PackageCapabilityApprovalRecord,
 } from './capability-approvals-repo.ts'
 import {
@@ -11,12 +13,18 @@ import {
 	capabilitySetsEqual,
 	type CapabilitySet,
 } from './capability-set.ts'
+import {
+	emptyDependencySnapshot,
+	serializeDependencySnapshot,
+	type PackageDependencySnapshot,
+} from './dependency-snapshot.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 export type CapabilityApprovalSummary = {
 	capabilitySet: CapabilitySet
+	dependencySnapshot: PackageDependencySnapshot | null
 	publishedCommit: string | null
 	latestApproval: PackageCapabilityApprovalRecord | null
 	/** Approval row for the current fingerprint, if any (not necessarily latest). */
@@ -62,6 +70,7 @@ export async function loadCapabilityApprovalSummary(input: {
 		])
 		return {
 			capabilitySet,
+			dependencySnapshot: null,
 			publishedCommit: null,
 			latestApproval,
 			matchingApproval: null,
@@ -70,13 +79,14 @@ export async function loadCapabilityApprovalSummary(input: {
 		}
 	}
 
-	const capabilitySet = await computePackageCapabilitySet({
+	const computed = await computePackageCapabilitySet({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
 		packageId: input.savedPackage.id,
 		packageKodyId: input.savedPackage.kodyId,
 		sourceId: input.savedPackage.sourceId,
 		requestUrl: input.requestUrl,
+		publishedCommit,
 	})
 
 	const matchingApproval = await findPackageCapabilityApprovalByFingerprint(
@@ -84,12 +94,13 @@ export async function loadCapabilityApprovalSummary(input: {
 		{
 			packageId: input.savedPackage.id,
 			ownerUserId: input.ownerUserId,
-			fingerprint: capabilitySet.fingerprint,
+			fingerprint: computed.capabilitySet.fingerprint,
 		},
 	)
 
 	return {
-		capabilitySet,
+		capabilitySet: computed.capabilitySet,
+		dependencySnapshot: computed.dependencySnapshot,
 		publishedCommit,
 		latestApproval,
 		matchingApproval,
@@ -106,7 +117,6 @@ export async function approvePackageCapabilitySet(input: {
 	requestUrl: string
 	/** Fingerprint the owner reviewed; must match the live set. */
 	expectedFingerprint: string
-	dependencySnapshotJson?: string
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
@@ -144,19 +154,55 @@ export async function approvePackageCapabilitySet(input: {
 		},
 	)
 	const now = new Date().toISOString()
-	const approval =
-		existing ??
-		(await insertPackageCapabilityApproval(input.env.APP_DB, {
+	const dependencySnapshotJson = serializeDependencySnapshot(
+		summary.dependencySnapshot ??
+			emptyDependencySnapshot({
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+				publishedCommit: summary.publishedCommit,
+			}),
+	)
+	const capabilitySetJson = JSON.stringify(summary.capabilitySet.entries)
+	let approval = existing
+	const existingSnapshotEmpty =
+		existing != null &&
+		isEmptyDependencySnapshotJson(existing.dependencySnapshotJson)
+	const existingSnapshotDrifted =
+		existing != null &&
+		!existingSnapshotEmpty &&
+		existing.dependencySnapshotJson !== dependencySnapshotJson
+	if (existing && existingSnapshotEmpty) {
+		// PR1 rows stored "{}". Backfill the real pin on re-approve so
+		// internet-visible serving can read a lockfile.
+		approval =
+			(await updatePackageCapabilityApprovalSnapshot(input.env.APP_DB, {
+				id: existing.id,
+				dependencySnapshotJson,
+				capabilitySetJson,
+				approvedByUserId: input.actorUserId,
+				approvedAt: now,
+			})) ?? existing
+	} else if (!existing || existingSnapshotDrifted) {
+		// Same capability fingerprint can still pin a newer dependency tree
+		// (decision 4: fingerprint drives re-prompt; the lockfile still moves).
+		// Insert a new row so prior approver history stays intact.
+		approval = await insertPackageCapabilityApproval(input.env.APP_DB, {
 			id: crypto.randomUUID(),
 			package_id: input.savedPackage.id,
 			owner_user_id: input.ownerUserId,
 			published_commit: summary.publishedCommit,
 			fingerprint: summary.capabilitySet.fingerprint,
-			capability_set_json: JSON.stringify(summary.capabilitySet.entries),
-			dependency_snapshot_json: input.dependencySnapshotJson ?? '{}',
+			capability_set_json: capabilitySetJson,
+			dependency_snapshot_json: dependencySnapshotJson,
 			approved_by_user_id: input.actorUserId,
 			approved_at: now,
-		}))
+		})
+	}
+
+	if (!approval) {
+		throw new CapabilityApprovalError('Could not record capability approval.')
+	}
 
 	if (!input.savedPackage.isInternetVisible) {
 		const changed = await updateSavedPackage(input.env.APP_DB, {

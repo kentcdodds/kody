@@ -31,8 +31,15 @@ import {
 	signCredentialClientHandle,
 } from './credential-client-handle.ts'
 import {
+	normalizeCredentialCallMap,
+	type CredentialCallMapInput,
+} from './credential-call-map.ts'
+import {
 	applyCredentialClient,
+	loadRunCredentialNeeds,
 	openCredentialClient,
+	openCredentialClients,
+	validateCredentialCallMap,
 	type CredentialClientContext,
 } from './credential-client.ts'
 import * as needsClosure from './credential-needs-closure.ts'
@@ -184,6 +191,7 @@ async function setup() {
 		request: ReturnType<typeof requestAs>
 		packageId?: string | null
 		binding?: string
+		credentials?: CredentialCallMapInput
 	}): CredentialClientContext => ({
 		env,
 		callerContext: {
@@ -193,6 +201,7 @@ async function setup() {
 		} as unknown as McpCallerContext,
 		binding: input.binding ?? 'run:test',
 		packageId: input.packageId ?? null,
+		callMap: normalizeCredentialCallMap(input.credentials),
 	})
 	const grantUse = (credentialId: string, person: keyof typeof people) =>
 		upsertGrant({
@@ -367,6 +376,9 @@ test('open reports unbound and ambiguous picks with ready-to-retry options, list
 	)
 	expect(ambiguous.body).toMatchObject({
 		code: 'credential_ambiguous',
+		message: expect.stringContaining(
+			': "resend-a" (org), "resend-b" (org). Pick one by name and scope.',
+		),
 		retryWith: [
 			{
 				credentials: { resend: { name: 'resend-a', scope: 'org' } },
@@ -628,4 +640,240 @@ test('the placed header drops the code value before placeholders expand, so a pl
 	})
 	expect(response.status).toBe(200)
 	expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${resendKey}`)
+})
+
+test('a call map picks by name among several matches, and credentials() opens every pick', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-a' })
+	await t.storeKey({ name: 'resend-b' })
+	const request = t.requestAs('bea', 'owner')
+	await expect(
+		rejection(
+			openCredentialClient(t.contextFor({ request }), { key: 'resend' }),
+		),
+	).resolves.toMatchObject({ body: { code: 'credential_ambiguous' } })
+
+	const picked = await openCredentialClient(
+		t.contextFor({ request, credentials: { resend: 'resend-b' } }),
+		{ key: 'resend' },
+	)
+	expect(picked).toMatchObject({
+		name: 'resend-b',
+		scope: 'org',
+		key: 'resend',
+	})
+	expect(picked.hint).toBeUndefined()
+
+	const both = t.contextFor({
+		request,
+		credentials: { resend: ['resend-a', { name: 'resend-b', scope: 'org' }] },
+	})
+	const many = await openCredentialClients(both, { key: 'resend' })
+	expect(many.map((client) => client.name)).toEqual(['resend-a', 'resend-b'])
+	await expect(
+		rejection(openCredentialClient(both, { key: 'resend' })),
+	).resolves.toMatchObject({
+		body: {
+			code: 'invalid_request',
+			message:
+				'The credentials map picks 2 credentials for "resend": "resend-a" (org), "resend-b" (org). Pick one of them for credential("resend"), or call credentials("resend") to get all of them.',
+			retryWith: [
+				expect.objectContaining({
+					credentials: { resend: { name: 'resend-a', scope: 'org' } },
+				}),
+				expect.objectContaining({
+					credentials: { resend: { name: 'resend-b', scope: 'org' } },
+				}),
+			],
+			options: [
+				expect.objectContaining({ name: 'resend-a', scope: 'org' }),
+				expect.objectContaining({ name: 'resend-b', scope: 'org' }),
+			],
+		},
+	})
+
+	const none = t.contextFor({ request, credentials: { resend: [] } })
+	expect(await openCredentialClients(none, { key: 'resend' })).toEqual([])
+	await expect(
+		rejection(openCredentialClient(none, { key: 'resend' })),
+	).resolves.toMatchObject({ body: { code: 'credential_unbound' } })
+
+	// No map entry: a multiple need still gets only the one match.
+	await t.storeKey({ name: 'solo', provider: 'solo' })
+	const solo = await openCredentialClients(t.contextFor({ request }), {
+		key: 'solo',
+	})
+	expect(solo.map((client) => client.name)).toEqual(['solo'])
+})
+
+test('a call map pick must match the need kind and provider, and a pick with no provider carries a hint', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	await t.storeKey({ name: 'loose-key', provider: null })
+	await t.storeKey({ name: 'github-key', provider: 'github' })
+	const request = t.requestAs('bea', 'owner')
+	const packageId = await t.savePackage({ ownerId: t.acmeId, name: '@acme/m' })
+	mockNeeds([
+		{ key: 'MAIL', provider: 'resend' },
+		{ key: 'HOOK', kind: 'url', provider: 'hooks' },
+	])
+	const open = (key: string, credentials: CredentialCallMapInput) =>
+		openCredentialClient(t.contextFor({ request, packageId, credentials }), {
+			key,
+		})
+	await expect(
+		rejection(open('MAIL', { MAIL: 'github-key' })),
+	).resolves.toMatchObject({
+		body: { code: 'invalid_request' },
+		message: expect.stringContaining('provider is "github"'),
+	})
+	await expect(
+		rejection(open('HOOK', { HOOK: 'resend-prod' })),
+	).resolves.toMatchObject({
+		body: { code: 'invalid_request' },
+		message: expect.stringContaining('takes a url credential'),
+	})
+	await expect(
+		rejection(open('MAIL', { MAIL: 'nope' })),
+	).resolves.toMatchObject({ body: { code: 'credential_not_found' } })
+	const loose = await open('MAIL', { MAIL: 'loose-key' })
+	expect(loose.name).toBe('loose-key')
+	expect(loose.hint).toContain('Set its provider to "resend"')
+	expect(JSON.stringify(loose)).not.toContain(resendKey)
+})
+
+test('a call map is validated before code runs: unknown keys fail an invoke and warn ad hoc code', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const request = t.requestAs('bea', 'owner')
+	const packageId = await t.savePackage({ ownerId: t.acmeId, name: '@acme/m' })
+	mockNeeds([{ key: 'MAIL', provider: 'resend' }])
+	const validate = (
+		credentials: CredentialCallMapInput,
+		strict: boolean,
+		packageIds: Array<string> = [packageId],
+	) =>
+		validateCredentialCallMap({
+			env: t.env,
+			request,
+			map: normalizeCredentialCallMap(credentials)!,
+			packageIds,
+			strict,
+		})
+	await expect(validate({ MAIL: 'resend-prod' }, true)).resolves.toEqual({
+		warnings: [],
+	})
+	await expect(
+		rejection(validate({ MAIL: 'resend-prod', OTHER: 'resend-prod' }, true)),
+	).resolves.toMatchObject({
+		body: { code: 'credential_need_unknown', retryWith: [] },
+		message: expect.stringContaining('declared: MAIL'),
+	})
+	const adHoc = await validate({ resend: 'resend-prod' }, false, [])
+	expect(adHoc.warnings).toEqual([
+		expect.stringContaining('credentials.resend is not a need of this code'),
+	])
+	await expect(
+		rejection(validate({ MAIL: 'missing' }, true)),
+	).resolves.toMatchObject({ body: { code: 'credential_not_found' } })
+	await expect(
+		rejection(
+			validateCredentialCallMap({
+				env: t.env,
+				request: null,
+				map: normalizeCredentialCallMap({ MAIL: 'resend-prod' })!,
+				packageIds: [],
+				strict: false,
+			}),
+		),
+	).resolves.toMatchObject({ body: { code: 'credential_denied' } })
+})
+
+test('call map validation keeps the entry package pinned needs over a dependency later publish', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const request = t.requestAs('bea', 'owner')
+	const entryId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/entry',
+	})
+	const depId = await t.savePackage({ ownerId: t.acmeId, name: '@acme/mailer' })
+	const need = (provider: string): CredentialNeed => ({
+		key: 'MAIL',
+		kind: 'secret',
+		provider,
+		description: '',
+		multiple: false,
+	})
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds')
+		.mockResolvedValueOnce([need('resend')])
+		.mockResolvedValueOnce([need('postmark')])
+	await expect(
+		validateCredentialCallMap({
+			env: t.env,
+			request,
+			map: normalizeCredentialCallMap({ MAIL: 'resend-prod' })!,
+			packageIds: [entryId, depId],
+			strict: true,
+		}),
+	).resolves.toEqual({ warnings: [] })
+})
+
+test('a dependency opens against the entry package pinned need its picks passed, not its later publish', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const request = t.requestAs('bea', 'owner')
+	const entryId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/entry',
+	})
+	const depId = await t.savePackage({ ownerId: t.acmeId, name: '@acme/mailer' })
+	const need = (provider: string): CredentialNeed => ({
+		key: 'MAIL',
+		kind: 'secret',
+		provider,
+		description: '',
+		multiple: false,
+	})
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockImplementation(
+		async ({ sourceId }) =>
+			sourceId === `source-${entryId}`
+				? [need('resend')]
+				: [need('postmark'), { ...need('postmark'), key: 'SMS' }],
+	)
+	const runNeeds = loadRunCredentialNeeds({
+		env: t.env,
+		request,
+		packageIds: [entryId],
+	})
+	const depContext = t.contextFor({
+		request,
+		packageId: depId,
+		credentials: { MAIL: 'resend-prod' },
+	})
+	const pinned = { ...depContext, runNeeds: () => runNeeds }
+	await expect(
+		openCredentialClient(pinned, { key: 'MAIL' }),
+	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
+	await expect(
+		rejection(openCredentialClient(depContext, { key: 'MAIL' })),
+	).resolves.toMatchObject({ body: { code: 'invalid_request' } })
+	// SMS is only in the dependency's later publish, so it reads as a
+	// provider instead of the dependency's newer need.
+	await expect(
+		rejection(openCredentialClient(pinned, { key: 'SMS' })),
+	).resolves.toMatchObject({
+		body: { code: 'credential_unbound' },
+		message: expect.stringContaining('provider "SMS"'),
+	})
+	const adHoc = t.contextFor({ request })
+	await expect(
+		openCredentialClient(
+			{ ...adHoc, runNeeds: () => runNeeds },
+			{ key: 'MAIL' },
+		),
+	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
+	await expect(
+		rejection(openCredentialClient(adHoc, { key: 'MAIL' })),
+	).resolves.toMatchObject({ body: { code: 'credential_unbound' } })
 })

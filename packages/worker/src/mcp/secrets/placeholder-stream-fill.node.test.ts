@@ -187,3 +187,116 @@ test('stream fill settles done when the consumer cancels', async () => {
 	await reader.cancel()
 	await expect(fill.done).resolves.toBeUndefined()
 })
+
+test('stream fill leaves nested placeholders in values literal (single pass)', async () => {
+	const replacements = new Map([
+		['{{secret:token}}', '{{secret:apiKey}}'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['Bearer {{secret:token}}']),
+		format: 'text',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe('Bearer {{secret:apiKey}}')
+	await fill.done
+})
+
+test('stream fill fills a later top-level placeholder without expanding nested text from a prior value', async () => {
+	const replacements = new Map([
+		['{{secret:token}}', '{{secret:apiKey}}'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['{{secret:token}}', ' and {{secret:apiKey}}']),
+		format: 'text',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe(
+		'{{secret:apiKey}} and api-key-value',
+	)
+	await fill.done
+})
+
+test('stream fill does not fill a placeholder formed by a secret value plus the next chunk', async () => {
+	const replacements = new Map([
+		['{{secret:token}}', 'prefix-{{secret:api'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['{{secret:token}}', 'Key}} suffix']),
+		format: 'text',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe(
+		'prefix-{{secret:apiKey}} suffix',
+	)
+	await fill.done
+})
+
+test('stream fill does not fill when a value opener prefix recombines with the next chunk', async () => {
+	const replacements = new Map([
+		['{{secret:token}}', '{{secre'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['A={{secret:token}}', 't:apiKey}}']),
+		format: 'text',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe('A={{secret:apiKey}}')
+	await fill.done
+})
+
+test('stream fill JSON path keeps nested placeholders in values literal across chunks', async () => {
+	const replacements = new Map([
+		['{{secret:token}}', 'say "{{secret:apiKey}}"'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream(['{"a":"', '{{secret:token}}', '"}']),
+		format: 'json',
+		replacements,
+		resolve: async () => [],
+	})
+	expect(decode(await readAll(fill.stream))).toBe(
+		'{"a":"say \\"{{secret:apiKey}}\\""}',
+	)
+	await fill.done
+})
+
+test('stream fill multipart keeps nested placeholders in part values literal', async () => {
+	const boundary = '----bound'
+	const replacements = new Map([
+		['{{secret:token}}', 'prefix-{{secret:api'],
+		['{{secret:apiKey}}', 'api-key-value'],
+	])
+	const part = [
+		`--${boundary}`,
+		'Content-Disposition: form-data; name="payload"',
+		'',
+		'Bearer {{secret:token}}',
+		`--${boundary}--`,
+		'',
+	].join('\r\n')
+	// Split so the filled value's unclosed opener would recombine with the
+	// remainder of the part if carry re-scanned substituted bytes.
+	const splitAt = part.indexOf('{{secret:token}}') + '{{secret:token}}'.length
+	const fill = createPlaceholderFillStream({
+		source: chunkedStream([
+			part.slice(0, splitAt),
+			'Key}}' + part.slice(splitAt),
+		]),
+		format: 'multipart',
+		replacements,
+		resolve: async () => [],
+	})
+	const body = decode(await readAll(fill.stream))
+	expect(body).toContain('Bearer prefix-{{secret:apiKey}}')
+	expect(body).not.toContain('api-key-value')
+	await fill.done
+})

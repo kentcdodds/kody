@@ -50,6 +50,8 @@ import { routes } from '#universal/routes.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { buildUnauthorizedErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { NotFoundPage } from './not-found-page.tsx'
 import { InternalErrorPage } from './internal-error-page.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
@@ -437,6 +439,11 @@ export function App(handle: Handle<AppProps>) {
 												Log in
 											</a>
 										</p>
+										<ErrorAgentPromptButton
+											prompt={buildUnauthorizedErrorAgentPrompt({
+												path: currentPathname,
+											})}
+										/>
 									</section>
 								}
 							/>

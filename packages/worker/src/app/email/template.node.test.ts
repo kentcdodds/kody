@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import {
 	buildAdvocateReferralEmail,
 	buildBillingSuccessEmail,
+	buildPastDueEmail,
+	buildPaymentFailedEmail,
 	buildConnectAgentEmail,
 	buildCoolingHomeEmail,
 	buildKeepPackageEmail,
@@ -183,6 +185,22 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(advocate.text).toContain(
 		'Email a short testimonial: mailto:me@kentcdodds.com?subject=Kody%20testimonial',
 	)
+
+	const paymentFailed = buildPaymentFailedEmail({
+		appBaseUrl: 'https://kody.codes',
+		billingUrl: 'https://kody.codes/account/billing',
+	})
+	expect(paymentFailed.html).toContain('data-error-agent-prompt')
+	expect(paymentFailed.html).toContain('Paste this prompt')
+	expect(paymentFailed.text).toContain('billing_payment_failed')
+	expect(paymentFailed.text).toContain('/account/billing')
+
+	const pastDue = buildPastDueEmail({
+		appBaseUrl: 'https://kody.codes',
+		billingUrl: 'https://kody.codes/account/billing',
+	})
+	expect(pastDue.html).toContain('data-error-agent-prompt')
+	expect(pastDue.text).toContain('billing_past_due')
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',

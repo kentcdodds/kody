@@ -90,6 +90,20 @@ export const orgTransferSealedColumns = {
 			context: (ownerId, row) =>
 				userWebhookHmacSecretContext(ownerId, text(row, 'id')),
 		},
+		{
+			column: 'hmac_verification_secret_encrypted',
+			decrypt: decryptWebhookHmacSecret,
+			encrypt: encryptWebhookHmacSecret,
+			context: (ownerId, row) =>
+				userWebhookHmacSecretContext(ownerId, text(row, 'id')),
+		},
+		{
+			column: 'previous_hmac_secret_encrypted',
+			decrypt: decryptWebhookHmacSecret,
+			encrypt: encryptWebhookHmacSecret,
+			context: (ownerId, row) =>
+				userWebhookHmacSecretContext(ownerId, text(row, 'id')),
+		},
 	],
 } satisfies Record<string, ReadonlyArray<SealedColumn>>
 

@@ -312,7 +312,9 @@ export async function checkMermaidSyntax(
 		issues.push(
 			...(await checkMermaidMarkdown({
 				source: relativePath.replaceAll('\\', '/'),
-				content: await readFile(path.join(cwd, relativePath), 'utf8'),
+				// path.resolve keeps relative paths under cwd and accepts
+				// absolute paths (for example /tmp/pr-body.md before upsert).
+				content: await readFile(path.resolve(cwd, relativePath), 'utf8'),
 			})),
 		)
 	}

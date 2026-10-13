@@ -1,7 +1,9 @@
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { parseAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import {
 	type ApprovalAction,
 	type ApprovalView,
@@ -445,11 +447,37 @@ export function renderPackageSecretApprovalPage(props: {
 					data-testid="account-secrets-package-approval-error"
 				>
 					<p mix={css({ margin: 0, color: colors.danger })}>{approvalError}</p>
+					<ErrorAgentPromptButton
+						prompt={buildHumanApprovalErrorAgentPrompt({
+							activity:
+								'Allowing a package to use saved secrets from an approval link.',
+							errorMessage: approvalError,
+							ids: {
+								packageKodyId: packageLabel,
+								path: '/account/secrets/approve',
+							},
+						})}
+					/>
 				</section>
 			) : null}
 
 			{message ? (
-				<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
+				<>
+					<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
+					{approvalError ? null : (
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Allowing a package to use saved secrets from an approval link.',
+								errorMessage: message,
+								ids: {
+									packageKodyId: packageLabel,
+									path: '/account/secrets/approve',
+								},
+							})}
+						/>
+					)}
+				</>
 			) : null}
 
 			{approval && packageId ? (

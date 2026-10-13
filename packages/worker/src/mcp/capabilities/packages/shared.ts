@@ -110,6 +110,35 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			),
 	})
 
+const credentialNeedShapeSchema = z.object({
+	kind: z.enum(packageCredentialKindValues),
+	provider: z.string(),
+	multiple: z.boolean(),
+})
+
+/** One credential need a paused publish adds or reshapes. */
+export const credentialNeedChangeSchema = z.discriminatedUnion('change', [
+	z.object({
+		key: z.string(),
+		change: z.literal('added'),
+		after: credentialNeedShapeSchema,
+		from: z
+			.string()
+			.optional()
+			.describe('The dependency that declared an inherited need.'),
+	}),
+	z.object({
+		key: z.string(),
+		change: z.literal('changed'),
+		before: credentialNeedShapeSchema,
+		after: credentialNeedShapeSchema,
+		from: z
+			.string()
+			.optional()
+			.describe('The dependency that declared an inherited need.'),
+	}),
+])
+
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),

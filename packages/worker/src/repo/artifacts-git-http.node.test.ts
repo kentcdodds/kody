@@ -6,7 +6,6 @@ import {
 	ArtifactsGitTimeoutError,
 	createArtifactsGitHttp,
 } from './artifacts-git-http.ts'
-import { gitRemoteReadOnlyPushRejectedMessage } from './git-remote-scope.ts'
 
 test('artifacts git http aborts a hung request and returns advertisement bytes', async () => {
 	{
@@ -77,5 +76,5 @@ test('artifacts git http maps receive-pack 403 to the actionable read-only messa
 			url: 'https://example.test/git/repo.git/git-receive-pack',
 			method: 'POST',
 		}),
-	).rejects.toThrow(gitRemoteReadOnlyPushRejectedMessage)
+	).rejects.toThrow("this remote is read-only; request scope: 'write'")
 })

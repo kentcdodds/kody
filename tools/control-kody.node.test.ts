@@ -218,6 +218,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 				'GET',
 				'/account/waiting',
 				'--dump',
+				'--headers',
 				'--contains',
 				'Waiting inbox',
 				'--contains',
@@ -226,6 +227,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			{
 				command: 'request',
 				dump: true,
+				showHeaders: true,
 				dumpFile: '.tmp/control-kody-body',
 				contains: ['Waiting inbox', '<h1>'],
 			},
@@ -445,6 +447,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			const waiting = await asSession('/account/waiting.json', null)
 			expect(waiting.ok).toBe(true)
 			expect(waiting.body).toEqual({ items: [] })
+			expect(waiting.headers['content-type']).toMatch(/application\/json/)
+			expect(waiting.ttfbMs).toBeGreaterThanOrEqual(0)
 			const admin = await asSession('/admin', 403)
 			expect(admin.ok).toBe(true)
 			expect(admin.status).toBe(403)

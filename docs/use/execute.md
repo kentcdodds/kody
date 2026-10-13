@@ -328,8 +328,10 @@ For dedicated inspection, use:
 
 - **`storageExport`** — export one storage bucket as JSON (`page_size` max 1000)
 - **`storageQuery`** — run SQL against one storage bucket (read-only by default,
-  opt into writes explicitly). Returns at most 1000 rows and sets
-  `truncated: true` when more matched — same cap as `sql(...)`.
+  opt into writes explicitly). Package-bucket ids still require `package:write`
+  (connection-profile write), including for SELECT inspection. Returns at most
+  1000 rows and sets `truncated: true` when more matched — same cap as
+  `sql(...)`.
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its
@@ -350,8 +352,8 @@ Handled **execute** responses also include top-level **`timing`** metadata with
 `startedAt`, `endedAt`, and `durationMs` alongside `conversationId`. Use it for
 basic latency instrumentation around tool runs.
 
-When a call is denied by a plan limit or a daily quota, the existing error
-message and `isError: true` stay the same. Structured content also includes a
+When a call is denied by a plan limit or a daily quota, the tool returns
+`isError: true` with the denial message. Structured content also includes a
 focused **`entitlement`** object with known fields only (resource, current plan,
 limit, current usage, upgrade hint). Daily quota denials add compact `used` and
 `remaining`. Ordinary successful execute results omit `entitlement`.

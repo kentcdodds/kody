@@ -87,12 +87,12 @@ test('assertEndpointsOnIssuerOrigin refuses cross-origin authorization and token
 				token_endpoint: 'https://auth.example/token',
 			},
 		}),
-	).toThrow(/missing issuer/)
+	).toThrow(/missing a usable issuer/)
 	expect(() =>
 		assertEndpointsOnIssuerOrigin({
 			authorizationServerMetadata: {},
 		}),
-	).not.toThrow()
+	).toThrow(/missing a usable issuer/)
 })
 
 test('oauthAttemptActorMatches requires both pending ids and an exact match', () => {
