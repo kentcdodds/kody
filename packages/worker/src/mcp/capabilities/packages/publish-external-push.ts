@@ -612,6 +612,7 @@ async function runExternalPublishAttempt(input: {
 	newCommit: string
 	allowForce: boolean
 	destructiveOverwriteConfirmed: boolean
+	requestedByUserId: string | null
 	signal?: AbortSignal
 	reportProgress?: McpReportProgress
 }): Promise<Exclude<PublishExternalPushResult, { status: 'dispatched' }>> {
@@ -648,6 +649,7 @@ async function runExternalPublishAttempt(input: {
 				baseUrl: input.baseUrl,
 				rebuildPackageArtifacts: false,
 				expectedPackageScope: input.expectedPackageScope,
+				requestedByUserId: input.requestedByUserId,
 				deferBundleCheckToRebuild: true,
 			})
 			const publishMs = Date.now() - publishStartedAt
@@ -1004,6 +1006,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				newCommit,
 				allowForce: args.allow_force,
 				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+				requestedByUserId: user.userId,
 				reportProgress: ctx.reportProgress,
 			}
 
