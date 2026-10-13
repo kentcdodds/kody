@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 	computeError: null as Error | null,
 	source: null as EntitySourceRow | null,
 	publishFromExternalRef: vi.fn(),
+	publishSession: vi.fn(),
 }))
 
 vi.mock('./credential-needs-closure.ts', async (importOriginal) => ({
@@ -34,6 +35,7 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: () => ({
 		publishFromExternalRef: (...args: Array<unknown>) =>
 			mocks.publishFromExternalRef(...args),
+		publishSession: (...args: Array<unknown>) => mocks.publishSession(...args),
 	}),
 }))
 
@@ -44,11 +46,8 @@ const {
 } = await import('./credential-needs-approval.ts')
 const { approveCredentialNeedsRequest, loadPendingPackageApprovals } =
 	await import('#app/account-package-approval-requests.ts')
-const {
-	enqueuePackageApprovalRequest,
-	getPackageApprovalRequest,
-	getPausedPackageHeadCommit,
-} = await import('#worker/package-capabilities/approval-requests-repo.ts')
+const { enqueuePackageApprovalRequest, getPackageApprovalRequest } =
+	await import('#worker/package-capabilities/approval-requests-repo.ts')
 
 const ownerId = ownerIdFromStored('org-acme')
 const manifestContent = JSON.stringify({
@@ -123,6 +122,7 @@ beforeEach(() => {
 	mocks.after = []
 	mocks.computeError = null
 	mocks.publishFromExternalRef.mockReset()
+	mocks.publishSession.mockReset()
 })
 
 test('only added or reshaped needs count as a change', () => {
@@ -224,14 +224,6 @@ test('a needs change queues one pending approval per package; unchanged, removed
 			publishedCommit: 'commit-later',
 		}),
 	).resolves.toEqual([])
-	const pausedHead = (publishedCommit: string) =>
-		getPausedPackageHeadCommit(t.db, {
-			packageId: t.packageId,
-			ownerUserId: ownerId,
-			publishedCommit,
-		})
-	await expect(pausedHead('commit-old')).resolves.toBe('commit-newer')
-	await expect(pausedHead('commit-later')).resolves.toBeNull()
 })
 
 test('approving publishes the paused commit past the pause; a moved base supersedes it', async () => {
@@ -281,7 +273,6 @@ test('approving publishes the paused commit past the pause; a moved base superse
 		expect.objectContaining({
 			newCommit: 'commit-new',
 			credentialNeedsApproved: true,
-			allowForce: true,
 		}),
 	)
 	expect(
@@ -308,4 +299,78 @@ test('approving publishes the paused commit past the pause; a moved base superse
 	})
 	expect(mocks.publishFromExternalRef).not.toHaveBeenCalled()
 	await expect(approve('missing')).resolves.toMatchObject({ status: 404 })
+})
+
+test('approving a paused session publish re-runs that session at the paused commit', async () => {
+	const t = await setup()
+	const savedPackage = {
+		id: t.packageId,
+		userId: ownerId,
+		sourceId: 'source-mailer',
+	} as SavedPackageRecord
+	mocks.after = [need('NEW')]
+	const paused = await requireCredentialNeedsApproval({
+		env: t.env,
+		source: t.source,
+		pendingCommit: 'commit-paused',
+		files: { 'package.json': manifestContent },
+		pausedSession: {
+			sessionId: 'source-sync-1',
+			force: true,
+			destructiveOverwriteConfirmed: true,
+			privateVisibilityChangeConfirmed: false,
+		},
+	})
+	const approve = (requestId: string) =>
+		approveCredentialNeedsRequest({
+			env: t.env,
+			request: new Request('https://kody.test/approve'),
+			savedPackage,
+			ownerUserId: ownerId,
+			actorUserId: 'person-bea',
+			requestId,
+		})
+	mocks.publishSession.mockResolvedValueOnce({
+		status: 'ok',
+		sessionId: 'source-sync-1',
+		publishedCommit: 'commit-paused',
+		message: 'Published.',
+	})
+	await expect(approve(paused!.requestId)).resolves.toEqual({ ok: true })
+	expect(mocks.publishSession).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sessionId: 'source-sync-1',
+			force: true,
+			destructiveOverwriteConfirmed: true,
+			credentialNeedsApproved: true,
+			expectedHeadCommit: 'commit-paused',
+		}),
+	)
+	expect(mocks.publishFromExternalRef).not.toHaveBeenCalled()
+
+	const gone = await requireCredentialNeedsApproval({
+		env: t.env,
+		source: t.source,
+		pendingCommit: 'commit-paused-2',
+		files: { 'package.json': manifestContent },
+		pausedSession: {
+			sessionId: 'source-sync-2',
+			force: false,
+			destructiveOverwriteConfirmed: false,
+			privateVisibilityChangeConfirmed: false,
+		},
+	})
+	mocks.publishSession.mockRejectedValueOnce(new Error('session not found'))
+	await expect(approve(gone!.requestId)).resolves.toMatchObject({
+		ok: false,
+		status: 409,
+		error: expect.stringContaining('Publish again'),
+	})
+	await expect(
+		getPackageApprovalRequest(t.db, {
+			id: gone!.requestId,
+			packageId: t.packageId,
+			ownerUserId: ownerId,
+		}),
+	).resolves.toMatchObject({ status: 'superseded' })
 })

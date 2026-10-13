@@ -203,6 +203,7 @@ export type RepoSessionRpc = {
 		credentialNeedsApproved?: boolean
 		requestedByUserId?: string | null
 		promotePublished?: boolean
+		expectedHeadCommit?: string
 	}) => Promise<RepoSessionPublishResult>
 	publishFromExternalRef: (payload: {
 		sessionId: string

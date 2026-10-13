@@ -75,7 +75,6 @@ import {
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
-import { getPausedPackageHeadCommit } from '#worker/package-capabilities/approval-requests-repo.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -1499,14 +1498,6 @@ class RepoSessionBase extends DurableObject<Env> {
 							source,
 							operation: 'repoOpenSession',
 							requirePublishedCommitHead: true,
-							pausedHeadCommit: await getPausedPackageHeadCommit(
-								this.env.APP_DB,
-								{
-									packageId: source.entity_id,
-									ownerUserId: source.user_id,
-									publishedCommit: source.published_commit,
-								},
-							),
 						})
 					: null
 			const sourceRepo =
@@ -3192,6 +3183,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		credentialNeedsApproved?: boolean
 		requestedByUserId?: string | null
 		promotePublished?: boolean
+		/** Refuse unless the session still holds exactly this commit. */
+		expectedHeadCommit?: string
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -3273,12 +3266,24 @@ class RepoSessionBase extends DurableObject<Env> {
 				confirmed: input.privateVisibilityChangeConfirmed,
 			})
 		}
+		// A re-run of a paused publish must publish the commit it paused on, so
+		// it never mints a new history-replacing commit.
 		const sessionHeadCommit =
 			(await this.commitIfDirty(
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionId}`,
-				replaceHistory ? { replaceHistory: true } : undefined,
+				replaceHistory && input.expectedHeadCommit === undefined
+					? { replaceHistory: true }
+					: undefined,
 			)) ?? (await this.getHeadCommit())
+		if (
+			input.expectedHeadCommit !== undefined &&
+			(sessionHeadCommit ?? sessionRow.base_commit) !== input.expectedHeadCommit
+		) {
+			throw new Error(
+				`Session ${input.sessionId} no longer holds commit ${input.expectedHeadCommit}.`,
+			)
+		}
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
 			input.expectedPackageScope,
@@ -3292,44 +3297,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			force: true,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
-		const forceSourcePush = input.force === true
-		const pushToSource = async (force: boolean) =>
-			await this.pushBranchToRemoteRef({
-				branch: sessionBranch,
-				remoteRef: sessionRow.source_branch,
-				token: sessionAccess.token,
-				...(force ? { force: true } : {}),
-			})
-		try {
-			await pushToSource(forceSourcePush)
-		} catch (error) {
-			if (!forceSourcePush && isGitPushNotFastForwardError(error)) {
-				const refreshedHead = await resolveLiveSourceHeadCommit(
-					this.env,
-					source,
-				)
-				// A newer publish replaces a paused one: the session is based on the
-				// published commit, and only the paused commit sits past it.
-				const pausedHead =
-					source.entity_kind === 'package' && refreshedHead
-						? await getPausedPackageHeadCommit(this.env.APP_DB, {
-								packageId: source.entity_id,
-								ownerUserId: source.user_id,
-								publishedCommit: source.published_commit,
-							})
-						: null
-				if (!pausedHead || pausedHead !== refreshedHead) {
-					return this.buildPublishBaseMovedResult({
-						sessionId: input.sessionId,
-						sessionBaseCommit: sessionRow.base_commit,
-						currentPublishedCommit: refreshedHead ?? source.published_commit,
-					})
-				}
-				await pushToSource(true)
-			} else {
-				throw error
-			}
-		}
 		// Commit/push do not rewrite workspace file bytes, so reuse the
 		// snapshot collected once above for the published source KV write.
 		const snapshotFiles = workspaceSnapshot.files
@@ -3340,6 +3307,69 @@ class RepoSessionBase extends DurableObject<Env> {
 				: null
 		const withCredentialNotice = (message: string) =>
 			credentialNotice ? `${message}\n\n${credentialNotice}` : message
+		// The pause runs before the source branch moves, so the published commit
+		// stays at HEAD and new sessions open as usual. The session (and its
+		// pushed branch) holds the paused commit until approval re-runs it.
+		const approval =
+			input.credentialNeedsApproved === true || input.promotePublished === false
+				? null
+				: await requireCredentialNeedsApproval({
+						env: this.env,
+						source,
+						pendingCommit: publishedCommit,
+						files: snapshotFiles,
+						requestedByUserId: input.requestedByUserId,
+						pausedSession: {
+							sessionId: sessionRow.id,
+							force: input.force === true,
+							destructiveOverwriteConfirmed:
+								input.destructiveOverwriteConfirmed === true,
+							privateVisibilityChangeConfirmed:
+								input.privateVisibilityChangeConfirmed === true,
+							...(input.expectedPackageScope !== undefined
+								? { expectedPackageScope: input.expectedPackageScope }
+								: {}),
+						},
+					})
+		if (approval) {
+			await updateRepoSession(this.env, {
+				id: sessionRow.id,
+				userId: sessionRow.user_id,
+				lastCheckpointCommit: publishedCommit,
+				lastCheckpointAt: nowIso(),
+			})
+			return {
+				status: 'approval_required',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				currentPublishedCommit: source.published_commit,
+				message: approval.message,
+				approval,
+				credentialNotice,
+			}
+		}
+		const forceSourcePush = input.force === true
+		try {
+			await this.pushBranchToRemoteRef({
+				branch: sessionBranch,
+				remoteRef: sessionRow.source_branch,
+				token: sessionAccess.token,
+				...(forceSourcePush ? { force: true } : {}),
+			})
+		} catch (error) {
+			if (!forceSourcePush && isGitPushNotFastForwardError(error)) {
+				const refreshedHead = await resolveLiveSourceHeadCommit(
+					this.env,
+					source,
+				)
+				return this.buildPublishBaseMovedResult({
+					sessionId: input.sessionId,
+					sessionBaseCommit: sessionRow.base_commit,
+					currentPublishedCommit: refreshedHead ?? source.published_commit,
+				})
+			}
+			throw error
+		}
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3371,27 +3401,6 @@ class RepoSessionBase extends DurableObject<Env> {
 					message: error.message,
 					credentialNotice,
 				}
-			}
-		}
-		const approval =
-			input.credentialNeedsApproved === true
-				? null
-				: await requireCredentialNeedsApproval({
-						env: this.env,
-						source,
-						pendingCommit: publishedCommit,
-						files: snapshotFiles,
-						requestedByUserId: input.requestedByUserId,
-					})
-		if (approval) {
-			return {
-				status: 'approval_required',
-				sessionId: input.sessionId,
-				publishedCommit: null,
-				currentPublishedCommit: source.published_commit,
-				message: approval.message,
-				approval,
-				credentialNotice,
 			}
 		}
 		await finalizePublishedEntitySource({

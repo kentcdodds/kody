@@ -835,8 +835,11 @@ the closure includes the needs of the packages it statically imports. Dropping a
 need, editing a description, and a package's first publish never pause.
 
 A paused publish keeps the previously published commit serving and is never
-published again automatically. The commit still lands on Artifacts HEAD.
-`repoPublishSession` and `packagePublishExternalPush` return
+published again automatically. A paused `repoPublishSession` or `packageSave`
+leaves Artifacts HEAD on the published commit and keeps its session, which holds
+the paused commit until approval; an idle session is swept after seven days, so
+publish again then. A pushed commit (`packagePublishExternalPush`) is already on
+HEAD. `repoPublishSession` and `packagePublishExternalPush` return
 **`approval_required`** with `pending_commit`, `credential_need_changes`, and an
 **`approval_url`**; `packageSave` fails with the same message and URL. The URL
 opens `/@{username}/{package-name}/approve-capabilities`, the package's one

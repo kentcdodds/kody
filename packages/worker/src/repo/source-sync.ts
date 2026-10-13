@@ -198,6 +198,9 @@ export async function syncArtifactSourceSnapshot(
 		path,
 		content,
 	}))
+	// A publish paused for credential needs approval keeps its session: the
+	// approval re-runs the publish from it.
+	let keepSession = false
 	try {
 		if (!source.published_commit) {
 			await assertPackageBootstrapUnlocked({
@@ -445,6 +448,7 @@ export async function syncArtifactSourceSnapshot(
 					currentPublishedCommit: publishResult.currentPublishedCommit,
 				})
 			case 'approval_required':
+				keepSession = true
 				throw new PackageCredentialNeedsApprovalError(publishResult.approval)
 			case 'checks_outdated':
 			case 'base_moved':
@@ -466,11 +470,15 @@ export async function syncArtifactSourceSnapshot(
 		// persistence and rollback.
 		return publishResult.publishedCommit
 	} finally {
-		await pushServerTiming(input.serverTiming, 'discard-session', () =>
-			session.discardSession({ sessionId, userId: input.userId }).catch(() => {
-				// Best effort only; publish/apply failures should preserve the root cause.
-			}),
-		)
+		if (!keepSession) {
+			await pushServerTiming(input.serverTiming, 'discard-session', () =>
+				session
+					.discardSession({ sessionId, userId: input.userId })
+					.catch(() => {
+						// Best effort only; publish/apply failures should preserve the root cause.
+					}),
+			)
+		}
 	}
 }
 

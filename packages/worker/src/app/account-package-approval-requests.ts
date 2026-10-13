@@ -2,6 +2,7 @@ import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	describeCredentialNeedChange,
 	readCredentialNeedChanges,
+	readPausedSessionPublish,
 } from '#worker/credentials/credential-needs-approval.ts'
 import {
 	getPackageApprovalRequest,
@@ -12,6 +13,7 @@ import {
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { type RepoSessionPublishResult } from '#worker/repo/types.ts'
 import { type AccountPackagePendingApproval } from '#universal/loader-data.ts'
 
 function reasonLabel(reason: PackageApprovalReason) {
@@ -126,6 +128,71 @@ export async function approveCredentialNeedsRequest(input: {
 		}
 	}
 	if (source.published_commit !== approval.baseCommit) return await supersede()
+	const approved = async () => {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: approval.id,
+			status: 'approved',
+			resolvedByUserId: input.actorUserId,
+		})
+		return { ok: true as const }
+	}
+	const pausedSession = readPausedSessionPublish(approval.details)
+	if (pausedSession) {
+		let sessionResult: RepoSessionPublishResult
+		try {
+			sessionResult = await repoSessionRpc(
+				input.env,
+				pausedSession.sessionId,
+			).publishSession({
+				sessionId: pausedSession.sessionId,
+				userId: input.ownerUserId,
+				force: pausedSession.force,
+				destructiveOverwriteConfirmed:
+					pausedSession.destructiveOverwriteConfirmed,
+				privateVisibilityChangeConfirmed:
+					pausedSession.privateVisibilityChangeConfirmed,
+				...(pausedSession.expectedPackageScope !== undefined
+					? { expectedPackageScope: pausedSession.expectedPackageScope }
+					: {}),
+				credentialNeedsApproved: true,
+				expectedHeadCommit: approval.pendingCommit,
+				rebuildPackageArtifacts: true,
+			})
+		} catch {
+			// The session ended or changed after the pause.
+			await resolvePackageApprovalRequest(input.env.APP_DB, {
+				id: approval.id,
+				status: 'superseded',
+				resolvedByUserId: input.actorUserId,
+			})
+			return {
+				ok: false,
+				status: 409,
+				error:
+					'This paused publish is no longer available. Publish again to request approval.',
+			}
+		}
+		switch (sessionResult.status) {
+			case 'ok':
+				return await approved()
+			case 'base_moved':
+			case 'checks_outdated':
+				return await supersede()
+			case 'locked':
+				return {
+					ok: false,
+					status: 409,
+					error:
+						'This package is locked. Unlock it, or approve the publish from its locked-publish approval page.',
+				}
+			case 'approval_required':
+				return { ok: false, status: 409, error: sessionResult.message }
+			default: {
+				const exhaustive: never = sessionResult
+				throw new Error(`Unknown publish status: ${String(exhaustive)}`)
+			}
+		}
+	}
 	const sessionId = `approve-credential-needs-${input.savedPackage.id}`
 	const result = await repoSessionRpc(
 		input.env,
@@ -136,23 +203,13 @@ export async function approveCredentialNeedsRequest(input: {
 		userId: input.ownerUserId,
 		newCommit: approval.pendingCommit,
 		credentialNeedsApproved: true,
-		// A packageSave with confirm_destructive_overwrite pauses a commit that
-		// replaced history, so it is not a fast-forward of the base. The base
-		// check above already proved nothing published since the pause.
-		allowForce: true,
-		destructiveOverwriteConfirmed: true,
 		baseUrl: getAppBaseUrl({ env: input.env, requestUrl: input.request.url }),
 		rebuildPackageArtifacts: true,
 	})
 	switch (result.status) {
 		case 'published':
 		case 'already_published':
-			await resolvePackageApprovalRequest(input.env.APP_DB, {
-				id: approval.id,
-				status: 'approved',
-				resolvedByUserId: input.actorUserId,
-			})
-			return { ok: true }
+			return await approved()
 		case 'not_fast_forward':
 			return await supersede()
 		case 'checks_failed':

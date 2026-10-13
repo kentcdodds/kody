@@ -562,7 +562,10 @@ Cole and Kent decided how decision 2's pause works.
 - **Approval.** The owner approves on the package's approval page
   (`/@<owner>/<package>/approve-capabilities`), which publishes the paused
   commit. Nothing republishes on its own; a newer push replaces the pending
-  request, and a request whose base commit is no longer published is dropped.
+  request, and a request whose base commit is no longer published is dropped. A
+  paused session publish leaves the source branch on the published commit and
+  keeps its session; approval re-runs that session's publish at the paused
+  commit. A pushed commit is approved through the external-publish path.
 - **One queue.** The pause shares ADR 0069's approval mechanism: one
   `package_approval_requests` queue and one page, with reason
   `credential_needs_changed` or `went_public`. ADR 0069's own storage-change

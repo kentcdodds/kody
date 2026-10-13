@@ -30,6 +30,18 @@ export type CredentialNeedChange =
 			from?: string
 	  }
 
+/**
+ * A session publish that paused before touching the source branch. Approval
+ * re-runs it on the same session with the same publish options.
+ */
+export type PausedSessionPublish = {
+	sessionId: string
+	force: boolean
+	destructiveOverwriteConfirmed: boolean
+	privateVisibilityChangeConfirmed: boolean
+	expectedPackageScope?: string
+}
+
 export type CredentialNeedsApprovalRequired = {
 	requestId: string
 	packageId: string
@@ -155,6 +167,7 @@ export async function requireCredentialNeedsApproval(input: {
 	pendingCommit: string
 	files: Record<string, string>
 	requestedByUserId?: string | null
+	pausedSession?: PausedSessionPublish
 }): Promise<CredentialNeedsApprovalRequired | null> {
 	if (input.source.entity_kind !== 'package') return null
 	if (!input.source.published_commit) return null
@@ -183,7 +196,10 @@ export async function requireCredentialNeedsApproval(input: {
 		reason: 'credential_needs_changed',
 		pendingCommit: input.pendingCommit,
 		baseCommit: input.source.published_commit,
-		details: { changes },
+		details: {
+			changes,
+			...(input.pausedSession ? { session: input.pausedSession } : {}),
+		},
 		requestedByUserId: input.requestedByUserId ?? null,
 	})
 	return {
@@ -217,4 +233,24 @@ export function readCredentialNeedChanges(
 ): Array<CredentialNeedChange> {
 	const changes = details['changes']
 	return Array.isArray(changes) ? (changes as Array<CredentialNeedChange>) : []
+}
+
+export function readPausedSessionPublish(
+	details: Record<string, unknown>,
+): PausedSessionPublish | null {
+	const session = details['session']
+	if (!session || typeof session !== 'object') return null
+	const value = session as Record<string, unknown>
+	if (typeof value['sessionId'] !== 'string') return null
+	return {
+		sessionId: value['sessionId'],
+		force: value['force'] === true,
+		destructiveOverwriteConfirmed:
+			value['destructiveOverwriteConfirmed'] === true,
+		privateVisibilityChangeConfirmed:
+			value['privateVisibilityChangeConfirmed'] === true,
+		...(typeof value['expectedPackageScope'] === 'string'
+			? { expectedPackageScope: value['expectedPackageScope'] }
+			: {}),
+	}
 }

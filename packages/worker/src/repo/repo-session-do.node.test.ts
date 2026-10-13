@@ -19,7 +19,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
 import type * as SavedPackageRepo from '#worker/package-registry/repo.ts'
-import type * as ApprovalRequestsRepo from '#worker/package-capabilities/approval-requests-repo.ts'
+import type * as CredentialNeedsApproval from '#worker/credentials/credential-needs-approval.ts'
 import type * as StorageBuckets from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionMockModule as mockModule,
@@ -287,15 +287,18 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: vi.fn(async () => undefined),
 }))
 
-const pausedHead = vi.hoisted(() => ({
-	getPausedPackageHeadCommit: vi.fn(async (): Promise<string | null> => null),
+const needsGate = vi.hoisted(() => ({
+	requireCredentialNeedsApproval: vi.fn(
+		async (): Promise<CredentialNeedsApproval.CredentialNeedsApprovalRequired | null> =>
+			null,
+	),
 }))
 
 vi.mock(
-	'#worker/package-capabilities/approval-requests-repo.ts',
+	'#worker/credentials/credential-needs-approval.ts',
 	async (importOriginal) => ({
-		...(await importOriginal<typeof ApprovalRequestsRepo>()),
-		getPausedPackageHeadCommit: pausedHead.getPausedPackageHeadCommit,
+		...(await importOriginal<typeof CredentialNeedsApproval>()),
+		requireCredentialNeedsApproval: needsGate.requireCredentialNeedsApproval,
 	}),
 )
 
@@ -1159,19 +1162,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	await expect(openSession('session-stale-source-head')).rejects.toThrow(
 		/does not match published commit/,
 	)
-
-	stubPackageSourceForOpenSession({
-		repoId: 'package-package-1',
-		publishedCommit: 'commit-published',
-		headCommit: 'commit-paused',
-	})
-	pausedHead.getPausedPackageHeadCommit.mockResolvedValueOnce('commit-paused')
-	vi.mocked(insertRepoSession).mockClear()
-	await openSession('session-paused-source-head')
-	expect(insertRepoSession).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({ base_commit: 'commit-published' }),
-	)
 })
 
 test('openSession wraps packfile corruption but leaves opaque Cloudflare internals bare', async () => {
@@ -1840,31 +1830,55 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 	)
 })
 
-test('publishSession forces past a paused commit at the source HEAD instead of reporting base_moved', async () => {
-	consoleWarn.mockImplementation(() => {})
+test('a publish paused for credential needs keeps the source branch and records the session for approval', async () => {
 	setCommonSessionFixtures()
-	mockModule.rawPush.mockRejectedValueOnce(
-		Object.assign(
-			new Error(
-				'Push rejected because it was not a simple fast-forward. Use "force: true" to override.',
-			),
-			{ name: 'PushRejectedError', code: 'PushRejectedError' },
-		),
-	)
 	const packageFile = { 'package.json': userPackageJson }
 	seedWorkspace(packageFile)
 	const state = await checkedPublishState(packageFile)
-	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
-		branch: 'main',
-		commit: 'commit-paused',
-	})
-	pausedHead.getPausedPackageHeadCommit.mockResolvedValueOnce('commit-paused')
+	const approval = {
+		requestId: 'request-1',
+		packageId: 'package-1',
+		packageName: '@user/pkg',
+		kodyId: 'pkg',
+		pendingCommit: 'commit-paused',
+		changes: [],
+		message: 'Package "@user/pkg" changed its credential needs.',
+	}
+	needsGate.requireCredentialNeedsApproval.mockResolvedValueOnce(approval)
+	mockModule.rawPush.mockClear()
+	mockModule.updateRepoSession.mockClear()
 
-	const result = await repoSession(createEnv(), state).publishSession(session)
-	expect(result.status).not.toBe('base_moved')
-	expect(mockModule.rawPush).toHaveBeenLastCalledWith(
-		expect.objectContaining({ force: true }),
+	await expect(
+		repoSession(createEnv(), state).publishSession(session),
+	).resolves.toMatchObject({
+		status: 'approval_required',
+		publishedCommit: null,
+		approval,
+	})
+	expect(needsGate.requireCredentialNeedsApproval).toHaveBeenCalledWith(
+		expect.objectContaining({
+			pausedSession: expect.objectContaining({ sessionId: 'session-1' }),
+		}),
 	)
+	expect(mockModule.git.push).toHaveBeenCalledWith(
+		expect.objectContaining({ ref: 'sessions/session1', force: true }),
+	)
+	expect(mockModule.rawPush).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.updateRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'session-1',
+			lastCheckpointAt: expect.any(String),
+		}),
+	)
+
+	await expect(
+		repoSession(createEnv(), state).publishSession({
+			...session,
+			expectedHeadCommit: 'commit-other',
+		}),
+	).rejects.toThrow(/no longer holds commit commit-other/)
 })
 
 test('runChecks forwards expectedPackageScope for a still-plain repo so promote can run package checks', async () => {
