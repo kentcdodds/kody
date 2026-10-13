@@ -490,6 +490,10 @@ test('finalize deletes the orphan snapshot when the pointer flip fails', async (
 	mockModule.updateEntitySource.mockRejectedValueOnce(
 		new Error('d1 unavailable'),
 	)
+	// Pointer never moved — live row still on the previous tip.
+	mockModule.getEntitySourceById.mockResolvedValueOnce(
+		source({ published_commit: 'commit-old' }),
+	)
 	mockModule.deletePublishedSourceSnapshot.mockClear()
 
 	await expect(
@@ -509,6 +513,33 @@ test('finalize deletes the orphan snapshot when the pointer flip fails', async (
 		sourceId: 'source-1',
 		publishedCommit: 'commit-new',
 	})
+})
+
+test('finalize keeps the snapshot when a concurrent pointer flip already landed', async () => {
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.updateEntitySource.mockRejectedValueOnce(
+		new Error('d1 unavailable'),
+	)
+	// Another writer already advertised commit-new.
+	mockModule.getEntitySourceById.mockResolvedValueOnce(
+		source({ published_commit: 'commit-new' }),
+	)
+	mockModule.deletePublishedSourceSnapshot.mockClear()
+
+	await expect(
+		finalizePublishedEntitySource({
+			env: kvEnv,
+			source: source() as ReturnType<typeof source> & {
+				entity_kind: 'package'
+			},
+			publishedCommit: 'commit-new',
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('d1 unavailable')
+
+	expect(mockModule.deletePublishedSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('locked package finishes checks then withholds published_commit unless allowLockedPublish', async () => {

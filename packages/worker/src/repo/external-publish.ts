@@ -88,18 +88,27 @@ export async function finalizePublishedEntitySource(
 			externalCheckUntil: null,
 		})
 	} catch (pointerError) {
-		// Orphan KV for the never-advertised tip is harmless but cheap to
-		// clean when the commit moved. Same-commit rewrites keep the live key.
+		// Orphan KV for a never-advertised tip is harmless but cheap to
+		// clean when the commit moved. Same-commit rewrites keep the live
+		// key. Re-read D1 first: a concurrent finalize of the same tip may
+		// have already advertised it, and deleting the shared commit-scoped
+		// key would wipe that winner's snapshot.
 		if (
 			wrotePublishedSnapshot &&
 			previousPublishedCommit !== input.publishedCommit
 		) {
 			try {
-				await deletePublishedSourceSnapshot({
-					env: input.env,
-					sourceId: input.source.id,
-					publishedCommit: input.publishedCommit,
-				})
+				const live = await getEntitySourceById(
+					input.env.APP_DB,
+					input.source.id,
+				)
+				if (live?.published_commit !== input.publishedCommit) {
+					await deletePublishedSourceSnapshot({
+						env: input.env,
+						sourceId: input.source.id,
+						publishedCommit: input.publishedCommit,
+					})
+				}
 			} catch (cleanupError) {
 				Sentry.captureException(cleanupError, {
 					tags: {

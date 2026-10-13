@@ -1,4 +1,3 @@
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -56,11 +55,11 @@ async function describeMissingPublishedSnapshot(input: {
 			? `package "${saved.name}" (${saved.id})`
 			: `package "${input.source.entity_id}"`
 	}
-	const causeSuffix = input.cause
-		? ` Recovery failed: ${getErrorMessage(input.cause)}`
-		: ''
+	// Keep Artifacts remotes/hosts out of the caller-facing message; attach
+	// the recovery cause for logs/Sentry without leaking it into Open API.
 	return new McpCallerError(
-		`Published snapshot for ${packageLabel} at commit "${input.publishedCommit}" is missing and could not be recovered from the artifact repo.${causeSuffix} Republish the package to restore it.`,
+		`Published snapshot for ${packageLabel} at commit "${input.publishedCommit}" is missing and could not be recovered from the artifact repo. Republish the package to restore it.`,
+		input.cause !== undefined ? { cause: input.cause } : undefined,
 	)
 }
 
