@@ -5285,7 +5285,8 @@ button.pw-slot:hover {
 
 .landing-pcards {
 	content-visibility: auto;
-	contain-intrinsic-size: auto 46rem;
+	/* Placeholder heights track the measured section at each layout. */
+	contain-intrinsic-size: auto calc(28rem + min(21vw, 16.8rem));
 	max-width: 72rem;
 	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
 	padding: 0 clamp(1.25rem, 4vw, 2.5rem);
@@ -5371,6 +5372,10 @@ button.pw-slot:hover {
 }
 
 @media (max-width: 860px) {
+	.landing-pcards {
+		contain-intrinsic-size: auto calc(34rem + 60vw);
+	}
+
 	.landing-pcards-list {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -5378,7 +5383,7 @@ button.pw-slot:hover {
 
 @media (max-width: 560px) {
 	.landing-pcards {
-		contain-intrinsic-size: auto 30rem;
+		contain-intrinsic-size: auto calc(16rem + 33.5vw);
 	}
 
 	.landing-pcards-list {
