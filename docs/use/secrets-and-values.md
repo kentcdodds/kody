@@ -52,10 +52,10 @@ change expiry on a user secret.
 
 ### Opt-in credential fields
 
-A saved secret is a **Key** by default, and Keys keep working through
-placeholders and host approval as described here. A user-scope **`secretSet`**
-from execute or the API (not from a package runtime) can also set fields for the
-opt-in credential types (ADR 0068):
+A saved secret is a **Key** by default. Keys fill placeholders and use host
+approval as described here. A user-scope **`secretSet`** from execute or the API
+(not from a package runtime) can also set fields for the opt-in credential types
+(ADR 0068):
 
 - **`kind`**: `secret` (a Key, the default), `url` (a whole webhook URL),
   `login` (a JSON object of login fields), or `signing` (a signing key). The

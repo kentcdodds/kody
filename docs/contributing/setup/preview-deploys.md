@@ -23,7 +23,7 @@ setup pages.
   per-deploy random `CAPABILITY_REINDEX_SECRET` so builtin capability search
   works on the fresh index (`--force` because APP_DB embed fingerprints can
   outlive the index they described). A per-preview index (instead of a namespace
-  prefix inside a shared index) keeps production namespace logic unchanged and
+  prefix inside a shared index) avoids sharing production's index namespace and
   lets cleanup delete every preview vector in one call; Cloudflare allows 50,000
   indexes per account.
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`

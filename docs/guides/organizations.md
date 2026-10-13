@@ -38,10 +38,9 @@ one org.
 A scheduled job, subscription, or webhook runs only after a person turns it on
 for themselves with `enablementEnable`. Minting a webhook URL also turns it on
 for the minter when the URL has no enabler yet and the minter holds
-`package:execute`; a webhook URL runs as one enabler. Triggers that were already
-running when enablements arrived were turned on for their creator, or the
-earliest Owner if the creator had left. That person is the **enabler**, and
-every run acts as them:
+`package:execute`; a webhook URL runs as one enabler. A trigger that has no
+later `enablementEnable` stays on for its creator, or the earliest Owner if the
+creator left. That person is the **enabler**, and every run acts as them:
 
 - The run has the enabler's live access in the org, checked on every run. It can
   do only what the enabler could do by hand at that moment, never more.

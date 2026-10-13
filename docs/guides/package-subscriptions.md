@@ -723,7 +723,7 @@ type PackageCodemodSubscriptionEnvelope = {
 `before_commit` and `after_commit` are the package's published commit before and
 after apply. The event deliberately omits file contents — fetch the current
 published source with repo or package capabilities when a handler needs diffs or
-full files. Community listing snapshots are unchanged by apply; only the owning
+full files. Apply does not rewrite community listing snapshots; only the owning
 saved package advances. `run.item_id` is the apply ledger item id.
 
 Use this topic for notifier packages that record migrations, ping owners, or

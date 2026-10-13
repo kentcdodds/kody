@@ -267,9 +267,9 @@ execute started from an MCP call is. A denial throws `LivePersonRequiredError`,
 which names the capability; Open API maps it to 403 `insufficient_scope` with
 `denial: 'live_person_required'`.
 
-Declared today: `orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`,
-`inviteAccept`, `inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member
-or billing grants. Org billing writes are session-only web handlers.
+Declared: `orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`, `inviteAccept`,
+`inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member or billing
+grants. Org billing writes are session-only web handlers.
 `registry.node.test.ts` fails when a member-changing capability does not declare
 it, and when a site-admin capability does.
 
@@ -300,7 +300,7 @@ finds no live person behind the request:
 
 Both steps live in
 `packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
-calls are unchanged.
+calls skip those two steps and use the usual role check.
 
 A team org's runs call as the org's identity, which holds no site role, so the
 role check still refuses them even when the enabler is an admin. Site-admin
@@ -315,7 +315,7 @@ the missing one. Its message prints the exact
 `cliCredentialBootstrap({ lifetime, scopes })` call and the matching
 `kody auth bootstrap --scopes` command. Open API adds `required_scope` and
 `mint_scopes` to the 403 `insufficient_scope` details so clients can print the
-same commands. Default bootstrap scopes cover local-execute parity plus
+same commands. Default bootstrap scopes include local-execute use scopes plus
 `package:write` and `token:delete`; callers can still narrow or expand via
 explicit `scopes`.
 

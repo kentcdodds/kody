@@ -38,7 +38,7 @@ challenge for credentials (`401`) so a configured helper can authenticate.
 After `kody auth setup-git`, the same URL accepts a long-lived `kody_at_…` for
 live HEAD clone/fetch/push (push moves HEAD only; it does not auto-publish). See
 [Git credential helper](../guides/auth-setup-git.md). Owner Artifacts remotes
-from `packageGetGitRemote` remain available and unchanged.
+from `packageGetGitRemote` stay available for short-lived scoped remotes.
 
 Community discovery uses the MCP **`community`** domain. Catalog listings do
 **not** appear in the general MCP **`search`** tool.

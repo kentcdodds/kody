@@ -455,7 +455,8 @@ Once a rescan finds no webhook without `verification`, publish requires it
 - Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
   that is not an array of objects, and a `verification` that is not an object.
 - Does not touch the stored signing secret. Mint still gives these webhooks the
-  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
+  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply still fills
+  that secret.
 - Sets `applyMode: 'published-only'` so fleet apply can advance
   `published_commit` on packages whose Artifacts default-branch HEAD has
   drifted, without moving that HEAD (owner unpublished work stays put).
@@ -501,11 +502,11 @@ step matched zero packages.
 Locked packages (`saved_packages.locked_at` set) still run apply and revert for
 `head-and-published` codemods when HEAD matches published: the engine commits
 and pushes HEAD and does **not** advance `published_commit`. The owner reviews
-that HEAD commit later at `/@username/:kodyId/approve-publish?commit=…`.
+that HEAD commit later at `/@username/:name/approve-publish?commit=…`.
 `published-only` codemods **always finalize** `published_commit`, including on
 locked packages via `allowLockedPublish`. If that creates a sibling of pending
-HEAD, approve-publish still works: the owner click passes `allowForce` with
-destructive overwrite confirmation (backup required).
+HEAD, approve-publish promotes that commit: the owner click passes `allowForce`
+with destructive overwrite confirmation (backup required).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.

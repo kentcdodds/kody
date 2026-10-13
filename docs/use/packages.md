@@ -127,9 +127,8 @@ hard-code a previous `@{username}` scope need updates from their owners.
 the block. A slot does not pick the credential: `{{secret:NAME}}` reads the
 secret stored as `NAME` and `{{integration-token:NAME}}` the integration named
 `NAME`, with the same package access rules as a package without slots. Name each
-slot after the secret or integration the code references. These placeholders
-keep working permanently; more secure credential types that a package can opt
-into are described in
+slot after the secret or integration the code references. Placeholders fill Key
+credentials; opt-in types that a package can declare are described in
 [ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md).
 
 ```json
@@ -159,18 +158,15 @@ into are described in
   64). Prefer naming a slot after its provider (`github`, `resend`); publish
   adds an informational note for a key that is not a provider slug
   (`^[a-z0-9-]+$`) and never fails for it.
-- `kind` is optional in the accepted design
-  ([ADR 0068 amendment 2026-10-12](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-12)):
-  omit it for any fetch-capable credential for that provider (Key/secret such as
-  a PAT, oauth, login); declare it only when a specific shape is needed
-  (`secret`, `oauth`, `mcp`, or the opt-in types `url`, `login`, and `signing`).
-  Implementation of optional `kind` is a follow-up; until then matching still
-  requires `kind`. `provider` is optional and defaults to the key; a second
-  account from the same provider gets its own key with an explicit `provider`.
-  `description` is required, never affects matching, and says why the package
-  wants access. `multiple: true` means the package uses several accounts at
-  once. A typical need looks like
-  `"github": { "description": "Read PRs to summarize them" }`.
+- `kind` is required (`secret`, `oauth`, `mcp`, or the opt-in types `url`,
+  `login`, and `signing`). `provider` is optional and defaults to the key; a
+  second account from the same provider gets its own key with an explicit
+  `provider`. `description` is required, never affects matching, and says why
+  the package wants access. `multiple: true` means the package uses several
+  accounts at once. A typical need looks like
+  `"github": { "kind": "oauth", "description": "Read PRs to summarize them" }`.
+  ADR 0068's accepted design allows omitting `kind` for any fetch-capable
+  credential; publish matching requires it.
 - Publish rejects any other key or a missing required field and names the slot.
   If a later rule rejects a slot in a version that is already published, the
   package still loads with its other slots.
