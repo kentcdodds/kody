@@ -21,6 +21,7 @@ import {
 } from '#universal/package-files.ts'
 import { directoryOfPackageFilePath } from '#universal/package-readme-images.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import { renderPackageRepoActions } from '#universal/package-title-actions.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import {
@@ -60,7 +61,12 @@ function countLines(value: string) {
 }
 
 export function PackageFilesExplorer(
-	handle: Handle<{ data: PackageFilesLoaderData; busy?: boolean }>,
+	handle: Handle<{
+		data: PackageFilesLoaderData
+		busy?: boolean
+		/** Fork result / error under the chrome (see the install controller). */
+		installStrip?: RemixNode
+	}>,
 ) {
 	// Directory open/closed state is the visitor's, so it survives navigation
 	// between files; each newly selected path opens its own ancestors on top of
@@ -144,6 +150,7 @@ export function PackageFilesExplorer(
 						ownerProfilePublic: data.ownerProfilePublic,
 						iconUrl: data.iconUrl ?? null,
 						iconName: data.kodyId,
+						actions: renderPackageRepoActions(data.repoActions ?? null),
 					})
 				) : (
 					<>
@@ -155,6 +162,7 @@ export function PackageFilesExplorer(
 						</header>
 					</>
 				)}
+				{handle.props.installStrip}
 				<div mix={css(layoutCss)}>
 					<nav aria-label="Files" mix={css(treeCss)}>
 						<div mix={css(treeHeadCss)}>

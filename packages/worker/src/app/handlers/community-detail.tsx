@@ -9,6 +9,7 @@ import {
 	ownerPackageForClient,
 	packagePageIsPrivate,
 } from '#app/package-page.ts'
+import { buildPackageRepoActionsForPage } from '#app/package-repo-actions.ts'
 import {
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
@@ -612,6 +613,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					kodyId: page.kodyId,
 					isPrivate: packagePageIsPrivate(page),
 					invocationUrlOrigin: page.invocationUrlOrigin,
+					repoActions: buildPackageRepoActionsForPage(page),
 				},
 				200,
 				serverTiming,
@@ -684,6 +686,7 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 						isPrivate: page.ownerPackage.isPrivate,
 						invocationUrlOrigin: page.invocationUrlOrigin,
+						repoActions: buildPackageRepoActionsForPage(page),
 					},
 				},
 			})
