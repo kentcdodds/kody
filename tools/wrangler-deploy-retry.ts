@@ -14,6 +14,16 @@ export function isRetryableWorkersDevSubdomainRace(output: string) {
 	return uploaded && missingAfterUpload
 }
 
+const workersDevSubdomainRaceMinDelayMs = 10_000
+
+/**
+ * A redeploy soon after the 10007 race can crash wrangler on the half-created
+ * Worker's settings. Only retried when the previous attempt hit the race.
+ */
+function isWranglerCrashAfterSubdomainRace(output: string) {
+	return /Cannot read properties of null \(reading 'tag'\)/.test(output)
+}
+
 export function isRetryableWranglerDeployFailure(output: string) {
 	return (
 		isRetryableWorkersDevSubdomainRace(output) ||
@@ -120,14 +130,27 @@ export async function runWranglerDeployWithRetry(input: {
 		})
 
 	let last = await run(input.command, input.args, input.env)
+	let sawSubdomainRace = false
 	for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
 		if (last.status === 0) return last
 		const combined = `${last.output} ${last.errorMessage}`
-		if (!isRetryableWranglerDeployFailure(combined)) return last
+		const subdomainRace = isRetryableWorkersDevSubdomainRace(combined)
+		const crashAfterRace =
+			sawSubdomainRace && isWranglerCrashAfterSubdomainRace(combined)
+		sawSubdomainRace ||= subdomainRace
+		if (!crashAfterRace && !isRetryableWranglerDeployFailure(combined)) {
+			return last
+		}
+		// The 10007 race heals over tens of seconds, not the 1-4s base backoff.
+		const delayMs =
+			(sawSubdomainRace
+				? Math.max(baseDelayMs, workersDevSubdomainRaceMinDelayMs)
+				: baseDelayMs) *
+			2 ** (attempt - 1)
 		log(
-			`Retrying wrangler (attempt ${attempt + 1}/${maxAttempts}) after a transient Cloudflare failure.`,
+			`Retrying wrangler (attempt ${attempt + 1}/${maxAttempts}) in ${String(delayMs)}ms after a transient Cloudflare failure${sawSubdomainRace ? ' (workers.dev 10007 race)' : ''}.`,
 		)
-		await wait(baseDelayMs * 2 ** (attempt - 1))
+		await wait(delayMs)
 		last = await run(input.command, input.args, input.env)
 	}
 	return last
