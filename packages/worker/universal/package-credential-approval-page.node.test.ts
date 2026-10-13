@@ -144,6 +144,15 @@ test('before and after read inherit, none, and credentials', () => {
 			change({ before: [], after: [], beforeUnusableIds: ['gone-1'] }),
 		),
 	).toBe(false)
+	expect(
+		approvalChangeIsNoop(
+			change({
+				before: [],
+				after: [],
+				error: { code: 'credential_not_found', message: 'No such credential.' },
+			}),
+		),
+	).toBe(false)
 })
 
 test('the approve button names the mappings and each trigger it turns on', () => {
