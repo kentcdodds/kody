@@ -492,3 +492,26 @@ Kent: manifest credential need `kind` becomes **optional**.
 - **Naming direction:** `credentials` is the umbrella term everywhere (secrets
   and integrations are credential subtypes). UI/UX is designed separately and is
   not decided here.
+
+## Amendment 2026-10-13: call maps and pinned needs
+
+Kent decided four call-map questions (#3599).
+
+1. **Strict invoke.** In an invoked run, a call-map key that no package in the
+   run declares fails the run before it starts (`credential_need_unknown`). A
+   dependency imported by a computed specifier, whose needs cannot be known up
+   front, is refused in strict mode. Ad hoc `execute` code only warns.
+2. **Pinned needs.** A published app runs against the credential needs
+   snapshotted at its publish (its needs closure), so a dependency cannot
+   quietly gain credentials. Only a change to credential needs, transitive
+   included, pauses a publish for approval; other changes publish freely. A
+   dependency change never rebuilds or republishes a public app on its own.
+3. **Where the map goes.** The `credentials` map is accepted on MCP `execute`
+   (for `code` and `invoke`) and on the CapabilityProxy (CLI `--credential`). It
+   is not accepted on the package-callable `execute` capability: package code
+   would pick credentials by name there, which would bypass `credential.named`'s
+   sharing rules.
+4. **Several picks for one `credential(key)`.** It is an error whose message
+   lists every option by name and scope, with matching `options` and
+   `retryWith`, so an agent can pick one or show them to the user. The same
+   holds for `credential_ambiguous`.
