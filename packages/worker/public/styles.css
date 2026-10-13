@@ -4421,7 +4421,7 @@ button.pw-node:hover {
 .pw-planner-wait {
 	position: absolute;
 	left: 0.7em;
-	top: 4.1em;
+	top: calc(100% + 0.5em);
 	color: var(--pw-muted);
 	font-size: 0.8em;
 	opacity: 0;
@@ -4575,6 +4575,10 @@ button.pw-slot:hover {
 	animation-delay: calc(var(--i, 0) * 0.2s);
 }
 
+.pw-integrations[data-motion] .pw-slot:is(:hover, :focus-visible) {
+	animation: none;
+}
+
 /* After a pick: one booking round trip. */
 .pw-integrations[data-motion] .pw-run[data-booked] .pw-lane,
 .pw-integrations[data-motion] .pw-run[data-booked] .pw-lane .pw-packet,
@@ -4688,17 +4692,16 @@ button.pw-slot:hover {
 
 @keyframes pw-in-slot {
 	0%,
-	64% {
-		opacity: 0;
-		transform: translateX(-0.5em);
+	64%,
+	90%,
+	100% {
+		border-color: var(--pw-line);
+		background: var(--pw-stage);
 	}
 	69%,
-	95% {
-		opacity: 1;
-		transform: none;
-	}
-	100% {
-		opacity: 0;
+	80% {
+		border-color: var(--pw-accent);
+		background: var(--pw-soft);
 	}
 }
 
