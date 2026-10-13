@@ -28,7 +28,10 @@ import {
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
-import { updateEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	getEntitySourceById,
+	updateEntitySource,
+} from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
 import { publishCommunityListing } from '#worker/community/service.ts'
@@ -238,19 +241,38 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				})
 			} catch (error) {
 				// publishSession can throw before finalize (no KV snapshot yet)
-				// or after finalize during session bookkeeping. Only revert when
-				// the package tip was never finalized — otherwise keep the live
-				// package and let the caller retry completion (#3497).
+				// or after finalize during session bookkeeping. Revert only when
+				// the tip was never finalized. If finalize already wrote KV,
+				// finish the promote happy path so we do not leave a package
+				// that packageGet can load but promote cannot retry (#3497).
 				const seededCommit = opened.base_commit || head.commit
+				const liveSource = await getEntitySourceById(
+					ctx.env.APP_DB,
+					source.id,
+				).catch(() => null)
+				const finalizedCommit =
+					liveSource?.published_commit?.trim() || seededCommit
 				const finalizedSnapshot = await readPublishedSourceSnapshot({
 					env: ctx.env,
 					sourceId: source.id,
-					publishedCommit: seededCommit,
+					publishedCommit: finalizedCommit,
 				}).catch(() => null)
 				if (!finalizedSnapshot) {
 					await revertFailedPromote()
+					throw error
 				}
-				throw error
+				console.error(
+					'repo-promote-to-package-post-finalize-bookkeeping-failed',
+					packageId,
+					error,
+				)
+				publishResult = {
+					status: 'ok',
+					sessionId,
+					publishedCommit: finalizedCommit,
+					message:
+						'Published session recovered after post-finalize bookkeeping failure.',
+				}
 			}
 			if (publishResult.status !== 'ok') {
 				await revertFailedPromote()
