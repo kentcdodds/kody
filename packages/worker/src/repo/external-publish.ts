@@ -60,39 +60,50 @@ export async function finalizePublishedEntitySource(
 	}
 	const previousPublishedCommit = input.source.published_commit
 	let wrotePublishedSnapshot = false
-	await updateEntitySource(input.env.APP_DB, {
-		id: input.source.id,
-		userId: input.source.user_id,
-		publishedCommit: input.publishedCommit,
-		manifestPath: input.source.manifest_path,
-		sourceRoot: input.source.source_root,
-		externalCheckUntil: null,
-	})
+	// Persist the published source snapshot *before* flipping
+	// `published_commit`. Advertising the new tip while KV still lacks the
+	// matching snapshot leaves a window where imports and packageGet fail
+	// with "Published snapshot … was not found" (platform feedback /
+	// promote race). The snapshot key is keyed by commit, so it does not
+	// require the D1 pointer to move first. Previous tip keeps serving until
+	// this write succeeds and D1 advances.
 	if (hasPublishedRuntimeArtifacts(input.env)) {
-		try {
-			await writePublishedSourceSnapshot({
-				env: input.env,
-				source: {
-					...input.source,
-					published_commit: input.publishedCommit,
-				},
-				files: input.files,
-			})
-			wrotePublishedSnapshot = true
-		} catch (snapshotError) {
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: input.publishedCommit,
+			},
+			files: input.files,
+		})
+		wrotePublishedSnapshot = true
+	}
+	try {
+		await updateEntitySource(input.env.APP_DB, {
+			id: input.source.id,
+			userId: input.source.user_id,
+			publishedCommit: input.publishedCommit,
+			manifestPath: input.source.manifest_path,
+			sourceRoot: input.source.source_root,
+			externalCheckUntil: null,
+		})
+	} catch (pointerError) {
+		// Orphan KV for the never-advertised tip is harmless but cheap to
+		// clean when the commit moved. Same-commit rewrites keep the live key.
+		if (
+			wrotePublishedSnapshot &&
+			previousPublishedCommit !== input.publishedCommit
+		) {
 			try {
-				await updateEntitySource(input.env.APP_DB, {
-					id: input.source.id,
-					userId: input.source.user_id,
-					publishedCommit: previousPublishedCommit,
-					manifestPath: input.source.manifest_path,
-					sourceRoot: input.source.source_root,
-					externalCheckUntil: input.source.external_check_until,
+				await deletePublishedSourceSnapshot({
+					env: input.env,
+					sourceId: input.source.id,
+					publishedCommit: input.publishedCommit,
 				})
-			} catch (revertError) {
-				Sentry.captureException(revertError, {
+			} catch (cleanupError) {
+				Sentry.captureException(cleanupError, {
 					tags: {
-						scope: 'repo.publishFromExternalRef.revert-after-snapshot-failure',
+						scope: 'repo.publishFromExternalRef.cleanup-after-pointer-failure',
 					},
 					extra: {
 						sourceId: input.source.id,
@@ -101,8 +112,8 @@ export async function finalizePublishedEntitySource(
 					},
 				})
 			}
-			throw snapshotError
 		}
+		throw pointerError
 	}
 	try {
 		await refreshIdentityIconForSource({

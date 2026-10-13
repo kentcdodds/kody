@@ -544,7 +544,8 @@ Codemods that set `applyMode: 'published-only'` (today: `0012`) change only the
 3. Commit the transformed files as a **child of** `published_commit`.
 4. Push that commit to the durable non-default ref `refs/heads/kody-published`
    (never the default-branch tip — owner unpublished work on HEAD is untouched).
-5. Call `finalizePublishedEntitySource` to advance `published_commit` + KV.
+5. Call `finalizePublishedEntitySource` to write KV then advance
+   `published_commit`.
 
 When HEAD already matches published, published-only codemods still use
 `syncArtifactSourceSnapshot` so HEAD and published stay aligned.

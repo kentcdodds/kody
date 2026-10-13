@@ -1310,10 +1310,11 @@ calls `publishFromExternalRef(...)`.
 
 - run manifest, docs (`README.md` + `AGENTS.md`), dependency, bundle, typecheck,
   and lint checks before mutation
-- advance `entity_sources.published_commit`
 - write the `PublishedSourceSnapshot` and manifest snapshot to
-  `BUNDLE_ARTIFACTS_KV`
-- roll the D1 commit pointer back if KV snapshot persistence fails
+  `BUNDLE_ARTIFACTS_KV` for the new commit (key is commit-scoped; previous tip
+  keeps serving until the pointer moves)
+- advance `entity_sources.published_commit` only after that KV write succeeds
+- delete the never-advertised new snapshot key if the D1 pointer update fails
 - rebuild saved package projections, bundle artifacts, vector search entries,
   retriever manifests, and package jobs through
   `refreshSavedPackageProjection(...)`

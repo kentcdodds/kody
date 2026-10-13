@@ -1320,33 +1320,9 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 			},
 		}),
 	).rejects.toThrow('kv write failed')
-	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
-		expect.objectContaining({
-			id: 'source-1',
-			publishedCommit: 'commit-published-fail',
-		}),
-	)
-	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
-		expect.objectContaining({ id: 'source-1', publishedCommit: 'commit-base' }),
-	)
-
-	await expect(
-		publishChecked('commit-published-double-fail', packageFiles, {
-			setup() {
-				mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
-					new Error('kv write failed'),
-				)
-				mockModule.updateEntitySource
-					.mockResolvedValueOnce(undefined)
-					.mockRejectedValueOnce(new Error('d1 revert failed'))
-			},
-		}),
-	).rejects.toThrow('kv write failed')
-	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
+	// Snapshot write runs before the D1 pointer flip, so a KV failure must
+	// leave published_commit on the previous tip (no advance, no revert).
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
 	await expect(
 		publishChecked(
@@ -1366,11 +1342,19 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	preparePublish('commit-published-new', files)
 	mockModule.workspaceGlob.mockClear()
 	mockModule.workspaceReadFileBytes.mockClear()
+	mockModule.writePublishedSourceSnapshot.mockClear()
+	mockModule.updateEntitySource.mockClear()
 	await publish(
 		{ force: false },
 		kvEnv(),
 		await checkedPublishState(packageFiles),
 	)
+	const writeOrder =
+		mockModule.writePublishedSourceSnapshot.mock.invocationCallOrder[0]
+	const updateOrder = mockModule.updateEntitySource.mock.invocationCallOrder[0]
+	expect(writeOrder).toBeDefined()
+	expect(updateOrder).toBeDefined()
+	expect(writeOrder!).toBeLessThan(updateOrder!)
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			source: expect.objectContaining({
