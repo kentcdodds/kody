@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { hashMigrationContent } from '../check-migrations.ts'
 import {
 	assertPreviewOnlyD1Target,
+	historicalMigrationRevListGitArgs,
 	isAllowedPreviewD1DatabaseName,
 	parseArgs,
 	planRenamedMigrationRewrites,
@@ -213,6 +214,22 @@ test('parseArgs requires remote, binding, config, and migrations-dir', () => {
 		migrationsDir: 'packages/worker/migrations',
 		dryRun: true,
 	})
+})
+
+test('historicalMigrationRevListGitArgs caps rev-list during enumeration with -n', () => {
+	expect(
+		historicalMigrationRevListGitArgs(
+			'packages/worker/migrations/0074-platform-oauth-app-visibility.sql',
+		),
+	).toEqual([
+		'rev-list',
+		'-n',
+		'32',
+		'--full-history',
+		'HEAD',
+		'--',
+		'packages/worker/migrations/0074-platform-oauth-app-visibility.sql',
+	])
 })
 
 test('resolveHistoricalMigrationContent recovers SQL from rename via commit parent', () => {

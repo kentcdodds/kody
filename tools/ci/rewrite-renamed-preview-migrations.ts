@@ -197,7 +197,21 @@ export function listMigrationDigests(
 
 const gitShowMaxBuffer = 16 * 1024 * 1024
 /** Cap how many path-touching commits we probe when recovering a blob. */
-const historicalRevListProbeLimit = 32
+export const historicalRevListProbeLimit = 32
+
+export function historicalMigrationRevListGitArgs(
+	relativePath: string,
+): Array<string> {
+	return [
+		'rev-list',
+		'-n',
+		String(historicalRevListProbeLimit),
+		'--full-history',
+		'HEAD',
+		'--',
+		relativePath,
+	]
+}
 
 function migrationRelativePath(
 	cwd: string,
@@ -285,8 +299,11 @@ export function resolveHistoricalMigrationContent(input: {
 	// (main), so a renumbered preview migration blob would be unrecoverable.
 	const revList = spawnSync(
 		'git',
-		['rev-list', '--full-history', 'HEAD', '--', relativePath],
-		{ cwd, encoding: 'utf8' },
+		historicalMigrationRevListGitArgs(relativePath),
+		{
+			cwd,
+			encoding: 'utf8',
+		},
 	)
 	if (revList.status !== 0) {
 		return null
@@ -296,7 +313,6 @@ export function resolveHistoricalMigrationContent(input: {
 		.split('\n')
 		.map((line) => line.trim())
 		.filter(Boolean)
-		.slice(0, historicalRevListProbeLimit)
 	for (const commit of commits) {
 		const content = showPathNearCommit(cwd, commit, relativePath)
 		if (content !== null) {
