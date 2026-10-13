@@ -225,10 +225,11 @@ function installMcpOAuthAttemptBinding(
 	if (typeof provider.redirectToAuthorization === 'function') {
 		const redirect = provider.redirectToAuthorization.bind(provider)
 		provider.redirectToAuthorization = async (authUrl) => {
-			// Stamp attempt identity before the SDK commits the authorization
-			// URL / PKCE state. Returning after redirect when identity cannot
-			// be built left users finishing provider consent for a flow
-			// checkState must refuse.
+			// Pre-validate the attempt stamp, commit SDK auth URL / PKCE, then
+			// write identity. Writing before redirect left the new attempt
+			// visible to a concurrent checkState while the prior PKCE state
+			// was still valid. Redirecting before validate (and returning)
+			// left users finishing consent for a flow checkState must refuse.
 			const serverId = readProviderString(provider, 'serverId')
 			const live = serverId ? await resolveLive(serverId) : null
 			const clientId =
@@ -262,8 +263,13 @@ function installMcpOAuthAttemptBinding(
 					mcpOAuthAttemptIdentityInvalidMessage(live.name),
 				)
 			}
-			await writeMcpOAuthAttemptIdentity(provider.storage, identity)
 			await redirect(authUrl)
+			try {
+				await writeMcpOAuthAttemptIdentity(provider.storage, identity)
+			} catch (error) {
+				clearMcpOAuthProviderAuthUrl(provider)
+				throw error
+			}
 		}
 	}
 	if (typeof provider.checkState === 'function') {
@@ -561,4 +567,13 @@ function readProviderString(
 	} catch {
 		return null
 	}
+}
+
+/** Drop a committed auth URL when attempt identity could not be persisted. */
+function clearMcpOAuthProviderAuthUrl(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	// SDK stores authUrl on a private field; clear via unknown so a failed
+	// stamp write cannot leave callers with a sendable authorize URL.
+	;(provider as unknown as { _authUrl_?: string })._authUrl_ = undefined
 }

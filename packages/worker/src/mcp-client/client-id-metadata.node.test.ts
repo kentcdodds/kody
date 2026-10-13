@@ -493,7 +493,7 @@ test('a verified pending attempt survives an actor-less refresh race during gran
 	).toBeUndefined()
 })
 
-test('redirectToAuthorization stamps attempt identity before the SDK commits', async () => {
+test('redirectToAuthorization validates, commits SDK state, then stamps identity', async () => {
 	const { storage, values } = createMemoryStorage()
 	const live = {
 		serverId: 'server-home',
@@ -537,6 +537,27 @@ test('redirectToAuthorization stamps attempt identity before the SDK commits', a
 	).rejects.toBeInstanceOf(McpOAuthAttemptIdentityError)
 	expect(providerAgain.authUrl).toBeUndefined()
 	expect(values.get(mcpOAuthAttemptStorageKey('server-home'))).toBeUndefined()
+
+	// Storage failure after SDK commit must clear authUrl so callers do not
+	// send the person through consent for an unwired attempt.
+	currentLive = { ...live }
+	const failingStorage = {
+		...storage,
+		put: async () => {
+			throw new Error('storage put failed')
+		},
+	} as unknown as DurableObjectStorage
+	const providerFailWrite = createMcpClientOAuthProvider(
+		failingStorage,
+		callbackUrl,
+		{ resolveLiveServerIdentity: async () => currentLive },
+	)
+	providerFailWrite.serverId = 'server-home'
+	providerFailWrite.clientId = 'client-1'
+	await expect(
+		providerFailWrite.redirectToAuthorization(authUrl),
+	).rejects.toThrow(/storage put failed/)
+	expect(providerFailWrite.authUrl).toBeUndefined()
 })
 
 test('checkState refuses when a concurrent redirect replaces the pending attempt', async () => {
