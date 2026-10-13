@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCommunityListingByOwnerAndPackage: vi.fn(),
@@ -69,6 +70,28 @@ test('resolveListingBehindPublishHint builds the update hint for a lagging listi
 		updateHint: expect.stringContaining('communityPublish'),
 		updateUrl: '/@danj/hey-email/settings#update-public-listing',
 	})
+})
+
+test('resolveListingBehindPublishHint returns null when the catalog lookup rejects', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mockModule.getCommunityListingByOwnerAndPackage.mockRejectedValue(
+		new Error('D1 unavailable'),
+	)
+	expect(
+		await resolveListingBehindPublishHint({
+			db: {} as D1Database,
+			ownerUserId: 'user-1',
+			packageId: 'pkg-1',
+			ownerUsername: 'danj',
+			kodyId: 'hey-email',
+			promotedCommit: 'commit-new',
+			promotedVersion: '1.5.0',
+		}),
+	).toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('listing-behind-hint'),
+		'D1 unavailable',
+	)
 })
 
 test('readPromotedVersionFromManifest reads package.json version strings', () => {

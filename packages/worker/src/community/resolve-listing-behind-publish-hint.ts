@@ -25,31 +25,41 @@ export async function resolveListingBehindPublishHint(input: {
 	/** Absolute or path update URL. Defaults to package settings fragment. */
 	updateUrl?: string
 }): Promise<CommunityListingBehindHint | null> {
-	const listing = await getCommunityListingByOwnerAndPackage(input.db, {
-		ownerUserId: input.ownerUserId,
-		packageId: input.packageId,
-	})
-	if (!listing || listing.status !== 'active') return null
-	if (
-		!listingNeedsRepublish({
-			listingPinnedCommit: listing.pinnedCommit,
-			sourcePublishedCommit: input.promotedCommit,
+	// Optional discoverability only — callers (publish/promote) must still
+	// return success when the catalog lookup rejects.
+	try {
+		const listing = await getCommunityListingByOwnerAndPackage(input.db, {
+			ownerUserId: input.ownerUserId,
+			packageId: input.packageId,
 		})
-	) {
+		if (!listing || listing.status !== 'active') return null
+		if (
+			!listingNeedsRepublish({
+				listingPinnedCommit: listing.pinnedCommit,
+				sourcePublishedCommit: input.promotedCommit,
+			})
+		) {
+			return null
+		}
+		return buildCommunityListingBehindHint({
+			listingPinnedCommit: listing.pinnedCommit,
+			promotedCommit: input.promotedCommit,
+			pinnedVersion: listing.version ?? null,
+			promotedVersion: input.promotedVersion ?? null,
+			updateUrl:
+				input.updateUrl ??
+				buildUpdatePublicListingHref({
+					username: input.ownerUsername,
+					kodyId: input.kodyId,
+				}),
+		})
+	} catch (error) {
+		console.warn(
+			`[listing-behind-hint] lookup failed for ${input.ownerUsername}/${input.kodyId}:`,
+			error instanceof Error ? error.message : error,
+		)
 		return null
 	}
-	return buildCommunityListingBehindHint({
-		listingPinnedCommit: listing.pinnedCommit,
-		promotedCommit: input.promotedCommit,
-		pinnedVersion: listing.version ?? null,
-		promotedVersion: input.promotedVersion ?? null,
-		updateUrl:
-			input.updateUrl ??
-			buildUpdatePublicListingHref({
-				username: input.ownerUsername,
-				kodyId: input.kodyId,
-			}),
-	})
 }
 
 export function readPromotedVersionFromManifest(

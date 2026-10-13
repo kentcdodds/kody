@@ -345,7 +345,7 @@ test('publishExternalPush still succeeds when listing hint lookup rejects', asyn
 	if (published.status !== 'published') throw new Error('expected published')
 	expect(published.listing).toBeUndefined()
 	expect(consoleWarn).toHaveBeenCalledWith(
-		expect.stringContaining('listing hint lookup failed'),
+		expect.stringContaining('listing-behind-hint'),
 		'D1 unavailable',
 	)
 })
