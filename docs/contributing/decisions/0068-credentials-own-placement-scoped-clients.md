@@ -246,9 +246,9 @@ The keyed map stays. `provider` is optional and defaults to the key.
 credentials: { github: 'work', google: ['work','personal'], x: { name: 'work', scope: 'org' } }
 ```
 
-The CLI takes `--credential github=work` and `--credential x=org:work`.
-Triggers do not take a map at enable time; their picks are stored mappings set
-through Approve or the package's Credentials tab (see
+The CLI takes `--credential github=work` and `--credential x=org:work`. Triggers
+do not take a map at enable time; their picks are stored mappings set through
+Approve or the package's Credentials tab (see
 [Amendment 2026-10-12](#amendment-2026-10-12)). An admin can disable someone
 else's enablement but cannot point it at different credentials.
 
@@ -517,10 +517,10 @@ Kent: manifest credential need `kind` becomes **optional**.
   that is not on fails with a clear error that includes the link. Enablements
   that already exist, including the migrated ones and any an earlier mint
   created, keep working untouched; remint and rotate never change them.
-  Credential mappings are stored per instance (per enablement), so each
-  instance can use different credentials. Today a declared webhook name has one
-  URL per org, which is one instance; more than one URL per name needs a schema
-  change that is still open.
+  Credential mappings are stored per instance (per enablement), so each instance
+  can use different credentials. Today a declared webhook name has one URL per
+  org, which is one instance; more than one URL per name needs a schema change
+  that is still open.
 - **Trigger picks are mappings, not snapshots (2026-10-13):** a trigger
   instance's credentials are its `enablement` mapping rows, which inherit the
   enabler's default, then the org default, then the one usable credential, so a
