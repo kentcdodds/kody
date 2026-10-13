@@ -222,6 +222,39 @@ test('an edit between the final check and the write fails Approve and writes not
 	expect(await t.mappingAudits()).toHaveLength(1)
 })
 
+test('a trigger turned on and mapped after review fails Approve as stale and keeps that mapping', async () => {
+	const t = await setup()
+	await t.storeKey('team-slack', 'slack')
+	await t.storeKey('backup-slack', 'slack')
+	const proposal = proposalOf([
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	const scope = await t.scopeFor('bea', 'owner')
+	const reviewed = (await resolveCredentialApproval(scope, proposal)).view
+	expect(reviewed.changes[0]!.willEnable).toBe(true)
+	// Another tab turns the trigger on with a different pick; `scope` still
+	// holds the rows read before it.
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'backup-slack' }] },
+	])
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal,
+		fingerprint: reviewed.fingerprint,
+	})
+	expect(outcome.status).toBe('stale')
+	const view = await buildPackageCredentialsView(
+		await t.scopeFor('bea', 'owner'),
+	)
+	expect(view.triggers[0]!.mappings[1]).toMatchObject({
+		needKey: 'chat',
+		effective: {
+			source: 'trigger',
+			credentials: [expect.objectContaining({ name: 'backup-slack' })],
+		},
+	})
+})
+
 test('switching a stored mapping between unusable credentials changes the fingerprint', async () => {
 	const t = await setup()
 	const gone1 = await t.storeKey('resend-old-1', 'resend')
