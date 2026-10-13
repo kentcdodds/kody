@@ -257,6 +257,21 @@ test('a signing credential signs a JWT the same way secretJwtSign does', async (
 		sub: 'user-1',
 		iat: 1700000000,
 	})
+	const hmacKey = await crypto.subtle.importKey(
+		'raw',
+		Buffer.from(key, 'base64'),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['verify'],
+	)
+	expect(
+		await crypto.subtle.verify(
+			'HMAC',
+			hmacKey,
+			Buffer.from(parts[2]!, 'base64url'),
+			new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+		),
+	).toBe(true)
 })
 
 test('only signing credentials with hosts sign, and nothing is read otherwise', async () => {

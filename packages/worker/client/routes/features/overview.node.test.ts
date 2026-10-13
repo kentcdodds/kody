@@ -6,9 +6,19 @@ import { FeaturesOverview } from './overview.tsx'
 test('features overview gives every primitive card an interactive widget', async () => {
 	const html = await renderToString(jsx(FeaturesOverview, {}))
 
-	expect(html).toMatch(/data-primitive="/)
-	expect(html).toMatch(/class="pw pw-/)
-	expect(html).toMatch(/href="\/features\//)
+	expect(html.match(/data-primitive="/g)).toHaveLength(6)
+	expect(html.match(/class="pw pw-/g)).toHaveLength(6)
+	for (const id of [
+		'memory',
+		'secrets',
+		'packages',
+		'triggers',
+		'integrations',
+		'apps',
+	]) {
+		expect(html).toContain(`data-primitive="${id}"`)
+		expect(html).toContain(`href="/features/${id}"`)
+	}
 	expect(html).toContain('aria-pressed="true"')
 	expect(html).toContain('aria-pressed="false"')
 	expect(html).not.toContain('data-motion')
