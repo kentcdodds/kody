@@ -110,10 +110,12 @@ static `kody:@owner/name` imports still run locally (package-graph download +
 CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
 ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
 on origin (or fail closed naming the secret) instead of sending them raw.
-`import { credential } from 'kody:runtime'` works for ad hoc and unpublished
-package source the same as hosted (CapabilityProxy opens a handle; gateway
-placement only; see
-[CLI local credential runtime](../contributing/contracts/cli-local-credential-runtime.md)).
+`import { credential } from 'kody:runtime'` for ad hoc and unpublished package
+source needs a CLI whose host `kody:runtime` exports `credential` /
+`credentials` per the
+[CLI local credential runtime](../contributing/contracts/cli-local-credential-runtime.md)
+contract (CapabilityProxy opens a handle; gateway placement only — same as
+hosted). Older CLIs fail at import time; upgrade `@kodycodes/cli`.
 
 A `fetch` that carries a placeholder runs on origin with the same 5-minute
 overall deadline as cloud fetches. The deadline starts when origin sends the
