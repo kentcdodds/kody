@@ -81,10 +81,10 @@ export function diffCredentialNeeds(
 }
 
 function describeShape(need: NeedShape) {
-	return `${need.kind} from "${need.provider}"${need.multiple ? ', multiple' : ''}`
+	return `${need.kind}, provider "${need.provider}"${need.multiple ? ', multiple' : ''}`
 }
 
-/** `MAIL (added: secret from "resend")` */
+/** `MAIL (added: secret, provider "resend")` */
 export function describeCredentialNeedChange(change: CredentialNeedChange) {
 	const via = change.from ? ` via ${change.from}` : ''
 	switch (change.change) {
