@@ -12,7 +12,10 @@
   mappings; creation-link kind hint/required; MCP servers are credentials in the
   same list — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12
   (Kent: minting a webhook URL no longer turns it on; webhooks go through
-  Approve — see [Amendment 2026-10-12](#amendment-2026-10-12))
+  Approve — see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13
+  (trigger credential picks are stored mappings that inherit the defaults, not
+  enable-time snapshots; no `enablementUpdate` — see
+  [Amendment 2026-10-12](#amendment-2026-10-12))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -243,10 +246,10 @@ The keyed map stays. `provider` is optional and defaults to the key.
 credentials: { github: 'work', google: ['work','personal'], x: { name: 'work', scope: 'org' } }
 ```
 
-The CLI takes `--credential github=work` and `--credential x=org:work`. Enable
-takes the same map, resolved once at enable time to credential ids, so ambiguous
-or unbound errors surface when enabling. Only the enabler changes the choice
-(`enablementUpdate { credentials }`, audited). An admin can disable someone
+The CLI takes `--credential github=work` and `--credential x=org:work`.
+Triggers do not take a map at enable time; their picks are stored mappings set
+through Approve or the package's Credentials tab (see
+[Amendment 2026-10-12](#amendment-2026-10-12)). An admin can disable someone
 else's enablement but cannot point it at different credentials.
 
 ### Resolution rules
@@ -377,7 +380,7 @@ warns as if the placeholder will break.
 
 T is the date the new credential types are available, opt-in: the client API,
 call maps (invoke, execute, CLI, enable), `packageGet` needs, the stored needs
-closure, and enablement snapshots. Nothing existing changes at T.
+closure, and stored credential mappings. Nothing existing changes at T.
 
 **Key behavior (Kent, 2026-10-11, made permanent 2026-10-12):** production keeps
 filling placeholders anywhere on allowed hosts over HTTPS. There is no switch to
@@ -518,3 +521,14 @@ Kent: manifest credential need `kind` becomes **optional**.
   instance can use different credentials. Today a declared webhook name has one
   URL per org, which is one instance; more than one URL per name needs a schema
   change that is still open.
+- **Trigger picks are mappings, not snapshots (2026-10-13):** a trigger
+  instance's credentials are its `enablement` mapping rows, which inherit the
+  enabler's default, then the org default, then the one usable credential, so a
+  need nobody pinned follows the defaults instead of freezing at enable time.
+  Picks change only through Approve or the package's Credentials tab, and only
+  the enabler's own instances; there is no `enablementUpdate` and no
+  `enablementEnable { credentials }`, so agents can only propose. Before each
+  run, a credential the instance's mapping names that is deleted or no longer
+  usable by the enabler pauses the enablement; the next event resumes it once
+  the credential is usable or the need is remapped. A publish that adds needs
+  while the package has live enablements gets a check note.
