@@ -792,6 +792,9 @@ async function followRedirectsWithoutCredentialReplay(input: {
 		if (rewritesToGet) {
 			headers.delete('content-type')
 			headers.delete('content-length')
+			headers.delete('content-encoding')
+			headers.delete('content-language')
+			headers.delete('content-location')
 		}
 		if (!sameOrigin(currentUrl, nextUrl)) {
 			for (const name of crossOriginFilteredHeaders) {
