@@ -1,0 +1,1104 @@
+/* Animated scenes for /features/integrations, on the shared `.pw` stage. */
+
+.feature-detail .integrations .pw .pw-wires {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	margin: 0;
+}
+
+.feature-detail .integrations .pw p,
+.feature-detail .integrations .pw h3,
+.feature-detail .integrations .pw ol,
+.feature-detail .integrations .pw small {
+	margin: 0;
+	max-width: none;
+}
+
+.feature-detail .integrations .pw button.pw-int-hit {
+	min-height: 0;
+	touch-action: manipulation;
+}
+
+.feature-detail .integrations .pw button.pw-int-hit:active {
+	transform: none;
+}
+
+.feature-detail .integrations .pw button.pw-int-hit:focus-visible {
+	outline: 2px solid var(--pw-text);
+	outline-offset: 2px;
+}
+
+.pw .pw-int-hit {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.4em;
+	margin: 0;
+	padding: 0.38em 0.55em;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.45em;
+	background: var(--pw-stage);
+	color: inherit;
+	font: inherit;
+	font-size: 0.74em;
+	line-height: 1.3;
+	text-align: left;
+	cursor: pointer;
+}
+
+.pw .pw-int-hit:hover {
+	border-color: var(--pw-ink);
+}
+
+.pw .pw-int-hit[aria-pressed='true'] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+}
+
+.pw.pw-scene-int-hero,
+.pw.pw-scene-int-reuse,
+.pw.pw-scene-int-setup {
+	--pw-int-fill: color-mix(in oklab, var(--pw-accent) 42%, var(--pw-text));
+	--pw-int-on-fill: var(--pw-surface);
+}
+
+.pw .pw-int-lane {
+	position: absolute;
+	height: 0;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.pw .pw-int-lane .pw-packet {
+	font-size: 0.66em;
+}
+
+.pw .pw-hub,
+.pw .pw-int-bus {
+	z-index: 2;
+}
+
+/* Hero: pick an account, the request goes out, events come back. */
+
+.pw .pw-int-brief,
+.pw .pw-int-google {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.4em;
+	padding: 0.7em 0.75em;
+	white-space: normal;
+}
+
+.pw .pw-int-brief {
+	translate: 0 -50%;
+	left: 0;
+	top: 50%;
+	width: 40%;
+}
+
+.pw .pw-int-google {
+	translate: -100% -50%;
+	left: 100%;
+	top: 50%;
+	width: 36%;
+}
+
+.pw-scene-int-hero .pw-int-hero-hub {
+	width: 2.8em;
+	height: 2.8em;
+	font-size: 0.82em;
+}
+
+.pw .pw-int-kicker {
+	color: var(--pw-text);
+	font-size: 0.74em;
+	font-weight: 650;
+	line-height: 1.35;
+}
+
+.pw .pw-int-email {
+	color: var(--pw-ink);
+	font-size: 0.82em;
+	font-weight: 650;
+	overflow-wrap: anywhere;
+}
+
+.pw .pw-int-events {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+}
+
+.pw .pw-int-event {
+	width: 100%;
+}
+
+.pw .pw-int-check {
+	color: var(--pw-ink);
+	font-weight: 700;
+}
+
+.pw .pw-int-stamp {
+	align-self: flex-start;
+	padding: 0.14em 0.55em;
+	border-radius: 99px;
+	background: var(--pw-int-fill);
+	color: var(--pw-int-on-fill);
+	font-size: 0.66em;
+	font-weight: 650;
+}
+
+.pw .pw-int-google-head {
+	display: flex;
+	align-items: center;
+	gap: 0.35em;
+	font-size: 0.82em;
+	white-space: nowrap;
+}
+
+.pw .pw-int-google-head strong {
+	font-weight: 650;
+}
+
+.pw .pw-int-count {
+	margin-left: auto;
+	color: var(--pw-muted);
+	font-size: 0.78em;
+}
+
+.pw .pw-int-account {
+	width: 100%;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.05em;
+}
+
+.pw .pw-int-account strong {
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.pw .pw-int-account small {
+	color: var(--pw-muted);
+	font-size: 0.88em;
+}
+
+.pw .pw-int-account[aria-pressed='true'] small {
+	color: var(--pw-ink);
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-out.to-east {
+	animation: pw-int-east-first 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-out.to-east .pw-packet {
+	animation: pw-int-packet-first 8s linear infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-back.to-west {
+	animation: pw-int-west-second 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-back.to-west .pw-packet {
+	animation: pw-int-packet-second 8s linear infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-google {
+	animation: pw-int-ask 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-brief {
+	animation: pw-int-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-hero[data-motion] .pw-int-stamp {
+	animation: pw-int-stamp 8s var(--pw-ease) infinite;
+}
+
+/* Reuse: one saved connection, three packages, one result. */
+
+.pw .pw-int-saved {
+	translate: 0 0;
+	left: 0;
+	top: 11%;
+	width: 32%;
+	height: 9.2em;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 0.4em;
+	padding: 0.7em;
+	white-space: normal;
+}
+
+.pw .pw-int-saved-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.pw .pw-int-saved-head strong {
+	font-size: 0.9em;
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.pw .pw-int-saved-email {
+	display: block;
+	color: var(--pw-muted);
+	font-size: 0.66em;
+	white-space: nowrap;
+}
+
+.pw .pw-int-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35em;
+	padding: 0.16em 0.55em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.68em;
+	font-weight: 650;
+}
+
+.pw .pw-int-bus {
+	position: absolute;
+	translate: -50% 0;
+	left: 50%;
+	top: 13%;
+	display: grid;
+	place-items: center;
+	width: 3.4em;
+	height: 11em;
+	border-radius: 999px;
+	background: var(--pw-text);
+	color: var(--pw-surface);
+	font-size: 0.78em;
+	font-weight: 700;
+	box-shadow: 0 0 0 0.28em
+		color-mix(in oklab, var(--pw-accent) 30%, transparent);
+}
+
+.pw .pw-int-bus::after {
+	content: '';
+	position: absolute;
+	inset: -0.45em;
+	border: 1.5px solid var(--pw-accent);
+	border-radius: inherit;
+	opacity: 0;
+}
+
+.pw .pw-int-picker {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+	pointer-events: none;
+}
+
+.pw .pw-int-pack {
+	position: absolute;
+	left: 66%;
+	width: 34%;
+	translate: 0 -50%;
+	justify-content: center;
+	pointer-events: auto;
+	font-weight: 650;
+}
+
+.pw .pw-scene-int-reuse .pw-wire:not([data-on]) .pw-line {
+	opacity: 0.45;
+}
+
+.pw .pw-int-result {
+	translate: 0 0;
+	left: 0;
+	top: 62%;
+	bottom: 0;
+	width: 100%;
+	height: auto;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 0.28em;
+	padding: 0.7em 0.85em;
+	white-space: normal;
+}
+
+.feature-detail .integrations .pw .pw-int-result h3 {
+	font: 650 1.02em/1.25 inherit;
+}
+
+.feature-detail .integrations .pw .pw-int-result p {
+	color: var(--pw-text);
+	font-size: 0.78em;
+	line-height: 1.35;
+}
+
+.pw .pw-int-result small {
+	color: var(--pw-muted);
+	font-size: 0.7em;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-out.to-west {
+	animation: pw-int-west-first 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-out.to-west .pw-packet {
+	animation: pw-int-packet-first 8s linear infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-back.to-east {
+	animation: pw-int-east-second 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-back.to-east .pw-packet {
+	animation: pw-int-packet-second 8s linear infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-saved {
+	animation: pw-int-ask 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-result,
+.pw-scene-int-reuse[data-motion] .pw-int-pack[aria-pressed='true'] {
+	animation: pw-int-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-pack:is(:hover, :focus-visible) {
+	animation: none;
+}
+
+.pw-scene-int-reuse[data-motion] .pw-int-bus::after {
+	animation: pw-ring 2.4s ease-out infinite;
+}
+
+/* Setup: steps complete, a test round trip, then the lock. */
+
+.pw .pw-int-board {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.8em;
+}
+
+.pw .pw-int-steps {
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 0.32em;
+	padding: 0;
+}
+
+.pw .pw-int-step {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 0.45em;
+	align-items: center;
+	padding: 0.38em 0.55em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 0.5em;
+	background: var(--pw-soft);
+}
+
+.pw .pw-int-num {
+	display: grid;
+	place-items: center;
+	width: 1.5em;
+	height: 1.5em;
+	border: 1px solid var(--pw-int-fill);
+	border-radius: 50%;
+	background: var(--pw-int-fill);
+	color: var(--pw-int-on-fill);
+	font-size: 0.68em;
+	font-weight: 700;
+}
+
+.pw .pw-int-step strong {
+	display: block;
+	font-size: 0.78em;
+	font-weight: 650;
+}
+
+.pw .pw-int-step small {
+	display: block;
+	margin-top: 0.1em;
+	color: var(--pw-muted);
+	font-size: 0.7em;
+	overflow-wrap: anywhere;
+}
+
+.pw .pw-int-step .pw-int-check {
+	font-size: 0.9em;
+}
+
+.pw .pw-int-test {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.4em;
+	min-height: 3.1em;
+	padding: 0.45em 0.6em;
+	border: 1px dashed var(--pw-line);
+	border-radius: 0.6em;
+	background: var(--pw-surface);
+}
+
+.pw .pw-int-test .pw-int-lane {
+	position: relative;
+	left: auto;
+	top: auto;
+	width: auto;
+	border-top: 2px solid var(--pw-accent);
+}
+
+.pw .pw-int-hub {
+	position: relative;
+	translate: none;
+	left: auto;
+	top: auto;
+	width: 2.55em;
+	height: 2.55em;
+	font-size: 0.66em;
+}
+
+.pw .pw-int-chip {
+	position: relative;
+	z-index: 2;
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 0.35em;
+	padding: 0.35em 0.5em;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.5em;
+	background: var(--pw-surface);
+	font-size: 0.72em;
+	white-space: nowrap;
+}
+
+.pw .pw-int-chip-account {
+	white-space: normal;
+}
+
+.pw .pw-int-chip-account strong,
+.pw .pw-int-chip-account small {
+	display: block;
+}
+
+.pw .pw-int-chip-account strong {
+	font-size: 1em;
+	font-weight: 650;
+}
+
+.pw .pw-int-chip-account small {
+	color: var(--pw-muted);
+	font-size: 0.92em;
+}
+
+.pw .pw-int-lock {
+	display: flex;
+	flex-direction: column;
+	padding: 0.65em 0.7em 0.45em;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.6em;
+	background: var(--pw-surface);
+	box-shadow:
+		0 1px 1px var(--pw-shadow),
+		0 0.2em 0.6em var(--pw-shadow);
+}
+
+.pw .pw-int-lock-head {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	padding-bottom: 0.35em;
+}
+
+.pw .pw-int-lock-head strong {
+	font-size: 0.9em;
+	font-weight: 650;
+}
+
+.pw .pw-int-lock-head .pw-int-pill {
+	margin-left: auto;
+}
+
+.pw .pw-int-padlock {
+	position: relative;
+	width: 0.72em;
+	height: 0.52em;
+	border: 0.12em solid var(--pw-accent);
+	border-radius: 0.14em;
+}
+
+.pw .pw-int-padlock::before {
+	content: '';
+	position: absolute;
+	left: 50%;
+	bottom: calc(100% - 0.1em);
+	width: 0.38em;
+	height: 0.32em;
+	translate: -50% 0;
+	border: 0.12em solid var(--pw-accent);
+	border-bottom: 0;
+	border-radius: 0.35em 0.35em 0 0;
+}
+
+.pw .pw-int-gate-row,
+.pw .pw-int-grant {
+	position: relative;
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.6em;
+	min-height: 1.7em;
+	padding: 0.32em 0.1em;
+	border-top: 1px solid var(--pw-line);
+	font-size: 0.76em;
+}
+
+.pw .pw-int-id {
+	font-family: ui-monospace, monospace;
+	font-weight: 650;
+}
+
+.pw .pw-int-gate-row .pw-packet {
+	top: 50%;
+	left: 46%;
+}
+
+.pw .pw-int-verdict {
+	font-weight: 700;
+}
+
+.pw .pw-int-gate-row[data-gate='deny'] .pw-int-verdict {
+	color: light-dark(#8d2f2f, #ffc9c4);
+}
+
+.pw .pw-int-gate-row[data-gate='allow'] .pw-int-verdict {
+	color: var(--pw-ink);
+}
+
+.pw .pw-int-grant > span {
+	color: var(--pw-muted);
+}
+
+.pw .pw-int-grant code {
+	font-family: ui-monospace, monospace;
+	font-size: 1em;
+}
+
+.pw .pw-int-grant strong {
+	font-size: 1em;
+	font-weight: 650;
+	text-align: right;
+}
+
+.pw .pw-int-behavior {
+	margin-top: 0.2em;
+	padding-inline: 0.4em;
+	border-radius: 0.4em;
+	background: var(--pw-soft);
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(1) {
+	animation: pw-int-step-a 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(1) .pw-int-num {
+	animation: pw-int-num-a 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(1) .pw-int-check,
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(1) small {
+	animation: pw-int-pop-a 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(2) {
+	animation: pw-int-step-b 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(2) .pw-int-num {
+	animation: pw-int-num-b 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(2) .pw-int-check,
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(2) small {
+	animation: pw-int-pop-b 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(3) {
+	animation: pw-int-step-c 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(3) .pw-int-num {
+	animation: pw-int-num-c 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(3) .pw-int-check,
+.pw-scene-int-setup[data-motion] .pw-int-step:nth-child(3) small {
+	animation: pw-int-pop-c 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-test .pw-int-out.to-east {
+	animation: pw-int-test-east 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-test .pw-int-out.to-east .pw-packet {
+	animation: pw-int-test-out-packet 9s linear infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-test .pw-int-back.to-west {
+	animation: pw-int-test-west 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-test .pw-int-back.to-west .pw-packet {
+	animation: pw-int-test-back-packet 9s linear infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-chip-account {
+	animation: pw-int-chip-arrive 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-chip-account small {
+	animation: pw-int-pop-c 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-gate-row[data-gate='deny'] .pw-packet {
+	animation: pw-int-deny-packet 9s linear infinite;
+}
+
+.pw-scene-int-setup[data-motion]
+	.pw-int-gate-row[data-gate='deny']
+	.pw-int-verdict {
+	animation: pw-int-verdict-deny 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion]
+	.pw-int-gate-row[data-gate='allow']
+	.pw-packet {
+	animation: pw-int-allow-packet 9s linear infinite;
+}
+
+.pw-scene-int-setup[data-motion]
+	.pw-int-gate-row[data-gate='allow']
+	.pw-int-verdict {
+	animation: pw-int-verdict-allow 9s var(--pw-ease) infinite;
+}
+
+.pw-scene-int-setup[data-motion] .pw-int-behavior {
+	animation: pw-int-behavior 9s var(--pw-ease) infinite;
+}
+
+@keyframes pw-int-east-first {
+	0%,
+	6% {
+		transform: translateX(0);
+	}
+	32%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-int-west-first {
+	0%,
+	6% {
+		transform: translateX(100%);
+	}
+	32%,
+	100% {
+		transform: translateX(0);
+	}
+}
+
+@keyframes pw-int-west-second {
+	0%,
+	34% {
+		transform: translateX(100%);
+	}
+	64%,
+	100% {
+		transform: translateX(0);
+	}
+}
+
+@keyframes pw-int-east-second {
+	0%,
+	34% {
+		transform: translateX(0);
+	}
+	64%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-int-packet-first {
+	0%,
+	16% {
+		opacity: 0;
+	}
+	19%,
+	23% {
+		opacity: 1;
+	}
+	27%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-int-packet-second {
+	0%,
+	44% {
+		opacity: 0;
+	}
+	48%,
+	54% {
+		opacity: 1;
+	}
+	58%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-int-ask {
+	0%,
+	24%,
+	42%,
+	100% {
+		scale: 1;
+	}
+	32% {
+		scale: 1.03;
+	}
+}
+
+@keyframes pw-int-arrive {
+	0%,
+	58%,
+	80%,
+	100% {
+		scale: 1;
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
+	}
+	66% {
+		scale: 1.025;
+		box-shadow: 0 0 0 0.28em
+			color-mix(in oklab, var(--pw-accent) 34%, transparent);
+	}
+}
+
+@keyframes pw-int-stamp {
+	0%,
+	60%,
+	78%,
+	100% {
+		scale: 1;
+	}
+	66% {
+		scale: 1.08;
+	}
+}
+
+@keyframes pw-int-step-a {
+	0%,
+	7% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+	14%,
+	93% {
+		border-color: var(--pw-accent);
+		background: var(--pw-soft);
+	}
+	100% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+}
+
+@keyframes pw-int-num-a {
+	0%,
+	7%,
+	100% {
+		border-color: var(--pw-line);
+		background: transparent;
+		color: var(--pw-muted);
+	}
+	14%,
+	93% {
+		border-color: var(--pw-int-fill);
+		background: var(--pw-int-fill);
+		color: var(--pw-int-on-fill);
+	}
+}
+
+@keyframes pw-int-pop-a {
+	0%,
+	7%,
+	100% {
+		opacity: 0;
+	}
+	14%,
+	93% {
+		opacity: 1;
+	}
+}
+
+@keyframes pw-int-step-b {
+	0%,
+	18% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+	26%,
+	93% {
+		border-color: var(--pw-accent);
+		background: var(--pw-soft);
+	}
+	100% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+}
+
+@keyframes pw-int-num-b {
+	0%,
+	18%,
+	100% {
+		border-color: var(--pw-line);
+		background: transparent;
+		color: var(--pw-muted);
+	}
+	26%,
+	93% {
+		border-color: var(--pw-int-fill);
+		background: var(--pw-int-fill);
+		color: var(--pw-int-on-fill);
+	}
+}
+
+@keyframes pw-int-pop-b {
+	0%,
+	18%,
+	100% {
+		opacity: 0;
+	}
+	26%,
+	93% {
+		opacity: 1;
+	}
+}
+
+@keyframes pw-int-step-c {
+	0%,
+	54% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+	62%,
+	93% {
+		border-color: var(--pw-accent);
+		background: var(--pw-soft);
+	}
+	100% {
+		border-color: var(--pw-line);
+		background: var(--pw-surface);
+	}
+}
+
+@keyframes pw-int-num-c {
+	0%,
+	54%,
+	100% {
+		border-color: var(--pw-line);
+		background: transparent;
+		color: var(--pw-muted);
+	}
+	62%,
+	93% {
+		border-color: var(--pw-int-fill);
+		background: var(--pw-int-fill);
+		color: var(--pw-int-on-fill);
+	}
+}
+
+@keyframes pw-int-pop-c {
+	0%,
+	54%,
+	100% {
+		opacity: 0;
+	}
+	62%,
+	93% {
+		opacity: 1;
+	}
+}
+
+@keyframes pw-int-test-east {
+	0%,
+	30% {
+		transform: translateX(0);
+	}
+	48%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-int-test-out-packet {
+	0%,
+	30% {
+		opacity: 0;
+	}
+	34%,
+	46% {
+		opacity: 1;
+	}
+	50%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-int-test-west {
+	0%,
+	48% {
+		transform: translateX(100%);
+	}
+	64%,
+	100% {
+		transform: translateX(0);
+	}
+}
+
+@keyframes pw-int-test-back-packet {
+	0%,
+	48% {
+		opacity: 0;
+	}
+	52%,
+	62% {
+		opacity: 1;
+	}
+	66%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-int-chip-arrive {
+	0%,
+	56%,
+	74%,
+	100% {
+		scale: 1;
+	}
+	64% {
+		scale: 1.04;
+	}
+}
+
+@keyframes pw-int-deny-packet {
+	0%,
+	62% {
+		opacity: 0;
+		left: 28%;
+	}
+	66% {
+		opacity: 1;
+		left: 30%;
+	}
+	76% {
+		opacity: 1;
+		left: 58%;
+	}
+	80%,
+	100% {
+		opacity: 0;
+		left: 58%;
+	}
+}
+
+@keyframes pw-int-verdict-deny {
+	0%,
+	74%,
+	100% {
+		opacity: 0;
+		scale: 0.8;
+	}
+	80%,
+	93% {
+		opacity: 1;
+		scale: 1;
+	}
+}
+
+@keyframes pw-int-allow-packet {
+	0%,
+	78% {
+		opacity: 0;
+		left: 32%;
+	}
+	82% {
+		opacity: 1;
+		left: 34%;
+	}
+	90% {
+		opacity: 1;
+		left: 62%;
+	}
+	94%,
+	100% {
+		opacity: 0;
+		left: 62%;
+	}
+}
+
+@keyframes pw-int-verdict-allow {
+	0%,
+	88%,
+	100% {
+		opacity: 0;
+		scale: 0.8;
+	}
+	93% {
+		opacity: 1;
+		scale: 1;
+	}
+}
+
+@keyframes pw-int-behavior {
+	0%,
+	88% {
+		background: transparent;
+	}
+	93% {
+		background: var(--pw-soft);
+	}
+	100% {
+		background: transparent;
+	}
+}
+
+@media (min-width: 801px) {
+	.feature-detail .integrations .split,
+	.feature-detail .integrations .story-split {
+		grid-template-columns: 0.9fr 1.1fr;
+	}
+}
