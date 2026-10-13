@@ -30,9 +30,10 @@ const packageFiles = [
 
 const briefSource = [
 	'export function brief(week) {',
-	"  title: 'Weekly brief',",
-	'  orchard: week.orchard,',
-	'  fieldwork: week.fieldwork,',
+	'  return {',
+	"    title: 'Weekly brief',",
+	'    ...week,',
+	'  }',
 	'}',
 ] as const
 
@@ -187,7 +188,7 @@ function heroBody(tab: PackageTab, live: boolean) {
 						<code class="pw-pkg-code">
 							{briefSource.map((line, index) => (
 								<span
-									key={line}
+									key={index}
 									class="pw-pkg-line"
 									style={{ '--i': String(index) }}
 								>

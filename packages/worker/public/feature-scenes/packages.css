@@ -418,7 +418,9 @@
 	animation-name: pw-pkg-type-d;
 }
 
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line:nth-child(5) {
+.pw-scene-pkg-hero[data-motion]
+	[data-mode='source']
+	.pw-pkg-line:nth-child(n + 5) {
 	animation-name: pw-pkg-type-e;
 }
 
