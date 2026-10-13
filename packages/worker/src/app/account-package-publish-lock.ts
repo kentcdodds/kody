@@ -51,6 +51,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 	}
 	const requestUrl = new URL(input.request.url)
 	const requestedCommit = requestUrl.searchParams.get('commit')?.trim() ?? ''
+	const pendingIsDefaultHead = !requestedCommit
 	let pendingCommit: string | null = null
 	if (requestedCommit) {
 		if (!isGitCommitSha(requestedCommit)) {
@@ -108,6 +109,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 		publishedCommit,
 		pendingCommit,
 		alreadyPublished,
+		pendingIsDefaultHead,
 		filesHref: getPackageTreeHref({
 			username: ownerUsername,
 			kodyId: savedPackage.kodyId,

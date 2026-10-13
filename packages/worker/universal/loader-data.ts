@@ -2032,8 +2032,15 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	/**
 	 * Default-branch HEAD when the owner can resolve the artifact source.
 	 * Compared with `publishedCommit` to show whether a publish is pending.
+	 * Null when there is no HEAD or the lookup failed — see
+	 * `pendingCommitKnown`.
 	 */
 	pendingCommit: string | null
+	/**
+	 * False when the artifact HEAD lookup failed. Do not treat the package as
+	 * up to date or demote Approve until this is true.
+	 */
+	pendingCommitKnown: boolean
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
 	/**
@@ -2062,6 +2069,12 @@ export type AccountPackageApprovePublishLoaderData = {
 	publishedCommit: string | null
 	pendingCommit: string | null
 	alreadyPublished: boolean
+	/**
+	 * True when `pendingCommit` is default-branch HEAD (no `?commit=` pin).
+	 * False when the URL named a specific commit — alreadyPublished then means
+	 * that pin matches the public version, not that HEAD has nothing pending.
+	 */
+	pendingIsDefaultHead: boolean
 	filesHref: string
 	packageHref: string
 	diff: {

@@ -28,6 +28,7 @@ function packageDetail(
 		exports: null,
 		publishedCommit: null,
 		pendingCommit: null,
+		pendingCommitKnown: true,
 		communityFork: null,
 		...overrides,
 	}
@@ -151,4 +152,26 @@ test('owner details show publish state and demote Approve when up to date', asyn
 	expect(pending).toContain('Published at aaaaaaa.')
 	expect(pending).toContain('Unpublished commit pending at bbbbbbb.')
 	expect(pending).toContain('data-testid="account-approve-publish"')
+
+	const unknownHead = await renderToString(
+		jsx(AccountPackageOwnerDetails, {
+			ownerUsername: 'kentcdodds',
+			packageDetail: packageDetail({
+				lockedAt: '2026-09-12T00:00:00.000Z',
+				publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				pendingCommit: null,
+				pendingCommitKnown: false,
+			}),
+			lockInFlight: false,
+			viewerCanPublish: true,
+			viewerCanDelete: true,
+			viewerCanAdoptCommunityFork: false,
+			onToggleLock: () => {},
+			onPackagesPayload: () => {},
+		}),
+	)
+
+	expect(unknownHead).toContain('Could not check for an unpublished commit')
+	expect(unknownHead).not.toContain('Published version is up to date')
+	expect(unknownHead).toContain('data-testid="account-approve-publish"')
 })

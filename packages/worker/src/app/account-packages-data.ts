@@ -223,18 +223,20 @@ async function resolveOwnerPendingCommit(input: {
 	requestUrl: string
 	userId: string
 	source: Awaited<ReturnType<typeof getEntitySourceById>>
-}): Promise<string | null> {
-	if (!input.source || input.source.user_id !== input.userId) return null
-	if (!input.source.repo_id) return null
+}): Promise<{ commit: string | null; known: boolean }> {
+	if (!input.source || input.source.user_id !== input.userId) {
+		return { commit: null, known: true }
+	}
+	if (!input.source.repo_id) return { commit: null, known: true }
 	try {
 		const head = await resolveCachedArtifactSourceHead(
 			input.env,
 			input.source.repo_id,
 			{ request: new Request(input.requestUrl) },
 		)
-		return head.commit
+		return { commit: head.commit, known: true }
 	} catch {
-		return null
+		return { commit: null, known: false }
 	}
 }
 
@@ -257,13 +259,17 @@ async function toDetail(input: {
 			getEntitySourceById(input.env.APP_DB, input.record.sourceId).then(
 				async (source) => {
 					const ownedSource = source?.user_id === input.userId ? source : null
-					const pendingCommit = await resolveOwnerPendingCommit({
+					const pending = await resolveOwnerPendingCommit({
 						env: input.env,
 						requestUrl: input.requestUrl,
 						userId: input.userId,
 						source: ownedSource,
 					})
-					return { ownedSource, pendingCommit }
+					return {
+						ownedSource,
+						pendingCommit: pending.commit,
+						pendingCommitKnown: pending.known,
+					}
 				},
 			),
 			input.record.sourceListingId == null
@@ -290,6 +296,7 @@ async function toDetail(input: {
 		exports,
 		publishedCommit: sourceAndPending.ownedSource?.published_commit ?? null,
 		pendingCommit: sourceAndPending.pendingCommit,
+		pendingCommitKnown: sourceAndPending.pendingCommitKnown,
 		communityFork: communityFork
 			? {
 					listingName: input.record.listingName,

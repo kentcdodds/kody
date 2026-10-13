@@ -194,25 +194,39 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 			payload?.alreadyPublished && payload.publishedCommit
 				? shortCommunityCommit(payload.publishedCommit)
 				: null
+		const headUpToDate =
+			Boolean(payload?.alreadyPublished) &&
+			Boolean(payload?.pendingIsDefaultHead) &&
+			upToDateShort != null
+		const pinnedCommitAlreadyPublished =
+			Boolean(payload?.alreadyPublished) &&
+			payload?.pendingIsDefaultHead === false &&
+			upToDateShort != null
 
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
 				<AccountPageHeader
 					title={
-						nothingToPublish
-							? upToDateShort
-								? `Nothing to publish: the public version is up to date at ${upToDateShort}`
-								: 'Nothing to publish'
-							: payload?.package.lockedAt
-								? 'Approve package publish'
-								: 'Publish HEAD'
+						headUpToDate
+							? `Nothing to publish: the public version is up to date at ${upToDateShort}`
+							: pinnedCommitAlreadyPublished
+								? `This commit is already published at ${upToDateShort}`
+								: nothingToPublish
+									? 'Nothing to publish'
+									: payload?.package.lockedAt
+										? 'Approve package publish'
+										: 'Publish HEAD'
 					}
 					description={
-						nothingToPublish
+						headUpToDate
 							? 'No unpublished commit is waiting. Nothing was approved or changed.'
-							: payload?.package.lockedAt
-								? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
-								: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
+							: pinnedCommitAlreadyPublished
+								? 'The commit in this link matches the public version. Open Approve without a commit pin to review default-branch HEAD if it has moved.'
+								: nothingToPublish
+									? 'No commit is available to publish from this page.'
+									: payload?.package.lockedAt
+										? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
+										: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
 					}
 					currentHref={currentHref}
 				/>

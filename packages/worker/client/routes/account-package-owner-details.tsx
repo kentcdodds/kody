@@ -40,6 +40,7 @@ function isPackageLocked(lockedAt: string | null | undefined) {
 }
 
 function hasUnpublishedPackageCommit(packageDetail: AccountPackageDetail) {
+	if (!packageDetail.pendingCommitKnown) return false
 	const pending = packageDetail.pendingCommit
 	if (!pending) return false
 	return (
@@ -48,9 +49,22 @@ function hasUnpublishedPackageCommit(packageDetail: AccountPackageDetail) {
 	)
 }
 
+/** Primary Approve only when unpublished HEAD is known, or HEAD is unknown. */
+function showApprovePublishPrimary(packageDetail: AccountPackageDetail) {
+	return (
+		!packageDetail.pendingCommitKnown ||
+		hasUnpublishedPackageCommit(packageDetail)
+	)
+}
+
 function publishStateCopy(packageDetail: AccountPackageDetail) {
 	const published = packageDetail.publishedCommit
 	const pending = packageDetail.pendingCommit
+	if (!packageDetail.pendingCommitKnown) {
+		return published
+			? `Published at ${shortCommunityCommit(published)}. Could not check for an unpublished commit.`
+			: 'Could not check for an unpublished commit.'
+	}
 	if (hasUnpublishedPackageCommit(packageDetail) && pending) {
 		const pendingShort = shortCommunityCommit(pending)
 		if (!published) {
@@ -561,7 +575,7 @@ export function AccountPackageOwnerDetails(
 								alignItems: 'center',
 							})}
 						>
-							{hasUnpublishedPackageCommit(packageDetail) ? (
+							{showApprovePublishPrimary(packageDetail) ? (
 								<a
 									href={routes.communityPackageApprovePublish.href({
 										username: handle.props.ownerUsername,
