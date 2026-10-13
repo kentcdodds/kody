@@ -434,9 +434,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 			createAccountHandler(env, title)
 	const account = await signedIn(accountPage('Profile'), '/account')
 	expect(account.response.status).toBe(200)
-	// `/account` is the Profile view in the account rail. The header has one
-	// menu: organizations, then the person's own links and Log out. The
-	// workspace sections and connected agents live elsewhere.
+	// `/account` is the Profile view in the account rail. The header has an
+	// organization switcher and an account menu with the person's own links
+	// and Log out. The workspace sections and connected agents live elsewhere.
 	expectHtml(
 		account.html,
 		[
