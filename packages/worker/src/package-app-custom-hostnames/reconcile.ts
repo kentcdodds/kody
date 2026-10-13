@@ -76,17 +76,17 @@ export async function reconcilePackageAppCustomHostnames(input: {
 		return result
 	}
 
-	let afterUpdatedAt = ''
+	let afterId = ''
 	while (Date.now() < deadline) {
 		const batch = await listPackageAppCustomHostnamesForReconcile(
 			input.env.APP_DB,
 			{
 				limit: input.batchSize ?? defaultBatchSize,
-				afterUpdatedAt,
+				afterId,
 			},
 		)
 		if (batch.length === 0) break
-		afterUpdatedAt = batch[batch.length - 1]!.updatedAt
+		afterId = batch[batch.length - 1]!.id
 
 		for (const row of batch) {
 			if (Date.now() >= deadline) {

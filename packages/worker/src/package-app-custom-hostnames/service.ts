@@ -336,14 +336,14 @@ export async function deletePackageAppCustomHostname(input: {
 
 export async function listPackageAppCustomHostnamesForReconcile(
 	db: D1Database,
-	input: { limit: number; afterUpdatedAt?: string },
+	input: { limit: number; afterId?: string },
 ) {
-	const after = input.afterUpdatedAt ?? ''
+	const after = input.afterId ?? ''
 	const rows = await db
 		.prepare(
 			`SELECT * FROM package_app_custom_hostnames
-			 WHERE updated_at > ?
-			 ORDER BY updated_at ASC
+			 WHERE id > ?
+			 ORDER BY id ASC
 			 LIMIT ?`,
 		)
 		.bind(after, input.limit)

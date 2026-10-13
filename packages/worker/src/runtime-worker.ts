@@ -23,7 +23,10 @@ import {
 	handlePackageAppOriginRequest,
 	resolveVerifiedCustomHostnameIfEnabled,
 } from '#app/package-app-origin.ts'
-import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
+import {
+	isAllowedRequestHost,
+	refuseNonCanonicalProductionHost,
+} from '#app/canonical-host.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 /**
@@ -102,6 +105,22 @@ const runtimeWorkerHandler = {
 async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
 	const url = new URL(request.url)
 
+	if (
+		url.pathname === runtimeWorkerHealthPath &&
+		isAllowedRequestHost({
+			request,
+			env,
+			allowedHealthPath: runtimeWorkerHealthPath,
+		})
+	) {
+		return Response.json(
+			buildRuntimeWorkerHealth({
+				commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
+				cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
+			}),
+		)
+	}
+
 	const nonCanonicalHost = refuseNonCanonicalProductionHost({
 		request,
 		env,
@@ -115,15 +134,6 @@ async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
 			env,
 		)
 		if (!customHostname) return nonCanonicalHost
-	}
-
-	if (url.pathname === runtimeWorkerHealthPath) {
-		return Response.json(
-			buildRuntimeWorkerHealth({
-				commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
-				cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
-			}),
-		)
 	}
 
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(

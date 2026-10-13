@@ -638,6 +638,8 @@ jobs:
           OIDC_SIGNING_PRIVATE_KEY_PEM:
             ${{ secrets.OIDC_SIGNING_PRIVATE_KEY_PEM }}
           OIDC_SIGNING_KEY_ID: ${{ secrets.OIDC_SIGNING_KEY_ID }}
+          CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
@@ -658,6 +660,7 @@ jobs:
           --set-from-env-optional STATUS_INCIDENT_EVENT_SECRET
           --set-from-env-optional YOUTUBE_DATA_API_KEY --set-from-env
           OIDC_SIGNING_PRIVATE_KEY_PEM --set-from-env OIDC_SIGNING_KEY_ID
+          --set-from-env-optional CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN
 
       # Runtime-lane secret allowlist (ADR 0016): only the secrets the
       # package runtime lane actually reads. COOKIE_SECRET/SECRET_STORE_KEY
@@ -736,6 +739,8 @@ jobs:
           OIDC_SIGNING_PRIVATE_KEY_PEM:
             ${{ secrets.OIDC_SIGNING_PRIVATE_KEY_PEM }}
           OIDC_SIGNING_KEY_ID: ${{ secrets.OIDC_SIGNING_KEY_ID }}
+          CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env "" --name kody-platform
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
@@ -755,6 +760,7 @@ jobs:
           STRIPE_SECRET_KEY --set-from-env-optional STRIPE_WEBHOOK_SECRET
           --set-from-env-optional STATUS_INCIDENT_EVENT_SECRET --set-from-env
           OIDC_SIGNING_PRIVATE_KEY_PEM --set-from-env OIDC_SIGNING_KEY_ID
+          --set-from-env-optional CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN
 
       - name: 🗄️ Apply D1 Migrations
         env:
