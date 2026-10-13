@@ -497,7 +497,11 @@
 			"sha256": "26fe1858ca6ca59fefd18ac9981f2787fe966dcf4d3fddbd5ef3b9f6e434293a"
 		},
 		{
-			"filename": "0135-webhook-enablement-one-live.sql",
+			"filename": "0135-package-app-custom-hostname-verification.sql",
+			"sha256": "6919bbb59c069eedefa1cf21db4f6370dbb3fb182a4cb2ff3342f7d8f8b406c2"
+		},
+		{
+			"filename": "0136-webhook-enablement-one-live.sql",
 			"sha256": "c508612f99a74e7719845ea45d320598d0d07fc2c0b41b16d23fe7ffc1b8045a"
 		}
 	]
