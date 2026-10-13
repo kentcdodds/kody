@@ -520,6 +520,14 @@ test('package page README images opt in for listing README and only matching own
 		})
 		expect({ ...input, href }).toEqual({ ...input, href: expected })
 	}
+	expect(
+		resolvePackagePageReadmeImageBaseHref({
+			ownerUsername: 'kentcdodds',
+			kodyId: 'notes',
+			usedListingReadme: false,
+			readmeCommit: 'headlive1',
+		}),
+	).toBeNull()
 })
 
 test('opens a png as a media preview and an unknown binary without a code dump', async () => {
@@ -722,6 +730,7 @@ test('loadOwnerPackageReadme falls back to Artifacts HEAD for plain repos withou
 })
 
 test('loadOwnerPackageReadme prefers the published snapshot when present', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(entitySource)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: entitySource,
 		manifest: { name: 'sentry', version: '1.0.0' },
@@ -742,12 +751,31 @@ test('loadOwnerPackageReadme prefers the published snapshot when present', async
 })
 
 test('loadOwnerPackageReadme does not fall through to HEAD when published snapshot has no README', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(entitySource)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: entitySource,
 		manifest: { name: 'sentry', version: '1.0.0' },
 		files: { 'package.json': '{"name":"sentry"}\n' },
 		snapshotCreatedAt: '2026-01-01T00:00:00.000Z',
 	} as never)
+	mockModule.readArtifactTreeAtCommit.mockResolvedValue({
+		'README.md': '# Secret HEAD README\n',
+	})
+	const readme = await loadOwnerPackageReadme({
+		env,
+		request: new Request('https://example.com/@kentcdodds/sentry'),
+		userId: ownerIdFromStored('owner-1'),
+		sourceId: 'src-1',
+	})
+	expect(readme).toEqual({ content: null, commit: null })
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
+})
+
+test('loadOwnerPackageReadme does not fall through to HEAD when published snapshot load fails', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(entitySource)
+	mockModule.loadPackageSourceBySourceId.mockRejectedValue(
+		new Error('R2 timeout'),
+	)
 	mockModule.readArtifactTreeAtCommit.mockResolvedValue({
 		'README.md': '# Secret HEAD README\n',
 	})

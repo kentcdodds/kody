@@ -811,7 +811,12 @@ export function resolvePackagePageReadmeImageBaseHref(input: {
 	}
 	const viewedReadmeCommit =
 		input.readmeCommit?.trim() || input.publishedCommit?.trim() || ''
-	const assetCommit = input.pinnedCommit?.trim() || viewedReadmeCommit
+	// `/assets/` serves the listing pin or the published snapshot — never a
+	// live HEAD tree. Do not fall back assetCommit to the viewed README
+	// commit: that would opt in plain-repo HEAD readmes when no pin/publish
+	// commit was passed.
+	const assetCommit =
+		input.pinnedCommit?.trim() || input.publishedCommit?.trim() || ''
 	return getCommunityPackageAssetBaseHrefForViewedCommit({
 		listingId: input.listingId,
 		ownerUsername: input.ownerUsername,
@@ -845,28 +850,32 @@ export async function loadOwnerPackageReadme(input: {
 	userId: string
 	sourceId: string
 }): Promise<OwnerPackageReadme> {
-	try {
-		const loaded = await loadPackageSourceBySourceId({
-			env: input.env,
-			baseUrl: getAppBaseUrl({
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source || source.user_id !== input.userId) {
+		return { content: null, commit: null }
+	}
+	const publishedCommit = source.published_commit?.trim() || null
+	if (publishedCommit) {
+		try {
+			const loaded = await loadPackageSourceBySourceId({
 				env: input.env,
-				requestUrl: input.request.url,
-			}),
-			userId: input.userId,
-			sourceId: input.sourceId,
-		})
-		const publishedCommit = loaded.source.published_commit?.trim() || null
-		const fromPublished = readmeFromFiles(loaded.files)
-		if (fromPublished) {
-			return { content: fromPublished, commit: publishedCommit }
-		}
-		if (publishedCommit) {
-			// Published package with no README in the snapshot — do not leak HEAD.
+				baseUrl: getAppBaseUrl({
+					env: input.env,
+					requestUrl: input.request.url,
+				}),
+				userId: input.userId,
+				sourceId: input.sourceId,
+			})
+			const fromPublished = readmeFromFiles(loaded.files)
+			return fromPublished
+				? { content: fromPublished, commit: publishedCommit }
+				: { content: null, commit: null }
+		} catch {
+			// Published snapshot unreadable — do not leak live HEAD to guests.
 			return { content: null, commit: null }
 		}
-	} catch {
-		// No published snapshot (plain repos) — fall through to Artifacts HEAD.
 	}
+	// Plain repos have no publish KV snapshot — Files already reads Artifacts HEAD.
 	return loadOwnerPackageReadmeFromArtifactsHead(input)
 }
 
