@@ -12,11 +12,14 @@ function fakeVectorizeApi(
 		ignoreDeletes?: boolean
 		lookupStatus?: number
 		staleReadsAfterRecreate?: number
+		/** GET index succeeds; metadata_index/list still 410 for N calls. */
+		metadataStaleAfterCreate?: number
 	} = {},
 ) {
 	const indexes = new Map<string, FakeIndex>()
 	const deleted = new Set<string>()
 	const staleReads = new Map<string, number>()
+	const metadataStaleReads = new Map<string, number>()
 	const requests: Array<string> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
 	const fetcher: typeof fetch = async (input, init) => {
@@ -30,6 +33,9 @@ function fakeVectorizeApi(
 			if (deleted.has(body.name)) {
 				staleReads.set(body.name, options.staleReadsAfterRecreate ?? 0)
 			}
+			if ((options.metadataStaleAfterCreate ?? 0) > 0) {
+				metadataStaleReads.set(body.name, options.metadataStaleAfterCreate!)
+			}
 			return ok({ name: body.name })
 		}
 		const match = /^\/([^/]+)(\/.*)?$/.exec(path)
@@ -37,6 +43,14 @@ function fakeVectorizeApi(
 		const stale = staleReads.get(name) ?? 0
 		if (stale > 0) {
 			staleReads.set(name, stale - 1)
+			return Response.json(
+				{ success: false, errors: [{ code: 3001, message: 'index deleted' }] },
+				{ status: 410 },
+			)
+		}
+		const metadataStale = metadataStaleReads.get(name) ?? 0
+		if (metadataStale > 0 && match?.[2] === '/metadata_index/list') {
+			metadataStaleReads.set(name, metadataStale - 1)
 			return Response.json(
 				{ success: false, errors: [{ code: 3001, message: 'index deleted' }] },
 				{ status: 410 },
@@ -133,6 +147,8 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 	})
 	expect(api.requests).toEqual([
 		'GET /kody-pr-7-vectors',
+		'GET /kody-pr-7-vectors',
+		'GET /kody-pr-7-vectors/metadata_index/list',
 		'GET /kody-pr-7-vectors/metadata_index/list',
 		'POST /kody-pr-7-vectors/metadata_index/create',
 		'POST /kody-pr-7-vectors/metadata_index/create',
@@ -218,6 +234,24 @@ test('ensureVectorizeIndex waits for a re-created index that still reads as dele
 		'category',
 		'domain',
 	])
+})
+
+test('ensureVectorizeIndex waits when GET succeeds but metadata_index/list still returns 410', async () => {
+	consoleError.mockImplementation(() => {})
+	const api = fakeVectorizeApi({ metadataStaleAfterCreate: 2 })
+	const name = 'kody-pr-12-vectors'
+	await ensureVectorizeIndex({ ...client(api.fetcher), name })
+	expect(api.indexes.get(name)?.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
+	expect(
+		api.requests.filter((entry) => entry.includes('metadata_index/list'))
+			.length,
+	).toBeGreaterThanOrEqual(3)
 })
 
 test('dry-run ensure and delete make no Cloudflare requests', async () => {

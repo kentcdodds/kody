@@ -3,6 +3,12 @@
  * carry-over buffer so a placeholder split across chunks is still found.
  * Multipart parts use the same literal scan (placeholders inside parts fill).
  *
+ * Holdback and fill operate on original body bytes only: substituted
+ * credential values are never carried into a later scan, so nested
+ * `{{secret:…}}` text inside a value (or a value that, with the next chunk,
+ * would form a new placeholder) stays literal — same single-pass guarantee as
+ * {@link replaceSecretPlaceholders}.
+ *
  * Format-aware escaping matches the buffered body path: JSON values are
  * JSON-escaped, form-urlencoded values are form-encoded, text/multipart stay
  * literal. Encoded placeholder forms this path will not fill are refused via
@@ -436,21 +442,28 @@ export function createPlaceholderFillStream(input: {
 						settleDone()
 						return
 					}
+					// Hold and scan original body bytes only. Filling before
+					// holdback would re-scan credential text on the next chunk
+					// when a value ends with an unclosed `{{secret…` opener.
 					const text = carry + bytesToBinary(value)
 					carry = ''
-					const filled = await fillCompletePlaceholders(text)
-					const hold = streamingHoldBytes(filled)
+					const hold = streamingHoldBytes(text)
 					if (hold.reject === 'window') {
 						throw new Error(
 							`A credential placeholder in the request body exceeds the ${placeholderStreamHoldLimitBytes}-byte inspection window. Shorten the placeholder or buffer the body.`,
 						)
 					}
-					const emitLength = filled.length - hold.hold
+					const emitLength = text.length - hold.hold
 					if (hold.hold > 0) {
-						carry = filled.slice(filled.length - hold.hold)
+						carry = text.slice(emitLength)
 					}
 					if (emitLength > 0) {
-						controller.enqueue(binaryToBytes(filled.slice(0, emitLength)))
+						const filled = await fillCompletePlaceholders(
+							text.slice(0, emitLength),
+						)
+						if (filled.length > 0) {
+							controller.enqueue(binaryToBytes(filled))
+						}
 						return
 					}
 				}

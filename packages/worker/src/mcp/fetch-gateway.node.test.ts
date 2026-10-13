@@ -450,6 +450,40 @@ test('fetch gateway fills placeholders in one pass across headers, URL, and body
 	})
 })
 
+test('fetch gateway stream body keeps single-pass fill when a value recombines with the next chunk', async () => {
+	// Hosted and local (--local → gatewayFetchStream) share createPlaceholderFillStream.
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) => {
+			if (name === 'token') {
+				// Value ends with an unclosed opener so a naive carry of filled
+				// bytes plus the next chunk would form {{secret:apiKey}}.
+				return userSecret('prefix-{{secret:api', ['api.example.com'])
+			}
+			return userSecret('api-key-value', ['api.example.com'])
+		},
+	)
+
+	const encoder = new TextEncoder()
+	const body = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(encoder.encode('Bearer {{secret:token}}'))
+			controller.enqueue(encoder.encode('Key}} and {{secret:apiKey}}'))
+			controller.close()
+		},
+	})
+	const expanded = await expand(
+		new Request('https://api.example.com/v1/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body,
+			duplex: 'half',
+		} as RequestInit & { duplex: 'half' }),
+	)
+	expect(await expanded.text()).toBe(
+		'Bearer prefix-{{secret:apiKey}} and api-key-value',
+	)
+})
+
 test('fetch gateway fills integration-token placeholders without nested expansion', async () => {
 	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
 		async ({ credential }) => {

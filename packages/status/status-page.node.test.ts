@@ -99,7 +99,11 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			'>abc123d<',
 			'>def4567<',
 			'>7890abc<',
-			'http-equiv="refresh"',
+			'<noscript><meta http-equiv="refresh" content="60" /></noscript>',
+			'document.documentElement.dataset.refreshTimer = String(setTimeout(() => location.reload(), 60000))',
+			'<script type="module" src="/status-breakout.js"></script>',
+			'<body data-overall-status="operational">',
+			'data-breakout-start hidden>Play while you wait</button>',
 			`href="${statusFaviconPath('operational')}"`,
 			'MCP execute',
 			'Recently verified',
@@ -130,6 +134,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			'Primary database',
 			'2026-08-04T11:00:00.000Z',
 			`href="${statusFaviconPath('down')}"`,
+			'<body data-overall-status="down">',
 		]),
 	).toEqual([])
 	expect(down).not.toContain(`href="${statusFaviconPath('operational')}"`)

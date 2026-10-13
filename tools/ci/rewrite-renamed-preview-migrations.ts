@@ -203,9 +203,13 @@ export function resolveHistoricalMigrationContent(input: {
 		.relative(cwd, path.resolve(cwd, input.migrationsDir, input.filename))
 		.split(path.sep)
 		.join('/')
+	// `--full-history`: pull_request workflows check out GitHub's temporary
+	// merge commit (base ← head). Default history simplification drops
+	// side-branch deletes of files that never existed on the first parent
+	// (main), so a renumbered preview migration blob would be unrecoverable.
 	const revList = spawnSync(
 		'git',
-		['rev-list', '-n', '1', 'HEAD', '--', relativePath],
+		['rev-list', '-n', '1', '--full-history', 'HEAD', '--', relativePath],
 		{ cwd, encoding: 'utf8' },
 	)
 	if (revList.status !== 0) {

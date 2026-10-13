@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "Preserve",
+		"moduleResolution": "Bundler",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"strict": true,
+		"noEmit": true,
+		"allowJs": true,
+		"checkJs": true,
+		"types": [],
+		"skipLibCheck": true
+	},
+	"include": ["public/*.js"]
+}
