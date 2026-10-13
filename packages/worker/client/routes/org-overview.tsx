@@ -75,7 +75,9 @@ export function OrgOverviewRoute(handle: Handle) {
 						) : null}
 						<ul
 							aria-label={group.label}
-							data-testid={`org-overview-${group.label.toLowerCase()}`}
+							data-testid={`org-overview-${group.label
+								.toLowerCase()
+								.replace(/[^a-z0-9]+/g, '-')}`}
 							mix={css(cardGridCss)}
 						>
 							{group.items.map(renderCard)}

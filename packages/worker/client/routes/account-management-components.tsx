@@ -5,9 +5,11 @@ import {
 	accountRailOrgSlug,
 	isAccountNavItemActive,
 	isAccountRailPath,
+	railTabsForPath,
 	workspaceRailGroups,
 	type AccountRailGroup,
 } from './account-rail.ts'
+import { organizationsWithSignupFallback } from '#universal/org-pages.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
@@ -418,10 +420,9 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
 			groups: accountRailGroups({
-				workspaceSlug: accountRailOrgSlug({
-					pathname: input.currentPath,
+				organizations: organizationsWithSignupFallback({
 					organizations,
-					username: input.session?.username,
+					username: input.session?.username ?? '',
 				}),
 			}),
 		}
@@ -478,6 +479,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const session = readAppSession(handle)?.session ?? null
 		const explainer = resolveEntityExplainer(currentPath)
 		const rail = pageRail({ session, currentPath })
+		const tabs = railTabsForPath(rail.groups, currentPath)
 
 		return (
 			<>
@@ -494,9 +496,54 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					actions={handle.props.actions}
 					titleAside={explainer ? <EntityExplainer copy={explainer} /> : null}
 				/>
+				{tabs ? (
+					<nav
+						aria-label={`${tabs.label} pages`}
+						data-testid="account-section-tabs"
+						mix={css(sectionTabsCss)}
+					>
+						{tabs.tabs.map((tab) => (
+							<a
+								key={tab.href}
+								href={tab.href}
+								aria-current={tab.active ? 'page' : undefined}
+								mix={css(sectionTabCss)}
+							>
+								{tab.label}
+							</a>
+						))}
+					</nav>
+				) : null}
 			</>
 		)
 	}
+}
+
+const sectionTabsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: spacing.md,
+	borderBottom: `1px solid ${colors.border}`,
+}
+
+const sectionTabCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	padding: '0.55rem 0.15rem',
+	marginBottom: '-1px',
+	borderBottom: '2px solid transparent',
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	fontWeight: 550,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
+	'&[aria-current="page"]': {
+		color: colors.text,
+		borderBottomColor: colors.primary,
+	},
 }
 
 type AdminPageHeaderProps = {
