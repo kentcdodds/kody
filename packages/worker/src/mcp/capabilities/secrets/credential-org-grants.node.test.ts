@@ -318,3 +318,79 @@ test('revoke removes the grant at once and audits it; a lost membership shows th
 	])
 	await expect(list({}, annHome)).resolves.toEqual({ grants: [] })
 })
+
+test('a grant or revoke that a concurrent call already made reports false and audits nothing', async () => {
+	const t = await setup()
+	const annInAcme = t.as('ann', t.acmeAs('member'))
+	await t.db
+		.prepare(
+			`INSERT INTO credential_org_grants (credential_id, user_id, org_id, created_at) VALUES (?, ?, ?, ?)`,
+		)
+		.bind(t.annToken, t.ids.ann, t.acmeId, now)
+		.run()
+	await expect(
+		grant({ credential_id: t.annToken }, annInAcme),
+	).resolves.toMatchObject({ created: false })
+	expect(await t.audits('credential.personal_org_granted')).toEqual([])
+	await t.db
+		.prepare(`DELETE FROM credential_org_grants WHERE credential_id = ?`)
+		.bind(t.annToken)
+		.run()
+	await expect(
+		revoke({ credential_id: t.annToken }, annInAcme),
+	).resolves.toMatchObject({ revoked: false })
+	expect(await t.audits('credential.personal_org_revoked')).toEqual([])
+})
+
+test('a disabled MCP server lists its grant inactive, and its grant needs integration Write even once deleted', async () => {
+	const t = await setup()
+	const annPersonalOrg = personalOrgId(personIdFromStored(t.ids.ann))
+	await t.db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url) VALUES ('ann-mcp', ?, 'annMcp', 'https://mcp.example.com/mcp')`,
+		)
+		.bind(annPersonalOrg)
+		.run()
+	const annInAcme = t.as('ann', t.acmeAs('member'))
+	await expect(
+		grant(
+			{ credential_id: 'ann-mcp' },
+			t.as('ann', t.acmeAs('member'), ['secret:write']),
+		),
+	).rejects.toMatchObject({ permission: 'integration:write' })
+	await expect(
+		grant({ credential_id: 'ann-mcp' }, annInAcme),
+	).resolves.toMatchObject({ credential_kind: 'mcp-server', created: true })
+	await t.db
+		.prepare(`UPDATE mcp_server_settings SET enabled = 0 WHERE id = 'ann-mcp'`)
+		.run()
+	await expect(list({}, annInAcme)).resolves.toMatchObject({
+		grants: [{ credential_id: 'ann-mcp', active: false }],
+	})
+	await t.db
+		.prepare(
+			`UPDATE mcp_server_settings SET deleted_at = ? WHERE id = 'ann-mcp'`,
+		)
+		.bind(now)
+		.run()
+	await expect(
+		revoke(
+			{ credential_id: 'ann-mcp' },
+			t.as('ann', t.acmeAs('member'), ['secret:write']),
+		),
+	).rejects.toMatchObject({ permission: 'integration:write' })
+	await expect(
+		revoke(
+			{ credential_id: 'no-such-credential' },
+			t.as('ann', t.acmeAs('member'), ['secret:write']),
+		),
+	).rejects.toMatchObject({ permission: 'integration:write' })
+	await expect(
+		revoke({ credential_id: 'ann-mcp' }, annInAcme),
+	).resolves.toMatchObject({ revoked: true })
+})
+
+test('grant and revoke both need a live person', () => {
+	expect(credentialOrgGrantCapability.requiresLivePerson).toBe('always')
+	expect(credentialOrgRevokeCapability.requiresLivePerson).toBe('always')
+})

@@ -95,10 +95,11 @@ bound to). It then works in that org only in your own runs, through scoped
 org can use it, Owners and Automation included, and `{{secret:name}}`
 placeholders never resolve it. **`credentialOrgRevoke`** removes one org's grant
 at once, and **`credentialOrgGrantList`** lists your grants, with
-`active: false` when one stops working (an expired value, or you left the org).
-Leaving an org deletes your grants there. Granting needs a live person (not a
-job, webhook, or package code) and Write on the credential; grants and revokes
-are audited in your personal org.
+`active: false` when one stops working (an expired value, a disconnected OAuth
+connection, a disabled MCP server, or you left the org). Leaving an org deletes
+your grants there. Granting and revoking need a live person (not a job, webhook,
+or package code) and Write on the credential; grants and revokes are audited in
+your personal org.
 
 The account create/edit form has the same optional expiry field. Agents
 prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query

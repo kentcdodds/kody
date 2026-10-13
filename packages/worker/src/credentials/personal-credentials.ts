@@ -45,9 +45,45 @@ const notFoundMessage =
 	'No personal credential with that id. Pass the credential_id of a secret, integration, or MCP server in your personal org.'
 
 /**
+ * Usable rows per kind, matching what scoped clients resolve
+ * (`credential-candidates.ts`): an unexpired user-scope secret, a connected
+ * OAuth connection, an enabled MCP server.
+ */
+const usableQueries: Record<
+	Exclude<OrgCredential['kind'], 'vault'>,
+	(placeholders: string) => {
+		sql: string
+		binds: (now: string) => Array<string>
+	}
+> = {
+	secret: (placeholders) => ({
+		sql: `SELECT e.id AS id FROM secret_entries e
+			JOIN secret_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+				AND (e.expires_at IS NULL OR e.expires_at > ?)
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+				AND e.id IN (${placeholders})`,
+		binds: (now) => [now, now],
+	}),
+	integration: (placeholders) => ({
+		sql: `SELECT id FROM user_integrations
+			WHERE user_id = ? AND deleted_at IS NULL AND connected_at IS NOT NULL
+				AND id IN (${placeholders})`,
+		binds: () => [],
+	}),
+	'mcp-server': (placeholders) => ({
+		sql: `SELECT id FROM mcp_server_settings
+			WHERE user_id = ? AND deleted_at IS NULL AND enabled = 1
+				AND id IN (${placeholders})`,
+		binds: () => [],
+	}),
+}
+
+/**
  * The owner's credentials among `ids` that can be personal credentials now:
- * live, in an active personal org, not a vault binding, and for secrets a
- * user-scope entry that has not expired. Package and session secrets stay
+ * live, in an active personal org, not a vault binding, and usable the way
+ * scoped clients require (`usableQueries`). Package and session secrets stay
  * with their package or session.
  */
 async function loadPersonalCredentials(
@@ -61,34 +97,22 @@ async function loadPersonalCredentials(
 		return new Map()
 	}
 	const credentials = await listOrgCredentialsByIds(db, ownerOrgId, ids)
-	const secretIds = [...credentials.values()]
-		.filter((credential) => credential.kind === 'secret')
-		.map((credential) => credential.id)
-	const usableSecretIds = new Set<string>()
+	const usableIds = new Set<string>()
 	const nowIso = now.toISOString()
-	for (const chunk of chunkArray(secretIds, maxD1BoundParameters - 3)) {
-		const result = await db
-			.prepare(
-				`SELECT e.id AS id FROM secret_entries e
-				JOIN secret_buckets b ON b.id = e.bucket_id
-				WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
-					AND e.deleted_at IS NULL AND b.deleted_at IS NULL
-					AND (e.expires_at IS NULL OR e.expires_at > ?)
-					AND (b.expires_at IS NULL OR b.expires_at > ?)
-					AND e.id IN (${chunk.map(() => '?').join(', ')})`,
-			)
-			.bind(ownerOrgId, nowIso, nowIso, ...chunk)
-			.all<{ id: string }>()
-		for (const row of result.results ?? []) usableSecretIds.add(row.id)
+	for (const [kind, query] of Object.entries(usableQueries)) {
+		const kindIds = [...credentials.values()]
+			.filter((credential) => credential.live && credential.kind === kind)
+			.map((credential) => credential.id)
+		for (const chunk of chunkArray(kindIds, maxD1BoundParameters - 3)) {
+			const { sql, binds } = query(chunk.map(() => '?').join(', '))
+			const result = await db
+				.prepare(sql)
+				.bind(ownerOrgId, ...binds(nowIso), ...chunk)
+				.all<{ id: string }>()
+			for (const row of result.results ?? []) usableIds.add(row.id)
+		}
 	}
-	return new Map(
-		[...credentials].filter(
-			([id, credential]) =>
-				credential.live &&
-				credential.kind !== 'vault' &&
-				(credential.kind !== 'secret' || usableSecretIds.has(id)),
-		),
-	)
+	return new Map([...credentials].filter(([id]) => usableIds.has(id)))
 }
 
 /**
@@ -131,42 +155,34 @@ export async function grantPersonalCredentialToOrg(input: {
 			'You can only grant a personal credential to an org you belong to.',
 		)
 	}
-	const existing = await input.db
+	const insert = input.db
 		.prepare(
-			`SELECT 1 AS found FROM credential_org_grants
-			WHERE credential_id = ? AND user_id = ? AND org_id = ?`,
+			`INSERT INTO credential_org_grants (credential_id, user_id, org_id, created_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT (credential_id, org_id) DO NOTHING`,
 		)
-		.bind(credential.id, input.ownerPersonId, input.orgId)
-		.first<{ found: number }>()
-	if (!existing) {
-		const insert = input.db
-			.prepare(
-				`INSERT INTO credential_org_grants (credential_id, user_id, org_id, created_at)
-				VALUES (?, ?, ?, ?)
-				ON CONFLICT (credential_id, org_id) DO NOTHING`,
-			)
-			.bind(credential.id, input.ownerPersonId, input.orgId, now.toISOString())
-		if (input.audit) {
-			await runAppDbBatchWithOrgAudit({
-				appDb: input.db,
-				audit: input.audit,
-				statements: [insert],
-				event: grantAuditEvent({
-					action: 'credential.personal_org_granted',
-					ownerOrgId,
-					credential,
-					orgId: input.orgId,
-				}),
-			})
-		} else {
-			await insert.run()
-		}
-	}
+		.bind(credential.id, input.ownerPersonId, input.orgId, now.toISOString())
+	const created = input.audit
+		? (
+				await runAppDbBatchWithOrgAudit({
+					appDb: input.db,
+					audit: input.audit,
+					statements: [insert],
+					event: grantAuditEvent({
+						action: 'credential.personal_org_granted',
+						ownerOrgId,
+						credential,
+						orgId: input.orgId,
+					}),
+					onlyIfChanged: true,
+				})
+			).changed
+		: ((await insert.run()).meta.changes ?? 0) > 0
 	return {
 		...credential,
 		ownerKind: 'user',
 		ownerPersonId: input.ownerPersonId,
-		created: !existing,
+		created,
 	}
 }
 
@@ -208,20 +224,12 @@ export async function revokePersonalCredentialOrgGrant(input: {
 		return (result.meta.changes ?? 0) > 0
 	}
 	const ownerOrgId = personalOrgId(input.ownerPersonId)
-	const existing = await input.db
-		.prepare(
-			`SELECT 1 AS found FROM credential_org_grants
-			WHERE credential_id = ? AND user_id = ? AND org_id = ?`,
-		)
-		.bind(input.credentialId, input.ownerPersonId, input.orgId)
-		.first<{ found: number }>()
-	if (!existing) return false
 	const credential = await getOrgCredential(
 		input.db,
 		ownerOrgId,
 		input.credentialId,
 	)
-	await runAppDbBatchWithOrgAudit({
+	const { changed } = await runAppDbBatchWithOrgAudit({
 		appDb: input.db,
 		audit: input.audit,
 		statements: [remove],
@@ -234,8 +242,9 @@ export async function revokePersonalCredentialOrgGrant(input: {
 			},
 			orgId: input.orgId,
 		}),
+		onlyIfChanged: true,
 	})
-	return true
+	return changed
 }
 
 export type PersonalCredentialOrgGrant = {
@@ -252,7 +261,8 @@ export type PersonalCredentialOrgGrant = {
 /**
  * The owner's org grants, optionally for one credential. A grant whose
  * credential was deleted is left out; one that stopped working (expired
- * value, lost membership) is listed with `active: false`.
+ * value, disconnected or disabled, lost membership) is listed with
+ * `active: false`.
  */
 export async function listPersonalCredentialOrgGrants(input: {
 	db: D1Database

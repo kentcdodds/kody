@@ -3,6 +3,7 @@ import {
 	ownerIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type CredentialPermissionFamily } from '@kody-internal/shared/org-permissions.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { authorizeCredentialScope } from '#worker/authorization/authorize.ts'
 import {
@@ -85,8 +86,12 @@ async function resolveTargetOrg(
 	return { id: ownerIdFromStored(org.id), slug: org.slug }
 }
 
-/** The owner's credential, for its kind; vault bindings are never personal. */
-async function loadOwnCredential(
+/**
+ * Write on the family of the owner's credential, deleted or not, so a grant
+ * outliving its credential still needs the right family. An id with no row
+ * in the owner's personal org needs Write on every family.
+ */
+async function authorizeGrantChange(
 	ctx: CapabilityContext,
 	request: RequestContext,
 	credentialId: string,
@@ -96,8 +101,12 @@ async function loadOwnCredential(
 		personalOrgId(request.actor!.userId),
 		credentialId,
 	)
-	if (!credential?.live || credential.kind === 'vault') return null
-	return credential
+	const families: Array<CredentialPermissionFamily> = credential
+		? [credentialPermissionFamily(credential.kind)]
+		: ['secret', 'integration']
+	for (const family of families) {
+		authorizeCredentialScope(request, `${family}:write`)
+	}
 }
 
 function toGrantKind(kind: CredentialKind): z.infer<typeof grantKindSchema> {
@@ -142,11 +151,7 @@ export const credentialOrgGrantCapability = defineDomainCapability(
 		}),
 		async handler(parsed, ctx: CapabilityContext) {
 			const { request, personId } = requireOwner(ctx, 'change')
-			const own = await loadOwnCredential(ctx, request, parsed.credential_id)
-			authorizeCredentialScope(
-				request,
-				`${credentialPermissionFamily(own?.kind ?? 'secret')}:write`,
-			)
+			await authorizeGrantChange(ctx, request, parsed.credential_id)
 			const org = await resolveTargetOrg(ctx, request, parsed.org)
 			const granted = await grantPersonalCredentialToOrg({
 				db: ctx.env.APP_DB,
@@ -171,8 +176,9 @@ export const credentialOrgRevokeCapability = defineDomainCapability(
 	{
 		name: 'credentialOrgRevoke',
 		orgPermission: 'none',
+		requiresLivePerson: true,
 		description:
-			"Revoke one org's grant of your personal credential (ADR 0068). Your runs in that org stop resolving it right away; the credential itself stays in your personal org. Needs Write on the credential and is audited in your personal org.",
+			"Revoke one org's grant of your personal credential (ADR 0068). Your runs in that org stop resolving it right away; the credential itself stays in your personal org. Needs Write on the credential and a live person, and is audited in your personal org.",
 		keywords: ['credential', 'personal', 'revoke', 'unshare', 'org', 'grant'],
 		readOnly: false,
 		idempotent: true,
@@ -190,11 +196,7 @@ export const credentialOrgRevokeCapability = defineDomainCapability(
 		}),
 		async handler(parsed, ctx: CapabilityContext) {
 			const { request, personId } = requireOwner(ctx, 'change')
-			const own = await loadOwnCredential(ctx, request, parsed.credential_id)
-			authorizeCredentialScope(
-				request,
-				`${credentialPermissionFamily(own?.kind ?? 'secret')}:write`,
-			)
+			await authorizeGrantChange(ctx, request, parsed.credential_id)
 			const org = await resolveTargetOrg(ctx, request, parsed.org)
 			const revoked = await revokePersonalCredentialOrgGrant({
 				db: ctx.env.APP_DB,
@@ -214,7 +216,7 @@ export const credentialOrgGrantListCapability = defineDomainCapability(
 		name: 'credentialOrgGrantList',
 		orgPermission: 'none',
 		description:
-			"List the orgs your personal credentials are granted to (ADR 0068), optionally for one credential. `active` is false when a grant does not work right now: the credential's value expired or you no longer belong to the org. Lists only your own grants, never anyone else's. Never returns values.",
+			"List the orgs your personal credentials are granted to (ADR 0068), optionally for one credential. `active` is false when a grant does not work right now: the credential's value expired, its OAuth connection is disconnected, its MCP server is disabled, or you no longer belong to the org. Lists only your own grants, never anyone else's. Never returns values.",
 		keywords: ['credential', 'personal', 'grant', 'list', 'org', 'shared'],
 		readOnly: true,
 		idempotent: true,
