@@ -628,11 +628,10 @@ A webhook that declares an HMAC type never falls back to the URL secret: a
 request without a valid signature is refused with 401, even on the right URL.
 Prefer an HMAC type whenever the sender can sign.
 
-A webhook that declares no `verification` is treated as `url-secret` for now.
-Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
-declaration to existing packages; once none are left, publish will require
-`verification` on every webhook
-([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+A webhook that declares no `verification` keeps working the same way: it is
+treated as `url-secret`, and publish accepts it. That will not change. Declaring
+a type is still recommended so the manifest says how the webhook authenticates:
+`url-secret` when the sender cannot sign, an HMAC type when it can.
 
 Either way, the webhook runs as its enabler, the person who turned it on; with
 no `on` enablement the delivery answers 409 `enablement_not_on`.
