@@ -281,6 +281,8 @@ test('approving publishes the paused commit past the pause; a moved base superse
 		expect.objectContaining({
 			newCommit: 'commit-new',
 			expectedHead: 'commit-new',
+			allowForce: false,
+			destructiveOverwriteConfirmed: false,
 			allowLockedPublish: true,
 			credentialNeedsApproved: true,
 		}),
@@ -329,6 +331,35 @@ test('approving publishes the paused commit past the pause; a moved base superse
 			ownerUserId: ownerId,
 		}),
 	).resolves.toMatchObject({ status: 'superseded' })
+
+	const forced = await enqueuePackageApprovalRequest(t.db, {
+		packageId: t.packageId,
+		ownerUserId: ownerId,
+		reason: 'credential_needs_changed',
+		pendingCommit: 'commit-orphan',
+		baseCommit: 'commit-old',
+		details: {
+			changes: [],
+			externalPublish: {
+				allowForce: true,
+				destructiveOverwriteConfirmed: true,
+			},
+		},
+		requestedByUserId: null,
+	})
+	mocks.publishFromExternalRef.mockResolvedValueOnce({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-orphan',
+	})
+	await expect(approve(forced.id)).resolves.toEqual({ ok: true })
+	expect(mocks.publishFromExternalRef).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			newCommit: 'commit-orphan',
+			allowForce: true,
+			destructiveOverwriteConfirmed: true,
+		}),
+	)
 })
 
 test('approving a paused session publish re-runs that session at the paused commit', async () => {

@@ -846,12 +846,13 @@ opens `/@{username}/{package-name}/approve-capabilities`, the package's one
 approval page. Its **Waiting for your approval** section shows each paused
 publish with its reason (**Credential needs changed**) and the needs that
 changed. **Approve and publish** needs `package:publish` and runs the real
-publish (checks, fast-forward) for that exact commit; it also counts as the
-locked-publish approval. A later publish replaces the pending request, and a
-request whose published base moved, or whose pushed commit is no longer HEAD,
-can no longer be approved, so publish again. A locked package keeps its
-locked-publish flow first: approving that publish on approve-publish runs this
-check and pauses there if the needs changed. Platform codemods do not pause.
+publish (checks, fast-forward) for that exact commit, with the paused publish's
+overwrite options; it also counts as the locked-publish approval. A later
+publish replaces the pending request, and a request whose published base moved,
+or whose pushed commit is no longer HEAD, can no longer be approved, so publish
+again. A locked package keeps its locked-publish flow first: approving that
+publish on approve-publish runs this check and pauses there if the needs
+changed. Platform codemods do not pause.
 
 ## Community fork provenance
 

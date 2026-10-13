@@ -484,6 +484,10 @@ test('changed credential needs pause the publish unless the owner approved them'
 		expect.objectContaining({
 			pendingCommit: 'commit-new',
 			files: { 'package.json': '{}' },
+			pausedExternalPublish: {
+				allowForce: false,
+				destructiveOverwriteConfirmed: false,
+			},
 		}),
 	)
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()

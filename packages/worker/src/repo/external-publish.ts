@@ -312,6 +312,11 @@ export async function publishFromExternalRef(input: {
 					pendingCommit: input.newCommit,
 					files: input.files ?? checks.sourceFiles,
 					requestedByUserId: input.requestedByUserId,
+					pausedExternalPublish: {
+						allowForce: input.allowForce === true,
+						destructiveOverwriteConfirmed:
+							input.destructiveOverwriteConfirmed === true,
+					},
 				})
 	if (approval) {
 		return {

@@ -5,6 +5,7 @@ import {
 	describeCredentialNeedChange,
 	isPausedSessionMovedError,
 	readCredentialNeedChanges,
+	readPausedExternalPublish,
 	readPausedSessionPublish,
 } from '#worker/credentials/credential-needs-approval.ts'
 import {
@@ -216,6 +217,7 @@ export async function approveCredentialNeedsRequest(input: {
 			// A newer push replaces this request; never publish an older commit
 			// over it.
 			expectedHead: approval.pendingCommit,
+			...readPausedExternalPublish(approval.details),
 			allowLockedPublish: true,
 			credentialNeedsApproved: true,
 			baseUrl: getAppBaseUrl({

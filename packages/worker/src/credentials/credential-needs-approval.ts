@@ -42,6 +42,15 @@ export type PausedSessionPublish = {
 	expectedPackageScope?: string
 }
 
+/**
+ * An external-ref publish that paused with its commit already on HEAD.
+ * Approval publishes that commit with the same overwrite options.
+ */
+export type PausedExternalPublish = {
+	allowForce: boolean
+	destructiveOverwriteConfirmed: boolean
+}
+
 export type CredentialNeedsApprovalRequired = {
 	requestId: string
 	packageId: string
@@ -168,6 +177,7 @@ export async function requireCredentialNeedsApproval(input: {
 	files: Record<string, string>
 	requestedByUserId?: string | null
 	pausedSession?: PausedSessionPublish
+	pausedExternalPublish?: PausedExternalPublish
 }): Promise<CredentialNeedsApprovalRequired | null> {
 	if (input.source.entity_kind !== 'package') return null
 	if (!input.source.published_commit) return null
@@ -199,6 +209,9 @@ export async function requireCredentialNeedsApproval(input: {
 		details: {
 			changes,
 			...(input.pausedSession ? { session: input.pausedSession } : {}),
+			...(input.pausedExternalPublish
+				? { externalPublish: input.pausedExternalPublish }
+				: {}),
 		},
 		requestedByUserId: input.requestedByUserId ?? null,
 	})
@@ -264,5 +277,18 @@ export function readPausedSessionPublish(
 		...(typeof value['expectedPackageScope'] === 'string'
 			? { expectedPackageScope: value['expectedPackageScope'] }
 			: {}),
+	}
+}
+
+export function readPausedExternalPublish(
+	details: Record<string, unknown>,
+): PausedExternalPublish {
+	const value = details['externalPublish']
+	const options =
+		value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+	return {
+		allowForce: options['allowForce'] === true,
+		destructiveOverwriteConfirmed:
+			options['destructiveOverwriteConfirmed'] === true,
 	}
 }
