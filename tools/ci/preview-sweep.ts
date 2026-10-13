@@ -283,8 +283,11 @@ export async function listPreviewCandidateNames(client: CloudflareClient) {
 }
 
 /**
- * Whether a `preview.yml` run is currently queued or in progress, for ANY
- * branch. Deliberately account-wide rather than matched to one branch: the
+ * Whether a `workflow_dispatch` `preview.yml` run is currently queued or in
+ * progress, for ANY branch. Only dispatch runs deploy branch previews; PR
+ * pushes run `preview.yml` almost constantly and would otherwise defer branch
+ * sweeping nearly every hour. Deliberately account-wide rather than matched
+ * to one branch: the
  * workflow's `preview_name` input can override the slug with an arbitrary
  * string, so a swept resource name cannot be reversed back into the exact
  * ref or input that produced it. Branch-preview deploys are a manual,
@@ -301,7 +304,7 @@ export async function isPreviewDeployInProgress(input: {
 	const fetcher = input.fetcher ?? fetch
 	for (const status of ['in_progress', 'queued']) {
 		const response = await fetcher(
-			`https://api.github.com/repos/${input.repository}/actions/workflows/preview.yml/runs?status=${status}&per_page=1`,
+			`https://api.github.com/repos/${input.repository}/actions/workflows/preview.yml/runs?status=${status}&event=workflow_dispatch&per_page=1`,
 			{
 				headers: {
 					Accept: 'application/vnd.github+json',
@@ -313,7 +316,7 @@ export async function isPreviewDeployInProgress(input: {
 		)
 		if (!response.ok) {
 			throw new Error(
-				`GitHub API GET actions/workflows/preview.yml/runs?status=${status} failed (${String(response.status)}).`,
+				`GitHub API GET actions/workflows/preview.yml/runs?status=${status}&event=workflow_dispatch failed (${String(response.status)}).`,
 			)
 		}
 		const json = (await response.json()) as { total_count?: unknown }
@@ -472,7 +475,7 @@ async function main() {
 		: false
 	if (deployInProgress) {
 		console.log(
-			'Branch preview sweep: a preview.yml run is queued or in progress; deferring all branch-preview sweeping to the next run so an in-flight deploy cannot be swept mid-provision.',
+			'Branch preview sweep: a workflow_dispatch preview.yml run is queued or in progress; deferring all branch-preview sweeping to the next run so an in-flight deploy cannot be swept mid-provision.',
 		)
 	} else {
 		// Re-fetch liveness right before deleting anything, rather than reusing

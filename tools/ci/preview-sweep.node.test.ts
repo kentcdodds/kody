@@ -301,12 +301,14 @@ test('a D1 name from one live branch can never mask an unrelated orphaned branch
 	})
 })
 
-test('isPreviewDeployInProgress checks in_progress then queued preview.yml runs', async () => {
+test('isPreviewDeployInProgress checks in_progress then queued workflow_dispatch preview.yml runs', async () => {
 	const requestedStatuses: Array<string> = []
+	const requestedEvents = new Set<string | null>()
 	const respond = (hasRun: boolean) =>
 		(async (input: RequestInfo | URL) => {
 			const url = new URL(String(input))
 			requestedStatuses.push(url.searchParams.get('status') ?? '')
+			requestedEvents.add(url.searchParams.get('event'))
 			return jsonResponse({ total_count: hasRun ? 1 : 0 })
 		}) as typeof fetch
 
@@ -318,6 +320,9 @@ test('isPreviewDeployInProgress checks in_progress then queued preview.yml runs'
 		}),
 	).resolves.toBe(false)
 	expect(requestedStatuses).toEqual(['in_progress', 'queued'])
+	// PR-push preview runs never deploy branch previews, so they must not
+	// defer branch sweeping.
+	expect([...requestedEvents]).toEqual(['workflow_dispatch'])
 
 	requestedStatuses.length = 0
 	await expect(
