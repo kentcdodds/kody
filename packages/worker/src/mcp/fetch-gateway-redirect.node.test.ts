@@ -2,7 +2,6 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { lookupSecretsThroughResolveSecret } from '#worker/test-support/secret-lookup.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import {
@@ -50,6 +49,8 @@ const env = {
 	...userMeter.env,
 	COOKIE_SECRET: 'test-cookie-secret',
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	// Opt out of credential-resolution audit writes in this fixture.
+	SENTRY_ENVIRONMENT: 'test',
 } as unknown as Env
 
 const props = {
@@ -80,7 +81,6 @@ beforeEach(() => {
 })
 
 test('stream body credential in a later chunk does not follow 307 to another host', async () => {
-	consoleError.mockImplementation(() => {})
 	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
 	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
 		userSecret('super-secret-token', ['api.example.com']),
@@ -140,7 +140,6 @@ test('stream body credential in a later chunk does not follow 307 to another hos
 	expect(response.headers.get('location')).toBe(
 		'https://evil.example.net/steal',
 	)
-	expect(consoleError).toHaveBeenCalled()
 })
 
 test('ordinary streamed POST without credentials still follows a 302', async () => {
