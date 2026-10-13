@@ -13,6 +13,7 @@ import {
 	sendCreditMonthlyCapEmail,
 } from '#app/user-account-emails.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
+import { buildOrgBillingMetadata } from './org-stripe-metadata.ts'
 import {
 	createOffSessionPaymentIntent,
 	StripeApiError,
@@ -99,7 +100,7 @@ export async function runCreditAutoRefill(input: {
 			idempotencyKey: `kody-credit-auto-refill:${input.userId}:${month}:${refillNumber}`,
 			metadata: {
 				[creditAutoRefillMetadataKey]: '1',
-				kody_stable_user_id: input.userId,
+				...buildOrgBillingMetadata(input.userId),
 			},
 		})
 		if (intent.status !== 'succeeded' || intent.currency !== 'usd') {
