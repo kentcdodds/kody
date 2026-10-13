@@ -144,6 +144,10 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 		found.add('signing')
 		break
 	}
+	// Calls whose secret name is not a string literal still need a hint.
+	if (scan.jwtSignCalls > scan.jwtSignSecretNames.length) {
+		found.add('signing')
+	}
 	const hints = (Object.keys(credentialTypeHints) as Array<CredentialTypeHint>)
 		.filter((hint) => found.has(hint))
 		.map((hint) => `- ${credentialTypeHints[hint]}`)

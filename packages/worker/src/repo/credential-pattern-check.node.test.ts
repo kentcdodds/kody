@@ -201,3 +201,13 @@ test('declared signing keys do not get a signing hint from jwtSignCalls', () => 
 	)
 	expect(hintLines(undeclared)).toEqual([hintsHeading, signingHint])
 })
+
+test('secretJwtSign with a non-literal key name still gets a signing hint', () => {
+	const dynamic = message(
+		[
+			"const keyName = 'APNS_KEY'",
+			'export const sign = () => kody.secretJwtSign({ private_key_secret_name: keyName, claims: {} })',
+		].join('\n'),
+	)
+	expect(hintLines(dynamic)).toEqual([hintsHeading, signingHint])
+})
