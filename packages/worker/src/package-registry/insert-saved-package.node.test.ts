@@ -183,3 +183,57 @@ test('updateSavedPackage keeps kody_id in lockstep with a renamed name leaf', as
 		description: 'After',
 	})
 })
+
+test('updateSavedPackage expectedUpdatedAt refuses a stale visibility write', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+
+	const ownerUserId = ownerIdFromStored('cas-user')
+	sqlite
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('cas', 'cas@example.com', 'hash', ?)`,
+		)
+		.run(ownerUserId)
+
+	const packageId = crypto.randomUUID()
+	await insertSavedPackage(db, {
+		id: packageId,
+		user_id: ownerUserId,
+		name: '@cas/visibility',
+		description: 'CAS',
+		tags_json: '[]',
+		search_text: null,
+		source_id: crypto.randomUUID(),
+		has_app: 0,
+		has_skills: 0,
+		hidden: 0,
+		is_private: 1,
+	})
+
+	const before = sqlite
+		.prepare(`SELECT updated_at FROM saved_packages WHERE id = ?`)
+		.get(packageId) as { updated_at: string }
+
+	const cleared = await updateSavedPackage(db, {
+		userId: ownerUserId,
+		packageId,
+		isInternetVisible: false,
+	})
+	expect(cleared).toBe(true)
+
+	const staleEnable = await updateSavedPackage(db, {
+		userId: ownerUserId,
+		packageId,
+		isInternetVisible: true,
+		expectedUpdatedAt: before.updated_at,
+	})
+	expect(staleEnable).toBe(false)
+
+	expect(
+		sqlite
+			.prepare(`SELECT is_internet_visible FROM saved_packages WHERE id = ?`)
+			.get(packageId),
+	).toEqual({ is_internet_visible: 0 })
+})

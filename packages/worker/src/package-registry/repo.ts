@@ -231,6 +231,11 @@ export async function updateSavedPackage(
 		hidden?: boolean
 		isPrivate?: boolean
 		isInternetVisible?: boolean
+		/**
+		 * When set, the update only applies if `updated_at` still matches.
+		 * Used so a concurrent clearer cannot be overwritten by a stale writer.
+		 */
+		expectedUpdatedAt?: string
 	},
 ) {
 	const assignments: Array<string> = []
@@ -276,13 +281,20 @@ export async function updateSavedPackage(
 
 	addAssignment('updated_at', new Date().toISOString())
 
+	const expectedUpdatedAtClause =
+		input.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?'
+	const bindValues =
+		input.expectedUpdatedAt === undefined
+			? [...values, input.packageId, input.userId]
+			: [...values, input.packageId, input.userId, input.expectedUpdatedAt]
+
 	const result = await db
 		.prepare(
 			`UPDATE saved_packages
 			SET ${assignments.join(', ')}
-			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}${expectedUpdatedAtClause}`,
 		)
-		.bind(...values, input.packageId, input.userId)
+		.bind(...bindValues)
 		.run()
 
 	return (result.meta.changes ?? 0) > 0

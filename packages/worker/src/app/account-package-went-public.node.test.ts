@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	resolvePackageApprovalRequest: vi.fn(),
 	loadCapabilityApprovalSummary: vi.fn(),
 	findPackageCapabilityApprovalByFingerprint: vi.fn(),
+	getSavedPackageById: vi.fn(),
 	updateSavedPackage: vi.fn(),
 	getEntitySourceById: vi.fn(),
 }))
@@ -34,6 +35,8 @@ vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
 	updateSavedPackage: (...args: Array<unknown>) =>
 		mockModule.updateSavedPackage(...args),
 }))
@@ -52,9 +55,41 @@ beforeEach(() => {
 	mockModule.resolvePackageApprovalRequest.mockReset()
 	mockModule.loadCapabilityApprovalSummary.mockReset()
 	mockModule.findPackageCapabilityApprovalByFingerprint.mockReset()
+	mockModule.getSavedPackageById.mockReset()
 	mockModule.updateSavedPackage.mockReset()
 	mockModule.getEntitySourceById.mockReset()
 })
+
+function stubApproveWentPublicHappyPath() {
+	mockModule.getPackageApprovalRequest.mockResolvedValue({
+		id: 'req-went',
+		reason: 'went_public',
+		status: 'pending',
+		pendingCommit: 'deadbeef',
+		baseCommit: 'deadbeef',
+		details: {},
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'owner-1',
+		published_commit: 'deadbeef',
+	})
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		publishedCommit: 'deadbeef',
+		fingerprintMatchesApproval: true,
+		capabilitySet: { fingerprint: 'fp-1', entries: [] },
+		dependencySnapshot: null,
+	})
+	mockModule.findPackageCapabilityApprovalByFingerprint.mockResolvedValue({
+		id: 'pin-1',
+		publishedCommit: 'deadbeef',
+		fingerprint: 'fp-1',
+		dependencySnapshotJson: '{}',
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage(false))
+	mockModule.resolvePackageApprovalRequest.mockResolvedValue(true)
+	mockModule.updateSavedPackage.mockResolvedValue(true)
+}
 
 function savedPackage(isInternetVisible = false) {
 	return {
@@ -118,38 +153,13 @@ test('loadPendingPackageApprovals shows went_public reason and approve action', 
 test('approveWentPublicRequest flips internet-visible when capability pin matches', async () => {
 	const env = { APP_DB: {} } as Env
 	const request = new Request('https://example.com/approve')
-	mockModule.getPackageApprovalRequest.mockResolvedValue({
-		id: 'req-went',
-		reason: 'went_public',
-		status: 'pending',
-		pendingCommit: 'deadbeef',
-		baseCommit: 'deadbeef',
-		details: {},
-	})
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'owner-1',
-		published_commit: 'deadbeef',
-	})
-	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
-		publishedCommit: 'deadbeef',
-		fingerprintMatchesApproval: true,
-		capabilitySet: { fingerprint: 'fp-1', entries: [] },
-		dependencySnapshot: null,
-	})
-	mockModule.findPackageCapabilityApprovalByFingerprint.mockResolvedValue({
-		id: 'pin-1',
-		publishedCommit: 'deadbeef',
-		fingerprint: 'fp-1',
-		dependencySnapshotJson: '{}',
-	})
-	mockModule.resolvePackageApprovalRequest.mockResolvedValue(true)
-	mockModule.updateSavedPackage.mockResolvedValue(true)
+	stubApproveWentPublicHappyPath()
+	const pkg = savedPackage(false)
 
 	const result = await approveWentPublicRequest({
 		env,
 		request,
-		savedPackage: savedPackage(false),
+		savedPackage: pkg,
 		ownerUserId: 'owner-1',
 		actorUserId: personIdFromStored('actor-1'),
 		requestId: 'req-went',
@@ -176,6 +186,36 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 		expect.objectContaining({
 			packageId: 'pkg-1',
 			isInternetVisible: true,
+			expectedUpdatedAt: pkg.updatedAt,
+		}),
+	)
+})
+
+test('approveWentPublicRequest fails closed when clear bumps updated_at after claim', async () => {
+	stubApproveWentPublicHappyPath()
+	mockModule.updateSavedPackage.mockResolvedValue(false)
+
+	const result = await approveWentPublicRequest({
+		env: { APP_DB: {} } as Env,
+		request: new Request('https://example.com/approve'),
+		savedPackage: savedPackage(false),
+		ownerUserId: 'owner-1',
+		actorUserId: personIdFromStored('actor-1'),
+		requestId: 'req-went',
+	})
+	expect(result).toMatchObject({ ok: false, status: 409 })
+	expect(mockModule.resolvePackageApprovalRequest).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'req-went',
+			status: 'approved',
+		}),
+	)
+	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			isInternetVisible: true,
+			expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
 		}),
 	)
 })

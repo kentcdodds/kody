@@ -21,7 +21,10 @@ import { findPackageCapabilityApprovalByFingerprint } from '#worker/package-capa
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
 import { serializeDependencySnapshot } from '#worker/package-capabilities/dependency-snapshot.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
-import { updateSavedPackage } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageById,
+	updateSavedPackage,
+} from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
@@ -382,6 +385,24 @@ export async function approveWentPublicRequest(input: {
 			}
 		}
 	}
+	// Re-read just before claim so the visibility write can CAS on updated_at.
+	// clearInternetVisible always bumps updated_at when it clears, so a stale
+	// approve cannot re-set isInternetVisible:true after clear completes.
+	const livePackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: input.savedPackage.id,
+	})
+	if (!livePackage) {
+		return { ok: false, status: 404, error: 'Package not found.' }
+	}
+	if (livePackage.isInternetVisible) {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: approval.id,
+			status: 'approved',
+			resolvedByUserId: input.actorUserId,
+		})
+		return { ok: true }
+	}
 	// Claim the pending row before flipping the flag so a concurrent clear
 	// that supersedes cannot leave internet-visible on with no approval.
 	const resolved = await resolvePackageApprovalRequest(input.env.APP_DB, {
@@ -400,9 +421,16 @@ export async function approveWentPublicRequest(input: {
 		userId: input.ownerUserId,
 		packageId: input.savedPackage.id,
 		isInternetVisible: true,
+		expectedUpdatedAt: livePackage.updatedAt,
 	})
 	if (!changed) {
-		return { ok: false, status: 404, error: 'Package not found.' }
+		// Clear (or another writer) won the race after we claimed the request.
+		return {
+			ok: false,
+			status: 409,
+			error:
+				'Public serving was turned off while approving. Reload and request internet visibility again if you still want it on.',
+		}
 	}
 	return { ok: true }
 }
