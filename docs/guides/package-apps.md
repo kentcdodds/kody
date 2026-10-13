@@ -5,9 +5,9 @@ summary:
   Give a package a hosted Worker app on `*.kody.run`. Covers the fetch-handler
   contract, mount-stripped URLs, `packageContext` / `kody:runtime`, the
   platform-built browser client (`kody.app.client`) and static assets directory
-  (`kody.app.assets`), session handoff, smoke tests with packageAppFetch, a
-  Remix recipe (Example A), the same-origin proxy, lean forks, compiled clients,
-  and listing verification.
+  (`kody.app.assets`), session handoff, local testing with `kody dev`, smoke
+  tests with packageAppFetch, a Remix recipe (Example A), the same-origin
+  proxy, lean forks, compiled clients, and listing verification.
 category: platform
 ---
 
@@ -94,8 +94,37 @@ session, then the subdomain loads. Plan QA around that path: signed-in origin
 first, then confirm the app on `*.kody.run/packages/…`.
 
 `packageAppFetch` exercises the fetch handler without that browser session. Use
-it for handler smoke tests. Use the handed-off URL for cookies, layout, OAuth
+it for handler smoke tests after publish. Prefer
+[Local testing with `kody dev`](#local-testing-with-kody-dev) while the package
+is still unpublished. Use the handed-off URL for cookies, layout, OAuth
 redirects, and websocket facets.
+
+## Local testing with `kody dev`
+
+**Start here for unpublished apps.** From the package directory, `@kodycodes/cli`
+serves `kody.app.entry` on localhost via workerd with hot reload. The path is
+mount-stripped the same way as production; `packageContext.hostedUrl` and
+`appBasePath` point at localhost. Bundling reuses the same esbuild path as
+publish.
+
+```bash
+cd ./my-package
+npx @kodycodes/cli@latest dev                  # default --target mock
+npx @kodycodes/cli@latest dev fetch /health    # agent-friendly probe
+npx @kodycodes/cli@latest dev --target prod    # local app, real Kody
+```
+
+`--target mock` (the `kody dev` default) uses the CLI’s built-in mock: scratch
+storage, fake or local credentials, no real secrets. `--target prod` keeps the
+app local but sends storage / credentials / `kody:*` hops to real Kody. Share
+previews for unpublished apps are out of scope — publish to share.
+
+Agents that cannot drive a browser should use `kody dev fetch`. After local mock
+and prod both look right, publish, then use `packageAppFetch` and the handed-off
+URL for the hosted proof.
+
+See also [Package lifecycle](./package-lifecycle.md#local-testing-before-publish)
+for exports, jobs, webhooks, and subscriptions (`kody dev job|webhook|emit`).
 
 ## Smoke with packageAppFetch
 
