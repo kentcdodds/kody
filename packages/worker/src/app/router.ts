@@ -135,6 +135,10 @@ import {
 	createAccountUsageHandler,
 } from '#app/handlers/account-usage.ts'
 import {
+	createOrgUsageApiHandler,
+	createOrgUsageHandler,
+} from '#app/handlers/org-usage.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
@@ -524,7 +528,7 @@ export function createAppRouter(env: Env) {
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
 			accountBillingCancellationFeedbackPost:
 				createAccountBillingCancellationFeedbackApiHandler(env),
-			accountCredits: createAccountCreditsHandler(),
+			accountCredits: createAccountCreditsHandler(env),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
 			accountUsage: createAccountUsageHandler(env),
@@ -641,6 +645,8 @@ export function createAppRouter(env: Env) {
 			orgBillingCheckoutPost: createOrgBillingCheckoutApiHandler(env),
 			orgBillingSuccess: createOrgBillingSuccessHandler(env),
 			orgBillingPortal: createOrgBillingPortalHandler(env),
+			orgUsage: createOrgUsageHandler(env),
+			orgUsageApi: createOrgUsageApiHandler(env),
 			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
 			orgEmail: createOrgSectionHandler(env, 'email'),
 			orgIntegrations: createOrgSectionHandler(env, 'integrations'),

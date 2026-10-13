@@ -14,7 +14,6 @@ import {
 import { renderCreditsDebitRateCard } from '#client/routes/account-credits-rate-card.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
-import { readAppSession } from '#client/app-session-context.tsx'
 import {
 	formatCentsForInput,
 	formatSignedMicroUsd,
@@ -36,6 +35,7 @@ import {
 	type AccountUsageCreditsWallet,
 	type AccountUsageLoaderData,
 } from '#universal/loader-data.ts'
+import { parseOrgBillingPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -83,6 +83,8 @@ function readAutoRefillDraft(draft: SettingsDraft): CreditAutoRefillSettings {
 
 type AccountUsageCreditsSectionProps = {
 	credits: AccountUsageCredits
+	/** Organization this usage page is showing (checkout + top-up target). */
+	orgSlug: string
 	/** Page-load outcome for credits (top-up added, top-up failed). */
 	notice?: string
 	error?: string
@@ -219,19 +221,20 @@ export function AccountUsageCreditsSection(
 		handle.update()
 	}
 
-	async function switchToPro() {
+	async function switchToPro(billingHref?: string) {
 		if (switchPending) return
 		switchPending = true
 		message = null
 		handle.update()
-		// Credits are metered per person, so this is the signup organization.
-		const session = readAppSession(handle)?.session
 		const orgSlug =
-			session?.organizations?.find((org) => org.personal)?.slug ??
-			session?.username
+			handle.props.orgSlug ||
+			(billingHref
+				? parseOrgBillingPath(new URL(billingHref, 'http://localhost').pathname)
+						?.slug
+				: null)
 		if (!orgSlug) {
 			switchPending = false
-			setMessage('Sign in again to switch plans.', 'error')
+			setMessage('Open billing to switch plans.', 'error')
 			handle.update()
 			return
 		}
@@ -264,12 +267,15 @@ export function AccountUsageCreditsSection(
 		) : null
 	}
 
-	function renderSwitchToProButton(label: string) {
+	function renderSwitchToProButton(label: string, billingHref?: string) {
 		return (
 			<button
 				type="button"
 				disabled={switchPending}
-				mix={[on('click', () => void switchToPro()), css(primaryButtonCss)]}
+				mix={[
+					on('click', () => void switchToPro(billingHref)),
+					css(primaryButtonCss),
+				]}
 			>
 				{switchPending ? 'Opening Stripe…' : label}
 			</button>
@@ -352,7 +358,7 @@ export function AccountUsageCreditsSection(
 				{renderMessage()}
 				<div mix={css(accountActionsCss)}>
 					{credits.canSwitchToPro ? (
-						renderSwitchToProButton('Switch to Pro')
+						renderSwitchToProButton('Switch to Pro', credits.billingHref)
 					) : (
 						<a href={credits.billingHref} mix={css(primaryLinkCss)}>
 							Go to billing

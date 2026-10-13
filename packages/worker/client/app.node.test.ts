@@ -216,6 +216,31 @@ test('error pages own main gutters on the SSR URL and at explicit /404 and /500;
 			},
 			true,
 		],
+		// Package detail tabs own the shared page box (Repo / Files / Settings).
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot/settings',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot/tree/main',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
 	]
 	expect(
 		cases.filter(([input, want]) => appMainOwnsItsGutters(input) !== want),

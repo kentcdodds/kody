@@ -602,14 +602,17 @@ async function resolveKey(
 	const target = needTarget(key, need)
 	const picks = ctx.callMap?.get(key)
 	if (!picks) {
-		const mapped = await resolveMappedNeed(ctx, {
-			request: requireActorRequest(ctx),
-			key,
-			target,
-			usable,
-			createUrl: () =>
-				createUrlForNeed(ctx, { key, provider: target.provider, need }),
-		})
+		// Mappings belong to declared needs; a row left by a removed need is ignored.
+		const mapped = need
+			? await resolveMappedNeed(ctx, {
+					request: requireActorRequest(ctx),
+					key,
+					target,
+					usable,
+					createUrl: () =>
+						createUrlForNeed(ctx, { key, provider: target.provider, need }),
+				})
+			: null
 		if (mapped) {
 			return (mode === 'one' ? mapped.slice(0, 1) : mapped).map(
 				(credential) => ({ credential, hint: null }),

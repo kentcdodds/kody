@@ -23,8 +23,8 @@ function billing(
 		subscriptionStatus: null,
 		purchasablePlans: ['pro'],
 		creditsEligible: false,
-		creditsHref: '/account/usage#credits',
-		usageHref: '/account/usage',
+		creditsHref: '/@ada/-/usage#credits',
+		usageHref: '/@ada/-/usage',
 		referralProgram: null,
 		org: {
 			slug: 'ada',
@@ -100,10 +100,10 @@ test('purchasable Pro subscribers see their plan and the interval switch', async
 	expect(html).not.toContain('Switch to Pro')
 })
 
-test('team organizations see seat pricing, a promo field, and subscribe', async () => {
+test('team organizations see seat pricing, a promo field, subscribe, and usage links', async () => {
 	const team = billing({
-		creditsHref: null,
-		usageHref: null,
+		creditsHref: '/@acme/-/usage#credits',
+		usageHref: '/@acme/-/usage',
 		org: {
 			slug: 'acme',
 			displayName: 'Acme',
@@ -115,7 +115,8 @@ test('team organizations see seat pricing, a promo field, and subscribe', async 
 	expect(html).toContain('3 seats · $36/month')
 	expect(html).toContain('Promo code (optional)')
 	expect(html).toContain('Subscribe monthly')
-	expect(html).not.toContain('See your current usage')
+	expect(html).toContain('href="/@acme/-/usage"')
+	expect(html).toContain('See your current usage')
 })
 
 test('seat pricing multiplies the per-seat Pro price by live seats', () => {

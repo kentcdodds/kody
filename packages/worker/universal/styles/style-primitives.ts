@@ -734,6 +734,34 @@ export const articleMeasure = '43rem'
 export const pageGutter = 'clamp(1.25rem, 4vw, 2.5rem)'
 
 /**
+ * Shared shell for every package detail tab (Repo, Files, Settings, …).
+ * Same box model as the site header `navCss`: `maxWidth` on the content box
+ * with `pageGutter` padding outside it (no `border-box`), so Files keeps the
+ * width it already had and lines up with the header. Carries the shirt-pattern
+ * whisper so switching tabs does not change background. The app shell leaves
+ * these routes unpadded; gutters live here.
+ */
+export const packageDetailPageCss = {
+	position: 'relative' as const,
+	isolation: 'isolate' as const,
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `${spacing.lg} ${pageGutter} ${spacing['2xl']}`,
+	[mq.tablet]: {
+		padding: `${spacing.md} ${pageGutter} ${spacing.xl}`,
+	},
+	'&::before': {
+		...pageHeadCss['&::before'],
+		inset: 'auto',
+		top: '-3rem',
+		left: '-30%',
+		right: '-30%',
+		height: '44rem',
+		background: `radial-gradient(ellipse 46% 55% at 70% 22%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
+	},
+}
+
+/**
  * Widen a block past `articleMeasure` when the viewport has room, staying
  * centered on the article and inside the same gutters as the site header.
  *

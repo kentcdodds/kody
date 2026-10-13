@@ -1069,8 +1069,9 @@ export async function calculateUserD1StorageBytes(input: {
 }
 
 /**
- * Whether a real account row exists for this stable user id. Synthetic
- * contexts (no `users` row) must never materialize durable UserMeter state.
+ * Whether a real billing subject exists for this owner id. Personal orgs
+ * appear in `users.stable_user_id`; team orgs only in `orgs`. Synthetic
+ * contexts (neither row) must never materialize durable UserMeter state.
  */
 async function userAccountRowExists(input: {
 	db: D1Database
@@ -1078,9 +1079,12 @@ async function userAccountRowExists(input: {
 }): Promise<boolean> {
 	const row = await input.db
 		.prepare(
-			`SELECT 1 AS present FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT 1 AS present FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}
+			 UNION ALL
+			 SELECT 1 AS present FROM orgs WHERE id = ?${andLiveDeletedAtSql()}
+			 LIMIT 1`,
 		)
-		.bind(input.userId)
+		.bind(input.userId, input.userId)
 		.first<{ present: number }>()
 	return row != null
 }

@@ -139,9 +139,9 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		effectivePlan: 'pro',
 		subscriptionStatus: 'past_due',
 		cancelAt: '2026-08-01T00:00:00.000Z',
-		usageHref: '/account/usage',
+		usageHref: '/@billing-user/-/usage',
 		purchasablePlans: ['pro'],
-		creditsHref: '/account/usage#credits',
+		creditsHref: '/@billing-user/-/usage#credits',
 		referralProgram: expect.objectContaining({
 			sharePath: '/signup?ref=billing-user',
 			rewardedCount: 0,
@@ -218,8 +218,8 @@ test("a team organization reads and refreshes its own Stripe customer, not the v
 		stripePlan: 'pro',
 		effectivePlan: 'pro',
 		creditsEligible: true,
-		creditsHref: null,
-		usageHref: null,
+		creditsHref: '/@acme/-/usage#credits',
+		usageHref: '/@acme/-/usage',
 		referralProgram: null,
 		org: {
 			slug: 'acme',

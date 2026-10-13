@@ -44,7 +44,7 @@ import { Toaster } from './toaster.tsx'
 import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { isDocsPagePath } from '#universal/docs-nav.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
-import { isPackageFilesPathname } from '#universal/package-files.ts'
+import { isPackageDetailPathname } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
 import { routes } from '#universal/routes.ts'
 import { userHasRole } from '#universal/permissions.ts'
@@ -130,7 +130,7 @@ export function appMainOwnsItsGutters(input: {
 		((input.notFound || input.internalError === true) && input.onSsrUrl) ||
 		isIllustratedErrorPath(input.pathname) ||
 		isRedesignedMarketingPath(input.pathname) ||
-		isPackageFilesPathname(input.pathname) ||
+		isPackageDetailPathname(input.pathname) ||
 		matchRoute(input.pathname, clientRoutes) == null
 	)
 }
@@ -297,6 +297,18 @@ export function App(handle: Handle<AppProps>) {
 			internalError: handle.props.internalError === true,
 			onSsrUrl: isOnSsrUrl(handle),
 		})
+		// When `<main>` is unpadded (route owns gutters) but the SSR
+		// unauthorized fallback has no page container, restore the generic
+		// main inset on that section so text is not flush to the viewport.
+		const mainGutterPaddingCss = {
+			padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
+			[mq.tablet]: {
+				padding: `${spacing.sm} ${spacing.sm} 0`,
+			},
+			[mq.mobile]: {
+				padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+			},
+		} as const
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
@@ -391,13 +403,7 @@ export function App(handle: Handle<AppProps>) {
 													boxSizing: 'border-box',
 													flex: 1,
 													viewTransitionName: 'page',
-													padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
-													[mq.tablet]: {
-														padding: `${spacing.sm} ${spacing.sm} 0`,
-													},
-													[mq.mobile]: {
-														padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-													},
+													...mainGutterPaddingCss,
 												},
 								),
 							]}
@@ -411,7 +417,13 @@ export function App(handle: Handle<AppProps>) {
 								fallback={<NotFoundPage />}
 								internalErrorFallback={<InternalErrorPage />}
 								unauthorizedFallback={
-									<section>
+									<section
+										mix={
+											routeOwnsItsGutters
+												? css(mainGutterPaddingCss)
+												: undefined
+										}
+									>
 										<h1
 											mix={css({
 												fontSize: typography.fontSize.lg,

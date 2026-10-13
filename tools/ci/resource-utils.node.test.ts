@@ -183,6 +183,43 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			'Authentication error [code: 10000]',
 			true,
 		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			false,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Authentication error',
+			true,
+		],
+		// 401/403 win over "Internal authentication error" wording so a real
+		// unauthorized response is never retried with the same token.
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			true,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (401): Internal authentication error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'✘ [ERROR] Internal authentication error: internal server error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
+		],
 	]
 	expect(cases.filter(([fn, value, want]) => fn(value) !== want)).toEqual([])
 
@@ -199,6 +236,14 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		['Cloudflare API request failed (429): Rate limited', true],
 		['Cloudflare API request failed (403): Authentication error', false],
 		['Cloudflare API request failed (401): unauthorized', false],
+		[
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
+		[
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
+		],
 	]
 	expect(
 		apiErrors.filter(
@@ -800,6 +845,24 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 			),
 			create,
 		],
+		[
+			// Cloudflare platform blip seen on preview-sweep listings: HTTP 500
+			// with "Internal authentication error". Must retry, not treat as a
+			// permanent bad-token failure (which would skip backoff entirely).
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+			{ pathname: '/workers/scripts' },
+		],
 	]
 	for (const [firstResponse, request] of retried) {
 		const result = { queue_id: 'queue-1', queue_name: 'kody-email-delivery' }
@@ -815,25 +878,60 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 		expect(fetcher).toHaveBeenCalledTimes(2)
 	}
 
-	const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
-		Response.json(
-			{
-				success: false,
-				errors: [{ code: 10000, message: 'Authentication error' }],
-			},
-			{ status: 403 },
-		),
-	)
+	for (const authMessage of [
+		'Authentication error',
+		'Internal authentication error',
+	]) {
+		const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
+			Response.json(
+				{
+					success: false,
+					errors: [{ code: 10000, message: authMessage }],
+				},
+				{ status: 403 },
+			),
+		)
+		await expect(
+			cloudflareApiRequest({
+				accountId: 'account-1',
+				apiToken: 'token-1',
+				pathname: '/queues?page=1&per_page=100',
+				fetcher: forbidden,
+				sleep: async () => {},
+			}),
+		).rejects.toThrow(`Cloudflare API request failed (403): ${authMessage}`)
+		expect(forbidden).toHaveBeenCalledTimes(1)
+	}
+
+	const persistentInternalAuth = vi
+		.fn<typeof fetch>()
+		.mockImplementation(async () =>
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+		)
 	await expect(
 		cloudflareApiRequest({
 			accountId: 'account-1',
 			apiToken: 'token-1',
-			pathname: '/queues?page=1&per_page=100',
-			fetcher: forbidden,
+			pathname: '/workers/scripts',
+			fetcher: persistentInternalAuth,
 			sleep: async () => {},
+			maxAttempts: 3,
 		}),
-	).rejects.toThrow('Cloudflare API request failed (403): Authentication error')
-	expect(forbidden).toHaveBeenCalledTimes(1)
+	).rejects.toThrow(
+		'Cloudflare API request failed (500): Internal authentication error: internal server error',
+	)
+	expect(persistentInternalAuth).toHaveBeenCalledTimes(3)
 })
 
 test('emptyR2Bucket deletes nested keys with literal slashes', async () => {
