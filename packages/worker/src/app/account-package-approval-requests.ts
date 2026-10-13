@@ -19,6 +19,7 @@ import {
 } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { findPackageCapabilityApprovalByFingerprint } from '#worker/package-capabilities/capability-approvals-repo.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
+import { serializeDependencySnapshot } from '#worker/package-capabilities/dependency-snapshot.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -368,6 +369,33 @@ export async function approveWentPublicRequest(input: {
 				'Approve the capability set for the current published commit before making this package internet-visible.',
 		}
 	}
+	if (summary.dependencySnapshot) {
+		const liveSnapshotJson = serializeDependencySnapshot(
+			summary.dependencySnapshot,
+		)
+		if (currentPin.dependencySnapshotJson !== liveSnapshotJson) {
+			return {
+				ok: false,
+				status: 409,
+				error:
+					'The dependency snapshot changed since the capability pin. Approve the capability set again.',
+			}
+		}
+	}
+	// Claim the pending row before flipping the flag so a concurrent clear
+	// that supersedes cannot leave internet-visible on with no approval.
+	const resolved = await resolvePackageApprovalRequest(input.env.APP_DB, {
+		id: approval.id,
+		status: 'approved',
+		resolvedByUserId: input.actorUserId,
+	})
+	if (!resolved) {
+		return {
+			ok: false,
+			status: 409,
+			error: 'This request was already resolved. Reload the page.',
+		}
+	}
 	const changed = await updateSavedPackage(input.env.APP_DB, {
 		userId: input.ownerUserId,
 		packageId: input.savedPackage.id,
@@ -376,10 +404,5 @@ export async function approveWentPublicRequest(input: {
 	if (!changed) {
 		return { ok: false, status: 404, error: 'Package not found.' }
 	}
-	await resolvePackageApprovalRequest(input.env.APP_DB, {
-		id: approval.id,
-		status: 'approved',
-		resolvedByUserId: input.actorUserId,
-	})
 	return { ok: true }
 }

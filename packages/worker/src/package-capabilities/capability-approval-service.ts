@@ -242,12 +242,8 @@ export async function clearInternetVisible(input: {
 	/** Who turned internet-visible off; supersedes a pending went_public. */
 	actorUserId?: string | null
 }): Promise<boolean> {
-	const changed = await updateSavedPackage(input.env.APP_DB, {
-		userId: input.ownerUserId,
-		packageId: input.packageId,
-		isInternetVisible: false,
-	})
-	if (!changed) return false
+	// Supersede first so a concurrent Approve cannot claim the pending row
+	// after we decide to turn public serving off.
 	const pending = await getPendingPackageApprovalRequest(input.env.APP_DB, {
 		packageId: input.packageId,
 		ownerUserId: input.ownerUserId,
@@ -260,7 +256,14 @@ export async function clearInternetVisible(input: {
 			resolvedByUserId: input.actorUserId ?? null,
 		})
 	}
-	return true
+	const changed = await updateSavedPackage(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: input.packageId,
+		isInternetVisible: false,
+	})
+	// Package missing → false. Already-off with a superseded pending → true so
+	// MCP/settings can cancel a went_public without requiring the flag on.
+	return changed || pending != null
 }
 
 export function approvalMatchesCurrentSet(input: {

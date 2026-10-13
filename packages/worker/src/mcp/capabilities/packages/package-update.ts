@@ -254,16 +254,14 @@ export const packageUpdateCapability = defineDomainCapability(
 				})
 				internetVisiblePending = true
 			}
-			if (
-				args.changes.internet_visible === false &&
-				existing.isInternetVisible
-			) {
+			if (args.changes.internet_visible === false) {
 				const expectedName = existing.kodyId
 				if (args.confirm_name?.trim() !== expectedName) {
 					throw new McpCallerError(
 						`Turning off internet-visible returns the app to owner-session serving. Confirm with the user, then pass confirm_name: "${expectedName}" (the package slug).`,
 					)
 				}
+				// Also runs when already off so a pending went_public is superseded.
 				const changed = await clearInternetVisible({
 					env: ctx.env,
 					ownerUserId: owner.ownerUserId,

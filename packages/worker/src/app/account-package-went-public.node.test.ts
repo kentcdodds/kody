@@ -135,14 +135,16 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 		publishedCommit: 'deadbeef',
 		fingerprintMatchesApproval: true,
 		capabilitySet: { fingerprint: 'fp-1', entries: [] },
+		dependencySnapshot: null,
 	})
 	mockModule.findPackageCapabilityApprovalByFingerprint.mockResolvedValue({
 		id: 'pin-1',
 		publishedCommit: 'deadbeef',
 		fingerprint: 'fp-1',
+		dependencySnapshotJson: '{}',
 	})
-	mockModule.updateSavedPackage.mockResolvedValue(true)
 	mockModule.resolvePackageApprovalRequest.mockResolvedValue(true)
+	mockModule.updateSavedPackage.mockResolvedValue(true)
 
 	const result = await approveWentPublicRequest({
 		env,
@@ -162,18 +164,18 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 			fingerprint: 'fp-1',
 		}),
 	)
-	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
-		env.APP_DB,
-		expect.objectContaining({
-			packageId: 'pkg-1',
-			isInternetVisible: true,
-		}),
-	)
 	expect(mockModule.resolvePackageApprovalRequest).toHaveBeenCalledWith(
 		env.APP_DB,
 		expect.objectContaining({
 			id: 'req-went',
 			status: 'approved',
+		}),
+	)
+	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
+		env.APP_DB,
+		expect.objectContaining({
+			packageId: 'pkg-1',
+			isInternetVisible: true,
 		}),
 	)
 })
