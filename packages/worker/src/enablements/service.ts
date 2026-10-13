@@ -29,7 +29,6 @@ import {
 	buildInsertEnablementStatement,
 	disableEnablement,
 	getEnablementById,
-	insertEnablement,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 } from './repo.ts'
@@ -139,7 +138,7 @@ async function resolveDeclaredTrigger(input: {
 			if (!endpoint) {
 				throw new TriggerEnablementError(
 					'webhook_not_minted',
-					`Webhook "${name}" has no URL yet. Mint one with webhookUrlMint, which also turns it on for you.`,
+					`Webhook "${name}" has no URL yet. Mint one with webhookUrlMint, then approve it at the approval URL the mint returns.`,
 				)
 			}
 			return {
@@ -373,55 +372,6 @@ export async function enableTriggerForCaller(input: {
 	})
 	if (!created) throw new Error('Unable to read the new enablement.')
 	return created
-}
-
-/**
- * Minting a webhook URL turns it on for the minter, unless it already has an
- * enabler. A minter without
- * `package:execute` gets the URL and no enablement.
- */
-export async function ensureWebhookEnablementForMinter(input: {
-	env: Env
-	request: RequestContext
-	savedPackage: SavedPackageRecord
-	endpointId: string
-	webhookName: string
-}): Promise<EnablementRecord | null> {
-	const actor = input.request.actor
-	if (!actor) return null
-	const db = input.env.APP_DB
-	const orgId = input.savedPackage.userId
-	const [existing] = await listEnablementsForInstance({
-		db,
-		orgId,
-		triggerKind: 'webhook',
-		instanceId: input.endpointId,
-	})
-	if (existing) return existing
-	try {
-		await authorize(
-			{ env: input.env, request: input.request },
-			'package:execute',
-			packageResource({
-				id: input.savedPackage.id,
-				userId: input.savedPackage.userId,
-			}),
-		)
-	} catch {
-		return null
-	}
-	return await insertEnablement({
-		db,
-		enablement: {
-			orgId,
-			packageId: input.savedPackage.id,
-			triggerKind: 'webhook',
-			triggerName: input.webhookName,
-			instanceId: input.endpointId,
-			enablerUserId: actor.userId,
-			origin: 'enabled',
-		},
-	})
 }
 
 /** Turn an enablement off for good. Only its enabler or an Owner may. */

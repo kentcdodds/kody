@@ -131,10 +131,14 @@ request to the package export that owns it.
    URL. `/@<slug>/-/webhooks` lists every webhook across packages and links to
    those sections.
 
-Declaring a webhook does not open ingress; minting does. Deliveries are
-rate-limited per webhook (default 60 per minute, at most 600), and body-only
-HMAC is replayable unless you opt into a timestamp window or delivery-id header.
-Full contract and payload shapes: [Inbound webhooks](../use/webhooks.md).
+Declaring a webhook does not open ingress, and minting alone does not run
+anything: until a person approves it, deliveries answer 409 `enablement_not_on`
+with the approval link. `webhookUrlMint` returns that link as `approval_url`;
+approving turns the webhook on for the approver and is where its credentials are
+mapped. Deliveries are rate-limited per webhook (default 60 per minute, at most
+600), and body-only HMAC is replayable unless you opt into a timestamp window or
+delivery-id header. Full contract and payload shapes:
+[Inbound webhooks](../use/webhooks.md).
 
 Sentry noise, GitHub events, Stripe payments, a shortcut on your phone, a CLI on
 your laptop — anything that can POST JSON can start a package this way.
@@ -163,9 +167,12 @@ In an org, a declared trigger runs only for the people who turned it on, and it
 runs as them: their access, their bill, their audit trail. Publishing never
 turns anything on.
 
+- The approval page turns triggers on with one Approve, together with the
+  credentials they use. `credentialMappingPropose` builds the link (`triggers`
+  to map, `enable` to turn one on with no mapping). Minting a webhook URL never
+  turns it on; the mint returns its approval link.
 - `enablementEnable` turns a job (`cron`), subscription topic, or minted webhook
-  on for you. You need execute access to the package. Minting a webhook URL
-  turns it on for you when nobody else has.
+  on for you. You need execute access to the package.
 - `enablementList` shows yours (`scope: "mine"`); Owners can list the whole org
   (`scope: "org"`). `enablementDisable` turns one off.
 - If you lose access to the package, the org, or a credential the run uses, the

@@ -19,7 +19,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
+import { listEnablementsForInstance } from '#worker/enablements/repo.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
@@ -46,6 +46,7 @@ import {
 	parseWebhookUrlHandle,
 	webhookUrlHostFromOrigin,
 } from './handle.ts'
+import { buildWebhookApprovalUrl } from './approval.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
@@ -126,6 +127,11 @@ export type MintedWebhookHandle = {
 	createdAt: string
 	rotatedAt: string
 	previousUrlActiveUntil: string | null
+	/**
+	 * Where a person approves the webhook so it runs; null once it has a
+	 * live enablement. Minting never turns a webhook on.
+	 */
+	approvalUrl: string | null
 }
 
 export type {
@@ -450,15 +456,23 @@ export async function mintWebhookUrlForUser(input: {
 			})
 		}
 	}
-	await ensureWebhookEnablementForMinter({
-		env: input.env,
-		request: input.request,
-		savedPackage,
-		endpointId: stored.id,
-		webhookName,
+	const enablements = await listEnablementsForInstance({
+		db: input.env.APP_DB,
+		orgId: savedPackage.userId,
+		triggerKind: 'webhook',
+		instanceId: stored.id,
 	})
 
 	return {
+		approvalUrl:
+			enablements.length > 0
+				? null
+				: buildWebhookApprovalUrl({
+						baseUrl,
+						orgSlug: input.request.org.slug,
+						packageKodyId: savedPackage.kodyId,
+						webhookName,
+					}),
 		packageId: savedPackage.id,
 		packageKodyId: savedPackage.kodyId,
 		name: webhookName,

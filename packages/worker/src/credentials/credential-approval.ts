@@ -1,9 +1,10 @@
 /**
  * The approval page's view and Approve (contract: "Mapping proposals and the
- * approval page"). An agent only proposes mappings; they take effect when a
- * signed-in person approves exactly what they reviewed. The fingerprint pins
- * that: the changes resolved to credential ids for this viewer, so a rename,
- * a replaced credential, or a mapping edited since review fails Approve.
+ * approval page"). An agent only proposes mappings and triggers to turn on;
+ * they take effect when a signed-in person approves exactly what they
+ * reviewed. The fingerprint pins that: the changes resolved to credential ids
+ * for this viewer, so a rename, a replaced credential, or a mapping edited
+ * since review fails Approve.
  */
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -12,8 +13,10 @@ import {
 } from '#universal/credential-contracts.ts'
 import {
 	resolveMappingChanges,
+	resolveTriggerEnables,
 	writeMappingChanges,
 	type ResolvedMappingChange,
+	type ResolvedTriggerEnable,
 } from './package-credential-mapping-changes.ts'
 import {
 	loadPackageMappingScope,
@@ -34,6 +37,7 @@ function fingerprintOf(
 	scope: PackageMappingScope,
 	proposal: ParsedCredentialProposal,
 	resolved: ReadonlyArray<ResolvedMappingChange>,
+	enable: ReadonlyArray<ResolvedTriggerEnable>,
 ) {
 	return sha256Hex(
 		JSON.stringify({
@@ -49,6 +53,12 @@ function fingerprintOf(
 				change.willEnable,
 				change.error?.code ?? null,
 			]),
+			enable: enable.map((entry) => [
+				entry.trigger,
+				entry.declared?.instanceId ?? null,
+				entry.willEnable,
+				entry.error?.code ?? null,
+			]),
 		}),
 	)
 }
@@ -56,6 +66,7 @@ function fingerprintOf(
 export type ResolvedCredentialApproval = {
 	view: CredentialApprovalView
 	resolved: Array<ResolvedMappingChange>
+	enable: Array<ResolvedTriggerEnable>
 }
 
 /** Resolves a proposal for the scope's viewer. Never writes. */
@@ -64,8 +75,10 @@ export async function resolveCredentialApproval(
 	proposal: ParsedCredentialProposal,
 ): Promise<ResolvedCredentialApproval> {
 	const resolved = await resolveMappingChanges(scope, proposal.changes)
+	const enable = resolveTriggerEnables(scope, proposal.enable)
 	return {
 		resolved,
+		enable,
 		view: {
 			ok: true,
 			package: {
@@ -75,9 +88,10 @@ export async function resolveCredentialApproval(
 			reason: proposal.reason,
 			canApprove:
 				proposal.errors.length === 0 &&
-				resolved.length > 0 &&
-				resolved.every((change) => change.error === null),
-			fingerprint: await fingerprintOf(scope, proposal, resolved),
+				resolved.length + enable.length > 0 &&
+				resolved.every((change) => change.error === null) &&
+				enable.every((entry) => entry.error === null),
+			fingerprint: await fingerprintOf(scope, proposal, resolved, enable),
 			changes: resolved.map((change) => ({
 				target: change.target,
 				needKey: change.needKey,
@@ -86,6 +100,11 @@ export async function resolveCredentialApproval(
 				after: change.after,
 				willEnable: change.willEnable,
 				error: change.error,
+			})),
+			enable: enable.map((entry) => ({
+				trigger: entry.trigger,
+				willEnable: entry.willEnable,
+				error: entry.error,
 			})),
 			errors: proposal.errors,
 		},
@@ -131,7 +150,9 @@ export async function approveCredentialProposal(input: {
 		return { status: 'stale', view: current.view }
 	}
 	try {
-		await writeMappingChanges(scope, current.resolved)
+		await writeMappingChanges(scope, current.resolved, {
+			enable: current.enable,
+		})
 	} catch (error) {
 		// A trigger someone else turned on between resolve and write.
 		if (!isMcpCallerError(error) || !(error instanceof Error)) throw error

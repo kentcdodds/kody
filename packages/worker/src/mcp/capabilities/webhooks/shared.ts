@@ -105,6 +105,12 @@ export const mintedWebhookHandleSchema = z.object({
 		.describe(
 			'ISO timestamp while the previous URL still accepts deliveries after rotate. Null on first mint.',
 		),
+	approval_url: z
+		.string()
+		.nullable()
+		.describe(
+			'Send this to the person: deliveries run only after they open it and click Approve. Null once the webhook is on (or paused) for someone.',
+		),
 })
 
 export const webhookUrlApplyResultSchema = z.object({
@@ -189,6 +195,7 @@ export function toMintedWebhookCapability(minted: {
 	createdAt: string
 	rotatedAt: string
 	previousUrlActiveUntil: string | null
+	approvalUrl: string | null
 }) {
 	return {
 		package_id: minted.packageId,
@@ -200,6 +207,7 @@ export function toMintedWebhookCapability(minted: {
 		created_at: minted.createdAt,
 		rotated_at: minted.rotatedAt,
 		previous_url_active_until: minted.previousUrlActiveUntil,
+		approval_url: minted.approvalUrl,
 	}
 }
 

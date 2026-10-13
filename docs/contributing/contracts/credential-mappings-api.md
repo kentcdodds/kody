@@ -333,11 +333,11 @@ MCP and API tokens cannot reach it.
 
 Who can write:
 
-| Target             | Allowed                                                                                                                                                                                 |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default` / `org`  | Package managers. Refs must be org credentials the writer can Use.                                                                                                                      |
-| `default` / `mine` | Anyone with `package:execute`. Refs must be credentials they can Use.                                                                                                                   |
-| `trigger`          | The enabler only. Writing a trigger mapping for a trigger the writer has not enabled turns it on for them (webhooks must be minted first; a webhook another person enabled is refused). |
+| Target             | Allowed                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default` / `org`  | Package managers. Refs must be org credentials the writer can Use.                                                                                                                                                            |
+| `default` / `mine` | Anyone with `package:execute`. Refs must be credentials they can Use.                                                                                                                                                         |
+| `trigger`          | The enabler only. Writing a trigger mapping for a trigger the writer has not enabled turns it on for them (webhooks must be minted first, and minting alone never turns one on; a webhook another person enabled is refused). |
 
 Validation per change: the need exists in the published closure; each ref exists
 and the writer can Use it; kind matches when the need declares one (otherwise
@@ -360,6 +360,7 @@ GET /@:username/:kodyId/approve-credentials?<proposal>
 | `default[<need>]`                | Org-layer default mapping for `<need>`.                                |
 | `mine[<need>]`                   | The approver's own default mapping for `<need>`.                       |
 | `trigger[<kind>:<name>][<need>]` | Trigger mapping for the approver's instance of a trigger.              |
+| `enable=<kind>:<name>`           | Turn a trigger on for the approver with no mapping. Repeatable.        |
 | `reason`                         | Optional agent note (at most 500 characters), shown as untrusted text. |
 
 Each mapping param is repeatable, one value per credential:
@@ -375,6 +376,12 @@ Each mapping param is repeatable, one value per credential:
   percent-encoded a second time (`%25`, `%5B`, `%5D`), so a cron job named
   `daily]backup` is `trigger[cron:daily%5Dbackup][github]` after query decoding.
   The codecs do this; hand-built links only need it for those three characters.
+
+`enable` splits at the first colon (`enable=subscription:acme.thing:happened`)
+and needs no bracket encoding. It is how a trigger with no credential needs
+reaches Approve: minting a webhook URL never turns it on, and the mint returns
+`enable=webhook:<name>` as its approval link. Each distinct `enable` value
+counts as one param.
 
 At most 64 mapping params (a param's repeated values count once). Param names
 that decode to the same target and need (`default[github]` and
@@ -428,15 +435,24 @@ export type CredentialApprovalChangeView = {
 	} | null
 }
 
+/** A trigger the proposal turns on with no mapping of its own. */
+export type CredentialApprovalEnableView = {
+	trigger: CredentialTriggerRef
+	/** False when it is already on (or paused) for the approver: a no-op. */
+	willEnable: boolean
+	error: { code: CredentialApprovalErrorCode; message: string } | null
+}
+
 export type CredentialApprovalView = {
 	ok: true
 	package: { id: string; kodyId: string }
 	reason: string | null
-	/** False when any change has an error or the proposal has parse errors. */
+	/** False when any change or enable has an error, or on parse errors. */
 	canApprove: boolean
-	/** Pins what was reviewed: changes resolved to credential ids. */
+	/** Pins what was reviewed: changes resolved to credential ids, and enables. */
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
+	enable: Array<CredentialApprovalEnableView>
 	/** Proposal-level problems (bad param names, too many params). */
 	errors: Array<string>
 }
@@ -466,8 +482,9 @@ export type CredentialApprovalSuccess = {
     and let the person approve again.
   - A webhook someone else enabled between review and write:
     `409 CredentialApprovalFailure`.
-  - Otherwise every change (and any trigger it enables) is written in one batch:
-    `200 CredentialApprovalSuccess`, whose view shows the new `before`.
+  - Otherwise every change, any trigger it enables, and every `enable` trigger
+    not yet on are written in one batch: `200 CredentialApprovalSuccess`, whose
+    view shows the new `before`.
 - One Approve applies trigger mappings and default mappings together.
 
 ### `credentialMappingPropose` (MCP / Open API)
@@ -485,6 +502,8 @@ Input:
 		name: string
 		credentials: Record<string, CredentialPick | Array<CredentialPick>>
 	}>
+	/** Triggers to turn on with no mapping (a webhook with no needs). */
+	enable?: Array<{ kind: CredentialTriggerKind; name: string }>
 	reason?: string
 }
 ```
@@ -495,6 +514,28 @@ person. It never writes. `view.canApprove: false` lists what to fix first.
 
 Open API: `POST /v1/credential-proposals`. Package code cannot call it, and a
 package the caller cannot run is a caller error ("Package not found").
+
+### Webhook mint and delivery
+
+Minting a webhook URL never turns it on. `webhookUrlMint` / `webhookUrlRotate`
+return `approval_url` (the website mint and rotate responses: `approvalUrl`)
+while the endpoint has no enablement that is on or paused; it is null once one
+exists. Enablements from before this rule, migrated or created by an earlier
+mint, are untouched.
+
+A delivery that runs nothing answers 409:
+
+```ts
+{
+	ok: false
+	error: {
+		code: 'enablement_not_on'
+		/** Says "not approved" or "paused", and includes the link. */
+		message: string
+		details?: { approvalUrl: string }
+	}
+}
+```
 
 ## Runtime errors
 

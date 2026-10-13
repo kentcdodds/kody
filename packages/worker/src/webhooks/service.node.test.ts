@@ -1,10 +1,14 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	decryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { insertEnablement } from '#worker/enablements/repo.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
@@ -173,6 +177,60 @@ async function setupOwner(email: string, username: string) {
 }
 
 const urlSecretOf = (url: string) => url.slice(url.lastIndexOf('/') + 1)
+
+test('minting never turns a webhook on: it links to Approve until someone has, and an existing enablement survives remint and rotate', async () => {
+	const owner = await setupOwner('approver@example.com', 'approver')
+	const { env, db, userId } = owner
+	const input = {
+		env,
+		request: sessionRequestContext(userId, 'approver'),
+		userId: ownerIdFromStored(userId),
+		username: 'approver',
+		...sentryHook,
+	}
+	const webhookEnablements = () =>
+		db
+			.prepare(
+				`SELECT id, state, origin FROM enablements WHERE trigger_kind = 'webhook'`,
+			)
+			.all<{ id: string; state: string; origin: string }>()
+			.then((result) => result.results)
+
+	const minted = await mintWebhookUrlForUser(input)
+	expect(minted.approvalUrl).toBe(
+		'https://heykody.dev/@approver/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
+	)
+	expect(await webhookEnablements()).toEqual([])
+
+	// Neither a second mint nor a rotate enables it behind the person's back.
+	expect((await mintWebhookUrlForUser(input)).approvalUrl).toBe(
+		minted.approvalUrl,
+	)
+	expect((await rotateWebhookUrlForUser(input)).approvalUrl).toBe(
+		minted.approvalUrl,
+	)
+	expect(await webhookEnablements()).toEqual([])
+
+	// An enablement from before this change (migrated, or minted under the old
+	// shortcut) keeps working, and the mint no longer asks for approval.
+	const existing = await insertEnablement({
+		db,
+		enablement: {
+			orgId: ownerIdFromStored(userId),
+			packageId: 'pkg-1',
+			triggerKind: 'webhook',
+			triggerName: 'sentry',
+			instanceId: parseWebhookUrlHandle(minted.handle)!,
+			enablerUserId: personIdFromStored(userId),
+			origin: 'migrated',
+		},
+	})
+	expect((await mintWebhookUrlForUser(input)).approvalUrl).toBeNull()
+	expect((await rotateWebhookUrlForUser(input)).approvalUrl).toBeNull()
+	expect(await webhookEnablements()).toEqual([
+		{ id: existing.id, state: 'on', origin: 'migrated' },
+	])
+})
 
 test('mint/list/rotate/enable/disable webhooks are package-centered and user-scoped', async () => {
 	const owner = await setupOwner('owner@example.com', 'owner')

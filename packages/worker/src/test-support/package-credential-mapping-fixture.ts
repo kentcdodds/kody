@@ -244,7 +244,7 @@ export async function setupPackageCredentialMappingFixture(input: {
 		const scope = await scopeFor(person, role)
 		const resolved = await resolveMappingChanges(scope, changes)
 		if (!resolved.some((change) => change.error)) {
-			await writeMappingChanges(scope, resolved, now)
+			await writeMappingChanges(scope, resolved, { now })
 		}
 		return resolved
 	}

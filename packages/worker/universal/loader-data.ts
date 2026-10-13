@@ -1686,6 +1686,11 @@ export type PackageWebhookRevealedUrl = {
 
 export type PackageWebhooksActionPayload = PackageWebhooksLoaderData & {
 	revealed?: PackageWebhookRevealedUrl
+	/**
+	 * Set by mint / rotate while the webhook is not on for anyone: minting
+	 * never turns it on, so link the person to Approve.
+	 */
+	approvalUrl?: string
 }
 
 export type PendingVerificationLoaderData = {

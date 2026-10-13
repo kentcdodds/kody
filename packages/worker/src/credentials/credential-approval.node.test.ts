@@ -224,3 +224,105 @@ test('a member cannot approve org defaults but can approve their own', async () 
 	).view
 	expect(mineView.canApprove).toBe(true)
 })
+
+test('an enable-only proposal turns a minted webhook on at Approve, once', async () => {
+	const t = await setup()
+	const enableIncoming = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'webhook', name: 'incoming' }],
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+
+	const unminted = (
+		await resolveCredentialApproval(
+			await t.scopeFor('ann', 'member'),
+			enableIncoming,
+		)
+	).view
+	expect(unminted.canApprove).toBe(false)
+	expect(unminted.enable).toEqual([
+		{
+			trigger: { kind: 'webhook', name: 'incoming' },
+			willEnable: false,
+			error: {
+				code: 'webhook_not_minted',
+				message:
+					'Webhook "incoming" has no URL yet. Mint its URL first, then approve it here.',
+			},
+		},
+	])
+
+	// A stored signing secret keeps the enable from minting one.
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints
+				(id, user_id, package_id, webhook_name, url_secret_hash, hmac_secret_encrypted, created_at, rotated_at)
+			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', 'sealed', ?, ?)`,
+		)
+		.bind(
+			t.acmeId,
+			t.savedPackage.id,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	expect(await t.enablementCount()).toBe(0)
+
+	const scope = await t.scopeFor('ann', 'member')
+	const { view } = await resolveCredentialApproval(scope, enableIncoming)
+	expect(view).toMatchObject({
+		canApprove: true,
+		changes: [],
+		enable: [
+			{
+				trigger: { kind: 'webhook', name: 'incoming' },
+				willEnable: true,
+				error: null,
+			},
+		],
+	})
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal: enableIncoming,
+		fingerprint: view.fingerprint,
+	})
+	expect(outcome.status).toBe('approved')
+	expect(outcome.view.enable[0]!.willEnable).toBe(false)
+	expect(await t.enablementCount()).toBe(1)
+	const enabled = await t.db
+		.prepare(
+			`SELECT instance_id, enabler_user_id, state FROM enablements WHERE trigger_kind = 'webhook'`,
+		)
+		.first<{ instance_id: string; enabler_user_id: string; state: string }>()
+	expect(enabled).toEqual({
+		instance_id: 'ep-incoming',
+		enabler_user_id: String(t.people.ann.personId),
+		state: 'on',
+	})
+
+	// Approving again writes nothing; someone else cannot take the webhook over.
+	const again = await resolveCredentialApproval(
+		await t.scopeFor('ann', 'member'),
+		enableIncoming,
+	)
+	await approveCredentialProposal({
+		scope: await t.scopeFor('ann', 'member'),
+		proposal: enableIncoming,
+		fingerprint: again.view.fingerprint,
+	})
+	expect(await t.enablementCount()).toBe(1)
+	const bea = (
+		await resolveCredentialApproval(
+			await t.scopeFor('bea', 'owner'),
+			enableIncoming,
+		)
+	).view
+	expect(bea.canApprove).toBe(false)
+	expect(bea.enable[0]!.error?.code).toBe('webhook_other_enabler')
+})

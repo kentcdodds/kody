@@ -10,10 +10,12 @@ import {
 } from '#worker/enablements/service.ts'
 import {
 	type CredentialApprovalChangeView,
+	type CredentialApprovalEnableView,
 	type CredentialApprovalErrorCode,
 	type CredentialMappingChange,
 	type CredentialPick,
 	type CredentialRef,
+	type CredentialTriggerRef,
 	describeCredentialMappingTarget,
 } from '#universal/credential-contracts.ts'
 import { type UsableCredential } from './credential-candidates.ts'
@@ -129,6 +131,40 @@ type TargetResolution = {
 	willEnable: boolean
 }
 
+/**
+ * The declared trigger and the viewer's enablement of it. Refuses a trigger
+ * the package does not declare, an unminted webhook, and a webhook someone
+ * else already runs.
+ */
+function resolveViewerTrigger(
+	scope: PackageMappingScope,
+	ref: CredentialTriggerRef,
+) {
+	const trigger = scope.triggers.find(
+		(candidate) => candidate.kind === ref.kind && candidate.name === ref.name,
+	)
+	if (!trigger) {
+		refuse(
+			'trigger_unknown',
+			`This package declares no ${describeCredentialMappingTarget({ type: 'trigger', trigger: ref })}.`,
+		)
+	}
+	if (trigger.kind === 'webhook' && trigger.instanceId === null) {
+		refuse(
+			'webhook_not_minted',
+			`Webhook "${trigger.name}" has no URL yet. Mint its URL first, then approve it here.`,
+		)
+	}
+	const { enablement, otherEnabler } = viewerEnablement(trigger, scope.actorId)
+	if (otherEnabler) {
+		refuse(
+			'webhook_other_enabler',
+			`Webhook "${trigger.name}" runs as another person; only they map its credentials.`,
+		)
+	}
+	return { trigger, enablement }
+}
+
 function resolveTarget(
 	scope: PackageMappingScope,
 	change: CredentialMappingChange,
@@ -152,33 +188,10 @@ function resolveTarget(
 				willEnable: false,
 			}
 		case 'trigger': {
-			const trigger = scope.triggers.find(
-				(candidate) =>
-					candidate.kind === target.trigger.kind &&
-					candidate.name === target.trigger.name,
+			const { trigger, enablement } = resolveViewerTrigger(
+				scope,
+				target.trigger,
 			)
-			if (!trigger) {
-				refuse(
-					'trigger_unknown',
-					`This package declares no ${describeCredentialMappingTarget(target)}.`,
-				)
-			}
-			if (trigger.kind === 'webhook' && trigger.instanceId === null) {
-				refuse(
-					'webhook_not_minted',
-					`Webhook "${trigger.name}" has no URL yet. Mint it first; minting turns it on for you.`,
-				)
-			}
-			const { enablement, otherEnabler } = viewerEnablement(
-				trigger,
-				scope.actorId,
-			)
-			if (otherEnabler) {
-				refuse(
-					'webhook_other_enabler',
-					`Webhook "${trigger.name}" runs as another person; only they map its credentials.`,
-				)
-			}
 			return enablement
 				? {
 						rowTarget: {
@@ -301,16 +314,59 @@ export async function resolveMappingChanges(
 	})
 }
 
+export type ResolvedTriggerEnable = CredentialApprovalEnableView & {
+	declared: DeclaredTrigger | null
+}
+
+/**
+ * Resolves triggers a proposal turns on without mapping anything: a webhook
+ * with no credential needs still goes through Approve.
+ */
+export function resolveTriggerEnables(
+	scope: PackageMappingScope,
+	refs: ReadonlyArray<CredentialTriggerRef>,
+): Array<ResolvedTriggerEnable> {
+	return refs.map((ref) => {
+		const trigger = { kind: ref.kind, name: ref.name }
+		try {
+			const { trigger: declared, enablement } = resolveViewerTrigger(scope, ref)
+			return {
+				trigger,
+				willEnable: enablement === null,
+				error: null,
+				declared,
+			}
+		} catch (error) {
+			if (!(error instanceof ChangeRefused)) throw error
+			return {
+				trigger,
+				willEnable: false,
+				error: { code: error.error.code, message: error.error.message },
+				declared: null,
+			}
+		}
+	})
+}
+
 /**
  * Writes resolved changes in one batch, turning on any trigger a change maps
- * for the first time. Every change must have resolved without an error.
+ * for the first time and every trigger in `enable` that is not on yet. Every
+ * change and enable must have resolved without an error.
  */
 export async function writeMappingChanges(
 	scope: PackageMappingScope,
 	resolved: ReadonlyArray<ResolvedMappingChange>,
-	now = new Date().toISOString(),
+	options: {
+		now?: string
+		enable?: ReadonlyArray<ResolvedTriggerEnable>
+	} = {},
 ) {
-	if (resolved.some((change) => change.error)) {
+	const now = options.now ?? new Date().toISOString()
+	const enable = options.enable ?? []
+	if (
+		resolved.some((change) => change.error) ||
+		enable.some((entry) => entry.error)
+	) {
 		throw new Error('Refusing to write mapping changes that have errors.')
 	}
 	const db = scope.env.APP_DB
@@ -318,29 +374,36 @@ export async function writeMappingChanges(
 	const prepares: Array<() => Promise<void>> = []
 	const enabledIds = new Map<DeclaredTrigger, string>()
 	const statements: Array<D1PreparedStatement> = []
+	const enableTrigger = async (trigger: DeclaredTrigger) => {
+		const known = enabledIds.get(trigger)
+		if (known) return known
+		const plan = await planTriggerEnablementForCaller({
+			env: scope.env,
+			baseUrl: scope.baseUrl,
+			request: scope.request,
+			savedPackage: scope.savedPackage,
+			kind: trigger.kind,
+			name: trigger.name,
+			now,
+		})
+		let enablementId: string
+		if (plan.enablement) {
+			enablementId = plan.enablement.id
+		} else {
+			enablementId = plan.enablementId
+			enableStatements.push(plan.statement)
+			prepares.push(plan.prepare)
+		}
+		enabledIds.set(trigger, enablementId)
+		return enablementId
+	}
+	for (const entry of enable) {
+		if (entry.willEnable && entry.declared) await enableTrigger(entry.declared)
+	}
 	for (const change of resolved) {
 		let rowTarget = change.rowTarget
 		if (!rowTarget && change.willEnable && change.trigger) {
-			let enablementId = enabledIds.get(change.trigger)
-			if (!enablementId) {
-				const plan = await planTriggerEnablementForCaller({
-					env: scope.env,
-					baseUrl: scope.baseUrl,
-					request: scope.request,
-					savedPackage: scope.savedPackage,
-					kind: change.trigger.kind,
-					name: change.trigger.name,
-					now,
-				})
-				if (plan.enablement) {
-					enablementId = plan.enablement.id
-				} else {
-					enablementId = plan.enablementId
-					enableStatements.push(plan.statement)
-					prepares.push(plan.prepare)
-				}
-				enabledIds.set(change.trigger, enablementId)
-			}
+			const enablementId = await enableTrigger(change.trigger)
 			rowTarget = {
 				target: 'enablement',
 				enablementId,
