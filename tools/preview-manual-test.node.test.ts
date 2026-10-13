@@ -558,7 +558,7 @@ test('preview --request --header sends the header with the session cookie and re
 })
 
 test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
-	await using server = await createPreviewFixtureServer()
+	await using server = await createPreviewFixtureServer('headsha')
 	let now = 0
 	let prViews = 0
 	const logs: Array<string> = []
@@ -574,7 +574,6 @@ test('preview manual test waits for the GitHub preview comment and head SHA work
 			return fakeGh(args, {
 				commentBody: commentReady ? sampleCommentWithUrl(server.origin) : null,
 				headSha: 'headsha',
-				deploymentSha: 'deployedsha',
 				runStatus: commentReady ? 'completed' : 'in_progress',
 				runConclusion: commentReady ? 'success' : null,
 			})
@@ -638,7 +637,6 @@ test('briefing single-quotes KODY_API_URL so comment-sourced shell metacharacter
 			workflowStatus: null,
 			workflowConclusion: null,
 			workflowHeadSha: null,
-			deploymentSha: null,
 		},
 		smoke: null,
 		session: { cookieHeader: null, origin: null, cookieFile: null },
@@ -655,7 +653,7 @@ test('briefing single-quotes KODY_API_URL so comment-sourced shell metacharacter
 })
 
 test('preview briefing prints the API host the CLI needs for auth bootstrap and execute --local', async () => {
-	await using server = await createPreviewFixtureServer()
+	await using server = await createPreviewFixtureServer('headsha')
 	const apiUrl = 'https://kody-pr-42-api.kody.workers.dev'
 	const fromComment = await runPreviewManualTest(
 		['--pr', '42', '--skip-login'],
@@ -668,7 +666,6 @@ test('preview briefing prints the API host the CLI needs for auth bootstrap and 
 						`API worker: \`kody-pr-42-api\` (${apiUrl})`,
 					].join('\n'),
 					headSha: 'headsha',
-					deploymentSha: 'deployedsha',
 					runStatus: 'completed',
 					runConclusion: 'success',
 				}),
@@ -727,7 +724,6 @@ test('preview briefing prints the API host the CLI needs for auth bootstrap and 
 							'API worker: `kody-pr-42-api` (https://kody-pr-42-api.kody-a99.workers.dev)',
 						].join('\n'),
 						headSha: 'headsha',
-						deploymentSha: 'headsha',
 						runStatus: 'completed',
 						runConclusion: 'success',
 					}),
@@ -755,7 +751,6 @@ test('preview manual test treats merge-commit /health as ready when it contains 
 				fakeGh(args, {
 					commentBody: sampleCommentWithUrl(server.origin),
 					headSha: 'headsha',
-					deploymentSha: 'headsha',
 					runStatus: 'completed',
 					runConclusion: 'success',
 					commitParents: ['basesha', 'headsha'],
@@ -924,7 +919,6 @@ function fakeGh(
 		isDraft?: boolean
 		commentBody?: string | null
 		headSha?: string
-		deploymentSha?: string | null
 		runStatus?: string
 		runConclusion?: string | null
 		runUrl?: string
@@ -963,19 +957,6 @@ function fakeGh(
 				displayTitle: 'Preview #42',
 			},
 		])
-	}
-	if (joined.includes('/deployments?')) {
-		return jsonGh(
-			input.deploymentSha
-				? [
-						{
-							id: 1,
-							sha: input.deploymentSha,
-							environment: 'preview-42',
-						},
-					]
-				: [],
-		)
 	}
 	if (joined.includes('/commits/')) {
 		return jsonGh({

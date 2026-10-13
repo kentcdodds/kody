@@ -150,7 +150,6 @@ export type PreviewSnapshot = {
 	workflowStatus: string | null
 	workflowConclusion: string | null
 	workflowHeadSha: string | null
-	deploymentSha: string | null
 }
 
 export type SmokeCheck = {
@@ -1243,12 +1242,6 @@ type WorkflowRun = {
 	displayTitle: string
 }
 
-type Deployment = {
-	id: number
-	sha: string
-	environment: string
-}
-
 async function resolveAndWait(
 	options: PreviewManualTestOptions,
 	deps: PreviewManualTestDeps,
@@ -1321,7 +1314,7 @@ function warnIfMissingExpectedSha(
 ) {
 	if (snapshot.previewUrl && !snapshot.expectedSha) {
 		deps.log(
-			'Warning: no expected /health commitSha (no GitHub preview deployment SHA and no --sha). Any healthy worker is accepted.',
+			'Warning: no expected /health commitSha (no PR head SHA and no --sha). Any healthy worker is accepted.',
 		)
 	}
 }
@@ -1377,7 +1370,6 @@ async function loadSnapshot(
 			workflowStatus: null,
 			workflowConclusion: null,
 			workflowHeadSha: null,
-			deploymentSha: null,
 		}
 	}
 
@@ -1385,7 +1377,6 @@ async function loadSnapshot(
 	const comment = await loadPreviewComment(pr.number, deps)
 	const parsed = comment ? parsePreviewComment(comment) : null
 	const workflow = await loadPreviewWorkflow(pr, deps)
-	const deploymentSha = await loadDeploymentSha(pr.number, deps)
 	const previewUrl = options.previewUrl ?? parsed?.previewUrl ?? null
 	const workerName =
 		parsed?.workerName ??
@@ -1439,12 +1430,15 @@ async function loadSnapshot(
 		d1DatabaseName: parsed?.d1DatabaseName ?? null,
 		oauthKvTitle: parsed?.oauthKvTitle ?? null,
 		mocks: parsed?.mocks ?? [],
-		expectedSha: options.expectedSha ?? deploymentSha ?? pr.headRefOid,
+		// Preview deploys no longer create a per-PR GitHub Environment, so there
+		// is no deployments-by-environment SHA. Prefer --sha, else the PR head;
+		// /health on pull_request runs is often the merge commit, which
+		// evaluateAppHealth accepts when it lists the PR head as a parent.
+		expectedSha: options.expectedSha ?? pr.headRefOid,
 		workflowUrl: workflow?.url ?? null,
 		workflowStatus: workflow?.status ?? null,
 		workflowConclusion: workflow?.conclusion ?? null,
 		workflowHeadSha: workflow?.headSha ?? null,
-		deploymentSha,
 	}
 }
 
@@ -1504,27 +1498,6 @@ async function loadPreviewWorkflow(
 		runs.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
 		null
 	)
-}
-
-async function loadDeploymentSha(
-	prNumber: number,
-	deps: PreviewManualTestDeps,
-): Promise<string | null> {
-	try {
-		const repo = await ghJson<{ nameWithOwner: string }>(deps, [
-			'repo',
-			'view',
-			'--json',
-			'nameWithOwner',
-		])
-		const deployments = await ghJson<Array<Deployment>>(deps, [
-			'api',
-			`repos/${repo.nameWithOwner}/deployments?environment=preview-${prNumber}&per_page=5`,
-		])
-		return deployments[0]?.sha ?? null
-	} catch {
-		return null
-	}
 }
 
 async function previewHealthReady(

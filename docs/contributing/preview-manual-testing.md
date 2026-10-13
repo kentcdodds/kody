@@ -104,10 +104,11 @@ cleanup live in [`preview deploys`](./setup/preview-deploys.md).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can
-differ from `HEAD` / `headRefOid`. GitHub environment deployments record the PR
-head SHA, not that merge commit. The script treats `/health` as ready when
-`commitSha` equals the PR head **or** is a merge commit that has the PR head as
-a parent. Pass `--sha` to override the expected commit.
+differ from `HEAD` / `headRefOid`. Preview deploys do not create a per-PR GitHub
+Environment, so the script expects the PR head SHA (or `--sha`). It treats
+`/health` as ready when `commitSha` equals that expected SHA **or** is a merge
+commit that has the PR head as a parent. Pass `--sha` to override the expected
+commit.
 
 ## DR backup control plane
 
