@@ -6,7 +6,9 @@
  */
 import {
 	planTriggerEnablementForCaller,
+	runNewEnablementPlans,
 	type DeclaredTrigger,
+	type NewTriggerEnablementPlan,
 } from '#worker/enablements/service.ts'
 import {
 	type CredentialApprovalChangeView,
@@ -350,8 +352,10 @@ export function resolveTriggerEnables(
 
 /**
  * Writes resolved changes in one batch, turning on any trigger a change maps
- * for the first time and every trigger in `enable` that is not on yet. Every
- * change and enable must have resolved without an error.
+ * for the first time and every trigger in `enable` that is not on yet. A
+ * webhook turned on lands in its own batch just before, so losing a race to
+ * another enabler throws `webhook_other_enabler` with nothing else written.
+ * Every change and enable must have resolved without an error.
  */
 export async function writeMappingChanges(
 	scope: PackageMappingScope,
@@ -370,8 +374,7 @@ export async function writeMappingChanges(
 		throw new Error('Refusing to write mapping changes that have errors.')
 	}
 	const db = scope.env.APP_DB
-	const enableStatements: Array<D1PreparedStatement> = []
-	const prepares: Array<() => Promise<void>> = []
+	const newEnablements: Array<NewTriggerEnablementPlan> = []
 	const enabledIds = new Map<DeclaredTrigger, string>()
 	const statements: Array<D1PreparedStatement> = []
 	const enableTrigger = async (trigger: DeclaredTrigger) => {
@@ -391,8 +394,7 @@ export async function writeMappingChanges(
 			enablementId = plan.enablement.id
 		} else {
 			enablementId = plan.enablementId
-			enableStatements.push(plan.statement)
-			prepares.push(plan.prepare)
+			newEnablements.push(plan)
 		}
 		enabledIds.set(trigger, enablementId)
 		return enablementId
@@ -424,7 +426,20 @@ export async function writeMappingChanges(
 			}),
 		)
 	}
-	for (const prepare of prepares) await prepare()
-	const batch = [...enableStatements, ...statements]
+	for (const plan of newEnablements) await plan.prepare()
+	// A webhook insert can lose to another enabler without failing. Land those
+	// first and alone: mappings and other enablements are only written once
+	// every webhook is known to be in, so none points at an enablement that
+	// was never inserted.
+	const webhookEnablements = newEnablements.filter(
+		(plan) => plan.kind === 'webhook',
+	)
+	await runNewEnablementPlans({ db, plans: webhookEnablements })
+	const batch = [
+		...newEnablements
+			.filter((plan) => plan.kind !== 'webhook')
+			.map((plan) => plan.statement),
+		...statements,
+	]
 	if (batch.length > 0) await db.batch(batch)
 }

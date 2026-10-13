@@ -18,6 +18,7 @@ import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
@@ -670,6 +671,43 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageSettings>
+}
+
+/**
+ * The bundled credential approval page. It needs a session (login comes back
+ * here with the proposal), and the page follows a moved package with its
+ * query. The client resolves the proposal through the approval API, which
+ * answers not found to anyone without `package:execute`.
+ */
+export function createCommunityPackageCredentialApprovalHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) return user
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: `${page.to}/approve-credentials`,
+					url: new URL(request.url),
+					cache: 'private',
+				})
+			}
+			if (page.kind !== 'page' || !page.viewerIsOwner || !page.ownerPackage) {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			return renderAppPage({
+				request,
+				env,
+				title: 'Approve credential mappings',
+			})
+		},
+	} satisfies Action<typeof routes.communityPackageApproveCredentials>
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 	parseCredentialApprovalQuery,
 	type CredentialMappingProposalChange,
 } from '#universal/credential-contracts.ts'
+import { insertEnablement } from '#worker/enablements/repo.ts'
 import {
 	approveCredentialProposal,
 	resolveCredentialApproval,
@@ -325,4 +326,80 @@ test('an enable-only proposal turns a minted webhook on at Approve, once', async
 	).view
 	expect(bea.canApprove).toBe(false)
 	expect(bea.enable[0]!.error?.code).toBe('webhook_other_enabler')
+})
+
+test('a webhook another person turns on between resolve and write is a conflict that writes nothing', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.grantUse(prod, 'ann')
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints
+				(id, user_id, package_id, webhook_name, url_secret_hash, hmac_secret_encrypted, created_at, rotated_at)
+			VALUES ('ep-incoming', ?, ?, 'incoming', 'hash', 'sealed', ?, ?)`,
+		)
+		.bind(
+			t.acmeId,
+			t.savedPackage.id,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	const incoming = {
+		type: 'trigger',
+		trigger: { kind: 'webhook', name: 'incoming' },
+	} as const
+	const proposal = proposalOf([
+		{ target: incoming, needKey: 'mail', credentials: [{ id: prod }] },
+	])
+	const scope = await t.scopeFor('ann', 'member')
+	const { view } = await resolveCredentialApproval(scope, proposal)
+	expect(view).toMatchObject({
+		canApprove: true,
+		changes: [{ willEnable: true, error: null }],
+	})
+
+	// Bea's enablement lands after Ann's plan was made and before her batch.
+	const racingDb = new Proxy(t.db, {
+		get(target, property) {
+			if (property === 'batch') {
+				return async (statements: Array<D1PreparedStatement>) => {
+					await insertEnablement({
+						db: target,
+						enablement: {
+							orgId: t.acmeId,
+							packageId: t.savedPackage.id,
+							triggerKind: 'webhook',
+							triggerName: 'incoming',
+							instanceId: 'ep-incoming',
+							enablerUserId: String(t.people.bea.personId),
+							origin: 'enabled',
+						},
+					})
+					return await target.batch(statements)
+				}
+			}
+			const value = Reflect.get(target, property) as unknown
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	const outcome = await approveCredentialProposal({
+		scope: { ...scope, env: { ...scope.env, APP_DB: racingDb } },
+		proposal,
+		fingerprint: view.fingerprint,
+	})
+	expect(outcome.status).toBe('conflict')
+	if (outcome.status !== 'conflict') return
+	expect(outcome.message).toContain('another person')
+	expect(outcome.view.canApprove).toBe(false)
+	expect(outcome.view.changes[0]!.error?.code).toBe('webhook_other_enabler')
+	expect(await t.enablementCount()).toBe(1)
+	const mappings = await t.db
+		.prepare(`SELECT COUNT(*) AS n FROM credential_mappings`)
+		.first<{ n: number }>()
+	expect(mappings!.n).toBe(0)
+	const live = await t.db
+		.prepare(`SELECT enabler_user_id FROM enablements`)
+		.first<{ enabler_user_id: string }>()
+	expect(live!.enabler_user_id).toBe(String(t.people.bea.personId))
 })

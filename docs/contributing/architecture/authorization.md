@@ -190,14 +190,15 @@ Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
   can see the resource the event is about (`enablerCanSee`). Run errors with no
   package or job reach Owners only.
 
-People turn triggers on for themselves with `enablementEnable` and off with
-`enablementDisable` (the enabler or an Owner); `enablementList` lists them.
-Publishing never turns anything on, and neither does minting a webhook URL: the
-mint returns an approval link, and Approve on that page creates the enablement.
-Enablements created before minting stopped enabling keep running. A webhook
-verifies a signature only when its manifest declares `verification`; otherwise
-its URL secret is the credential. The generated signing secret on unsigned
-endpoints is stored but not checked.
+People turn jobs and subscriptions on for themselves with `enablementEnable` (a
+webhook's first turn-on is Approve only) and off with `enablementDisable` (the
+enabler or an Owner); `enablementList` lists them. Publishing never turns
+anything on, and neither does minting a webhook URL: the mint returns an
+approval link, and Approve on that page creates the enablement. Enablements
+created before minting stopped enabling keep running. A webhook verifies a
+signature only when its manifest declares `verification`; otherwise its URL
+secret is the credential. The generated signing secret on unsigned endpoints is
+stored but not checked.
 
 ### Checking many resources
 
