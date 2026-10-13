@@ -56,7 +56,7 @@ const outputSchema = z.object({
 	complete: z
 		.boolean()
 		.describe(
-			'False when an owner RunLog read failed or the owner list hit its cap.',
+			'False when an owner RunLog read failed, the owner list hit its cap, or one owner had more flagged packages than a single RunLog summary accepts.',
 		),
 	packages: z.array(
 		z.object({

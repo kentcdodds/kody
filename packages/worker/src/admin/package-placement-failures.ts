@@ -78,12 +78,16 @@ export async function loadPackagePlacementFailures(input: {
 		list.push(item)
 		flaggedByOwner.set(item.ownerId, list)
 	}
+	// Per-owner RunLog summaries cap packageIds; truncate like the owner list
+	// instead of aborting the whole fleet report when one owner overflows.
+	let flaggedPackagesTruncated = false
 	for (const [ownerId, list] of flaggedByOwner) {
-		if (list.length > packageFailureSummaryMaxPackageIds) {
-			throw new Error(
-				`Owner ${ownerId} has ${list.length} flagged packages; at most ${packageFailureSummaryMaxPackageIds} per owner are supported.`,
-			)
-		}
+		if (list.length <= packageFailureSummaryMaxPackageIds) continue
+		flaggedByOwner.set(
+			ownerId,
+			list.slice(0, packageFailureSummaryMaxPackageIds),
+		)
+		flaggedPackagesTruncated = true
 	}
 
 	const { ownerIds, truncated } = await listPackageOwners(
@@ -137,7 +141,10 @@ export async function loadPackagePlacementFailures(input: {
 		flaggedPackageCount: flagged.length,
 		ownersAttempted: ownerIds.length,
 		ownersLoaded,
-		complete: !truncated && ownersLoaded === ownerIds.length,
+		complete:
+			!truncated &&
+			!flaggedPackagesTruncated &&
+			ownersLoaded === ownerIds.length,
 		packages: rows.map((row) => ({
 			...row,
 			ownerHandle: handles.get(row.ownerId) ?? null,

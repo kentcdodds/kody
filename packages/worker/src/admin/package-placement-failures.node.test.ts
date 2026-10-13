@@ -1,6 +1,7 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
+	packageFailureSummaryMaxPackageIds,
 	type RunLogPackageFailureSummary,
 	type RunLogPackageFailureSummaryInput,
 } from '#worker/run-records/package-failure-summary.ts'
@@ -263,6 +264,71 @@ test('listPackageOwners marks truncated when flagged owners displace live owners
 	expect(listed.truncated).toBe(true)
 	expect(listed.ownerIds).toHaveLength(packagePlacementFailuresMaxOwners)
 	expect(listed.ownerIds.every((id) => id.startsWith('flag-'))).toBe(true)
+})
+
+test('loadPackagePlacementFailures truncates oversized flagged lists instead of aborting the report', async () => {
+	const packageIds = Array.from(
+		{ length: packageFailureSummaryMaxPackageIds + 1 },
+		(_, index) => `pkg-overflow-${index}`,
+	)
+	const db = {
+		prepare(query: string) {
+			const statement = {
+				bind() {
+					return statement
+				},
+				async all<T>() {
+					if (query.includes('FROM saved_packages') && query.includes('IN (')) {
+						return {
+							results: packageIds.map((id) => ({
+								id,
+								user_id: ownerA,
+								kody_id: id.replace('pkg-', ''),
+							})) as Array<T>,
+						}
+					}
+					if (query.includes('SELECT DISTINCT user_id')) {
+						return { results: [{ user_id: ownerA }] as Array<T> }
+					}
+					if (query.includes('FROM orgs')) {
+						return {
+							results: [{ id: ownerA, slug: 'alice' }] as Array<T>,
+						}
+					}
+					throw new Error(`Unsupported query: ${query}`)
+				},
+			}
+			return statement
+		},
+	} as unknown as D1Database
+
+	runLogMocks.summarizePackageFailures.mockImplementation(async (input) => {
+		expect(input.userId).toBe(ownerA)
+		expect(input.window.packageIds).toHaveLength(
+			packageFailureSummaryMaxPackageIds,
+		)
+		return {
+			packages: (input.window.packageIds ?? []).map((packageId) => ({
+				packageId,
+				placementRefusals: counts(0, null),
+				failedRuns: counts(0, null),
+			})),
+		}
+	})
+
+	const report = await loadPackagePlacementFailures({
+		env: { APP_DB: db } as unknown as Env,
+		window: {
+			since: '2026-10-11T02:51:00.000Z',
+			until: '2026-10-11T15:49:00.000Z',
+			packageIds,
+		},
+	})
+
+	expect(report.complete).toBe(false)
+	expect(report.flaggedPackageCount).toBe(packageIds.length)
+	expect(report.packages).toHaveLength(packageFailureSummaryMaxPackageIds)
+	expect(report.packages.every((row) => row.ownerId === ownerA)).toBe(true)
 })
 
 test('loadPackagePlacementFailures rejects an inverted or oversized window before reading', async () => {
