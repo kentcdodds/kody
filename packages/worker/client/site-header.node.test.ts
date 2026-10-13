@@ -484,10 +484,10 @@ test('logged-out header shows Log in without an Account link', async () => {
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
 })
 
-test('account menu Usage & credits uses the URL org, never a cookie', () => {
+test('account menu Usage & credits uses the URL org when billing is allowed', () => {
 	const orgs = [
-		{ slug: 'ada', personal: true },
-		{ slug: 'acme', personal: false },
+		{ slug: 'ada', personal: true, role: 'owner' as const },
+		{ slug: 'acme', personal: false, role: 'owner' as const },
 	]
 	expect(
 		usageHrefForAccountMenu({
@@ -513,6 +513,27 @@ test('account menu Usage & credits uses the URL org, never a cookie', () => {
 	expect(
 		usageHrefForAccountMenu({
 			pathname: '/@stranger/pkg',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@ada/-/usage')
+})
+
+test('account menu Usage & credits falls back when the URL org lacks billing', () => {
+	const orgs = [
+		{ slug: 'ada', personal: true, role: 'owner' as const },
+		{ slug: 'acme', personal: false, role: 'member' as const },
+	]
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/@acme/-/agents',
+			organizations: orgs,
+			username: 'ada',
+		}),
+	).toBe('/@ada/-/usage')
+	expect(
+		usageHrefForAccountMenu({
+			pathname: '/@acme',
 			organizations: orgs,
 			username: 'ada',
 		}),

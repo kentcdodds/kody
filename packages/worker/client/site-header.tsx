@@ -9,6 +9,7 @@ import {
 	currentSwitcherSlug,
 	orgIdentity,
 	orgRoleLabel,
+	orgRoleManagesBilling,
 	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
 	orgSwitcherEntries,
@@ -394,23 +395,29 @@ function OrgSwitcher(
 
 /**
  * Usage link for the avatar menu: org from the URL only (no last-used
- * cookie), falling back to the personal org.
+ * cookie) when the viewer can open billing there, otherwise the personal org.
+ * Matches the workspace rail gate (`orgRoleManagesBilling`).
  */
 export function usageHrefForAccountMenu(input: {
 	pathname: string
-	organizations: ReadonlyArray<Pick<OrganizationSummary, 'slug' | 'personal'>>
+	organizations: ReadonlyArray<
+		Pick<OrganizationSummary, 'slug' | 'personal' | 'role'>
+	>
 	username: string
 }) {
-	const owned = orgSlugFromOrgOwnedPath(input.pathname)
-	if (owned) return orgUsagePath(owned)
-	const fromPath = orgSlugFromPathname(input.pathname)
-	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
-		return orgUsagePath(fromPath)
-	}
 	const personal =
 		input.organizations.find((org) => org.personal)?.slug ??
 		input.username.trim()
-	return personal ? orgUsagePath(personal) : routes.account.href()
+	const personalHref = personal ? orgUsagePath(personal) : routes.account.href()
+	const usageOrgSlug = (slug: string) => {
+		const org = input.organizations.find((entry) => entry.slug === slug)
+		return org && orgRoleManagesBilling(org.role) ? orgUsagePath(slug) : null
+	}
+	const owned = orgSlugFromOrgOwnedPath(input.pathname)
+	if (owned) return usageOrgSlug(owned) ?? personalHref
+	const fromPath = orgSlugFromPathname(input.pathname)
+	if (fromPath) return usageOrgSlug(fromPath) ?? personalHref
+	return personalHref
 }
 
 function accountRows(input: {

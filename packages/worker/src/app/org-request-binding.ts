@@ -24,7 +24,9 @@ const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
  * The organization for this request. Resource, billing, usage, and management
  * URLs under `/@slug/...` bind that organization when the actor is a member or
  * holds a grant. Org-owned `/account/<section>.json` and credits mutation APIs
- * bind the same org via Referer. Every other URL keeps the signup organization.
+ * bind the same org via Referer. Credits mutations without a usable Referer
+ * are denied (no personal fallback). Every other URL keeps the signup
+ * organization.
  */
 export function loadRequestOrgResolution(
 	request: Request,
@@ -131,7 +133,9 @@ async function resolveRequestOrg(
 		(apiSection || creditsApi || lastUsedCommit
 			? orgSlugFromAccountApiReferer(request, url.origin)
 			: null)
-	if (!slug) return 'personal'
+	// Credits mutations must name an org (path or usage-page Referer). Falling
+	// back to personal would top up the wrong wallet when Referer is missing.
+	if (!slug) return creditsApi ? 'denied' : 'personal'
 	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'
 }

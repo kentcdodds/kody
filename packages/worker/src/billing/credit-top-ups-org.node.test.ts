@@ -60,9 +60,11 @@ test('applyCreditTopUpFromCheckoutSession credits a team org wallet', async () =
 		CREATE TABLE orgs (
 			id TEXT PRIMARY KEY,
 			slug TEXT NOT NULL,
+			deleting_at TEXT,
 			deleted_at TEXT
 		);
-		INSERT INTO orgs (id, slug, deleted_at) VALUES ('org-acme', 'acme', NULL);
+		INSERT INTO orgs (id, slug, deleting_at, deleted_at)
+		VALUES ('org-acme', 'acme', NULL, NULL);
 	`)
 
 	const result = await applyCreditTopUpFromCheckoutSession({
@@ -84,6 +86,7 @@ test('applyCreditTopUpFromCheckoutSession rejects an unknown org id', async () =
 		CREATE TABLE orgs (
 			id TEXT PRIMARY KEY,
 			slug TEXT NOT NULL,
+			deleting_at TEXT,
 			deleted_at TEXT
 		);
 	`)
@@ -93,6 +96,31 @@ test('applyCreditTopUpFromCheckoutSession rejects an unknown org id', async () =
 			env: { APP_DB: db } as unknown as Env,
 			sessionId: 'cs_missing',
 			expectedStableUserId: 'org-missing',
+			now: new Date('2026-01-01T00:00:00.000Z'),
+		}),
+	).rejects.toMatchObject({ code: 'user_not_found' })
+	expect(mocks.applyCreditPayment).not.toHaveBeenCalled()
+})
+
+test('applyCreditTopUpFromCheckoutSession rejects an org mid-delete', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	sqlite.exec(`
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
+			slug TEXT NOT NULL,
+			deleting_at TEXT,
+			deleted_at TEXT
+		);
+		INSERT INTO orgs (id, slug, deleting_at, deleted_at)
+		VALUES ('org-acme', 'acme', '2026-01-01T00:00:00.000Z', NULL);
+	`)
+
+	await expect(
+		applyCreditTopUpFromCheckoutSession({
+			env: { APP_DB: db } as unknown as Env,
+			sessionId: 'cs_deleting',
+			expectedStableUserId: 'org-acme',
 			now: new Date('2026-01-01T00:00:00.000Z'),
 		}),
 	).rejects.toMatchObject({ code: 'user_not_found' })
