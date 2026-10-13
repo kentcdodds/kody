@@ -11,7 +11,11 @@ import {
 	type CustomHostnameSslMethod,
 } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
 import { checkRateLimit, releaseRateLimit } from '#worker/app/rate-limit.ts'
-import { countOrgCustomHostnames } from '#worker/package-app-custom-hostnames/count-org.ts'
+import {
+	countOrgCustomHostnames,
+	listOrgCustomHostnameRows,
+	orgOwnsPackageIncludingDeleted,
+} from '#worker/package-app-custom-hostnames/count-org.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	packageAppCustomHostnameAddRateLimit,
@@ -308,11 +312,11 @@ async function loadOwnedCustomHostnameRow(input: {
 	}
 	const owned =
 		row.org_id === input.orgId ||
-		(row.package_id &&
-			(await getSavedPackageById(input.env.APP_DB, {
-				userId: input.orgId,
+		(row.package_id != null &&
+			(await orgOwnsPackageIncludingDeleted(input.env.APP_DB, {
+				orgId: input.orgId,
 				packageId: row.package_id,
-			})) !== null)
+			})))
 	if (!owned) {
 		throw new PackageAppCustomHostnameError(
 			'This custom hostname does not belong to the bound organization.',
@@ -641,10 +645,33 @@ export async function addPackageAppCustomHostname(input: {
 
 	// Re-check after insert so concurrent adds cannot permanently exceed the
 	// hard cap. Losers roll back CF + the row and refund the rate-limit slot.
-	const postInsertCount = await countOrgCustomHostnames(
-		input.env.APP_DB,
-		input.orgId,
-	)
+	// If the recount itself fails, compensate both writes so we never leave a
+	// claimed hostname without returning it to the caller.
+	let postInsertCount: number
+	try {
+		postInsertCount = await countOrgCustomHostnames(
+			input.env.APP_DB,
+			input.orgId,
+		)
+	} catch (error) {
+		await input.env.APP_DB.prepare(
+			`DELETE FROM package_app_custom_hostnames WHERE id = ?`,
+		)
+			.bind(id)
+			.run()
+		invalidateCachedPackageAppCustomHostname(input.env.APP_DB, hostname)
+		await compensateCloudflareDelete({
+			client,
+			cloudflareHostnameId: cf.id,
+			hostname,
+		})
+		await releaseRateLimit(input.env.APP_DB, rateLimitKey).catch(
+			() => undefined,
+		)
+		throw new PackageAppCustomHostnameError(
+			`Custom hostname could not be confirmed after store (${getErrorMessage(error)}).`,
+		)
+	}
 	if (postInsertCount > packageAppCustomHostnameMaxPerOrg) {
 		await input.env.APP_DB.prepare(
 			`DELETE FROM package_app_custom_hostnames WHERE id = ?`,
@@ -698,18 +725,12 @@ export async function listPackageAppCustomHostnames(input: {
 	orgId: string
 }) {
 	await requireCustomDomainsEnabled(input.env.APP_DB)
-	const rows = await input.env.APP_DB.prepare(
-		`SELECT * FROM package_app_custom_hostnames
-			 WHERE org_id = ?
-			    OR package_id IN (
-			      SELECT id FROM saved_packages WHERE user_id = ?${andLiveDeletedAtSql('saved_packages')}
-			    )
-			 ORDER BY created_at ASC`,
+	const rows = await listOrgCustomHostnameRows<CustomHostnameRowSql>(
+		input.env.APP_DB,
+		input.orgId,
 	)
-		.bind(input.orgId, input.orgId)
-		.all<CustomHostnameRowSql>()
 	return {
-		hostnames: (rows.results ?? []).map((row) => publicRow(rowFromSql(row))),
+		hostnames: rows.map((row) => publicRow(rowFromSql(row))),
 	}
 }
 

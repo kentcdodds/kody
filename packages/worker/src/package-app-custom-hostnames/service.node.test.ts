@@ -209,6 +209,67 @@ test('add rejects when the org is at the abuse hostname cap', async () => {
 	expect(fetcher.fetch).not.toHaveBeenCalled()
 })
 
+test('list and delete still reach app hostnames after the package is soft-deleted', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO saved_packages (
+				id, user_id, name, kody_id, is_internet_visible, deleted_at
+			) VALUES ('pkg-1', 'org-1', '@acme/demo', 'demo', 1, '2026-10-13T00:00:00.000Z')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'row-orphaned', 'orphaned.example.com', 'app', 'pkg-1', NULL,
+				'cf-orphaned', 'zonetest123', 'active', 'active', 'person-1',
+				'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z'
+			)`,
+		)
+		.run()
+	const fetcher = {
+		fetch: vi.fn(async (_url: string, init?: RequestInit) => {
+			if (init?.method === 'DELETE') {
+				return cfHostnameResponse({ status: 'deleted' })
+			}
+			return cfHostnameResponse()
+		}),
+	} as unknown as Fetcher
+	const listed = await listPackageAppCustomHostnames({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+	})
+	expect(listed.hostnames.map((row) => row.hostname)).toEqual([
+		'orphaned.example.com',
+	])
+	await deletePackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		hostname: 'orphaned.example.com',
+	})
+	expect(
+		await listPackageAppCustomHostnames({
+			env: { ...createEnv(db), fetcher } as unknown as Env,
+			orgId: 'org-1',
+		}),
+	).toEqual({ hostnames: [] })
+})
+
 test('abuse cap still counts app hostnames after the package is soft-deleted', async () => {
 	const db = createDb()
 	await db

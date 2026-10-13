@@ -170,10 +170,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 						row.id,
 					)
 					.run()
-				invalidateCachedPackageAppCustomHostname(
-					input.env.APP_DB,
-					row.hostname,
-				)
+				invalidateCachedPackageAppCustomHostname(input.env.APP_DB, row.hostname)
 				result.updated += 1
 			} catch (error) {
 				console.error(
