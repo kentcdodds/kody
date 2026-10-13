@@ -7,6 +7,17 @@ export const packageAppCustomHostnameDnsRecordSchema = z.object({
 	value: z.string(),
 })
 
+export const packageAppCustomHostnameDnsHintSchema = z.object({
+	type: z.literal('CNAME'),
+	name: z.string(),
+	target: z.string().nullable(),
+})
+
+export const packageAppCustomHostnameVerificationSchema = z.object({
+	ownership_verification: packageAppCustomHostnameDnsRecordSchema.nullable(),
+	ssl_validation_records: z.array(packageAppCustomHostnameDnsRecordSchema),
+})
+
 export const packageAppCustomHostnameRowSchema = z.object({
 	id: z.string(),
 	hostname: z.string(),
@@ -17,17 +28,7 @@ export const packageAppCustomHostnameRowSchema = z.object({
 	ssl_status: z.string(),
 	verified_at: z.string().nullable(),
 	dns_missing_since: z.string().nullable(),
+	verification: packageAppCustomHostnameVerificationSchema,
 	created_at: z.string(),
 	updated_at: z.string(),
-})
-
-export const packageAppCustomHostnameDnsHintSchema = z.object({
-	type: z.literal('CNAME'),
-	name: z.string(),
-	target: z.string().nullable(),
-})
-
-export const packageAppCustomHostnameVerificationSchema = z.object({
-	ownership_verification: packageAppCustomHostnameDnsRecordSchema.nullable(),
-	ssl_validation_records: z.array(packageAppCustomHostnameDnsRecordSchema),
 })
