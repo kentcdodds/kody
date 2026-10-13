@@ -62,7 +62,11 @@ export type CredentialNeedsApprovalRequired = {
 }
 
 function shape(need: CredentialNeed): NeedShape {
-	return { kind: need.kind, provider: need.provider, multiple: need.multiple }
+	return {
+		...(need.kind ? { kind: need.kind } : {}),
+		provider: need.provider,
+		multiple: need.multiple,
+	}
 }
 
 /** Needs `after` adds or reshapes relative to `before`, by key. */
@@ -102,7 +106,8 @@ export function diffCredentialNeeds(
 }
 
 function describeShape(need: NeedShape) {
-	return `${need.kind}, provider "${need.provider}"${need.multiple ? ', multiple' : ''}`
+	const kind = need.kind ?? 'any fetch-capable kind'
+	return `${kind}, provider "${need.provider}"${need.multiple ? ', multiple' : ''}`
 }
 
 /** `MAIL (added: secret, provider "resend")` */

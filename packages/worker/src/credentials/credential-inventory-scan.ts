@@ -133,7 +133,7 @@ export type CredentialReference = {
 
 export type CredentialSlotDeclaration = {
 	name: string
-	kind: PackageCredentialKind
+	kind?: PackageCredentialKind
 	provider: string
 }
 
@@ -260,7 +260,7 @@ export function scanPackageCredentials(input: {
 		jwtSignCalls: 0,
 		slots: Object.entries(input.slots ?? {}).map(([name, slot]) => ({
 			name,
-			kind: slot.kind,
+			...(slot.kind ? { kind: slot.kind } : {}),
 			provider: slot.provider ?? name,
 		})),
 		unparsedModules: 0,

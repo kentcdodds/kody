@@ -117,9 +117,8 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    delivery row. Non-matching POSTs continue. GET without a matching challenge
    declaration → **405**.
 7. Payload cap 1 MB → **413**. When verification is `{ type: 'url-secret' }` (or
-   omitted, which is treated the same until publish requires it;
-   [#3477](https://github.com/kentcdodds/kody/issues/3477)), the URL secret is
-   the credential and signature headers are ignored. A declared HMAC type never
+   omitted, which is permanently treated the same), the URL secret is the
+   credential and signature headers are ignored. A declared HMAC type never
    falls back to the URL secret. For HMAC, try `verification.secretName` in the
    secret store first (user/package scope via package storage context), then the
    previous signing secret during its 24h grace window, then the package-owned

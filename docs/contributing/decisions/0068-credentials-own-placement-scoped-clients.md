@@ -7,9 +7,19 @@
   old-lane removal; integration-token placeholders are permanent; the webhook
   no-actor exception stays unless a proven replacement breaks nothing);
   2026-10-12 (Kent: manifest credential need `kind` is optional — see
-  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
-  default and trigger credential mappings, approved by a person — see
-  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings))
+  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-12 (Kent: unbound
+  errors carry a creation-page link; Approve bundles trigger and ad hoc default
+  mappings; creation-link kind hint/required; MCP servers are credentials in the
+  Credentials list — see [Amendment 2026-10-12](#amendment-2026-10-12));
+  2026-10-12 / 2026-10-13 (Kent: minting a webhook URL no longer turns it on;
+  webhook URLs are identities and the declared name is display metadata only —
+  see [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-13 (Kent: stored
+  default and trigger credential mappings; agents may set a trigger pick only to
+  a value they already proposed, still through approval — see
+  [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings)); 2026-10-13
+  (Kent: creation pages carry org as a URL segment with no org picker; Secret
+  providers stay separate from the Credentials list — see
+  [Amendment 2026-10-12](#amendment-2026-10-12))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -284,15 +294,15 @@ credentials.
 
 Every error is structured and includes `retryWith`.
 
-| Error                                   | Meaning                                                                          |
-| --------------------------------------- | -------------------------------------------------------------------------------- |
-| `credential_unbound{ possibleMatches }` | No candidate. Lists same-kind credentials with a null provider, filtered by Use. |
-| `credential_ambiguous{ options }`       | More than one candidate.                                                         |
-| `credential_not_found`                  | Missing or not usable by the actor; one error for both so it reveals neither.    |
-| `credential_need_unknown`               | The map names a key the package does not declare.                                |
-| `credential_denied`                     | Authorization failed.                                                            |
-| `host_not_allowed`                      | The host is not in the credential's `hosts`.                                     |
-| `insecure_transport`                    | The request is not HTTPS.                                                        |
+| Error                                   | Meaning                                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `credential_unbound{ possibleMatches }` | No candidate. Lists matching-kind credentials with a null provider (fetch-capable when `kind` is omitted), filtered by Use. |
+| `credential_ambiguous{ options }`       | More than one candidate.                                                                                                    |
+| `credential_not_found`                  | Missing or not usable by the actor; one error for both so it reveals neither.                                               |
+| `credential_need_unknown`               | The map names a key the package does not declare.                                                                           |
+| `credential_denied`                     | Authorization failed.                                                                                                       |
+| `host_not_allowed`                      | The host is not in the credential's `hosts`.                                                                                |
+| `insecure_transport`                    | The request is not HTTPS.                                                                                                   |
 
 A 401 or 403 from a client fetch adds a hint naming only the inject shape (for
 example `header Authorization Bearer`), never a value, the hosts, or other
@@ -380,7 +390,7 @@ warns as if the placeholder will break.
 
 T is the date the new credential types are available, opt-in: the client API,
 call maps (invoke, execute, CLI, enable), `packageGet` needs, the stored needs
-closure, and enablement snapshots. Nothing existing changes at T.
+closure, and stored credential mappings. Nothing existing changes at T.
 
 **Key behavior (Kent, 2026-10-11, made permanent 2026-10-12):** production keeps
 filling placeholders anywhere on allowed hosts over HTTPS. There is no switch to
@@ -496,8 +506,40 @@ Kent: manifest credential need `kind` becomes **optional**.
 - **Missing scopes** surface at call time via 401/403 `x-kody-credential-hint`.
   Declaring scopes is possible future work.
 - **Naming direction:** `credentials` is the umbrella term everywhere (secrets
-  and integrations are credential subtypes). UI/UX is designed separately and is
-  not decided here.
+  and integrations are credential subtypes). MCP servers are credentials too and
+  appear in the Credentials list with other usable credentials. That does not
+  fold Secret providers into that list; vault access stays on its own page (see
+  below).
+- **Unbound / missing at runtime:** when a run hits a missing or unbound
+  credential, the agent always surfaces a link to the credential creation page,
+  never a bare error. `credential_unbound` and `credential_not_found` errors
+  carry that link.
+- **Credential approval page:** one Approve action bundles trigger mappings and
+  ad hoc default mappings together.
+- **Creation-link design:** agents provide a link like the existing
+  secret-intake (`/connect/secret-set`) and `/connect/oauth` flows. A query
+  param for `kind` can be a **hint** (default kind, chooser shown) or
+  **required** (kind locked, no chooser UI). The one-pager reuses the existing
+  secret-intake or OAuth components, chosen by kind.
+- **Creation page has no org picker (Kent, 2026-10-13 ~9:10 AM MT):** each MCP
+  connection and the CLI are attached to a specific organization. Creation pages
+  and agent-generated creation links carry that org as a URL segment, so the
+  page does not offer an org picker.
+- **Secret providers stay separate (Kent, 2026-10-13 ~9:10 AM MT):** the Secret
+  providers page stays separate from the Credentials list, because vault access
+  is a different trust decision with its own audit trail.
+- **Webhooks go through Approve, not mint (Kent, 2026-10-12 ~10:50 PM MT and
+  2026-10-13 ~9:07 AM MT):** minting a webhook URL no longer turns the webhook
+  on for the minter. New webhooks need a separate Approve step on the same
+  approval page as other triggers, with one Approve that also maps credentials
+  for that instance. Kent accepts the extra approval as the long-term design,
+  not an interim step. The mint returns the approval link while nobody has
+  approved it, and a delivery to a webhook that is not on fails with a clear
+  error that includes the link. Existing enablements, including migrated ones
+  and any an earlier mint created, stay untouched; remint and rotate never
+  change them. **Webhook URLs are identities;** the declared webhook name is
+  display metadata only. One name does not map to multiple URLs; each URL is its
+  own instance with its own credential mappings.
 
 ## Amendment 2026-10-13: call maps and pinned needs
 
@@ -524,29 +566,39 @@ Kent decided four call-map questions (#3599).
 
 ## Amendment 2026-10-13: credential mappings
 
-Kent (voice, 2026-10-12): packages get explicit, human-approved credential
-mappings. This changes "no mapping tables" and "there is never a default
-credential" in the sections above, and nothing else.
+Kent (voice, 2026-10-12, and 2026-10-13 ~9:07 AM MT): packages get explicit,
+human-approved credential mappings. This changes "no mapping tables" and "there
+is never a default credential" in the sections above, and nothing else. These
+are the long-term design, not an interim step.
 
 - **Default mappings:** a package may store an ad hoc default mapping per need
   (need key to credential ids). Two layers: an org layer set by package managers
   (org credentials only) and a per-person layer.
-- **Trigger mappings:** each trigger instance (enablement) may override a need;
-  a need with no override inherits the enabler's default mapping.
+- **Trigger mappings:** each trigger instance (enablement) may override a need.
+  Trigger credential picks are stored mappings that follow the enabler's
+  default, then the org default, then the single usable credential. They are not
+  frozen at enable time. A need with no override inherits those defaults on each
+  run.
 - **When triggers resolve:** enabling resolves nothing and never fails on needs.
   Each run resolves every need in the order below, so a need with no trigger
   override follows the current defaults, and an ambiguous or unbound need fails
   that run with a creation link. Only a need the trigger mapping pins does not
-  drift. Trigger mappings change only through Approve or the package's
-  Credentials tab; there is no `enablementUpdate`.
+  drift with the defaults. Before each run, a deleted or unusable credential
+  named in the instance's trigger mapping pauses the enablement until the need
+  is remapped or the credential is usable again; the next event resumes it.
+  Unusable refs in a default are skipped. A publish that adds needs while the
+  package has live enablements gets a check note.
 - **Resolution order:** call map, then trigger mapping, then the person's
-  default, then the org default, then auto-resolve (rule 3). An unusable ref in
-  a trigger mapping is an error for that run; unusable refs in a default are
-  skipped.
+  default, then the org default, then auto-resolve (rule 3).
 - **Authority is unchanged:** a mapping grants nothing. Runs still need the
   actor's Use plus `package:execute`, and option lists stay filtered by Use.
-- **Agents only propose:** a proposal takes effect only through the approval
-  page, where one Approve applies trigger and default mappings together.
+- **How picks change:** agents propose mapping changes. One Approve on the
+  approval page (or the package's Credentials tab for the enabler's own
+  instances) applies them. Agents also get an API that can set a trigger
+  credential pick only to a value that agent already proposed; that write still
+  goes through the same approval path, so no pick changes without approval.
+  There is no open-ended `enablementUpdate` or
+  `enablementEnable { credentials }` that writes arbitrary picks.
 - **Contract:**
   [credential mappings API](../contracts/credential-mappings-api.md).
 

@@ -3,11 +3,13 @@
  * (ADR 0068 resolution rules). One module serves `packageGet` needs, the
  * scoped client, call maps, and enablements, so they never disagree.
  *
- * Candidates are credentials of the need's kind and provider that the actor
- * can Use in the run org: org credentials with Use, plus the actor's own
- * personal credentials granted to that org. A credential with no provider
- * never auto-resolves; it is still an explicit option of the same kind.
- * Nothing here reads a value.
+ * Candidates are credentials of the need's provider that the actor can Use in
+ * the run org: org credentials with Use, plus the actor's own personal
+ * credentials granted to that org. When the need declares `kind`, candidates
+ * must match it; when `kind` is omitted, any fetch-capable credential
+ * (secret/Key, oauth, login) qualifies. A credential with no provider never
+ * auto-resolves; it is still an explicit option of a matching kind. Nothing
+ * here reads a value.
  */
 import {
 	chunkArray,
@@ -23,7 +25,10 @@ import {
 	loadResourceListScope,
 } from '#worker/authorization/authorize.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
-import { type PackageCredentialKind } from '#worker/package-registry/types.ts'
+import {
+	isFetchCapableCredentialKind,
+	type PackageCredentialKind,
+} from '#worker/package-registry/types.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import { listPersonalCredentialCandidates } from './personal-credentials.ts'
 
@@ -257,11 +262,11 @@ export type NeedResolution = {
 	status: 'ready' | 'ambiguous' | 'unbound'
 	/** The one candidate that resolves the need with no map entry. */
 	autoPick: UsableCredential | null
-	/** Credentials of the need's kind and provider. */
+	/** Credentials matching the need's provider and kind filter. */
 	candidates: Array<UsableCredential>
-	/** What an explicit pick may name: candidates plus same-kind credentials with no provider. */
+	/** What an explicit pick may name: candidates plus matching-kind credentials with no provider. */
 	options: Array<UsableCredential>
-	/** Same-kind credentials with no provider, which a provider would let auto-resolve. */
+	/** Matching-kind credentials with no provider, which a provider would let auto-resolve. */
 	possibleMatches: Array<UsableCredential>
 }
 
@@ -269,7 +274,11 @@ export function resolveNeedCandidates(
 	need: Pick<CredentialNeed, 'kind' | 'provider'>,
 	usable: ReadonlyArray<UsableCredential>,
 ): NeedResolution {
-	const sameKind = usable.filter((credential) => credential.kind === need.kind)
+	const matchesKind = (credential: UsableCredential) =>
+		need.kind != null
+			? credential.kind === need.kind
+			: isFetchCapableCredentialKind(credential.kind)
+	const sameKind = usable.filter(matchesKind)
 	const candidates = sameKind.filter(
 		(credential) => credential.provider === need.provider,
 	)

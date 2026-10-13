@@ -926,6 +926,74 @@ test('explicit url-secret verification runs on the URL secret; a declared HMAC s
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(3)
 })
 
+test('live undeclared webhooks (telegram-trigger telegram, feature-planner upload) keep delivering unchanged', async () => {
+	const userId = await setupOwnerWithWebhooks(['telegram', 'upload'])
+	const telegramUpdate = JSON.stringify({
+		update_id: 1,
+		message: { chat: { id: 7 }, text: '/start' },
+	})
+	// Telegram sends its own secret-token header and never signs the body.
+	const telegramHeaders = {
+		'content-type': 'application/json',
+		'x-telegram-bot-api-secret-token': 'owner-chosen-token',
+	}
+
+	declareWebhook({ name: 'telegram' })
+	expect(
+		await statusOf('telegram', {
+			body: telegramUpdate,
+			headers: telegramHeaders,
+			unsigned: true,
+		}),
+	).toBe(202)
+	expect(enqueued(0).params.webhook.name).toBe('telegram')
+	expect(enqueued(0).params.request.body).toBe(telegramUpdate)
+
+	declareWebhook({
+		name: 'upload',
+		responseMode: 'sync',
+		inputMode: 'request',
+	})
+	const upload = await sendWebhook('upload', {
+		body: 'title=Plan&notes=ship+it',
+		headers: { 'content-type': 'application/x-www-form-urlencoded' },
+		unsigned: true,
+	})
+	expect(upload.status).toBe(200)
+	await expect(upload.json()).resolves.toEqual({
+		ok: true,
+		result: { handled: true },
+	})
+	expect(mocks.invokePackageExport).toHaveBeenCalledTimes(1)
+
+	expect(
+		(await listDeliveries(userId, 'telegram')).map((run) => run.errorMessage),
+	).not.toContain('missing_signature')
+	expect((await listDeliveries(userId, 'upload'))[0]).toMatchObject({
+		status: 'success',
+	})
+
+	// Declaring a signing scheme on the same URL never falls back to the URL
+	// secret, even when the provider's own secret header is present.
+	declareWebhook({
+		name: 'telegram',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-kody-signature',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+	})
+	expect(
+		await statusOf('telegram', {
+			body: telegramUpdate,
+			headers: telegramHeaders,
+			unsigned: true,
+		}),
+	).toBe(401)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+})
+
 test('a declared verification.secretName wins over the stored generated secret, on the same URL', async () => {
 	const userId = await setupOwnerWithWebhooks(['stripe'])
 	const generated = defaultSigningSecrets.get('stripe')!

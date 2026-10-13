@@ -713,12 +713,10 @@ export async function handleWebhookIngressRequest(
 	}
 
 	// A declared HMAC scheme never falls back to URL-secret-only auth.
-	// Webhooks that declare no verification are treated as
-	// `{ type: 'url-secret' }` until codemod 0012 makes the declaration
-	// explicit everywhere and publish requires it.
-	// https://github.com/kentcdodds/kody/issues/3477
-	// The log counts requests that rely on the implicit default, even ones a
-	// later check rejects.
+	// Webhooks that declare no verification are permanently supported as
+	// `{ type: 'url-secret' }`: senders like Gmail Pub/Sub and Microsoft Graph
+	// cannot sign. The log counts requests that rely on the implicit default,
+	// even ones a later check rejects.
 	const verification = webhookHmacVerification(declared.verification)
 	let matchedHmacSource: WebhookHmacVerificationSecret['source'] | null = null
 	let observedPreviousHmacCiphertext: string | null = null

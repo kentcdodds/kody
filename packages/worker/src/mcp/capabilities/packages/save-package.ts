@@ -22,6 +22,10 @@ import {
 	createPackagePublishLockedMessage,
 	isPackagePublishLockedError,
 } from '#worker/package-registry/package-publish-lock.ts'
+import {
+	isRepoChecksFailedError,
+	repoChecksFailedCallerMessage,
+} from '#worker/repo/repo-checks-failed-error.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	deleteEntitySource,
@@ -433,6 +437,15 @@ export const savePackageCapability = defineDomainCapability(
 						}),
 						{ cause: error },
 					)
+				}
+				// Failed publish/repo checks (typecheck, docs, …) are caller
+				// package bugs. Subclass identity may not survive RepoSession
+				// DO RPC on the bootstrap path — match name / JSRPC prefix.
+				// KODY-96.
+				if (isRepoChecksFailedError(error)) {
+					throw new McpCallerError(repoChecksFailedCallerMessage(error), {
+						cause: error,
+					})
 				}
 				throw error
 			}
