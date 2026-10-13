@@ -119,11 +119,11 @@ storage, fake or local credentials, no real secrets. `--target prod` keeps the
 app local but sends storage / credentials / `kody:*` hops to real Kody. Share
 previews for unpublished apps are out of scope — publish to share.
 
-Optional outbound HTTP mocking: add `.kody/mocks.ts` (MSW `handlers`) so the
-CLI Node gateway answers package `fetch` calls under mock. Unmatched requests
-return `unmocked_request` with a paste-ready stub; `--passthrough <host,…>`
-opts hosts into real network without real secrets. Ignored on `--target prod`
-and when the file is absent. See
+Optional outbound HTTP mocking: add `.kody/mocks.ts` (MSW `handlers`) so the CLI
+Node gateway answers package `fetch` calls under mock. Unmatched requests return
+`unmocked_request` with a paste-ready stub; `--passthrough <host,…>` opts hosts
+into real network without real secrets. Ignored on `--target prod` and when the
+file is absent. See
 [Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-kodymocksts).
 
 Agents that cannot drive a browser should use `kody dev fetch`. After local mock

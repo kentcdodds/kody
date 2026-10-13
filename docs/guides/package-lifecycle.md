@@ -237,11 +237,11 @@ npx @kodycodes/cli@latest execute --target mock --invoke ./export --params '…'
 npx @kodycodes/cli@latest dev --passthrough api.stripe.com
 ```
 
-Unmatched requests fail closed with structured `unmocked_request` (method +
-URL) and a paste-ready handler stub in `fix` / `details.handlerStub`.
-`--passthrough <host,…>` opts specific hosts into the real network;
-credentials stay fake on mock, so passthrough never carries real secrets.
-Private/local passthrough hosts also need `--allow-private-network`.
+Unmatched requests fail closed with structured `unmocked_request` (method + URL)
+and a paste-ready handler stub in `fix` / `details.handlerStub`.
+`--passthrough <host,…>` opts specific hosts into the real network; credentials
+stay fake on mock, so passthrough never carries real secrets. Private/local
+passthrough hosts also need `--allow-private-network`.
 
 Example agent-facing error:
 
