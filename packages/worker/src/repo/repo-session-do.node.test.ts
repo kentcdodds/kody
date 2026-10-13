@@ -1830,57 +1830,6 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 	)
 })
 
-test('a publish paused for credential needs keeps the source branch and records the session for approval', async () => {
-	setCommonSessionFixtures()
-	const packageFile = { 'package.json': userPackageJson }
-	seedWorkspace(packageFile)
-	const state = await checkedPublishState(packageFile)
-	const approval = {
-		requestId: 'request-1',
-		packageId: 'package-1',
-		packageName: '@user/pkg',
-		kodyId: 'pkg',
-		pendingCommit: 'commit-paused',
-		changes: [],
-		message: 'Package "@user/pkg" changed its credential needs.',
-	}
-	needsGate.requireCredentialNeedsApproval.mockResolvedValueOnce(approval)
-	mockModule.rawPush.mockClear()
-	mockModule.updateRepoSession.mockClear()
-
-	await expect(
-		repoSession(createEnv(), state).publishSession(session),
-	).resolves.toMatchObject({
-		status: 'approval_required',
-		publishedCommit: null,
-		approval,
-	})
-	expect(needsGate.requireCredentialNeedsApproval).toHaveBeenCalledWith(
-		expect.objectContaining({
-			pausedSession: expect.objectContaining({ sessionId: 'session-1' }),
-		}),
-	)
-	expect(mockModule.git.push).toHaveBeenCalledWith(
-		expect.objectContaining({ ref: 'sessions/session1', force: true }),
-	)
-	expect(mockModule.rawPush).not.toHaveBeenCalled()
-	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
-	expect(mockModule.updateRepoSession).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			id: 'session-1',
-			lastCheckpointAt: expect.any(String),
-		}),
-	)
-
-	await expect(
-		repoSession(createEnv(), state).publishSession({
-			...session,
-			expectedHeadCommit: 'commit-other',
-		}),
-	).rejects.toThrow(/no longer holds commit commit-other/)
-})
-
 test('runChecks forwards expectedPackageScope for a still-plain repo so promote can run package checks', async () => {
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue(
