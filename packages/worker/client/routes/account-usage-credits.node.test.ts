@@ -11,7 +11,7 @@ import {
 	type AccountUsageCreditsWallet,
 	type AccountUsageLoaderData,
 } from '#universal/loader-data.ts'
-import { routes } from '#universal/routes.ts'
+import { orgUsagePath } from '#universal/org-pages.ts'
 import {
 	includedComputeSummary,
 	presentIncludedCompute,
@@ -181,7 +181,7 @@ function usage(
 async function renderUsagePage(accountUsage: AccountUsageLoaderData) {
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
-			url: routes.accountUsage.href(),
+			url: orgUsagePath(session.username),
 			children: jsx(AppSessionProvider, {
 				session,
 				status: 'ready',
@@ -206,7 +206,7 @@ const missing = (html: string, parts: Array<string>) =>
 
 test('usage page is the one money/caps page: Pro wallet shows balance, packs, limits, rate card, and credit history last', async () => {
 	const { html } = await renderUsagePage(usage())
-	expect(html).toMatch(/href="\/account\/usage"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/usage"[^>]*aria-current="page"/)
 	const order = [
 		'Activity this month',
 		'Included compute',
@@ -415,7 +415,7 @@ test('credits alarm shows once, above the Credits section, linking into it', asy
 	expect(html.split('data-credits-alarm=')).toHaveLength(2)
 	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
 	expect(text).toContain('Runs past the include are stopped')
-	expect(html).toMatch(/href="\/account\/usage#credits"[^>]*>Add credits</)
+	expect(html).toMatch(/href="#credits"[^>]*>Add credits</)
 	expect(html.indexOf('data-credits-alarm')).toBeLessThan(
 		html.indexOf('id="credits"'),
 	)

@@ -67,7 +67,19 @@ async function setRollups(userId: string, counts: Record<string, number>) {
  * snapshot needs tables this suite does not migrate).
  */
 async function loadStoryAndCredits(userId: number) {
-	const user = await loadAccountCreditsUser({ env, userId, now })
+	const row = await env.APP_DB.prepare(
+		`SELECT stable_user_id FROM users WHERE id = ?`,
+	)
+		.bind(userId)
+		.first<{ stable_user_id: string }>()
+	if (!row) throw new Error('seeded user missing')
+	const user = await loadAccountCreditsUser({
+		env,
+		userId,
+		orgId: row.stable_user_id,
+		personal: true,
+		now,
+	})
 	if (!user) throw new Error('seeded user missing')
 	const computeOverage = await readAccountComputeOverage({
 		db: env.APP_DB,

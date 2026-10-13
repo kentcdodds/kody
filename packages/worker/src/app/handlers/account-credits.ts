@@ -1,5 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
 import { loadAccountUsageData } from '#app/account-usage-data.ts'
 import {
@@ -7,8 +8,18 @@ import {
 	getRequestIp,
 	logAuditEvent,
 } from '#worker/audit-log.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { accountCreditsPath } from '#universal/compute-overage.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
+import { personalOrgUsageRedirectUrl } from '#app/handlers/org-usage.ts'
+import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import {
+	authorize,
+	AuthorizationError,
+} from '#worker/authorization/authorize.ts'
+import { orgUsageCreditsPath } from '#universal/org-pages.ts'
 import {
 	validateCreditAutoRefillSettings,
 	validateCreditTopUpCents,
@@ -22,16 +33,22 @@ import {
 	updateCreditWalletSettings,
 } from '#worker/billing/credit-wallet.ts'
 import { StripeApiError } from '#worker/billing/stripe-client.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
+import { type BillingPageOrg } from '#app/account-billing-data.ts'
 
 /**
- * Where an old `/account/credits` link lands: the usage page's Credits
- * section, keeping the query so pre-move Stripe returns
- * (`?topup=success&session_id=…`) and notice codes still resolve.
+ * Where an old `/account/credits` link lands once the personal org slug is
+ * known. Kept for unit tests that build the URL without auth.
  */
-export function accountCreditsRedirectUrl(requestUrl: string): string {
-	const target = new URL(accountCreditsPath, requestUrl)
-	target.search = new URL(requestUrl).search
-	return target.toString()
+export function accountCreditsRedirectUrl(
+	requestUrl: string,
+	slug: string,
+): string {
+	return personalOrgUsageRedirectUrl({
+		requestUrl,
+		slug,
+		credits: true,
+	})
 }
 
 function readNotifySettings(value: unknown): CreditNotifySettings | null {
@@ -50,11 +67,93 @@ function readNotifySettings(value: unknown): CreditNotifySettings | null {
 	return { autoRefilled, monthlyCap, lowBalance }
 }
 
-export function createAccountCreditsHandler() {
+async function personalOrgSlug(env: Env, user: AuthenticatedAppUser) {
+	const signupOrg = await getOrgById(
+		env.APP_DB,
+		personalOrgId(user.mcpUser.userId),
+	)
+	return signupOrg?.slug?.trim() || user.username
+}
+
+/**
+ * Organization a credits mutation acts on. Path/Referer bind via
+ * {@link loadRequestOrgResolution}; missing org falls back to the signup
+ * organization. Requires `billing:write`.
+ */
+async function resolveCreditsOrg(input: {
+	request: Request
+	env: Env
+	user: AuthenticatedAppUser
+}): Promise<
+	| { ok: true; org: BillingPageOrg }
+	| { ok: false; status: 403 | 404; error: string }
+> {
+	const resolution = await loadRequestOrgResolution(
+		input.request,
+		input.env,
+		input.user.mcpUser.userId,
+	)
+	if (resolution === 'denied') {
+		return { ok: false, status: 404, error: 'Organization unavailable.' }
+	}
+	try {
+		await authorize(
+			{ env: input.env, request: input.user.request },
+			'billing:write',
+		)
+	} catch (error) {
+		if (!(error instanceof AuthorizationError)) throw error
+		const slug =
+			resolution === 'personal'
+				? input.user.username
+				: (resolution.org.slug ?? input.user.username)
+		return {
+			ok: false,
+			status: 403,
+			error: `Only owners and billing admins can manage credits for @${slug}.`,
+		}
+	}
+	if (resolution === 'personal') {
+		const id = personalOrgId(input.user.mcpUser.userId)
+		const record = await getOrgById(input.env.APP_DB, id)
+		return {
+			ok: true,
+			org: {
+				id,
+				slug: record?.slug?.trim() || input.user.username,
+				displayName: record?.display_name ?? null,
+				personal: true,
+			},
+		}
+	}
+	const record = await getOrgById(input.env.APP_DB, resolution.org.id)
+	if (!record) {
+		throw new Error(`Cannot load credits: missing org ${resolution.org.id}.`)
+	}
+	return {
+		ok: true,
+		org: {
+			id: resolution.org.id,
+			slug: record.slug,
+			displayName: record.display_name,
+			personal: resolution.org.id === personalOrgId(input.user.mcpUser.userId),
+		},
+	}
+}
+
+export function createAccountCreditsHandler(env: Env) {
 	return {
 		middleware: [],
-		handler({ request }) {
-			return Response.redirect(accountCreditsRedirectUrl(request.url), 302)
+		async handler({ request }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
+			}
+			const slug = await personalOrgSlug(env, user)
+			return Response.redirect(
+				accountCreditsRedirectUrl(request.url, slug),
+				302,
+			)
 		},
 	} satisfies Action<typeof routes.accountCredits>
 }
@@ -69,6 +168,10 @@ export function createAccountCreditsTopUpApiHandler(env: Env) {
 			}
 			if (request.method !== 'POST') {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+			const access = await resolveCreditsOrg({ request, env, user })
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
 			const body = (await request.json().catch(() => null)) as {
 				amountCents?: unknown
@@ -87,6 +190,8 @@ export function createAccountCreditsTopUpApiHandler(env: Env) {
 			const creditsUser = await loadAccountCreditsUser({
 				env,
 				userId: user.userId,
+				orgId: access.org.id,
+				personal: access.org.personal,
 				now,
 			})
 			if (!creditsUser?.canBuyCredits || !creditsUser.stripeCustomerId) {
@@ -107,7 +212,10 @@ export function createAccountCreditsTopUpApiHandler(env: Env) {
 					stableUserId: creditsUser.stableUserId,
 					stripeCustomerId: creditsUser.stripeCustomerId,
 					amountCents: amount.cents,
-					creditsUrl: new URL(accountCreditsPath, request.url).toString(),
+					creditsUrl: new URL(
+						orgUsageCreditsPath(access.org.slug),
+						request.url,
+					).toString(),
 				})
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
@@ -150,6 +258,10 @@ export function createAccountCreditsSettingsApiHandler(env: Env) {
 			if (request.method !== 'POST') {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
+			const access = await resolveCreditsOrg({ request, env, user })
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
 			const body = (await request.json().catch(() => null)) as {
 				autoRefill?: unknown
 				notify?: unknown
@@ -169,6 +281,8 @@ export function createAccountCreditsSettingsApiHandler(env: Env) {
 			const creditsUser = await loadAccountCreditsUser({
 				env,
 				userId: user.userId,
+				orgId: access.org.id,
+				personal: access.org.personal,
 				now,
 			})
 			if (!creditsUser?.canBuyCredits) {
@@ -193,6 +307,7 @@ export function createAccountCreditsSettingsApiHandler(env: Env) {
 			const accountUsage = await loadAccountUsageData({
 				env,
 				userId: user.userId,
+				org: access.org,
 				notice: 'Credit settings saved.',
 				now,
 			})

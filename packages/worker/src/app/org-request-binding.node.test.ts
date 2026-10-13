@@ -87,6 +87,41 @@ test('account JSON without an org page stays on the signup org', async () => {
 	)
 })
 
+test('credits mutations without a usage Referer are denied', async () => {
+	const env = await createEnv()
+	await expect(
+		loadRequestOrgResolution(
+			new Request('https://kody.test/account/credits/top-up.json', {
+				method: 'POST',
+			}),
+			env,
+			adaId,
+		),
+	).resolves.toBe('denied')
+	await expect(
+		isOrgRequestDenied(
+			new Request('https://kody.test/account/credits/settings.json', {
+				method: 'POST',
+			}),
+			env,
+			adaId,
+		),
+	).resolves.toBe(true)
+})
+
+test('credits mutations bind the usage page Referer org', async () => {
+	const env = await createEnv()
+	const resolution = await loadRequestOrgResolution(
+		new Request('https://kody.test/account/credits/top-up.json', {
+			method: 'POST',
+			headers: { referer: 'https://kody.test/@acme/-/usage' },
+		}),
+		env,
+		adaId,
+	)
+	expect(resolution).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
+})
+
 test('account JSON from another site does not bind an org', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/secrets.json', {

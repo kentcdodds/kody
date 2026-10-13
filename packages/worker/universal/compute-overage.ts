@@ -29,8 +29,10 @@ import {
 } from './plans.ts'
 
 /**
- * Where to add credits (or switch to Pro first): the Credits section of the
- * usage page. `/account/credits` redirects here for old links.
+ * Legacy Credits deep link. `/account/credits` and `/account/usage#credits`
+ * redirect to the signed-in person's personal-org usage Credits section.
+ * Prefer `orgUsageCreditsPath` from `#universal/org-pages.ts` when the
+ * organization slug is known.
  */
 export const accountCreditsPath = '/account/usage#credits'
 

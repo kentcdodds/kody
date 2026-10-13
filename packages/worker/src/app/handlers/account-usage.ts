@@ -1,40 +1,26 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { loadAccountUsageData } from '#app/account-usage-data.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
-import { renderAppPage } from '#app/ssr-render.tsx'
-import { accountCreditsPath } from '#universal/compute-overage.ts'
-import { type routes } from '#universal/routes.ts'
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
-	applyCreditTopUpFromCheckoutSession,
-	CreditTopUpError,
-} from '#worker/billing/credit-top-ups.ts'
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { personalOrgUsageRedirectUrl } from '#app/handlers/org-usage.ts'
+import { type routes } from '#universal/routes.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 
-const creditsNoticeMessages: Record<string, string> = {
-	added:
-		'Credits added. Usage past your monthly include runs on them within a minute.',
-}
-
-const creditsErrorMessages: Record<string, string> = {
-	topup_failed: 'We could not confirm that top-up. Refresh in a moment.',
-	not_paid: 'That top-up has not been paid yet.',
-	client_reference_mismatch: 'That top-up does not belong to your account.',
-}
-
-function readMessage(
-	messages: Record<string, string>,
-	code: string | null,
-): string | undefined {
-	return code && Object.hasOwn(messages, code) ? messages[code] : undefined
-}
-
-function creditsRedirect(request: Request, params: Record<string, string>) {
-	const url = new URL(accountCreditsPath, request.url)
-	for (const [key, value] of Object.entries(params)) {
-		url.searchParams.set(key, value)
-	}
-	return Response.redirect(url.toString(), 302)
+/**
+ * Legacy `/account/usage` → personal-org `/@slug/-/usage`, keeping the query
+ * so Stripe top-up returns (`?topup=success&session_id=…`) and notice codes
+ * still resolve on the org usage page. The browser re-applies `#credits`.
+ */
+async function personalUsageSlug(env: Env, user: AuthenticatedAppUser) {
+	const signupOrg = await getOrgById(
+		env.APP_DB,
+		personalOrgId(user.mcpUser.userId),
+	)
+	return signupOrg?.slug?.trim() || user.username
 }
 
 export function createAccountUsageHandler(env: Env) {
@@ -45,49 +31,19 @@ export function createAccountUsageHandler(env: Env) {
 			if (user instanceof Response) {
 				return user
 			}
-
-			const searchParams = new URL(request.url).searchParams
-			const sessionId = searchParams.get('session_id')?.trim()
-			if (searchParams.get('topup') === 'success' && sessionId) {
-				try {
-					await applyCreditTopUpFromCheckoutSession({
-						env,
-						sessionId,
-						expectedStableUserId: user.mcpUser.userId,
-						now: new Date(),
-					})
-					return creditsRedirect(request, { credits: 'added' })
-				} catch (error) {
-					const code =
-						error instanceof CreditTopUpError ? error.code : 'topup_failed'
-					console.error('credit_top_up_confirm_failed', { code })
-					return creditsRedirect(request, {
-						error: readMessage(creditsErrorMessages, code)
-							? code
-							: 'topup_failed',
-					})
-				}
-			}
-
-			const accountUsage = await loadAccountUsageData({
-				env,
-				userId: user.userId,
-				notice: readMessage(creditsNoticeMessages, searchParams.get('credits')),
-				error: readMessage(creditsErrorMessages, searchParams.get('error')),
-			})
-			if (!accountUsage) {
-				return new Response('Not found', { status: 404 })
-			}
-			return renderAppPage({
-				request,
-				env,
-				title: 'Usage',
-				loaderData: { accountUsage },
-			})
+			const slug = await personalUsageSlug(env, user)
+			return Response.redirect(
+				personalOrgUsageRedirectUrl({ requestUrl: request.url, slug }),
+				302,
+			)
 		},
 	} satisfies Action<typeof routes.accountUsage>
 }
 
+/**
+ * Legacy `/account/usage.json` → personal-org usage JSON. Kept so existing
+ * clients keep working until they switch to `/@:orgSlug/-/usage.json`.
+ */
 export function createAccountUsageApiHandler(env: Env) {
 	return {
 		middleware: [],
@@ -96,19 +52,13 @@ export function createAccountUsageApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-
 			if (request.method !== 'GET') {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
-
-			const accountUsage = await loadAccountUsageData({
-				env,
-				userId: user.userId,
-			})
-			if (!accountUsage) {
-				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
-			}
-			return jsonResponse(accountUsage)
+			const slug = await personalUsageSlug(env, user)
+			const target = new URL(`/@${slug}/-/usage.json`, request.url)
+			target.search = new URL(request.url).search
+			return Response.redirect(target.toString(), 302)
 		},
 	} satisfies Action<typeof routes.accountUsageApi>
 }

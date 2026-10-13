@@ -116,37 +116,73 @@ export function canBuyCreditsForUser(input: {
 	)
 }
 
-/** Signed-in account plus its entitlement (wallet state included). */
+/**
+ * Credits buyer for one organization. Personal orgs keep the users⋈orgs
+ * join; team orgs read plan/customer columns from `orgs` and use that org's
+ * id as the wallet key (same `user_id` column as metering).
+ */
 export async function loadAccountCreditsUser(input: {
 	env: Env
 	userId: number
+	/** Organization whose wallet and Stripe customer this mutates. */
+	orgId: string
+	/** When true, `orgId` is the signed-in person's signup organization. */
+	personal: boolean
 	now?: Date
 }): Promise<AccountCreditsUser | null> {
+	if (input.personal) {
+		const row = await input.env.APP_DB.prepare(
+			`SELECT u.id, u.stable_user_id, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
+			 FROM users u
+			 INNER JOIN orgs o ON o.id = u.stable_user_id
+			 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+		)
+			.bind(input.userId)
+			.first<
+				UserEntitlementRow & {
+					id: number
+					stable_user_id: string
+					stripe_customer_id: string | null
+				}
+			>()
+		if (!row) return null
+		const entitlement = await resolveUserEntitlementFromRow({
+			db: input.env.APP_DB,
+			stableUserId: row.stable_user_id,
+			row,
+			now: input.now,
+		})
+		const stripeCustomerId = row.stripe_customer_id?.trim() || null
+		return {
+			id: row.id,
+			stableUserId: row.stable_user_id,
+			stripeCustomerId,
+			entitlement,
+			canBuyCredits: canBuyCreditsForUser({
+				row,
+				entitlement,
+				stripeCustomerId,
+			}),
+		}
+	}
 	const row = await input.env.APP_DB.prepare(
-		`SELECT u.id, u.stable_user_id, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
-		 FROM users u
-		 INNER JOIN orgs o ON o.id = u.stable_user_id
-		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+		`SELECT stripe_customer_id, ${userEntitlementColumnsSql()}
+		 FROM orgs
+		 WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
-		.bind(input.userId)
-		.first<
-			UserEntitlementRow & {
-				id: number
-				stable_user_id: string
-				stripe_customer_id: string | null
-			}
-		>()
+		.bind(input.orgId)
+		.first<UserEntitlementRow & { stripe_customer_id: string | null }>()
 	if (!row) return null
 	const entitlement = await resolveUserEntitlementFromRow({
 		db: input.env.APP_DB,
-		stableUserId: row.stable_user_id,
+		stableUserId: input.orgId,
 		row,
 		now: input.now,
 	})
 	const stripeCustomerId = row.stripe_customer_id?.trim() || null
 	return {
-		id: row.id,
-		stableUserId: row.stable_user_id,
+		id: input.userId,
+		stableUserId: input.orgId,
 		stripeCustomerId,
 		entitlement,
 		canBuyCredits: canBuyCreditsForUser({ row, entitlement, stripeCustomerId }),
