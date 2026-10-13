@@ -4,6 +4,14 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
+	pendingApproval: null as {
+		pendingCommit: string
+		baseCommit: string | null
+	} | null,
+}))
+
+vi.mock('#worker/package-capabilities/approval-requests-repo.ts', () => ({
+	getPendingPackageApprovalRequest: async () => mockModule.pendingApproval,
 }))
 
 vi.mock('#worker/repo/artifacts.ts', () => ({
@@ -153,4 +161,88 @@ test('reconcileArtifactsPushes skips locked packages without calling publish', a
 	expect(calls).toContain('locked_at')
 	expect(calls).toContain('update')
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+})
+
+test('reconcileArtifactsPushes waits on a pending credential-needs request only while its base is still published', async () => {
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	const env = {
+		APP_DB: {
+			prepare(query: string) {
+				return {
+					bind(..._params: Array<unknown>) {
+						return {
+							async all<T>() {
+								if (query.includes('FROM entity_sources')) {
+									return {
+										results: [
+											{
+												id: 'source-package',
+												user_id: ownerIdFromStored('user-1'),
+												entity_kind: 'package',
+												entity_id: 'pkg-1',
+												repo_id: 'repo-pkg-1',
+												published_commit: 'commit-codemod',
+												indexed_commit: null,
+												manifest_path: 'package.json',
+												source_root: '/',
+												last_external_check_at: null,
+												external_check_until: '2026-08-28T13:00:00.000Z',
+												created_at: '2026-01-01T00:00:00.000Z',
+												updated_at: '2026-01-01T00:00:00.000Z',
+											},
+										],
+									} as T
+								}
+								throw new Error(`Unexpected all: ${query}`)
+							},
+							async first<T>() {
+								if (query.includes('locked_at')) {
+									return { locked_at: null } as T
+								}
+								throw new Error(`Unexpected first: ${query}`)
+							},
+							async run() {
+								return { meta: { changes: 1 } }
+							},
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	const reconcile = () =>
+		reconcileArtifactsPushes({
+			env,
+			baseUrl: 'https://kody.test',
+			now: new Date('2026-08-04T12:00:00.000Z'),
+			batchSize: 10,
+			staleAfterMinutes: 0,
+			timeBudgetMs: 1000,
+		})
+
+	mockModule.publishFromExternalRef.mockReset()
+	mockModule.pendingApproval = {
+		pendingCommit: 'commit-new',
+		baseCommit: 'commit-codemod',
+	}
+	expect((await reconcile()).approvalRequiredSkipped).toBe(1)
+	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+
+	mockModule.pendingApproval = {
+		pendingCommit: 'commit-new',
+		baseCommit: 'commit-old',
+	}
+	mockModule.publishFromExternalRef.mockResolvedValueOnce({
+		status: 'published',
+		previous_commit: 'commit-codemod',
+		published_commit: 'commit-new',
+	})
+	expect((await reconcile()).approvalRequiredSkipped).toBe(0)
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
+		expect.objectContaining({ newCommit: 'commit-new' }),
+	)
+	mockModule.pendingApproval = null
 })

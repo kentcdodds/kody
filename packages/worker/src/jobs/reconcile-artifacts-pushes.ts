@@ -198,15 +198,19 @@ async function reconcileSource(input: {
 			})
 			return
 		}
+		const pendingApproval =
+			source.entity_kind === 'package'
+				? await getPendingPackageApprovalRequest(env.APP_DB, {
+						packageId: source.entity_id,
+						ownerUserId: source.user_id,
+						reason: 'credential_needs_changed',
+					})
+				: null
+		// A request against an older published commit is stale; re-running the
+		// gate supersedes it.
 		if (
-			source.entity_kind === 'package' &&
-			(
-				await getPendingPackageApprovalRequest(env.APP_DB, {
-					packageId: source.entity_id,
-					ownerUserId: source.user_id,
-					reason: 'credential_needs_changed',
-				})
-			)?.pendingCommit === head.commit
+			pendingApproval?.pendingCommit === head.commit &&
+			pendingApproval.baseCommit === source.published_commit
 		) {
 			result.approvalRequiredSkipped += 1
 			await updateEntitySource(env.APP_DB, {
