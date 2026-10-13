@@ -1,6 +1,8 @@
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
@@ -193,11 +195,31 @@ export function ConnectSecretsRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.danger })}>
 							{data.approvalError}
 						</p>
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Allowing secret hosts from a /connect/secrets approval link.',
+								errorMessage: data.approvalError,
+								ids: { path: '/connect/secrets' },
+							})}
+						/>
 					</section>
 				) : null}
 
 				{message ? (
-					<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
+					<>
+						<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
+						{data?.approvalError ? null : (
+							<ErrorAgentPromptButton
+								prompt={buildHumanApprovalErrorAgentPrompt({
+									activity:
+										'Allowing secret hosts from a /connect/secrets approval link.',
+									errorMessage: message,
+									ids: { path: '/connect/secrets' },
+								})}
+							/>
+						)}
+					</>
 				) : null}
 
 				{approval && (hosts.length > 0 || rejectedHosts.length > 0) ? (

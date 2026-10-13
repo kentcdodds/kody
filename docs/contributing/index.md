@@ -5,7 +5,8 @@ style, tests, MCP capabilities, and runtime architecture.
 
 ## Setup and workflow
 
-- [Engineering principles](../principles/index.md)
+- [Engineering principles](../principles/index.md) (including
+  [error prompt for agents](../principles/error-prompt-for-agents.md))
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (steering veto list: product-shaped
   nos and durable constraints — not an ADR-per-PR log)
@@ -46,7 +47,9 @@ style, tests, MCP capabilities, and runtime architecture.
   [guide:local_execute](../guides/local-execute.md) and
   [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
   Streaming placeholder-fill hop:
-  [CLI streaming gateway-fetch contract](./contracts/cli-streaming-gateway-fetch.md)
+  [CLI streaming gateway-fetch contract](./contracts/cli-streaming-gateway-fetch.md).
+  Ad hoc `credential()` on local `kody:runtime`:
+  [CLI local credential runtime](./contracts/cli-local-credential-runtime.md)
 - PR system recaps (visual plan/recap blocks in PR descriptions):
   [visual-recap skill](../../.agents/skills/visual-recap/SKILL.md)
 
@@ -117,6 +120,8 @@ style, tests, MCP capabilities, and runtime architecture.
   lifecycle, [authorization](./architecture/authorization.md) (RBAC)
 - [CLI streaming gateway-fetch contract](./contracts/cli-streaming-gateway-fetch.md)
   — native Open API hop for local `kody.gatewayFetchStream`
+- [CLI local credential runtime](./contracts/cli-local-credential-runtime.md) —
+  ad hoc `credential()` / `credentials()` on CLI host `kody:runtime`
 - [Direct-upload host token](./design-notes/direct-upload-host-token.md) —
   two-way door design note; gateway remains the default
 

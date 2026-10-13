@@ -239,9 +239,13 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
   need the check used, pinned by the entry package. A pick with no provider
   opens with a `hint` to set one. A pick grants nothing; it chooses only among
   credentials you can Use.
-- A client works only in the run that opened it. Under `kody execute --local`, a
-  saved package that imports `credential` works the same; ad hoc local code
-  needs a CLI release that adds `credential` to its `kody:runtime`.
+- A client works only in the run that opened it. Under `kody execute --local`,
+  published `kody:@…` modules and ad hoc / unpublished `--code` / `--file`
+  modules both use `credential` / `credentials` from `kody:runtime` with the
+  same CapabilityProxy resolution and gateway placement as hosted (secret values
+  never enter local workerd). CLI releases before the
+  [local credential runtime contract](../contributing/contracts/cli-local-credential-runtime.md)
+  lack the host export and fail at import time — upgrade `@kodycodes/cli`.
 
 To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
@@ -251,6 +255,13 @@ list in their output, and `packagePublishExternalPush` includes the result in
 `checks`. It never fails a check or blocks a publish. The labels are described
 in
 [package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
+When the list is shown, it may end with optional credential types that fit where
+the placeholders sit: a Key with an inject for header, query, or basic auth
+placeholders; an OAuth connection's `credential(key)` for integration token
+headers; a `url` credential for path or whole-URL placeholders; a `login`
+credential for password or token exchange bodies; and a `signing` credential for
+`secretJwtSign` or signature keys. They are suggestions only, without credential
+names; nothing is suggested for a placement no type fits.
 
 ### npm dependencies
 
@@ -797,9 +808,14 @@ resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
 Visitors see the badge but not the link. The five-minute reconcile job still
 auto-publishes unlocked packages; this page is the explicit website path.
 
-Fleet package-codemod apply does the same HEAD write on locked packages: the
-transform commits and pushes so you can review it the next time you publish. It
-does not skip locked packages, and it does not move `published_commit`.
+Fleet package-codemod apply for `head-and-published` codemods does the same HEAD
+write on locked packages: the transform commits and pushes so you can review it
+the next time you publish. It does not skip locked packages, and it does not
+move `published_commit`. Codemods with `applyMode: 'published-only'` (today:
+`0012`) finalize `published_commit` even when locked (`allowLockedPublish`). If
+that leaves pending HEAD as a sibling of the new published tip, **Publish HEAD**
+/ approve-publish still promotes that commit (`allowForce` with the owner click
+as overwrite confirmation).
 
 When a provider token is coarser than the job — Gmail has `gmail.send` but no
 drafts-only scope — the lock is the real grant. Worked example:

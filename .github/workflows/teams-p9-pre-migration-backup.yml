@@ -11,7 +11,8 @@ on:
     inputs:
       target:
         description:
-          production, or a branch preview worker name (kody-branch-<slug>)
+          production, a branch preview (kody-branch-<slug>), or the slug
+          preview.yml used (cig-0110 → kody-branch-cig-0110)
         required: true
         type: string
         default: production
@@ -30,7 +31,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: teams-p9-pre-migration-backup-${{ inputs.target }}
+  group:
+    teams-p9-pre-migration-backup-${{ inputs.target == 'production' &&
+    'production' || (startsWith(inputs.target, 'kody-branch-') && inputs.target
+    || format('kody-branch-{0}', inputs.target)) }}
   cancel-in-progress: false
 
 jobs:
@@ -60,6 +64,27 @@ jobs:
             echo "Run from main only, got $REF." >&2
             exit 1
           fi
+          # Keep in sync with resolveRehearsalWorkerName /
+          # preview-rehearsal.yml / teams-production-queries.yml.
+          resolve_branch_preview_target() {
+            local raw="$1"
+            local name
+            name="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+            if [[ "$name" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              printf '%s\n' "$name"
+              return
+            fi
+            if [[ "$name" =~ ^kody-pr-[0-9]+$ ]]; then
+              echo "target must be production or a branch preview (kody-branch-<slug> or the slug preview.yml uses), got '$raw'." >&2
+              return 1
+            fi
+            if [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              printf '%s\n' "kody-branch-$(printf '%s' "$name" | cut -c1-32)"
+              return
+            fi
+            echo "target must be production or a branch preview (kody-branch-<slug> or the slug preview.yml uses), got '$raw'." >&2
+            return 1
+          }
           if [ "$TARGET" = "production" ]; then
             # Approved production runners (Kent + Cloud Agent gh user +
             # kody-bot operator connector). Agents dispatch this workflow
@@ -76,9 +101,10 @@ jobs:
               echo 'Production needs confirm = "teams p9 pre-migration bookmarks".' >&2
               exit 1
             fi
-          elif ! [[ "$TARGET" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
-            echo "target must be production or a branch preview (kody-branch-<slug>), got '$TARGET'." >&2
-            exit 1
+          else
+            TARGET="$(resolve_branch_preview_target "$TARGET")"
+            echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+            echo "Resolved target=$TARGET"
           fi
 
       - name: 📦 Checkout

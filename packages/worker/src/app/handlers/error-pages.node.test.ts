@@ -92,6 +92,7 @@ test('GET /404 and /500 are explicit illustrated error routes', async () => {
 	expect(notFoundHtml).toContain("This doesn't quite connect.")
 	expect(notFoundHtml).toContain('src="/images/kody-404-disappointed.png"')
 	expect(notFoundHtml).toContain('data-testid="not-found-page"')
+	expect(notFoundHtml).toContain('data-error-agent-prompt')
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
 
 	const internalErrorResponse = await createInternalErrorPageHandler(
@@ -105,5 +106,6 @@ test('GET /404 and /500 are explicit illustrated error routes', async () => {
 	expect(internalErrorHtml).toContain('We got a little zapped.')
 	expect(internalErrorHtml).toContain('src="/images/kody-500-zapped.png"')
 	expect(internalErrorHtml).toContain('data-testid="internal-error-page"')
+	expect(internalErrorHtml).toContain('data-error-agent-prompt')
 	expect(readAppRootProps(internalErrorHtml).internalError).toBe(true)
 })

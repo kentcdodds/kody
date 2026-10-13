@@ -1,9 +1,9 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { buildDomainIndexMatches } from '#mcp/tools/search-domain-index.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 const capabilitySummarySchema = z.object({
 	name: z.string(),
@@ -122,17 +122,19 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
-			const userId = ctx.callerContext.user
-				? personalOrgId(ctx.callerContext.user.userId)
-				: null
-			const registry = userId
+			// Match registry synthesis: MCP servers are org-owned, so visibility
+			// must use the bound org (ownerIdFromCaller), not the personal org.
+			// Otherwise team tools appear in the runtime registry but get filtered
+			// out of metaListCapabilities / discovery.
+			const ownerId = ownerIdFromCaller(ctx.callerContext) || null
+			const registry = ownerId
 				? filterCapabilityRegistryMcpServersForCaller(
 						runtimeRegistry,
 						new Set(
 							(
 								await listVisibleEnabledMcpServerRefsCached({
 									env: ctx.env,
-									userId,
+									userId: ownerId,
 									packageId: ctx.callerContext.storageContext?.packageId,
 								}).catch(() => [])
 							).map((ref) => ref.serverId),

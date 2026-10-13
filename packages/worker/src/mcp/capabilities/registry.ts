@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildCapabilityRegistry,
 	type BuiltCapabilityRegistry,
@@ -19,6 +16,7 @@ import { PromiseLruCache } from '#worker/package-registry/published-package-cach
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 let staticRegistryMemo: Promise<BuiltCapabilityRegistry> | null = null
 
@@ -124,9 +122,9 @@ async function loadEnabledMcpServerRefs(input: {
 	userId: OwnerId
 }): Promise<ReadonlyArray<McpServerRef>> {
 	try {
-		// Per-user 30s cache: registry assembly runs on every execute /
-		// package invocation, so this must not cost a D1 read per call.
-		// Include package-locked servers so an approved package export
+		// Per-owner 30s cache (bound org id): registry assembly runs on every
+		// execute / package invocation, so this must not cost a D1 read per
+		// call. Include package-locked servers so an approved package export
 		// imported into execute can still dispatch kody.mcp["server"].tool —
 		// assertCanUseMcpServer enforces the grant at call time via the
 		// bundler stamp (secret-authority ALS), not via this listing filter.
@@ -172,9 +170,13 @@ export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
-	const userId = input.callerContext.user
-		? personalOrgId(input.callerContext.user.userId)
-		: null
+	// MCP servers (and their hub connections) are org-owned. Use the bound
+	// org — the same owner mcpServerList, kody.mcp metadata, and tool calls
+	// already use — not the acting person's personal org. After an org
+	// resource transfer, personal can be empty while the team still holds
+	// ready servers; synthesizing from personal left kody.mcp showing
+	// connected servers with no callable capabilities.
+	const ownerId = ownerIdFromCaller(input.callerContext) || null
 	// Flag evaluation does not depend on MCP server refs or hub snapshots.
 	// Start it with the static registry so those reads overlap the flag D1
 	// round trips. Dynamic registries reuse this result when the static
@@ -190,7 +192,7 @@ export async function getCapabilityRegistryForContext(input: {
 	// MCP ref reads sit between this start and the await. Observe a rejection
 	// now; awaiting `flagsPromise` later still throws.
 	void flagsPromise.catch(() => {})
-	if (!userId) {
+	if (!ownerId) {
 		return filterRegistryForContext({
 			registry: await staticRegistryPromise,
 			callerContext: input.callerContext,
@@ -199,7 +201,7 @@ export async function getCapabilityRegistryForContext(input: {
 	}
 	const mcpServerRefs = await loadEnabledMcpServerRefs({
 		env: input.env,
-		userId,
+		userId: ownerId,
 	})
 	if (mcpServerRefs.length === 0) {
 		return filterRegistryForContext({
@@ -210,11 +212,11 @@ export async function getCapabilityRegistryForContext(input: {
 	}
 	const mcpServerSnapshots = await loadMcpServerSnapshots({
 		env: input.env,
-		userId,
+		userId: ownerId,
 		refs: mcpServerRefs,
 	})
 	const cacheKey = createCapabilityRegistryCacheKey({
-		userId,
+		userId: ownerId,
 		mcpServerRefs,
 		mcpServerSnapshots,
 	})

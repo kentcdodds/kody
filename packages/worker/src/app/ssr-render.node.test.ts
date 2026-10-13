@@ -1123,6 +1123,8 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expectHtml(missingHtml, [
 		'role="alert"',
 		'data-testid="connect-oauth-incomplete"',
+		'data-error-agent-prompt',
+		'Copy prompt for your agent',
 	])
 	expect(
 		missingHtml.split('Missing required OAuth configuration parameters.')

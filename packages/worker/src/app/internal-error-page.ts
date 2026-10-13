@@ -1,6 +1,8 @@
 import { html } from 'remix/html-template'
 import { render } from '#app/render.ts'
 import { DEFAULT_DOCUMENT_TITLE } from '#universal/document-head.ts'
+import { renderErrorAgentPromptStaticHtml } from '#universal/error-agent-prompt.ts'
+import { buildInternalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	internalErrorPageCopy,
@@ -110,6 +112,7 @@ export function renderInternalServerErrorPage(retryHref = '/') {
 								<a data-variant="pill" href="${retryHref}">Try again</a>
 								<a data-variant="ghost" href="${routes.home.href()}">Go home</a>
 							</nav>
+							${html.raw`${renderErrorAgentPromptStaticHtml(buildInternalErrorAgentPrompt({ path: retryHref }))}`}
 						</section>
 					</main>
 				</body>

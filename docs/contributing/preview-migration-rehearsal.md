@@ -29,7 +29,8 @@ P=kody-branch-teams-rehearsal
 gh workflow run preview.yml --ref main -f action=deploy -f target=branch -f preview_name=teams-rehearsal
 
 # 2. Make a key pair for sealed credentials (keep the private key off the repo).
-node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-rehearsal/key > ~/.kody-rehearsal/key.pub
+#    Writes ~/.kody-rehearsal/key and ~/.kody-rehearsal/key.pub.
+node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-rehearsal/key
 
 # 3. Seed (takes a pre-seed D1 bookmark first). Safe to re-run: a complete
 #    roster is a no-op and does not overwrite the pre-seed bookmark.

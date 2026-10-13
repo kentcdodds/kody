@@ -172,13 +172,35 @@ suppressed based on provider status.
 | `/favicon-down.png`                               | Favicon while a kody incident is open                                           |
 | `/favicon-unknown.png`                            | Favicon when status data is unavailable                                         |
 | `/favicon.ico`                                    | 302 to the current overall-status PNG (30s cache)                               |
+| `/status-breakout*.js`                            | Browser modules for the opt-in "while you wait" game                            |
 
 The HTML `<link rel="icon">` (and apple-touch icon) is chosen from
-`overallStatus` on each render. The page meta-refreshes every 60 seconds, so an
-open tab picks up a new icon when an incident opens or resolves. `/favicon.ico`
+`overallStatus` on each render. The page reloads every 60 seconds, so an open
+tab picks up a new icon when an incident opens or resolves. `/favicon.ico`
 follows the same snapshot so clients that ignore `<link>` tags stay in sync.
 Provider incidents do not change the favicon — they stay corroborating context
 only.
+
+## While you wait (Breakout)
+
+When `overallStatus` is not `operational`, the page offers **Play while you
+wait**: Breakout played with the page itself. The cards fly into a brick wall,
+and the ball shatters real words, status dots, and day bars into falling debris.
+Red incident days explode, amber days split off another ball, and a card or the
+banner shatters once everything inside it is gone. While a game runs it polls
+`/status.json` every 20 seconds and shows a "Kody is back" toast when the
+overall status turns operational. Add `?play` to the URL to offer the game while
+everything is up (for testing).
+
+The game is progressive enhancement in `public/status-breakout*.js` (plain
+browser modules, no dependencies, nothing loaded from the main worker). Without
+JavaScript the page is unchanged and refreshes through a `<noscript>` meta
+refresh. With JavaScript, a small inline script in `<head>` schedules the
+60-second reload before any module loads (so a slow or failed module never stops
+the refresh) and records the timer id on `<html data-refresh-timer>`; starting a
+game clears it, and quitting reloads the page. The pure collision math in
+`status-breakout-physics.js` has node tests, and `tsconfig.browser.json`
+typechecks the modules against DOM types.
 
 ## Deploy
 

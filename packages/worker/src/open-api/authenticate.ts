@@ -14,9 +14,15 @@ import {
 	slideApiTokenExpiry,
 	touchApiToken,
 	type ApiTokenAuthenticationFailure,
+	type ApiTokenRecord,
 } from '#worker/api-tokens/service.ts'
 import { loadOrgBindingFromGrantProps } from '#worker/orgs/grant-binding.ts'
-import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import {
+	getOrgById,
+	getOrgBySlug,
+	loadOrgBindingForOrg,
+	type OrgBinding,
+} from '#worker/orgs/repo.ts'
 import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { buildMcpUserContextFromGrantProps } from '#worker/mcp-auth-user-context.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
@@ -102,11 +108,53 @@ function mcpOauthAudienceMatches(
 	return allowed.some((value) => value === appOrigin || value === resourcePath)
 }
 
+/**
+ * Resolve `?org=` for a user-owned token. Accepts a public slug or an org id.
+ * Blank/missing defaults to the person's personal org.
+ */
+export async function resolveOrgBindingForUserOwnedToken(input: {
+	db: D1Database
+	userId: string
+	orgHint: string | null | undefined
+}): Promise<OrgBinding | null> {
+	const hint = input.orgHint?.trim() ?? ''
+	if (!hint) {
+		return loadOrgBindingForOrg(input.db, input.userId, input.userId)
+	}
+	const bySlug = await getOrgBySlug(input.db, hint)
+	if (bySlug) {
+		return loadOrgBindingForOrg(input.db, input.userId, bySlug.id)
+	}
+	const byId = await getOrgById(input.db, hint)
+	if (byId) {
+		return loadOrgBindingForOrg(input.db, input.userId, byId.id)
+	}
+	return null
+}
+
+async function resolveOrgBindingForApiTokenRecord(input: {
+	db: D1Database
+	userId: string
+	record: ApiTokenRecord
+	orgHint: string | null | undefined
+}): Promise<OrgBinding | null> {
+	if (input.record.org_binding === 'user') {
+		return resolveOrgBindingForUserOwnedToken({
+			db: input.db,
+			userId: input.userId,
+			orgHint: input.orgHint,
+		})
+	}
+	const orgId = input.record.org_id.trim() || input.record.user_id
+	return loadOrgBindingForOrg(input.db, input.userId, orgId)
+}
+
 async function authenticateWithApiToken(input: {
 	token: string
 	env: Env
 	appOrigin: string
 	waitUntil: (promise: Promise<unknown>) => void
+	orgHint?: string | null
 }): Promise<ApiInvocationContext> {
 	const now = new Date()
 	const authentication = await authenticateApiToken({
@@ -172,15 +220,17 @@ async function authenticateWithApiToken(input: {
 			),
 		)
 	}
-	const orgId = record.org_id.trim() || record.user_id
-	const orgBinding = await loadOrgBindingForOrg(
-		input.env.APP_DB,
-		authContext.user.userId,
-		orgId,
-	)
+	const orgBinding = await resolveOrgBindingForApiTokenRecord({
+		db: input.env.APP_DB,
+		userId: authContext.user.userId,
+		record,
+		orgHint: input.orgHint,
+	})
 	if (!orgBinding) {
 		throw unauthorized(
-			'API token is not bound to an org you can access.',
+			record.org_binding === 'user'
+				? 'API token cannot access that org. Pass ?org=<slug> for an org you belong to (or have a grant in), or omit it for your personal org.'
+				: 'API token is not bound to an org you can access.',
 			true,
 			personalOrgId(authContext.user.userId),
 		)
@@ -326,11 +376,13 @@ export async function authenticateApiRequest(input: {
 		)
 	}
 	if (parseApiToken(token)) {
+		const orgHint = new URL(input.request.url).searchParams.get('org')
 		return authenticateWithApiToken({
 			token,
 			env: input.env,
 			appOrigin: input.appOrigin,
 			waitUntil: input.waitUntil,
+			orgHint,
 		})
 	}
 	if (input.allowMcpOauth) {

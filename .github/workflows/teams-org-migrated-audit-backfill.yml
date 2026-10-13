@@ -12,8 +12,8 @@ on:
     inputs:
       target:
         description:
-          production, or a preview worker (kody-pr-<number> or
-          kody-branch-<slug>)
+          production, a preview worker (kody-pr-<number> or kody-branch-<slug>),
+          or the slug preview.yml used (cig-0110 → kody-branch-cig-0110)
         required: true
         type: string
         default: production
@@ -36,7 +36,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: teams-org-migrated-audit-${{ inputs.target }}
+  group:
+    teams-org-migrated-audit-${{ inputs.target == 'production' && 'production'
+    || (startsWith(inputs.target, 'kody-pr-') && inputs.target ||
+    (startsWith(inputs.target, 'kody-branch-') && inputs.target ||
+    format('kody-branch-{0}', inputs.target))) }}
   cancel-in-progress: false
 
 jobs:
@@ -79,9 +83,19 @@ jobs:
               echo 'Production needs confirm = "backfill org.migrated audit".' >&2
               exit 1
             fi
-          elif ! [[ "$TARGET" =~ ^kody-pr-[0-9]+$ || "$TARGET" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
-            echo "target must be production, kody-pr-<number>, or kody-branch-<slug>, got '$TARGET'." >&2
-            exit 1
+          else
+            # Keep in sync with resolveRehearsalWorkerName / preview-rehearsal.yml.
+            name="$(printf '%s' "$TARGET" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+            if [[ "$name" =~ ^kody-pr-[0-9]+$ || "$name" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              TARGET="$name"
+            elif [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+              TARGET="kody-branch-$(printf '%s' "$name" | cut -c1-32)"
+            else
+              echo "target must be production, kody-pr-<number>, kody-branch-<slug>, or the slug preview.yml uses, got '$TARGET'." >&2
+              exit 1
+            fi
+            echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+            echo "Resolved target=$TARGET"
           fi
 
       - name: 📦 Checkout

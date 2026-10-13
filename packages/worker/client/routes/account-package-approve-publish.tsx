@@ -1,6 +1,8 @@
 import { type Handle, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { routes } from '#universal/routes.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -171,9 +173,23 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					currentHref={currentHref}
 				/>
 				{message ? (
-					<AccountManagementMessage tone="error">
-						{message}
-					</AccountManagementMessage>
+					<>
+						<AccountManagementMessage tone="error">
+							{message}
+						</AccountManagementMessage>
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Approving a package publish from the browser approval page.',
+								errorMessage: message,
+								ids: {
+									packageName: payload?.package.name,
+									packageKodyId: payload?.package.kodyId,
+									path: currentHref,
+								},
+							})}
+						/>
+					</>
 				) : null}
 				{status === 'loading' ? (
 					<p mix={css({ margin: 0, color: colors.textMuted })}>Loading…</p>

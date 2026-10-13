@@ -1,4 +1,5 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
+import { buildIncompleteConnectOauthAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 
 /**
  * Shared OAuth scope-menu helpers for the connect page and account
@@ -61,15 +62,9 @@ export function buildIncompleteConnectOauthPrompt(input: {
 	provider: string
 }): string {
 	const providerKey = normalizeProviderKey(input.provider)
-	const provider = providerKey || 'this provider'
-	const href = providerKey
-		? `/connect/oauth?provider=${encodeURIComponent(providerKey)}`
-		: '/connect/oauth'
-	return [
-		`I opened ${href} to connect "${provider}" to my Kody account, but Kody does not have enough OAuth configuration to start the flow (missing authorize URL and/or token URL).`,
-		`Open search({ entity: "guide:oauth" }) and, if a provider guide exists, search({ entity: "guide:provider_<slug>" }).`,
-		`Then give me a complete /connect/oauth URL with the required query parameters (provider, authorizeUrl, tokenUrl, and any scopes, flow, and allowedHosts the provider needs) so I can connect.`,
-	].join(' ')
+	return buildIncompleteConnectOauthAgentPrompt({
+		provider: providerKey || 'this provider',
+	})
 }
 
 export function buildChangeIntegrationScopesPrompt(input: {

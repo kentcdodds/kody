@@ -1,5 +1,7 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { routes } from '#universal/routes.ts'
+import { buildInternalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import {
 	internalErrorPageCopy,
 	internalErrorPageHeading,
@@ -27,6 +29,7 @@ import { readRouterUrl } from './router-location.tsx'
  */
 export function InternalErrorPage(handle: Handle) {
 	const retryHref = normalizeRedirectTo(readRouterUrl(handle)) ?? '/'
+	const prompt = buildInternalErrorAgentPrompt({ path: retryHref })
 
 	return () => (
 		<section
@@ -50,6 +53,7 @@ export function InternalErrorPage(handle: Handle) {
 					Go home
 				</a>
 			</nav>
+			<ErrorAgentPromptButton prompt={prompt} />
 		</section>
 	)
 }

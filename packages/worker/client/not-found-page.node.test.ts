@@ -16,4 +16,6 @@ test('not-found page shows the disappointed illustration and recovery destinatio
 	expect(html).toContain('href="/"')
 	expect(html).toContain('href="/docs"')
 	expect(html).toContain('href="/community"')
+	expect(html).toContain('data-error-agent-prompt')
+	expect(html).toContain('Copy prompt for your agent')
 })

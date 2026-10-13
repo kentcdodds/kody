@@ -167,7 +167,9 @@ URL, so its client returns redirects unfollowed.
 Personal credentials follow plan v4 3.2: user-owned, granted to orgs one org at
 a time, never usable by Owners or Automation on someone else's behalf. A
 personal OAuth credential minted through an org's OAuth app is pinned to that
-org.
+org. The owner manages grants with `credentialOrgGrant`, `credentialOrgRevoke`,
+and `credentialOrgGrantList` (live person and Write on the credential to change
+one; audited in the owner's personal org).
 
 ### Use grants (`accessGrant` / `accessRevoke`)
 

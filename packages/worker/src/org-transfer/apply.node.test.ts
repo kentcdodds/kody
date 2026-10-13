@@ -68,6 +68,8 @@ const plaintexts = {
 	refreshToken: 'integration-refresh-token-plaintext',
 	webhookUrl: 'webhook-url-secret-plaintext',
 	webhookHmac: 'webhook-hmac-secret-plaintext',
+	webhookVerification: 'webhook-verification-snapshot-plaintext',
+	webhookPreviousHmac: 'webhook-previous-hmac-plaintext',
 }
 
 beforeEach(() => {
@@ -186,8 +188,11 @@ async function seed() {
 	)
 
 	run(
-		`INSERT INTO webhook_endpoints (id, user_id, package_id, webhook_name, url_secret_hash, created_at, rotated_at, url_secret_encrypted, hmac_secret_encrypted)
-		 VALUES ('hook-1', ?, ?, 'ping', 'hash-1', ?, ?, ?, ?)`,
+		`INSERT INTO webhook_endpoints (
+			id, user_id, package_id, webhook_name, url_secret_hash, created_at, rotated_at,
+			url_secret_encrypted, hmac_secret_encrypted,
+			hmac_verification_secret_encrypted, previous_hmac_secret_encrypted
+		) VALUES ('hook-1', ?, ?, 'ping', 'hash-1', ?, ?, ?, ?, ?, ?)`,
 		src,
 		pkgA,
 		now,
@@ -200,6 +205,16 @@ async function seed() {
 		await encryptWebhookHmacSecret(
 			env,
 			plaintexts.webhookHmac,
+			userWebhookHmacSecretContext(src, 'hook-1'),
+		),
+		await encryptWebhookHmacSecret(
+			env,
+			plaintexts.webhookVerification,
+			userWebhookHmacSecretContext(src, 'hook-1'),
+		),
+		await encryptWebhookHmacSecret(
+			env,
+			plaintexts.webhookPreviousHmac,
 			userWebhookHmacSecretContext(src, 'hook-1'),
 		),
 	)
@@ -408,7 +423,9 @@ function expectNoSecretMaterial(text: string, sqlite: DatabaseSync) {
 			 UNION ALL SELECT access_token_encrypted FROM user_integrations
 			 UNION ALL SELECT refresh_token_encrypted FROM user_integrations
 			 UNION ALL SELECT url_secret_encrypted FROM webhook_endpoints
-			 UNION ALL SELECT hmac_secret_encrypted FROM webhook_endpoints`,
+			 UNION ALL SELECT hmac_secret_encrypted FROM webhook_endpoints
+			 UNION ALL SELECT hmac_verification_secret_encrypted FROM webhook_endpoints
+			 UNION ALL SELECT previous_hmac_secret_encrypted FROM webhook_endpoints`,
 		)
 		.all() as Array<{ value: string | null }>
 	for (const { value } of ciphertexts) {
@@ -744,6 +761,20 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 			userWebhookHmacSecretContext(dst, 'hook-1'),
 		),
 	).toBe(plaintexts.webhookHmac)
+	expect(
+		await decryptWebhookHmacSecret(
+			env,
+			hook.hmac_verification_secret_encrypted!,
+			userWebhookHmacSecretContext(dst, 'hook-1'),
+		),
+	).toBe(plaintexts.webhookVerification)
+	expect(
+		await decryptWebhookHmacSecret(
+			env,
+			hook.previous_hmac_secret_encrypted!,
+			userWebhookHmacSecretContext(dst, 'hook-1'),
+		),
+	).toBe(plaintexts.webhookPreviousHmac)
 	const orphanHook = sqlite
 		.prepare(
 			`SELECT user_id, deleted_at FROM webhook_endpoints WHERE id = 'hook-orphan'`,

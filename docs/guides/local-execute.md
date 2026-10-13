@@ -27,7 +27,9 @@ and package-graph routes.
 **Agents already on MCP:** call `cliCredentialBootstrap` with a required
 lifetime (single-task agents use `short`). It returns a one-shot `kody_bc_…`
 code and a `cli_command` that already includes lifetime flags (**not** a
-`kody_at_…`). Run the CLI command (no second OAuth, no `tokenCreate`):
+`kody_at_…`). New bootstraps mint person-owned tokens (`org_binding: user`);
+pass `?org=<slug>` on API calls to act in a team org (default: personal). Run
+the CLI command (no second OAuth, no `tokenCreate`):
 
 ```json
 {
@@ -110,6 +112,12 @@ static `kody:@owner/name` imports still run locally (package-graph download +
 CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
 ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
 on origin (or fail closed naming the secret) instead of sending them raw.
+`import { credential } from 'kody:runtime'` for ad hoc and unpublished package
+source needs a CLI whose host `kody:runtime` exports `credential` /
+`credentials` per the
+[CLI local credential runtime](../contributing/contracts/cli-local-credential-runtime.md)
+contract (CapabilityProxy opens a handle; gateway placement only — same as
+hosted). Older CLIs fail at import time; upgrade `@kodycodes/cli`.
 
 A `fetch` that carries a placeholder runs on origin with the same 5-minute
 overall deadline as cloud fetches. The deadline starts when origin sends the

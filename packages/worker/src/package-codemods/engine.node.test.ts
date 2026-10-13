@@ -931,7 +931,7 @@ test('published-only apply on drifted packages uses syncPublishedSourceSnapshotO
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
-test('published-only apply fails locked drifted packages instead of hiding a pending commit', async () => {
+test('published-only apply promotes locked drifted packages via allowLockedPublish', async () => {
 	setupMocks()
 	const { env } = createEnv()
 	const pkg = {
@@ -955,21 +955,30 @@ test('published-only apply fails locked drifted packages instead of hiding a pen
 		branch: 'main',
 		commit: 'commit-head-moved',
 	})
+	mocks.syncPublishedSourceSnapshotOnly.mockResolvedValue(
+		'commit-published-only-locked',
+	)
 
 	const apply = await step(env, {
 		mode: 'apply',
 		codemodId: publishedOnlyCodemodId,
 	})
 	expect(apply.items[0]).toMatchObject({
-		status: 'failed',
+		status: 'applied',
 		packageId: pkg.id,
+		afterCommit: 'commit-published-only-locked',
 	})
-	expect(apply.items[0]?.error).toMatch(/skips locked packages/i)
-	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
+	expect(mocks.syncPublishedSourceSnapshotOnly).toHaveBeenCalledWith(
+		expect.objectContaining({
+			promotePublished: true,
+			allowLockedPublish: true,
+			expectedPublishedCommit: 'commit-published-old',
+		}),
+	)
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
-test('published-only apply fails locked aligned packages so revert stays restorable', async () => {
+test('published-only apply promotes locked aligned packages via allowLockedPublish', async () => {
 	setupMocks()
 	const { env } = createEnv()
 	const pkg = {
@@ -993,18 +1002,26 @@ test('published-only apply fails locked aligned packages so revert stays restora
 		branch: 'main',
 		commit: 'commit-repo-aligned',
 	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue(
+		'commit-after-locked-aligned',
+	)
 
 	const apply = await step(env, {
 		mode: 'apply',
 		codemodId: publishedOnlyCodemodId,
 	})
 	expect(apply.items[0]).toMatchObject({
-		status: 'failed',
+		status: 'applied',
 		packageId: pkg.id,
+		afterCommit: 'commit-after-locked-aligned',
 	})
-	expect(apply.items[0]?.error).toMatch(/skips locked packages/i)
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			promotePublished: true,
+			allowLockedPublish: true,
+		}),
+	)
 	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
-	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('published-only apply on non-drifted packages still uses syncArtifactSourceSnapshot', async () => {

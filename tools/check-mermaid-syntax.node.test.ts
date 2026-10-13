@@ -225,6 +225,28 @@ test('repo mermaid fences currently parse', async () => {
 	await expect(checkMermaidSyntax(repoRoot)).resolves.toEqual([])
 })
 
+test('checkMermaidSyntax reads absolute paths as-is', async () => {
+	await using tree = await tempTree('mermaid-abs-', {
+		'inside.md': 'No diagram.\n',
+	})
+	const absolutePath = path.join(
+		os.tmpdir(),
+		`mermaid-outside-${Date.now()}.md`,
+	)
+	await writeFile(absolutePath, fenced(githubPlusNoteDiagram))
+	try {
+		const issues = await checkMermaidSyntax(tree.cwd, [absolutePath])
+		expect(issues).toEqual([
+			expect.objectContaining({
+				file: absolutePath.replaceAll('\\', '/'),
+				message: expect.stringContaining("got '+'"),
+			}),
+		])
+	} finally {
+		await rm(absolutePath, { force: true })
+	}
+})
+
 test('CLI with no paths scans docs and skills', async () => {
 	await using tree = await tempTree('mermaid-check-cli-', {
 		'README.md': 'No diagram.\n',

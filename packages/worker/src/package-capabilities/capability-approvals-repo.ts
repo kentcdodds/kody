@@ -89,6 +89,53 @@ export async function getLatestPackageCapabilityApproval(
 	return row ? mapRow(row) : null
 }
 
+export async function updatePackageCapabilityApprovalSnapshot(
+	db: D1Database,
+	input: {
+		id: string
+		dependencySnapshotJson: string
+		capabilitySetJson: string
+		approvedByUserId: string
+		approvedAt: string
+	},
+): Promise<PackageCapabilityApprovalRecord | null> {
+	await db
+		.prepare(
+			`UPDATE package_capability_approvals
+			SET dependency_snapshot_json = ?,
+				capability_set_json = ?,
+				approved_by_user_id = ?,
+				approved_at = ?
+			WHERE id = ?`,
+		)
+		.bind(
+			input.dependencySnapshotJson,
+			input.capabilitySetJson,
+			input.approvedByUserId,
+			input.approvedAt,
+			input.id,
+		)
+		.run()
+	const row = await db
+		.prepare(
+			`SELECT id, package_id, owner_user_id, published_commit, fingerprint,
+				capability_set_json, dependency_snapshot_json,
+				approved_by_user_id, approved_at, created_at
+			FROM package_capability_approvals
+			WHERE id = ?
+			LIMIT 1`,
+		)
+		.bind(input.id)
+		.first()
+	return row ? mapRow(row) : null
+}
+
+export function isEmptyDependencySnapshotJson(raw: string | null | undefined) {
+	if (!raw) return true
+	const trimmed = raw.trim()
+	return trimmed === '' || trimmed === '{}'
+}
+
 export async function findPackageCapabilityApprovalByFingerprint(
 	db: D1Database,
 	input: {

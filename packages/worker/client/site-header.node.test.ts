@@ -354,6 +354,89 @@ test('org switcher keeps every org-owned section when switching between orgs', a
 	}
 })
 
+test('org switcher draws a team photo on the button and in the open menu', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: '/profiles/ada/avatar/ada.png',
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@kody/-/settings',
+			organizations: [
+				{
+					slug: 'kody',
+					displayName: 'Kody',
+					role: 'owner',
+					personal: false,
+					avatarUrl: '/orgs/kody/avatar/new.png',
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+					avatarUrl: null,
+				},
+			],
+		}),
+	)
+	const trigger = html.slice(
+		html.indexOf('data-testid="org-switcher"'),
+		html.indexOf('data-testid="org-switcher-panel"'),
+	)
+	expect(trigger).toContain('src="/orgs/kody/avatar/new.png"')
+	expect(trigger).not.toContain('/profiles/ada/avatar/ada.png')
+
+	const panel = html.slice(
+		html.indexOf('data-testid="org-switcher-panel"'),
+		html.indexOf('data-testid="org-switcher-menu"'),
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	for (const section of [panel, menu]) {
+		const adaAt = section.indexOf('data-testid="org-switcher-ada"')
+		const kodyAt = section.indexOf('data-testid="org-switcher-kody"')
+		const createAt = section.indexOf('data-testid="org-switcher-create"')
+		const adaRow = section.slice(section.lastIndexOf('<a', adaAt), kodyAt)
+		const kodyRow = section.slice(section.lastIndexOf('<a', kodyAt), createAt)
+		expect(kodyRow).toContain('src="/orgs/kody/avatar/new.png"')
+		expect(adaRow).toContain('src="/profiles/ada/avatar/ada.png"')
+		expect(kodyRow).not.toContain('>K<')
+	}
+})
+
+test('org switcher uses the account photo for the personal organization', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: '/profiles/ada/avatar/ada.png',
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+					avatarUrl: '/orgs/ada/avatar/ignored.png',
+				},
+			],
+		}),
+	)
+	const trigger = html.slice(
+		html.indexOf('data-testid="org-switcher"'),
+		html.indexOf('data-testid="org-switcher-panel"'),
+	)
+	expect(trigger).toContain('src="/profiles/ada/avatar/ada.png"')
+	expect(html).not.toContain('/orgs/ada/avatar/ignored.png')
+})
+
 test('logged-out header shows Log in without an Account link', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
