@@ -28,6 +28,7 @@ import {
 	clearInternetVisible,
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
+import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
 const packageUpdateChangesSchema = z
@@ -227,14 +228,17 @@ export const packageUpdateCapability = defineDomainCapability(
 						`Internet-visible requires owner approval of the credential and capability summary. Send them to ${approvalUrl}`,
 					)
 				}
-				const changed = await updateSavedPackage(ctx.env.APP_DB, {
-					userId: owner.ownerUserId,
-					packageId: args.package_id,
-					isInternetVisible: true,
+				await enqueueWentPublicApproval({
+					env: ctx.env,
+					ownerUserId: owner.ownerUserId,
+					savedPackage: existing,
+					publishedCommit: summary.publishedCommit,
+					fingerprint: summary.capabilitySet.fingerprint,
+					requestedByUserId: owner.actorUserId,
 				})
-				if (!changed) {
-					throw new McpCallerError('Saved package not found for this user.')
-				}
+				throw new McpCallerError(
+					`Internet-visible is waiting on owner approval (went public). Send them to ${approvalUrl}`,
+				)
 			}
 			if (
 				args.changes.internet_visible === false &&

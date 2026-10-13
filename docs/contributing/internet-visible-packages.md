@@ -11,12 +11,13 @@ Internet-visible is a **package app** flag, independent of **forkable** (public
 Either, both, or neither. Enabling internet-visible requires the owner to
 approve a one-page credential and capability summary (stable credential ids,
 hosts, storage) for the **resolved dependency tree** (root + transitive `kody:@`
-packages). Approval **records** a lockfile-like dependency snapshot with the
-fingerprint. Request-time serving uses the current `published_commit`; it does
-not pin to that snapshot
-([ADR 0069](./decisions/0069-internet-visible-capability-pinning.md)). Secret
-values never appear on that page or in package code. Regular packages keep
-floating on current `published_commit`.
+packages). Approving the capability set **records** a lockfile-like dependency
+snapshot with the fingerprint and enqueues a `went_public` request on the shared
+`package_approval_requests` queue (same page as credential-needs pauses). The
+owner Approves that request to flip internet-visible on. Secret values never
+appear on that page or in package code. Regular packages keep floating on
+current `published_commit`
+([ADR 0069](./decisions/0069-internet-visible-capability-pinning.md)).
 
 ## ADR 0001 exception
 

@@ -21,6 +21,8 @@ import {
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { type PackageApprovalRequest } from './approval-requests-repo.ts'
+import { enqueueWentPublicApproval } from './went-public-approval.ts'
 
 export type CapabilityApprovalSummary = {
 	capabilitySet: CapabilitySet
@@ -120,6 +122,8 @@ export async function approvePackageCapabilitySet(input: {
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
+	/** Pending `went_public` request when this approve is the path to going public. */
+	wentPublicRequest: PackageApprovalRequest | null
 }> {
 	const summary = await loadCapabilityApprovalSummary({
 		env: input.env,
@@ -204,18 +208,27 @@ export async function approvePackageCapabilitySet(input: {
 		throw new CapabilityApprovalError('Could not record capability approval.')
 	}
 
+	// Going public pauses on the shared approval queue (`went_public`). The
+	// owner Approves that request to flip internet-visible. Re-approving an
+	// already-public package only refreshes the capability pin (storage-change
+	// trigger stays on the fingerprint match, not the queue).
+	let wentPublicRequest: PackageApprovalRequest | null = null
 	if (!input.savedPackage.isInternetVisible) {
-		const changed = await updateSavedPackage(input.env.APP_DB, {
-			userId: input.ownerUserId,
-			packageId: input.savedPackage.id,
-			isInternetVisible: true,
+		wentPublicRequest = await enqueueWentPublicApproval({
+			env: input.env,
+			ownerUserId: input.ownerUserId,
+			savedPackage: input.savedPackage,
+			publishedCommit: summary.publishedCommit,
+			fingerprint: summary.capabilitySet.fingerprint,
+			requestedByUserId: input.actorUserId,
 		})
-		if (!changed) {
-			throw new CapabilityApprovalError('Package not found.')
-		}
 	}
 
-	return { approval, capabilitySet: summary.capabilitySet }
+	return {
+		approval,
+		capabilitySet: summary.capabilitySet,
+		wentPublicRequest,
+	}
 }
 
 export async function clearInternetVisible(input: {

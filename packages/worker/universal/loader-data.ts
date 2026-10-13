@@ -2074,8 +2074,8 @@ export type AccountPackagePendingApproval = {
 	createdAt: string
 	/** One line per credential need the paused publish adds or reshapes. */
 	changes: Array<string>
-	/** The POST action that approves it, or null when this page cannot yet. */
-	approveAction: 'approve-credential-needs' | null
+	/** The POST action that approves it. */
+	approveAction: 'approve-credential-needs' | 'approve-went-public'
 }
 
 export type AccountPackageApproveCapabilitiesLoaderData = {

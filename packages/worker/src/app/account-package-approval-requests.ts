@@ -1,5 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	describeCredentialNeedChange,
@@ -14,6 +17,9 @@ import {
 	resolvePackageApprovalRequest,
 	type PackageApprovalReason,
 } from '#worker/package-capabilities/approval-requests-repo.ts'
+import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
+import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
+import { updateSavedPackage } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
@@ -42,7 +48,25 @@ function approveAction(reason: PackageApprovalReason) {
 		case 'credential_needs_changed':
 			return 'approve-credential-needs' as const
 		case 'went_public':
-			return null
+			return 'approve-went-public' as const
+		default: {
+			const exhaustive: never = reason
+			throw new Error(`Unknown approval reason: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function pendingChanges(
+	reason: PackageApprovalReason,
+	details: Record<string, unknown>,
+): Array<string> {
+	switch (reason) {
+		case 'credential_needs_changed':
+			return readCredentialNeedChanges(details).map(
+				describeCredentialNeedChange,
+			)
+		case 'went_public':
+			return [readWentPublicSummary(details)]
 		default: {
 			const exhaustive: never = reason
 			throw new Error(`Unknown approval reason: ${String(exhaustive)}`)
@@ -73,12 +97,7 @@ export async function loadPendingPackageApprovals(input: {
 			reasonLabel: reasonLabel(request.reason),
 			pendingCommit: request.pendingCommit,
 			createdAt: request.createdAt,
-			changes:
-				request.reason === 'credential_needs_changed'
-					? readCredentialNeedChanges(request.details).map(
-							describeCredentialNeedChange,
-						)
-					: [],
+			changes: pendingChanges(request.reason, request.details),
 			approveAction: approveAction(request.reason),
 		}))
 }
@@ -253,4 +272,94 @@ export async function approveCredentialNeedsRequest(input: {
 			throw new Error(`Unknown publish status: ${String(exhaustive)}`)
 		}
 	}
+}
+
+export type ApproveWentPublicResult =
+	| { ok: true }
+	| { ok: false; status: 400 | 404 | 409; error: string }
+
+/**
+ * Flips internet-visible on for a pending `went_public` request. Capability
+ * approval must still match the live set; the storage-change re-prompt stays
+ * on the fingerprint path.
+ */
+export async function approveWentPublicRequest(input: {
+	env: Env
+	request: Request
+	savedPackage: SavedPackageRecord
+	ownerUserId: string
+	actorUserId: string
+	requestId: string
+}): Promise<ApproveWentPublicResult> {
+	const approval = await getPackageApprovalRequest(input.env.APP_DB, {
+		id: input.requestId,
+		packageId: input.savedPackage.id,
+		ownerUserId: input.ownerUserId,
+	})
+	if (!approval || approval.reason !== 'went_public') {
+		return { ok: false, status: 404, error: 'Approval request not found.' }
+	}
+	if (approval.status !== 'pending') {
+		return {
+			ok: false,
+			status: 409,
+			error: 'This request was already resolved. Reload the page.',
+		}
+	}
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.savedPackage.sourceId,
+	)
+	if (!source || source.user_id !== input.ownerUserId) {
+		return { ok: false, status: 404, error: 'Package source not found.' }
+	}
+	if (source.published_commit !== approval.baseCommit) {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: approval.id,
+			status: 'superseded',
+			resolvedByUserId: input.actorUserId,
+		})
+		return {
+			ok: false,
+			status: 409,
+			error:
+				'The published version changed since this request was created. Approve the capability set again.',
+		}
+	}
+	if (input.savedPackage.isInternetVisible) {
+		await resolvePackageApprovalRequest(input.env.APP_DB, {
+			id: approval.id,
+			status: 'approved',
+			resolvedByUserId: input.actorUserId,
+		})
+		return { ok: true }
+	}
+	const summary = await loadCapabilityApprovalSummary({
+		env: input.env,
+		ownerUserId: input.ownerUserId as OwnerId,
+		savedPackage: input.savedPackage,
+		requestUrl: input.request.url,
+	})
+	if (!summary.fingerprintMatchesApproval) {
+		return {
+			ok: false,
+			status: 409,
+			error:
+				'Review and approve the credential and capability summary before making this package internet-visible.',
+		}
+	}
+	const changed = await updateSavedPackage(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: input.savedPackage.id,
+		isInternetVisible: true,
+	})
+	if (!changed) {
+		return { ok: false, status: 404, error: 'Package not found.' }
+	}
+	await resolvePackageApprovalRequest(input.env.APP_DB, {
+		id: approval.id,
+		status: 'approved',
+		resolvedByUserId: input.actorUserId,
+	})
+	return { ok: true }
 }

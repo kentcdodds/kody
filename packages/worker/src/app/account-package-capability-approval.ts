@@ -7,8 +7,10 @@ import { loadWritableAccountSavedPackage } from '#app/account-package-write-acce
 import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import {
 	approveCredentialNeedsRequest,
+	approveWentPublicRequest,
 	loadPendingPackageApprovals,
 } from '#app/account-package-approval-requests.ts'
+import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	approvePackageCapabilitySet,
@@ -121,7 +123,8 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 	if (
 		action !== 'set-internet-visible' &&
 		action !== 'approve-capabilities' &&
-		action !== 'approve-credential-needs'
+		action !== 'approve-credential-needs' &&
+		action !== 'approve-went-public'
 	) {
 		return null
 	}
@@ -155,7 +158,10 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 		kodyId: savedPackage.kodyId,
 	})
 
-	if (action === 'approve-credential-needs') {
+	if (
+		action === 'approve-credential-needs' ||
+		action === 'approve-went-public'
+	) {
 		const requestId =
 			'requestId' in input.body && typeof input.body.requestId === 'string'
 				? input.body.requestId.trim()
@@ -166,14 +172,24 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 				400,
 			)
 		}
-		const approved = await approveCredentialNeedsRequest({
-			env: input.env,
-			request: input.request,
-			savedPackage,
-			ownerUserId,
-			actorUserId,
-			requestId,
-		})
+		const approved =
+			action === 'approve-credential-needs'
+				? await approveCredentialNeedsRequest({
+						env: input.env,
+						request: input.request,
+						savedPackage,
+						ownerUserId,
+						actorUserId,
+						requestId,
+					})
+				: await approveWentPublicRequest({
+						env: input.env,
+						request: input.request,
+						savedPackage,
+						ownerUserId,
+						actorUserId,
+						requestId,
+					})
 		if (!approved.ok) {
 			return jsonResponse(
 				{ ok: false, error: approved.error, approvalUrl },
@@ -252,14 +268,25 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 						400,
 					)
 				}
-				await approvePackageCapabilitySet({
+				// Capability pin already matches: enqueue went_public and send
+				// the owner to Approve on the shared queue page.
+				await enqueueWentPublicApproval({
 					env: input.env,
 					ownerUserId,
-					actorUserId,
 					savedPackage,
-					requestUrl: input.request.url,
-					expectedFingerprint: summary.capabilitySet.fingerprint,
+					publishedCommit: summary.publishedCommit,
+					fingerprint: summary.capabilitySet.fingerprint,
+					requestedByUserId: actorUserId,
 				})
+				return jsonResponse(
+					{
+						ok: false,
+						error:
+							'Approve making this package internet-visible on the approval page.',
+						approvalUrl,
+					},
+					400,
+				)
 			} else {
 				if (confirmName !== savedPackage.kodyId) {
 					return jsonResponse(

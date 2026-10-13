@@ -295,7 +295,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 											>
 												{approvingRequestId === approval.id
 													? 'Approving…'
-													: 'Approve and publish'}
+													: approval.reason === 'went_public'
+														? 'Approve and make internet-visible'
+														: 'Approve and publish'}
 											</button>
 										</div>
 									) : null}
@@ -490,7 +492,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 									? 'Approving…'
 									: payload.package.isInternetVisible
 										? 'Re-approve capability set'
-										: 'Approve and make internet-visible'}
+										: 'Approve capability set'}
 							</button>
 							<a
 								href={payload.settingsHref}
