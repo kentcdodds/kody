@@ -72,10 +72,12 @@ function minifyCss(css: string) {
 			continue
 		}
 		// CSS whitespace only (not JS `\s`, which would fold NBSP in identifiers).
+		// Count units, not code points: preprocessing folds a CRLF pair into one newline.
 		if (/[ \t\n\r\f]/.test(ch)) {
 			let ws = 0
 			while (i < css.length && /[ \t\n\r\f]/.test(css[i]!)) {
-				i += 1
+				if (css[i] === '\r' && css[i + 1] === '\n') i += 2
+				else i += 1
 				ws += 1
 			}
 			const prev = out.at(-1)
@@ -84,9 +86,9 @@ function minifyCss(css: string) {
 			// `:` as glue — that would turn `and (` into the function `and(` and
 			// `[host] :focus-visible` into `[host]:focus-visible`.
 			if (prev && next && !/[{}:;,]/.test(prev) && !/[{};,]/.test(next)) {
-				// A hex escape consumes its first following whitespace. Keep a
-				// second space when the author had 2+ so `.\\31  .child` stays a
-				// descendant selector instead of collapsing to `.\\31 .child`.
+				// A hex escape consumes its first following whitespace unit. Keep a
+				// second space when the author had 2+ units so `.\\31  .child` stays a
+				// descendant selector. One CRLF (`.\\31\r\n.child`) stays compound.
 				out += /\\[0-9a-fA-F]{1,6}$/.test(out) && ws >= 2 ? '  ' : ' '
 			}
 			continue

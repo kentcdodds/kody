@@ -69,6 +69,26 @@ test('inline stylesheet minify keeps hex-escape terminator plus combinator space
 	expect(inlined).toBe('.\\31  .child{color:red;}')
 })
 
+test('inline stylesheet minify treats CRLF after a hex escape as one compound terminator', async () => {
+	resetInlineStylesheetCache()
+	const css = `.\\31\r\n.child { color: red; }`
+	const inlined = await getInlineStylesheet({
+		assets: { fetch: async () => new Response(css) },
+		buildId: 'inline-stylesheet-hex-escape-crlf',
+	})
+	expect(inlined).toBe('.\\31 .child{color:red;}')
+})
+
+test('inline stylesheet minify keeps a descendant space after hex-escape CRLF plus space', async () => {
+	resetInlineStylesheetCache()
+	const css = `.\\31\r\n .child { color: red; }`
+	const inlined = await getInlineStylesheet({
+		assets: { fetch: async () => new Response(css) },
+		buildId: 'inline-stylesheet-hex-escape-crlf-space',
+	})
+	expect(inlined).toBe('.\\31  .child{color:red;}')
+})
+
 test('inline stylesheet minify keeps media and (), descendant :, and calc spaces', async () => {
 	resetInlineStylesheetCache()
 	const css = `
