@@ -14,6 +14,7 @@ import {
 	type PackageAppCustomHostnameBindingKind,
 	type PackageAppCustomHostnameLookup,
 	type VerifiedAppCustomHostname,
+	type VerifiedOrgCustomHostname,
 } from '#worker/package-app-custom-hostnames/types.ts'
 
 /**
@@ -62,6 +63,17 @@ export function isVerifiedAppCustomHostname(
 	)
 }
 
+export function isVerifiedOrgCustomHostname(
+	row: PackageAppCustomHostnameLookup,
+): row is VerifiedOrgCustomHostname {
+	return (
+		row.bindingKind === 'org' &&
+		row.verified &&
+		row.orgId !== null &&
+		row.username !== null
+	)
+}
+
 type HostnameLookupSqlRow = {
 	hostname: string
 	binding_kind: string
@@ -72,6 +84,7 @@ type HostnameLookupSqlRow = {
 	package_name: string | null
 	owner_handle: string | null
 	live_owner_org_id: string | null
+	org_slug: string | null
 }
 
 function parseBindingKind(
@@ -121,12 +134,14 @@ function lookupFromRow(
 		}
 		case 'org': {
 			if (!row.org_id) return null
+			const username = row.org_slug?.trim().toLowerCase() || null
+			if (!username) return null
 			return {
 				hostname: row.hostname,
 				bindingKind,
 				packageId: null,
 				orgId: row.org_id,
-				username: null,
+				username,
 				kodyId: null,
 				hostnameStatus: row.hostname_status,
 				sslStatus: row.ssl_status,
@@ -149,13 +164,17 @@ const hostnameLookupSql = `SELECT
 	ch.ssl_status AS ssl_status,
 	sp.name AS package_name,
 	live_owner.slug AS owner_handle,
-	live_owner.id AS live_owner_org_id
+	live_owner.id AS live_owner_org_id,
+	live_org.slug AS org_slug
 FROM package_app_custom_hostnames ch
 LEFT JOIN saved_packages sp
 	ON ch.binding_kind = 'app'
 	AND sp.id = ch.package_id${andLiveDeletedAtSql('sp')}
 LEFT JOIN orgs live_owner
 	ON live_owner.id = sp.user_id${andActiveOrgSql('live_owner')}
+LEFT JOIN orgs live_org
+	ON ch.binding_kind = 'org'
+	AND live_org.id = ch.org_id${andActiveOrgSql('live_org')}
 WHERE ch.hostname = ?
 LIMIT 1`
 
@@ -187,7 +206,8 @@ const verifiedPackageLookupSql = `SELECT
 	ch.ssl_status AS ssl_status,
 	sp.name AS package_name,
 	live_owner.slug AS owner_handle,
-	live_owner.id AS live_owner_org_id
+	live_owner.id AS live_owner_org_id,
+	NULL AS org_slug
 FROM package_app_custom_hostnames ch
 INNER JOIN saved_packages sp
 	ON sp.id = ch.package_id${andLiveDeletedAtSql('sp')}
@@ -222,5 +242,55 @@ export async function lookupVerifiedAppCustomHostnameForPackage(input: {
 	if (!row) return null
 	const lookup = lookupFromRow(row)
 	if (!lookup || !isVerifiedAppCustomHostname(lookup)) return null
+	return lookup
+}
+
+const verifiedOrgLookupSql = `SELECT
+	ch.hostname AS hostname,
+	ch.binding_kind AS binding_kind,
+	ch.package_id AS package_id,
+	ch.org_id AS org_id,
+	ch.hostname_status AS hostname_status,
+	ch.ssl_status AS ssl_status,
+	NULL AS package_name,
+	NULL AS owner_handle,
+	NULL AS live_owner_org_id,
+	live_org.slug AS org_slug
+FROM package_app_custom_hostnames ch
+INNER JOIN orgs live_org
+	ON live_org.id = ch.org_id
+	AND live_org.slug = ?${andActiveOrgSql('live_org')}
+INNER JOIN saved_packages sp
+	ON sp.user_id = ch.org_id${andLiveDeletedAtSql('sp')}
+	AND lower(substr(sp.name, instr(sp.name, '/') + 1)) = ?
+WHERE ch.binding_kind = 'org'
+	AND ch.hostname_status = 'active'
+	AND ch.ssl_status = 'active'
+ORDER BY ch.updated_at DESC
+LIMIT 1`
+
+/**
+ * Verified org-level custom hostname for a package owned by the org named in
+ * the URL (`/@username/packages/{kodyId}` or `{username}.kody.run/...`).
+ * App-level rows take precedence at serve time; this backs handoff when only
+ * an org domain is configured.
+ */
+export async function lookupVerifiedOrgCustomHostnameForPackage(input: {
+	db: D1Database
+	username: string
+	kodyId: string
+}): Promise<VerifiedOrgCustomHostname | null> {
+	const username = normalizeUsername(input.username)
+	const kodyId = input.kodyId.trim().toLowerCase()
+	if (!username || getUsernameFormatValidationError(username) || !kodyId) {
+		return null
+	}
+	const row = await input.db
+		.prepare(verifiedOrgLookupSql)
+		.bind(username, kodyId)
+		.first<HostnameLookupSqlRow>()
+	if (!row) return null
+	const lookup = lookupFromRow(row)
+	if (!lookup || !isVerifiedOrgCustomHostname(lookup)) return null
 	return lookup
 }

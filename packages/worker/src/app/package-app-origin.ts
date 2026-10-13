@@ -12,11 +12,18 @@ import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	isVerifiedAppCustomHostname,
+	isVerifiedOrgCustomHostname,
 	lookupPackageAppCustomHostname,
 	lookupVerifiedAppCustomHostnameForPackage,
+	lookupVerifiedOrgCustomHostnameForPackage,
 	normalizeCustomHostname,
 } from '#worker/package-app-custom-hostnames/lookup.ts'
-import { type VerifiedAppCustomHostname } from '#worker/package-app-custom-hostnames/types.ts'
+import {
+	type VerifiedAppCustomHostname,
+	type VerifiedOrgCustomHostname,
+	type VerifiedPackageAppCustomHostname,
+} from '#worker/package-app-custom-hostnames/types.ts'
+import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getAppBaseUrl,
@@ -57,7 +64,6 @@ import {
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
-import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
 
@@ -86,8 +92,9 @@ import { wantsJson } from '#worker/utils.ts'
  *
  * When `package-app-custom-domains` is globally on, a verified app-level
  * custom hostname serves that package at `/` (assets at `/_assets/...`).
- * The app origin hands off to `https://{custom-host}/{rest}` instead of the
- * per-user package-app subdomain. Org-level rows are stored and not served.
+ * A verified org-level hostname serves private apps at
+ * `/packages/{kodyId}` like `{slug}.kody.run`. The app origin hands off to
+ * the custom host when a binding exists (app-level first, then org-level).
  * Unverified hostnames stay refused.
  *
  * The origins never redirect to each other in a cycle: the app origin only
@@ -325,7 +332,7 @@ function configuredAppHostnames(env: Env) {
 export async function resolveVerifiedCustomHostnameIfEnabled(
 	request: Request,
 	env: Env,
-): Promise<VerifiedAppCustomHostname | null> {
+): Promise<VerifiedPackageAppCustomHostname | null> {
 	let url: URL
 	try {
 		url = new URL(request.url)
@@ -348,8 +355,10 @@ export async function resolveVerifiedCustomHostnameIfEnabled(
 		db: env.APP_DB,
 		hostname,
 	})
-	if (!mapping || !isVerifiedAppCustomHostname(mapping)) return null
-	return mapping
+	if (!mapping) return null
+	if (isVerifiedAppCustomHostname(mapping)) return mapping
+	if (isVerifiedOrgCustomHostname(mapping)) return mapping
+	return null
 }
 
 async function buildCustomHostnameHandoffTarget(input: {
@@ -358,21 +367,44 @@ async function buildCustomHostnameHandoffTarget(input: {
 	url: URL
 }): Promise<{ target: URL; kodyId: string } | null> {
 	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
-	const mapping = await lookupVerifiedAppCustomHostnameForPackage({
+	const appMapping = await lookupVerifiedAppCustomHostnameForPackage({
 		db: input.env.APP_DB,
 		username: input.packagePath.username,
 		kodyId: input.packagePath.kodyId,
 	})
+	const mapping =
+		appMapping ??
+		(await lookupVerifiedOrgCustomHostnameForPackage({
+			db: input.env.APP_DB,
+			username: input.packagePath.username,
+			kodyId: input.packagePath.kodyId,
+		}))
 	if (!mapping) return null
-	const target = new URL(
-		buildPackageAppCustomHostnameUrl({
-			origin: `https://${mapping.hostname}`,
-			restPath:
-				input.packagePath.restPath === '/' ? null : input.packagePath.restPath,
-		}),
-	)
+	const target =
+		mapping.bindingKind === 'app'
+			? new URL(
+					buildPackageAppCustomHostnameUrl({
+						origin: `https://${mapping.hostname}`,
+						restPath:
+							input.packagePath.restPath === '/'
+								? null
+								: input.packagePath.restPath,
+					}),
+				)
+			: new URL(
+					buildPackageAppSubdomainPath({
+						kodyId: input.packagePath.kodyId,
+						restPath:
+							input.packagePath.restPath === '/'
+								? null
+								: input.packagePath.restPath,
+					}),
+					`https://${mapping.hostname}`,
+				)
 	target.search = withoutHandoffToken(input.url).search
-	return { target, kodyId: mapping.kodyId }
+	const handoffKodyId =
+		mapping.bindingKind === 'app' ? mapping.kodyId : input.packagePath.kodyId
+	return { target, kodyId: handoffKodyId }
 }
 
 /**
@@ -634,6 +666,46 @@ async function handleUserSubdomainRequest(input: {
  * (`__Host-` prefix, no Domain), and a missing session links back to the
  * app-origin entry URL instead of redirecting.
  */
+async function handleOrgCustomHostnameRequest(input: {
+	request: Request
+	env: Env
+	url: URL
+	mapping: VerifiedOrgCustomHostname
+}) {
+	const { request, env, url, mapping } = input
+	const appBaseUrl = getAppBaseUrl({ env })
+	const packagePath = parsePackageAppSubdomainPath({
+		pathname: url.pathname,
+		username: mapping.username,
+	})
+	if (!packagePath) {
+		if (url.pathname === '/') {
+			return redirectResponse({ location: `${appBaseUrl}/`, status: 302 })
+		}
+		return createUnmatchedPackageAppPathResponse()
+	}
+
+	const slugLookup = await resolveSavedPackageForPackageAppSlug({
+		db: env.APP_DB,
+		userId: mapping.orgId,
+		slug: packagePath.kodyId,
+	})
+	if (
+		!slugLookup ||
+		!slugLookup.savedPackage.hasApp ||
+		slugLookup.savedPackage.isInternetVisible
+	) {
+		return createUnmatchedPackageAppPathResponse()
+	}
+
+	return await handleUserSubdomainRequest({
+		request,
+		env,
+		url,
+		username: mapping.username,
+	})
+}
+
 async function handleCustomHostnameRequest(input: {
 	request: Request
 	env: Env
@@ -763,6 +835,14 @@ async function dispatchPackageAppOriginRequest(request: Request, env: Env) {
 			env,
 		)
 		if (customHostname) {
+			if (customHostname.bindingKind === 'org') {
+				return handleOrgCustomHostnameRequest({
+					request,
+					env,
+					url,
+					mapping: customHostname,
+				})
+			}
 			return handleCustomHostnameRequest({
 				request,
 				env,

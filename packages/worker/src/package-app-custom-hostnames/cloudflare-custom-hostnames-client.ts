@@ -5,12 +5,10 @@ import {
 
 /**
  * Zone SSL and Certificates Edit token for Cloudflare for SaaS custom
- * hostnames. This is not `CLOUDFLARE_API_TOKEN` and does not exist yet
- * (#3612). `PACKAGE_APP_ZONE_ID` is the SaaS zone used for proof (a staging
- * copy). Do not point it at the production kody.run zone from this client.
- *
- * Request handling does not call Cloudflare. These methods are the write
- * path a later change will use.
+ * hostnames (`CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN`). This is not
+ * `CLOUDFLARE_API_TOKEN`. `PACKAGE_APP_ZONE_ID` is the SaaS zone used for
+ * proof (typically a staging copy). Do not point it at the production
+ * kody.run zone from this client.
  */
 export type CloudflareCustomHostnamesClientEnv = {
 	CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN?: string

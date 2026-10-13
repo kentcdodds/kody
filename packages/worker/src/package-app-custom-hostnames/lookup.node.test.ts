@@ -168,7 +168,7 @@ test('lookup resolves a verified app binding and ignores unverified or org rows 
 		bindingKind: 'org',
 		packageId: null,
 		orgId: 'org-team',
-		username: null,
+		username: 'team',
 		kodyId: null,
 		verified: true,
 	})

@@ -23,8 +23,8 @@ export type PackageAppCustomHostnameRow = {
 
 /**
  * Resolved custom hostname. App bindings include the package owner handle and
- * the package name leaf (`kodyId`). Org bindings are stored for a later tier
- * and are not served.
+ * the package name leaf (`kodyId`). Org bindings include the org slug and
+ * serve private apps at `/packages/{kodyId}` when verified.
  */
 export type PackageAppCustomHostnameLookup = {
 	hostname: string
@@ -45,3 +45,14 @@ export type VerifiedAppCustomHostname = PackageAppCustomHostnameLookup & {
 	kodyId: string
 	verified: true
 }
+
+export type VerifiedOrgCustomHostname = PackageAppCustomHostnameLookup & {
+	bindingKind: 'org'
+	orgId: string
+	username: string
+	verified: true
+}
+
+export type VerifiedPackageAppCustomHostname =
+	| VerifiedAppCustomHostname
+	| VerifiedOrgCustomHostname
