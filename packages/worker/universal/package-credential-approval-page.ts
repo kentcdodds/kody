@@ -116,9 +116,9 @@ export function approvalAfterLabel(change: CredentialApprovalChangeView) {
 }
 
 export function approvalChangeIsNoop(change: CredentialApprovalChangeView) {
-	if (change.before === null || change.beforeUnusableIds.length > 0) {
-		return false
-	}
+	if (change.before === null || change.error) return false
+	// Stored unusable ids are rewritten on Approve even when usable refs match.
+	if (change.beforeUnusableIds.length > 0) return false
 	const before = change.before.map((ref) => ref.id)
 	const after = change.after.map((ref) => ref.id)
 	return (
