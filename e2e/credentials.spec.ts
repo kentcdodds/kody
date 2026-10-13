@@ -34,11 +34,15 @@ test('Credentials lists a key, filters by kind, and opens its detail pane withou
 	const table = page.getByRole('region', { name: 'Credentials', exact: true })
 	const row = table.getByRole('link', { name: /DEMO_API_KEY/ })
 	await expect(row).toBeVisible()
+	const addCredential = page.getByRole('link', { name: 'Add credential' })
+	await expect(addCredential).toHaveAttribute(
+		'href',
+		`/@${user.username}/-/credentials/new`,
+	)
 	await expect(
-		page.getByRole('link', { name: 'Add credential' }),
-	).toHaveAttribute('href', `/@${user.username}/-/credentials/new`)
-	await expect(
-		page.getByRole('link', { name: 'Secret providers' }),
+		addCredential
+			.locator('xpath=..')
+			.getByRole('link', { name: 'Secret providers' }),
 	).toHaveAttribute('href', `/@${user.username}/-/secret-providers`)
 
 	await page
