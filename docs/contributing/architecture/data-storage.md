@@ -1546,7 +1546,7 @@ on write unless a migration backfills existing rows.
   credential ids, and `[]` means "none on purpose". Rows hold ids only. A
   person's rows in an org are hard-deleted when they leave it, and with their
   account.
-- `credential_mapping_proposals` (`0133-credential-mapping-proposals.sql`,
+- `credential_mapping_proposals` (`0135-credential-mapping-proposals.sql`,
   `packages/worker/src/credentials/agent-credential-proposals.ts`) records each
   approvable `credentialMappingPropose` call under the agent that made it: the
   person (`person_user_id`) plus the request credential (`agent_credential_kind`
