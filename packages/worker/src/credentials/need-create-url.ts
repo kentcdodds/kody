@@ -17,6 +17,7 @@ export async function buildNeedCreateUrl(input: {
 	provider: string
 	need: CredentialNeed | null
 	packageKodyId: string | null
+	orgSlug: string | null
 }) {
 	const declaredKind: PackageCredentialKind | null = input.need?.kind ?? null
 	const providerSlug = providerSlugPattern.test(input.provider)
@@ -37,6 +38,7 @@ export async function buildNeedCreateUrl(input: {
 		description: input.need?.description,
 		packageKodyId: input.packageKodyId,
 		needKey: input.need ? input.key : null,
+		orgSlug: input.orgSlug,
 		extra: builtInOauth && providerSlug ? { platform: providerSlug } : {},
 	})
 }

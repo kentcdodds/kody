@@ -85,7 +85,7 @@ export type CredentialClientErrorBody = {
 	retryWith: Array<CredentialClientRetry>
 	options?: Array<CredentialClientOption>
 	possibleMatches?: Array<CredentialClientOption>
-	/** Absolute creation link; always set for unbound and not-found errors. */
+	/** Absolute creation link; always set for unbound, ambiguous, and not-found errors. */
 	createUrl?: string
 }
 
@@ -318,6 +318,7 @@ async function pickOne(input: {
 				retryFor(input.key, candidate),
 			),
 			options: input.candidates.map(toOption),
+			createUrl: await input.createUrl(),
 		},
 	)
 }
@@ -403,7 +404,10 @@ export async function openCredentialClient(
 				credential.name === name && (!scope || credential.scope === scope),
 		)
 		const createUrl = async () =>
-			buildCredentialCreateUrl(ctx.callerContext.baseUrl, { name })
+			buildCredentialCreateUrl(ctx.callerContext.baseUrl, {
+				name,
+				orgSlug: request.org.slug,
+			})
 		if (matches.length === 0) {
 			throw refusal(
 				'credential_not_found',
@@ -430,6 +434,7 @@ export async function openCredentialClient(
 				provider,
 				need,
 				packageKodyId,
+				orgSlug: request.org.slug,
 			})
 		const mapped = await resolveMappedNeed(ctx, {
 			request,

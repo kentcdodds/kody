@@ -614,3 +614,28 @@ test('each view part is addressable on its own', () => {
 		'github',
 	])
 })
+
+test('a creation link names its org, and the interim redirect lands in that org', () => {
+	const href = buildCredentialCreateHref({
+		kind: 'mcp',
+		name: 'linear',
+		orgSlug: 'acme-clients',
+	})
+	const search = new URL(href, 'https://kody.test').searchParams
+	expect(search.get('org')).toBe('acme-clients')
+	expect(parseCredentialCreateQuery(search)).toMatchObject({
+		orgSlug: 'acme-clients',
+		passthrough: new URLSearchParams(),
+	})
+	expect(credentialCreateInterimHref({ search, orgSlug: 'ada' })).toBe(
+		`/@acme-clients/-/mcp-servers?${search}`,
+	)
+	const signing = new URLSearchParams({ kind: 'signing', org: 'acme-clients' })
+	expect(credentialCreateInterimHref({ search: signing, orgSlug: 'ada' })).toBe(
+		'/@acme-clients/-/secrets',
+	)
+	const secret = new URLSearchParams({ kind: 'secret', org: 'acme-clients' })
+	expect(credentialCreateInterimHref({ search: secret, orgSlug: 'ada' })).toBe(
+		`/connect/secret-set?${secret}`,
+	)
+})

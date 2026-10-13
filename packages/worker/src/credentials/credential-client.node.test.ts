@@ -439,7 +439,7 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 		openCredentialClient(t.contextFor({ request: bea }), { key: 'resend' }),
 	)
 	const adHocUrl =
-		'https://example.com/connect/credential?kind=secret&name=resend&provider=resend'
+		'https://example.com/connect/credential?kind=secret&name=resend&provider=resend&org=acme-clients'
 	expect(adHoc.body).toMatchObject({
 		code: 'credential_unbound',
 		createUrl: adHocUrl,
@@ -474,6 +474,7 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 		description: 'Read PRs to summarize them',
 		forPackage: expect.any(String),
 		need: 'github',
+		org: 'acme-clients',
 	})
 
 	const named = await rejection(
@@ -481,7 +482,8 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 	)
 	expect(named.body).toMatchObject({
 		code: 'credential_not_found',
-		createUrl: 'https://example.com/connect/credential?name=missing',
+		createUrl:
+			'https://example.com/connect/credential?name=missing&org=acme-clients',
 	})
 })
 
@@ -509,6 +511,7 @@ test('an unbound link selects a built-in OAuth app, and kinds with no form point
 		kind: 'oauth',
 		name: 'github',
 		provider: 'github',
+		org: 'acme-clients',
 		platform: 'github',
 	})
 
@@ -837,4 +840,63 @@ test('stored mappings pick the credential: trigger override, then your default, 
 	await expect(open(bea)).rejects.toMatchObject({
 		body: { code: 'credential_unbound' },
 	})
+})
+
+test('a need a republish added fails only that call in a trigger run, with an org-scoped creation link', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/digest',
+	})
+	const beaTrigger = deriveRequestContext({
+		user: { userId: t.people.bea.personId },
+		source: {
+			kind: 'schedule',
+			jobId: 'job-1',
+			enablement: {
+				id: 'enablement-bea-daily',
+				enabler: { userId: t.people.bea.personId },
+				role: 'owner',
+			},
+		},
+		orgBinding: { org: { id: t.acmeId, slug: 'acme-clients' }, role: 'owner' },
+	})
+	const open = (key: string) =>
+		openCredentialClient(t.contextFor({ request: beaTrigger, packageId }), {
+			key,
+		})
+	mockNeeds([{ key: 'mail', provider: 'resend' }])
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
+
+	mockNeeds([
+		{ key: 'mail', provider: 'resend' },
+		{ key: 'chat', provider: 'slack' },
+	])
+	const unbound = await rejection(open('chat'))
+	const unboundUrl = new URL((unbound.body as { createUrl: string }).createUrl)
+	expect(unbound.body).toMatchObject({ code: 'credential_unbound' })
+	expect(unboundUrl.pathname).toBe('/connect/credential')
+	expect(unboundUrl.searchParams.get('org')).toBe('acme-clients')
+	expect(unboundUrl.searchParams.get('need')).toBe('chat')
+	expect(unbound.message).toContain(`Create one at ${unboundUrl.href}`)
+	// The rest of the trigger keeps working.
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
+
+	await t.storeKey({ name: 'slack-a', provider: 'slack' })
+	await t.storeKey({ name: 'slack-b', provider: 'slack' })
+	const ambiguous = await rejection(open('chat'))
+	expect(ambiguous.body).toMatchObject({
+		code: 'credential_ambiguous',
+		options: [
+			expect.objectContaining({ name: 'slack-a' }),
+			expect.objectContaining({ name: 'slack-b' }),
+		],
+	})
+	expect(
+		new URL(
+			(ambiguous.body as { createUrl: string }).createUrl,
+		).searchParams.get('org'),
+	).toBe('acme-clients')
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
 })

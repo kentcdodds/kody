@@ -315,6 +315,7 @@ export async function needCreateUrls(scope: PackageMappingScope) {
 						provider: need.provider,
 						need,
 						packageKodyId: scope.savedPackage.kodyId,
+						orgSlug: scope.request.org.slug,
 					}),
 				] as const,
 		),

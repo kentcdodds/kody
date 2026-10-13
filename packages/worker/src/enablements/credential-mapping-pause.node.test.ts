@@ -1,7 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import * as needsClosure from '#worker/credentials/credential-needs-closure.ts'
 import { buildPackageJobId } from '#worker/jobs/package-job-id.ts'
 import {
 	dailyTarget as daily,
+	mappingFixtureNeeds,
 	setupPackageCredentialMappingFixture,
 } from '#worker/test-support/package-credential-mapping-fixture.ts'
 import { planEnablementRuns } from './run-gate.ts'
@@ -114,6 +116,28 @@ test('none on purpose and default-layer mappings never pause an enablement', asy
 		},
 	])
 	await t.setDeleted(prod, true)
+	expect((await t.plan()).runs).toHaveLength(1)
+	expect((await t.readEnablement())?.state).toBe('on')
+})
+
+test('a need a republish added with no single match never pauses the trigger', async () => {
+	const t = await setup()
+	await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue([
+		...mappingFixtureNeeds,
+		{
+			key: 'calendar',
+			kind: 'oauth',
+			provider: 'google',
+			description: 'Read the calendar',
+			multiple: false,
+		},
+	])
+	// Only the call for the new need fails (credential-client tests); the
+	// trigger keeps running.
 	expect((await t.plan()).runs).toHaveLength(1)
 	expect((await t.readEnablement())?.state).toBe('on')
 })

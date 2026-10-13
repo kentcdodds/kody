@@ -318,6 +318,8 @@ export type CredentialCreateLinkInput = {
 	/** The package (kody id) and need key the credential is for. */
 	packageKodyId?: string | null
 	needKey?: string | null
+	/** Slug of the org the credential is for (the run's org). */
+	orgSlug?: string | null
 	/** Passed through to the reused form (secret-set or OAuth params). */
 	extra?: Record<string, string>
 }
@@ -331,6 +333,7 @@ const createLinkKnownParams = new Set([
 	'allowedHosts',
 	'forPackage',
 	'need',
+	'org',
 ])
 
 function trimmed(value: string | null | undefined) {
@@ -360,6 +363,7 @@ export function buildCredentialCreateHref(
 	if (hosts.length > 0) params.set('allowedHosts', hosts.join(','))
 	set('forPackage', input.packageKodyId)
 	set('need', input.needKey)
+	set('org', input.orgSlug)
 	for (const [key, value] of Object.entries(input.extra ?? {})) {
 		if (createLinkKnownParams.has(key)) continue
 		params.set(key, value)
@@ -386,6 +390,7 @@ export type ParsedCredentialCreateQuery = {
 	allowedHosts: Array<string>
 	packageKodyId: string | null
 	needKey: string | null
+	orgSlug: string | null
 	/** Every other param, for the reused form. */
 	passthrough: URLSearchParams
 }
@@ -412,6 +417,7 @@ export function parseCredentialCreateQuery(
 			.filter(Boolean),
 		packageKodyId: trimmed(search.get('forPackage')),
 		needKey: trimmed(search.get('need')),
+		orgSlug: trimmed(search.get('org')),
 		passthrough,
 	}
 }
@@ -420,28 +426,28 @@ export function parseCredentialCreateQuery(
  * Where `/connect/credential` sends a visit until the one-pager ships: the
  * existing page for the kind, with the same query. No existing form creates
  * `url`, `login`, or `signing`, so those land on the Secrets list instead of
- * a form that would save the wrong kind.
+ * a form that would save the wrong kind. The link's `org` wins over the
+ * visitor's `orgSlug`; org pages still check membership.
  */
 export function credentialCreateInterimHref(input: {
 	search: URLSearchParams
 	orgSlug: string | null
 }): string {
 	const parsed = parseCredentialCreateQuery(input.search)
+	const orgSlug = parsed.orgSlug ?? input.orgSlug
 	const query = input.search.toString()
 	const withQuery = (path: string) => (query ? `${path}?${query}` : path)
 	switch (parsed.kind) {
 		case 'oauth':
 			return withQuery('/connect/oauth')
 		case 'mcp':
-			return input.orgSlug
-				? withQuery(`/@${encodeURIComponent(input.orgSlug)}/-/mcp-servers`)
+			return orgSlug
+				? withQuery(`/@${encodeURIComponent(orgSlug)}/-/mcp-servers`)
 				: withQuery('/account')
 		case 'url':
 		case 'login':
 		case 'signing':
-			return input.orgSlug
-				? `/@${encodeURIComponent(input.orgSlug)}/-/secrets`
-				: '/account'
+			return orgSlug ? `/@${encodeURIComponent(orgSlug)}/-/secrets` : '/account'
 		case 'secret':
 		case null:
 			return withQuery('/connect/secret-set')

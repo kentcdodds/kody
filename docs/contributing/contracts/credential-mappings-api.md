@@ -153,6 +153,7 @@ Agents hand people this link the way they hand out `/connect/secret-set` and
 | `description`        | Prefilled description.                                                                                                                                                                                                 |
 | `allowedHosts`       | Prefilled hosts, comma separated or repeated (same as `/connect/secret-set`).                                                                                                                                          |
 | `forPackage`, `need` | The package (kody id) and need key this credential is for. After saving, the page offers the approval link that maps it as the default. (`package` is taken: `/connect/secret-set` reads it as an allowed package id.) |
+| `org`                | Slug of the org the credential is for: the run's org on runtime links. The interim redirect lands on that org's pages, and the secret form saves into it (membership is still checked).                                |
 | anything else        | Passed through unchanged to the reused form: `/connect/secret-set` params (`scope`, `packageId`, `expiresAt`, `allowedPackages`) or `/connect/oauth` params (`authorizeUrl`, `tokenUrl`, `scopes`, `flow`, ...).       |
 
 The page body reuses the existing secret-intake form for `secret`, `url`,
@@ -571,7 +572,7 @@ export type CredentialClientErrorBody = {
 	retryWith: Array<CredentialClientRetry>
 	options?: Array<CredentialClientOption>
 	possibleMatches?: Array<CredentialClientOption>
-	/** Absolute creation link. Always set for credential_unbound and credential_not_found. */
+	/** Absolute creation link. Always set for credential_unbound, credential_ambiguous, and credential_not_found. */
 	createUrl?: string
 }
 ```
@@ -582,7 +583,15 @@ export type CredentialClientErrorBody = {
   `kindMode=required`; for a need without `kind` it links with `kindMode=hint`
   (`oauth` when a platform OAuth app exists for the provider, plus
   `platform=<slug>`; else `secret`). `provider`, `name` (the need key),
-  `description`, `forPackage`, and `need` are prefilled.
+  `description`, `forPackage`, `need`, and `org` (the run's org) are prefilled.
+- `credential_ambiguous` carries the same link beside `options` and `retryWith`,
+  so the person can create a dedicated credential instead of picking one.
+- A failure fails only that `credential()` call. In a trigger run, a need a
+  republish added that has no single matching credential (unbound or ambiguous)
+  never pauses the trigger: the call fails with the error and its link, and the
+  trigger's other calls and later runs keep working, as for any other runtime
+  credential error. Only a credential the trigger mapping names pauses it (see
+  "Paused on a trigger mapping").
 - For a need that declares `url`, `login`, or `signing`, the message also says
   to create it with `secretSet` and that `kind`, since the website cannot create
   those kinds until the one-pager ships.
