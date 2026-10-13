@@ -5,6 +5,10 @@ import {
 } from '#app/authenticated-user.ts'
 import { loadWritableAccountSavedPackage } from '#app/account-package-write-access.ts'
 import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
+import {
+	approveCredentialNeedsRequest,
+	loadPendingPackageApprovals,
+} from '#app/account-package-approval-requests.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	approvePackageCapabilitySet,
@@ -72,8 +76,16 @@ export async function loadAccountPackageApproveCapabilitiesData(input: {
 		kodyId: savedPackage.kodyId,
 	})
 
+	const pendingApprovals = await loadPendingPackageApprovals({
+		env: input.env,
+		ownerUserId: savedPackage.userId,
+		packageId: savedPackage.id,
+		publishedCommit: summary.publishedCommit,
+	})
+
 	return {
 		ok: true,
+		pendingApprovals,
 		email: input.user.email,
 		package: {
 			id: savedPackage.id,
@@ -106,7 +118,11 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 		'action' in input.body && typeof input.body.action === 'string'
 			? input.body.action.trim()
 			: ''
-	if (action !== 'set-internet-visible' && action !== 'approve-capabilities') {
+	if (
+		action !== 'set-internet-visible' &&
+		action !== 'approve-capabilities' &&
+		action !== 'approve-credential-needs'
+	) {
 		return null
 	}
 
@@ -138,6 +154,42 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 		username,
 		kodyId: savedPackage.kodyId,
 	})
+
+	if (action === 'approve-credential-needs') {
+		const requestId =
+			'requestId' in input.body && typeof input.body.requestId === 'string'
+				? input.body.requestId.trim()
+				: ''
+		if (!requestId) {
+			return jsonResponse(
+				{ ok: false, error: 'Approval request id is required.' },
+				400,
+			)
+		}
+		const approved = await approveCredentialNeedsRequest({
+			env: input.env,
+			request: input.request,
+			savedPackage,
+			ownerUserId,
+			actorUserId,
+			requestId,
+		})
+		if (!approved.ok) {
+			return jsonResponse(
+				{ ok: false, error: approved.error, approvalUrl },
+				approved.status,
+			)
+		}
+		return jsonResponse(
+			await reloadAccountPackagesAfterWrite({
+				env: input.env,
+				request: input.request,
+				user: input.user,
+				packageId,
+				ownerUserId,
+			}),
+		)
+	}
 
 	try {
 		if (action === 'approve-capabilities') {

@@ -854,6 +854,8 @@ async function processPackageForMode(input: {
 							sourceId: input.savedPackage.sourceId,
 							files: gated.transformedFiles,
 							destructiveOverwriteConfirmed: true,
+							// Platform migrations do not wait in the owner approval queue.
+							credentialNeedsApproved: true,
 							promotePublished,
 							...(allowLockedPublish === true
 								? { allowLockedPublish: true }
@@ -1219,6 +1221,7 @@ async function processRevertStep(input: {
 											sourceId: savedPackage.sourceId,
 											files: snapshot.files,
 											destructiveOverwriteConfirmed: true,
+											credentialNeedsApproved: true,
 											promotePublished: publishedOnlyAlignedRevert
 												? true
 												: !locked,

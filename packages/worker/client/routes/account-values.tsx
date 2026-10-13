@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -131,12 +131,10 @@ export async function accountValuesRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildValuesApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		buildValuesApiRequestUrl(href),
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -163,12 +161,10 @@ export function AccountValuesRoute(handle: Handle) {
 		key: 'accountValues',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(buildValuesApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				buildValuesApiRequestUrl(href),
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountValuesLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

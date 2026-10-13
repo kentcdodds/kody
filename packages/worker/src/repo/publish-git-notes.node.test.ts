@@ -21,6 +21,7 @@ vi.mock('./isomorphic-git-lazy.ts', () => ({
 
 vi.mock('@sentry/cloudflare', () => ({
 	captureException: vi.fn(),
+	instrumentDurableObjectWithSentry: (_options: unknown, base: unknown) => base,
 }))
 
 vi.mock('./artifacts.ts', () => ({

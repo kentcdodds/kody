@@ -51,6 +51,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 	}
 	const requestUrl = new URL(input.request.url)
 	const requestedCommit = requestUrl.searchParams.get('commit')?.trim() ?? ''
+	const pendingIsDefaultHead = !requestedCommit
 	let pendingCommit: string | null = null
 	if (requestedCommit) {
 		if (!isGitCommitSha(requestedCommit)) {
@@ -108,6 +109,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 		publishedCommit,
 		pendingCommit,
 		alreadyPublished,
+		pendingIsDefaultHead,
 		filesHref: getPackageTreeHref({
 			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
@@ -181,7 +183,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		permission: 'package:write',
 	})
 	if (!resolved.ok) return resolved.response
-	const { savedPackage, ownerUserId } = resolved.package
+	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 
 	if (action === 'lock' || action === 'unlock') {
 		if (action === 'lock' && isSavedPackageLocked(savedPackage.lockedAt)) {
@@ -242,6 +244,7 @@ export async function handleAccountPackagePublishLockAction(input: {
 		userId: ownerUserId,
 		newCommit: commit,
 		...(locked ? { allowLockedPublish: true } : {}),
+		requestedByUserId: actorUserId,
 		// Owner explicitly chose this commit on approve-publish. If a
 		// published-only fleet migration advanced published_commit to a sibling
 		// of pending HEAD, this is not a fast-forward; allowForce + overwrite
@@ -286,6 +289,8 @@ export async function handleAccountPackagePublishLockAction(input: {
 				},
 				409,
 			)
+		case 'approval_required':
+			return jsonResponse({ ok: false, error: publishResult.message }, 409)
 		default: {
 			const exhaustive: never = publishResult
 			throw new Error(`Unknown approve-publish status: ${String(exhaustive)}`)

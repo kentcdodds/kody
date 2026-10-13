@@ -5,16 +5,14 @@ import {
 	isLoopbackArtifactsRemote,
 } from './artifacts.ts'
 import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
-import {
-	createSnapshotFilesWorkspace,
-	formatFailedRepoCheckMessages,
-	runRepoChecks,
-} from './checks.ts'
+import { createSnapshotFilesWorkspace, runRepoChecks } from './checks.ts'
+import { createRepoChecksFailedError } from './repo-checks-failed-error.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
 } from './large-file-policy.ts'
+import { PackageCredentialNeedsApprovalError } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
@@ -59,6 +57,9 @@ type SyncArtifactSourceInput = {
 	serverTiming?: Array<ServerTimingEntry>
 	/** Website or platform-owned rewrites may promote a locked package. */
 	allowLockedPublish?: boolean
+	/** Platform-owned rewrites skip the credential needs approval pause. */
+	credentialNeedsApproved?: boolean
+	requestedByUserId?: string | null
 	/**
 	 * When false, commit and push HEAD without advancing published_commit.
 	 * Used by fleet codemods on locked packages.
@@ -194,6 +195,9 @@ export async function syncArtifactSourceSnapshot(
 		path,
 		content,
 	}))
+	// A publish paused for credential needs approval keeps its session: the
+	// approval re-runs the publish from it.
+	let keepSession = false
 	try {
 		if (!source.published_commit) {
 			await assertPackageBootstrapUnlocked({
@@ -256,7 +260,7 @@ export async function syncArtifactSourceSnapshot(
 									: {}),
 							})
 							if (!checks.ok) {
-								throw new Error(formatFailedRepoCheckMessages(checks.results))
+								throw createRepoChecksFailedError(checks.results)
 							}
 						}
 						const snapshot = await writeArtifactSourceSnapshot({
@@ -392,7 +396,7 @@ export async function syncArtifactSourceSnapshot(
 					: {}),
 			})
 			if (!checkRun.ok) {
-				throw new Error(formatFailedRepoCheckMessages(checkRun.results))
+				throw createRepoChecksFailedError(checkRun.results)
 			}
 		} else if (
 			source.entity_kind === 'package' &&
@@ -422,18 +426,34 @@ export async function syncArtifactSourceSnapshot(
 			...(input.allowLockedPublish === true
 				? { allowLockedPublish: true }
 				: {}),
+			...(input.credentialNeedsApproved === true
+				? { credentialNeedsApproved: true }
+				: {}),
+			...(input.requestedByUserId
+				? { requestedByUserId: input.requestedByUserId }
+				: {}),
 			...(input.promotePublished === false ? { promotePublished: false } : {}),
 		})
-		if (publishResult.status === 'locked') {
-			throw new PackagePublishLockedError({
-				packageId: publishResult.packageId,
-				packageName: publishResult.packageName,
-				pendingCommit: publishResult.pendingCommit,
-				currentPublishedCommit: publishResult.currentPublishedCommit,
-			})
-		}
-		if (publishResult.status !== 'ok') {
-			throw new Error(publishResult.message)
+		switch (publishResult.status) {
+			case 'ok':
+				break
+			case 'locked':
+				throw new PackagePublishLockedError({
+					packageId: publishResult.packageId,
+					packageName: publishResult.packageName,
+					pendingCommit: publishResult.pendingCommit,
+					currentPublishedCommit: publishResult.currentPublishedCommit,
+				})
+			case 'approval_required':
+				keepSession = true
+				throw new PackageCredentialNeedsApprovalError(publishResult.approval)
+			case 'checks_outdated':
+			case 'base_moved':
+				throw new Error(publishResult.message)
+			default: {
+				const exhaustive: never = publishResult
+				throw new Error(`Unknown publish status: ${String(exhaustive)}`)
+			}
 		}
 		// publishSession persists the workspace snapshot to
 		// BUNDLE_ARTIFACTS_KV and reverts entity_sources.published_commit
@@ -447,11 +467,15 @@ export async function syncArtifactSourceSnapshot(
 		// persistence and rollback.
 		return publishResult.publishedCommit
 	} finally {
-		await pushServerTiming(input.serverTiming, 'discard-session', () =>
-			session.discardSession({ sessionId, userId: input.userId }).catch(() => {
-				// Best effort only; publish/apply failures should preserve the root cause.
-			}),
-		)
+		if (!keepSession) {
+			await pushServerTiming(input.serverTiming, 'discard-session', () =>
+				session
+					.discardSession({ sessionId, userId: input.userId })
+					.catch(() => {
+						// Best effort only; publish/apply failures should preserve the root cause.
+					}),
+			)
+		}
 	}
 }
 

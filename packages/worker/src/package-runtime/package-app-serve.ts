@@ -11,6 +11,8 @@ import {
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
+import { renderErrorAgentPromptStaticHtml } from '#universal/error-agent-prompt.ts'
+import { buildPackageAppErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { getAppBaseUrl, getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -456,6 +458,17 @@ function createPackageAppErrorResponse(input: {
 								<dt>Path</dt>
 								<dd><code>${requestPath}</code></dd>
 							</dl>
+							${html.raw`${renderErrorAgentPromptStaticHtml(
+								buildPackageAppErrorAgentPrompt({
+									kind: input.kind,
+									packageName: input.packageName,
+									kodyId: input.kodyId,
+									path: requestPath,
+									// Visitor HTML must not include host exception text;
+									// JSON synthetic responses still carry `cause`.
+									runtimeRunId: input.runtimeRunId,
+								}),
+							)}`}
 						</section>
 					</main>
 				</body>

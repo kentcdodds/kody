@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -42,12 +42,10 @@ async function loadSecretProviders(
 	href: string,
 	signal: AbortSignal,
 ): Promise<AccountSecretProvidersLoaderData> {
-	const response = await fetch(apiUrlForHref(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		apiUrlForHref(href),
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) {
 		throw new Error('Unauthorized.')
 	}
@@ -65,12 +63,10 @@ export async function accountSecretProvidersRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(apiUrlForHref(url.pathname + url.search), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(url.href),
-		signal,
-	})
+	const response = await fetch(
+		apiUrlForHref(url.pathname + url.search),
+		orgAccountApiFetchInit(url.href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}

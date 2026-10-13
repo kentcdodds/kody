@@ -116,6 +116,11 @@ export const parallelValidateLegs = [
 		weight: 'check',
 	},
 	{
+		name: 'error-agent-prompt',
+		command: 'npm run error-agent-prompt:check',
+		weight: 'check',
+	},
+	{
 		name: 'docs-hosted-execute',
 		command: 'npm run docs:check-no-hosted-execute',
 		weight: 'check',

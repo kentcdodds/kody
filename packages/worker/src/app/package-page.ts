@@ -186,6 +186,8 @@ function toPlainRepoOwnerPackage(input: {
 		searchText: null,
 		exports: null,
 		publishedCommit: input.iconCommit,
+		pendingCommit: input.iconCommit,
+		pendingCommitKnown: true,
 		communityFork: null,
 	}
 }

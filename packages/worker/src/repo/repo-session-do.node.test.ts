@@ -19,6 +19,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
 import type * as SavedPackageRepo from '#worker/package-registry/repo.ts'
+import type * as CredentialNeedsApproval from '#worker/credentials/credential-needs-approval.ts'
 import type * as StorageBuckets from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionMockModule as mockModule,
@@ -285,6 +286,21 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: vi.fn(async () => undefined),
 }))
+
+const needsGate = vi.hoisted(() => ({
+	requireCredentialNeedsApproval: vi.fn(
+		async (): Promise<CredentialNeedsApproval.CredentialNeedsApprovalRequired | null> =>
+			null,
+	),
+}))
+
+vi.mock(
+	'#worker/credentials/credential-needs-approval.ts',
+	async (importOriginal) => ({
+		...(await importOriginal<typeof CredentialNeedsApproval>()),
+		requireCredentialNeedsApproval: needsGate.requireCredentialNeedsApproval,
+	}),
+)
 
 vi.mock('#worker/repo/identity-icon.ts', () => ({
 	refreshIdentityIconForSource: vi.fn(async () => undefined),

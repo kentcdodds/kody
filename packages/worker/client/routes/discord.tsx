@@ -1,5 +1,7 @@
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { buildErrorAgentPrompt } from '#universal/error-agent-prompt.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import {
 	createRouteData,
@@ -44,20 +46,47 @@ function isDiscordPagePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === discordPath
 }
 
-function readCallbackMessage(href: string) {
+type DiscordPageMessage = {
+	text: string
+	tone: 'error' | 'info'
+	oauthErrorCode?: string | null
+}
+
+function readCallbackMessage(href: string): DiscordPageMessage | null {
 	const searchParams = new URL(href, 'http://localhost').searchParams
 	const linkedProvider = searchParams.get('oauthLinked')
 	if (linkedProvider === 'discord') {
 		return {
 			text: 'Discord connected.',
-			tone: 'info' as const,
+			tone: 'info',
 		}
 	}
-	const error = getOauthLoginErrorMessage(searchParams.get('oauthError'))
+	const oauthErrorCode = searchParams.get('oauthError')
+	const error = getOauthLoginErrorMessage(oauthErrorCode)
 	if (error) {
-		return { text: error, tone: 'error' as const }
+		return { text: error, tone: 'error', oauthErrorCode }
 	}
 	return null
+}
+
+function discordErrorAgentPrompt(input: {
+	errorMessage: string
+	oauthErrorCode?: string | null
+}) {
+	return buildErrorAgentPrompt({
+		activity: 'Connecting Discord on /discord.',
+		errorCode: input.oauthErrorCode ?? 'discord_error',
+		errorMessage: input.errorMessage,
+		ids: { path: '/discord', provider: 'discord' },
+		likelyCause:
+			'OAuth callback failed, Discord is not configured, or the connection status could not be loaded.',
+		nextSteps: [
+			'Open guide:oauth and retry the Discord connect from /discord.',
+			'Tell me whether to reconnect Discord or check provider configuration.',
+		],
+		kodyTools: ['search({ entity: "guide:oauth" })'],
+		docs: ['search({ entity: "guide:oauth" })'],
+	})
 }
 
 function discordMemberRoleMessage(status: string) {
@@ -96,7 +125,7 @@ export function DiscordRoute(handle: Handle) {
 	/** Last good payload; the action handlers read it between renders. */
 	let page: DiscordPageLoaderData | null = null
 	let busy = false
-	let actionMessage: { text: string; tone: 'error' | 'info' } | null = null
+	let actionMessage: DiscordPageMessage | null = null
 	const pageData = createRouteData({
 		key: 'discord',
 		async load(_href, signal) {
@@ -246,22 +275,41 @@ export function DiscordRoute(handle: Handle) {
 				</header>
 
 				{message ? (
-					<p
-						role={message.tone === 'error' ? 'alert' : 'status'}
-						mix={css({
-							...descriptionCss,
-							color:
-								message.tone === 'error' ? colors.danger : colors.textMuted,
-						})}
-					>
-						{message.text}
-					</p>
+					<>
+						<p
+							role={message.tone === 'error' ? 'alert' : 'status'}
+							mix={css({
+								...descriptionCss,
+								color:
+									message.tone === 'error' ? colors.danger : colors.textMuted,
+							})}
+						>
+							{message.text}
+						</p>
+						{message.tone === 'error' ? (
+							<>
+								<ErrorAgentPromptButton
+									prompt={discordErrorAgentPrompt({
+										errorMessage: message.text,
+										oauthErrorCode: message.oauthErrorCode,
+									})}
+								/>
+							</>
+						) : null}
+					</>
 				) : null}
 
 				{status === 'error' ? (
-					<p mix={css(descriptionCss)} role="alert">
-						Unable to load Discord connection status.
-					</p>
+					<>
+						<p mix={css(descriptionCss)} role="alert">
+							Unable to load Discord connection status.
+						</p>
+						<ErrorAgentPromptButton
+							prompt={discordErrorAgentPrompt({
+								errorMessage: 'Unable to load Discord connection status.',
+							})}
+						/>
+					</>
 				) : null}
 
 				<section mix={css(cardCss)}>

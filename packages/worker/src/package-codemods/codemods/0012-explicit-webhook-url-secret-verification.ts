@@ -9,8 +9,8 @@ export const explicitWebhookUrlSecretVerificationCodemodId =
 
 const packageManifestPath = 'package.json'
 
-const missingVerificationMessage =
-	'Declares a kody.webhooks entry without verification; add verification: { "type": "url-secret" } (current behavior), or an HMAC type if the sender signs.'
+const undeclaredVerificationMessage =
+	'Declares a kody.webhooks entry without verification. It keeps working on its URL secret; consider declaring verification: { "type": "url-secret" } (same behavior, explicit), or an HMAC type if the sender signs.'
 
 const invalidJsonMessage =
 	'package.json is missing or not valid JSON; review kody.webhooks manually.'
@@ -18,18 +18,11 @@ const invalidJsonMessage =
 const invalidShapeMessage =
 	'package.json#kody.webhooks is not an array of objects, or a webhook verification is not an object; review and update manually.'
 
-type ManifestRecord = Record<string, unknown>
-
-type WebhooksRewrite =
-	| { kind: 'clean' }
-	| { kind: 'rewrite'; parsed: ManifestRecord; source: string }
-	| { kind: 'manual'; message: string }
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function parseManifest(source: string): ManifestRecord | null {
+function parseManifest(source: string): Record<string, unknown> | null {
 	try {
 		const parsed: unknown = JSON.parse(source)
 		return isPlainObject(parsed) ? parsed : null
@@ -38,121 +31,63 @@ function parseManifest(source: string): ManifestRecord | null {
 	}
 }
 
-function detectJsonIndent(source: string) {
-	const match = source.match(/\n([ \t]+)"/)
-	return match?.[1] ?? '\t'
-}
-
-function classifyPackageJson(files: Record<string, string>): WebhooksRewrite {
-	const source = files[packageManifestPath]
-	if (typeof source !== 'string') {
-		return { kind: 'manual', message: invalidJsonMessage }
-	}
-	const parsed = parseManifest(source)
-	if (!parsed) return { kind: 'manual', message: invalidJsonMessage }
-	const kody = parsed['kody']
-	if (kody === undefined) return { kind: 'clean' }
-	if (!isPlainObject(kody)) {
-		return { kind: 'manual', message: invalidShapeMessage }
-	}
-	const webhooks = kody['webhooks']
-	if (webhooks === undefined) return { kind: 'clean' }
-	if (!Array.isArray(webhooks) || !webhooks.every(isPlainObject)) {
-		return { kind: 'manual', message: invalidShapeMessage }
-	}
-	let missing = false
-	for (const webhook of webhooks) {
-		if (!('verification' in webhook)) {
-			missing = true
-		} else if (!isPlainObject(webhook['verification'])) {
-			return { kind: 'manual', message: invalidShapeMessage }
-		}
-	}
-	return missing ? { kind: 'rewrite', parsed, source } : { kind: 'clean' }
-}
-
 function detectExplicitWebhookUrlSecretVerification(
 	files: Record<string, string>,
 ): Array<PackageCodemodFinding> {
-	const rewrite = classifyPackageJson(files)
-	switch (rewrite.kind) {
-		case 'clean':
-			return []
-		case 'rewrite':
-			return [
-				{ path: packageManifestPath, message: missingVerificationMessage },
-			]
-		case 'manual':
-			return [{ path: packageManifestPath, message: rewrite.message }]
-		default: {
-			const exhaustive: never = rewrite
-			return exhaustive
+	const source = files[packageManifestPath]
+	if (typeof source !== 'string') {
+		return [{ path: packageManifestPath, message: invalidJsonMessage }]
+	}
+	const parsed = parseManifest(source)
+	if (!parsed) {
+		return [{ path: packageManifestPath, message: invalidJsonMessage }]
+	}
+	const kody = parsed['kody']
+	if (kody === undefined) return []
+	if (!isPlainObject(kody)) {
+		return [{ path: packageManifestPath, message: invalidShapeMessage }]
+	}
+	const webhooks = kody['webhooks']
+	if (webhooks === undefined) return []
+	if (!Array.isArray(webhooks) || !webhooks.every(isPlainObject)) {
+		return [{ path: packageManifestPath, message: invalidShapeMessage }]
+	}
+	let undeclared = false
+	for (const webhook of webhooks) {
+		if (!('verification' in webhook)) {
+			undeclared = true
+		} else if (!isPlainObject(webhook['verification'])) {
+			return [{ path: packageManifestPath, message: invalidShapeMessage }]
 		}
 	}
+	return undeclared
+		? [{ path: packageManifestPath, message: undeclaredVerificationMessage }]
+		: []
 }
 
 function transformExplicitWebhookUrlSecretVerification(
 	files: Record<string, string>,
 ): PackageCodemodTransformResult {
-	const rewrite = classifyPackageJson(files)
-	switch (rewrite.kind) {
-		case 'clean':
-			return {
-				files: { ...files },
-				changed: false,
-				changedPaths: [],
-				needsManual: [],
-			}
-		case 'manual':
-			return {
-				files: { ...files },
-				changed: false,
-				changedPaths: [],
-				needsManual: [{ path: packageManifestPath, message: rewrite.message }],
-			}
-		case 'rewrite': {
-			const kody = rewrite.parsed['kody'] as ManifestRecord
-			const webhooks = kody['webhooks'] as Array<ManifestRecord>
-			const next = {
-				...rewrite.parsed,
-				kody: {
-					...kody,
-					webhooks: webhooks.map((webhook) =>
-						'verification' in webhook
-							? webhook
-							: { ...webhook, verification: { type: 'url-secret' } },
-					),
-				},
-			}
-			return {
-				files: {
-					...files,
-					[packageManifestPath]: `${JSON.stringify(next, null, detectJsonIndent(rewrite.source))}\n`,
-				},
-				changed: true,
-				changedPaths: [packageManifestPath],
-				needsManual: [],
-			}
-		}
-		default: {
-			const exhaustive: never = rewrite
-			return exhaustive
-		}
+	return {
+		files: { ...files },
+		changed: false,
+		changedPaths: [],
+		needsManual: detectExplicitWebhookUrlSecretVerification(files),
 	}
 }
 
 /**
- * Manifest-format migration: give every `kody.webhooks` entry that declares no
- * `verification` the explicit `{ "type": "url-secret" }` it already gets at
- * ingress, so publish can require `verification`. Zero behavior change.
+ * Detect-only: lists `kody.webhooks` entries with no `verification`. Omitting
+ * `verification` is a supported, permanent state (URL secret only), so this
+ * never rewrites manifests; owners choose whether to declare a type.
  * https://github.com/kentcdodds/kody/issues/3477
  */
 export const explicitWebhookUrlSecretVerificationCodemod = {
 	id: explicitWebhookUrlSecretVerificationCodemodId,
 	description:
-		'Add verification: { "type": "url-secret" } to package.json#kody.webhooks entries that declare no verification (what ingress already does for them).',
-	// Fleet apply must advance published_commit on drifted packages without
-	// clobbering owner unpublished HEAD (issue #3477 rollout).
+		'Detect-only: list package.json#kody.webhooks entries that declare no verification (they keep running on the URL secret) so owners can choose to declare one.',
+	// Earlier apply runs used the published-only lane; revert of those runs
+	// must take the same lane.
 	applyMode: 'published-only',
 	detect: detectExplicitWebhookUrlSecretVerification,
 	transform: transformExplicitWebhookUrlSecretVerification,

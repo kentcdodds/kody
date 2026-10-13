@@ -294,6 +294,7 @@ test('capability proxy session matches the CLI preflight contract', async () => 
 		expiresAt: expect.any(String),
 		maxExpiresAt: expect.any(String),
 		user: { userId: api.userId, email: 'api-user@example.com' },
+		features: expect.arrayContaining(['credential-call-map']),
 	})
 
 	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
@@ -385,6 +386,38 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 				point.blobs[1] === 'execute' || point.blobs[1] === 'dynamic_worker_day',
 		),
 	).toBe(false)
+})
+
+test('capability proxy checks a credentials call map before local code runs', async () => {
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+	const noMap = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: { path: ['kody', 'credentialClientCheck'], args: [{}] },
+	})
+	expect(noMap.status).toBe(200)
+	expect(noMap.body).toEqual({ result: { ok: true, value: { warnings: [] } } })
+	const missingPick = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: {
+			path: ['kody', 'credentialClientCheck'],
+			args: [{}],
+			credentials: { github: 'no-such-credential' },
+		},
+	})
+	expect(missingPick.status).toBe(200)
+	expect(missingPick.body).toMatchObject({
+		result: { ok: false, error: { code: 'credential_not_found' } },
+	})
+	const badMap = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: {
+			path: ['kody', 'credentialClientCheck'],
+			args: [{}],
+			credentials: { github: { name: 'x', scope: 'team' } },
+		},
+	})
+	expect(badMap.status).toBe(400)
 })
 
 test('capability proxy runs kody:runtime calls and meters each hop', async () => {

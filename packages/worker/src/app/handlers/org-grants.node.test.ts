@@ -225,6 +225,46 @@ test('owner can revoke a grant', async () => {
 	expect(payload.grants).toEqual([])
 })
 
+test('personal org owner can list and revoke grants', async () => {
+	const env = createEnv()
+	const now = '2026-01-01T00:00:00.000Z'
+	const personalOrgId = ownerIdFromStored(people.ada.personId)
+	sqlite
+		.prepare(
+			`INSERT INTO grants (
+			   id, org_id, resource_type, resource_id, subject_type, subject_id,
+			   preset, created_by_user_id, created_at, updated_at
+			 ) VALUES ('grant-personal-1', ?, 'package', 'pkg-1', 'user', ?, 'use', ?, ?, ?)`,
+		)
+		.run(personalOrgId, people.dan.personId, people.ada.personId, now, now)
+
+	const listReq = new Request('https://kody.test/@ada/-/grants.json')
+	await signIn('ada', listReq)
+	const listRes = await createOrgGrantsApiHandler(env).handler({
+		request: listReq,
+	} as never)
+	expect(listRes.status).toBe(200)
+	const listPayload = (await listRes.json()) as {
+		canManage: boolean
+		grants: Array<{ id: string }>
+	}
+	expect(listPayload.canManage).toBe(true)
+	expect(listPayload.grants.map((g) => g.id)).toContain('grant-personal-1')
+
+	const revokeReq = new Request('https://kody.test/@ada/-/grants/revoke.json', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ grantId: 'grant-personal-1' }),
+	})
+	await signIn('ada', revokeReq)
+	const revoked = await createOrgGrantsRevokePostHandler(env).handler({
+		request: revokeReq,
+	} as never)
+	expect(revoked.status).toBe(200)
+	const payload = (await revoked.json()) as { grants: Array<{ id: string }> }
+	expect(payload.grants.map((g) => g.id)).not.toContain('grant-personal-1')
+})
+
 test('collaborators JSON is 404 for grant-only people', async () => {
 	const env = createEnv()
 	const req = new Request('https://kody.test/@zeta-co/-/collaborators.json')

@@ -41,7 +41,7 @@ export const storageQueryCapability = defineDomainCapability(
 		name: 'storageQuery',
 		orgPermission: 'package:write',
 		description:
-			'Run SQL against one durable storage bucket. Defaults to read-only and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true.',
+			'Run SQL against one durable storage bucket. Requires package:write (connection-profile write) whenever storage_id resolves to a package bucket — including writable:false SELECT/EXPLAIN/PRAGMA inspection. Defaults to read-only SQL and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true.',
 		keywords: ['storage', 'sql', 'query', 'inspect', 'database'],
 		readOnly: false,
 		idempotent: false,

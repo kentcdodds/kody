@@ -8,7 +8,6 @@ import {
 	gatewayFetchHeadersHeaderName,
 	gatewayFetchMethodHeaderName,
 	gatewayFetchPackageIdHeaderName,
-	gatewayFetchUploadLimitMessage,
 	gatewayFetchUrlHeaderName,
 	maxGatewayFetchUploadBytes,
 	parseCapabilityProxyGatewayFetchStreamHeaders,
@@ -105,8 +104,11 @@ test('assertGatewayFetchContentLength names the Worker upload limit', () => {
 		expect(error).toMatchObject({
 			status: 413,
 			code: 'payload_too_large',
-			message: gatewayFetchUploadLimitMessage(),
 		})
+		expect((error as ApiError).message).toMatch(/100 MiB/)
+		expect((error as ApiError).message).toContain(
+			String(maxGatewayFetchUploadBytes),
+		)
 	}
 })
 

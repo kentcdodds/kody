@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
@@ -85,12 +85,10 @@ export function AccountActivityRoute(handle: Handle) {
 		key: 'accountActivity',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(buildActivityApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				buildActivityApiRequestUrl(href),
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountActivityLoaderData>(response)
 			if (!response.ok || !payload?.ok) {

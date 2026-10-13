@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { credentialNeedChangeSchema } from '#mcp/capabilities/packages/shared.ts'
 import {
 	packageIdLookupDescription,
 	packageNameLookupDescription,
@@ -659,6 +660,16 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		pending_commit: z.string(),
 		current_published_commit: z.string().nullable(),
 		approval_url: z.string(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('approval_required'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		pending_commit: z.string(),
+		current_published_commit: z.string().nullable(),
+		approval_url: z.string(),
+		credential_need_changes: z.array(credentialNeedChangeSchema),
 		message: z.string(),
 	}),
 ])

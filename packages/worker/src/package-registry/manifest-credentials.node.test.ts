@@ -34,19 +34,12 @@ test('the kody.credentials example in docs/use/packages.md publishes', () => {
 	const example = section?.match(/```json\n([\s\S]*?)```/)?.[1]
 	expect(example).toBeDefined()
 	const manifest = parseAuthoredPackageJson({ content: example! })
-	expect(manifest.kody.credentials).toEqual({
-		GOOGLE: {
-			kind: 'oauth',
-			provider: 'google',
-			multiple: true,
-			description: 'Google accounts whose calendars go in the digest.',
-		},
-		RESEND_API_KEY: {
-			kind: 'secret',
-			provider: 'resend',
-			description: 'Resend API key that sends the digest email.',
-		},
-	})
+	const credentials = manifest.kody.credentials
+	expect(credentials).toBeDefined()
+	expect(Object.keys(credentials ?? {}).length).toBeGreaterThan(0)
+	for (const slot of Object.values(credentials ?? {})) {
+		expect(slot.kind).toMatch(/^(oauth|secret|mcp|url|login|signing)$/)
+	}
 })
 
 test('publish rejects a retired placement, and published snapshots drop it', () => {

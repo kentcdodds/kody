@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import type * as RepoChecks from '#worker/repo/checks.ts'
+import { explicitWebhookUrlSecretVerificationCodemodId } from './codemods/0012-explicit-webhook-url-secret-verification.ts'
 import {
 	createPackageCodemodRun,
 	getPackageCodemodRunById,
@@ -11,6 +12,8 @@ import {
 	insertPackageCodemodRunItem,
 	listPackageCodemodRuns,
 } from './ledger.ts'
+import type * as Registry from './registry.ts'
+import { type PackageCodemod } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
@@ -25,6 +28,28 @@ const mocks = vi.hoisted(() => ({
 	getPackageScopeByUserId: vi.fn(
 		async (_db: D1Database, userId: string) => userId,
 	),
+}))
+
+const publishedOnlyFixtureCodemod = vi.hoisted((): PackageCodemod => ({
+	id: 'test-published-only-fixture',
+	description: 'Test fixture for the published-only write lane.',
+	applyMode: 'published-only',
+	detect: (files) =>
+		files['index.ts']?.includes('// fixture codemod')
+			? []
+			: [{ path: 'index.ts', message: 'Missing fixture marker.' }],
+	transform: (files) => {
+		const source = files['index.ts'] ?? ''
+		if (source.includes('// fixture codemod')) {
+			return { files, changed: false, changedPaths: [], needsManual: [] }
+		}
+		return {
+			files: { ...files, 'index.ts': `${source}// fixture codemod\n` },
+			changed: true,
+			changedPaths: ['index.ts'],
+			needsManual: [],
+		}
+	},
 }))
 
 vi.mock('#worker/package-registry/user-scope.ts', () => ({
@@ -52,6 +77,16 @@ vi.mock('#worker/repo/checks.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof RepoChecks>()),
 	runRepoChecks: mocks.runRepoChecks,
 }))
+vi.mock('./registry.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof Registry>()
+	return {
+		...actual,
+		getPackageCodemodById: (id: string) =>
+			id === publishedOnlyFixtureCodemod.id
+				? publishedOnlyFixtureCodemod
+				: actual.getPackageCodemodById(id),
+	}
+})
 vi.mock('./subscription-events.ts', () => ({
 	packageCodemodAppliedTopic: 'package.codemod.applied',
 	packageCodemodRevertedTopic: 'package.codemod.reverted',
@@ -865,9 +900,9 @@ test('package codemod continuation steps heartbeat the run and reopen abandoned 
 	expect(reopened!.updatedAt > '2026-07-30T10:00:00.000Z').toBe(true)
 })
 
-const publishedOnlyCodemodId = '0012-explicit-webhook-url-secret-verification'
+const publishedOnlyCodemodId = publishedOnlyFixtureCodemod.id
 
-function webhookMissingVerificationFiles() {
+function undeclaredWebhookFiles() {
 	return {
 		'package.json': `${JSON.stringify(
 			{
@@ -875,7 +910,7 @@ function webhookMissingVerificationFiles() {
 				exports: { '.': './index.ts' },
 				kody: {
 					id: 'webhook-pkg',
-					description: 'Webhook package for published-only codemod tests.',
+					description: 'Webhook package with no verification declared.',
 					webhooks: [{ path: '/hooks/demo' }],
 				},
 			},
@@ -885,6 +920,51 @@ function webhookMissingVerificationFiles() {
 		'index.ts': 'export {}\n',
 	}
 }
+
+test('0012 dry-run and apply never rewrite or republish an undeclared webhook package', async () => {
+	setupMocks()
+	const { env, kv } = createEnv()
+	const pkg = savedPackage('pkg-undeclared-webhook', {
+		kodyId: 'webhook-pkg',
+		sourceId: 'source-undeclared-webhook',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: undeclaredWebhookFiles(),
+			publishedCommit: 'commit-published',
+			repoId: 'repo-undeclared-webhook',
+			sourceId: pkg.sourceId,
+			userId: pkg.userId,
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-published',
+	})
+
+	for (const mode of ['dry-run', 'apply'] as const) {
+		const result = await step(env, {
+			mode,
+			codemodId: explicitWebhookUrlSecretVerificationCodemodId,
+		})
+		expect(result.items[0]).toMatchObject({
+			status: 'needs_manual',
+			packageId: pkg.id,
+			changedPaths: [],
+			findings: [
+				{
+					path: 'package.json',
+					message: expect.stringContaining('keeps working on its URL secret'),
+				},
+			],
+		})
+	}
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+	expect(mocks.syncPublishedSourceSnapshotOnly).not.toHaveBeenCalled()
+	expect(mocks.refreshSavedPackageProjection).not.toHaveBeenCalled()
+	expect(kv.store.size).toBe(0)
+})
 
 test('published-only apply on drifted packages uses syncPublishedSourceSnapshotOnly and never default-branch sync', async () => {
 	setupMocks()
@@ -896,7 +976,7 @@ test('published-only apply on drifted packages uses syncPublishedSourceSnapshotO
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-published-old',
 			repoId: 'repo-drift-published-only',
 			sourceId: pkg.sourceId,
@@ -944,7 +1024,7 @@ test('published-only apply promotes locked drifted packages via allowLockedPubli
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-published-old',
 			repoId: 'repo-locked-drift-published-only',
 			sourceId: pkg.sourceId,
@@ -991,7 +1071,7 @@ test('published-only apply promotes locked aligned packages via allowLockedPubli
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-repo-aligned',
 			repoId: 'repo-locked-aligned-published-only',
 			sourceId: pkg.sourceId,
@@ -1034,7 +1114,7 @@ test('published-only apply on non-drifted packages still uses syncArtifactSource
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-repo-aligned',
 			repoId: 'repo-aligned-published-only',
 			sourceId: pkg.sourceId,
@@ -1069,7 +1149,7 @@ test('published-only revert does not require HEAD to match afterCommit', async (
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-before',
 			repoId: 'repo-revert-published-only',
 			sourceId: pkg.sourceId,
@@ -1104,7 +1184,7 @@ test('published-only revert does not require HEAD to match afterCommit', async (
 	})
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-after-apply',
 			repoId: 'repo-revert-published-only',
 			sourceId: pkg.sourceId,
@@ -1137,7 +1217,7 @@ test('published-only codemod revert of an aligned apply uses syncArtifactSourceS
 	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-aligned',
 			repoId: 'repo-revert-aligned-published-only',
 			sourceId: pkg.sourceId,
@@ -1166,7 +1246,7 @@ test('published-only codemod revert of an aligned apply uses syncArtifactSourceS
 	})
 	mocks.loadPackageSourceBySourceId.mockResolvedValue(
 		loadedSource({
-			files: webhookMissingVerificationFiles(),
+			files: undeclaredWebhookFiles(),
 			publishedCommit: 'commit-after-aligned',
 			repoId: 'repo-revert-aligned-published-only',
 			sourceId: pkg.sourceId,

@@ -441,24 +441,23 @@ the sibling is applied.
 
 ### `0012-explicit-webhook-url-secret-verification`
 
-This one-shot manifest-format codemod adds
-`"verification": { "type": "url-secret" }` to every `package.json#kody.webhooks`
-entry that declares no `verification`. Ingress already authenticates those
-webhooks by URL secret alone, so the rewrite changes no behavior (see
+Detect-only. Lists `package.json#kody.webhooks` entries that declare no
+`verification`. Omitting `verification` is a supported, permanent state: ingress
+treats it as `url-secret` and publish accepts it (see
 [Senders that cannot sign](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
-Once a rescan finds no webhook without `verification`, publish requires it
-([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+Findings are a recommendation for owners to declare a type, not a migration.
 
-- Appends `verification` to each undeclared entry. Entries that already declare
-  any verification type are left unchanged, and the codemod is idempotent.
-- Packages without `kody.webhooks` are clean.
-- Emits `needsManual` for missing or invalid `package.json`, a `kody.webhooks`
-  that is not an array of objects, and a `verification` that is not an object.
-- Does not touch the stored signing secret. Mint still gives these webhooks the
-  default `X-Kody-Signature` secret, and `{{webhookSecret}}` apply is unchanged.
-- Sets `applyMode: 'published-only'` so fleet apply can advance
-  `published_commit` on packages whose Artifacts default-branch HEAD has
-  drifted, without moving that HEAD (owner unpublished work stays put).
+- `transform` never changes files, so dry-run and apply report `needs_manual`
+  with the same finding and never republish a package.
+- Packages without `kody.webhooks`, or whose webhooks all declare
+  `verification`, are clean.
+- Emits a manual-review finding for missing or invalid `package.json`, a
+  `kody.webhooks` that is not an array of objects, and a `verification` that is
+  not an object.
+- An earlier version rewrote manifests to add
+  `"verification": { "type": "url-secret" }` (same behavior at ingress) through
+  the published-only lane. It keeps `applyMode: 'published-only'` so
+  `adminPackageCodemodRevert` of those runs takes the same lane.
 
 ## Engine
 
@@ -501,11 +500,11 @@ step matched zero packages.
 Locked packages (`saved_packages.locked_at` set) still run apply and revert for
 `head-and-published` codemods when HEAD matches published: the engine commits
 and pushes HEAD and does **not** advance `published_commit`. The owner reviews
-that HEAD commit later at `/@username/:kodyId/approve-publish?commit=…`.
+that HEAD commit later at `/@username/:name/approve-publish?commit=…`.
 `published-only` codemods **always finalize** `published_commit`, including on
 locked packages via `allowLockedPublish`. If that creates a sibling of pending
-HEAD, approve-publish still works: the owner click passes `allowForce` with
-destructive overwrite confirmation (backup required).
+HEAD, approve-publish promotes that commit: the owner click passes `allowForce`
+with destructive overwrite confirmation (backup required).
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.

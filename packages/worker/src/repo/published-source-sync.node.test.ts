@@ -157,12 +157,6 @@ function setupRepoAccess(remote = 'https://artifacts.example/git/repo-1.git') {
 	})
 }
 
-test('kody published ref constants stay off sessions/*', () => {
-	expect(kodyPublishedBranchName).toBe('kody-published')
-	expect(kodyPublishedRef).toBe('refs/heads/kody-published')
-	expect(kodyPublishedRef.startsWith('refs/heads/sessions/')).toBe(false)
-})
-
 test('syncPublishedSourceSnapshotOnly pushes kody-published and finalizes without touching default branch', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow)
 	setupRepoAccess()

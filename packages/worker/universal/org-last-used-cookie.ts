@@ -3,6 +3,17 @@ import { isOrganizationSlug } from '#universal/org-pages.ts'
 const lastUsedOrgCookieName = 'kody_last_org'
 const lastUsedOrgMaxAgeSeconds = 60 * 60 * 24 * 365
 
+/**
+ * Lightweight JSON twin used after the client router adopts an org-page
+ * prefetch that skipped `Set-Cookie`. Distinct from section payloads so the
+ * no-refetch navigation e2e still sees one `/account/<section>.json`.
+ */
+export const lastUsedOrgCommitApiPath = '/account/last-used-org.json'
+
+export function isLastUsedOrgCommitApiPath(pathname: string) {
+	return pathname === lastUsedOrgCommitApiPath
+}
+
 export function readLastUsedOrgSlug(cookieHeader: string | null | undefined) {
 	if (!cookieHeader) return null
 	let latest: string | null = null

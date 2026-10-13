@@ -19,6 +19,7 @@ import {
 	isIntegrationRefreshPolicy,
 	type IntegrationRefreshPolicy,
 } from './refresh-policy.ts'
+import { credentialGrantCleanupStatements } from '#worker/credentials/credential-grant-cleanup.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type JoinedIntegration,
@@ -170,7 +171,15 @@ export async function listJoinedIntegrationsForUser(input: {
 		)
 		.bind(input.userId)
 		.all<JoinedIntegrationRow>()
-	return (result.results ?? []).map(mapJoinedRow)
+	// Skip orphan OAuth/platform joins so one soft-deleted app cannot fail
+	// the whole list (search, account UI, waiting probe). Single-get still
+	// throws via mapJoinedRow so callers learn the connection is broken.
+	const joined: Array<JoinedIntegration> = []
+	for (const row of result.results ?? []) {
+		if (isOrphanJoinedRow(row)) continue
+		joined.push(mapJoinedRow(row))
+	}
+	return joined
 }
 
 export async function getJoinedIntegrationByName(input: {
@@ -520,14 +529,17 @@ export async function deleteIntegrationConnection(input: {
 	userId: string
 	name: string
 }): Promise<boolean> {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM user_integrations
-			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.userId, input.name)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const liveRowSql = `FROM user_integrations
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`
+	const results = await input.db.batch([
+		...credentialGrantCleanupStatements(input.db, {
+			ownerId: input.userId,
+			credentialIdSql: `SELECT id ${liveRowSql}`,
+			credentialIdBindings: [input.userId, input.name],
+		}),
+		input.db.prepare(`DELETE ${liveRowSql}`).bind(input.userId, input.name),
+	])
+	return (results.at(-1)?.meta.changes ?? 0) > 0
 }
 
 export async function getIntegrationCredentialId(input: {
@@ -905,6 +917,17 @@ function mapLastAuthFailure(
 				: Number(row.auth_failed_http_status),
 		reconnectable: row.auth_failed_reconnectable === 1,
 	}
+}
+
+/**
+ * True when the connection row cannot join a live OAuth (user or platform) app.
+ * List callers skip these; single-get still throws in {@link mapJoinedRow}.
+ */
+function isOrphanJoinedRow(row: JoinedIntegrationRow): boolean {
+	if (row.platform_app_slug != null) {
+		return row.p_slug == null
+	}
+	return row.app_slug == null || row.a_slug == null
 }
 
 function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {

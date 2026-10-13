@@ -1,6 +1,9 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
+import { shortCommunityCommit } from '#universal/community-display.ts'
 import { routes } from '#universal/routes.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -32,6 +35,37 @@ const approvePublishMatcher = createMatcher(
 type PageStatus = 'loading' | 'ready' | 'error' | 'promoting'
 
 const loadFailureMessage = 'Unable to load this publish approval.'
+
+function approvePublishMetadataItems(
+	payload: AccountPackageApprovePublishLoaderData,
+) {
+	const items: Array<{ label: string; value: RemixNode }> = [
+		{
+			label: 'Kody id',
+			value: <IdValue value={payload.package.kodyId} label="Kody id" />,
+		},
+	]
+	// Title already names the short public commit when nothing is pending —
+	// do not repeat it in the metadata grid.
+	if (payload.alreadyPublished || !payload.pendingCommit) {
+		return items
+	}
+	items.push(
+		{
+			label: 'Current published commit',
+			value: payload.publishedCommit ? (
+				<IdValue value={payload.publishedCommit} label="published commit" />
+			) : (
+				'None'
+			),
+		},
+		{
+			label: payload.package.lockedAt ? 'Commit to promote' : 'HEAD to publish',
+			value: <IdValue value={payload.pendingCommit} label="pending commit" />,
+		},
+	)
+	return items
+}
 
 function isApprovePublishPath(href: string) {
 	return approvePublishMatcher.match(new URL(href, 'http://localhost')) !== null
@@ -154,26 +188,66 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					: promoting
 						? 'promoting'
 						: 'ready'
+		const nothingToPublish =
+			payload != null && (payload.alreadyPublished || !payload.pendingCommit)
+		const upToDateShort =
+			payload?.alreadyPublished && payload.publishedCommit
+				? shortCommunityCommit(payload.publishedCommit)
+				: null
+		const headUpToDate =
+			Boolean(payload?.alreadyPublished) &&
+			Boolean(payload?.pendingIsDefaultHead) &&
+			upToDateShort != null
+		const pinnedCommitAlreadyPublished =
+			Boolean(payload?.alreadyPublished) &&
+			payload?.pendingIsDefaultHead === false &&
+			upToDateShort != null
 
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
 				<AccountPageHeader
 					title={
-						payload?.package.lockedAt
-							? 'Approve package publish'
-							: 'Publish HEAD'
+						headUpToDate
+							? `Nothing to publish: the public version is up to date at ${upToDateShort}`
+							: pinnedCommitAlreadyPublished
+								? `This commit is already published at ${upToDateShort}`
+								: nothingToPublish
+									? 'Nothing to publish'
+									: payload?.package.lockedAt
+										? 'Approve package publish'
+										: 'Publish HEAD'
 					}
 					description={
-						payload?.package.lockedAt
-							? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
-							: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
+						headUpToDate
+							? 'No unpublished commit is waiting. Nothing was approved or changed.'
+							: pinnedCommitAlreadyPublished
+								? 'The commit in this link matches the public version. Open Approve without a commit pin to review default-branch HEAD if it has moved.'
+								: nothingToPublish
+									? 'No commit is available to publish from this page.'
+									: payload?.package.lockedAt
+										? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
+										: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
 					}
 					currentHref={currentHref}
 				/>
 				{message ? (
-					<AccountManagementMessage tone="error">
-						{message}
-					</AccountManagementMessage>
+					<>
+						<AccountManagementMessage tone="error">
+							{message}
+						</AccountManagementMessage>
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Approving a package publish from the browser approval page.',
+								errorMessage: message,
+								ids: {
+									packageName: payload?.package.name,
+									packageKodyId: payload?.package.kodyId,
+									path: currentHref,
+								},
+							})}
+						/>
+					</>
 				) : null}
 				{status === 'loading' ? (
 					<p mix={css({ margin: 0, color: colors.textMuted })}>Loading…</p>
@@ -205,40 +279,7 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 									: 'This package is not locked. Lock it from the package page if you want later publishes to require approval.'}
 							</p>
 						</div>
-						<MetadataGrid
-							items={[
-								{
-									label: 'Kody id',
-									value: (
-										<IdValue value={payload.package.kodyId} label="Kody id" />
-									),
-								},
-								{
-									label: 'Current published commit',
-									value: payload.publishedCommit ? (
-										<IdValue
-											value={payload.publishedCommit}
-											label="published commit"
-										/>
-									) : (
-										'None'
-									),
-								},
-								{
-									label: payload.package.lockedAt
-										? 'Commit to promote'
-										: 'HEAD to publish',
-									value: payload.pendingCommit ? (
-										<IdValue
-											value={payload.pendingCommit}
-											label="pending commit"
-										/>
-									) : (
-										'No unpublished commit'
-									),
-								},
-							]}
-						/>
+						<MetadataGrid items={approvePublishMetadataItems(payload)} />
 						<div
 							mix={css({
 								display: 'flex',

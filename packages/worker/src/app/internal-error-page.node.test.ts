@@ -26,4 +26,5 @@ test('retryHrefFromRequest keeps same-origin paths and rejects protocol-relative
 	).text()
 	expect(body).toContain('data-variant="pill" href="/"')
 	expect(body).not.toContain('data-variant="pill" href="//evil.example"')
+	expect(body).toContain('data-error-agent-prompt')
 })

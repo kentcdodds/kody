@@ -440,6 +440,13 @@ export function workspaceRailGroups(input: {
 	const organizationItems: Array<AccountRailItem> = personal
 		? [
 				{
+					href: orgSlug ? orgGrantsPath(orgSlug) : routes.account.href(),
+					label: 'Grants',
+					icon: 'key',
+					description:
+						'Who can use packages and other resources in this workspace.',
+				},
+				{
 					...billingRailItem(orgSlug),
 					description: 'Plan, subscription, and payment method.',
 				},

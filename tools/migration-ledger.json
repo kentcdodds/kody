@@ -487,6 +487,10 @@
 		{
 			"filename": "0130-package-app-custom-hostnames.sql",
 			"sha256": "4789df598f18f9ba9082cad29e680c15c14f61cd298f299a4519e79ecd8599fb"
+		},
+		{
+			"filename": "0132-package-approval-requests.sql",
+			"sha256": "f229ef3ef17673d4ded45153d1ff55a47a694e567b09cd2f613df79b72765310"
 		}
 	]
 }
