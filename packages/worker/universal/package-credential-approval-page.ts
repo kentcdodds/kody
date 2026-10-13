@@ -89,8 +89,17 @@ export function approvalBeforeLabel(change: CredentialApprovalChangeView) {
 			? 'Inherits your default'
 			: 'Not set'
 	}
-	if (change.before.length === 0) return 'None on purpose'
-	return refsLabel(change.before)
+	const unusable = change.beforeUnusableIds.length
+	const unusableLabel =
+		unusable === 1
+			? '1 credential you can no longer use'
+			: `${unusable} credentials you can no longer use`
+	if (change.before.length === 0) {
+		return unusable > 0 ? unusableLabel : 'None on purpose'
+	}
+	return unusable > 0
+		? `${refsLabel(change.before)}, plus ${unusableLabel}`
+		: refsLabel(change.before)
 }
 
 export function approvalAfterLabel(change: CredentialApprovalChangeView) {
@@ -100,7 +109,9 @@ export function approvalAfterLabel(change: CredentialApprovalChangeView) {
 }
 
 export function approvalChangeIsNoop(change: CredentialApprovalChangeView) {
-	if (change.before === null) return false
+	if (change.before === null || change.beforeUnusableIds.length > 0) {
+		return false
+	}
 	const before = change.before.map((ref) => ref.id)
 	const after = change.after.map((ref) => ref.id)
 	return (
@@ -116,23 +127,39 @@ export function approvalProblems(view: CredentialApprovalView): Array<string> {
 		...view.changes.flatMap((change) =>
 			change.error ? [`${change.needKey}: ${change.error.message}`] : [],
 		),
+		...view.enable.flatMap((entry) =>
+			entry.error
+				? [`${describeTrigger(entry.trigger)}: ${entry.error.message}`]
+				: [],
+		),
 	]
+}
+
+/** Triggers Approve turns on, whether by a mapping or by `enable[]` alone. */
+export function approvalEnabledTriggers(
+	view: Pick<CredentialApprovalView, 'changes' | 'enable'>,
+): Array<string> {
+	const labels = new Set<string>()
+	for (const change of view.changes) {
+		if (change.willEnable && change.target.type === 'trigger') {
+			labels.add(describeTrigger(change.target.trigger))
+		}
+	}
+	for (const entry of view.enable) {
+		if (entry.willEnable) labels.add(describeTrigger(entry.trigger))
+	}
+	return [...labels]
 }
 
 export function approvalSummary(view: CredentialApprovalView) {
 	const count = view.changes.length
-	const enables = new Set(
-		view.changes
-			.filter((change) => change.willEnable && change.target.type === 'trigger')
-			.map((change) =>
-				change.target.type === 'trigger'
-					? describeTrigger(change.target.trigger)
-					: '',
-			),
-	)
+	const enables = approvalEnabledTriggers(view)
+	const turnOn = enables.length > 0 ? `turn on ${enables.join(', ')}` : null
+	if (count === 0) {
+		return turnOn ? `Approve and ${turnOn}` : 'Approve'
+	}
 	const mappings = count === 1 ? '1 mapping' : `${count} mappings`
-	if (enables.size === 0) return `Approve ${mappings}`
-	return `Approve ${mappings} and turn on ${[...enables].join(', ')}`
+	return turnOn ? `Approve ${mappings} and ${turnOn}` : `Approve ${mappings}`
 }
 
 export function credentialApprovalAgentPrompt(input: {

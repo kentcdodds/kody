@@ -124,6 +124,8 @@ function mintedUrl(overrides: Record<string, unknown> = {}) {
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T00:00:00.000Z',
 		previousUrlActiveUntil: null,
+		approvalUrl:
+			'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
 		...overrides,
 	}
 }
@@ -277,6 +279,9 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	expect(minted.webhook.url_host).toBe('heykody.dev')
 	expect(minted.webhook).not.toHaveProperty('url')
 	expect(minted.webhook).not.toHaveProperty('url_secret')
+	expect(minted.webhook.approval_url).toBe(
+		'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
+	)
 
 	const rotated = await webhookUrlRotateCapability.handler(sentry, ctx)
 	expect(rotated.webhook.handle).toBe('whh_ep-1')

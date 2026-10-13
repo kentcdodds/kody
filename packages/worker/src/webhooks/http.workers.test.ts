@@ -1293,9 +1293,16 @@ test('a webhook with no enablement on answers 409 instead of running', async () 
 	})
 	const off = await sendWebhook('plain', { body, unsigned: true })
 	expect(off.status).toBe(409)
-	await expect(off.json()).resolves.toMatchObject({
-		error: { code: 'enablement_not_on' },
-	})
+	const offBody = (await off.json()) as {
+		error: { code: string; message: string; details: { approvalUrl: string } }
+	}
+	expect(offBody.error.code).toBe('enablement_not_on')
+	expect(offBody.error.details.approvalUrl).toMatch(
+		/^https?:\/\/[^/]+\/@alice\/sentry-bridge\/approve-credentials\?enable=webhook%3Aplain$/,
+	)
+	expect(offBody.error.message).toBe(
+		`Webhook "plain" is not approved, so nothing ran. Minting a URL does not turn a webhook on. Approve it: ${offBody.error.details.approvalUrl}`,
+	)
 
 	// Nobody has turned it on: ack mode answers 409 instead of queueing.
 	await env.APP_DB.prepare(`DELETE FROM enablements`).run()

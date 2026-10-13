@@ -19,6 +19,7 @@ import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { loadPackageMappingScopeForViewer } from '#app/package-credentials-access.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	type PackageCredentialsTab,
@@ -764,10 +765,16 @@ export function createCommunityPackageCredentialApprovalHandler(env: Env) {
 				})
 			}
 			// Execute-only members cannot open the package page, so read access
-			// is not required here; the approval API checks execute.
-			if (page.kind === 'page' && !page.hasPackage) {
-				return renderPackageNotFoundPage({ request, env })
-			}
+			// is not required here; the mapping scope checks the package exists
+			// and the viewer holds execute.
+			const scope = await loadPackageMappingScopeForViewer({
+				env,
+				request,
+				user,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (!scope) return renderPackageNotFoundPage({ request, env })
 			return renderAppPage({
 				request,
 				env,

@@ -27,6 +27,7 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { describeWebhookNotOn } from './approval.ts'
 import {
 	handleWebhookSubscriptionChallenge,
 	webhookChallengeAllowsGet,
@@ -237,13 +238,19 @@ function rateLimitedResponse(retryAfterSeconds: number) {
 	)
 }
 
-function enablementNotOnResponse(webhookName: string) {
+function enablementNotOnResponse(input: {
+	message: string
+	approvalUrl: string | null
+}) {
 	return jsonResponse(
 		{
 			ok: false,
 			error: {
 				code: 'enablement_not_on',
-				message: `Webhook "${webhookName}" has no on enablement, so nothing ran. Its enabler may have lost access (it resumes once access is back), or nobody has enabled it.`,
+				message: input.message,
+				...(input.approvalUrl
+					? { details: { approvalUrl: input.approvalUrl } }
+					: {}),
 			},
 		},
 		{ status: 409 },
@@ -906,7 +913,15 @@ export async function handleWebhookIngressRequest(
 				startedAt: receivedAt,
 				waitUntil,
 			})
-			return enablementNotOnResponse(liveEndpoint.webhookName)
+			return enablementNotOnResponse(
+				await describeWebhookNotOn({
+					env,
+					baseUrl,
+					endpoint: liveEndpoint,
+					packageKodyId: savedPackage.kodyId,
+					plan,
+				}),
+			)
 		}
 		let message = createWebhookDispatchQueueMessage({
 			endpoint: {

@@ -145,7 +145,8 @@ function challengeValue(webhook: PackageWebhookListItem) {
 
 /**
  * One declared webhook on package settings: metadata, the URL slot (Mint /
- * Reveal + Copy / Hide), and the Rotate and Enable / Disable actions. The
+ * Reveal + Copy / Hide), Approve until a person approves it, then the Rotate
+ * and Enable / Disable actions. The
  * card never renders a URL it did not just receive from a reveal.
  */
 export function renderPackageWebhookCard(input: {
@@ -262,7 +263,22 @@ export function renderPackageWebhookCard(input: {
 						alignItems: 'center',
 					})}
 				>
-					{webhook.enabled ? (
+					{!webhook.approved ? (
+						webhook.approvalUrl ? (
+							<a
+								href={webhook.approvalUrl}
+								aria-label={`Approve ${webhookLabel}`}
+								data-testid="package-webhook-approve"
+								mix={css(primaryButtonCss)}
+							>
+								Approve
+							</a>
+						) : (
+							<span mix={css({ color: colors.textMuted })}>
+								Approve it from this package's Credentials page.
+							</span>
+						)
+					) : webhook.enabled ? (
 						<button
 							type="button"
 							disabled={isMutating}
@@ -323,6 +339,13 @@ export function renderPackageWebhookCard(input: {
 				</AccountManagementMessage>
 			) : null}
 
+			{webhook.minted && !webhook.approved ? (
+				<AccountManagementMessage tone="info">
+					Minting a URL does not turn the webhook on. Deliveries answer 409
+					until you approve it.
+				</AccountManagementMessage>
+			) : null}
+
 			{webhook.minted ? (
 				<p mix={css(descriptionCss)}>
 					Disabling answers 404 without deleting the mint; enabling restores the
@@ -349,9 +372,10 @@ function renderUrlSection(input: {
 		return (
 			<div mix={css({ display: 'grid', gap: spacing.sm })}>
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
-					No URL yet. Minting opens ingress for this webhook and shows the URL
-					once so you can paste it into the provider. Treat it as a credential:
-					anyone holding it can POST to this export.
+					No URL yet. Minting creates the URL and shows it so you can paste it
+					into the provider, but the webhook only runs after you approve it.
+					Treat the URL as a credential: anyone holding it can POST to this
+					export once approved.
 				</p>
 				<div>
 					<button

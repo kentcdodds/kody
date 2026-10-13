@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	type CredentialApprovalChangeView,
+	type CredentialApprovalEnableView,
 	type CredentialApprovalView,
 	type CredentialRef,
 } from '#universal/credential-contracts.ts'
@@ -13,6 +14,11 @@ import {
 	credentialApprovalAgentPrompt,
 	groupApprovalChanges,
 } from './package-credential-approval-page.ts'
+import { credentialKindLabel } from './credentials-list.ts'
+import {
+	credentialRefLabel,
+	describeTrigger,
+} from './package-credentials-page.ts'
 
 const bot: CredentialRef = {
 	id: 'cred-1',
@@ -35,6 +41,7 @@ function change(
 		needKey: 'github',
 		need: null,
 		before: null,
+		beforeUnusableIds: [],
 		after: [bot],
 		willEnable: false,
 		error: null,
@@ -44,8 +51,20 @@ function change(
 
 const daily = { kind: 'cron', name: 'daily' } as const
 
+function enableEntry(
+	overrides: Partial<CredentialApprovalEnableView> = {},
+): CredentialApprovalEnableView {
+	return {
+		trigger: { kind: 'webhook', name: 'incoming' },
+		willEnable: true,
+		error: null,
+		...overrides,
+	}
+}
+
 function view(
 	changes: Array<CredentialApprovalChangeView>,
+	enable: Array<CredentialApprovalEnableView> = [],
 ): CredentialApprovalView {
 	return {
 		ok: true,
@@ -54,6 +73,7 @@ function view(
 		canApprove: true,
 		fingerprint: 'fp',
 		changes,
+		enable,
 		errors: [],
 	}
 }
@@ -100,6 +120,22 @@ test('before and after read inherit, none, and credentials', () => {
 	expect(approvalChangeIsNoop(change({ before: [mine] }))).toBe(false)
 	expect(
 		approvalChangeIsNoop(change({ before: [bot, mine], after: [mine, bot] })),
+	).toBe(false)
+})
+
+test('credentials the viewer can no longer use count as the before state', () => {
+	const dead = change({ before: [], beforeUnusableIds: ['cred-gone'] })
+	expect(approvalBeforeLabel(dead)).toBe('1 credential you can no longer use')
+	expect(approvalChangeIsNoop({ ...dead, after: [] })).toBe(false)
+	expect(
+		approvalBeforeLabel(
+			change({ before: [bot], beforeUnusableIds: ['cred-a', 'cred-b'] }),
+		),
+	).toBe('acme-bot, plus 2 credentials you can no longer use')
+	expect(
+		approvalChangeIsNoop(
+			change({ before: [bot], beforeUnusableIds: ['cred-gone'] }),
+		),
 	).toBe(false)
 })
 
@@ -151,4 +187,77 @@ test('problems and the agent prompt list link and change errors', () => {
 			'Build a corrected link (credentialMappingPropose checks it first). Do not ask me to paste any credential value into chat.',
 		].join('\n'),
 	)
+})
+
+test('labels name triggers, credential refs, and kinds', () => {
+	expect(describeTrigger(daily)).toBe('Schedule “daily”')
+	expect(describeTrigger({ kind: 'webhook', name: 'incoming' })).toBe(
+		'Webhook “incoming”',
+	)
+	expect(describeTrigger({ kind: 'subscription', name: 'topic' })).toBe(
+		'Subscription “topic”',
+	)
+	expect(credentialRefLabel(bot)).toBe('acme-bot')
+	expect(credentialRefLabel(mine)).toBe('openai (yours)')
+	expect(
+		(['secret', 'oauth', 'mcp', 'url', 'login', 'signing'] as const).map(
+			credentialKindLabel,
+		),
+	).toEqual(['Key', 'OAuth', 'MCP server', 'URL', 'Login', 'Signing'])
+})
+
+test('an enable-only link names the trigger it turns on', () => {
+	expect(approvalSummary(view([], [enableEntry()]))).toBe(
+		'Approve and turn on Webhook “incoming”',
+	)
+	expect(
+		approvalSummary(
+			view(
+				[],
+				[
+					enableEntry(),
+					enableEntry({ trigger: { kind: 'subscription', name: 'topic' } }),
+				],
+			),
+		),
+	).toBe('Approve and turn on Webhook “incoming”, Subscription “topic”')
+	expect(approvalSummary(view([], [enableEntry({ willEnable: false })]))).toBe(
+		'Approve',
+	)
+})
+
+test('mappings and enable[] combine without repeating a trigger', () => {
+	expect(
+		approvalSummary(
+			view(
+				[
+					change({
+						target: { type: 'trigger', trigger: daily },
+						willEnable: true,
+					}),
+				],
+				[enableEntry(), enableEntry({ trigger: daily })],
+			),
+		),
+	).toBe('Approve 1 mapping and turn on Schedule “daily”, Webhook “incoming”')
+	expect(approvalSummary(view([change({})], [enableEntry()]))).toBe(
+		'Approve 1 mapping and turn on Webhook “incoming”',
+	)
+})
+
+test('enable errors are problems too', () => {
+	const broken = view(
+		[],
+		[
+			enableEntry({
+				error: {
+					code: 'webhook_not_minted',
+					message: 'Mint this webhook first.',
+				},
+			}),
+		],
+	)
+	expect(approvalProblems(broken)).toEqual([
+		'Webhook “incoming”: Mint this webhook first.',
+	])
 })

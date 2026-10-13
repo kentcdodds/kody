@@ -12,6 +12,7 @@ import {
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	type CredentialApprovalChangeView,
+	type CredentialApprovalEnableView,
 	type CredentialApprovalFailure,
 	type CredentialApprovalSuccess,
 	type CredentialApprovalView,
@@ -23,6 +24,7 @@ import {
 	approvalAfterLabel,
 	approvalBeforeLabel,
 	approvalChangeIsNoop,
+	approvalEnabledTriggers,
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
@@ -44,7 +46,10 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
 const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',
@@ -233,6 +238,45 @@ function renderChange(
 	)
 }
 
+function renderEnable(
+	entry: CredentialApprovalEnableView,
+	index: number,
+	approved: boolean,
+) {
+	const label = describeTrigger(entry.trigger)
+	return (
+		<li
+			key={`${entry.trigger.kind}:${entry.trigger.name}`}
+			data-testid={`approval-enable-${index}`}
+			mix={css({
+				...insetCardCss,
+				display: 'grid',
+				gap: spacing.xs,
+				borderLeft: entry.error ? `4px solid ${colors.danger}` : undefined,
+			})}
+		>
+			<strong>{label}</strong>
+			{entry.willEnable ? (
+				<p mix={css({ margin: 0, color: colors.warningText })}>
+					{approved
+						? `${label} is on for you.`
+						: `Approving turns on ${label} for you.`}
+				</p>
+			) : (
+				<p mix={css(mutedCss)}>{label} is already on for you.</p>
+			)}
+			{entry.error ? (
+				<p
+					data-testid="approval-enable-error"
+					mix={css({ margin: 0, color: colors.danger })}
+				>
+					{entry.error.message}
+				</p>
+			) : null}
+		</li>
+	)
+}
+
 function renderGroup(
 	group: CredentialApprovalGroup,
 	approved: boolean,
@@ -254,6 +298,21 @@ function renderGroup(
 			</ul>
 		</section>
 	)
+}
+
+function approvedCopy(view: CredentialApprovalView) {
+	const count = view.changes.length
+	const parts: Array<string> = []
+	if (count > 0) {
+		parts.push(
+			count === 1 ? '1 mapping is saved' : `${count} mappings are saved`,
+		)
+	}
+	const enables = approvalEnabledTriggers(view)
+	if (enables.length > 0) parts.push(`${enables.join(', ')} is on`)
+	return parts.length > 0
+		? `${parts.join(' and ')}.`
+		: 'Nothing needed to change.'
 }
 
 export function PackageCredentialApprovalRoute(handle: Handle) {
@@ -430,10 +489,13 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					>
 						<h2 mix={css(cardTitleCss)}>Approved</h2>
 						<p mix={css({ margin: 0 })}>
-							{view.changes.length === 1
-								? '1 mapping is saved.'
-								: `${view.changes.length} mappings are saved.`}{' '}
-							Runs of <code>{packageName}</code> use them from now on.
+							{approvedCopy(view)}
+							{view.changes.length > 0 ? (
+								<>
+									{' '}
+									Runs of <code>{packageName}</code> use them from now on.
+								</>
+							) : null}
 						</p>
 						<a href={credentialsHref}>See this package’s credentials</a>
 					</section>
@@ -454,10 +516,14 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					</section>
 				) : null}
 
-				{view && view.changes.length === 0 && view.errors.length === 0 ? (
+				{view &&
+				view.changes.length === 0 &&
+				view.enable.length === 0 &&
+				view.errors.length === 0 ? (
 					<section mix={css(cardCss)}>
 						<p mix={css({ margin: 0 })}>
-							This link proposes no mappings. Ask your agent for a new link.
+							This link proposes no mappings or triggers to turn on. Ask your
+							agent for a new link.
 						</p>
 					</section>
 				) : null}
@@ -470,9 +536,31 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 					</section>
 				) : null}
 
+				{view && view.enable.length > 0 ? (
+					<section
+						aria-label="Triggers to turn on"
+						mix={css({ ...cardCss, gap: spacing.sm })}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h2 mix={css(cardTitleCss)}>Turn on</h2>
+							<p mix={css(mutedCss)}>
+								Triggers this link turns on for you. Their credentials are not
+								changed.
+							</p>
+						</div>
+						<ul mix={css(listCss)}>
+							{view.enable.map((entry, index) =>
+								renderEnable(entry, index, approved),
+							)}
+						</ul>
+					</section>
+				) : null}
+
 				{view &&
 				!approved &&
-				(view.changes.length > 0 || problems.length > 0) ? (
+				(view.changes.length > 0 ||
+					view.enable.length > 0 ||
+					problems.length > 0) ? (
 					<section
 						mix={css({
 							display: 'grid',

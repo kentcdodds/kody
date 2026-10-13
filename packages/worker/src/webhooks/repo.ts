@@ -218,6 +218,22 @@ export async function upsertWebhookEndpointSecret(input: {
 	return record
 }
 
+/** Sets package-owned HMAC ciphertext, as a statement to batch with related writes. */
+export function buildSetWebhookEndpointHmacSecretStatement(input: {
+	db: D1Database
+	userId: string
+	endpointId: string
+	hmacSecretEncrypted: string
+}): D1PreparedStatement {
+	return input.db
+		.prepare(
+			`UPDATE webhook_endpoints
+			SET hmac_secret_encrypted = ?
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.hmacSecretEncrypted, input.userId, input.endpointId)
+}
+
 /** Persist package-owned HMAC without rotating the URL secret. */
 export async function setWebhookEndpointHmacSecret(input: {
 	db: D1Database
@@ -247,14 +263,7 @@ export async function setWebhookEndpointHmacSecret(input: {
 					input.endpointId,
 				)
 				.run()
-		: await input.db
-				.prepare(
-					`UPDATE webhook_endpoints
-					SET hmac_secret_encrypted = ?
-					WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
-				)
-				.bind(input.hmacSecretEncrypted, input.userId, input.endpointId)
-				.run()
+		: await buildSetWebhookEndpointHmacSecretStatement(input).run()
 	if ((result.meta.changes ?? 0) === 0) return null
 	return getWebhookEndpointByIdForUser({
 		db: input.db,

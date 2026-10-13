@@ -204,6 +204,7 @@ test('names that look like prefixes and brackets in names round-trip', () => {
 	])
 	expect(parseCredentialApprovalQuery(url.searchParams)).toEqual({
 		changes,
+		enable: [],
 		reason: null,
 		errors: [],
 	})
@@ -284,9 +285,59 @@ test('approval links round-trip defaults, personal defaults, triggers, and none'
 				credentials: [],
 			},
 		],
+		enable: [],
 		reason: 'Daily digest',
 		errors: [],
 	})
+})
+
+test('enable params turn triggers on with no mapping, deduped and capped with mappings', () => {
+	const href = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'pr-digest',
+		changes: [],
+		enable: [
+			{ kind: 'webhook', name: 'incoming' },
+			{ kind: 'subscription', name: 'acme.thing:happened' },
+		],
+	})
+	expect(href).toBe(
+		'/@acme/pr-digest/approve-credentials?enable=webhook%3Aincoming&enable=subscription%3Aacme.thing%3Ahappened',
+	)
+	expect(
+		parseCredentialApprovalQuery(
+			new URL(href, 'https://kody.codes').searchParams,
+		),
+	).toEqual({
+		changes: [],
+		enable: [
+			{ kind: 'webhook', name: 'incoming' },
+			{ kind: 'subscription', name: 'acme.thing:happened' },
+		],
+		reason: null,
+		errors: [],
+	})
+
+	const messy = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			'enable=webhook:incoming&enable= webhook : incoming &enable=hourly:x&enable=cron:&enable=daily',
+		),
+	)
+	expect(messy.enable).toEqual([{ kind: 'webhook', name: 'incoming' }])
+	expect(messy.errors).toEqual([
+		'"enable=hourly:x" is not a trigger; use <cron|subscription|webhook>:<name>.',
+		'"enable=cron:" is not a trigger; use <cron|subscription|webhook>:<name>.',
+		'"enable=daily" is not a trigger; use <cron|subscription|webhook>:<name>.',
+	])
+
+	const tooMany = new URLSearchParams()
+	for (let index = 0; index < maxCredentialProposalValues; index += 1) {
+		tooMany.append(`default[need-${index}]`, 'x')
+	}
+	tooMany.append('enable', 'webhook:incoming')
+	const capped = parseCredentialApprovalQuery(tooMany)
+	expect(capped).toMatchObject({ changes: [], enable: [] })
+	expect(capped.errors).toHaveLength(1)
 })
 
 test('approval queries report malformed mapping params and cap the size', () => {
@@ -530,8 +581,16 @@ const sampleApproval = {
 				multiple: false,
 			},
 			before: null,
+			beforeUnusableIds: [],
 			after: [acmeBot],
 			willEnable: false,
+			error: null,
+		},
+	],
+	enable: [
+		{
+			trigger: { kind: 'webhook', name: 'incoming' },
+			willEnable: true,
 			error: null,
 		},
 	],
