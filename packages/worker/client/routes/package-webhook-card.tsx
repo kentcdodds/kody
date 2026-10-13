@@ -67,7 +67,18 @@ const statusPillCss = {
 
 function verificationValue(webhook: PackageWebhookListItem) {
 	const verification = webhook.verification
-	if (!verification) return 'URL secret only (no HMAC; not declared)'
+	if (!verification) {
+		return (
+			<span mix={css({ display: 'grid', gap: spacing.xs })}>
+				<span>URL secret only (no HMAC; not declared)</span>
+				<span mix={css({ color: colors.textMuted })}>
+					Works as is. Optionally declare{' '}
+					<code>{'verification: { "type": "url-secret" }'}</code>, or an HMAC
+					type if the sender signs.
+				</span>
+			</span>
+		)
+	}
 	if (verification.type === 'url-secret') return 'URL secret only (no HMAC)'
 	return (
 		<span mix={css({ display: 'grid', gap: spacing.xs })}>
