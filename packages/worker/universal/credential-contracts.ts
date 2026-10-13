@@ -427,7 +427,9 @@ function formatCredentialPick(pick: CredentialPick): string {
 	if ('id' in pick) return `id:${pick.id}`
 	if (pick.scope) return `${pick.scope}:${pick.name}`
 	// A blank value means "none on purpose"; `name:` keeps a blank name invalid.
-	return reservedPickPrefix.test(pick.name) || !pick.name.trim()
+	// The parser trims first, so check the prefix on the trimmed name.
+	const trimmedName = pick.name.trim()
+	return reservedPickPrefix.test(trimmedName) || !trimmedName
 		? `name:${pick.name}`
 		: pick.name
 }
