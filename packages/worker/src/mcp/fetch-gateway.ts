@@ -29,10 +29,7 @@ import {
 	type PlaceholderReferenceBatch,
 	type PlaceholderStreamBodyFormat,
 } from '#mcp/secrets/placeholder-stream-fill.ts'
-import {
-	EncodedPlaceholderError,
-	holdsUnfilledEncodedPlaceholder,
-} from '#mcp/secrets/encoded-placeholder.ts'
+import { EncodedPlaceholderError } from '#mcp/secrets/encoded-placeholder.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
@@ -251,7 +248,7 @@ export async function executeGatewayFetch(input: {
 			props: input.props,
 			env: input.env,
 		})
-		const { bodyFillDone } = expanded
+		const { bodyFillDone, deferRedirectFollow } = expanded
 		let transformed = expanded.request
 		let substitutedValues = expanded.substitutedValues
 		if (credentialClient) {
@@ -281,8 +278,26 @@ export async function executeGatewayFetch(input: {
 				),
 			)
 			// Body placeholders may resolve while the upload streams; wait so
-			// echo redaction sees every substituted value.
+			// echo redaction and redirect policy see every substituted value.
 			await bodyFillDone
+			// Credential-bearing requests stay on redirect=manual (fail closed).
+			// Ordinary bodies that used manual only so mid-stream fills could be
+			// observed still get Fetch-like follow for redirects that do not
+			// replay a body (no whole-upload buffer).
+			if (
+				deferRedirectFollow &&
+				substitutedValues.length === 0 &&
+				response &&
+				isRedirectStatus(response.status)
+			) {
+				response = await followRedirectsWithoutCredentialReplay({
+					response,
+					request: transformed,
+					fetch: globalFetch,
+					signal: deadline.signal,
+					track: (next) => deadline!.track(next),
+				})
+			}
 		} catch (error) {
 			throw redactEchoedSecretsInError(
 				asCallerFacingBodyFillError(error),
@@ -376,6 +391,13 @@ export async function expandSecretPlaceholders(input: {
 	request: Request
 	substitutedValues: Array<string>
 	bodyFillDone: Promise<void>
+	/**
+	 * True when the caller asked for `redirect: 'follow'` but the expanded
+	 * request uses `manual` so a mid-stream body credential can keep redirects
+	 * fail-closed. {@link executeGatewayFetch} may still follow when no
+	 * credential was filled and the hop does not replay a body.
+	 */
+	deferRedirectFollow: boolean
 }> {
 	const headers = new Headers(input.request.headers)
 	// A client handle is for the gateway only; it never leaves.
@@ -420,6 +442,7 @@ export async function expandSecretPlaceholders(input: {
 			}),
 			substitutedValues: [],
 			bodyFillDone: Promise.resolve(),
+			deferRedirectFollow: false,
 		}
 	}
 
@@ -625,20 +648,16 @@ export async function expandSecretPlaceholders(input: {
 
 	let nextBody: ReadableStream<Uint8Array> | null = sourceBody
 	let bodyFillDone: Promise<void> = Promise.resolve()
+	let bodyFillActive = false
 
-	let bodyMayHoldCredentials = false
 	if (fillsUrlAndBody && sourceBody) {
+		bodyFillActive = true
 		const { format, body: classifiedBody } = await classifyStreamingBody({
 			body: sourceBody,
 			contentType: headers.get('content-type'),
 		})
-		// Peek before fill so body-only secrets force manual redirects without
-		// disabling follow for ordinary bodies that have no credential opener
-		// in the first chunk.
-		const peeked = await peekCredentialOpenerInStream(classifiedBody)
-		bodyMayHoldCredentials = peeked.mayHold
 		const fill = createPlaceholderFillStream({
-			source: peeked.body,
+			source: classifiedBody,
 			format,
 			replacements,
 			allowPercentEncoded: format === 'form',
@@ -675,11 +694,13 @@ export async function expandSecretPlaceholders(input: {
 		nextBody = sourceBody
 	}
 
-	const nextRedirect =
-		(referencedAnyCredential || bodyMayHoldCredentials) &&
-		input.request.redirect === 'follow'
-			? 'manual'
-			: input.request.redirect
+	// Any fillable body uses manual redirects so a credential that appears
+	// only in a later chunk cannot ride redirect=follow to another host.
+	// executeGatewayFetch restores ordinary follow when nothing was filled.
+	const deferRedirectFollow =
+		input.request.redirect === 'follow' &&
+		(referencedAnyCredential || bodyFillActive)
+	const nextRedirect = deferRedirectFollow ? 'manual' : input.request.redirect
 	return {
 		request: new Request(nextUrl, {
 			method: input.request.method,
@@ -696,63 +717,65 @@ export async function expandSecretPlaceholders(input: {
 		}),
 		substitutedValues,
 		bodyFillDone,
+		deferRedirectFollow,
 	}
 }
 
+const redirectStatusCodes = new Set([301, 302, 303, 307, 308])
+
+function isRedirectStatus(status: number) {
+	return redirectStatusCodes.has(status)
+}
+
+function redirectRewritesToGet(status: number, method: string) {
+	if (status === 303) return method !== 'HEAD'
+	if (status === 301 || status === 302) {
+		return method !== 'GET' && method !== 'HEAD'
+	}
+	return false
+}
+
 /**
- * Read one chunk for a credential-shaped opener, then rebuild a pull stream
- * that starts with that chunk (backpressured).
+ * Follow redirects for requests that carried no filled credential, without
+ * buffering a streamed upload for 307/308 body replay. Hops that would need
+ * that replay are returned as-is (fail closed on replay, not on follow).
  */
-async function peekCredentialOpenerInStream(
-	body: ReadableStream<Uint8Array>,
-): Promise<{ mayHold: boolean; body: ReadableStream<Uint8Array> }> {
-	const reader = body.getReader()
-	const first = await reader.read()
-	if (first.done || !first.value) {
-		reader.releaseLock()
-		return {
-			mayHold: false,
-			body: new ReadableStream({
-				start(controller) {
-					controller.close()
-				},
-			}),
+async function followRedirectsWithoutCredentialReplay(input: {
+	response: Response
+	request: Request
+	fetch: typeof fetch
+	signal: AbortSignal
+	track: (response: Response) => Response
+}): Promise<Response> {
+	let response = input.response
+	let request = input.request
+	for (let hop = 0; hop < 20; hop += 1) {
+		if (!isRedirectStatus(response.status)) return response
+		const location = response.headers.get('location')
+		if (!location) return response
+		const rewritesToGet = redirectRewritesToGet(response.status, request.method)
+		const requestHadBody = shouldSendBody(request.method)
+		if (!rewritesToGet && requestHadBody) {
+			// 307/308 with a body would replay bytes already consumed from a
+			// stream. Do not buffer the upload; leave the redirect to the caller.
+			return response
 		}
+		await response.body?.cancel().catch(() => {})
+		const nextUrl = new URL(location, response.url || request.url)
+		const headers = new Headers(request.headers)
+		if (rewritesToGet) {
+			headers.delete('content-type')
+			headers.delete('content-length')
+		}
+		request = new Request(nextUrl, {
+			method: rewritesToGet ? 'GET' : request.method,
+			headers,
+			signal: input.signal,
+			redirect: 'manual',
+		})
+		response = input.track(await input.fetch(request))
 	}
-	const prefix = first.value
-	const text = new TextDecoder('latin1').decode(prefix)
-	const mayHold =
-		holdsPlaceholder(text) ||
-		holdsUnfilledEncodedPlaceholder(text) ||
-		text.includes('{{secret') ||
-		text.includes('{{integration-token') ||
-		/%7B%7B(?:secret|integration-token)/i.test(text)
-	let emittedPrefix = false
-	return {
-		mayHold,
-		body: new ReadableStream<Uint8Array>({
-			async pull(controller) {
-				try {
-					if (!emittedPrefix) {
-						emittedPrefix = true
-						controller.enqueue(prefix)
-						return
-					}
-					const { done, value } = await reader.read()
-					if (done) {
-						controller.close()
-						return
-					}
-					controller.enqueue(value)
-				} catch (error) {
-					controller.error(error)
-				}
-			},
-			cancel(reason) {
-				return reader.cancel(reason)
-			},
-		}),
-	}
+	throw new TypeError('Too many redirects.')
 }
 
 function asCallerFacingBodyFillError(error: unknown) {
