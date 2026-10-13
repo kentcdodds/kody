@@ -209,7 +209,7 @@ export function AppsFeature(handle: Handle) {
 					</div>
 					<div class="ia-return-scene">
 						<AppsReturnScene records={records} openedId={opened?.id} />
-						<p class="visually-hidden" aria-live="polite">
+						<p class="visually-hidden">
 							{`Tomorrow, ${records.map((record) => record.name).join(', ')} ${records.length === 1 ? 'is' : 'are'} still saved, and ${tomorrowBrief.name} was added.`}
 						</p>
 						<div class="ia-saved-head">

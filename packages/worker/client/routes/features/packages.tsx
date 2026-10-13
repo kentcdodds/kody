@@ -30,6 +30,21 @@ function tabFromLabel(label: PackageTabLabel): PackageTab {
 	}
 }
 
+function tabStatus(tab: PackageTab) {
+	switch (tab) {
+		case 'intent':
+			return 'Showing the request that became the weekly-brief package.'
+		case 'source':
+			return 'Showing the package source in src/brief.ts.'
+		case 'result':
+			return 'Showing the result of running weekly-brief.'
+		default: {
+			const exhaustive: never = tab
+			return exhaustive
+		}
+	}
+}
+
 function accessFromValue(value: string): PackageAccess {
 	switch (value) {
 		case 'use':
@@ -111,7 +126,10 @@ export function PackagesFeature(handle: Handle) {
 								)
 							})}
 						</div>
-						<div class="contents" id="package-content" aria-live="polite">
+						<p class="visually-hidden" aria-live="polite">
+							{tabStatus(tab)}
+						</p>
+						<div class="contents" id="package-content">
 							<PackageWorkbenchScene tab={tab} live={live} shot={heroShot} />
 							{tab === 'source' ? (
 								<a class="pw-pkg-skills" href="/docs/package-skills">
