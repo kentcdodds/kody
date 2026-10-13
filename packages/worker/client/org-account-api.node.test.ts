@@ -54,15 +54,37 @@ test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits that page only',
 		expect.objectContaining({
 			referrer: acme,
 			credentials: 'include',
-			signal: navigation.signal,
 		}),
 	)
 	const commitInit = fetchMock.mock.calls[0]?.[1]
 	expect(commitInit?.headers).toEqual({ Accept: 'application/json' })
+	// Cookie write must not ride the navigation AbortSignal: a follow-up hop
+	// would abort it and drop last-used for an org page already opened.
+	expect(commitInit?.signal).toBeUndefined()
 
 	fetchMock.mockClear()
 	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/waiting', navigation.signal)
 	expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('query-bearing settings prefetch key matches adopt', async () => {
+	const fetchMock = stubBrowser({ ok: true })
+	const settings = 'https://kody.test/@acme/-/settings?tab=members'
+	prefetchRouteOnIntent(
+		'/@acme/-/settings?tab=members',
+		async (_url, signal) => {
+			fetch('/@acme/-/settings.json', orgAccountApiFetchInit(settings, signal))
+			return {}
+		},
+		new URL(settings),
+	)
+	await Promise.resolve()
+	fetchMock.mockClear()
+	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/settings?tab=members')
+	expect(fetchMock).toHaveBeenCalledWith(
+		lastUsedOrgCommitApiPath,
+		expect.objectContaining({ referrer: settings }),
+	)
 })
 
 test('adopt commits last-used via dedicated path for Connections pages', async () => {

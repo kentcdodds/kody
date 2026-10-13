@@ -49,12 +49,14 @@ type SettingsPayload = OrgSettingsLoaderData & {
 }
 
 async function fetchSettings(
-	slug: string,
+	href: string,
 	signal: AbortSignal,
 ): Promise<SettingsPayload | 'unauthorized' | 'not-found'> {
+	const slug = slugFromHref(href)
 	const response = await fetch(
 		routes.orgSettingsApi.href({ orgSlug: slug }),
-		orgAccountApiFetchInit(`/@${slug}/-/settings`, signal),
+		// Pass the destination href (incl. query) so prefetch pending keys match adopt.
+		orgAccountApiFetchInit(href, signal),
 	)
 	if (response.status === 401) return 'unauthorized'
 	if (response.status === 404) return 'not-found'
@@ -78,8 +80,7 @@ export async function orgSettingsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const slug = slugFromHref(url.pathname)
-	const payload = await fetchSettings(slug, signal)
+	const payload = await fetchSettings(url.href, signal)
 	if (payload === 'unauthorized') return routeLoaderRedirect('/login')
 	if (payload === 'not-found') {
 		return routeLoaderRedirect(routes.notFoundPage.href())
@@ -91,7 +92,7 @@ export function OrgSettingsRoute(handle: Handle) {
 	const settingsData = createRouteData({
 		key: 'orgSettings',
 		async load(href, signal) {
-			const payload = await fetchSettings(slugFromHref(href), signal)
+			const payload = await fetchSettings(href, signal)
 			if (payload === 'unauthorized') return routeDataRedirect('/login')
 			if (payload === 'not-found') throw new Error('Organization unavailable.')
 			return payload

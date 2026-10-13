@@ -58,9 +58,12 @@ export function orgAccountApiFetchInit(
  * After the client router adopts a prefetch and commits that destination, the
  * adopted response was served with `X-Kody-Prefetch` and never wrote
  * `kody_last_org`. Hit the dedicated last-used commit JSON (not the section
- * twin) so the navigation e2e still sees one section payload, grant-only
- * collaborators are not section-denied, and a superseding navigation's
- * AbortSignal can cancel the cookie write (#3517).
+ * twin) so the navigation e2e still sees one section payload and grant-only
+ * collaborators are not section-denied (#3517).
+ *
+ * `signal` only gates whether we start the write (aborted nav never committed).
+ * The fetch itself is not aborted: a follow-up hop must not cancel the cookie
+ * for an org page the user already opened (e.g. org → personal).
  */
 export function commitLastUsedOrgAfterPrefetchAdopt(
 	pageHref: string,
@@ -77,7 +80,6 @@ export function commitLastUsedOrgAfterPrefetchAdopt(
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		referrer: pageUrl.href,
-		signal,
 	}).then(
 		() => {},
 		() => {},
