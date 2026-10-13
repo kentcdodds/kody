@@ -274,7 +274,12 @@ export const packageExportSurfaceSchema = z.object({
 
 export const packageCredentialNeedSchema = z.object({
 	key: z.string(),
-	kind: z.enum(packageCredentialKindValues),
+	kind: z
+		.enum(packageCredentialKindValues)
+		.optional()
+		.describe(
+			'When set, only credentials of this kind match. When omitted, any fetch-capable credential (secret, oauth, login) for the provider matches.',
+		),
 	provider: z.string(),
 	description: z.string(),
 	multiple: z.boolean(),
@@ -285,7 +290,7 @@ export const packageCredentialNeedSchema = z.object({
 	status: z
 		.enum(['ready', 'ambiguous', 'unbound'])
 		.describe(
-			'ready: exactly one of your credentials matches kind and provider and resolves with no call map entry. ambiguous: several match; pick one with a call map. unbound: none match.',
+			'ready: exactly one of your credentials matches the need (kind filter and provider) and resolves with no call map entry. ambiguous: several match; pick one with a call map. unbound: none match.',
 		),
 	autoPick: z
 		.string()
@@ -301,7 +306,7 @@ export const packageCredentialNeedSchema = z.object({
 			}),
 		)
 		.describe(
-			'Credentials you can Use that a call map may pick: the matches, plus same-kind credentials with no provider (set their provider to auto-resolve).',
+			'Credentials you can Use that a call map may pick: the matches, plus matching-kind credentials with no provider (set their provider to auto-resolve).',
 		),
 })
 

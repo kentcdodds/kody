@@ -69,6 +69,16 @@ test('publish rejects a retired placement, and published snapshots drop it', () 
 	}
 })
 
+test('publish accepts a need with only description (optional kind)', () => {
+	const content = manifestWithCredentials({
+		github: { description: 'Read PRs to summarize them' },
+	})
+	const authored = parseAuthoredPackageJson({ content, mode: 'authoring' })
+	expect(authored.kody.credentials).toEqual({
+		github: { description: 'Read PRs to summarize them' },
+	})
+})
+
 test('publish rejects invalid kody.credentials slots and names the slot', () => {
 	expect(
 		publishError({
