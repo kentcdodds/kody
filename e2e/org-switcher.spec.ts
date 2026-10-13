@@ -80,9 +80,10 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(
 		accountGroup.getByRole('link', { name: 'Account settings' }),
 	).toHaveAttribute('href', '/account')
+	// Usage follows the URL org (team home here), not a last-used cookie.
 	await expect(
 		accountGroup.getByRole('link', { name: 'Usage & credits' }),
-	).toHaveAttribute('href', `/@${user.username}/-/usage`)
+	).toHaveAttribute('href', `/@pinned-${runId}/-/usage`)
 	await expect(
 		accountGroup.getByRole('button', { name: 'Log out' }),
 	).toBeVisible()
