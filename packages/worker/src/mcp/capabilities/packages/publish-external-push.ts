@@ -64,6 +64,11 @@ import {
 	reportCapabilityProgress,
 	type McpReportProgress,
 } from '#mcp/progress.ts'
+import {
+	readPromotedVersionFromManifest,
+	resolveListingBehindPublishHint,
+} from '#worker/community/resolve-listing-behind-publish-hint.ts'
+import { buildUpdatePublicListingHref } from '#universal/update-public-listing.ts'
 
 const inputSchema = z.object({
 	package_id: z.string().min(1).optional(),
@@ -319,6 +324,18 @@ const publishPhaseTimingsSchema = z
 		'Coarse packagePublishExternalPush phase timings in milliseconds. Field names are stable. Omitted keys mean that phase did not run in this result. checks_bundle_ms and rebuild_ms stay separate.',
 	)
 
+const communityListingBehindHintSchema = z
+	.object({
+		pinnedVersion: z.string().nullable(),
+		promotedVersion: z.string().nullable(),
+		behind: z.literal(true),
+		updateHint: z.string(),
+		updateUrl: z.string(),
+	})
+	.describe(
+		'Present when this package has a public community listing whose pinned snapshot is behind the published commit. Listings do not auto-follow publish or promote; call communityPublish or open updateUrl to republish the catalog row.',
+	)
+
 const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('already_published'),
@@ -327,6 +344,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
+		listing: communityListingBehindHintSchema.optional(),
 		phase_timings: publishPhaseTimingsSchema,
 	}),
 	z.object({
@@ -379,6 +397,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
+		listing: communityListingBehindHintSchema.optional(),
 		phase_timings: publishPhaseTimingsSchema,
 	}),
 	z.object({
@@ -533,6 +552,33 @@ async function getPendingSecretApprovalsForPublishedPackage(input: {
 	} catch {
 		return null
 	}
+}
+
+async function getListingBehindPublishHint(input: {
+	env: Env
+	baseUrl: string
+	ownerUserId: OwnerId
+	ownerScope: string
+	packageId: string
+	kodyId: string
+	promotedCommit: string
+	promotedVersion?: string | null
+}) {
+	const path = buildUpdatePublicListingHref({
+		username: input.ownerScope,
+		kodyId: input.kodyId,
+	})
+	const updateUrl = new URL(path, input.baseUrl).toString()
+	return await resolveListingBehindPublishHint({
+		db: input.env.APP_DB,
+		ownerUserId: input.ownerUserId,
+		packageId: input.packageId,
+		ownerUsername: input.ownerScope,
+		kodyId: input.kodyId,
+		promotedCommit: input.promotedCommit,
+		promotedVersion: input.promotedVersion,
+		updateUrl,
+	})
 }
 
 async function getPublishStaticDependents(input: {
@@ -715,14 +761,26 @@ async function runExternalPublishAttempt(input: {
 							publishedCommit,
 						},
 						async () => {
-							const testHints = await getPublishedPackageTestHints({
-								env: input.env,
-								userId: input.ownerUserId,
-								sourceId: input.source.id,
-								packageId: input.packageId,
-							})
+							const [testHints, listing] = await Promise.all([
+								getPublishedPackageTestHints({
+									env: input.env,
+									userId: input.ownerUserId,
+									sourceId: input.source.id,
+									packageId: input.packageId,
+								}),
+								getListingBehindPublishHint({
+									env: input.env,
+									baseUrl: input.baseUrl,
+									ownerUserId: input.ownerUserId,
+									ownerScope: input.ownerScope,
+									packageId: input.packageId,
+									kodyId: input.kodyId,
+									promotedCommit: publishedCommit,
+								}),
+							])
 							return {
 								testHints,
+								listing,
 								hosted_app_url: await resolvePublishedHostedAppUrl({
 									env: input.env,
 									baseUrl: input.baseUrl,
@@ -765,6 +823,9 @@ async function runExternalPublishAttempt(input: {
 					static_dependents: alreadyPublishedExtras.static_dependents,
 					pending_secret_package_approvals:
 						alreadyPublishedExtras.pending_secret_package_approvals,
+					...(alreadyPublishedExtras.listing
+						? { listing: alreadyPublishedExtras.listing }
+						: {}),
 					phase_timings: buildPublishPhaseTimings({
 						startedAt: publishStartedAt,
 						fromPublish: result.phase_timings,
@@ -867,8 +928,19 @@ async function runExternalPublishAttempt(input: {
 							manifest: result.manifest,
 							packageId: input.packageId,
 						})
+						const listing = await getListingBehindPublishHint({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							ownerUserId: input.ownerUserId,
+							ownerScope: input.ownerScope,
+							packageId: input.packageId,
+							kodyId: input.kodyId,
+							promotedCommit: result.published_commit,
+							promotedVersion: readPromotedVersionFromManifest(result.manifest),
+						})
 						return {
 							testHints,
+							listing,
 							hosted_app_url: await resolvePublishedHostedAppUrl({
 								env: input.env,
 								baseUrl: input.baseUrl,
@@ -910,6 +982,9 @@ async function runExternalPublishAttempt(input: {
 				static_dependents: publishedExtras.static_dependents,
 				pending_secret_package_approvals:
 					publishedExtras.pending_secret_package_approvals,
+				...(publishedExtras.listing
+					? { listing: publishedExtras.listing }
+					: {}),
 				phase_timings: buildPublishPhaseTimings({
 					startedAt: publishStartedAt,
 					fromPublish: result.phase_timings,

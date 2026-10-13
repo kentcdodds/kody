@@ -27,6 +27,7 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
+	getCommunityListingByOwnerAndPackage: vi.fn(),
 	loadPublicTreeFiles: vi.fn(async (_input: { commit: string | null }) => ({
 		files: {} as Record<string, string>,
 		fromListingSnapshot: false,
@@ -89,6 +90,10 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: () => ({
 		publishFromExternalRef: mockModule.publishFromExternalRef,
 	}),
+}))
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingByOwnerAndPackage(...args),
 }))
 vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: () => 'https://example.com',
@@ -172,6 +177,7 @@ function loadApprove(commit?: string) {
 }
 
 async function loadApproveOk(commit?: string) {
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	const loaded = await loadApprove(commit)
 	if (!loaded.ok) throw new Error('expected loader success')
 	return loaded
@@ -258,6 +264,7 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		branch: 'main',
 		commit: 'deadbeef',
 	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	expect(await loadApprove('abc1234')).toMatchObject({
 		ok: true,
 		publishedCommit: 'commit-old',
@@ -266,6 +273,7 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		pendingIsDefaultHead: false,
 		packageHref: '/@user/notes',
 		package: { id: 'pkg-1', lockedAt: '2026-08-28T12:00:00.000Z' },
+		listing: null,
 		diff: { files: [], omittedCount: 0 },
 	})
 })
@@ -291,6 +299,31 @@ test('approve-publish hrefs use the owning org slug for team packages', async ()
 	const loaded = await loadApproveOk('abc1234')
 	expect(loaded.packageHref).toBe('/@acme/shared')
 	expect(loaded.filesHref).toContain('/@acme/shared')
+})
+
+test('approve-publish loader includes listing hint when the catalog pin lags the pending commit', async () => {
+	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+	mockModule.writablePackage = unlockedPackage
+	mockModule.getEntitySourceById.mockResolvedValue(sourceRow(publishedCommit))
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		commit: pendingCommit,
+	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
+		id: 'listing-1',
+		status: 'active',
+		pinnedCommit: publishedCommit,
+		version: '1.4.0',
+	})
+	const loaded = await loadApprove(pendingCommit)
+	if (!loaded.ok) throw new Error('expected loader success')
+	expect(loaded.listing).toEqual({
+		pinnedVersion: '1.4.0',
+		promotedVersion: null,
+		behind: true,
+		updateHint: expect.stringContaining('communityPublish'),
+		updateUrl: '/@user/notes/settings#update-public-listing',
+	})
 })
 
 test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {

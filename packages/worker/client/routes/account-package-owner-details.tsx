@@ -34,6 +34,7 @@ import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
 } from '#universal/loader-data.ts'
+import { updatePublicListingSectionId } from '#universal/update-public-listing.ts'
 
 function isPackageLocked(lockedAt: string | null | undefined) {
 	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
@@ -101,12 +102,14 @@ export function AccountPackageOwnerDetails(
 	async function submitVisibility(
 		packageDetail: AccountPackageDetail,
 		visibility: 'public' | 'private',
+		options: { republishListing?: boolean } = {},
 	) {
 		if (visibilityState === 'submitting') return
 		if (confirmName.trim() !== packageDetail.kodyId) {
 			visibilityState = 'error'
-			visibilityMessage =
-				visibility === 'public'
+			visibilityMessage = options.republishListing
+				? `Type ${packageDetail.kodyId} to update the public community listing to the current published commit.`
+				: visibility === 'public'
 					? `Type ${packageDetail.kodyId} to make this package forkable. Anyone will be able to read and fork the default branch on /community.`
 					: `Type ${packageDetail.kodyId} to turn off forkable. Public URLs will 404; existing forks keep their copies.`
 			handle.update()
@@ -322,6 +325,74 @@ export function AccountPackageOwnerDetails(
 						mix={css({ display: 'grid', gap: spacing.md })}
 						data-testid="package-visibility-controls"
 					>
+						{packageDetail.listingNeedsRepublish ? (
+							<div
+								id={updatePublicListingSectionId}
+								mix={css({ display: 'grid', gap: spacing.xs })}
+								data-testid="package-update-public-listing"
+							>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Publish and promote update the package runtime. The public
+									community listing stays on its pinned snapshot until you
+									republish it. Type the slug, then update the listing.
+								</p>
+								<label mix={css({ display: 'grid', gap: spacing.xs })}>
+									<span mix={css(visuallyHiddenCss)}>
+										Type {packageDetail.kodyId} to update the public listing
+									</span>
+									<input
+										value={confirmName}
+										placeholder={packageDetail.kodyId}
+										data-testid="package-update-public-listing-confirm"
+										mix={[
+											css({
+												padding: spacing.sm,
+												borderRadius: radius.md,
+												border: `1px solid ${colors.border}`,
+												backgroundColor: colors.surface,
+												color: colors.text,
+											}),
+											on('input', (event) => {
+												if (
+													!(event.currentTarget instanceof HTMLInputElement)
+												) {
+													return
+												}
+												confirmName = event.currentTarget.value
+												handle.update()
+											}),
+										]}
+									/>
+								</label>
+								<button
+									type="button"
+									disabled={visibilityState === 'submitting'}
+									data-testid="package-update-public-listing-submit"
+									mix={[
+										css(getPillButtonCss()),
+										on(
+											'click',
+											() =>
+												void submitVisibility(packageDetail, 'public', {
+													republishListing: true,
+												}),
+										),
+									]}
+								>
+									{visibilityState === 'submitting'
+										? 'Updating listing…'
+										: 'Update public listing'}
+								</button>
+								{visibilityMessage ? (
+									<p
+										mix={css({ margin: 0, color: colors.danger })}
+										role="alert"
+									>
+										{visibilityMessage}
+									</p>
+								) : null}
+							</div>
+						) : null}
 						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								{packageDetail.isPrivate
@@ -384,7 +455,7 @@ export function AccountPackageOwnerDetails(
 										? 'Make forkable'
 										: 'Turn off forkable'}
 							</button>
-							{visibilityMessage ? (
+							{!packageDetail.listingNeedsRepublish && visibilityMessage ? (
 								<p mix={css({ margin: 0, color: colors.danger })} role="alert">
 									{visibilityMessage}
 								</p>

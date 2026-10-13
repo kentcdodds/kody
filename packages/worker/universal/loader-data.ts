@@ -2015,6 +2015,11 @@ export type AccountPackageListItem = {
 	 */
 	isInternetVisible: boolean
 	hasCommunityListing: boolean
+	/**
+	 * True when an active community listing pin lags `publishedCommit`.
+	 * Owners use Update public listing on settings to move the catalog pin.
+	 */
+	listingNeedsRepublish: boolean
 	listingAhead: AccountPackageListingAhead | null
 	forkAhead: AccountPackageForkAhead | null
 }
@@ -2056,6 +2061,15 @@ type AccountPackagePublishDiffFile = {
 	patch: string | null
 }
 
+/** Catalog listing pin lags the package runtime published commit. */
+export type AccountPackageListingBehindHint = {
+	pinnedVersion: string | null
+	promotedVersion: string | null
+	behind: true
+	updateHint: string
+	updateUrl: string
+}
+
 export type AccountPackageApprovePublishLoaderData = {
 	ok: true
 	email: string
@@ -2077,6 +2091,11 @@ export type AccountPackageApprovePublishLoaderData = {
 	pendingIsDefaultHead: boolean
 	filesHref: string
 	packageHref: string
+	/**
+	 * When an active community listing pin is behind the current published
+	 * commit (or will be after this promote), how to update the public catalog.
+	 */
+	listing: AccountPackageListingBehindHint | null
 	diff: {
 		files: Array<AccountPackagePublishDiffFile>
 		omittedCount: number

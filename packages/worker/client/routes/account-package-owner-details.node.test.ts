@@ -22,6 +22,7 @@ function packageDetail(
 		isPrivate: false,
 		isInternetVisible: false,
 		hasCommunityListing: false,
+		listingNeedsRepublish: false,
 		listingAhead: null,
 		forkAhead: null,
 		searchText: null,
@@ -95,6 +96,7 @@ test('owner details expose independent forkable and internet-visible controls', 
 	expect(html).toContain('data-testid="package-visibility-controls"')
 	expect(html).toContain('data-testid="package-internet-visible-controls"')
 	expect(html).toContain('data-testid="package-make-public"')
+	expect(html).not.toContain('data-testid="package-update-public-listing"')
 	expect(html).toContain('Make forkable')
 	expect(html).toContain(
 		"Lists the source on /community so anyone can read and fork it. Doesn't host your app.",
@@ -174,4 +176,31 @@ test('owner details show publish state and demote Approve when up to date', asyn
 	expect(unknownHead).toContain('Could not check for an unpublished commit')
 	expect(unknownHead).not.toContain('Published version is up to date')
 	expect(unknownHead).toContain('data-testid="account-approve-publish"')
+})
+
+test('owner details offer Update public listing when the catalog pin lags', async () => {
+	const html = await renderToString(
+		jsx(AccountPackageOwnerDetails, {
+			ownerUsername: 'danj',
+			packageDetail: packageDetail({
+				isPrivate: false,
+				hasCommunityListing: true,
+				listingNeedsRepublish: true,
+				publishedCommit: '4665dddb7b7347291bd99049ba0f67ca101ee082',
+			}),
+			lockInFlight: false,
+			viewerCanPublish: true,
+			viewerCanDelete: true,
+			viewerCanAdoptCommunityFork: false,
+			onToggleLock: () => {},
+			onPackagesPayload: () => {},
+		}),
+	)
+
+	expect(html).toContain('data-testid="package-update-public-listing"')
+	expect(html).toContain('id="update-public-listing"')
+	expect(html).toContain('Update public listing')
+	expect(html).toContain(
+		'Publish and promote update the package runtime. The public',
+	)
 })

@@ -181,6 +181,7 @@ function toPlainRepoOwnerPackage(input: {
 		isPrivate: input.repo.isPrivate,
 		isInternetVisible: false,
 		hasCommunityListing: false,
+		listingNeedsRepublish: false,
 		listingAhead: null,
 		forkAhead: null,
 		searchText: null,

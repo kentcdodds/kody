@@ -19,6 +19,7 @@ import { readArtifactTreeAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { resolveListingBehindPublishHint } from '#worker/community/resolve-listing-behind-publish-hint.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -96,6 +97,22 @@ export async function loadAccountPackageApprovePublishData(input: {
 		ownerUserId,
 	)
 	const ownerUsername = ownerBinding?.org.slug ?? input.user.username
+	// Hint against the commit this page will promote (or the published tip when
+	// already published). Promote moves runtime only; the catalog pin lags until
+	// communityPublish / Update public listing.
+	const listingCommit =
+		!alreadyPublished && pendingCommit ? pendingCommit : publishedCommit
+	const listing =
+		listingCommit == null
+			? null
+			: await resolveListingBehindPublishHint({
+					db: input.env.APP_DB,
+					ownerUserId,
+					packageId: savedPackage.id,
+					ownerUsername,
+					kodyId: savedPackage.kodyId,
+					promotedCommit: listingCommit,
+				})
 	return {
 		ok: true,
 		email: input.user.email,
@@ -118,6 +135,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 			username: ownerUsername,
 			kodyId: savedPackage.kodyId,
 		}),
+		listing,
 		diff:
 			unpublishedCompare || pendingMissing
 				? { files: [], omittedCount: 0 }
@@ -259,16 +277,33 @@ export async function handleAccountPackagePublishLockAction(input: {
 	})
 	switch (publishResult.status) {
 		case 'published':
-		case 'already_published':
-			return jsonResponse(
-				await reloadAccountPackagesAfterWrite({
-					env: input.env,
-					request: input.request,
-					user: input.user,
-					packageId,
-					ownerUserId,
-				}),
+		case 'already_published': {
+			const packagesPayload = await reloadAccountPackagesAfterWrite({
+				env: input.env,
+				request: input.request,
+				user: input.user,
+				packageId,
+				ownerUserId,
+			})
+			const ownerBinding = await loadOrgBindingForOrg(
+				input.env.APP_DB,
+				input.user.mcpUser.userId,
+				ownerUserId,
 			)
+			const ownerUsername = ownerBinding?.org.slug ?? input.user.username
+			const listing = await resolveListingBehindPublishHint({
+				db: input.env.APP_DB,
+				ownerUserId,
+				packageId,
+				ownerUsername,
+				kodyId: savedPackage.kodyId,
+				promotedCommit: commit,
+			})
+			return jsonResponse({
+				...packagesPayload,
+				listing,
+			})
+		}
 		case 'checks_failed':
 			return jsonResponse(
 				{

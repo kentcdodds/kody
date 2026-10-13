@@ -36,6 +36,7 @@ import {
 	getCommunityForkByForkedPackageId,
 	getCommunityListingByOwnerAndPackage,
 } from '#worker/community/repo.ts'
+import { listingNeedsRepublish } from '#worker/community/listing-needs-republish.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
 	resolveSavedPackageRefWithCommunityProvenance,
@@ -191,6 +192,7 @@ function toListItem(
 		isPrivate: record.isPrivate,
 		isInternetVisible: record.isInternetVisible,
 		hasCommunityListing: false,
+		listingNeedsRepublish: false,
 		listingAhead,
 		forkAhead,
 	}
@@ -247,6 +249,7 @@ async function toDetail(input: {
 	username?: string
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
+	listingNeedsRepublish: boolean
 }): Promise<AccountPackageDetail> {
 	const [exports, sourceAndPending, communityFork, creditAttribution] =
 		await Promise.all([
@@ -292,6 +295,7 @@ async function toDetail(input: {
 			toForkAhead(input.record),
 		),
 		hasCommunityListing: input.hasCommunityListing,
+		listingNeedsRepublish: input.listingNeedsRepublish,
 		searchText: input.record.searchText,
 		exports,
 		publishedCommit: sourceAndPending.ownedSource?.published_commit ?? null,
@@ -374,16 +378,26 @@ async function loadPackageCreditAttributionRow(input: {
 	}
 }
 
-async function hasActiveCommunityListing(input: {
+async function loadActiveCommunityListingState(input: {
 	db: D1Database
 	userId: string
 	packageId: string
+	publishedCommit: string | null | undefined
 }) {
 	const listing = await getCommunityListingByOwnerAndPackage(input.db, {
 		ownerUserId: input.userId,
 		packageId: input.packageId,
 	})
-	return listing?.status === 'active'
+	const hasCommunityListing = listing?.status === 'active'
+	return {
+		hasCommunityListing,
+		listingNeedsRepublish:
+			hasCommunityListing &&
+			listingNeedsRepublish({
+				listingPinnedCommit: listing?.pinnedCommit,
+				sourcePublishedCommit: input.publishedCommit,
+			}),
+	}
 }
 
 export async function loadAccountPackageDetail(input: {
@@ -438,22 +452,22 @@ async function toDetailWithListingState(input: {
 	username?: string
 	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
-	const [hasCommunityListing, detail] = await Promise.all([
-		hasActiveCommunityListing({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			packageId: input.record.id,
-		}),
-		toDetail({
-			env: input.env,
-			requestUrl: input.requestUrl,
-			userId: input.userId,
-			username: input.username,
-			record: input.record,
-			hasCommunityListing: false,
-		}),
-	])
-	return { ...detail, hasCommunityListing }
+	const detail = await toDetail({
+		env: input.env,
+		requestUrl: input.requestUrl,
+		userId: input.userId,
+		username: input.username,
+		record: input.record,
+		hasCommunityListing: false,
+		listingNeedsRepublish: false,
+	})
+	const listingState = await loadActiveCommunityListingState({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.record.id,
+		publishedCommit: detail.publishedCommit,
+	})
+	return { ...detail, ...listingState }
 }
 
 export async function loadAccountPackagesData(input: {

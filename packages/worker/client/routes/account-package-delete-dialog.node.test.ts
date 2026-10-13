@@ -21,6 +21,7 @@ const packageDetail: AccountPackageDetail = {
 	isPrivate: false,
 	isInternetVisible: false,
 	hasCommunityListing: false,
+	listingNeedsRepublish: false,
 	listingAhead: null,
 	forkAhead: null,
 	searchText: null,

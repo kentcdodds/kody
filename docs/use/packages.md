@@ -804,6 +804,13 @@ resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
 Visitors see the badge but not the link. The five-minute reconcile job still
 auto-publishes unlocked packages; this page is the explicit website path.
 
+Publishing or promoting does **not** move a public community listing. The
+catalog pin stays on the last `communityPublish` until you republish — see
+[Listing vs publish and promote](./community-packages.md#listing-vs-publish-and-promote).
+`packagePublishExternalPush` success results include a `listing` hint when the
+listing is behind; the promote page and Repo tab offer **Update public
+listing**.
+
 Fleet package-codemod apply for `head-and-published` codemods does the same HEAD
 write on locked packages: the transform commits and pushes so you can review it
 the next time you publish. It does not skip locked packages, and it does not

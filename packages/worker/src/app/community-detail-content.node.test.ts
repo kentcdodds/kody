@@ -142,6 +142,25 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
 
+	const listingBehindHtml = await render({
+		listing: {
+			...sampleListing,
+			sourceAhead: true,
+			listingBehind: true,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		},
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		publishCompareHref: ownerAheadHref,
+	})
+	expect(listingBehindHtml).toContain(
+		'data-testid="community-detail-update-public-listing"',
+	)
+	expect(listingBehindHtml).toContain(
+		'href="/@kentcdodds/github-triage/settings#update-public-listing"',
+	)
+	expect(listingBehindHtml).toContain('Update public listing')
+
 	expectMarkers(
 		await render({
 			listing: withInstall({ targetName: '@kentcdodds/github-triage' }),

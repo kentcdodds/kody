@@ -47,16 +47,21 @@ export async function handleAccountPackageVisibilityAction(input: {
 	const { savedPackage, ownerUserId, actorUserId } = resolved.package
 
 	try {
-		if (visibility === 'public' && savedPackage.isPrivate) {
+		if (visibility === 'public') {
 			if (confirmName !== savedPackage.kodyId) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: `Type the package slug "${savedPackage.kodyId}" to make it public. Anyone will be able to read and fork the default branch.`,
+						error: savedPackage.isPrivate
+							? `Type the package slug "${savedPackage.kodyId}" to make it public. Anyone will be able to read and fork the default branch.`
+							: `Type the package slug "${savedPackage.kodyId}" to update the public community listing to the current published commit.`,
 					},
 					400,
 				)
 			}
+			// First publish and republish both call publishCommunityListing: the
+			// catalog pin only moves on this path (or communityPublish), never on
+			// package publish / promote alone.
 			await publishCommunityListing({
 				env: input.env,
 				baseUrl: new URL(input.request.url).origin,

@@ -46,8 +46,9 @@ Community discovery uses the MCP **`community`** domain. Catalog listings do
 ## Making a package public
 
 Ask your agent to set visibility with `packageUpdate`
-(`changes.visibility: "public"`). `communityPublish` is an alias for the same
-action.
+(`changes.visibility: "public"`) the first time. `communityPublish` also makes a
+package public, and it is the capability that **republishes** an already-public
+listing after later package publishes.
 
 There are **no** MIT, logo, README Intent, or `package.json#private`
 **platform** gates to flip visibility. Tags, description, category, and an icon
@@ -71,6 +72,34 @@ on that review.
   listing keep their copies. If the deleted package was itself a community fork,
   that fork record is removed and the listing's fork count drops.
 - Hidden and locked stay separate from visibility.
+
+### Listing vs publish and promote
+
+Three commits matter for a public package:
+
+| Surface                                  | Commit           | Moves when                                                                                                |
+| ---------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| Default-branch **HEAD**                  | Artifacts tip    | `git push` / repo session edits                                                                           |
+| Package **runtime** (`published_commit`) | Last publish     | `packagePublishExternalPush`, `repoPublishSession`, or website **Publish HEAD** / **Promote this commit** |
+| Community **listing** (`pinned_commit`)  | Catalog snapshot | `communityPublish` or website **Update public listing**                                                   |
+
+Publish and promote do **not** advance the public community listing. The catalog
+keeps serving the last `communityPublish` pin (and its `package.json#version`
+label) until you republish. After a successful publish or promote, MCP/API
+results include a `listing` hint when the pin is behind, with `updateHint` and
+`updateUrl`. On the website, owners see **Update public listing** on the promote
+page and on the package Repo tab (next to **HEAD ahead of published** when that
+badge also applies), linking to
+`/@username/{kodyId}/settings#update-public-listing`.
+
+To move the listing after promoting a new version:
+
+1. Agents: call `communityPublish({ package_id })` (or ask the agent to).
+2. Website: open package **Settings**, type the slug, click **Update public
+   listing**.
+
+Listings intentionally do not auto-follow promote — that keeps catalog updates
+an explicit owner choice.
 
 ### Icon
 
@@ -297,9 +326,10 @@ rating, or reporting public packages.
 
 Use the MCP `community` domain:
 
-- `communityPublish` — alias for making a saved package public (prefer
-  `packageUpdate` with `changes.visibility: "public"`; review personal details
-  first)
+- `communityPublish` — make a saved package public, or republish an
+  already-public listing to the current published commit (prefer `packageUpdate`
+  with `changes.visibility: "public"` for the first publish; review personal
+  details first)
 - `communityUnpublish` — make a package private / unlist it (prefer
   `packageUpdate` with `changes.visibility: "private"` and `confirm_name`)
 - `packageDelete` — permanently delete a saved package (type the package name;
