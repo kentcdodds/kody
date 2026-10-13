@@ -14,7 +14,7 @@ import {
 const migrationSql = readFileSync(
 	join(
 		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0128-package-app-custom-hostnames.sql',
+		'../../migrations/0130-package-app-custom-hostnames.sql',
 	),
 	'utf8',
 )
