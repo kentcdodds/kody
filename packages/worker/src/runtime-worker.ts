@@ -19,7 +19,10 @@ import {
 	handlePackageAppRequest,
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
-import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import {
+	handlePackageAppOriginRequest,
+	resolveVerifiedCustomHostnameIfEnabled,
+} from '#app/package-app-origin.ts'
 import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
@@ -104,7 +107,15 @@ async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
 		env,
 		allowedHealthPath: runtimeWorkerHealthPath,
 	})
-	if (nonCanonicalHost) return nonCanonicalHost
+	if (nonCanonicalHost) {
+		// Customer custom hostnames are not in the sync allowlist. Let a
+		// verified app binding through; everything else keeps the 404.
+		const customHostname = await resolveVerifiedCustomHostnameIfEnabled(
+			request,
+			env,
+		)
+		if (!customHostname) return nonCanonicalHost
+	}
 
 	if (url.pathname === runtimeWorkerHealthPath) {
 		return Response.json(

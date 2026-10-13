@@ -5,6 +5,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
+	buildPackageAppCustomHostnamePath,
 	buildPackageAppPath,
 	buildPackageAppSubdomainPath,
 	type PackageAppMount,
@@ -118,6 +119,75 @@ export function parsePackageAppSubdomainPath(input: {
 		kodyId,
 		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
 		mount: 'user-subdomain',
+	}
+}
+
+/**
+ * Path on a verified custom hostname. The username and package slug come from
+ * the hostname mapping; the request path is the app path. An empty pathname
+ * is `/`.
+ */
+export function parsePackageAppCustomHostnamePath(input: {
+	pathname: string
+	username: string
+	kodyId: string
+}): PackageAppPath {
+	const pathname = input.pathname.trim()
+	const parts = pathname.split('/').filter(Boolean)
+	return {
+		username: input.username,
+		kodyId: input.kodyId,
+		restPath: parts.length > 0 ? `/${parts.join('/')}` : '/',
+		mount: 'custom-hostname',
+	}
+}
+
+function packageAppBasePath(input: {
+	mount: PackageAppMount
+	username: string
+	kodyId: string
+}): string {
+	switch (input.mount) {
+		case 'user-subdomain':
+			return buildPackageAppSubdomainPath({ kodyId: input.kodyId })
+		case 'username-path':
+			return buildPackageAppPath({
+				username: input.username,
+				kodyId: input.kodyId,
+			})
+		case 'custom-hostname':
+			return ''
+		default: {
+			input.mount satisfies never
+			throw new Error(`Unknown package app mount: ${String(input.mount)}`)
+		}
+	}
+}
+
+function packageAppLocationPath(input: {
+	mount: PackageAppMount
+	username: string
+	kodyId: string
+	restPath?: string | null
+}): string {
+	switch (input.mount) {
+		case 'user-subdomain':
+			return buildPackageAppSubdomainPath({
+				kodyId: input.kodyId,
+				restPath: input.restPath,
+			})
+		case 'username-path':
+			return buildPackageAppPath({
+				username: input.username,
+				kodyId: input.kodyId,
+				restPath: input.restPath,
+			})
+		case 'custom-hostname':
+			return buildPackageAppCustomHostnamePath({ restPath: input.restPath })
+		default: {
+			input.mount satisfies never
+			throw new Error(`Unknown package app mount: ${String(input.mount)}`)
+		}
 	}
 }
 
@@ -481,8 +551,10 @@ export async function servePackageAppRequest(input: {
 	}
 	// Same freshness-tier cache family as keyless host export invoke, but a
 	// distinct key that may follow slug redirects. A retired slug never serves
-	// the app: permanent 308 to the current leaf so cookies/caches/storage stay
-	// on one canonical path (webhooks/invocations still follow internally).
+	// on a path that includes the slug: permanent 308 to the current leaf so
+	// cookies, caches, and storage stay on one canonical path (webhooks and
+	// invocations still follow internally). Custom hostnames bind by package
+	// id and have no slug in the URL, so a same-path redirect is skipped.
 	const slugLookup = await pushServerTiming(
 		serverTiming,
 		'resolveSavedPackage',
@@ -505,39 +577,35 @@ export async function servePackageAppRequest(input: {
 		// savedPackage.kodyId — those can diverge until Phase 2's single writer,
 		// and a mismatch would 308 to the same retired path forever.
 		const currentSlug = getPackageNameLeaf(savedPackage.name)
-		const locationPath =
-			packagePath.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({
-						kodyId: currentSlug,
-						restPath:
-							forwardedPackageRestPath === '/'
-								? null
-								: forwardedPackageRestPath,
-					})
-				: buildPackageAppPath({
-						username: packagePath.username,
-						kodyId: currentSlug,
-						restPath:
-							forwardedPackageRestPath === '/'
-								? null
-								: forwardedPackageRestPath,
-					})
+		const locationPath = packageAppLocationPath({
+			mount: packagePath.mount,
+			username: packagePath.username,
+			kodyId: currentSlug,
+			restPath:
+				forwardedPackageRestPath === '/' ? null : forwardedPackageRestPath,
+		})
 		const location = new URL(locationPath, requestUrl)
 		// Drop a handoff minted for the retired slug — consume would reject it.
 		location.search = requestUrl.search
 		location.searchParams.delete(packageAppHandoffQueryParam)
-		return attachPackageAppServerTiming(
-			new Response(null, {
-				status: 308,
-				headers: {
-					Location: `${location.pathname}${location.search}`,
-					// Source slug can be reclaimed by a later package; positive
-					// freshness would keep sending browsers to the wrong app.
-					'Cache-Control': 'no-store',
-				},
-			}),
-			serverTiming,
-		)
+		const next = `${location.pathname}${location.search}`
+		const current = `${requestUrl.pathname}${requestUrl.search}`
+		// Custom hostnames bind by package id, so a retired slug does not appear
+		// in the URL. A 308 to the same path would loop; keep serving.
+		if (next !== current) {
+			return attachPackageAppServerTiming(
+				new Response(null, {
+					status: 308,
+					headers: {
+						Location: next,
+						// Source slug can be reclaimed by a later package; positive
+						// freshness would keep sending browsers to the wrong app.
+						'Cache-Control': 'no-store',
+					},
+				}),
+				serverTiming,
+			)
+		}
 	}
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
@@ -607,13 +675,11 @@ export async function servePackageAppRequest(input: {
 		// URL path segment is the name leaf (Kent: slug = leaf), not kodyId —
 		// those can diverge until Phase 2's single writer.
 		const urlSlug = getPackageNameLeaf(savedPackage.name)
-		const appBasePath =
-			packagePath.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({ kodyId: urlSlug })
-				: buildPackageAppPath({
-						username: packagePath.username,
-						kodyId: urlSlug,
-					})
+		const appBasePath = packageAppBasePath({
+			mount: packagePath.mount,
+			username: packagePath.username,
+			kodyId: urlSlug,
+		})
 		try {
 			const packageManifest = await pushServerTiming(
 				serverTiming,

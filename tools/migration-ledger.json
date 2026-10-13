@@ -483,6 +483,10 @@
 		{
 			"filename": "0129-drop-git-access-tokens.sql",
 			"sha256": "512af1c504e4cf5c7a8ad88dcb87bc2ce292a5b7f42f0cce0ca3b9b042194cfa"
+		},
+		{
+			"filename": "0130-package-app-custom-hostnames.sql",
+			"sha256": "4789df598f18f9ba9082cad29e680c15c14f61cd298f299a4519e79ecd8599fb"
 		}
 	]
 }

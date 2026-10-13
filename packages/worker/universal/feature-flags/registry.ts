@@ -153,6 +153,19 @@ export const featureFlagDefinitions = [
 				'Experimenters whose MCP clients subscribe to package events run more event-driven execute calls than comparable flag-off users.',
 		},
 	},
+	{
+		key: 'package-app-custom-domains',
+		defaultEnabled: false,
+		description:
+			'Serve package apps on customer custom hostnames (Cloudflare for SaaS on the package-app zone). Off by default; enable only for staging proof. Root-path serve + verified hostname mapping. Delete the flag when custom domains ship.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Users with a working custom-hostname package app keep executing against that package more than comparable flag-off users.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -170,6 +183,9 @@ export const mcpSkillsExtensionFlagKey =
 
 export const mcpEventsExtensionFlagKey =
 	'mcp-events-extension' satisfies FeatureFlagKey
+
+export const packageAppCustomDomainsFlagKey =
+	'package-app-custom-domains' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

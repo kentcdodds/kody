@@ -58,7 +58,10 @@ import {
 	handlePackageAppRequest,
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
-import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import {
+	handlePackageAppOriginRequest,
+	resolveVerifiedCustomHostnameIfEnabled,
+} from '#app/package-app-origin.ts'
 import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { serveAnonymousHtmlFromCache } from '#app/anonymous-html-edge-cache.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
@@ -832,7 +835,15 @@ async function fetchWithDynamicWorkerBudget(
 		env,
 		allowedHealthPath: '/health',
 	})
-	if (nonCanonicalHost) return nonCanonicalHost
+	if (nonCanonicalHost) {
+		// Workers tests and any custom hostname that reaches this script
+		// (instead of the runtime Worker) still need the verified mapping.
+		const customHostname = await resolveVerifiedCustomHostnameIfEnabled(
+			request,
+			env,
+		)
+		if (!customHostname) return nonCanonicalHost
+	}
 
 	// Package runtime lane extraction (ADR 0016): when the runtime Worker
 	// service binding is configured, runtime-owned requests (package-app

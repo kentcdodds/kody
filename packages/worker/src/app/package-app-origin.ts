@@ -2,11 +2,21 @@ import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
+	buildPackageAppCustomHostnameUrl,
 	buildPackageAppPath,
 	buildPackageAppSubdomainPath,
 	buildPackageAppSubdomainUrl,
 	buildPackagePagePath,
 } from '@kody-internal/shared/public-urls.ts'
+import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
+import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import {
+	isVerifiedAppCustomHostname,
+	lookupPackageAppCustomHostname,
+	lookupVerifiedAppCustomHostnameForPackage,
+	normalizeCustomHostname,
+} from '#worker/package-app-custom-hostnames/lookup.ts'
+import { type VerifiedAppCustomHostname } from '#worker/package-app-custom-hostnames/types.ts'
 import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getAppBaseUrl,
@@ -35,6 +45,7 @@ import {
 } from '#app/package-app-session.ts'
 import {
 	type PackageAppPath,
+	parsePackageAppCustomHostnamePath,
 	parsePackageAppPath,
 	parsePackageAppSubdomainPath,
 	servePackageAppRequest,
@@ -70,6 +81,13 @@ import { wantsJson } from '#worker/utils.ts'
  * a short-lived single-use handoff token and the user's package-app subdomain
  * exchanges it for its own host-scoped session cookie (named with the
  * `__Host-` prefix on secure requests so sibling subdomains cannot shadow it).
+ * The same host-only cookie is set on a verified customer custom hostname.
+ *
+ * When `package-app-custom-domains` is globally on, a verified app-level
+ * custom hostname serves that package at `/` (assets at `/_assets/...`).
+ * The app origin hands off to `https://{custom-host}/{rest}` instead of the
+ * per-user package-app subdomain. Org-level rows are stored and not served.
+ * Unverified hostnames stay refused.
  *
  * The origins never redirect to each other in a cycle: the app origin only
  * ever redirects *to* a package-app subdomain, the apex only redirects to a
@@ -277,9 +295,87 @@ async function redirectRetiredPackageAppSlug(input: {
 	})
 }
 
+function requestHostname(url: URL) {
+	return url.hostname.toLowerCase().replace(/\.+$/, '')
+}
+
+function configuredAppHostnames(env: Env) {
+	const hostnames: Array<string> = []
+	const configured = env.APP_BASE_URL?.trim()
+	if (configured) {
+		try {
+			hostnames.push(requestHostname(new URL(configured)))
+		} catch {
+			// Ignore an unparsable app origin; custom-host lookup stays closed.
+		}
+	}
+	for (const hostname of parseLegacyHosts(env.APP_LEGACY_HOSTS)) {
+		if (!hostnames.includes(hostname)) hostnames.push(hostname)
+	}
+	return hostnames
+}
+
+/**
+ * Verified app-level custom hostname for this request, when the flag is on.
+ * Returns null for the app origin, package-app hosts, `*.workers.dev`, and
+ * any hostname that is not both active and serving an app binding. Callers
+ * that already refused the host can then let the request through.
+ */
+export async function resolveVerifiedCustomHostnameIfEnabled(
+	request: Request,
+	env: Env,
+): Promise<VerifiedAppCustomHostname | null> {
+	let url: URL
+	try {
+		url = new URL(request.url)
+	} catch {
+		return null
+	}
+	const hostname = normalizeCustomHostname(url.hostname)
+	if (!hostname) return null
+	const appHostnames = configuredAppHostnames(env)
+	// Custom domains are a hosted-origin feature. With no canonical app host
+	// configured, skip the flag read so ordinary test traffic stays off D1.
+	if (appHostnames.length === 0) return null
+	if (appHostnames.includes(hostname)) return null
+	if (hostname.endsWith('.workers.dev')) return null
+	if (parsePackageAppRequestHost({ env, url })) return null
+	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) return null
+	const mapping = await lookupPackageAppCustomHostname({
+		db: env.APP_DB,
+		hostname,
+	})
+	if (!mapping || !isVerifiedAppCustomHostname(mapping)) return null
+	return mapping
+}
+
+async function buildCustomHostnameHandoffTarget(input: {
+	env: Env
+	packagePath: PackageAppPath
+	url: URL
+}): Promise<URL | null> {
+	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
+	const mapping = await lookupVerifiedAppCustomHostnameForPackage({
+		db: input.env.APP_DB,
+		username: input.packagePath.username,
+		kodyId: input.packagePath.kodyId,
+	})
+	if (!mapping) return null
+	const target = new URL(
+		buildPackageAppCustomHostnameUrl({
+			origin: `https://${mapping.hostname}`,
+			restPath:
+				input.packagePath.restPath === '/' ? null : input.packagePath.restPath,
+		}),
+	)
+	target.search = withoutHandoffToken(input.url).search
+	return target
+}
+
 /**
  * Mint a handoff token for the signed-in owner and send them to their
- * package-app subdomain. The app origin never executes package code once
+ * package-app subdomain, or to a verified custom hostname when one is bound
+ * to this package. The app origin never executes package code once
  * `PACKAGE_APP_BASE_URL` is configured.
  */
 async function redirectAppOriginToPackageAppOrigin(input: {
@@ -305,7 +401,9 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	})
 	if (retiredRedirect) return retiredRedirect
 
-	const target = buildSubdomainTarget({ packageAppOrigin, packagePath, url })
+	const target =
+		(await buildCustomHostnameHandoffTarget({ env, packagePath, url })) ??
+		buildSubdomainTarget({ packageAppOrigin, packagePath, url })
 
 	// A non-safe method reaching the app origin is not part of the normal flow
 	// (package pages are loaded from, and post back to, the package-app
@@ -520,6 +618,108 @@ async function handleUserSubdomainRequest(input: {
 }
 
 /**
+ * Serve the package bound to a verified custom hostname at the host root.
+ * Session handoff matches the per-user subdomain: the cookie stays host-only
+ * (`__Host-` prefix, no Domain), and a missing session links back to the
+ * app-origin entry URL instead of redirecting.
+ */
+async function handleCustomHostnameRequest(input: {
+	request: Request
+	env: Env
+	url: URL
+	mapping: VerifiedAppCustomHostname
+}) {
+	const { request, env, url, mapping } = input
+	const appBaseUrl = getAppBaseUrl({ env })
+	const packagePath = parsePackageAppCustomHostnamePath({
+		pathname: url.pathname,
+		username: mapping.username,
+		kodyId: mapping.kodyId,
+	})
+
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		const originHeader = request.headers.get('Origin')
+		if (originHeader !== null && originHeader !== url.origin) {
+			return new Response(
+				'Cross-origin mutating requests to a package-app custom hostname are not allowed.',
+				{
+					status: 403,
+					headers: {
+						'Cache-Control': 'no-store',
+						'Content-Type': 'text/plain; charset=utf-8',
+					},
+				},
+			)
+		}
+	}
+
+	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
+	if (handoffToken) {
+		const now = Date.now()
+		const claims = await consumePackageAppHandoffToken({
+			env,
+			token: handoffToken,
+			expected: {
+				username: packagePath.username,
+				kodyId: packagePath.kodyId,
+			},
+			now,
+		})
+		if (claims) {
+			return redirectResponse({
+				location: withoutHandoffToken(url).toString(),
+				status: 302,
+				setCookie: await createPackageAppSessionCookie({
+					env,
+					session: {
+						stableUserId: claims.stableUserId,
+						username: claims.username,
+					},
+					secure: isSecureRequest(request),
+					expiresAt: claims.sessionExpiresAt,
+					now,
+				}),
+			})
+		}
+	}
+
+	const parsedSession = await readPackageAppSession({ request, env })
+	const serverTiming: Array<ServerTimingEntry> = []
+	const owner = parsedSession
+		? await pushServerTiming(serverTiming, 'owner', () =>
+				resolvePackageAppOwnerByStableUserId({
+					env,
+					stableUserId: parsedSession.session.stableUserId,
+					issuedAt: parsedSession.issuedAt,
+				}),
+			)
+		: null
+
+	if (!owner || !parsedSession) {
+		return createPackageAppSessionRequiredResponse({
+			request,
+			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
+			handoffPresented: Boolean(handoffToken),
+		})
+	}
+
+	return await servePackageAppRequest({
+		request: url.searchParams.has(packageAppHandoffQueryParam)
+			? new Request(withoutHandoffToken(url), request)
+			: request,
+		env,
+		owner,
+		visitor: {
+			userId: personIdFromStored(parsedSession.session.stableUserId),
+			username: owner.username,
+			role: 'owner',
+		},
+		packagePath,
+		serverTiming,
+	})
+}
+
+/**
  * Route a request according to the configured package-app origin.
  *
  * Returns `null` when a non-production deployment has no separate package-app
@@ -544,6 +744,21 @@ async function dispatchPackageAppOriginRequest(request: Request, env: Env) {
 	const configurationError = getPackageAppOriginConfigurationError(env)
 	if (configurationError && (packagePath || requestHost)) {
 		return createPackageAppOriginConfigurationErrorResponse(configurationError)
+	}
+
+	if (!requestHost) {
+		const customHostname = await resolveVerifiedCustomHostnameIfEnabled(
+			request,
+			env,
+		)
+		if (customHostname) {
+			return handleCustomHostnameRequest({
+				request,
+				env,
+				url,
+				mapping: customHostname,
+			})
+		}
 	}
 
 	const packageAppOrigin = getPackageAppBaseUrl({ env })

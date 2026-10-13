@@ -13,6 +13,7 @@ import { buildPackageAppNotFoundMessage } from '#worker/package-runtime/package-
 import {
 	createPackageCodeRequest,
 	isPackageAppRequestPath,
+	parsePackageAppCustomHostnamePath,
 	parsePackageAppPath,
 	parsePackageAppSubdomainPath,
 	servePackageAppRequest,
@@ -22,6 +23,7 @@ import {
 export {
 	createPackageCodeRequest,
 	isPackageAppRequestPath,
+	parsePackageAppCustomHostnamePath,
 	parsePackageAppPath,
 	parsePackageAppSubdomainPath,
 	servePackageAppRequest,

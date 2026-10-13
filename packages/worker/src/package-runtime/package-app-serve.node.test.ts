@@ -11,7 +11,10 @@ import {
 	packageAppRuntimeErrorHeader,
 	packageAppRuntimeRunIdHeader,
 } from './package-app-diagnostics.ts'
-import { servePackageAppRequest } from './package-app-serve.ts'
+import {
+	parsePackageAppCustomHostnamePath,
+	servePackageAppRequest,
+} from './package-app-serve.ts'
 
 // Existing serve tests exercise the local construction path (index/platform/
 // runtime scripts that export PackageAppRuntimeBridge). Slim-origin forward
@@ -856,4 +859,33 @@ test('an app past the monthly include with no credits gets a 429 pause page, not
 		error: 'Monthly include used up',
 		cause: expect.stringContaining('Rows read include used up'),
 	})
+})
+
+test('custom hostnames mount the bound app at the host root', () => {
+	expect(
+		parsePackageAppCustomHostnamePath({
+			pathname: '/',
+			username: 'pkg-owner',
+			kodyId: 'demo',
+		}),
+	).toEqual({
+		username: 'pkg-owner',
+		kodyId: 'demo',
+		restPath: '/',
+		mount: 'custom-hostname',
+	})
+	expect(
+		parsePackageAppCustomHostnamePath({
+			pathname: '',
+			username: 'pkg-owner',
+			kodyId: 'demo',
+		}).restPath,
+	).toBe('/')
+	expect(
+		parsePackageAppCustomHostnamePath({
+			pathname: '/report/today',
+			username: 'pkg-owner',
+			kodyId: 'demo',
+		}).restPath,
+	).toBe('/report/today')
 })
