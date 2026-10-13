@@ -24,17 +24,21 @@ already bring their own DNS and certs.
 ## Decision
 
 1. **Cloudflare for SaaS on the package-app zone (`kody.run`).** Custom
-   hostnames attach to that zone with a Worker as fallback origin and a `*/*`
-   route. Do **not** require Cloudflare Enterprise.
+   hostnames attach to that zone with the runtime Worker as origin via a
+   proxied `domains.kody.run` DNS record (Cloudflare “fallback origin”) and a
+   `*/*` Worker route. Customers CNAME their hostnames to `domains.kody.run`
+   — never to a hostname that exposes the word “fallback”. Do **not** require
+   Cloudflare Enterprise.
 2. **Public and private apps** may use custom domains.
 3. **Two tiers:** an **org-level** custom domain replaces `kody.run` for that
    org's **private** apps; **per-app** custom domains are for **public** apps.
 4. **Resolution order:** app-level domain → org-level domain → `kody.run`.
-5. **Subdomains (CNAME) are the default.** Bare/apex domains work only through
-   the customer's DNS ALIAS or CNAME-flattening (Squarespace ALIAS records
-   work). Confirm with one real-domain test; optionally use TXT pre-validation
-   so the cert issues before traffic switches. True apex `A` records and
-   wildcards need Enterprise — **out of scope**.
+5. **Subdomains (CNAME) are the default.** Customers point a CNAME at
+   `domains.kody.run`. Bare/apex domains work only through the customer's DNS
+   ALIAS or CNAME-flattening (Squarespace ALIAS records work). Confirm with
+   one real-domain test; optionally use TXT pre-validation so the cert issues
+   before traffic switches. True apex `A` records and wildcards need
+   Enterprise — **out of scope**.
 6. **Only org admins** can add a custom domain.
 7. **Billing:** paying customers get **one free** custom domain; additional
    domains cost
@@ -67,7 +71,11 @@ Cloudflare for SaaS requirement).
   ([0065](./0065-org-seats-and-prepaid-credits.md)).
 - Do not attach customer hostnames as ordinary Workers custom domains that
   replace the `kody.run` zone route table (see
-  [`setup-manifest.md`](../setup-manifest.md)).
+  [`setup-manifest.md`](../setup-manifest.md)). Keep `domains.kody.run` as a
+  zone DNS + route target only (proxied AAAA `100::`), never a Workers custom
+  domain.
+- Reserve the `domains` username so `domains.kody.run` cannot become a
+  per-user package-app subdomain.
 - Revisit Enterprise apex `A` / wildcards only if paying demand requires them
   and budget allows; revisit free-tier hostname counts if Cloudflare pricing
   changes.
