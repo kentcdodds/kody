@@ -1158,7 +1158,7 @@
 	font-size: 12px;
 	padding: 7px 10px;
 }
-.feature-detail .story-section svg {
+.feature-detail .story-section svg:not(.pw-wires) {
 	max-width: 430px;
 	margin-inline: auto;
 }
