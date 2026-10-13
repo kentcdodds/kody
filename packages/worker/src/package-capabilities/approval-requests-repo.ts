@@ -177,6 +177,28 @@ export async function getPendingPackageApprovalRequest(
 	return row ? mapRow(row) : null
 }
 
+/**
+ * The commit a paused session publish left at the source branch HEAD, while
+ * the published commit stays behind it. Only a request whose base is still
+ * the published commit counts.
+ */
+export async function getPausedPackageHeadCommit(
+	db: D1Database,
+	input: {
+		packageId: string
+		ownerUserId: string
+		publishedCommit: string | null
+	},
+): Promise<string | null> {
+	const pending = await getPendingPackageApprovalRequest(db, {
+		packageId: input.packageId,
+		ownerUserId: input.ownerUserId,
+		reason: 'credential_needs_changed',
+	})
+	if (!pending || pending.baseCommit !== input.publishedCommit) return null
+	return pending.pendingCommit
+}
+
 export async function listPendingPackageApprovalRequests(
 	db: D1Database,
 	input: { packageId: string; ownerUserId: string },

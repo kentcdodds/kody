@@ -44,8 +44,11 @@ const {
 } = await import('./credential-needs-approval.ts')
 const { approveCredentialNeedsRequest, loadPendingPackageApprovals } =
 	await import('#app/account-package-approval-requests.ts')
-const { enqueuePackageApprovalRequest, getPackageApprovalRequest } =
-	await import('#worker/package-capabilities/approval-requests-repo.ts')
+const {
+	enqueuePackageApprovalRequest,
+	getPackageApprovalRequest,
+	getPausedPackageHeadCommit,
+} = await import('#worker/package-capabilities/approval-requests-repo.ts')
 
 const ownerId = ownerIdFromStored('org-acme')
 const manifestContent = JSON.stringify({
@@ -221,6 +224,14 @@ test('a needs change queues one pending approval per package; unchanged, removed
 			publishedCommit: 'commit-later',
 		}),
 	).resolves.toEqual([])
+	const pausedHead = (publishedCommit: string) =>
+		getPausedPackageHeadCommit(t.db, {
+			packageId: t.packageId,
+			ownerUserId: ownerId,
+			publishedCommit,
+		})
+	await expect(pausedHead('commit-old')).resolves.toBe('commit-newer')
+	await expect(pausedHead('commit-later')).resolves.toBeNull()
 })
 
 test('approving publishes the paused commit past the pause; a moved base supersedes it', async () => {

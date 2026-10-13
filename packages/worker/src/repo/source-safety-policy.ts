@@ -353,6 +353,8 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	source: EntitySourceRow
 	operation: string
 	requirePublishedCommitHead?: boolean
+	/** A HEAD ahead of the published commit that is waiting for approval. */
+	pausedHeadCommit?: string | null
 	accessToken?: {
 		scope: 'read' | 'write'
 		ttlSeconds: number
@@ -437,7 +439,8 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	}
 	if (
 		input.requirePublishedCommitHead === true &&
-		head.commit !== input.source.published_commit
+		head.commit !== input.source.published_commit &&
+		(!input.pausedHeadCommit || head.commit !== input.pausedHeadCommit)
 	) {
 		throw new Error(
 			buildSourceRecoveryProblemMessage({

@@ -19,6 +19,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
 import type * as SavedPackageRepo from '#worker/package-registry/repo.ts'
+import type * as ApprovalRequestsRepo from '#worker/package-capabilities/approval-requests-repo.ts'
 import type * as StorageBuckets from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionMockModule as mockModule,
@@ -285,6 +286,18 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: vi.fn(async () => undefined),
 }))
+
+const pausedHead = vi.hoisted(() => ({
+	getPausedPackageHeadCommit: vi.fn(async (): Promise<string | null> => null),
+}))
+
+vi.mock(
+	'#worker/package-capabilities/approval-requests-repo.ts',
+	async (importOriginal) => ({
+		...(await importOriginal<typeof ApprovalRequestsRepo>()),
+		getPausedPackageHeadCommit: pausedHead.getPausedPackageHeadCommit,
+	}),
+)
 
 vi.mock('#worker/repo/identity-icon.ts', () => ({
 	refreshIdentityIconForSource: vi.fn(async () => undefined),
@@ -1146,6 +1159,19 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	await expect(openSession('session-stale-source-head')).rejects.toThrow(
 		/does not match published commit/,
 	)
+
+	stubPackageSourceForOpenSession({
+		repoId: 'package-package-1',
+		publishedCommit: 'commit-published',
+		headCommit: 'commit-paused',
+	})
+	pausedHead.getPausedPackageHeadCommit.mockResolvedValueOnce('commit-paused')
+	vi.mocked(insertRepoSession).mockClear()
+	await openSession('session-paused-source-head')
+	expect(insertRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ base_commit: 'commit-published' }),
+	)
 })
 
 test('openSession wraps packfile corruption but leaves opaque Cloudflare internals bare', async () => {
@@ -1811,6 +1837,33 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 	)
 	expect(mockModule.rawPush).toHaveBeenCalledWith(
 		expect.not.objectContaining({ force: true }),
+	)
+})
+
+test('publishSession forces past a paused commit at the source HEAD instead of reporting base_moved', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setCommonSessionFixtures()
+	mockModule.rawPush.mockRejectedValueOnce(
+		Object.assign(
+			new Error(
+				'Push rejected because it was not a simple fast-forward. Use "force: true" to override.',
+			),
+			{ name: 'PushRejectedError', code: 'PushRejectedError' },
+		),
+	)
+	const packageFile = { 'package.json': userPackageJson }
+	seedWorkspace(packageFile)
+	const state = await checkedPublishState(packageFile)
+	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
+		branch: 'main',
+		commit: 'commit-paused',
+	})
+	pausedHead.getPausedPackageHeadCommit.mockResolvedValueOnce('commit-paused')
+
+	const result = await repoSession(createEnv(), state).publishSession(session)
+	expect(result.status).not.toBe('base_moved')
+	expect(mockModule.rawPush).toHaveBeenLastCalledWith(
+		expect.objectContaining({ force: true }),
 	)
 })
 

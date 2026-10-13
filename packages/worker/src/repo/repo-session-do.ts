@@ -75,6 +75,7 @@ import {
 } from './checks.ts'
 import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
+import { getPausedPackageHeadCommit } from '#worker/package-capabilities/approval-requests-repo.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -1498,6 +1499,14 @@ class RepoSessionBase extends DurableObject<Env> {
 							source,
 							operation: 'repoOpenSession',
 							requirePublishedCommitHead: true,
+							pausedHeadCommit: await getPausedPackageHeadCommit(
+								this.env.APP_DB,
+								{
+									packageId: source.entity_id,
+									ownerUserId: source.user_id,
+									publishedCommit: source.published_commit,
+								},
+							),
 						})
 					: null
 			const sourceRepo =
@@ -3284,26 +3293,42 @@ class RepoSessionBase extends DurableObject<Env> {
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		const forceSourcePush = input.force === true
-		try {
+		const pushToSource = async (force: boolean) =>
 			await this.pushBranchToRemoteRef({
 				branch: sessionBranch,
 				remoteRef: sessionRow.source_branch,
 				token: sessionAccess.token,
-				...(forceSourcePush ? { force: true } : {}),
+				...(force ? { force: true } : {}),
 			})
+		try {
+			await pushToSource(forceSourcePush)
 		} catch (error) {
 			if (!forceSourcePush && isGitPushNotFastForwardError(error)) {
 				const refreshedHead = await resolveLiveSourceHeadCommit(
 					this.env,
 					source,
 				)
-				return this.buildPublishBaseMovedResult({
-					sessionId: input.sessionId,
-					sessionBaseCommit: sessionRow.base_commit,
-					currentPublishedCommit: refreshedHead ?? source.published_commit,
-				})
+				// A newer publish replaces a paused one: the session is based on the
+				// published commit, and only the paused commit sits past it.
+				const pausedHead =
+					source.entity_kind === 'package' && refreshedHead
+						? await getPausedPackageHeadCommit(this.env.APP_DB, {
+								packageId: source.entity_id,
+								ownerUserId: source.user_id,
+								publishedCommit: source.published_commit,
+							})
+						: null
+				if (!pausedHead || pausedHead !== refreshedHead) {
+					return this.buildPublishBaseMovedResult({
+						sessionId: input.sessionId,
+						sessionBaseCommit: sessionRow.base_commit,
+						currentPublishedCommit: refreshedHead ?? source.published_commit,
+					})
+				}
+				await pushToSource(true)
+			} else {
+				throw error
 			}
-			throw error
 		}
 		// Commit/push do not rewrite workspace file bytes, so reuse the
 		// snapshot collected once above for the published source KV write.
