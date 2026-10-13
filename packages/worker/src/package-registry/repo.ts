@@ -216,6 +216,20 @@ export async function insertSavedPackage(
 	)
 }
 
+/**
+ * Next `updated_at` that is strictly after `previous` (ISO). Same-ms clears
+ * still advance so a concurrent CAS writer cannot reuse a stale stamp.
+ */
+export function nextSavedPackageUpdatedAt(
+	previous: string | null | undefined,
+): string {
+	const now = new Date().toISOString()
+	if (!previous || now > previous) return now
+	const bumpedMs = Date.parse(previous) + 1
+	if (Number.isNaN(bumpedMs)) return now
+	return new Date(bumpedMs).toISOString()
+}
+
 export async function updateSavedPackage(
 	db: D1Database,
 	input: {
@@ -231,6 +245,8 @@ export async function updateSavedPackage(
 		hidden?: boolean
 		isPrivate?: boolean
 		isInternetVisible?: boolean
+		/** Override the stamp written to `updated_at` (defaults to now). */
+		updatedAt?: string
 		/**
 		 * When set, the update only applies if `updated_at` still matches.
 		 * Used so a concurrent clearer cannot be overwritten by a stale writer.
@@ -279,7 +295,7 @@ export async function updateSavedPackage(
 		addAssignment('is_internet_visible', input.isInternetVisible ? 1 : 0)
 	}
 
-	addAssignment('updated_at', new Date().toISOString())
+	addAssignment('updated_at', input.updatedAt ?? new Date().toISOString())
 
 	const expectedUpdatedAtClause =
 		input.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?'

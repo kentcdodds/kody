@@ -18,7 +18,11 @@ import {
 	serializeDependencySnapshot,
 	type PackageDependencySnapshot,
 } from './dependency-snapshot.ts'
-import { updateSavedPackage } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageById,
+	nextSavedPackageUpdatedAt,
+	updateSavedPackage,
+} from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
@@ -256,10 +260,20 @@ export async function clearInternetVisible(input: {
 			resolvedByUserId: input.actorUserId ?? null,
 		})
 	}
+	const live = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: input.packageId,
+	})
+	if (!live) {
+		return pending != null
+	}
+	// Always advance updated_at past the live stamp so a concurrent approve
+	// that claimed the row then CAS-enables on the old stamp fails closed.
 	const changed = await updateSavedPackage(input.env.APP_DB, {
 		userId: input.ownerUserId,
 		packageId: input.packageId,
 		isInternetVisible: false,
+		updatedAt: nextSavedPackageUpdatedAt(live.updatedAt),
 	})
 	// Package missing → false. Already-off with a superseded pending → true so
 	// MCP/settings can cancel a went_public without requiring the flag on.

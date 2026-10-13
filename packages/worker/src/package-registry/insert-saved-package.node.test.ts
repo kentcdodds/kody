@@ -6,7 +6,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { insertSavedPackage, updateSavedPackage } from './repo.ts'
+import {
+	insertSavedPackage,
+	nextSavedPackageUpdatedAt,
+	updateSavedPackage,
+} from './repo.ts'
 
 test('insertSavedPackage stamps the actor when package owner is a team org', async () => {
 	const sqlite = new DatabaseSync(':memory:')
@@ -198,6 +202,7 @@ test('updateSavedPackage expectedUpdatedAt refuses a stale visibility write', as
 		.run(ownerUserId)
 
 	const packageId = crypto.randomUUID()
+	const stampedAt = '2026-10-13T17:00:00.000Z'
 	await insertSavedPackage(db, {
 		id: packageId,
 		user_id: ownerUserId,
@@ -210,24 +215,28 @@ test('updateSavedPackage expectedUpdatedAt refuses a stale visibility write', as
 		has_skills: 0,
 		hidden: 0,
 		is_private: 1,
+		created_at: stampedAt,
+		updated_at: stampedAt,
 	})
-
-	const before = sqlite
-		.prepare(`SELECT updated_at FROM saved_packages WHERE id = ?`)
-		.get(packageId) as { updated_at: string }
 
 	const cleared = await updateSavedPackage(db, {
 		userId: ownerUserId,
 		packageId,
 		isInternetVisible: false,
+		updatedAt: nextSavedPackageUpdatedAt(stampedAt),
 	})
 	expect(cleared).toBe(true)
+	expect(
+		sqlite
+			.prepare(`SELECT updated_at FROM saved_packages WHERE id = ?`)
+			.get(packageId),
+	).not.toEqual({ updated_at: stampedAt })
 
 	const staleEnable = await updateSavedPackage(db, {
 		userId: ownerUserId,
 		packageId,
 		isInternetVisible: true,
-		expectedUpdatedAt: before.updated_at,
+		expectedUpdatedAt: stampedAt,
 	})
 	expect(staleEnable).toBe(false)
 
@@ -236,4 +245,9 @@ test('updateSavedPackage expectedUpdatedAt refuses a stale visibility write', as
 			.prepare(`SELECT is_internet_visible FROM saved_packages WHERE id = ?`)
 			.get(packageId),
 	).toEqual({ is_internet_visible: 0 })
+})
+
+test('nextSavedPackageUpdatedAt advances past a same-ms stamp', () => {
+	const stamp = '2026-10-13T17:00:00.000Z'
+	expect(nextSavedPackageUpdatedAt(stamp) > stamp).toBe(true)
 })
