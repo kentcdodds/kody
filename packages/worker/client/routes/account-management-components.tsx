@@ -31,6 +31,7 @@ import { type SessionInfo } from '#client/session.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
+import { AccountSectionTabs } from './account-section-tabs.tsx'
 import {
 	AccountManagementLinkNav,
 	accountManagementNarrowMq,
@@ -497,53 +498,11 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					titleAside={explainer ? <EntityExplainer copy={explainer} /> : null}
 				/>
 				{tabs ? (
-					<nav
-						aria-label={`${tabs.label} pages`}
-						data-testid="account-section-tabs"
-						mix={css(sectionTabsCss)}
-					>
-						{tabs.tabs.map((tab) => (
-							<a
-								key={tab.href}
-								href={tab.href}
-								aria-current={tab.active ? 'page' : undefined}
-								mix={css(sectionTabCss)}
-							>
-								{tab.label}
-							</a>
-						))}
-					</nav>
+					<AccountSectionTabs label={tabs.label} tabs={tabs.tabs} />
 				) : null}
 			</>
 		)
 	}
-}
-
-const sectionTabsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	gap: spacing.md,
-	borderBottom: `1px solid ${colors.border}`,
-}
-
-const sectionTabCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	padding: '0.55rem 0.15rem',
-	marginBottom: '-1px',
-	borderBottom: '2px solid transparent',
-	color: colors.textMuted,
-	fontSize: '0.95rem',
-	fontWeight: 550,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
-	'&[aria-current="page"]': {
-		color: colors.text,
-		borderBottomColor: colors.primary,
-	},
 }
 
 type AdminPageHeaderProps = {
