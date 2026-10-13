@@ -947,6 +947,10 @@ const orgSwitcherButtonCss = {
 
 const orgSwitcherLabelCss = {
 	maxWidth: '14rem',
+	// The trigger's font shorthand is line-height 1. Overflow on that em-square
+	// line box cuts off descenders (g, j, p, q, y). 1.25 is this face's normal
+	// line box, so those glyphs and the @ sit fully inside the clip.
+	lineHeight: 1.25,
 	overflow: 'hidden',
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap' as const,
