@@ -267,6 +267,8 @@ export function PackageFilesRoute(handle: Handle) {
 				}
 				appliedListingId = listingId
 				install.applySnapshot(listingId)
+				// The strip already rendered with the previous listing's outcome.
+				handle.update()
 			})
 		}
 		return (
