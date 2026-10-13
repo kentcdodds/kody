@@ -172,7 +172,7 @@ test('add stores org binding with verification records and list returns it', asy
 		.run()
 
 	const fetcher = {
-		fetch: vi.fn(async (url: string, init?: RequestInit) => {
+		fetch: vi.fn(async (_url: string, init?: RequestInit) => {
 			if (init?.method === 'DELETE') {
 				return cfHostnameResponse({ status: 'deleted' })
 			}
