@@ -326,8 +326,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 			const prefillKey = `${prefill.name}\n${prefill.url}`
 			if (prefilledKey !== prefillKey) {
 				prefilledKey = prefillKey
-				if (prefill.name) addName = prefill.name
-				if (prefill.url) addUrl = prefill.url
+				addName = prefill.name
+				addUrl = prefill.url
 			}
 		} else {
 			prefilledKey = null
