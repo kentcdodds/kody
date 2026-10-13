@@ -240,7 +240,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 	).toEqual([])
 	expect(
 		signedIn.html.indexOf('data-testid="package-title-actions"'),
-	).toBeLessThan(signedIn.html.indexOf('data-testid="package-repo-nav"'))
+	).toBeGreaterThan(signedIn.html.indexOf('data-testid="package-repo-actions"'))
 })
 
 test('community detail Files tab uses the looked-up default branch', async () => {
