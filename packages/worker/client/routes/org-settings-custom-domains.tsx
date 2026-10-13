@@ -147,15 +147,14 @@ export function createOrgSettingsCustomDomains(
 			) {
 				clearCustomDomainsOverride()
 			}
+			// Do not clear on null: an in-flight or failed-closed settings reload
+			// can briefly report customDomains null and would wipe a just-added
+			// verification list. Org-slug mismatch and caught-up lists clear it.
 			if (
 				hostnameBusy === null &&
 				customDomainsOverride !== undefined &&
-				(args.customDomains === null ||
-					(customDomainsOverride !== null &&
-						serverCaughtUpWithOverride(
-							customDomainsOverride,
-							args.customDomains,
-						)))
+				customDomainsOverride !== null &&
+				serverCaughtUpWithOverride(customDomainsOverride, args.customDomains)
 			) {
 				clearCustomDomainsOverride()
 			}
