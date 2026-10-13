@@ -856,6 +856,37 @@ export function collectPackageStorageGrantIds(input: {
 }
 
 /**
+ * The packages whose needs closures pin a run's credential needs, in
+ * precedence order. A run's own package's static imports are pinned by its
+ * closure, so they are not entries; ad hoc code has no closure, so its direct
+ * imports are. A computed import's callee pins its own imports. Literal
+ * dynamic imports are never in a closure, so each is its own entry.
+ */
+export function credentialNeedsEntryPackageIds(input: {
+	packageContext: PackageContextOptions
+	computedImportCalleePackageId: string | null
+	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencyPackageIds: Array<string>
+}): Array<string> {
+	const contextPackageId = input.packageContext?.packageId ?? null
+	const staticEntries = input.computedImportCalleePackageId
+		? [input.computedImportCalleePackageId]
+		: contextPackageId
+			? []
+			: input.dependencies
+					.filter(isDirectBundleDependency)
+					.map((dependency) => dependency.packageId)
+					.filter((packageId): packageId is string => Boolean(packageId))
+	return [
+		...new Set([
+			...(contextPackageId ? [contextPackageId] : []),
+			...staticEntries,
+			...input.dynamicDependencyPackageIds,
+		]),
+	]
+}
+
+/**
  * Host tools for computed `import(specifier)` of caller-owned `kody:@`
  * names. Nested evaluate uses library-load semantics: caller's
  * `packageContext`, callee stamp grants via the importable-module artifact.
@@ -965,6 +996,7 @@ export function createComputedPackageImportTools(input: {
 					credentialCallMap: input.credentialCallMap
 						? { map: input.credentialCallMap, strict: false, checked: true }
 						: null,
+					computedImportCalleePackageId: calleePackageId ?? null,
 					// Library load is not enter-as-package: do not attribute a
 					// package_export usage event to the caller's package id.
 					skipPackageExportUsage: true,
@@ -1063,6 +1095,8 @@ export async function runBundledModuleWithRegistry(
 		executeShape?: ExecuteThinGlueClass | null
 		claimWorkerDay?: ClaimWorkerDay
 		credentialCallMap?: RunCredentialCallMap | null
+		/** The package a computed-import library load runs. */
+		computedImportCalleePackageId?: string | null
 	},
 ): Promise<
 	ExecuteResult & {
@@ -1242,20 +1276,19 @@ export async function runBundledModuleWithRegistry(
 		const closedWorldRetrieverRuntime =
 			options?.closedWorldRetrieverRuntime === true
 		const callMap = options?.credentialCallMap ?? null
-		const runPackageIds = [
-			...new Set([
-				...(options?.packageContext?.packageId
-					? [options.packageContext.packageId]
-					: []),
-				...grantedPackageStorageIds,
-			]),
-		]
+		const credentialEntryPackageIds = credentialNeedsEntryPackageIds({
+			packageContext: options?.packageContext ?? null,
+			computedImportCalleePackageId:
+				options?.computedImportCalleePackageId ?? null,
+			dependencies: bundle.dependencies ?? [],
+			dynamicDependencyPackageIds,
+		})
 		if (callMap && !callMap.checked) {
 			const { warnings } = await validateCredentialCallMap({
 				env,
 				request: callerContext.request ?? null,
 				map: callMap.map,
-				packageIds: runPackageIds,
+				packageIds: credentialEntryPackageIds,
 				strict: callMap.strict,
 			})
 			if (warnings.length > 0) callMap.onWarnings?.(warnings)
@@ -1280,7 +1313,7 @@ export async function runBundledModuleWithRegistry(
 							runNeeds ??= loadRunCredentialNeeds({
 								env,
 								request,
-								packageIds: runPackageIds,
+								packageIds: credentialEntryPackageIds,
 							})
 							return runNeeds
 						},

@@ -836,29 +836,44 @@ test('a dependency opens against the entry package pinned need its picks passed,
 		multiple: false,
 	})
 	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockImplementation(
-		async ({ sourceId }) => [
-			need(sourceId === `source-${entryId}` ? 'resend' : 'postmark'),
-		],
+		async ({ sourceId }) =>
+			sourceId === `source-${entryId}`
+				? [need('resend')]
+				: [need('postmark'), { ...need('postmark'), key: 'SMS' }],
 	)
 	const runNeeds = loadRunCredentialNeeds({
 		env: t.env,
 		request,
-		packageIds: [entryId, depId],
+		packageIds: [entryId],
 	})
 	const depContext = t.contextFor({
 		request,
 		packageId: depId,
 		credentials: { MAIL: 'resend-prod' },
 	})
+	const pinned = { ...depContext, runNeeds: () => runNeeds }
 	await expect(
-		openCredentialClient(
-			{ ...depContext, runNeeds: () => runNeeds },
-			{
-				key: 'MAIL',
-			},
-		),
+		openCredentialClient(pinned, { key: 'MAIL' }),
 	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
 	await expect(
 		rejection(openCredentialClient(depContext, { key: 'MAIL' })),
 	).resolves.toMatchObject({ body: { code: 'invalid_request' } })
+	// SMS is only in the dependency's later publish, so it reads as a
+	// provider instead of the dependency's newer need.
+	await expect(
+		rejection(openCredentialClient(pinned, { key: 'SMS' })),
+	).resolves.toMatchObject({
+		body: { code: 'credential_unbound' },
+		message: expect.stringContaining('provider "SMS"'),
+	})
+	const adHoc = t.contextFor({ request })
+	await expect(
+		openCredentialClient(
+			{ ...adHoc, runNeeds: () => runNeeds },
+			{ key: 'MAIL' },
+		),
+	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
+	await expect(
+		rejection(openCredentialClient(adHoc, { key: 'MAIL' })),
+	).resolves.toMatchObject({ body: { code: 'credential_unbound' } })
 })

@@ -135,8 +135,9 @@ export type CredentialClientContext = {
 	/** The caller's picks for this run, by need key. */
 	callMap?: CredentialCallMap | null
 	/**
-	 * The run's needs as `validateCredentialCallMap` sees them (entry closure
-	 * first), so a package's open resolves the same target its picks passed.
+	 * The run's pinned needs as `validateCredentialCallMap` sees them. When
+	 * set, a key missing here reads as a provider: a package's latest publish
+	 * never adds needs the run's entry closures did not pin.
 	 */
 	runNeeds?: () => Promise<ReadonlyMap<string, CredentialNeed>>
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -234,9 +235,8 @@ async function loadPackageNeeds(input: {
 }
 
 async function loadNeed(ctx: CredentialClientContext, key: string) {
+	if (ctx.runNeeds) return (await ctx.runNeeds()).get(key) ?? null
 	if (!ctx.packageId) return null
-	const pinned = (await ctx.runNeeds?.())?.get(key)
-	if (pinned) return pinned
 	const needs = await loadPackageNeeds({
 		env: ctx.env,
 		request: requireActorRequest(ctx),
@@ -498,9 +498,10 @@ export async function openCredentialClients(
 }
 
 /**
- * Every need the run's packages declare, by key. The entry package comes
- * first: its closure pins its dependencies' needs, so a dependency's later
- * publish never replaces them.
+ * Every need the run's entry packages declare, by key, first entry wins.
+ * Pass entries only (see `credentialNeedsEntryPackageIds`): an entry's
+ * closure pins its static dependencies' needs, so a dependency's later
+ * publish never adds or replaces them.
  */
 export async function loadRunCredentialNeeds(input: {
 	env: Env
