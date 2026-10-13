@@ -177,7 +177,6 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					id: packageId,
 					user_id: owner.ownerUserId,
 					name: manifest.name,
-					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
 					tags_json: JSON.stringify(manifest.kody.tags ?? []),
 					search_text: manifest.kody.searchText ?? null,

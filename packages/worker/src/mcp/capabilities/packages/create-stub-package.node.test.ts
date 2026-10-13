@@ -142,23 +142,17 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			email: 'user-1@example.com',
 		}),
 	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-new',
-			userId: ownerIdFromStored('user-1'),
-			files: expect.objectContaining({
-				'package.json': expect.stringContaining('"private": true'),
-				'README.md': expect.stringContaining('## Intent'),
-				'AGENTS.md': expect.stringContaining('## Imports'),
-			}),
-		}),
-	)
+	const syncedFiles = mockModule.syncArtifactSourceSnapshot.mock.calls[0]?.[0]
+		?.files as Record<string, string>
+	expect(syncedFiles['package.json']).toContain('"private": true')
+	expect(syncedFiles['package.json']).not.toContain('"id"')
+	expect(syncedFiles['README.md']).toContain('## Intent')
+	expect(syncedFiles['AGENTS.md']).toContain('## Imports')
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			user_id: ownerIdFromStored('user-1'),
 			name: '@kentcdodds/my-package',
-			kody_id: 'my-package',
 			description: 'Does the thing.',
 			source_id: 'source-new',
 			has_app: 0,
@@ -167,6 +161,9 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 		}),
 		expect.anything(),
 		{ actorUserId: personIdFromStored('user-1') },
+	)
+	expect(mockModule.insertSavedPackage.mock.calls[0]?.[1]).not.toHaveProperty(
+		'kody_id',
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()

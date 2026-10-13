@@ -584,6 +584,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	>
 	expect(updateArg).not.toHaveProperty('hidden')
 	expect(updateArg).not.toHaveProperty('isPrivate')
+	expect(updateArg).not.toHaveProperty('kodyId')
 	expect(updateArg).toMatchObject({
 		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',

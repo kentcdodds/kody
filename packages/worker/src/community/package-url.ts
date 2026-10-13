@@ -274,10 +274,17 @@ export async function resolvePackagePageUrl(input: {
 	return null
 }
 
-// Every redirect write goes to both tables until `package_kody_id_redirects`
-// is dropped (#1909 phase 4); reads try `package_slug_redirects` first.
-const packageSlugRedirectTables = [
-	{ table: 'package_slug_redirects', slugColumn: 'old_slug' },
+// New retire rows write only `package_slug_redirects` (#1909 phase 2). Release
+// and delete still clear leftover `package_kody_id_redirects` rows so a claimed
+// slug cannot keep redirecting through the legacy read fallback. Reads try the
+// slug table first; the legacy table drops in phase 4 (Kent gate).
+const packageSlugRedirectWriteTable = {
+	table: 'package_slug_redirects',
+	slugColumn: 'old_slug',
+} as const
+
+const packageSlugRedirectCleanupTables = [
+	packageSlugRedirectWriteTable,
 	{ table: 'package_kody_id_redirects', slugColumn: 'old_kody_id' },
 ] as const
 
@@ -294,7 +301,7 @@ export async function releasePackageSlugRedirect(input: {
 	const slug = normalizeSlug(input.slug)
 	if (!slug) return
 	await input.db.batch(
-		packageSlugRedirectTables.map(({ table, slugColumn }) =>
+		packageSlugRedirectCleanupTables.map(({ table, slugColumn }) =>
 			input.db
 				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND ${slugColumn} = ?`)
 				.bind(input.userId, slug),
@@ -316,22 +323,28 @@ export async function retirePackageSlug(input: {
 	const oldSlug = normalizeSlug(input.oldSlug)
 	const newSlug = normalizeSlug(input.newSlug)
 	if (!oldSlug || oldSlug === newSlug) return
-	await input.db.batch(
-		packageSlugRedirectTables.flatMap(({ table, slugColumn }) => [
-			input.db
-				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND ${slugColumn} = ?`)
-				.bind(input.userId, newSlug),
-			input.db
-				.prepare(
-					`INSERT INTO ${table} (user_id, ${slugColumn}, package_id)
-					VALUES (?, ?, ?)
-					ON CONFLICT (user_id, ${slugColumn}) DO UPDATE SET
-						package_id = excluded.package_id,
-						created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-				)
-				.bind(input.userId, oldSlug, input.packageId),
-		]),
-	)
+	const { table, slugColumn } = packageSlugRedirectWriteTable
+	await input.db.batch([
+		// Drop any leftover legacy row for the new live slug so it cannot
+		// shadow the package through the read fallback.
+		...packageSlugRedirectCleanupTables.map(
+			({ table: cleanupTable, slugColumn: cleanupColumn }) =>
+				input.db
+					.prepare(
+						`DELETE FROM ${cleanupTable} WHERE user_id = ? AND ${cleanupColumn} = ?`,
+					)
+					.bind(input.userId, newSlug),
+		),
+		input.db
+			.prepare(
+				`INSERT INTO ${table} (user_id, ${slugColumn}, package_id)
+				VALUES (?, ?, ?)
+				ON CONFLICT (user_id, ${slugColumn}) DO UPDATE SET
+					package_id = excluded.package_id,
+					created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
+			)
+			.bind(input.userId, oldSlug, input.packageId),
+	])
 }
 
 /**
@@ -373,7 +386,7 @@ export async function deletePackageSlugRedirects(input: {
 	packageId: string
 }) {
 	await input.db.batch(
-		packageSlugRedirectTables.map(({ table }) =>
+		packageSlugRedirectCleanupTables.map(({ table }) =>
 			input.db
 				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND package_id = ?`)
 				.bind(input.userId, input.packageId),

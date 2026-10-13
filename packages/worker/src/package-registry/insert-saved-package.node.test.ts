@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { insertSavedPackage } from './repo.ts'
+import { insertSavedPackage, updateSavedPackage } from './repo.ts'
 
 test('insertSavedPackage stamps the actor when package owner is a team org', async () => {
 	const sqlite = new DatabaseSync(':memory:')
@@ -32,7 +32,6 @@ test('insertSavedPackage stamps the actor when package owner is a team org', asy
 			id: packageId,
 			user_id: teamOrgOwnerId,
 			name: '@acme/tool',
-			kody_id: 'tool',
 			description: 'Team tool',
 			tags_json: '[]',
 			search_text: null,
@@ -79,7 +78,6 @@ test('insertSavedPackage falls back to row user_id when no actor is provided', a
 		id: packageId,
 		user_id: ownerUserId,
 		name: '@solo/pkg',
-		kody_id: 'pkg',
 		description: 'Personal package',
 		tags_json: '[]',
 		search_text: null,
@@ -100,4 +98,88 @@ test('insertSavedPackage falls back to row user_id when no actor is provided', a
 			)
 			.get(ownerUserId),
 	).toEqual({ first_saved_package_at: at })
+})
+
+test('insertSavedPackage derives kody_id from the name leaf and ignores a mismatched leftover', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+
+	const ownerUserId = ownerIdFromStored('leaf-user')
+	sqlite
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('leaf', 'leaf@example.com', 'hash', ?)`,
+		)
+		.run(ownerUserId)
+
+	const packageId = crypto.randomUUID()
+	await insertSavedPackage(db, {
+		id: packageId,
+		user_id: ownerUserId,
+		name: '@leaf/real-slug',
+		kody_id: 'invented-second-id',
+		description: 'Leaf wins',
+		tags_json: '[]',
+		search_text: null,
+		source_id: crypto.randomUUID(),
+		has_app: 0,
+		has_skills: 0,
+		hidden: 0,
+		is_private: 1,
+	})
+
+	expect(
+		sqlite
+			.prepare(`SELECT name, kody_id FROM saved_packages WHERE id = ?`)
+			.get(packageId),
+	).toEqual({ name: '@leaf/real-slug', kody_id: 'real-slug' })
+})
+
+test('updateSavedPackage keeps kody_id in lockstep with a renamed name leaf', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+
+	const ownerUserId = ownerIdFromStored('rename-user')
+	sqlite
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('rename', 'rename@example.com', 'hash', ?)`,
+		)
+		.run(ownerUserId)
+
+	const packageId = crypto.randomUUID()
+	await insertSavedPackage(db, {
+		id: packageId,
+		user_id: ownerUserId,
+		name: '@rename/before',
+		description: 'Before',
+		tags_json: '[]',
+		search_text: null,
+		source_id: crypto.randomUUID(),
+		has_app: 0,
+		has_skills: 0,
+		hidden: 0,
+		is_private: 1,
+	})
+
+	await updateSavedPackage(db, {
+		userId: ownerUserId,
+		packageId,
+		name: '@rename/after',
+		description: 'After',
+	})
+
+	expect(
+		sqlite
+			.prepare(
+				`SELECT name, kody_id, description FROM saved_packages WHERE id = ?`,
+			)
+			.get(packageId),
+	).toEqual({
+		name: '@rename/after',
+		kody_id: 'after',
+		description: 'After',
+	})
 })
