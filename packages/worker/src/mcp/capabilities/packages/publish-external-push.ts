@@ -564,21 +564,31 @@ async function getListingBehindPublishHint(input: {
 	promotedCommit: string
 	promotedVersion?: string | null
 }) {
-	const path = buildUpdatePublicListingHref({
-		username: input.ownerScope,
-		kodyId: input.kodyId,
-	})
-	const updateUrl = new URL(path, input.baseUrl).toString()
-	return await resolveListingBehindPublishHint({
-		db: input.env.APP_DB,
-		ownerUserId: input.ownerUserId,
-		packageId: input.packageId,
-		ownerUsername: input.ownerScope,
-		kodyId: input.kodyId,
-		promotedCommit: input.promotedCommit,
-		promotedVersion: input.promotedVersion,
-		updateUrl,
-	})
+	// Optional discoverability only — never fail a completed publish/promote
+	// because the listing hint lookup rejected.
+	try {
+		const path = buildUpdatePublicListingHref({
+			username: input.ownerScope,
+			kodyId: input.kodyId,
+		})
+		const updateUrl = new URL(path, input.baseUrl).toString()
+		return await resolveListingBehindPublishHint({
+			db: input.env.APP_DB,
+			ownerUserId: input.ownerUserId,
+			packageId: input.packageId,
+			ownerUsername: input.ownerScope,
+			kodyId: input.kodyId,
+			promotedCommit: input.promotedCommit,
+			promotedVersion: input.promotedVersion,
+			updateUrl,
+		})
+	} catch (error) {
+		console.warn(
+			`[packagePublishExternalPush] listing hint lookup failed for ${input.ownerScope}/${input.kodyId}:`,
+			error instanceof Error ? error.message : error,
+		)
+		return null
+	}
 }
 
 async function getPublishStaticDependents(input: {

@@ -329,6 +329,27 @@ test('publishExternalPush includes listing hint when the public catalog pin lags
 	})
 })
 
+test('publishExternalPush still succeeds when listing hint lookup rejects', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setupDefaultMocks({
+		publish: publishedResult({
+			manifest: { version: '1.5.0', name: '@user/demo-package' },
+		}),
+	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockRejectedValue(
+		new Error('D1 unavailable'),
+	)
+
+	const published = await publish()
+	expect(published.status).toBe('published')
+	if (published.status !== 'published') throw new Error('expected published')
+	expect(published.listing).toBeUndefined()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('listing hint lookup failed'),
+		'D1 unavailable',
+	)
+})
+
 test('publishExternalPush returns forwarded clone and check timings without collapsing bundle and rebuild', async () => {
 	setupDefaultMocks({
 		publish: publishedResult({
