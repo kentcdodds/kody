@@ -90,9 +90,12 @@ export function writeCredentialCreateKind(href: string, kind: CredentialKind) {
 	return `${url.pathname}${url.search}`
 }
 
+const mcpPrefillParams = ['name', 'url'] as const
+
 /**
  * Where an OAuth or MCP link continues. OAuth keeps the whole query, which
- * `/connect/oauth` already reads (`provider` and its config params).
+ * `/connect/oauth` already reads (`provider` and its config params). MCP keeps
+ * the `name` and `url` the add-server form prefills from.
  */
 export function credentialCreateHandoffHref(input: {
 	kind: 'oauth' | 'mcp'
@@ -105,8 +108,16 @@ export function credentialCreateHandoffHref(input: {
 			const path = routes.connectOauth.href()
 			return query ? `${path}?${query}` : path
 		}
-		case 'mcp':
-			return orgResourcePath(input.orgSlug, 'mcp-servers', 'new')
+		case 'mcp': {
+			const path = orgResourcePath(input.orgSlug, 'mcp-servers', 'new')
+			const params = new URLSearchParams()
+			for (const key of mcpPrefillParams) {
+				const value = input.search.get(key)?.trim()
+				if (value) params.set(key, value)
+			}
+			const query = params.toString()
+			return query ? `${path}?${query}` : path
+		}
 		default: {
 			const exhaustive: never = input.kind
 			return exhaustive

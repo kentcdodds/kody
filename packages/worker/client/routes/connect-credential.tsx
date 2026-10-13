@@ -586,7 +586,7 @@ export function ConnectCredentialRoute(handle: Handle) {
 		const pathOrgSlug = orgSlugFromPathname(
 			new URL(href, 'http://localhost').pathname,
 		)
-		const selected = query.kind
+		const selected = query.kind ?? 'secret'
 		const kinds = query.kindLocked && selected ? [selected] : credentialKinds
 		const matches = data ? findMatchingCredentials(data.credentials, query) : []
 		const packages = data?.packages ?? []
@@ -611,7 +611,9 @@ export function ConnectCredentialRoute(handle: Handle) {
 					<header mix={css(pageHeaderCss)}>
 						<span mix={css(pageEyebrowCss)}>Add a credential</span>
 						<h1 mix={css(pageTitleCss)}>
-							{selected ? credentialCreateTitle(selected) : 'Add a credential'}
+							{query.kind
+								? credentialCreateTitle(query.kind)
+								: 'Add a credential'}
 						</h1>
 						<p mix={css(pageDescriptionCss)}>
 							{query.packageKodyId && query.needKey ? (
@@ -643,45 +645,44 @@ export function ConnectCredentialRoute(handle: Handle) {
 							</p>
 						) : (
 							<p mix={css(mutedCss)}>
-								{selected
+								{query.kind
 									? 'Suggested by the link. Pick another kind if it fits better.'
-									: 'What kind of credential is it?'}
+									: 'A key fits most credentials. Pick another kind if it fits better.'}
 							</p>
 						)}
 						{renderKindList({ kinds, selected, href })}
 					</section>
 
-					{selected === null
-						? null
-						: renderKindBody({
-								kind: selected,
-								search,
+					{renderKindBody({
+						kind: selected,
+						search,
+						orgSlug,
+						personalOrgSlug: data?.personalOrgSlug ?? null,
+						valueForm: (kind) =>
+							renderKeyForm({
+								kind,
+								state,
+								existing,
 								orgSlug,
-								valueForm: (kind) =>
-									renderKeyForm({
+								packages,
+								linkProblem,
+								forNeed:
+									pathOrgSlug && query.packageKodyId && query.needKey
+										? {
+												orgSlug: pathOrgSlug,
+												packageKodyId: query.packageKodyId,
+												needKey: query.needKey,
+											}
+										: null,
+								prompt: (error) =>
+									credentialCreateAgentPrompt({
 										kind,
-										state,
-										existing,
-										orgSlug,
-										packages,
-										linkProblem,
-										forNeed:
-											pathOrgSlug && query.packageKodyId && query.needKey
-												? {
-														orgSlug: pathOrgSlug,
-														packageKodyId: query.packageKodyId,
-														needKey: query.needKey,
-													}
-												: null,
-										prompt: (error) =>
-											credentialCreateAgentPrompt({
-												kind,
-												query,
-												pageUrl,
-												error,
-											}),
+										query,
+										pageUrl,
+										error,
 									}),
-							})}
+							}),
+					})}
 				</section>
 			</AccountManagementShell>
 		)
@@ -692,6 +693,7 @@ function renderKindBody(input: {
 	kind: CredentialKind
 	search: URLSearchParams
 	orgSlug: string
+	personalOrgSlug: string | null
 	valueForm: (kind: ValueFormKind) => RemixNode
 }) {
 	const mode = credentialCreateMode(input.kind)
@@ -708,6 +710,18 @@ function renderKindBody(input: {
 							? `Kody sends you to ${provider ? `${provider}'s` : 'the provider’s'} sign-in, then brings you back.`
 							: 'Add the server’s URL. Kody connects to it and asks you to sign in when the server needs it.'}
 					</p>
+					{kind === 'oauth' &&
+					input.personalOrgSlug &&
+					input.orgSlug &&
+					input.personalOrgSlug !== input.orgSlug ? (
+						<p
+							mix={css(mutedCss)}
+							data-testid="connect-credential-oauth-personal"
+						>
+							Kody saves OAuth connections to your personal account,{' '}
+							<code>@{input.personalOrgSlug}</code>, not to this team.
+						</p>
+					) : null}
 					<a
 						href={credentialCreateHandoffHref({
 							kind,

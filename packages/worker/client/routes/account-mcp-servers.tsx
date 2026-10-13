@@ -32,6 +32,7 @@ import {
 	type McpServerUsageDraft,
 	type MessageTone,
 	filterServers,
+	readAddServerPrefill,
 	readOAuthResultFromHref,
 	readSearchFilter,
 	renderNamedServer,
@@ -98,6 +99,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let addName = ''
 	let addUrl = ''
 	let addBearerToken = ''
+	/** The add-server href whose link prefill was applied, so typing is kept. */
+	let prefilledHref: string | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	/** Payload last applied to the closure state above. */
@@ -315,6 +318,12 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = mcpServersRoute.getSelection(currentHref)
+		if (selection.isCreating && prefilledHref !== currentHref) {
+			prefilledHref = currentHref
+			const prefill = readAddServerPrefill(currentHref)
+			if (prefill.name) addName = prefill.name
+			if (prefill.url) addUrl = prefill.url
+		}
 		const search = readSearchFilter(currentHref)
 		const filteredServers = filterServers(servers, search)
 		const server =

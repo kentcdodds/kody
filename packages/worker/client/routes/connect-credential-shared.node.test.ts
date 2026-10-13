@@ -85,6 +85,15 @@ test('choosing a kind keeps the prefill, and hand-offs carry it on', () => {
 			orgSlug: 'acme',
 		}),
 	).toBe('/@acme/-/mcp-servers/new')
+	expect(
+		credentialCreateHandoffHref({
+			kind: 'mcp',
+			search: new URLSearchParams(
+				'kind=mcp&name=docs&url=https%3A%2F%2Fmcp.example.com&provider=x',
+			),
+			orgSlug: 'acme',
+		}),
+	).toBe('/@acme/-/mcp-servers/new?name=docs&url=https%3A%2F%2Fmcp.example.com')
 })
 
 test('the Key form starts from the link and saves an org Key', () => {
