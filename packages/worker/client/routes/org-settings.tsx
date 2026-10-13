@@ -118,7 +118,8 @@ export function OrgSettingsRoute(handle: Handle) {
 			messageTone = tone
 		},
 		reloadSettings() {
-			appliedKey = ''
+			// Keep appliedKey so an unsaved display-name draft is not wiped when
+			// custom-domain add/sync/remove refreshes settings.
 			settingsData.reload(handle, readCurrentRouterHref(handle))
 		},
 	})
