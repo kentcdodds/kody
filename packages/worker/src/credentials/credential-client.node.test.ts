@@ -376,6 +376,9 @@ test('open reports unbound and ambiguous picks with ready-to-retry options, list
 	)
 	expect(ambiguous.body).toMatchObject({
 		code: 'credential_ambiguous',
+		message: expect.stringContaining(
+			': "resend-a" (org), "resend-b" (org). Pick one by name and scope.',
+		),
 		retryWith: [
 			{
 				credentials: { resend: { name: 'resend-a', scope: 'org' } },
@@ -670,8 +673,23 @@ test('a call map picks by name among several matches, and credentials() opens ev
 	await expect(
 		rejection(openCredentialClient(both, { key: 'resend' })),
 	).resolves.toMatchObject({
-		body: { code: 'invalid_request' },
-		message: expect.stringContaining('credentials("resend")'),
+		body: {
+			code: 'invalid_request',
+			message:
+				'The credentials map picks 2 credentials for "resend": "resend-a" (org), "resend-b" (org). Pick one of them for credential("resend"), or call credentials("resend") to get all of them.',
+			retryWith: [
+				expect.objectContaining({
+					credentials: { resend: { name: 'resend-a', scope: 'org' } },
+				}),
+				expect.objectContaining({
+					credentials: { resend: { name: 'resend-b', scope: 'org' } },
+				}),
+			],
+			options: [
+				expect.objectContaining({ name: 'resend-a', scope: 'org' }),
+				expect.objectContaining({ name: 'resend-b', scope: 'org' }),
+			],
+		},
 	})
 
 	const none = t.contextFor({ request, credentials: { resend: [] } })

@@ -201,6 +201,13 @@ function toOption(credential: UsableCredential): CredentialClientOption {
 	}
 }
 
+/** `"work" (org), "work" (personal)`: names and scopes to pick from. */
+function describeOptions(credentials: ReadonlyArray<UsableCredential>) {
+	return credentials
+		.map((credential) => `"${credential.name}" (${credential.scope})`)
+		.join(', ')
+}
+
 function retryFor(key: string | null, credential: UsableCredential) {
 	const pick = { name: credential.name, scope: credential.scope }
 	return {
@@ -301,7 +308,7 @@ function pickOne(input: {
 	}
 	throw refusal(
 		'credential_ambiguous',
-		`More than one credential you can use matches ${input.describe}. Pick one by name and scope.`,
+		`More than one credential you can use matches ${input.describe}: ${describeOptions(input.candidates)}. Pick one by name and scope.`,
 		{
 			retryWith: input.candidates.map((candidate) =>
 				retryFor(input.key, candidate),
@@ -399,16 +406,21 @@ async function resolveKey(
 			`The credentials map picks no credential for "${key}".`,
 		)
 	}
-	if (mode === 'one' && picks.length > 1) {
-		throw refusal(
-			'invalid_request',
-			`The credentials map picks ${picks.length} credentials for "${key}". Call credentials("${key}") to get all of them.`,
-		)
-	}
 	const picked = new Map<string, Picked>()
 	for (const pick of picks) {
 		const one = pickExplicit({ key, pick, usable, target })
 		picked.set(one.credential.id, one)
+	}
+	const all = [...picked.values()].map((one) => one.credential)
+	if (mode === 'one' && all.length > 1) {
+		throw refusal(
+			'invalid_request',
+			`The credentials map picks ${all.length} credentials for "${key}": ${describeOptions(all)}. Pick one of them for credential("${key}"), or call credentials("${key}") to get all of them.`,
+			{
+				retryWith: all.map((credential) => retryFor(key, credential)),
+				options: all.map(toOption),
+			},
+		)
 	}
 	return [...picked.values()]
 }
