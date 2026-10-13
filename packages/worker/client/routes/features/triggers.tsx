@@ -1,17 +1,27 @@
 import { on, type Handle } from 'remix/component'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { FeatureRelated } from './feature-related.tsx'
-import { TriggerSignalsArt, TriggerScanArt } from './triggers-art.tsx'
+import {
+	TriggerHeroScene,
+	TriggerScanScene,
+	TriggerSignalsScene,
+	type ScanResult,
+	type SignalId,
+	type TriggerExampleId,
+} from './triggers-scenes.tsx'
 import { triggerExamples, signals } from './triggers-data.ts'
 
 export function TriggersFeature(handle: Handle) {
-	let selected: keyof typeof triggerExamples = 'purchase'
-	let signal: keyof typeof signals = 'webhook'
+	let selected: TriggerExampleId = 'purchase'
+	let signal: SignalId = 'webhook'
 	let ran = false
 	let otherAddress = false
 	let showFlake = false
 	let scanFlake = false
-	let scanResult = ''
+	let scanResult: ScanResult = ''
+	let heroShot = 0
+	let signalShot = 0
+	let scanShot = 0
 	return () => {
 		const event = triggerExamples[selected]
 		const result =
@@ -53,6 +63,7 @@ export function TriggersFeature(handle: Handle) {
 						mix={on('click', () => {
 							selected = 'purchase'
 							ran = false
+							heroShot += 1
 							handle.update()
 						})}
 					>
@@ -64,6 +75,7 @@ export function TriggersFeature(handle: Handle) {
 						mix={on('click', () => {
 							selected = 'issue'
 							ran = false
+							heroShot += 1
 							handle.update()
 						})}
 					>
@@ -75,6 +87,7 @@ export function TriggersFeature(handle: Handle) {
 						mix={on('click', () => {
 							selected = 'email'
 							ran = false
+							heroShot += 1
 							handle.update()
 						})}
 					>
@@ -86,35 +99,23 @@ export function TriggersFeature(handle: Handle) {
 						mix={on('click', () => {
 							selected = 'schedule'
 							ran = false
+							heroShot += 1
 							handle.update()
 						})}
 					>
 						A daily check
 					</button>
 				</div>
-				<div class="ledger ui-stage">
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">↗</span> When
-						</small>
-						<strong>{event.when}</strong>
-					</div>
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">ƒ</span> Run package
-						</small>
-						<strong>{event.package}</strong>
-					</div>
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">✓</span> Result
-						</small>
-						<strong>{result}</strong>
-						<p class="result" id="trigger-detail" aria-live="polite">
-							{ran ? detail : 'Run the example to follow the event.'}
-						</p>
-					</div>
-				</div>
+				<TriggerHeroScene
+					example={selected}
+					result={result}
+					otherAddress={otherAddress}
+					showFlake={showFlake}
+					shot={heroShot}
+				/>
+				<p class="result" id="trigger-detail" aria-live="polite">
+					{ran ? detail : 'Run the example to follow the event.'}
+				</p>
 				<div class="controls">
 					{selected === 'email' && (
 						<label>
@@ -124,6 +125,7 @@ export function TriggersFeature(handle: Handle) {
 								mix={on('change', (event) => {
 									otherAddress = event.currentTarget.checked
 									ran = false
+									heroShot += 1
 									handle.update()
 								})}
 							/>{' '}
@@ -138,6 +140,7 @@ export function TriggersFeature(handle: Handle) {
 								mix={on('change', (event) => {
 									showFlake = event.currentTarget.checked
 									ran = false
+									heroShot += 1
 									handle.update()
 								})}
 							/>{' '}
@@ -149,6 +152,7 @@ export function TriggersFeature(handle: Handle) {
 						class="run"
 						mix={on('click', () => {
 							ran = true
+							heroShot += 1
 							handle.update()
 						})}
 					>
@@ -176,6 +180,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'webhook'}
 								mix={on('click', () => {
 									signal = 'webhook'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -187,6 +192,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'inbox'}
 								mix={on('click', () => {
 									signal = 'inbox'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -198,6 +204,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'package'}
 								mix={on('click', () => {
 									signal = 'package'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -209,6 +216,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'clock'}
 								mix={on('click', () => {
 									signal = 'clock'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -219,7 +227,7 @@ export function TriggersFeature(handle: Handle) {
 						<a href="/docs/triggers">Read the trigger guide ↗</a>
 					</div>
 					<div class="pt-switch-illustration">
-						<TriggerSignalsArt signal={signal} />
+						<TriggerSignalsScene signal={signal} shot={signalShot} />
 						<div class="pt-signal-outcome" aria-live="polite">
 							<strong>{signals[signal].name}</strong>
 							<p id="pt-signal-detail">{signals[signal].detail}</p>
@@ -245,6 +253,7 @@ export function TriggersFeature(handle: Handle) {
 									checked={scanFlake}
 									mix={on('change', (event) => {
 										scanFlake = event.currentTarget.checked
+										scanShot += 1
 										handle.update()
 									})}
 								/>{' '}
@@ -254,6 +263,7 @@ export function TriggersFeature(handle: Handle) {
 								type="button"
 								mix={on('click', () => {
 									scanResult = scanFlake ? 'flake' : 'clean'
+									scanShot += 1
 									handle.update()
 								})}
 							>
@@ -270,7 +280,11 @@ export function TriggersFeature(handle: Handle) {
 						<a href="/docs/flake-hunter">See how Flake Hunter works ↗</a>
 					</div>
 					<div class="pt-decision" data-result={scanResult}>
-						<TriggerScanArt />
+						<TriggerScanScene
+							flake={scanFlake}
+							result={scanResult}
+							shot={scanShot}
+						/>
 						<p class="pt-example-caption">
 							Example scan. An agent is called only on the branch that needs
 							investigation.

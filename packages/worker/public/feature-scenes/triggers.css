@@ -1,0 +1,621 @@
+/* Animated scenes for /features/triggers, on the shared `.pw` stage (`public/styles.css`). */
+
+.feature-detail .triggers .pw {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.feature-detail .triggers #trigger-detail {
+	margin: 14px 0 0;
+	min-height: 1.5em;
+	font-size: 16px;
+}
+
+.feature-detail .triggers .pt-decision {
+	padding: 0;
+	background: transparent;
+	border: 0;
+}
+
+.feature-detail .triggers .pt-signal-outcome {
+	margin: 16px 0 0;
+}
+
+.feature-detail .triggers .pw p,
+.feature-detail .triggers .pw strong {
+	max-width: none;
+	margin: 0;
+}
+
+.feature-detail .triggers .pw-wires {
+	width: 100%;
+	height: 100%;
+}
+
+.pw .pw-trg-card,
+.pw .pw-trg-sig,
+.pw .pw-trg-end {
+	z-index: 1;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.35em;
+	white-space: normal;
+	padding: 0.6em 0.65em;
+}
+
+.pw .pw-trg-card {
+	width: 27%;
+	translate: 0 -50%;
+}
+
+.pw .pw-trg-source {
+	width: 27%;
+}
+
+.pw .pw-trg-logs,
+.pw .pw-trg-outcome {
+	width: 26%;
+}
+
+.pw .pw-trg-outcome {
+	width: 27%;
+}
+
+.pw .pw-trg-logs,
+.pw .pw-trg-outcome,
+.pw .pw-trg-sig-card {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-trg-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.4em;
+	min-width: 0;
+}
+
+.pw .pw-trg-head > span:nth-child(2),
+.pw
+	.pw-trg-head
+	> span:first-child:not(.pw-icon):not(.pw-trg-fn):not(.pw-trg-tick) {
+	min-width: 0;
+}
+
+.pw .pw-trg-head .pw-kicker {
+	display: block;
+	font-size: 0.62em;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-card strong,
+.pw .pw-trg-end strong,
+.pw .pw-trg-pkg strong {
+	display: block;
+	font-size: 0.78em;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.pw .pw-trg-fn,
+.pw .pw-trg-tick {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 1.35em;
+	height: 1.35em;
+	margin-top: 0.15em;
+	border-radius: 0.35em;
+	background: var(--pw-text);
+	color: var(--pw-surface);
+	font-size: 0.85em;
+	font-style: italic;
+	font-weight: 700;
+}
+
+.pw .pw-trg-tick {
+	font-style: normal;
+	background: var(--pw-accent);
+	color: #161a16;
+}
+
+.pw .pw-trg-rows p,
+.pw .pw-trg-log {
+	font-size: 0.68em;
+	line-height: 1.3;
+}
+
+.pw .pw-trg-rows p {
+	display: flex;
+	flex-direction: column;
+	gap: 0.04em;
+}
+
+.pw .pw-trg-rows p span:first-child {
+	color: var(--pw-muted);
+	font-size: 0.92em;
+}
+
+.pw .pw-trg-log {
+	display: flex;
+	gap: 0.45em;
+	align-items: baseline;
+	font-family: ui-monospace, monospace;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-t,
+.pw .pw-trg-runid,
+.pw .pw-trg-dur {
+	font-family: ui-monospace, monospace;
+}
+
+.pw .pw-trg-t {
+	flex: none;
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-meta {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.4em;
+	padding-top: 0.35em;
+	border-top: 1px solid var(--pw-line);
+	font-size: 0.64em;
+}
+
+.pw .pw-trg-runid {
+	color: var(--pw-ink);
+	font-weight: 650;
+}
+
+.pw .pw-trg-dur {
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-chip,
+.pw .pw-trg-nomodel {
+	align-self: flex-start;
+	padding: 0.08em 0.45em;
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.62em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-nomodel {
+	margin-left: auto;
+}
+
+.pw .pw-trg-mail {
+	position: relative;
+	flex: none;
+	width: 1.2em;
+	height: 0.82em;
+	margin-top: 0.15em;
+	overflow: hidden;
+	border: 1.5px solid var(--pw-ink);
+	border-radius: 0.12em;
+	color: var(--pw-ink);
+}
+
+.pw .pw-trg-mail::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(
+				to bottom right,
+				transparent 46%,
+				currentColor 47% 53%,
+				transparent 54%
+			)
+			left top / 50% 70% no-repeat,
+		linear-gradient(
+				to bottom left,
+				transparent 46%,
+				currentColor 47% 53%,
+				transparent 54%
+			)
+			right top / 50% 70% no-repeat;
+}
+
+.pw .pw-trg-diamond {
+	color: var(--pw-ink);
+	font-size: 0.95em;
+	line-height: 1;
+}
+
+.pw .pw-trg-lane .pw-packet {
+	font-size: 0.62em;
+}
+
+/* Signal diagram */
+
+.pw .pw-trg-sig {
+	width: 38%;
+	translate: 0 -50%;
+	flex-direction: row;
+	align-items: center;
+	gap: 0.4em;
+	font-size: 0.78em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-pkg,
+.pw .pw-trg-sig-card {
+	width: 36%;
+	translate: 0 -50%;
+}
+
+.pw .pw-trg-pkg {
+	width: 36%;
+}
+
+/* Scan */
+
+.pw .pw-trg-scan {
+	width: 72%;
+	translate: -50% -50%;
+}
+
+.pw .pw-trg-code {
+	position: relative;
+}
+
+.pw .pw-trg-scanbar {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 1.35em;
+	border-radius: 0.25em;
+	background: color-mix(in oklab, var(--pw-accent) 18%, transparent);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.pw .pw-trg-code-line {
+	display: flex;
+	gap: 0.55em;
+	font-family: ui-monospace, monospace;
+	font-size: 0.68em;
+	line-height: 1.45;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-code-line span {
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-code-line[data-flake] {
+	color: var(--pw-ink);
+	font-weight: 650;
+}
+
+.pw .pw-trg-ask {
+	position: absolute;
+	z-index: 2;
+	left: 50%;
+	top: 58%;
+	translate: -50% -50%;
+	padding: 0.12em 0.45em;
+	border-radius: 99px;
+	background: var(--pw-stage);
+	color: var(--pw-muted);
+	font-size: 0.66em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-end {
+	width: 34%;
+	translate: -50% -50%;
+	align-items: flex-start;
+	gap: 0.2em;
+}
+
+.pw .pw-trg-end p {
+	color: var(--pw-muted);
+	font-size: 0.68em;
+}
+
+.pw .pw-trg-check {
+	display: grid;
+	place-items: center;
+	width: 1.2em;
+	height: 1.2em;
+	border-radius: 50%;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.72em;
+	font-weight: 700;
+}
+
+.pw .pw-trg-agent {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35em;
+	padding: 0.12em 0.45em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99px;
+	background: var(--pw-surface);
+	color: var(--pw-text);
+	font-size: 0.64em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-agent-dot {
+	width: 0.45em;
+	height: 0.45em;
+	border-radius: 50%;
+	background: var(--pw-line);
+}
+
+.pw .pw-trg-agent[data-lit] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+}
+
+.pw .pw-trg-agent[data-lit] .pw-trg-agent-dot {
+	background: var(--pw-accent);
+}
+
+.pw .pw-trg-agent[data-lit]::before {
+	content: '';
+	position: absolute;
+	inset: -0.22em;
+	border: 1.5px solid var(--pw-accent);
+	border-radius: inherit;
+	opacity: 1;
+}
+
+/* Motion. Resting rules above are the finished run. */
+
+.pw.pw-scene-trg-hero .pw-pulse,
+.pw.pw-scene-trg-signals .pw-pulse,
+.pw.pw-scene-trg-scan .pw-pulse {
+	animation: none;
+	opacity: 0;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-wire:nth-child(1) .pw-pulse {
+	animation: pw-trg-dash-in 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-wire:nth-child(2) .pw-pulse {
+	animation: pw-trg-dash-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-lane {
+	animation: none;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-lane-in {
+	animation: pw-trg-lane-in 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-lane-out {
+	animation: pw-trg-lane-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-lane-in .pw-packet {
+	animation: pw-trg-packet-in 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-lane-out .pw-packet {
+	animation: pw-trg-packet-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-fn {
+	animation: pw-trg-pop 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-tick {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-runid {
+	animation: pw-trg-id 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-wire[data-on] .pw-pulse {
+	animation: pw-trg-dash-in 8s linear infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-wire:last-child .pw-pulse {
+	animation: pw-trg-dash-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-sig-card {
+	animation: pw-trg-bump 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-pkg {
+	animation: pw-trg-pop 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-trg-scanbar {
+	animation: pw-trg-scanbar 8s linear infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-wire[data-on] .pw-pulse {
+	animation: pw-trg-dash-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] [data-result='clean'] .pw-trg-check {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-trg-agent[data-lit] {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+@keyframes pw-trg-dash-in {
+	0%,
+	10% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	12% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	28% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	32%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-dash-out {
+	0%,
+	42% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	44% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	60% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	64%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-lane-in {
+	0%,
+	12% {
+		transform: translateX(0);
+	}
+	28%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-trg-lane-out {
+	0%,
+	44% {
+		transform: translateX(0);
+	}
+	60%,
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes pw-trg-packet-in {
+	0%,
+	11% {
+		opacity: 0;
+	}
+	14%,
+	26% {
+		opacity: 1;
+	}
+	30%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-packet-out {
+	0%,
+	43% {
+		opacity: 0;
+	}
+	46%,
+	58% {
+		opacity: 1;
+	}
+	62%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-pop {
+	0%,
+	20% {
+		transform: scale(1);
+	}
+	28% {
+		transform: scale(1.08);
+	}
+	38%,
+	100% {
+		transform: scale(1);
+	}
+}
+
+@keyframes pw-trg-mark {
+	0%,
+	42% {
+		transform: none;
+	}
+	50% {
+		transform: scale(1.12);
+	}
+	60%,
+	100% {
+		transform: none;
+	}
+}
+
+@keyframes pw-trg-bump {
+	0%,
+	48% {
+		transform: none;
+	}
+	56% {
+		transform: scale(1.04);
+	}
+	66%,
+	100% {
+		transform: none;
+	}
+}
+
+@keyframes pw-trg-scanbar {
+	0%,
+	8% {
+		opacity: 0;
+		transform: translateY(0);
+	}
+	16% {
+		opacity: 1;
+	}
+	40% {
+		opacity: 1;
+		transform: translateY(2.8em);
+	}
+	48%,
+	100% {
+		opacity: 0;
+		transform: translateY(2.8em);
+	}
+}
+
+@keyframes pw-trg-id {
+	0%,
+	58% {
+		transform: none;
+	}
+	66% {
+		transform: scale(1.06);
+	}
+	76%,
+	100% {
+		transform: none;
+	}
+}
