@@ -29,6 +29,7 @@ function createDb() {
 			slug TEXT,
 			suspended_at TEXT,
 			deleted_at TEXT,
+			plan TEXT NOT NULL DEFAULT 'free',
 			stripe_plan TEXT
 		);
 		CREATE TABLE saved_packages (
@@ -102,7 +103,7 @@ test('add rejects app-level hostnames for non-internet-visible packages', async 
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
 		)
 		.run()
 	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue({
@@ -138,7 +139,7 @@ test('add rejects free-plan orgs before calling Cloudflare', async () => {
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'free')`,
 		)
 		.run()
 
@@ -167,7 +168,7 @@ test('add stores org binding with verification records and list returns it', asy
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
 		)
 		.run()
 
@@ -232,7 +233,7 @@ test('sync refreshes Cloudflare status and returns verification records', async 
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
 		)
 		.run()
 	await db
@@ -284,7 +285,7 @@ test('add compensates with Cloudflare delete when the local insert fails', async
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
 		)
 		.run()
 	await db
@@ -323,4 +324,118 @@ test('add compensates with Cloudflare delete when the local insert fails', async
 		}),
 	).rejects.toThrow(/could not be stored/)
 	expect(methods).toEqual(['POST', 'DELETE'])
+})
+
+test('add allows manual paid plan even when stripe_plan is free', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro', NULL)`,
+		)
+		.run()
+	const fetcher = {
+		fetch: vi.fn(async () =>
+			cfHostnameResponse({ id: 'cf-manual', hostname: 'manual.example.com' }),
+		),
+	} as unknown as Fetcher
+	const added = await addPackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		createdByUserId: 'person-1',
+		bindingKind: 'org',
+		hostname: 'manual.example.com',
+	})
+	expect(added.hostname.hostname).toBe('manual.example.com')
+})
+
+test('sync prefers id over a conflicting hostname body', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	for (const [id, hostname, cfId] of [
+		['row-a', 'a.example.com', 'cf-a'],
+		['row-b', 'b.example.com', 'cf-b'],
+	] as const) {
+		await db
+			.prepare(
+				`INSERT INTO package_app_custom_hostnames (
+					id, hostname, binding_kind, package_id, org_id,
+					cloudflare_hostname_id, cloudflare_zone_id,
+					hostname_status, ssl_status, created_by_user_id,
+					created_at, updated_at
+				) VALUES (?, ?, 'org', NULL, 'org-1', ?, 'zonetest123', 'pending', 'pending', 'person-1',
+					'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z')`,
+			)
+			.bind(id, hostname, cfId)
+			.run()
+	}
+
+	await expect(
+		syncPackageAppCustomHostname({
+			env: createEnv(db),
+			orgId: 'org-1',
+			id: 'row-a',
+			hostname: 'b.example.com',
+		}),
+	).rejects.toThrow(/does not match/)
+})
+
+test('sync marks Cloudflare-missing hostnames deleted and starts grace', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, verified_at, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'row-1', 'team.example.com', 'org', NULL, 'org-1',
+				'cf-gone', 'zonetest123', 'active', 'active', '2026-10-12T00:00:00.000Z',
+				'person-1', '2026-10-12T00:00:00.000Z', '2026-10-12T00:00:00.000Z'
+			)`,
+		)
+		.run()
+
+	const fetcher = {
+		fetch: vi.fn(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'not found', code: 1436 }] },
+				{ status: 404 },
+			),
+		),
+	} as unknown as Fetcher
+
+	const synced = await syncPackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		id: 'row-1',
+		now: new Date('2026-10-13T12:00:00.000Z'),
+	})
+	expect(synced.hostname.hostname_status).toBe('deleted')
+	expect(synced.hostname.dns_missing_since).toBe('2026-10-13T12:00:00.000Z')
+	expect(synced.verification.ownership_verification).toBeNull()
 })

@@ -217,28 +217,51 @@ export class CloudflareCustomHostnamesClient {
 
 	async getCustomHostname(input: {
 		id: string
-	}): Promise<CloudflareCustomHostnameResult> {
-		const response = await this.client.rawRequest({
-			method: 'GET',
-			path: this.hostnamePath(input.id),
-		})
-		return readCustomHostnameResult(response.body, response.status)
+	}): Promise<CloudflareCustomHostnameResult | { alreadyGone: true }> {
+		try {
+			const response = await this.client.rawRequest({
+				method: 'GET',
+				path: this.hostnamePath(input.id),
+			})
+			if (response.status === 404) {
+				return { alreadyGone: true }
+			}
+			return readCustomHostnameResult(response.body, response.status)
+		} catch (error) {
+			if (error instanceof CloudflareApiError && error.status === 404) {
+				return { alreadyGone: true }
+			}
+			throw error
+		}
 	}
 
 	/**
-	 * Delete a custom hostname. A 404 means Cloudflare already dropped it —
-	 * treat that as success so local cleanup can proceed.
+	 * Delete a custom hostname. A 404 (JSON or non-JSON) means Cloudflare
+	 * already dropped it — treat that as success so local cleanup can proceed.
 	 */
 	async deleteCustomHostname(input: {
 		id: string
 	}): Promise<CloudflareCustomHostnameResult | { alreadyGone: true }> {
-		const response = await this.client.rawRequest({
-			method: 'DELETE',
-			path: this.hostnamePath(input.id),
-		})
-		if (response.status === 404) {
-			return { alreadyGone: true }
+		try {
+			const response = await this.client.rawRequest({
+				method: 'DELETE',
+				path: this.hostnamePath(input.id),
+			})
+			if (response.status === 404) {
+				return { alreadyGone: true }
+			}
+			return readCustomHostnameResult(response.body, response.status)
+		} catch (error) {
+			if (error instanceof CloudflareApiError && error.status === 404) {
+				return { alreadyGone: true }
+			}
+			throw error
 		}
-		return readCustomHostnameResult(response.body, response.status)
 	}
+}
+
+export function isCloudflareCustomHostnameGone(
+	value: CloudflareCustomHostnameResult | { alreadyGone: true },
+): value is { alreadyGone: true } {
+	return 'alreadyGone' in value && value.alreadyGone === true
 }

@@ -1,9 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { parseStripePlanName } from '#universal/plans.ts'
+import { parseStoredPlanName } from '#universal/plans.ts'
+import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	CloudflareCustomHostnamesClient,
+	isCloudflareCustomHostnameGone,
 	type CloudflareCustomHostnameResult,
 	type CustomHostnameDnsRecord,
 	type CustomHostnameSslMethod,
@@ -164,22 +166,31 @@ async function countOrgCustomHostnames(db: D1Database, orgId: string) {
 
 /**
  * ADR 0071: paying orgs only. Free plans cannot claim custom domains.
+ * Uses the same manual `plan` + `stripe_plan` overlay as entitlements (no
+ * second-agent/referral gift overlays — those are personal-org only).
  * Stripe $0.10 metering for extras is still deferred; extras get a note.
  */
 async function requirePaidOrgForCustomDomains(db: D1Database, orgId: string) {
 	const org = await db
 		.prepare(
-			`SELECT stripe_plan FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+			`SELECT plan, stripe_plan FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
-		.first<{ stripe_plan: string | null }>()
-	const paidPlan = parseStripePlanName(org?.stripe_plan ?? null)
-	if (!paidPlan || paidPlan === 'free') {
+		.first<{ plan: string | null; stripe_plan: string | null }>()
+	if (!org) {
+		throw new PackageAppCustomHostnameError('Organization not found.')
+	}
+	const { plan } = resolvePlanOverlay(
+		parseStoredPlanName(org.plan ?? 'free'),
+		org.stripe_plan,
+		null,
+	)
+	if (plan === 'free') {
 		throw new PackageAppCustomHostnameError(
 			'Custom domains require a paid organization plan. Paying orgs include one domain at no extra charge (ADR 0071).',
 		)
 	}
-	return paidPlan
+	return plan
 }
 
 async function billingNoteForAdd(db: D1Database, orgId: string) {
@@ -201,19 +212,26 @@ async function loadOwnedCustomHostnameRow(input: {
 	if (!hostname && !id) {
 		throw new PackageAppCustomHostnameError('Pass hostname or id.')
 	}
-	const row = hostname
+	// Prefer id when present so Open API path params cannot be overridden by a
+	// conflicting body hostname. Hostname-only remains for MCP.
+	const row = id
 		? await input.env.APP_DB.prepare(
-				`SELECT * FROM package_app_custom_hostnames WHERE hostname = ?`,
-			)
-				.bind(hostname)
-				.first<CustomHostnameRowSql>()
-		: await input.env.APP_DB.prepare(
 				`SELECT * FROM package_app_custom_hostnames WHERE id = ?`,
 			)
 				.bind(id)
 				.first<CustomHostnameRowSql>()
+		: await input.env.APP_DB.prepare(
+				`SELECT * FROM package_app_custom_hostnames WHERE hostname = ?`,
+			)
+				.bind(hostname)
+				.first<CustomHostnameRowSql>()
 	if (!row) {
 		throw new PackageAppCustomHostnameError('Custom hostname not found.')
+	}
+	if (id && hostname && row.hostname !== hostname) {
+		throw new PackageAppCustomHostnameError(
+			'hostname does not match the custom hostname id.',
+		)
 	}
 	const owned =
 		row.org_id === input.orgId ||
@@ -228,6 +246,19 @@ async function loadOwnedCustomHostnameRow(input: {
 		)
 	}
 	return rowFromSql(row)
+}
+
+function deletedCloudflareHostnameResult(
+	row: PackageAppCustomHostnameRow,
+): CloudflareCustomHostnameResult {
+	return {
+		id: row.cloudflareHostnameId ?? row.id,
+		hostname: row.hostname,
+		hostnameStatus: 'deleted',
+		sslStatus: row.sslStatus,
+		ownershipVerification: null,
+		sslValidationRecords: [],
+	}
 }
 
 async function insertCustomHostnameRow(input: {
@@ -540,7 +571,10 @@ export async function syncPackageAppCustomHostname(input: {
 	const now = input.now ?? new Date()
 	const nowIso = now.toISOString()
 	const client = createCloudflareClient(input.env)
-	const cf = await client.getCustomHostname({ id: cfId })
+	const cfOrGone = await client.getCustomHostname({ id: cfId })
+	const cf = isCloudflareCustomHostnameGone(cfOrGone)
+		? deletedCloudflareHostnameResult(row)
+		: cfOrGone
 	const updated = await applyCloudflareStatus({
 		env: input.env,
 		row,
@@ -550,7 +584,12 @@ export async function syncPackageAppCustomHostname(input: {
 	return {
 		hostname: publicRow(updated),
 		dns: dnsHint(input.env, updated.hostname),
-		verification: verificationFromCloudflare(cf),
+		verification: isCloudflareCustomHostnameGone(cfOrGone)
+			? {
+					ownership_verification: null,
+					ssl_validation_records: [],
+				}
+			: verificationFromCloudflare(cf),
 	}
 }
 

@@ -123,6 +123,22 @@ test('custom hostname delete treats Cloudflare 404 as already gone', async () =>
 	).resolves.toEqual({ alreadyGone: true })
 })
 
+test('custom hostname get and delete treat non-JSON 404 as already gone', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(
+			async () => new Response('not found', { status: 404 }),
+		),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
+	await expect(
+		client.deleteCustomHostname({ id: 'missing-hostname' }),
+	).resolves.toEqual({ alreadyGone: true })
+})
+
 test('custom hostname client refuses a missing token or zone', () => {
 	expect(
 		() =>
