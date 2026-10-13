@@ -48,3 +48,23 @@ test('inline stylesheet minify keeps url() and quoted strings intact', async () 
 		'.foo{background:url("/images/a b.svg");content:"hello  world";margin:0 auto;}',
 	)
 })
+
+test('inline stylesheet minify keeps media and (), descendant :, and calc spaces', async () => {
+	resetInlineStylesheetCache()
+	const css = `
+		@media (hover: hover) and (pointer: fine) {
+			.pill:hover { opacity: 0.9; }
+		}
+		[data-focus-container] :focus-visible { outline: none; }
+		.hero { transform: translateY(calc(100% + (1rem - 2px))); }
+	`
+	const inlined = await getInlineStylesheet({
+		assets: { fetch: async () => new Response(css) },
+		buildId: 'inline-stylesheet-minify-tokens',
+	})
+	expect(inlined).toContain('@media (hover:hover) and (pointer:fine)')
+	expect(inlined).toContain('[data-focus-container] :focus-visible')
+	expect(inlined).toContain('calc(100% + (1rem - 2px))')
+	expect(inlined).not.toMatch(/\band\(/)
+	expect(inlined).not.toContain('[data-focus-container]:focus-visible')
+})

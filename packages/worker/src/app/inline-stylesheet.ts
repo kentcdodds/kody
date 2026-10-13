@@ -28,7 +28,9 @@ function stripCssComments(css: string) {
 
 /**
  * Collapse authoring whitespace without touching string / url() contents.
- * Keeps calc() operators spaced so values stay valid.
+ * Keeps spaces that change tokens: media-query `and (` / `or (` / `not (`,
+ * descendant combinators before `:` (e.g. `[x] :focus-visible`), and calc()
+ * `+` / `-` beside parentheses or values.
  */
 function minifyCss(css: string) {
 	let out = ''
@@ -68,7 +70,10 @@ function minifyCss(css: string) {
 			while (i < css.length && /\s/.test(css[i]!)) i += 1
 			const prev = out.at(-1)
 			const next = css[i]
-			if (prev && next && !/[{}:;,()]/.test(prev) && !/[{}:;,()]/.test(next)) {
+			// Drop space around `{ } : ; ,` only. Do not treat `()` or a leading
+			// `:` as glue — that would turn `and (` into the function `and(` and
+			// `[host] :focus-visible` into `[host]:focus-visible`.
+			if (prev && next && !/[{}:;,]/.test(prev) && !/[{};,]/.test(next)) {
 				out += ' '
 			}
 			continue
