@@ -44,7 +44,12 @@ export type RepoPushQueueLimits = {
 	maxEntries: number
 	maxQueuedBytes: number
 	inMemorySendBytes: number
-	headersTimeoutMs: number
+	/**
+	 * Grace past the push deadline for the in-flight Artifacts exchange
+	 * (upload, response headers, and report-status body). A stalled upstream
+	 * is aborted so the queue keeps moving.
+	 */
+	responseGraceMs: number
 	busyBackoffMs: ReadonlyArray<number>
 }
 
@@ -55,7 +60,7 @@ export const defaultRepoPushQueueLimits: RepoPushQueueLimits = {
 	maxEntries: repoPushQueueMaxEntries,
 	maxQueuedBytes: repoPushQueueMaxQueuedBytes,
 	inMemorySendBytes: repoPushQueueInMemorySendBytes,
-	headersTimeoutMs: 120_000,
+	responseGraceMs: 120_000,
 	busyBackoffMs: artifactsReceivePackBusyBackoffMs,
 }
 
@@ -85,6 +90,8 @@ export type RepoPushQueueDeps = {
 	createId?: () => string
 	limits?: Partial<RepoPushQueueLimits>
 	log?: (event: RepoPushQueueEvent) => void
+	/** Host (and subdomains) the caller's token may be sent to. */
+	upstreamHostSuffix?: string
 }
 
 type QueueEntry = {
@@ -98,6 +105,8 @@ type QueueEntry = {
 	position: number
 	settle: (response: Response) => void
 }
+
+type ExchangeStats = { attempts: number; firstSendAt: number | null }
 
 type RejectOutcome = 'timeout' | 'full' | 'unavailable'
 
@@ -153,6 +162,7 @@ export class RepoPushQueue {
 	readonly #createId: () => string
 	readonly #limits: RepoPushQueueLimits
 	readonly #log: (event: RepoPushQueueEvent) => void
+	readonly #upstreamHostSuffix: string | undefined
 
 	readonly #waiting: Array<QueueEntry> = []
 	#running: QueueEntry | null = null
@@ -168,6 +178,7 @@ export class RepoPushQueue {
 		this.#createId = deps.createId ?? (() => crypto.randomUUID())
 		this.#limits = { ...defaultRepoPushQueueLimits, ...deps.limits }
 		this.#log = deps.log ?? (() => {})
+		this.#upstreamHostSuffix = deps.upstreamHostSuffix
 	}
 
 	/** Pushes landing, waiting, or running. */
@@ -179,7 +190,10 @@ export class RepoPushQueue {
 		const arrivedAt = this.#now()
 		const deadlineMs = arrivedAt + this.#limits.budgetMs
 		const upstream = request.headers.get(repoPushQueueUpstreamHeader)
-		if (!upstream || !isRepoPushQueueUpstreamUrl(upstream)) {
+		if (
+			!upstream ||
+			!isRepoPushQueueUpstreamUrl(upstream, this.#upstreamHostSuffix)
+		) {
 			return textResponse(400, 'Invalid push queue upstream.')
 		}
 		if (this.depth >= this.#limits.maxEntries) {
@@ -242,9 +256,17 @@ export class RepoPushQueue {
 	): Promise<{ bytes: number; chunkCount: number }> {
 		const chunkBytes = this.#limits.chunkBytes
 		let total = 0
+		let reserved = 0
 		let chunkCount = 0
 		let pending = new Uint8Array(chunkBytes)
 		let pendingLength = 0
+		// A timed-out race does not cancel the storage write; cleanup waits for
+		// it so a late write cannot leave an orphaned chunk.
+		let inFlight: Promise<unknown> | null = null
+		const track = <T>(operation: Promise<T>) => {
+			inFlight = operation
+			return Promise.race([operation, timedOut])
+		}
 		const flush = async (bytes: Uint8Array) => {
 			await this.#store.putChunk(id, chunkCount, bytes)
 			chunkCount += 1
@@ -270,6 +292,7 @@ export class RepoPushQueue {
 					throw new QueueFullError()
 				}
 				this.#reservedBytes += value.byteLength
+				reserved += value.byteLength
 				let offset = 0
 				while (offset < value.byteLength) {
 					const take = Math.min(
@@ -280,19 +303,22 @@ export class RepoPushQueue {
 					pendingLength += take
 					offset += take
 					if (pendingLength === chunkBytes) {
-						await Promise.race([flush(pending), timedOut])
+						await track(flush(pending))
 						pending = new Uint8Array(chunkBytes)
 						pendingLength = 0
 					}
 				}
 			}
 			if (pendingLength > 0) {
-				await Promise.race([flush(pending.slice(0, pendingLength)), timedOut])
+				await track(flush(pending.slice(0, pendingLength)))
 			}
-			await Promise.race([this.#store.sync(), timedOut])
+			await track(this.#store.sync())
 			return { bytes: total, chunkCount }
 		} catch (error) {
-			this.#reservedBytes -= Math.min(total, this.#reservedBytes)
+			this.#reservedBytes -= Math.min(reserved, this.#reservedBytes)
+			if (inFlight) {
+				await (inFlight as Promise<unknown>).catch(() => {})
+			}
 			if (reader) {
 				try {
 					await reader.cancel()
@@ -335,8 +361,32 @@ export class RepoPushQueue {
 				return this.#reject('unavailable', { entry })
 			}
 		}
-		let attempts = 0
-		let firstSendAt: number | null = null
+		const stats: ExchangeStats = { attempts: 0, firstSendAt: null }
+		const exchange = new AbortController()
+		const exchangeTimer = setTimeout(
+			() => exchange.abort(),
+			Math.max(0, entry.deadlineMs - this.#now()) +
+				this.#limits.responseGraceMs,
+		)
+		try {
+			return await this.#exchange(entry, loaded, exchange.signal, stats)
+		} catch {
+			return this.#reject('unavailable', {
+				entry,
+				waitMs: (stats.firstSendAt ?? this.#now()) - entry.landedAt,
+				attempts: stats.attempts,
+			})
+		} finally {
+			clearTimeout(exchangeTimer)
+		}
+	}
+
+	async #exchange(
+		entry: QueueEntry,
+		loaded: Array<Uint8Array> | null,
+		signal: AbortSignal,
+		stats: ExchangeStats,
+	): Promise<Response> {
 		const waited = await waitOutReceivePackBusy({
 			deadlineMs: entry.deadlineMs,
 			backoffMs: this.#limits.busyBackoffMs,
@@ -344,9 +394,9 @@ export class RepoPushQueue {
 			now: this.#now,
 			random: this.#random,
 			send: async () => {
-				attempts += 1
-				firstSendAt ??= this.#now()
-				return this.#send(entry, loaded)
+				stats.attempts += 1
+				stats.firstSendAt ??= this.#now()
+				return this.#send(entry, loaded, signal)
 			},
 			isBusy: (response, bodyText) =>
 				isArtifactsGitReceivePackBusyResponse({
@@ -355,7 +405,8 @@ export class RepoPushQueue {
 				}),
 			readBusyBody: readCappedResponseText,
 		})
-		const waitMs = (firstSendAt ?? this.#now()) - entry.landedAt
+		const waitMs = (stats.firstSendAt ?? this.#now()) - entry.landedAt
+		const attempts = stats.attempts
 		if (waited.kind === 'timeout') {
 			return this.#reject('timeout', { entry, waitMs, attempts })
 		}
@@ -398,6 +449,7 @@ export class RepoPushQueue {
 	async #send(
 		entry: QueueEntry,
 		loaded: Array<Uint8Array> | null,
+		signal: AbortSignal,
 	): Promise<Response> {
 		const store = this.#store
 		let index = 0
@@ -418,22 +470,13 @@ export class RepoPushQueue {
 				controller.enqueue(chunk)
 			},
 		})
-		const controller = new AbortController()
-		const timeoutId = setTimeout(
-			() => controller.abort(),
-			this.#limits.headersTimeoutMs,
-		)
-		try {
-			return await this.#fetch(entry.upstream, {
-				method: 'POST',
-				headers: entry.headers,
-				body,
-				signal: controller.signal,
-				duplex: 'half',
-			} as RequestInit)
-		} finally {
-			clearTimeout(timeoutId)
-		}
+		return this.#fetch(entry.upstream, {
+			method: 'POST',
+			headers: entry.headers,
+			body,
+			signal,
+			duplex: 'half',
+		} as RequestInit)
 	}
 
 	async #deleteQuietly(id: string, chunkCount: number) {

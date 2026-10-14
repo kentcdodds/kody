@@ -14,6 +14,8 @@ import {
 export type PushQueueWorkerEnv = {
 	REPO_PUSH_QUEUE_V1: DurableObjectNamespace
 	APP_COMMIT_SHA?: string
+	/** Overrides the default Artifacts upstream host suffix. */
+	ARTIFACTS_UPSTREAM_HOST_SUFFIX?: string
 }
 
 function chunkKey(entryId: string, index: number) {
@@ -65,6 +67,7 @@ export class RepoPushQueueV1 extends DurableObject<PushQueueWorkerEnv> {
 			store: createDurableObjectPushQueueStore(ctx.storage),
 			fetch: (url, init) => fetch(url, init),
 			log: logQueueEvent,
+			upstreamHostSuffix: env.ARTIFACTS_UPSTREAM_HOST_SUFFIX || undefined,
 		})
 		// A fresh instance has no live waiters or tokens, so anything stored
 		// belongs to a replaced instance whose callers already got a 503.

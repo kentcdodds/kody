@@ -20,7 +20,10 @@ that repo across all origin isolates and colos:
 4. Report-status (including non-fast-forward and stale-ref rejections) passes
    through unchanged. Chunks are deleted after every push.
 
-The Artifacts token stays in memory only. A replaced instance (deploy or
+The Artifacts token stays in memory only and is only sent to HTTPS
+`*.artifacts.cloudflare.net` receive-pack URLs (`ARTIFACTS_UPSTREAM_HOST_SUFFIX`
+overrides the host). A stalled Artifacts exchange is aborted 120s past the
+push's deadline so the queue keeps moving. A replaced instance (deploy or
 eviction) clears leftover chunks on start, and those callers retry.
 
 - `wrangler.jsonc` — committed config (script name `kody-push-queue`). Class

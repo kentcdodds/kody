@@ -54,12 +54,29 @@ export function isRepoPushQueueSourceId(value: string | null): value is string {
 	return value !== null && sourceIdPattern.test(value)
 }
 
-export function isRepoPushQueueUpstreamUrl(value: string | null) {
+/** Artifacts smart-HTTP remotes live under this host (and its subdomains). */
+export const repoPushQueueDefaultUpstreamHostSuffix = 'artifacts.cloudflare.net'
+
+/**
+ * The queue forwards the caller's Artifacts bearer token upstream, so only
+ * HTTPS receive-pack URLs on the Artifacts host are accepted.
+ */
+export function isRepoPushQueueUpstreamUrl(
+	value: string | null,
+	allowedHostSuffix = repoPushQueueDefaultUpstreamHostSuffix,
+) {
 	if (!value) return false
+	const suffix = allowedHostSuffix.toLowerCase().replace(/^\.+/, '')
+	if (!suffix) return false
 	try {
 		const url = new URL(value)
+		const host = url.hostname.toLowerCase()
 		return (
-			url.protocol === 'https:' && url.pathname.endsWith('/git-receive-pack')
+			url.protocol === 'https:' &&
+			url.username === '' &&
+			url.password === '' &&
+			(host === suffix || host.endsWith(`.${suffix}`)) &&
+			url.pathname.endsWith('/git-receive-pack')
 		)
 	} catch {
 		return false

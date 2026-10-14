@@ -18,7 +18,8 @@ import {
 import { RepoPushQueue, type RepoPushQueueStore } from './repo-push-queue.ts'
 
 const sourceId = '57a9ce42-dfc2-4867-bc01-2c0d05f23f07'
-const upstream = 'https://artifacts.example/git/repo.git/git-receive-pack'
+const upstream =
+	'https://acct.artifacts.cloudflare.net/git/default/repo.git/git-receive-pack'
 const busyBody = '{"error":"artifacts_git_receive_pack_busy"}'
 
 function createMemoryStore() {
@@ -444,6 +445,122 @@ test('oversized packs get 413 and a full queue gets a retryable 503', async () =
 	expect(full.headers.get(repoPushQueueOutcomeHeader)).toBe('full')
 	hold.controller.close()
 	expect((await holding).status).toBe(200)
+})
+
+test('the token is only forwarded to the Artifacts host', async () => {
+	const { store } = createMemoryStore()
+	let calls = 0
+	const queue = new RepoPushQueue({
+		store,
+		fetch: async () => {
+			calls += 1
+			return new Response('ok')
+		},
+	})
+	for (const foreign of [
+		'https://evil.example/git/repo.git/git-receive-pack',
+		'https://artifacts.cloudflare.net.evil.example/x/git-receive-pack',
+		'http://acct.artifacts.cloudflare.net/git/repo.git/git-receive-pack',
+		'https://user:pw@acct.artifacts.cloudflare.net/git/repo.git/git-receive-pack',
+	]) {
+		const response = await queue.handle(
+			pushRequest('pack', { [repoPushQueueUpstreamHeader]: foreign }),
+		)
+		expect(response.status).toBe(400)
+	}
+	expect(calls).toBe(0)
+	expect((await queue.handle(pushRequest('pack'))).status).toBe(200)
+	expect(calls).toBe(1)
+})
+
+test('a stalled report-status body is aborted and the queue moves on', async () => {
+	const { store, chunks } = createMemoryStore()
+	let clock = 0
+	let calls = 0
+	const queue = new RepoPushQueue({
+		store,
+		now: () => clock,
+		limits: { budgetMs: 1_000, responseGraceMs: 0 },
+		fetch: async (_url, init) => {
+			calls += 1
+			if (calls > 1) return new Response('000eunpack ok\n0000')
+			const body = new ReadableStream<Uint8Array>({
+				start(controller) {
+					init.signal?.addEventListener('abort', () =>
+						controller.error(new DOMException('aborted', 'AbortError')),
+					)
+				},
+			})
+			return new Response(body, { status: 200 })
+		},
+	})
+	const stalled = queue.handle(pushRequest('first'))
+	// The first push's deadline is 10ms away when it is sent; the second
+	// arrives with a fresh budget.
+	clock = 990
+	const next = queue.handle(pushRequest('second'))
+	const stalledResponse = await stalled
+	expect(stalledResponse.status).toBe(503)
+	expect(stalledResponse.headers.get(repoPushQueueOutcomeHeader)).toBe(
+		'unavailable',
+	)
+	expect(stalledResponse.headers.get(repoPushQueueAttemptsHeader)).toBe('1')
+	const nextResponse = await next
+	expect(nextResponse.status).toBe(200)
+	expect(await nextResponse.text()).toBe('000eunpack ok\n0000')
+	expect(calls).toBe(2)
+	await settle()
+	expect(queue.depth).toBe(0)
+	expect(chunks.size).toBe(0)
+})
+
+test('a rejected landing releases only the bytes it reserved', async () => {
+	const { store } = createMemoryStore()
+	const queue = new RepoPushQueue({
+		store,
+		limits: { bodyLimitBytes: 10, maxQueuedBytes: 8, chunkBytes: 64 },
+		fetch: async () => new Response('ok'),
+	})
+	const holder = manualStream()
+	const holding = queue.handle(pushRequest(holder.stream))
+	holder.controller.enqueue(new TextEncoder().encode('123456'))
+	await settle()
+
+	const oversized = await queue.handle(pushRequest('0123456789AB'))
+	expect(oversized.status).toBe(413)
+
+	// The holder still reserves 6 of 8 bytes, so another 6 must not fit.
+	const overCap = await queue.handle(pushRequest('abcdef'))
+	expect(overCap.status).toBe(503)
+	expect(overCap.headers.get(repoPushQueueOutcomeHeader)).toBe('full')
+
+	holder.controller.close()
+	expect((await holding).status).toBe(200)
+	expect((await queue.handle(pushRequest('abcdef'))).status).toBe(200)
+})
+
+test('a landing that times out mid-write waits for the write before cleanup', async () => {
+	const memory = createMemoryStore()
+	const gate = deferred()
+	const store: RepoPushQueueStore = {
+		...memory.store,
+		async putChunk(entryId, index, bytes) {
+			await gate.promise
+			await memory.store.putChunk(entryId, index, bytes)
+		},
+	}
+	const queue = new RepoPushQueue({
+		store,
+		limits: { budgetMs: 5, chunkBytes: 4 },
+		fetch: async () => new Response('ok'),
+	})
+	const landing = queue.handle(pushRequest('abcd'))
+	await new Promise((resolve) => setTimeout(resolve, 30))
+	gate.resolve()
+	const response = await landing
+	expect(response.status).toBe(408)
+	await settle()
+	expect(memory.chunks.size).toBe(0)
 })
 
 test('gateway rejects malformed handoffs and maps a dead Durable Object to a retryable 503', async () => {
