@@ -81,19 +81,25 @@ async function readReconcileCursor(db: D1Database): Promise<string> {
 	return row?.after_id ?? ''
 }
 
-async function writeReconcileCursor(
-	db: D1Database,
-	afterId: string,
-	nowIso: string,
-) {
-	await db
+/**
+ * Compare-and-swap the singleton cursor. Returns false when another reconcile
+ * run already advanced (or reset) the cursor past `expectedAfterId`.
+ */
+async function compareAndSwapReconcileCursor(input: {
+	db: D1Database
+	afterId: string
+	expectedAfterId: string
+	nowIso: string
+}): Promise<boolean> {
+	const result = await input.db
 		.prepare(
 			`UPDATE package_app_custom_hostname_reconcile_cursor
 			 SET after_id = ?, updated_at = ?
-			 WHERE singleton = 1`,
+			 WHERE singleton = 1 AND after_id = ?`,
 		)
-		.bind(afterId, nowIso)
+		.bind(input.afterId, input.nowIso, input.expectedAfterId)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function reconcilePackageAppCustomHostnames(input: {
@@ -121,8 +127,25 @@ export async function reconcilePackageAppCustomHostnames(input: {
 	}
 
 	const batchSize = input.batchSize ?? defaultBatchSize
-	let afterId = await readReconcileCursor(input.env.APP_DB)
+	const startedAfterId = await readReconcileCursor(input.env.APP_DB)
+	let afterId = startedAfterId
+	let persistedAfterId = startedAfterId
 	let wrappedOnce = false
+
+	const persistCursor = async (nextAfterId: string) => {
+		const swapped = await compareAndSwapReconcileCursor({
+			db: input.env.APP_DB,
+			afterId: nextAfterId,
+			expectedAfterId: persistedAfterId,
+			nowIso,
+		})
+		if (swapped) {
+			persistedAfterId = nextAfterId
+			afterId = nextAfterId
+		}
+		return swapped
+	}
+
 	while (Date.now() < deadline) {
 		const batch = await listPackageAppCustomHostnamesForReconcile(
 			input.env.APP_DB,
@@ -132,19 +155,29 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			},
 		)
 		if (batch.length === 0) {
-			if (afterId !== '' && !wrappedOnce) {
-				// Tail reached mid-sweep: wrap so later ticks cover early rows.
+			if (afterId !== '' && !wrappedOnce && startedAfterId !== '') {
+				// Resumed mid-table and hit the tail: wrap once to cover the head.
 				wrappedOnce = true
-				afterId = ''
-				await writeReconcileCursor(input.env.APP_DB, '', nowIso)
+				if (!(await persistCursor(''))) break
 				continue
+			}
+			// Empty at head, already wrapped, or finished an exact-batch pass
+			// that began at the head — do not start a second full sweep.
+			if (persistedAfterId !== '') {
+				await persistCursor('')
 			}
 			break
 		}
 
+		let stopAfterCoveringHead = false
 		for (const row of batch) {
 			if (Date.now() >= deadline) {
 				result.budgetExhausted = true
+				break
+			}
+			if (wrappedOnce && startedAfterId !== '' && row.id > startedAfterId) {
+				// Head coverage reached the resume point; full sweep done.
+				stopAfterCoveringHead = true
 				break
 			}
 			result.scanned += 1
@@ -223,25 +256,34 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			}
 		}
 
+		if (stopAfterCoveringHead) {
+			await persistCursor('')
+			break
+		}
+
 		if (result.budgetExhausted) {
-			await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
+			await persistCursor(afterId)
 			break
 		}
 
 		const reachedTail = batch.length < batchSize
 		if (reachedTail) {
-			// Finished a full pass (or a wrap that ended early): reset so the
-			// next tick starts a fresh sweep from the beginning.
-			afterId = ''
-			await writeReconcileCursor(input.env.APP_DB, '', nowIso)
+			if (startedAfterId !== '' && !wrappedOnce) {
+				// Mid-sweep resume hit a short final page: wrap to cover the head.
+				wrappedOnce = true
+				if (!(await persistCursor(''))) break
+				continue
+			}
+			// Finished a full pass that began at the head (or finished after wrap).
+			await persistCursor('')
 			break
 		}
-		await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
+		if (!(await persistCursor(afterId))) break
 	}
 
 	if (!result.budgetExhausted && Date.now() >= deadline) {
 		result.budgetExhausted = true
-		await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
+		await persistCursor(afterId)
 	}
 
 	return result
