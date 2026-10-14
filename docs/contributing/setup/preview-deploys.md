@@ -123,12 +123,10 @@ the exact invocation and
 [Manual preview testing](../preview-manual-testing.md#feature-flags-on-the-preview-seed).
 
 Preview deploys do **not** set a GitHub Actions `environment:` on the deploy
-job, so they no longer create per-PR `preview-<n>` (or `preview-<run_id>`)
-GitHub Environments. The preview URL is posted as a PR comment instead.
+job. The preview URL is posted as a PR comment instead.
 
-Cleanup still deletes any leftover `preview-<pr-number>` GitHub Environment on
-PR close (legacy entries, or recreations from in-flight deploys before this
-change). That API requires repository administration write access, so the repo
+Cleanup deletes any leftover `preview-<pr-number>` GitHub Environment on PR
+close. That API requires repository administration write access, so the repo
 must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions secret with a token that
 has that permission. Cleanup intentionally fails when that secret is missing or
 under-scoped so permission regressions are visible.

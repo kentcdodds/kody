@@ -113,11 +113,10 @@ source.
 ## Your copy
 
 You can download your **personal** memories as JSON from your personal org's
-`/@<slug>/-/memories` page. Team workspace Memories pages show a read-only
-legacy list during the soak after personal-only cutover; writable memory is
-always personal. The export file is memories only: no credentials or other
-account primitives. Deleted memories are included only when you turn on
-**Include deleted**.
+`/@<slug>/-/memories` page. Team workspace Memories pages are read-only;
+writable memory is always personal. The export file is memories only: no
+credentials or other account primitives. Deleted memories are included only when
+you turn on **Include deleted**.
 
 ## Where to go next
 

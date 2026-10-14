@@ -86,8 +86,8 @@ Three commits matter for a public package:
 Once a package is listed on the community, publish and promote advance the
 catalog pin with the runtime. There is no separate republish step. First-time
 listing still uses `packageUpdate` with `changes.visibility: "public"` (or
-`communityPublish`). A scheduled backfill catches any listing that drifted
-before auto-follow landed.
+`communityPublish`). A scheduled backfill catches any listing whose pin drifted
+from the published commit.
 
 The package **Settings** tab has one **Publishing** panel: the live version, who
 can see it (only you, your organization, or anyone on the community), what is

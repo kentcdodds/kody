@@ -164,11 +164,11 @@ credentials; opt-in types that a package can declare are described in
   a PAT, oauth, login); declare it only when a specific shape is needed
   (`secret`, `oauth`, `mcp`, or the opt-in types `url`, `login`, and `signing`).
   When `kind` is omitted, matching accepts any fetch-capable credential for the
-  provider; a declared `kind` keeps today's narrowing. `provider` is optional
-  and defaults to the key; a second account from the same provider gets its own
-  key with an explicit `provider`. `description` is required, never affects
-  matching, and says why the package wants access. `multiple: true` means the
-  package uses several accounts at once. A typical need looks like
+  provider; a declared `kind` narrows matching to that kind. `provider` is
+  optional and defaults to the key; a second account from the same provider gets
+  its own key with an explicit `provider`. `description` is required, never
+  affects matching, and says why the package wants access. `multiple: true`
+  means the package uses several accounts at once. A typical need looks like
   `"github": { "description": "Read PRs to summarize them" }`.
 - Publish rejects any other key or a missing required field and names the slot.
   If a later rule rejects a slot in a version that is already published, the
