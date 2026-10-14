@@ -29,6 +29,7 @@ import {
 	getApprovalBundleForPerson,
 	listApprovalBundleDecisions,
 	planApprovalBundleInsert,
+	type ApprovalBundleDecisionRecord,
 	type ApprovalBundleRecord,
 } from './repo.ts'
 
@@ -46,6 +47,34 @@ export type PendingApprovalFilter = {
 }
 
 const itemViewConcurrency = 8
+
+/**
+ * Capability items each compute a full capability summary, so views load a few
+ * at a time to keep a large bundle inside Worker subrequest limits.
+ */
+async function loadItemViews(
+	viewer: ApprovalViewer,
+	refs: ReadonlyArray<ApprovalItemRef>,
+	decisions?: ReadonlyMap<string, ApprovalBundleDecisionRecord>,
+): Promise<Array<ApprovalItemView>> {
+	const views: Array<ApprovalItemView> = []
+	for (let start = 0; start < refs.length; start += itemViewConcurrency) {
+		views.push(
+			...(await Promise.all(
+				refs
+					.slice(start, start + itemViewConcurrency)
+					.map((ref) =>
+						loadApprovalItemView(
+							viewer,
+							ref,
+							decisions?.get(approvalItemKey(ref)) ?? null,
+						),
+					),
+			)),
+		)
+	}
+	return views
+}
 
 function wants(filter: PendingApprovalFilter, type: ApprovalItemType) {
 	return !filter.types || filter.types.length === 0
@@ -121,19 +150,7 @@ export async function listPendingApprovalItems(
 	viewer: ApprovalViewer,
 	filter: PendingApprovalFilter = {},
 ): Promise<Array<ApprovalItemView>> {
-	const refs = await candidateRefs(viewer, filter)
-	// Capability candidates each compute a full capability summary; loading
-	// them a few at a time keeps a large catalog from fanning out at once.
-	const views: Array<ApprovalItemView> = []
-	for (let start = 0; start < refs.length; start += itemViewConcurrency) {
-		views.push(
-			...(await Promise.all(
-				refs
-					.slice(start, start + itemViewConcurrency)
-					.map((ref) => loadApprovalItemView(viewer, ref)),
-			)),
-		)
-	}
+	const views = await loadItemViews(viewer, await candidateRefs(viewer, filter))
 	return views.filter(
 		(item) =>
 			item.status === 'pending' && namesPackage(filter.packages, item.package),
@@ -186,9 +203,7 @@ export async function createApprovalBundle(input: {
 				`A bundle holds at most ${approvalBundleMaxItems} items; got ${refs.length}.`,
 			)
 		}
-		const views = await Promise.all(
-			refs.map((ref) => loadApprovalItemView(viewer, ref)),
-		)
+		const views = await loadItemViews(viewer, refs)
 		items = views.filter((item) => item.status === 'pending')
 		skipped = views
 			.filter((item) => item.status !== 'pending')
@@ -274,15 +289,7 @@ export async function loadApprovalBundleView(input: {
 		viewer.env.APP_DB,
 		bundle.id,
 	)
-	const items = await Promise.all(
-		bundle.items.map((ref) =>
-			loadApprovalItemView(
-				viewer,
-				ref,
-				decisions.get(approvalItemKey(ref)) ?? null,
-			),
-		),
-	)
+	const items = await loadItemViews(viewer, bundle.items, decisions)
 	return {
 		ok: true,
 		view: {
