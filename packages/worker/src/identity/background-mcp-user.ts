@@ -5,6 +5,7 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
 import { resolveDisplayName } from './username.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -101,17 +102,19 @@ async function loadBackgroundMcpUser(
 ): Promise<McpUserContext> {
 	const user = await db
 		.prepare(
-			`SELECT id, email, username, display_name, suspended_at,
-				deleting_at, deleted_at
+			`SELECT id, email, username, display_name, stable_user_id,
+				personal_org_id, suspended_at, deleting_at, deleted_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ? OR personal_org_id = ?`,
 		)
-		.bind(userId)
+		.bind(userId, userId)
 		.first<{
 			id: number
 			email: string
 			username: string
 			display_name: string | null
+			stable_user_id: string
+			personal_org_id: string | null
 			suspended_at: string | null
 			deleting_at: string | null
 			deleted_at: string | null
@@ -168,8 +171,9 @@ async function loadBackgroundMcpUser(
 		}
 	}
 
+	const personId = personIdFromStored(user.stable_user_id)
 	return {
-		userId: personIdFromStored(userId),
+		userId: personId,
 		email: user.email,
 		username: user.username,
 		displayName:
@@ -178,6 +182,10 @@ async function loadBackgroundMcpUser(
 				email: user.email,
 				username: user.username,
 			}),
+		personalOrgId: personalOrgIdFromUserRow({
+			personal_org_id: user.personal_org_id,
+			stable_user_id: user.stable_user_id,
+		}),
 		roles,
 		permissions,
 	}
@@ -186,9 +194,10 @@ async function loadBackgroundMcpUser(
 /**
  * Resolve account identity for background execution from an owner id.
  *
- * The id is a person (`users.stable_user_id`, also that person's personal
- * org) or a team org (`orgs.id` with no users row). This is the only place
- * that distinction is made. Callers keep passing the storage owner id.
+ * The id is a person (`users.stable_user_id`), that person's personal org
+ * (`users.personal_org_id`), or a team org (`orgs.id` with no users row).
+ * This is the only place that distinction is made. Callers keep passing the
+ * storage owner id.
  *
  * This is the suspension choke point for background lanes (jobs, package
  * invocations and subscriptions, workflows, retrievers, realtime hooks):

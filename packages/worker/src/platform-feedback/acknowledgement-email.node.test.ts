@@ -94,6 +94,7 @@ function createUsersAndFeedbackDb() {
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL DEFAULT 'x',
 			stable_user_id TEXT NOT NULL UNIQUE,
+			personal_org_id TEXT,
 			suspended_at TEXT,
 			deleted_at TEXT
 		);

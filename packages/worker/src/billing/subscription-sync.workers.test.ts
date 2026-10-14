@@ -79,11 +79,13 @@ async function seedUser(label: string, input: SeedInput = {}) {
 		.bind(email)
 		.first<{ id: number }>()
 	if (!row) throw new Error(`Failed to seed user ${email}`)
+	const ownerId = ownerIdFromStored(stableUserId)
 	return {
 		id: row.id,
 		email,
-		stableUserId: ownerIdFromStored(stableUserId),
-		linkReference: await createBillingLinkReference(env, stableUserId),
+		stableUserId: ownerId,
+		personalOrgId: ownerId,
+		linkReference: await createBillingLinkReference(env, ownerId),
 	}
 }
 

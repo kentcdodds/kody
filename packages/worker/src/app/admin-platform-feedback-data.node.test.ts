@@ -13,6 +13,7 @@ function createAdminPlatformFeedbackFixture() {
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			stable_user_id TEXT,
+			personal_org_id TEXT,
 			private_content TEXT,
 			deleted_at TEXT
 		);

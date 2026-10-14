@@ -88,7 +88,7 @@ type WarningCandidate = UserEntitlementRow & {
 }
 
 const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('o')}`
-const orgEntitlementJoinSql = `INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}`
+const orgEntitlementJoinSql = `INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}`
 
 export type UserWarningResource =
 	| EntitlementResource

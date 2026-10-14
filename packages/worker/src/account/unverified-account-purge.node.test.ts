@@ -74,7 +74,11 @@ function withVerifyAfterUnverifiedAccountSelect(
 		...db,
 		prepare(query: string) {
 			const statement = originalPrepare(query)
-			if (!query.includes('SELECT id, stable_user_id, email, created_at')) {
+			if (
+				!query.includes(
+					'SELECT id, stable_user_id, personal_org_id, email, created_at',
+				)
+			) {
 				return statement
 			}
 			return {
@@ -251,6 +255,7 @@ test('purge deletes only aged unverified person accounts through full account de
 		env: expect.objectContaining({ APP_DB: h.db }),
 		dbUserId: eligible.id,
 		mcpUserId: eligible.stableUserId,
+		personUserId: eligible.stableUserId,
 	})
 	expect(h.usernames()).toEqual([
 		'fenced-unverified',

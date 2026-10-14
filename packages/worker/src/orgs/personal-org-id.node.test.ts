@@ -3,7 +3,10 @@ import {
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
-import { personalOrgIdFromUserRow } from './personal-org-id.ts'
+import {
+	personalOrgIdForPerson,
+	personalOrgIdFromUserRow,
+} from './personal-org-id.ts'
 
 const personId = 'a'.repeat(64)
 const distinctOrgId = 'b'.repeat(64)
@@ -34,4 +37,15 @@ test('personalOrgIdFromUserRow falls back to the person id while the column is e
 		).toBe(expected)
 	}
 	expect(expected).toBe(personId)
+})
+
+test('personalOrgIdForPerson prefers a stamped personalOrgId', () => {
+	const userId = personIdFromStored(personId)
+	expect(
+		personalOrgIdForPerson({
+			userId,
+			personalOrgId: distinctOrgId as never,
+		}),
+	).toBe(distinctOrgId)
+	expect(personalOrgIdForPerson({ userId })).toBe(personalOrgId(userId))
 })

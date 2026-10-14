@@ -42,7 +42,7 @@ pinned commit), `/@username/:kodyId/settings` (**Settings** tab for packages:
 lock, forkable visibility, internet-visible, webhooks, delete),
 `/@username/:kodyId/collaborators` (**Collaborators** tab, shown only with
 `package:manage_access`: teams, org members, and outside collaborators with
-their preset; add, change preset, remove, invite, revoke invite),
+their preset; add a team or org member, change preset, remove),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
 internet-visible). `/@:orgSlug/-/approvals/:bundleId` is an agent-prefilled
@@ -92,8 +92,7 @@ fixtures use `control-kody execute` / `search` against the same origin.
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (raw file bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET|POST /profiles/:username/packages/:kodyId/collaborators.json` (view / one
-  change: `grant`, `revoke`, `invite`, `revoke-invite`; 403 without
-  `package:manage_access`)
+  change: `grant`, `revoke`; 403 without `package:manage_access`)
 - `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`

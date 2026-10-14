@@ -339,7 +339,10 @@ export async function listPendingInvitesForPerson(
 
 type OrgBindingRow = { org_id: string; org_slug: string; role: OrgRole }
 
-/** Live personal-org membership row for a person (org_id = user_id). */
+/**
+ * Live personal-org membership for a person via `users.personal_org_id`
+ * (fallback: founding `org_id = user_id` when the column is blank).
+ */
 export function orgBindingForPersonStatement(
 	db: D1Database,
 	personId: string,
@@ -347,11 +350,14 @@ export function orgBindingForPersonStatement(
 	return db
 		.prepare(
 			`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
-			 FROM org_memberships m
+			 FROM users u
+			 INNER JOIN org_memberships m
+			   ON m.user_id = u.stable_user_id
+			  AND m.org_id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
+			  AND m.deleted_at IS NULL
 			 INNER JOIN orgs o ON o.id = m.org_id
-			 WHERE m.user_id = ?
-			   AND m.org_id = m.user_id
-			   AND m.deleted_at IS NULL${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?
+			   AND u.deleted_at IS NULL${andLiveDeletedAtSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(personId)
@@ -363,7 +369,7 @@ export function orgBindingForPersonFromRow(
 ): OrgBinding {
 	if (!row) {
 		throw new Error(
-			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have an org_memberships row where org_id = user_id.`,
+			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have users.personal_org_id (or legacy org_id = user_id) with a live membership.`,
 		)
 	}
 	return toBinding(row)

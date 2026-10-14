@@ -5,13 +5,13 @@
  * writable.
  */
 import {
-	personalOrgId,
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 
 export const memoryLegacyWriteFrozenMessage =
 	'Memory is personal-only. Write or delete only in your personal org. Shared org knowledge belongs in documented packages and org instructions.'
@@ -27,8 +27,11 @@ export function legacyOrgMemoryProvenanceUri(
 	return `https://kody.codes/legacy-org-memory/${fromOrgId}/${sourceMemoryId}`
 }
 
-export function personalMemoryOwnerId(userId: PersonId): OwnerId {
-	return personalOrgId(userId)
+export function personalMemoryOwnerId(
+	user: PersonId | { userId: PersonId; personalOrgId?: OwnerId | null },
+): OwnerId {
+	if (typeof user === 'string') return personalOrgIdForPerson({ userId: user })
+	return personalOrgIdForPerson(user)
 }
 
 /**
@@ -38,8 +41,13 @@ export function personalMemoryOwnerId(userId: PersonId): OwnerId {
 export function personalMemoryOwnerRequest(input: {
 	request: RequestContext
 	userId: PersonId
+	/** Prefer stamped personal org when the caller loaded `users.personal_org_id`. */
+	personalOrgId?: OwnerId | null
 }): RequestContext {
-	const personalId = personalMemoryOwnerId(input.userId)
+	const personalId = personalMemoryOwnerId({
+		userId: input.userId,
+		personalOrgId: input.personalOrgId,
+	})
 	if (input.request.org.id === personalId) return input.request
 	return {
 		...input.request,

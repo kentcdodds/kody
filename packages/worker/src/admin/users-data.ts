@@ -54,7 +54,7 @@ export const adminUserRowSelectSql = `u.id, u.stable_user_id, u.username, u.emai
 				u.first_mcp_connected_at, u.first_execute_at, u.first_search_at, u.first_saved_package_at, u.mcp_client_name, u.last_active_at,
 				o.second_agent_standard_gift_expires_at, o.referral_standard_credit_expires_at, u.created_at, u.updated_at`
 
-const adminUsersFromSql = `users u LEFT JOIN orgs o ON o.id = u.stable_user_id AND o.deleted_at IS NULL`
+const adminUsersFromSql = `users u LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id) AND o.deleted_at IS NULL`
 
 export const adminUserListItemFieldNames = [
 	'stableUserId',

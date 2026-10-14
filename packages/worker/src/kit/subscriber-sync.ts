@@ -388,7 +388,7 @@ export async function maybeSyncKitSubscriberForUser(input: {
 				`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
 				        u.first_saved_package_at, o.stripe_plan
 				 FROM users u
-				 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+				 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 				 WHERE u.email = ? AND u.deleting_at IS NULL
 				 ${andLiveDeletedAtSql('u')} LIMIT 1`,
 			)
@@ -398,7 +398,7 @@ export async function maybeSyncKitSubscriberForUser(input: {
 				`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
 				        u.first_saved_package_at, o.stripe_plan
 				 FROM users u
-				 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+				 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 				 WHERE u.stable_user_id = ? AND u.deleting_at IS NULL
 				 ${andLiveDeletedAtSql('u')} LIMIT 1`,
 			)
@@ -469,7 +469,7 @@ export async function reconcileKitSubscribers(input: {
 		`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
 		        u.first_saved_package_at, o.stripe_plan
 		 FROM users u
-		 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+		 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 		 WHERE u.deleting_at IS NULL
 		   AND u.email IS NOT NULL${andLiveDeletedAtSql('u')}
 		 ORDER BY u.updated_at DESC

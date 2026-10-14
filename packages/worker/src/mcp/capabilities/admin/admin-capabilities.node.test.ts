@@ -562,8 +562,16 @@ test('adminUserCreate records audit metadata and assigns the default role', asyn
 	const created = t.userRow('person+launch@example.com')
 	expect(created).toMatchObject({
 		stable_user_id: stableUserId,
-		plan: 'free',
 	})
+	expect(
+		t.sqlite
+			.prepare(
+				`SELECT o.plan FROM users u
+				 INNER JOIN orgs o ON o.id = u.personal_org_id
+				 WHERE u.email = ?`,
+			)
+			.get('person+launch@example.com'),
+	).toEqual({ plan: 'free' })
 	expect(
 		t.sqlite
 			.prepare(

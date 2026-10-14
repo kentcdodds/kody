@@ -1,7 +1,7 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createAccountExportManifest } from '#worker/account/export.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type routes } from '#universal/routes.ts'
 
 function buildExportFilename(username: string) {
@@ -27,7 +27,7 @@ export function createAccountExportHandler(env: Env) {
 			const manifest = await createAccountExportManifest({
 				env,
 				dbUserId: user.userId,
-				mcpUserId: personalOrgId(user.mcpUser.userId),
+				mcpUserId: personalOrgIdForPerson(user.mcpUser),
 			})
 			const body = JSON.stringify(
 				{

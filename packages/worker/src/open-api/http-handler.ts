@@ -1,7 +1,5 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
@@ -297,7 +295,7 @@ async function handleOperation(input: {
 		const apiError = toApiError(error)
 		if (apiError instanceof ApiError) {
 			recordCapabilityProxyObservation({
-				userId: personalOrgId(ctx.callerContext.user.userId),
+				userId: personalOrgIdForPerson(ctx.callerContext.user),
 				failureCode: apiError.code,
 				request: ctx.callerContext.request,
 			})
@@ -321,7 +319,7 @@ async function handleOperation(input: {
 		match,
 		inputSchema: resolved.inputSchema,
 	})
-	const userId = personalOrgId(ctx.callerContext.user.userId)
+	const userId = personalOrgIdForPerson(ctx.callerContext.user)
 	const run = () =>
 		invokeApiOperation({
 			operationId: matchedOperation.operationId,
@@ -353,7 +351,7 @@ async function handleCapabilityProxyGatewayFetchStream(input: {
 	operationId: string
 	resolved: ReturnType<typeof resolveApiOperation>
 }) {
-	const userId = personalOrgId(input.ctx.callerContext.user.userId)
+	const userId = personalOrgIdForPerson(input.ctx.callerContext.user)
 	const run = () =>
 		runCapabilityProxyGatewayFetchStream({
 			ctx: input.ctx,
@@ -390,7 +388,7 @@ async function handleCapabilityProxyGatewayFetchStream(input: {
 			recordUsage(
 				input.env,
 				{
-					userId: input.ctx.callerContext.user.userId,
+					userId: personalOrgIdForPerson(input.ctx.callerContext.user),
 					eventType: 'api_call',
 					entityId: capabilityProxyObservationEntityId({
 						baseEntityId: input.operationId,

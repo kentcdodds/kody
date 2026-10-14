@@ -1,4 +1,5 @@
 import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	insufficientScope,
 	type OAuthHelpers,
@@ -615,13 +616,13 @@ export async function handleMcpRequest({
 		if (mcpParsedBodyNeedsAccountWriteLease(classification.parsedBody)) {
 			return await withAccountWriteLease({
 				db: env.APP_DB,
-				stableUserId: personalOrgId(mcpUser.userId),
+				stableUserId: personalOrgIdForPerson(mcpUser),
 				holder: `mcp:${request.method} ${url.pathname}`,
 				env,
 				write: serveMcp,
 			})
 		}
-		await assertAccountWritableDb(env.APP_DB, personalOrgId(mcpUser.userId))
+		await assertAccountWritableDb(env.APP_DB, personalOrgIdForPerson(mcpUser))
 		return await serveMcp()
 	} catch (error) {
 		if (error instanceof AccountDeletionInProgressError) {

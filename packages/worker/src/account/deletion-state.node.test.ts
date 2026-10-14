@@ -119,13 +119,14 @@ function createLeaseHarness(
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE,
+			personal_org_id TEXT,
 			deleting_at TEXT,
 			deleted_at TEXT,
 			active_write_count INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT
 		);
-		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
-		INSERT INTO users (id, stable_user_id) VALUES (2, 'user-b');
+		INSERT INTO users (id, stable_user_id, personal_org_id) VALUES (1, 'user-a', 'user-a');
+		INSERT INTO users (id, stable_user_id, personal_org_id) VALUES (2, 'user-b', 'user-b');
 		CREATE TABLE orgs (
 			id TEXT PRIMARY KEY NOT NULL,
 			slug TEXT NOT NULL UNIQUE,

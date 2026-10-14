@@ -2,7 +2,7 @@ import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import {
 	type PackageCollaboratorsChange,
-	type PackageCollaboratorsWriteResult,
+	type PackageCollaboratorsView,
 } from '#universal/package-collaborators.ts'
 import {
 	type CollaboratorPerson,
@@ -40,7 +40,8 @@ beforeEach(async () => {
 			seed.savedPackages.find(
 				(savedPackage) =>
 					savedPackage.userId === input.userId &&
-					savedPackage.kodyId === input.packageIdOrKodyId,
+					(savedPackage.id === input.packageIdOrKodyId ||
+						savedPackage.kodyId === input.packageIdOrKodyId),
 			) ?? null,
 	)
 })
@@ -85,7 +86,7 @@ async function call(
 	return {
 		status: response.status,
 		body: (await response.json()) as
-			| PackageCollaboratorsWriteResult
+			| PackageCollaboratorsView
 			| { ok: false; error: string },
 	}
 }
@@ -112,7 +113,7 @@ test('an owner sees the teams and members they can add', async () => {
 	])
 })
 
-test('grant, change preset, invite, revoke invite, and revoke are audited', async () => {
+test('adding a team and a member, changing a preset, and removing are audited', async () => {
 	const teamAdded = view(
 		await call('ada', {
 			intent: 'grant',
@@ -157,23 +158,6 @@ test('grant, change preset, invite, revoke invite, and revoke are audited', asyn
 	})
 	expect(changed.collaborators).toHaveLength(2)
 
-	const invited = view(
-		await call('ada', { intent: 'invite', invitee: '@dan', preset: 'use' }),
-	)
-	expect(invited.invite?.token).toMatch(/\S+/)
-	expect(invited.invite?.prompt).toContain(invited.invite!.token)
-	expect(invited.invites).toEqual([
-		expect.objectContaining({ inviteeUsername: 'dan', preset: 'use' }),
-	])
-
-	const revokedInvite = view(
-		await call('ada', {
-			intent: 'revoke-invite',
-			inviteId: invited.invites[0]!.id,
-		}),
-	)
-	expect(revokedInvite.invites).toEqual([])
-
 	const removed = view(
 		await call('ada', { intent: 'revoke', grantId: bob!.grantId }),
 	)
@@ -183,13 +167,11 @@ test('grant, change preset, invite, revoke invite, and revoke are audited', asyn
 		'grant.created',
 		'grant.created',
 		'grant.updated',
-		'invite.created',
-		'invite.revoked',
 		'grant.revoked',
 	])
 })
 
-test('a non-member must be invited, not granted directly', async () => {
+test('a non-member cannot be added', async () => {
 	const refused = await call('ada', {
 		intent: 'grant',
 		subjectType: 'user',
@@ -197,11 +179,14 @@ test('a non-member must be invited, not granted directly', async () => {
 		preset: 'use',
 	})
 	expect(refused.status).toBe(400)
-	expect(refused.body).toMatchObject({ ok: false, error: /Invite them/ })
+	expect(refused.body).toMatchObject({
+		ok: false,
+		error: /not a member of this organization/,
+	})
 	expect(await auditActions()).toEqual([])
 })
 
-test('an outside collaborator who already holds a grant can have it changed', async () => {
+test('an outside collaborator is listed and can be removed but not changed', async () => {
 	insertCollaboratorGrant(seed, {
 		id: 'grant-dan',
 		packageId: 'pkg-1',
@@ -209,24 +194,37 @@ test('an outside collaborator who already holds a grant can have it changed', as
 		subjectId: collaboratorPeople.dan.personId,
 		preset: 'use',
 	})
-	const changed = view(
-		await call('ada', {
-			intent: 'grant',
-			subjectType: 'user',
-			subjectId: collaboratorPeople.dan.personId,
-			preset: 'contribute',
-		}),
-	)
-	expect(changed.collaborators).toEqual([
-		expect.objectContaining({
-			grantId: 'grant-dan',
-			kind: 'outside',
-			preset: 'contribute',
-		}),
+	expect(view(await call('ada')).collaborators).toEqual([
+		expect.objectContaining({ grantId: 'grant-dan', kind: 'outside' }),
 	])
+	const refused = await call('ada', {
+		intent: 'grant',
+		subjectType: 'user',
+		subjectId: collaboratorPeople.dan.personId,
+		preset: 'contribute',
+	})
+	expect(refused.status).toBe(400)
+	const removed = view(
+		await call('ada', { intent: 'revoke', grantId: 'grant-dan' }),
+	)
+	expect(removed.collaborators).toEqual([])
+	expect(await auditActions()).toEqual(['grant.revoked'])
 })
 
-test('grants and invites on another package cannot be revoked here', async () => {
+test('invite changes are not accepted', async () => {
+	const result = await call('ada', {
+		intent: 'invite',
+		invitee: '@dan',
+		preset: 'use',
+	})
+	expect(result.status).toBe(400)
+	const invites = await seed.db
+		.prepare(`SELECT COUNT(*) AS count FROM invites`)
+		.first<{ count: number }>()
+	expect(invites?.count).toBe(0)
+})
+
+test('a grant on another package cannot be removed here', async () => {
 	insertCollaboratorGrant(seed, {
 		id: 'grant-other',
 		packageId: 'pkg-2',
@@ -235,17 +233,12 @@ test('grants and invites on another package cannot be revoked here', async () =>
 		preset: 'use',
 	})
 	const revoke = await call('ada', { intent: 'revoke', grantId: 'grant-other' })
-	expect(revoke.status).toBe(404)
+	expect(revoke.status).toBe(400)
+	expect(revoke.body).toMatchObject({ error: /no longer has access/ })
 	const live = await seed.db
 		.prepare(`SELECT deleted_at FROM grants WHERE id = 'grant-other'`)
 		.first<{ deleted_at: string | null }>()
 	expect(live?.deleted_at).toBeNull()
-
-	const revokeInvite = await call('ada', {
-		intent: 'revoke-invite',
-		inviteId: 'missing-invite',
-	})
-	expect(revokeInvite.status).toBe(404)
 })
 
 test('Manage is required; without read the package is not found', async () => {

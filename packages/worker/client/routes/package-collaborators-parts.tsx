@@ -1,5 +1,4 @@
 import {
-	type PackageCollaboratorInviteView,
 	type PackageCollaboratorPreset,
 	type PackageCollaboratorView,
 	isPackageCollaboratorPreset,
@@ -32,13 +31,6 @@ export function collaboratorDetail(collaborator: PackageCollaboratorView) {
 	return collaborator.displayName?.trim()
 		? `${collaborator.label} · ${kind}`
 		: kind
-}
-
-export function inviteeName(invite: PackageCollaboratorInviteView) {
-	return (
-		invite.inviteeEmail ??
-		(invite.inviteeUsername ? `@${invite.inviteeUsername}` : 'Invite')
-	)
 }
 
 export function readPreset(event: Event): PackageCollaboratorPreset | null {
@@ -154,15 +146,4 @@ export const iconWellCss = {
 	borderRadius: radius.full,
 	color: colors.textMuted,
 	backgroundColor: colors.background,
-}
-
-export const promptCss = {
-	margin: 0,
-	padding: spacing.md,
-	borderRadius: radius.card,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	whiteSpace: 'pre-wrap' as const,
-	overflowWrap: 'anywhere' as const,
 }

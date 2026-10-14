@@ -97,6 +97,7 @@ async function createEnv() {
 			`CREATE TABLE users (
 				id INTEGER PRIMARY KEY,
 				stable_user_id TEXT NOT NULL UNIQUE,
+			personal_org_id TEXT,
 				email TEXT,
 				email_verified_at TEXT,
 				deleting_at TEXT,

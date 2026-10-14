@@ -1,8 +1,9 @@
 import { type Action } from 'remix/router'
 import {
-	personalOrgId,
+	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import {
 	readAuthenticatedAppUser,
@@ -135,8 +136,11 @@ function sectionParams(
 }
 
 /** Team-org packages are org-owned. The signup org keeps the person's profile list. */
-function isTeamOrg(binding: OrgBinding, personId: PersonId) {
-	return binding.org.id !== personalOrgId(personId)
+function isTeamOrg(
+	binding: OrgBinding,
+	user: { userId: PersonId; personalOrgId?: OwnerId | null },
+) {
+	return binding.org.id !== personalOrgIdForPerson(user)
 }
 
 export function createOrgSectionHandler(
@@ -174,8 +178,7 @@ export function createOrgSectionHandler(
 				// the immutable personal-org slug after a rename.
 				...(section === 'repositories' ? { username: user.username } : {}),
 			}
-			return section === 'repositories' &&
-				isTeamOrg(resolution, user.mcpUser.userId)
+			return section === 'repositories' && isTeamOrg(resolution, user.mcpUser)
 				? await renderTeamRepositoriesPage({
 						env,
 						request: ctx.request,
@@ -250,7 +253,7 @@ export function createOrgRepositoriesApiHandler(env: Env) {
 					404,
 				)
 			}
-			if (isTeamOrg(binding, user.mcpUser.userId)) {
+			if (isTeamOrg(binding, user.mcpUser)) {
 				return jsonResponse(
 					await loadOrgRepositoriesData({ env, request, user, binding }),
 				)

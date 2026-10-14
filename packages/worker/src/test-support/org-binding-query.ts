@@ -4,8 +4,10 @@
  */
 export function isOrgBindingMembershipQuery(normalizedQuery: string) {
 	return (
-		normalizedQuery.includes('from org_memberships') &&
-		normalizedQuery.includes('inner join orgs')
+		(normalizedQuery.includes('from org_memberships') ||
+			normalizedQuery.includes('join org_memberships')) &&
+		(normalizedQuery.includes('inner join orgs') ||
+			normalizedQuery.includes('join orgs'))
 	)
 }
 
@@ -40,7 +42,9 @@ export function personalOrgAccessD1(): D1Database {
 						async first() {
 							if (isActiveOrgQuery(normalizedQuery)) return { ok: 1 }
 							return isOrgBindingMembershipQuery(normalizedQuery)
-								? mockPersonalOrgBindingRow(String(params[1]))
+								? mockPersonalOrgBindingRow(
+										String(params[0] ?? params[1] ?? ''),
+									)
 								: null
 						},
 						async all() {
