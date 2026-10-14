@@ -145,7 +145,11 @@ function proposalSender(
 		senderValue: sender.value,
 	})
 	if (!isCompleteEnablementSender(canonical) || !canonical.senderKind) {
-		return null
+		// A provided but unusable sender must not become "no sender": with one
+		// live email enablement, approval would bind that row by accident.
+		throw new McpCallerError(
+			`sender kind "${sender.kind}" needs a usable value (member person id, email address, or bare domain; any_authenticated needs none).`,
+		)
 	}
 	return { kind: canonical.senderKind, value: canonical.senderValue }
 }
