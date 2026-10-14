@@ -545,15 +545,20 @@ async function savePreservedMcpOAuthTokens(input: {
 		await input.provider.storage.delete(
 			mcpOAuthRefreshGrantOmittedStorageKey(serverId),
 		)
-	} else if (
-		serverId &&
-		mcpOAuthDiscoveryAdvertisesRefresh(discovery) &&
-		!readMcpOAuthTokenPresence(merged).hasRefreshToken
-	) {
-		await input.provider.storage.put(
-			mcpOAuthRefreshGrantOmittedStorageKey(serverId),
-			{ omitted: true, at: new Date().toISOString() },
-		)
+	} else if (serverId && !readMcpOAuthTokenPresence(merged).hasRefreshToken) {
+		if (consumeVerifiedAttempt) {
+			// New authorization-code grant without a refresh token: drop the
+			// prior sidecar so tokens() cannot resurrect the old rotating RT.
+			await input.provider.storage.delete(
+				mcpOAuthRefreshTokenStorageKey(serverId),
+			)
+		}
+		if (mcpOAuthDiscoveryAdvertisesRefresh(discovery)) {
+			await input.provider.storage.put(
+				mcpOAuthRefreshGrantOmittedStorageKey(serverId),
+				{ omitted: true, at: new Date().toISOString() },
+			)
+		}
 	}
 	if (discovery !== undefined) {
 		await input.writeDiscovery(discovery)

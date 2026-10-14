@@ -353,6 +353,68 @@ test('re-authorize redirect keeps the live grant until the new authorization-cod
 	})
 })
 
+test('authorization-code grant without a refresh token clears the prior sidecar', async () => {
+	const { storage, values } = createMemoryStorage()
+	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://beeper.example/mcp',
+		clientId: cimdClientId,
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'beeper',
+	}
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => live,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = cimdClientId
+	await provider.saveDiscoveryState({
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			grant_types_supported: ['authorization_code', 'refresh_token'],
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+		},
+	} as never)
+	await provider.saveTokens(bearer('old-at', 'old-rt'))
+	expect(values.get(refreshKey)).toEqual({ refresh_token: 'old-rt' })
+
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: cimdClientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: {
+			authorizationServerUrl: 'https://auth.example',
+			authorizationServerMetadata: {
+				issuer: 'https://auth.example',
+				authorization_endpoint: 'https://auth.example/authorize',
+				token_endpoint: 'https://auth.example/token',
+				grant_types_supported: ['authorization_code', 'refresh_token'],
+				response_types_supported: ['code'],
+				code_challenge_methods_supported: ['S256'],
+			},
+		},
+	})
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	await provider.saveTokens(bearer('access-only'))
+
+	expect(values.get(refreshKey)).toBeUndefined()
+	expect(
+		values.get(mcpOAuthRefreshGrantOmittedStorageKey('server-home')),
+	).toMatchObject({ omitted: true })
+	expect(await provider.tokens()).toMatchObject({
+		access_token: 'access-only',
+	})
+	expect(await provider.tokens()).not.toHaveProperty('refresh_token')
+})
+
 test('saveTokens records an omitted advertised refresh grant and clears it when a refresh token arrives', async () => {
 	const { storage, values } = createMemoryStorage()
 	const provider = makeProvider(storage, 'client-1')
