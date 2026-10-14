@@ -158,7 +158,11 @@ export async function seedAccount(input: {
 				username = excluded.username,
 				email_verified_at = excluded.email_verified_at,
 				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-				personal_org_id = COALESCE(NULLIF(TRIM(users.personal_org_id), ''), excluded.personal_org_id),
+				personal_org_id = COALESCE(
+					NULLIF(TRIM(users.personal_org_id), ''),
+					users.stable_user_id,
+					excluded.personal_org_id
+				),
 				updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(
