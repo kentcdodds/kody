@@ -1,3 +1,4 @@
+export { BelieveRoute } from './believe.tsx'
 export { BusinessRoute } from './business.tsx'
 export { AcquisitionRoute } from './acquisition.tsx'
 export { CaseStudiesRoute } from './case-studies.tsx'

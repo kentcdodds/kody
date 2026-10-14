@@ -281,6 +281,7 @@ import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createAcquisitionHandler } from '#app/handlers/acquisition.ts'
 import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
+import { createBelieveHandler } from '#app/handlers/believe.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -435,6 +436,7 @@ export function createAppRouter(env: Env) {
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
 			caseStudies: createCaseStudiesHandler(env),
+			believe: createBelieveHandler(env),
 			n8nAlternatives: createAcquisitionHandler(env),
 			mcpGateway: createAcquisitionHandler(env),
 			sharedMemory: createAcquisitionHandler(env),

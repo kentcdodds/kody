@@ -169,6 +169,15 @@ export const publicOgPages = {
 			'Longer notes from people using Kody — how it shows up in their work.',
 		path: '/case-studies',
 	},
+	believe: {
+		imageTitle: 'What we believe',
+		imageSubtitle:
+			'Invisible software: problems solved, not another app to learn.',
+		ogTitle: 'What we believe: Kody',
+		ogDescription:
+			'The beliefs behind Kody, each tied to how the product behaves today.',
+		path: '/believe',
+	},
 	support: {
 		imageTitle: 'Support',
 		imageSubtitle: 'Contact the hosted kody.codes service.',

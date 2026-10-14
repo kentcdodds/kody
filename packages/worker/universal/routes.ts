@@ -377,6 +377,7 @@ export const routes = route({
 	pricing: '/pricing',
 	faq: '/faq',
 	caseStudies: '/case-studies',
+	believe: '/believe',
 	n8nAlternatives: '/compare/n8n-alternatives',
 	mcpGateway: '/use-cases/mcp-gateway',
 	sharedMemory: '/use-cases/shared-agent-memory',

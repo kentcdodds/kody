@@ -94,6 +94,7 @@ function isRedesignedMarketingPath(pathname: string) {
 		pathname === '/pricing' ||
 		pathname === '/faq' ||
 		pathname === '/case-studies' ||
+		pathname === '/believe' ||
 		pathname === '/blog' ||
 		pathname === '/community' ||
 		pathname === '/onboarding' ||

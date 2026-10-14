@@ -10,6 +10,7 @@ const publicPaths = new Set([
 	'/pricing',
 	'/faq',
 	'/case-studies',
+	'/believe',
 	'/community',
 	'/blog',
 	'/docs',

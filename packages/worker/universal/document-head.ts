@@ -533,6 +533,7 @@ const routeDocumentHeads = {
 		'case-studies',
 		'Case studies',
 	),
+	[routePattern(routes.believe)]: publicPageHead('believe', 'What we believe'),
 	[routePattern(routes.support)]: publicPageHead('support', 'Support'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
