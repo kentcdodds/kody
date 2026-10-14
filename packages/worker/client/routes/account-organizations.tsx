@@ -160,7 +160,9 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	let slugEdited = draftSlug.length > 0
 	let confirming = false
 	let clientError: string | null = null
+	let clientErrorField: 'displayName' | 'slug' | null = null
 	const handleInputProps = permanentHandleInputProps()
+	const formErrorId = 'create-organization-form-error'
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -170,6 +172,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 			syncedHref = href
 			loaderError = null
 			clientError = null
+			clientErrorField = null
 			;({ draftName, draftSlug } = draftFromHref(href))
 			slugEdited = draftSlug.length > 0
 			confirming = false
@@ -178,6 +181,12 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 			clientError ??
 			loaderError ??
 			new URL(href, 'http://localhost').searchParams.get('error')
+		const nameInvalid = clientErrorField === 'displayName'
+		const slugInvalid =
+			clientErrorField === 'slug' ||
+			Boolean(
+				error && !clientError && /(handle|slug|taken|reserved)/i.test(error),
+			)
 		return (
 			<AccountManagementShell maxWidth="40rem">
 				<AccountPageHeader
@@ -187,7 +196,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 				/>
 				{error ? (
 					<AccountManagementMessage tone="error">
-						{error}
+						<span id={formErrorId}>{error}</span>
 					</AccountManagementMessage>
 				) : null}
 				<AccountManagementPanel title="Details">
@@ -203,6 +212,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								if (!displayName || displayName.length > 80) {
 									event.preventDefault()
 									clientError = 'Enter a name up to 80 characters.'
+									clientErrorField = 'displayName'
 									confirming = false
 									handle.update()
 									return
@@ -213,11 +223,13 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								if (slugError) {
 									event.preventDefault()
 									clientError = slugError
+									clientErrorField = 'slug'
 									confirming = false
 									handle.update()
 									return
 								}
 								clientError = null
+								clientErrorField = null
 								// Handles are permanent, so the first submit shows the final
 								// URL and asks once before the organization is created.
 								if (confirming) return
@@ -236,11 +248,14 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								autoComplete="organization"
 								value={draftName}
 								data-field-ring
+								aria-invalid={nameInvalid ? 'true' : undefined}
+								aria-describedby={nameInvalid ? formErrorId : undefined}
 								mix={[
 									css(accountInputCss),
 									on('input', (event) => {
 										draftName = (event.currentTarget as HTMLInputElement).value
 										clientError = null
+										clientErrorField = null
 										if (!slugEdited) {
 											const nextSlug = slugFromName(draftName)
 											// A handle the person has not seen confirmed is not confirmed.
@@ -265,10 +280,12 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									name="slug"
 									required
 									autoComplete="off"
-									aria-describedby="create-organization-slug-note"
-									aria-invalid={
-										error && /\bhandle\b/i.test(error) ? 'true' : undefined
+									aria-describedby={
+										slugInvalid
+											? `create-organization-slug-note ${formErrorId}`
+											: 'create-organization-slug-note'
 									}
+									aria-invalid={slugInvalid ? 'true' : undefined}
 									value={draftSlug}
 									data-field-ring
 									{...handleInputProps}
@@ -281,6 +298,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 											slugEdited = draftSlug.length > 0
 											confirming = false
 											clientError = null
+											clientErrorField = null
 											handle.update()
 										}),
 									]}

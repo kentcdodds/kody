@@ -41,6 +41,14 @@ test('signup rejects short passwords and bad emails', () => {
 	})
 	expect(
 		validateAuthFormFields({
+			mode: 'login',
+			username: '',
+			email: 'user@localhost',
+			password: 'x',
+		}),
+	).toBeNull()
+	expect(
+		validateAuthFormFields({
 			mode: 'signup',
 			username: 'kent',
 			email: 'kent@example.com',

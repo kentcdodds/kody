@@ -147,11 +147,13 @@ export function renderAuthForm(
 ) {
 	const statusId = `${props.handleId}-form-status`
 	const usernameNoteId = `${props.handleId}-username-note`
-	const invalidFields = invalidFieldsForMessage(
-		props.status,
-		props.message,
-		props.isSignup ? ['username', 'email', 'password'] : ['email', 'password'],
-	)
+	// Fallback is credentials only: username is marked only when the message
+	// names username/handle (see invalidFieldsForMessage), not for network
+	// or other generic errors.
+	const invalidFields = invalidFieldsForMessage(props.status, props.message, [
+		'email',
+		'password',
+	])
 	const usernameErrorProps = fieldErrorProps(
 		'username',
 		invalidFields,

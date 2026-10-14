@@ -1,13 +1,12 @@
 import { getHandleFormatError } from '@kody-internal/shared/handle-rules.ts'
-import {
-	getPasswordPolicyError,
-	minPasswordLength,
-} from '@kody-internal/shared/password-policy.ts'
+import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { type AuthInvalidField } from '#client/form-error-fields.ts'
 
-const emailShapePattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Match the auth handler: any non-empty local@domain after trim. Do not
+// require a dotted TLD — accounts like user@localhost must still log in.
+const emailShapePattern = /^[^\s@]+@[^\s@]+$/
 
-export function getAuthEmailShapeError(email: string): string | null {
+function getAuthEmailShapeError(email: string): string | null {
 	if (!email) return 'Email is required.'
 	if (email.length > 254) return 'Email is too long.'
 	if (!emailShapePattern.test(email)) return 'Enter a valid email address.'
@@ -51,5 +50,3 @@ export function validateAuthFormFields(input: {
 
 	return null
 }
-
-export { minPasswordLength }
