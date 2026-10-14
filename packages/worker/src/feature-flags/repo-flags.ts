@@ -132,11 +132,11 @@ export async function setFeatureFlagRepoOverride(
 	await db
 		.prepare(
 			`INSERT INTO feature_flag_repo_overrides
-				(flag_key, source_id, enabled, updated_by_stable_user_id, updated_at)
+				(flag_key, source_id, enabled, updated_by, updated_at)
 			 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 			 ON CONFLICT(flag_key, source_id) DO UPDATE SET
 				enabled = excluded.enabled,
-				updated_by_stable_user_id = excluded.updated_by_stable_user_id,
+				updated_by = excluded.updated_by,
 				updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(
@@ -168,7 +168,7 @@ export async function listFeatureFlagRepoOverrides(
 ): Promise<Array<FeatureFlagRepoOverride>> {
 	const result = await db
 		.prepare(
-			`SELECT source_id, enabled, updated_by_stable_user_id, updated_at
+			`SELECT source_id, enabled, updated_by, updated_at
 			 FROM feature_flag_repo_overrides
 			 WHERE flag_key = ?
 			 ORDER BY updated_at DESC, source_id ASC`,
@@ -177,13 +177,13 @@ export async function listFeatureFlagRepoOverrides(
 		.all<{
 			source_id: string
 			enabled: number
-			updated_by_stable_user_id: string | null
+			updated_by: string | null
 			updated_at: string
 		}>()
 	return (result.results ?? []).map((row) => ({
 		sourceId: row.source_id,
 		enabled: row.enabled === 1,
-		updatedByStableUserId: row.updated_by_stable_user_id,
+		updatedByStableUserId: row.updated_by,
 		updatedAt: row.updated_at,
 	}))
 }
