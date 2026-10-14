@@ -777,8 +777,22 @@
 }
 
 @container (max-width: 380px) {
+	.feature-detail .pw .pw-apx-chrome {
+		gap: 0.3em;
+		padding-inline: 0.45em;
+	}
+
 	.feature-detail .pw .pw-apx-dots {
-		display: none;
+		width: 1.75em;
+		background:
+			radial-gradient(circle at 0.22em 50%, #ff6159 0.2em, transparent 0.22em),
+			radial-gradient(circle at 0.87em 50%, #ffbd2e 0.2em, transparent 0.22em),
+			radial-gradient(circle at 1.52em 50%, #28c941 0.2em, transparent 0.22em);
+	}
+
+	.feature-detail .pw .pw-apx-url {
+		padding-inline: 0.3em;
+		letter-spacing: -0.02em;
 	}
 }
 
