@@ -4,6 +4,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	viewerCanDeleteSavedPackage,
 	viewerCanManageSavedPackage,
+	viewerCanManageSavedPackageAccess,
 	viewerCanPublishSavedPackage,
 	viewerCanReadSavedPackage,
 	viewerIsSavedPackageOrgOwner,
@@ -58,6 +59,8 @@ export type PackagePageAccess =
 			viewerCanManage: boolean
 			viewerCanPublish: boolean
 			viewerCanDelete: boolean
+			/** May change who can use the package (`package:manage_access`). */
+			viewerCanManageAccess: boolean
 			/** May adopt a community fork (org owner only; widens secret access). */
 			viewerCanAdoptCommunityFork: boolean
 			loggedIn: boolean
@@ -303,6 +306,7 @@ async function loadPlainRepoPage(input: {
 		viewerCanManage: false,
 		viewerCanPublish: false,
 		viewerCanDelete: false,
+		viewerCanManageAccess: false,
 		viewerCanAdoptCommunityFork: false,
 		loggedIn: Boolean(viewer),
 		invocationUrlOrigin: getAppBaseUrl({
@@ -430,6 +434,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage,
 			viewerCanPublish,
 			viewerCanDelete,
+			viewerCanManageAccess,
 			viewerCanAdoptCommunityFork,
 		] = await Promise.all([
 			viewerCanManageSavedPackage({
@@ -445,6 +450,12 @@ async function loadPackagePageUncached(input: {
 				packageId,
 			}),
 			viewerCanDeleteSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanManageSavedPackageAccess({
 				env: input.env,
 				viewer,
 				ownerId,
@@ -486,6 +497,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage,
 			viewerCanPublish,
 			viewerCanDelete,
+			viewerCanManageAccess,
 			viewerCanAdoptCommunityFork,
 			loggedIn: true,
 			invocationUrlOrigin,
@@ -512,6 +524,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage: false,
 			viewerCanPublish: false,
 			viewerCanDelete: false,
+			viewerCanManageAccess: false,
 			viewerCanAdoptCommunityFork: false,
 			loggedIn: Boolean(viewer),
 			invocationUrlOrigin,

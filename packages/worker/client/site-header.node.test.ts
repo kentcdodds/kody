@@ -36,6 +36,19 @@ test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or
 	} as unknown as HTMLElement
 	dismissOpenPopoverPanel(closedPanel)
 	expect(closedHidePopover).not.toHaveBeenCalled()
+
+	// Safari 16: hidePopover may exist while matches(':popover-open') throws.
+	const throwingHide = vi.fn()
+	const throwingMatches = vi.fn(() => {
+		throw new SyntaxError('The string did not match the expected pattern.')
+	})
+	const throwingPanel = {
+		hidePopover: throwingHide,
+		matches: throwingMatches,
+	} as unknown as HTMLElement
+	expect(() => dismissOpenPopoverPanel(throwingPanel)).not.toThrow()
+	expect(throwingMatches).toHaveBeenCalledWith(':popover-open')
+	expect(throwingHide).not.toHaveBeenCalled()
 })
 
 test('logged-in header has only the account menu; the org switcher lives in the workspace rail', async () => {

@@ -68,9 +68,10 @@ you run. A triggered run that tries one fails with
 `Capability "<name>" needs a live person`, naming the capability it tried.
 Everything else runs unattended with the enabler's live permissions.
 
-Site-admin tools run unattended too, but only for a site admin: a job, webhook,
-subscription, or inbound email handler in a site admin's personal org may call
-them, and every such call is audited with its trigger type and id.
+Site-admin tools run unattended too when the person the run acts for is a site
+admin: a job, webhook, subscription, inbound email handler, or `jobRunNow` in
+that person's personal org or any team org they enabled (or clicked run-now in)
+may call them, and every such call is audited with its trigger type and id.
 
 Publishing a package never turns anything on, and nobody can enable a trigger
 for someone else. `enablementList` shows your enablements (an Owner can list the

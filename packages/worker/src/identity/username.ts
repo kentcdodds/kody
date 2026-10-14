@@ -2,15 +2,19 @@ export {
 	orgSlugPermanentError,
 	usernamePermanentError,
 } from '@kody-internal/shared/handle-permanence.ts'
-import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
+import {
+	handleFormatRequirements,
+	handleMaxLength,
+	isCanonicalHandle,
+	normalizeHandle,
+} from '@kody-internal/shared/handle-rules.ts'
 import { getEffectiveReservedUsernameError } from '#worker/identity/reserved-username-settings.ts'
 import { getReservedUsernameError } from '#worker/identity/reserved-usernames.ts'
 
-export const usernameRequirements =
-	'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.'
+export const usernameRequirements = handleFormatRequirements
 
 export function normalizeUsername(value: unknown) {
-	return typeof value === 'string' ? value.trim().toLowerCase() : ''
+	return normalizeHandle(value)
 }
 
 export function usernameTakenError(username: string) {
@@ -26,17 +30,18 @@ export function usernameNotPersistedError(username: string) {
 }
 
 /**
- * Every username is a valid DNS label (`dnsSafeUsernamePattern` from
- * `@kody-internal/shared/public-urls.ts`): each user owns a `{username}.`
- * subdomain on the package-app domain. There is no lenient legacy shape —
- * the underscore-era usernames were migrated out of production on
- * 2026-08-12 (decision 0017).
+ * Every username is a valid DNS label (shared {@link isCanonicalHandle}): each
+ * user owns a `{username}.` subdomain on the package-app domain. Callers must
+ * pass an already-normalized value — uppercase is rejected so lookup paths
+ * cannot skip canonicalize. There is no lenient legacy shape — the
+ * underscore-era usernames were migrated out of production on 2026-08-12
+ * (decision 0017).
  */
 export function getUsernameFormatValidationError(username: string) {
 	if (!username) {
 		return 'Username is required.'
 	}
-	if (!dnsSafeUsernamePattern.test(username)) {
+	if (!isCanonicalHandle(username)) {
 		return usernameRequirements
 	}
 	return null
@@ -53,7 +58,7 @@ export function usernameFromEmail(email: string) {
 		.replace(/[^a-z0-9-]+/g, '-')
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 	const truncated = normalized
-		.slice(0, 32)
+		.slice(0, handleMaxLength)
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 	return truncated.length >= 3 ? truncated : `user-${truncated || 'new'}`
 }

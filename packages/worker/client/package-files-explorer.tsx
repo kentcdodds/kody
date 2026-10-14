@@ -159,6 +159,7 @@ export function PackageFilesExplorer(
 						hasPackage: data.hasPackage,
 						viewerIsOwner: data.viewerIsOwner ?? false,
 						viewerCanManage: data.viewerCanManage ?? false,
+						viewerCanManageAccess: data.viewerCanManageAccess ?? false,
 						active: 'files',
 						filesHref: data.filesBasePath,
 						description: data.description,

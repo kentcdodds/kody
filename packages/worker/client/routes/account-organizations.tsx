@@ -2,9 +2,15 @@ import {
 	handlePermanentNote,
 	handleUrlPreview,
 } from '@kody-internal/shared/handle-permanence.ts'
+import {
+	getHandleFormatError,
+	handleFormatHint,
+	suggestHandle,
+} from '@kody-internal/shared/handle-rules.ts'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { permanentHandleInputProps } from '#client/handle-field.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
@@ -120,16 +126,9 @@ function renderOrgRow(input: {
 	)
 }
 
-/** Lowercase, hyphenated, and trimmed to the slug rules, for the auto-fill. */
+/** Lowercase, hyphenated slug for the auto-fill from the display name. */
 function slugFromName(name: string) {
-	return name
-		.toLowerCase()
-		.normalize('NFKD')
-		.replace(/[\u0300-\u036f]/g, '')
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 32)
-		.replace(/-+$/g, '')
+	return suggestHandle(name) ?? ''
 }
 
 function draftFromHref(href: string) {
@@ -160,6 +159,10 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	// an untouched slug follows the name.
 	let slugEdited = draftSlug.length > 0
 	let confirming = false
+	let clientError: string | null = null
+	let clientErrorField: 'displayName' | 'slug' | null = null
+	const handleInputProps = permanentHandleInputProps()
+	const formErrorId = 'create-organization-form-error'
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -168,12 +171,22 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 		if (href !== syncedHref) {
 			syncedHref = href
 			loaderError = null
+			clientError = null
+			clientErrorField = null
 			;({ draftName, draftSlug } = draftFromHref(href))
 			slugEdited = draftSlug.length > 0
 			confirming = false
 		}
 		const error =
-			loaderError ?? new URL(href, 'http://localhost').searchParams.get('error')
+			clientError ??
+			loaderError ??
+			new URL(href, 'http://localhost').searchParams.get('error')
+		const nameInvalid = clientErrorField === 'displayName'
+		const slugInvalid =
+			clientErrorField === 'slug' ||
+			Boolean(
+				error && !clientError && /(handle|slug|taken|reserved)/i.test(error),
+			)
 		return (
 			<AccountManagementShell maxWidth="40rem">
 				<AccountPageHeader
@@ -183,7 +196,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 				/>
 				{error ? (
 					<AccountManagementMessage tone="error">
-						{error}
+						<span id={formErrorId}>{error}</span>
 					</AccountManagementMessage>
 				) : null}
 				<AccountManagementPanel title="Details">
@@ -191,9 +204,32 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 						method="post"
 						action={routes.accountOrganizationsNewPost.href()}
 						data-testid="create-organization-form"
+						noValidate
 						mix={[
 							css(formCss),
 							on('submit', (event) => {
+								const displayName = draftName.trim()
+								if (!displayName || displayName.length > 80) {
+									event.preventDefault()
+									clientError = 'Enter a name up to 80 characters.'
+									clientErrorField = 'displayName'
+									confirming = false
+									handle.update()
+									return
+								}
+								const slugError = getHandleFormatError(draftSlug.trim(), {
+									label: 'Handle',
+								})
+								if (slugError) {
+									event.preventDefault()
+									clientError = slugError
+									clientErrorField = 'slug'
+									confirming = false
+									handle.update()
+									return
+								}
+								clientError = null
+								clientErrorField = null
 								// Handles are permanent, so the first submit shows the final
 								// URL and asks once before the organization is created.
 								if (confirming) return
@@ -212,10 +248,14 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								autoComplete="organization"
 								value={draftName}
 								data-field-ring
+								aria-invalid={nameInvalid ? 'true' : undefined}
+								aria-describedby={nameInvalid ? formErrorId : undefined}
 								mix={[
 									css(accountInputCss),
 									on('input', (event) => {
 										draftName = (event.currentTarget as HTMLInputElement).value
+										clientError = null
+										clientErrorField = null
 										if (!slugEdited) {
 											const nextSlug = slugFromName(draftName)
 											// A handle the person has not seen confirmed is not confirmed.
@@ -239,15 +279,16 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								<input
 									name="slug"
 									required
-									minLength={3}
-									maxLength={32}
-									pattern="[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]"
-									autoCapitalize="none"
 									autoComplete="off"
-									spellCheck={false}
-									aria-describedby="create-organization-slug-note"
+									aria-describedby={
+										slugInvalid
+											? `create-organization-slug-note ${formErrorId}`
+											: 'create-organization-slug-note'
+									}
+									aria-invalid={slugInvalid ? 'true' : undefined}
 									value={draftSlug}
 									data-field-ring
+									{...handleInputProps}
 									mix={[
 										css(slugInputCss),
 										on('input', (event) => {
@@ -256,6 +297,8 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 											).value.toLowerCase()
 											slugEdited = draftSlug.length > 0
 											confirming = false
+											clientError = null
+											clientErrorField = null
 											handle.update()
 										}),
 									]}
@@ -265,8 +308,8 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								id="create-organization-slug-note"
 								mix={css(accountFieldNoteCss)}
 							>
-								3 to 32 letters, numbers, and hyphens. {handlePermanentNote}{' '}
-								Your organization's URL will be{' '}
+								{handleFormatHint} {handlePermanentNote} Your organization's URL
+								will be{' '}
 								<strong data-testid="create-organization-url-preview">
 									{handleUrlPreview(draftSlug || 'your-handle')}
 								</strong>

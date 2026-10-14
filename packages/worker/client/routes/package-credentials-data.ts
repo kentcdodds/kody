@@ -93,6 +93,7 @@ export async function loadPackageCredentialsPage(
 				publishedCommit: ownerPackage.publishedCommit ?? null,
 				ownerProfilePublic: detail.ownerProfilePublic,
 				viewerCanManage: detail.viewerCanManage,
+				viewerCanManageAccess: detail.viewerCanManageAccess === true,
 			},
 			view,
 			viewError,

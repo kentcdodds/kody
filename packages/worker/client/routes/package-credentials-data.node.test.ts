@@ -78,6 +78,7 @@ test('loads the chrome and the credentials view together', async () => {
 				publishedCommit: null,
 				ownerProfilePublic: true,
 				viewerCanManage: true,
+				viewerCanManageAccess: false,
 			},
 			view,
 			viewError: null,

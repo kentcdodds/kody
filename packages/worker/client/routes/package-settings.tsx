@@ -51,6 +51,7 @@ export function PackageSettingsRoute(handle: Handle) {
 	let defaultBranch: string | null = null
 	let ownerProfilePublic = true
 	let viewerCanPublish = false
+	let viewerCanManageAccess = false
 	let viewerCanDelete = false
 	let viewerCanAdoptCommunityFork = false
 	let repoActions: PackageRepoActions | null = null
@@ -106,6 +107,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				listingId: payload.listing?.id ?? null,
 				defaultBranch: payload.listing?.defaultBranch ?? null,
 				ownerProfilePublic: payload.ownerProfilePublic,
+				viewerCanManageAccess: payload.viewerCanManageAccess === true,
 				viewerCanPublish: payload.viewerCanPublish === true,
 				viewerCanDelete: payload.viewerCanDelete === true,
 				viewerCanAdoptCommunityFork:
@@ -183,6 +185,7 @@ export function PackageSettingsRoute(handle: Handle) {
 						ownerProfilePublic = snapshot.data.ownerProfilePublic
 					}
 					viewerCanPublish = snapshot.data.viewerCanPublish
+					viewerCanManageAccess = snapshot.data.viewerCanManageAccess
 					viewerCanDelete = snapshot.data.viewerCanDelete
 					viewerCanAdoptCommunityFork =
 						snapshot.data.viewerCanAdoptCommunityFork
@@ -244,6 +247,7 @@ export function PackageSettingsRoute(handle: Handle) {
 							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
 							viewerCanManage: true,
+							viewerCanManageAccess,
 							active: 'settings',
 							filesHref: getPackageTreeHref({
 								username: chromeUsername,

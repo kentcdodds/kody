@@ -17,7 +17,10 @@ import {
 	createCapabilityTypeName,
 	createSchemaTypeDefinition,
 } from './schema-type-definitions.ts'
-import { assertCallerCanAccessCapability } from './access-control.ts'
+import {
+	assertCallerCanAccessCapability,
+	siteAccessActorTriggerOf,
+} from './access-control.ts'
 import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
 import {
 	assertTriggeredRunCanAccessSiteCapability,
@@ -27,7 +30,6 @@ import {
 import {
 	assertLivePerson,
 	authorizeSurface,
-	nonInteractiveTriggerOf,
 } from '#worker/authorization/authorize.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
@@ -133,7 +135,7 @@ export function defineCapability<
 				env: ctx.env,
 			})
 			const siteAccessTrigger = requiresSiteAccess(definition)
-				? nonInteractiveTriggerOf(ctx.callerContext.request)
+				? siteAccessActorTriggerOf(ctx.callerContext)
 				: null
 			if (siteAccessTrigger) {
 				await assertTriggeredRunCanAccessSiteCapability({
