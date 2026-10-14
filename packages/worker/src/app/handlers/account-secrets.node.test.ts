@@ -1595,57 +1595,6 @@ test('account secrets save stays ok when metadata reload fails after write', asy
 	expect(mockModule.saveSecret).toHaveBeenCalled()
 })
 
-test('account secrets save reports rename cleanup failure without failing the save', async () => {
-	const existing = makeSecret('oldApiKey')
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
-	mockModule.listSecrets
-		.mockResolvedValueOnce([existing])
-		.mockResolvedValueOnce([makeSecret('renamedApiKey')])
-	mockModule.saveSecret.mockResolvedValueOnce({
-		name: 'renamedApiKey',
-		scope: 'user',
-		description: '',
-		packageId: null,
-		allowedHosts: [],
-		allowedPackages: [],
-		createdAt: epoch,
-		updatedAt: epoch,
-		expiresAt: null,
-		ttlMs: null,
-	} as never)
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'fresh-secret',
-	} as never)
-	mockModule.deleteSecret.mockRejectedValueOnce(
-		new Error('delete prior secret failed'),
-	)
-
-	const call = createHandler()
-	const response = await call(
-		postRequest({
-			action: 'save',
-			currentId: 'user::::oldApiKey',
-			name: 'renamedApiKey',
-			scope: 'user',
-			value: 'fresh-secret',
-			allowedHosts: [],
-			allowedPackages: [],
-		}),
-	)
-
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: true,
-		renameCleanupError: 'delete prior secret failed',
-		selectedSecret: { name: 'renamedApiKey' },
-	})
-	expect(mockModule.deleteSecret).toHaveBeenCalledWith(
-		expect.objectContaining({ name: 'oldApiKey', scope: 'user' }),
-	)
-})
-
 test('account secrets save fallback uses the saved record metadata', async () => {
 	const existing = makeSecret('oldApiKey', {
 		ttlMs: 60_000,

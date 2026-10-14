@@ -91,6 +91,12 @@ export function AccountSecretsRoute(handle: Handle) {
 	let approval: ApprovalView | null = null
 	let editorState = createEmptyEditorState([])
 	let message: string | null = null
+	/**
+	 * Save warnings (provider link / rename cleanup) must survive the
+	 * post-save navigate → GET applyPayload cycle, which otherwise clears
+	 * `message` because the loader payload has no warning fields.
+	 */
+	let stickySaveWarning: string | null = null
 	let submittingApprovalAction: ApprovalAction | null = null
 	let completedPackageApproval: ApprovalAction | null = null
 	let packageApprovalHref: string | null = null
@@ -182,8 +188,10 @@ export function AccountSecretsRoute(handle: Handle) {
 				}
 			: null
 		syncEditorState(selection)
+		const saveWarning = readAccountSecretsSaveWarning(payload)
+		if (saveWarning) stickySaveWarning = saveWarning
 		message =
-			readAccountSecretsSaveWarning(payload) ??
+			stickySaveWarning ??
 			nextMessage ??
 			payload.approvalError ??
 			(selection.selectedId && !payload.selectedSecret && !payload.approval
@@ -296,6 +304,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		saveState = 'saving'
 		message = null
+		stickySaveWarning = null
 		handle.update()
 
 		try {
@@ -377,6 +386,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		saveState = 'deleting'
 		message = null
+		stickySaveWarning = null
 		handle.update()
 
 		try {
