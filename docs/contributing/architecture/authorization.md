@@ -282,12 +282,16 @@ enabler) is a site admin. `defineCapability` adds two steps when
 `nonInteractiveTriggerOf` (`packages/worker/src/authorization/authorize.ts`)
 finds no live person behind the request:
 
-- after the usual role check against the caller's roles, the run's actor must
-  hold the role or permission in D1 right now
-  (`getActiveStableUserRolesAndPermissions`), and must not be suspended or
-  deleted. The background caller's roles are cached for up to a minute and name
-  the org's identity, so they are not trusted on their own. A run with no actor
-  (a trigger nobody turned on) is refused.
+- enablement-backed runs (job, webhook, subscription, email) defer the caller's
+  site-admin role check to the run's actor in D1 (`shouldDeferSiteAccessToActor`
+  in `access-control.ts`, then `getActiveStableUserRolesAndPermissions`). The
+  background caller's roles are cached for up to a minute and name the org's
+  identity, so they are not trusted on their own. The actor must hold the role
+  or permission right now and must not be suspended or deleted. A run with no
+  actor (a trigger nobody turned on) is refused. Package-app and unattended runs
+  still fail closed on the caller's roles. Attribution helpers
+  (`resolveActingAdminPerson`) also prefer `request.actor` for non-interactive
+  runs so grants and audit rows name the enabler, not the org.
 - every call that passes writes one `admin` audit row, on success or failure,
   whose action is the capability name and whose reason is
   `trigger=<job|webhook|subscription|email|package-app|unattended>;trigger_id=<id>;actor=<stable id>;package_id=<id>`,
@@ -300,12 +304,8 @@ finds no live person behind the request:
 
 Both steps live in
 `packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
-calls skip those two steps and use the usual role check.
-
-A team org's runs call as the org's identity, which holds no site role, so the
-role check still refuses them even when the enabler is an admin. Site-admin
-automation runs from the admin's personal org. Package app visitors carry no
-site roles and are refused the same way.
+calls skip those two steps and use the usual role check. Package app visitors
+carry no site roles and are refused on the caller role check.
 
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no

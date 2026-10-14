@@ -65,14 +65,21 @@ function countDeltaParity(input: {
 	return { delta, parity: delta === 0 }
 }
 
-async function userExists(db: D1Database, stableUserId: OwnerId) {
-	const row = await db
+async function ownerExists(db: D1Database, stableUserId: OwnerId) {
+	const userRow = await db
 		.prepare(
 			`SELECT 1 AS present FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<{ present: number }>()
-	return row != null
+	if (userRow != null) return true
+	const orgRow = await db
+		.prepare(
+			`SELECT 1 AS present FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(stableUserId)
+		.first<{ present: number }>()
+	return orgRow != null
 }
 
 async function readDailyMeterCounts(input: {
@@ -139,13 +146,22 @@ async function readDeletionParity(input: {
 	env: UserMeterEnv
 	stableUserId: OwnerId
 }): Promise<DeletionParity> {
-	const d1DeletingRow = await input.db
+	const userDeletingRow = await input.db
 		.prepare(
 			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.stableUserId)
 		.first<{ deleting_at: string | null }>()
-	const d1DeletingAt = d1DeletingRow?.deleting_at ?? null
+	let d1DeletingAt = userDeletingRow?.deleting_at ?? null
+	if (userDeletingRow == null) {
+		const orgDeletingRow = await input.db
+			.prepare(
+				`SELECT deleting_at FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(input.stableUserId)
+			.first<{ deleting_at: string | null }>()
+		d1DeletingAt = orgDeletingRow?.deleting_at ?? null
+	}
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
 	const meterDeletion = await meter.readDeletionState()
 	const deletingAtParity = d1DeletingAt === meterDeletion.deletingAt
@@ -159,12 +175,13 @@ async function readDeletionParity(input: {
 }
 
 /**
- * Read-only UserMeter verification report for one account. Storage compares a
- * physical D1 payload recompute with the meter; deletion compares the permanent
- * D1 tombstone with the meter fence. Never bootstraps or writes parity state.
- * Opening a cold UserMeter stub may still run Durable Object constructor schema
- * maintenance and opportunistic stale daily-counter pruning; cold meter rows
- * surface as `needsBootstrap`.
+ * Read-only UserMeter verification report for one owner id (person or team
+ * org). Storage compares a physical D1 payload recompute with the meter;
+ * deletion compares the permanent D1 tombstone (`users.deleting_at`, else
+ * `orgs.deleting_at`) with the meter fence. Never bootstraps or writes parity
+ * state. Opening a cold UserMeter stub may still run Durable Object constructor
+ * schema maintenance and opportunistic stale daily-counter pruning; cold meter
+ * rows surface as `needsBootstrap`.
  */
 export async function loadAdminUserMeterParityReport(input: {
 	db: D1Database
@@ -176,7 +193,7 @@ export async function loadAdminUserMeterParityReport(input: {
 }): Promise<AdminUserMeterParityReport | null> {
 	const stableUserId = parseOwnerId(input.stableUserId)
 	if (!stableUserId) return null
-	if (!(await userExists(input.db, stableUserId))) return null
+	if (!(await ownerExists(input.db, stableUserId))) return null
 
 	const now = input.now ?? new Date()
 	const generatedAt = now.toISOString()
