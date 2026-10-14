@@ -191,5 +191,17 @@ test('raw type keeps sniffed media and serves everything else inert', () => {
 			bytes: Uint8Array.from([104, 0, 105]),
 		}),
 	).toEqual(download)
+	expect(
+		resolvePackageFileRawType({
+			path: 'data.unknown',
+			bytes: Uint8Array.from([0xff, 0xfe, 0x41]),
+		}),
+	).toEqual(download)
+	expect(
+		resolvePackageFileRawType({
+			path: 'notes.md',
+			bytes: encode('héllo ✓\n'),
+		}),
+	).toEqual(text)
 	expect(safeContentDispositionFilename('docs/résumé.md')).toBe('r_sum_.md')
 })

@@ -269,6 +269,15 @@ export type PackageFileRawType = {
 	disposition: 'inline' | 'attachment'
 }
 
+function isValidUtf8(bytes: Uint8Array) {
+	try {
+		new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+		return true
+	} catch {
+		return false
+	}
+}
+
 /**
  * How `/raw/` serves a file. Sniffed media keeps its type so `<img>` /
  * `<video>` previews work. Everything else is inert on the app origin:
@@ -284,6 +293,7 @@ export function resolvePackageFileRawType(input: {
 	const extension = packageFileExtension(input.path)
 	if (
 		input.bytes.includes(0) ||
+		!isValidUtf8(input.bytes) ||
 		binaryExtensions.has(extension) ||
 		(extension !== 'svg' && Object.hasOwn(mediaTypesByExtension, extension))
 	) {
