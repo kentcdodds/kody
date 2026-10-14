@@ -514,22 +514,29 @@ async function savePreservedMcpOAuthTokens(input: {
 	if (activeClientId) {
 		input.provider.clientId = activeClientId
 	}
-	if (consumeVerifiedAttempt && serverId) {
-		// Authorization-code completion replaces the grant: drop sibling
-		// client-id token blobs so a leftover DCR key cannot shadow CIMD.
-		// Actor-less refresh during a verified window must not wipe the seed.
-		await deleteStoredMcpOAuthTokenBlobs(input.provider, serverId)
-	}
 	const merged = withPreservedMcpOAuthRefreshToken({
 		incoming: input.incoming,
 		sources: consumeVerifiedAttempt ? [] : [existing, ...stored.sources],
 	})
+	// Save the replacement first. Deleting sibling blobs before saveTokens
+	// would drop a recoverable grant if the write failed mid-exchange.
 	await input.saveTokens(
 		merged && typeof merged === 'object'
 			? (merged as McpOAuthSaveTokens)
 			: input.incoming,
 		input.context,
 	)
+	if (consumeVerifiedAttempt && serverId) {
+		// Authorization-code completion succeeded: drop leftover DCR/CIMD
+		// sibling `/token` blobs so they cannot shadow the new active client.
+		// Keep the just-saved active-client key. Actor-less refresh during a
+		// verified window must not wipe the seed (consumeVerifiedAttempt false).
+		await deleteSiblingMcpOAuthTokenBlobs(
+			input.provider,
+			serverId,
+			activeClientId,
+		)
+	}
 	const refreshToken = parseStoredMcpOAuthRefreshToken(merged)
 	if (serverId && refreshToken) {
 		await input.provider.storage.put(mcpOAuthRefreshTokenStorageKey(serverId), {
@@ -613,7 +620,37 @@ async function deleteStoredMcpOAuthTokenBlobs(
 	const keys = [
 		mcpOAuthRefreshTokenStorageKey(serverId),
 		mcpOAuthRefreshGrantOmittedStorageKey(serverId),
+		...(await listMcpOAuthTokenBlobKeys(provider, serverId)),
 	]
+	await provider.storage.delete(keys)
+}
+
+/** After a successful authorization-code save, drop other client-id `/token` keys. */
+async function deleteSiblingMcpOAuthTokenBlobs(
+	provider: DurableObjectOAuthClientProvider,
+	serverId: string,
+	activeClientId: string | null,
+) {
+	const keys = (await listMcpOAuthTokenBlobKeys(provider, serverId)).filter(
+		(key) => {
+			const clientId = clientIdFromMcpOAuthTokenStorageKey({
+				clientName: mcpClientName,
+				serverId,
+				key,
+			})
+			return Boolean(clientId) && clientId !== activeClientId
+		},
+	)
+	if (keys.length > 0) {
+		await provider.storage.delete(keys)
+	}
+}
+
+async function listMcpOAuthTokenBlobKeys(
+	provider: DurableObjectOAuthClientProvider,
+	serverId: string,
+) {
+	const keys: Array<string> = []
 	const prefix = mcpOAuthServerStoragePrefix({
 		clientName: mcpClientName,
 		serverId,
@@ -630,7 +667,7 @@ async function deleteStoredMcpOAuthTokenBlobs(
 			keys.push(key)
 		}
 	}
-	await provider.storage.delete(keys)
+	return keys
 }
 
 function readProviderString(

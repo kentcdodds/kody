@@ -217,6 +217,79 @@ test('CIMD grant stores under the metadata URL and drops a leftover DCR sibling 
 	})
 })
 
+test('failed authorization-code saveTokens keeps the prior grant and DCR sibling', async () => {
+	const { storage, values } = createMemoryStorage()
+	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
+	const dcrKey = '/Kody/server-home/dcr-stale/token'
+	const cimdKey = `/Kody/server-home/${cimdClientId}/token`
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://beeper.example/mcp',
+		clientId: cimdClientId,
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'beeper',
+	}
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => live,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = cimdClientId
+	await provider.saveDiscoveryState({
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+		},
+	} as never)
+	await provider.saveTokens(bearer('old-at', 'old-rt'))
+	values.set(dcrKey, bearer('stale-at', 'stale-rt'))
+
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: cimdClientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: {
+			authorizationServerUrl: 'https://auth.example',
+			authorizationServerMetadata: {
+				issuer: 'https://auth.example',
+				authorization_endpoint: 'https://auth.example/authorize',
+				token_endpoint: 'https://auth.example/token',
+				response_types_supported: ['code'],
+				code_challenge_methods_supported: ['S256'],
+			},
+		},
+	})
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+
+	const originalPut = storage.put.bind(storage)
+	storage.put = (async (key: string, value: unknown) => {
+		if (key === cimdKey) {
+			throw new Error('simulated token write failure')
+		}
+		return originalPut(key, value)
+	}) as typeof storage.put
+
+	await expect(provider.saveTokens(bearer('new-at', 'new-rt'))).rejects.toThrow(
+		'simulated token write failure',
+	)
+	expect(values.get(cimdKey)).toMatchObject({
+		access_token: 'old-at',
+		refresh_token: 'old-rt',
+	})
+	expect(values.get(dcrKey)).toMatchObject({
+		access_token: 'stale-at',
+		refresh_token: 'stale-rt',
+	})
+	expect(values.get(refreshKey)).toEqual({ refresh_token: 'old-rt' })
+})
+
 test('re-authorize redirect keeps the live grant until the new authorization-code save clears siblings', async () => {
 	const { storage, values } = createMemoryStorage()
 	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
