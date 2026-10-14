@@ -7,6 +7,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import {
 	dispatchAdminPackageSubscriptionEvent,
 	loadMatchingPackageSubscriptions,
@@ -142,8 +143,11 @@ async function loadMatchingEmailSubscriptions(input: {
 }
 
 /**
- * A member sender runs only the packages they may execute themselves, so an
- * email from a member never starts a package that member cannot access.
+ * A member sender runs only the packages they may execute in the mailbox
+ * org. The actor is that member, and the org is the inbox — a team org has
+ * no users row, so the mailbox id is not a person to resolve. External
+ * inbox-owner mail skips this gate; which of those packages run is the
+ * per-sender enablement rule.
  */
 async function subscriptionsRunnableBySender<
 	T extends { savedPackage: SavedPackageRecord },
@@ -153,27 +157,46 @@ async function subscriptionsRunnableBySender<
 	request: Extract<RequestSource, { kind: 'inbound-email' }>
 	subscriptions: Array<T>
 }): Promise<Array<T>> {
-	if (input.request.sender.kind === 'inbox-owner') return input.subscriptions
-	const request = deriveRequestContext({
-		user: await resolveBackgroundMcpUser(input.env.APP_DB, input.orgId),
-		source: input.request,
-	})
-	const access = await computeEffectivePermissions({
-		env: input.env as Env,
-		request,
-	})
-	return input.subscriptions.filter(
-		({ savedPackage }) =>
-			checkPermission(
-				access,
-				'package:execute',
-				packageResource({
-					id: savedPackage.id,
-					userId: savedPackage.userId,
-					label: savedPackage.name,
-				}),
-			).allowed,
-	)
+	const { sender } = input.request
+	switch (sender.kind) {
+		case 'inbox-owner':
+			return input.subscriptions
+		case 'member': {
+			const personId = sender.actor.userId
+			const orgBinding = await loadOrgBindingForOrg(
+				input.env.APP_DB,
+				personId,
+				input.orgId,
+			)
+			// Classified as a member, then lost the mailbox org before dispatch.
+			if (!orgBinding) return []
+			const request = deriveRequestContext({
+				user: await resolveBackgroundMcpUser(input.env.APP_DB, personId),
+				source: input.request,
+				orgBinding,
+			})
+			const access = await computeEffectivePermissions({
+				env: input.env as Env,
+				request,
+			})
+			return input.subscriptions.filter(
+				({ savedPackage }) =>
+					checkPermission(
+						access,
+						'package:execute',
+						packageResource({
+							id: savedPackage.id,
+							userId: savedPackage.userId,
+							label: savedPackage.name,
+						}),
+					).allowed,
+			)
+		}
+		default: {
+			const exhaustive: never = sender
+			throw new Error(`Unhandled inbound email sender: ${String(exhaustive)}`)
+		}
+	}
 }
 
 export async function dispatchInboundEmailSubscriptionEvents(input: {

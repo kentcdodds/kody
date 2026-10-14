@@ -1199,6 +1199,63 @@ test("member email runs only that member's rule; unmatched mail runs nothing", a
 	})
 })
 
+test('team member mail runs packages they can execute, including any_authenticated, and skips the rest', async () => {
+	const t = await setup()
+	const insertPackage = (id: string) =>
+		t.db
+			.prepare(
+				`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+				 VALUES (?, ?, ?, ?, '', ?)`,
+			)
+			.bind(id, t.orgId, `@acme/${id}`, id, `source-${id}`)
+			.run()
+	await insertPackage('pkg-open')
+	await insertPackage('pkg-locked')
+	await t.grant(t.people.bea.userId, 'package', 'pkg-open')
+	await t.enable('bea', 'subscription', emailTopic)
+	await insertEnablement({
+		db: t.db,
+		enablement: {
+			orgId: t.orgId,
+			packageId: 'pkg-open',
+			triggerKind: 'subscription',
+			triggerName: emailTopic,
+			instanceId: 'pkg-open',
+			enablerUserId: t.people.bea.userId,
+			origin: 'enabled',
+			senderKind: 'any_authenticated',
+			senderValue: null,
+		},
+	})
+	await insertEnablement({
+		db: t.db,
+		enablement: {
+			orgId: t.orgId,
+			packageId: 'pkg-locked',
+			triggerKind: 'subscription',
+			triggerName: emailTopic,
+			instanceId: 'pkg-locked',
+			enablerUserId: t.people.bea.userId,
+			origin: 'enabled',
+			senderKind: 'member',
+			senderValue: t.people.bea.userId,
+		},
+	})
+	t.setPackageCode(async () => null)
+
+	await t.sendEmail('bea@acme.example')
+
+	expect(t.runs.map((run) => run.packageId).sort()).toEqual([
+		'pkg-open',
+		'pkg-shared',
+	])
+	for (const run of t.runs) {
+		expect(run.request?.org.id).toBe(t.orgId)
+		expect(run.request?.actor?.userId).toBe(t.people.bea.userId)
+		expect(run.error).toBeNull()
+	}
+})
+
 test('turning a trigger on again keeps one enablement per person', async () => {
 	const t = await setup()
 	const beasCron = await t.enable('bea', 'cron', jobName)
