@@ -222,17 +222,25 @@ export async function withStagedTreeForTypecheck<T>(input: {
 	const writeTree = input.git(['write-tree'])
 	if (writeTree.status !== 0) {
 		log(
-			`pre-commit: git write-tree failed (${writeTree.stderr.trim() || 'unknown'}); typechecking as-is`,
+			`pre-commit: git write-tree failed (${writeTree.stderr.trim() || 'unknown'}); refusing to typecheck a dirty worktree as-is`,
 		)
-		return input.run()
+		return 1 as T
 	}
 	const indexTree = writeTree.stdout.trim()
 	if (!/^[0-9a-f]{40}$/i.test(indexTree)) {
-		log('pre-commit: git write-tree returned no tree SHA; typechecking as-is')
-		return input.run()
+		log(
+			'pre-commit: git write-tree returned no tree SHA; refusing to typecheck a dirty worktree as-is',
+		)
+		return 1 as T
 	}
 
+	// Pin identity via -c so Cloud Agent / fresh clones without user.* still
+	// get a staged tree; never fall back to typechecking the dirty worktree.
 	const commitTree = input.git([
+		'-c',
+		'user.email=kody-pre-commit@localhost',
+		'-c',
+		'user.name=kody-pre-commit',
 		'commit-tree',
 		indexTree,
 		'-m',
@@ -240,14 +248,16 @@ export async function withStagedTreeForTypecheck<T>(input: {
 	])
 	if (commitTree.status !== 0) {
 		log(
-			`pre-commit: git commit-tree failed (${commitTree.stderr.trim() || 'unknown'}); typechecking as-is`,
+			`pre-commit: git commit-tree failed (${commitTree.stderr.trim() || 'unknown'}); refusing to typecheck a dirty worktree as-is`,
 		)
-		return input.run()
+		return 1 as T
 	}
 	const stagedCommit = commitTree.stdout.trim()
 	if (!/^[0-9a-f]{40}$/i.test(stagedCommit)) {
-		log('pre-commit: git commit-tree returned no commit; typechecking as-is')
-		return input.run()
+		log(
+			'pre-commit: git commit-tree returned no commit; refusing to typecheck a dirty worktree as-is',
+		)
+		return 1 as T
 	}
 
 	const tmpRoot = join(repoRoot, '.tmp')

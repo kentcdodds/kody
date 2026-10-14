@@ -539,7 +539,7 @@ test('withStagedTreeForTypecheck runs typecheck in a detached index worktree', a
 			if (args[0] === 'write-tree') {
 				return gitResult(0, `${treeSha}\n`)
 			}
-			if (args[0] === 'commit-tree') {
+			if (args.includes('commit-tree')) {
 				return gitResult(0, `${commitSha}\n`)
 			}
 			if (args[0] === 'worktree' && args[1] === 'add') {
@@ -564,7 +564,11 @@ test('withStagedTreeForTypecheck runs typecheck in a detached index worktree', a
 		expect(value).toBe(7)
 		expect(calls[0]).toBe('status --porcelain -uall')
 		expect(calls).toContain('write-tree')
-		expect(calls.some((line) => line.startsWith('commit-tree'))).toBe(true)
+		expect(
+			calls.some(
+				(line) => line.includes('commit-tree') && line.includes('user.email='),
+			),
+		).toBe(true)
 		expect(calls.some((line) => line.startsWith('worktree add --detach'))).toBe(
 			true,
 		)
@@ -589,7 +593,7 @@ test('withStagedTreeForTypecheck fails closed when worktree add fails', async ()
 			if (args[0] === 'write-tree') {
 				return gitResult(0, `${treeSha}\n`)
 			}
-			if (args[0] === 'commit-tree') {
+			if (args.includes('commit-tree')) {
 				return gitResult(0, `${'4'.repeat(40)}\n`)
 			}
 			if (args[0] === 'worktree' && args[1] === 'add') {
@@ -605,7 +609,65 @@ test('withStagedTreeForTypecheck fails closed when worktree add fails', async ()
 			run: () => 0,
 		})
 		expect(value).toBe(1)
-		expect(logs.some((line) => line.includes('worktree add failed'))).toBe(true)
+		expect(
+			logs.some(
+				(line) =>
+					line.includes('worktree add failed') ||
+					line.includes('refusing to typecheck a dirty worktree'),
+			),
+		).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('withStagedTreeForTypecheck fails closed when write-tree or commit-tree fails', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-write-fail-'))
+	try {
+		const writeFail: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'write-tree') {
+				return gitResult(1, '', 'write-tree failed')
+			}
+			return gitResult(1)
+		}
+		const logs: Array<string> = []
+		expect(
+			await withStagedTreeForTypecheck({
+				git: writeFail,
+				repoRoot: root,
+				log: (message) => logs.push(message),
+				run: () => 0,
+			}),
+		).toBe(1)
+		expect(logs.some((line) => line.includes('write-tree failed'))).toBe(true)
+
+		const commitFail: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'write-tree') {
+				return gitResult(0, `${'5'.repeat(40)}\n`)
+			}
+			if (args.includes('commit-tree')) {
+				return gitResult(1, '', 'Author identity unknown')
+			}
+			return gitResult(1)
+		}
+		const commitLogs: Array<string> = []
+		expect(
+			await withStagedTreeForTypecheck({
+				git: commitFail,
+				repoRoot: root,
+				log: (message) => commitLogs.push(message),
+				run: () => 0,
+			}),
+		).toBe(1)
+		expect(commitLogs.some((line) => line.includes('commit-tree failed'))).toBe(
+			true,
+		)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
