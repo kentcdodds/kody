@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
+import { dismissOpenPopoverPanel } from '#client/popover-open.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import { colors, shadows, typography } from '#universal/styles/tokens.ts'
 import {
@@ -40,8 +41,7 @@ export function FeaturesMenu(handle: Handle<Props>) {
 	let open = false
 	if (typeof document !== 'undefined') {
 		listenToRouterNavigation(handle, () => {
-			const panel = document.getElementById(panelId)
-			if (panel?.matches(':popover-open')) panel.hidePopover()
+			dismissOpenPopoverPanel(document.getElementById(panelId))
 			const mobile = document.getElementById('features-navigation-mobile')
 			if (mobile instanceof HTMLDetailsElement) mobile.open = false
 		})

@@ -2,6 +2,7 @@ import { FeaturesMenu } from '#client/features-menu.tsx'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { dismissOpenPopoverPanel, isPopoverOpen } from '#client/popover-open.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
@@ -81,17 +82,7 @@ const menuPanelId = 'site-menu'
 const orgSwitcherPanelId = 'org-switcher'
 const accountMenuPanelId = 'account-menu'
 
-/**
- * Dismiss an open popover panel on client-side navigation. Older browsers
- * throw from `matches(':popover-open')` when the Popover API is unavailable.
- */
-export function dismissOpenPopoverPanel(panel: Element | null) {
-	if (!panel || typeof (panel as HTMLElement).hidePopover !== 'function') return
-	const element = panel as HTMLElement
-	if (element.matches(':popover-open')) {
-		element.hidePopover()
-	}
-}
+export { dismissOpenPopoverPanel, isPopoverOpen }
 
 type SwitcherRow = {
 	key: string
@@ -164,7 +155,7 @@ function renderLogoutRow() {
 
 /** Focus order for the arrow keys: the trigger, then every row in the panel. */
 function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
-	if (!panel || !panel.matches(':popover-open')) return
+	if (!panel || !isPopoverOpen(panel)) return
 	const rows = Array.from(
 		panel.querySelectorAll<HTMLElement>('a[href], button'),
 	)
