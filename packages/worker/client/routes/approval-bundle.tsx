@@ -316,18 +316,22 @@ export function ApprovalBundleRoute(handle: Handle) {
 
 	async function runApproveAll(path: BundlePath, view: ApprovalBundleView) {
 		if (approveAll) return
-		const queue = readyToApprove(view)
+		const queue = readyToApprove(view).filter((item) => !busy.has(item.key))
 		if (queue.length === 0) return
 		approveAll = { done: 0, total: queue.length }
 		summary = null
 		handle.update()
 		let approved = 0
-		for (const item of queue) {
-			if (await decide(path, item, 'approve')) approved += 1
-			approveAll = { done: approveAll.done + 1, total: queue.length }
+		try {
+			for (const [index, item] of queue.entries()) {
+				if (await decide(path, item, 'approve')) approved += 1
+				approveAll = { done: index + 1, total: queue.length }
+				handle.update()
+			}
+		} finally {
+			approveAll = null
 			handle.update()
 		}
-		approveAll = null
 		const failed = queue.length - approved
 		summary =
 			failed === 0
