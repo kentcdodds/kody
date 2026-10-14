@@ -83,8 +83,9 @@ test('logged-in header has only the account menu; the org switcher lives in the 
 		menu.indexOf('data-testid="account-menu-manage-group"'),
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
-	expect(manage).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>Overview</)
+	expect(manage).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>@acme</)
 	expect(manage).toMatch(/href="\/@ada\/-\/overview"[^>]*>[\s\S]*?>@ada</)
+	expect(manage).not.toContain('>Overview<')
 	const account = menu.slice(
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
@@ -172,7 +173,7 @@ test('account menu Usage & credits falls back when the URL org lacks billing', (
 	).toBe('/@ada/-/usage')
 })
 
-test('account menu Manage leads with the current workspace Overview, then every other workspace', () => {
+test('account menu Manage lists every workspace by handle, the current one first', () => {
 	const organizations = [
 		{
 			slug: 'kody',
@@ -193,22 +194,23 @@ test('account menu Manage leads with the current workspace Overview, then every 
 			pathname,
 			organizations,
 			lastUsedSlug,
-		}).map((link) => [link.label, link.href, link.detail])
-	// The org in the URL is the one Manage opens first.
+		}).map((link) => [link.label, link.href, link.detail, link.icon])
+	// The org in the URL is the one Manage lists first.
 	expect(links('/@kody/-/credentials')).toEqual([
-		['Overview', '/@kody', '@kody'],
-		['@kentcdodds', '/@kentcdodds/-/overview', null],
-		['@acme', '/@acme', null],
+		['@kody', '/@kody', null, 'users'],
+		['@kentcdodds', '/@kentcdodds/-/overview', null, 'user'],
+		['@acme', '/@acme', null, 'users'],
 	])
 	// Off an org page, the switcher's org (last used) leads.
 	expect(links('/account', 'kody')).toEqual(links('/@kody'))
+	// The signup org reads like every other row: its handle, no Overview.
 	expect(links('/account')).toEqual([
-		['Overview', '/@kentcdodds/-/overview', '@kentcdodds'],
-		['@acme', '/@acme', null],
-		['@kody', '/@kody', null],
+		['@kentcdodds', '/@kentcdodds/-/overview', null, 'user'],
+		['@acme', '/@acme', null, 'users'],
+		['@kody', '/@kody', null, 'users'],
 	])
 	// A stale session list leaves the URL org's kind unknown (a renamed
-	// person's signup org keeps its old slug), so Overview takes the path
+	// person's signup org keeps its old slug), so the row takes the path
 	// that serves the signup org and redirects a team to its home.
 	expect(
 		accountMenuManageLinks({
@@ -216,10 +218,10 @@ test('account menu Manage leads with the current workspace Overview, then every 
 			organizations: [],
 			lastUsedSlug: null,
 		}).map((link) => [link.label, link.href, link.detail]),
-	).toEqual([['Overview', '/@kent-old/-/overview', '@kent-old']])
+	).toEqual([['@kent-old', '/@kent-old/-/overview', null]])
 })
 
-test('account menu shows a Manage section before the person links; the phone menu keeps Overview', async () => {
+test('account menu shows a Manage section before the person links, in the phone menu too', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -244,7 +246,7 @@ test('account menu shows a Manage section before the person links; the phone men
 	)
 	const accountPanel = html.slice(
 		html.indexOf('data-testid="account-menu-panel"'),
-		html.indexOf('data-testid="org-switcher-menu"'),
+		html.indexOf('data-testid="site-menu-account"'),
 	)
 	const manage = accountPanel.slice(
 		accountPanel.lastIndexOf(
@@ -256,12 +258,13 @@ test('account menu shows a Manage section before the person links; the phone men
 	expect(manage).toContain('aria-label="Manage"')
 	expect(manage).toContain('>Manage<')
 	expect(manage).toMatch(
-		/href="\/@kody"[^>]*aria-current="page"[^>]*>[\s\S]*?>Overview<[\s\S]*?>@kody</,
+		/href="\/@kody"[^>]*aria-current="page"[^>]*>[\s\S]*?data-icon="users"[\s\S]*?>@kody</,
 	)
 	expect(manage).toMatch(
-		/href="\/@kentcdodds\/-\/overview"[^>]*>[\s\S]*?>@kentcdodds</,
+		/href="\/@kentcdodds\/-\/overview"[^>]*>[\s\S]*?data-icon="user"[\s\S]*?>@kentcdodds</,
 	)
-	expect(manage.indexOf('>Overview<')).toBeLessThan(
+	expect(manage).not.toContain('>Overview<')
+	expect(manage.indexOf('>@kody<')).toBeLessThan(
 		manage.indexOf('>@kentcdodds<'),
 	)
 	expect(accountPanel.indexOf('account-menu-manage-group')).toBeLessThan(
@@ -273,7 +276,8 @@ test('account menu shows a Manage section before the person links; the phone men
 		menu.indexOf('data-testid="account-menu-manage-group"'),
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
-	expect(phoneManage).toMatch(/href="\/@kody"[^>]*>[\s\S]*?>Overview</)
+	expect(phoneManage).toMatch(/href="\/@kody"[^>]*>[\s\S]*?>@kody</)
+	expect(phoneManage).not.toContain('>Overview<')
 	// No org switcher in the header, so the phone Manage group lists every
 	// other workspace too.
 	expect(phoneManage).toContain('data-testid="org-switcher-manage-kentcdodds"')

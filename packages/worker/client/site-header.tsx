@@ -189,10 +189,10 @@ export type AccountMenuManageLink = {
 }
 
 /**
- * The account menu's Manage links: the current workspace's Overview first,
- * then every other workspace's home. Each workspace rail lists every
- * section, so any section stays two clicks from the avatar. Unlike switcher
- * rows, which keep the current page, these always open a workspace home.
+ * The account menu's Manage links: one `@slug` row per workspace, the current
+ * one first, each opening that workspace's home. Each workspace rail lists
+ * every section, so any section stays two clicks from the avatar. Unlike
+ * switcher rows, which keep the current page, these always open a home.
  */
 export function accountMenuManageLinks(input: {
 	pathname: string
@@ -208,14 +208,14 @@ export function accountMenuManageLinks(input: {
 	const current = input.organizations.find((org) => org.slug === currentSlug)
 	return [
 		{
-			key: 'manage-overview',
+			key: `manage-${currentSlug}`,
 			// A URL org missing from a stale session list could be a renamed
 			// person's signup org, so its kind is unknown. `/-/overview` serves
 			// the signup org and redirects a team to its home.
 			href: current ? workspaceHomeHref(current) : orgOverviewPath(currentSlug),
-			label: 'Overview',
-			detail: `@${currentSlug}`,
-			icon: 'home',
+			label: `@${currentSlug}`,
+			detail: null,
+			icon: current ? (current.personal ? 'user' : 'users') : 'home',
 		},
 		...orderOrganizations(input.organizations)
 			.filter((org) => org.slug !== currentSlug)

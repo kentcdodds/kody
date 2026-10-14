@@ -101,14 +101,12 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(
 		accountGroup.getByRole('button', { name: 'Log out' }),
 	).toBeVisible()
-	// Manage leads with the current workspace's Overview, then every other
-	// workspace, so the avatar menu is never a dead end for org sections.
+	// Manage lists every workspace by handle, the current one first, so the
+	// avatar menu is never a dead end for org sections.
 	const manageGroup = accountPanel.getByRole('group', { name: 'Manage' })
 	const manageLinks = manageGroup.getByRole('link')
 	await expect(manageLinks).toHaveCount(2)
-	await expect(manageLinks.nth(0)).toHaveAccessibleName(
-		`Overview @pinned-${runId}`,
-	)
+	await expect(manageLinks.nth(0)).toHaveAccessibleName(`@pinned-${runId}`)
 	await expect(manageLinks.nth(0)).toHaveAttribute('href', `/@pinned-${runId}`)
 	await expect(manageLinks.nth(1)).toHaveAccessibleName(`@${user.username}`)
 	await expect(manageLinks.nth(1)).toHaveAttribute(

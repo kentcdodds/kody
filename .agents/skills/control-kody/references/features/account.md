@@ -46,13 +46,14 @@ no switcher; its Workspaces group lists every org. Source:
 
 The site header has one session control, the account menu
 (`data-testid="account-menu"`, panel `account-menu-panel`): the person's avatar,
-name and `@username`, then a **Manage** group (`account-menu-manage-group`) that
-leads with the current org's **Overview** (team `/@<slug>`, signup org
-`/@<slug>/-/overview`) and lists every other org's workspace home, then Your
-profile, Account settings, Usage & credits (current org from the URL only, else
-the personal org), and Log out. So pages without a workspace rail (packages, org
-homes, account pages) still reach every org. Narrow viewports fold the account
-menu into the one menu panel (`site-menu-account`: Manage, then a "Your account"
+name and `@username`, then a **Manage** group (`account-menu-manage-group`) with
+one `@<slug>` row per org (person icon for the signup org, people icon for
+teams), the current org first. Each row opens that org's workspace home (team
+`/@<slug>`, signup org `/@<slug>/-/overview`). Then Your profile, Account
+settings, Usage & credits (current org from the URL only, else the personal
+org), and Log out. So pages without a workspace rail (packages, org homes,
+account pages) still reach every org. Narrow viewports fold the account menu
+into the one menu panel (`site-menu-account`: Manage, then a "Your account"
 group). Own profile (`/@<username>`) also links **Workspace** (lands on
 `/@<slug>/-/repositories`) beside Edit profile. A team org home lists
 **Workspace** above its management links.
