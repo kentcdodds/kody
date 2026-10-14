@@ -1574,8 +1574,8 @@ on write unless a migration backfills existing rows.
   so one request acts per item, then sets `finalized_at`
   (`0143-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
   the row is an in-flight claim, not a decision, and expires after 10 minutes.
-  The first finalized decision wins. Bundles open for 30 days. A person's bundles in an org are hard-deleted
-  when they leave it, and with their account.
+  The first finalized decision wins. Bundles open for 30 days. A person's
+  bundles in an org are hard-deleted when they leave it, and with their account.
 
 ### Durable Object id contracts
 
