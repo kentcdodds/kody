@@ -21,7 +21,6 @@ import {
 	personalMemoryOwnerId,
 	personalMemoryOwnerRequest,
 } from '#mcp/memory/memory-owner.ts'
-import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { requireMcpRequest, requireMcpUser } from './require-user.ts'
 
 export const memoryPersonalOnlyOrgPermission = 'none' as const
@@ -45,7 +44,17 @@ export function resolvePersonalMemoryPersonId(
 ): PersonId {
 	const user = requireMcpUser(ctx.callerContext)
 	const bound = requireMcpRequest(ctx.callerContext)
-	return (bound.actor?.userId ?? user.userId) as PersonId
+	if (bound.actor?.userId) return bound.actor.userId
+	// Team synthetic background users reuse the org id and have no email
+	// (`resolveBackgroundMcpUser`). Without an actor there is no person to own
+	// personal memory.
+	if (
+		(bound.org.id as string) === (user.userId as string) &&
+		user.email === ''
+	) {
+		throw new McpCallerError(memoryRequiresPersonActorMessage)
+	}
+	return user.userId
 }
 
 export function requirePersonalMemoryAuth(
@@ -71,9 +80,6 @@ export async function authorizePersonalMemory(
 	memoryId?: string,
 ): Promise<PersonalMemoryAuth> {
 	const auth = requirePersonalMemoryAuth(ctx)
-	if (!(await isPersonalOrg(ctx.env.APP_DB, auth.userId))) {
-		throw new McpCallerError(memoryRequiresPersonActorMessage)
-	}
 	await authorize(
 		{ env: ctx.env, request: auth.request },
 		permission,
