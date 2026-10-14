@@ -120,6 +120,45 @@ test('none on purpose and default-layer mappings never pause an enablement', asy
 	expect((await t.readEnablement())?.state).toBe('on')
 })
 
+test('a stored credential-access pause stays in place while a mapping breaks and after it is fixed', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.grantPackageUse('ann')
+	await t.grantUse(slack, 'ann')
+	const applied = await t.apply('ann', 'member', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	expect(applied.map((change) => change.error)).toEqual([null])
+	// Paused at run time on a permission ann lacks (she only has Use).
+	const storedPause = {
+		state: 'paused',
+		paused_reason: 'credential_access',
+		paused_resource_type: 'credential',
+		paused_resource_id: slack,
+		paused_credential_id: null,
+	}
+	await t.db
+		.prepare(
+			`UPDATE enablements SET state = 'paused', paused_reason = 'credential_access',
+				paused_permission = 'secret:write', paused_resource_type = 'credential',
+				paused_resource_id = ?, paused_credential_id = NULL,
+				paused_at = '2026-10-13T00:00:00.000Z'
+			WHERE package_id = ?`,
+		)
+		.bind(slack, t.savedPackage.id)
+		.run()
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+
+	await t.setDeleted(slack, false)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+})
+
 test('a corrupt trigger mapping row reads as unset and never pauses or blocks the run', async () => {
 	const t = await setup()
 	await t.storeKey('team-slack', 'slack')

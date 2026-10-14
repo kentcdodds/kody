@@ -258,12 +258,8 @@ async function checkEnablerAccess(input: {
 			},
 		}
 	}
-	const mappingPause = await checkEnablementMappedCredentials({
-		env: input.env,
-		request,
-		enablement,
-	})
-	if (mappingPause) return { ok: false, pause: mappingPause }
+	// A run-time credential pause stays authoritative: a mapping pause must
+	// not replace it, or fixing the mapping would resume a still-blocked run.
 	const stored = isEnablementMappingPause(enablement.pause)
 		? null
 		: await storedPauseResource(db, enablement)
@@ -275,6 +271,12 @@ async function checkEnablerAccess(input: {
 		)
 		if (!allowed) return { ok: false, pause: null }
 	}
+	const mappingPause = await checkEnablementMappedCredentials({
+		env: input.env,
+		request,
+		enablement,
+	})
+	if (mappingPause) return { ok: false, pause: mappingPause }
 	return { ok: true, run, access }
 }
 
