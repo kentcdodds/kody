@@ -179,6 +179,15 @@ footer a { color: inherit; }
 }
 .play-button:hover { border-style: solid; }
 .play-button[hidden] { display: none; }
+.footer-play {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
 html.breakout-active,
 html.breakout-active body { overflow: hidden; }
 html.breakout-active body { user-select: none; -webkit-user-select: none; }
@@ -503,7 +512,8 @@ ${renderFaviconLinks(snapshot.overallStatus)}
 	<footer>
 		${renderProductionCommits(snapshot)}Probes run every minute from an independently deployed worker.
 		<a href="https://kody.codes">kody.codes</a> ·
-		<a href="/status.json">JSON</a>
+		<a href="/status.json">JSON</a><span data-breakout-footer-start hidden>
+		· <button type="button" class="footer-play">Play Breakout</button></span>
 	</footer>
 </main>
 </body>

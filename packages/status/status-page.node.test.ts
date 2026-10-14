@@ -104,6 +104,8 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			'<script type="module" src="/status-breakout.js"></script>',
 			'<body data-overall-status="operational">',
 			'data-breakout-start',
+			'<span data-breakout-footer-start hidden>',
+			'<button type="button" class="footer-play">Play Breakout</button>',
 			`href="${statusFaviconPath('operational')}"`,
 			'MCP execute',
 			'Recently verified',
