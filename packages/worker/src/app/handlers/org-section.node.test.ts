@@ -159,12 +159,12 @@ test('the credential creation page passes the team-org gate and keeps its URL th
 			params: { orgSlug },
 		})
 	const response = await open('acme')
-	expect(response.status).not.toBe(404)
-	if (response.status === 302) {
-		expect(response.headers.get('location')).toContain(
-			encodeURIComponent('/@acme/-/credentials/new?name=x'),
-		)
-	}
+	// A gate denial is a 404; past the gate, the unmocked page auth sends the
+	// request to sign-in with its URL kept.
+	expect(response.status).toBe(302)
+	expect(response.headers.get('location')).toBe(
+		`https://kody.test/login?redirectTo=${encodeURIComponent('/@acme/-/credentials/new?name=x')}`,
+	)
 })
 
 test('the org-less creation link keeps its query on the signup org page', async () => {
