@@ -578,24 +578,25 @@ guarded by a bearer secret comparison.
 ## Inbound email spam controls
 
 Inbound mail is classified at receive time (`accepted` or `quarantined`) before
-package subscription dispatch. Per-user sender rules run first (exact address or
-domain with subdomain matching; address rules beat domain rules): `block`
-rejects at SMTP before quota is charged, `quarantine` stores as flagged, `allow`
-bypasses the auth-verdict quarantine. When no rule matches, Kody parses
-Authentication-Results (DMARC fail, or SPF fail/softfail without DKIM pass →
-quarantine; missing header fails open). Accepted user mail dispatches
-`email.message.received`; quarantined user mail dispatches
-`email.message.quarantined` instead. Quarantined operator system-inbox mail is
-stored but suppresses `email.system-message.received`. Before user-inbox
-dispatch, `classifyInboundEmailSender` decides who the run acts as: a verified,
-authenticated account email of a current org member runs as that member (only
-packages they hold `package:execute` on, credentials checked and audited under
-them at resolve time), any other sender that passes the auth verdict runs as the
-inbox's org, and failed auth or a spoofed member address runs nothing and logs
-`inbound-email-sender-unverified`. Successful reserved-sender sends fan
-`email.system-message.sent` (admin-only) with the sent correspondence.
-Reclassification never retroactively fires subscription events. Users manage
-rules via `email_sender_rule_*` (200-rule cap), reclassify via
+package subscription dispatch. Authentication-Results are decided first (DMARC
+fail, or SPF fail/softfail without DKIM pass → suspect; missing header fails
+open). Per-user sender rules then apply (exact address or domain with subdomain
+matching; address rules beat domain rules): `block` rejects at SMTP before quota
+is charged, `quarantine` stores as flagged, `allow` accepts only when From
+passed authentication — spoofed mail is never accepted because of an allow rule.
+When no rule matches, suspect mail is quarantined and other mail is accepted.
+Accepted user mail dispatches `email.message.received`; quarantined user mail
+dispatches `email.message.quarantined` instead. Quarantined operator
+system-inbox mail is stored but suppresses `email.system-message.received`.
+Before user-inbox dispatch, `classifyInboundEmailSender` decides who the run
+acts as: a verified, authenticated account email of a current org member runs as
+that member (only packages they hold `package:execute` on, credentials checked
+and audited under them at resolve time), any other sender that passes the auth
+verdict runs as the inbox's org, and failed auth or a spoofed member address
+runs nothing and logs `inbound-email-sender-unverified`. Successful
+reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
+correspondence. Reclassification never retroactively fires subscription events.
+Users manage rules via `email_sender_rule_*` (200-rule cap), reclassify via
 `emailMessageClassify` or `/@<slug>/-/email`, and delete stored messages via
 `emailMessageDelete` or the delete action on `/@<slug>/-/email`; operators use
 `admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare

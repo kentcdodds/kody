@@ -227,16 +227,19 @@ Inbound mail is classified at receive time. Each stored message carries
 `classification` (`accepted` or `quarantined`) and an optional human-readable
 `classification_reason`. Decision order:
 
-1. **Per-user sender rules** — exact address or domain match (domain rules also
+1. **Authentication-Results verdict** — Kody parses the stored SPF/DKIM/DMARC
+   results first. DMARC `fail`, or SPF `fail`/`softfail` without a DKIM `pass`,
+   marks the message suspect. A missing Authentication-Results header fails open
+   (not authenticated, not suspect).
+2. **Per-user sender rules** — exact address or domain match (domain rules also
    match subdomains). Address rules beat domain rules. Effects:
    - `block` rejects at SMTP before any receive quota is charged.
    - `quarantine` stores the message as quarantined.
-   - `allow` stores the message as accepted and bypasses the auth-verdict
-     quarantine step below.
-2. **Authentication-Results verdict** — when no sender rule decides the outcome,
-   Kody parses the stored SPF/DKIM/DMARC results. DMARC `fail`, or SPF
-   `fail`/`softfail` without a DKIM `pass`, quarantines the message. A missing
-   Authentication-Results header fails open to `accepted`.
+   - `allow` stores the message as accepted only when From passed
+     authentication. Spoofed (auth-failed) mail is never accepted because of an
+     allow rule; it is quarantined by the auth verdict instead.
+3. **Default** — when no sender rule decides the outcome, suspect mail is
+   quarantined and everything else is accepted.
 
 Each user may store at most 200 sender rules. Manage them with
 `emailSenderRuleList`, `emailSenderRuleSet` (kind / value / effect / note), and
