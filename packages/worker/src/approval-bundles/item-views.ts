@@ -240,10 +240,24 @@ async function credentialNeedGrant(
 		kind: kindLabel(after.kind),
 		provider: after.provider,
 		hosts: candidateHosts(candidates),
-		before:
-			change.change === 'changed' ? describeNeedShape(change.before) : null,
+		before: describeNeedBefore(change),
 		after: describeNeedShape(after),
 		match: describeMatch(candidates),
+	}
+}
+
+function describeNeedBefore(change: CredentialNeedChange) {
+	switch (change.change) {
+		case 'added':
+			return null
+		case 'changed':
+			return describeNeedShape(change.before)
+		default: {
+			const exhaustive: never = change
+			throw new Error(
+				`Unknown credential need change: ${JSON.stringify(exhaustive)}`,
+			)
+		}
 	}
 }
 
