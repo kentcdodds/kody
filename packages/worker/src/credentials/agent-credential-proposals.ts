@@ -295,8 +295,9 @@ export async function getRecordedCredentialProposal(input: {
 /**
  * Unapproved proposals made for `personId` in `orgId` within the pending
  * window, newest first. The same proposal recorded twice for a package by the
- * same agent appears once, as its newest record. Approvals are scoped to the
- * proposing agent, so equal proposals from different agents stay separate.
+ * same agent appears once, as its newest record, and not at all once that
+ * newest record is approved. Approvals are scoped to the proposing agent, so
+ * equal proposals from different agents stay separate.
  */
 export async function listPendingCredentialProposals(input: {
 	db: D1Database
@@ -308,8 +309,7 @@ export async function listPendingCredentialProposals(input: {
 	const { results } = await input.db
 		.prepare(
 			`SELECT ${recordedProposalColumns} FROM credential_mapping_proposals
-			WHERE org_id = ? AND person_user_id = ? AND approved_at IS NULL
-				AND created_at >= ?
+			WHERE org_id = ? AND person_user_id = ? AND created_at >= ?
 			ORDER BY created_at DESC, id`,
 		)
 		.bind(
@@ -329,6 +329,7 @@ export async function listPendingCredentialProposals(input: {
 		])
 		if (seen.has(dedupeKey)) continue
 		seen.add(dedupeKey)
+		if (row['approved_at'] != null) continue
 		const recorded = mapRecordedProposal(row)
 		if (recorded) proposals.push(recorded)
 	}
