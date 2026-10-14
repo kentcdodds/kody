@@ -21,10 +21,7 @@ import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
 import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
-import {
-	isPackageAppCustomDomainsEnabled,
-	isPackageAppCustomDomainsEnabledForUser,
-} from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import { isPackageAppCustomDomainsEnabledForUser } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	addPackageAppCustomHostname,
 	deletePackageAppCustomHostname,
@@ -67,11 +64,8 @@ async function loadCustomDomainsView(
 	orgId: string,
 	actingUserId: number,
 ): Promise<OrgSettingsLoaderData['customDomains']> {
-	// Global off → hide without per-user evaluation (incomplete test DBs and
-	// the common production case before the flag is switched on).
-	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) {
-		return null
-	}
+	// Same gate as mutations/MCP: audience + per-user overrides. Global-only
+	// would hide the panel for override users who can still add/sync.
 	if (
 		!(await isPackageAppCustomDomainsEnabledForUser(env.APP_DB, actingUserId))
 	) {

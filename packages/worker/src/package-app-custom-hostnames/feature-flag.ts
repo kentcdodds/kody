@@ -47,5 +47,10 @@ function isMissingFeatureFlagsTable(error: unknown) {
 		error instanceof Error && error.cause instanceof Error
 			? error.cause.message
 			: ''
-	return `${message} ${cause}`.includes('no such table: feature_flags')
+	const combined = `${message} ${cause}`
+	// Incomplete workers-unit / handler test DBs often omit flag tables.
+	return (
+		combined.includes('no such table: feature_flags') ||
+		combined.includes('no such table: feature_flag_user_overrides')
+	)
 }
