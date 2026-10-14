@@ -15,6 +15,8 @@ import {
 	parsePublishedServerResponse,
 	parseServerJson,
 	registryServerVersionUrl,
+	serverJsonDescriptionLengthError,
+	serverJsonDescriptionMaxLength,
 	serverJsonEquals,
 	type ServerJson,
 } from './mcp-registry-publish.ts'
@@ -119,6 +121,48 @@ test('parses registry payloads and encodes the version URL', () => {
 	expect(parsePublishedServerResponse(localServer)).toEqual(localServer)
 	expect(() => parseServerJson('[]')).toThrow(/JSON object/)
 	expect(() => parseServerJson('{"name":"x"}')).toThrow(/version/)
+	expect(() => parseServerJson('{"name":"x","version":"1.0.0"}')).toThrow(
+		/description/,
+	)
+	expect(
+		parseServerJson(
+			JSON.stringify({
+				...localServer,
+				description: 'x'.repeat(serverJsonDescriptionMaxLength + 1),
+			}),
+		).description,
+	).toBe('x'.repeat(serverJsonDescriptionMaxLength + 1))
+})
+
+test('MCP Registry description limit is enforced on the local payload only', async () => {
+	const tooLong = 'x'.repeat(serverJsonDescriptionMaxLength + 1)
+	expect(
+		serverJsonDescriptionLengthError(
+			'x'.repeat(serverJsonDescriptionMaxLength),
+		),
+	).toBeNull()
+	expect(serverJsonDescriptionLengthError(tooLong)).toMatch(/100/)
+
+	const checkedIn = parseServerJson(readFileSync('server.json', 'utf8'))
+	expect(typeof checkedIn.description).toBe('string')
+	expect(
+		serverJsonDescriptionLengthError(checkedIn.description as string),
+	).toBe(null)
+
+	const rejected = await decidePublish({
+		local: { ...localServer, description: tooLong },
+		fetchImpl: async () => {
+			throw new Error('should not look up a too-long description')
+		},
+	})
+	expect(rejected).toMatchObject({ action: 'fail' })
+
+	const invalid = await checkServerJsonVersionBump({
+		head: { ...localServer, description: tooLong },
+		env: {},
+		git: async () => null,
+	})
+	expect(invalid).toMatchObject({ ok: false, kind: 'invalid-description' })
 })
 
 test('decidePublish skips a matching published version and publishes a 404', async () => {

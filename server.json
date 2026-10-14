@@ -2,8 +2,8 @@
 	"$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
 	"name": "io.github.kentcdodds/kody",
 	"title": "Kody",
-	"description": "Your agents' cloud for individuals and teams. MCP server with search, execute, packages, jobs, credentials, and integrations.",
-	"version": "1.0.4",
+	"description": "Your agents' cloud for individuals and teams. Search, execute, packages, jobs, and credentials.",
+	"version": "1.0.5",
 	"websiteUrl": "https://kody.codes",
 	"repository": {
 		"url": "https://github.com/kentcdodds/kody",
