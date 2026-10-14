@@ -70,19 +70,18 @@ function clipContains(clip: string, x: number, y: number) {
 	return inside
 }
 
-test('orbit light tones cycle through the six primitive colors', () => {
+test('orbit light tones cycle through the five primitive colors', () => {
 	expect(
-		Array.from({ length: 9 }, (_, index) => landingOrbitLightTone(index)),
+		Array.from({ length: 8 }, (_, index) => landingOrbitLightTone(index)),
 	).toEqual([
 		'memory',
-		'secrets',
 		'packages',
 		'triggers',
 		'integrations',
 		'apps',
 		'memory',
-		'secrets',
 		'packages',
+		'triggers',
 	])
 	expect(landingOrbitLightTone(-1)).toBe('apps')
 })

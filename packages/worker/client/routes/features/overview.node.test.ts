@@ -3,19 +3,14 @@ import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { FeaturesOverview } from './overview.tsx'
 
-test('features overview gives every primitive card an interactive widget', async () => {
+test('features overview shows the lantern and gives every primitive card an interactive widget', async () => {
 	const html = await renderToString(jsx(FeaturesOverview, {}))
 
-	expect(html.match(/data-primitive="/g)).toHaveLength(6)
-	expect(html.match(/class="pw pw-/g)).toHaveLength(6)
-	for (const id of [
-		'memory',
-		'secrets',
-		'packages',
-		'triggers',
-		'integrations',
-		'apps',
-	]) {
+	// Five lantern orbs plus five cards.
+	expect(html.match(/data-primitive="/g)).toHaveLength(10)
+	expect(html.match(/class="pw pw-/g)).toHaveLength(5)
+	expect(html).toContain('aria-label="The five primitives"')
+	for (const id of ['memory', 'packages', 'triggers', 'integrations', 'apps']) {
 		expect(html).toContain(`data-primitive="${id}"`)
 		expect(html).toContain(`href="/features/${id}"`)
 	}

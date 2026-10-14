@@ -10,7 +10,7 @@ import { routes } from '#universal/routes.ts'
  * Homepage cards: a small copy of each `/features` widget beside the
  * primitive's name and one line. The widget is decorative (the card is one
  * link); `/features` has the interactive versions. Narrow screens turn the
- * grid into a swipe row so six cards do not become six screens of scroll.
+ * grid into a swipe row so the cards do not become five screens of scroll.
  */
 export function LandingPrimitiveCards() {
 	return () => (

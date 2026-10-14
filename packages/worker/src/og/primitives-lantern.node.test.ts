@@ -12,14 +12,13 @@ import {
 	landingPrimitiveOgColors,
 } from './primitives-lantern.ts'
 
-/** Hue bands of the orb art. Pink/magenta is apps, not memory. */
+/** Hue bands of the orb art. Purple is apps; red is memory. */
 const hueBands = {
 	memory: [15, 45],
-	secrets: [280, 320],
 	packages: [230, 275],
 	triggers: [80, 115],
 	integrations: [125, 165],
-	apps: [330, 360],
+	apps: [280, 320],
 } as const
 
 function hueOfHex(hex: string) {

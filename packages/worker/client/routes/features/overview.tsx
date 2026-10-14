@@ -4,16 +4,16 @@ import {
 	primitiveFeatureHref,
 } from '#universal/primitive-cards.ts'
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
+import { LandingPrimitives } from '#client/routes/landing-primitives.tsx'
 import { OverviewWidget } from './overview-widgets.tsx'
 
 /** Card accent hues; `feature-pages.css` derives `--accent` from `--hue`. */
 const cardHues = {
 	memory: '29',
-	secrets: '300',
 	packages: '255',
 	triggers: '96',
 	integrations: '148',
-	apps: '345',
+	apps: '300',
 } as const satisfies Record<LandingPrimitiveId, string>
 
 export function FeaturesOverview() {
@@ -31,6 +31,7 @@ export function FeaturesOverview() {
 				</p>
 				<p class="overview-example">Interactive examples use fictional data.</p>
 			</div>
+			<LandingPrimitives />
 			<div class="features">
 				{primitiveCards.map((card) => (
 					<article

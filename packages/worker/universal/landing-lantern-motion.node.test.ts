@@ -188,7 +188,7 @@ test('a grab flicks an orb into the glass and into the other orbs', () => {
 	})
 
 	const tossed = structuredClone(rested) satisfies Array<LanternOrbBody>
-	const flyer = tossed.find((body) => body.id === 'secrets')!
+	const flyer = tossed.find((body) => body.id === 'triggers')!
 	flyer.x = landingLanternCavity.x
 	flyer.y = landingLanternCavity.y
 	flyer.vx = 1.5
@@ -198,7 +198,7 @@ test('a grab flicks an orb into the glass and into the other orbs', () => {
 		time: 0,
 		amplitude: 0,
 	})
-	const coasted = coast.find((body) => body.id === 'secrets')!
+	const coasted = coast.find((body) => body.id === 'triggers')!
 	expect(coasted.x).toBeGreaterThan(flyer.x + 0.01)
 	expect(coasted.coasting).toBe(true)
 

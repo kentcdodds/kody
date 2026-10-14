@@ -84,24 +84,30 @@ function missing(html: string, markers: Array<string>) {
 	return markers.filter((marker) => !html.includes(marker))
 }
 
-test('homepage hero uses locked copy, compare, and session-aware connect CTA', async () => {
+test('homepage hero uses locked copy, compare, and one connect CTA', async () => {
 	const anonymous = await renderHome('https://example.com/')
 	expect(anonymous.status).toBe(200)
 	expect(
 		missing(anonymous.hero, [
+			'The <em>shared cloud</em> for your team\u2019s agents',
+			'One place for the credentials, tools, and workflows every agent needs. Works with every agent your team members use.',
+			'Keep your agent. Kody is what it plugs into.',
 			landingHeroPrimaryCta,
-			'href="#primitives"',
-			'/signup?utm_source=kody.codes',
 		]),
 	).toEqual([])
+	expect(landingHeroPrimaryCta).toBe('Connect your agent')
+	expect(anonymous.hero).not.toContain('/signup')
 	expect(anonymous.hero).not.toContain('landing-hero-video')
 	expect(anonymous.hero).not.toContain('landing-hero-agents')
+	// Onboarding happens with the agent, so the homepage never links to it.
+	expect(anonymous.html).not.toContain('href="/onboarding')
+	expect(anonymous.html).not.toContain('\u2014')
 	const [firstThumb, secondThumb] = homepageHeroVideos.map(
 		(video) => `/youtube-thumb/${video.videoId}`,
 	)
 	expect(
 		missing(anonymous.html, [
-			'id="primitives"',
+			'class="landing-pcard"',
 			'href="/docs"',
 			'landing-proof',
 			'landing-hero-agents',
@@ -110,8 +116,6 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 			firstThumb!,
 			'landing-hero-agent-light',
 			'landing-hero-agent-track',
-			'href="/docs/github"',
-			'href="/docs/slack"',
 			'aria-label="Example triggers"',
 			...landingFactoryBeats.flatMap((beat) => [
 				`href="/docs/${beat.slug}"`,
@@ -124,29 +128,39 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 		anonymous.html.indexOf(secondThumb!),
 	)
 	expect(anonymous.html).not.toContain('data-embed-playlist')
-	const inviteTools =
+	expect(anonymous.html).not.toContain('id="primitives"')
+
+	const isSection =
 		anonymous.html.match(
-			/<ul[^>]*class="[^"]*landing-invite-tools[^"]*"[\s\S]*?<\/ul>/,
+			/<section[^>]*class="landing-vs"[\s\S]*?<\/section>/,
 		)?.[0] ?? ''
-	const toolIcons = ['github', 'linear', 'sentry', 'cloudflare', 'slack']
 	expect(
-		missing(inviteTools, [
-			'GitHub',
-			'Linear',
-			'Sentry',
-			'Cloudflare',
-			'Slack',
-			'Public packages',
-			...toolIcons.map((icon) => `/images/icons/${icon}.svg`),
+		missing(isSection, [
+			'What Kody is and is not',
+			'Not an agent.',
+			'Not a chat app.',
+			'Not tied to one agent.',
+			'The shared credentials, tools, and workflows behind every agent your team uses.',
+		]),
+	).toEqual([])
+
+	const closing =
+		anonymous.html.match(
+			/<section[^>]*id="invisible-software"[\s\S]*?<\/section>/,
+		)?.[0] ?? ''
+	expect(
+		missing(closing, [
+			'Invisible <em>software</em>',
+			'People want problems solved, not another app.',
+			'href="/believe"',
+			landingHeroPrimaryCta,
 		]),
 	).toEqual([])
 
 	const signedIn = await renderHome('https://example.com/', true)
 	expect(signedIn.status).toBe(200)
-	expect(
-		missing(signedIn.hero, [landingHeroPrimaryCta, 'href="/onboarding"']),
-	).toEqual([])
-	expect(signedIn.hero).not.toContain('/signup?utm_source=kody.codes')
+	expect(missing(signedIn.hero, [landingHeroPrimaryCta])).toEqual([])
+	expect(signedIn.html).not.toContain('href="/onboarding')
 	expect(
 		missing(signedIn.html, ['landing-videos', 'landing-hero-agents']),
 	).toEqual([])

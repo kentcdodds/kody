@@ -13,9 +13,6 @@ import {
 	packageChanges,
 	packagesScene,
 	type PackageCallerId,
-	secretHosts,
-	secretsScene,
-	type SecretHostId,
 	triggerSources,
 	triggersScene,
 	type TriggerSourceId,
@@ -99,39 +96,6 @@ function MemoryWidget(handle: Handle) {
 	}
 }
 
-function SecretsWidget(handle: Handle) {
-	let host: SecretHostId = 'approved'
-	let shot = 0
-	return () => {
-		const target = secretHosts.find((entry) => entry.id === host)
-		return demo({
-			id: 'secrets',
-			label: 'Secrets example',
-			scene: secretsScene({ host, shot }),
-			controls: (
-				<>
-					<span class="demo-controls-label">Send to</span>
-					{secretHosts.map((entry) =>
-						controlButton({
-							label: entry.host,
-							pressed: host === entry.id,
-							onPress() {
-								host = entry.id
-								shot += 1
-								handle.update()
-							},
-						}),
-					)}
-				</>
-			),
-			receipt:
-				host === 'approved'
-					? `Kody attached the key for ${target?.host}. The agent only saw a reference.`
-					: `Kody blocked the request. ${target?.host} is not an approved host.`,
-		})
-	}
-}
-
 function PackagesWidget(handle: Handle) {
 	let version = 0
 	let caller: PackageCallerId = 'claude'
@@ -204,7 +168,7 @@ function IntegrationsWidget(handle: Handle) {
 		const slot = integrationSlots.find((entry) => entry.id === booked)
 		return demo({
 			id: 'integrations',
-			label: 'Integrations example',
+			label: 'Credentials example',
 			scene: integrationsScene({
 				booked,
 				shot,
@@ -268,8 +232,6 @@ export function OverviewWidget(handle: Handle<{ id: LandingPrimitiveId }>) {
 		switch (id) {
 			case 'memory':
 				return <MemoryWidget />
-			case 'secrets':
-				return <SecretsWidget />
 			case 'packages':
 				return <PackagesWidget />
 			case 'triggers':

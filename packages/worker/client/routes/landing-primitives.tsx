@@ -23,8 +23,8 @@ import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 const landingPrimitivesMoreHref = docHref('what-is-kody')
 
 /**
- * Homepage primitives block: the locked intro line, then the five-orb
- * lantern with the six words listed beside it, then the learn-more line
+ * `/features` primitives block: the locked intro line, then the five-orb
+ * lantern with the five words listed beside it, then the learn-more line
  * ("What is Kody?" → intro guide). Orbs highlight a primitive and draw
  * leader lines to its word; each word links to that primitive's feature page.
  *
@@ -35,7 +35,7 @@ const landingPrimitivesMoreHref = docHref('what-is-kody')
  * in the document for read-out and simply has no lines.
  */
 
-export const landingPrimitivesSectionId = 'primitives'
+const landingPrimitivesSectionId = 'primitives'
 
 /** Measure orbs and words, then write the leader paths in section pixels. */
 function leaderFollow() {
@@ -207,7 +207,7 @@ export function LandingPrimitives(handle: Handle) {
 					onResume={clearDismissed}
 				/>
 				{renderLeaders(openId)}
-				<ul class="landing-primitives-words" aria-label="The six primitives">
+				<ul class="landing-primitives-words" aria-label="The five primitives">
 					{landingHomePrimitives.map((primitive) => (
 						<li key={primitive.id} class="landing-primitive-item">
 							<LandingPrimitiveWord

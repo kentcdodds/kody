@@ -115,23 +115,25 @@
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
-	/* Six primitives, one palette: the lantern orbs, the leader lines,
-	   word dots, popovers, and orbit lights all read from these. Hues
-	   follow the orb art — memory red (not apps magenta), secrets purple,
-	   packages blue, triggers yellow, integrations green (the plug, not
-	   the old lightning lime), apps magenta. */
+	/* Primitive palette: the lantern orbs, the leader lines, word dots,
+	   popovers, and orbit lights all read from these. Hues follow the orb
+	   art: memory red, packages blue, triggers yellow, integrations
+	   (credentials) green, apps purple. Apps sits a step lighter than
+	   secrets so the dark ink on its scene buttons clears 4.5:1. Secrets
+	   keeps its purple for the `/features/secrets` scenes; it has no
+	   lantern orb. */
 	--primitive-memory: oklch(0.63 0.22 29);
 	--primitive-secrets: oklch(0.6 0.22 300);
 	--primitive-packages: oklch(0.6 0.2 255);
 	--primitive-triggers: oklch(0.78 0.16 96);
 	--primitive-integrations: oklch(0.66 0.19 148);
-	--primitive-apps: oklch(0.72 0.24 345);
+	--primitive-apps: oklch(0.63 0.21 300);
 	--primitive-memory-dark: oklch(0.72 0.17 29);
 	--primitive-secrets-dark: oklch(0.72 0.19 300);
 	--primitive-packages-dark: oklch(0.72 0.17 255);
 	--primitive-triggers-dark: oklch(0.89 0.17 96);
 	--primitive-integrations-dark: oklch(0.76 0.19 148);
-	--primitive-apps-dark: oklch(0.8 0.18 345);
+	--primitive-apps-dark: oklch(0.72 0.19 300);
 	/* Lightness used when a primitive color has to carry text: dark enough
 	   on the light canvas, light enough on graphite. */
 	--primitive-text-l: 0.46;
@@ -688,119 +690,6 @@ html.is-settled {
 	color: var(--color-text);
 }
 
-.landing-pill {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	font: 650 1rem/1 var(--font-display);
-	border: none;
-	border-radius: var(--radius-full);
-	padding: 0.95rem 1.7rem;
-	cursor: pointer;
-	text-decoration: none;
-	white-space: nowrap;
-	background-color: var(--color-primary);
-	color: var(--color-on-primary);
-	transition:
-		background-color var(--transition-fast),
-		color var(--transition-fast),
-		transform var(--transition-fast),
-		box-shadow var(--transition-fast);
-}
-
-.landing-pill:disabled {
-	cursor: not-allowed;
-	opacity: 0.7;
-}
-
-.landing-pill:not(:disabled):active {
-	transform: translateY(0) scale(0.97);
-}
-
-@media (hover: hover) and (pointer: fine) {
-	.landing-pill:not(:disabled):hover {
-		background-color: var(--color-primary-hover);
-		color: var(--color-on-primary);
-		transform: translateY(-1px);
-		box-shadow: 0 6px 20px -8px oklch(from var(--color-primary) l c h / 0.6);
-	}
-
-	.landing-pill:not(:disabled):active {
-		transform: translateY(0) scale(0.97);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.landing-pill {
-		transition:
-			background-color var(--transition-normal),
-			border-color var(--transition-normal),
-			color var(--transition-normal),
-			opacity var(--transition-normal),
-			box-shadow var(--transition-normal);
-	}
-
-	.landing-pill:not(:disabled):hover,
-	.landing-pill:not(:disabled):active {
-		transform: none;
-	}
-}
-
-.landing-pill-swap {
-	display: inline-grid;
-	justify-items: center;
-	align-items: center;
-}
-
-.landing-pill-swap [data-swap-label] {
-	grid-area: 1 / 1;
-	white-space: nowrap;
-	transition:
-		opacity 90ms var(--ease-out),
-		filter 90ms var(--ease-out),
-		scale 90ms var(--ease-out);
-}
-
-.landing-pill-swap [data-swap-label]:not([data-active]) {
-	opacity: 0;
-	filter: blur(3px);
-	scale: 0.96;
-}
-
-.landing-pill-swap [data-swap-label][data-active] {
-	transition:
-		opacity 200ms var(--ease-out) 50ms,
-		filter 200ms var(--ease-out) 50ms,
-		scale 200ms var(--ease-out) 50ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.landing-pill-swap [data-swap-label] {
-		transition: opacity 90ms var(--ease-out);
-		filter: none;
-		scale: none;
-	}
-
-	.landing-pill-swap [data-swap-label][data-active] {
-		transition: opacity 200ms var(--ease-out) 50ms;
-	}
-}
-
-.landing-pill-swap[aria-disabled='true'] {
-	cursor: progress;
-	opacity: 0.7;
-	transform: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-	.landing-pill-swap[aria-disabled='true']:hover,
-	.landing-pill-swap[aria-disabled='true']:active {
-		transform: none;
-		box-shadow: none;
-	}
-}
-
 .landing-account-deleted {
 	box-sizing: border-box;
 	width: min(40rem, calc(100% - 2.5rem));
@@ -848,20 +737,23 @@ html.is-settled {
 
 .landing-hero-subhead {
 	margin: 1.15rem 0 0;
-	font-size: clamp(1.25rem, 2.4vw, 1.7rem);
-	font-weight: 650;
+	max-width: 40ch;
+	color: var(--color-text-muted);
+	font-size: clamp(1.1rem, 1.9vw, 1.35rem);
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	line-height: 1.45;
+	text-wrap: pretty;
+}
+
+/* The line directly under the hero: keep your agent, plug it into Kody. */
+.landing-hero-plug {
+	margin: clamp(2.25rem, 5vw, 3.25rem) auto 0;
+	font-size: clamp(1.3rem, 2.6vw, 1.75rem);
+	font-weight: 700;
 	letter-spacing: -0.02em;
 	line-height: 1.25;
 	text-wrap: balance;
-}
-
-.landing-hero-lead {
-	margin: 0.95rem 0 0;
-	color: var(--color-text-muted);
-	font-size: 1.12rem;
-	line-height: 1.5;
-	max-width: 42ch;
-	text-wrap: pretty;
 }
 
 .landing-hero-actions {
@@ -871,17 +763,6 @@ html.is-settled {
 	justify-content: center;
 	align-items: center;
 	gap: 0.85rem 1.25rem;
-}
-
-.landing-hero-secondary {
-	font: 650 1rem/1 var(--font-display);
-	color: var(--color-primary-text);
-	text-decoration-thickness: 1.5px;
-	text-underline-offset: 3px;
-}
-
-.landing-hero-secondary:hover {
-	color: var(--color-text);
 }
 
 .landing-hero-media {
@@ -1082,10 +963,6 @@ html.is-settled {
 			translate 260ms var(--ease-out),
 			opacity 200ms var(--ease-out);
 	}
-}
-
-.landing-hero-cta {
-	box-sizing: border-box;
 }
 
 .landing-compare {
@@ -1612,6 +1489,23 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
+.landing-vs-item-is {
+	border-color: color-mix(
+		in oklch,
+		var(--color-primary) 40%,
+		var(--color-border)
+	);
+	background: color-mix(
+		in oklch,
+		var(--color-primary) 7%,
+		var(--color-surface)
+	);
+}
+
+.landing-vs-item-is .landing-vs-body {
+	color: var(--color-text);
+}
+
 .landing-proof {
 	max-width: 72rem;
 	margin: 0 auto;
@@ -1657,10 +1551,6 @@ html.is-settled {
 
 .landing-videos .landing-section-heading {
 	margin-bottom: 1.25rem;
-}
-
-.landing-invite-tools {
-	margin-top: 2.25rem;
 }
 
 .landing-hero-art {
@@ -1958,47 +1848,6 @@ html.is-settled {
 	padding: 0.45rem 1rem;
 }
 
-.landing-chip-muted {
-	color: var(--color-text-muted);
-	background-color: transparent;
-	border-style: dashed;
-}
-
-.landing-chip-icon::before {
-	content: '';
-	width: 1.05em;
-	height: 1.05em;
-	flex: none;
-	background: currentColor;
-	mask-image: var(--chip-icon);
-	mask-position: center;
-	mask-size: contain;
-	mask-repeat: no-repeat;
-	-webkit-mask-image: var(--chip-icon);
-	-webkit-mask-position: center;
-	-webkit-mask-size: contain;
-	-webkit-mask-repeat: no-repeat;
-}
-
-.landing-chip-link {
-	text-decoration: none;
-	cursor: pointer;
-}
-
-.landing-chip-link:hover {
-	color: var(--color-text);
-	border-color: color-mix(
-		in oklch,
-		var(--color-primary) 40%,
-		var(--color-border)
-	);
-	background-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
-}
-
-.landing-world-link-item {
-	display: flex;
-}
-
 .landing-factory {
 	max-width: 72rem;
 	margin-inline: auto;
@@ -2222,6 +2071,9 @@ html.is-settled {
 
 .landing-loop {
 	margin: clamp(1.75rem, 4vw, 2.5rem) auto 0;
+	/* Auto inline margins shrink a grid item to its content, so the card
+	   would grow as the conversation fills in. Hold the full column. */
+	width: 100%;
 	max-width: 40rem;
 	text-align: left;
 	background: var(--color-surface);
@@ -2807,17 +2659,6 @@ html.is-settled {
 	text-wrap: balance;
 }
 
-.landing-world-cloud {
-	list-style: none;
-	margin: 2.2rem auto 0;
-	padding: 0;
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 0.6rem;
-	max-width: 46rem;
-}
-
 .landing-trust {
 	max-width: 72rem;
 	margin-inline: auto;
@@ -2886,6 +2727,11 @@ html.is-settled {
 	font-size: 1.08rem;
 	max-width: 44ch;
 	text-wrap: balance;
+}
+
+.landing-invite-believe {
+	margin: 1.1rem auto 0;
+	font-weight: 600;
 }
 
 .landing-invite-cta {
@@ -3346,14 +3192,7 @@ button.pw-node:hover {
 	animation-delay: calc(var(--i, 0) * 2s);
 }
 
-/* Secrets */
-
-.pw-vault {
-	flex-direction: column;
-	gap: 0.25em;
-	padding: 0.5em 0.85em;
-	font-weight: 600;
-}
+/* Lock, lanes, and packets shared by the scenes */
 
 .pw-lock {
 	position: relative;
@@ -3377,25 +3216,6 @@ button.pw-node:hover {
 	border-radius: 0.35em 0.35em 0 0;
 }
 
-.pw-host {
-	flex-direction: column;
-	gap: 0.1em;
-}
-
-.pw-host-name {
-	font-size: 0.85em;
-}
-
-.pw-host-status {
-	font-size: 0.72em;
-	color: var(--pw-muted);
-}
-
-.pw-run[data-blocked] .pw-host {
-	border-style: dashed;
-	opacity: 0.6;
-}
-
 .pw-lane {
 	position: absolute;
 	height: 0;
@@ -3417,70 +3237,12 @@ button.pw-node:hover {
 	opacity: 0;
 }
 
-.pw-run[data-blocked] .pw-lane-2 {
-	display: none;
-}
-
-.pw-stamp {
-	position: absolute;
-	translate: -50% -50%;
-	display: grid;
-	place-items: center;
-	width: 1.5em;
-	height: 1.5em;
-	border-radius: 50%;
-	background: var(--color-danger, #c0392b);
-	color: #fff;
-	font-weight: 800;
-	opacity: 0;
-}
-
-.pw-run[data-blocked] .pw-stamp {
-	opacity: 1;
-}
-
-.pw-ledger {
-	display: grid;
-	grid-template-columns: auto auto;
-	gap: 0.25em 1.2em;
-	padding: 0.55em 0.95em;
-	font-size: 0.85em;
-}
-
-.pw-ledger span {
-	color: var(--pw-muted);
-}
-
-.pw-ledger code {
-	font-family: ui-monospace, monospace;
-}
-
 .pw[data-motion] .pw-lane {
 	animation: pw-lane-1 5s var(--pw-ease) infinite;
 }
 
 .pw[data-motion] .pw-lane .pw-packet {
 	animation: pw-packet-1 5s linear infinite;
-}
-
-.pw[data-motion] .pw-lane-2 {
-	animation-name: pw-lane-2;
-}
-
-.pw[data-motion] .pw-lane-2 .pw-packet {
-	animation-name: pw-packet-2;
-}
-
-.pw[data-motion] .pw-vault {
-	animation: pw-vault 5s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-run:not([data-blocked]) .pw-host {
-	animation: pw-arrive 5s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-run[data-blocked] .pw-stamp {
-	animation: pw-stamp 5s var(--pw-ease) infinite;
 }
 
 @keyframes pw-lane-1 {
@@ -3506,73 +3268,6 @@ button.pw-node:hover {
 	36%,
 	100% {
 		opacity: 0;
-	}
-}
-
-@keyframes pw-lane-2 {
-	0%,
-	44% {
-		transform: translateX(0);
-	}
-	74%,
-	100% {
-		transform: translateX(100%);
-	}
-}
-
-@keyframes pw-packet-2 {
-	0%,
-	43% {
-		opacity: 0;
-	}
-	46%,
-	72% {
-		opacity: 1;
-	}
-	76%,
-	100% {
-		opacity: 0;
-	}
-}
-
-@keyframes pw-vault {
-	0%,
-	32%,
-	48%,
-	100% {
-		scale: 1;
-	}
-	38% {
-		scale: 1.1;
-	}
-}
-
-@keyframes pw-arrive {
-	0%,
-	72%,
-	86%,
-	100% {
-		scale: 1;
-	}
-	77% {
-		scale: 1.1;
-	}
-}
-
-@keyframes pw-stamp {
-	0%,
-	38% {
-		opacity: 0;
-		scale: 1.8;
-	}
-	44%,
-	92% {
-		opacity: 1;
-		scale: 1;
-	}
-	100% {
-		opacity: 0;
-		scale: 1;
 	}
 }
 
@@ -5138,9 +4833,10 @@ button.pw-slot:hover {
 	text-align: center;
 }
 
+/* Half-width tracks so a short last row can sit centered under the rest. */
 .landing-pcards-list {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(6, minmax(0, 1fr));
 	gap: 1rem;
 	margin: 1.75rem 0 0;
 	padding: 0;
@@ -5150,6 +4846,15 @@ button.pw-slot:hover {
 
 .landing-pcard-item {
 	display: flex;
+	grid-column: span 2;
+}
+
+.landing-pcard-item:nth-child(3n + 1):nth-last-child(2) {
+	grid-column: 2 / span 2;
+}
+
+.landing-pcard-item:nth-child(3n + 1):last-child {
+	grid-column: 3 / span 2;
 }
 
 .landing-pcard {
@@ -5222,7 +4927,16 @@ button.pw-slot:hover {
 	}
 
 	.landing-pcards-list {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.landing-pcard-item,
+	.landing-pcard-item:nth-child(3n + 1):nth-last-child(2) {
+		grid-column: span 2;
+	}
+
+	.landing-pcard-item:nth-child(odd):last-child {
+		grid-column: 2 / span 2;
 	}
 }
 
@@ -5243,7 +4957,10 @@ button.pw-slot:hover {
 		scroll-snap-type: x mandatory;
 	}
 
-	.landing-pcard-item {
+	.landing-pcard-item,
+	.landing-pcard-item:nth-child(3n + 1):nth-last-child(2),
+	.landing-pcard-item:nth-child(odd):last-child {
+		grid-column: auto;
 		scroll-snap-align: start;
 	}
 }

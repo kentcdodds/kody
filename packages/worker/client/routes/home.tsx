@@ -10,24 +10,24 @@ import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
-import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
-import { landingWorldBrands } from '#universal/landing-world-brands.ts'
 import { renderIcon } from '#universal/icon.tsx'
-import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	isLandingHeroVideo,
-	landingHeroChooserLabel,
 	landingHeroChooserLabelEmphasis,
 	landingHeroChooserLabelLead,
 	presentLandingHeroVideos,
 	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
 import {
+	landingClosingBelieveLink,
+	landingClosingHeadingEmphasis,
+	landingClosingHeadingLead,
+	landingClosingLead,
 	landingCompareCaption,
 	landingCompareWithItems,
 	landingCompareWithoutItems,
@@ -35,24 +35,18 @@ import {
 	landingCompareWithoutTitle,
 	landingHeroHeadlineEmphasis,
 	landingHeroHeadlineLead,
-	landingHeroLead,
+	landingHeroHeadlineTail,
+	landingHeroPlugLine,
 	landingHeroPrimaryCta,
-	landingHeroSecondaryCta,
-	landingHeroSubheadEmphasis,
-	landingHeroSubheadLead,
-	landingHeroSubheadTail,
-	landingInviteGuestLead,
-	landingInviteHeadingEmphasis,
-	landingInviteHeadingLead,
-	landingInviteSignedInLead,
-	landingVsHeading,
-	landingVsItems,
+	landingHeroSubhead,
+	landingIsHeading,
+	landingIsItem,
+	landingIsNotItems,
 } from '#universal/landing-home-copy.ts'
 import {
 	accountDeletedConfirmationMessage,
 	isAccountDeletedHome,
 } from '#universal/account-deletion-confirmation.ts'
-import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
@@ -60,19 +54,18 @@ import {
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	LandingPrimitives,
-	landingPrimitivesSectionId,
-} from '#client/routes/landing-primitives.tsx'
 import { LandingPrimitiveCards } from '#client/routes/landing-primitive-cards.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
- * Public landing page. Cross-agent continuity is the door: H1, compare,
- * primitives, and vs come first. Factory / orbit / videos prove it. Motion
- * is enhance-only (`html.js`) and fully off under `prefers-reduced-motion`.
+ * Public landing page. The shared team cloud is the door: H1, one connect
+ * CTA, compare, primitive cards, and what Kody is and is not come first.
+ * Factory / orbit / videos prove it, and the page closes on invisible
+ * software. The connect CTA copies an agent-led setup prompt, so the page
+ * never links to `/onboarding`. Motion is enhance-only (`html.js`) and fully
+ * off under `prefers-reduced-motion`.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -116,8 +109,7 @@ const ecosystemPathSteps = [
 
 const ecosystemTriggers = ['Webhook', 'Cron', 'HTTP', 'App'] as const
 
-const communityHref = routes.community.href()
-const howItWorksHref = `#${landingPrimitivesSectionId}`
+const believeHref = routes.believe.href()
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -145,10 +137,6 @@ async function fetchLandingHeroVideos(signal: AbortSignal) {
 	}
 }
 
-function chipIconStyle(icon: string) {
-	return { '--chip-icon': `url("/images/icons/${icon}.svg")` }
-}
-
 export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
@@ -171,7 +159,6 @@ type HomePagePayloads = {
 }
 
 export function HomeRoute(handle: Handle) {
-	let loggedIn = false
 	let walkthroughHosts: WalkthroughHostPick | null = null
 	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
@@ -212,14 +199,9 @@ export function HomeRoute(handle: Handle) {
 		},
 	})
 
-	function applyOnboardingPayload(payload: OnboardingPayload | null) {
-		loggedIn = payload?.loggedIn === true
-	}
-
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
 		landingHeroVideos = presentLandingHeroVideos(payload.landingHeroVideos)
-		applyOnboardingPayload(payload.onboarding)
 	}
 
 	return () => {
@@ -231,11 +213,6 @@ export function HomeRoute(handle: Handle) {
 		}
 		const pending = snapshot.kind === 'pending'
 		const busy = pending && appliedPayload !== null
-
-		// A failed fallback fetch still settles the door for a visitor.
-		const onboardingReady = appliedPayload !== null || snapshot.kind === 'error'
-		const isSignedIn = onboardingReady && loggedIn
-		const connectHref = isSignedIn ? onboardingPath : homepageSignupPath
 
 		const showAccountDeleted = isAccountDeletedHome(
 			new URL(currentHref, 'https://kody.local').search,
@@ -258,33 +235,26 @@ export function HomeRoute(handle: Handle) {
 						<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
 							{landingHeroHeadlineLead}
 							<em>{landingHeroHeadlineEmphasis}</em>
+							{landingHeroHeadlineTail}
 						</h1>
 						<h2
 							data-rise
 							style={{ '--rise': '0.6' }}
 							class="landing-hero-subhead"
 						>
-							{landingHeroSubheadLead}
-							<em>{landingHeroSubheadEmphasis}</em>
-							{landingHeroSubheadTail}
+							{landingHeroSubhead}
 						</h2>
-						<p data-rise style={{ '--rise': '1' }} class="landing-hero-lead">
-							{landingHeroLead}
-						</p>
 						<div
 							data-rise
-							style={{ '--rise': '1.4' }}
+							style={{ '--rise': '1' }}
 							class="landing-hero-actions"
 						>
-							<a href={connectHref} class="landing-pill landing-hero-cta">
-								{landingHeroPrimaryCta}
-							</a>
-							<BuildWithAgentButton />
-							<a href={howItWorksHref} class="landing-hero-secondary">
-								{landingHeroSecondaryCta}
-							</a>
+							{renderConnectCta()}
 						</div>
 					</div>
+					<p data-rise style={{ '--rise': '1.4' }} class="landing-hero-plug">
+						{landingHeroPlugLine}
+					</p>
 					<div class="landing-compare">
 						<div class="landing-compare-col">
 							<h3 id="compare-without-title" class="landing-compare-title">
@@ -316,20 +286,23 @@ export function HomeRoute(handle: Handle) {
 					<p class="landing-compare-caption">{landingCompareCaption}</p>
 				</section>
 
-				<LandingPrimitives />
 				<LandingPrimitiveCards />
 
-				<section aria-labelledby="vs-title" class="landing-vs">
-					<h2 id="vs-title" class="landing-section-heading">
-						{landingVsHeading}
+				<section aria-labelledby="is-title" class="landing-vs">
+					<h2 id="is-title" class="landing-section-heading">
+						{landingIsHeading}
 					</h2>
 					<ul class="landing-vs-list">
-						{landingVsItems.map((item) => (
+						{landingIsNotItems.map((item) => (
 							<li key={item.kicker} class="landing-vs-item" mix={reveal()}>
 								<p class="landing-vs-kicker">{item.kicker}</p>
 								<p class="landing-vs-body">{item.body}</p>
 							</li>
 						))}
+						<li class="landing-vs-item landing-vs-item-is" mix={reveal()}>
+							<p class="landing-vs-kicker">{landingIsItem.kicker}</p>
+							<p class="landing-vs-body">{landingIsItem.body}</p>
+						</li>
 					</ul>
 				</section>
 
@@ -463,8 +436,8 @@ export function HomeRoute(handle: Handle) {
 				) : null}
 
 				<section
-					id="invite"
-					aria-labelledby="invite-title"
+					id="invisible-software"
+					aria-labelledby="closing-title"
 					class="landing-invite"
 				>
 					<img
@@ -473,72 +446,34 @@ export function HomeRoute(handle: Handle) {
 						class="landing-invite-art"
 					/>
 					<h2
-						id="invite-title"
+						id="closing-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						{landingInviteHeadingLead}
-						<em>{landingInviteHeadingEmphasis}</em>
+						{landingClosingHeadingLead}
+						<em>{landingClosingHeadingEmphasis}</em>
 					</h2>
-					{isSignedIn ? (
-						<div>
-							<p class="landing-invite-lead">{landingInviteSignedInLead}</p>
-							<p class="landing-invite-cta">
-								<a href={onboardingPath} class="landing-pill">
-									{landingHeroPrimaryCta}
-								</a>
-							</p>
-						</div>
-					) : (
-						<div>
-							<p class="landing-invite-lead">{landingInviteGuestLead}</p>
-							<p class="landing-invite-cta">
-								<a href={homepageSignupPath} class="landing-pill">
-									{publicCreateAccountLabel}
-								</a>
-							</p>
-						</div>
-					)}
-					<ul
-						aria-label="Services that work with Kody"
-						class="landing-world-cloud landing-invite-tools"
-					>
-						{landingWorldBrands.map((brand, index) =>
-							'href' in brand && brand.href ? (
-								<li key={brand.label} class="landing-world-link-item">
-									<a
-										href={brand.href}
-										class="landing-chip landing-chip-icon landing-chip-link"
-										style={chipIconStyle(brand.icon)}
-										mix={revealPop(index * 35)}
-									>
-										{brand.label}
-									</a>
-								</li>
-							) : (
-								<li
-									key={brand.label}
-									class="landing-chip landing-chip-icon"
-									style={chipIconStyle(brand.icon)}
-									mix={revealPop(index * 35)}
-								>
-									{brand.label}
-								</li>
-							),
-						)}
-						<li class="landing-world-link-item">
-							<a
-								href={communityHref}
-								class="landing-chip landing-chip-muted landing-chip-link"
-								mix={revealPop(landingWorldBrands.length * 35)}
-							>
-								Public packages
-							</a>
-						</li>
-					</ul>
+					<p class="landing-invite-lead">{landingClosingLead}</p>
+					<p class="landing-invite-believe">
+						<a href={believeHref} class="landing-inline-link">
+							{landingClosingBelieveLink} <span aria-hidden="true">→</span>
+						</a>
+					</p>
+					<div class="landing-invite-cta">{renderConnectCta()}</div>
 				</section>
 			</div>
 		)
 	}
+}
+
+/** The page's one call to action: copy an agent-led setup prompt. */
+function renderConnectCta() {
+	return (
+		<BuildWithAgentButton
+			label={landingHeroPrimaryCta}
+			variant="pill"
+			onboardingPage={false}
+		/>
+	)
 }
 
 type LandingPathStep = {

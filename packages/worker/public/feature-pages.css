@@ -47,7 +47,7 @@
 	--hue: 148;
 }
 .feature-detail .apps {
-	--hue: 345;
+	--hue: 300;
 }
 .feature-detail button {
 	color: inherit;
@@ -1292,8 +1292,15 @@
 }
 .feature-overview .features {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	gap: 26px;
+}
+.feature-overview .feature {
+	grid-column: span 2;
+}
+/* An odd card out sits centered under the pairs. */
+.feature-overview .feature:nth-child(odd):last-child {
+	grid-column: 2 / span 2;
 }
 .feature-overview .feature {
 	position: relative;
@@ -1393,6 +1400,10 @@
 	.feature-overview .features {
 		grid-template-columns: 1fr;
 		gap: 24px;
+	}
+	.feature-overview .feature,
+	.feature-overview .feature:nth-child(odd):last-child {
+		grid-column: auto;
 	}
 	.feature-overview h1 {
 		font-size: 43px;
