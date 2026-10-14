@@ -39,6 +39,6 @@ export async function bundlePausedPublishes(input: {
 
 export function pausedPublishBundleMessage(bundle: PausedPublishBundle | null) {
 	return bundle
-		? `${bundle.count} paused publishes wait for approval, including this one. The owner can approve them together at ${bundle.url}.`
+		? `${bundle.count} paused publishes wait for approval, including this one. The person you act for can approve them together at ${bundle.url} (only they can open it).`
 		: null
 }
