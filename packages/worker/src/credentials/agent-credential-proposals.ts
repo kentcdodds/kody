@@ -220,6 +220,115 @@ export async function agentHasApprovedPick(input: {
 	)
 }
 
+export type RecordedCredentialProposal = {
+	id: string
+	orgId: string
+	packageId: string
+	personId: string
+	agentCredentialKind: string
+	agentCredentialId: string
+	proposal: ParsedCredentialProposal
+	approvedAt: string | null
+	createdAt: string
+}
+
+/** The proposal as `credentialMappingPropose` recorded it; null when unreadable. */
+function readRecordedProposal(json: string): ParsedCredentialProposal | null {
+	try {
+		const parsed = JSON.parse(json) as Partial<
+			Pick<ParsedCredentialProposal, 'changes' | 'enable' | 'reason'>
+		> & { sender?: ParsedCredentialProposal['sender'] }
+		if (!Array.isArray(parsed.changes) || !Array.isArray(parsed.enable)) {
+			return null
+		}
+		return {
+			changes: parsed.changes,
+			enable: parsed.enable,
+			reason: typeof parsed.reason === 'string' ? parsed.reason : null,
+			sender: parsed.sender ?? null,
+			errors: [],
+		}
+	} catch {
+		return null
+	}
+}
+
+function mapRecordedProposal(
+	row: Record<string, unknown>,
+): RecordedCredentialProposal | null {
+	const proposal = readRecordedProposal(String(row['proposal_json']))
+	if (!proposal) return null
+	return {
+		id: String(row['id']),
+		orgId: String(row['org_id']),
+		packageId: String(row['package_id']),
+		personId: String(row['person_user_id']),
+		agentCredentialKind: String(row['agent_credential_kind']),
+		agentCredentialId: String(row['agent_credential_id']),
+		proposal,
+		approvedAt: row['approved_at'] == null ? null : String(row['approved_at']),
+		createdAt: String(row['created_at']),
+	}
+}
+
+const recordedProposalColumns = `id, org_id, package_id, person_user_id,
+	agent_credential_kind, agent_credential_id, proposal_json, approved_at,
+	created_at`
+
+/** One recorded proposal made for `personId` in `orgId`. */
+export async function getRecordedCredentialProposal(input: {
+	db: D1Database
+	id: string
+	orgId: string
+	personId: string
+}): Promise<RecordedCredentialProposal | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT ${recordedProposalColumns} FROM credential_mapping_proposals
+			WHERE id = ? AND org_id = ? AND person_user_id = ?`,
+		)
+		.bind(input.id, input.orgId, input.personId)
+		.first<Record<string, unknown>>()
+	return row ? mapRecordedProposal(row) : null
+}
+
+/**
+ * Unapproved proposals made for `personId` in `orgId` within the pending
+ * window, newest first. The same proposal recorded twice for a package
+ * appears once, as its newest record.
+ */
+export async function listPendingCredentialProposals(input: {
+	db: D1Database
+	orgId: string
+	personId: string
+	now?: Date
+}): Promise<Array<RecordedCredentialProposal>> {
+	const now = input.now ?? new Date()
+	const { results } = await input.db
+		.prepare(
+			`SELECT ${recordedProposalColumns} FROM credential_mapping_proposals
+			WHERE org_id = ? AND person_user_id = ? AND approved_at IS NULL
+				AND created_at >= ?
+			ORDER BY created_at DESC, id`,
+		)
+		.bind(
+			input.orgId,
+			input.personId,
+			new Date(now.getTime() - pendingProposalTtlMs).toISOString(),
+		)
+		.all<Record<string, unknown>>()
+	const seen = new Set<string>()
+	const proposals: Array<RecordedCredentialProposal> = []
+	for (const row of results ?? []) {
+		const dedupeKey = JSON.stringify([row['package_id'], row['proposal_json']])
+		if (seen.has(dedupeKey)) continue
+		seen.add(dedupeKey)
+		const recorded = mapRecordedProposal(row)
+		if (recorded) proposals.push(recorded)
+	}
+	return proposals
+}
+
 /** A member leaving an org takes their agents' proposals with them. */
 export async function deleteCredentialProposalsForMember(input: {
 	db: D1Database
