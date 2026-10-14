@@ -170,8 +170,8 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 			'trigger',
 			'package',
 		],
-		readOnly: true,
-		idempotent: true,
+		readOnly: false,
+		idempotent: false,
 		destructive: false,
 		inputSchema: z
 			.object({

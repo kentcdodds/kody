@@ -13,7 +13,7 @@ import {
 	type CredentialApprovalView,
 	type ParsedCredentialProposal,
 } from '#universal/credential-contracts.ts'
-import { recordCredentialProposalApproval } from './agent-credential-proposals.ts'
+import { planCredentialProposalApproval } from './agent-credential-proposals.ts'
 import {
 	resolveMappingChanges,
 	resolveTriggerEnables,
@@ -137,8 +137,8 @@ async function resolveFresh(
 /**
  * Re-resolves the proposal and, when it still matches `fingerprint` and has
  * no errors, writes every change (and any trigger it turns on) in one batch.
- * With `proposalId`, an approved agent proposal records the trigger picks it
- * applied, which that agent may set again later. The returned view is
+ * With `proposalId`, the same batch records the trigger picks an agent's
+ * proposal applied, which that agent may set again later. The returned view is
  * resolved again after the write.
  */
 export async function approveCredentialProposal(input: {
@@ -155,9 +155,18 @@ export async function approveCredentialProposal(input: {
 	if (current.view.fingerprint !== input.fingerprint) {
 		return { status: 'stale', view: current.view }
 	}
+	const approval = input.proposalId
+		? await planCredentialProposalApproval({
+				scope,
+				proposalId: input.proposalId,
+				proposal,
+				resolved: current.resolved,
+			})
+		: null
 	try {
 		await writeMappingChanges(scope, current.resolved, {
 			enable: current.enable,
+			also: approval ? [approval] : [],
 		})
 	} catch (error) {
 		// A trigger someone else turned on between resolve and write.
@@ -167,14 +176,6 @@ export async function approveCredentialProposal(input: {
 			message: error.message,
 			view: await resolveFresh(scope, proposal),
 		}
-	}
-	if (input.proposalId) {
-		await recordCredentialProposalApproval({
-			scope,
-			proposalId: input.proposalId,
-			proposal,
-			resolved: current.resolved,
-		})
 	}
 	return { status: 'approved', view: await resolveFresh(scope, proposal) }
 }

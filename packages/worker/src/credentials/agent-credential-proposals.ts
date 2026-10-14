@@ -113,24 +113,26 @@ export async function recordCredentialProposal(input: {
 }
 
 /**
- * After an Approve, records the trigger picks it applied on the recorded
- * proposal `proposalId`. Only the person the agent proposed for can approve
- * picks the agent may later set, and only for exactly what was proposed:
- * an edited link, another org or package, or another approver records
- * nothing. Returns whether it recorded.
+ * The statement that records, on the recorded proposal `proposalId`, the
+ * trigger picks an Approve applies, for the caller to write in the same batch
+ * as the mappings. Only the person the agent proposed for can approve picks
+ * the agent may later set, and only for exactly what was proposed: an edited
+ * link, another org or package, or another approver records nothing (null).
+ * Picks approved earlier on the same proposal stay approved.
  */
-export async function recordCredentialProposalApproval(input: {
+export async function planCredentialProposalApproval(input: {
 	scope: PackageMappingScope
 	proposalId: string
 	proposal: ParsedCredentialProposal
 	resolved: ReadonlyArray<ResolvedMappingChange>
 	now?: Date
-}): Promise<boolean> {
+}): Promise<D1PreparedStatement | null> {
 	const { scope } = input
 	const db = scope.env.APP_DB
 	const row = await db
 		.prepare(
-			`SELECT proposal_json FROM credential_mapping_proposals
+			`SELECT proposal_json, approved_picks_json
+			FROM credential_mapping_proposals
 			WHERE id = ? AND org_id = ? AND package_id = ? AND person_user_id = ?`,
 		)
 		.bind(
@@ -139,21 +141,20 @@ export async function recordCredentialProposalApproval(input: {
 			scope.savedPackage.id,
 			scope.actorId,
 		)
-		.first<{ proposal_json: string }>()
-	if (!row || row.proposal_json !== proposalJson(input.proposal)) return false
-	const picks: Array<ApprovedTriggerPick> = input.resolved.flatMap((change) =>
-		change.target.type === 'trigger' && change.credentialIds
-			? [
-					{
-						trigger: change.target.trigger,
-						instanceId: change.trigger?.instanceId ?? null,
-						needKey: change.needKey,
-						credentialIds: change.credentialIds,
-					},
-				]
-			: [],
-	)
-	await db
+		.first<{ proposal_json: string; approved_picks_json: string | null }>()
+	if (!row || row.proposal_json !== proposalJson(input.proposal)) return null
+	const picks = parsePicks(row.approved_picks_json ?? '[]')
+	for (const change of input.resolved) {
+		if (change.target.type !== 'trigger' || !change.credentialIds) continue
+		const pick: ApprovedTriggerPick = {
+			trigger: change.target.trigger,
+			instanceId: change.trigger?.instanceId ?? null,
+			needKey: change.needKey,
+			credentialIds: change.credentialIds,
+		}
+		if (!picks.some((approved) => samePick(approved, pick))) picks.push(pick)
+	}
+	return db
 		.prepare(
 			`UPDATE credential_mapping_proposals
 			SET approved_picks_json = ?, approved_at = ?
@@ -164,8 +165,6 @@ export async function recordCredentialProposalApproval(input: {
 			(input.now ?? new Date()).toISOString(),
 			input.proposalId,
 		)
-		.run()
-	return true
 }
 
 function parsePicks(json: string): Array<ApprovedTriggerPick> {

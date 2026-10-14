@@ -350,8 +350,9 @@ export function resolveTriggerEnables(
 
 /**
  * Writes resolved changes in one batch, turning on any trigger a change maps
- * for the first time and every trigger in `enable` that is not on yet. Every
- * change and enable must have resolved without an error.
+ * for the first time and every trigger in `enable` that is not on yet, plus
+ * any `also` statements. Every change and enable must have resolved without an
+ * error.
  */
 export async function writeMappingChanges(
 	scope: PackageMappingScope,
@@ -359,6 +360,7 @@ export async function writeMappingChanges(
 	options: {
 		now?: string
 		enable?: ReadonlyArray<ResolvedTriggerEnable>
+		also?: ReadonlyArray<D1PreparedStatement>
 	} = {},
 ) {
 	const now = options.now ?? new Date().toISOString()
@@ -425,6 +427,6 @@ export async function writeMappingChanges(
 		)
 	}
 	for (const prepare of prepares) await prepare()
-	const batch = [...enableStatements, ...statements]
+	const batch = [...enableStatements, ...statements, ...(options.also ?? [])]
 	if (batch.length > 0) await db.batch(batch)
 }

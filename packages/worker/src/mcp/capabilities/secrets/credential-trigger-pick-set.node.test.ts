@@ -147,6 +147,46 @@ test('an agent sets a trigger pick back to a value it proposed and the person ap
 	expect(await t.dailyChatPick()).toEqual([t.team])
 })
 
+test('approving the same link again after its credential is replaced keeps the earlier pick approved', async () => {
+	const t = await setup()
+	const approvalUrl = await t.propose('team-slack')
+	await t.approve(approvalUrl)
+	await t.db
+		.prepare(`UPDATE secret_entries SET name = 'old-team-slack' WHERE id = ?`)
+		.bind(t.team)
+		.run()
+	const replacement = await t.storeKey('team-slack', 'slack')
+	await t.approve(approvalUrl)
+	expect(await t.dailyChatPick()).toEqual([replacement])
+
+	await t.setPick('old-team-slack')
+	expect(await t.dailyChatPick()).toEqual([t.team])
+	await t.setPick('team-slack')
+	expect(await t.dailyChatPick()).toEqual([replacement])
+})
+
+test('Approve writes the mapping and records the approved picks together, or neither', async () => {
+	const t = await setup()
+	const approvalUrl = await t.propose('team-slack')
+	const prepare = t.db.prepare.bind(t.db)
+	const spy = vi
+		.spyOn(t.db, 'prepare')
+		.mockImplementation((sql: string) =>
+			prepare(
+				sql.includes('SET approved_picks_json')
+					? sql.replace('approved_at = ?', 'missing_column = ?')
+					: sql,
+			),
+		)
+	await expect(t.approve(approvalUrl)).rejects.toThrow()
+	spy.mockRestore()
+	expect(await t.dailyChatPick()).toBeNull()
+	expect(await t.enablementCount()).toBe(0)
+
+	await t.approve(approvalUrl)
+	expect(await t.dailyChatPick()).toEqual([t.team])
+})
+
 test('an agent cannot set a pick it never proposed, or one another agent proposed', async () => {
 	const t = await setup()
 	await t.approve(await t.propose('team-slack'))
