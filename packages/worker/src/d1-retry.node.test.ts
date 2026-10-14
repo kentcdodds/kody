@@ -53,6 +53,32 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		// KODY-82: D1 can surface DO-storage object-reset under D1_ERROR:.
 		[`${doReset}; reference = b44vvje0qcq0ubd9ea522366`, true, false],
 		[`Error: ${doReset}; reference = b44vvje0qcq0ubd9ea522366`, true, true],
+		// KODY-95: startup phrasing of the same DO-storage-reset family.
+		[
+			'Internal error while starting up Durable Object storage caused object to be reset; reference = 9k2mnpq7rstuvwxyzabcdefg',
+			true,
+			false,
+		],
+		[
+			'Error: Internal error while starting up Durable Object storage caused object to be reset; reference = e_Gz3hrU_5c47162d21d24e238a5c25e98b89ee39',
+			true,
+			true,
+		],
+		[
+			'D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+			true,
+			false,
+		],
+		[
+			'Error: D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+			true,
+			true,
+		],
+		[
+			'Internal error while starting up D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
+			true,
+			false,
+		],
 		['Network connection lost while uploading...', false, true],
 		['queue is overloaded while uploading...', false, true],
 		['internal error', false, false],
@@ -68,6 +94,23 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 			true,
 		],
 		[doReset, false, false],
+		// KODY-95 negatives: no reference, wrapped, unrelated "while …".
+		[
+			'Internal error while starting up Durable Object storage caused object to be reset',
+			false,
+			false,
+		],
+		[
+			'D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset',
+			false,
+			true,
+		],
+		['Internal error while starting up the package executor', false, false],
+		[
+			'serveMcp could not recover after retries: Internal error while starting up Durable Object storage caused object to be reset; reference = 9k2mnpq7rstuvwxyzabcdefg',
+			false,
+			true,
+		],
 		['syntax error near SELECT', false, true],
 	]
 	expect(
