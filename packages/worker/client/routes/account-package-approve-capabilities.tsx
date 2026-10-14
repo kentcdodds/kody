@@ -131,10 +131,11 @@ function credentialsSectionIntro(input: {
 	isInternetVisible: boolean
 	mentionInternet: boolean
 }) {
-	// Credential-needs-only review must not imply the pending credentials are
-	// already reachable via public requests (even on an internet-visible package).
+	// Entries are the currently published capability set. On credential-needs-only
+	// review, do not attribute them to the paused publish (shown above) or imply
+	// they are already reachable via public requests.
 	if (!input.mentionInternet) {
-		return 'This publish asks to use these credentials.'
+		return 'The previously published version can use these.'
 	}
 	if (input.isInternetVisible) {
 		return 'It is internet-visible, so requests from anyone can run code that uses these.'

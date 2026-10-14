@@ -286,8 +286,8 @@ test('a credential-needs-only approval states the change and never claims public
 		'The previously published version keeps running until you approve.',
 	)
 	expect(html).toContain('Credential values never appear here.')
-	expect(html).toContain('This publish asks to use these credentials.')
 	expect(html).toContain('Approve and publish')
+	expect(html).toContain('The previously published version can use these.')
 	expect(html).not.toContain('Approve capability set')
 	expect(html).not.toContain('data-testid="package-approve-capabilities"')
 
@@ -361,7 +361,7 @@ test('credential-needs-only copy wins over an already internet-visible package',
 	)
 
 	expect(html).toContain('Approve credential needs')
-	expect(html).toContain('This publish asks to use these credentials.')
+	expect(html).toContain('The previously published version can use these.')
 	expect(html).not.toContain(
 		'It is internet-visible, so requests from anyone can run code that uses these.',
 	)
