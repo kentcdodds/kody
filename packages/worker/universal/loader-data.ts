@@ -2848,6 +2848,8 @@ export type AppLoaderData = {
 	accountExperiments?: AccountExperimentsLoaderData
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick
+	/** Homepage agent marquee: one SSR shuffle of `withAgents` slugs. */
+	landingAgentOrder?: Array<string>
 	onboardingAgentChooser?: OnboardingAgentChooserPick
 }
 

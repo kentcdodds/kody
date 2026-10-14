@@ -540,6 +540,9 @@ export const clientRoutes = {
 	[routePattern(routes.believe)]: (
 		<LazyMarketingRoute render={(m) => <m.BelieveRoute />} />
 	),
+	[routePattern(routes.withAgent)]: (
+		<LazyMarketingRoute render={(m) => <m.WithAgentRoute />} />
+	),
 	[routePattern(routes.support)]: (
 		<LazyMarketingRoute render={(m) => <m.SupportRoute />} />
 	),

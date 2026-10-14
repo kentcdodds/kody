@@ -15,6 +15,7 @@ import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
 import { routes } from '#universal/routes.ts'
+import { withAgentHref, withAgents } from '#universal/with-agents.ts'
 
 export const sessionCookieName = 'kody_session'
 
@@ -44,6 +45,7 @@ const cacheableAnonymousExactPaths = new Set([
 	'/faq',
 	'/case-studies',
 	'/believe',
+	...withAgents.map((agent) => withAgentHref(agent.slug)),
 	'/blog',
 	'/community',
 	'/onboarding',

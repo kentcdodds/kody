@@ -405,6 +405,7 @@ registerPreloadPatterns(
 		routePattern(routes.faq),
 		routePattern(routes.caseStudies),
 		routePattern(routes.believe),
+		routePattern(routes.withAgent),
 		routePattern(routes.n8nAlternatives),
 		routePattern(routes.mcpGateway),
 		routePattern(routes.sharedMemory),

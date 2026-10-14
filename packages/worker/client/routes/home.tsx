@@ -49,6 +49,8 @@ import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
+import { pickWithAgentOrder } from '#universal/with-agents.ts'
+import { LandingAgentMarquee } from '#client/routes/landing-agent-marquee.tsx'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -124,6 +126,7 @@ export async function homeRouteLoader(
 ): Promise<RouteLoaderResult> {
 	return {
 		walkthroughHosts: pickWalkthroughHosts(),
+		landingAgentOrder: pickWithAgentOrder(),
 		landingHeroVideos: await fetchLandingHeroVideos(signal),
 	}
 }
@@ -135,6 +138,7 @@ type HomePagePayloads = {
 
 export function HomeRoute(handle: Handle) {
 	let walkthroughHosts: WalkthroughHostPick | null = null
+	let landingAgentOrder: Array<string> | null = null
 	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: HomePagePayloads | null = null
@@ -142,6 +146,12 @@ export function HomeRoute(handle: Handle) {
 		consume(handle, href) {
 			if (!isHomePath(href)) return null
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
+			const agentOrder = tryConsumeRouteLoaderData(
+				handle,
+				'landingAgentOrder',
+				href,
+			)
+			if (agentOrder) landingAgentOrder = agentOrder
 			const videos = tryConsumeRouteLoaderData(
 				handle,
 				'landingHeroVideos',
@@ -206,6 +216,13 @@ export function HomeRoute(handle: Handle) {
 						>
 							{landingHeroSubhead}
 						</h2>
+						<div
+							data-rise
+							style={{ '--rise': '0.8' }}
+							class="landing-agents-row"
+						>
+							<LandingAgentMarquee order={landingAgentOrder} />
+						</div>
 						<div
 							data-rise
 							style={{ '--rise': '1' }}
@@ -398,6 +415,7 @@ function renderConnectCta() {
 					label={landingHeroPrimaryCta}
 					variant="pill"
 					onboardingPage={false}
+					icons={false}
 				/>
 			</span>
 			<a

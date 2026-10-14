@@ -133,8 +133,7 @@ export function CredentialsFeature(handle: Handle) {
 							</p>
 							<p>
 								Packages you write and forks you adopt after reviewing the
-								source get use automatically. Other packages need your
-								approval.
+								source get use automatically. Other packages need your approval.
 							</p>
 							<div class="controls" aria-label="Explore credential approvals">
 								<button

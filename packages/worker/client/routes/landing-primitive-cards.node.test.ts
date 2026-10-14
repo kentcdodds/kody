@@ -8,7 +8,13 @@ test('homepage cards link each primitive and keep the widgets decorative', async
 
 	expect(html.match(/class="landing-pcard"/g)).toHaveLength(5)
 	expect(html.match(/data-size="mini"/g)).toHaveLength(5)
-	for (const page of ['memory', 'packages', 'triggers', 'credentials', 'apps']) {
+	for (const page of [
+		'memory',
+		'packages',
+		'triggers',
+		'credentials',
+		'apps',
+	]) {
 		expect(html).toContain(`href="/features/${page}"`)
 	}
 	expect(html).toContain('<em>Primitives</em> for your agents')

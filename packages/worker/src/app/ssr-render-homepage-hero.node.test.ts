@@ -4,6 +4,7 @@ import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { landingHeroPrimaryCta } from '#universal/landing-home-copy.ts'
+import { withAgents } from '#universal/with-agents.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -69,6 +70,7 @@ async function renderHome(requestUrl: string, loggedIn = false) {
 				requestUrl,
 				user: loggedIn ? { username: 'home-user', emailVerified: true } : null,
 			}),
+			landingAgentOrder: ['muse', 'codex', 'cursor'],
 			landingHeroVideos: [...homepageHeroVideos],
 		},
 	})
@@ -100,6 +102,23 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 	expect(anonymous.hero).toContain(
 		'href="/docs/connect-your-agent" class="landing-connect-fallback',
 	)
+	// The connect button is label-only; the agent marks live in the marquee.
+	expect(anonymous.hero).not.toContain('/images/icons/claudecode.svg" alt=""')
+	expect(anonymous.hero).toContain('aria-label="Agents that work with Kody"')
+	for (const agent of withAgents) {
+		expect(anonymous.hero).toContain(`href="/with/${agent.slug}"`)
+	}
+	const marquee =
+		anonymous.hero.match(
+			/<nav[^>]*class="landing-agents"[\s\S]*?<\/nav>/,
+		)?.[0] ?? ''
+	const marqueeOrder = [...marquee.matchAll(/href="\/with\/([^"]+)"/g)].map(
+		(match) => match[1],
+	)
+	// SSR order comes from loader data; the second copy is the loop.
+	expect(marqueeOrder.slice(0, 3)).toEqual(['muse', 'codex', 'cursor'])
+	expect(marqueeOrder).toHaveLength(withAgents.length * 2)
+	expect(marquee.match(/tabindex="-1"/g)).toHaveLength(withAgents.length)
 	expect(anonymous.hero).not.toContain('/signup')
 	expect(anonymous.hero).not.toContain('landing-hero-video')
 	expect(anonymous.hero).not.toContain('landing-hero-agents')

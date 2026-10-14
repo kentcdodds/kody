@@ -9,10 +9,17 @@ export function BuildWithAgentButton(
 		variant?: 'ghost' | 'pill'
 		/** False keeps the prompt agent-led, with no `/onboarding` link. */
 		onboardingPage?: boolean
+		/** False drops the agent marks beside the label. */
+		icons?: boolean
 	}>,
 ) {
 	return () => {
-		const { business, onboardingPage, variant = 'ghost' } = handle.props
+		const {
+			business,
+			onboardingPage,
+			variant = 'ghost',
+			icons = true,
+		} = handle.props
 		const label = handle.props.label ?? 'Build with your agent'
 		return (
 			<CopyTextButton
@@ -21,34 +28,38 @@ export function BuildWithAgentButton(
 				ariaLabel={`${label}, copy setup prompt`}
 				copiedLabel="Copied! Paste into your agent"
 				idleLabel={
-					<span
-						mix={css({
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: '0.65rem',
-						})}
-					>
+					icons ? (
 						<span
-							aria-hidden="true"
-							mix={css({ display: 'inline-flex', gap: '0.3rem' })}
+							mix={css({
+								display: 'inline-flex',
+								alignItems: 'center',
+								gap: '0.65rem',
+							})}
 						>
-							{['claudecode', 'codex', 'cursor'].map((icon) => (
-								<img
-									key={icon}
-									src={`/images/icons/${icon}.svg`}
-									alt=""
-									width={18}
-									height={18}
-									mix={css({
-										background: '#fff',
-										borderRadius: '3px',
-										padding: '2px',
-									})}
-								/>
-							))}
+							<span
+								aria-hidden="true"
+								mix={css({ display: 'inline-flex', gap: '0.3rem' })}
+							>
+								{['claudecode', 'codex', 'cursor'].map((icon) => (
+									<img
+										key={icon}
+										src={`/images/icons/${icon}.svg`}
+										alt=""
+										width={18}
+										height={18}
+										mix={css({
+											background: '#fff',
+											borderRadius: '3px',
+											padding: '2px',
+										})}
+									/>
+								))}
+							</span>
+							{label}
 						</span>
-						{label}
-					</span>
+					) : (
+						label
+					)
 				}
 			/>
 		)

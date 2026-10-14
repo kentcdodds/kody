@@ -765,6 +765,148 @@ html.is-settled {
 	gap: 0.85rem 1.25rem;
 }
 
+/* Hero agent marks: 64px monochrome icons (a mask filled with the text
+   colour), each a link to its `/with/:agent` page. Hover, focus, or press
+   zooms a mark like the video chooser thumbs, slides its neighbours aside,
+   and fades its name in. With JS and motion allowed the doubled track loops
+   (`landing-agent-marquee.tsx`); otherwise the row scrolls by hand. */
+.landing-agents-row {
+	width: 100%;
+}
+
+.landing-agents {
+	--agent-size: 64px;
+	--agent-zoom: 1.25;
+	--agent-shift: calc(var(--agent-size) * (var(--agent-zoom) - 1) / 2);
+	--agent-fade: clamp(2rem, 8vw, 4.5rem);
+	width: min(44rem, 100%);
+	margin: clamp(1.75rem, 4vw, 2.5rem) auto 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	mask-image: linear-gradient(
+		to right,
+		transparent,
+		#000 var(--agent-fade),
+		#000 calc(100% - var(--agent-fade)),
+		transparent
+	);
+	-webkit-mask-image: linear-gradient(
+		to right,
+		transparent,
+		#000 var(--agent-fade),
+		#000 calc(100% - var(--agent-fade)),
+		transparent
+	);
+}
+
+.landing-agents::-webkit-scrollbar {
+	display: none;
+}
+
+.landing-agents-track {
+	list-style: none;
+	margin: 0;
+	padding: 0.75rem var(--agent-fade) 0;
+	display: flex;
+	width: max-content;
+}
+
+.landing-agents-item {
+	flex: none;
+	padding-inline: 0.8rem;
+}
+
+.landing-agents-item[aria-hidden] {
+	display: none;
+}
+
+.landing-agent {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	padding-bottom: 1.6rem;
+	color: var(--color-text);
+	text-decoration: none;
+	border-radius: 0.75rem;
+}
+
+.landing-agent-icon {
+	display: block;
+	width: var(--agent-size);
+	height: var(--agent-size);
+	background-color: currentColor;
+	mask: var(--agent-icon) center / contain no-repeat;
+	-webkit-mask: var(--agent-icon) center / contain no-repeat;
+}
+
+.landing-agent-name {
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	translate: -50% 0;
+	white-space: nowrap;
+	font-size: 0.78rem;
+	font-weight: 550;
+	color: var(--color-text-muted);
+	opacity: 0;
+}
+
+.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-icon {
+	scale: var(--agent-zoom);
+}
+
+.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-name {
+	opacity: 1;
+}
+
+.landing-agents-item:has(
+	~ .landing-agents-item .landing-agent:is(:hover, :focus-visible, :active)
+) {
+	translate: calc(-1 * var(--agent-shift)) 0;
+}
+
+.landing-agents-item:has(.landing-agent:is(:hover, :focus-visible, :active))
+	~ .landing-agents-item {
+	translate: var(--agent-shift) 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.landing-agents-item {
+		transition: translate 260ms var(--ease-out);
+	}
+
+	.landing-agent-icon {
+		transition: scale 260ms var(--ease-out);
+	}
+
+	.landing-agent-name {
+		transition: opacity 200ms var(--ease-out);
+	}
+
+	html.js .landing-agents {
+		overflow: hidden;
+	}
+
+	html.js .landing-agents-track {
+		padding-inline: 0;
+		animation: landing-agents-loop 55s linear infinite;
+	}
+
+	html.js .landing-agents-item[aria-hidden] {
+		display: block;
+	}
+
+	html.js .landing-agents:is(:hover, :focus-within) .landing-agents-track {
+		animation-play-state: paused;
+	}
+}
+
+@keyframes landing-agents-loop {
+	to {
+		translate: -50% 0;
+	}
+}
+
 .landing-hero-media {
 	min-width: 0;
 }

@@ -17,6 +17,10 @@ import {
 	applyHomeOgVariant,
 } from '#universal/home-og-variants.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
+import {
+	findWithAgentByPathname,
+	withAgentHref,
+} from '#universal/with-agents.ts'
 
 export const DEFAULT_DOCUMENT_TITLE = 'Kody'
 export const NOT_FOUND_DOCUMENT_TITLE = 'Not found'
@@ -526,6 +530,7 @@ const routeDocumentHeads = {
 		'Case studies',
 	),
 	[routePattern(routes.believe)]: publicPageHead('believe', 'What we believe'),
+	[routePattern(routes.withAgent)]: withAgentHead,
 	[routePattern(routes.support)]: publicPageHead('support', 'Support'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
@@ -704,6 +709,22 @@ export function absolutizeDocumentHead(
 			type: link.type,
 			title: link.title,
 		})),
+	}
+}
+
+function withAgentHead({
+	pathname,
+}: {
+	pathname: string
+}): DocumentHeadDescriptor {
+	const agent = findWithAgentByPathname(pathname)
+	if (!agent) return { title: NOT_FOUND_DOCUMENT_TITLE }
+	const title = `Kody for ${agent.name} | Kody`
+	return {
+		title,
+		description: agent.pitch,
+		canonicalPath: withAgentHref(agent.slug),
+		og: { title, description: agent.pitch, imagePath: '/og/home.png' },
 	}
 }
 
