@@ -28,7 +28,12 @@ export function auditedLabel(audit: { recordedAt: string; auditor: string }) {
  * never approves anything; the Approve button stays a separate human click.
  */
 export function PackageSecurityAuditField(
-	handle: Handle<{ audit: AccountPackageSecurityAudit; packageName: string }>,
+	handle: Handle<{
+		audit: AccountPackageSecurityAudit
+		packageName: string
+		/** A paused publish of a different commit waits on this page. */
+		hasPausedPublish: boolean
+	}>,
 ) {
 	let dialogOpen = false
 	let dialogNode: HTMLDialogElement | null = null
@@ -47,7 +52,7 @@ export function PackageSecurityAuditField(
 	}
 
 	return () => {
-		const { audit, packageName } = handle.props
+		const { audit, packageName, hasPausedPublish } = handle.props
 		return (
 			<section
 				id={packageSecurityAuditAnchor}
@@ -98,6 +103,15 @@ export function PackageSecurityAuditField(
 						</a>
 					</p>
 				)}
+				{hasPausedPublish && audit.status !== 'unpublished' ? (
+					<p
+						data-testid="package-security-audit-paused-note"
+						mix={css(fieldNoteCss)}
+					>
+						Covers the published version only, not the paused publish waiting
+						above. Audit that one after it publishes.
+					</p>
+				) : null}
 				<p mix={css(fieldNoteCss)}>
 					{audit.status === 'audited'
 						? 'Informational only. It covers this published version; a new publish or capability change needs a new audit.'

@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -211,4 +212,44 @@ test('packageSecurityAuditRecord refuses unpublished and missing packages', asyn
 
 	expect(mockModule.insertPackageSecurityAudit).not.toHaveBeenCalled()
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
+})
+
+test('packageSecurityAuditRecord needs package:read to vouch for source it cannot read', async () => {
+	mockCurrentVersion()
+	const ctx = createCtx()
+	const request = ctx.callerContext.request!
+	const writeOnly = {
+		...ctx,
+		callerContext: {
+			...ctx.callerContext,
+			request: {
+				...request,
+				credential: {
+					...request.credential,
+					scopes: ['package:write' as OrgPermission],
+				},
+			},
+		},
+	}
+
+	await expect(
+		packageSecurityAuditRecordCapability.handler(validArgs, writeOnly),
+	).rejects.toThrow(/package:read/)
+	expect(mockModule.insertPackageSecurityAudit).not.toHaveBeenCalled()
+})
+
+test('packageSecurityAuditRecord redacts token-shaped strings from the summary', async () => {
+	mockCurrentVersion()
+
+	await packageSecurityAuditRecordCapability.handler(
+		{
+			...validArgs,
+			summary:
+				'Found a hardcoded key sk_live_abcdefghijklmnop1234 in config.ts.',
+		},
+		createCtx(),
+	)
+
+	const [, record] = mockModule.insertPackageSecurityAudit.mock.calls[0]!
+	expect(record.summary).toBe('Found a hardcoded key [REDACTED] in config.ts.')
 })

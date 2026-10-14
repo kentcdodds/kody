@@ -916,14 +916,16 @@ that version's code for declared vs used credentials, leaked secrets, unintended
 public exposure, risky network hosts, and package storage use.
 
 The agent records the result with **`packageSecurityAuditRecord`**
-(`POST /v1/packages/{package_id}/security-audits`, `package:write`). It passes
-`package_id`, `published_commit`, `fingerprint`, a `verdict` (`pass` or
-`concerns`), a plain-language `summary`, and an optional `auditor` name. The
-capability rejects a commit or fingerprint that no longer matches the current
-version. Each record stores who recorded it and when, and is audit-logged. The
-field then reads **Audited {date} by {auditor}** and links to the summary. A new
-publish or a changed capability set reads as not audited again. Capability items
-on an approval bundle page show the same state and link to the package's
+(`POST /v1/packages/{package_id}/security-audits`, `package:write` plus
+`package:read`). It passes `package_id`, `published_commit`, `fingerprint`, a
+`verdict` (`pass` or `concerns`), a plain-language `summary`, and an optional
+`auditor` name. The capability rejects a commit or fingerprint that no longer
+matches the current version, and redacts token-shaped strings from the summary.
+Each record stores who recorded it and when, and is audit-logged. The field then
+reads **Audited {date} by {auditor}** and links to the summary. A new publish or
+a changed capability set reads as not audited again. The field covers only the
+published version, not a paused publish waiting on the same page. Capability
+items on an approval bundle page show the same state and link to the package's
 approval page for the prompt or summary.
 
 The audit is informational. It never approves capabilities or makes a package

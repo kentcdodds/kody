@@ -295,6 +295,10 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 			payload?.entries.filter((entry) => entry.kind === 'storage') ?? []
 
 		const pendingApprovals = payload?.pendingApprovals ?? []
+		const publishedCommit = payload?.publishedCommit ?? null
+		const hasPausedPublish = pendingApprovals.some(
+			(approval) => approval.pendingCommit !== publishedCommit,
+		)
 
 		return (
 			<AccountManagementShell
@@ -529,6 +533,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						<PackageSecurityAuditField
 							audit={payload.securityAudit}
 							packageName={payload.package.name}
+							hasPausedPublish={hasPausedPublish}
 						/>
 						<div
 							mix={css({

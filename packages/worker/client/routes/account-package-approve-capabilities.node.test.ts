@@ -319,3 +319,28 @@ test('security audit asks for a publish before an unpublished package can be aud
 	)
 	expect(field).not.toContain('<dialog')
 })
+
+test('security audit says it does not cover a paused publish waiting on the page', async () => {
+	const paused = await render(
+		loaderData({
+			pendingApprovals: [
+				{
+					id: 'req-2',
+					reason: 'credential_needs_changed',
+					reasonLabel: 'Credential needs changed',
+					pendingCommit: 'cccccccccccccccccccccccccccccccccccccccc',
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: [],
+					approveAction: 'approve-credential-needs',
+				},
+			],
+		}),
+	)
+	expect(securityAuditField(paused)).toContain(
+		'Covers the published version only, not the paused publish waiting',
+	)
+
+	expect(securityAuditField(await render(loaderData()))).not.toContain(
+		'data-testid="package-security-audit-paused-note"',
+	)
+})

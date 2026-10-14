@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -16,6 +20,7 @@ import {
 } from '#worker/package-capabilities/security-audits-repo.ts'
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { redactErrorAgentPromptText } from '#universal/error-agent-prompt.ts'
 import {
 	packageSecurityAuditAnchor,
 	packageSecurityAuditAuditorMaxLength,
@@ -28,7 +33,7 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 		name: 'packageSecurityAuditRecord',
 		orgPermission: 'package:write',
 		description:
-			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page). Review that version first: declared vs used credentials, leaked secrets, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit never approves capabilities or makes anything internet-visible; the owner still approves on the website.',
+			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page). Review that version first: declared vs used credentials, leaked secrets, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit never approves capabilities or makes anything internet-visible; the owner still approves on the website. Requires package:read (to review the source) as well as package:write. Token-shaped strings in the summary are redacted.',
 		keywords: [
 			'package',
 			'security',
@@ -106,14 +111,15 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 			if (!savedPackage) {
 				throw new McpCallerError('Saved package not found for this user.')
 			}
-			await authorizePackageWrite(
-				{ env: ctx.env, request: ctx.callerContext.request },
-				{
-					id: savedPackage.id,
-					userId: savedPackage.userId,
-					label: savedPackage.name,
-				},
-			)
+			const authorizeCtx = { env: ctx.env, request: ctx.callerContext.request }
+			const resource = {
+				id: savedPackage.id,
+				userId: savedPackage.userId,
+				label: savedPackage.name,
+			}
+			await authorizePackageWrite(authorizeCtx, resource)
+			// An auditor has to be able to read the source it vouches for.
+			await authorize(authorizeCtx, 'package:read', packageResource(resource))
 			const summary = await loadCapabilityApprovalSummary({
 				env: ctx.env,
 				ownerUserId: owner.ownerUserId,
@@ -134,7 +140,8 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 				)
 			}
 
-			const auditorLabel = args.auditor?.trim() || null
+			const auditor = args.auditor?.trim()
+			const auditorLabel = auditor ? redactErrorAgentPromptText(auditor) : null
 			const record = await insertPackageSecurityAudit(ctx.env.APP_DB, {
 				id: crypto.randomUUID(),
 				packageId: savedPackage.id,
@@ -142,7 +149,7 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 				publishedCommit: summary.publishedCommit,
 				fingerprint: summary.capabilitySet.fingerprint,
 				verdict: args.verdict,
-				summary: args.summary,
+				summary: redactErrorAgentPromptText(args.summary),
 				auditorLabel,
 				recordedByUserId: owner.actorUserId,
 				recordedAt: new Date().toISOString(),
