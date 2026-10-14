@@ -187,9 +187,19 @@ test('set adds a team and a member by slug and username, then changes a preset',
 		grant_id: member.collaborator.grant_id,
 		preset: 'manage',
 	})
+	const blankTeam = await packageCollaboratorSetCapability.handler(
+		{ package_id: 'pkg-1', team_slug: '  ', username: ' bob ', preset: 'use' },
+		ctx,
+	)
+	expect(blankTeam.collaborator).toMatchObject({
+		kind: 'member',
+		username: 'bob',
+		preset: 'use',
+	})
 	expect(await auditActions()).toEqual([
 		'grant.created',
 		'grant.created',
+		'grant.updated',
 		'grant.updated',
 	])
 })

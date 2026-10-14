@@ -87,9 +87,9 @@ async function loadManagedPackage(ctx: CapabilityContext, packageId: string) {
 	}
 }
 
-function countGiven(values: ReadonlyArray<string | undefined>) {
-	return values.filter((value) => value !== undefined && value.trim() !== '')
-		.length
+function readSelector(value: string | undefined) {
+	const trimmed = value?.trim()
+	return trimmed ? trimmed : null
 }
 
 /**
@@ -106,31 +106,22 @@ async function resolveInternalSubject(
 		user_id?: string
 	},
 ): Promise<{ type: 'user' | 'team'; id: string }> {
-	if (
-		countGiven([
-			input.team_slug,
-			input.team_id,
-			input.username,
-			input.user_id,
-		]) !== 1
-	) {
+	const teamSlug = readSelector(input.team_slug)
+	const teamId = readSelector(input.team_id)
+	const username = readSelector(input.username)
+	const userIdInput = readSelector(input.user_id)
+	if ([teamSlug, teamId, username, userIdInput].filter(Boolean).length !== 1) {
 		throw new McpCallerError(
 			'Pass exactly one of team_slug, team_id, username, or user_id.',
 		)
 	}
-	if (input.team_slug || input.team_id) {
+	if (teamSlug || teamId) {
 		return {
 			type: 'team',
-			id: await resolveTeamId(db, orgId, {
-				teamId: input.team_id,
-				teamSlug: input.team_slug,
-			}),
+			id: await resolveTeamId(db, orgId, { teamId, teamSlug }),
 		}
 	}
-	const userId = await resolvePersonId(db, {
-		userId: input.user_id,
-		username: input.username,
-	})
+	const userId = await resolvePersonId(db, { userId: userIdInput, username })
 	const membership = await getLiveOrgMembership(db, orgId, userId)
 	if (!membership) {
 		throw new McpCallerError(
