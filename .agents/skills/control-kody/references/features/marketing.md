@@ -1,7 +1,7 @@
 # Public marketing pages
 
-Public homepage (session-aware CTAs), pricing, FAQ, case studies, support,
-legal, docs, blog, Discord invite.
+Public homepage, pricing, FAQ, case studies, beliefs, support, legal, docs,
+blog, Discord invite.
 
 ## How to get there
 
@@ -34,10 +34,15 @@ Anonymous HTML on `/` and several marketing routes is short-CDN-cached. The
 cache key includes the query string, so `/?accountDeleted=1` is its own document
 and shows "Your Kody account has been deleted"
 (`data-testid="account-deleted-notice"`). Weekly site-perf owns landing budgets.
-The `/` hero is a two-column layout: headline plus signup CTAs (anonymous
-sessions) beside a first-party YouTube light player with a horizontal video
-chooser; the lantern/agent orbit sits below that row. The factory “Trigger it”
-cards (Flake Hunter, Sentry Issues, Agent inbox, Purchase thanks) are quiet
+The `/` hero is centered: headline, subhead, and one "Connect your agent" CTA
+that copies an agent-led setup prompt (without JavaScript it is a link to
+`/docs/connect-your-agent`). The homepage never links to `/onboarding` or
+`/signup`, for any session. Below the hero come the primitive cards, "What Kody
+is and is not", the factory, the agent orbit beside the example walkthrough,
+testimonials, git/npm, the first-party YouTube light player with a horizontal
+video chooser, and the "Invisible software" close linking to `/believe`. The
+five-orb lantern lives on `/features`, not the homepage. The factory “Trigger
+it” cards (Flake Hunter, Sentry Issues, Agent inbox, Purchase thanks) are quiet
 same-origin links to `/docs/flake-hunter`, `/docs/sentry-issues`,
 `/docs/agent-inbox`, and `/docs/purchase-thanks` (pointer and focus ring only;
 no extra labels or hover chrome). Signed-in visitors still see the player and
