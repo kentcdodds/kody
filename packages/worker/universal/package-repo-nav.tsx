@@ -302,13 +302,15 @@ const navCss = {
 	display: 'flex',
 	alignItems: 'center',
 	flexWrap: 'wrap' as const,
-	gap: spacing.sm,
+	// Owner chrome adds Credentials / Default mappings / Triggers — keep a
+	// clear gutter between labels so they do not read as one run-on string.
+	gap: `0.35rem ${spacing.md}`,
 }
 
 const tabCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	padding: '0.55rem 0.15rem',
+	padding: '0.55rem 0.55rem',
 	borderBottom: '2px solid transparent',
 	color: colors.textMuted,
 	fontSize: '0.95rem',

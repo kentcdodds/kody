@@ -319,7 +319,13 @@ const edgeAnchoredTooltipCss = {
  */
 function compactActionCss<
 	T extends ReturnType<typeof getPillButtonCss | typeof getGhostButtonCss>,
->(base: T) {
+>(
+	base: T,
+	ink: {
+		backgroundColor: string
+		color: string
+	},
+) {
 	return {
 		...base,
 		...copyPromptTooltipCss,
@@ -327,6 +333,18 @@ function compactActionCss<
 		position: 'relative' as const,
 		padding: '0.5rem 0.95rem',
 		font: `650 0.875rem/1 ${typography.fontFamilyDisplay}`,
+		// Re-assert fill/ink after tooltip chrome spreads. Remix styles sit in
+		// `@layer rmx`; without this, an unlayered page `a { color: … }` (or a
+		// missing `--color-on-primary`) can leave the label the same green as
+		// the pill fill — a solid box with no visible text.
+		backgroundColor: ink.backgroundColor,
+		color: ink.color,
+		'& > span:not([role="tooltip"])': {
+			color: 'inherit',
+		},
+		'& > svg': {
+			color: 'inherit',
+		},
 		'&:focus-visible': {
 			outline: `2px solid ${colors.primary}`,
 			outlineOffset: '2px',
@@ -340,9 +358,11 @@ function compactActionCss<
 
 const packageActionPrimaryCss = compactActionCss(
 	getPillButtonCss({ size: 'sm' }),
+	{ backgroundColor: colors.primary, color: colors.onPrimary },
 )
 const packageActionSecondaryCss = compactActionCss(
 	getGhostButtonCss({ size: 'sm' }),
+	{ backgroundColor: 'transparent', color: colors.text },
 )
 
 const spinnerCss = {
