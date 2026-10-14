@@ -44,7 +44,7 @@ export type CredentialPick =
 	| { id: string }
 
 export const credentialMappingLayers = ['org', 'mine'] as const
-export type CredentialMappingLayer = (typeof credentialMappingLayers)[number]
+type CredentialMappingLayer = (typeof credentialMappingLayers)[number]
 
 export const credentialTriggerKinds = [
 	'cron',
@@ -317,7 +317,7 @@ export function orgCredentialCreatePath(orgSlug: string) {
 	return `/@${encodeURIComponent(orgSlug)}/-/credentials/new`
 }
 
-export type CredentialKindMode = 'hint' | 'required'
+type CredentialKindMode = 'hint' | 'required'
 
 export type CredentialCreateLinkInput = {
 	/** The org the credential is saved in. Omit only when no org is known. */

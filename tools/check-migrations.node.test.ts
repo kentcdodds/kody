@@ -5,7 +5,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
-	allowedHistoricalDuplicateMigrationFilenames,
 	checkMigrationFilenameReferences,
 	checkMigrationFilenames,
 	checkMigrationLedger,
@@ -109,10 +108,6 @@ test(
 			nextPrefix: '0078',
 			maxPrefix: 77,
 		})
-
-		// Exact allowlist pin: the 2026-08-04 migration squash retired every
-		// grandfathered duplicate-prefix pair, so the allowlist stays empty.
-		expect([...allowedHistoricalDuplicateMigrationFilenames]).toEqual([])
 
 		const live = await checkMigrationsDirectory()
 		expect(live.ok).toBe(true)

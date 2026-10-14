@@ -11,8 +11,6 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	assertMemoryGrantsAllowedOnOrg,
 	assertPersonalMemoryWritable,
-	memoryLegacyGrantBlockedMessage,
-	memoryLegacyWriteFrozenMessage,
 } from './memory-owner.ts'
 
 async function createDb() {
@@ -48,8 +46,8 @@ test('assertPersonalMemoryWritable allows personal orgs and freezes team orgs', 
 		.first<{ id: string }>()
 	await expect(
 		assertPersonalMemoryWritable(db, ownerIdFromStored(org!.id)),
-	).rejects.toThrow(memoryLegacyWriteFrozenMessage)
+	).rejects.toThrow(/write or delete only in your personal org/)
 	await expect(
 		assertMemoryGrantsAllowedOnOrg(db, ownerIdFromStored(org!.id)),
-	).rejects.toThrow(memoryLegacyGrantBlockedMessage)
+	).rejects.toThrow(/New memory grants are only allowed on a personal org/)
 })

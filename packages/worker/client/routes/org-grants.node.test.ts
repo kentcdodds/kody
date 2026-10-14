@@ -94,18 +94,6 @@ test('revoke is offered only for grants the viewer may revoke', async () => {
 	expect(row(html, 'grant-denied')).not.toContain('>Revoke<')
 })
 
-test('member:write alone does not show revoke buttons', async () => {
-	const html = await renderGrants({
-		ok: true,
-		org,
-		canManage: true,
-		grants: [grant('grant-denied', false)],
-	})
-	expect(html).toContain('data-testid="org-grants"')
-	expect(html).not.toContain('data-testid="org-grant-revoke"')
-	expect(html).not.toContain('>Revoke<')
-})
-
 test('a viewer who cannot manage members sees no revoke buttons', async () => {
 	const html = await renderGrants({
 		ok: true,

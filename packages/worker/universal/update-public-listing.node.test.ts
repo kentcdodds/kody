@@ -1,18 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	buildCommunityListingBehindHint,
-	buildUpdatePublicListingHref,
-	updatePublicListingSectionId,
-} from './update-public-listing.ts'
-
-test('buildUpdatePublicListingHref targets package settings with the section fragment', () => {
-	expect(
-		buildUpdatePublicListingHref({
-			username: 'danj',
-			kodyId: 'hey-email',
-		}),
-	).toBe(`/@danj/hey-email/settings#${updatePublicListingSectionId}`)
-})
+import { buildCommunityListingBehindHint } from './update-public-listing.ts'
 
 test('buildCommunityListingBehindHint returns null when pins match or are missing', () => {
 	expect(

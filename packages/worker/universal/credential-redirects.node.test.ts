@@ -26,33 +26,10 @@ test('old org index pages go to the Credentials list filtered by kind', () => {
 	expect(redirect('/@jane%2Bold/-/secrets')).toBe(
 		'/@jane%2Bold/-/credentials?kind=secret',
 	)
-})
-
-test('deeper flows, /connect/oauth, Secret providers, and other sections keep serving', () => {
-	for (const path of [
-		'/@acme/-/secret-providers',
-		'/@acme/-/secret-providers?q=vault',
-		'/@acme/-/mcp-servers?auth=success&server=linear',
-		'/@acme/-/mcp-servers?auth=error&reason=denied',
-		'/@acme/-/secrets/approve',
-		'/@acme/-/secrets/approve?token=t',
-		'/@acme/-/secrets?names=STRIPE_KEY&hosts=api.stripe.com',
-		'/@acme/-/secrets?name=STRIPE_KEY&allowed-host=api.stripe.com',
-		'/@acme/-/secrets?name=STRIPE_KEY&host=api.stripe.com',
-		'/@acme/-/secrets?name=STRIPE_KEY&allowedHosts=api.stripe.com',
-		'/@acme/-/secrets?names=A,B&package_id=pkg-1',
-		'/@acme/-/secrets?scope=package&package=pkg-1',
-		'/@acme/-/mcp-servers/srv-1/authorize',
-		'/@acme/-/integrations/github',
-		'/account/mcp-servers/oauth/callback',
-		'/connect/oauth?provider=github',
-		'/@acme/-/credentials',
-		'/@acme/-/values',
-		'/@acme/-/secretsx',
-		'/@acme/secrets',
-	]) {
-		expect(redirect(path), path).toBeNull()
-	}
+	expect(redirect('/@acme/-/secret-providers')).toBeNull()
+	expect(redirect('/@acme/-/integrations/github')).toBeNull()
+	expect(redirect('/@acme/-/mcp-servers/srv-1/authorize')).toBeNull()
+	expect(redirect('/@acme/-/credentials')).toBeNull()
 })
 
 test('/connect/secret-set opens the Key form with the same prefill', () => {

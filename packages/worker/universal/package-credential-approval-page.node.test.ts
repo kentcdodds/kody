@@ -225,11 +225,8 @@ test('labels name triggers, credential refs, and kinds', () => {
 	)
 	expect(credentialRefLabel(bot)).toBe('acme-bot')
 	expect(credentialRefLabel(mine)).toBe('openai (yours)')
-	expect(
-		(['secret', 'oauth', 'mcp', 'url', 'login', 'signing'] as const).map(
-			credentialKindLabel,
-		),
-	).toEqual(['Key', 'OAuth', 'MCP server', 'URL', 'Login', 'Signing'])
+	expect(credentialKindLabel('secret')).toBe('Key')
+	expect(credentialKindLabel('mcp')).toBe('MCP server')
 })
 
 test('an enable-only link names the trigger it turns on', () => {

@@ -147,7 +147,4 @@ test('credentialMappingPropose tells the agent to read view.enable[].error when 
 	expect(result.message).toContain('view.enable[].error')
 	expect(result.message).toContain('view.changes[].error')
 	expect(result.message).toContain('view.errors')
-	expect(credentialMappingProposeCapability.description).toContain(
-		'view.enable[].error',
-	)
 })

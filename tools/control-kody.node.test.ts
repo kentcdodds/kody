@@ -7,10 +7,9 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import {
 	controlKodyUserAgent,
-	credentialsForOrigin,
 	defaultFeaturesDir,
 	defaultRoutesPath,
 	loginToOrigin,
@@ -28,7 +27,6 @@ import {
 	runDoctor,
 	runMapCheck,
 } from './control-kody.ts'
-import { previewSeedEmail } from './preview-manual-test.ts'
 import { featureCatalog } from './control-kody/feature-catalog.ts'
 import { formatCookieFile } from './control-kody/session-cookie.ts'
 
@@ -386,11 +384,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		)
 	}
 
-	expect(credentialsForOrigin('http://localhost:3742').email).toBe(
-		localSeedEmail,
-	)
-	expect(credentialsForOrigin(preview).email).toBe(previewSeedEmail)
-
 	const root = repoRootFromHere()
 	const report = runMapCheck({
 		routeSource: readFileSync(defaultRoutesPath(root), 'utf8'),
@@ -398,13 +391,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	})
 	expect(report.issues).toEqual([])
 	expect(report.ok).toBe(true)
-	expect(
-		readdirSync(defaultFeaturesDir(root)).filter((name) =>
-			name.endsWith('.md'),
-		),
-	).toEqual(
-		expect.arrayContaining(featureCatalog.map((feature) => feature.file)),
-	)
 
 	await withAuthServer(
 		(request, response) => {

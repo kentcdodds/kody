@@ -1,7 +1,7 @@
 import { routes } from '#universal/routes.ts'
 
 /** Settings fragment for the website republish control. */
-export const updatePublicListingSectionId = 'update-public-listing'
+const updatePublicListingSectionId = 'update-public-listing'
 
 export function buildUpdatePublicListingHref(input: {
 	username: string

@@ -4,7 +4,6 @@ import {
 	authorizationServerOriginFromDiscovery,
 	discoveryMatchesAttemptAuthorizationServerOrigin,
 	mcpOAuthAttemptIdentityInvalidMessage,
-	mcpOAuthAttemptReconnectHref,
 	oauthAttemptActorMatches,
 	oauthAttemptIdentityMatches,
 } from './oauth-identity.ts'
@@ -159,9 +158,8 @@ test('discovery AS origin helpers and reconnect copy stay fail-closed', () => {
 			},
 		}),
 	).toBe(false)
-	expect(mcpOAuthAttemptReconnectHref()).toBe('/account/mcp-servers')
 	expect(mcpOAuthAttemptIdentityInvalidMessage('docs')).toContain(
-		`Reconnect at ${mcpOAuthAttemptReconnectHref()}`,
+		'Reconnect at /account/mcp-servers',
 	)
 	expect(mcpOAuthAttemptIdentityInvalidMessage('docs')).toContain('"docs"')
 })
