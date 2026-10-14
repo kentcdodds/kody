@@ -92,10 +92,11 @@ test('placeholders cover Keys and OAuth only, with the package scope when it has
 			null,
 		)
 	}
-	// Placeholders resolve in the bound org, so a granted personal one has none.
+	// Placeholders and credential() share one rule, so a granted personal
+	// secret still shows the same placeholder (owner's runs only).
 	expect(
 		credentialPlaceholder(item({ id: 'e', name: 'MINE', scope: 'personal' })),
-	).toBe(null)
+	).toBe('{{secret:MINE}}')
 	// A name the placeholder grammar cannot spell has no placeholder.
 	expect(credentialPlaceholder(item({ id: 'd', name: 'work github' }))).toBe(
 		null,

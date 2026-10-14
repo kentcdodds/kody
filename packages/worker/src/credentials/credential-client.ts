@@ -49,7 +49,12 @@ import {
 	loadCredentialMappings,
 	resolveStoredMapping,
 } from './credential-mappings.ts'
-import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
+import {
+	loadPackageNeeds,
+	mappedCredentialFits,
+	type NeedTarget,
+	needTarget,
+} from './credential-need-fit.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import {
 	CredentialLoginFailedError,
@@ -97,7 +102,7 @@ export type CredentialClientErrorBody = {
 	retryWith: Array<CredentialClientRetry>
 	options?: Array<CredentialClientOption>
 	possibleMatches?: Array<CredentialClientOption>
-	/** Absolute creation link; always set for unbound and not-found errors. */
+	/** Absolute creation link; always set for unbound, ambiguous, and not-found errors. */
 	createUrl?: string
 }
 
@@ -199,18 +204,6 @@ export type OpenedCredentialClient = {
 
 type Picked = { credential: UsableCredential; hint: string | null }
 
-/** What a need key asks for: the declared need, or the key read as a provider. */
-type NeedTarget = {
-	kind: PackageCredentialKind | null
-	provider: string
-	describe: string
-	/**
-	 * How an explicit pick's kind is checked: declared kind, any fetch-capable
-	 * kind when the need omits kind, or any kind for an ad-hoc provider key.
-	 */
-	match: 'exact' | 'fetch-capable' | 'any'
-}
-
 const maxKeyLength = 100
 
 function requireActorRequest(ctx: CredentialClientContext): RequestContext {
@@ -265,23 +258,6 @@ function retryFor(key: string | null, credential: UsableCredential) {
 	}
 }
 
-async function loadPackageNeeds(input: {
-	env: Env
-	request: RequestContext
-	packageId: string
-}) {
-	const saved = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.request.org.id,
-		packageId: input.packageId,
-	})
-	if (!saved) return []
-	return await loadPublishedCredentialNeeds({
-		env: input.env,
-		userId: saved.userId,
-		sourceId: saved.sourceId,
-	})
-}
-
 async function loadNeed(ctx: CredentialClientContext, key: string) {
 	if (ctx.runNeeds) return (await ctx.runNeeds()).get(key) ?? null
 	if (!ctx.packageId) return null
@@ -315,32 +291,6 @@ async function createUrlForNeed(
 	})
 }
 
-function needTarget(key: string, need: CredentialNeed | null): NeedTarget {
-	if (!need) {
-		return {
-			kind: null,
-			provider: key,
-			describe: `provider "${key}"`,
-			match: 'any',
-		}
-	}
-	const provider = need.provider
-	if (need.kind) {
-		return {
-			kind: need.kind,
-			provider,
-			describe: `need "${key}" (${need.kind} from provider "${provider}")`,
-			match: 'exact',
-		}
-	}
-	return {
-		kind: null,
-		provider,
-		describe: `need "${key}" (any fetch-capable credential from provider "${provider}")`,
-		match: 'fetch-capable',
-	}
-}
-
 /**
  * `credential.named` works only in ad hoc code and in a package of the
  * actor's personal org that is not listed in Community.
@@ -371,7 +321,7 @@ function pickOne(input: {
 	candidates: Array<UsableCredential>
 	possibleMatches: Array<UsableCredential>
 	describe: string
-	/** Set when there are no candidates: the unbound error's creation link. */
+	/** Set unless exactly one candidate matches: the error's creation link. */
 	createUrl?: string
 }) {
 	const [only, second] = input.candidates
@@ -401,34 +351,9 @@ function pickOne(input: {
 				retryFor(input.key, candidate),
 			),
 			options: input.candidates.map(toOption),
+			...(input.createUrl ? { createUrl: input.createUrl } : {}),
 		},
 	)
-}
-
-/**
- * A stored mapping follows the explicit-pick rule: the kind filter must match,
- * and so must the provider when the credential has one. A need whose kind or
- * provider changed after mapping no longer takes the old credential.
- */
-function mappedCredentialFits(
-	credential: UsableCredential,
-	target: NeedTarget,
-): boolean {
-	if (credential.provider && credential.provider !== target.provider) {
-		return false
-	}
-	switch (target.match) {
-		case 'exact':
-			return target.kind === null || credential.kind === target.kind
-		case 'fetch-capable':
-			return isFetchCapableCredentialKind(credential.kind)
-		case 'any':
-			return true
-		default: {
-			const exhaustive: never = target.match
-			throw new Error(`Unhandled need match: ${String(exhaustive)}`)
-		}
-	}
 }
 
 /**
@@ -612,7 +537,7 @@ async function resolveKey(
 					possibleMatches: [],
 				}
 		const createUrl =
-			candidates.length === 0
+			candidates.length !== 1
 				? await createUrlForNeed(ctx, {
 						key,
 						provider: target.provider,

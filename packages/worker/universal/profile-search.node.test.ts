@@ -6,7 +6,6 @@ import {
 	profilePackageFiltersAreActive,
 	profilePackageSortIsActive,
 	readProfilePackageFiltersFromHref,
-	readProfileSearchQueryFromHref,
 } from './profile-search.ts'
 import { type PublicProfilePackageItem } from './community-public-types.ts'
 
@@ -161,7 +160,6 @@ test('profile package filter hrefs omit defaults and ignore owner-only params fo
 			{ ...defaultFilters, ...overrides },
 		]),
 	)
-	expect(readProfileSearchQueryFromHref('/@kody?q=obsidian')).toBe('obsidian')
 
 	const activeFilters: Array<[Partial<ProfileFilters>, boolean]> = [
 		[{ query: 'notes' }, false],

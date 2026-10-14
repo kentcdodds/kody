@@ -14,7 +14,6 @@ import {
 	listWalkthroughHostOptions,
 	pickWalkthroughHosts,
 	replaceWalkthroughHost,
-	resolveWalkthroughKicker,
 	shuffleWalkthroughHosts,
 	walkthroughHostCatalog,
 	walkthroughHostForAct,
@@ -286,12 +285,6 @@ test('pickWalkthroughHosts uses the injected rng, maps acts, and supports host r
 			joinWalkthroughHostLabels,
 		),
 	).toEqual(['Cursor', 'Cursor and Claude', 'Cursor, Claude, and Grok'])
-	expect(
-		resolveWalkthroughKicker('You start on the computer with {coding}.', pick),
-	).toBe(`You start on the computer with ${pick.coding.label}.`)
-	expect(resolveWalkthroughKicker('Later, on your phone with {invoke}.')).toBe(
-		'Later, on your phone with {invoke}.',
-	)
 
 	const codingOptions = listWalkthroughHostOptions(pick, 'coding')
 	expect(codingOptions.every((host) => host.id !== pick.invoke.id)).toBe(true)

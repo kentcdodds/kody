@@ -39,7 +39,8 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountEmailDestinationsApiPost:
 		'notification addresses belong to the person',
 	accountBillingCancellationFeedbackPost: 'feedback from the person',
-	accountMcpServerLogo: 'logos are stored on the signup org',
+	accountMcpServerLogo:
+		'path has no org; handler binds via Referer or request org',
 	accountMcpServersOauthCallback: 'OAuth state carries the server owner',
 	accountPackagesApi:
 		'no per-package authz; teams use /@slug/-/repositories.json',

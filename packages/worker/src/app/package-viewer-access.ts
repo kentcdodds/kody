@@ -1,4 +1,5 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
@@ -139,4 +140,34 @@ export async function viewerIsSavedPackageOrgOwner(input: {
 }): Promise<boolean> {
 	const resolved = await effectivePackageAccess(input)
 	return resolved?.binding.role === 'owner'
+}
+
+/**
+ * Whether a signed-in person may run a hosted package app owned by this org.
+ * Owners always hold `app:execute`. Members and outside collaborators need a
+ * grant that includes it (team member defaults do not, until that ships).
+ * When `appId` is set, the check is for that app resource only — a grant on
+ * another app does not open this one.
+ */
+export async function viewerCanExecutePackageApp(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+	/** Saved package id when the concrete app is known. */
+	appId?: string | null
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	if (!resolved) return false
+	const appId = input.appId?.trim()
+	return checkPermission(
+		resolved.access,
+		'app:execute',
+		appId
+			? {
+					type: 'app',
+					id: appId,
+					orgId: ownerIdFromStored(input.ownerId),
+				}
+			: undefined,
+	).allowed
 }

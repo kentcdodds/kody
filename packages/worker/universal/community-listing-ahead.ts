@@ -29,18 +29,6 @@ export function classifyForkListingRelation(input: {
 	return 'ahead'
 }
 
-/**
- * True only when the listing pin is proven not to be an ancestor of the fork
- * tip. SHA inequality alone is not enough — that can be a fork that is ahead.
- */
-export function isCommunityListingAhead(input: {
-	originCommit: string | null | undefined
-	listingPinnedCommit: string | null | undefined
-	listingPinIsAncestorOfForkTip?: boolean | null
-}) {
-	return classifyForkListingRelation(input) === 'outdated'
-}
-
 export function buildListingAheadPrompt(input: {
 	listingName: string
 	listingId: string

@@ -11,10 +11,12 @@ const mockModule = vi.hoisted(() => ({
 	sqlQuery: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	authorizePackageWrite: vi.fn(),
+	assertStorageRunnerWriteWithinEntitlement: vi.fn(),
 }))
 
 vi.mock('#worker/storage-runner.ts', () => ({
-	assertStorageRunnerWriteWithinEntitlement: vi.fn(),
+	assertStorageRunnerWriteWithinEntitlement: (...args: Array<unknown>) =>
+		mockModule.assertStorageRunnerWriteWithinEntitlement(...args),
 	isReadOnlyStorageSqlQuery: (query: string) =>
 		query.trim().toLowerCase().startsWith('select'),
 	storageRunnerRpc: () => ({
@@ -189,4 +191,71 @@ test('storageQuery denies package runtimes buckets their package does not own', 
 	)
 	expect(ownBucketResult.storage_id).toBe(buildPackageStorageId(packageId))
 	expect(mockModule.authorizePackageWrite).toHaveBeenCalled()
+})
+
+test('writable storageQuery entitlements use the bound org, not the personal plan', async () => {
+	const teamOrgId = ownerIdFromStored('org-acme')
+	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: packageId,
+		userId: teamOrgId,
+		name: '@acme/pkg',
+		kodyId: 'pkg',
+	})
+	mockModule.authorizePackageWrite.mockResolvedValue(undefined)
+	mockModule.assertStorageRunnerWriteWithinEntitlement.mockResolvedValue(
+		undefined,
+	)
+	mockModule.sqlQuery.mockResolvedValue({
+		columns: [],
+		rows: [],
+		rowCount: 0,
+		rowsRead: 0,
+		rowsWritten: 1,
+		truncated: false,
+	})
+
+	await storageQueryCapability.handler(
+		{
+			storage_id: buildPackageStorageId(packageId),
+			query: 'INSERT INTO notes (body) VALUES (?)',
+			params: ['hello'],
+			writable: true,
+		},
+		{
+			env: {} as Env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+				executionOrigin: 'background',
+				user: {
+					userId: personIdFromStored('user-1'),
+					email: 'user@example.com',
+					displayName: 'User',
+				},
+				orgBinding: {
+					org: { id: teamOrgId, slug: 'acme' },
+					// Owner compiles without APP_DB; the entitlement args are
+					// what this regression asserts.
+					role: 'owner',
+				},
+				storageContext: {
+					sessionId: null,
+					appId: packageId,
+					packageId,
+					storageId: buildPackageStorageId(packageId),
+				},
+			}),
+		} as never,
+	)
+
+	expect(
+		mockModule.assertStorageRunnerWriteWithinEntitlement,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: teamOrgId,
+			email: null,
+			storageId: buildPackageStorageId(packageId),
+		}),
+	)
 })

@@ -193,3 +193,33 @@ test('features overview has no blocking axe violations in either theme', async (
 		await scanRoute(page, featuresRoute, theme)
 	}
 })
+
+// Scene loops fade text in and out, so contrast is sampled on the finished
+// still that reduced motion shows.
+test('feature detail pages have no blocking axe violations in either theme', async ({
+	page,
+}) => {
+	test.setTimeout(process.env.CI ? 180_000 : 90_000)
+	await page.emulateMedia({ reducedMotion: 'reduce' })
+	for (const feature of [
+		'memory',
+		'secrets',
+		'packages',
+		'triggers',
+		'integrations',
+		'apps',
+	]) {
+		for (const theme of themes) {
+			await scanRoute(
+				page,
+				{
+					path: `/features/${feature}`,
+					ready: async (page) => {
+						await expect(page.locator('.pw').first()).toBeVisible()
+					},
+				},
+				theme,
+			)
+		}
+	}
+})

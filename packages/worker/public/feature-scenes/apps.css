@@ -1,0 +1,1124 @@
+/* Animated scenes for /features/apps, on the shared `.pw` stage (`public/styles.css`). */
+
+.feature-detail .apps .split {
+	align-items: start;
+}
+
+.feature-detail .pw.pw-scene-apx-hero p,
+.feature-detail .pw.pw-scene-apx-return p,
+.feature-detail .pw.pw-scene-apx-share p {
+	max-width: none;
+	margin: 0;
+}
+
+/* Every apps stage sizes to its content so the type never clips. */
+.feature-detail .pw.pw-scene-apx-hero .pw-stage,
+.feature-detail .pw.pw-scene-apx-return .pw-stage,
+.feature-detail .pw.pw-scene-apx-share .pw-stage {
+	aspect-ratio: auto;
+	height: auto;
+}
+
+.feature-detail .pw.pw-scene-apx-hero .pw-stage {
+	font-size: clamp(14px, 100cqw / 26, 16px);
+}
+
+.feature-detail .pw.pw-scene-apx-hero .pw-apx-shell {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+}
+
+.feature-detail .pw.pw-scene-apx-hero .pw-apx-prompt-run {
+	position: relative;
+	inset: auto;
+}
+
+.feature-detail .pw.pw-scene-apx-return .pw-run,
+.feature-detail .pw.pw-scene-apx-share .pw-run {
+	position: relative;
+	inset: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.55em;
+}
+
+/* Prompt that builds the hosted app. The form fields are never animated. */
+
+.pw .pw-apx-prompt-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 0.5em;
+}
+
+.pw .pw-apx-prompt {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.3em;
+	max-width: 100%;
+	padding: 0.5em 0.75em 0.6em;
+	border-radius: 0.9em 0.9em 0.9em 0.28em;
+	background: var(--pw-text);
+	color: var(--pw-surface);
+}
+
+.pw .pw-apx-prompt-head {
+	display: flex;
+	align-items: center;
+	gap: 0.35em;
+	color: color-mix(in oklab, var(--pw-surface) 72%, var(--pw-text));
+	font-size: max(12px, 0.8em);
+	font-weight: 650;
+}
+
+.pw .pw-apx-prompt-text {
+	position: relative;
+	max-width: 100%;
+	font-size: 0.92em;
+	font-weight: 650;
+	line-height: 1.3;
+}
+
+.pw .pw-apx-prompt-text::after {
+	content: '';
+	display: inline-block;
+	width: 0.08em;
+	height: 1em;
+	margin-left: 0.12em;
+	vertical-align: -0.12em;
+	background: currentColor;
+	opacity: 0;
+}
+
+.pw .pw-apx-hosted {
+	padding: 0.2em 0.55em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: max(12px, 0.8em);
+	font-weight: 750;
+}
+
+.pw .pw-apx-lane {
+	position: relative;
+	height: 1.7em;
+}
+
+.pw .pw-apx-packet {
+	position: absolute;
+	left: 1.1em;
+	top: 0;
+	padding: 0 0.45em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.2;
+	opacity: 0;
+}
+
+.pw .pw-apx-window {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.9em;
+	background: linear-gradient(
+		180deg,
+		color-mix(in oklab, var(--pw-accent) 12%, var(--pw-surface)),
+		var(--pw-surface) 2.6em
+	);
+	box-shadow:
+		0 1px 1px var(--pw-shadow),
+		0 0.7em 1.8em var(--pw-shadow);
+}
+
+.pw .pw-apx-window-fill {
+	flex: 1;
+	min-height: 0;
+}
+
+.pw .pw-apx-chrome {
+	display: flex;
+	align-items: center;
+	gap: 0.55em;
+	padding: 0.55em 0.7em;
+	border-bottom: 1px solid var(--pw-line);
+}
+
+.pw .pw-apx-dots {
+	flex: none;
+	width: 2.6em;
+	height: 0.7em;
+	background:
+		radial-gradient(circle at 0.32em 50%, #ff6159 0.28em, transparent 0.3em),
+		radial-gradient(circle at 1.32em 50%, #ffbd2e 0.28em, transparent 0.3em),
+		radial-gradient(circle at 2.32em 50%, #28c941 0.28em, transparent 0.3em);
+}
+
+.pw .pw-apx-url {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	padding: 0.18em 0.6em 0.28em;
+	border-radius: 99px;
+	background: var(--pw-stage);
+	color: var(--pw-text);
+	font-family: ui-monospace, monospace;
+	font-size: max(12px, 0.76em);
+	text-align: center;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pw .pw-apx-url::after {
+	content: '';
+	position: absolute;
+	left: 0.7em;
+	right: 0.7em;
+	bottom: 0.12em;
+	height: 2px;
+	border-radius: 99px;
+	background: var(--pw-accent);
+	transform: scaleX(1);
+	transform-origin: left center;
+}
+
+.pw .pw-apx-demo {
+	flex: none;
+	padding: 0.12em 0.45em;
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: max(12px, 0.76em);
+	font-weight: 750;
+}
+
+.pw .pw-apx-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4em;
+	padding: 0.65em 0.75em 0.2em;
+}
+
+.pw .pw-apx-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4em;
+	min-height: 44px;
+	padding: 0.3em 0.75em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99px;
+	background: var(--pw-surface);
+	color: var(--pw-text);
+	font: inherit;
+	font-size: 0.88em;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.pw .pw-apx-tab:hover {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-apx-tab[aria-pressed='true'] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+}
+
+.pw .pw-apx-badge-wrap {
+	position: relative;
+	display: inline-flex;
+}
+
+.pw .pw-apx-badge {
+	display: inline-grid;
+	place-items: center;
+	min-width: 1.35em;
+	height: 1.35em;
+	padding: 0 0.35em;
+	border-radius: 99px;
+	background: var(--pw-accent);
+	color: #14080e;
+	font-size: max(12px, 0.8em);
+	font-weight: 800;
+}
+
+.pw .pw-apx-fly {
+	position: absolute;
+	z-index: 4;
+	right: 0;
+	top: 0;
+	display: flex;
+	flex-direction: column;
+	width: max-content;
+	max-width: 12em;
+	padding: 0.4em 0.6em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 0.55em;
+	background: var(--pw-surface);
+	color: var(--pw-text);
+	font-size: 14px;
+	box-shadow: 0 0.45em 1.1em var(--pw-shadow);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.pw .pw-apx-fly strong {
+	overflow: hidden;
+	font-size: 0.95em;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pw .pw-apx-fly small {
+	color: var(--pw-ink);
+	font-size: 12px;
+	font-weight: 750;
+}
+
+.pw .pw-apx-body {
+	min-width: 0;
+	padding: 0.35em 0 0.85em;
+}
+
+.pw .pw-apx-form {
+	padding: 0 0.85em;
+}
+
+.pw .pw-apx-form h3 {
+	margin: 0.15em -0.85em 0.75em;
+	padding: 0.55em 0.85em;
+	background: linear-gradient(
+		115deg,
+		color-mix(in oklab, var(--pw-accent) 40%, #1c1018),
+		color-mix(in oklab, var(--pw-accent) 56%, #1c1018)
+	);
+	color: #fff7fa;
+	font-size: 1.2em;
+}
+
+.feature-detail .pw .pw-apx-form p {
+	margin: 0.55em 0;
+}
+
+.pw .pw-apx-form label {
+	display: block;
+	color: var(--pw-text);
+	font-size: 0.92em;
+	font-weight: 650;
+}
+
+.feature-detail .pw .pw-apx-form input,
+.feature-detail .pw .pw-apx-form select,
+.feature-detail .pw .pw-apx-form textarea {
+	margin-top: 0.3em;
+	border-color: var(--pw-line);
+	border-radius: 0.5em;
+	background: var(--pw-stage);
+	color: var(--pw-text);
+	animation: none !important;
+}
+
+/* Dark ink on the accent clears 4.5:1 in both themes; white on this pink does not. */
+.feature-detail .pw .pw-apx-form .run {
+	min-height: 44px;
+	margin-top: 0.35em;
+	border: 1px solid color-mix(in oklab, var(--pw-accent) 70%, #14080e);
+	background: var(--pw-accent);
+	color: #14080e;
+	font-weight: 750;
+}
+
+.feature-detail .pw .pw-apx-form .run:hover {
+	box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--pw-accent) 35%, transparent);
+}
+
+.pw .pw-apx-detail .run:hover {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-apx-records,
+.pw .pw-apx-detail {
+	padding: 0.4em 0.85em 0;
+}
+
+.pw .pw-apx-records h3,
+.pw .pw-apx-detail h3 {
+	margin-bottom: 0.35em;
+	font-size: 1.25em;
+	overflow-wrap: anywhere;
+}
+
+.feature-detail .pw .pw-apx-detail p {
+	margin: 0.35em 0;
+	overflow-wrap: anywhere;
+	line-height: 1.45;
+}
+
+.pw .pw-apx-detail [role='status'] {
+	color: var(--pw-ink);
+	font-size: max(12px, 0.85em);
+	font-weight: 700;
+}
+
+.pw .pw-apx-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.45em;
+	margin-top: 0.7em;
+}
+
+.pw .pw-apx-detail .run,
+.pw .pw-apx-action-quiet {
+	border: 1px solid var(--pw-line);
+	background: var(--pw-surface);
+	color: var(--pw-text);
+}
+
+.feature-detail .pw .ia-record {
+	gap: 0.6em;
+	padding: 0.75em 0.2em;
+	min-height: 44px;
+}
+
+.feature-detail .pw .ia-record strong {
+	font-size: 1em;
+}
+
+.feature-detail .pw .ia-record small,
+.feature-detail .pw .ia-record > span:last-child {
+	font-size: max(12px, 0.8em);
+}
+
+/* Come back tomorrow: the same briefs, plus one new entry. */
+
+.pw .pw-apx-cal {
+	position: relative;
+	display: grid;
+	flex: 1;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.45em;
+	min-height: 0;
+	padding: 0.5em;
+}
+
+.pw .pw-apx-col {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+	min-width: 0;
+	padding: 0.45em;
+	border: 1px solid var(--pw-line);
+	border-radius: 0.65em;
+	background: color-mix(in oklab, var(--pw-stage) 70%, var(--pw-surface));
+}
+
+.pw .pw-apx-col-next {
+	border-color: var(--pw-accent);
+	background: color-mix(in oklab, var(--pw-accent) 10%, var(--pw-surface));
+}
+
+.pw .pw-apx-dayhead {
+	position: relative;
+	align-self: flex-start;
+	width: max-content;
+	padding: 0 1.45em 0.85em 0;
+	color: var(--pw-text);
+	font-size: max(12px, 0.86em);
+	font-weight: 750;
+}
+
+.pw .pw-apx-col-next .pw-apx-dayhead {
+	color: var(--pw-ink);
+}
+
+.pw .pw-apx-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0.12em;
+	min-width: 0;
+	padding: 0.35em 0.4em 0.4em 0.5em;
+	border: 1px solid var(--pw-line);
+	border-left: 0.22em solid var(--pw-accent);
+	border-radius: 0.4em;
+	background: var(--pw-surface);
+}
+
+.pw .pw-apx-card[data-on] {
+	box-shadow: 0 0 0 0.14em
+		color-mix(in oklab, var(--pw-accent) 35%, transparent);
+}
+
+.pw .pw-apx-card-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.3em;
+	min-width: 0;
+}
+
+.pw .pw-apx-card strong {
+	min-width: 0;
+	font-size: max(12px, 0.86em);
+	font-weight: 750;
+	overflow-wrap: anywhere;
+}
+
+.pw .pw-apx-card small,
+.pw .pw-apx-more {
+	color: var(--pw-muted);
+	font-size: max(12px, 0.78em);
+	overflow-wrap: break-word;
+}
+
+.pw .pw-apx-card-new {
+	border-style: solid;
+}
+
+.pw .pw-apx-newtag {
+	flex: none;
+	padding: 0.08em 0.38em;
+	border-radius: 99px;
+	background: var(--pw-accent);
+	color: #14080e;
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+.feature-detail .story-section .pw .pw-apx-check {
+	display: block;
+	flex: none;
+	width: 0.95em;
+	max-width: 0.95em;
+	height: 0.95em;
+	margin: 0;
+}
+
+.pw .pw-apx-check path {
+	fill: none;
+	stroke: var(--pw-accent);
+	stroke-width: 2.2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-dasharray: 18;
+	stroke-dashoffset: 0;
+}
+
+.pw .pw-apx-kept {
+	position: absolute;
+	z-index: 2;
+	top: 0.42em;
+	right: 0.15em;
+	width: 0.55em;
+	height: 0.55em;
+	border-radius: 50%;
+	background: var(--pw-accent);
+	box-shadow: 0 0 0 0.18em var(--pw-surface);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.feature-detail .pw .pw-apx-foot {
+	padding: 0.15em 0.7em 0.55em;
+	border-top: 1px solid var(--pw-line);
+	color: var(--pw-muted);
+	font-size: max(12px, 0.78em);
+	font-weight: 650;
+}
+
+/* Share: Morgan's view of the app changes with the access step. */
+
+.pw .pw-apx-track {
+	position: relative;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.25em;
+	padding-top: 0.15em;
+}
+
+.pw .pw-apx-track-line,
+.pw .pw-apx-track-fill {
+	position: absolute;
+	left: 16%;
+	top: 0.62em;
+	width: 68%;
+	height: 0.16em;
+	border-radius: 99px;
+}
+
+.pw .pw-apx-track-line {
+	background: var(--pw-line);
+}
+
+.pw .pw-apx-track-fill {
+	background: var(--pw-accent);
+	transform: scaleX(var(--pw-apx-fill, 0));
+	transform-origin: left center;
+}
+
+.pw .pw-apx-step {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35em;
+	color: var(--pw-muted);
+	font-size: max(12px, 0.8em);
+	font-weight: 700;
+	line-height: 1.2;
+	text-align: center;
+}
+
+.pw .pw-apx-step[data-on] {
+	color: var(--pw-text);
+}
+
+.pw .pw-apx-dot {
+	width: 0.95em;
+	height: 0.95em;
+	border: 0.16em solid var(--pw-line);
+	border-radius: 50%;
+	background: var(--pw-surface);
+}
+
+.pw .pw-apx-step[data-on] .pw-apx-dot {
+	border-color: var(--pw-accent);
+	background: var(--pw-accent);
+}
+
+.feature-detail .pw .pw-apx-view-label {
+	padding: 0.45em 0.7em 0;
+	color: var(--pw-muted);
+	font-size: max(12px, 0.8em);
+	font-weight: 700;
+}
+
+.pw .pw-apx-sheet {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.4em;
+	min-height: 10.8em;
+	padding: 0.35em 0.7em 0.65em;
+}
+
+.pw .pw-apx-sheet-title {
+	font-size: 1em;
+	font-weight: 750;
+	line-height: 1.25;
+}
+
+.feature-detail .pw .pw-apx-sheet p,
+.pw .pw-apx-field,
+.pw .pw-apx-access {
+	font-size: max(12px, 0.86em);
+	line-height: 1.35;
+}
+
+.pw .pw-apx-sheet .pw-kicker {
+	font-size: max(12px, 0.8em);
+}
+
+.pw .pw-apx-copy {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	color: var(--pw-muted);
+}
+
+.pw .pw-apx-field {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5em;
+	width: 100%;
+	color: var(--pw-muted);
+}
+
+.pw .pw-apx-value {
+	overflow: hidden;
+	max-width: 68%;
+	padding: 0.2em 0.45em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 0.35em;
+	background: var(--pw-stage);
+	color: var(--pw-text);
+	font-weight: 650;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pw .pw-apx-action {
+	position: relative;
+	padding: 0.32em 0.8em;
+	border-radius: 0.45em;
+	background: var(--pw-accent);
+	color: #14080e;
+	font-size: max(12px, 0.9em);
+	font-weight: 750;
+}
+
+.pw .pw-apx-action.pw-apx-action-quiet {
+	border: 1px solid var(--pw-line);
+	background: var(--pw-surface);
+	color: var(--pw-text);
+}
+
+.pw .pw-apx-actions .pw-apx-action {
+	font-size: 1em;
+}
+
+.pw .pw-apx-access {
+	padding: 0.2em 0.5em;
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-weight: 700;
+}
+
+.pw .pw-apx-toast {
+	padding: 0.18em 0.55em;
+	border-radius: 99px;
+	background: color-mix(in oklab, var(--pw-accent) 16%, var(--pw-surface));
+	color: var(--pw-text);
+	font-size: max(12px, 0.8em);
+	font-weight: 700;
+}
+
+/* The cursor is a child of the control it clicks. transform: none lands on it. */
+
+.pw .pw-apx-dayhead .pw-apx-cursor {
+	left: auto;
+	right: 0.05em;
+	top: 0.72em;
+}
+
+.pw .pw-apx-cursor {
+	position: absolute;
+	left: 62%;
+	top: 52%;
+	width: 1.15em;
+	height: 1.3em;
+	background: #15171c;
+	clip-path: polygon(0 0, 0 78%, 24% 60%, 42% 100%, 58% 93%, 41% 55%, 72% 55%);
+	filter: drop-shadow(0 0 0.06em #fff) drop-shadow(0 0 0.06em #fff);
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* Stacked: Today above Tomorrow with a short connector; steps stay in a row. */
+
+@container (max-width: 520px) {
+	.feature-detail .pw .pw-apx-chrome {
+		gap: 0.4em;
+		padding-inline: 0.55em;
+	}
+
+	.feature-detail .pw .pw-apx-field {
+		flex-wrap: wrap;
+	}
+
+	.feature-detail .pw .pw-apx-value {
+		max-width: 100%;
+	}
+}
+
+@container (max-width: 440px) {
+	.feature-detail .pw .pw-apx-cal {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1.5em;
+	}
+
+	.feature-detail .pw .pw-apx-col-next {
+		position: relative;
+	}
+
+	.feature-detail .pw .pw-apx-col-next::before,
+	.feature-detail .pw .pw-apx-col-next::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		translate: -50% 0;
+	}
+
+	.feature-detail .pw .pw-apx-col-next::before {
+		top: -1.35em;
+		width: 2px;
+		height: 0.9em;
+		background: var(--pw-accent);
+	}
+
+	.feature-detail .pw .pw-apx-col-next::after {
+		top: -0.6em;
+		border: 0.3em solid transparent;
+		border-top-color: var(--pw-accent);
+		border-bottom-width: 0;
+	}
+
+	.feature-detail .pw .pw-apx-kept {
+		display: none;
+	}
+}
+
+@container (max-width: 380px) {
+	.feature-detail .pw .pw-apx-chrome {
+		gap: 0.3em;
+		padding-inline: 0.45em;
+	}
+
+	.feature-detail .pw .pw-apx-dots {
+		width: 1.75em;
+		background:
+			radial-gradient(circle at 0.22em 50%, #ff6159 0.2em, transparent 0.22em),
+			radial-gradient(circle at 0.87em 50%, #ffbd2e 0.2em, transparent 0.22em),
+			radial-gradient(circle at 1.52em 50%, #28c941 0.2em, transparent 0.22em);
+	}
+
+	.feature-detail .pw .pw-apx-url {
+		padding-inline: 0.3em;
+		letter-spacing: -0.02em;
+	}
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-prompt-text::after {
+	animation: pw-apx-caret 8s steps(1, end) infinite;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-prompt {
+	animation: pw-apx-send 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-hosted {
+	animation: pw-apx-hosted 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-packet {
+	animation: pw-apx-packet 8s linear infinite;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-url::after {
+	animation: pw-apx-drawline 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-fly {
+	animation: pw-apx-fly 1.05s var(--pw-ease) both;
+}
+
+.pw-scene-apx-hero[data-motion] .pw-apx-badge[data-pop] {
+	animation: pw-apx-badge 1.05s var(--pw-ease) both;
+}
+
+.pw-scene-apx-return[data-motion] .pw-apx-kept {
+	animation: pw-apx-kept 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-return[data-motion] .pw-apx-check path {
+	animation: pw-apx-draw 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-return[data-motion] .pw-apx-newtag {
+	animation: pw-apx-new 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-return[data-motion] .pw-apx-cursor {
+	animation: pw-apx-return-cursor 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-share[data-motion]
+	.pw-apx-step[data-on]:not(:has(~ .pw-apx-step[data-on]))
+	.pw-apx-dot {
+	animation: pw-apx-ring 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-share[data-motion] .pw-apx-cursor {
+	animation: pw-apx-share-cursor 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-share[data-motion] .pw-apx-toast {
+	animation: pw-apx-toast 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-share[data-motion] .pw-apx-action {
+	animation: pw-apx-press 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-apx-share[data-motion] .pw-apx-action-quiet {
+	animation: none;
+}
+
+@keyframes pw-apx-caret {
+	0%,
+	6%,
+	12%,
+	18% {
+		opacity: 1;
+	}
+	3%,
+	9%,
+	15%,
+	21%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes pw-apx-send {
+	0%,
+	20%,
+	34%,
+	100% {
+		box-shadow: 0 0 0 0 color-mix(in oklab, var(--pw-accent) 0%, transparent);
+	}
+	26% {
+		box-shadow: 0 0 0 0.25em
+			color-mix(in oklab, var(--pw-accent) 45%, transparent);
+	}
+}
+
+@keyframes pw-apx-hosted {
+	0%,
+	44%,
+	56%,
+	100% {
+		transform: none;
+	}
+	50% {
+		transform: scale(1.12);
+	}
+}
+
+@keyframes pw-apx-packet {
+	0%,
+	26% {
+		opacity: 0;
+		transform: translateY(0);
+	}
+	30% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	42% {
+		opacity: 1;
+		transform: translateY(0.8em);
+	}
+	48%,
+	100% {
+		opacity: 0;
+		transform: translateY(0.8em);
+	}
+}
+
+@keyframes pw-apx-drawline {
+	0%,
+	36% {
+		transform: scaleX(1);
+	}
+	40% {
+		transform: scaleX(0.04);
+	}
+	54%,
+	100% {
+		transform: scaleX(1);
+	}
+}
+
+@keyframes pw-apx-fly {
+	0% {
+		opacity: 1;
+		transform: translate(-5.5em, 9.5em) scale(1.35);
+	}
+	70% {
+		opacity: 1;
+		transform: translate(0, 0) scale(0.35);
+	}
+	100% {
+		opacity: 0;
+		transform: translate(0, 0) scale(0.2);
+	}
+}
+
+@keyframes pw-apx-badge {
+	0%,
+	62% {
+		transform: none;
+	}
+	76% {
+		transform: scale(1.28);
+	}
+	100% {
+		transform: none;
+	}
+}
+
+@keyframes pw-apx-kept {
+	0%,
+	8% {
+		opacity: 0;
+		transform: translateX(-12em);
+	}
+	16% {
+		opacity: 1;
+		transform: translateX(-12em);
+	}
+	34% {
+		opacity: 1;
+		transform: none;
+	}
+	46%,
+	100% {
+		opacity: 0;
+		transform: none;
+	}
+}
+
+@keyframes pw-apx-draw {
+	0%,
+	30% {
+		stroke-dashoffset: 0;
+	}
+	33% {
+		stroke-dashoffset: 18;
+	}
+	44%,
+	100% {
+		stroke-dashoffset: 0;
+	}
+}
+
+@keyframes pw-apx-new {
+	0%,
+	36%,
+	48%,
+	100% {
+		transform: none;
+	}
+	42% {
+		transform: scale(1.2);
+	}
+}
+
+@keyframes pw-apx-return-cursor {
+	0%,
+	14% {
+		opacity: 0;
+		transform: translate(1.5em, -1.3em);
+	}
+	26% {
+		opacity: 1;
+		transform: none;
+	}
+	32% {
+		opacity: 1;
+		transform: scale(0.84);
+	}
+	38%,
+	56% {
+		opacity: 1;
+		transform: none;
+	}
+	68%,
+	100% {
+		opacity: 0;
+		transform: none;
+	}
+}
+
+@keyframes pw-apx-ring {
+	0%,
+	30%,
+	50%,
+	100% {
+		box-shadow: 0 0 0 0 color-mix(in oklab, var(--pw-accent) 0%, transparent);
+	}
+	38% {
+		box-shadow: 0 0 0 0.35em
+			color-mix(in oklab, var(--pw-accent) 35%, transparent);
+	}
+}
+
+@keyframes pw-apx-share-cursor {
+	0%,
+	16% {
+		opacity: 0;
+		transform: translate(3.2em, -2.2em);
+	}
+	28% {
+		opacity: 1;
+		transform: none;
+	}
+	34% {
+		opacity: 1;
+		transform: scale(0.84);
+	}
+	40%,
+	52% {
+		opacity: 1;
+		transform: none;
+	}
+	64%,
+	100% {
+		opacity: 0;
+		transform: none;
+	}
+}
+
+@keyframes pw-apx-press {
+	0%,
+	30%,
+	40%,
+	100% {
+		transform: none;
+	}
+	34% {
+		transform: scale(0.94);
+	}
+}
+
+@keyframes pw-apx-toast {
+	0%,
+	28% {
+		opacity: 0;
+		transform: translateY(0.3em);
+	}
+	40%,
+	100% {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+/* Story-section detail beneath the return scene. */
+
+.feature-detail .apps .ia-record-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 24px;
+	margin-top: 20px;
+}
+
+.feature-detail .apps .ia-record-actions a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
+}
+
+.feature-detail .apps .ia-saved-head > span {
+	font-size: 12px;
+}

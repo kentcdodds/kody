@@ -909,6 +909,62 @@ test('stored mappings pick the credential: trigger override, then your default, 
 	})
 })
 
+test('a need a republish added fails only that call in a trigger run, with an org-scoped creation link', async () => {
+	const t = await setup()
+	await t.storeKey({ name: 'resend-prod' })
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/digest',
+	})
+	const beaTrigger = deriveRequestContext({
+		user: { userId: t.people.bea.personId },
+		source: {
+			kind: 'schedule',
+			jobId: 'job-1',
+			enablement: {
+				id: 'enablement-bea-daily',
+				enabler: { userId: t.people.bea.personId },
+				role: 'owner',
+			},
+		},
+		orgBinding: { org: { id: t.acmeId, slug: 'acme-clients' }, role: 'owner' },
+	})
+	const open = (key: string) =>
+		openCredentialClient(t.contextFor({ request: beaTrigger, packageId }), {
+			key,
+		})
+	mockNeeds([{ key: 'mail', provider: 'resend' }])
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
+
+	mockNeeds([
+		{ key: 'mail', provider: 'resend' },
+		{ key: 'chat', provider: 'slack' },
+	])
+	const unbound = await rejection(open('chat'))
+	const unboundUrl = new URL((unbound.body as { createUrl: string }).createUrl)
+	expect(unbound.body).toMatchObject({ code: 'credential_unbound' })
+	expect(unboundUrl.pathname).toBe('/@acme-clients/-/credentials/new')
+	expect(unboundUrl.searchParams.get('need')).toBe('chat')
+	expect(unbound.message).toContain(`Create one at ${unboundUrl.href}`)
+	// The rest of the trigger keeps working.
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
+
+	await t.storeKey({ name: 'slack-a', provider: 'slack' })
+	await t.storeKey({ name: 'slack-b', provider: 'slack' })
+	const ambiguous = await rejection(open('chat'))
+	expect(ambiguous.body).toMatchObject({
+		code: 'credential_ambiguous',
+		options: [
+			expect.objectContaining({ name: 'slack-a' }),
+			expect.objectContaining({ name: 'slack-b' }),
+		],
+	})
+	expect(
+		new URL((ambiguous.body as { createUrl: string }).createUrl).pathname,
+	).toBe('/@acme-clients/-/credentials/new')
+	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
+})
+
 test('a stored mapping stops applying when the need changes or is removed, and a corrupt row reads as unset', async () => {
 	const t = await setup()
 	const keyA = await t.storeKey({ name: 'resend-a' })
@@ -1162,7 +1218,11 @@ test('a call map is validated before code runs: unknown keys fail an invoke and 
 		Object.fromEntries(
 			new URL((missing.body as { createUrl: string }).createUrl).searchParams,
 		),
-	).toEqual({ kind: 'secret', kindMode: 'required', name: 'missing' })
+	).toEqual({
+		kind: 'secret',
+		kindMode: 'required',
+		name: 'missing',
+	})
 	const emptyPick = await rejection(
 		openCredentialClient(
 			t.contextFor({ request, packageId, credentials: { MAIL: [] } }),

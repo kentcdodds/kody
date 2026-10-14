@@ -1821,6 +1821,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						env: this.env,
 						baseUrl: source.source_root,
 						userId: input.userId,
+						sourceId: source.id,
 						...(input.expectedPackageScope !== undefined
 							? { expectedPackageScope: input.expectedPackageScope }
 							: {}),
@@ -2505,6 +2506,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			env: this.env,
 			baseUrl: source.source_root,
 			userId: input.userId,
+			sourceId: source.id,
 			// Honor an explicit scope even on a still-plain repo: promote
 			// runs package checks before flipping entity_kind.
 			expectedPackageScope: input.expectedPackageScope,

@@ -1,7 +1,5 @@
-import {
-	PrimitiveWidgetFrame,
-	primitiveRestScene,
-} from '#client/primitive-widgets.tsx'
+import { PrimitiveWidgetFrame } from '#client/primitive-widget-parts.tsx'
+import { primitiveRestScene } from '#client/primitive-widgets.tsx'
 import {
 	primitiveCards,
 	primitiveFeatureHref,

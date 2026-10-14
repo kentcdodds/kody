@@ -197,4 +197,10 @@ test.each([
 		rel: 'stylesheet',
 		href: '/feature-pages.css',
 	})
+	const sceneLinks = (head.links ?? []).filter((link) =>
+		link.href.startsWith('/feature-scenes/'),
+	)
+	expect(sceneLinks).toEqual(
+		suffix ? [{ rel: 'stylesheet', href: `/feature-scenes${suffix}.css` }] : [],
+	)
 })

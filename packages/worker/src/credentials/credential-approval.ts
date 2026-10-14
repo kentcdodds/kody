@@ -2,7 +2,9 @@
  * The approval page's view and Approve (contract: "Mapping proposals and the
  * approval page"). An agent only proposes mappings and triggers to turn on;
  * they take effect when a signed-in person approves exactly what they
- * reviewed. The fingerprint pins that: the changes resolved to credential ids
+ * reviewed. `credentialTriggerPickSet` writes through here too, and only a
+ * trigger pick that agent proposed and the person approved (see
+ * agent-credential-proposals.ts). The fingerprint pins that: the changes resolved to credential ids
  * for this viewer, so a rename, a replaced credential, or a mapping edited
  * since review fails Approve.
  */
@@ -10,6 +12,7 @@ import {
 	type CredentialApprovalView,
 	type ParsedCredentialProposal,
 } from '#universal/credential-contracts.ts'
+import { planCredentialProposalApproval } from './agent-credential-proposals.ts'
 import {
 	MappingChangedSinceResolve,
 	MappingWriteRefused,
@@ -139,12 +142,15 @@ async function resolveFresh(
 /**
  * Re-resolves the proposal and, when it still matches `fingerprint` and has
  * no errors, writes every change (and any trigger it turns on) in one batch.
- * The returned view is resolved again after the write.
+ * With `proposalId`, the same batch records the trigger picks an agent's
+ * proposal applied, which that agent may set again later. The returned view is
+ * resolved again after the write.
  */
 export async function approveCredentialProposal(input: {
 	scope: PackageMappingScope
 	proposal: ParsedCredentialProposal
 	fingerprint: string
+	proposalId?: string | null
 }): Promise<CredentialApprovalOutcome> {
 	const { scope, proposal } = input
 	const current = await resolveCredentialApproval(scope, proposal)
@@ -154,10 +160,19 @@ export async function approveCredentialProposal(input: {
 	if (current.view.fingerprint !== input.fingerprint) {
 		return { status: 'stale', view: current.view }
 	}
+	const approval = input.proposalId
+		? await planCredentialProposalApproval({
+				scope,
+				proposalId: input.proposalId,
+				proposal,
+				resolved: current.resolved,
+			})
+		: null
 	try {
 		await writeMappingChanges(scope, current.resolved, {
 			enable: current.enable,
 			requireUnchanged: true,
+			also: approval ? [approval] : [],
 		})
 	} catch (error) {
 		// Something changed between this resolve and the write.

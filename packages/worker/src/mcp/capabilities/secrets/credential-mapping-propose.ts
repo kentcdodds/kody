@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+	proposingAgentFor,
+	recordCredentialProposal,
+} from '#worker/credentials/agent-credential-proposals.ts'
 import { resolveCredentialApproval } from '#worker/credentials/credential-approval.ts'
 import { credentialPickSchema } from '#worker/credentials/credential-pick-schema.ts'
 import { loadPackageMappingScopeForRequest } from '#worker/credentials/package-mapping-scope-access.ts'
@@ -159,7 +163,7 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 		name: 'credentialMappingPropose',
 		orgPermission: 'none',
 		description:
-			'Propose which credentials a package uses: org default mappings (defaults), your own defaults (mine), per-trigger mappings for your instance of a cron job, subscription, or webhook (triggers), and triggers to turn on with no mapping (enable). Never writes. Returns an approval URL to send to the person; nothing changes until they review it and click Approve, which applies every change at once and turns on every trigger it maps or enables. A webhook URL must be minted before it can be approved; minting alone does not turn it on. view.canApprove false lists what to fix first in view.changes[].error, view.enable[].error, and view.errors (unknown need or trigger, unminted webhook, missing or ambiguous credential with a createUrl, kind or provider mismatch, org defaults without package:write). Needs package:execute on the package.',
+			'Propose which credentials a package uses: org default mappings (defaults), your own defaults (mine), per-trigger mappings for your instance of a cron job, subscription, or webhook (triggers), and triggers to turn on with no mapping (enable). Never writes a mapping. Returns an approval URL to send to the person; nothing changes until they review it and click Approve, which applies every change at once and turns on every trigger it maps or enables. A webhook URL must be minted before it can be approved; minting alone does not turn it on. view.canApprove false lists what to fix first in view.changes[].error, view.enable[].error, and view.errors (unknown need or trigger, unminted webhook, missing or ambiguous credential with a createUrl, kind or provider mismatch, org defaults without package:write). Once the person approves, credentialTriggerPickSet can set those trigger picks again later. Needs package:execute on the package.',
 		keywords: [
 			'credential',
 			'credentials',
@@ -171,8 +175,8 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 			'trigger',
 			'package',
 		],
-		readOnly: true,
-		idempotent: true,
+		readOnly: false,
+		idempotent: false,
 		destructive: false,
 		inputSchema: z
 			.object({
@@ -286,7 +290,30 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 				new URL(href, ctx.callerContext.baseUrl).searchParams,
 			)
 			const { view } = await resolveCredentialApproval(scope, proposal)
-			const approvalUrl = new URL(href, ctx.callerContext.baseUrl).toString()
+			const agent = proposingAgentFor(request)
+			const proposalId =
+				agent && view.canApprove
+					? await recordCredentialProposal({
+							db: ctx.env.APP_DB,
+							orgId: request.org.id,
+							packageId: scope.savedPackage.id,
+							agent,
+							proposal,
+						})
+					: null
+			const approvalUrl = new URL(
+				proposalId
+					? buildCredentialApprovalHref({
+							username,
+							kodyId: scope.savedPackage.kodyId,
+							changes,
+							enable,
+							reason: args.reason ?? null,
+							proposalId,
+						})
+					: href,
+				ctx.callerContext.baseUrl,
+			).toString()
 			return {
 				approvalUrl,
 				view,

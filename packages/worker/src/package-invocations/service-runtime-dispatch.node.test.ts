@@ -472,6 +472,42 @@ test('package events deliver with filters, idempotent replay, and retryable fail
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
+test('events.dispatch from a team package keys subscribers by the package owner org', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	const send = vi.fn<(message: unknown) => Promise<undefined>>(
+		async () => undefined,
+	)
+	const teamOrgId = ownerIdFromStored('org-acme-team')
+	const tools = createRuntimeEventTools(db, {
+		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },
+		orgBinding: {
+			org: { id: teamOrgId, slug: 'acme' },
+			role: 'member',
+		},
+	})
+
+	await tools.dispatch({
+		topic: messageCreated,
+		idempotencyKey: 'discord:message-create:team',
+		payload: { messageId: 'team-1' },
+	})
+
+	expect(send).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: teamOrgId,
+			topic: messageCreated,
+			source: { packageId: 'pkg-gateway', kodyId: 'discord-gateway' },
+		}),
+	)
+	expect(send.mock.calls[0]?.[0]).not.toMatchObject({
+		userId: ownerIdFromStored('user-123'),
+	})
+	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: teamOrgId }),
+	)
+})
+
 test('package events fall back to inline delivery without a queue binding', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()

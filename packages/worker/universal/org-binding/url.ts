@@ -16,16 +16,6 @@ export function readOrgSlugFromUrl(url: string | URL): string | null {
 	}
 }
 
-/** Build the MCP URL with `?org=` (lowercase slug). */
-export function buildOrgBoundMcpUrl(input: {
-	mcpServerUrl: string
-	orgSlug: string
-}) {
-	const url = new URL(input.mcpServerUrl)
-	url.searchParams.set('org', normalizeOrgSlug(input.orgSlug))
-	return url.toString()
-}
-
 /**
  * Pull an org slug from an OAuth resource URI that may carry `?org=`.
  * Removes only `org` so a sibling `?profile=` survives until profile

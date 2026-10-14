@@ -1,20 +1,75 @@
 import { on, type Handle } from 'remix/component'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
-import { PackagePublishArt, PackageShareArt } from './packages-art.tsx'
 import { FeatureRelated } from './feature-related.tsx'
+import {
+	PackagePublishScene,
+	PackageShareScene,
+	PackageWorkbenchScene,
+	type PackageAccess,
+	type PackageSharing,
+	type PackageTab,
+} from './packages-scenes.tsx'
 
 const examplePackageSource = 'README.md\nAGENTS.md\npackage.json\nsrc/brief.ts'
 
+const packageTabs = ['Intent', 'Source', 'Result'] as const
+type PackageTabLabel = (typeof packageTabs)[number]
+
+function tabFromLabel(label: PackageTabLabel): PackageTab {
+	switch (label) {
+		case 'Intent':
+			return 'intent'
+		case 'Source':
+			return 'source'
+		case 'Result':
+			return 'result'
+		default: {
+			const exhaustive: never = label
+			return exhaustive
+		}
+	}
+}
+
+function tabStatus(tab: PackageTab) {
+	switch (tab) {
+		case 'intent':
+			return 'Showing the request that became the weekly-brief package.'
+		case 'source':
+			return 'Showing the package source in src/brief.ts.'
+		case 'result':
+			return 'Showing the result of running weekly-brief.'
+		default: {
+			const exhaustive: never = tab
+			return exhaustive
+		}
+	}
+}
+
+function accessFromValue(value: string): PackageAccess {
+	switch (value) {
+		case 'use':
+		case 'contribute':
+		case 'manage':
+			return value
+		default:
+			return 'use'
+	}
+}
+
 export function PackagesFeature(handle: Handle) {
-	let tab = 'intent'
+	let tab: PackageTab = 'intent'
+	let heroShot = 0
 	let questions = false
 	let previewQuestions = false
 	let previewed = false
 	let live = false
-	let sharing = 'share'
-	let access = 'use'
+	let publishShot = 0
+	let version = 1
+	let sharing: PackageSharing = 'share'
+	let access: PackageAccess = 'use'
 	let copyEdited = false
 	let forkArtStatus = ''
+	let shareShot = 0
 	let status = 'Example package. The published brief has no open questions.'
 	return () => (
 		<div class="study packages">
@@ -53,44 +108,34 @@ export function PackagesFeature(handle: Handle) {
 							<span class="ui-state">Published</span>
 						</div>
 						<div class="controls" aria-label="Package contents">
-							{['Intent', 'Source', 'Result'].map((label) => (
-								<button
-									key={label}
-									type="button"
-									aria-pressed={tab === label.toLowerCase()}
-									mix={on('click', () => {
-										tab = label.toLowerCase()
-										handle.update()
-									})}
-								>
-									{label}
-								</button>
-							))}
+							{packageTabs.map((label) => {
+								const next = tabFromLabel(label)
+								return (
+									<button
+										key={label}
+										type="button"
+										aria-pressed={tab === next}
+										mix={on('click', () => {
+											tab = next
+											heroShot += 1
+											handle.update()
+										})}
+									>
+										{label}
+									</button>
+								)
+							})}
 						</div>
-						<div class="contents" id="package-content" aria-live="polite">
-							{tab === 'intent' ? (
-								<p>
-									Collect the project updates I choose and turn them into a
-									weekly brief.
-								</p>
-							) : tab === 'source' ? (
-								<>
-									<pre>{examplePackageSource}</pre>
-									<a href="/docs/package-skills">
-										Packages can also include Agent Skills
-									</a>
-								</>
-							) : (
-								<>
-									<h3>Weekly brief</h3>
-									<p>
-										Orchard: design review is ready.
-										<br />
-										Fieldwork: kickoff is booked.
-									</p>
-									{live && <p>Open question: Who approves the final copy?</p>}
-								</>
-							)}
+						<p class="visually-hidden" aria-live="polite">
+							{tabStatus(tab)}
+						</p>
+						<div class="contents" id="package-content">
+							<PackageWorkbenchScene tab={tab} live={live} shot={heroShot} />
+							{tab === 'source' ? (
+								<a class="pw-pkg-skills" href="/docs/package-skills">
+									Packages can also include Agent Skills
+								</a>
+							) : null}
 						</div>
 						{/* Tab panels need JS; keep example source readable without it. */}
 						<noscript>
@@ -128,6 +173,7 @@ export function PackagesFeature(handle: Handle) {
 								mix={on('change', (event) => {
 									questions = event.currentTarget.checked
 									previewed = false
+									publishShot += 1
 									status =
 										'Source changed. Preview it to compare with the current published output.'
 									handle.update()
@@ -140,6 +186,7 @@ export function PackagesFeature(handle: Handle) {
 							mix={on('click', () => {
 								previewed = true
 								previewQuestions = questions
+								publishShot += 1
 								status = questions
 									? 'Example output includes open questions. The published output has not changed.'
 									: 'Example output has no open questions. The published output has not changed.'
@@ -153,6 +200,8 @@ export function PackagesFeature(handle: Handle) {
 							disabled={!previewed || questions === live}
 							mix={on('click', () => {
 								live = questions
+								version += 1
+								publishShot += 1
 								status = 'Example change is now published.'
 								handle.update()
 							})}
@@ -166,31 +215,14 @@ export function PackagesFeature(handle: Handle) {
 					<a href="/docs/package-authoring">How packages are built ↗</a>
 				</div>
 				<div class="pt-proof">
-					<PackagePublishArt />
-					<div class="pt-sheets">
-						<article hidden={!previewed}>
-							<small>Proposed output</small>
-							<h3>Weekly brief</h3>
-							<p>
-								Orchard: design review is ready.
-								<br />
-								Fieldwork: kickoff is booked.
-							</p>
-							<p hidden={!previewQuestions}>
-								Open question: Who approves the final copy?
-							</p>
-						</article>
-						<article>
-							<small>Current published output</small>
-							<h3>Weekly brief</h3>
-							<p>
-								Orchard: design review is ready.
-								<br />
-								Fieldwork: kickoff is booked.
-							</p>
-							<p hidden={!live}>Open question: Who approves the final copy?</p>
-						</article>
-					</div>
+					<PackagePublishScene
+						questions={questions}
+						previewed={previewed}
+						previewQuestions={previewQuestions}
+						live={live}
+						version={version}
+						shot={publishShot}
+					/>
 				</div>
 			</section>
 			<section class="story-section story-split pt-sharing">
@@ -210,6 +242,7 @@ export function PackagesFeature(handle: Handle) {
 							aria-pressed={sharing === 'share'}
 							mix={on('click', () => {
 								sharing = 'share'
+								shareShot += 1
 								handle.update()
 							})}
 						>
@@ -220,6 +253,7 @@ export function PackagesFeature(handle: Handle) {
 							aria-pressed={sharing === 'fork'}
 							mix={on('click', () => {
 								sharing = 'fork'
+								shareShot += 1
 								handle.update()
 							})}
 						>
@@ -232,7 +266,8 @@ export function PackagesFeature(handle: Handle) {
 							id="pt-access"
 							value={access}
 							mix={on('change', (event) => {
-								access = event.currentTarget.value
+								access = accessFromValue(event.currentTarget.value)
+								shareShot += 1
 								handle.update()
 							})}
 						>
@@ -251,6 +286,7 @@ export function PackagesFeature(handle: Handle) {
 						mix={on('click', () => {
 							copyEdited = !copyEdited
 							forkArtStatus = 'Change the copy’s focus'
+							shareShot += 1
 							handle.update()
 						})}
 					>
@@ -271,7 +307,12 @@ export function PackagesFeature(handle: Handle) {
 					<a href="/docs/package-sharing">Package sharing and access ↗</a>
 				</div>
 				<div class="pt-share-art">
-					<PackageShareArt sharing={sharing} copyEdited={copyEdited} />
+					<PackageShareScene
+						sharing={sharing}
+						access={access}
+						copyEdited={copyEdited}
+						shot={shareShot}
+					/>
 				</div>
 			</section>
 			<FeatureRelated

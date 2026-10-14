@@ -1547,6 +1547,16 @@ on write unless a migration backfills existing rows.
   credential ids, and `[]` means "none on purpose". Rows hold ids only. A
   person's rows in an org are hard-deleted when they leave it, and with their
   account.
+- `credential_mapping_proposals` (`0137-credential-mapping-proposals.sql`,
+  `packages/worker/src/credentials/agent-credential-proposals.ts`) records each
+  approvable `credentialMappingPropose` call under the agent that made it: the
+  person (`person_user_id`) plus the request credential (`agent_credential_kind`
+  and `agent_credential_id`, an MCP OAuth client, CLI client, or API token).
+  When that person approves the link, `approved_picks_json` holds the trigger
+  picks they approved, as credential ids; `credentialTriggerPickSet` lets the
+  same agent set only those. Unapproved rows older than 30 days are dropped when
+  that agent proposes again. A person's rows in an org are hard-deleted when
+  they leave it, and with their account.
 
 ### Durable Object id contracts
 

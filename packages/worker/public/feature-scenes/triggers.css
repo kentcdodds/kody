@@ -1,0 +1,773 @@
+/* Animated scenes for /features/triggers, on the shared `.pw` stage (`public/styles.css`). */
+
+.feature-detail .triggers .split {
+	grid-template-columns: 0.85fr 1.15fr;
+	gap: 48px;
+}
+
+.feature-detail .triggers .split h1 {
+	font-size: clamp(40px, 4vw, 52px);
+}
+
+.feature-detail .triggers .split .lead {
+	margin-bottom: 22px;
+}
+
+.feature-detail .triggers .trg-examples {
+	margin: 26px 0 0;
+}
+
+.feature-detail .triggers .trg-run {
+	align-items: center;
+	margin: 12px 0 0;
+}
+
+.feature-detail .triggers .trg-hero-scene .smallprint {
+	margin-top: 12px;
+}
+
+@media (max-width: 800px) {
+	.feature-detail .triggers .split {
+		grid-template-columns: 1fr;
+		gap: 35px;
+	}
+
+	.feature-detail .triggers .split h1 {
+		font-size: 44px;
+	}
+}
+
+.feature-detail .triggers .pw {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.feature-detail .triggers #trigger-detail {
+	margin: 14px 0 0;
+	min-height: 1.5em;
+	font-size: 16px;
+}
+
+.feature-detail .triggers .pt-decision {
+	padding: 0;
+	background: transparent;
+	border: 0;
+}
+
+.feature-detail .triggers .pt-signal-outcome {
+	margin: 16px 0 0;
+}
+
+.feature-detail .triggers .pw p,
+.feature-detail .triggers .pw strong {
+	max-width: none;
+	margin: 0;
+}
+
+.feature-detail .triggers .pw-wires {
+	width: 100%;
+	height: 100%;
+}
+
+/* Shared card parts. Readable text stays at or above 0.82em so it holds
+   12px both on the narrowest unstacked stage and in the 15px stack. */
+
+.pw .pw-trg-card,
+.pw .pw-trg-sig,
+.pw .pw-trg-end {
+	z-index: 1;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.35em;
+	white-space: normal;
+	padding: 0.6em 0.7em;
+}
+
+.pw .pw-trg-card {
+	width: 27%;
+	translate: 0 -50%;
+}
+
+.pw .pw-trg-logs,
+.pw .pw-trg-outcome,
+.pw .pw-trg-sig-card {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-trg-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.45em;
+	min-width: 0;
+}
+
+.pw .pw-trg-head > span:not(.pw-icon):not(.pw-trg-fn):not(.pw-trg-tick) {
+	min-width: 0;
+}
+
+.pw .pw-trg-head .pw-kicker {
+	display: block;
+	font-size: 0.82em;
+	line-height: 1.3;
+}
+
+.pw .pw-trg-card strong,
+.pw .pw-trg-end strong {
+	display: block;
+	font-size: 0.92em;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.pw .pw-trg-fn,
+.pw .pw-trg-tick {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 1.5em;
+	height: 1.5em;
+	margin-top: 0.1em;
+	border-radius: 0.35em;
+	background: var(--pw-text);
+	color: var(--pw-surface);
+	font-size: 0.9em;
+	font-style: italic;
+	font-weight: 700;
+}
+
+.pw .pw-trg-tick {
+	font-style: normal;
+	background: var(--pw-accent);
+	color: #161a16;
+}
+
+.pw .pw-trg-rows {
+	display: grid;
+	gap: 0.15em;
+}
+
+.pw .pw-trg-rows p,
+.pw .pw-trg-log {
+	font-size: 0.82em;
+	line-height: 1.3;
+}
+
+.pw .pw-trg-source .pw-trg-rows p {
+	display: grid;
+	grid-template-columns: 5.4em minmax(0, 1fr);
+	gap: 0.5em;
+}
+
+.pw .pw-trg-source .pw-trg-rows p span:first-child {
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-loglist {
+	display: grid;
+	gap: 0.1em;
+}
+
+.pw .pw-trg-log {
+	display: flex;
+	gap: 0.5em;
+	align-items: baseline;
+	font-family: ui-monospace, monospace;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-t,
+.pw .pw-trg-runid,
+.pw .pw-trg-dur {
+	font-family: ui-monospace, monospace;
+}
+
+.pw .pw-trg-t {
+	flex: none;
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-meta {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.4em;
+	padding-top: 0.35em;
+	border-top: 1px solid var(--pw-line);
+	font-size: 0.82em;
+}
+
+.pw .pw-trg-runid {
+	color: var(--pw-text);
+	font-weight: 650;
+}
+
+.pw .pw-trg-dur {
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-chip,
+.pw .pw-trg-nomodel {
+	flex: none;
+	align-self: flex-start;
+	padding: 0.1em 0.5em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99px;
+	background: var(--pw-soft);
+	color: var(--pw-text);
+	font-size: 0.82em;
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-nomodel {
+	margin-left: auto;
+}
+
+.pw .pw-trg-mail {
+	position: relative;
+	flex: none;
+	width: 1.2em;
+	height: 0.82em;
+	margin-top: 0.2em;
+	overflow: hidden;
+	border: 1.5px solid var(--pw-ink);
+	border-radius: 0.12em;
+	color: var(--pw-ink);
+}
+
+.pw .pw-trg-mail::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(
+				to bottom right,
+				transparent 46%,
+				currentColor 47% 53%,
+				transparent 54%
+			)
+			left top / 50% 70% no-repeat,
+		linear-gradient(
+				to bottom left,
+				transparent 46%,
+				currentColor 47% 53%,
+				transparent 54%
+			)
+			right top / 50% 70% no-repeat;
+}
+
+.pw .pw-trg-diamond {
+	color: var(--pw-ink);
+	font-size: 1em;
+	line-height: 1;
+}
+
+/* Hero: a staircase of cards on a grid. The moving chips travel in their
+   own gap rows, so they never cross a card. */
+
+.pw.pw-scene-trg-hero .pw-stage {
+	aspect-ratio: auto;
+}
+
+.pw.pw-scene-trg-hero .pw-stage .pw-run {
+	position: relative;
+	inset: auto;
+	display: grid;
+	grid-template-columns: 2fr 1fr 2fr;
+	grid-template-rows: auto 3em auto 3em auto;
+	gap: 0;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-card {
+	position: relative;
+	width: auto;
+	translate: none;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-source {
+	grid-area: 1 / 1 / 2 / 3;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-link-in {
+	grid-area: 2 / 2 / 3 / 3;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-logs {
+	grid-area: 3 / 2 / 4 / 4;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-link-out {
+	grid-area: 4 / 2 / 5 / 3;
+}
+
+.pw.pw-scene-trg-hero .pw-trg-outcome {
+	grid-area: 5 / 1 / 6 / 3;
+}
+
+.pw .pw-trg-link {
+	position: relative;
+}
+
+.pw .pw-trg-link::before {
+	content: '';
+	position: absolute;
+	left: calc(50% - 1px);
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: repeating-linear-gradient(
+		to bottom,
+		var(--pw-accent) 0 4px,
+		transparent 4px 9px
+	);
+}
+
+.pw .pw-trg-link .pw-packet {
+	z-index: 2;
+	left: 50%;
+	top: 50%;
+	color: var(--pw-text);
+	font-size: 0.82em;
+	opacity: 1;
+}
+
+/* Signals */
+
+.pw .pw-trg-sig {
+	width: 34%;
+	translate: 0 -50%;
+	flex-direction: row;
+	align-items: center;
+	gap: 0.45em;
+	font-size: 0.92em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-pkg,
+.pw .pw-trg-sig-card {
+	width: 42%;
+	translate: 0 -50%;
+}
+
+/* Scan */
+
+.pw .pw-trg-scan {
+	width: 82%;
+	translate: -50% -50%;
+}
+
+.pw .pw-trg-code {
+	position: relative;
+	font-size: 0.82em;
+}
+
+.pw .pw-trg-scanbar {
+	position: absolute;
+	left: -0.3em;
+	right: -0.3em;
+	height: 1.45em;
+	border-radius: 0.25em;
+	background: color-mix(in oklab, var(--pw-accent) 18%, transparent);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.pw .pw-trg-code-line {
+	position: relative;
+	display: flex;
+	gap: 0.6em;
+	font-family: ui-monospace, monospace;
+	line-height: 1.45;
+	white-space: nowrap;
+}
+
+.pw .pw-trg-code-line span {
+	color: var(--pw-muted);
+}
+
+.pw .pw-trg-code-line[data-flake] {
+	color: var(--pw-text);
+	font-weight: 650;
+}
+
+.pw .pw-trg-ask {
+	position: absolute;
+	z-index: 2;
+	left: 50%;
+	top: 54.5%;
+	translate: -50% -50%;
+	padding: 0.1em 0.5em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99px;
+	background: var(--pw-surface);
+	color: var(--pw-muted);
+	font-size: 0.82em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-end {
+	width: 36%;
+	translate: -50% -50%;
+	align-items: flex-start;
+	gap: 0.25em;
+}
+
+.pw .pw-trg-end p {
+	color: var(--pw-muted);
+	font-size: 0.82em;
+}
+
+.pw .pw-trg-check {
+	display: grid;
+	place-items: center;
+	width: 1.5em;
+	height: 1.5em;
+	border-radius: 50%;
+	background: var(--pw-soft);
+	color: var(--pw-text);
+	font-size: 0.82em;
+	font-weight: 700;
+}
+
+.pw .pw-trg-agent {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35em;
+	padding: 0.1em 0.5em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99px;
+	background: var(--pw-surface);
+	color: var(--pw-text);
+	font-size: 0.82em;
+	font-weight: 650;
+}
+
+.pw .pw-trg-agent-dot {
+	width: 0.5em;
+	height: 0.5em;
+	border-radius: 50%;
+	background: var(--pw-line);
+}
+
+.pw .pw-trg-agent[data-lit] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+}
+
+.pw .pw-trg-agent[data-lit] .pw-trg-agent-dot {
+	background: var(--pw-accent);
+}
+
+.pw .pw-trg-agent[data-lit]::before {
+	content: '';
+	position: absolute;
+	inset: -0.22em;
+	border: 1.5px solid var(--pw-accent);
+	border-radius: inherit;
+}
+
+/* Stacked layouts below 520px. */
+
+@container (max-width: 520px) {
+	.pw.pw-scene-trg-hero .pw-stage .pw-run {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.pw.pw-scene-trg-hero .pw-trg-source,
+	.pw.pw-scene-trg-hero .pw-trg-link,
+	.pw.pw-scene-trg-hero .pw-trg-logs,
+	.pw.pw-scene-trg-hero .pw-trg-outcome {
+		grid-column: 1 / -1;
+	}
+
+	.pw.pw-scene-trg-signals .pw-stage .pw-run,
+	.pw.pw-scene-trg-scan .pw-stage .pw-run {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.6em;
+	}
+
+	.pw.pw-scene-trg-signals .pw-trg-pkg,
+	.pw.pw-scene-trg-signals .pw-trg-sig-card,
+	.pw.pw-scene-trg-scan .pw-trg-scan {
+		grid-column: 1 / -1;
+	}
+
+	.pw.pw-scene-trg-signals .pw-trg-pkg,
+	.pw.pw-scene-trg-signals .pw-trg-sig-card {
+		margin-top: 1.4em;
+	}
+
+	.pw.pw-scene-trg-signals .pw-trg-pkg::before,
+	.pw.pw-scene-trg-signals .pw-trg-sig-card::before {
+		content: '';
+		position: absolute;
+		left: calc(50% - 1px);
+		top: -2em;
+		height: 2em;
+		width: 2px;
+		background: repeating-linear-gradient(
+			to bottom,
+			var(--pw-accent) 0 4px,
+			transparent 4px 9px
+		);
+	}
+
+	.pw.pw-scene-trg-signals .pw-trg-sig:not([data-on]) {
+		color: var(--pw-muted);
+	}
+
+	.pw.pw-scene-trg-scan .pw-trg-ask {
+		position: relative;
+		left: auto;
+		top: auto;
+		grid-column: 1 / -1;
+		justify-self: center;
+		translate: none;
+	}
+
+	.pw.pw-scene-trg-scan .pw-trg-code-line {
+		white-space: normal;
+	}
+}
+
+/* Motion. Resting rules above are the finished run. */
+
+.pw.pw-scene-trg-signals .pw-pulse,
+.pw.pw-scene-trg-scan .pw-pulse {
+	animation: none;
+	opacity: 0;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-link::before,
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-pkg::before,
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-sig-card::before {
+	animation: pw-trg-flow 1.2s linear infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-link-in .pw-packet {
+	animation: pw-trg-drop-in 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-link-out .pw-packet {
+	animation: pw-trg-drop-out 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-fn {
+	animation: pw-trg-pop 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-logs {
+	animation: pw-trg-glow-run 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-outcome {
+	animation: pw-trg-glow-done 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-hero[data-motion] .pw-trg-tick {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-wire[data-on] .pw-pulse {
+	animation: pw-trg-dash-in 8s linear infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-wire:last-child .pw-pulse {
+	animation: pw-trg-dash-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-pkg {
+	animation: pw-trg-glow-run 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-signals[data-motion] .pw-trg-sig-card {
+	animation: pw-trg-glow-done 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-trg-scanbar {
+	animation: pw-trg-scanbar 8s linear infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-wire[data-on] .pw-pulse {
+	animation: pw-trg-dash-out 8s linear infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] [data-result='clean'] .pw-trg-check {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-trg-scan[data-motion] .pw-trg-agent[data-lit] {
+	animation: pw-trg-mark 8s var(--pw-ease) infinite;
+}
+
+@keyframes pw-trg-flow {
+	to {
+		background-position: 0 9px;
+	}
+}
+
+@keyframes pw-trg-drop-in {
+	0% {
+		transform: translateY(-0.6em);
+		opacity: 0;
+	}
+	2%,
+	12% {
+		transform: translateY(-0.6em);
+		opacity: 1;
+	}
+	26%,
+	94% {
+		transform: translateY(0.6em);
+		opacity: 1;
+	}
+	100% {
+		transform: translateY(0.6em);
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-drop-out {
+	0% {
+		transform: translateY(-0.6em);
+		opacity: 0;
+	}
+	2%,
+	44% {
+		transform: translateY(-0.6em);
+		opacity: 1;
+	}
+	58%,
+	94% {
+		transform: translateY(0.6em);
+		opacity: 1;
+	}
+	100% {
+		transform: translateY(0.6em);
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-glow-run {
+	0%,
+	22%,
+	46%,
+	100% {
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
+	}
+	30%,
+	38% {
+		box-shadow: 0 0 0 0.25em
+			color-mix(in oklab, var(--pw-accent) 32%, transparent);
+	}
+}
+
+@keyframes pw-trg-glow-done {
+	0%,
+	54%,
+	76%,
+	100% {
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
+	}
+	62%,
+	68% {
+		box-shadow: 0 0 0 0.25em
+			color-mix(in oklab, var(--pw-accent) 32%, transparent);
+	}
+}
+
+@keyframes pw-trg-dash-in {
+	0%,
+	10% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	12% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	28% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	32%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-dash-out {
+	0%,
+	42% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	44% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	60% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	64%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-trg-pop {
+	0%,
+	22% {
+		transform: scale(1);
+	}
+	30% {
+		transform: scale(1.1);
+	}
+	38%,
+	100% {
+		transform: scale(1);
+	}
+}
+
+@keyframes pw-trg-mark {
+	0%,
+	54% {
+		transform: none;
+	}
+	62% {
+		transform: scale(1.12);
+	}
+	70%,
+	100% {
+		transform: none;
+	}
+}
+
+@keyframes pw-trg-scanbar {
+	0%,
+	8% {
+		opacity: 0;
+		transform: translateY(0);
+	}
+	16% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	40% {
+		opacity: 1;
+		transform: translateY(2.9em);
+	}
+	48%,
+	100% {
+		opacity: 0;
+		transform: translateY(2.9em);
+	}
+}

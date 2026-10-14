@@ -474,7 +474,7 @@ function changeTargetKey(change: ResolvedMappingChange) {
  * writes nothing and throws `MappingWriteRefused` (`webhook_other_enabler`).
  * With `requireUnchanged` (Approve), each replaced row must still hold what
  * was resolved, or nothing is written and it throws
- * `MappingChangedSinceResolve`.
+ * `MappingChangedSinceResolve`. `also` statements join the same batch.
  */
 export async function writeMappingChanges(
 	scope: PackageMappingScope,
@@ -482,6 +482,7 @@ export async function writeMappingChanges(
 	options: {
 		now?: string
 		enable?: ReadonlyArray<ResolvedTriggerEnable>
+		also?: ReadonlyArray<D1PreparedStatement>
 		requireUnchanged?: boolean
 	} = {},
 ) {
@@ -587,6 +588,7 @@ export async function writeMappingChanges(
 			after: [
 				...statements,
 				...auditPlans.map((plan) => orgAuditOutboxInsertStatement(db, plan)),
+				...(options.also ?? []),
 			],
 		})
 	} catch (error) {

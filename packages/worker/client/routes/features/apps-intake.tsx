@@ -17,6 +17,7 @@ export function AppsIntake(
 		const { draft } = handle.props
 		return (
 			<form
+				class="pw-apx-form"
 				mix={on('submit', (event) => {
 					event.preventDefault()
 					handle.props.onSave()

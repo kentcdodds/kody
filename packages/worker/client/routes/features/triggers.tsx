@@ -1,17 +1,27 @@
 import { on, type Handle } from 'remix/component'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { FeatureRelated } from './feature-related.tsx'
-import { TriggerSignalsArt, TriggerScanArt } from './triggers-art.tsx'
+import {
+	TriggerHeroScene,
+	TriggerScanScene,
+	TriggerSignalsScene,
+	type ScanResult,
+	type SignalId,
+	type TriggerExampleId,
+} from './triggers-scenes.tsx'
 import { triggerExamples, signals } from './triggers-data.ts'
 
 export function TriggersFeature(handle: Handle) {
-	let selected: keyof typeof triggerExamples = 'purchase'
-	let signal: keyof typeof signals = 'webhook'
+	let selected: TriggerExampleId = 'purchase'
+	let signal: SignalId = 'webhook'
 	let ran = false
 	let otherAddress = false
 	let showFlake = false
 	let scanFlake = false
-	let scanResult = ''
+	let scanResult: ScanResult = ''
+	let heroShot = 0
+	let signalShot = 0
+	let scanShot = 0
 	return () => {
 		const event = triggerExamples[selected]
 		const result =
@@ -28,137 +38,137 @@ export function TriggersFeature(handle: Handle) {
 					: event.detail
 		return (
 			<div class="study triggers">
-				<img
-					class="feature-orb"
-					src="/images/lantern/kody-primitives-orb-triggers.webp"
-					alt=""
-					width="80"
-					height="80"
-				/>
-				<h1>
-					Give the next step
-					<br />a starting signal.
-				</h1>
-				<p class="lead">
-					A purchase lands. An issue opens. An email arrives. Your package runs,
-					even when the chat is closed.
-				</p>
-				<a class="action" href="/onboarding">
-					Connect your agent
-				</a>
-				<div class="controls" aria-label="Example trigger">
-					<button
-						type="button"
-						aria-pressed={selected === 'purchase'}
-						mix={on('click', () => {
-							selected = 'purchase'
-							ran = false
-							handle.update()
-						})}
-					>
-						A purchase
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'issue'}
-						mix={on('click', () => {
-							selected = 'issue'
-							ran = false
-							handle.update()
-						})}
-					>
-						An issue
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'email'}
-						mix={on('click', () => {
-							selected = 'email'
-							ran = false
-							handle.update()
-						})}
-					>
-						An email
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'schedule'}
-						mix={on('click', () => {
-							selected = 'schedule'
-							ran = false
-							handle.update()
-						})}
-					>
-						A daily check
-					</button>
-				</div>
-				<div class="ledger ui-stage">
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">↗</span> When
-						</small>
-						<strong>{event.when}</strong>
-					</div>
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">ƒ</span> Run package
-						</small>
-						<strong>{event.package}</strong>
-					</div>
-					<div class="ui-window">
-						<small>
-							<span class="ui-symbol">✓</span> Result
-						</small>
-						<strong>{result}</strong>
+				<div class="split">
+					<div>
+						<img
+							class="feature-orb"
+							src="/images/lantern/kody-primitives-orb-triggers.webp"
+							alt=""
+							width="80"
+							height="80"
+						/>
+						<h1>
+							Give the next step
+							<br />a starting signal.
+						</h1>
+						<p class="lead">
+							A purchase lands. An issue opens. An email arrives. Your package
+							runs, even when the chat is closed.
+						</p>
+						<a class="action" href="/onboarding">
+							Connect your agent
+						</a>
+						<div class="controls trg-examples" aria-label="Example trigger">
+							<button
+								type="button"
+								aria-pressed={selected === 'purchase'}
+								mix={on('click', () => {
+									selected = 'purchase'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								A purchase
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'issue'}
+								mix={on('click', () => {
+									selected = 'issue'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								An issue
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'email'}
+								mix={on('click', () => {
+									selected = 'email'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								An email
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'schedule'}
+								mix={on('click', () => {
+									selected = 'schedule'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								A daily check
+							</button>
+						</div>
+						<div class="controls trg-run">
+							{selected === 'email' && (
+								<label>
+									<input
+										type="checkbox"
+										checked={otherAddress}
+										mix={on('change', (event) => {
+											otherAddress = event.currentTarget.checked
+											ran = false
+											heroShot += 1
+											handle.update()
+										})}
+									/>{' '}
+									Use another address
+								</label>
+							)}
+							{selected === 'schedule' && (
+								<label>
+									<input
+										type="checkbox"
+										checked={showFlake}
+										mix={on('change', (event) => {
+											showFlake = event.currentTarget.checked
+											ran = false
+											heroShot += 1
+											handle.update()
+										})}
+									/>{' '}
+									Show a flake
+								</label>
+							)}
+							<button
+								type="button"
+								class="run"
+								mix={on('click', () => {
+									ran = true
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								Run example
+							</button>
+						</div>
 						<p class="result" id="trigger-detail" aria-live="polite">
 							{ran ? detail : 'Run the example to follow the event.'}
 						</p>
 					</div>
+					<div class="trg-hero-scene">
+						<TriggerHeroScene
+							example={selected}
+							result={result}
+							otherAddress={otherAddress}
+							showFlake={showFlake}
+							shot={heroShot}
+						/>
+						<p class="smallprint">
+							Illustrative events. Ordinary code can do the watching and call an
+							agent when needed.
+						</p>
+					</div>
 				</div>
-				<div class="controls">
-					{selected === 'email' && (
-						<label>
-							<input
-								type="checkbox"
-								checked={otherAddress}
-								mix={on('change', (event) => {
-									otherAddress = event.currentTarget.checked
-									ran = false
-									handle.update()
-								})}
-							/>{' '}
-							Use another address
-						</label>
-					)}
-					{selected === 'schedule' && (
-						<label>
-							<input
-								type="checkbox"
-								checked={showFlake}
-								mix={on('change', (event) => {
-									showFlake = event.currentTarget.checked
-									ran = false
-									handle.update()
-								})}
-							/>{' '}
-							Show a flake
-						</label>
-					)}
-					<button
-						type="button"
-						class="run"
-						mix={on('click', () => {
-							ran = true
-							handle.update()
-						})}
-					>
-						Run example
-					</button>
-				</div>
-				<p class="smallprint">
-					Illustrative events. Ordinary code can do the watching and call an
-					agent when needed.
-				</p>
 				<section class="story-section story-split pt-signals">
 					<div>
 						<h2>
@@ -176,6 +186,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'webhook'}
 								mix={on('click', () => {
 									signal = 'webhook'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -187,6 +198,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'inbox'}
 								mix={on('click', () => {
 									signal = 'inbox'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -198,6 +210,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'package'}
 								mix={on('click', () => {
 									signal = 'package'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -209,6 +222,7 @@ export function TriggersFeature(handle: Handle) {
 								aria-pressed={signal === 'clock'}
 								mix={on('click', () => {
 									signal = 'clock'
+									signalShot += 1
 									handle.update()
 								})}
 							>
@@ -219,7 +233,7 @@ export function TriggersFeature(handle: Handle) {
 						<a href="/docs/triggers">Read the trigger guide ↗</a>
 					</div>
 					<div class="pt-switch-illustration">
-						<TriggerSignalsArt signal={signal} />
+						<TriggerSignalsScene signal={signal} shot={signalShot} />
 						<div class="pt-signal-outcome" aria-live="polite">
 							<strong>{signals[signal].name}</strong>
 							<p id="pt-signal-detail">{signals[signal].detail}</p>
@@ -245,6 +259,8 @@ export function TriggersFeature(handle: Handle) {
 									checked={scanFlake}
 									mix={on('change', (event) => {
 										scanFlake = event.currentTarget.checked
+										scanResult = ''
+										scanShot += 1
 										handle.update()
 									})}
 								/>{' '}
@@ -254,6 +270,7 @@ export function TriggersFeature(handle: Handle) {
 								type="button"
 								mix={on('click', () => {
 									scanResult = scanFlake ? 'flake' : 'clean'
+									scanShot += 1
 									handle.update()
 								})}
 							>
@@ -270,7 +287,11 @@ export function TriggersFeature(handle: Handle) {
 						<a href="/docs/flake-hunter">See how Flake Hunter works ↗</a>
 					</div>
 					<div class="pt-decision" data-result={scanResult}>
-						<TriggerScanArt />
+						<TriggerScanScene
+							flake={scanFlake}
+							result={scanResult}
+							shot={scanShot}
+						/>
 						<p class="pt-example-caption">
 							Example scan. An agent is called only on the branch that needs
 							investigation.

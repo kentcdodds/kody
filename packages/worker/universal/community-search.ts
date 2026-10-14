@@ -25,10 +25,6 @@ export function readCommunitySearchFromHref(href: string) {
 	}
 }
 
-export function readCommunitySearchQueryFromHref(href: string) {
-	return readCommunitySearchFromHref(href).query
-}
-
 export function buildCommunityIndexHref(input?: {
 	query?: string | null
 	sort?: CommunityListingSort

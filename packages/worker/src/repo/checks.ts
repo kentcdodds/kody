@@ -78,6 +78,7 @@ import { validatePackageSkills } from '#worker/package-registry/package-skills.t
 import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
 import { credentialNeedKeyNotes } from '#worker/credentials/credential-needs.ts'
 import { computeCredentialNeedsClosure } from '#worker/credentials/credential-needs-closure.ts'
+import { republishedNeedsNote } from '#worker/enablements/republish-needs-note.ts'
 
 export const repoCheckKinds = [
 	'manifest',
@@ -1462,6 +1463,7 @@ async function runChunkedBundleValidation(input: {
 async function buildCredentialNeedsCheck(input: {
 	env?: Env
 	userId?: string
+	sourceId?: string
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 }): Promise<RepoCheckResult | null> {
@@ -1469,12 +1471,24 @@ async function buildCredentialNeedsCheck(input: {
 	let conflicts: Array<string> = []
 	if (input.env && input.userId) {
 		try {
-			;({ conflicts } = await computeCredentialNeedsClosure({
+			const closure = await computeCredentialNeedsClosure({
 				env: input.env,
 				userId: input.userId,
 				manifest: input.manifest,
 				files: input.sourceFiles,
-			}))
+			})
+			conflicts = closure.conflicts
+			const republished =
+				conflicts.length === 0
+					? await republishedNeedsNote({
+							env: input.env,
+							userId: input.userId,
+							sourceId: input.sourceId ?? null,
+							packageName: input.manifest.name,
+							needs: closure.needs,
+						})
+					: null
+			if (republished) notes.push(republished)
 		} catch (error) {
 			// A lookup failure is not a conflict: note it and let publish go on.
 			notes.push(
@@ -1518,6 +1532,8 @@ export async function runRepoChecks(input: {
 	env?: Env
 	baseUrl?: string
 	userId?: string
+	/** The entity source being published, when there is one. */
+	sourceId?: string
 	expectedPackageScope?: string
 	phaseTimings?: PublishPhaseTimings
 	/**
@@ -1645,6 +1661,7 @@ export async function runRepoChecks(input: {
 	const credentialNeedsCheck = await buildCredentialNeedsCheck({
 		env: input.env,
 		userId: input.userId,
+		...(input.sourceId ? { sourceId: input.sourceId } : {}),
 		manifest,
 		sourceFiles,
 	})

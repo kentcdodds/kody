@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	applyExecuteHealthTick,
 	claimExecuteHealthSynthetic,
-	countExecuteHealthSynthetics,
 	decideExecuteHealthProbe,
 	deriveExecuteHealthView,
 	executeHealthOrganicFreshMs,
@@ -19,10 +18,6 @@ const recentMs = executeHealthRecentMs
 const minuteMs = executeHealthOrganicFreshMs
 const start = Date.parse('2026-09-07T17:00:00.000Z')
 const iso = (ms: number) => new Date(ms).toISOString()
-
-function ticks(count: number, stepMs = minuteMs) {
-	return Array.from({ length: count }, (_, index) => start + index * stepMs)
-}
 
 type ViewInput = Parameters<typeof deriveExecuteHealthView>[0]
 const view = (now: number, overrides: Partial<ViewInput> = {}) =>
@@ -80,16 +75,6 @@ test('synthetic probe runs on stale organic, once per hourly cooldown after succ
 			decideExecuteHealthProbe({ now, lastSuccessAt, lastSyntheticAttemptAt }),
 		),
 	).toEqual(cases.map(([, , , decision]) => decision))
-
-	// No traffic across many minute ticks stays at most once per hour.
-	expect(
-		[59, 180, 61].map((count) =>
-			countExecuteHealthSynthetics({
-				ticks: ticks(count),
-				lastSuccessAt: null,
-			}),
-		),
-	).toEqual([1, 3, 2])
 })
 
 test('stale or missing telemetry is unknown, not an outage or a fresh healthy signal', () => {

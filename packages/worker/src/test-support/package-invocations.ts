@@ -933,6 +933,11 @@ export function createRuntimeEventTools(
 	options: {
 		envOverrides?: Record<string, unknown>
 		packageInvokeDepth?: number
+		/**
+		 * When set, the caller is bound to this org (team-org regression).
+		 * Omit for the default personal-org caller.
+		 */
+		orgBinding?: Parameters<typeof createMcpCallerContext>[0]['orgBinding']
 	} = {},
 ) {
 	return createPackageEventTools({
@@ -949,6 +954,7 @@ export function createRuntimeEventTools(
 				email: 'me@example.com',
 				displayName: 'Me',
 			},
+			...(options.orgBinding ? { orgBinding: options.orgBinding } : {}),
 		}),
 		packageContext: {
 			packageId: 'pkg-gateway',

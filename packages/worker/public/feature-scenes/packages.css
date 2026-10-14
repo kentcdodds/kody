@@ -1,0 +1,775 @@
+/* Animated scenes for /features/packages, on the shared `.pw` stage (`public/styles.css`). */
+
+/* The bench pane and the old SVG frames fight the stage. Scope resets here so
+   feature-pages.css can drop the dead illustration rules later. */
+
+.feature-detail .packages .bench .contents {
+	padding: 0;
+	min-height: 0;
+	font-size: inherit;
+	line-height: inherit;
+	white-space: normal;
+}
+
+.feature-detail .packages .pw-pkg-skills {
+	display: block;
+	padding: 2px 18px 14px;
+	font-size: 14px;
+}
+
+.feature-detail .packages .bench .pw {
+	border-radius: 0;
+	background: var(--pw-stage);
+}
+
+.feature-detail .packages .pt-proof,
+.feature-detail .packages .pt-share-art {
+	background: none;
+	border: 0;
+	padding: 0;
+	min-width: 0;
+}
+
+.feature-detail .packages .pw .pw-wires {
+	display: block;
+	width: 100%;
+	max-width: none;
+	height: 100%;
+	margin: 0;
+	overflow: visible;
+}
+
+.feature-detail .packages .pw h3,
+.feature-detail .packages .pw p,
+.feature-detail .packages .pw small,
+.feature-detail .packages .pw li {
+	max-width: none;
+	margin: 0;
+	font-size: inherit;
+	line-height: inherit;
+	color: inherit;
+}
+/* Ink and tint tuned for AA text on the package blue in both themes. */
+.pw.pw-scene-pkg-hero,
+.pw.pw-scene-pkg-publish,
+.pw.pw-scene-pkg-share {
+	--pw-ink: light-dark(oklch(0.43 0.16 255), oklch(0.87 0.08 255));
+	--pw-soft: light-dark(oklch(0.95 0.03 255), oklch(0.32 0.06 255));
+	--pw-pkg-flash: light-dark(oklch(0.9 0.07 255), oklch(0.4 0.09 255));
+}
+
+.pw .pw-pkg-card {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.4em;
+	min-width: 0;
+	padding: 0.7em 0.75em;
+	white-space: normal;
+	overflow-wrap: break-word;
+}
+
+.pw .pw-pkg-card .pw-kicker {
+	font-size: 0.82em;
+	line-height: 1.3;
+}
+
+.pw .pw-pkg-card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.45em;
+	min-width: 0;
+}
+
+.pw .pw-pkg-born .pw-pkg-card-head {
+	flex-wrap: wrap;
+	align-items: flex-start;
+}
+
+.pw .pw-pkg-name {
+	white-space: nowrap;
+}
+
+.pw .pw-pkg-badge {
+	flex: none;
+	white-space: nowrap;
+	padding: 0.1em 0.5em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99em;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.8em;
+	font-weight: 650;
+	line-height: 1.3;
+}
+
+/* Hero: two cards joined by one wire. */
+
+.pw .pw-pkg-side {
+	translate: 0 -50%;
+}
+
+.pw .pw-pkg-chat {
+	width: 44%;
+}
+
+.pw .pw-pkg-born {
+	width: 36%;
+}
+
+.pw .pw-pkg-tree {
+	width: 30%;
+}
+
+.pw .pw-pkg-editor {
+	width: 61%;
+}
+
+.pw .pw-pkg-log {
+	width: 38%;
+}
+
+.pw .pw-pkg-result {
+	width: 53%;
+}
+
+.feature-detail .packages .pw .pw-pkg-ask {
+	padding: 0.5em 0.65em;
+	border-radius: 0.8em 0.8em 0.2em 0.8em;
+	background: var(--pw-soft);
+	font-size: 0.86em;
+	line-height: 1.35;
+}
+
+.pw .pw-pkg-files,
+.pw .pw-pkg-loglines,
+.pw .pw-pkg-chips {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2em;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.feature-detail .packages .pw .pw-pkg-files li,
+.feature-detail .packages .pw .pw-pkg-loglines li {
+	padding: 0.1em 0.4em;
+	border-radius: 0.35em;
+	font:
+		0.8em/1.35 ui-monospace,
+		monospace;
+}
+
+.pw .pw-pkg-files li[data-on] {
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	box-shadow: inset 0.18em 0 var(--pw-accent);
+}
+
+.pw .pw-pkg-code {
+	display: flex;
+	flex-direction: column;
+	gap: 0.12em;
+	font:
+		0.8em/1.35 ui-monospace,
+		monospace;
+	white-space: pre-wrap;
+}
+
+.pw .pw-pkg-line {
+	display: block;
+	width: fit-content;
+	max-width: 100%;
+	padding: 0 0.2em;
+	border-radius: 0.2em;
+}
+
+.pw .pw-pkg-add {
+	padding: 0.08em 0.3em;
+	background: var(--pw-soft);
+	color: var(--pw-text);
+	font-weight: 650;
+}
+
+.feature-detail .packages .pw .pw-pkg-brief h3 {
+	font-size: 0.95em;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.feature-detail .packages .pw .pw-pkg-brief p,
+.feature-detail .packages .pw .pw-pkg-wait p {
+	font-size: 0.84em;
+	line-height: 1.35;
+}
+
+.feature-detail .packages .pw .pw-pkg-out small {
+	color: var(--pw-muted);
+	font-size: 0.8em;
+	font-weight: 650;
+	line-height: 1.3;
+}
+
+.pw .pw-pkg-question {
+	color: var(--pw-ink);
+	font-weight: 650;
+}
+
+.pw .pw-pkg-packet {
+	padding: 0.08em 0.42em;
+	border: 1px solid var(--pw-accent);
+	border-radius: 99em;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.8em;
+	font-weight: 650;
+	line-height: 1.3;
+	white-space: nowrap;
+	opacity: 0;
+}
+
+/* Publish: repo diff, preview beside the published output, then what runs. */
+
+.pw .pw-pkg-board {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15em;
+	padding: 0.2em 0.05em 0.05em;
+}
+
+.pw .pw-pkg-board .pw-node {
+	position: relative;
+	top: auto;
+	left: auto;
+	width: auto;
+	translate: none;
+}
+
+.pw .pw-pkg-compare {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 0.4em;
+	min-width: 0;
+}
+
+.pw .pw-pkg-out[data-diff] {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-pkg-wait {
+	border-style: dashed;
+}
+
+.pw .pw-pkg-wait p {
+	color: var(--pw-text);
+}
+
+.pw .pw-pkg-bridge {
+	position: relative;
+	align-self: flex-start;
+	width: 2px;
+	height: 1.8em;
+	margin-left: 16%;
+	background: var(--pw-line);
+}
+
+.pw .pw-pkg-board[data-preview] .pw-pkg-bridge {
+	background: var(--pw-accent);
+}
+
+.pw .pw-pkg-publish-step {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.55em;
+}
+
+.pw .pw-pkg-step-label {
+	color: var(--pw-ink);
+	font-size: 0.8em;
+	font-weight: 650;
+	line-height: 1.3;
+	white-space: nowrap;
+}
+
+.pw .pw-pkg-bridge-pub {
+	align-self: center;
+	margin-left: 0;
+	background: var(--pw-accent);
+}
+
+.pw .pw-pkg-bridge .pw-pkg-packet {
+	position: absolute;
+	top: 0.1em;
+	left: 0.6em;
+}
+
+.pw .pw-pkg-runs {
+	margin-top: 0.2em;
+}
+
+/* Share: one package, two people. Fork: the package splits. */
+
+.pw .pw-pkg-package,
+.pw .pw-pkg-person,
+.pw .pw-pkg-copy {
+	width: 42%;
+	translate: -50% -50%;
+}
+
+.pw .pw-pkg-package {
+	width: 62%;
+	align-items: flex-start;
+	translate: -50% -100%;
+}
+
+.pw .pw-pkg-person {
+	translate: -50% 0;
+}
+
+.pw .pw-pkg-package strong,
+.pw .pw-pkg-copy strong {
+	font-size: 0.98em;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.pw .pw-pkg-who {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	font-size: 0.9em;
+	font-weight: 650;
+}
+
+.pw .pw-pkg-avatar {
+	display: grid;
+	place-items: center;
+	width: 1.5em;
+	height: 1.5em;
+	border-radius: 50%;
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+	font-size: 0.9em;
+	font-weight: 700;
+}
+
+.pw .pw-pkg-meta {
+	color: var(--pw-text);
+	font-size: 0.82em;
+	line-height: 1.35;
+}
+
+.pw .pw-pkg-chips {
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 0.28em;
+}
+
+.feature-detail .packages .pw .pw-pkg-chip {
+	padding: 0.1em 0.42em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99em;
+	background: var(--pw-surface);
+	color: var(--pw-text);
+	font-size: 0.8em;
+	font-weight: 650;
+	line-height: 1.3;
+	white-space: nowrap;
+}
+
+.feature-detail .packages .pw .pw-pkg-chip[data-on] {
+	border-color: var(--pw-accent);
+	background: var(--pw-soft);
+	color: var(--pw-ink);
+}
+
+.pw .pw-pkg-mate {
+	border-color: var(--pw-accent);
+}
+
+.pw .pw-pkg-origin {
+	position: absolute;
+	padding: 0.18em 0.55em;
+	border: 1px solid var(--pw-line);
+	border-radius: 99em;
+	background: var(--pw-surface);
+	font-size: 0.82em;
+	font-weight: 650;
+	translate: -50% -50%;
+	white-space: nowrap;
+}
+
+.pw .pw-pkg-fork-copy[data-edited] {
+	border-color: var(--pw-accent);
+	box-shadow: 0 0 0 0.18em
+		color-mix(in oklab, var(--pw-accent) 28%, transparent);
+}
+
+/* The shared stack rules start at 520px, which also catches the two-column
+   desktop layout (about 465px). Keep the hero and share diagrams down to
+   420px and stack below that. */
+
+@container (min-width: 420px) and (max-width: 520px) {
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack],
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] {
+		aspect-ratio: var(--pw-ratio);
+	}
+
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack] .pw-run,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-run {
+		position: absolute;
+		inset: 0;
+		display: block;
+	}
+
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack] .pw-node,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-node,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-pkg-origin {
+		position: absolute;
+		left: var(--pkg-x) !important;
+		top: var(--pkg-y) !important;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-side {
+		translate: 0 -50%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-chat {
+		width: 44%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-born {
+		width: 36%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-tree {
+		width: 30%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-editor {
+		width: 61%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-log {
+		width: 38%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-result {
+		width: 53%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-package {
+		width: 62%;
+		translate: -50% -100%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-person {
+		width: 42%;
+		translate: -50% 0;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-copy {
+		width: 42%;
+		translate: -50% -50%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-board {
+		gap: 0.15em;
+	}
+}
+
+/* Narrow stages: the cards stack in story order and short connectors stand
+   in for the hidden wires. */
+
+@container (max-width: 419.98px) {
+	.feature-detail .packages .pw .pw-stage[data-stack] .pw-wires {
+		display: none;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-board {
+		gap: 0;
+		padding: 0;
+	}
+
+	.pw .pw-pkg-compare {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.6em;
+	}
+
+	.pw .pw-pkg-bridge {
+		height: 1.6em;
+		margin-left: 1.5em;
+	}
+
+	.pw .pw-pkg-bridge-pub {
+		margin-left: 0;
+	}
+
+	.pw .pw-pkg-runs {
+		margin-top: 0;
+	}
+
+	/* Hold the tallest tab's height so switching tabs does not move the page. */
+	.pw.pw-scene-pkg-hero .pw-run {
+		justify-content: center;
+		min-height: 19.5em;
+	}
+
+	.pw.pw-scene-pkg-share .pw-run {
+		justify-content: center;
+		min-height: 17.75em;
+	}
+
+	.pw .pw-pkg-side + .pw-pkg-side::before,
+	.pw .pw-pkg-person::before,
+	.pw .pw-pkg-copy::before {
+		content: '';
+		position: absolute;
+		bottom: 100%;
+		left: 1.5em;
+		width: 2px;
+		height: 0.75em;
+		background: var(--pw-accent);
+	}
+
+	.pw .pw-pkg-origin {
+		position: relative;
+		top: auto !important;
+		left: auto !important;
+		align-self: flex-start;
+		translate: none;
+	}
+}
+
+/* Motion. Every scene starts complete; loops move emphasis, not content.
+   Without data-motion the rules above are the finished still. */
+
+.pw-scene-pkg-hero[data-motion] .pw-pulse,
+.pw-scene-pkg-share[data-motion] .pw-pulse {
+	animation: pw-pkg-pulse 8s linear infinite;
+}
+
+/* The shared dash treatment stops short of the nodes. Keep a solid wire
+   and let the pulse carry the motion. */
+.pw.pw-scene-pkg-hero[data-motion] .pw-wire[data-on] .pw-line,
+.pw.pw-scene-pkg-share[data-motion] .pw-wire[data-on] .pw-line {
+	stroke-dasharray: none;
+	animation: none;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-ask,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-files li[data-on],
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-loglines li {
+	animation: pw-pkg-scan 8s var(--pw-ease) infinite;
+	animation-delay: calc(var(--i, 0) * 0.5s + 0.2s);
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-files li[data-on] {
+	animation-name: pw-pkg-scan-on;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-born,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-editor,
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-result {
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-badge {
+	animation: pw-pkg-badge 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-files li,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line {
+	animation: pw-pkg-scan 8s var(--pw-ease) infinite;
+	animation-delay: calc(var(--i) * 0.45s + 3.6s);
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-brief {
+	animation: pw-pkg-scan 8s var(--pw-ease) 3.6s infinite;
+}
+
+.pw-scene-pkg-publish[data-motion] .pw-pkg-bridge-pub .pw-pkg-packet {
+	animation: pw-pkg-drop 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-publish[data-motion] [data-acted] .pw-pkg-add {
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
+}
+
+.pw-scene-pkg-publish[data-motion]
+	[data-preview]
+	.pw-pkg-bridge
+	.pw-pkg-packet {
+	animation: pw-pkg-drop 7s var(--pw-ease) 1 both;
+}
+
+.pw-scene-pkg-publish[data-motion] [data-preview] .pw-pkg-out[data-diff],
+.pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-runs {
+	animation: pw-pkg-arrive 4s var(--pw-ease) 1 both;
+}
+
+.pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-badge {
+	animation: pw-pkg-badge 4s var(--pw-ease) 1 both;
+}
+
+.pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-question {
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='share'] .pw-pkg-chip[data-on] {
+	animation: pw-pkg-chip 8s var(--pw-ease) infinite;
+	animation-delay: calc(var(--i) * 0.25s + 3.2s);
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='share'] .pw-pkg-mate {
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-origin {
+	animation: pw-pkg-origin 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-copy {
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-fork-copy {
+	animation-delay: 0.5s;
+}
+
+.pw-scene-pkg-share[data-motion] [data-edited] .pw-pkg-copy-title,
+.pw-scene-pkg-share[data-motion] [data-edited] .pw-pkg-fork-copy .pw-pkg-meta {
+	border-radius: 0.25em;
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
+}
+
+/* A highlight that sweeps down a list; the line is readable throughout. */
+@keyframes pw-pkg-scan {
+	0%,
+	8%,
+	100% {
+		background-color: transparent;
+	}
+	2%,
+	5% {
+		background-color: var(--pw-soft);
+	}
+}
+
+@keyframes pw-pkg-scan-on {
+	0%,
+	8%,
+	100% {
+		background-color: var(--pw-soft);
+	}
+	2%,
+	5% {
+		background-color: var(--pw-pkg-flash);
+	}
+}
+
+@keyframes pw-pkg-flash {
+	0%,
+	30% {
+		background-color: var(--pw-pkg-flash);
+	}
+}
+
+@keyframes pw-pkg-arrive {
+	0%,
+	34% {
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
+	}
+	42% {
+		box-shadow: 0 0 0 0.28em
+			color-mix(in oklab, var(--pw-accent) 32%, transparent);
+	}
+	54%,
+	100% {
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
+	}
+}
+
+@keyframes pw-pkg-badge {
+	0%,
+	36%,
+	54%,
+	100% {
+		transform: none;
+	}
+	44% {
+		transform: scale(1.1);
+	}
+}
+
+@keyframes pw-pkg-pulse {
+	0%,
+	16% {
+		stroke-dashoffset: 14;
+		opacity: 0;
+	}
+	20% {
+		stroke-dashoffset: 14;
+		opacity: 1;
+	}
+	40% {
+		stroke-dashoffset: -100;
+		opacity: 1;
+	}
+	46%,
+	100% {
+		stroke-dashoffset: -100;
+		opacity: 0;
+	}
+}
+
+@keyframes pw-pkg-drop {
+	0%,
+	10% {
+		opacity: 0;
+		transform: translateY(0);
+	}
+	18% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	46% {
+		opacity: 1;
+		transform: translateY(0.4em);
+	}
+	58%,
+	100% {
+		opacity: 0;
+		transform: translateY(0.4em);
+	}
+}
+
+@keyframes pw-pkg-chip {
+	0%,
+	10%,
+	100% {
+		box-shadow: none;
+	}
+	5% {
+		box-shadow: 0 0 0 0.2em
+			color-mix(in oklab, var(--pw-accent) 32%, transparent);
+	}
+}
+
+@keyframes pw-pkg-origin {
+	0%,
+	16%,
+	100% {
+		scale: 1;
+	}
+	8% {
+		scale: 1.08;
+	}
+}

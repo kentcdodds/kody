@@ -1,14 +1,12 @@
 /**
  * Uncapped referral program: both parties earn one month of the purchasable
- * Pro (overlay on Free) after the referee's first qualifying paid invoice. Enforcement composes
- * {@link resolveEffectivePlanWithSecondAgentGift} with the later of the
- * second-agent gift and this stackable credit.
+ * Pro (overlay on Free) after the referee's first qualifying paid invoice.
+ * Enforcement stacks this credit with the second-agent gift.
  */
 
 import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import {
 	isSecondAgentStandardGiftActive,
-	resolveEffectivePlanWithSecondAgentGift,
 	resolvePlanOverlay,
 } from '#universal/second-agent-standard-gift.ts'
 import { type PlanName } from '#universal/plans.ts'
@@ -100,46 +98,6 @@ export function isReferralStandardCreditActive(
 	now: Date = new Date(),
 ) {
 	return isSecondAgentStandardGiftActive(expiresAt, now)
-}
-
-/**
- * Next credit expiry: add 30 days to the latest of now, an unexpired
- * stacked credit, and an optional paid Stripe period end so a subscriber's
- * month starts after paid access rather than overlapping it.
- */
-export function addReferralStandardCreditDuration(input: {
-	now: Date
-	currentExpiresAt?: string | null
-	paidPeriodEndAt?: string | null
-}): Date {
-	const candidates = [input.now.getTime()]
-	const currentMs = input.currentExpiresAt
-		? Date.parse(input.currentExpiresAt)
-		: Number.NaN
-	if (Number.isFinite(currentMs) && currentMs > input.now.getTime()) {
-		candidates.push(currentMs)
-	}
-	const periodMs = input.paidPeriodEndAt
-		? Date.parse(input.paidPeriodEndAt)
-		: Number.NaN
-	if (Number.isFinite(periodMs) && periodMs > input.now.getTime()) {
-		candidates.push(periodMs)
-	}
-	return new Date(Math.max(...candidates) + referralStandardCreditDurationMs)
-}
-
-export function resolveEffectivePlanWithStandardOverlays(
-	manualPlan: PlanName,
-	stripePlan: string | null,
-	overlayExpiresAt: string | null | undefined,
-	now: Date = new Date(),
-): PlanName {
-	return resolveEffectivePlanWithSecondAgentGift(
-		manualPlan,
-		stripePlan,
-		overlayExpiresAt,
-		now,
-	)
 }
 
 /**

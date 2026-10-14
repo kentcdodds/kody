@@ -3,7 +3,6 @@ import {
 	buildCommunityIndexHref,
 	parseCommunityListingSort,
 	readCommunitySearchFromHref,
-	readCommunitySearchQueryFromHref,
 } from './community-search.ts'
 
 test('community search hrefs omit default sort and keep newest with the query', () => {
@@ -47,7 +46,4 @@ test('community search hrefs omit default sort and keep newest with the query', 
 		sort: 'newest',
 		category: 'integrations',
 	})
-	expect(readCommunitySearchQueryFromHref('/community?q=obsidian')).toBe(
-		'obsidian',
-	)
 })

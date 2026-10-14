@@ -7,6 +7,7 @@ import {
 	credentialOrgGrantListCapability,
 	credentialOrgRevokeCapability,
 } from './credential-org-grants.ts'
+import { credentialTriggerPickSetCapability } from './credential-trigger-pick-set.ts'
 import { credentialUpdateCapability } from './credential-update.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { secretDeleteCapability } from './secret-delete.ts'
@@ -47,6 +48,7 @@ export const secretsDomain = defineDomain({
 		credentialOrgGrantCapability,
 		credentialOrgRevokeCapability,
 		credentialOrgGrantListCapability,
+		credentialTriggerPickSetCapability,
 		jwtSignCapability,
 	],
 })

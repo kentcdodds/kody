@@ -503,6 +503,10 @@
 		{
 			"filename": "0136-webhook-enablement-one-live.sql",
 			"sha256": "c508612f99a74e7719845ea45d320598d0d07fc2c0b41b16d23fe7ffc1b8045a"
+		},
+		{
+			"filename": "0137-credential-mapping-proposals.sql",
+			"sha256": "6c5afdd32f2d3bfa0b4781d93b793e4ced8c86b56e5593b9f8e11392ca14284b"
 		}
 	]
 }

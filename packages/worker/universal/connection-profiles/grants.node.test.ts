@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
 	connectionProfileAllows,
-	formatConnectionProfileGrantString,
 	normalizeConnectionProfileGrants,
-	parseConnectionProfileGrantString,
 } from '#universal/connection-profiles/grants.ts'
 import {
 	buildConnectionProfileMcpUrl,
@@ -90,20 +88,6 @@ describe('connection profile grants', () => {
 				{ resourceType: 'secret', resourceId: 's1', actions: ['read'] },
 			]),
 		).toThrow(/secret/)
-	})
-
-	test('grant strings round-trip', () => {
-		const formatted = formatConnectionProfileGrantString({
-			resourceType: 'package',
-			resourceId: 'pkg:with:colons',
-			action: 'read',
-		})
-		expect(formatted).toBe('package:pkg:with:colons:read')
-		expect(parseConnectionProfileGrantString(formatted)).toEqual({
-			resourceType: 'package',
-			resourceId: 'pkg:with:colons',
-			action: 'read',
-		})
 	})
 })
 

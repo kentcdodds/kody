@@ -35,6 +35,10 @@ import {
 	getSecretProviderBinding,
 	normalizeProviderId,
 } from '#mcp/secrets/secret-providers/service.ts'
+import {
+	checkEnablementMappedCredentials,
+	isEnablementMappingPause,
+} from './credential-mapping-pause.ts'
 import { vaultPauseResourceType } from './pause-on-denial.ts'
 import {
 	listEnablementsForInstance,
@@ -42,7 +46,11 @@ import {
 	resumeEnablement,
 	type EnablementPauseInput,
 } from './repo.ts'
-import { type EnablementRecord, type EnablementTriggerKind } from './types.ts'
+import {
+	type EnablementPause,
+	type EnablementRecord,
+	type EnablementTriggerKind,
+} from './types.ts'
 
 export type EnablementTrigger = {
 	kind: EnablementTriggerKind
@@ -250,7 +258,11 @@ async function checkEnablerAccess(input: {
 			},
 		}
 	}
-	const stored = await storedPauseResource(db, enablement)
+	// A run-time credential pause stays authoritative: a mapping pause must
+	// not replace it, or fixing the mapping would resume a still-blocked run.
+	const stored = isEnablementMappingPause(enablement.pause)
+		? null
+		: await storedPauseResource(db, enablement)
 	if (stored) {
 		// Still blocked on the same credential: stay paused as is.
 		const allowed = stored.resources.some(
@@ -259,7 +271,27 @@ async function checkEnablerAccess(input: {
 		)
 		if (!allowed) return { ok: false, pause: null }
 	}
+	const mappingPause = await checkEnablementMappedCredentials({
+		env: input.env,
+		request,
+		enablement,
+	})
+	if (mappingPause) return { ok: false, pause: mappingPause }
 	return { ok: true, run, access }
+}
+
+function samePause(
+	stored: EnablementPause | null,
+	next: EnablementPauseInput,
+): boolean {
+	return (
+		stored !== null &&
+		stored.reason === next.reason &&
+		stored.permission === (next.permission ?? null) &&
+		stored.resourceType === (next.resourceType ?? null) &&
+		stored.resourceId === (next.resourceId ?? null) &&
+		stored.credentialId === (next.credentialId ?? null)
+	)
 }
 
 /**
@@ -313,12 +345,18 @@ export async function planEnablementRuns(input: {
 			},
 		})
 		if (!check.ok) {
-			if (check.pause && enablement.state === 'on') {
+			// A paused enablement whose cause changed gets the current cause, so
+			// Waiting names what to fix now.
+			if (
+				check.pause &&
+				(enablement.state === 'on' || !samePause(enablement.pause, check.pause))
+			) {
 				await pauseEnablement({
 					db,
 					orgId: input.orgId,
 					id: enablement.id,
 					pause: check.pause,
+					replace: true,
 				})
 			}
 			skip('paused')

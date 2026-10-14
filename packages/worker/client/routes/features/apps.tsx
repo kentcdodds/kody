@@ -1,6 +1,11 @@
 import { type Handle, on } from 'remix/component'
 import { AppsSharing } from './apps-sharing.tsx'
 import { AppsIntake, type Brief } from './apps-intake.tsx'
+import {
+	AppsHeroScene,
+	AppsReturnScene,
+	tomorrowBrief,
+} from './apps-scenes.tsx'
 import { FeatureRelated } from './feature-related.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
@@ -18,6 +23,9 @@ export function AppsFeature(handle: Handle) {
 	let opened: Brief | undefined
 	let saved = false
 	let nextId = 1
+	let promptShot = 0
+	let saveShot = 0
+	let flyingName = initialBrief.name
 	function focusSavedBriefHeading() {
 		queueMicrotask(() => {
 			document.getElementById('saved-brief-heading')?.focus()
@@ -34,9 +42,21 @@ export function AppsFeature(handle: Handle) {
 			: [...records, { ...draft }]
 		opened = { ...draft }
 		saved = true
+		flyingName = draft.name
+		saveShot += 1
 		view = 'detail'
 		handle.update()
 		focusSavedBriefHeading()
+	}
+	function showForm() {
+		view = 'form'
+		promptShot += 1
+		handle.update()
+	}
+	function showRecords() {
+		view = 'records'
+		promptShot += 1
+		handle.update()
 	}
 	function newBrief() {
 		draft = {
@@ -101,82 +121,73 @@ export function AppsFeature(handle: Handle) {
 					<span class="example">
 						Interactive demo, saved only in this page session
 					</span>
-					<div class="appwindow ui-window">
-						<div class="bar">
-							<span>
-								<span class="ui-browser-dots" aria-hidden="true">
-									● ● ●
-								</span>{' '}
-								project-intake
-							</span>
-							<span>Demo app</span>
-						</div>
-						<div class="appbody" id="intake-demo">
-							<div class="tabs" aria-label="Demo views">
-								<button
-									type="button"
-									aria-pressed={view === 'form'}
-									mix={on('click', () => {
-										view = 'form'
-										handle.update()
-									})}
-								>
-									Intake form
-								</button>
-								<button
-									type="button"
-									aria-pressed={view === 'records'}
-									mix={on('click', () => {
-										view = 'records'
-										handle.update()
-									})}
-								>
-									Saved briefs
-								</button>
+					<AppsHeroScene
+						promptShot={promptShot}
+						saveShot={saveShot}
+						count={records.length}
+						flyingName={flyingName}
+						formPressed={view === 'form'}
+						recordsPressed={view === 'records'}
+						onShowForm={showForm}
+						onShowRecords={showRecords}
+					>
+						{view === 'form' ? (
+							<AppsIntake
+								draft={draft}
+								onSave={save}
+								onChange={(next) => {
+									draft = next
+									handle.update()
+								}}
+							/>
+						) : view === 'records' ? (
+							<div class="pw-apx-records">
+								<h3>Saved briefs</h3>
+								{recordList()}
 							</div>
-							{view === 'form' ? (
-								<AppsIntake
-									draft={draft}
-									onSave={save}
-									onChange={(next) => {
-										draft = next
-										handle.update()
-									}}
-								/>
-							) : view === 'records' ? (
-								<div>
-									<h3>Saved briefs</h3>
-									{recordList()}
-								</div>
-							) : (
-								<div>
-									<h3 id="saved-brief-heading" tabIndex={-1}>
-										{draft.name}
-									</h3>
-									<p>
-										{draft.kind} · {draft.deadline}
-									</p>
-									<p>{draft.copy}</p>
-									<p role="status">
-										{saved ? 'Saved in this demo' : 'Example brief'}
-									</p>
+						) : (
+							<div class="pw-apx-detail">
+								<h3 id="saved-brief-heading" tabIndex={-1}>
+									{draft.name}
+								</h3>
+								<p>
+									{draft.kind} · {draft.deadline}
+								</p>
+								<p>{draft.copy}</p>
+								<p role="status">
+									{saved ? 'Saved in this demo' : 'Example brief'}
+								</p>
+								<div class="pw-apx-actions">
 									<button
 										type="button"
 										class="run"
 										mix={on('click', () => {
 											view = 'form'
+											promptShot += 1
 											handle.update()
 										})}
 									>
 										Edit brief
 									</button>
-									<button type="button" class="run" mix={on('click', newBrief)}>
+									<button
+										type="button"
+										class="run"
+										mix={on('click', () => {
+											promptShot += 1
+											newBrief()
+										})}
+									>
 										New brief
 									</button>
 								</div>
-							)}
-						</div>
-					</div>
+							</div>
+						)}
+					</AppsHeroScene>
+					<p class="visually-hidden" aria-live="polite">
+						{saveShot > 0
+							? `${flyingName} saved. ${records.length} in Saved briefs.`
+							: ''}
+					</p>
 				</div>
 			</div>
 			<section class="story-section">
@@ -197,44 +208,10 @@ export function AppsFeature(handle: Handle) {
 						<a href="/docs/package-apps">How app data works ↗</a>
 					</div>
 					<div class="ia-return-scene">
-						<svg class="ia-return-art" viewBox="0 0 560 150" aria-hidden="true">
-							<path d="M95 100C95 10 460 10 460 100" class="ia-track" />
-							<path
-								d="m444 85 16 17 15-18"
-								fill="none"
-								stroke="var(--accent)"
-								stroke-width="3"
-							/>
-							<g transform="translate(68 70) rotate(-8)">
-								<rect
-									width="64"
-									height="77"
-									rx="6"
-									fill="var(--selected)"
-									stroke="var(--accent)"
-								/>
-								<path
-									d="M16 22h32M16 34h32M16 46h22"
-									stroke="var(--accent)"
-									stroke-width="3"
-								/>
-							</g>
-							<g transform="translate(430 75) rotate(7)">
-								<rect
-									width="64"
-									height="77"
-									rx="6"
-									fill="var(--surface)"
-									stroke="var(--accent)"
-								/>
-								<path
-									d="m15 38 12 12 23-25"
-									fill="none"
-									stroke="var(--accent)"
-									stroke-width="4"
-								/>
-							</g>
-						</svg>
+						<AppsReturnScene records={records} openedId={opened?.id} />
+						<p class="visually-hidden">
+							{`Tomorrow, ${records.map((record) => record.name).join(', ')} ${records.length === 1 ? 'is' : 'are'} still saved, and ${tomorrowBrief.name} was added.`}
+						</p>
 						<div class="ia-saved-head">
 							<h3>Saved briefs</h3>
 							<span>Page-session demo</span>
@@ -252,26 +229,29 @@ export function AppsFeature(handle: Handle) {
 									{opened.kind} · {opened.deadline}
 								</p>
 								<p>{opened.copy}</p>
-								<button
-									type="button"
-									class="run"
-									mix={on('click', () => {
-										if (opened) {
-											draft = { ...opened }
-											view = 'form'
-											handle.update()
-										}
-									})}
-								>
-									Edit this brief
-								</button>
-								<a href="#intake-demo">Go to intake form ↑</a>
+								<div class="ia-record-actions">
+									<button
+										type="button"
+										class="run"
+										mix={on('click', () => {
+											if (opened) {
+												draft = { ...opened }
+												view = 'form'
+												promptShot += 1
+												handle.update()
+											}
+										})}
+									>
+										Edit this brief
+									</button>
+									<a href="#intake-demo">Go to intake form ↑</a>
+								</div>
 							</div>
 						)}
 					</div>
 				</div>
 			</section>
-			<AppsSharing />
+			<AppsSharing preview={opened ?? records[0] ?? initialBrief} />
 			<FeatureRelated
 				links={[
 					{ href: '/features/packages', label: 'Reusable packages' },

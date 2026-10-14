@@ -171,6 +171,10 @@ turns anything on.
   credentials they use. `credentialMappingPropose` builds the link (`triggers`
   to map, `enable` to turn one on with no mapping). Minting a webhook URL never
   turns it on; the mint returns its approval link.
+- After you approve an agent's link, that same agent can switch your trigger's
+  credentials back to a value it proposed and you approved, with
+  `credentialTriggerPickSet`. It cannot pick anything else or turn a trigger on:
+  it has to propose again.
 - `enablementEnable` turns a job (`cron`) or subscription topic on for you. You
   need execute access to the package. A webhook's first turn-on goes through
   Approve instead; `enablementEnable` refuses it with the approval link and only
@@ -181,6 +185,12 @@ turns anything on.
 - If you lose access to the package, the org, or a credential the run uses, the
   enablement pauses and events are dropped. It resumes by itself on the next
   event once access is back.
+- A credential your trigger's mapping names is checked before each run. If it is
+  deleted, you lost Use on it, or a republish changed the need so it no longer
+  fits, the enablement pauses instead of running; map another credential on the
+  package's Credentials page (or get Use back) and the next event resumes it.
+  Defaults are not checked this way: an unusable default falls through to the
+  next layer.
 - `jobRunNow` does not fire a scheduled run in an org; use `execute` to invoke
   the wrapper as yourself.
 

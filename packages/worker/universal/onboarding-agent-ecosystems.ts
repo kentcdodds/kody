@@ -204,17 +204,6 @@ export function listOnboardingGreyedSecondAgents(
 	return [...greyed].map(([id, reason]) => ({ id, reason }))
 }
 
-export function onboardingSecondAgentDisableReason(
-	candidate: McpClientKind,
-	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
-): OnboardingSecondAgentDisableReason | null {
-	return (
-		listOnboardingGreyedSecondAgents(connectedAgents).find(
-			(entry) => entry.id === candidate,
-		)?.reason ?? null
-	)
-}
-
 export function onboardingSecondAgentDisableHint(
 	reason: OnboardingSecondAgentDisableReason,
 ): string {

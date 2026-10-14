@@ -139,25 +139,6 @@ export function claimExecuteHealthSynthetic(input: {
 	}
 }
 
-export function countExecuteHealthSynthetics(input: {
-	ticks: ReadonlyArray<number>
-	lastSuccessAt: number | null
-	initialLastSyntheticAttemptAt?: number | null
-}): number {
-	let lastSyntheticAttemptAt = input.initialLastSyntheticAttemptAt ?? null
-	let runs = 0
-	for (const now of input.ticks) {
-		const claim = claimExecuteHealthSynthetic({
-			now,
-			lastSuccessAt: input.lastSuccessAt,
-			lastSyntheticAttemptAt,
-		})
-		lastSyntheticAttemptAt = claim.lastSyntheticAttemptAt
-		if (claim.run) runs += 1
-	}
-	return runs
-}
-
 export async function applyExecuteHealthTick(input: {
 	now: number
 	lastSuccessAt: number | null

@@ -9,6 +9,7 @@ import {
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	parseCredentialApprovalQuery,
+	readCredentialProposalId,
 	type CredentialApprovalFailure,
 	type CredentialApprovalSuccess,
 } from '#universal/credential-contracts.ts'
@@ -23,7 +24,8 @@ const bodySchema = z.strictObject({
  * `/profiles/:username/packages/:kodyId/approve-credentials.json?<proposal>`:
  * the credential approval page. GET returns the `CredentialApprovalView` for
  * the signed-in viewer; POST `{ action: 'approve', fingerprint }` writes the
- * reviewed changes in one batch. Anyone without `package:execute` gets a 404.
+ * reviewed changes in one batch. A `proposal` param names the recorded agent
+ * proposal the link came from. Anyone without `package:execute` gets a 404.
  */
 export function createPackageCredentialApprovalApiHandler(env: Env) {
 	return {
@@ -71,6 +73,7 @@ export function createPackageCredentialApprovalApiHandler(env: Env) {
 				scope,
 				proposal,
 				fingerprint: parsed.data.fingerprint,
+				proposalId: readCredentialProposalId(url.searchParams),
 			})
 			switch (outcome.status) {
 				case 'approved':

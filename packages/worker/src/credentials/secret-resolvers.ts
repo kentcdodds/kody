@@ -5,6 +5,10 @@
  * vault checks Use on the binding first and the host after the read.
  */
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	assertPackageCanAccessResolvedSecret,
 	loadPackageSecretMounts,
 	PackageSecretMissingError,
@@ -25,16 +29,113 @@ import {
 	normalizeProviderId,
 	resolveProviderSecret,
 } from '#mcp/secrets/secret-providers/service.ts'
-import { findSecretForUse, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import {
+	findSecretForUse,
+	type FoundSecret,
+	type ResolvedSecret,
+} from '#mcp/secrets/service.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
+	assertCredentialScopeAllows,
 	authorizeActorUse,
 	type CredentialResolver,
+	type ResolverCall,
 } from './credential-resolver.ts'
+import { authorizePersonalCredentialUse } from './personal-credentials.ts'
 
 function isFoundSecret(secret: ResolvedSecret) {
 	return secret.found && typeof secret.value === 'string'
+}
+
+type SecretNameLookup = {
+	owner: 'org' | 'personal'
+	ownerId: OwnerId
+	found: FoundSecret
+	readValue: () => Promise<ResolvedSecret>
+}
+
+/** Org secret by name, else the actor's granted personal secret of that name. */
+async function findSecretByName(
+	call: ResolverCall,
+	input: {
+		name: string
+		scope?: Parameters<typeof findSecretForUse>[0]['scope']
+		storageContext: StorageContext
+	},
+): Promise<SecretNameLookup> {
+	const orgLookup = await findSecretForUse({
+		env: call.input.env,
+		userId: call.input.orgId,
+		name: input.name,
+		scope: input.scope,
+		storageContext: input.storageContext,
+	})
+	if (orgLookup.found.found) {
+		return {
+			owner: 'org',
+			ownerId: call.input.orgId,
+			found: orgLookup.found,
+			readValue: orgLookup.readValue,
+		}
+	}
+	const person = call.input.actor?.actor?.userId
+	if (!person) {
+		return {
+			owner: 'org',
+			ownerId: call.input.orgId,
+			found: orgLookup.found,
+			readValue: orgLookup.readValue,
+		}
+	}
+	const personalOwner = personalOrgId(person)
+	const personalLookup = await findSecretForUse({
+		env: call.input.env,
+		userId: personalOwner,
+		name: input.name,
+		scope: input.scope,
+		storageContext: input.storageContext,
+	})
+	if (personalLookup.found.found) {
+		return {
+			owner: 'personal',
+			ownerId: personalOwner,
+			found: personalLookup.found,
+			readValue: personalLookup.readValue,
+		}
+	}
+	return {
+		owner: 'org',
+		ownerId: call.input.orgId,
+		found: orgLookup.found,
+		readValue: orgLookup.readValue,
+	}
+}
+
+async function authorizeSecretNameUse(
+	call: ResolverCall,
+	lookup: SecretNameLookup,
+) {
+	const { found } = lookup
+	switch (lookup.owner) {
+		case 'org':
+			await authorizeActorUse(call, found.credentialId)
+			break
+		case 'personal':
+			call.subject.credentialId = found.credentialId
+			assertCredentialScopeAllows(call, 'secret:use')
+			await authorizePersonalCredentialUse({
+				db: call.input.env.APP_DB,
+				actorPersonId: call.input.actor?.actor?.userId ?? null,
+				orgId: call.input.orgId,
+				credentialId: found.credentialId ?? '',
+			})
+			break
+		default: {
+			const exhaustive: never = lookup.owner
+			throw new Error(`Unhandled secret owner: ${String(exhaustive)}`)
+		}
+	}
 }
 
 export const secretResolver: CredentialResolver<'secret'> = {
@@ -47,9 +148,7 @@ export const secretResolver: CredentialResolver<'secret'> = {
 	}),
 	async resolve(call) {
 		const { input, credential } = call
-		const lookup = await findSecretForUse({
-			env: input.env,
-			userId: input.orgId,
+		const lookup = await findSecretByName(call, {
 			name: credential.name,
 			scope: credential.scope,
 			storageContext: credential.storageContext,
@@ -57,7 +156,7 @@ export const secretResolver: CredentialResolver<'secret'> = {
 		const found = lookup.found
 		return {
 			async authorize() {
-				await authorizeActorUse(call, found.credentialId)
+				await authorizeSecretNameUse(call, lookup)
 				if (!found.found) return
 				await assertPackageCanAccessResolvedSecret({
 					env: input.env,

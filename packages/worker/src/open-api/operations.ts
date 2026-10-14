@@ -226,6 +226,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'/v1/personal-credential-grants/{credential_id}/{org}',
 			'credentialOrgRevoke',
 		],
+		['PUT', '/v1/credential-trigger-picks', 'credentialTriggerPickSet'],
 		['GET', '/v1/secret-providers', 'secretProviderList'],
 		['PUT', '/v1/secret-providers/{provider}', 'secretProviderBind'],
 		['DELETE', '/v1/secret-providers/{provider}', 'secretProviderUnbind'],

@@ -60,6 +60,15 @@ const secondaryButtonCss = getSecondaryButtonCss({
 	weight: 'semibold',
 })
 
+/**
+ * A creation link's `org` binds the save to that org: account JSON binds the
+ * org of an `/@slug/-/...` Referer, and the server still checks membership.
+ */
+function orgReferrer(href: string): { referrer?: string } {
+	const org = new URL(href, 'http://localhost').searchParams.get('org')?.trim()
+	return org ? { referrer: `/@${encodeURIComponent(org)}/-/secrets` } : {}
+}
+
 export async function connectSecretSetRouteLoader(
 	url: URL,
 	signal: AbortSignal,
@@ -68,6 +77,7 @@ export async function connectSecretSetRouteLoader(
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
+		...orgReferrer(url.href),
 	})
 	if (response.status === 401) {
 		const redirectTo = `${url.pathname}${url.search}`
@@ -367,6 +377,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 				existing,
 			})
 			const response = await fetch(accountSecretsApiPath, {
+				...orgReferrer(requestHref),
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',

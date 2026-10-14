@@ -174,6 +174,39 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS credential_mappings (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				package_id TEXT NOT NULL,
+				need_key TEXT NOT NULL,
+				target TEXT NOT NULL,
+				person_user_id TEXT NOT NULL DEFAULT '',
+				enablement_id TEXT NOT NULL DEFAULT '',
+				credential_ids_json TEXT NOT NULL DEFAULT '[]',
+				updated_by_user_id TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS credential_mapping_proposals (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				package_id TEXT NOT NULL,
+				person_user_id TEXT NOT NULL,
+				agent_credential_kind TEXT NOT NULL,
+				agent_credential_id TEXT NOT NULL,
+				proposal_json TEXT NOT NULL,
+				approved_picks_json TEXT,
+				approved_at TEXT,
+				created_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS org_invite_links (
 				id TEXT PRIMARY KEY NOT NULL,
 				org_id TEXT NOT NULL,

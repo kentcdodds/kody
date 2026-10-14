@@ -3,7 +3,6 @@ import {
 	buildForkListingDiffHref,
 	buildListingAheadPrompt,
 	classifyForkListingRelation,
-	isCommunityListingAhead,
 	readListingAheadFlag,
 } from './community-listing-ahead.ts'
 
@@ -14,12 +13,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 			listingPinnedCommit: 'commit-same',
 		}),
 	).toBe('synced')
-	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-same',
-			listingPinnedCommit: 'commit-same',
-		}),
-	).toBe(false)
 
 	expect(
 		classifyForkListingRelation({
@@ -28,13 +21,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 			listingPinIsAncestorOfForkTip: true,
 		}),
 	).toBe('ahead')
-	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-tip',
-			listingPinnedCommit: 'commit-pin',
-			listingPinIsAncestorOfForkTip: true,
-		}),
-	).toBe(false)
 
 	expect(
 		classifyForkListingRelation({
@@ -43,13 +29,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 			listingPinIsAncestorOfForkTip: false,
 		}),
 	).toBe('outdated')
-	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-old',
-			listingPinnedCommit: 'commit-new',
-			listingPinIsAncestorOfForkTip: false,
-		}),
-	).toBe(true)
 
 	expect(
 		classifyForkListingRelation({
@@ -57,12 +36,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 			listingPinnedCommit: 'commit-new',
 		}),
 	).toBe('ahead')
-	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-old',
-			listingPinnedCommit: 'commit-new',
-		}),
-	).toBe(false)
 
 	expect(
 		classifyForkListingRelation({
@@ -88,18 +61,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 			listingPinnedCommit: 'commit-new',
 		}),
 	).toBe(null)
-	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-old',
-			listingPinnedCommit: null,
-		}),
-	).toBe(false)
-	expect(
-		isCommunityListingAhead({
-			originCommit: null,
-			listingPinnedCommit: 'commit-new',
-		}),
-	).toBe(false)
 
 	expect(readListingAheadFlag({ listingAhead: false })).toBe(false)
 	expect(readListingAheadFlag({ listingAhead: null })).toBe(null)

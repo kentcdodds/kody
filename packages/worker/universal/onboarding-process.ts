@@ -98,9 +98,6 @@ export const onboardingUnconnectedNotice =
 /** Agent-retrievable first-run guide (bundled + `search({ entity })`). */
 const onboardingGuideEntity = 'guide:onboarding'
 export const onboardingGuideHref = '/docs/onboarding'
-
-/** Agent-retrievable Step 3 reuse guide (bundled + `search({ entity })`). */
-export const portabilityGuideSlug = 'portability'
 export const portabilityGuideEntity = 'guide:portability'
 export const portabilityGuideHref = '/docs/portability'
 

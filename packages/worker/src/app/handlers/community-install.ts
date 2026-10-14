@@ -1,14 +1,25 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { waitUntil } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import {
 	buildInstallAdaptPrompt,
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
 import { type routes } from '#universal/routes.ts'
+import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
+import {
+	checkPermission,
+	computeEffectivePermissions,
+} from '#worker/authorization/authorize.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -19,10 +30,44 @@ import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { toApiError } from '#worker/open-api/errors.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
+import { entitlementEmailForOwner } from '#worker/request-context/owner-id.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+
+/**
+ * Community pages are not org-bound, so install into the last-used org when
+ * the person still belongs there and holds `package:create`; otherwise their
+ * personal org (where they are Owner).
+ */
+async function resolveCommunityInstallOwnerId(input: {
+	env: Env
+	user: AuthenticatedAppUser
+	request: Request
+}): Promise<OwnerId> {
+	const personalId = personalOrgId(input.user.mcpUser.userId)
+	const remembered = readLastUsedOrgSlug(input.request.headers.get('cookie'))
+	if (!remembered) return personalId
+	const binding = await loadOrgBindingForSlug(
+		input.env.APP_DB,
+		input.user.mcpUser.userId,
+		remembered,
+	)
+	if (!binding || binding.org.id === personalId) return personalId
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: deriveRequestContext({
+			user: input.user.mcpUser,
+			source: { kind: 'session' },
+			orgBinding: binding,
+		}),
+	})
+	if (!checkPermission(access, 'package:create').allowed) return personalId
+	return binding.org.id
+}
 
 const communityInstallPostSchema = z.object({
 	acknowledged: z.boolean().optional(),
@@ -75,9 +120,14 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			}
 
 			try {
-				const expectedPackageScope = await getMcpUserPackageScope(
+				const installOwnerId = await resolveCommunityInstallOwnerId({
+					env,
+					user,
+					request,
+				})
+				const expectedPackageScope = await getPackageScopeByUserId(
 					env.APP_DB,
-					user.mcpUser,
+					installOwnerId,
 				)
 				let expectedPinnedCommit = listing.pinnedCommit
 				if (listing.sourceId) {
@@ -94,8 +144,11 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 				const result = await installCommunityListing({
 					env,
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-					userId: personalOrgId(user.mcpUser.userId),
-					userEmail: user.email,
+					userId: installOwnerId,
+					userEmail: entitlementEmailForOwner(
+						{ user: { userId: user.mcpUser.userId, email: user.email } },
+						installOwnerId,
+					),
 					expectedPackageScope,
 					listingId: listing.id,
 					kodyId: parsed.data.kody_id,

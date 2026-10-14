@@ -608,6 +608,25 @@ export async function getSavedPackageByName(
 	return row ? mapSavedPackageRow(row) : null
 }
 
+/** The live saved package published from entity source `sourceId`. */
+export async function getSavedPackageBySourceId(
+	db: D1Database,
+	input: {
+		userId: string
+		sourceId: string
+	},
+): Promise<SavedPackageRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageSelectColumns}
+			FROM saved_packages
+			WHERE source_id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.sourceId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageRow(row) : null
+}
+
 export async function listSavedPackagesByUserId(
 	db: D1Database,
 	input: {
