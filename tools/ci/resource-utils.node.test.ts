@@ -21,11 +21,13 @@ import {
 	ensurePackageAppDnsRecords,
 	ensureR2BucketLifecycle,
 	isCloudflareQueueAlreadyGoneError,
+	isCloudflareQuotaExceededFailure,
 	isPermanentCloudflareAuthFailure,
 	isR2BucketAlreadyExistsOutput,
 	isR2BucketNotEmptyOutput,
 	isRetryableCloudflareApiError,
 	isRetryableCloudflareFailure,
+	isTransientCloudflareGone,
 	isWranglerNotFoundOutput,
 	parseJsonc,
 	removeCloudflareQueueConsumers,
@@ -257,6 +259,39 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 				isRetryableCloudflareApiError(new Error(message)) !== want,
 		),
 	).toEqual([])
+
+	expect(
+		isTransientCloudflareGone(
+			new Error('Cloudflare API request failed (410): index deleted'),
+		),
+	).toBe(true)
+	expect(
+		isTransientCloudflareGone(
+			new Error('Cloudflare API request failed (404): not found'),
+		),
+	).toBe(true)
+	expect(
+		isTransientCloudflareGone(
+			new Error('Cloudflare API request failed (400): invalid'),
+		),
+	).toBe(false)
+	expect(isTransientCloudflareGone('not an error')).toBe(false)
+
+	expect(
+		isCloudflareQuotaExceededFailure(
+			'Cannot create Durable Object namespace [code: 10067]',
+		),
+	).toBe(true)
+	expect(
+		isCloudflareQuotaExceededFailure(
+			'A request to the Cloudflare API failed.\n [code: 10090]',
+		),
+	).toBe(true)
+	expect(
+		isCloudflareQuotaExceededFailure(
+			'Cloudflare API request failed (400): invalid queue name',
+		),
+	).toBe(false)
 })
 
 test('writeGeneratedWranglerConfig preserves migrations and copies environment asset routing', async () => {

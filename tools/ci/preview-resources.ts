@@ -14,6 +14,7 @@ import {
 import { planPreviewOriginQueues } from './preview-queue-plan.ts'
 import {
 	CloudflareResourceError,
+	assertDurableObjectNamespaceHeadroom,
 	deleteArtifactsNamespace,
 	deleteCloudflareQueue,
 	deleteR2Bucket,
@@ -652,6 +653,22 @@ async function ensurePreviewResources(options: CliOptions) {
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
 		dryRun: options.dryRun,
+	}
+	// Refuse to provision more Workers when the account is near the Durable
+	// Object namespace cap; leftover previews fill it and every ensure then
+	// fails mid-deploy with 10067/10090 (#3707).
+	if (!options.dryRun && accountId && apiToken) {
+		try {
+			await assertDurableObjectNamespaceHeadroom({
+				accountId,
+				apiToken,
+			})
+		} catch (error) {
+			if (error instanceof CloudflareResourceError) {
+				fail(error.message)
+			}
+			throw error
+		}
 	}
 	const existingQueues = options.dryRun
 		? []

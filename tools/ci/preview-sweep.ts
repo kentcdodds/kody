@@ -19,7 +19,9 @@ import { cloudflareApiRequest, fail } from './resource-utils.ts'
  * they are swept on worker liveness instead: once the bare `kody-branch-<slug>`
  * script is gone, its D1/KV/R2 leftovers are orphaned and swept the same way
  * (#3563). A live branch preview is also swept once its source branch's PRs
- * are all closed (`planClosedSourceBranchSweep`, #3707). Liveness is judged ONLY from a `/workers/scripts` listing
+ * are all closed (`planClosedSourceBranchSweep`, #3707), and once its last
+ * recorded deploy is older than `branchPreviewTtlMs` (`planExpiredBranchPreviewSweep`,
+ * 7 days — rehearsal leftovers that never close a PR). Liveness is judged ONLY from a `/workers/scripts` listing
  * (`listPreviewCandidateNames`'s own `scriptNames`, or the fresh re-fetch in
  * `main` right before branch processing), never from the broader D1/KV/R2/DO
  * discovery names (`names`): a D1 database can share its exact string with
@@ -274,6 +276,42 @@ export function planClosedSourceBranchSweep(input: {
 		stale.push({ workerName, branch: source.branch })
 	}
 	return stale
+}
+
+/** Branch preview TTL: rehearsal leftovers without a closing PR (#3707). */
+export const branchPreviewTtlMs = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Sweeps live branch previews whose last recorded deploy is older than the
+ * TTL. Previews with no recorded deploy source are kept (same as closed-source
+ * keep-when-unknown). Extends #3720; does not replace orphan or closed-source
+ * sweeps.
+ */
+export function planExpiredBranchPreviewSweep(input: {
+	liveBranchWorkerNames: ReadonlyArray<string>
+	sources: ReadonlyMap<string, BranchPreviewSource>
+	nowMs: number
+	ttlMs?: number
+}) {
+	const ttlMs = input.ttlMs ?? branchPreviewTtlMs
+	const expired: Array<{
+		workerName: string
+		branch: string
+		deployedAt: string
+	}> = []
+	for (const workerName of input.liveBranchWorkerNames) {
+		const source = input.sources.get(workerName)
+		if (!source) continue
+		const deployedAtMs = Date.parse(source.deployedAt)
+		if (!Number.isFinite(deployedAtMs)) continue
+		if (input.nowMs - deployedAtMs < ttlMs) continue
+		expired.push({
+			workerName,
+			branch: source.branch,
+			deployedAt: source.deployedAt,
+		})
+	}
+	return expired
 }
 
 /**
@@ -725,8 +763,20 @@ async function main() {
 			pullRequests,
 			defaultBranch,
 		})
+		const closedWorkerNames = new Set(
+			closedSource.map((entry) => entry.workerName),
+		)
+		const expiredSource = planExpiredBranchPreviewSweep({
+			liveBranchWorkerNames: branchPlan.live.filter(
+				(name) => !closedWorkerNames.has(name),
+			),
+			sources,
+			nowMs: now(),
+		})
 		const closedRoom = Math.max(0, maxPerRun - branchPlan.sweep.length)
 		const closedSweep = closedSource.slice(0, closedRoom)
+		const expiredRoom = Math.max(0, closedRoom - closedSweep.length)
+		const expiredSweep = expiredSource.slice(0, expiredRoom)
 		console.log(
 			[
 				`Branch preview sweep: ${String(branchWorkerNames.length)} branch preview(s) on the account.`,
@@ -740,12 +790,20 @@ async function main() {
 						.map((entry) => entry.workerName)
 						.join(', ') || 'none'
 				}`,
+				`  TTL expired (>${String(branchPreviewTtlMs / 86_400_000)}d), sweeping now: ${expiredSweep.map((entry) => `${entry.workerName} (${entry.deployedAt})`).join(', ') || 'none'}`,
+				`  TTL expired, next run: ${
+					expiredSource
+						.slice(expiredRoom)
+						.map((entry) => entry.workerName)
+						.join(', ') || 'none'
+				}`,
 			].join('\n'),
 		)
 
 		const branchSweep = [
 			...branchPlan.sweep,
 			...closedSweep.map((entry) => entry.workerName),
+			...expiredSweep.map((entry) => entry.workerName),
 		]
 		for (const [index, workerName] of branchSweep.entries()) {
 			if (!hasBudget()) {
@@ -773,6 +831,15 @@ async function main() {
 				) {
 					console.log(
 						`Skipping ${workerName}: its source PR reopened or a branch deploy started since planning.`,
+					)
+					continue
+				}
+				if (
+					expiredSweep.some((entry) => entry.workerName === workerName) &&
+					(await isPreviewDeployInProgress({ repository, githubToken }))
+				) {
+					console.log(
+						`Skipping ${workerName}: a branch deploy started since planning the TTL sweep.`,
 					)
 					continue
 				}

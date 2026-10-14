@@ -286,6 +286,67 @@ test('ensureVectorizeIndex retries metadata setup when readiness flaps back to 4
 	)
 })
 
+test('ensureVectorizeIndex recreates once when configure keeps answering 410 past the flap retries', async () => {
+	consoleError.mockImplementation(() => {})
+	const api = fakeVectorizeApi()
+	const name = 'kody-pr-14-vectors'
+	const base = api.fetcher
+	const fetcher: typeof fetch = async (input, init) => {
+		const url = new URL(String(input))
+		const method = init?.method ?? 'GET'
+		const path = url.pathname.replace(/^.*\/vectorize\/v2\/indexes/, '')
+		if (path.endsWith('/metadata_index/list') && method === 'GET') {
+			// Poison the first index lifetime; after delete+recreate, succeed.
+			const recreated =
+				api.requests.filter((entry) => entry === `DELETE /${name}`).length >
+					0 && api.requests.filter((entry) => entry === 'POST /').length > 1
+			if (!recreated) {
+				return Response.json(
+					{
+						success: false,
+						errors: [{ code: 3001, message: 'index deleted' }],
+					},
+					{ status: 410 },
+				)
+			}
+		}
+		return base(input, init)
+	}
+	await ensureVectorizeIndex({ ...client(fetcher), name })
+	expect(api.indexes.get(name)?.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
+	expect(api.requests).toContain(`DELETE /${name}`)
+	expect(
+		api.requests.filter((entry) => entry === 'POST /').length,
+	).toBeGreaterThanOrEqual(2)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('Recreating Vectorize index once'),
+	)
+})
+
+test('ensureVectorizeIndex respects deadlineMs while waiting for readiness', async () => {
+	consoleError.mockImplementation(() => {})
+	const api = fakeVectorizeApi({ metadataStaleAfterCreate: 20 })
+	const name = 'kody-pr-15-vectors'
+	let now = 0
+	await expect(
+		ensureVectorizeIndex({
+			...client(api.fetcher),
+			name,
+			now: () => now,
+			deadlineMs: 50,
+			sleep: async (ms) => {
+				now += ms
+			},
+		}),
+	).rejects.toThrow(/Failed to ensure Vectorize index/)
+})
+
 test('dry-run ensure and delete make no Cloudflare requests', async () => {
 	consoleError.mockImplementation(() => {})
 	const api = fakeVectorizeApi()

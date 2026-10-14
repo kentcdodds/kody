@@ -76,10 +76,14 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   `Preview deploy (branch: <name>)` run name `preview.yml` sets on dispatch.
   Previews deployed from `main`, from a branch with no PR, or before that run
   name existed are kept, as is any preview whose newest deploy is still running
-  or whose recent runs came from different branches. Each delete re-checks the
-  PRs first. Both the PR and branch loops share one wall-clock budget per run,
-  so a run that spends it on PR cleanups still defers branch cleanups cleanly
-  instead of running past the job timeout.
+  or whose recent runs came from different branches. Live branch previews whose
+  last recorded deploy is older than 7 days are also swept (TTL for rehearsal
+  leftovers that never close a PR). Each delete re-checks the PRs first. Both
+  the PR and branch loops share one wall-clock budget per run, so a run that
+  spends it on PR cleanups still defers branch cleanups cleanly instead of
+  running past the job timeout. Preview ensure also asserts Durable Object
+  namespace headroom before provisioning so the job fails with a clear quota
+  message near the 500-namespace cap instead of mid-deploy 10067/10090.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the

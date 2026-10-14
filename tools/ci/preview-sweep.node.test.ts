@@ -7,8 +7,10 @@ import {
 	isPreviewDeployInProgress,
 	listBranchPullRequests,
 	listPreviewCandidateNames,
+	branchPreviewTtlMs,
 	planClosedSourceBranchSweep,
 	planBranchPreviewSweep,
+	planExpiredBranchPreviewSweep,
 	planPreviewSweep,
 	previewBranchSlug,
 	previewBranchWorkerName,
@@ -456,6 +458,43 @@ test('collectBranchPreviewSources records the newest unambiguous branch deploy p
 			'kody-branch-same',
 			{ branch: 'feat/same', deployedAt: '2026-10-13T12:00:00Z' },
 		],
+	])
+})
+
+test('planExpiredBranchPreviewSweep sweeps live branch previews past the TTL', () => {
+	const nowMs = Date.parse('2026-10-14T00:00:00Z')
+	const sources = new Map([
+		[
+			'kody-branch-old',
+			{
+				branch: 'feat/old',
+				deployedAt: new Date(nowMs - branchPreviewTtlMs - 1_000).toISOString(),
+			},
+		],
+		[
+			'kody-branch-fresh',
+			{
+				branch: 'feat/fresh',
+				deployedAt: new Date(nowMs - branchPreviewTtlMs + 60_000).toISOString(),
+			},
+		],
+	])
+	expect(
+		planExpiredBranchPreviewSweep({
+			liveBranchWorkerNames: [
+				'kody-branch-old',
+				'kody-branch-fresh',
+				'kody-branch-unknown',
+			],
+			sources,
+			nowMs,
+		}),
+	).toEqual([
+		{
+			workerName: 'kody-branch-old',
+			branch: 'feat/old',
+			deployedAt: sources.get('kody-branch-old')!.deployedAt,
+		},
 	])
 })
 

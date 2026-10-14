@@ -21,6 +21,12 @@ const retryableDeployFailurePatterns = [
 	/Received a malformed response from the API/i,
 	/upstream connect error or disconnect\/reset/i,
 	/Secrets failed to upload[\s\S]*-> 5\d\d/i,
+	// Preview runtime uploads (~19MB) hit Cloudflare gateway timeouts on
+	// GET .../deployments; production already retries these via wrangler, but
+	// the outer workflow retry must recognize them too (#3512).
+	/504 Gateway Timeout/i,
+	/Gateway Timeout/i,
+	/-> 504\b/i,
 ] as const
 
 function stripDeployLogAnsi(text: string) {

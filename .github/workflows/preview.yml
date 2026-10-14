@@ -61,8 +61,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🔎 Deploy Preview Resources
-    # Includes room for the failed-deploy cleanup step (150s budget).
-    timeout-minutes: 15
+    # Includes room for deploy retries, healthchecks, and failed-deploy
+    # cleanup (150s budget). Raised from 15 so a healthy origin/platform/runtime
+    # is not cancelled mid API healthcheck (#3495).
+    timeout-minutes: 25
     # Do not set `environment:` here. A per-PR GitHub Environment auto-creates
     # `preview-<n>` (or `preview-<run_id>`) entries that pile up in Settings;
     # the preview URL is posted as a PR comment instead. Cleanup still deletes
@@ -427,7 +429,37 @@ jobs:
           set -euo pipefail
           echo "worker_name=$RUNTIME_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          npm run deploy -- --name "$RUNTIME_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy-runtime.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Runtime deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --name "$RUNTIME_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Runtime deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Runtime deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
           RUNTIME_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-runtime.log "$RUNTIME_WORKER_NAME")"
           if [ -n "$RUNTIME_URL" ]; then
@@ -449,7 +481,37 @@ jobs:
           set -euo pipefail
           echo "worker_name=$PLATFORM_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          npm run deploy -- --name "$PLATFORM_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-platform.log
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy-platform.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Platform deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --name "$PLATFORM_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-platform.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Platform deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Platform deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
           PLATFORM_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-platform.log "$PLATFORM_WORKER_NAME")"
           if [ -n "$PLATFORM_URL" ]; then
@@ -473,7 +535,37 @@ jobs:
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
           echo "Origin deploy: ${ORIGIN_ENTRY} entry (${ORIGIN_DEPLOY_MODE} preview fleet)"
 
-          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Origin deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Origin deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Origin deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
           PREVIEW_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy.log "$APP_WORKER_NAME")"
           if [ -n "$PREVIEW_URL" ]; then
@@ -514,7 +606,37 @@ jobs:
           node tools/ci/api-worker-config.ts --worker-name "$API_WORKER_NAME" --app-worker-name "$APP_WORKER_NAME" --out-config "$API_CONFIG"
           echo "worker_name=$API_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          node ./wrangler-env.ts deploy --config "$API_CONFIG" --env preview --name "$API_WORKER_NAME" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-api.log
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy-api.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "API deploy attempt $attempt/$deploy_attempts"
+            set +e
+            node ./wrangler-env.ts deploy --config "$API_CONFIG" --env preview --name "$API_WORKER_NAME" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-api.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "API deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "API deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
           API_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-api.log "$API_WORKER_NAME")"
           if [ -n "$API_URL" ]; then
@@ -780,17 +902,33 @@ jobs:
           fi
           exit 1
 
+      # Origin + platform + runtime are the core preview. Mark healthy here so
+      # a later API healthcheck that loses the job budget does not tear the
+      # usable fleet down (#3495).
+      - name: ✅ Mark preview healthy
+        id: preview_healthy
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+
       - name: 🩺 Healthcheck API worker (preview)
         shell: bash
         env:
           API_URL: ${{ steps.deploy_api.outputs.url }}
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          CORE_HEALTHY: ${{ steps.preview_healthy.outputs.ok }}
         run: |
           set -euo pipefail
 
+          soft_fail_if_core_healthy() {
+            if [ "${CORE_HEALTHY:-}" = "true" ]; then
+              echo "::warning::API worker healthcheck did not pass, but origin/platform/runtime are healthy; leaving the preview up." >&2
+              exit 0
+            fi
+            exit 1
+          }
+
           if [ -z "${API_URL:-}" ]; then
             echo "Missing API worker preview URL output; cannot run healthcheck." >&2
-            exit 1
+            soft_fail_if_core_healthy
           fi
 
           attempts=30
@@ -812,11 +950,7 @@ jobs:
           done
 
           echo "API worker healthcheck failed after ${attempts} attempts: $API_URL" >&2
-          exit 1
-
-      - name: ✅ Mark preview healthy
-        id: preview_healthy
-        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+          soft_fail_if_core_healthy
 
       - name: 🧾 Write preview link summary
         if: steps.deploy_preview.outputs.url != ''

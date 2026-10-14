@@ -578,6 +578,7 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 		lines: [],
 		warning:
 			'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+		overlaps: [],
 	})
 
 	const migrationsDir = 'packages/worker/migrations'
@@ -589,7 +590,12 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 			localNextPrefix: '0098',
 			scan: { status: 'skipped', reason: 'no-token' },
 		}),
-	).toEqual({ suggestedPrefix: '0098', lines: [], warning: null })
+	).toEqual({
+		suggestedPrefix: '0098',
+		lines: [],
+		warning: null,
+		overlaps: [],
+	})
 	expect(
 		formatOpenPullRequestMigrationAdvisory({
 			migrationsDir,
@@ -611,6 +617,7 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 	})
 	expect(unauthorized.suggestedPrefix).toBe('0098')
 	expect(unauthorized.lines).toEqual([])
+	expect(unauthorized.overlaps).toEqual([])
 	expect(unauthorized.warning).toContain('failed (401)')
 
 	const claimed = formatOpenPullRequestMigrationAdvisory({
@@ -644,6 +651,9 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 	})
 	expect(claimed.warning).toBeNull()
 	expect(claimed.suggestedPrefix).toBe('0099')
+	expect(claimed.overlaps).toEqual([
+		{ prefix: '0097', pullNumbers: [3219, 3242] },
+	])
 	expect(claimed.lines).toEqual([
 		`Open pull requests claim migration prefixes in ${migrationsDir}:`,
 		'  0097: #3219, #3242',
@@ -651,6 +661,7 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 		'  0100: #3238',
 		'This checkout uses prefixes also claimed by open pull requests:',
 		'  0097: #3219, #3242',
+		'Rename to the next free prefix 0099 (for example, 0099-your-change.sql) before merging.',
 		'Next prefix free of this checkout and those claims: 0099.',
 	])
 })
