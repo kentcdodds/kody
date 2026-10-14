@@ -73,9 +73,17 @@ async function candidateRefs(
 		const packages = await listSavedPackagesByUserId(env.APP_DB, {
 			userId: request.org.id,
 		})
+		// Each candidate computes a full capability summary, so the scan stays
+		// bounded by the bundle size no matter how large the catalog grows.
 		refs.push(
 			...packages
-				.filter((savedPackage) => savedPackage.isInternetVisible)
+				.filter(
+					(savedPackage) =>
+						savedPackage.isInternetVisible &&
+						namesPackage(filter.packages, savedPackage),
+				)
+				.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+				.slice(0, approvalBundleMaxItems)
 				.map((savedPackage) => ({
 					type: 'capabilities' as const,
 					packageId: savedPackage.id,
@@ -99,14 +107,14 @@ async function candidateRefs(
 	return refs
 }
 
-function matchesPackages(
-	item: ApprovalItemView,
+function namesPackage(
 	packages: ReadonlyArray<string> | undefined,
+	savedPackage: { id: string; kodyId: string } | null,
 ) {
 	if (!packages || packages.length === 0) return true
-	if (!item.package) return false
+	if (!savedPackage) return false
 	return (
-		packages.includes(item.package.id) || packages.includes(item.package.kodyId)
+		packages.includes(savedPackage.id) || packages.includes(savedPackage.kodyId)
 	)
 }
 
@@ -121,7 +129,7 @@ export async function listPendingApprovalItems(
 	)
 	return views.filter(
 		(item) =>
-			item.status === 'pending' && matchesPackages(item, filter.packages),
+			item.status === 'pending' && namesPackage(filter.packages, item.package),
 	)
 }
 
