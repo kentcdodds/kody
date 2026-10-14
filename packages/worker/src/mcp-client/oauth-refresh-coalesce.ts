@@ -8,7 +8,10 @@
  *
  * One HTTP exchange per refresh_token value; concurrent callers share the
  * buffered response (including the rotated refresh token) so both
- * `saveTokens` writes are idempotent.
+ * `saveTokens` writes are idempotent. A successful exchange stays shared
+ * until {@link releaseMcpOAuthRefreshCoalesce} runs after `saveTokens` (or a
+ * grace timeout), so a second 401 before persistence still reuses the first
+ * response instead of spending the parent token again.
  */
 
 type BufferedRefreshResponse = {
@@ -18,10 +21,18 @@ type BufferedRefreshResponse = {
 	body: ArrayBuffer
 }
 
-const refreshFlights = new WeakMap<
-	object,
-	Map<string, Promise<BufferedRefreshResponse>>
->()
+type RefreshFlightMaps = {
+	inFlight: Map<string, Promise<BufferedRefreshResponse>>
+	completed: Map<
+		string,
+		{ buffered: BufferedRefreshResponse; expiresAt: number }
+	>
+}
+
+const refreshFlights = new WeakMap<object, RefreshFlightMaps>()
+
+/** How long a successful refresh response stays shareable after the HTTP round-trip. */
+export const mcpOAuthRefreshCoalesceGraceMs = 30_000
 
 export function isMcpOAuthRefreshTokenGrantBody(body: unknown): boolean {
 	if (typeof body !== 'string') return false
@@ -44,6 +55,30 @@ export function readRefreshTokenFromTokenRequestBody(
 	}
 }
 
+function mapsFor(scope: object): RefreshFlightMaps {
+	let maps = refreshFlights.get(scope)
+	if (!maps) {
+		maps = { inFlight: new Map(), completed: new Map() }
+		refreshFlights.set(scope, maps)
+	}
+	return maps
+}
+
+function pruneCompleted(maps: RefreshFlightMaps, now = Date.now()) {
+	for (const [key, entry] of maps.completed) {
+		if (entry.expiresAt <= now) maps.completed.delete(key)
+	}
+}
+
+/**
+ * Drop coalesced refresh state after tokens are persisted (or invalidated).
+ * Call from `saveTokens` / `invalidateCredentials` so the next refresh can
+ * use the rotated token.
+ */
+export function releaseMcpOAuthRefreshCoalesce(scope: object) {
+	refreshFlights.delete(scope)
+}
+
 /**
  * Wrap `fetch` so refresh_token grants for `scope` (typically the OAuth
  * provider instance) share one in-flight POST per refresh_token value.
@@ -62,15 +97,16 @@ export function wrapFetchForMcpOAuthRefreshCoalesce(
 			return baseFetch(input, init)
 		}
 
-		let flights = refreshFlights.get(scope)
-		if (!flights) {
-			flights = new Map()
-			refreshFlights.set(scope, flights)
-		}
+		const maps = mapsFor(scope)
+		pruneCompleted(maps)
 
-		const existing = flights.get(refreshToken)
+		const existing = maps.inFlight.get(refreshToken)
 		if (existing) {
 			return responseFromBuffered(await existing)
+		}
+		const completed = maps.completed.get(refreshToken)
+		if (completed) {
+			return responseFromBuffered(completed.buffered)
 		}
 
 		const flight = (async (): Promise<BufferedRefreshResponse> => {
@@ -81,18 +117,21 @@ export function wrapFetchForMcpOAuthRefreshCoalesce(
 				headers: new Headers(response.headers),
 				body: await response.arrayBuffer(),
 			}
-		})().finally(() => {
-			const current = refreshFlights.get(scope)
-			if (current?.get(refreshToken) === flight) {
-				current.delete(refreshToken)
-				if (current.size === 0) {
-					refreshFlights.delete(scope)
-				}
-			}
-		})
+		})()
 
-		flights.set(refreshToken, flight)
-		return responseFromBuffered(await flight)
+		maps.inFlight.set(refreshToken, flight)
+		try {
+			const buffered = await flight
+			maps.completed.set(refreshToken, {
+				buffered,
+				expiresAt: Date.now() + mcpOAuthRefreshCoalesceGraceMs,
+			})
+			return responseFromBuffered(buffered)
+		} finally {
+			if (maps.inFlight.get(refreshToken) === flight) {
+				maps.inFlight.delete(refreshToken)
+			}
+		}
 	}
 }
 

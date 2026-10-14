@@ -13,7 +13,10 @@ import {
 } from './oauth-attempt.ts'
 import { mcpOAuthAttemptIdentityInvalidMessage } from './oauth-identity.ts'
 import { assertEndpointsOnIssuerOrigin } from './oauth-issuer-endpoints.ts'
-import { wrapFetchForMcpOAuthRefreshCoalesce } from './oauth-refresh-coalesce.ts'
+import {
+	releaseMcpOAuthRefreshCoalesce,
+	wrapFetchForMcpOAuthRefreshCoalesce,
+} from './oauth-refresh-coalesce.ts'
 import {
 	clientIdFromMcpOAuthTokenStorageKey,
 	mcpOAuthDiscoveryAdvertisesRefresh,
@@ -395,6 +398,8 @@ function installMcpOAuthTokenPreservation(
 				resolveLiveServerIdentity: resolveLive,
 			})
 			tokenWriteGeneration += 1
+			// Persistence finished: allow the next refresh to use the rotated token.
+			releaseMcpOAuthRefreshCoalesce(provider)
 			return result
 		})
 		saveQueue = run.then(
@@ -424,6 +429,7 @@ function installMcpOAuthTokenPreservation(
 				const serverId = readProviderString(provider, 'serverId')
 				if (!serverId) return
 				await deleteStoredMcpOAuthTokenBlobs(provider, serverId)
+				releaseMcpOAuthRefreshCoalesce(provider)
 				if (scope === 'all' || scope === 'client') {
 					await clearMcpOAuthAttemptIdentity(provider.storage, serverId)
 				}

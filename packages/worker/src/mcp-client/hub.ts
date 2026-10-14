@@ -982,6 +982,16 @@ class McpClientHubBase extends DurableObject<Env> {
 			if (refreshed.state === 'authenticating' && refreshed.authUrl) {
 				return refreshed
 			}
+			// Authenticated but discovery incomplete (or a transient connect
+			// failure that left the grant intact): keep tokens. Reminting would
+			// force the user through consent for a tools/list timeout.
+			const presenceAfter = await this.readTokenPresence(input.serverId)
+			if (
+				refreshed.state === 'connected' ||
+				shouldAttemptMcpOAuthRefresh(presenceAfter)
+			) {
+				return refreshed
+			}
 		}
 
 		const existingConnection = this.manager.mcpConnections[input.serverId]
@@ -1012,12 +1022,18 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		try {
 			await this.manager.removeServer(input.serverId)
-			// Remint starts a new authorization. Clear token blobs so a stale
-			// DCR/CIMD sibling cannot be read after the user re-approves.
+			// Remint for a replacement authorization. Clear token blobs only when
+			// resetting the client registration, or when no usable grant remains
+			// (re-authorize via redirectToAuthorization also clears). Do not wipe
+			// a live refresh token after a discovery-only failure — that path
+			// returns above.
+			const presenceForRemint = await this.readTokenPresence(input.serverId)
 			await this.clearOAuthAuthorizationStorage({
 				serverId: input.serverId,
 				clearClientRegistration,
-				clearTokens: true,
+				clearTokens:
+					clearClientRegistration ||
+					!shouldAttemptMcpOAuthRefresh(presenceForRemint),
 			})
 
 			const authProvider = this.createAuthProvider(input.callbackUrl)

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	isMcpOAuthRefreshTokenGrantBody,
 	readRefreshTokenFromTokenRequestBody,
+	releaseMcpOAuthRefreshCoalesce,
 	wrapFetchForMcpOAuthRefreshCoalesce,
 } from './oauth-refresh-coalesce.ts'
 
@@ -94,4 +95,40 @@ test('distinct refresh tokens and non-refresh grants are not coalesced', async (
 		}),
 	])
 	expect(posts).toBe(3)
+})
+
+test('a second refresh with the same parent token reuses the completed response until release', async () => {
+	const scope = {}
+	let posts = 0
+	const baseFetch: typeof fetch = async () => {
+		posts += 1
+		return new Response(
+			JSON.stringify({
+				access_token: 'at-1',
+				refresh_token: 'rt-2',
+				token_type: 'Bearer',
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		)
+	}
+	const coalesce = wrapFetchForMcpOAuthRefreshCoalesce(scope, baseFetch)
+	const body = 'grant_type=refresh_token&refresh_token=rt-1'
+	const first = await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body,
+	})
+	expect(posts).toBe(1)
+	expect(await first.json()).toMatchObject({ refresh_token: 'rt-2' })
+
+	// Gap before saveTokens: another 401 must not spend rt-1 again.
+	const second = await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body,
+	})
+	expect(posts).toBe(1)
+	expect(await second.json()).toMatchObject({ refresh_token: 'rt-2' })
+
+	releaseMcpOAuthRefreshCoalesce(scope)
+	await coalesce('https://auth.example/token', { method: 'POST', body })
+	expect(posts).toBe(2)
 })
