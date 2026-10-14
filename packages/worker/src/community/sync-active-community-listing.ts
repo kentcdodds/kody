@@ -20,10 +20,22 @@ export async function syncActiveCommunityListingToPublishedCommit(input: {
 	publishedCommit: string
 	actorUserId?: string
 }): Promise<'synced' | 'skipped'> {
-	const listing = await getCommunityListingByOwnerAndPackage(input.env.APP_DB, {
-		ownerUserId: input.ownerUserId,
-		packageId: input.packageId,
-	})
+	if (typeof input.env.APP_DB?.prepare !== 'function') return 'skipped'
+	let listing: Awaited<
+		ReturnType<typeof getCommunityListingByOwnerAndPackage>
+	> | null = null
+	try {
+		listing = await getCommunityListingByOwnerAndPackage(input.env.APP_DB, {
+			ownerUserId: input.ownerUserId,
+			packageId: input.packageId,
+		})
+	} catch (error) {
+		console.warn(
+			`[listing-auto-follow] lookup failed for ${input.packageId}:`,
+			error instanceof Error ? error.message : error,
+		)
+		return 'skipped'
+	}
 	if (!listing || listing.status !== 'active') return 'skipped'
 	if (
 		!listingNeedsRepublish({

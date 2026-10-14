@@ -555,7 +555,7 @@ async function toDetailWithListingState(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
 	const [ownerIsPersonal, detailBase] = await Promise.all([
-		isPersonalOrg(input.env.APP_DB, input.userId),
+		resolveOwnerIsPersonal(input.env.APP_DB, input.userId),
 		toDetail({
 			env: input.env,
 			requestUrl: input.requestUrl,
@@ -578,6 +578,16 @@ async function toDetailWithListingState(input: {
 		...detailBase,
 		...listingState,
 		ownerIsPersonal,
+	}
+}
+
+async function resolveOwnerIsPersonal(db: D1Database, userId: string) {
+	if (typeof db?.prepare !== 'function') return true
+	try {
+		return await isPersonalOrg(db, userId)
+	} catch (error) {
+		console.warn('package-owner-is-personal-lookup-failed', error)
+		return true
 	}
 }
 

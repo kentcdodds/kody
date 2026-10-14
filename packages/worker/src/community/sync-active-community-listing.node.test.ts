@@ -19,7 +19,13 @@ const { syncActiveCommunityListingToPublishedCommit } =
 	await import('./sync-active-community-listing.ts')
 
 function env() {
-	return { APP_DB: {} } as Env
+	return {
+		APP_DB: {
+			prepare: () => {
+				throw new Error('APP_DB.prepare should be mocked via repo helpers')
+			},
+		},
+	} as unknown as Env
 }
 
 test('syncActiveCommunityListingToPublishedCommit skips when no active listing', async () => {
