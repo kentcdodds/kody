@@ -82,7 +82,11 @@ denormalized topic-index table.
 
 ## Local testing before publish
 
-While the package is still unpublished, prefer `@kodycodes/cli` `kody dev emit`:
+MCP-only agents validate unpublished subscription wiring with `repoRunChecks`,
+publish, then smoke with `packageSubscriptionDispatch` (below).
+
+When Node ≥22 and `@kodycodes/cli` are available, you can also exercise the
+handler locally before publish with `kody dev emit`:
 
 ```bash
 npx @kodycodes/cli@latest dev emit email.message.received --body ./fixtures/event.json
@@ -93,8 +97,8 @@ That delivers the platform subscription envelope (`synthetic: true`, and an
 `package.json#kody.subscriptions`. On `--target mock` (the `kody dev` default),
 any declared event type is allowed — the mock does not restrict to the live
 platform catalog. See
-[Package lifecycle → Local testing before publish](./package-lifecycle.md#local-testing-before-publish)
-for the other three surfaces (exports, jobs, webhooks).
+[Package lifecycle → Validate and test before publish](./package-lifecycle.md#validate-and-test-before-publish)
+for the other surfaces (exports, jobs, webhooks) and for hosts without a CLI.
 
 ## Synthetic dispatch
 

@@ -148,6 +148,10 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(syncedFiles['package.json']).not.toContain('"id"')
 	expect(syncedFiles['README.md']).toContain('## Intent')
 	expect(syncedFiles['AGENTS.md']).toContain('## Imports')
+	expect(syncedFiles['AGENTS.md']).toContain('repoRunChecks')
+	expect(syncedFiles['AGENTS.md']).toContain(
+		'Do not assume every agent can run the CLI.',
+	)
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

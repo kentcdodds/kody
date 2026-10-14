@@ -49,10 +49,14 @@ local filesystem and git access:
   When the OAuth token is coarser than the export (Gmail drafts without send),
   lock after the first publish — see
   [locked-gmail-drafts.md](./locked-gmail-drafts.md).
-- **Tool-only lane.** Without local filesystem/git access, create with
-  `packageSave` (complete UTF-8 text file set; no binary files) and edit through
-  repo sessions (`repoOpenSession`, `repoEditFiles`, `repoCommit`, then
-  `repoRunChecks` before `repoPublishSession`).
+- **Tool-only lane.** Without local filesystem/git access (MCP-only agents such
+  as ChatGPT / Claude / Grok mobile apps), create with `packageSave` (complete
+  UTF-8 text file set; no binary files) and edit through repo sessions
+  (`repoOpenSession`, `repoEditFiles`, `repoCommit`, then **`repoRunChecks`**
+  before `repoPublishSession`). `repoRunChecks` is the pre-publish validate for
+  hosts that cannot run the CLI. When a coding agent _can_ run `@kodycodes/cli`,
+  also use `kody dev` / `.kody/mocks.ts` / `--local` as optional local surface
+  tests — see `guide:package_lifecycle`.
 
 If a request needs binary assets, many-file changes, or local build/test loops
 and you are tool-only, tell the user the task fits a coding-capable agent better
@@ -127,8 +131,12 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-After publish, run the module with local CLI execute. When, command, and
-failure: [Local CLI execute](./local-execute.md) (`guide:local_execute`).
+Before publish (every agent): `repoRunChecks` on the repo session
+(`guide:package_lifecycle`). After publish, when Node ≥22 and the CLI are
+available, prefer local CLI execute (`guide:local_execute`). MCP-only hosts
+smoke with the matching post-publish surface (`packageAppFetch`,
+`packageSubscriptionDispatch`, webhook synthetic dispatch) or a static `kody:@…`
+import from `execute` when that tool is on the session.
 
 ## Edge cases
 
