@@ -20,7 +20,10 @@ import {
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import { type ApprovalViewer } from './item-views.ts'
-import { deleteApprovalBundlesForMember } from './repo.ts'
+import {
+	approvalBundleClaimLeaseMs,
+	deleteApprovalBundlesForMember,
+} from './repo.ts'
 import { createApprovalBundle, loadApprovalBundleView } from './service.ts'
 
 const mocks = vi.hoisted(() => ({ loadPackageManifestBySourceId: vi.fn() }))
@@ -386,14 +389,16 @@ test('a decided item stays decided in its bundle', async () => {
 	await t.db
 		.prepare(
 			`INSERT INTO approval_bundle_decisions (
-				bundle_id, item_key, decision, decided_by_user_id, decided_at
-			) VALUES (?, ?, 'approved', ?, ?)`,
+				bundle_id, item_key, decision, decided_by_user_id, decided_at,
+				finalized_at
+			) VALUES (?, ?, 'approved', ?, ?, ?)`,
 		)
 		.bind(
 			created.bundle.id,
 			item!.key,
 			t.people.bea.personId,
 			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:01.000Z',
 		)
 		.run()
 	const loaded = await loadApprovalBundleView({
@@ -407,6 +412,78 @@ test('a decided item stays decided in its bundle', async () => {
 		canDeny: false,
 	})
 	expect(approvalItemsAwaitingDecision(loaded.view)).toEqual([])
+})
+
+test('an in-flight claim blocks others until its lease runs out, and never reads as decided', async () => {
+	const t = await setup()
+	const request = await t.pausePublish()
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		items: [{ type: 'publish', requestId: request.id }],
+	})
+	const [item] = created.items
+	const claim = (decidedAt: string) =>
+		t.db
+			.prepare(
+				`INSERT OR REPLACE INTO approval_bundle_decisions (
+					bundle_id, item_key, decision, decided_by_user_id, decided_at
+				) VALUES (?, ?, 'approved', ?, ?)`,
+			)
+			.bind(created.bundle.id, item!.key, t.people.bea.personId, decidedAt)
+			.run()
+	const deny = () =>
+		t.decide({
+			bundleId: created.bundle.id,
+			action: 'deny',
+			item: item!.key,
+			fingerprint: item!.fingerprint!,
+		})
+
+	await claim(new Date().toISOString())
+	const loaded = await loadApprovalBundleView({
+		viewer: t.viewerFor('bea'),
+		bundleId: created.bundle.id,
+	})
+	if (!loaded.ok) throw new Error('bundle did not load')
+	expect(bundleItems(loaded.view)[0]).toMatchObject({
+		status: 'pending',
+		decision: null,
+	})
+	const blocked = await deny()
+	expect(blocked).toMatchObject({ ok: false, status: 409 })
+	expect(blocked.body).toMatchObject({
+		error: expect.stringContaining('being decided in another tab'),
+	})
+
+	await claim(
+		new Date(Date.now() - approvalBundleClaimLeaseMs - 1000).toISOString(),
+	)
+	const takenOver = await deny()
+	expect(takenOver.body).toMatchObject({
+		ok: true,
+		item: { status: 'denied' },
+	})
+})
+
+test('an approved proposal hides its older identical copies', async () => {
+	const t = await setup()
+	await t.proposeDailyChat()
+	await t.proposeDailyChat()
+	const pending = () =>
+		listPendingCredentialProposals({
+			db: t.db,
+			orgId: t.acmeId,
+			personId: t.people.bea.personId,
+		})
+	const [newest] = await pending()
+	expect(await pending()).toHaveLength(1)
+	await t.db
+		.prepare(
+			`UPDATE credential_mapping_proposals SET approved_at = ? WHERE id = ?`,
+		)
+		.bind(new Date().toISOString(), newest!.id)
+		.run()
+	expect(await pending()).toEqual([])
 })
 
 test('pending items that cannot be approved yet still count as waiting', () => {
