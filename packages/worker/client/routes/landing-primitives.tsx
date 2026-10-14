@@ -16,6 +16,7 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
+import { primitiveFeatureHref } from '#universal/primitive-cards.ts'
 import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
@@ -250,7 +251,7 @@ function LandingPrimitiveWord(
 					aria-hidden="true"
 				></span>
 				<a
-					href={`/features/${primitive.id}`}
+					href={primitiveFeatureHref(primitive.id)}
 					class="landing-primitive-word"
 					data-word={primitive.id}
 				>
