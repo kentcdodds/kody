@@ -44,6 +44,7 @@ export const communityRateCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			await rateCommunityListing({
 				env: ctx.env,
+				// person-keyed (not personal org)
 				userId: personalOrgId(user.userId),
 				listingId: args.listing_id,
 				stars: args.stars,

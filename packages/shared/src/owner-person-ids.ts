@@ -89,10 +89,15 @@ export function ownerIdFromStored<T extends string | null | undefined>(
 }
 
 /**
- * The person's personal org: the owner their own actions read and write. A
- * personal org reuses the person's stable id, so this is the identity. Acting
- * in any other org must go through an explicit membership or grant check, never
- * through this function.
+ * Brand a person id into the `OwnerId` type for **person-keyed** storage
+ * (sessions, passkeys, OAuth principals, connected-agent grants, audit).
+ *
+ * This is **not** the personal org resolver. After #3053 phase 3, personal org
+ * ids come from `users.personal_org_id` via `personalOrgIdForPerson` /
+ * `personalOrgIdFromUserRow` / `loadPersonalOrgIdForPerson`. Legacy personal
+ * orgs still have `orgs.id === person id`; new signups mint a distinct org id.
+ * Acting in any org other than the caller's personal org must go through an
+ * explicit membership or grant check.
  */
 export function personalOrgId(person: PersonId): OwnerId {
 	return person as string as OwnerId

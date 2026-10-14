@@ -47,6 +47,18 @@ async function setup() {
 		{ stableUserId: string; personId: ReturnType<typeof personIdFromStored> }
 	>
 	for (const [username, person] of Object.entries(people)) {
+		await db
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, stable_user_id, personal_org_id)
+				 VALUES (?, ?, 'x', ?, ?)`,
+			)
+			.bind(
+				username,
+				`${username}@example.com`,
+				person.stableUserId,
+				person.stableUserId,
+			)
+			.run()
 		await provisionPersonalOrg(db, {
 			stableUserId: person.stableUserId,
 			username,
@@ -223,6 +235,108 @@ test('a grant needs the owner’s own live credential and a live binding to the 
 			personId: t.people.ann.stableUserId,
 		}),
 	).toBe(1)
+})
+
+test('distinct personal org id still resolves personal credential grants', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const env = {
+		APP_DB: db,
+		...createInMemoryUserMeterEnv().env,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as unknown as Env
+	const personStable = testStableUserIdFromEmail('dee@example.com')
+	const personId = personIdFromStored(personStable)
+	const distinctOrgId = ownerIdFromStored('e'.repeat(64))
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id, personal_org_id)
+			 VALUES (1, 'dee', 'dee@example.com', 'x', ?, ?)`,
+		)
+		.bind(personStable, distinctOrgId)
+		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: personStable,
+		orgId: distinctOrgId,
+		username: 'dee',
+		createdAt: now,
+	})
+	const beaStable = testStableUserIdFromEmail('bea-distinct@example.com')
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id, personal_org_id)
+			 VALUES (2, 'beadistinct', 'bea-distinct@example.com', 'x', ?, ?)`,
+		)
+		.bind(beaStable, beaStable)
+		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: beaStable,
+		username: 'beadistinct',
+		createdAt: now,
+	})
+	const created = await createOrganization(
+		db,
+		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+		{
+			personId: personIdFromStored(beaStable),
+			audit: createTestOrgAuditWriter(),
+			slug: 'distinct-acme',
+			displayName: 'Distinct Acme',
+		},
+	)
+	if (!created.ok) throw new Error(created.error)
+	const acme = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'distinct-acme'`)
+		.first<{ id: string }>()
+	const acmeId = ownerIdFromStored(acme!.id)
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'member', ?)`,
+		)
+		.bind(acmeId, personStable, now)
+		.run()
+	await saveSecret({
+		env,
+		userId: distinctOrgId,
+		scope: 'user',
+		name: 'deeToken',
+		value: 'dee-secret-value',
+	})
+	const tokenId = (
+		await findCredentialIdsByLegacyName(db, distinctOrgId, {
+			type: 'secret',
+			name: 'deeToken',
+		})
+	)[0]!
+	await grantPersonalCredentialToOrg({
+		db,
+		ownerPersonId: personId,
+		credentialId: tokenId,
+		orgId: acmeId,
+	})
+	expect(
+		await listPersonalCredentialCandidates({
+			db,
+			actorPersonId: personId,
+			orgId: acmeId,
+		}),
+	).toEqual([
+		expect.objectContaining({
+			id: tokenId,
+			name: 'deeToken',
+			ownerPersonId: personId,
+		}),
+	])
+	await expect(
+		grantPersonalCredentialToOrg({
+			db,
+			ownerPersonId: personId,
+			credentialId: tokenId,
+			orgId: distinctOrgId,
+		}),
+	).rejects.toThrow('already works in your personal org')
 })
 
 test('expired secrets, package secrets, and suspended personal orgs are not personal credentials', async () => {

@@ -33,6 +33,7 @@ export const communityReportCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const report = await reportCommunityListing({
 				env: ctx.env,
+				// person-keyed (not personal org)
 				userId: personalOrgId(user.userId),
 				listingId: args.listing_id,
 				reason: args.reason,

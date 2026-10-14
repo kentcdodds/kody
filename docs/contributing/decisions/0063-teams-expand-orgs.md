@@ -65,4 +65,11 @@ move their storage keys.
   (SQL joins, binding, `isPersonalOrg`, write-lease fence, stamped
   `mcpUser.personalOrgId`). New signups mint `orgs.id` distinct from
   `stable_user_id`. Existing personal orgs keep equal ids.
-- **Phase 3 (narrow).** Remove the identity assumption on `personalOrgId()`.
+- **Phase 3 (narrow).** `personalOrgId(person)` is no longer the personal-org
+  resolver; it remains only a person→`OwnerId` brand for **person-keyed**
+  storage. Org-keyed readers use `personalOrgIdForPerson` /
+  `personalOrgIdFromUserRow` / `loadPersonalOrgIdForPerson` / `request.org.id`
+  (blank-column / unstamped callers still equal-id fall back for fixtures).
+  Migration `0146` re-asserts live rows have a non-blank `personal_org_id`.
+  Existing personal orgs still keep `orgs.id = stable_user_id` forever (no data
+  moves).

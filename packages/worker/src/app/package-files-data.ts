@@ -1,9 +1,7 @@
-import {
-	ownerIdFromStored,
-	personalOrgId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
@@ -218,7 +216,9 @@ export async function loadCommunityPackageFilesData(input: {
 	})
 	if (!view) return null
 	const viewerOwnsListing =
-		viewerUserId != null && personalOrgId(viewerUserId) === listing.ownerUserId
+		viewerUserId != null &&
+		(await loadPersonalOrgIdForPerson(input.env.APP_DB, viewerUserId)) ===
+			listing.ownerUserId
 
 	return toLoaderData({
 		env: input.env,

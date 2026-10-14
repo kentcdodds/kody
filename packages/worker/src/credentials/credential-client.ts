@@ -13,9 +13,9 @@
  * can Use.
  */
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
@@ -301,8 +301,11 @@ async function assertNamedAllowed(ctx: CredentialClientContext) {
 	const request = requireActorRequest(ctx)
 	// Equal-id fixtures and stamped distinct signup orgs both count as personal.
 	const personal =
-		request.org.id === personalOrgId(request.actor!.userId) ||
-		(await isPersonalOrg(ctx.env.APP_DB, request.org.id))
+		request.org.id ===
+			personalOrgIdForPerson({
+				userId: request.actor!.userId,
+				personalOrgId: ctx.callerContext.user?.personalOrgId,
+			}) || (await isPersonalOrg(ctx.env.APP_DB, request.org.id))
 	const listed = personal
 		? await ctx.env.APP_DB.prepare(
 				`SELECT 1 AS listed FROM community_listings

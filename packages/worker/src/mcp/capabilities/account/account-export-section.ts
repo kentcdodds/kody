@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -8,6 +7,7 @@ import {
 	readAccountExportSection,
 	resolveAccountExportDbUserId,
 } from '#worker/account/export.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	accountExportSectionOutputSchema,
 	accountExportSectionSchema,
@@ -50,15 +50,17 @@ export const accountExportSectionCapability = defineDomainCapability(
 		outputSchema: accountExportSectionOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const mcpUserId =
+				ctx.callerContext.request?.org.id ?? personalOrgIdForPerson(user)
 			const dbUserId = await resolveAccountExportDbUserId({
 				env: ctx.env,
-				mcpUserId: personalOrgId(user.userId),
+				mcpUserId,
 				email: user.email,
 			})
 			const result = await readAccountExportSection({
 				env: ctx.env,
 				dbUserId,
-				mcpUserId: personalOrgId(user.userId),
+				mcpUserId,
 				section: args.section,
 				table: args.table,
 				storageId: args.storage_id,

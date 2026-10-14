@@ -447,6 +447,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					clearReferralCookie?: boolean
 				} = {},
 			) {
+				// person-keyed (not personal org)
 				const stableUserId = personalOrgId(
 					personIdFromStored(user.stable_user_id),
 				)

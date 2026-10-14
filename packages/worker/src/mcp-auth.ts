@@ -541,6 +541,7 @@ export async function handleMcpRequest({
 		clientName: classification.clientName,
 		clientVersion: classification.clientVersion,
 		packageIdentityParam: classification.packageIdentityParam,
+		// person-keyed (not personal org)
 		userId: personalOrgId(mcpUser.userId),
 		requestHost: (() => {
 			try {

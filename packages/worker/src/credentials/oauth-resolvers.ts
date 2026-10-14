@@ -3,10 +3,8 @@
  * integration's hosts are checked before the token is read, so a refused
  * host never triggers a token refresh.
  */
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	createMissingIntegrationAccessTokenMessage,
 	findIntegrationCredentialId,
@@ -110,7 +108,10 @@ async function findIntegrationByName(
 	if (!person) {
 		return { owner: 'org', ownerId: call.input.orgId, credentialId: null }
 	}
-	const personalOwner = personalOrgId(person)
+	const personalOwner = await loadPersonalOrgIdForPerson(
+		call.input.env.APP_DB,
+		person,
+	)
 	const personalId = await findIntegrationCredentialId({
 		env: call.input.env,
 		userId: personalOwner,

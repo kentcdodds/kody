@@ -4,7 +4,6 @@
  * in each reader's personal org with provenance. Idempotent via provenance URI.
  */
 import {
-	personalOrgId,
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
@@ -15,6 +14,8 @@ import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { listGrants } from '#worker/orgs/access-writes.ts'
 import { listTeamMembers } from '#worker/orgs/org-teams-list.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
+import { personalOrgIdSql } from '#worker/orgs/personal-org-sql.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
@@ -179,7 +180,7 @@ export async function listTeamOrgsPage(input: {
 			   AND o.deleting_at IS NULL
 			   AND NOT EXISTS (
 			     SELECT 1 FROM users u
-			     WHERE u.stable_user_id = o.id
+			     WHERE ${personalOrgIdSql} = o.id
 			       AND u.deleted_at IS NULL
 			   )
 			 ORDER BY o.id
@@ -258,7 +259,10 @@ async function copyOneMemoryToPerson(input: {
 	personId: PersonId
 	dryRun: boolean
 }): Promise<MemoryPersonalizeCopyRow> {
-	const toOrgId = personalOrgId(input.personId)
+	const toOrgId = await loadPersonalOrgIdForPerson(
+		input.env.APP_DB,
+		input.personId,
+	)
 	const provenanceUri = legacyOrgMemoryProvenanceUri(
 		input.fromOrgId,
 		input.source.id,
