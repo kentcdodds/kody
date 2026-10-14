@@ -353,13 +353,20 @@ Client routes: `packages/worker/client/routes/community*`
   same-origin `/raw/` route (`<img>` / `<video>` / `<audio>`). SVG is served
   only as `image/svg+xml` for `<img src>` — markup is never injected. Other
   binaries show a non-preview message instead of a latin1 code dump.
-- `/@:username/:kodyId/raw/:ref(/*relativePath)` — allowlisted media bytes for
-  that preview (same authz and tree resolution as the explorer). A hex ref that
-  only falls back to the listing pin snapshot 404s, same as the tree.
-  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)`.
-  `Content-Type` comes from the extension allowlist plus a magic-byte sniff;
-  responses are `nosniff` + `Content-Disposition: inline` and never `text/html`
-  or JavaScript.
+- `/@:username/:kodyId/raw/:ref(/*relativePath)` — GitHub-style raw bytes for
+  any file the viewer can open in the explorer (same authz and tree resolution;
+  the file view links it as **Raw**). Every denial, including private,
+  other-org, and signed-out reads, is a 404. Browsers use the session cookie;
+  agents send `Authorization: Bearer kody_at_…` with `package:read` (a token
+  without it reads like a signed-out visitor; an invalid token is 401). A hex
+  ref that only falls back to the listing pin snapshot 404s, same as the tree.
+  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)` (public
+  listing tree only). Sniffed media (extension allowlist plus magic bytes) keeps
+  its type for `<img>` / `<video>` previews; other text is
+  `text/plain; charset=utf-8`, and binaries download as
+  `application/octet-stream`. Every response is `nosniff` with
+  `Content-Security-Policy: default-src 'none'; sandbox`, so HTML, SVG, and JS
+  never run on the app origin.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (login required;
   other-account listings arm via `createDoubleCheck` and fork on the second

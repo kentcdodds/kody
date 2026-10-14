@@ -33,8 +33,9 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - Profiles are public catalogs (packages, ratings, forks). There is no follow
   graph, bookmark-star, or social timeline.
 - Files, tree, and raw media URLs are public read for listed packages and
-  owner-only for private ones. `/raw/` only serves allowlisted sniffed media
-  (never HTML or JS).
+  owner-only for private ones. `/raw/` serves any file as inert bytes (sniffed
+  media keeps its type; text is `text/plain`, binaries download) and 404s every
+  denial.
 - README `![alt](./docs/poster.png)` images render from
   `/@owner/<package-name-leaf>/assets/…` (or `/community/:listingId/assets/…`
   when the leaf is a reserved ingress segment) only when the viewed README
