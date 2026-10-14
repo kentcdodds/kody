@@ -59,8 +59,8 @@ const packages = {
 		operation: 'Read the next meeting',
 		title: 'Walk in prepared.',
 		copy: 'Project review, Monday at 09:00. Bring the launch brief and your open questions.',
-		request: 'read meeting',
-		result: 'meeting prep notes',
+		request: 'read next',
+		result: 'prep notes',
 	},
 	planner: {
 		name: 'day-planner',
@@ -94,6 +94,11 @@ const packageRowY = {
 	prep: 102,
 	planner: 136,
 } as const satisfies Record<IntegrationPackageId, number>
+
+/** ViewBox x of the saved card's right edge and the package column's left
+ *  edge (31% and 71% in the CSS). */
+const reuseCardLeft = 112
+const reuseCardRight = 256
 
 const heroHeight = 232
 const reuseHeight = 308
@@ -159,15 +164,16 @@ export function integrationAccountStatus(
 	return `${received} ${picked.text} is in the brief.`
 }
 
-function lane(
-	className: string,
-	box: { left: string; width: string; top: string },
-	label: string,
-) {
+/**
+ * A request or result label parked in the gap between two cards. It never
+ * travels, so it cannot collide with a card; the animation only emphasizes
+ * it. `dir` picks the arrow, which CSS swaps for up/down when stacked.
+ */
+function tag(dir: 'out' | 'back', x: number, y: number, label: string) {
 	return (
-		<div class={`pw-int-lane ${className}`} style={box}>
-			<span class="pw-packet">{label}</span>
-		</div>
+		<span class={`pw-int-tag pw-int-tag-${dir}`} style={at(x, y)}>
+			{label}
+		</span>
 	)
 }
 
@@ -191,36 +197,29 @@ export function IntegrationsHeroScene(
 				size="full"
 				height={heroHeight}
 				class="pw-scene-int-hero"
+				stack
 			>
 				<div class="pw-run" key={`${account}-${event ?? 'none'}-${shot}`}>
 					{wires(
 						<>
 							{wire({
 								key: 'out',
-								d: 'M146 88 H232',
+								d: 'M144 88 H230',
 								on: true,
 							})}
 							{wire({
 								key: 'back',
-								d: 'M232 144 H146',
+								d: 'M230 144 H144',
 								on: true,
 							})}
 						</>,
 						heroHeight,
 					)}
-					{lane(
-						'pw-int-out to-east',
-						{ left: '44%', width: '18%', top: '38%' },
-						'events?',
-					)}
-					{lane(
-						'pw-int-back to-west',
-						{ left: '44%', width: '18%', top: '62%' },
-						backLabel,
-					)}
-					<div class="pw-hub pw-int-hero-hub" style={at(53, 50)}>
+					{tag('out', 52, 26, 'events?')}
+					<div class="pw-hub pw-int-hero-hub" style={at(52, 50)}>
 						Kody
 					</div>
+					{tag('back', 52, 74, backLabel)}
 				</div>
 				<div class="pw-node pw-int-brief">
 					<span class="pw-int-kicker">weekly-brief · Read upcoming events</span>
@@ -235,11 +234,7 @@ export function IntegrationsHeroScene(
 								mix={on('click', () => onEvent(entry.id))}
 							>
 								{entry.text}
-								{event === entry.id ? (
-									<span class="pw-int-check" aria-hidden="true">
-										✓
-									</span>
-								) : null}
+								<span class="pw-int-radio" aria-hidden="true"></span>
 							</button>
 						))}
 					</div>
@@ -267,8 +262,11 @@ export function IntegrationsHeroScene(
 								aria-pressed={account === id}
 								mix={on('click', () => onAccount(id))}
 							>
-								<strong>{row.name}</strong>
-								<small>{row.label}</small>
+								<span class="pw-int-account-copy">
+									<strong>{row.name}</strong>
+									<small>{row.label}</small>
+								</span>
+								<span class="pw-int-radio" aria-hidden="true"></span>
 							</button>
 						)
 					})}
@@ -295,49 +293,38 @@ export function IntegrationsReuseScene(
 				size="full"
 				height={reuseHeight}
 				class="pw-scene-int-reuse"
+				stack
 			>
 				<div class="pw-run" key={`${selected}-${shot}`}>
 					{wires(
 						packageOrder.flatMap((id) => {
 							const y = packageRowY[id]
-							const onWire = id === selected
-							if (!onWire) {
-								return [wire({ key: `${id}-idle`, d: `M238 ${y} H118` })]
+							if (id !== selected) {
+								return [
+									wire({
+										key: `${id}-idle`,
+										d: `M${reuseCardRight} ${y} H${reuseCardLeft}`,
+									}),
+								]
 							}
 							return [
 								wire({
 									key: `${id}-out`,
-									d: `M238 ${y - 7} H118`,
-									on: onWire,
+									d: `M${reuseCardRight} ${y - 7} H${reuseCardLeft}`,
+									on: true,
 								}),
 								wire({
 									key: `${id}-back`,
-									d: `M118 ${y + 7} H238`,
-									on: onWire,
+									d: `M${reuseCardLeft} ${y + 7} H${reuseCardRight}`,
+									on: true,
 								}),
 							]
 						}),
 						reuseHeight,
 					)}
-					{lane(
-						'pw-int-out to-west',
-						{
-							left: '34%',
-							width: '32%',
-							top: `${((rowY - 7) / reuseHeight) * 100}%`,
-						},
-						info.request,
-					)}
-					{lane(
-						'pw-int-back to-east',
-						{
-							left: '34%',
-							width: '32%',
-							top: `${((rowY + 7) / reuseHeight) * 100}%`,
-						},
-						info.result,
-					)}
+					{tag('out', 50, 7, info.request)}
 					<div class="pw-int-bus">Kody</div>
+					{tag('back', 50, 53, info.result)}
 				</div>
 				<div class="pw-node pw-int-saved">
 					<span class="pw-int-saved-head">
@@ -346,7 +333,11 @@ export function IntegrationsReuseScene(
 						</span>
 						<strong>google-work</strong>
 					</span>
-					<small class="pw-int-saved-email">{accounts.work.email}</small>
+					<small class="pw-int-saved-email">
+						alex@
+						<wbr />
+						company.example
+					</small>
 					<span class="pw-int-pill">Saved connection</span>
 				</div>
 				<fieldset class="pw-int-picker">
@@ -366,6 +357,7 @@ export function IntegrationsReuseScene(
 								mix={on('click', () => onSelect(id))}
 							>
 								{row.name}
+								<span class="pw-int-radio" aria-hidden="true"></span>
 							</button>
 						)
 					})}
@@ -403,6 +395,7 @@ export function IntegrationsSetupScene(_handle: Handle) {
 				size="full"
 				height={setupHeight}
 				class="pw-scene-int-setup"
+				stack
 			>
 				<div class="pw-run" key="setup">
 					<div class="pw-int-board">
@@ -424,13 +417,9 @@ export function IntegrationsSetupScene(_handle: Handle) {
 						</ol>
 						<div class="pw-int-test">
 							<span class="pw-int-chip">list 1 event</span>
-							<div class="pw-int-lane pw-int-out to-east">
-								<span class="pw-packet">list 1 event</span>
-							</div>
+							<span class="pw-int-link pw-int-link-a" aria-hidden="true"></span>
 							<div class="pw-hub pw-int-hub">Kody</div>
-							<div class="pw-int-lane pw-int-back to-west">
-								<span class="pw-packet">Project review</span>
-							</div>
+							<span class="pw-int-link pw-int-link-b" aria-hidden="true"></span>
 							<span class="pw-int-chip pw-int-chip-account">
 								<span class="pw-mark" aria-hidden="true">
 									G
@@ -454,14 +443,14 @@ export function IntegrationsSetupScene(_handle: Handle) {
 							</div>
 							<div class="pw-int-gate-row" data-gate="deny">
 								<span class="pw-int-id">mail-send</span>
-								<span class="pw-packet">send</span>
+								<span class="pw-int-act">send</span>
 								<span class="pw-int-verdict">
 									<span aria-hidden="true">✕ </span>Refused
 								</span>
 							</div>
 							<div class="pw-int-gate-row" data-gate="allow">
 								<span class="pw-int-id">gmail-drafts</span>
-								<span class="pw-packet">create draft</span>
+								<span class="pw-int-act">create draft</span>
 								<span class="pw-int-verdict">
 									<span aria-hidden="true">✓ </span>Passed
 								</span>
