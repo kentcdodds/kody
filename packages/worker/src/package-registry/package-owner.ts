@@ -1,10 +1,10 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
-	personalOrgId,
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { getMcpUserPackageScope } from './user-scope.ts'
 
 /**
@@ -21,6 +21,8 @@ export type PackageOwnerContext = {
 	ownerScope: string
 	ownerEmail: string
 	actorUserId: PersonId
+	/** Actor's personal org id (stamped when available). */
+	actorPersonalOrgId: OwnerId
 }
 
 /**
@@ -33,7 +35,8 @@ export async function resolvePackageOwnerContext(
 	input: { user: McpUserContext; request: RequestContext },
 ): Promise<PackageOwnerContext> {
 	const { user, request } = input
-	const isPersonalOrg = request.org.id === personalOrgId(user.userId)
+	const actorPersonalOrgId = personalOrgIdForPerson(user)
+	const isPersonalOrg = request.org.id === actorPersonalOrgId
 	// A personal org's package scope is the (permanent) username.
 	const ownerScope = isPersonalOrg
 		? await getMcpUserPackageScope(env.APP_DB, user)
@@ -48,6 +51,7 @@ export async function resolvePackageOwnerContext(
 		ownerScope,
 		ownerEmail: user.email,
 		actorUserId: user.userId,
+		actorPersonalOrgId,
 	}
 }
 
@@ -64,7 +68,7 @@ export async function resolvePackageOwnerContext(
 export function packageOwnerEntitlementEmail(
 	owner: PackageOwnerContext,
 ): string | null {
-	if (owner.ownerUserId === personalOrgId(owner.actorUserId)) {
+	if (owner.ownerUserId === owner.actorPersonalOrgId) {
 		return owner.ownerEmail
 	}
 	return null

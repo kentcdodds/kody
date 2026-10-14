@@ -56,7 +56,7 @@ async function readPersonalUsageOrg(
 	const row = await env.APP_DB.prepare(
 		`SELECT u.id, u.stable_user_id, u.username, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
 		 FROM users u
-		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(userId)

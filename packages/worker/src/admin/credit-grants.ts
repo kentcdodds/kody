@@ -57,7 +57,7 @@ async function loadCreditGrantTarget(
 	target: AdminUserTarget,
 ): Promise<CreditGrantTargetRow | null> {
 	const columns = `u.id, u.stable_user_id, u.username, ${userEntitlementColumnsSql('o')}`
-	const fromSql = `users u INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}`
+	const fromSql = `users u INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}`
 	if (target.stableUserId !== undefined) {
 		const stableUserId = parseOwnerId(target.stableUserId)
 		if (!stableUserId) return null

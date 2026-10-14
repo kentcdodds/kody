@@ -1,7 +1,5 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
@@ -141,7 +139,7 @@ export async function loadRelevantMemoriesForTool(input: {
 	embedText?: EmbedTextFn
 }): Promise<MemoryToolSummary | null> {
 	const userId = input.callerContext.user
-		? personalOrgId(input.callerContext.user.userId)
+		? personalOrgIdForPerson(input.callerContext.user)
 		: null
 	if (!userId) return null
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
@@ -192,7 +190,7 @@ export async function acknowledgeToolMemories(input: {
 	memoryIds: Array<string>
 }) {
 	const userId = input.callerContext.user
-		? personalOrgId(input.callerContext.user.userId)
+		? personalOrgIdForPerson(input.callerContext.user)
 		: null
 	if (!userId || input.memoryIds.length === 0) return
 	await acknowledgeSurfacedMemories({
@@ -211,7 +209,7 @@ export async function surfaceToolMemories(input: {
 	limit?: number
 }) {
 	const userId = input.callerContext.user
-		? personalOrgId(input.callerContext.user.userId)
+		? personalOrgIdForPerson(input.callerContext.user)
 		: null
 	if (!userId) return null
 	const retrievalQuery = input.retrievalQuery.trim()

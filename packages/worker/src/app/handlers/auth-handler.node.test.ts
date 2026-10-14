@@ -417,8 +417,9 @@ test('auth handler login and signup workflow', async () => {
 	expect(allowedUser).toMatchObject({
 		username: 'allowed-jane',
 	})
-	expect(allowedUser?.personal_org_id).toBe(allowedUser?.stable_user_id)
 	expect(allowedUser?.personal_org_id).not.toBe('')
+	expect(allowedUser?.personal_org_id).not.toBe(allowedUser?.stable_user_id)
+	expect(allowedUser?.personal_org_id).toMatch(/^[a-f0-9]{64}$/)
 	expect(
 		allowedSignupResponse.headers
 			.getSetCookie()
@@ -553,8 +554,12 @@ test('password signup schedules user.created with first-touch attribution and pe
 		welcomeCreditMocks.maybeGrantSignupWelcomeCredits,
 	).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: plainStableUserId,
+		userId: expect.stringMatching(/^[a-f0-9]{64}$/),
 	})
+	expect(
+		welcomeCreditMocks.maybeGrantSignupWelcomeCredits.mock.calls[0]?.[0]
+			?.userId,
+	).not.toBe(plainStableUserId)
 
 	const email = 'attributed@example.com'
 	const response = await context.signup(email, 'attributed', {

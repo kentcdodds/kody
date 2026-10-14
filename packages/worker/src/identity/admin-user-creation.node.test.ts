@@ -59,26 +59,34 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	)
 	const expiresAt = now.getTime() + adminPasswordSetupTokenExpiryMs
 	expect(created.setupTokenExpiresAt).toBe(expiresAt)
-	expect(
-		sqlite
-			.prepare(
-				`SELECT u.email, u.username, u.email_verified_at, u.password_hash,
-					u.personal_org_id, u.stable_user_id, o.id AS org_id, o.plan
-				FROM users u
-				INNER JOIN orgs o ON o.id = u.personal_org_id
-				WHERE u.id = ?`,
-			)
-			.get(created.userId),
-	).toEqual({
+	const row = sqlite
+		.prepare(
+			`SELECT u.email, u.username, u.email_verified_at, u.password_hash,
+				u.personal_org_id, u.stable_user_id, o.id AS org_id, o.plan
+			FROM users u
+			INNER JOIN orgs o ON o.id = u.personal_org_id
+			WHERE u.id = ?`,
+		)
+		.get(created.userId) as {
+		email: string
+		username: string
+		email_verified_at: string
+		password_hash: string
+		personal_org_id: string
+		stable_user_id: string
+		org_id: string
+		plan: string
+	}
+	expect(row).toMatchObject({
 		email: 'person+launch@example.com',
 		username: 'person-launch',
 		email_verified_at: now.toISOString(),
 		password_hash: 'admin_created_no_usable_password',
-		personal_org_id: created.stableUserId,
 		stable_user_id: created.stableUserId,
-		org_id: created.stableUserId,
 		plan: 'free',
 	})
+	expect(row.personal_org_id).toBe(row.org_id)
+	expect(row.personal_org_id).not.toBe(row.stable_user_id)
 	expect(
 		sqlite
 			.prepare(`SELECT expires_at FROM password_resets WHERE user_id = ?`)
@@ -99,9 +107,9 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 				`SELECT id, kind, amount_micro_usd, granted_by_user_id
 				 FROM credit_ledger_entries WHERE user_id = ?`,
 			)
-			.get(created.stableUserId),
+			.get(row.personal_org_id),
 	).toEqual({
-		id: `signup_welcome:${created.stableUserId}`,
+		id: `signup_welcome:${row.personal_org_id}`,
 		kind: 'admin_grant',
 		amount_micro_usd: 5_000_000,
 		granted_by_user_id: null,
@@ -109,7 +117,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	expect(
 		sqlite
 			.prepare(`SELECT balance_micro_usd FROM credit_wallets WHERE user_id = ?`)
-			.get(created.stableUserId),
+			.get(row.personal_org_id),
 	).toEqual({ balance_micro_usd: 5_000_000 })
 	expect(
 		sqlite
@@ -117,7 +125,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 				`SELECT signup_welcome_credits_pending AS pending
 				 FROM orgs WHERE id = ?`,
 			)
-			.get(created.stableUserId),
+			.get(row.personal_org_id),
 	).toEqual({ pending: 0 })
 })
 

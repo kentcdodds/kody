@@ -15,6 +15,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
@@ -298,7 +299,10 @@ async function createUrlForNeed(
 async function assertNamedAllowed(ctx: CredentialClientContext) {
 	if (!ctx.packageId) return
 	const request = requireActorRequest(ctx)
-	const personal = request.org.id === personalOrgId(request.actor!.userId)
+	// Equal-id fixtures and stamped distinct signup orgs both count as personal.
+	const personal =
+		request.org.id === personalOrgId(request.actor!.userId) ||
+		(await isPersonalOrg(ctx.env.APP_DB, request.org.id))
 	const listed = personal
 		? await ctx.env.APP_DB.prepare(
 				`SELECT 1 AS listed FROM community_listings

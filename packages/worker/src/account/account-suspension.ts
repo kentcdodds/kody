@@ -58,7 +58,7 @@ export async function getAccountRestrictionsByStableUserId(input: {
 		.prepare(
 			`SELECT u.suspended_at, o.email_outbound_paused_at
 			 FROM users u
-			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)

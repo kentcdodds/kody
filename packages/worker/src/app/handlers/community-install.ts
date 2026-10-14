@@ -1,7 +1,5 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { waitUntil } from 'cloudflare:workers'
@@ -48,7 +46,7 @@ async function resolveCommunityInstallOwnerId(input: {
 	user: AuthenticatedAppUser
 	request: Request
 }): Promise<OwnerId> {
-	const personalId = personalOrgId(input.user.mcpUser.userId)
+	const personalId = personalOrgIdForPerson(input.user.mcpUser)
 	const remembered = readLastUsedOrgSlug(input.request.headers.get('cookie'))
 	if (!remembered) return personalId
 	const binding = await loadOrgBindingForSlug(

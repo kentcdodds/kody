@@ -486,34 +486,36 @@ export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: OwnerId,
 ) {
-	// One D1 round trip: the person row, its soft-deleted marker, and the org
-	// row (personal orgs reuse stable_user_id) are read together, then decided
-	// in the same order as before. A deleting/deleted personal org must block
-	// OwnerId writes even while the person row is still live, or leftover
-	// UserMeter heal would clear softDeleteOrg's fence.
+	// `stableUserId` is an OwnerId: a personal org id, a team org id, or (legacy
+	// equal-id shape) a person id. Resolve the person by stable_user_id or
+	// personal_org_id, and the org by id (or the person's personal_org_id).
 	// Pre-Teams test DBs may lack `orgs`; treat that as no org row.
 	const userStatement = db
 		.prepare(
-			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT deleting_at, stable_user_id, personal_org_id
+			 FROM users
+			 WHERE (stable_user_id = ? OR personal_org_id = ?)
+			   ${andLiveDeletedAtSql()}`,
 		)
-		.bind(stableUserId)
+		.bind(stableUserId, stableUserId)
 	const softDeletedPersonStatement = db
 		.prepare(
 			`SELECT 1 AS present
 			FROM users
-			WHERE stable_user_id = ?
+			WHERE (stable_user_id = ? OR personal_org_id = ?)
 			  AND deleted_at IS NOT NULL`,
 		)
-		.bind(stableUserId)
+		.bind(stableUserId, stableUserId)
 	const orgStatement = db
 		.prepare(`SELECT deleting_at, deleted_at FROM orgs WHERE id = ?`)
 		.bind(stableUserId)
 
-	// The live-user and personal-org reads do not depend on each other, so
-	// issue them together; the soft-deleted-person check only matters when the
-	// live row is missing, so it stays on the rare path.
 	const [row, orgOutcome] = await Promise.all([
-		userStatement.first<{ deleting_at: string | null }>(),
+		userStatement.first<{
+			deleting_at: string | null
+			stable_user_id: string
+			personal_org_id: string | null
+		}>(),
 		orgStatement
 			.first<{ deleting_at: string | null; deleted_at: string | null }>()
 			.then(
@@ -529,10 +531,21 @@ export async function assertAccountWritableDb(
 				},
 			),
 	])
-	const { org, orgsTableMissing } = orgOutcome
+	let { org, orgsTableMissing } = orgOutcome
 
 	if (row) {
 		if (row.deleting_at) throw new AccountDeletionInProgressError()
+		const personalOrgId = row.personal_org_id?.trim() || row.stable_user_id
+		if (!org && personalOrgId !== stableUserId && !orgsTableMissing) {
+			org =
+				(await db
+					.prepare(`SELECT deleting_at, deleted_at FROM orgs WHERE id = ?`)
+					.bind(personalOrgId)
+					.first<{
+						deleting_at: string | null
+						deleted_at: string | null
+					}>()) ?? null
+		}
 		if (org && (org.deleted_at || org.deleting_at)) {
 			throw new AccountDeletionInProgressError()
 		}

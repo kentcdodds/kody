@@ -1,8 +1,8 @@
 import {
 	type OwnerId,
 	type PersonId,
-	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 
 /**
  * Storage and usage billing key for a caller.
@@ -10,17 +10,17 @@ import {
  * Org-owned rows, Durable Object names, secret AAD, Vectorize metadata, and
  * usage rollups use this id. It is `request.org.id` when the request has an
  * org, and the acting person's personal org otherwise (legacy wire callers
- * without `request`). Personal orgs reuse the person id, so those callers
- * keep the same key. Do not add another resolver: background identity still
- * goes through `resolveBackgroundMcpUser`. Does not trim: a missing caller
- * is still the empty string callers treat as absent.
+ * without `request`). Prefer a stamped `user.personalOrgId` when present so
+ * distinct signup org ids stay correct. Do not add another resolver:
+ * background identity still goes through `resolveBackgroundMcpUser`. Does not
+ * trim: a missing caller is still the empty string callers treat as absent.
  */
 export function ownerIdFromCaller(caller: {
 	request?: { org: { id: OwnerId } } | null
-	user?: { userId: PersonId } | null
+	user?: { userId: PersonId; personalOrgId?: OwnerId | null } | null
 }): OwnerId {
 	if (caller.request) return caller.request.org.id
-	if (caller.user) return personalOrgId(caller.user.userId)
+	if (caller.user) return personalOrgIdForPerson(caller.user)
 	return '' as OwnerId
 }
 
@@ -31,11 +31,17 @@ export function ownerIdFromCaller(caller: {
  * personal org gets the email; other orgs resolve by id.
  */
 export function entitlementEmailForOwner(
-	caller: { user?: { userId: PersonId; email: string } | null },
+	caller: {
+		user?: {
+			userId: PersonId
+			email: string
+			personalOrgId?: OwnerId | null
+		} | null
+	},
 	ownerId: OwnerId,
 ): string | null {
 	if (!caller.user) return null
-	return ownerId === personalOrgId(caller.user.userId)
+	return ownerId === personalOrgIdForPerson(caller.user)
 		? caller.user.email
 		: null
 }

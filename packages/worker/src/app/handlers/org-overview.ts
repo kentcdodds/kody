@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -34,7 +34,7 @@ export function createOrgOverviewHandler(env: Env) {
 				})
 			}
 			const slug = resolution.org.slug ?? params.orgSlug
-			if (resolution.org.id !== personalOrgId(user.mcpUser.userId)) {
+			if (resolution.org.id !== personalOrgIdForPerson(user.mcpUser)) {
 				return Response.redirect(
 					new URL(routes.profile.href({ username: slug }), request.url),
 					302,

@@ -322,7 +322,7 @@ async function getUserBillingIdentity(env: Env, dbUserId: number) {
 	const row = await env.APP_DB.prepare(
 		`SELECT o.stripe_customer_id, u.email
 		 FROM users u
-		 LEFT JOIN orgs o ON o.id = u.stable_user_id
+		 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 		 WHERE u.id = ?`,
 	)
 		.bind(dbUserId)
