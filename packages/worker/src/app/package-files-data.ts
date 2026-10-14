@@ -134,7 +134,12 @@ async function toLoaderData(input: {
 		mediaHref: isPackageFilesMediaKind(contentKind)
 			? (input.rawHref ?? null)
 			: null,
-		rawHref: input.view.kind === 'file' ? (input.rawHref ?? null) : null,
+		// `/raw/` buffers the whole blob, so it shares the preview size cap.
+		rawHref:
+			input.view.kind === 'file' &&
+			(input.view.contentByteLength ?? 0) <= maxPackageFilePreviewBytes
+				? (input.rawHref ?? null)
+				: null,
 		contentFences,
 		contentHighlighted,
 		username: input.username,
@@ -1213,14 +1218,26 @@ export async function loadAccessiblePackageFileRaw(input: {
 	ref?: string
 	/** See `loadPackagePage`; omit to use the session cookie. */
 	viewer?: McpUserContext | null
+	/** Org an org-bound token is fixed to; other orgs read as anonymous. */
+	viewerOrgId?: string | null
 }): Promise<PackageFileRawResult> {
-	const page = await loadPackagePage({
-		env: input.env,
-		request: input.request,
-		username: input.username,
-		kodyId: input.kodyId,
-		viewer: input.viewer,
-	})
+	const loadPage = (viewer: McpUserContext | null | undefined) =>
+		loadPackagePage({
+			env: input.env,
+			request: input.request,
+			username: input.username,
+			kodyId: input.kodyId,
+			viewer,
+		})
+	let page = await loadPage(input.viewer)
+	if (
+		input.viewer &&
+		input.viewerOrgId &&
+		page.kind === 'page' &&
+		page.ownerUserId !== input.viewerOrgId
+	) {
+		page = await loadPage(null)
+	}
 	// Same gate as `loadAccessiblePackageFilesData`. Every denial, including
 	// "sign in to see this unlisted package", is a 404 so raw URLs never
 	// confirm a package exists.

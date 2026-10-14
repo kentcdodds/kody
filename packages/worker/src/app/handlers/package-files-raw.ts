@@ -41,7 +41,7 @@ function rawInvalidCredentials(error: ApiError) {
 }
 
 function rawTooLarge() {
-	return new Response('File too large to preview', {
+	return new Response('File too large to serve raw', {
 		status: 413,
 		headers: {
 			'Content-Type': 'text/plain; charset=utf-8',
@@ -128,7 +128,9 @@ export function createCommunityPackageRawHandler(env: Env) {
 				kodyId: params.kodyId,
 				selectedPath,
 				ref: params.ref,
-				...(viewer.kind === 'token' ? { viewer: viewer.user } : {}),
+				...(viewer.kind === 'token'
+					? { viewer: viewer.user, viewerOrgId: viewer.orgId }
+					: {}),
 			})
 			return respondRaw({ request, result })
 		},

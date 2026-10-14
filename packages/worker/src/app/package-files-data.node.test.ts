@@ -29,6 +29,7 @@ import type * as entitySources from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+import { maxPackageFilePreviewBytes } from '#universal/package-file-media.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCommunityListingById:
@@ -1073,4 +1074,54 @@ test('file views carry a raw href and directory views do not', async () => {
 	expect(await loadTree('README.md')).toMatchObject({
 		rawHref: '/@kentcdodds/sentry/raw/main/README.md',
 	})
+})
+
+test('an org-bound token reads another org like a signed-out visitor', async () => {
+	publishPrivateSkillsPackage()
+	const tokenViewer = viewer('owner-1').mcpUser
+	const ownOrg = await loadSkillGetRaw({
+		viewer: tokenViewer,
+		viewerOrgId: ownerIdFromStored('owner-1'),
+	})
+	expect(ownOrg).toMatchObject({ kind: 'ok', isPrivate: true })
+	expect(mockModule.loadPackagePage).toHaveBeenCalledTimes(1)
+
+	mockModule.loadPackagePage.mockClear()
+	mockModule.loadPackagePage
+		.mockResolvedValueOnce(
+			plainRepoPage({
+				kodyId: 'skills',
+				hasPackage: true,
+				viewerIsOwner: true,
+				ownerPackage: plainRepoOwnerPackage({ isPrivate: true }),
+			}),
+		)
+		.mockResolvedValueOnce({ kind: 'not_found' })
+	expect(
+		await loadSkillGetRaw({ viewer: tokenViewer, viewerOrgId: 'team-a' }),
+	).toEqual({ kind: 'not-found' })
+	expect(mockModule.loadPackagePage).toHaveBeenLastCalledWith(
+		expect.objectContaining({ viewer: null }),
+	)
+})
+
+test('files above the raw size cap get no Raw link', async () => {
+	publishPrivateSkillsPackage()
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(
+		publishedSnapshot({
+			'data/large.csv': 'a'.repeat(maxPackageFilePreviewBytes + 1),
+		}),
+	)
+	expect(
+		await loadAccessiblePackageFilesData({
+			env,
+			request: new Request(
+				'https://kody.codes/@kentcdodds/skills/tree/main/data/large.csv',
+			),
+			username: 'kentcdodds',
+			kodyId: 'skills',
+			selectedPath: 'data/large.csv',
+			ref: 'main',
+		}),
+	).toMatchObject({ kind: 'file', rawHref: null })
 })

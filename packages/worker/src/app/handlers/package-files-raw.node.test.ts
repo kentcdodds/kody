@@ -132,6 +132,7 @@ test('raw accepts a kody_at_ bearer and rejects invalid credentials before looku
 	mockModule.resolvePackageFileRawViewer.mockResolvedValue({
 		kind: 'token',
 		user: tokenUser,
+		orgId: 'team-a',
 	})
 	mockModule.loadAccessiblePackageFileRaw.mockResolvedValue({
 		kind: 'ok',
@@ -150,7 +151,7 @@ test('raw accepts a kody_at_ bearer and rejects invalid credentials before looku
 	// Credentialed reads never land in a shared cache, even for public files.
 	expect(withToken.headers.get('Cache-Control')).toBe('private, no-store')
 	expect(mockModule.loadAccessiblePackageFileRaw).toHaveBeenCalledWith(
-		expect.objectContaining({ viewer: tokenUser }),
+		expect.objectContaining({ viewer: tokenUser, viewerOrgId: 'team-a' }),
 	)
 
 	mockModule.loadAccessiblePackageFileRaw.mockClear()

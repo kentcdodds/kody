@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest'
 import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
-import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'
+import {
+	PackageFilesExplorer,
+	packageFilesContentKey,
+} from '#client/package-files-explorer.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 
 function tabbedFileData(): PackageFilesLoaderData {
@@ -78,4 +81,18 @@ test('file views link to the raw file and directory views do not', async () => {
 		}),
 	)
 	expect(directoryHtml).not.toContain('package-files-raw-link')
+})
+
+test('the cached blob pane rebuilds when the same file opens at another ref', () => {
+	const main = {
+		...tabbedFileData(),
+		rawHref: '/@jane/tab-width-fixture/raw/main/example.tsx',
+	}
+	const commit = {
+		...main,
+		filesBasePath: '/@jane/tab-width-fixture/tree/abc1234',
+		rawHref: '/@jane/tab-width-fixture/raw/abc1234/example.tsx',
+	}
+	expect(packageFilesContentKey(commit)).not.toBe(packageFilesContentKey(main))
+	expect(packageFilesContentKey({ ...main })).toBe(packageFilesContentKey(main))
 })

@@ -61,6 +61,20 @@ function countLines(value: string) {
 	return value.replace(/\n$/, '').split('\n').length
 }
 
+/**
+ * Identity of the cached blob pane. `filesBasePath` carries the ref, so the
+ * same path on another branch or commit rebuilds its content and Raw link.
+ */
+export function packageFilesContentKey(data: PackageFilesLoaderData) {
+	return [
+		data.filesBasePath,
+		data.selectedPath,
+		data.contentPath ?? '',
+		data.imageBaseHref ?? '',
+		data.rawHref ?? '',
+	].join('\n')
+}
+
 export function PackageFilesExplorer(
 	handle: Handle<{
 		data: PackageFilesLoaderData
@@ -120,7 +134,7 @@ export function PackageFilesExplorer(
 	return () => {
 		const { data } = handle.props
 		syncExpanded(data.selectedPath, data.kind === 'directory')
-		const contentKey = `${data.selectedPath}\n${data.contentPath ?? ''}\n${data.imageBaseHref ?? ''}`
+		const contentKey = packageFilesContentKey(data)
 		if (contentFor !== contentKey) {
 			contentFor = contentKey
 			contentNode = renderContent(data)

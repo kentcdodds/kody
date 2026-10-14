@@ -8,8 +8,12 @@ import { ApiError } from '#worker/open-api/errors.ts'
 export type PackageFileRawViewer =
 	/** No Authorization header: `loadPackagePage` reads the session cookie. */
 	| { kind: 'session' }
-	/** Valid `kody_at_` token; `user` is null when it lacks `package:read`. */
-	| { kind: 'token'; user: McpUserContext | null }
+	/**
+	 * Valid `kody_at_` token; `user` is null when it lacks `package:read`.
+	 * `orgId` is set for org-bound tokens, which only act as the user inside
+	 * that org. User-bound tokens read across the user's orgs (ADR 0070).
+	 */
+	| { kind: 'token'; user: McpUserContext | null; orgId: string | null }
 	| { kind: 'invalid'; error: ApiError }
 
 /**
@@ -35,12 +39,16 @@ export async function resolvePackageFileRawViewer(input: {
 			}),
 			waitUntil,
 		})
-		const canReadPackages =
-			context.principal.kind === 'token' &&
-			apiTokenScopeIncludes(context.principal.token.scopes, 'package:read')
+		if (context.principal.kind !== 'token') {
+			return { kind: 'token', user: null, orgId: null }
+		}
+		const { token } = context.principal
 		return {
 			kind: 'token',
-			user: canReadPackages ? context.callerContext.user : null,
+			user: apiTokenScopeIncludes(token.scopes, 'package:read')
+				? context.callerContext.user
+				: null,
+			orgId: token.org_binding === 'user' ? null : token.org_id,
 		}
 	} catch (error) {
 		if (error instanceof ApiError) return { kind: 'invalid', error }

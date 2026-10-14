@@ -32,10 +32,16 @@ const tokenUser = {
 	displayName: 'Kent',
 }
 
-function tokenContext(scopes: Array<ApiTokenScope>) {
+function tokenContext(
+	scopes: Array<ApiTokenScope>,
+	binding: { org_binding: 'user' | 'org'; org_id: string } = {
+		org_binding: 'user',
+		org_id: 'owner-1',
+	},
+) {
 	return {
 		callerContext: { user: tokenUser },
-		principal: { kind: 'token', token: { scopes } },
+		principal: { kind: 'token', token: { scopes, ...binding } },
 	} as unknown as ApiInvocationContext
 }
 
@@ -61,6 +67,7 @@ test('raw viewer uses a package:read token and reads as anonymous without it', a
 	expect(await resolvePackageFileRawViewer({ env, request })).toEqual({
 		kind: 'token',
 		user: tokenUser,
+		orgId: null,
 	})
 	expect(mockModule.authenticateApiRequest).toHaveBeenCalledWith(
 		expect.not.objectContaining({ allowMcpOauth: true }),
@@ -72,6 +79,16 @@ test('raw viewer uses a package:read token and reads as anonymous without it', a
 	expect(await resolvePackageFileRawViewer({ env, request })).toEqual({
 		kind: 'token',
 		user: null,
+		orgId: null,
+	})
+
+	mockModule.authenticateApiRequest.mockResolvedValue(
+		tokenContext(['package:read'], { org_binding: 'org', org_id: 'team-a' }),
+	)
+	expect(await resolvePackageFileRawViewer({ env, request })).toEqual({
+		kind: 'token',
+		user: tokenUser,
+		orgId: 'team-a',
 	})
 })
 
