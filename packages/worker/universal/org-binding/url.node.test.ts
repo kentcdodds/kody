@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	buildOrgBoundMcpUrl,
-	readOrgSlugFromUrl,
-	stripOrgFromResourceUri,
-} from './url.ts'
+import { readOrgSlugFromUrl, stripOrgFromResourceUri } from './url.ts'
 
 test('readOrgSlugFromUrl normalizes lowercase and ignores blanks', () => {
 	expect(readOrgSlugFromUrl('https://kody.codes/mcp?org=Acme')).toBe('acme')
@@ -26,13 +22,4 @@ test('stripOrgFromResourceUri keeps profile and drops only org', () => {
 		canonicalResource: 'https://kody.codes/mcp',
 		orgSlug: null,
 	})
-})
-
-test('buildOrgBoundMcpUrl sets lowercase org', () => {
-	expect(
-		buildOrgBoundMcpUrl({
-			mcpServerUrl: 'https://kody.codes/mcp',
-			orgSlug: 'Acme',
-		}),
-	).toBe('https://kody.codes/mcp?org=acme')
 })

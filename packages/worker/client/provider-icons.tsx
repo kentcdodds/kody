@@ -363,7 +363,7 @@ const knownProviderIconIds = [
 	'zoom',
 ] as const
 
-export type ProviderIconId = (typeof knownProviderIconIds)[number]
+type ProviderIconId = (typeof knownProviderIconIds)[number]
 
 const providerIconRenderers: Record<
 	ProviderIconId,
@@ -391,83 +391,6 @@ const providerIconRenderers: Record<
 	x: renderXIcon,
 	xero: renderXeroIcon,
 	zoom: renderZoomIcon,
-}
-
-const providerIconHosts: Record<string, ProviderIconId> = {
-	'accounts.google.com': 'google',
-	'accounts.spotify.com': 'spotify',
-	'api.github.com': 'github',
-	'api.linear.app': 'linear',
-	'api.notion.com': 'notion',
-	'linear.app': 'linear',
-	'mcp.asana.com': 'asana',
-	'mcp.atlassian.com': 'atlassian',
-	'mcp.canva.com': 'canva',
-	'mcp.linear.app': 'linear',
-	'mcp.notion.com': 'notion',
-	'mcp.sentry.dev': 'sentry',
-	'mcp.slack.com': 'slack',
-	'mcp.stripe.com': 'stripe',
-	'app.asana.com': 'asana',
-	'asana.com': 'asana',
-	'atlassian.com': 'atlassian',
-	'auth.atlassian.com': 'atlassian',
-	'canva.com': 'canva',
-	'sentry.io': 'sentry',
-	'api.stripe.com': 'stripe',
-	'stripe.com': 'stripe',
-	'api.spotify.com': 'spotify',
-	'discord.com': 'discord',
-	'discordapp.com': 'discord',
-	'github.com': 'github',
-	'googleapis.com': 'google',
-	'notion.so': 'notion',
-	'oauth2.googleapis.com': 'google',
-	'slack.com': 'slack',
-	'spotify.com': 'spotify',
-	'twitter.com': 'x',
-	'x.com': 'x',
-	'dropbox.com': 'dropbox',
-	'dropboxapi.com': 'dropbox',
-	'groupme.com': 'groupme',
-	'linkedin.com': 'linkedin',
-	'producthunt.com': 'producthunt',
-	'telegram.org': 'telegram',
-	'tesla.com': 'tesla',
-	'twitch.tv': 'twitch',
-	'xero.com': 'xero',
-	'zoom.us': 'zoom',
-}
-
-function isProviderIconId(value: string): value is ProviderIconId {
-	return (knownProviderIconIds as ReadonlyArray<string>).includes(value)
-}
-
-/**
- * Maps a connect-page provider key (`google-youtube-brand`) or authorize
- * host (`accounts.google.com`) onto an inline brand mark. `x` only matches
- * exact / `x-…` / twitter names so short keys like `example` stay unmatched.
- */
-export function resolveProviderIconId(input: {
-	providerKey?: string | null
-	host?: string | null
-}): ProviderIconId | null {
-	const key = input.providerKey?.trim().toLowerCase() ?? ''
-	if (isProviderIconId(key)) return key
-	if (key === 'twitter' || key.startsWith('x-')) return 'x'
-	if (key) {
-		for (const id of knownProviderIconIds) {
-			if (id === 'x') continue
-			if (key.startsWith(`${id}-`) || key.endsWith(`-${id}`)) return id
-		}
-	}
-	const host = input.host?.trim().toLowerCase() ?? ''
-	if (!host) return null
-	if (providerIconHosts[host]) return providerIconHosts[host]
-	for (const [known, id] of Object.entries(providerIconHosts)) {
-		if (host === known || host.endsWith(`.${known}`)) return id
-	}
-	return null
 }
 
 export function ProviderIcon(

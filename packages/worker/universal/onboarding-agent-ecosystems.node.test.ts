@@ -4,7 +4,6 @@ import {
 	hasSecondConnectedMcpClient,
 	listOnboardingGreyedSecondAgents,
 	onboardingConnectedChooserKinds,
-	onboardingSecondAgentDisableReason,
 	onboardingSecondAgentGreyedPresentation,
 	onboardingStep3EcosystemGroups,
 	resolveOnboardingStep3SelectedAgent,
@@ -85,12 +84,6 @@ test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {
 	]) {
 		expect(greyedIds).not.toContain(id)
 	}
-	expect(
-		onboardingSecondAgentDisableReason('claude-code', connected),
-	).toBeNull()
-	expect(onboardingSecondAgentDisableReason('chatgpt', connected)).toBe(
-		'connected',
-	)
 
 	const cloud = listOnboardingGreyedSecondAgents([
 		{ kind: 'cursor-cloud' },

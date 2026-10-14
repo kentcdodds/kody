@@ -5,7 +5,6 @@ import { type SessionInfo } from '#client/session.ts'
 import {
 	buildOnboardingPath,
 	onboardingPath,
-	resolveOnboardingLoginPath,
 	resolveOnboardingPendingVerificationPath,
 } from '#client/routes/onboarding-redirect.ts'
 import { resolveContinueVerificationFeedback } from '#client/routes/pending-verification-continue.ts'
@@ -87,13 +86,6 @@ test('email verification redirect helpers preserve safe targets and reject open 
 	)
 	expect(resolveOnboardingPendingVerificationPath('https://evil.example')).toBe(
 		'/pending-verification',
-	)
-
-	expect(resolveOnboardingLoginPath(null)).toBe(
-		'/login?redirectTo=%2Fonboarding',
-	)
-	expect(resolveOnboardingLoginPath(oauthResume)).toBe(
-		`/login?redirectTo=${encodeURIComponent(buildOnboardingPath(oauthResume))}`,
 	)
 
 	expect(buildPendingVerificationPath(null)).toBe('/pending-verification')

@@ -130,10 +130,6 @@ export function readProfilePackageFiltersFromHref(
 	)
 }
 
-export function readProfileSearchQueryFromHref(href: string) {
-	return readProfilePackageFiltersFromHref(href).query
-}
-
 export function profilePackageFiltersAreActive(filters: ProfilePackageFilters) {
 	return (
 		filters.visibility !== 'all' ||

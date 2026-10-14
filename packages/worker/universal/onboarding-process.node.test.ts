@@ -21,7 +21,6 @@ import {
 	onboardingWizardSteps,
 	parseOnboardingPathname,
 	portabilityGuideEntity,
-	portabilityGuideSlug,
 	remainingOnboardingWizardLabels,
 	resolveOnboardingFirstAgentKind,
 	resumeOnboardingWizardStep,
@@ -266,7 +265,6 @@ test('first-win and quick-example name the current wizard steps', () => {
 	expect(quickExample).toContain(giveAccess.label)
 	expect(quickExample).toContain(connectAgent.path)
 	expect(quickExample).toContain('first-win')
-	expect(portability).toContain(`id: ${portabilityGuideSlug}`)
 	expect(portability).toContain(portabilityGuideEntity)
 	expect(portability).toContain(secondAgent.path)
 	expect(connectYourAgent).toContain(giveAccess.path)

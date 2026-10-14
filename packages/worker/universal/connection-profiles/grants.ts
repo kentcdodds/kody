@@ -21,9 +21,6 @@ export type ConnectionProfileGrant = {
 	actions: Array<ConnectionProfileAction>
 }
 
-export type ConnectionProfileGrantString =
-	`${string}:${string}:${ConnectionProfileAction}`
-
 const actionSet: ReadonlySet<string> = new Set(connectionProfileActions)
 const v1ActionSet: ReadonlySet<string> = new Set(connectionProfileV1Actions)
 const resourceTypeSet: ReadonlySet<string> = new Set(
@@ -46,36 +43,6 @@ function isConnectionProfileV1Action(
 	value: unknown,
 ): value is ConnectionProfileV1Action {
 	return typeof value === 'string' && v1ActionSet.has(value)
-}
-
-export function formatConnectionProfileGrantString(input: {
-	resourceType: string
-	resourceId: string
-	action: ConnectionProfileAction
-}): ConnectionProfileGrantString {
-	return `${input.resourceType}:${input.resourceId}:${input.action}`
-}
-
-/**
- * Parse `type:id:action`. Resource ids may contain `:`; action is the last
- * segment and type is the first.
- */
-export function parseConnectionProfileGrantString(value: string): {
-	resourceType: string
-	resourceId: string
-	action: ConnectionProfileAction
-} | null {
-	const trimmed = value.trim()
-	const firstColon = trimmed.indexOf(':')
-	const lastColon = trimmed.lastIndexOf(':')
-	if (firstColon <= 0 || lastColon <= firstColon) return null
-	const resourceType = trimmed.slice(0, firstColon)
-	const resourceId = trimmed.slice(firstColon + 1, lastColon)
-	const action = trimmed.slice(lastColon + 1)
-	if (!resourceType || !resourceId || !isConnectionProfileAction(action)) {
-		return null
-	}
-	return { resourceType, resourceId, action }
 }
 
 /**

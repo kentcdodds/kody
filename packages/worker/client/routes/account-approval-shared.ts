@@ -56,25 +56,6 @@ export async function readJson<T>(response: Response) {
 	return (await response.json().catch(() => null)) as T | null
 }
 
-export function buildHostApprovalRequestUrl(
-	approvalUrl: string,
-	baseUrl = 'http://localhost',
-) {
-	const approvalPageUrl = new URL(approvalUrl, baseUrl)
-	const requestUrl = new URL(accountSecretsApiPath, baseUrl)
-	if (approvalPageUrl.pathname === '/connect/secrets') {
-		requestUrl.search = approvalPageUrl.search
-		return `${requestUrl.pathname}${requestUrl.search}`
-	}
-	const parsedPath = parseAccountSecretPath(approvalPageUrl.pathname)
-	if (!parsedPath) {
-		throw new Error('Invalid approval link.')
-	}
-	requestUrl.search = approvalPageUrl.search
-	requestUrl.searchParams.set('selected', parsedPath.id)
-	return `${requestUrl.pathname}${requestUrl.search}`
-}
-
 export async function submitApprovalRequest<
 	T extends { ok?: boolean; error?: string },
 >(action: ApprovalAction, requestUrl = accountSecretsApiPath) {

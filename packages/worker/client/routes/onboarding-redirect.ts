@@ -24,11 +24,3 @@ export function resolveOnboardingPendingVerificationPath(
 ) {
 	return buildPendingVerificationPath(redirectTo)
 }
-
-/**
- * Login return path that keeps the user on onboarding and, when present, the
- * nested safe redirectTo after they authenticate again.
- */
-export function resolveOnboardingLoginPath(redirectTo?: string | null) {
-	return buildAuthLink('/login', buildOnboardingPath(redirectTo))
-}

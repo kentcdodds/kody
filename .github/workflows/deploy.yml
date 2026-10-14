@@ -564,7 +564,11 @@ jobs:
           LEGACY_SYSTEM_EMAIL_DOMAINS: ${{ vars.LEGACY_SYSTEM_EMAIL_DOMAINS }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
-          PACKAGE_APP_ZONE_ID: ${{ vars.PACKAGE_APP_ZONE_ID }}
+          # Prefer environment secret when Kent (or CI) stored the zone id as a
+          # secret; fall back to a production environment variable. Empty vars
+          # alone left PACKAGE_APP_ZONE_ID blank in deploy logs (#3717 follow-up).
+          PACKAGE_APP_ZONE_ID:
+            ${{ secrets.PACKAGE_APP_ZONE_ID || vars.PACKAGE_APP_ZONE_ID }}
         run: |
           set -euo pipefail
           node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"

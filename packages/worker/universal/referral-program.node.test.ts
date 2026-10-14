@@ -1,12 +1,10 @@
 import { expect, test } from 'vitest'
 import {
-	addReferralStandardCreditDuration,
 	laterIsoTimestamp,
 	normalizeEmailForReferralFraud,
 	normalizeReferralCode,
 	parseReferralCode,
 	referralSharePath,
-	resolveEffectivePlanWithStandardOverlays,
 	resolveAdminPlanOverlay,
 	unixSecondsToIso,
 } from './referral-program.ts'
@@ -31,30 +29,6 @@ test('referral codes, share links, stacking, overlays, and fraud email collapse'
 	expect(referralSharePath('KentCDodds')).toBe('/signup?ref=kentcdodds')
 	expect(referralSharePath('x')).toBe('/signup')
 
-	expect(addReferralStandardCreditDuration({ now }).toISOString()).toBe(
-		'2026-10-07T12:00:00.000Z',
-	)
-	expect(
-		addReferralStandardCreditDuration({
-			now,
-			currentExpiresAt: '2026-11-01T00:00:00.000Z',
-		}).toISOString(),
-	).toBe('2026-12-01T00:00:00.000Z')
-	expect(
-		addReferralStandardCreditDuration({
-			now,
-			currentExpiresAt: '2026-08-01T00:00:00.000Z',
-			paidPeriodEndAt: '2026-10-01T00:00:00.000Z',
-		}).toISOString(),
-	).toBe('2026-10-31T00:00:00.000Z')
-	expect(
-		addReferralStandardCreditDuration({
-			now,
-			currentExpiresAt: '2026-12-01T00:00:00.000Z',
-			paidPeriodEndAt: '2026-10-01T00:00:00.000Z',
-		}).toISOString(),
-	).toBe('2026-12-31T00:00:00.000Z')
-
 	expect(
 		laterIsoTimestamp(
 			null,
@@ -63,31 +37,6 @@ test('referral codes, share links, stacking, overlays, and fraud email collapse'
 		),
 	).toBe('2026-02-01T00:00:00.000Z')
 	expect(laterIsoTimestamp('not-a-date', null)).toBeNull()
-
-	expect(
-		resolveEffectivePlanWithStandardOverlays(
-			'free',
-			null,
-			'2026-10-01T00:00:00.000Z',
-			now,
-		),
-	).toBe('pro')
-	expect(
-		resolveEffectivePlanWithStandardOverlays(
-			'free',
-			'pro',
-			'2026-10-01T00:00:00.000Z',
-			now,
-		),
-	).toBe('pro')
-	expect(
-		resolveEffectivePlanWithStandardOverlays(
-			'free',
-			null,
-			'2026-08-01T00:00:00.000Z',
-			now,
-		),
-	).toBe('free')
 
 	expect(normalizeEmailForReferralFraud('Ada+1@Gmail.com')).toBe(
 		'ada@gmail.com',
