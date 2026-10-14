@@ -477,7 +477,7 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && Boolean(data)}>
 				<AccountPageHeader
 					title="Organizations"
-					description="Each organization has its own repositories, secrets, and members. Switch between them from the header."
+					description="Each organization has its own repositories, secrets, and members. Open one to work in it, or switch from your avatar menu."
 					currentHref={href}
 					actions={
 						<a
