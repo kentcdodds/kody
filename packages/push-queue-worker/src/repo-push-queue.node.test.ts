@@ -252,6 +252,37 @@ test('busy Artifacts is retried inside the queue and never surfaces raw', async 
 	expect(response.headers.get(repoPushQueueAttemptsHeader)).toBe('3')
 })
 
+test('in-band HTTP 200 busy (sideband fatal pkt-line) is retried inside the queue', async () => {
+	const { store } = createMemoryStore()
+	let clock = 0
+	let calls = 0
+	const inBandBusy = '0025\x03artifacts_git_receive_pack_busy\n'
+	const queue = new RepoPushQueue({
+		store,
+		now: () => clock,
+		sleep: async (ms) => {
+			clock += ms
+		},
+		random: () => 0.5,
+		fetch: async () => {
+			calls += 1
+			if (calls < 4) {
+				return new Response(inBandBusy, {
+					status: 200,
+					headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
+				})
+			}
+			return new Response('000eunpack ok\n0000', { status: 200 })
+		},
+	})
+	const response = await queue.handle(pushRequest('pack'))
+	expect(response.status).toBe(200)
+	const text = await response.text()
+	expect(text).toBe('000eunpack ok\n0000')
+	expect(text).not.toContain('artifacts_git_receive_pack_busy')
+	expect(response.headers.get(repoPushQueueAttemptsHeader)).toBe('4')
+})
+
 test('non-fast-forward and other upstream rejections pass through unchanged', async () => {
 	const { store } = createMemoryStore()
 	const reportStatus = '0000ng refs/heads/main non-fast-forward\n'

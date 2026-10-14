@@ -8,6 +8,8 @@ import {
 	ReceivePackBodyTooLargeError,
 	ReceivePackWaitTimeoutError,
 	releaseReceivePackGate,
+	scanReceivePackResultForBusy,
+	sniffInBandReceivePackBusy,
 	waitOutReceivePackBusy,
 	withReceivePackGate,
 } from './artifacts-receive-pack-wait.ts'
@@ -128,6 +130,156 @@ test('busy wait does not retry unrelated upstream errors', async () => {
 	if (result.kind === 'response') {
 		expect(result.response.status).toBe(500)
 		expect(await result.response.text()).toBe('internal blowup')
+	}
+})
+
+function pktLine(payload: string | Uint8Array) {
+	const bytes =
+		typeof payload === 'string' ? new TextEncoder().encode(payload) : payload
+	const header = new TextEncoder().encode(
+		(bytes.length + 4).toString(16).padStart(4, '0'),
+	)
+	const merged = new Uint8Array(header.length + bytes.length)
+	merged.set(header)
+	merged.set(bytes, header.length)
+	return merged
+}
+
+function sideband(band: number, text: string) {
+	const body = new TextEncoder().encode(text)
+	const payload = new Uint8Array(body.length + 1)
+	payload[0] = band
+	payload.set(body, 1)
+	return pktLine(payload)
+}
+
+function concat(...parts: Array<Uint8Array>) {
+	const total = parts.reduce((sum, part) => sum + part.length, 0)
+	const merged = new Uint8Array(total)
+	let offset = 0
+	for (const part of parts) {
+		merged.set(part, offset)
+		offset += part.length
+	}
+	return merged
+}
+
+// Exact body observed from Artifacts in production for a contended push.
+const inBandBusyBody = sideband(3, 'artifacts_git_receive_pack_busy\n')
+
+function streamOf(bytes: Uint8Array, chunkSize: number) {
+	let offset = 0
+	return new ReadableStream<Uint8Array>({
+		pull(controller) {
+			if (offset >= bytes.length) {
+				controller.close()
+				return
+			}
+			controller.enqueue(bytes.slice(offset, offset + chunkSize))
+			offset += chunkSize
+		},
+	})
+}
+
+test('in-band busy body matches the observed 37-byte production result', () => {
+	expect(inBandBusyBody.length).toBe(37)
+	expect(new TextDecoder().decode(inBandBusyBody.subarray(0, 4))).toBe('0025')
+	expect(scanReceivePackResultForBusy(inBandBusyBody)).toEqual({
+		kind: 'busy',
+	})
+})
+
+test('pkt-line scan skips progress and ignores unrelated fatals and data', () => {
+	expect(
+		scanReceivePackResultForBusy(
+			concat(sideband(2, 'Resolving deltas\n'), inBandBusyBody),
+		),
+	).toEqual({ kind: 'busy' })
+	expect(
+		scanReceivePackResultForBusy(
+			pktLine('ERR artifacts_git_receive_pack_busy'),
+		),
+	).toEqual({ kind: 'busy' })
+	expect(scanReceivePackResultForBusy(sideband(3, 'disk full\n'))).toEqual({
+		kind: 'not-busy',
+	})
+	expect(
+		scanReceivePackResultForBusy(
+			sideband(1, 'artifacts_git_receive_pack_busy in a commit msg'),
+		),
+	).toEqual({ kind: 'not-busy' })
+	expect(scanReceivePackResultForBusy(inBandBusyBody.subarray(0, 20))).toEqual({
+		kind: 'need-more',
+	})
+	expect(
+		scanReceivePackResultForBusy(new TextEncoder().encode('0000')),
+	).toEqual({ kind: 'not-busy' })
+})
+
+test('busy wait retries HTTP 200 in-band busy results', async () => {
+	const success = concat(
+		sideband(2, 'progress\n'),
+		sideband(1, '000eunpack ok\n0019ok refs/heads/main\n0000'),
+		new TextEncoder().encode('0000'),
+	)
+	let attempts = 0
+	const result = await waitOutReceivePackBusy({
+		deadlineMs: Date.now() + 10_000,
+		backoffMs: [1],
+		sleep: async () => {},
+		send: async () => {
+			attempts += 1
+			const body = attempts < 3 ? inBandBusyBody : success
+			return new Response(streamOf(body, 7), {
+				status: 200,
+				headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
+			})
+		},
+		isBusy: () => false,
+		readBusyBody: async () => {
+			throw new Error('2xx bodies are sniffed, not read as error text')
+		},
+	})
+	expect(attempts).toBe(3)
+	expect(result.kind).toBe('response')
+	if (result.kind === 'response') {
+		expect(result.response.status).toBe(200)
+		expect(result.response.headers.get('Content-Type')).toBe(
+			'application/x-git-receive-pack-result',
+		)
+		expect(new Uint8Array(await result.response.arrayBuffer())).toEqual(success)
+	}
+})
+
+test('in-band busy until the budget expires returns timeout', async () => {
+	let now = 0
+	const result = await waitOutReceivePackBusy({
+		deadlineMs: 100,
+		backoffMs: [60],
+		random: () => 1,
+		now: () => now,
+		sleep: async (ms) => {
+			now += ms
+		},
+		send: async () => new Response(inBandBusyBody, { status: 200 }),
+		isBusy: () => false,
+		readBusyBody: async (response) => response.text(),
+	})
+	expect(result).toEqual({ kind: 'timeout' })
+})
+
+test('sniff preserves large non-busy bodies byte for byte', async () => {
+	const big = concat(
+		sideband(1, 'x'.repeat(60_000)),
+		sideband(1, 'y'.repeat(60_000)),
+		new TextEncoder().encode('0000'),
+	)
+	const sniffed = await sniffInBandReceivePackBusy(
+		new Response(streamOf(big, 4096), { status: 200 }),
+	)
+	expect(sniffed.busy).toBe(false)
+	if (!sniffed.busy) {
+		expect(new Uint8Array(await sniffed.response.arrayBuffer())).toEqual(big)
 	}
 })
 
