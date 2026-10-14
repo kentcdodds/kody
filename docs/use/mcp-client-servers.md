@@ -50,15 +50,19 @@ refresh token when the server's token response omits a new one, including across
 Durable Object restore when the OAuth client id is not in SQL yet. If the
 authorization server advertised refresh support but the token response had no
 refresh token, Status and `mcpServerList.error` stay visible while the server is
-still Connected so the access-token expiry is not a surprise. One successful
-Authorize + callback is enough: a replay of the callback URL settles with the
-tokens from the first exchange instead of asking you to approve again.
-`mcpServerReconnect` tries that refresh before minting a new authorization link.
-Packages that subscribe to `mcp.server.disconnected` (for example a Discord
-notifier on `package.json#kody.subscriptions`) receive the event when a
-previously connected server parks needing re-auth — including the durable
-“Authorization required / no refresh token” card — even if waiting or search
-notices the park first.
+still Connected so the access-token expiry is not a surprise. That warning is
+tied to the grant save that omitted the refresh token — not to a later empty
+token store after a failed refresh. Concurrent refresh attempts for the same
+rotating refresh token share one token-endpoint exchange. Re-authorize clears
+stale token blobs for that server so a leftover client-id key cannot shadow the
+new grant. One successful Authorize + callback is enough: a replay of the
+callback URL settles with the tokens from the first exchange instead of asking
+you to approve again. `mcpServerReconnect` tries that refresh before minting a
+new authorization link. Packages that subscribe to `mcp.server.disconnected`
+(for example a Discord notifier on `package.json#kody.subscriptions`) receive
+the event when a previously connected server parks needing re-auth — including
+the durable “Authorization required / no refresh token” card — even if waiting
+or search notices the park first.
 
 ## Lock a server to a package
 

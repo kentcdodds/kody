@@ -1,7 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
-import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
+import {
+	mcpOAuthRefreshGrantOmittedStorageKey,
+	mcpOAuthRefreshTokenStorageKey,
+} from './oauth-token-recovery.ts'
 
 type FakeServerRow = {
 	id: string
@@ -567,7 +570,10 @@ test('replayed unusable callback settles with stored tokens instead of reminting
 	connection.connectionState = 'authenticating'
 	connection.connectionError = noRefreshTokenMessage
 	manager.rows[0]!.auth_url = null
-	setTokens(connection, { access_token: 'fresh-at', refresh_token: 'fresh-rt' })
+	setTokens(connection, {
+		access_token: 'fresh-at',
+		refresh_token: 'fresh-rt',
+	})
 	setRecoveryRecord(values, noRefreshTokenMessage)
 	manager.callbackMatches = false
 	manager.connectBehavior = 'ready'
@@ -884,6 +890,12 @@ test('ready grant without a refresh token warns when the authorization server ad
 	setTokens(connection, { access_token: 'at-only' })
 	connection.options.transport.authProvider.storedDiscovery = discovery
 	values.set('/Kody/server-1/oauth_discovery', discovery)
+	// Stamp only when saveTokens recorded that this grant omitted RT — not
+	// whenever tokens() is empty while ready (e.g. after a refresh wipe).
+	values.set(mcpOAuthRefreshGrantOmittedStorageKey('server-1'), {
+		omitted: true,
+		at: '2026-10-14T08:00:00.000Z',
+	})
 
 	const snapshot = await hub.getSnapshot()
 	expect(snapshot.servers[0]?.state).toBe('ready')
@@ -901,6 +913,24 @@ test('ready grant without a refresh token warns when the authorization server ad
 	expect(afterRefresh.servers[0]?.lastError).toBeNull()
 	expect(afterRefresh.servers[0]?.error).toBeNull()
 	expect(connection.connectionError).toBeNull()
+})
+
+test('ready without a refresh token does not warn unless saveTokens marked the grant omitted', async () => {
+	const { values, hub, manager } = createHub()
+	const connection = await seedReadyHomeServer(hub, manager)
+	const discovery = {
+		grant_types_supported: ['authorization_code', 'refresh_token'],
+		scopes_supported: ['mcp'],
+	}
+	setTokens(connection, { access_token: 'at-only' })
+	connection.options.transport.authProvider.storedDiscovery = discovery
+	values.set('/Kody/server-1/oauth_discovery', discovery)
+
+	const snapshot = await hub.getSnapshot()
+	expect(snapshot.servers[0]?.state).toBe('ready')
+	expect(snapshot.servers[0]?.hasRefreshToken).toBe(false)
+	expect(snapshot.servers[0]?.lastError).toBeNull()
+	expect(snapshot.connectionEvents).toEqual([])
 })
 
 test('snapshot after a prior ready connection parks authenticating with a durable token-recovery lastError', async () => {
@@ -1369,7 +1399,10 @@ test('overlapping client changes run one at a time and the hub keeps the last on
 	expect((await hub.getSnapshot()).servers[0]?.oauthClientId).toBe('client-b')
 
 	const removed = await setOAuthClient(hub, null)
-	expect(removed).toMatchObject({ changed: true, previousClientId: 'client-b' })
+	expect(removed).toMatchObject({
+		changed: true,
+		previousClientId: 'client-b',
+	})
 	expect(values.has(preRegisteredClientKey)).toBe(false)
 	const registerCount = manager.registerCount
 	const again = await setOAuthClient(hub, null)

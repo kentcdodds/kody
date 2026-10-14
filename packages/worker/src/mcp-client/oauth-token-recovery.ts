@@ -6,6 +6,8 @@ import { type McpServerLastError } from './types.ts'
 
 export const mcpOAuthTokenRecoveryStoragePrefix = 'mcp-oauth-token-recovery/'
 export const mcpOAuthRefreshTokenStoragePrefix = 'mcp-oauth-refresh-token/'
+export const mcpOAuthRefreshGrantOmittedStoragePrefix =
+	'mcp-oauth-refresh-grant-omitted/'
 
 export type McpOAuthTokenPresence = {
 	hasAccessToken: boolean
@@ -18,6 +20,44 @@ export function mcpOAuthTokenRecoveryStorageKey(serverId: string) {
 
 export function mcpOAuthRefreshTokenStorageKey(serverId: string) {
 	return `${mcpOAuthRefreshTokenStoragePrefix}${serverId}`
+}
+
+export function mcpOAuthRefreshGrantOmittedStorageKey(serverId: string) {
+	return `${mcpOAuthRefreshGrantOmittedStoragePrefix}${serverId}`
+}
+
+/**
+ * Prefer the live client identity when several `/token` blobs share a server
+ * prefix (for example a leftover DCR id beside a CIMD URL). A refresh token
+ * under the preferred id wins; otherwise any blob that still has a refresh
+ * token; otherwise the preferred id even without tokens; otherwise the first
+ * sibling.
+ */
+export function preferMcpOAuthStoredClientId(input: {
+	preferredClientId: string | null
+	siblings: ReadonlyArray<{ clientId: string; hasRefreshToken: boolean }>
+}): string | null {
+	if (input.siblings.length === 0) {
+		return input.preferredClientId
+	}
+	const preferred = input.preferredClientId?.trim() || null
+	if (preferred) {
+		const preferredWithRefresh = input.siblings.find(
+			(sibling) => sibling.clientId === preferred && sibling.hasRefreshToken,
+		)
+		if (preferredWithRefresh) return preferredWithRefresh.clientId
+	}
+	const anyWithRefresh = input.siblings.find(
+		(sibling) => sibling.hasRefreshToken,
+	)
+	if (anyWithRefresh) return anyWithRefresh.clientId
+	if (
+		preferred &&
+		input.siblings.some((sibling) => sibling.clientId === preferred)
+	) {
+		return preferred
+	}
+	return input.siblings[0]?.clientId ?? preferred
 }
 
 export function readMcpOAuthRefreshToken(tokens: unknown): string | null {

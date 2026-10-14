@@ -8,6 +8,7 @@ import {
 	mcpOAuthAttemptVerifiedStorageKey,
 } from './oauth-attempt.ts'
 import {
+	mcpOAuthRefreshGrantOmittedStorageKey,
 	mcpOAuthRefreshTokenStorageKey,
 	mcpOAuthTokenRecoveryStorageKey,
 } from './oauth-token-recovery.ts'
@@ -99,6 +100,7 @@ export function mcpServerSidecarStorageKeys(serverId: string) {
 		mcpLegacyHandshakeStorageKey(serverId),
 		mcpOAuthTokenRecoveryStorageKey(serverId),
 		mcpOAuthRefreshTokenStorageKey(serverId),
+		mcpOAuthRefreshGrantOmittedStorageKey(serverId),
 		mcpPreRegisteredOAuthClientStorageKey(serverId),
 		mcpOAuthAttemptStorageKey(serverId),
 		mcpOAuthAttemptVerifiedStorageKey(serverId),

@@ -9,6 +9,7 @@ import {
 	mcpOAuthDiscoveryAdvertisesRefresh,
 	mcpOAuthTokenRecoveryStorageKey,
 	mergeMcpOAuthTokens,
+	preferMcpOAuthStoredClientId,
 	readMcpOAuthTokenPresence,
 	restoreReadableMcpOAuthTokens,
 	shouldAttemptMcpOAuthRefresh,
@@ -53,6 +54,30 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 			clientName: 'Kody',
 			serverId: 'home',
 			key: '/Kody/home/https://kody.codes/oauth/client-metadata.json/token',
+		}),
+	).toBe('https://kody.codes/oauth/client-metadata.json')
+	expect(
+		preferMcpOAuthStoredClientId({
+			preferredClientId: 'https://kody.codes/oauth/client-metadata.json',
+			siblings: [
+				{ clientId: 'dcr-old', hasRefreshToken: false },
+				{
+					clientId: 'https://kody.codes/oauth/client-metadata.json',
+					hasRefreshToken: true,
+				},
+			],
+		}),
+	).toBe('https://kody.codes/oauth/client-metadata.json')
+	expect(
+		preferMcpOAuthStoredClientId({
+			preferredClientId: 'dcr-stale',
+			siblings: [
+				{ clientId: 'dcr-stale', hasRefreshToken: false },
+				{
+					clientId: 'https://kody.codes/oauth/client-metadata.json',
+					hasRefreshToken: true,
+				},
+			],
 		}),
 	).toBe('https://kody.codes/oauth/client-metadata.json')
 

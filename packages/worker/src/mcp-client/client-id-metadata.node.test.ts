@@ -20,7 +20,10 @@ import {
 	McpOAuthFailedError,
 	mcpOAuthFailedCode,
 } from './oauth-issuer-endpoints.ts'
-import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
+import {
+	mcpOAuthRefreshGrantOmittedStorageKey,
+	mcpOAuthRefreshTokenStorageKey,
+} from './oauth-token-recovery.ts'
 
 const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
 const tokenKey = '/Kody/server-home/client-1/token'
@@ -143,6 +146,144 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 	expect(values.get(tokenKey)).toBeUndefined()
 	expect(values.get(refreshKey)).toBeUndefined()
 	expect(await restored.tokens()).toBeUndefined()
+})
+
+test('CIMD grant stores under the metadata URL and drops a leftover DCR sibling so tokens() sees the refresh token', async () => {
+	const { storage, values } = createMemoryStorage()
+	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
+	const dcrKey = '/Kody/server-home/dcr-stale/token'
+	const cimdKey = `/Kody/server-home/${cimdClientId}/token`
+	values.set(dcrKey, bearer('stale-at'))
+
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://beeper.example/mcp',
+		clientId: cimdClientId,
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'beeper',
+	}
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => live,
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = 'dcr-stale'
+	await provider.saveDiscoveryState({
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			grant_types_supported: ['authorization_code', 'refresh_token'],
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+		},
+	} as never)
+
+	const pending = buildMcpOAuthAttemptIdentity({
+		serverId: live.serverId,
+		serverUrl: live.serverUrl,
+		clientId: cimdClientId,
+		ownerOrgId: live.ownerOrgId,
+		personId: live.personId,
+		discovery: {
+			authorizationServerUrl: 'https://auth.example',
+			authorizationServerMetadata: {
+				issuer: 'https://auth.example',
+				authorization_endpoint: 'https://auth.example/authorize',
+				token_endpoint: 'https://auth.example/token',
+				response_types_supported: ['code'],
+				code_challenge_methods_supported: ['S256'],
+			},
+		},
+	})
+	await writeMcpOAuthAttemptIdentity(storage, pending!)
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	await provider.saveTokens(bearer('grant-at', 'grant-rt'))
+
+	expect(values.get(dcrKey)).toBeUndefined()
+	expect(values.get(cimdKey)).toMatchObject({
+		access_token: 'grant-at',
+		refresh_token: 'grant-rt',
+	})
+	expect(values.get(refreshKey)).toEqual({ refresh_token: 'grant-rt' })
+	expect(values.get(mcpOAuthRefreshGrantOmittedStorageKey('server-home'))).toBe(
+		undefined,
+	)
+	expect(provider.clientId).toBe(cimdClientId)
+	expect(await provider.tokens()).toMatchObject({
+		access_token: 'grant-at',
+		refresh_token: 'grant-rt',
+	})
+})
+
+test('re-authorize redirect clears stale tokens so a new grant cannot read an old rotating refresh token', async () => {
+	const { storage, values } = createMemoryStorage()
+	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
+	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
+		resolveLiveServerIdentity: async () => ({
+			serverId: 'server-home',
+			serverUrl: 'https://beeper.example/mcp',
+			clientId: cimdClientId,
+			ownerOrgId: 'org-1',
+			personId: 'person-1',
+			name: 'beeper',
+		}),
+	})
+	provider.serverId = 'server-home'
+	provider.clientId = cimdClientId
+	await provider.saveDiscoveryState({
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+		},
+	} as never)
+	await provider.saveTokens(bearer('old-at', 'old-rt'))
+	values.set(
+		'/Kody/server-home/dcr-stale/token',
+		bearer('stale-at', 'stale-rt'),
+	)
+
+	const authUrl = new URL('https://auth.example/authorize')
+	authUrl.searchParams.set('client_id', cimdClientId)
+	authUrl.searchParams.set('state', 'nonce.server-home')
+	authUrl.searchParams.set('code_challenge', 'challenge')
+	await provider.redirectToAuthorization(authUrl)
+
+	expect(values.get(`/Kody/server-home/${cimdClientId}/token`)).toBeUndefined()
+	expect(values.get('/Kody/server-home/dcr-stale/token')).toBeUndefined()
+	expect(values.get(refreshKey)).toBeUndefined()
+	expect(await provider.tokens()).toBeUndefined()
+})
+
+test('saveTokens records an omitted advertised refresh grant and clears it when a refresh token arrives', async () => {
+	const { storage, values } = createMemoryStorage()
+	const provider = makeProvider(storage, 'client-1')
+	const omitKey = mcpOAuthRefreshGrantOmittedStorageKey('server-home')
+	await provider.saveDiscoveryState({
+		authorizationServerUrl: 'https://auth.example',
+		authorizationServerMetadata: {
+			issuer: 'https://auth.example',
+			authorization_endpoint: 'https://auth.example/authorize',
+			token_endpoint: 'https://auth.example/token',
+			grant_types_supported: ['authorization_code', 'refresh_token'],
+			response_types_supported: ['code'],
+			code_challenge_methods_supported: ['S256'],
+		},
+	} as never)
+
+	await provider.saveTokens(bearer('access-only'))
+	expect(values.get(omitKey)).toMatchObject({ omitted: true })
+	expect(values.get(tokenKey)).toEqual(bearer('access-only'))
+	expect(values.get(refreshKey)).toBeUndefined()
+
+	await provider.saveTokens(bearer('with-rt', 'rt-1'))
+	expect(values.get(omitKey)).toBeUndefined()
+	expect(values.get(refreshKey)).toEqual({ refresh_token: 'rt-1' })
 })
 
 test('OAuth invalidate infers a missing client id, drops leftover token blobs, and keeps a newer rotated grant', async () => {
