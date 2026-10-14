@@ -83,7 +83,11 @@ export async function resolveCredentialApproval(
 	scope: PackageMappingScope,
 	proposal: ParsedCredentialProposal,
 ): Promise<ResolvedCredentialApproval> {
-	const resolved = await resolveMappingChanges(scope, proposal.changes)
+	const resolved = await resolveMappingChanges(
+		scope,
+		proposal.changes,
+		proposal.sender,
+	)
 	const enable = resolveTriggerEnables(scope, proposal.enable, proposal.sender)
 	const errors = [...proposal.errors]
 	const emailWithoutSender = emailTopicsTurningOn(resolved, enable)
@@ -216,7 +220,8 @@ export async function approveCredentialProposal(input: {
 		// Something changed between this resolve and the write.
 		if (
 			error instanceof MappingWriteRefused &&
-			error.code === 'webhook_other_enabler'
+			(error.code === 'webhook_other_enabler' ||
+				error.code === 'email_sender_conflict')
 		) {
 			return {
 				status: 'conflict',

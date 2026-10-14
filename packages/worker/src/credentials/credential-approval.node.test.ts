@@ -670,3 +670,273 @@ test('approving an inbound-email subscription stores the sender and refuses a li
 	).toBe('invalid')
 	expect(await t.enablementCount()).toBe(2)
 })
+
+test('approving a sender mapping writes that sender enablement, not an older one', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+				},
+			},
+		},
+	})
+	const credA = await t.storeKey('resend-a', 'resend')
+	const credB = await t.storeKey('resend-b', 'resend')
+	const credNext = await t.storeKey('resend-next', 'resend')
+	const enabler = String(t.people.bea.personId)
+	const insertSender = (senderValue: string, now: string) =>
+		insertEnablement({
+			db: t.db,
+			now,
+			enablement: {
+				orgId: t.acmeId,
+				packageId: t.savedPackage.id,
+				triggerKind: 'subscription',
+				triggerName: 'email.message.received',
+				instanceId: t.savedPackage.id,
+				enablerUserId: enabler,
+				origin: 'enabled',
+				senderKind: 'address',
+				senderValue,
+			},
+		})
+	const senderA = await insertSender(
+		'a@shop.example',
+		'2026-10-13T00:00:00.000Z',
+	)
+	const senderB = await insertSender(
+		'b@shop.example',
+		'2026-10-13T00:01:00.000Z',
+	)
+	const writeMapping = (enablementId: string, credentialId: string) =>
+		buildWriteCredentialMappingStatement({
+			db: t.db,
+			orgId: t.acmeId,
+			packageId: t.savedPackage.id,
+			needKey: 'mail',
+			target: { target: 'enablement', enablementId, personId: enabler },
+			credentialIds: [credentialId],
+			updatedByUserId: enabler,
+			now: '2026-10-13T00:00:00.000Z',
+		}).run()
+	await writeMapping(senderA.id, credA)
+	await writeMapping(senderB.id, credB)
+	const proposal = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [
+					{
+						target: {
+							type: 'trigger',
+							trigger: {
+								kind: 'subscription',
+								name: 'email.message.received',
+							},
+						},
+						needKey: 'mail',
+						credentials: [{ id: credNext }],
+					},
+				],
+				sender: { kind: 'address', value: 'b@shop.example' },
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const scope = await t.scopeFor('bea', 'owner')
+	const reviewed = await resolveCredentialApproval(scope, proposal)
+	expect(reviewed.view.canApprove).toBe(true)
+	expect(reviewed.view.changes[0]).toMatchObject({
+		willEnable: false,
+		before: [expect.objectContaining({ id: credB })],
+		after: [expect.objectContaining({ id: credNext })],
+	})
+	expect(
+		(
+			await approveCredentialProposal({
+				scope,
+				proposal,
+				fingerprint: reviewed.view.fingerprint,
+			})
+		).status,
+	).toBe('approved')
+	const rows = await t.db
+		.prepare(
+			`SELECT enablement_id, credential_ids_json
+			 FROM credential_mappings
+			 WHERE target = 'enablement'
+			 ORDER BY enablement_id`,
+		)
+		.all<{ enablement_id: string; credential_ids_json: string }>()
+	const stored = (rows.results ?? []).map((row) => ({
+		enablementId: row.enablement_id,
+		credentialIds: JSON.parse(row.credential_ids_json) as Array<string>,
+	}))
+	expect(stored).toEqual(
+		[
+			{ enablementId: senderA.id, credentialIds: [credA] },
+			{ enablementId: senderB.id, credentialIds: [credNext] },
+		].sort((left, right) =>
+			left.enablementId.localeCompare(right.enablementId),
+		),
+	)
+	expect(await t.enablementCount()).toBe(2)
+})
+
+test('a concurrent approval of the same sender reuses that enablement', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+				},
+			},
+		},
+	})
+	const cred = await t.storeKey('resend-prod', 'resend')
+	const sender = { kind: 'address' as const, value: 'receipts@shop.example' }
+	const proposal = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [
+					{
+						target: {
+							type: 'trigger',
+							trigger: {
+								kind: 'subscription',
+								name: 'email.message.received',
+							},
+						},
+						needKey: 'mail',
+						credentials: [{ id: cred }],
+					},
+				],
+				sender,
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const scope = await t.scopeFor('bea', 'owner')
+	const reviewed = await resolveCredentialApproval(scope, proposal)
+	expect(reviewed.view.canApprove).toBe(true)
+	expect(reviewed.view.changes[0]!.willEnable).toBe(true)
+	let raced = false
+	const racingDb = new Proxy(t.db, {
+		get(target, property) {
+			if (property === 'batch') {
+				return async (statements: Array<D1PreparedStatement>) => {
+					if (!raced) {
+						raced = true
+						await insertEnablement({
+							db: target,
+							enablement: {
+								orgId: t.acmeId,
+								packageId: t.savedPackage.id,
+								triggerKind: 'subscription',
+								triggerName: 'email.message.received',
+								instanceId: t.savedPackage.id,
+								enablerUserId: String(t.people.bea.personId),
+								origin: 'enabled',
+								senderKind: sender.kind,
+								senderValue: sender.value,
+							},
+						})
+					}
+					return await target.batch(statements)
+				}
+			}
+			const value = Reflect.get(target, property) as unknown
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	const outcome = await approveCredentialProposal({
+		scope: { ...scope, env: { ...scope.env, APP_DB: racingDb } },
+		proposal,
+		fingerprint: reviewed.view.fingerprint,
+	})
+	expect(outcome.status).toBe('approved')
+	expect(await t.enablementCount()).toBe(1)
+	const mapping = await t.db
+		.prepare(
+			`SELECT enablement_id, credential_ids_json FROM credential_mappings
+			 WHERE target = 'enablement'`,
+		)
+		.first<{ enablement_id: string; credential_ids_json: string }>()
+	const live = await t.db
+		.prepare(`SELECT id FROM enablements`)
+		.first<{ id: string }>()
+	expect(mapping).toEqual({
+		enablement_id: live!.id,
+		credential_ids_json: JSON.stringify([cred]),
+	})
+})
+
+test('approving a sender someone else already runs is a conflict', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+				},
+			},
+		},
+	})
+	await insertEnablement({
+		db: t.db,
+		enablement: {
+			orgId: t.acmeId,
+			packageId: t.savedPackage.id,
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: t.savedPackage.id,
+			enablerUserId: String(t.people.bea.personId),
+			origin: 'enabled',
+			senderKind: 'address',
+			senderValue: 'receipts@shop.example',
+		},
+	})
+	const proposal = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'subscription', name: 'email.message.received' }],
+				sender: { kind: 'address', value: 'receipts@shop.example' },
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const scope = await t.scopeFor('ann', 'member')
+	const reviewed = await resolveCredentialApproval(scope, proposal)
+	expect(reviewed.view.canApprove).toBe(true)
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal,
+		fingerprint: reviewed.view.fingerprint,
+	})
+	expect(outcome.status).toBe('conflict')
+	if (outcome.status !== 'conflict') return
+	expect(outcome.message).toContain('another person')
+	expect(await t.enablementCount()).toBe(1)
+	const live = await t.db
+		.prepare(`SELECT enabler_user_id FROM enablements`)
+		.first<{ enabler_user_id: string }>()
+	expect(live!.enabler_user_id).toBe(String(t.people.bea.personId))
+})

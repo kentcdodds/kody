@@ -6,6 +6,7 @@ import {
 	buildInsertEnablementStatement,
 	buildInsertWebhookEnablementStatement,
 	disableEnablement,
+	EmailSenderEnablementConflict,
 	insertEnablement,
 	isWebhookOneLiveConflict,
 	listEnablementsForInstance,
@@ -241,4 +242,51 @@ test('an enablement stores an inbound sender rule', async () => {
 		senderKind: 'address',
 		senderValue: 'receipts@shop.example',
 	})
+})
+
+test('a second live email sender enablement adopts the same enabler or conflicts', async () => {
+	const db = setup()
+	const sender = {
+		orgId: 'org-1',
+		packageId: 'pkg-1',
+		triggerKind: 'subscription' as const,
+		triggerName: 'email.message.received',
+		instanceId: 'pkg-1',
+		origin: 'enabled' as const,
+		senderKind: 'address' as const,
+		senderValue: 'receipts@shop.example',
+	}
+	const first = await insertEnablement({
+		db,
+		enablement: { ...sender, enablerUserId: 'user-1' },
+	})
+	const again = await insertEnablement({
+		db,
+		enablement: { ...sender, enablerUserId: 'user-1' },
+	})
+	expect(again.id).toBe(first.id)
+	await expect(
+		insertEnablement({
+			db,
+			enablement: { ...sender, enablerUserId: 'user-2' },
+		}),
+	).rejects.toBeInstanceOf(EmailSenderEnablementConflict)
+	const other = await insertEnablement({
+		db,
+		enablement: {
+			...sender,
+			enablerUserId: 'user-1',
+			senderValue: 'other@shop.example',
+		},
+	})
+	expect(other.id).not.toBe(first.id)
+	expect(
+		await listEnablementsForInstance({
+			db,
+			orgId: 'org-1',
+			triggerKind: 'subscription',
+			instanceId: 'pkg-1',
+			triggerName: 'email.message.received',
+		}),
+	).toHaveLength(2)
 })

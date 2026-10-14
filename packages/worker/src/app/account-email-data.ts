@@ -1,6 +1,10 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { authorize } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -253,7 +257,7 @@ async function loadUsage(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
 	userId: OwnerId
-	email: string
+	email: string | null
 }): Promise<AccountEmailUsage> {
 	const now = new Date()
 	const entitlement = await getUserEntitlement(input.db, {
@@ -573,7 +577,10 @@ export async function loadAccountEmailData(input: {
 			stableUserId: input.user.mcpUser.userId,
 		}))
 
-	if (!emailVerified) {
+	// Personal inboxes stay behind account email verification. A team mailbox
+	// is the org's: a viewer with email:read sees it even when their own
+	// address is unverified.
+	if (!emailVerified && (await isPersonalOrg(input.env.APP_DB, userId))) {
 		return emptyVerifiedShell({
 			user: input.user,
 			env: input.env,
@@ -604,7 +611,7 @@ export async function loadAccountEmailData(input: {
 			db: input.env.APP_DB,
 			env: input.env,
 			userId,
-			email: input.user.email,
+			email: entitlementEmailForOwner({ user: input.user.mcpUser }, userId),
 		}),
 		selectedMessageId
 			? loadSelectedMessage({

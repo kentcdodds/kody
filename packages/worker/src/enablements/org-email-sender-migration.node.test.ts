@@ -65,6 +65,13 @@ test('0138 tags live personal-org email subscriptions and leaves team orgs alone
 		state: 'on',
 	})
 	insertEnablement(db, {
+		id: 'personal-received-later',
+		orgId: 'person-ada',
+		triggerKind: 'subscription',
+		triggerName: 'email.message.received',
+		state: 'on',
+	})
+	insertEnablement(db, {
 		id: 'personal-quarantined',
 		orgId: 'person-ada',
 		triggerKind: 'subscription',
@@ -150,9 +157,55 @@ test('0138 tags live personal-org email subscriptions and leaves team orgs alone
 			sender_value: null,
 		},
 		{
+			id: 'personal-received-later',
+			sender_kind: null,
+			sender_value: null,
+		},
+		{
 			id: 'team-received',
 			sender_kind: null,
 			sender_value: null,
 		},
 	])
+})
+
+test('0138 allows one live email sender rule per org, instance, topic, and sender', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, '0138-org-email-sender-enablements.sql')
+	applyMigrationFile(db, '0138-org-email-sender-enablements.sql')
+	const insert = (
+		id: string,
+		senderValue: string,
+		enabler: string,
+		triggerName = 'email.message.received',
+	) => {
+		db.prepare(
+			`INSERT INTO enablements (
+				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+				enabler_user_id, state, origin, sender_kind, sender_value,
+				enabled_at, updated_at
+			) VALUES (?, 'org', 'pkg', 'subscription', ?, 'pkg',
+				?, 'on', 'enabled', 'address', ?, ?, ?)`,
+		).run(
+			id,
+			triggerName,
+			enabler,
+			senderValue,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+	}
+	insert('one', 'receipts@shop.example', 'person-a')
+	expect(() => insert('two', 'receipts@shop.example', 'person-b')).toThrow(
+		/enablements_email_sender_one_live|UNIQUE constraint failed/i,
+	)
+	insert('other-sender', 'other@shop.example', 'person-a')
+	insert(
+		'other-topic',
+		'receipts@shop.example',
+		'person-a',
+		'email.message.quarantined',
+	)
+	db.prepare(`UPDATE enablements SET state = 'off' WHERE id = 'one'`).run()
+	insert('after-off', 'receipts@shop.example', 'person-b')
 })

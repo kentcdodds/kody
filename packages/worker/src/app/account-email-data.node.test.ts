@@ -1,16 +1,20 @@
 import { DatabaseSync } from 'node:sqlite'
 import {
 	ownerIdFromStored,
+	personalOrgId,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
+import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { ensureOrgLimitOverridesTestTable } from '#worker/users-test-schema.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const messageRecord = {
@@ -299,4 +303,189 @@ test('loadAccountEmailData refuses a member without email:read', async () => {
 		}),
 	).rejects.toMatchObject({ permission: 'email:read' })
 	expect(mocks.listOwnerEmailMessagesPage).not.toHaveBeenCalled()
+})
+
+async function usersAndOrgsDb() {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureOrgsTestSchema(db)
+	await ensureOrgLimitOverridesTestTable(db)
+	await db
+		.prepare(
+			`CREATE TABLE users (
+				stable_user_id TEXT PRIMARY KEY,
+				email TEXT,
+				deleted_at TEXT,
+				deleting_at TEXT
+			)`,
+		)
+		.run()
+	return db
+}
+
+test('loadAccountEmailData hides a personal inbox until the account email is verified', async () => {
+	vi.mocked(isAccountEmailVerified).mockResolvedValueOnce(false)
+	mocks.listOwnerEmailMessagesPage.mockClear()
+	const db = await usersAndOrgsDb()
+	const orgId = personalOrgId(personIdFromStored('stable-user-1'))
+	await db
+		.prepare(
+			`INSERT INTO users (stable_user_id, email, deleted_at, deleting_at)
+			 VALUES (?, 'user@example.com', NULL, NULL)`,
+		)
+		.bind(orgId)
+		.run()
+	const meter = createInMemoryUserMeterEnv()
+	const result = await loadAccountEmailData({
+		env: {
+			APP_DB: db,
+			APP_BASE_URL: 'https://example.com',
+			COOKIE_SECRET: 'secret',
+			...meter.env,
+		} as Env,
+		request: new Request('https://example.com/account/email.json'),
+		user: { ...authenticatedUser, emailVerified: false },
+	})
+	expect(result.emailVerified).toBe(false)
+	expect(result.messages).toEqual([])
+	expect(result.usage).toBeNull()
+	expect(mocks.listOwnerEmailMessagesPage).not.toHaveBeenCalled()
+})
+
+test('loadAccountEmailData shows a team inbox to an unverified owner with email:read', async () => {
+	vi.mocked(isAccountEmailVerified).mockResolvedValueOnce(false)
+	mocks.classifyInboundEmailSender.mockResolvedValue({
+		kind: 'unverified',
+		reason: 'From address was not authenticated.',
+	})
+	mocks.listOwnerEmailMessagesPage.mockResolvedValueOnce({
+		total: 1,
+		messages: [messageRecord],
+	})
+	const db = await usersAndOrgsDb()
+	const orgId = ownerIdFromStored('a'.repeat(64))
+	const viewerId = personIdFromStored('b'.repeat(64))
+	const now = new Date(0).toISOString()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, created_at, updated_at)
+			 VALUES (?, 'acme', ?, ?)`,
+		)
+		.bind(orgId, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (stable_user_id, email, deleted_at, deleting_at)
+			 VALUES (?, 'ada@example.com', NULL, NULL)`,
+		)
+		.bind(viewerId)
+		.run()
+	const meter = createInMemoryUserMeterEnv()
+	const result = await loadAccountEmailData({
+		env: {
+			APP_DB: db,
+			APP_BASE_URL: 'https://example.com',
+			COOKIE_SECRET: 'secret',
+			...meter.env,
+		} as Env,
+		request: new Request('https://example.com/account/email.json'),
+		user: {
+			...authenticatedUser,
+			email: 'ada@example.com',
+			emailVerified: false,
+			username: 'ada',
+			mcpUser: {
+				...authenticatedUser.mcpUser,
+				userId: viewerId,
+				email: 'ada@example.com',
+				username: 'ada',
+			},
+			request: deriveRequestContext({
+				user: { userId: viewerId, username: 'ada' },
+				source: { kind: 'session' },
+				orgBinding: { org: { id: orgId, slug: 'acme' }, role: 'owner' },
+			}),
+		},
+	})
+	expect(result.emailVerified).toBe(true)
+	expect(result.verificationMessage).toBeNull()
+	expect(result.messages).toEqual([
+		expect.objectContaining({ id: 'msg-1', subject: 'Hello from sender' }),
+	])
+	expect(mocks.listOwnerEmailMessagesPage).toHaveBeenCalledWith(
+		expect.objectContaining({ ownerId: orgId }),
+	)
+})
+
+test('loadAccountEmailData shows a paid team plan instead of the viewer email free plan', async () => {
+	const actual = await vi.importActual<typeof EntitlementService>(
+		'#worker/entitlements/service.ts',
+	)
+	vi.mocked(getUserEntitlement).mockImplementation(
+		actual.getUserEntitlement as typeof getUserEntitlement,
+	)
+	mocks.classifyInboundEmailSender.mockResolvedValue({
+		kind: 'unverified',
+		reason: 'From address was not authenticated.',
+	})
+	mocks.listOwnerEmailMessagesPage.mockResolvedValueOnce({
+		total: 0,
+		messages: [],
+	})
+	const db = await usersAndOrgsDb()
+	const orgId = ownerIdFromStored('c'.repeat(64))
+	const viewerId = personIdFromStored('d'.repeat(64))
+	const now = new Date(0).toISOString()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES (?, 'acme', 'pro', ?, ?)`,
+		)
+		.bind(orgId, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (stable_user_id, email, deleted_at, deleting_at)
+			 VALUES (?, 'ada@example.com', NULL, NULL)`,
+		)
+		.bind(viewerId)
+		.run()
+	const meter = createInMemoryUserMeterEnv()
+	const result = await loadAccountEmailData({
+		env: {
+			APP_DB: db,
+			APP_BASE_URL: 'https://example.com',
+			COOKIE_SECRET: 'secret',
+			...meter.env,
+		} as Env,
+		request: new Request('https://example.com/account/email.json'),
+		user: {
+			...authenticatedUser,
+			email: 'ada@example.com',
+			emailVerified: true,
+			username: 'ada',
+			mcpUser: {
+				...authenticatedUser.mcpUser,
+				userId: viewerId,
+				email: 'ada@example.com',
+				username: 'ada',
+			},
+			request: deriveRequestContext({
+				user: { userId: viewerId, username: 'ada' },
+				source: { kind: 'session' },
+				orgBinding: { org: { id: orgId, slug: 'acme' }, role: 'owner' },
+			}),
+		},
+	})
+	expect(getUserEntitlement).toHaveBeenCalledWith(
+		db,
+		expect.objectContaining({ userId: orgId, email: null }),
+	)
+	expect(result.usage).toMatchObject({
+		plan: 'pro',
+		sends_today: { limit: 500 },
+		receives_today: { limit: 2_000 },
+		stored_messages: { limit: 25_000 },
+		max_message_bytes: 768 * 1024,
+	})
 })

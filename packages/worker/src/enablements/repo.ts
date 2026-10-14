@@ -229,6 +229,67 @@ export function isWebhookOneLiveConflict(error: unknown) {
 	return false
 }
 
+/** True for the unique-index error of a second live inbound-email sender rule. */
+export function isEmailSenderOneLiveConflict(error: unknown) {
+	let current = error
+	while (current instanceof Error) {
+		if (/enablements_email_sender_one_live/i.test(current.message)) return true
+		current = current.cause
+	}
+	return false
+}
+
+export const emailSenderEnablementConflictMessage =
+	'This sender already has a live email enablement for another person. Only one live rule runs for a sender.'
+
+/** Another person already holds the live rule for this sender. */
+export class EmailSenderEnablementConflict extends Error {
+	constructor(message = emailSenderEnablementConflictMessage) {
+		super(message)
+		this.name = 'EmailSenderEnablementConflict'
+	}
+}
+
+/** The live inbound-email enablement for one sender, if one exists. */
+export async function findLiveEmailSenderEnablement(input: {
+	db: D1Database
+	orgId: string
+	instanceId: string
+	triggerName: string
+	senderKind: EnablementSenderKind
+	senderValue: string | null
+}): Promise<EnablementRecord | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT ${enablementColumns} FROM enablements
+			 WHERE org_id = ? AND instance_id = ? AND trigger_kind = 'subscription'
+			   AND trigger_name = ? AND sender_kind = ?
+			   AND IFNULL(sender_value, '') = IFNULL(?, '')
+			   AND state <> 'off'
+			 LIMIT 1`,
+		)
+		.bind(
+			input.orgId,
+			input.instanceId,
+			input.triggerName,
+			input.senderKind,
+			input.senderValue,
+		)
+		.first<EnablementRow>()
+	return row ? toRecord(row) : null
+}
+
+function sameEnablerAndSender(
+	existing: EnablementRecord,
+	enablement: NewEnablement,
+) {
+	return (
+		String(existing.enablerUserId) === String(enablement.enablerUserId) &&
+		existing.senderKind === enablement.senderKind &&
+		(existing.senderValue ?? '') === (enablement.senderValue ?? '')
+	)
+}
+
 export async function insertEnablement(input: {
 	db: D1Database
 	enablement: NewEnablement
@@ -240,7 +301,25 @@ export async function insertEnablement(input: {
 		enablement: input.enablement,
 		now,
 	})
-	await statement.run()
+	try {
+		await statement.run()
+	} catch (error) {
+		if (!isEmailSenderOneLiveConflict(error) || !input.enablement.senderKind) {
+			throw error
+		}
+		const existing = await findLiveEmailSenderEnablement({
+			db: input.db,
+			orgId: input.enablement.orgId,
+			instanceId: input.enablement.instanceId,
+			triggerName: input.enablement.triggerName,
+			senderKind: input.enablement.senderKind,
+			senderValue: input.enablement.senderValue ?? null,
+		})
+		if (existing && sameEnablerAndSender(existing, input.enablement)) {
+			return existing
+		}
+		throw new EmailSenderEnablementConflict()
+	}
 	const record = await getEnablementById({
 		db: input.db,
 		orgId: input.enablement.orgId,

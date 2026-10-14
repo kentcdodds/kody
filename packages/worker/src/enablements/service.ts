@@ -36,12 +36,19 @@ import {
 	buildInsertEnablementStatement,
 	buildInsertWebhookEnablementStatement,
 	disableEnablement,
+	emailSenderEnablementConflictMessage,
+	findLiveEmailSenderEnablement,
 	getEnablementById,
+	isEmailSenderOneLiveConflict,
 	isWebhookOneLiveConflict,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 } from './repo.ts'
-import { type EnablementRecord, type EnablementTriggerKind } from './types.ts'
+import {
+	type EnablementRecord,
+	type EnablementSenderKind,
+	type EnablementTriggerKind,
+} from './types.ts'
 
 export type TriggerEnablementErrorCode =
 	| 'trigger_unknown'
@@ -49,6 +56,7 @@ export type TriggerEnablementErrorCode =
 	| 'webhook_other_enabler'
 	| 'webhook_approval_required'
 	| 'email_approval_required'
+	| 'email_sender_conflict'
 
 /** A trigger the caller cannot turn on, with a code mapping surfaces can show. */
 export class TriggerEnablementError extends McpCallerError {
@@ -250,6 +258,10 @@ export type NewTriggerEnablementPlan = {
 	orgId: string
 	instanceId: string
 	enablementId: string
+	/** Set for an inbound-email insert so a unique-index race can re-read it. */
+	enablerUserId?: string
+	senderKind?: EnablementSenderKind | null
+	senderValue?: string | null
 	/**
 	 * Inserts the caller's enablement; run it with `runNewEnablementPlans`
 	 * (a webhook insert writes nothing when another enabler got there first).
@@ -257,6 +269,17 @@ export type NewTriggerEnablementPlan = {
 	statement: D1PreparedStatement
 	/** Writes that land in the same batch, just before the insert. */
 	prepareStatements: () => Promise<Array<D1PreparedStatement>>
+}
+
+/**
+ * The email-sender insert lost to a row this same enabler already holds.
+ * The batch rolled back. The caller plans again and writes against that row.
+ */
+export class EmailSenderInsertAdopted extends Error {
+	constructor() {
+		super('An email sender enablement already exists for this enabler.')
+		this.name = 'EmailSenderInsertAdopted'
+	}
 }
 
 export type TriggerEnablementPlan =
@@ -274,8 +297,10 @@ function webhookOtherEnablerError(triggerName: string) {
  * Runs new-enablement inserts in one batch, between `before` and `after`
  * (related writes such as credential mappings). A webhook insert that lost a
  * race with another enabler rolls the whole batch back; the caller gets
- * `webhook_other_enabler` when another live enablement holds the webhook,
- * and the batch error otherwise.
+ * `webhook_other_enabler` when another live enablement holds the webhook.
+ * An inbound-email sender insert that loses its unique index rolls back too:
+ * `EmailSenderInsertAdopted` when the same enabler already holds the row,
+ * `email_sender_conflict` when someone else does.
  */
 export async function runNewEnablementPlans(input: {
 	db: D1Database
@@ -304,8 +329,58 @@ export async function runNewEnablementPlans(input: {
 			const firstWebhook = plans.find((plan) => plan.kind === 'webhook')
 			if (firstWebhook) throw webhookOtherEnablerError(firstWebhook.triggerName)
 		}
+		if (isEmailSenderOneLiveConflict(error)) {
+			const race = await classifyEmailSenderRace(db, plans)
+			if (race === 'adopt') throw new EmailSenderInsertAdopted()
+			if (race === 'conflict') {
+				throw new TriggerEnablementError(
+					'email_sender_conflict',
+					emailSenderEnablementConflictMessage,
+				)
+			}
+		}
 		throw error
 	}
+}
+
+/**
+ * After a unique failure, the winner's row is committed and this batch is
+ * not. Same enabler adopts that row; anyone else is a conflict.
+ */
+async function classifyEmailSenderRace(
+	db: D1Database,
+	plans: ReadonlyArray<NewTriggerEnablementPlan>,
+): Promise<'adopt' | 'conflict' | 'unrelated'> {
+	const emailPlans = plans.filter(
+		(plan) =>
+			plan.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(plan.triggerName) &&
+			plan.senderKind &&
+			plan.enablerUserId,
+	)
+	if (emailPlans.length === 0) return 'unrelated'
+	let adopt = false
+	for (const plan of emailPlans) {
+		const senderKind = plan.senderKind
+		const enablerUserId = plan.enablerUserId
+		if (!senderKind || !enablerUserId) continue
+		const existing = await findLiveEmailSenderEnablement({
+			db,
+			orgId: plan.orgId,
+			instanceId: plan.instanceId,
+			triggerName: plan.triggerName,
+			senderKind,
+			senderValue: plan.senderValue ?? null,
+		})
+		if (!existing) continue
+		const same =
+			String(existing.enablerUserId) === enablerUserId &&
+			existing.senderKind === senderKind &&
+			(existing.senderValue ?? '') === (plan.senderValue ?? '')
+		if (!same) return 'conflict'
+		adopt = true
+	}
+	return adopt ? 'adopt' : 'conflict'
 }
 
 async function findWebhookRaceLoser(
@@ -484,6 +559,9 @@ export async function planTriggerEnablementForCaller(input: {
 		orgId,
 		instanceId: trigger.instanceId,
 		enablementId: id,
+		enablerUserId: String(actor.userId),
+		senderKind: storedSender?.kind ?? null,
+		senderValue: storedSender?.value ?? null,
 		statement,
 		prepareStatements,
 	}

@@ -520,6 +520,15 @@ Input:
 	}>
 	/** Triggers to turn on with no mapping (a webhook with no needs). */
 	enable?: Array<{ kind: CredentialTriggerKind; name: string }>
+	/**
+	 * Sender an inbound-email subscription runs for. Required when `enable`
+	 * or a trigger mapping turns on `email.message.received` or
+	 * `email.message.quarantined`. `any_authenticated` omits `value`.
+	 */
+	sender?: {
+		kind: 'member' | 'address' | 'domain' | 'any_authenticated'
+		value?: string | null
+	}
 	reason?: string
 }
 ```

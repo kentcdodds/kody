@@ -27,6 +27,7 @@ import {
 	parseCredentialApprovalQuery,
 	type CredentialMappingProposalChange,
 	type CredentialPick,
+	type CredentialProposalSender,
 } from '#universal/credential-contracts.ts'
 
 const picksSchema = z
@@ -126,6 +127,20 @@ const viewSchema = z.object({
 	errors: z.array(z.string()),
 })
 
+function proposalSender(
+	sender:
+		| {
+				kind: (typeof credentialProposalSenderKinds)[number]
+				value?: string | null
+		  }
+		| undefined,
+): CredentialProposalSender | null {
+	if (!sender) return null
+	if (sender.kind === 'any_authenticated')
+		return { kind: sender.kind, value: null }
+	return { kind: sender.kind, value: sender.value?.trim() || null }
+}
+
 function toPicks(value: CredentialPick | Array<CredentialPick>) {
 	return Array.isArray(value) ? value : [value]
 }
@@ -173,7 +188,7 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 		name: 'credentialMappingPropose',
 		orgPermission: 'none',
 		description:
-			'Propose which credentials a package uses: org default mappings (defaults), your own defaults (mine), per-trigger mappings for your instance of a cron job, subscription, or webhook (triggers), and triggers to turn on with no mapping (enable). Never writes a mapping. Returns an approval URL to send to the person; nothing changes until they review it and click Approve, which applies every change at once and turns on every trigger it maps or enables. A webhook URL must be minted before it can be approved; minting alone does not turn it on. view.canApprove false lists what to fix first in view.changes[].error, view.enable[].error, and view.errors (unknown need or trigger, unminted webhook, missing or ambiguous credential with a createUrl, kind or provider mismatch, org defaults without package:write). Once the person approves, credentialTriggerPickSet can set those trigger picks again later. Needs package:execute on the package.',
+			'Propose which credentials a package uses: org default mappings (defaults), your own defaults (mine), per-trigger mappings for your instance of a cron job, subscription, or webhook (triggers), and triggers to turn on with no mapping (enable). Never writes a mapping. Returns an approval URL to send to the person; nothing changes until they review it and click Approve, which applies every change at once and turns on every trigger it maps or enables. A webhook URL must be minted before it can be approved; minting alone does not turn it on. email.message.received and email.message.quarantined run only for a sender: pass sender (kind member, address, domain, or any_authenticated, and value except for any_authenticated) so the approval link names who it runs for. view.canApprove false lists what to fix first in view.changes[].error, view.enable[].error, and view.errors (unknown need or trigger, unminted webhook, missing or ambiguous credential with a createUrl, kind or provider mismatch, org defaults without package:write). Once the person approves, credentialTriggerPickSet can set those trigger picks again later. Needs package:execute on the package.',
 		keywords: [
 			'credential',
 			'credentials',
@@ -239,6 +254,21 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 					.max(500)
 					.optional()
 					.describe('Shown to the approver as an untrusted note.'),
+				sender: z
+					.object({
+						kind: z.enum(credentialProposalSenderKinds),
+						value: z
+							.string()
+							.nullable()
+							.optional()
+							.describe(
+								'Person id, email address, or bare domain. Omit for any_authenticated.',
+							),
+					})
+					.optional()
+					.describe(
+						'Sender an inbound-email subscription runs for. Required when enabling email.message.received or email.message.quarantined.',
+					),
 			})
 			.refine((input) => Boolean(input.packageId ?? input.kodyId), {
 				message: 'Provide packageId or kodyId.',
@@ -288,12 +318,14 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 					'Package not found in this org, or you lack package:execute on it.',
 				)
 			}
+			const sender = proposalSender(args.sender)
 			const href = buildCredentialApprovalHref({
 				username,
 				kodyId: scope.savedPackage.kodyId,
 				changes,
 				enable,
 				reason: args.reason ?? null,
+				sender,
 			})
 			// Resolve what the page will read back, so the view matches it.
 			const proposal = parseCredentialApprovalQuery(
@@ -319,6 +351,7 @@ export const credentialMappingProposeCapability = defineDomainCapability(
 							changes,
 							enable,
 							reason: args.reason ?? null,
+							sender,
 							proposalId,
 						})
 					: href,

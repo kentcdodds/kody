@@ -138,6 +138,16 @@ export async function loadPackageMappingScope(input: {
 		}),
 	])
 	const ownEnablementIds = triggers.flatMap((trigger) => {
+		// One person can hold several inbound-email enablements. Load every
+		// one of theirs so a sender-specific edit sees that sender's mapping.
+		if (
+			trigger.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(trigger.name)
+		) {
+			return trigger.enablements
+				.filter((enablement) => String(enablement.enablerUserId) === actorId)
+				.map((enablement) => enablement.id)
+		}
 		const { enablement, otherEnabler } = viewerEnablement(trigger, actorId)
 		return enablement && !otherEnabler ? [enablement.id] : []
 	})
