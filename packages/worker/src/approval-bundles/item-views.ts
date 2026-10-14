@@ -92,10 +92,6 @@ function orgSlug(viewer: ApprovalViewer) {
 	return viewer.request.org.slug ?? ''
 }
 
-function absolute(viewer: ApprovalViewer, path: string) {
-	return new URL(path, viewer.baseUrl).toString()
-}
-
 function packageView(
 	viewer: ApprovalViewer,
 	savedPackage: SavedPackageRecord,
@@ -112,7 +108,7 @@ function packageView(
 }
 
 /** The package when the viewer may approve its publishes (`package:publish`). */
-export async function loadPublishablePackage(
+async function loadPublishablePackage(
 	viewer: ApprovalViewer,
 	packageId: string,
 ): Promise<SavedPackageRecord | null> {
@@ -609,11 +605,4 @@ export async function loadApprovalItemView(
 			throw new Error(`Unknown approval item: ${JSON.stringify(exhaustive)}`)
 		}
 	}
-}
-
-export function approvalItemAbsoluteHref(
-	viewer: ApprovalViewer,
-	path: string | null,
-) {
-	return path ? absolute(viewer, path) : null
 }

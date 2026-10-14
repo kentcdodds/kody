@@ -171,6 +171,21 @@ export function parseOrgUsagePath(pathname: string): { slug: string } | null {
 	return isOrganizationSlug(slug) ? { slug } : null
 }
 
+/**
+ * `/@acme/-/approvals/:bundleId` and its `.json`: an approval bundle made for
+ * one person in the organization.
+ */
+export function parseOrgApprovalBundlePath(
+	pathname: string,
+): { slug: string; bundleId: string } | null {
+	const match = /^\/@([^/]+)\/-\/approvals\/([^/.]+)(?:\.json)?\/?$/.exec(
+		pathname,
+	)
+	const slug = match?.[1] ?? ''
+	const bundleId = match?.[2] ?? ''
+	return isOrganizationSlug(slug) && bundleId ? { slug, bundleId } : null
+}
+
 export function orgUsagePath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/usage`
 }
@@ -339,6 +354,7 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgUsagePath(pathname)?.slug ??
+		parseOrgApprovalBundlePath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
 		parseOrgOverviewPath(pathname)?.slug ??
 		null

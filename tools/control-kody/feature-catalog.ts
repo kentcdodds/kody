@@ -146,6 +146,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/repos/:repoId/icon/:iconCommit',
 			'/@:username/:kodyId/approve-publish',
 			'/@:orgSlug/-/repositories',
+			'/@:orgSlug/-/approvals/:bundleId',
 		],
 		apis: [
 			'/account/packages.json',
@@ -154,6 +155,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/packages/:packageId/files.json',
 			'/profiles/:username/packages/:kodyId/approve-publish.json',
 			'/@:username/:kodyId/raw/:ref(/*relativePath)',
+			'/@:orgSlug/-/approvals/:bundleId.json',
 		],
 	},
 	{

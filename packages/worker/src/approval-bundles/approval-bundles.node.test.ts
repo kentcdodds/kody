@@ -1,0 +1,368 @@
+import { expect, test, vi } from 'vitest'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { decideApprovalBundleItem } from '#app/approval-bundle-decisions.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { approvalBundleCreateCapability } from '#mcp/capabilities/packages/approval-bundle-create.ts'
+import { approvalPendingListCapability } from '#mcp/capabilities/packages/approval-pending-list.ts'
+import { credentialMappingProposeCapability } from '#mcp/capabilities/secrets/credential-mapping-propose.ts'
+import { enqueuePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
+import {
+	mappingFixtureBaseUrl,
+	setupPackageCredentialMappingFixture,
+	type MappingFixturePerson,
+} from '#worker/test-support/package-credential-mapping-fixture.ts'
+import {
+	approvalItemsAwaitingDecision,
+	type ApprovalBundleView,
+} from '#universal/approval-bundles.ts'
+import { type ApprovalViewer } from './item-views.ts'
+import { deleteApprovalBundlesForMember } from './repo.ts'
+import { createApprovalBundle, loadApprovalBundleView } from './service.ts'
+
+const mocks = vi.hoisted(() => ({ loadPackageManifestBySourceId: vi.fn() }))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
+}))
+
+async function setup() {
+	const t = await setupPackageCredentialMappingFixture({
+		loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
+	})
+	await t.storeKey('team-slack', 'slack')
+	await t.db
+		.prepare(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit,
+				manifest_path, source_root, created_at, updated_at
+			) VALUES (?, ?, 'package', ?, ?, 'commit-1', 'package.json', '/', ?, ?)`,
+		)
+		.bind(
+			t.savedPackage.sourceId,
+			t.acmeId,
+			t.savedPackage.id,
+			`repo-${t.savedPackage.id}`,
+			'2026-10-13T00:00:00.000Z',
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	const agent = (person: MappingFixturePerson, packageId?: string) => ({
+		env: t.env,
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: mappingFixtureBaseUrl,
+			oauthClientId: 'client-a',
+			user: {
+				userId: t.people[person].personId,
+				email: `${person}@example.com`,
+				displayName: person,
+			},
+			orgBinding: {
+				org: { id: t.acmeId, slug: 'acme-clients' },
+				role: person === 'bea' ? 'owner' : 'member',
+			},
+			...(packageId
+				? {
+						storageContext: {
+							sessionId: null,
+							appId: null,
+							packageId,
+							storageId: null,
+						},
+					}
+				: {}),
+		}),
+	})
+	const viewerFor = (person: MappingFixturePerson): ApprovalViewer => ({
+		env: t.env,
+		baseUrl: mappingFixtureBaseUrl,
+		request: t.requestAs(person, person === 'bea' ? 'owner' : 'member'),
+	})
+	const proposeDailyChat = () =>
+		credentialMappingProposeCapability.handler(
+			{
+				kodyId: 'digest',
+				triggers: [
+					{
+						kind: 'cron',
+						name: 'daily',
+						credentials: { chat: { name: 'team-slack' } },
+					},
+				],
+				reason: 'Daily digest needs Slack.',
+			},
+			agent('bea'),
+		)
+	const pausePublish = () =>
+		enqueuePackageApprovalRequest(t.db, {
+			packageId: t.savedPackage.id,
+			ownerUserId: t.acmeId,
+			reason: 'credential_needs_changed',
+			pendingCommit: 'e650a38aaaaaaaa',
+			baseCommit: 'commit-1',
+			details: {
+				changes: [
+					{
+						change: 'added',
+						key: 'dns',
+						from: null,
+						after: { kind: 'secret', provider: 'nextdns', multiple: false },
+					},
+				],
+			},
+			requestedByUserId: t.people.bea.stableUserId,
+		})
+	const user = (person: MappingFixturePerson) =>
+		({
+			userId: 0,
+			username: person,
+			mcpUser: { userId: t.people[person].personId, username: person },
+		}) as unknown as AuthenticatedAppUser
+	const decide = (input: {
+		person?: MappingFixturePerson
+		bundleId: string
+		action: 'approve' | 'deny'
+		item: string
+		fingerprint: string
+	}) => {
+		const person = input.person ?? 'bea'
+		return decideApprovalBundleItem({
+			viewer: viewerFor(person),
+			request: new Request(`${mappingFixtureBaseUrl}/approvals`),
+			user: user(person),
+			bundleId: input.bundleId,
+			decision: {
+				action: input.action,
+				item: input.item,
+				fingerprint: input.fingerprint,
+			},
+		})
+	}
+	const bundleAudits = async () => {
+		const rows = await t.env.AUDIT_DB.prepare(
+			`SELECT action, result, credential_kind, details_json
+			FROM org_audit_events
+			WHERE resource_type = 'approval_bundle' ORDER BY rowid`,
+		).all<{
+			action: string
+			result: string
+			credential_kind: string | null
+			details_json: string | null
+		}>()
+		return (rows.results ?? []).map((row) => ({
+			action: row.action,
+			result: row.result,
+			credentialKind: row.credential_kind,
+			details: row.details_json ? JSON.parse(row.details_json) : null,
+		}))
+	}
+	return {
+		...t,
+		agent,
+		viewerFor,
+		proposeDailyChat,
+		pausePublish,
+		decide,
+		bundleAudits,
+	}
+}
+
+function bundleItems(view: ApprovalBundleView) {
+	return view.groups.flatMap((group) => group.items)
+}
+
+test('an agent bundles pending approvals, and approving from the bundle applies the proposal', async () => {
+	const t = await setup()
+	await t.proposeDailyChat()
+	const request = await t.pausePublish()
+
+	const listed = await approvalPendingListCapability.handler({}, t.agent('bea'))
+	expect(listed.items.map((item) => item.type).sort()).toEqual([
+		'credential-picks',
+		'publish',
+	])
+	const publish = listed.items.find((item) => item.type === 'publish')!
+	expect(publish.key).toBe(`publish:${request.id}`)
+	expect(publish.package?.kodyId).toBe('digest')
+	expect(publish.grants).toEqual([
+		expect.objectContaining({
+			change: 'added',
+			label: 'dns',
+			provider: 'nextdns',
+			kind: 'Key',
+		}),
+	])
+
+	const created = await approvalBundleCreateCapability.handler(
+		{ note: 'Approve the credential format updates.' },
+		t.agent('bea'),
+	)
+	expect(created.url).toBe(
+		`${mappingFixtureBaseUrl}/@acme-clients/-/approvals/${created.bundleId}`,
+	)
+	expect(created.items).toHaveLength(2)
+
+	const loaded = await loadApprovalBundleView({
+		viewer: t.viewerFor('bea'),
+		bundleId: created.bundleId,
+	})
+	if (!loaded.ok) throw new Error('bundle did not load')
+	expect(loaded.view.bundle.note).toBe('Approve the credential format updates.')
+	expect(loaded.view.bundle.createdVia).toBe('an MCP client')
+	expect(loaded.view.groups).toHaveLength(1)
+	expect(approvalItemsAwaitingDecision(loaded.view)).toHaveLength(2)
+
+	const picks = bundleItems(loaded.view).find(
+		(item) => item.type === 'credential-picks',
+	)!
+	const approved = await t.decide({
+		bundleId: created.bundleId,
+		action: 'approve',
+		item: picks.key,
+		fingerprint: picks.fingerprint!,
+	})
+	expect(approved.body).toMatchObject({
+		ok: true,
+		item: { key: picks.key, status: 'approved' },
+	})
+	const mapping = await t.db
+		.prepare(
+			`SELECT credential_ids_json FROM credential_mappings
+			WHERE target = 'enablement' AND need_key = 'chat'`,
+		)
+		.first<{ credential_ids_json: string }>()
+	expect(JSON.parse(mapping!.credential_ids_json)).toHaveLength(1)
+
+	const again = await t.decide({
+		bundleId: created.bundleId,
+		action: 'approve',
+		item: picks.key,
+		fingerprint: picks.fingerprint!,
+	})
+	expect(again).toMatchObject({ ok: false, status: 409 })
+
+	expect(await t.bundleAudits()).toEqual([
+		expect.objectContaining({
+			action: 'approval.bundle.create',
+			result: 'success',
+			credentialKind: 'mcp-oauth',
+		}),
+		expect.objectContaining({
+			action: 'approval.bundle.approve',
+			result: 'success',
+			credentialKind: 'session',
+			details: expect.objectContaining({ item: picks.key }),
+		}),
+	])
+})
+
+test('denying a paused publish drops it and records the denial', async () => {
+	const t = await setup()
+	const request = await t.pausePublish()
+	await t.pausePublish()
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		items: [{ type: 'publish', requestId: request.id }],
+	})
+	const [item] = created.items
+	const stale = await t.decide({
+		bundleId: created.bundle.id,
+		action: 'deny',
+		item: item!.key,
+		fingerprint: 'something-else',
+	})
+	expect(stale).toMatchObject({ ok: false, status: 409 })
+
+	const denied = await t.decide({
+		bundleId: created.bundle.id,
+		action: 'deny',
+		item: item!.key,
+		fingerprint: item!.fingerprint!,
+	})
+	expect(denied.body).toMatchObject({
+		ok: true,
+		item: { status: 'denied', canApprove: false },
+	})
+	const row = await t.db
+		.prepare(`SELECT status FROM package_approval_requests WHERE id = ?`)
+		.bind(request.id)
+		.first<{ status: string }>()
+	expect(row?.status).toBe('superseded')
+	expect((await t.bundleAudits()).map((event) => event.action)).toEqual([
+		'approval.bundle.create',
+		'approval.bundle.deny',
+	])
+})
+
+test('only the person a bundle was made for can open or decide it', async () => {
+	const t = await setup()
+	await t.pausePublish()
+	const created = await createApprovalBundle({ viewer: t.viewerFor('bea') })
+	expect(
+		await loadApprovalBundleView({
+			viewer: t.viewerFor('ann'),
+			bundleId: created.bundle.id,
+		}),
+	).toEqual({ ok: false, reason: 'not-found' })
+	const [item] = created.items
+	expect(
+		await t.decide({
+			person: 'ann',
+			bundleId: created.bundle.id,
+			action: 'approve',
+			item: item!.key,
+			fingerprint: item!.fingerprint!,
+		}),
+	).toMatchObject({ ok: false, status: 404 })
+})
+
+test('members without package:publish see no paused publishes to bundle', async () => {
+	const t = await setup()
+	await t.pausePublish()
+	const listed = await approvalPendingListCapability.handler(
+		{ types: ['publish'] },
+		t.agent('ann'),
+	)
+	expect(listed.items).toEqual([])
+	await expect(
+		approvalBundleCreateCapability.handler(
+			{ types: ['publish'] },
+			t.agent('ann'),
+		),
+	).rejects.toThrow('Nothing is waiting on you to approve.')
+})
+
+test('package code cannot create approval bundles', async () => {
+	const t = await setup()
+	await t.pausePublish()
+	await expect(
+		approvalBundleCreateCapability.handler(
+			{},
+			t.agent('bea', t.savedPackage.id),
+		),
+	).rejects.toThrow('Package code cannot create approval bundles.')
+})
+
+test('bundles expire after 30 days and leave with the member', async () => {
+	const t = await setup()
+	await t.pausePublish()
+	const created = await createApprovalBundle({ viewer: t.viewerFor('bea') })
+	expect(
+		await loadApprovalBundleView({
+			viewer: t.viewerFor('bea'),
+			bundleId: created.bundle.id,
+			now: new Date(Date.parse(created.bundle.createdAt) + 31 * 86_400_000),
+		}),
+	).toEqual({ ok: false, reason: 'expired' })
+	await deleteApprovalBundlesForMember({
+		db: t.db,
+		orgId: t.acmeId,
+		personId: t.people.bea.stableUserId,
+	})
+	expect(
+		await loadApprovalBundleView({
+			viewer: t.viewerFor('bea'),
+			bundleId: created.bundle.id,
+		}),
+	).toEqual({ ok: false, reason: 'not-found' })
+})

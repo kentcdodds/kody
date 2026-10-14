@@ -1,6 +1,5 @@
 // remix-skill: agent-prefilled approval bundle (`/@org/-/approvals/:bundleId`).
 import { type Handle, type RemixNode, css } from 'remix/component'
-import { createMatcher } from 'remix/route-pattern/match'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
@@ -12,6 +11,7 @@ import {
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	approvalBundleApiPath,
+	approvalItemsAwaitingDecision,
 	approvalItemStatusLabel,
 	approveAllLabel,
 	type ApprovalBundleDecisionResponse,
@@ -22,7 +22,7 @@ import {
 	type ApprovalItemStatus,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
-import { routes } from '#universal/routes.ts'
+import { parseOrgApprovalBundlePath } from '#universal/org-pages.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -60,15 +60,13 @@ const listCss = {
 	gap: spacing.sm,
 }
 
-const bundleMatcher = createMatcher(routes.orgApprovalBundle.pattern)
-
 type BundlePath = { orgSlug: string; bundleId: string }
 
 function readBundlePath(href: string): BundlePath | null {
-	const match = bundleMatcher.match(new URL(href, 'http://localhost'))
-	if (!match) return null
-	const { orgSlug, bundleId } = match.params
-	return orgSlug && bundleId ? { orgSlug, bundleId } : null
+	const parsed = parseOrgApprovalBundlePath(
+		new URL(href, 'http://localhost').pathname,
+	)
+	return parsed ? { orgSlug: parsed.slug, bundleId: parsed.bundleId } : null
 }
 
 function loginRedirect(href: string) {
@@ -255,11 +253,7 @@ export function ApprovalBundleRoute(handle: Handle) {
 	}
 
 	function awaitingApproval(view: ApprovalBundleView) {
-		return currentGroups(view).flatMap((group) =>
-			group.items.filter(
-				(item) => item.status === 'pending' && item.canApprove,
-			),
-		)
+		return approvalItemsAwaitingDecision({ groups: currentGroups(view) })
 	}
 
 	async function decide(

@@ -34,7 +34,7 @@ export const approvalBundleMaxItems = 100
 /** Bundles stop opening after this long. */
 export const approvalBundleTtlMs = 30 * 24 * 60 * 60 * 1000
 
-export function approvalItemRefId(ref: ApprovalItemRef): string {
+function approvalItemRefId(ref: ApprovalItemRef): string {
 	switch (ref.type) {
 		case 'publish':
 			return ref.requestId
