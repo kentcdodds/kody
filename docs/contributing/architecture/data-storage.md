@@ -1558,7 +1558,7 @@ on write unless a migration backfills existing rows.
   that agent proposes again. A person's rows in an org are hard-deleted when
   they leave it, and with their account.
 - `approval_bundles` and `approval_bundle_decisions`
-  (`0140-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
+  (`0142-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
   store agent-prefilled approval pages (`approvalBundleCreate`). A bundle row
   names the person it is for (`person_user_id`), the agent credential that made
   it (`agent_credential_kind`, `agent_credential_id`), an untrusted note, and
