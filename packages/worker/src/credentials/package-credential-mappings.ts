@@ -11,6 +11,7 @@ import {
 	listDeclaredTriggers,
 	type DeclaredTrigger,
 } from '#worker/enablements/service.ts'
+import { canonicalizeEnablementSender } from '#worker/enablements/sender-match.ts'
 import { type EnablementRecord } from '#worker/enablements/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -62,9 +63,13 @@ function sameSender(
 	enablement: EnablementRecord,
 	sender: CredentialProposalSender,
 ) {
+	const canonical = canonicalizeEnablementSender({
+		senderKind: sender.kind,
+		senderValue: sender.value,
+	})
 	return (
-		enablement.senderKind === sender.kind &&
-		(enablement.senderValue ?? null) === (sender.value ?? null)
+		enablement.senderKind === canonical.senderKind &&
+		(enablement.senderValue ?? null) === (canonical.senderValue ?? null)
 	)
 }
 

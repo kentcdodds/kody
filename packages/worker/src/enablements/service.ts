@@ -44,6 +44,7 @@ import {
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 } from './repo.ts'
+import { canonicalizeEnablementSender } from './sender-match.ts'
 import {
 	type EnablementRecord,
 	type EnablementSenderKind,
@@ -364,19 +365,24 @@ async function classifyEmailSenderRace(
 		const senderKind = plan.senderKind
 		const enablerUserId = plan.enablerUserId
 		if (!senderKind || !enablerUserId) continue
+		const sender = canonicalizeEnablementSender({
+			senderKind,
+			senderValue: plan.senderValue,
+		})
+		if (!sender.senderKind) continue
 		const existing = await findLiveEmailSenderEnablement({
 			db,
 			orgId: plan.orgId,
 			instanceId: plan.instanceId,
 			triggerName: plan.triggerName,
-			senderKind,
-			senderValue: plan.senderValue ?? null,
+			senderKind: sender.senderKind,
+			senderValue: sender.senderValue,
 		})
 		if (!existing) continue
 		const same =
 			String(existing.enablerUserId) === enablerUserId &&
-			existing.senderKind === senderKind &&
-			(existing.senderValue ?? '') === (plan.senderValue ?? '')
+			existing.senderKind === sender.senderKind &&
+			(existing.senderValue ?? '') === (sender.senderValue ?? '')
 		if (!same) return 'conflict'
 		adopt = true
 	}
@@ -435,9 +441,13 @@ function senderMatches(
 	row: EnablementRecord,
 	sender: CredentialProposalSender,
 ) {
+	const canonical = canonicalizeEnablementSender({
+		senderKind: sender.kind,
+		senderValue: sender.value,
+	})
 	return (
-		row.senderKind === sender.kind &&
-		(row.senderValue ?? null) === (sender.value ?? null)
+		row.senderKind === canonical.senderKind &&
+		(row.senderValue ?? null) === (canonical.senderValue ?? null)
 	)
 }
 
@@ -520,7 +530,25 @@ export async function planTriggerEnablementForCaller(input: {
 				}),
 			)
 		}
-		storedSender = input.sender
+		const canonical = canonicalizeEnablementSender({
+			senderKind: input.sender.kind,
+			senderValue: input.sender.value,
+		})
+		if (!canonical.senderKind) {
+			throw new TriggerEnablementError(
+				'email_approval_required',
+				emailApprovalRequiredMessage({
+					baseUrl: input.baseUrl,
+					orgSlug: input.request.org.slug,
+					kodyId: savedPackage.kodyId,
+					topic: trigger.triggerName,
+				}),
+			)
+		}
+		storedSender = {
+			kind: canonical.senderKind,
+			value: canonical.senderValue,
+		}
 	}
 	const ownRows = (
 		await listEnablementsForInstance({

@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { canonicalizeEnablementSender } from './sender-match.ts'
 import {
 	enablementPausedReasons,
 	enablementTriggerKinds,
@@ -124,6 +125,10 @@ export function buildInsertEnablementStatement(input: {
 	now: string
 }): { id: string; statement: D1PreparedStatement } {
 	const id = input.enablement.id ?? crypto.randomUUID()
+	const sender = canonicalizeEnablementSender({
+		senderKind: input.enablement.senderKind,
+		senderValue: input.enablement.senderValue,
+	})
 	const statement = input.db
 		.prepare(
 			`INSERT INTO enablements (
@@ -143,8 +148,8 @@ export function buildInsertEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
-			input.enablement.senderKind ?? null,
-			input.enablement.senderValue ?? null,
+			sender.senderKind,
+			sender.senderValue,
 		)
 	return { id, statement }
 }
@@ -164,6 +169,10 @@ export function buildInsertWebhookEnablementStatement(input: {
 		throw new Error('Only a webhook enablement uses the one-live insert.')
 	}
 	const id = input.enablement.id ?? crypto.randomUUID()
+	const sender = canonicalizeEnablementSender({
+		senderKind: input.enablement.senderKind,
+		senderValue: input.enablement.senderValue,
+	})
 	const statement = input.db
 		.prepare(
 			`INSERT INTO enablements (
@@ -188,8 +197,8 @@ export function buildInsertWebhookEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
-			input.enablement.senderKind ?? null,
-			input.enablement.senderValue ?? null,
+			sender.senderKind,
+			sender.senderValue,
 			input.enablement.orgId,
 			input.enablement.instanceId,
 		)
@@ -259,6 +268,11 @@ export async function findLiveEmailSenderEnablement(input: {
 	senderKind: EnablementSenderKind
 	senderValue: string | null
 }): Promise<EnablementRecord | null> {
+	const sender = canonicalizeEnablementSender({
+		senderKind: input.senderKind,
+		senderValue: input.senderValue,
+	})
+	if (!sender.senderKind) return null
 	const row = await input.db
 		.prepare(
 			`SELECT ${enablementColumns} FROM enablements
@@ -272,8 +286,8 @@ export async function findLiveEmailSenderEnablement(input: {
 			input.orgId,
 			input.instanceId,
 			input.triggerName,
-			input.senderKind,
-			input.senderValue,
+			sender.senderKind,
+			sender.senderValue,
 		)
 		.first<EnablementRow>()
 	return row ? toRecord(row) : null
@@ -283,10 +297,14 @@ function sameEnablerAndSender(
 	existing: EnablementRecord,
 	enablement: NewEnablement,
 ) {
+	const sender = canonicalizeEnablementSender({
+		senderKind: enablement.senderKind,
+		senderValue: enablement.senderValue,
+	})
 	return (
 		String(existing.enablerUserId) === String(enablement.enablerUserId) &&
-		existing.senderKind === enablement.senderKind &&
-		(existing.senderValue ?? '') === (enablement.senderValue ?? '')
+		existing.senderKind === sender.senderKind &&
+		(existing.senderValue ?? '') === (sender.senderValue ?? '')
 	)
 }
 

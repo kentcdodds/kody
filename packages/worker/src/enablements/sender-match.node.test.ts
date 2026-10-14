@@ -1,6 +1,7 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
+	canonicalizeEnablementSender,
 	enablementMatchesInboundSender,
 	type InboundSenderMatch,
 } from './sender-match.ts'
@@ -22,6 +23,39 @@ const externalMatch: InboundSenderMatch = {
 	fromAddress: 'Receipts <receipts@shop.example>',
 	authenticated: true,
 }
+
+test('canonicalizeEnablementSender normalizes address, domain, and catch-all', () => {
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: 'address',
+			senderValue: 'Receipts@Shop.Example',
+		}),
+	).toEqual({ senderKind: 'address', senderValue: 'receipts@shop.example' })
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: 'domain',
+			senderValue: '@SHOP.EXAMPLE',
+		}),
+	).toEqual({ senderKind: 'domain', senderValue: 'shop.example' })
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: 'any_authenticated',
+			senderValue: 'ignored@shop.example',
+		}),
+	).toEqual({ senderKind: 'any_authenticated', senderValue: null })
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: 'member',
+			senderValue: beaId.toUpperCase(),
+		}),
+	).toEqual({ senderKind: 'member', senderValue: beaId })
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: null,
+			senderValue: 'anything',
+		}),
+	).toEqual({ senderKind: null, senderValue: null })
+})
 
 test('a null sender kind never matches', () => {
 	expect(

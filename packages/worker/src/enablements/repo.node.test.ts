@@ -290,3 +290,100 @@ test('a second live email sender enablement adopts the same enabler or conflicts
 		}),
 	).toHaveLength(2)
 })
+
+test('sender writes store a canonical form so case variants share one live rule', async () => {
+	const db = setup()
+	const created = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'address',
+			senderValue: 'Receipts@Shop.Example',
+		},
+	})
+	expect(created.senderValue).toBe('receipts@shop.example')
+	const again = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'address',
+			senderValue: 'RECEIPTS@shop.example',
+		},
+	})
+	expect(again.id).toBe(created.id)
+	await expect(
+		insertEnablement({
+			db,
+			enablement: {
+				orgId: 'org-1',
+				packageId: 'pkg-1',
+				triggerKind: 'subscription',
+				triggerName: 'email.message.received',
+				instanceId: 'pkg-1',
+				enablerUserId: 'user-2',
+				origin: 'enabled',
+				senderKind: 'address',
+				senderValue: 'receipts@SHOP.example',
+			},
+		}),
+	).rejects.toBeInstanceOf(EmailSenderEnablementConflict)
+
+	const domain = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'domain',
+			senderValue: '@Shop.Example',
+		},
+	})
+	expect(domain.senderValue).toBe('shop.example')
+	const domainAgain = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'domain',
+			senderValue: 'SHOP.EXAMPLE',
+		},
+	})
+	expect(domainAgain.id).toBe(domain.id)
+
+	const catchAll = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'any_authenticated',
+			senderValue: 'ignored@shop.example',
+		},
+	})
+	expect(catchAll.senderValue).toBeNull()
+})

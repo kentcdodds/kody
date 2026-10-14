@@ -20,6 +20,43 @@ function fromDomain(fromAddress: string | null) {
 }
 
 /**
+ * Canonical form stored on enablements and used in the live unique index.
+ * Address and domain are lowercased; `any_authenticated` drops the value.
+ */
+export function canonicalizeEnablementSender(input: {
+	senderKind: EnablementSenderKind | null | undefined
+	senderValue: string | null | undefined
+}): { senderKind: EnablementSenderKind | null; senderValue: string | null } {
+	const senderKind = input.senderKind ?? null
+	if (!senderKind) return { senderKind: null, senderValue: null }
+	switch (senderKind) {
+		case 'any_authenticated':
+			return { senderKind, senderValue: null }
+		case 'member': {
+			const value = input.senderValue?.trim().toLowerCase() ?? ''
+			return { senderKind, senderValue: value.length > 0 ? value : null }
+		}
+		case 'address': {
+			const value = input.senderValue
+				? normalizeEmailAddress(input.senderValue)
+				: null
+			return { senderKind, senderValue: value }
+		}
+		case 'domain': {
+			const value = input.senderValue?.trim().toLowerCase().replace(/^@+/, '')
+			return {
+				senderKind,
+				senderValue: value && value.length > 0 ? value : null,
+			}
+		}
+		default: {
+			const exhaustive: never = senderKind
+			throw new Error(`Unhandled enablement sender kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
  * Whether one enablement's sender rule matches this inbound message.
  * A null `senderKind` never matches: unmatched mail stays in the inbox
  * and runs no package.
