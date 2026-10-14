@@ -156,8 +156,9 @@ export const featureFlagDefinitions = [
 	{
 		key: 'package-app-custom-domains',
 		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
 		description:
-			'Serve package apps on customer custom hostnames (Cloudflare for SaaS on the package-app zone). Off by default; enable only for staging proof. Root-path serve + verified hostname mapping. Delete the flag when custom domains ship.',
+			'Serve package apps on customer custom hostnames (Cloudflare for SaaS on the package-app zone). Off by default; enable with audience experiments_opt_in so only opted-in users can manage domains. Anonymous serve still uses the global on switch once a hostname is verified. Delete the flag when custom domains ship.',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',

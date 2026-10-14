@@ -21,7 +21,10 @@ import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
 import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
-import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import {
+	isPackageAppCustomDomainsEnabled,
+	isPackageAppCustomDomainsEnabledForUser,
+} from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	addPackageAppCustomHostname,
 	deletePackageAppCustomHostname,
@@ -62,12 +65,24 @@ function renderDenied(
 async function loadCustomDomainsView(
 	env: Env,
 	orgId: string,
+	actingUserId: number,
 ): Promise<OrgSettingsLoaderData['customDomains']> {
+	// Global off → hide without per-user evaluation (incomplete test DBs and
+	// the common production case before the flag is switched on).
 	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) {
 		return null
 	}
+	if (
+		!(await isPackageAppCustomDomainsEnabledForUser(env.APP_DB, actingUserId))
+	) {
+		return null
+	}
 	try {
-		const listed = await listPackageAppCustomHostnames({ env, orgId })
+		const listed = await listPackageAppCustomHostnames({
+			env,
+			orgId,
+			actingUserId,
+		})
 		return {
 			dnsTarget: packageAppCustomDomainsCnameTargetFromBaseUrl(
 				env.PACKAGE_APP_BASE_URL,
@@ -113,7 +128,7 @@ async function loadOrgSettingsData(input: {
 		canDelete:
 			teamOrg && (await orgHasPermission(input.env, input.user, 'org:delete')),
 		customDomains: canManage
-			? await loadCustomDomainsView(input.env, input.org.id)
+			? await loadCustomDomainsView(input.env, input.org.id, input.user.userId)
 			: null,
 	}
 }
@@ -426,12 +441,16 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 					400,
 				)
 			}
-			if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) {
+			if (
+				!(await isPackageAppCustomDomainsEnabledForUser(
+					env.APP_DB,
+					user.userId,
+				))
+			) {
 				return jsonResponse(
 					{
 						ok: false,
-						error:
-							'Package-app custom domains are not enabled for this environment.',
+						error: 'Package-app custom domains are not enabled for this user.',
 					},
 					404,
 				)
@@ -467,6 +486,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await addPackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							createdByUserId: user.mcpUser.userId,
 							bindingKind,
 							hostname,
@@ -482,6 +502,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await syncPackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							hostname:
 								typeof body.hostname === 'string' ? body.hostname : undefined,
 							id: typeof body.id === 'string' ? body.id : undefined,
@@ -492,6 +513,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await deletePackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							hostname:
 								typeof body.hostname === 'string' ? body.hostname : undefined,
 							id: typeof body.id === 'string' ? body.id : undefined,
