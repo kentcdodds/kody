@@ -44,15 +44,13 @@ function asRecord(value: unknown): JsonRecord {
 }
 
 /** Default generated config next to the committed wrangler jsonc. */
-export const localDevGeneratedConfigBasename =
-	'wrangler-local-dev.generated.json'
+const localDevGeneratedConfigBasename = 'wrangler-local-dev.generated.json'
 
 /**
  * E2E webServer writes a separate basename so a concurrent `dev:ensure` Vite
  * does not reload E2E-generated bindings (#3731 / Devin on #3745).
  */
-export const localE2eGeneratedConfigBasename =
-	'wrangler-local-e2e.generated.json'
+const localE2eGeneratedConfigBasename = 'wrangler-local-e2e.generated.json'
 
 export function localGeneratedConfigBasename(
 	env: NodeJS.ProcessEnv = process.env,
