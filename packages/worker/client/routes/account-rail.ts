@@ -3,6 +3,7 @@ import {
 	accountAliasPath,
 	orgBillingPath,
 	orgCollaboratorsPath,
+	orgCreditsPath,
 	orgGrantsPath,
 	orgMembersPath,
 	orgOverviewPath,
@@ -15,6 +16,7 @@ import {
 	orgUsagePath,
 	orderOrganizations,
 	parseOrgBillingPath,
+	parseOrgCreditsPath,
 	parseOrgManagementPath,
 	parseOrgResourcePath,
 	parseOrgUsagePath,
@@ -162,6 +164,7 @@ function orgPathOpensFor(
 ) {
 	const section = parseOrgResourcePath(pathname)?.section
 	if (org.role === null) return section === 'agents'
+	if (parseOrgCreditsPath(pathname)) return true
 	if (parseOrgBillingPath(pathname) || parseOrgUsagePath(pathname)) {
 		return orgRoleManagesBilling(org.role)
 	}
@@ -262,6 +265,14 @@ function usageRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	}
 }
 
+function creditsRailItem(orgSlug: string): AccountRailItem {
+	return {
+		href: orgCreditsPath(orgSlug),
+		label: 'Credits',
+		icon: 'pie-chart',
+	}
+}
+
 /**
  * Entry into an organization's workspace rail. Lands on Repositories (the
  * first Build section) so Activity, Secrets, and the rest stay one click away
@@ -280,8 +291,8 @@ export function workspaceLandingItem(
 /**
  * Management links for a team (non-personal) organization. Same order as the
  * Organization rail: Settings, Members, Teams (owners/members), Grants,
- * Collaborators, Billing (owners/billing). Empty for collaborators (`role`
- * null) or when `orgSlug` is missing. Used by the rail and org home so
+ * Collaborators, Usage and Billing (owners/billing), and Credits (every
+ * member). Empty for collaborators (`role` null) or when `orgSlug` is missing. Used by the rail and org home so
  * discovery stays consistent.
  */
 export function teamOrgManagementItems(input: {
@@ -323,7 +334,13 @@ export function teamOrgManagementItems(input: {
 		},
 	)
 	if (orgRoleManagesBilling(input.role)) {
-		items.push(usageRailItem(orgSlug), billingRailItem(orgSlug))
+		items.push(
+			usageRailItem(orgSlug),
+			creditsRailItem(orgSlug),
+			billingRailItem(orgSlug),
+		)
+	} else {
+		items.push(creditsRailItem(orgSlug))
 	}
 	return items
 }
@@ -530,10 +547,22 @@ export function workspaceRailGroups(input: {
 		...billingRailItem(orgSlug),
 		description: 'Plan, subscription, and payment method.',
 	}
-	const billingAndUsage = orgRoleManagesBilling(role) ? [usage, billing] : []
+	const credits: Array<AccountRailItem> = orgSlug
+		? [
+				{
+					...creditsRailItem(orgSlug),
+					description: orgRoleManagesBilling(role)
+						? 'Balance, budgets, and the full credit ledger.'
+						: 'Your monthly budget and what it has spent.',
+				},
+			]
+		: []
+	const billingItems = orgRoleManagesBilling(role)
+		? [usage, ...credits, billing]
+		: credits
 	const organizationItems: Array<AccountRailItem> =
 		personal || !orgSlug
-			? [grantsRailItem(orgSlug), ...billingAndUsage]
+			? [grantsRailItem(orgSlug), ...billingItems]
 			: [
 					membersRailItem(orgSlug, role),
 					{
@@ -542,7 +571,7 @@ export function workspaceRailGroups(input: {
 						icon: 'edit',
 						description: 'The organization name, photo, and deletion.',
 					},
-					...billingAndUsage,
+					...billingItems,
 				]
 
 	return [

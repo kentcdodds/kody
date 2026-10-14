@@ -35,7 +35,7 @@ import {
 	type AccountUsageCreditsWallet,
 	type AccountUsageLoaderData,
 } from '#universal/loader-data.ts'
-import { parseOrgBillingPath } from '#universal/org-pages.ts'
+import { orgCreditsPath, parseOrgBillingPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -346,6 +346,20 @@ export function AccountUsageCreditsSection(
 		)
 	}
 
+	function renderLedgerLink(label: string) {
+		return handle.props.orgSlug ? (
+			<p mix={css(descriptionCss)}>
+				<a
+					href={orgCreditsPath(handle.props.orgSlug)}
+					data-credits-ledger-link
+					mix={css(primaryLinkCss)}
+				>
+					{label}
+				</a>
+			</p>
+		) : null
+	}
+
 	function renderIneligible(
 		credits: Extract<AccountUsageCredits, { eligible: false }>,
 	) {
@@ -365,6 +379,7 @@ export function AccountUsageCreditsSection(
 						</a>
 					)}
 				</div>
+				{renderLedgerLink('See your balance and credit history')}
 			</AccountManagementPanel>
 		)
 	}
@@ -650,6 +665,7 @@ export function AccountUsageCreditsSection(
 				})}
 
 				<AccountManagementPanel title="Credit history">
+					{renderLedgerLink('View the full ledger')}
 					{credits.recent.length === 0 ? (
 						<p mix={css(descriptionCss)}>No credit activity yet.</p>
 					) : (

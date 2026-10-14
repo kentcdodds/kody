@@ -2839,6 +2839,7 @@ export type AppLoaderData = {
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
+	orgCredits?: OrgCreditsLoaderData
 	accountWaiting?: AccountWaitingLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
 	discord?: DiscordPageLoaderData
@@ -2899,6 +2900,70 @@ export type AccountCreditsLedgerItem = {
 	amountMicroUsd: number
 	description: string
 	createdAt: string
+}
+
+/** One row of the organization credit ledger on `/@slug/-/credits`. */
+export type OrgCreditsLedgerEntry = {
+	id: string
+	kind: AccountCreditsLedgerItem['kind']
+	/** Purchase, Auto-refill, Grant, or Usage. */
+	typeLabel: string
+	description: string
+	/** What the row paid for or where it came from; null when nothing to add. */
+	detail: string | null
+	amountMicroUsd: number
+	/** Wallet balance right after this row (ledger rows explain every change). */
+	balanceAfterMicroUsd: number
+	createdAt: string
+}
+
+export type OrgCreditsLedgerPage = {
+	entries: Array<OrgCreditsLedgerEntry>
+	/** Pass as `?cursor=` to `/@slug/-/credits.json` for older rows. */
+	nextCursor: string | null
+}
+
+/** A monthly spend budget and what it has used this UTC month. */
+export type OrgCreditsBudget = {
+	budgetMicroUsd: number
+	/** Null when the spend counter could not be read right now. */
+	spentMicroUsd: number | null
+}
+
+export type OrgCreditsBudgets = {
+	/** UTC month the spend counters cover (`YYYY-MM`). */
+	month: string
+	/**
+	 * The viewer's own monthly budget in this organization. `individual` is a
+	 * budget set for them; `orgDefault` is the organization default. Null when
+	 * no budget applies.
+	 */
+	yours: (OrgCreditsBudget & { source: 'individual' | 'orgDefault' }) | null
+	/** Organization-wide settings. Only for owners and billing admins. */
+	org: {
+		defaultUserBudgetMicroUsd: number | null
+		automation: OrgCreditsBudget | null
+	} | null
+}
+
+export type OrgCreditsLoaderData = {
+	ok: true
+	org: { slug: string; displayName: string | null; personal: boolean }
+	/** `billing` sees balance and ledger; `member` sees only their budget. */
+	access: 'billing' | 'member'
+	/** Null for members without `billing:read`. */
+	wallet: {
+		balanceMicroUsd: number
+		/** Usage past the include draws on credits (purchasable Pro wallet). */
+		creditsEligible: boolean
+		autoRefillEnabled: boolean
+		/** Usage page Credits section: top-ups and auto-refill settings. */
+		manageHref: string
+		/** Usage page breakdown of what spent credits this month. */
+		whereItWentHref: string
+	} | null
+	budgets: OrgCreditsBudgets
+	ledger: OrgCreditsLedgerPage | null
 }
 
 /**
