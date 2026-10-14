@@ -82,7 +82,7 @@ export type PackageCollaboratorsView = {
 }
 
 /** Shown once, right after an invite is created. */
-export type PackageCollaboratorInviteCreated = {
+type PackageCollaboratorInviteCreated = {
 	id: string
 	expiresAt: string
 	token: string
@@ -184,7 +184,7 @@ export function readPackageCollaboratorsPath(pathname: string): {
 }
 
 /** The package chrome for the tab, from the package detail API. */
-export type PackageCollaboratorsPageShell = {
+type PackageCollaboratorsPageShell = {
 	username: string
 	kodyId: string
 	name: string

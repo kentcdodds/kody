@@ -24,18 +24,14 @@ import {
 import { renderIcon } from '#universal/icon.tsx'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import {
-	isPackageCollaboratorPreset,
-	type PackageCollaboratorInviteView,
 	type PackageCollaboratorPreset,
 	type PackageCollaboratorsChange,
 	type PackageCollaboratorsLoaderData,
 	type PackageCollaboratorsView,
 	type PackageCollaboratorsWriteResult,
 	type PackageCollaboratorView,
-	packageCollaboratorKindLabel,
 	packageCollaboratorPresetDescription,
 	packageCollaboratorPresetLabel,
-	packageCollaboratorPresets,
 	readPackageCollaboratorsPath,
 } from '#universal/package-collaborators.ts'
 import {
@@ -48,59 +44,33 @@ import {
 	getDangerPillCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { spacing } from '#universal/styles/tokens.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	detailArticleCss,
 	renderShellStatus,
 } from './community-detail-sections.tsx'
 import { loadPackageCollaboratorsPage } from './package-collaborators-data.ts'
+import {
+	collaboratorDetail,
+	collaboratorName,
+	formCss,
+	iconWellCss,
+	inviteeName,
+	listCss,
+	mutedCopyCss,
+	promptCss,
+	readPreset,
+	renderPresetOptions,
+	rowActionsCss,
+	rowCss,
+	rowDetailCss,
+	rowNameCss,
+	rowTextCss,
+	selectCss,
+} from './package-collaborators-parts.tsx'
 
 type ChangeKey = string
-
-function collaboratorName(collaborator: PackageCollaboratorView) {
-	if (collaborator.subjectType === 'team') return collaborator.label
-	return collaborator.displayName?.trim() || collaborator.label
-}
-
-function collaboratorDetail(collaborator: PackageCollaboratorView) {
-	const kind = packageCollaboratorKindLabel(collaborator.kind)
-	if (collaborator.subjectType === 'team') {
-		const count = collaborator.teamMemberCount
-		return count === null
-			? kind
-			: `${kind} · ${count} ${count === 1 ? 'member' : 'members'}`
-	}
-	return collaborator.displayName?.trim()
-		? `${collaborator.label} · ${kind}`
-		: kind
-}
-
-function inviteeName(invite: PackageCollaboratorInviteView) {
-	return (
-		invite.inviteeEmail ??
-		(invite.inviteeUsername ? `@${invite.inviteeUsername}` : 'Invite')
-	)
-}
-
-function readPreset(event: Event): PackageCollaboratorPreset | null {
-	const value = (event.currentTarget as HTMLSelectElement).value
-	return isPackageCollaboratorPreset(value) ? value : null
-}
-
-function renderPresetOptions(selected: PackageCollaboratorPreset | null) {
-	return packageCollaboratorPresets.map((preset) => (
-		<option key={preset} value={preset} selected={preset === selected}>
-			{packageCollaboratorPresetLabel(preset)}
-		</option>
-	))
-}
 
 export function PackageCollaboratorsRoute(handle: Handle) {
 	const pageData = createRouteData<
@@ -760,115 +730,4 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 			</article>
 		)
 	}
-}
-
-const mutedCopyCss = {
-	margin: 0,
-	color: colors.textMuted,
-}
-
-const listCss = {
-	listStyle: 'none',
-	margin: 0,
-	padding: 0,
-	display: 'grid',
-	gap: spacing.sm,
-}
-
-const rowCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: spacing.md,
-	minWidth: 0,
-	padding: '0.85rem 1rem',
-	borderRadius: radius.card,
-	border: `1.5px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	[mq.mobile]: {
-		flexWrap: 'wrap',
-		alignItems: 'flex-start',
-	},
-}
-
-const rowTextCss = {
-	display: 'grid',
-	gap: '0.15rem',
-	minWidth: 0,
-	flex: '1 1 auto',
-	[mq.mobile]: {
-		flex: '1 1 0%',
-		maxWidth: '100%',
-	},
-}
-
-const rowNameCss = {
-	fontWeight: 650,
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap' as const,
-	[mq.mobile]: {
-		whiteSpace: 'normal',
-		overflowWrap: 'anywhere',
-	},
-}
-
-const rowDetailCss = {
-	fontSize: typography.fontSize.sm,
-	color: colors.textMuted,
-	minWidth: 0,
-	[mq.mobile]: {
-		overflowWrap: 'anywhere',
-	},
-}
-
-const rowActionsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: spacing.sm,
-	alignItems: 'center',
-	flexShrink: 0,
-	[mq.mobile]: {
-		flex: '1 0 100%',
-		maxWidth: '100%',
-		minWidth: 0,
-	},
-}
-
-const selectCss = {
-	...accountInputCss,
-	width: 'auto',
-	minWidth: '8rem',
-	padding: '0.45rem 0.7rem',
-	[mq.mobile]: {
-		minWidth: 'min(100%, 8rem)',
-		maxWidth: '100%',
-	},
-}
-
-const formCss = {
-	display: 'grid',
-	gap: spacing.lg,
-}
-
-const iconWellCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '2.75rem',
-	height: '2.75rem',
-	flexShrink: 0,
-	borderRadius: radius.full,
-	color: colors.textMuted,
-	backgroundColor: colors.background,
-}
-
-const promptCss = {
-	margin: 0,
-	padding: spacing.md,
-	borderRadius: radius.card,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	whiteSpace: 'pre-wrap' as const,
-	overflowWrap: 'anywhere' as const,
 }
