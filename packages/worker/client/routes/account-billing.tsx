@@ -36,11 +36,7 @@ import {
 	resolveActiveStripePlan,
 } from '#client/routes/account-billing-plans.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
-import {
-	orgCreditsPath,
-	orgIdentity,
-	parseOrgBillingPath,
-} from '#universal/org-pages.ts'
+import { orgIdentity, parseOrgBillingPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	billingPortalPath,
@@ -490,12 +486,6 @@ export function AccountBillingRoute(handle: Handle) {
 										view usage
 									</a>
 								) : null}
-								<a
-									href={orgCreditsPath(billing.org.slug)}
-									mix={css(mutedLinkCss)}
-								>
-									view credits
-								</a>
 							</div>
 							{statusInfo && statusInfo.tone !== 'action' ? (
 								<p mix={css(descriptionCss)}>{statusInfo.detail}</p>
