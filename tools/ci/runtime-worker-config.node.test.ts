@@ -292,10 +292,17 @@ test('generate truncates long branch preview workflow names to 64 chars', async 
 	).toBe(72)
 })
 
-const packageAppRoutes = [
+const packageAppApexAndWildcardRoutes = [
 	{ pattern: 'kody.run/*', zone_name: 'kody.run' },
 	{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
-	{ pattern: '*/*', zone_name: 'kody.run' },
+]
+const packageAppCatchAllRoute = {
+	pattern: '*/*',
+	zone_name: 'kody.run',
+}
+const packageAppRoutes = [
+	...packageAppApexAndWildcardRoutes,
+	packageAppCatchAllRoute,
 ]
 
 test('generate publishes the package-app custom domain for production', async () => {
@@ -331,10 +338,12 @@ test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone r
 		PACKAGE_APP_LEGACY_HOSTS: 'legacy-apps.example.org',
 		PACKAGE_APP_LEGACY_REDIRECT: 'true',
 	})
+	// Catch-all stays on the canonical SaaS zone only — never on a shared
+	// legacy zone where unrelated hosts may lack more-specific Worker routes.
 	expect(runtime.env?.production?.routes).toEqual([
-		...packageAppRoutes,
+		...packageAppApexAndWildcardRoutes,
 		{ pattern: 'legacy-apps.example.org/*', zone_name: 'example.org' },
 		{ pattern: '*.legacy-apps.example.org/*', zone_name: 'example.org' },
-		{ pattern: '*/*', zone_name: 'example.org' },
+		packageAppCatchAllRoute,
 	])
 })

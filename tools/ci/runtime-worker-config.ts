@@ -277,7 +277,16 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	const publishedPatterns = new Set<string>()
 	const newRoutes: Array<Record<string, unknown>> = []
 	const catchAllPattern = packageAppCustomHostnameCatchAllRoutePattern()
-	const zonesWithCatchAll = new Set<string>()
+	// Catch-all only on the canonical SaaS zone. Legacy dual-served hosts may
+	// sit in a shared zone (e.g. legacy-apps.example.org → example.org); a
+	// `*/*` there would steal unrelated hostnames without more-specific routes.
+	const canonicalHostname = hostnames[0]
+	const canonicalZoneName = readPackageAppZoneName(canonicalHostname)
+	if (!canonicalZoneName) {
+		fail(
+			`runtime env.${envName}.vars package-app host "${canonicalHostname}" has no registrable zone name. Use a hostname on a public suffix (for example kody.run).`,
+		)
+	}
 	for (const hostname of hostnames) {
 		const zoneName = readPackageAppZoneName(hostname)
 		if (!zoneName) {
@@ -294,15 +303,14 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			{ pattern: apexPattern, zone_name: zoneName },
 			{ pattern: wildcardPattern, zone_name: zoneName },
 		)
-		// One `*/*` per package-app zone so Cloudflare for SaaS custom
-		// hostnames hit the runtime Worker (ADR 0071). Apex/wildcard stay
-		// more specific for first-party traffic.
-		if (!zonesWithCatchAll.has(zoneName)) {
-			zonesWithCatchAll.add(zoneName)
-			publishedPatterns.add(catchAllPattern)
-			newRoutes.push({ pattern: catchAllPattern, zone_name: zoneName })
-		}
 	}
+	// Cloudflare for SaaS custom hostnames on the canonical zone (ADR 0071).
+	// Apex/wildcard routes stay more specific for first-party package-app traffic.
+	publishedPatterns.add(catchAllPattern)
+	newRoutes.push({
+		pattern: catchAllPattern,
+		zone_name: canonicalZoneName,
+	})
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
 		? runtimeEnv.routes.filter((route) => {
 				if (!route || typeof route !== 'object') return true
