@@ -1,5 +1,8 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { listActiveCommunityListingsBehindPublished } from '#worker/community/repo.ts'
+import {
+	listActiveCommunityListingsBehindPublished,
+	updateCommunityListing,
+} from '#worker/community/repo.ts'
 import { syncActiveCommunityListingToPublishedCommit } from '#worker/community/sync-active-community-listing.ts'
 
 /**
@@ -51,6 +54,20 @@ export async function backfillCommunityListingsBehindPublished(input: {
 				row.listing.id,
 				error instanceof Error ? error.message : error,
 			)
+			// Rotate failed rows off the front of ORDER BY updated_at ASC so a
+			// permanently stuck listing cannot monopolize every backfill batch.
+			try {
+				await updateCommunityListing(input.env.APP_DB, {
+					listingId: row.listing.id,
+					ownerUserId: row.listing.ownerUserId,
+				})
+			} catch (touchError) {
+				console.warn(
+					'community-listing-behind-backfill-touch-failed',
+					row.listing.id,
+					touchError instanceof Error ? touchError.message : touchError,
+				)
+			}
 		}
 	}
 	return { scanned: rows.length, synced, failed }

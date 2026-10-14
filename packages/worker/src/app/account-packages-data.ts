@@ -37,6 +37,7 @@ import {
 	getCommunityListingByOwnerAndPackage,
 } from '#worker/community/repo.ts'
 import { listingNeedsRepublish } from '#worker/community/listing-needs-republish.ts'
+import { readPackageManifestVersion } from '#worker/community/package-version.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { buildPublishCommitDiff } from '#app/package-publish-diff.ts'
 import { loadPublicTreeFiles } from '#app/package-files-data.ts'
@@ -48,7 +49,9 @@ import {
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { loadPackageSourceRowForUser } from '#worker/package-registry/source.ts'
+import { loadPublishedEntityManifest } from '#worker/repo/published-source.ts'
 import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
@@ -202,25 +205,39 @@ function toListItem(
 	}
 }
 
-async function loadPackageExportNames(input: {
+async function loadPackageExportsAndPublishedVersion(input: {
 	env: Env
 	requestUrl: string
 	userId: string
 	sourceId: string
-}): Promise<Array<string> | null> {
+}): Promise<{
+	exports: Array<string> | null
+	publishedVersion: string | null
+}> {
+	void input.requestUrl
 	try {
-		const loaded = await loadPackageManifestBySourceId({
+		const source = await loadPackageSourceRowForUser({
 			env: input.env,
-			baseUrl: getAppBaseUrl({
-				env: input.env,
-				requestUrl: input.requestUrl,
-			}),
 			userId: input.userId,
 			sourceId: input.sourceId,
 		})
-		return listPackageManifestExportNames(loaded.manifest.exports)
+		const published = await loadPublishedEntityManifest({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+			source,
+		})
+		const manifest = parseAuthoredPackageJson({
+			content: published.content,
+			manifestPath: source.manifest_path,
+			mode: 'published',
+		})
+		return {
+			exports: listPackageManifestExportNames(manifest.exports),
+			publishedVersion: readPackageManifestVersion(published.content),
+		}
 	} catch {
-		return null
+		return { exports: null, publishedVersion: null }
 	}
 }
 
@@ -254,12 +271,11 @@ async function toDetail(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 	listingNeedsRepublish: boolean
-	publishedVersion: string | null
 	ownerIsPersonal: boolean
 }): Promise<AccountPackageDetail> {
-	const [exports, sourceAndPending, communityFork, creditAttribution] =
+	const [packageMetadata, sourceAndPending, communityFork, creditAttribution] =
 		await Promise.all([
-			loadPackageExportNames({
+			loadPackageExportsAndPublishedVersion({
 				env: input.env,
 				requestUrl: input.requestUrl,
 				userId: input.userId,
@@ -313,11 +329,11 @@ async function toDetail(input: {
 		),
 		hasCommunityListing: input.hasCommunityListing,
 		listingNeedsRepublish: input.listingNeedsRepublish,
-		publishedVersion: input.publishedVersion,
+		publishedVersion: packageMetadata.publishedVersion,
 		unpublishedChangeCount,
 		ownerIsPersonal: input.ownerIsPersonal,
 		searchText: input.record.searchText,
-		exports,
+		exports: packageMetadata.exports,
 		publishedCommit,
 		pendingCommit,
 		pendingCommitKnown: sourceAndPending.pendingCommitKnown,
@@ -495,10 +511,6 @@ async function loadActiveCommunityListingState(input: {
 				listingPinnedCommit: listing?.pinnedCommit,
 				sourcePublishedCommit: input.publishedCommit,
 			}),
-		publishedVersion:
-			hasCommunityListing && listing?.version?.trim()
-				? listing.version.trim()
-				: null,
 	}
 }
 
@@ -564,7 +576,6 @@ async function toDetailWithListingState(input: {
 			record: input.record,
 			hasCommunityListing: false,
 			listingNeedsRepublish: false,
-			publishedVersion: null,
 			ownerIsPersonal: true,
 		}),
 	])

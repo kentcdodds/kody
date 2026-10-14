@@ -169,29 +169,28 @@ test('community detail head covers install, installed, and listing-ahead badges'
 			ownerAheadHtml,
 		)?.[1]
 	expect(publishClass).toBeTruthy()
-	expect(ownerAheadHtml).toMatch(
-		new RegExp(
-			`@layer rmx\\.${publishClass}[\\s\\S]*?color:\\s*var\\(--color-on-primary\\)`,
-		),
-	)
+	const publishLayer = new RegExp(
+		`@layer rmx\\.${publishClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(publishLayer).toMatch(/color:\s*var\(--color-on-primary\)/)
 	const navClass =
 		/data-testid="package-repo-nav"[^>]*class="(rmxc-[^"\s]+)/.exec(
 			ownerAheadHtml,
 		)?.[1]
 	expect(navClass).toBeTruthy()
-	expect(ownerAheadHtml).toMatch(
-		new RegExp(`@layer rmx\\.${navClass}[\\s\\S]*?gap:\\s*0\\.35rem`),
-	)
+	const navLayer = new RegExp(
+		`@layer rmx\\.${navClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(navLayer).toMatch(/gap:\s*0\.35rem/)
 	const tabClass =
 		/data-testid="package-repo-nav-repo"[^>]*class="(rmxc-[^"\s]+)/.exec(
 			ownerAheadHtml,
 		)?.[1]
 	expect(tabClass).toBeTruthy()
-	expect(ownerAheadHtml).toMatch(
-		new RegExp(
-			`@layer rmx\\.${tabClass}[\\s\\S]*?padding:\\s*0\\.55rem 0\\.55rem`,
-		),
-	)
+	const tabLayer = new RegExp(
+		`@layer rmx\\.${tabClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(tabLayer).toMatch(/padding:\s*0\.55rem 0\.55rem/)
 
 	const listingBehindHtml = await render({
 		listing: {

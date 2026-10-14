@@ -4,6 +4,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listActiveCommunityListingsBehindPublished: vi.fn(),
+	updateCommunityListing: vi.fn(),
 	syncActiveCommunityListingToPublishedCommit: vi.fn(),
 	getAppBaseUrl: vi.fn(() => 'https://kody.codes'),
 }))
@@ -11,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/community/repo.ts', () => ({
 	listActiveCommunityListingsBehindPublished:
 		mockModule.listActiveCommunityListingsBehindPublished,
+	updateCommunityListing: mockModule.updateCommunityListing,
 }))
 
 vi.mock('#worker/community/sync-active-community-listing.ts', () => ({
@@ -68,6 +70,14 @@ test('backfillCommunityListingsBehindPublished syncs each behind listing', async
 		packageId: 'pkg-1',
 		publishedCommit: 'new-1',
 	})
+	expect(mockModule.updateCommunityListing).toHaveBeenCalledTimes(1)
+	expect(mockModule.updateCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			listingId: 'listing-2',
+			ownerUserId: ownerIdFromStored('user-2'),
+		},
+	)
 })
 
 test('backfillCommunityListingsBehindPublished soft-fails when the scan query rejects', async () => {

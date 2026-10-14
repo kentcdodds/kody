@@ -2106,8 +2106,8 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	 */
 	pendingCommitKnown: boolean
 	/**
-	 * Author-supplied `package.json#version` on the live community listing
-	 * (or published commit), when known. Display metadata only.
+	 * Author-supplied `package.json#version` on the package's published commit,
+	 * when known. Display metadata only — not the community listing pin.
 	 */
 	publishedVersion: string | null
 	/**

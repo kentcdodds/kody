@@ -37,6 +37,8 @@ export type FinalizePublishedSourceInput = {
 	baseUrl?: string
 	rebuildPackageArtifacts?: boolean
 	allowLockedPublish?: boolean
+	/** Actor who requested the publish; forwarded to listing auto-follow ban checks. */
+	actorUserId?: string
 }
 
 export async function finalizePublishedEntitySource(
@@ -216,6 +218,7 @@ export async function finalizePublishedEntitySource(
 			ownerUserId: input.source.user_id,
 			packageId: input.source.entity_id,
 			publishedCommit: input.publishedCommit,
+			actorUserId: input.actorUserId,
 		})
 	} catch (error) {
 		console.error(
@@ -385,6 +388,7 @@ export async function publishFromExternalRef(input: {
 		baseUrl: input.baseUrl,
 		rebuildPackageArtifacts: input.rebuildPackageArtifacts,
 		allowLockedPublish: input.allowLockedPublish,
+		actorUserId: input.requestedByUserId ?? undefined,
 	})
 	return {
 		status: 'published',
