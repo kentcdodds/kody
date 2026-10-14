@@ -6,22 +6,22 @@ blog, Discord invite.
 ## How to get there
 
 `/`, `/for/business`, `/pricing`, `/faq`, `/case-studies`, `/believe`,
-`/support`, `/privacy`, `/terms`, `/docs`, `/docs/:slug`, `/docs/connect`,
-`/llms.txt`, `/blog`, `/blog/:slug`, `/discord`. Legacy `/guides*` URLs 308 to
-`/docs*`. Intra-docs navigation (doc to doc, or a doc to `/docs` /
-`/docs/connect`) is an instant shell swap — no page view-transition — so the
-sidebar does not re-animate. How Kody works (and other interactive walkthroughs)
-stay in the article column; they do not break out over the nav. The docs shell
-opts out of overflow anchoring so replacing the article does not bump the rail.
-After hydrate it independently prefetches every sidebar href (one loader request
-per slug, including `/docs/connect`) so a click adopts a warm payload instead of
-waiting on a cold fetch. `/docs/package-skills` opens with a flag callout for
-`mcp-skills-extension`: signed-in visitors POST `/docs/package-skills/opt-in` to
-turn it on for themselves; signed-out visitors log in with `redirectTo` back to
-that page. `/docs/mcp-events` does the same for `mcp-events-extension` via
-`/docs/mcp-events/opt-in`. Custom secret providers are documented at
-`/docs/secret-providers`. Open API is documented at `/docs/open-api`; local CLI
-execute at `/docs/local-execute`.
+`/with/:agent`, `/support`, `/privacy`, `/terms`, `/docs`, `/docs/:slug`,
+`/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`, `/discord`. Legacy
+`/guides*` URLs 308 to `/docs*`. Intra-docs navigation (doc to doc, or a doc to
+`/docs` / `/docs/connect`) is an instant shell swap — no page view-transition —
+so the sidebar does not re-animate. How Kody works (and other interactive
+walkthroughs) stay in the article column; they do not break out over the nav.
+The docs shell opts out of overflow anchoring so replacing the article does not
+bump the rail. After hydrate it independently prefetches every sidebar href (one
+loader request per slug, including `/docs/connect`) so a click adopts a warm
+payload instead of waiting on a cold fetch. `/docs/package-skills` opens with a
+flag callout for `mcp-skills-extension`: signed-in visitors POST
+`/docs/package-skills/opt-in` to turn it on for themselves; signed-out visitors
+log in with `redirectTo` back to that page. `/docs/mcp-events` does the same for
+`mcp-events-extension` via `/docs/mcp-events/opt-in`. Custom secret providers
+are documented at `/docs/secret-providers`. Open API is documented at
+`/docs/open-api`; local CLI execute at `/docs/local-execute`.
 
 ## Drive it
 
@@ -34,23 +34,28 @@ Anonymous HTML on `/` and several marketing routes is short-CDN-cached. The
 cache key includes the query string, so `/?accountDeleted=1` is its own document
 and shows "Your Kody account has been deleted"
 (`data-testid="account-deleted-notice"`). Weekly site-perf owns landing budgets.
-The `/` hero is centered: headline, subhead, and one "Connect your agent" CTA
-that copies an agent-led setup prompt (without JavaScript it is a link to
-`/docs/connect-your-agent`). The homepage never links to `/onboarding` or
-`/signup`, for any session. Below the hero come the primitive cards, "What Kody
-is and is not", the factory, the agent orbit beside the example walkthrough,
-testimonials, git/npm, the first-party YouTube light player with a horizontal
-video chooser, and the "Invisible software" close linking to `/believe`. The
-five-orb lantern lives on `/features`, not the homepage. The factory “Trigger
-it” cards (Flake Hunter, Sentry Issues, Agent inbox, Purchase thanks) are quiet
-same-origin links to `/docs/flake-hunter`, `/docs/sentry-issues`,
-`/docs/agent-inbox`, and `/docs/purchase-thanks` (pointer and focus ring only;
-no extra labels or hover chrome). Signed-in visitors still see the player and
-chooser. Chooser membership and order come from the unlisted playlist
-`PLBPBUA8boGLA`. Client navigations load `GET /landing-hero-videos.json`. The
-lite player embeds the selected chooser video only, without a playlist id, so
-YouTube chrome uses that video's title. Chooser ids are on the YouTube allowlist
-for `/youtube-thumb` without a playlist round-trip on plain documents.
+The `/` hero is centered: headline, subhead, a horizontally looping row of 64px
+monochrome agent marks (SSR-shuffled `landingAgentOrder`, fades at both edges,
+pauses on hover or focus, zooms the hovered mark), and one "Connect your agent"
+CTA that copies an agent-led setup prompt (without JavaScript it is a link to
+`/docs/connect-your-agent`). Each mark links to `/with/:agent`, a short page for
+that agent with its shortest connect steps (copyable commands), a setup-prompt
+button, and links to the other agents; slugs come from
+`universal/with-agents.ts` and unknown slugs 404. The homepage never links to
+`/onboarding` or `/signup`, for any session. Below the hero come "Primitives for
+your agents" cards, "What Kody is and is not", the agent orbit beside the
+example walkthrough, testimonials, the team git/npm section, the first-party
+YouTube light player with a horizontal video chooser, and the "Invisible
+software" close linking to `/believe`. The five-orb lantern lives on
+`/features`, not the homepage. Feature pages are `/features/memory`,
+`/features/packages`, `/features/triggers`, `/features/credentials`, and
+`/features/apps`; `/features/secrets` and `/features/integrations` 301 to
+`/features/credentials`. Signed-in visitors still see the player and chooser.
+Chooser membership and order come from the unlisted playlist `PLBPBUA8boGLA`.
+Client navigations load `GET /landing-hero-videos.json`. The lite player embeds
+the selected chooser video only, without a playlist id, so YouTube chrome uses
+that video's title. Chooser ids are on the YouTube allowlist for
+`/youtube-thumb` without a playlist round-trip on plain documents.
 `/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
 routes; unknown or disallowed ids do not open the player.
 

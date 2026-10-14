@@ -1482,6 +1482,10 @@
 .feature-detail .credentials :is(.secrets, .integrations) {
 	background: transparent;
 }
+.feature-detail .credentials h2 em {
+	font-style: normal;
+	color: var(--accent);
+}
 .feature-detail {
 	background: light-dark(oklch(0.955 0.004 250), oklch(0.22 0.025 var(--hue)));
 }
