@@ -9,7 +9,9 @@ export function invalidFieldsForMessage(
 ): Set<AuthInvalidField> {
 	if (status !== 'error' || !message) return noInvalidFields
 	const text = message.toLowerCase()
-	if (/\busername\b/.test(text)) return new Set(['username'])
+	if (/\busernames?\b/.test(text) || /\bhandle\b/.test(text)) {
+		return new Set(['username'])
+	}
 	if (/\bemail\b/.test(text) && !/\bpassword\b/.test(text)) {
 		return new Set(['email'])
 	}

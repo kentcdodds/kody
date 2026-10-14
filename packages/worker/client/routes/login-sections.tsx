@@ -2,12 +2,15 @@ import {
 	handlePermanentNote,
 	handleUrlPreview,
 } from '@kody-internal/shared/handle-permanence.ts'
+import { handleFormatHint } from '@kody-internal/shared/handle-rules.ts'
+import { minPasswordLength } from '@kody-internal/shared/password-policy.ts'
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import {
 	fieldErrorProps,
 	invalidFieldsForMessage,
 } from '#client/form-error-fields.ts'
+import { permanentHandleInputProps } from '#client/handle-field.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
 import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
@@ -139,25 +142,31 @@ export function renderAuthForm(
 		onPasskeySignIn: () => void
 		signupUsername: string
 		onSignupUsernameInput: (value: string) => void
+		onSignupUsernameBlur?: () => void
 	},
 ) {
 	const statusId = `${props.handleId}-form-status`
 	const usernameNoteId = `${props.handleId}-username-note`
-	const invalidFields = invalidFieldsForMessage(props.status, props.message, [
-		'email',
-		'password',
-	])
+	const invalidFields = invalidFieldsForMessage(
+		props.status,
+		props.message,
+		props.isSignup ? ['username', 'email', 'password'] : ['email', 'password'],
+	)
 	const usernameErrorProps = fieldErrorProps(
 		'username',
 		invalidFields,
 		statusId,
 	)
+	const handleInputProps = permanentHandleInputProps({
+		caseInsensitivePattern: true,
+	})
 	return (
 		<form
 			key="authentication"
 			data-public-auth-form
 			data-rise
 			method="post"
+			noValidate
 			style={{ '--rise': '1' }}
 			mix={[
 				css(authFormCss),
@@ -183,10 +192,9 @@ export function renderAuthForm(
 						required
 						autoFocus
 						autoComplete="username"
-						pattern={'[A-Za-z0-9][A-Za-z0-9\\-]{1,30}[A-Za-z0-9]'}
-						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 						placeholder="kent"
 						data-field-ring
+						{...handleInputProps}
 						{...usernameErrorProps}
 						aria-describedby={
 							usernameErrorProps['aria-describedby']
@@ -200,10 +208,13 @@ export function renderAuthForm(
 									(event.currentTarget as HTMLInputElement).value,
 								)
 							}),
+							props.onSignupUsernameBlur
+								? on('blur', () => props.onSignupUsernameBlur?.())
+								: null,
 						]}
 					/>
 					<p id={usernameNoteId} mix={css(authFieldNoteCss)}>
-						{handlePermanentNote} Your profile URL will be{' '}
+						{handleFormatHint} {handlePermanentNote} Your profile URL will be{' '}
 						<strong>
 							{handleUrlPreview(
 								props.signupUsername.trim().toLowerCase() || 'your-username',
@@ -259,8 +270,13 @@ export function renderAuthForm(
 					id={`${props.handleId}-password`}
 					name="password"
 					required
+					minLength={props.isSignup ? minPasswordLength : undefined}
 					autoComplete={props.isSignup ? 'new-password' : 'current-password'}
-					placeholder={props.isSignup ? 'At least 8 characters' : undefined}
+					placeholder={
+						props.isSignup
+							? `At least ${minPasswordLength} characters`
+							: undefined
+					}
 					data-field-ring
 					{...fieldErrorProps('password', invalidFields, statusId)}
 					mix={css(authInputCss)}

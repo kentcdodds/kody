@@ -1,6 +1,8 @@
 import { handleUrlPreview } from '@kody-internal/shared/handle-permanence.ts'
+import { getHandleFormatError } from '@kody-internal/shared/handle-rules.ts'
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/component'
+import { validateAuthFormFields } from '#client/auth-form-validation.ts'
 import {
 	getPathname,
 	listenToRouterNavigation,
@@ -74,6 +76,9 @@ export function LoginRoute(handle: Handle) {
 	// Handles are permanent: the first signup submit shows the final URL and
 	// asks once; the next submit creates the account.
 	let signupConfirmPending = false
+	// After blur or a failed username submit, keep explaining format problems
+	// while the field stays invalid (instead of only the native browser bubble).
+	let signupUsernameFormatLive = false
 
 	function maybeTrackSignupStarted() {
 		if (signupStartedTracked) return
@@ -110,6 +115,25 @@ export function LoginRoute(handle: Handle) {
 		if (status !== 'error') return
 		resetAuthState()
 		handle.update()
+	}
+
+	function refreshSignupUsernameFormatError() {
+		if (!signupUsernameFormatLive) return false
+		if (getCurrentAuthMode(handle) !== 'signup') return false
+		const usernameError = getHandleFormatError(signupUsername)
+		if (!usernameError) return false
+		setState('error', usernameError)
+		return true
+	}
+
+	function onFieldEdit() {
+		if (refreshSignupUsernameFormatError()) return
+		clearFieldError()
+	}
+
+	function onSignupUsernameBlur() {
+		signupUsernameFormatLive = true
+		refreshSignupUsernameFormatError()
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -166,12 +190,17 @@ export function LoginRoute(handle: Handle) {
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
 		const protection = readPublicFormProtection(formData, form)
 
-		if (!email || !password) {
-			setState('error', 'Email and password are required.')
-			return
-		}
-		if (mode === 'signup' && !username) {
-			setState('error', 'Username is required.')
+		const clientValidation = validateAuthFormFields({
+			mode,
+			email,
+			password,
+			username,
+		})
+		if (clientValidation) {
+			if (clientValidation.field === 'username') {
+				signupUsernameFormatLive = true
+			}
+			setState('error', clientValidation.message)
 			return
 		}
 		if (mode === 'signup' && !signupConfirmPending) {
@@ -453,7 +482,7 @@ export function LoginRoute(handle: Handle) {
 							submitBusyLabel,
 							onSubmit: handleSubmit,
 							onPasskeySignIn: handlePasskeySignIn,
-							onFieldEdit: clearFieldError,
+							onFieldEdit,
 							signupUsername,
 							onSignupUsernameInput: (value) => {
 								signupUsername = value
@@ -463,6 +492,7 @@ export function LoginRoute(handle: Handle) {
 								}
 								handle.update()
 							},
+							onSignupUsernameBlur,
 						})}
 
 						{showSocial
