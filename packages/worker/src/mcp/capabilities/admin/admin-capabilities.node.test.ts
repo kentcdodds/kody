@@ -1071,6 +1071,17 @@ test('a team-org jobRunNow with org caller roles reaches site-admin when the cli
 			},
 		]),
 	)
+	// Team-org MCP user has no email; the wrapper row still hashes the clicker
+	// so email-filtered audit queries find the run-now invocation.
+	const runNowAudit = t.auditSqlite
+		.prepare(
+			`SELECT email_hash, reason FROM audit_events
+			 WHERE action = 'adminUserVerify' AND reason LIKE 'trigger=run-now%'
+			 ORDER BY id DESC LIMIT 1`,
+		)
+		.get() as { email_hash: string | null; reason: string } | undefined
+	expect(runNowAudit?.reason).toBe(triggerAudit('run-now', ''))
+	expect(runNowAudit?.email_hash).toBeTruthy()
 })
 
 test('an interactive caller without the admin role is still refused', async () => {

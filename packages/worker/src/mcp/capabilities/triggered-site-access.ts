@@ -7,6 +7,7 @@ import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
 } from '#mcp/auth-audit.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type Capability } from './types.ts'
 
 type SiteAccessRequirement = Pick<
@@ -96,11 +97,33 @@ function describeDenial(
 }
 
 /**
- * Run a site-admin capability called from a non-interactive run and record
- * one `admin` audit row naming the trigger. `run` covers input validation
- * through output validation; the row's result says whether it returned or
- * threw. A capability that reports a failure in its returned result records
- * that verdict in its own audit row.
+ * Email for the deferred site-admin wrapper audit row. Team-org background
+ * callers have an empty org email; prefer that when set, otherwise the
+ * actor's live users.email so email-hash filters find the clicker/enabler.
+ */
+async function resolveTriggeredSiteAuditEmail(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<string | undefined> {
+	const callerEmail = callerContext.user?.email?.trim()
+	if (callerEmail) return callerEmail
+	const actorId = callerContext.request?.actor?.userId
+	if (!actorId || !env.APP_DB) return undefined
+	const row = await env.APP_DB.prepare(
+		`SELECT email FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(String(actorId))
+		.first<{ email: string }>()
+	const actorEmail = row?.email?.trim()
+	return actorEmail || undefined
+}
+
+/**
+ * Run a site-admin capability called from a deferred actor-gated run and
+ * record one `admin` audit row naming the trigger. `run` covers input
+ * validation through output validation; the row's result says whether it
+ * returned or threw. A capability that reports a failure in its returned
+ * result records that verdict in its own audit row.
  */
 export async function auditTriggeredSiteCapabilityCall<TResult>(
 	input: {
@@ -118,13 +141,14 @@ export async function auditTriggeredSiteCapabilityCall<TResult>(
 		`actor=${callerContext.request?.actor?.userId ?? ''}`,
 		`package_id=${callerContext.storageContext?.packageId ?? ''}`,
 	].join(';')
+	const email = await resolveTriggeredSiteAuditEmail(input.env, callerContext)
 	const audit = (result: 'success' | 'failure', detail?: string) =>
 		logAuditEvent({
 			db: auditDatabaseFromEnv(input.env),
 			category: 'admin',
 			action: input.capabilityName,
 			result,
-			email: callerContext.user?.email,
+			email,
 			path: '/mcp',
 			reason: detail ? `${reason};error=${detail}` : reason,
 		})
