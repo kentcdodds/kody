@@ -1166,13 +1166,20 @@ test('auto-refill charges the saved card at the threshold and stops at the month
 		STRIPE_SECRET_KEY: 'sk_test_secret',
 		STRIPE_API_BASE_URL: 'https://stripe.mock',
 	} as Env
-	const fetchMock = vi.fn(async () =>
-		Response.json({
-			id: `pi_${crypto.randomUUID().slice(0, 8)}`,
-			status: 'succeeded',
-			amount: 1_000,
-			currency: 'usd',
-		}),
+	const fetchMock = vi.fn(
+		async (url: string | URL | Request, init?: RequestInit) => {
+			const method = init?.method ?? 'GET'
+			const href = String(url)
+			if (method === 'GET' && href.includes('/v1/payment_intents')) {
+				return Response.json({ data: [], has_more: false })
+			}
+			return Response.json({
+				id: `pi_${crypto.randomUUID().slice(0, 8)}`,
+				status: 'succeeded',
+				amount: 1_000,
+				currency: 'usd',
+			})
+		},
 	)
 	const refill = (customerId: string) =>
 		runCreditAutoRefill({
@@ -1185,7 +1192,8 @@ test('auto-refill charges the saved card at the threshold and stops at the month
 	vi.stubGlobal('fetch', fetchMock)
 	try {
 		expect(await refill(stripeCustomerId)).toBe('charged')
-		expect(fetchMock).toHaveBeenCalledTimes(1)
+		// List reconcile (empty) then create PaymentIntent.
+		expect(fetchMock).toHaveBeenCalledTimes(2)
 		expect(await balance(userId)).toBe(10_000_000)
 
 		// Above the threshold: nothing to do.
@@ -1194,7 +1202,7 @@ test('auto-refill charges the saved card at the threshold and stops at the month
 		// Back under the threshold, but another $10 would pass the $15 cap.
 		await zeroBalance(userId)
 		expect(await refill('cus_any')).toBe('cap_reached')
-		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.unstubAllGlobals()
 	}

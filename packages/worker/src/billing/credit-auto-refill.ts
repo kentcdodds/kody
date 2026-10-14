@@ -62,43 +62,57 @@ async function creditLedgerHasStripeReference(
 }
 
 function isSucceededAutoRefillPaymentIntentForOrg(
-	intent: Pick<
-		StripePaymentIntentListItem,
-		'status' | 'currency' | 'amount' | 'metadata'
-	>,
-	input: { orgId: string; amountCents: number },
+	intent: Pick<StripePaymentIntentListItem, 'status' | 'currency' | 'metadata'>,
+	orgId: string,
 ): boolean {
 	if (intent.status !== 'succeeded' || intent.currency !== 'usd') return false
-	if (intent.amount !== input.amountCents) return false
 	const metadata = intent.metadata ?? {}
 	if (metadata[creditAutoRefillMetadataKey] !== '1') return false
-	return resolveOrgIdFromStripeMetadata(metadata) === input.orgId
+	return resolveOrgIdFromStripeMetadata(metadata) === orgId
 }
 
+/**
+ * Newest-first Stripe list may include auto-refills from a prior UTC month.
+ * applyCreditPayment still stamps the ledger with the caller `now` month
+ * (pre-existing wallet behavior); prefer healing the paid intent over leaving
+ * it uncredited.
+ */
 async function findUnledgeredSucceededAutoRefillPaymentIntent(input: {
 	env: Env
 	db: D1Database
 	customerId: string
 	orgId: string
-	amountCents: number
 }): Promise<StripePaymentIntent | null> {
 	const intents = await listPaymentIntentsForCustomer(
 		input.env,
 		input.customerId,
 	)
 	for (const intent of intents) {
-		if (
-			!isSucceededAutoRefillPaymentIntentForOrg(intent, {
-				orgId: input.orgId,
-				amountCents: input.amountCents,
-			})
-		) {
+		if (!isSucceededAutoRefillPaymentIntentForOrg(intent, input.orgId)) {
 			continue
 		}
 		if (await creditLedgerHasStripeReference(input.db, intent.id)) continue
 		return intent
 	}
 	return null
+}
+
+async function tryFindUnledgeredSucceededAutoRefillPaymentIntent(input: {
+	env: Env
+	db: D1Database
+	customerId: string
+	orgId: string
+}): Promise<StripePaymentIntent | null> {
+	try {
+		return await findUnledgeredSucceededAutoRefillPaymentIntent(input)
+	} catch (error) {
+		if (!(error instanceof StripeApiError)) throw error
+		console.warn('credit_auto_refill_list_reconcile_failed', {
+			status: error.status,
+			code: error.code,
+		})
+		return null
+	}
 }
 
 async function applySucceededAutoRefillPaymentIntent(input: {
@@ -167,12 +181,11 @@ async function createAutoRefillPaymentIntent(input: {
 		amountCents: input.amountCents,
 		description: 'Kody credits auto-refill',
 	}
-	const reconciled = await findUnledgeredSucceededAutoRefillPaymentIntent({
+	const reconciled = await tryFindUnledgeredSucceededAutoRefillPaymentIntent({
 		env: input.env,
 		db: input.db,
 		customerId: input.customerId,
 		orgId: input.userId,
-		amountCents: input.amountCents,
 	})
 	if (reconciled) return reconciled
 
@@ -203,12 +216,11 @@ async function createAutoRefillPaymentIntent(input: {
 			})
 		} catch (legacyError) {
 			if (!(legacyError instanceof StripeApiError)) throw legacyError
-			const fromList = await findUnledgeredSucceededAutoRefillPaymentIntent({
+			const fromList = await tryFindUnledgeredSucceededAutoRefillPaymentIntent({
 				env: input.env,
 				db: input.db,
 				customerId: input.customerId,
 				orgId: input.userId,
-				amountCents: input.amountCents,
 			})
 			if (fromList) return fromList
 			throw legacyError

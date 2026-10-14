@@ -209,6 +209,98 @@ test('runCreditAutoRefill applies an unledgered succeeded PaymentIntent from lis
 	}
 })
 
+test('runCreditAutoRefill heals an orphan whose amount differs from current settings', async () => {
+	const { db } = createDb()
+	await seedWallet(db)
+	const env = createTestEnv(db)
+	const orphanIntent = {
+		id: 'pi_orphan_old_amount',
+		status: 'succeeded',
+		amount: 500,
+		currency: 'usd',
+		metadata: {
+			[creditAutoRefillMetadataKey]: '1',
+			kody_org_id: userId,
+			[KODY_STABLE_USER_ID_METADATA_KEY]: userId,
+		},
+	}
+	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		const method = init?.method ?? 'GET'
+		if (method === 'GET' && url.includes('/v1/payment_intents?')) {
+			return jsonResponse({ data: [orphanIntent], has_more: false })
+		}
+		throw new Error(`Unexpected fetch: ${method} ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		expect(
+			await runCreditAutoRefill({
+				env,
+				userId,
+				email: 'user@example.com',
+				stripeCustomerId: customerId,
+				now,
+			}),
+		).toBe('charged')
+		const ledger = await db
+			.prepare(
+				`SELECT stripe_reference, amount_micro_usd FROM credit_ledger_entries WHERE user_id = ?`,
+			)
+			.bind(userId)
+			.first<{ stripe_reference: string; amount_micro_usd: number }>()
+		expect(ledger).toEqual({
+			stripe_reference: 'pi_orphan_old_amount',
+			amount_micro_usd: 5_000_000,
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('runCreditAutoRefill still creates when PaymentIntent listing fails', async () => {
+	const { db } = createDb()
+	await seedWallet(db)
+	const env = createTestEnv(db)
+	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		const method = init?.method ?? 'GET'
+		if (method === 'GET' && url.includes('/v1/payment_intents?')) {
+			return jsonResponse(
+				{
+					error: {
+						message: 'Service unavailable',
+						type: 'api_error',
+					},
+				},
+				503,
+			)
+		}
+		if (method === 'POST' && url.includes('/v1/payment_intents')) {
+			return jsonResponse({
+				id: 'pi_after_list_fail',
+				status: 'succeeded',
+				amount: amountCents,
+				currency: 'usd',
+			})
+		}
+		throw new Error(`Unexpected fetch: ${method} ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		expect(
+			await runCreditAutoRefill({
+				env,
+				userId,
+				email: 'user@example.com',
+				stripeCustomerId: customerId,
+				now,
+			}),
+		).toBe('charged')
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
 test('runCreditAutoRefill lists then creates with dual-write metadata when no orphan exists', async () => {
 	const { db } = createDb()
 	await seedWallet(db)

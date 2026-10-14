@@ -1331,17 +1331,21 @@ const paymentIntentListItemSchema = object({
 
 const paymentIntentListSchema = object({
 	data: array(paymentIntentListItemSchema),
+	has_more: optional(boolean()),
 })
 
 export type StripePaymentIntentListItem = InferOutput<
 	typeof paymentIntentListItemSchema
 >
 
-/** Recent PaymentIntents for a customer (newest first). */
+/** Cap pages so a pathological customer history cannot hang the refill sweep. */
+const paymentIntentListMaxPages = 5
+
+/** Recent PaymentIntents for a customer (newest first), following `has_more`. */
 export async function listPaymentIntentsForCustomer(
 	env: StripeEnv,
 	customerId: string,
-	options?: { limit?: number },
+	options?: { limit?: number; maxPages?: number },
 ): Promise<Array<StripePaymentIntentListItem>> {
 	const trimmed = customerId.trim()
 	if (!trimmed) {
@@ -1353,19 +1357,36 @@ export async function listPaymentIntentsForCustomer(
 			status: 400,
 		})
 	}
-	const body = await stripeRequest(env, {
-		method: 'GET',
-		path: '/v1/payment_intents',
-		query: {
-			customer: trimmed,
-			limit: String(limit),
-		},
-	})
-	const parsed = parseSafe(paymentIntentListSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe payment intent list shape.', {
-			status: 502,
+	const maxPages = options?.maxPages ?? paymentIntentListMaxPages
+	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
+		throw new StripeApiError('Payment intent list maxPages must be >= 1.', {
+			status: 400,
 		})
 	}
-	return parsed.value.data
+	const collected: Array<StripePaymentIntentListItem> = []
+	let startingAfter: string | undefined
+	for (let page = 0; page < maxPages; page += 1) {
+		const query: Record<string, string> = {
+			customer: trimmed,
+			limit: String(limit),
+		}
+		if (startingAfter) query.starting_after = startingAfter
+		const body = await stripeRequest(env, {
+			method: 'GET',
+			path: '/v1/payment_intents',
+			query,
+		})
+		const parsed = parseSafe(paymentIntentListSchema, body)
+		if (!parsed.success) {
+			throw new StripeApiError('Unexpected Stripe payment intent list shape.', {
+				status: 502,
+			})
+		}
+		const pageData = parsed.value.data
+		collected.push(...pageData)
+		if (!parsed.value.has_more || pageData.length === 0) break
+		startingAfter = pageData[pageData.length - 1]?.id
+		if (!startingAfter) break
+	}
+	return collected
 }

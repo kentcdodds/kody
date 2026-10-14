@@ -919,6 +919,7 @@ test('listPaymentIntentsForCustomer lists recent intents for a customer', async 
 					metadata: { kody_credit_auto_refill: '1' },
 				},
 			],
+			has_more: false,
 		}),
 	)
 	const mockEnv = {
@@ -933,6 +934,49 @@ test('listPaymentIntentsForCustomer lists recent intents for a customer', async 
 	expect(queryOf(fetchMock.mock.calls[0]?.[0])).toMatchObject({
 		customer: 'cus_1',
 		limit: '10',
+	})
+})
+
+test('listPaymentIntentsForCustomer follows has_more pages', async () => {
+	using fetchMock = fetchReturning(
+		jsonResponse({
+			data: [
+				{
+					id: 'pi_page1',
+					status: 'succeeded',
+					amount: 1000,
+					currency: 'usd',
+					metadata: {},
+				},
+			],
+			has_more: true,
+		}),
+		jsonResponse({
+			data: [
+				{
+					id: 'pi_page2',
+					status: 'succeeded',
+					amount: 500,
+					currency: 'usd',
+					metadata: { kody_credit_auto_refill: '1' },
+				},
+			],
+			has_more: false,
+		}),
+	)
+	const mockEnv = {
+		...env,
+		STRIPE_API_BASE_URL: 'https://stripe.mock',
+	}
+	const intents = await listPaymentIntentsForCustomer(mockEnv, 'cus_1', {
+		limit: 1,
+		maxPages: 3,
+	})
+	expect(intents.map((intent) => intent.id)).toEqual(['pi_page1', 'pi_page2'])
+	expect(queryOf(fetchMock.mock.calls[1]?.[0])).toMatchObject({
+		customer: 'cus_1',
+		limit: '1',
+		starting_after: 'pi_page1',
 	})
 })
 
