@@ -549,9 +549,11 @@ export function ApprovalBundleRoute(handle: Handle) {
 				<header mix={css(pageHeaderCss)}>
 					<span mix={css(pageEyebrowCss)}>Review approvals</span>
 					<h1 mix={css(pageTitleCss)}>
-						{total === 1
-							? '1 change waits for you'
-							: `${total} changes wait for you`}
+						{remaining === 0
+							? `All ${total} ${total === 1 ? 'change is' : 'changes are'} decided`
+							: remaining === 1
+								? '1 change waits for you'
+								: `${remaining} changes wait for you`}
 					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						An agent
