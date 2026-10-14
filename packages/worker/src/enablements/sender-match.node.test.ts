@@ -69,6 +69,18 @@ test('canonicalizeEnablementSender normalizes address, domain, and catch-all', (
 	).toEqual({ senderKind: null, senderValue: null })
 	expect(
 		canonicalizeEnablementSender({
+			senderKind: 'domain',
+			senderValue: 'bob@shop.example',
+		}),
+	).toEqual({ senderKind: null, senderValue: null })
+	expect(
+		canonicalizeEnablementSender({
+			senderKind: 'domain',
+			senderValue: '*.example',
+		}),
+	).toEqual({ senderKind: null, senderValue: null })
+	expect(
+		canonicalizeEnablementSender({
 			senderKind: 'member',
 			senderValue: '',
 		}),

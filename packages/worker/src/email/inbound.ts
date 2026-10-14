@@ -328,7 +328,6 @@ export async function handleInboundEmail(
 				creditWallet: accountEntitlement.creditWallet,
 				emailVerified: Boolean(accountRow?.email_verified_at),
 				suspended: Boolean(accountRow?.suspended_at),
-				storedPlan: accountRow?.plan ?? null,
 			}
 
 			const provisioned = await ensureDefaultEmailInbox({
@@ -392,8 +391,9 @@ export async function handleInboundEmail(
 			}
 
 			// A free team org has a live handle but cannot receive mail.
-			// Personal orgs keep the free plan's own receive caps.
-			if (!account.personal && !isPaidOrg(account.storedPlan ?? 'free')) {
+			// Personal orgs keep the free plan's own receive caps. Use the
+			// effective entitlement (stripe_plan ranked in), not orgs.plan alone.
+			if (!account.personal && !isPaidOrg(account.plan)) {
 				const reason = 'Team email requires a paid plan.'
 				message.setReject(reason)
 				await recordBoundedEmailRejectionEvent({

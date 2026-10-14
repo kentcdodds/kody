@@ -48,7 +48,17 @@ export function canonicalizeEnablementSender(input: {
 		}
 		case 'domain': {
 			const value = input.senderValue?.trim().toLowerCase().replace(/^@+/, '')
-			if (!value) return { senderKind: null, senderValue: null }
+			// Same bare-hostname rules as normalizeProposalDomain: no mailbox,
+			// spaces, wildcards, or percent/underscore placeholders.
+			if (
+				!value ||
+				value.includes('@') ||
+				/\s/.test(value) ||
+				!value.includes('.') ||
+				/[%_*]/.test(value)
+			) {
+				return { senderKind: null, senderValue: null }
+			}
 			return { senderKind, senderValue: value }
 		}
 		default: {

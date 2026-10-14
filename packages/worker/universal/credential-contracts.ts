@@ -719,7 +719,7 @@ function normalizeProposalDomain(value: string) {
 		domain.includes('@') ||
 		/\s/.test(domain) ||
 		!domain.includes('.') ||
-		/[%_]/.test(domain)
+		/[%_*]/.test(domain)
 	) {
 		return null
 	}

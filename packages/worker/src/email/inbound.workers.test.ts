@@ -512,17 +512,21 @@ test('max-plan inbox stores oversized related mail by omitting the large part', 
 	).toMatchObject({ outcome: 'ready', count: 1 })
 }, 60_000)
 
-async function seedTeamOrg(plan: 'free' | 'pro') {
+async function seedTeamOrg(
+	plan: 'free' | 'pro',
+	options?: { stripePlan?: 'pro' | 'standard' | null },
+) {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const slug = `team-${crypto.randomUUID().slice(0, 8)}`
 	const orgId = testStableUserIdFromEmail(`${slug}@teams.example`)
 	const now = new Date().toISOString()
+	const stripePlan = options?.stripePlan ?? null
 	await env.APP_DB.prepare(
-		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO orgs (id, slug, plan, stripe_plan, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 	)
-		.bind(orgId, slug, plan, now, now)
+		.bind(orgId, slug, plan, stripePlan, now, now)
 		.run()
 	await env.APP_DB.prepare(
 		`INSERT INTO handles (handle, user_id, org_id, created_at)
@@ -560,4 +564,17 @@ test('a free team org rejects inbound mail', async () => {
 
 	expect(message.rejectedReason).toBe('Team email requires a paid plan.')
 	expect(await listUserMessages(orgId)).toEqual([])
+}, 30_000)
+
+test('a stripe-paid team with free orgs.plan still receives mail', async () => {
+	const { orgId, address } = await seedTeamOrg('free', { stripePlan: 'pro' })
+	const message = inboundMessage({
+		address,
+		messageId: `team-stripe-${crypto.randomUUID()}@example.net`,
+	})
+
+	await handleInboundEmail(message, inboundEnv())
+
+	expect(message.rejectedReason).toBeNull()
+	expect(await listUserMessages(orgId)).toHaveLength(1)
 }, 30_000)
