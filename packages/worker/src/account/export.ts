@@ -1,7 +1,9 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
-	ownerIdFromStored,
+	personalOrgId,
+	personIdFromStored,
 	type OwnerId,
+	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	accountExportForeignUserIdColumnsByTable,
@@ -364,8 +366,27 @@ type D1TableCondition = {
 	params: Array<unknown>
 }
 
+/**
+ * Resolve personal-org owner + person ids for account export.
+ * `mcpUserId` alone keeps equal-id behavior for existing callers.
+ */
+function resolveAccountExportUserIds(input: {
+	ownerUserId?: OwnerId
+	personUserId?: PersonId
+	mcpUserId?: OwnerId
+}): { ownerUserId: OwnerId; personUserId: PersonId } {
+	const ownerUserId = input.ownerUserId ?? input.mcpUserId
+	if (!ownerUserId) {
+		throw new Error('Account export requires ownerUserId or mcpUserId.')
+	}
+	const personUserId =
+		input.personUserId ?? personIdFromStored(ownerUserId as string)
+	return { ownerUserId, personUserId }
+}
+
 function buildD1TableConditions(input: {
 	mcpUserId: OwnerId
+	personUserId?: PersonId
 	dbUserId: number
 }) {
 	const conditionsByTable = new Map<string, Array<D1TableCondition>>()
@@ -385,6 +406,7 @@ function buildD1TableConditions(input: {
 		const match = buildUserScopedTargetMatch({
 			target,
 			mcpUserId: input.mcpUserId,
+			personUserId: input.personUserId,
 			dbUserId: input.dbUserId,
 		})
 		add(match.table, {
@@ -398,18 +420,20 @@ function buildD1TableConditions(input: {
 function sanitizeRow(
 	table: string,
 	row: Record<string, unknown>,
-	mcpUserId: OwnerId,
+	ownerUserId: OwnerId,
+	personUserId: PersonId,
 ) {
 	const redactedColumns = accountExportRedactedColumnsByTable[table] ?? []
 	const foreignUserIdColumns =
 		accountExportForeignUserIdColumnsByTable[table] ?? []
+	const ownedIds = new Set<string>([ownerUserId, personUserId])
 	const sanitized: Record<string, unknown> = {}
 	for (const [key, value] of Object.entries(row)) {
 		if (redactedColumns.includes(key)) continue
 		if (
 			foreignUserIdColumns.includes(key) &&
 			typeof value === 'string' &&
-			value !== mcpUserId
+			!ownedIds.has(value)
 		) {
 			sanitized[key] = accountExportRedactedForeignUserId
 			continue
@@ -461,6 +485,7 @@ async function selectD1TablePage(input: {
 	table: string
 	conditions: ReadonlyArray<D1TableCondition>
 	mcpUserId: OwnerId
+	personUserId: PersonId
 	afterRowid: number
 	limit: number
 }) {
@@ -485,7 +510,9 @@ async function selectD1TablePage(input: {
 	for (const rawRow of pageRows) {
 		const { [exportRowidColumn]: rowid, ...columns } = rawRow
 		lastRowid = Number(rowid)
-		rows.push(sanitizeRow(input.table, columns, input.mcpUserId))
+		rows.push(
+			sanitizeRow(input.table, columns, input.mcpUserId, input.personUserId),
+		)
 	}
 	return { rows, lastRowid, truncated }
 }
@@ -495,6 +522,7 @@ async function collectD1TableRows(input: {
 	table: string
 	conditions: ReadonlyArray<D1TableCondition>
 	mcpUserId: OwnerId
+	personUserId: PersonId
 	warnings: Array<string>
 }): Promise<AccountExportD1Table> {
 	const section: AccountExportD1Table = {
@@ -512,6 +540,7 @@ async function collectD1TableRows(input: {
 				table: input.table,
 				conditions: input.conditions,
 				mcpUserId: input.mcpUserId,
+				personUserId: input.personUserId,
 				afterRowid,
 				limit: d1ExportPageSize,
 			})
@@ -1086,10 +1115,12 @@ async function collectD1Tables(input: {
 	env: AccountExportEnv
 	dbUserId: number
 	mcpUserId: OwnerId
+	personUserId: PersonId
 	warnings: Array<string>
 }) {
 	const conditionsByTable = buildD1TableConditions({
 		mcpUserId: input.mcpUserId,
+		personUserId: input.personUserId,
 		dbUserId: input.dbUserId,
 	})
 	const tables: Array<[string, AccountExportD1Table]> = []
@@ -1101,6 +1132,7 @@ async function collectD1Tables(input: {
 				table,
 				conditions,
 				mcpUserId: input.mcpUserId,
+				personUserId: input.personUserId,
 				warnings: input.warnings,
 			}),
 		])
@@ -1115,10 +1147,12 @@ async function collectD1TableCounts(input: {
 	env: AccountExportEnv
 	dbUserId: number
 	mcpUserId: OwnerId
+	personUserId: PersonId
 	warnings: Array<string>
 }) {
 	const conditionsByTable = buildD1TableConditions({
 		mcpUserId: input.mcpUserId,
+		personUserId: input.personUserId,
 		dbUserId: input.dbUserId,
 	})
 	const sections: Array<[string, AccountExportManifestSection]> = []
@@ -1177,6 +1211,7 @@ async function readD1TableSectionPage(input: {
 	env: AccountExportEnv
 	dbUserId: number
 	mcpUserId: OwnerId
+	personUserId: PersonId
 	table: string
 	pageSize: number | undefined
 	startAfter: string | undefined
@@ -1213,6 +1248,7 @@ async function readD1TableSectionPage(input: {
 	}
 	const conditions = buildD1TableConditions({
 		mcpUserId: input.mcpUserId,
+		personUserId: input.personUserId,
 		dbUserId: input.dbUserId,
 	}).get(input.table)
 	if (!conditions) return null
@@ -1222,6 +1258,7 @@ async function readD1TableSectionPage(input: {
 			table: input.table,
 			conditions,
 			mcpUserId: input.mcpUserId,
+			personUserId: input.personUserId,
 			afterRowid: parseRowidCursor(input.startAfter),
 			limit: pageSize,
 		})
@@ -1625,7 +1662,7 @@ export function getAccountExportD1UserColumnCoverage() {
 
 export async function resolveAccountExportDbUserId(input: {
 	env: AccountExportEnv
-	mcpUserId: OwnerId
+	personUserId: PersonId
 	email?: string | null
 }) {
 	const email = input.email?.trim().toLowerCase()
@@ -1640,7 +1677,7 @@ export async function resolveAccountExportDbUserId(input: {
 	if (!row) {
 		throw new Error('Authenticated account was not found.')
 	}
-	if (ownerIdFromStored(row.stable_user_id) !== input.mcpUserId) {
+	if (personIdFromStored(row.stable_user_id) !== input.personUserId) {
 		throw new Error(
 			'Authenticated user identity did not match the account email.',
 		)
@@ -1651,34 +1688,50 @@ export async function resolveAccountExportDbUserId(input: {
 export async function createAccountExportManifest(input: {
 	env: AccountExportEnv
 	dbUserId: number
-	mcpUserId: OwnerId
+	/**
+	 * Personal org / storage owner. Prefer this over {@link mcpUserId}.
+	 */
+	ownerUserId?: OwnerId
+	/**
+	 * Person id for OAuth grants. Defaults to the same bytes as the owner id
+	 * (legacy equal-id personal orgs).
+	 */
+	personUserId?: PersonId
+	/**
+	 * Backward-compatible single id: used as owner when `ownerUserId` is
+	 * omitted, and as person when `personUserId` is omitted.
+	 */
+	mcpUserId?: OwnerId
 	generatedAt?: string
 }): Promise<AccountExportManifest> {
+	const { ownerUserId, personUserId } = resolveAccountExportUserIds(input)
+	const personKeyedOwnerId = personalOrgId(personUserId)
 	const warnings: Array<string> = []
 	const generatedAt = input.generatedAt ?? new Date().toISOString()
 	const [d1Sections, inventoryCounts, oauthGrantCount] = await Promise.all([
 		collectD1TableCounts({
 			env: input.env,
 			dbUserId: input.dbUserId,
-			mcpUserId: input.mcpUserId,
+			mcpUserId: ownerUserId,
+			personUserId,
 			warnings,
 		}),
 		collectManifestInventoryCounts({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 			dbUserId: input.dbUserId,
 			warnings,
 		}),
 		countOAuthGrants({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: personKeyedOwnerId,
 			warnings,
 		}),
 	])
 	return buildManifest({
 		generatedAt,
 		dbUserId: input.dbUserId,
-		mcpUserId: input.mcpUserId,
+		mcpUserId: ownerUserId,
 		d1Sections,
 		inventoryCounts,
 		oauthGrantCount,
@@ -1689,33 +1742,38 @@ export async function createAccountExportManifest(input: {
 export async function createAccountExport(input: {
 	env: AccountExportEnv
 	dbUserId: number
-	mcpUserId: OwnerId
+	ownerUserId?: OwnerId
+	personUserId?: PersonId
+	mcpUserId?: OwnerId
 	generatedAt?: string
 }): Promise<AccountExportFile> {
+	const { ownerUserId, personUserId } = resolveAccountExportUserIds(input)
+	const personKeyedOwnerId = personalOrgId(personUserId)
 	const warnings: Array<string> = []
 	const generatedAt = input.generatedAt ?? new Date().toISOString()
 	const [d1, inventory, oauthGrants] = await Promise.all([
 		collectD1Tables({
 			env: input.env,
 			dbUserId: input.dbUserId,
-			mcpUserId: input.mcpUserId,
+			mcpUserId: ownerUserId,
+			personUserId,
 			warnings,
 		}),
 		collectInventory({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 			dbUserId: input.dbUserId,
 			warnings,
 		}),
 		listOAuthGrants({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: personKeyedOwnerId,
 			warnings,
 		}),
 	])
 	const durableObjects = await exportDurableObjects({
 		env: input.env,
-		userId: input.mcpUserId,
+		userId: ownerUserId,
 		inventory,
 		warnings,
 	})
@@ -1723,7 +1781,7 @@ export async function createAccountExport(input: {
 		manifest: buildManifest({
 			generatedAt,
 			dbUserId: input.dbUserId,
-			mcpUserId: input.mcpUserId,
+			mcpUserId: ownerUserId,
 			d1,
 			durableObjects,
 			oauthGrants,
@@ -1763,7 +1821,9 @@ async function readR2ObjectSection(input: {
 export async function readAccountExportSection(input: {
 	env: AccountExportEnv
 	dbUserId: number
-	mcpUserId: OwnerId
+	ownerUserId?: OwnerId
+	personUserId?: PersonId
+	mcpUserId?: OwnerId
 	section: AccountExportSectionName
 	table?: string
 	storageId?: string
@@ -1771,12 +1831,14 @@ export async function readAccountExportSection(input: {
 	pageSize?: number
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {
+	const { ownerUserId, personUserId } = resolveAccountExportUserIds(input)
+	const personKeyedOwnerId = personalOrgId(personUserId)
 	const warnings: Array<string> = []
 	if (input.section === 'r2_object') {
 		return await readR2ObjectSection({
 			env: input.env,
 			dbUserId: input.dbUserId,
-			mcpUserId: input.mcpUserId,
+			mcpUserId: ownerUserId,
 			startAfter: input.startAfter,
 			warnings,
 		})
@@ -1787,7 +1849,7 @@ export async function readAccountExportSection(input: {
 		}
 		const storageOwned = await isExportDiscoverableStorageId(
 			input.env,
-			input.mcpUserId,
+			ownerUserId,
 			input.storageId,
 		)
 		if (!storageOwned) {
@@ -1796,7 +1858,7 @@ export async function readAccountExportSection(input: {
 		const pageSize = normalizePageSize(input.pageSize)
 		const runnerExport = await storageRunnerRpc({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 			storageId: input.storageId,
 		}).exportStorage({
 			pageSize,
@@ -1817,7 +1879,7 @@ export async function readAccountExportSection(input: {
 			items: [
 				await exportJobManagerForUser({
 					env: input.env,
-					userId: input.mcpUserId,
+					userId: ownerUserId,
 				}),
 			],
 			truncated: false,
@@ -1830,7 +1892,7 @@ export async function readAccountExportSection(input: {
 		const pageSize = normalizePageSize(input.pageSize)
 		const page = await exportRunRecords({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 			pageSize,
 			startAfter: input.startAfter,
 		})
@@ -1854,7 +1916,7 @@ export async function readAccountExportSection(input: {
 		const pageSize = normalizePageSize(input.pageSize)
 		const page = await userMeterRpc({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 		}).exportCounters({
 			pageSize,
 			startAfter: input.startAfter ?? null,
@@ -1875,7 +1937,7 @@ export async function readAccountExportSection(input: {
 		const pageSize = normalizePageSize(input.pageSize)
 		const page = await exportInternalUserMailbox({
 			env: input.env,
-			ownerId: input.mcpUserId,
+			ownerId: ownerUserId,
 			pageSize,
 			startAfter: input.startAfter ?? null,
 		})
@@ -1895,9 +1957,9 @@ export async function readAccountExportSection(input: {
 		const pageSize = normalizePageSize(input.pageSize)
 		const page = await repoSessionIndexRpc({
 			env: input.env,
-			userId: input.mcpUserId,
+			userId: ownerUserId,
 		}).exportSessions({
-			ownerId: input.mcpUserId,
+			ownerId: ownerUserId,
 			pageSize,
 			startAfter: input.startAfter ?? null,
 		})
@@ -1919,7 +1981,8 @@ export async function readAccountExportSection(input: {
 			const page = await readD1TableSectionPage({
 				env: input.env,
 				dbUserId: input.dbUserId,
-				mcpUserId: input.mcpUserId,
+				mcpUserId: ownerUserId,
+				personUserId,
 				table: input.table,
 				pageSize: input.pageSize,
 				startAfter: input.startAfter,
@@ -1937,7 +2000,7 @@ export async function readAccountExportSection(input: {
 		case 'oauth_grants': {
 			const oauthGrants = await listOAuthGrants({
 				env: input.env,
-				userId: input.mcpUserId,
+				userId: personKeyedOwnerId,
 				warnings,
 			})
 			items = [...oauthGrants]
@@ -1946,7 +2009,7 @@ export async function readAccountExportSection(input: {
 		case 'artifact_repos': {
 			const inventory = await collectInventory({
 				env: input.env,
-				userId: input.mcpUserId,
+				userId: ownerUserId,
 				dbUserId: input.dbUserId,
 				warnings,
 			})
@@ -1956,7 +2019,7 @@ export async function readAccountExportSection(input: {
 		case 'kv_keys': {
 			const inventory = await collectInventory({
 				env: input.env,
-				userId: input.mcpUserId,
+				userId: ownerUserId,
 				dbUserId: input.dbUserId,
 				warnings,
 			})
@@ -1978,7 +2041,7 @@ export async function readAccountExportSection(input: {
 					section: input.section,
 					items: cursor['done']
 						? []
-						: [{ kind: 'job_manager', userId: input.mcpUserId }],
+						: [{ kind: 'job_manager', userId: ownerUserId }],
 					truncated: false,
 					nextStartAfter: null,
 					pageSize: 1,
@@ -1992,7 +2055,7 @@ export async function readAccountExportSection(input: {
 				const afterId = String(cursor['afterId'] ?? '')
 				const { ids: selected, truncated } = await listExportBaseStorageIdPage(
 					input.env,
-					input.mcpUserId,
+					ownerUserId,
 					afterId,
 					pageSize,
 				)
@@ -2015,10 +2078,10 @@ export async function readAccountExportSection(input: {
 			if (stage === 'runlog') {
 				const afterId = String(cursor['afterId'] ?? '')
 				const [d1Ids, runRecordStorageIds] = await Promise.all([
-					listExportD1DiscoverableStorageIds(input.env, input.mcpUserId),
+					listExportD1DiscoverableStorageIds(input.env, ownerUserId),
 					listRunRecordStorageIds({
 						env: input.env,
-						userId: input.mcpUserId,
+						userId: ownerUserId,
 					}),
 				])
 				const exclusive = runRecordStorageIds

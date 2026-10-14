@@ -27,17 +27,19 @@ export const accountExportManifestCapability = defineDomainCapability(
 		outputSchema: accountExportManifestOutputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const mcpUserId =
-				ctx.callerContext.request?.org.id ?? personalOrgIdForPerson(user)
+			// GDPR export is always the personal account — never a bound team org.
+			const ownerUserId = personalOrgIdForPerson(user)
+			const personUserId = user.userId
 			const dbUserId = await resolveAccountExportDbUserId({
 				env: ctx.env,
-				mcpUserId,
+				personUserId,
 				email: user.email,
 			})
 			const manifest = await createAccountExportManifest({
 				env: ctx.env,
 				dbUserId,
-				mcpUserId,
+				ownerUserId,
+				personUserId,
 			})
 			return { manifest }
 		},

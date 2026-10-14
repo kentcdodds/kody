@@ -1,7 +1,8 @@
--- #3053 phase 3 (narrow): assert live users still have personal_org_id after
--- phase 1 backfill and phase 2 dual-write. Readers no longer COALESCE to
--- stable_user_id. Existing personal orgs keep orgs.id = stable_user_id;
--- this migration does not move org rows or drop the column.
+-- #3053 phase 3 (narrow): repair any live stragglers still missing
+-- personal_org_id (backfill equal-id), then assert every live row is stamped.
+-- Readers no longer COALESCE to stable_user_id. Existing personal orgs keep
+-- orgs.id = stable_user_id; this migration does not move org rows or drop the
+-- column.
 
 UPDATE users
 SET personal_org_id = stable_user_id

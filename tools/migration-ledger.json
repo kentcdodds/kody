@@ -541,13 +541,12 @@
 			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
 		},
 		{
-<<<<<<< HEAD
 			"filename": "0146-package-security-audits.sql",
 			"sha256": "18d8fb033af7e5f4e2aab1311a95ae24be9e60a2aac454c7d2c764129bc49ae9"
-=======
-			"filename": "0146-users-personal-org-id-required.sql",
-			"sha256": "2d0f574f8f436cf916bbf3ac6a2a2685fff0818a60573185f774b22a6e0c19e2"
->>>>>>> 1847f4547 (feat(orgs): narrow personalOrgId identity assumption (#3053))
+		},
+		{
+			"filename": "0147-users-personal-org-id-required.sql",
+			"sha256": "f929f07d49cc5cbf391743d38df7595431d335287f2d336105ac404ccd8e805f"
 		}
 	]
 }

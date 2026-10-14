@@ -50,17 +50,19 @@ export const accountExportSectionCapability = defineDomainCapability(
 		outputSchema: accountExportSectionOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const mcpUserId =
-				ctx.callerContext.request?.org.id ?? personalOrgIdForPerson(user)
+			// GDPR export is always the personal account — never a bound team org.
+			const ownerUserId = personalOrgIdForPerson(user)
+			const personUserId = user.userId
 			const dbUserId = await resolveAccountExportDbUserId({
 				env: ctx.env,
-				mcpUserId,
+				personUserId,
 				email: user.email,
 			})
 			const result = await readAccountExportSection({
 				env: ctx.env,
 				dbUserId,
-				mcpUserId,
+				ownerUserId,
+				personUserId,
 				section: args.section,
 				table: args.table,
 				storageId: args.storage_id,
