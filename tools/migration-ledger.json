@@ -527,6 +527,10 @@
 		{
 			"filename": "0142-approval-bundles.sql",
 			"sha256": "a61972046d238fd6fd8e4c621e549ef8fed3f6bcce0ef36d35f93e29bbfcb457"
+		},
+		{
+			"filename": "0143-approval-bundle-decision-finalized-at.sql",
+			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
 		}
 	]
 }

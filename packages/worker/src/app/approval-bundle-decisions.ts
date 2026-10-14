@@ -379,10 +379,13 @@ export async function decideApprovalBundleItem(input: {
 		decidedAt: new Date().toISOString(),
 	} as const
 	if (!(await claimApprovalBundleDecision(viewer.env.APP_DB, claim))) {
+		const latest = await loadCurrentItemView(viewer, bundle.id, ref)
 		return failure(
 			409,
-			'This item was already decided.',
-			await loadCurrentItemView(viewer, bundle.id, ref),
+			latest.decision
+				? 'This item was already decided.'
+				: 'This item is being decided in another tab. Reload in a moment to see the result.',
+			latest,
 		)
 	}
 	let outcome: ApproveOutcome
@@ -415,7 +418,7 @@ export async function decideApprovalBundleItem(input: {
 			await loadApprovalItemView(viewer, ref, null),
 		)
 	}
-	const decidedAt = new Date().toISOString()
+	const { decidedAt } = claim
 	await runAppDbBatchWithOrgAudit({
 		appDb: viewer.env.APP_DB,
 		audit: orgAuditWriterFromRequest(viewer.env, viewer.request),
@@ -423,7 +426,7 @@ export async function decideApprovalBundleItem(input: {
 			finalizeApprovalBundleDecisionStatement(
 				viewer.env.APP_DB,
 				claim,
-				decidedAt,
+				new Date().toISOString(),
 			),
 		],
 		event: {

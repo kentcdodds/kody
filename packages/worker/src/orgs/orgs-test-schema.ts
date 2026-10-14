@@ -239,6 +239,7 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				decision TEXT NOT NULL CHECK (decision IN ('approved', 'denied')),
 				decided_by_user_id TEXT NOT NULL,
 				decided_at TEXT NOT NULL,
+				finalized_at TEXT,
 				PRIMARY KEY (bundle_id, item_key)
 			)`,
 		)

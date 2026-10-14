@@ -108,7 +108,8 @@ export async function listApprovalBundleDecisions(
 	const { results } = await db
 		.prepare(
 			`SELECT item_key, decision, decided_by_user_id, decided_at
-			FROM approval_bundle_decisions WHERE bundle_id = ?`,
+			FROM approval_bundle_decisions
+			WHERE bundle_id = ? AND finalized_at IS NOT NULL`,
 		)
 		.bind(bundleId)
 		.all<Record<string, unknown>>()
@@ -134,15 +135,24 @@ type DecisionClaim = {
 }
 
 /**
+ * How long an unfinalized claim blocks other requests. Longer than any single
+ * approve (a publish included), so only a request that stopped part-way loses
+ * its claim.
+ */
+export const approvalBundleClaimLeaseMs = 10 * 60_000
+
+/**
  * Claims an item's decision before anything is approved or denied, so only
- * one request ever acts on an item. False when another request already
- * decided or is deciding it.
+ * one request acts on an item. The row stays an in-flight claim (no
+ * `finalized_at`) until the approve or deny finishes; a claim older than the
+ * lease is taken over. False when the item is decided or another request is
+ * deciding it.
  */
 export async function claimApprovalBundleDecision(
 	db: D1Database,
 	claim: DecisionClaim,
 ): Promise<boolean> {
-	const result = await db
+	const inserted = await db
 		.prepare(
 			`INSERT OR IGNORE INTO approval_bundle_decisions (
 				bundle_id, item_key, decision, decided_by_user_id, decided_at
@@ -156,7 +166,27 @@ export async function claimApprovalBundleDecision(
 			claim.decidedAt,
 		)
 		.run()
-	return (result.meta?.changes ?? 0) > 0
+	if ((inserted.meta?.changes ?? 0) > 0) return true
+	const leaseCutoff = new Date(
+		Date.parse(claim.decidedAt) - approvalBundleClaimLeaseMs,
+	).toISOString()
+	const takenOver = await db
+		.prepare(
+			`UPDATE approval_bundle_decisions
+			SET decision = ?, decided_by_user_id = ?, decided_at = ?
+			WHERE bundle_id = ? AND item_key = ? AND finalized_at IS NULL
+				AND decided_at < ?`,
+		)
+		.bind(
+			claim.decision,
+			claim.decidedByUserId,
+			claim.decidedAt,
+			claim.bundleId,
+			claim.itemKey,
+			leaseCutoff,
+		)
+		.run()
+	return (takenOver.meta?.changes ?? 0) > 0
 }
 
 /** Gives back a claim whose approve or deny did not happen. */
@@ -167,15 +197,16 @@ export async function releaseApprovalBundleDecision(
 	await db
 		.prepare(
 			`DELETE FROM approval_bundle_decisions
-			WHERE bundle_id = ? AND item_key = ? AND decision = ? AND decided_at = ?`,
+			WHERE bundle_id = ? AND item_key = ? AND decided_at = ?
+				AND finalized_at IS NULL`,
 		)
-		.bind(claim.bundleId, claim.itemKey, claim.decision, claim.decidedAt)
+		.bind(claim.bundleId, claim.itemKey, claim.decidedAt)
 		.run()
 }
 
 /**
- * Stamps the claim's final time once its approve or deny is done; batched with
- * the audit row so a recorded decision is always audited.
+ * Turns the claim into a decision once its approve or deny is done; batched
+ * with the audit row so a recorded decision is always audited.
  */
 export function finalizeApprovalBundleDecisionStatement(
 	db: D1Database,
@@ -184,16 +215,11 @@ export function finalizeApprovalBundleDecisionStatement(
 ): D1PreparedStatement {
 	return db
 		.prepare(
-			`UPDATE approval_bundle_decisions SET decided_at = ?
-			WHERE bundle_id = ? AND item_key = ? AND decision = ? AND decided_at = ?`,
+			`UPDATE approval_bundle_decisions SET finalized_at = ?
+			WHERE bundle_id = ? AND item_key = ? AND decided_at = ?
+				AND finalized_at IS NULL`,
 		)
-		.bind(
-			finalizedAt,
-			claim.bundleId,
-			claim.itemKey,
-			claim.decision,
-			claim.decidedAt,
-		)
+		.bind(finalizedAt, claim.bundleId, claim.itemKey, claim.decidedAt)
 }
 
 /** A member leaving an org takes the bundles made for them there. */

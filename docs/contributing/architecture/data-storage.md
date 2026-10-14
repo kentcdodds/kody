@@ -1565,8 +1565,11 @@ on write unless a migration backfills existing rows.
   `items_json`, an ordered array of item keys (`publish:<requestId>`,
   `capabilities:<packageId>`, `credential-picks:<proposalId>`). Item state is
   read live from the item's own tables; a bundle holds no approval state. Each
-  approve or deny writes one decision row (`decided_by_user_id`), first decision
-  wins. Bundles open for 30 days. A person's bundles in an org are hard-deleted
+  approve or deny first claims the item's decision row (`decided_by_user_id`),
+  so one request acts per item, then sets `finalized_at`
+  (`0143-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
+  the row is an in-flight claim, not a decision, and expires after 10 minutes.
+  The first finalized decision wins. Bundles open for 30 days. A person's bundles in an org are hard-deleted
   when they leave it, and with their account.
 
 ### Durable Object id contracts
