@@ -12,6 +12,7 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	approvalBundleApiPath,
 	approvalItemsAwaitingDecision,
+	approvalItemsReadyToApprove,
 	approvalItemStatusLabel,
 	approveAllLabel,
 	type ApprovalBundleDecisionResponse,
@@ -252,8 +253,12 @@ export function ApprovalBundleRoute(handle: Handle) {
 		}))
 	}
 
-	function awaitingApproval(view: ApprovalBundleView) {
+	function awaitingDecision(view: ApprovalBundleView) {
 		return approvalItemsAwaitingDecision({ groups: currentGroups(view) })
+	}
+
+	function readyToApprove(view: ApprovalBundleView) {
+		return approvalItemsReadyToApprove({ groups: currentGroups(view) })
 	}
 
 	async function decide(
@@ -311,7 +316,7 @@ export function ApprovalBundleRoute(handle: Handle) {
 
 	async function runApproveAll(path: BundlePath, view: ApprovalBundleView) {
 		if (approveAll) return
-		const queue = awaitingApproval(view)
+		const queue = readyToApprove(view)
 		if (queue.length === 0) return
 		approveAll = { done: 0, total: queue.length }
 		summary = null
@@ -537,7 +542,8 @@ export function ApprovalBundleRoute(handle: Handle) {
 		}
 		const view = loaded
 		const groups = view ? currentGroups(view) : []
-		const remaining = view ? awaitingApproval(view).length : 0
+		const remaining = view ? awaitingDecision(view).length : 0
+		const ready = view ? readyToApprove(view).length : 0
 		const total = groups.reduce((sum, group) => sum + group.items.length, 0)
 
 		return (
@@ -607,7 +613,7 @@ export function ApprovalBundleRoute(handle: Handle) {
 						<button
 							type="button"
 							data-testid="approval-bundle-approve-all"
-							disabled={remaining === 0 || approveAll !== null}
+							disabled={ready === 0 || approveAll !== null}
 							mix={[
 								css(approveAllButtonCss),
 								on('click', () => void runApproveAll(path, view)),
@@ -615,7 +621,7 @@ export function ApprovalBundleRoute(handle: Handle) {
 						>
 							{approveAll
 								? `Approving ${Math.min(approveAll.done + 1, approveAll.total)} of ${approveAll.total}…`
-								: approveAllLabel(remaining)}
+								: approveAllLabel(ready, remaining)}
 						</button>
 						{approveAll ? (
 							<p mix={css(smallMutedCss)}>

@@ -198,12 +198,20 @@ export function groupApprovalItems(
 	return [...groups.values()]
 }
 
+/** Items still waiting on a decision, including ones that cannot be approved yet. */
 export function approvalItemsAwaitingDecision(
 	view: Pick<ApprovalBundleView, 'groups'>,
 ): Array<ApprovalItemView> {
 	return view.groups.flatMap((group) =>
-		group.items.filter((item) => item.status === 'pending' && item.canApprove),
+		group.items.filter((item) => item.status === 'pending'),
 	)
+}
+
+/** Pending items Approve all can approve right now. */
+export function approvalItemsReadyToApprove(
+	view: Pick<ApprovalBundleView, 'groups'>,
+): Array<ApprovalItemView> {
+	return approvalItemsAwaitingDecision(view).filter((item) => item.canApprove)
 }
 
 export function approvalItemStatusLabel(status: ApprovalItemStatus) {
@@ -225,9 +233,13 @@ export function approvalItemStatusLabel(status: ApprovalItemStatus) {
 	}
 }
 
-export function approveAllLabel(count: number) {
-	if (count === 0) return 'Nothing left to approve'
-	return count === 1 ? 'Approve 1 change' : `Approve all ${count} changes`
+export function approveAllLabel(ready: number, waiting: number = ready) {
+	if (ready === 0) {
+		return waiting === 0
+			? 'Nothing left to approve'
+			: 'Nothing here can be approved yet'
+	}
+	return ready === 1 ? 'Approve 1 change' : `Approve all ${ready} changes`
 }
 
 export function approvalBundleCreatedVia(kind: string | null) {
