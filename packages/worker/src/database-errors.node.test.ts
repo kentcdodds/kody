@@ -24,6 +24,16 @@ test('getUniqueConstraintField reads table columns, named unique indexes, and wr
 			),
 		),
 	).toBe('stable_user_id')
+	expect(
+		getUniqueConstraintField(
+			new Error('UNIQUE constraint failed: users.personal_org_id'),
+		),
+	).toBe('personal_org_id')
+	expect(
+		getUniqueConstraintField(
+			new Error('UNIQUE constraint failed: idx_users_personal_org_id'),
+		),
+	).toBe('personal_org_id')
 
 	const wrapped = new Error('D1_ERROR')
 	wrapped.cause = new Error(

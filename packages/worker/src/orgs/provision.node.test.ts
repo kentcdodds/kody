@@ -2,7 +2,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
-import { ensurePersonalOrg, provisionPersonalOrg } from './provision.ts'
+import {
+	deletePersonalOrgForRollback,
+	ensurePersonalOrg,
+	provisionPersonalOrg,
+} from './provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function createDb() {
@@ -74,4 +78,47 @@ test('ensurePersonalOrg is idempotent when the personal org already exists', asy
 		.bind(stableUserId)
 		.first<{ slug: string }>()
 	expect(org?.slug).toBe('idem')
+})
+
+test('deletePersonalOrgForRollback removes a distinct orgId and frees the handle', async () => {
+	const db = await createDb()
+	const stableUserId = testStableUserIdFromEmail('rollback@example.com')
+	const orgId = testStableUserIdFromEmail('rollback-org@example.com')
+	expect(orgId).not.toBe(stableUserId)
+	await provisionPersonalOrg(db, {
+		stableUserId,
+		orgId,
+		username: 'rollback-user',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+
+	await deletePersonalOrgForRollback(db, stableUserId, orgId)
+
+	expect(
+		await db.prepare(`SELECT id FROM orgs WHERE id = ?`).bind(orgId).first(),
+	).toBeNull()
+	expect(
+		await db
+			.prepare(`SELECT 1 AS ok FROM org_memberships WHERE org_id = ?`)
+			.bind(orgId)
+			.first(),
+	).toBeNull()
+	expect(
+		await db
+			.prepare(`SELECT handle FROM handles WHERE handle = ?`)
+			.bind('rollback-user')
+			.first(),
+	).toBeNull()
+
+	await provisionPersonalOrg(db, {
+		stableUserId,
+		orgId,
+		username: 'rollback-user',
+		createdAt: '2026-01-03T00:00:00.000Z',
+	})
+	const retried = await db
+		.prepare(`SELECT id, slug FROM orgs WHERE id = ?`)
+		.bind(orgId)
+		.first<{ id: string; slug: string }>()
+	expect(retried).toEqual({ id: orgId, slug: 'rollback-user' })
 })

@@ -24,7 +24,9 @@ them is a compile error.
 - `PersonId` is the acting person, and is used for audit, RBAC, and attribution.
 
 `personalOrgId(person)` is the only conversion between the two. Today it is the
-identity function. Acting in any other org must go through an explicit
+identity function. The [ADR 0063](./0063-teams-expand-orgs.md) amendment
+(2026-10-14, #3053) records that same id on `users.personal_org_id` without
+changing this cast. Acting in any other org must go through an explicit
 membership or grant check, never through this function.
 `resolvePackageOwnerContext` (platform scope grants) and
 `resolvePackageStorageOwner` (share grants) are the two existing checks. Caller

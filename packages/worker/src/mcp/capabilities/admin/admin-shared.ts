@@ -8,6 +8,7 @@ import {
 	logAuditEvent,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
+import { nonInteractiveTriggerOf } from '#worker/authorization/authorize.ts'
 import {
 	emailVerificationDeliveryClassValues,
 	emailVerificationDeliveryStatusValues,
@@ -17,6 +18,13 @@ import { planNames } from '#universal/plans.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+
+export type ActingAdminPerson = {
+	usersId: number
+	stableUserId: string
+	email: string
+	username: string
+}
 
 /**
  * Site-admin tools: the `admin` role gates them, not org permissions. A job,
@@ -209,6 +217,18 @@ function getErrorReason(error: unknown) {
 	return 'unknown_error'
 }
 
+async function resolveAuditActorEmail(
+	ctx: CapabilityContext,
+): Promise<string | undefined> {
+	const callerEmail = ctx.callerContext.user?.email?.trim()
+	if (callerEmail) return callerEmail
+	try {
+		return (await resolveActingAdminPerson(ctx)).email
+	} catch {
+		return undefined
+	}
+}
+
 export async function auditAdminCapabilityInvocation<TResult>(
 	ctx: CapabilityContext,
 	capabilityName: string,
@@ -219,7 +239,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 		resultOf?: (result: TResult) => 'success' | 'failure'
 	} = {},
 ): Promise<TResult> {
-	const actorEmail = ctx.callerContext.user?.email
+	const actorEmail = await resolveAuditActorEmail(ctx)
 	try {
 		const result = await run()
 		await logAuditEvent({
@@ -256,21 +276,41 @@ export function buildCreatedUserAuditReason(input: {
 	].join(';')
 }
 
-export async function resolveActingAdminUserId(
+/**
+ * The person a site-admin capability acts as for attribution. Non-interactive
+ * runs with `request.actor` resolve that actor (the enabler); otherwise the
+ * authenticated MCP caller.
+ */
+export async function resolveActingAdminPerson(
 	ctx: CapabilityContext,
-): Promise<number> {
-	const user = requireMcpUser(ctx.callerContext)
-	const stableUserId = user.userId.trim()
+): Promise<ActingAdminPerson> {
+	const trigger = nonInteractiveTriggerOf(ctx.callerContext.request)
+	const actor = ctx.callerContext.request?.actor
+	const stableUserId =
+		trigger && actor
+			? String(actor.userId).trim()
+			: requireMcpUser(ctx.callerContext).userId.trim()
 	if (!stableUserId) {
 		throw new Error('Authenticated admin account was not found.')
 	}
 	const row = await ctx.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		`SELECT id, email, username FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(stableUserId)
-		.first<{ id: number }>()
+		.first<{ id: number; email: string; username: string }>()
 	if (!row) {
 		throw new Error('Authenticated admin account was not found.')
 	}
-	return row.id
+	return {
+		usersId: row.id,
+		stableUserId,
+		email: row.email,
+		username: row.username,
+	}
+}
+
+export async function resolveActingAdminUserId(
+	ctx: CapabilityContext,
+): Promise<number> {
+	return (await resolveActingAdminPerson(ctx)).usersId
 }

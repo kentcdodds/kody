@@ -98,15 +98,38 @@ const openFeedback = {
 	updatedAt: '2026-07-19T00:00:00.000Z',
 }
 
+function createActingAdminAppDb(userId: string): D1Database {
+	const stableUserId = personIdFromStored(userId)
+	return {
+		prepare(_sql: string) {
+			return {
+				bind(lookupId: string) {
+					return {
+						async first() {
+							if (lookupId !== stableUserId) return null
+							return {
+								id: 1,
+								email: `${userId}@example.com`,
+								username: `${userId}-name`,
+							}
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+}
+
 function createCapabilityContext(input?: {
 	userId?: string
 	roles?: Array<string>
 	packageId?: string
 	executionOrigin?: 'interactive' | 'background'
 }) {
+	const userId = input?.userId ?? 'user-1'
 	return {
 		env: {
-			APP_DB: {} as D1Database,
+			APP_DB: createActingAdminAppDb(userId),
 			PLATFORM_FEEDBACK_DISPATCH_QUEUE: {
 				send: mockModule.queueSend,
 			},
@@ -127,10 +150,10 @@ function createCapabilityContext(input?: {
 			...(input
 				? {
 						user: {
-							userId: personIdFromStored(input.userId ?? 'user-1'),
-							username: `${input.userId ?? 'user-1'}-name`,
-							email: `${input.userId ?? 'user-1'}@example.com`,
-							displayName: `${input.userId ?? 'user-1'}-name`,
+							userId: personIdFromStored(userId),
+							username: `${userId}-name`,
+							email: `${userId}@example.com`,
+							displayName: `${userId}-name`,
 							roles: input.roles,
 						},
 					}

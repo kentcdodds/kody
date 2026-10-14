@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { isPlatformFeedbackDomainError } from '#worker/platform-feedback/errors.ts'
 import {
 	sendPlatformFeedbackOutcomeEmail,
@@ -13,6 +12,7 @@ import { platformFeedbackActions } from '#worker/platform-feedback/types.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminPerson,
 } from './admin-shared.ts'
 import {
 	adminPlatformFeedbackRecordSchema,
@@ -61,7 +61,7 @@ export const adminPlatformFeedbackUpdateCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const admin = await resolveActingAdminPerson(ctx)
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'adminPlatformFeedbackUpdate',
@@ -71,7 +71,7 @@ export const adminPlatformFeedbackUpdateCapability = defineDomainCapability(
 							await updatePlatformFeedbackForAdmin({
 								db: ctx.env.APP_DB,
 								feedbackId: args.id,
-								reviewerUserId: user.userId,
+								reviewerUserId: admin.stableUserId,
 								action: args.action,
 								adminNote: args.admin_note,
 							})

@@ -525,11 +525,15 @@
 			"sha256": "6569873dde8e62a1b81e9d1100022fe2d15c65926a2eb1b76970e2577d46fa9d"
 		},
 		{
-			"filename": "0142-approval-bundles.sql",
+			"filename": "0142-users-personal-org-id.sql",
+			"sha256": "0bd51fbfb9d4e7d94098284577491889c0740c22876c3309fd59de4a70173694"
+		},
+		{
+			"filename": "0143-approval-bundles.sql",
 			"sha256": "a61972046d238fd6fd8e4c621e549ef8fed3f6bcce0ef36d35f93e29bbfcb457"
 		},
 		{
-			"filename": "0143-approval-bundle-decision-finalized-at.sql",
+			"filename": "0144-approval-bundle-decision-finalized-at.sql",
 			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
 		}
 	]

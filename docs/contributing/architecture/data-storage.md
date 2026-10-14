@@ -1563,7 +1563,7 @@ on write unless a migration backfills existing rows.
   that agent proposes again. A person's rows in an org are hard-deleted when
   they leave it, and with their account.
 - `approval_bundles` and `approval_bundle_decisions`
-  (`0142-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
+  (`0143-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
   store agent-prefilled approval pages (`approvalBundleCreate`). A bundle row
   names the person it is for (`person_user_id`), the agent credential that made
   it (`agent_credential_kind`, `agent_credential_id`), an untrusted note, and
@@ -1572,7 +1572,7 @@ on write unless a migration backfills existing rows.
   read live from the item's own tables; a bundle holds no approval state. Each
   approve or deny first claims the item's decision row (`decided_by_user_id`),
   so one request acts per item, then sets `finalized_at`
-  (`0143-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
+  (`0144-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
   the row is an in-flight claim, not a decision, and expires after 10 minutes.
   The first finalized decision wins. Bundles open for 30 days. A person's
   bundles in an org are hard-deleted when they leave it, and with their account.

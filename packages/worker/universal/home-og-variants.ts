@@ -119,25 +119,25 @@ const homeOgVariants = {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Trigger **anything**\nfrom webhooks',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	email: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Run code from\nyour **email**',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	cron: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Put your\nautomations\non a schedule',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	subscriptions: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Subscribe and\nemit custom\nevents',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 } as const satisfies Record<HomeOgVariantId, HomeOgVariantEntry>
 

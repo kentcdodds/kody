@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	addReservedUsernames,
@@ -11,6 +10,7 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminPerson,
 } from './admin-shared.ts'
 import {
 	reservedUsernamesInputSchema,
@@ -36,12 +36,12 @@ export const adminReservedUsernameAddCapability = defineDomainCapability(
 				ctx,
 				'adminReservedUsernameAdd',
 				async () => {
-					const user = requireMcpUser(ctx.callerContext)
+					const admin = await resolveActingAdminPerson(ctx)
 					try {
 						await addReservedUsernames({
 							env: ctx.env,
 							usernames: args.usernames,
-							updatedBy: user.userId,
+							updatedBy: admin.stableUserId,
 						})
 					} catch (error) {
 						if (error instanceof InvalidReservedUsernameError) {
