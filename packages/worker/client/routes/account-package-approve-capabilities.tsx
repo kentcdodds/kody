@@ -38,7 +38,11 @@ import {
 type CapabilityEntry =
 	AccountPackageApproveCapabilitiesLoaderData['entries'][number]
 
-/** The dependency that reaches an entry, or null when the package itself does. */
+/**
+ * The dependency on an entry's reach path, or null when only the package
+ * itself reaches it. Deduped rows keep the longest path, so a dependency path
+ * does not rule out the package also using the entry directly.
+ */
 function reachingDependency(entry: CapabilityEntry) {
 	return entry.via.length > 1 ? (entry.via.at(-1) ?? null) : null
 }
@@ -51,7 +55,9 @@ function credentialKindText(kind: string | undefined) {
 function credentialSummary(entry: CapabilityEntry) {
 	const dependency = reachingDependency(entry)
 	return `${credentialKindText(entry.credentialKind)} · ${
-		dependency ? `used by its dependency ${dependency}` : 'used by this package'
+		dependency
+			? `reachable through its dependency ${dependency}`
+			: 'used by this package'
 	}`
 }
 
@@ -312,7 +318,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 					}
 					description={
 						payload
-							? `Before ${payload.package.name} is served on the public internet, check what it can use. Secret values never appear here.`
+							? payload.package.isInternetVisible
+								? `${payload.package.name} is served on the public internet. Check what it can use before you re-approve. Secret values never appear here.`
+								: `Before ${payload.package.name} is served on the public internet, check what it can use. Secret values never appear here.`
 							: 'Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here.'
 					}
 				/>
@@ -457,8 +465,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							) : (
 								<>
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Once it is internet-visible, requests from anyone can run
-										code that uses these.
+										{payload.package.isInternetVisible
+											? 'It is internet-visible, so requests from anyone can run code that uses these.'
+											: 'Once it is internet-visible, requests from anyone can run code that uses these.'}
 									</p>
 									<ul mix={css(cardListCss)}>
 										{credentialEntries.map((entry) => (

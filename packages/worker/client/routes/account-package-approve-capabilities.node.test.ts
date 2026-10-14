@@ -181,6 +181,50 @@ test('pending approvals keep their commit in a Details disclosure', async () => 
 	expect(card.slice(detailsIndex)).toContain(pendingCommit)
 })
 
+test('capability approval does not claim a dependency-reached credential is dependency-only', async () => {
+	const html = await render(
+		loaderData({
+			entries: [
+				{
+					kind: 'credential',
+					credentialId,
+					name: 'SLACK_WEBHOOK_URL',
+					credentialKind: 'url',
+					hosts: ['hooks.slack.com'],
+					placement: null,
+					via: ['mau-chart', 'slack-notify'],
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('URL · reachable through its dependency slack-notify')
+	expect(html).not.toContain('used by this package')
+})
+
+test('capability approval copy matches an already internet-visible package', async () => {
+	const live = await render(
+		loaderData({
+			package: { ...loaderData().package, isInternetVisible: true },
+		}),
+	)
+	expect(live).toContain(
+		'@kody/mau-chart is served on the public internet. Check what it can use before you re-approve.',
+	)
+	expect(live).toContain(
+		'It is internet-visible, so requests from anyone can run code that uses these.',
+	)
+	expect(live).toContain('Re-approve capability set')
+	expect(live).not.toContain('Before @kody/mau-chart is served')
+	expect(live).not.toContain('Once it is internet-visible')
+
+	const notLive = await render(loaderData())
+	expect(notLive).toContain(
+		'Before @kody/mau-chart is served on the public internet',
+	)
+	expect(notLive).toContain('Once it is internet-visible')
+})
+
 test('capability approval says so plainly when nothing is reachable', async () => {
 	const html = await render(loaderData({ entries: [] }))
 
