@@ -14,6 +14,17 @@ test('refresh-token grant body detection and token extraction', () => {
 	)
 	expect(readRefreshTokenFromTokenRequestBody(body)).toBe('rt-1')
 	expect(readRefreshTokenFromTokenRequestBody(null)).toBeNull()
+	const params = new URLSearchParams({
+		grant_type: 'refresh_token',
+		refresh_token: 'rt-params',
+	})
+	expect(isMcpOAuthRefreshTokenGrantBody(params)).toBe(true)
+	expect(readRefreshTokenFromTokenRequestBody(params)).toBe('rt-params')
+	const form = new FormData()
+	form.set('grant_type', 'refresh_token')
+	form.set('refresh_token', 'rt-form')
+	expect(isMcpOAuthRefreshTokenGrantBody(form)).toBe(true)
+	expect(readRefreshTokenFromTokenRequestBody(form)).toBe('rt-form')
 })
 
 test('concurrent refresh_token POSTs with the same token share one HTTP exchange', async () => {

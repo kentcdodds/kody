@@ -34,25 +34,38 @@ const refreshFlights = new WeakMap<object, RefreshFlightMaps>()
 /** How long a successful refresh response stays shareable after the HTTP round-trip. */
 export const mcpOAuthRefreshCoalesceGraceMs = 30_000
 
-export function isMcpOAuthRefreshTokenGrantBody(body: unknown): boolean {
-	if (typeof body !== 'string') return false
-	try {
-		return new URLSearchParams(body).get('grant_type') === 'refresh_token'
-	} catch {
-		return false
+function tokenRequestParamsFromBody(body: unknown): URLSearchParams | null {
+	if (typeof body === 'string') {
+		try {
+			return new URLSearchParams(body)
+		} catch {
+			return null
+		}
 	}
+	if (body instanceof URLSearchParams) {
+		return new URLSearchParams(body)
+	}
+	if (typeof FormData !== 'undefined' && body instanceof FormData) {
+		const params = new URLSearchParams()
+		for (const [key, value] of body.entries()) {
+			if (typeof value === 'string') params.append(key, value)
+		}
+		return params
+	}
+	return null
+}
+
+export function isMcpOAuthRefreshTokenGrantBody(body: unknown): boolean {
+	const params = tokenRequestParamsFromBody(body)
+	return params?.get('grant_type') === 'refresh_token'
 }
 
 export function readRefreshTokenFromTokenRequestBody(
 	body: unknown,
 ): string | null {
-	if (typeof body !== 'string') return null
-	try {
-		const value = new URLSearchParams(body).get('refresh_token')
-		return value && value.trim().length > 0 ? value : null
-	} catch {
-		return null
-	}
+	const params = tokenRequestParamsFromBody(body)
+	const value = params?.get('refresh_token')
+	return value && value.trim().length > 0 ? value : null
 }
 
 function mapsFor(scope: object): RefreshFlightMaps {

@@ -150,8 +150,9 @@ export type ResolveMcpOAuthLiveServerIdentity = (
  * advertise scopes. A completed authorization-code grant clears leftover
  * `/token` blobs for other client ids on that server and records whether the
  * AS omitted an advertised refresh token (so ready-state warnings do not fire
- * after a later wipe). `redirectToAuthorization` clears stored tokens for the
- * server so a re-authorize cannot read a stale DCR/CIMD sibling. `coalesceFetch`
+ * after a later wipe). `redirectToAuthorization` keeps the live grant (a
+ * transient refresh failure must stay recoverable); authorization-code
+ * `saveTokens` clears sibling DCR/CIMD `/token` blobs. `coalesceFetch`
  * collapses concurrent refresh_token POSTs for this provider.
  * `invalidateCredentials` for `tokens`, `client`, or `all` infers `clientId`
  * when it is missing, deletes leftover `/token` keys and the sidecar so a
@@ -284,13 +285,10 @@ function installMcpOAuthAttemptBinding(
 					mcpOAuthAttemptIdentityInvalidMessage(live.name),
 				)
 			}
-			// Re-authorize starts a new grant: drop every leftover `/token`
-			// blob and the sidecar so tokens() cannot return a stale DCR
-			// sibling (or an old rotating refresh token) under the wrong key.
-			await deleteStoredMcpOAuthTokenBlobs(provider, serverId)
-			await provider.storage.delete(
-				mcpOAuthRefreshGrantOmittedStorageKey(serverId),
-			)
+			// Do not wipe the live grant here. The SDK can call redirect after a
+			// transient refresh failure; deleting first would drop a recoverable
+			// token. consumeVerifiedAttempt clears sibling blobs when the new
+			// authorization-code grant is saved.
 			if (clientId) provider.clientId = clientId
 			await redirect(authUrl)
 			try {

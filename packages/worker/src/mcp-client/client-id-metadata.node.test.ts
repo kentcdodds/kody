@@ -217,18 +217,19 @@ test('CIMD grant stores under the metadata URL and drops a leftover DCR sibling 
 	})
 })
 
-test('re-authorize redirect clears stale tokens so a new grant cannot read an old rotating refresh token', async () => {
+test('re-authorize redirect keeps the live grant until the new authorization-code save clears siblings', async () => {
 	const { storage, values } = createMemoryStorage()
 	const cimdClientId = `https://kody.codes${mcpClientIdMetadataPath}`
+	const live = {
+		serverId: 'server-home',
+		serverUrl: 'https://beeper.example/mcp',
+		clientId: cimdClientId,
+		ownerOrgId: 'org-1',
+		personId: 'person-1',
+		name: 'beeper',
+	}
 	const provider = createMcpClientOAuthProvider(storage, callbackUrl, {
-		resolveLiveServerIdentity: async () => ({
-			serverId: 'server-home',
-			serverUrl: 'https://beeper.example/mcp',
-			clientId: cimdClientId,
-			ownerOrgId: 'org-1',
-			personId: 'person-1',
-			name: 'beeper',
-		}),
+		resolveLiveServerIdentity: async () => live,
 	})
 	provider.serverId = 'server-home'
 	provider.clientId = cimdClientId
@@ -254,10 +255,29 @@ test('re-authorize redirect clears stale tokens so a new grant cannot read an ol
 	authUrl.searchParams.set('code_challenge', 'challenge')
 	await provider.redirectToAuthorization(authUrl)
 
-	expect(values.get(`/Kody/server-home/${cimdClientId}/token`)).toBeUndefined()
+	// Redirect alone must not wipe a recoverable grant (SDK may redirect after
+	// a transient refresh failure). Sibling cleanup happens on code exchange.
+	expect(values.get(`/Kody/server-home/${cimdClientId}/token`)).toMatchObject({
+		access_token: 'old-at',
+		refresh_token: 'old-rt',
+	})
+	expect(values.get('/Kody/server-home/dcr-stale/token')).toMatchObject({
+		access_token: 'stale-at',
+		refresh_token: 'stale-rt',
+	})
+	expect(values.get(refreshKey)).toEqual({ refresh_token: 'old-rt' })
+	expect(await provider.tokens()).toMatchObject({
+		access_token: 'old-at',
+		refresh_token: 'old-rt',
+	})
+
+	await markMcpOAuthAttemptVerified(storage, 'server-home')
+	await provider.saveTokens(bearer('new-at', 'new-rt'))
 	expect(values.get('/Kody/server-home/dcr-stale/token')).toBeUndefined()
-	expect(values.get(refreshKey)).toBeUndefined()
-	expect(await provider.tokens()).toBeUndefined()
+	expect(values.get(`/Kody/server-home/${cimdClientId}/token`)).toMatchObject({
+		access_token: 'new-at',
+		refresh_token: 'new-rt',
+	})
 })
 
 test('saveTokens records an omitted advertised refresh grant and clears it when a refresh token arrives', async () => {

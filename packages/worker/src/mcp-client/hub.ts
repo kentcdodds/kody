@@ -194,6 +194,36 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.manager = new MCPClientManager(mcpClientName, mcpClientVersion, {
 			createAuthProvider: (callbackUrl) => this.createAuthProvider(callbackUrl),
 		})
+		// Restore rebuilds the auth provider but not transport.fetch (functions
+		// cannot persist in server_options). Wire coalesceFetch on every
+		// createConnection — including hibernation restore — before the
+		// StreamableHTTP/SSE transport captures fetch at construction.
+		// MCPClientManager.createConnection is private; patch through a narrow
+		// escape hatch so restore gets the same fetch wiring as registerServer.
+		type McpCreateConnection = (
+			id: string,
+			url: string,
+			options: {
+				client?: unknown
+				transport?: Record<string, unknown>
+				discoverResult?: unknown
+			},
+		) => unknown
+		const managerWithCreate = this.manager as unknown as {
+			createConnection?: McpCreateConnection
+		}
+		const createConnection = managerWithCreate.createConnection
+		if (typeof createConnection === 'function') {
+			const boundCreateConnection = createConnection.bind(managerWithCreate)
+			managerWithCreate.createConnection = (id, url, options) => {
+				const transport = options.transport
+				if (!transport) return boundCreateConnection(id, url, options)
+				return boundCreateConnection(id, url, {
+					...options,
+					transport: withMcpOAuthTransportFetch(transport),
+				})
+			}
+		}
 		// The manager is a lifecycle capability: it receives DO storage from the
 		// lifecycle and restores persisted connections in its `onStart`.
 		this.lifecycle = Lifecycle.install(this).use(this.manager)
@@ -1009,6 +1039,11 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (sidecarValue !== undefined) {
 			oauthStorageSnapshot.set(sidecarKey, sidecarValue)
 		}
+		const omittedKey = mcpOAuthRefreshGrantOmittedStorageKey(input.serverId)
+		const omittedValue = await this.ctx.storage.get(omittedKey)
+		if (omittedValue !== undefined) {
+			oauthStorageSnapshot.set(omittedKey, omittedValue)
+		}
 		const attemptKey = mcpOAuthAttemptStorageKey(input.serverId)
 		const attemptValue = await this.ctx.storage.get(attemptKey)
 		if (attemptValue !== undefined) {
@@ -1023,10 +1058,10 @@ class McpClientHubBase extends DurableObject<Env> {
 		try {
 			await this.manager.removeServer(input.serverId)
 			// Remint for a replacement authorization. Clear token blobs only when
-			// resetting the client registration, or when no usable grant remains
-			// (re-authorize via redirectToAuthorization also clears). Do not wipe
-			// a live refresh token after a discovery-only failure — that path
-			// returns above.
+			// resetting the client registration, or when no usable grant remains.
+			// Do not wipe a live refresh token after a discovery-only failure —
+			// that path returns above. Sibling blobs clear on authorization-code
+			// saveTokens after redirect, not on redirect itself.
 			const presenceForRemint = await this.readTokenPresence(input.serverId)
 			await this.clearOAuthAuthorizationStorage({
 				serverId: input.serverId,
