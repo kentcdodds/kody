@@ -378,7 +378,12 @@ export async function decideApprovalBundleItem(input: {
 		decidedByUserId: personId,
 		decidedAt: new Date().toISOString(),
 	} as const
-	if (!(await claimApprovalBundleDecision(viewer.env.APP_DB, claim))) {
+	if (
+		!(await claimApprovalBundleDecision(viewer.env.APP_DB, {
+			...claim,
+			orgId: bundle.orgId,
+		}))
+	) {
 		const latest = await loadCurrentItemView(viewer, bundle.id, ref)
 		return failure(
 			409,
@@ -419,7 +424,9 @@ export async function decideApprovalBundleItem(input: {
 		)
 	}
 	const { decidedAt } = claim
-	await runAppDbBatchWithOrgAudit({
+	// The approve or deny already happened, so it is audited even when the
+	// claim expired mid-way and another request took it over.
+	const { changed: finalized } = await runAppDbBatchWithOrgAudit({
 		appDb: viewer.env.APP_DB,
 		audit: orgAuditWriterFromRequest(viewer.env, viewer.request),
 		statements: [
@@ -442,12 +449,14 @@ export async function decideApprovalBundleItem(input: {
 		status: 200,
 		body: {
 			ok: true,
-			item: await loadApprovalItemView(viewer, ref, {
-				itemKey,
-				decision,
-				decidedByUserId: personId,
-				decidedAt,
-			}),
+			item: finalized
+				? await loadApprovalItemView(viewer, ref, {
+						itemKey,
+						decision,
+						decidedByUserId: personId,
+						decidedAt,
+					})
+				: await loadCurrentItemView(viewer, bundle.id, ref),
 		},
 	}
 }

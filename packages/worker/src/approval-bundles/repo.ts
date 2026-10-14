@@ -141,22 +141,36 @@ type DecisionClaim = {
  */
 export const approvalBundleClaimLeaseMs = 10 * 60_000
 
+/** A live claim on the same item from another bundle in the org. */
+const liveClaimElsewhere = `EXISTS (
+	SELECT 1 FROM approval_bundles other
+	JOIN approval_bundle_decisions claim
+		ON claim.bundle_id = other.id AND claim.item_key = ?
+	WHERE other.org_id = ? AND other.id <> ?
+		AND claim.finalized_at IS NULL AND claim.decided_at >= ?
+)`
+
 /**
  * Claims an item's decision before anything is approved or denied, so only
- * one request acts on an item. The row stays an in-flight claim (no
- * `finalized_at`) until the approve or deny finishes; a claim older than the
- * lease is taken over. False when the item is decided or another request is
- * deciding it.
+ * one request acts on an item, across every bundle in the org that holds it.
+ * The row stays an in-flight claim (no `finalized_at`) until the approve or
+ * deny finishes; a claim older than the lease is taken over. False when the
+ * item is decided in this bundle or another request is deciding it.
  */
 export async function claimApprovalBundleDecision(
 	db: D1Database,
-	claim: DecisionClaim,
+	claim: DecisionClaim & { orgId: string },
 ): Promise<boolean> {
+	const leaseCutoff = new Date(
+		Date.parse(claim.decidedAt) - approvalBundleClaimLeaseMs,
+	).toISOString()
+	const elsewhere = [claim.itemKey, claim.orgId, claim.bundleId, leaseCutoff]
 	const inserted = await db
 		.prepare(
 			`INSERT OR IGNORE INTO approval_bundle_decisions (
 				bundle_id, item_key, decision, decided_by_user_id, decided_at
-			) VALUES (?, ?, ?, ?, ?)`,
+			)
+			SELECT ?, ?, ?, ?, ? WHERE NOT ${liveClaimElsewhere}`,
 		)
 		.bind(
 			claim.bundleId,
@@ -164,18 +178,16 @@ export async function claimApprovalBundleDecision(
 			claim.decision,
 			claim.decidedByUserId,
 			claim.decidedAt,
+			...elsewhere,
 		)
 		.run()
 	if ((inserted.meta?.changes ?? 0) > 0) return true
-	const leaseCutoff = new Date(
-		Date.parse(claim.decidedAt) - approvalBundleClaimLeaseMs,
-	).toISOString()
 	const takenOver = await db
 		.prepare(
 			`UPDATE approval_bundle_decisions
 			SET decision = ?, decided_by_user_id = ?, decided_at = ?
 			WHERE bundle_id = ? AND item_key = ? AND finalized_at IS NULL
-				AND decided_at < ?`,
+				AND decided_at < ? AND NOT ${liveClaimElsewhere}`,
 		)
 		.bind(
 			claim.decision,
@@ -184,6 +196,7 @@ export async function claimApprovalBundleDecision(
 			claim.bundleId,
 			claim.itemKey,
 			leaseCutoff,
+			...elsewhere,
 		)
 		.run()
 	return (takenOver.meta?.changes ?? 0) > 0
