@@ -1,23 +1,14 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { waitUntil } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import {
-	readAuthenticatedAppUser,
-	type AuthenticatedAppUser,
-} from '#app/authenticated-user.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	buildInstallAdaptPrompt,
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
 import { type routes } from '#universal/routes.ts'
-import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
-import {
-	checkPermission,
-	computeEffectivePermissions,
-} from '#worker/authorization/authorize.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -28,45 +19,11 @@ import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { toApiError } from '#worker/open-api/errors.ts'
-import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { entitlementEmailForOwner } from '#worker/request-context/owner-id.ts'
-import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-
-/**
- * Community pages have no org in their path, so the target org must be named
- * in the URL (`?org=<slug>`, forwarded from the listing page). It is used when
- * the person belongs there and holds `package:create`; otherwise the install
- * goes to their personal org (where they are Owner).
- */
-async function resolveCommunityInstallOwnerId(input: {
-	env: Env
-	user: AuthenticatedAppUser
-	request: Request
-}): Promise<OwnerId> {
-	const personalId = personalOrgIdForPerson(input.user.mcpUser)
-	const requested = readOrgSlugFromUrl(input.request.url)
-	if (!requested) return personalId
-	const binding = await loadOrgBindingForSlug(
-		input.env.APP_DB,
-		input.user.mcpUser.userId,
-		requested,
-	)
-	if (!binding || binding.org.id === personalId) return personalId
-	const access = await computeEffectivePermissions({
-		env: input.env,
-		request: deriveRequestContext({
-			user: input.user.mcpUser,
-			source: { kind: 'session' },
-			orgBinding: binding,
-		}),
-	})
-	if (!checkPermission(access, 'package:create').allowed) return personalId
-	return binding.org.id
-}
 
 const communityInstallPostSchema = z.object({
 	acknowledged: z.boolean().optional(),
@@ -119,11 +76,10 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			}
 
 			try {
-				const installOwnerId = await resolveCommunityInstallOwnerId({
-					env,
-					user,
-					request,
-				})
+				// Community pages have no org in their URL, so the web install goes
+				// to the personal org. Team forks go through an org-scoped MCP
+				// connection (`communityFork`).
+				const installOwnerId = personalOrgIdForPerson(user.mcpUser)
 				const expectedPackageScope = await getPackageScopeByUserId(
 					env.APP_DB,
 					installOwnerId,

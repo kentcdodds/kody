@@ -1,8 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import {
-	communityInstallHref,
-	createPackageTitleInstallArm,
-} from './community-detail-install.ts'
+import { createPackageTitleInstallArm } from './community-detail-install.ts'
 
 const idleTooltip =
 	'This was built by another user. Verify it before using. Click again to confirm fork.'
@@ -110,16 +107,4 @@ test('an outside click clears an armed package-title fork and a click on the con
 	} finally {
 		vi.unstubAllGlobals()
 	}
-})
-
-test('the install POST names the org only when the page URL does', () => {
-	expect(communityInstallHref('listing-1', '')).toBe(
-		'/community/listing-1/install.json',
-	)
-	expect(communityInstallHref('listing-1', '?tab=files')).toBe(
-		'/community/listing-1/install.json',
-	)
-	expect(communityInstallHref('listing-1', '?org=acme&tab=files')).toBe(
-		'/community/listing-1/install.json?org=acme',
-	)
 })

@@ -25,9 +25,9 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - `GET /profiles/:username.json`
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
-- `POST /community/:listingId/{report,feature,install}.json` (install targets
-  `?org=<slug>` when given and you hold `package:create` there, forwarded from
-  the listing page URL; otherwise your personal org)
+- `POST /community/:listingId/{report,feature,install}.json` (web install goes
+  to your personal org since listing URLs carry no org; team forks use an
+  org-scoped MCP connection's `communityFork`)
 - `POST /community/:listingId/trust.json` returns 410 (no trusted-listing mark)
 
 ## Gotchas
