@@ -384,7 +384,8 @@ function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'memories'),
 		label: 'Memories',
 		icon: 'book',
-		description: 'Long-term memories Kody keeps for this workspace.',
+		description:
+			'Personal long-term memories (team workspaces show a read-only legacy list).',
 	}
 }
 

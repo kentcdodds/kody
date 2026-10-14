@@ -188,6 +188,10 @@ Open these before proposing a new primitive, surface, or storage home.
   per-app for public; CNAME/ALIAS only (no Enterprise apex A/wildcards); org
   admins; one free domain then $0.10/mo; verify before serve; 24–48h DNS grace
   then remove
+- [0072 — Memory is personal-only](./0072-memory-is-personal-only.md) — one
+  writable pool per person (personal org); tools always use personal regardless
+  of connection org; shared org knowledge is packages + org instructions;
+  team-org rows are write-frozen legacy until cleanup
 
 ## Historical / UI / implementation
 

@@ -22,6 +22,8 @@ export type MemoryToolSummary = {
 		id: string
 		subject: string
 		summary: string
+		/** Always personal — memory is person-scoped (ADR 0072). */
+		scope: 'personal'
 	}>
 	retrieverResults: Array<PackageRetrieverSurfaceResult>
 	retrieverWarnings: Array<string>
@@ -298,9 +300,13 @@ export function buildMemoryStructuredContent(
 function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 	const lines: Array<string> = []
 	if (memorySummary.memories.length > 0) {
-		lines.push('## Relevant memories', '')
+		lines.push('## Relevant memories (personal)', '')
+		lines.push(
+			'These are personal memories. Ask before copying any into an org package or other shared org resource.',
+			'',
+		)
 		for (const memory of memorySummary.memories) {
-			lines.push(`- **${memory.subject}** — ${memory.summary}`)
+			lines.push(`- **[personal]** **${memory.subject}** — ${memory.summary}`)
 		}
 	}
 	if (memorySummary.retrieverResults.length > 0) {
@@ -337,6 +343,7 @@ function toMemoryToolSummaryItem(memory: MemoryRecord) {
 	return {
 		id: memory.id,
 		subject: memory.subject,
+		scope: 'personal' as const,
 		summary: memory.summary,
 	}
 }

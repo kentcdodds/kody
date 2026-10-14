@@ -44,6 +44,7 @@ import {
 	OrgSlugValidationError,
 } from '#worker/orgs/access-writes.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { assertMemoryGrantsAllowedOnOrg } from '#mcp/memory/memory-owner.ts'
 
 export const grantPresetSchema = z.enum(grantPresets)
 
@@ -325,6 +326,9 @@ async function authorizeGrantChange(
 ) {
 	const user = requireMcpUser(ctx.callerContext)
 	const request = requireMcpRequest(ctx.callerContext)
+	if (purpose === 'grant' && resourceType === 'memory') {
+		await assertMemoryGrantsAllowedOnOrg(ctx.env.APP_DB, request.org.id)
+	}
 	const check = await grantTargetCheck(
 		ctx,
 		request.org.id,

@@ -358,6 +358,7 @@ function memorySummary(
 				tags: ['search'],
 				sourceUris: [],
 				updatedAt: '2026-04-20T00:00:00.000Z',
+				scope: 'personal' as const,
 				...overrides,
 			},
 		],

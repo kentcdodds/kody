@@ -170,16 +170,19 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 			id,
 			subject: 'Search workflow',
 			summary: 'Use ranked search.',
+			scope: 'personal',
 		})),
 	)
 	expect(mockModule.acknowledgeSurfacedMemories).not.toHaveBeenCalled()
 	const [compactContent] = formatSurfacedMemoriesMarkdown(filtered)
 	expect(compactContent?.text).toBe(
 		[
-			'## Relevant memories',
+			'## Relevant memories (personal)',
 			'',
-			'- **Search workflow** — Use ranked search.',
-			'- **Search workflow** — Use ranked search.',
+			'These are personal memories. Ask before copying any into an org package or other shared org resource.',
+			'',
+			'- **[personal]** **Search workflow** — Use ranked search.',
+			'- **[personal]** **Search workflow** — Use ranked search.',
 		].join('\n'),
 	)
 
@@ -209,11 +212,13 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 			id: 'dup-first',
 			subject: 'OpenAI Apps domain verification',
 			summary: 'Challenge token is a static public asset.',
+			scope: 'personal',
 		},
 		{
 			id: 'next-distinct',
 			subject: 'Always prefill hosted setup URLs',
 			summary: 'Give a prefilled secrets URL.',
+			scope: 'personal',
 		},
 	])
 

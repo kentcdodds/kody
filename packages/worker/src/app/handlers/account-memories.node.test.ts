@@ -118,6 +118,11 @@ vi.mock('#mcp/memory/service.ts', () => ({
 		mockModule.deleteMemory(...args),
 }))
 
+vi.mock('#worker/orgs/is-personal-org.ts', () => ({
+	isPersonalOrg: async (_db: unknown, orgId: string) =>
+		orgId === 'stable-user-1',
+}))
+
 const { createAccountMemoriesApiHandler, createAccountMemoriesExportHandler } =
 	await import('./account-memories.ts')
 
@@ -176,6 +181,7 @@ test('memories API lists, filters, and selects user-scoped memories', async () =
 		selectedMemory: null,
 		query: '',
 		includeDeleted: false,
+		legacyReadOnly: false,
 	})
 
 	const filtered = await request(

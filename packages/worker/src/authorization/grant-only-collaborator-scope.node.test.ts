@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { type OrgGrantResourceType } from '@kody-internal/shared/org-permissions.ts'
 import {
 	ownerIdFromStored,
+	personalOrgId,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import type * as MemoryService from '#mcp/memory/service.ts'
@@ -297,8 +298,15 @@ const alarm = {
 	alarmInSync: true,
 }
 
-test('memory search scopes a grant-only collaborator to granted memories', async () => {
+test('memory tools always use the caller personal org (ADR 0072), even on a foreign org binding', async () => {
 	const { owner, collaborator } = await setup()
+	// Collaborator needs a live personal org so authorize against personal works.
+	const collaboratorPersonId = collaborator.callerContext.user!.userId
+	const ownerPersonId = owner.callerContext.user!.userId
+	await provisionPersonalOrg(collaborator.env.APP_DB, {
+		stableUserId: collaboratorPersonId,
+		username: `g${collaboratorPersonId.slice(0, 7)}`,
+	})
 	mocks.searchMemoryRecords.mockResolvedValue({
 		query: 'q',
 		matches: [],
@@ -311,37 +319,37 @@ test('memory search scopes a grant-only collaborator to granted memories', async
 	)
 	expect(mocks.searchMemoryRecords).toHaveBeenLastCalledWith(
 		expect.objectContaining({
-			scope: { kind: 'granted', ids: new Set([grantedMemoryId]) },
+			userId: personalOrgId(collaboratorPersonId),
+			scope: { kind: 'all' },
 		}),
 	)
 
 	await metaMemorySearchCapability.handler({ query: 'q', limit: 5 }, owner)
 	expect(mocks.searchMemoryRecords).toHaveBeenLastCalledWith(
-		expect.objectContaining({ scope: { kind: 'all' } }),
-	)
-})
-
-test('memory get and delete deny a memory the collaborator has no grant on', async () => {
-	const { collaborator } = await setup()
-	mocks.getMemory.mockImplementation(async (input: { memoryId: string }) =>
-		memoryRecord(input.memoryId),
+		expect.objectContaining({
+			userId: personalOrgId(ownerPersonId),
+			scope: { kind: 'all' },
+		}),
 	)
 
-	await expect(
-		metaMemoryGetCapability.handler({ memory_id: otherMemoryId }, collaborator),
-	).rejects.toBeInstanceOf(AuthorizationError)
-	const granted = await metaMemoryGetCapability.handler(
+	mocks.getMemory.mockResolvedValueOnce(memoryRecord(grantedMemoryId))
+	const got = await metaMemoryGetCapability.handler(
 		{ memory_id: grantedMemoryId },
 		collaborator,
 	)
-	expect(granted?.id).toBe(grantedMemoryId)
+	expect(got?.id).toBe(grantedMemoryId)
+	expect(mocks.getMemory).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			userId: personalOrgId(collaboratorPersonId),
+		}),
+	)
 
 	await expect(
 		metaMemoryDeleteCapability.handler(
 			{ memory_id: otherMemoryId, verified_by_agent: true },
 			collaborator,
 		),
-	).rejects.toBeInstanceOf(AuthorizationError)
+	).rejects.toThrow()
 	expect(mocks.deleteMemory).not.toHaveBeenCalled()
 })
 

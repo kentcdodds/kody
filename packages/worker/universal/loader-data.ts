@@ -2568,6 +2568,11 @@ export type AccountMemoriesLoaderData = {
 	selectedMemory: AccountMemoryDetail | null
 	query: string
 	includeDeleted: boolean
+	/**
+	 * Team-org legacy list: read-only until cleanup. Personal org is writable.
+	 * Memory is personal-only (ADR 0072).
+	 */
+	legacyReadOnly: boolean
 }
 
 type AccountEmailUsageEntry = {

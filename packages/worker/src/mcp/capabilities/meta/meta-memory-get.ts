@@ -1,20 +1,29 @@
-import { authorize, orgResource } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getMemory } from '#mcp/memory/service.ts'
 import { memoryRecordSchema } from './meta-memory-shared.ts'
-import { requireMcpRequest, requireMcpUser } from './require-user.ts'
+import {
+	authorizePersonalMemory,
+	memoryPersonalOnlyOrgPermission,
+} from './meta-memory-owner.ts'
 
 export const metaMemoryGetCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryGet',
-		orgPermission: 'memory:read',
-		description: 'Load one stored durable memory by id for the signed-in user.',
-		keywords: ['memory', 'get', 'load', 'read', 'durable memory'],
+		orgPermission: memoryPersonalOnlyOrgPermission,
+		description:
+			'Load one stored **personal** memory by id for the signed-in person (always their personal org, regardless of which org this connection uses).',
+		keywords: [
+			'memory',
+			'get',
+			'load',
+			'read',
+			'durable memory',
+			'personal memory',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -23,16 +32,14 @@ export const metaMemoryGetCapability = defineDomainCapability(
 		}),
 		outputSchema: memoryRecordSchema.nullable(),
 		async handler(args, ctx: CapabilityContext) {
-			requireMcpUser(ctx.callerContext)
-			const request = requireMcpRequest(ctx.callerContext)
-			await authorize(
-				{ env: ctx.env, request },
+			const auth = await authorizePersonalMemory(
+				ctx,
 				'memory:read',
-				orgResource(request, 'memory', args.memory_id),
+				args.memory_id,
 			)
 			const memory = await getMemory({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: auth.userId,
 				memoryId: args.memory_id,
 			})
 			return memory
