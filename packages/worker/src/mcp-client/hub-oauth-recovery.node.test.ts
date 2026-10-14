@@ -44,7 +44,12 @@ type FakeConnection = {
 	}
 }
 
-type ConnectBehavior = 'oauth' | 'ready' | 'disconnected' | 'connected'
+type ConnectBehavior =
+	| 'oauth'
+	| 'ready'
+	| 'disconnected'
+	| 'connected'
+	| 'authenticating-no-url'
 
 type FakeManager = {
 	rows: Array<FakeServerRow>
@@ -225,6 +230,16 @@ vi.mock('agents/mcp/client', () => ({
 				connection.connectionState = 'disconnected'
 				connection.connectionError = 'upstream closed'
 				return { state: 'disconnected' }
+			}
+			if (connectBehavior === 'authenticating-no-url') {
+				// Stuck authenticating with a grant but no authorize URL — remint
+				// must keep leftover refresh tokens (read presence before remove).
+				connection.connectionState = 'authenticating'
+				connection.connectionError = null
+				provider.authUrl = undefined
+				const row = this.rows.find((item) => item.id === serverId)
+				if (row) row.auth_url = null
+				return { state: 'authenticating' }
 			}
 			if (provider.storedTokens) provider.storedTokens = null
 			provider.clientId ??= `client-${this.connectCount}`
@@ -831,6 +846,32 @@ test('snapshot retries a previously ready server before emitting disconnect', as
 			),
 		).toBe(true)
 	}
+})
+
+test('remint for stuck authenticating without authUrl keeps leftover refresh tokens', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { values, hub, manager } = createHub()
+	const connection = await seedReadyHomeServer(hub, manager)
+	const storedTokens = {
+		access_token: 'stale-at',
+		refresh_token: 'keep-rt',
+	}
+	setTokens(connection, { ...storedTokens })
+	values.set(tokenKey, { ...storedTokens })
+	values.set(mcpOAuthRefreshTokenStorageKey('server-1'), {
+		refresh_token: 'keep-rt',
+	})
+	// Refresh-first parks without an auth URL; remint must still preserve the
+	// grant (presence is read before removeServer).
+	manager.connectBehaviors = ['authenticating-no-url', 'oauth']
+	const reminted = await reconnect(hub)
+	expect(reminted.state).toBe('authenticating')
+	expect(reminted.authUrl).toBeTruthy()
+	expect(manager.registerCount).toBe(1)
+	expect(values.get(tokenKey)).toEqual(storedTokens)
+	expect(values.get(mcpOAuthRefreshTokenStorageKey('server-1'))).toEqual({
+		refresh_token: 'keep-rt',
+	})
 })
 
 test('reconnect tries stored refresh before wiping tokens, and a parked authenticating lastError survives refreshServer', async () => {

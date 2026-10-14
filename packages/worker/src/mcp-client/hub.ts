@@ -1061,6 +1061,10 @@ class McpClientHubBase extends DurableObject<Env> {
 			oauthStorageSnapshot.set(attemptVerifiedKey, attemptVerifiedValue)
 		}
 
+		// Read presence before removeServer: tokens() lives on the connection's
+		// authProvider, so a post-remove read always looks empty and would wipe
+		// a leftover refresh token during remint.
+		const presenceBeforeRemint = await this.readTokenPresence(input.serverId)
 		try {
 			await this.manager.removeServer(input.serverId)
 			// Remint for a replacement authorization. Clear token blobs only when
@@ -1068,13 +1072,12 @@ class McpClientHubBase extends DurableObject<Env> {
 			// Do not wipe a live refresh token after a discovery-only failure —
 			// that path returns above. Sibling blobs clear on authorization-code
 			// saveTokens after redirect, not on redirect itself.
-			const presenceForRemint = await this.readTokenPresence(input.serverId)
 			await this.clearOAuthAuthorizationStorage({
 				serverId: input.serverId,
 				clearClientRegistration,
 				clearTokens:
 					clearClientRegistration ||
-					!shouldAttemptMcpOAuthRefresh(presenceForRemint),
+					!shouldAttemptMcpOAuthRefresh(presenceBeforeRemint),
 			})
 
 			const authProvider = this.createAuthProvider(input.callbackUrl)
