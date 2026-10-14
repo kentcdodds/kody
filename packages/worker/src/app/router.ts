@@ -555,6 +555,7 @@ export function createAppRouter(env: Env) {
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountCredentialsApi: createAccountCredentialsApiHandler(env),
+			accountCredentialsApiPost: createAccountCredentialsApiHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
 			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),

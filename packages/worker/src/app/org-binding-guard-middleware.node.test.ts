@@ -253,6 +253,7 @@ test('every org-scoped route 404s for an org the person cannot use', async () =>
 			'accountWebhooksApi',
 			'accountMcpServersApiPost',
 			'accountSecretsApiPost',
+			'accountCredentialsApiPost',
 			'accountJobsApiPost',
 			'accountConnectedAgentsApiPost',
 		]),

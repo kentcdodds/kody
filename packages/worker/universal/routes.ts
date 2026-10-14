@@ -46,6 +46,7 @@ export const routes = route({
 	accountPackagesApi: '/account/packages.json',
 	accountPackagesApiPost: post('/account/packages.json'),
 	accountCredentialsApi: '/account/credentials.json',
+	accountCredentialsApiPost: post('/account/credentials.json'),
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
 	accountSecretProvidersApi: '/account/secret-providers.json',
