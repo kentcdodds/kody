@@ -8,6 +8,7 @@ import {
 	type CreditAttributionBreakdown,
 	type CreditAttributionRow,
 } from '#universal/credit-attribution.ts'
+import { whereItWentSectionId } from '#universal/org-pages.ts'
 import { formatOnCreditsMicroUsd } from '#universal/usage-presentation.ts'
 import {
 	colors,
@@ -104,6 +105,7 @@ export function WhereItWentPanel(
 		const rows = [...visiblePackages, ...(adHocRow ? [adHocRow] : [])]
 		return (
 			<AccountManagementPanel
+				id={whereItWentSectionId}
 				title="Where it went"
 				description={
 					breakdown.totalCreditsMicroUsd > 0

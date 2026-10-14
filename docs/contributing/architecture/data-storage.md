@@ -395,8 +395,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `referee_stable_user_id`) and the invoice-gated reward ledger (`status`,
   `reward_invoice_id`, held invoice fields while email is unverified). See
   [Entitlements](./entitlements.md#referral-pro-credit). The
-  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
-  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
+  `d1_storage_reconciliation` lane sweeps live owners (personal orgs by
+  `users.stable_user_id` and team orgs by `orgs.id`) in one keyset from the
+  platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see
   [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
   reverse-resolve stable ids — it uses the indexed username lookup
@@ -806,9 +807,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `reserveStorageBytes` (atomic increment with limit check),
   `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
-  and usage reads via `readStorageBytes`; the reconcile lane sweeps by
-  `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner and
-  RepoSession bucket estimates stay outside this row (see
+  and usage reads via `readStorageBytes`; the reconcile lane sweeps personal and
+  team org owner ids by keyset from `d1_storage_reconcile_cursor`. StorageRunner
+  and RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
@@ -1563,7 +1564,7 @@ on write unless a migration backfills existing rows.
   that agent proposes again. A person's rows in an org are hard-deleted when
   they leave it, and with their account.
 - `approval_bundles` and `approval_bundle_decisions`
-  (`0143-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
+  (`0144-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
   store agent-prefilled approval pages (`approvalBundleCreate`). A bundle row
   names the person it is for (`person_user_id`), the agent credential that made
   it (`agent_credential_kind`, `agent_credential_id`), an untrusted note, and
@@ -1572,7 +1573,7 @@ on write unless a migration backfills existing rows.
   read live from the item's own tables; a bundle holds no approval state. Each
   approve or deny first claims the item's decision row (`decided_by_user_id`),
   so one request acts per item, then sets `finalized_at`
-  (`0144-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
+  (`0145-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
   the row is an in-flight claim, not a decision, and expires after 10 minutes.
   Within a bundle, the first finalized decision wins. Denying a capability set
   or credential proposal changes nothing, so it can still be approved from its

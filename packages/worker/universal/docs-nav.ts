@@ -153,6 +153,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 			'Verified, console-by-console walkthroughs for connecting a specific service.',
 		items: [
 			{ slug: 'discord', label: 'Discord' },
+			{ slug: 'dropbox', label: 'Dropbox' },
 			{ slug: 'figma', label: 'Figma' },
 			{ slug: 'github', label: 'GitHub' },
 			{ slug: 'google', label: 'Google' },

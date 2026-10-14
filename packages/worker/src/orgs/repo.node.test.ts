@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { runWithRequestContext } from '#worker/request-context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { isOrgBindingMembershipQuery } from '#worker/test-support/org-binding-query.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { provisionPersonalOrg } from './provision.ts'
 import {
@@ -14,9 +16,9 @@ import {
 } from './repo.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-async function createDb() {
+async function createDb(options?: { queries?: Array<string> }) {
 	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
+	const db = createD1FromSqlite(sqlite, options)
 	await ensureOrgsTestSchema(db)
 	return db
 }
@@ -88,6 +90,62 @@ test('loadOrgBindingForOrg requires membership or a live grant', async () => {
 		org: { id: gus, slug: 'gus' },
 		role: null,
 	})
+})
+
+test('loadOrgBindingForOrg hits D1 once per (personId, orgId) within a request', async () => {
+	const queries: Array<string> = []
+	const db = await createDb({ queries })
+	const ada = testStableUserIdFromEmail('ada-memo@example.com')
+	const gus = testStableUserIdFromEmail('gus-memo@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-memo',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: gus,
+		username: 'gus-memo',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	queries.length = 0
+
+	const membershipPrepares = () =>
+		queries.filter((query) =>
+			isOrgBindingMembershipQuery(
+				query.replace(/\s+/g, ' ').trim().toLowerCase(),
+			),
+		).length
+
+	const request = new Request(
+		'https://kody.test/profiles/ada/packages/demo/files.json',
+	)
+	const expected = {
+		org: { id: ada, slug: 'ada-memo' },
+		role: 'owner' as const,
+	}
+	// Same fan-out shape as loadPackagePageUncached: one read check, then four
+	// manage/publish/delete/owner checks in parallel (KODY-98).
+	const results = await runWithRequestContext(request, () =>
+		Promise.all([
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+		]),
+	)
+	expect(results).toEqual([expected, expected, expected, expected, expected])
+	expect(membershipPrepares()).toBe(1)
+
+	const other = await runWithRequestContext(request, () =>
+		loadOrgBindingForOrg(db, ada, gus),
+	)
+	expect(other).toBeNull()
+	expect(membershipPrepares()).toBe(2)
+
+	await expect(loadOrgBindingForOrg(db, ada, ada)).resolves.toEqual(expected)
+	await expect(loadOrgBindingForOrg(db, ada, ada)).resolves.toEqual(expected)
+	expect(membershipPrepares()).toBe(4)
 })
 
 test('listOrgsForPerson unions memberships and live grant orgs', async () => {

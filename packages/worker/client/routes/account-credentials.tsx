@@ -359,6 +359,12 @@ export function AccountCredentialsRoute(handle: Handle) {
 									}),
 									teamOrg,
 									packagesById,
+									href: currentHref,
+									onHostsSaved: () =>
+										credentialsData.reload(
+											handle,
+											readCurrentRouterHref(handle),
+										),
 								})
 							: undefined
 					}

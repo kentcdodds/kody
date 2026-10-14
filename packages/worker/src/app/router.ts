@@ -145,6 +145,10 @@ import {
 	createOrgApprovalBundleHandler,
 } from '#app/handlers/approval-bundle.ts'
 import {
+	createOrgCreditsApiHandler,
+	createOrgCreditsHandler,
+} from '#app/handlers/org-credits.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
@@ -559,6 +563,7 @@ export function createAppRouter(env: Env) {
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountCredentialsApi: createAccountCredentialsApiHandler(env),
+			accountCredentialsApiPost: createAccountCredentialsApiHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
 			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),
@@ -676,6 +681,8 @@ export function createAppRouter(env: Env) {
 			orgBillingPortal: createOrgBillingPortalHandler(env),
 			orgUsage: createOrgUsageHandler(env),
 			orgUsageApi: createOrgUsageApiHandler(env),
+			orgCredits: createOrgCreditsHandler(env),
+			orgCreditsApi: createOrgCreditsApiHandler(env),
 			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
 			orgCredentials: createOrgSectionHandler(env, 'credentials'),
 			orgCredentialNew: createOrgCredentialNewHandler(env),

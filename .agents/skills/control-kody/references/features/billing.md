@@ -13,11 +13,22 @@ the portal, and usage. Team organizations buy one Pro seat per owner and member.
 page (credits keeps `#credits` and the query). Billing also shows the signed-in
 user's referral share link and reward status.
 
+`/@:orgSlug/-/credits` is the organization's credits page and is open to every
+member. Owners and billing admins (`billing:read`) see the balance, the
+organization's default per-person and automation budgets with this month's
+spend, and the full credit ledger (purchases, auto-refills, grants, and usage
+debits with the meter, units, and month) with the balance after each row, newest
+first. **Load older** pages via `/@:orgSlug/-/credits.json?cursor=`. Free
+organizations still see any balance and history they have. Members and
+collaborators without `billing:read` see only their own monthly budget and its
+spend. The workspace rail lists **Credits** for everyone in the organization.
+
 ## Drive it
 
 ```bash
 node tools/control-kody.ts request GET /@user-me/-/billing.json
 node tools/control-kody.ts request GET /@user-me/-/usage.json
+node tools/control-kody.ts request GET /@user-me/-/credits.json
 ```
 
 Do not complete a real Stripe checkout or credit top-up from a Cloud Agent.
@@ -73,4 +84,5 @@ dashboard filter is `usageByPackageGet` (`GET /v1/account/usage/by-package`).
 - `POST /account/credits/top-up.json`
 - `POST /account/credits/settings.json`
 - `GET /@:orgSlug/-/usage.json`
+- `GET /@:orgSlug/-/credits.json` (`?cursor=` for older ledger rows)
 - `GET /v1/account/usage/by-package` (`usageByPackageGet`)

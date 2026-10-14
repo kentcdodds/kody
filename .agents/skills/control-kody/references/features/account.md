@@ -33,19 +33,29 @@ overview URL redirects to its home at `/@<slug>`. Both rails come from
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
-The site header has two controls. The org switcher
-(`data-testid="org-switcher"`, "@slug: switch organization") lists orgs, then
-Create organization and an invites row when you have any. The account menu
-(`data-testid="account-menu"`, panel `account-menu-panel`) is the person's
-avatar: name and `@username`, then a **Manage** group
-(`account-menu-manage-group`) that leads with the current org's **Overview**
-(the switcher's org: team `/@<slug>`, signup org `/@<slug>/-/overview`) and
-lists every other org's workspace home, then Your profile, Account settings,
-Usage & credits (current org from the URL only, else the personal org), and Log
-out. Narrow viewports show both in the one menu panel (orgs, then Manage with
-Overview only, then a "Your account" group). Own profile (`/@<username>`) also
-links **Workspace** (lands on `/@<slug>/-/repositories`) beside Edit profile. A
-team org home lists **Workspace** above its management links.
+The org switcher is the Workspace rail's heading: under the "Workspace" label,
+the org name is a button (`data-testid="org-switcher"`, "@slug: switch
+organization", panel `org-switcher-panel`) that lists orgs (avatar, `@slug`,
+role, check on the rail's org), then Create organization and an invites row when
+you have any. Each org row keeps the current section when that org can open it,
+otherwise it opens that org's workspace home (`workspaceSwitchHref`). Below
+860px the same switcher is the first item in the rail's `<details>` drawer
+(`org-switcher-drawer`, panel `org-switcher-drawer-panel`). The account rail has
+no switcher; its Workspaces group lists every org. Source:
+`packages/worker/client/workspace-switcher.tsx`.
+
+The site header has one session control, the account menu
+(`data-testid="account-menu"`, panel `account-menu-panel`): the person's avatar,
+name and `@username`, then a **Manage** group (`account-menu-manage-group`) that
+leads with the current org's **Overview** (team `/@<slug>`, signup org
+`/@<slug>/-/overview`) and lists every other org's workspace home, then Your
+profile, Account settings, Usage & credits (current org from the URL only, else
+the personal org), and Log out. So pages without a workspace rail (packages, org
+homes, account pages) still reach every org. Narrow viewports fold the account
+menu into the one menu panel (`site-menu-account`: Manage, then a "Your account"
+group). Own profile (`/@<username>`) also links **Workspace** (lands on
+`/@<slug>/-/repositories`) beside Edit profile. A team org home lists
+**Workspace** above its management links.
 
 ## How to get there
 

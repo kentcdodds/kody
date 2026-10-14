@@ -47,20 +47,21 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
-	// The header has an organization switcher and a separate account menu;
-	// the workspace sections are a click away from the Profile page.
+	// The header has only the account menu; the organization switcher heads
+	// the workspace rail, a click away from the Profile page.
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Profile' }),
 	).toBeVisible()
-	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
-		`@${primaryTestUser.username}: switch organization`,
-	)
 	await expect(page.getByTestId('account-menu')).toBeVisible()
+	await expect(page.getByTestId('org-switcher')).toHaveCount(0)
 	await page.goto(`/@${primaryTestUser.username}/-/jobs`)
 	await waitForClientHydration(page)
 	const workspaceRail = page.getByRole('navigation', {
 		name: 'Workspace sections',
 	})
+	await expect(workspaceRail.getByTestId('org-switcher')).toHaveAccessibleName(
+		`@${primaryTestUser.username}: switch organization`,
+	)
 	await expect(
 		workspaceRail.getByRole('link', { name: 'Credentials', exact: true }),
 	).toBeVisible()

@@ -46,6 +46,7 @@ export const routes = route({
 	accountPackagesApi: '/account/packages.json',
 	accountPackagesApiPost: post('/account/packages.json'),
 	accountCredentialsApi: '/account/credentials.json',
+	accountCredentialsApiPost: post('/account/credentials.json'),
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
 	accountSecretProvidersApi: '/account/secret-providers.json',
@@ -224,6 +225,8 @@ export const routes = route({
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
+	orgCredits: get('/@:orgSlug/-/credits'),
+	orgCreditsApi: get('/@:orgSlug/-/credits.json'),
 	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
 	// The credential creation one-pager for this org.
 	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),

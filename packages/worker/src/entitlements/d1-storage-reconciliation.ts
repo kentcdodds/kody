@@ -19,9 +19,10 @@ import {
  *   is **not** a failure.
  * - `failed` — unexpected error; retried on the next sweep wrap.
  *
- * Pages walk `users.stable_user_id` ascending from the platform-owned
- * `d1_storage_reconcile_cursor` singleton, wrapping at the tail. Row failures
- * do not fail the lane; `env` is required (UserMeter is the authority).
+ * Pages walk live owner ids (personal orgs and team orgs) ascending from the
+ * platform-owned `d1_storage_reconcile_cursor` singleton, wrapping at the tail.
+ * Row failures do not fail the lane; `env` is required (UserMeter is the
+ * authority).
  */
 export const d1StorageReconciliationBatchSize = 8
 

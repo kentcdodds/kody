@@ -3,6 +3,12 @@ import { routerEvents } from '#client/client-router.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import { hoverMq, pageGutter } from '#universal/styles/style-primitives.ts'
+import { dismissOpenPopoverPanel } from '#client/switcher-menu.tsx'
+import {
+	WorkspaceSwitcher,
+	workspaceSwitcherPanelId,
+	type WorkspaceSwitcherData,
+} from '#client/workspace-switcher.tsx'
 
 /** Account nav collapses to a wrapping row below this width (prototype 860px). */
 export const accountManagementNarrowMq = '@media (max-width: 860px)'
@@ -25,6 +31,8 @@ type AccountManagementLinkNavProps = {
 	label: string
 	/** Names whose settings these are: "Account", or "Workspace" plus `@slug`. */
 	heading?: { eyebrow: string; name?: string }
+	/** Draws the heading as the organization switcher (workspace rails). */
+	workspaceSwitcher?: WorkspaceSwitcherData
 	groups: Array<AccountManagementLinkNavGroup>
 }
 
@@ -286,7 +294,14 @@ export function AccountManagementLinkNav(
 							}),
 						]}
 					>
-						{renderRailHeading(handle.props.heading)}
+						{handle.props.workspaceSwitcher ? (
+							<WorkspaceSwitcher
+								{...handle.props.workspaceSwitcher}
+								placement="rail"
+							/>
+						) : (
+							renderRailHeading(handle.props.heading)
+						)}
 						{renderRailGroups(handle.props.groups, accountNavLinkCss)}
 					</div>
 				</nav>
@@ -299,6 +314,18 @@ export function AccountManagementLinkNav(
 								node.open = false
 							}
 							routerEvents.addEventListener('navigate', close, { signal })
+							// The switcher panel is in the top layer, so closing the
+							// drawer would otherwise leave it floating.
+							node.addEventListener(
+								'toggle',
+								() => {
+									if (node.open) return
+									dismissOpenPopoverPanel(
+										document.getElementById(workspaceSwitcherPanelId('drawer')),
+									)
+								},
+								{ signal },
+							)
 						}),
 					]}
 				>
@@ -316,6 +343,12 @@ export function AccountManagementLinkNav(
 						) : null}
 					</summary>
 					<nav aria-label={handle.props.label}>
+						{handle.props.workspaceSwitcher ? (
+							<WorkspaceSwitcher
+								{...handle.props.workspaceSwitcher}
+								placement="drawer"
+							/>
+						) : null}
 						{renderRailGroups(handle.props.groups, accountMobileNavLinkCss)}
 					</nav>
 				</details>

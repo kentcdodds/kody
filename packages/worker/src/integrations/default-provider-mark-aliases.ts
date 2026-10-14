@@ -28,7 +28,12 @@ export const defaultProviderMarkAliases = {
 	datadog: ['app.datadoghq.com', 'api.datadoghq.com'],
 	devin: ['app.devin.ai', 'devin.ai', 'cognition'],
 	discord: ['discord.com', 'discordapp.com', 'discord.gg'],
-	dropbox: ['www.dropbox.com', 'api.dropboxapi.com', 'content.dropboxapi.com'],
+	dropbox: [
+		'www.dropbox.com',
+		'api.dropboxapi.com',
+		'content.dropboxapi.com',
+		'notify.dropboxapi.com',
+	],
 	drizzle: ['drizzle-orm'],
 	duckduckgo: ['duckduckgo.com'],
 	facebook: ['www.facebook.com', 'graph.facebook.com'],

@@ -195,6 +195,28 @@ export function orgUsageCreditsPath(slug: string) {
 	return `${orgUsagePath(slug)}#credits`
 }
 
+/** Anchor of the usage page's per-package credit breakdown. */
+export const whereItWentSectionId = 'where-it-went'
+
+export function orgUsageWhereItWentPath(slug: string) {
+	return `${orgUsagePath(slug)}#${whereItWentSectionId}`
+}
+
+/**
+ * `/@acme/-/credits` and `/@acme/-/credits.json`: the organization's credit
+ * balance, budgets, and full ledger. Open to every member; the ledger and
+ * balance need `billing:read`, everyone else sees only their own budget.
+ */
+export function parseOrgCreditsPath(pathname: string): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/credits(?:\.json)?\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgCreditsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/credits`
+}
+
 /**
  * `/@acme/-/overview`: the workspace landing that links every section the
  * organization owns. A team org's overview is its home at `/@slug`, so the
@@ -355,6 +377,7 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgUsagePath(pathname)?.slug ??
 		parseOrgApprovalBundlePath(pathname)?.slug ??
+		parseOrgCreditsPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
 		parseOrgOverviewPath(pathname)?.slug ??
 		null
@@ -386,6 +409,7 @@ export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
 	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
 	if (parseOrgUsagePath(pathname)) return orgUsagePath(targetSlug)
+	if (parseOrgCreditsPath(pathname)) return orgCreditsPath(targetSlug)
 	const management = parseOrgManagementPath(pathname)
 	if (management) {
 		switch (management.section) {

@@ -240,3 +240,49 @@ test("the viewer's own credential lists the team orgs it is granted to", async (
 	])
 	expect((await load(false)).grants).toEqual([])
 })
+
+test("host settings cover the org's own Keys and OAuth connections only", async () => {
+	const { sqlite, env } = setup()
+	sqlite.exec(`
+		INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+		VALUES ('org-1', 'dropbox', 'dropbox', 'dbx-client',
+			'https://api.dropboxapi.com/oauth2/token', 'https://api.dropboxapi.com', 'pkce');
+		INSERT INTO user_integrations (id, user_id, name, app_slug, required_hosts_json)
+		VALUES ('dbx', 'org-1', 'dropbox', 'dropbox',
+			'["api.dropboxapi.com","content.dropboxapi.com"]');
+		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
+		VALUES ('bucket-1', 'org-1', 'user', '');
+		INSERT INTO secret_entries (id, bucket_id, name, encrypted_value, allowed_hosts, kind)
+		VALUES ('key', 'bucket-1', 'OPENAI', 'ct', '["api.openai.com"]', 'secret'),
+			('hook', 'bucket-1', 'HOOK', 'ct', '["hooks.example.com"]', 'url');
+	`)
+	const hostSettings = async (credential: CredentialListItem) =>
+		(
+			await loadCredentialDetail({
+				env,
+				request: {} as RequestContext,
+				orgId: 'org-1',
+				ownedByViewer: true,
+				credential,
+				packages: [],
+			})
+		).hostSettings
+
+	expect(
+		await hostSettings(item({ id: 'dbx', name: 'dropbox', kind: 'oauth' })),
+	).toEqual({
+		hosts: ['content.dropboxapi.com'],
+		fixedHosts: ['api.dropboxapi.com'],
+	})
+	expect(await hostSettings(item({ id: 'key', name: 'OPENAI' }))).toEqual({
+		hosts: ['api.openai.com'],
+		fixedHosts: [],
+	})
+	expect(
+		await hostSettings(item({ id: 'hook', name: 'HOOK', kind: 'url' })),
+	).toBeNull()
+	// A personal credential granted in is edited from the org that owns it.
+	expect(
+		await hostSettings(item({ id: 'key', name: 'OPENAI', scope: 'personal' })),
+	).toBeNull()
+})
