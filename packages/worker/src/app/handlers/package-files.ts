@@ -14,7 +14,7 @@ import {
 import { loadPackagePage } from '#app/package-page.ts'
 import {
 	loadAccessiblePackageFilesData,
-	loadCommunityPackageFilesData,
+	loadListingFilesData,
 	readPackageFilesSelectedPath,
 } from '#app/package-files-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -88,16 +88,18 @@ async function renderListingFilesPage(input: {
 	listingId: string | null
 	selectedPath: string
 	ref?: string
+	packagePath?: { username: string; kodyId: string }
 }) {
 	const serverTiming: Array<ServerTimingEntry> = []
 	const data = input.listingId
-		? await loadCommunityPackageFilesData({
+		? await loadListingFilesData({
 				env: input.env,
 				request: input.request,
 				listingId: input.listingId,
 				selectedPath: input.selectedPath,
 				ref: input.ref,
 				serverTiming,
+				packagePath: input.packagePath,
 			})
 		: null
 	if (!data) {
@@ -194,6 +196,7 @@ async function renderResolvedFilesPage(input: {
 		listingId: target.listingId,
 		selectedPath: target.selectedPath,
 		ref: target.ref,
+		packagePath: target.packagePath,
 	})
 }
 
@@ -340,8 +343,9 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			// The file tree is viewer-independent; a session cookie alone makes
-			// the response private so an owner's tree never lands in a shared cache.
+			// Anonymous payloads are viewer-independent (the repo actions' fork is
+			// a login link); a session cookie alone makes the response private so
+			// an owner's tree or a viewer's fork state never lands in a shared cache.
 			return jsonResponse(data, {
 				headers: anonymousPersonalizedJsonCacheHeaders({
 					personalized: false,
@@ -367,7 +371,7 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 			}
 			const treeRef = new URL(request.url).searchParams.get('ref')?.trim() || ''
 			const serverTiming: Array<ServerTimingEntry> = []
-			const data = await loadCommunityPackageFilesData({
+			const data = await loadListingFilesData({
 				env,
 				request,
 				listingId: params.listingId,
@@ -381,8 +385,9 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			// The file tree is viewer-independent; a session cookie alone makes
-			// the response private so an owner's tree never lands in a shared cache.
+			// Anonymous payloads are viewer-independent (the repo actions' fork is
+			// a login link); a session cookie alone makes the response private so
+			// an owner's tree or a viewer's fork state never lands in a shared cache.
 			return jsonResponse(data, {
 				headers: anonymousPersonalizedJsonCacheHeaders({
 					personalized: false,

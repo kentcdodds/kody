@@ -9,6 +9,7 @@ import {
 	ownerPackageForClient,
 	packagePageIsPrivate,
 } from '#app/package-page.ts'
+import { buildPackageRepoActionsForPage } from '#app/package-repo-actions.ts'
 import {
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
@@ -18,6 +19,8 @@ import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { loadPackageMappingScopeForViewer } from '#app/package-credentials-access.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
@@ -610,6 +613,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					kodyId: page.kodyId,
 					isPrivate: packagePageIsPrivate(page),
 					invocationUrlOrigin: page.invocationUrlOrigin,
+					repoActions: buildPackageRepoActionsForPage(page),
 				},
 				200,
 				serverTiming,
@@ -682,11 +686,57 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
 						isPrivate: page.ownerPackage.isPrivate,
 						invocationUrlOrigin: page.invocationUrlOrigin,
+						repoActions: buildPackageRepoActionsForPage(page),
 					},
 				},
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageSettings>
+}
+
+/**
+ * The bundled credential approval page. It needs a session (login comes back
+ * here with the proposal), and the page follows a moved package with its
+ * query. The client resolves the proposal through the approval API, which
+ * answers not found to anyone without `package:execute`.
+ */
+export function createCommunityPackageCredentialApprovalHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) return user
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: `${page.to}/approve-credentials`,
+					url: new URL(request.url),
+					cache: 'private',
+				})
+			}
+			if (page.kind !== 'page') {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			const scope = await loadPackageMappingScopeForViewer({
+				env,
+				request,
+				user,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (!scope) return renderPackageNotFoundPage({ request, env })
+			return renderAppPage({
+				request,
+				env,
+				title: 'Approve credential mappings',
+			})
+		},
+	} satisfies Action<typeof routes.communityPackageApproveCredentials>
 }
 
 /**

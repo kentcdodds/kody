@@ -19,7 +19,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
+import { listEnablementsForInstance } from '#worker/enablements/repo.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
@@ -46,6 +46,7 @@ import {
 	parseWebhookUrlHandle,
 	webhookUrlHostFromOrigin,
 } from './handle.ts'
+import { buildWebhookApprovalUrl } from './approval.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
@@ -106,6 +107,13 @@ export type ListedWebhook = {
 	urlHost: string | null
 	enabled: boolean | null
 	/**
+	 * True once a person has approved the webhook: it has a live enablement.
+	 * Minting alone leaves this false, and deliveries answer 409 until then.
+	 */
+	approved: boolean
+	/** Where to approve it; null when not minted or already approved. */
+	approvalUrl: string | null
+	/**
 	 * False for mints that predate encrypted secret storage: the hash alone
 	 * cannot rebuild the URL, so apply / reveal need a rotate first.
 	 */
@@ -126,6 +134,11 @@ export type MintedWebhookHandle = {
 	createdAt: string
 	rotatedAt: string
 	previousUrlActiveUntil: string | null
+	/**
+	 * Where a person approves the webhook so it runs; null once it has a
+	 * live enablement. Minting never turns a webhook on.
+	 */
+	approvalUrl: string | null
 }
 
 export type {
@@ -268,6 +281,19 @@ export async function listWebhooksForUser(input: {
 		),
 	)
 
+	const approvedEndpointIds = new Set<string>()
+	await Promise.all(
+		[...mintedByKey.values()].map(async (mint) => {
+			const enablements = await listEnablementsForInstance({
+				db: input.env.APP_DB,
+				orgId: mint.userId,
+				triggerKind: 'webhook',
+				instanceId: mint.id,
+			})
+			if (enablements.length > 0) approvedEndpointIds.add(mint.id)
+		}),
+	)
+
 	const listed: Array<ListedWebhook> = []
 	const urlHost = webhookUrlHostFromOrigin(input.baseUrl)
 	for (const [index, savedPackage] of filteredPackages.entries()) {
@@ -275,6 +301,7 @@ export async function listWebhooksForUser(input: {
 		if (!loaded) continue
 		for (const webhook of listPackageWebhooks(loaded.manifest)) {
 			const mint = mintedByKey.get(`${savedPackage.id}:${webhook.name}`)
+			const approved = mint !== undefined && approvedEndpointIds.has(mint.id)
 			listed.push({
 				packageId: savedPackage.id,
 				packageKodyId: savedPackage.kodyId,
@@ -292,6 +319,16 @@ export async function listWebhooksForUser(input: {
 				handle: mint ? formatWebhookUrlHandle(mint.id) : null,
 				urlHost: mint ? urlHost : null,
 				enabled: mint?.enabled ?? null,
+				approved,
+				approvalUrl:
+					mint && !approved
+						? buildWebhookApprovalUrl({
+								baseUrl: input.baseUrl,
+								orgSlug: input.request.org.slug,
+								packageKodyId: savedPackage.kodyId,
+								webhookName: webhook.name,
+							})
+						: null,
 				urlRecoverable: mint?.urlSecretEncrypted != null,
 				createdAt: mint?.createdAt ?? null,
 				rotatedAt: mint?.rotatedAt ?? null,
@@ -450,15 +487,23 @@ export async function mintWebhookUrlForUser(input: {
 			})
 		}
 	}
-	await ensureWebhookEnablementForMinter({
-		env: input.env,
-		request: input.request,
-		savedPackage,
-		endpointId: stored.id,
-		webhookName,
+	const enablements = await listEnablementsForInstance({
+		db: input.env.APP_DB,
+		orgId: savedPackage.userId,
+		triggerKind: 'webhook',
+		instanceId: stored.id,
 	})
 
 	return {
+		approvalUrl:
+			enablements.length > 0
+				? null
+				: buildWebhookApprovalUrl({
+						baseUrl,
+						orgSlug: input.request.org.slug,
+						packageKodyId: savedPackage.kodyId,
+						webhookName,
+					}),
 		packageId: savedPackage.id,
 		packageKodyId: savedPackage.kodyId,
 		name: webhookName,

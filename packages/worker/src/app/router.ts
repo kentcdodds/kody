@@ -147,6 +147,8 @@ import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
 } from '#app/handlers/account-experiments.ts'
+import { createPackageCredentialApprovalApiHandler } from '#app/handlers/package-credential-approval.ts'
+import { createPackageCredentialsApiHandler } from '#app/handlers/package-credentials.ts'
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
@@ -177,6 +179,7 @@ import {
 	createCommunityPackageApiHandler,
 	createCommunityPackageHandler,
 	createCommunityPackageSettingsHandler,
+	createCommunityPackageCredentialApprovalHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
@@ -347,6 +350,7 @@ import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
+	createOrgSettingsCustomHostnamesPostHandler,
 	createOrgSettingsDeletePostHandler,
 	createOrgSettingsHandler,
 	createOrgSettingsPostHandler,
@@ -494,6 +498,13 @@ export function createAppRouter(env: Env) {
 				createCommunityPackageWebhooksApiHandler(env),
 			communityPackageWebhooksApiPost:
 				createCommunityPackageWebhooksApiHandler(env),
+			communityPackageCredentialsApi: createPackageCredentialsApiHandler(env),
+			communityPackageCredentialsApiPost:
+				createPackageCredentialsApiHandler(env),
+			communityPackageApproveCredentialsApi:
+				createPackageCredentialApprovalApiHandler(env),
+			communityPackageApproveCredentialsApiPost:
+				createPackageCredentialApprovalApiHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
@@ -613,6 +624,8 @@ export function createAppRouter(env: Env) {
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageSettings: createCommunityPackageSettingsHandler(env),
+			communityPackageApproveCredentials:
+				createCommunityPackageCredentialApprovalHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageRaw: createCommunityPackageRawHandler(env),
@@ -662,6 +675,8 @@ export function createAppRouter(env: Env) {
 			orgSettingsPost: createOrgSettingsPostHandler(env),
 			orgSettingsAvatarPost: createOrgSettingsAvatarPostHandler(env),
 			orgSettingsDeletePost: createOrgSettingsDeletePostHandler(env),
+			orgSettingsCustomHostnamesPost:
+				createOrgSettingsCustomHostnamesPostHandler(env),
 			orgMembers: createOrgMembersHandler(env),
 			orgMembersApi: createOrgMembersApiHandler(env),
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),

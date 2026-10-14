@@ -4,6 +4,7 @@ import {
 	isCloudflareCustomHostnameGone,
 	type CloudflareCustomHostnameResult,
 } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
+import { invalidateCachedPackageAppCustomHostname } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import { isPackageAppCustomHostnameVerified } from '#worker/package-app-custom-hostnames/lookup.ts'
 import {
 	listPackageAppCustomHostnamesForReconcile,
@@ -169,6 +170,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 						row.id,
 					)
 					.run()
+				invalidateCachedPackageAppCustomHostname(input.env.APP_DB, row.hostname)
 				result.updated += 1
 			} catch (error) {
 				console.error(

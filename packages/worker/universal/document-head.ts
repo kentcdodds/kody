@@ -234,6 +234,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.orgUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
+	[routePattern(routes.communityPackageApproveCredentials)]: titleOnly(
+		'Approve credential mappings',
+	),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),

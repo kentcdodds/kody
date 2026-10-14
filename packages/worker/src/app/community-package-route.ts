@@ -91,6 +91,8 @@ export type CommunityFilesRouteTarget =
 			listingId: string
 			selectedPath: string
 			ref: string
+			/** Set when the URL already names the package (`/@user/kody/tree/…`). */
+			packagePath?: { username: string; kodyId: string }
 	  }
 	| {
 			kind: 'package'
@@ -348,6 +350,7 @@ export async function resolveCommunityFilesRoute(input: {
 			listingId: target.listingId,
 			selectedPath,
 			ref,
+			packagePath: { username: target.username, kodyId: target.kodyId },
 		}
 	}
 

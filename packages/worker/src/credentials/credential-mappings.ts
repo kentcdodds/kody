@@ -205,6 +205,43 @@ export function buildWriteCredentialMappingStatement(input: {
 		)
 }
 
+/** The invalid JSON a failed unchanged-guard evaluates. */
+const credentialMappingChangedMarker = 'credential mapping changed'
+
+/**
+ * A batch guard: fails the statement (and so the whole D1 batch) unless the
+ * row still holds `credentialIds` (null: no row). SQLite has no RAISE outside
+ * triggers, so a mismatch evaluates `json()` on invalid text.
+ */
+export function buildCredentialMappingUnchangedStatement(input: {
+	db: D1Database
+	orgId: string
+	packageId: string
+	needKey: string
+	target: CredentialMappingRowTarget
+	credentialIds: ReadonlyArray<string> | null
+}): D1PreparedStatement {
+	const { personUserId, enablementId } = targetColumns(input.target)
+	return input.db
+		.prepare(
+			`SELECT CASE WHEN (
+				SELECT credential_ids_json FROM credential_mappings
+				WHERE org_id = ? AND package_id = ? AND target = ?
+					AND person_user_id = ? AND enablement_id = ? AND need_key = ?
+			) IS ? THEN 1 ELSE json(?) END AS unchanged`,
+		)
+		.bind(
+			input.orgId,
+			input.packageId,
+			input.target.target,
+			personUserId,
+			enablementId,
+			input.needKey,
+			input.credentialIds === null ? null : JSON.stringify(input.credentialIds),
+			credentialMappingChangedMarker,
+		)
+}
+
 /** Deleting a package drops every mapping for its needs. */
 export async function deleteCredentialMappingsForPackage(input: {
 	db: D1Database

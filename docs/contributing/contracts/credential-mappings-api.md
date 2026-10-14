@@ -314,16 +314,38 @@ export type PackageCredentialsView = {
 `POST { changes: Array<CredentialMappingChange> }` applies edits made directly
 on the website (a person editing a tab) and returns the updated
 `PackageCredentialsView`. It uses the same validator and writer as Approve and
-is atomic: every change applies, or none does (`400 { ok: false, errors }`).
-This endpoint is session-only; MCP and API tokens cannot reach it.
+is atomic: every change applies, or none does. This endpoint is session-only;
+MCP and API tokens cannot reach it.
+
+- `:username` is the org slug. The viewer must belong to the org (or hold a
+  grant in it) and have `package:execute` on the package; otherwise `404`.
+- A malformed body (not 1–64 changes of the shape above) is
+  `400 { ok: false, error }`.
+- Changes that cannot apply are `400 PackageCredentialsWriteFailure`:
+  `{ ok: false, errors: Array<{ needKey, target, code, message, createUrl? }> }`
+  with the approval error codes. Nothing is written. A trigger that disappears
+  between reading and writing is the same `400` (`trigger_unknown` or
+  `webhook_not_minted`).
+- `409 { ok: false, error }` only when a webhook was turned on by someone else
+  between reading and writing.
+- When one request edits the same need and target more than once, the last edit
+  wins (a set then clear on a trigger that is off never turns it on).
+- A webhook another person enabled shows `enablement.enabledByYou: false`,
+  `canEdit: false`, and no `mappings` (its overrides are theirs).
+- `incomplete` lists the default per need, plus each trigger the viewer has
+  turned on (a trigger that is off never runs).
+- Every written mapping (create, update, or clear), including Approve, records
+  one `credential.mapping.update` org audit event. The row names the actor and
+  automation credential (kind/id), and details carry package, trigger (when
+  applicable), need, and old/new credential ids — never values.
 
 Who can write:
 
-| Target             | Allowed                                                                                                                                                                                 |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default` / `org`  | Package managers. Refs must be org credentials the writer can Use.                                                                                                                      |
-| `default` / `mine` | Anyone with `package:execute`. Refs must be credentials they can Use.                                                                                                                   |
-| `trigger`          | The enabler only. Writing a trigger mapping for a trigger the writer has not enabled turns it on for them (webhooks must be minted first; a webhook another person enabled is refused). |
+| Target             | Allowed                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default` / `org`  | Package managers. Refs must be org credentials the writer can Use.                                                                                                                                                            |
+| `default` / `mine` | Anyone with `package:execute`. Refs must be credentials they can Use.                                                                                                                                                         |
+| `trigger`          | The enabler only. Writing a trigger mapping for a trigger the writer has not enabled turns it on for them (webhooks must be minted first, and minting alone never turns one on; a webhook another person enabled is refused). |
 
 Validation per change: the need exists in the published closure; each ref exists
 and the writer can Use it; kind matches when the need declares one (otherwise
@@ -346,6 +368,7 @@ GET /@:username/:kodyId/approve-credentials?<proposal>
 | `default[<need>]`                | Org-layer default mapping for `<need>`.                                |
 | `mine[<need>]`                   | The approver's own default mapping for `<need>`.                       |
 | `trigger[<kind>:<name>][<need>]` | Trigger mapping for the approver's instance of a trigger.              |
+| `enable=<kind>:<name>`           | Turn a trigger on for the approver with no mapping. Repeatable.        |
 | `reason`                         | Optional agent note (at most 500 characters), shown as untrusted text. |
 
 Each mapping param is repeatable, one value per credential:
@@ -361,6 +384,12 @@ Each mapping param is repeatable, one value per credential:
   percent-encoded a second time (`%25`, `%5B`, `%5D`), so a cron job named
   `daily]backup` is `trigger[cron:daily%5Dbackup][github]` after query decoding.
   The codecs do this; hand-built links only need it for those three characters.
+
+`enable` splits at the first colon (`enable=subscription:acme.thing:happened`)
+and needs no bracket encoding. It is how a trigger with no credential needs
+reaches Approve: minting a webhook URL never turns it on, and the mint returns
+`enable=webhook:<name>` as its approval link. Each distinct `enable` value
+counts as one param.
 
 At most 64 mapping params (a param's repeated values count once). Param names
 that decode to the same target and need (`default[github]` and
@@ -414,27 +443,56 @@ export type CredentialApprovalChangeView = {
 	} | null
 }
 
+/** A trigger the proposal turns on with no mapping of its own. */
+export type CredentialApprovalEnableView = {
+	trigger: CredentialTriggerRef
+	/** False when it is already on (or paused) for the approver: a no-op. */
+	willEnable: boolean
+	error: { code: CredentialApprovalErrorCode; message: string } | null
+}
+
 export type CredentialApprovalView = {
 	ok: true
 	package: { id: string; kodyId: string }
 	reason: string | null
-	/** False when any change has an error or the proposal has parse errors. */
+	/** False when any change or enable has an error, or on parse errors. */
 	canApprove: boolean
-	/** Pins what was reviewed: changes resolved to credential ids. */
+	/** Pins what was reviewed: changes resolved to credential ids, and enables. */
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
+	enable: Array<CredentialApprovalEnableView>
 	/** Proposal-level problems (bad param names, too many params). */
 	errors: Array<string>
 }
 ```
 
+```ts
+/** Approve refused; nothing was written. `view` is resolved fresh. */
+export type CredentialApprovalFailure = {
+	ok: false
+	error: string
+	view: CredentialApprovalView
+}
+
+export type CredentialApprovalSuccess = {
+	ok: true
+	view: CredentialApprovalView
+}
+```
+
 - `GET` resolves the proposal for the signed-in viewer and returns
-  `CredentialApprovalView`. It never writes.
-- `POST { action: 'approve', fingerprint }` re-resolves the same query. A
-  different fingerprint (a credential was renamed or replaced, or a mapping
-  changed since review) is `409 { ok: false, error, view }` with the fresh view.
-  Otherwise every change (and any trigger it enables) is written in one batch:
-  `{ ok: true, view }`.
+  `CredentialApprovalView`. It never writes. 401 without a session; 404 when the
+  org or package is not visible or the viewer lacks `package:execute`.
+- `POST { action: 'approve', fingerprint }` re-resolves the same query:
+  - `canApprove` is false now: `400 CredentialApprovalFailure`.
+  - A different fingerprint (a credential was replaced, or a mapping changed
+    since review): `409 CredentialApprovalFailure` with the fresh view. Show it
+    and let the person approve again.
+  - A webhook someone else enabled between review and write:
+    `409 CredentialApprovalFailure`.
+  - Otherwise every change, any trigger it enables, and every `enable` trigger
+    not yet on are written in one batch: `200 CredentialApprovalSuccess`, whose
+    view shows the new `before`.
 - One Approve applies trigger mappings and default mappings together.
 
 ### `credentialMappingPropose` (MCP / Open API)
@@ -452,6 +510,8 @@ Input:
 		name: string
 		credentials: Record<string, CredentialPick | Array<CredentialPick>>
 	}>
+	/** Triggers to turn on with no mapping (a webhook with no needs). */
+	enable?: Array<{ kind: CredentialTriggerKind; name: string }>
 	reason?: string
 }
 ```
@@ -459,6 +519,31 @@ Input:
 Output: `{ approvalUrl, view: CredentialApprovalView, message }`. It validates
 as the caller would approve and returns the absolute approval URL to send to the
 person. It never writes. `view.canApprove: false` lists what to fix first.
+
+Open API: `POST /v1/credential-proposals`. Package code cannot call it, and a
+package the caller cannot run is a caller error ("Package not found").
+
+### Webhook mint and delivery
+
+Minting a webhook URL never turns it on. `webhookUrlMint` / `webhookUrlRotate`
+return `approval_url` (the website mint and rotate responses: `approvalUrl`)
+while the endpoint has no enablement that is on or paused; it is null once one
+exists. Enablements from before this rule, migrated or created by an earlier
+mint, are untouched.
+
+A delivery that runs nothing answers 409:
+
+```ts
+{
+	ok: false
+	error: {
+		code: 'enablement_not_on'
+		/** Says "not approved" or "paused", and includes the link. */
+		message: string
+		details?: { approvalUrl: string }
+	}
+}
+```
 
 ## Runtime errors
 
@@ -495,25 +580,41 @@ export type CredentialClientErrorBody = {
 
 ## Redirects
 
-When the credentials list page ships, these old URLs redirect (302, query
-preserved) instead of 404ing:
+Once the new Credentials UI has shipped and been proven, these old URLs redirect
+(302, query preserved) instead of 404ing:
 
-| Old                         | New                                               |
-| --------------------------- | ------------------------------------------------- |
-| `/@:org/-/secrets`          | `/@:org/-/credentials?kind=secret`                |
-| `/@:org/-/integrations`     | `/@:org/-/credentials?kind=oauth`                 |
-| `/@:org/-/mcp-servers`      | `/@:org/-/credentials?kind=mcp`                   |
-| `/@:org/-/secret-providers` | `/@:org/-/credentials` (custom providers section) |
-| `/connect/secret-set`       | `/connect/credential?kind=secret&...`             |
+| Old                     | New                                   |
+| ----------------------- | ------------------------------------- |
+| `/@:org/-/secrets`      | `/@:org/-/credentials?kind=secret`    |
+| `/@:org/-/integrations` | `/@:org/-/credentials?kind=oauth`     |
+| `/@:org/-/mcp-servers`  | `/@:org/-/credentials?kind=mcp`       |
+| `/connect/secret-set`   | `/connect/credential?kind=secret&...` |
 
 Only index pages redirect. Deeper paths that are approval or OAuth flows
 (`/@:org/-/secrets/approve`, `/@:org/-/mcp-servers/:serverId/authorize`,
 `/account/mcp-servers/oauth/callback`) keep serving. `/connect/oauth` never
 redirects: it is the registered OAuth redirect URI for bring-your-own apps.
-`credentialRedirectFor(url)` returns the new URL or null so the router and tests
-share one table. Legacy `/connect/secret-set` links read `package` as an allowed
-package id, so the redirect renames it to `allowedPackages` (the creation link
-uses `forPackage` for the package a need belongs to).
+`credentialRedirectFor(url)` (`universal/credential-redirects.ts`) returns the
+new path and query or null so the router and tests share one table. Legacy
+`/connect/secret-set` links read `package` as an allowed package id, so the
+redirect renames it to `allowedPackages` (the creation link uses `forPackage`
+for the package a need belongs to).
+
+`/@:org/-/secret-providers` stays its own page and never redirects: granting a
+vault provider access is a different trust decision from using a credential,
+with its own audit trail.
+
+The redirects are defined and tested but not wired. The old pages keep serving
+until their replacement is proven:
+
+- The three org index routes switch on by wrapping their handlers with
+  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`),
+  only after the new Credentials list has shipped and been proven, including the
+  add forms and row editors that live on those index pages today. Until then the
+  Credentials page links to them, and a redirect would loop.
+- `/connect/secret-set` switches on only after `/connect/credential` serves the
+  one-pager and it has been proven. Today `/connect/credential?kind=secret`
+  redirects to `/connect/secret-set`, so redirecting back would loop.
 
 ## Build order
 

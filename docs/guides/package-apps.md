@@ -6,8 +6,8 @@ summary:
   contract, mount-stripped URLs, `packageContext` / `kody:runtime`, the
   platform-built browser client (`kody.app.client`) and static assets directory
   (`kody.app.assets`), session handoff, local testing with `kody dev`, smoke
-  tests with packageAppFetch, a Remix recipe (Example A), the same-origin
-  proxy, lean forks, compiled clients, and listing verification.
+  tests with packageAppFetch, a Remix recipe (Example A), the same-origin proxy,
+  lean forks, compiled clients, and listing verification.
 category: platform
 ---
 
@@ -101,11 +101,11 @@ redirects, and websocket facets.
 
 ## Local testing with `kody dev`
 
-**Start here for unpublished apps.** From the package directory, `@kodycodes/cli`
-serves `kody.app.entry` on localhost via workerd with hot reload. The path is
-mount-stripped the same way as production; `packageContext.hostedUrl` and
-`appBasePath` point at localhost. Bundling reuses the same esbuild path as
-publish.
+**Start here for unpublished apps.** From the package directory,
+`@kodycodes/cli` serves `kody.app.entry` on localhost via workerd with hot
+reload. The path is mount-stripped the same way as production;
+`packageContext.hostedUrl` and `appBasePath` point at localhost. Bundling reuses
+the same esbuild path as publish.
 
 ```bash
 cd ./my-package
@@ -119,12 +119,20 @@ storage, fake or local credentials, no real secrets. `--target prod` keeps the
 app local but sends storage / credentials / `kody:*` hops to real Kody. Share
 previews for unpublished apps are out of scope — publish to share.
 
+Optional outbound HTTP mocking: add `.kody/mocks.ts` (MSW `handlers`) so the CLI
+Node gateway answers package `fetch` calls under mock. Unmatched requests return
+`unmocked_request` with a paste-ready stub; `--passthrough <host,…>` opts hosts
+into real network without real secrets. Ignored on `--target prod` and when the
+file is absent. See
+[Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-kodymocksts).
+
 Agents that cannot drive a browser should use `kody dev fetch`. After local mock
 and prod both look right, publish, then use `packageAppFetch` and the handed-off
 URL for the hosted proof.
 
-See also [Package lifecycle](./package-lifecycle.md#local-testing-before-publish)
-for exports, jobs, webhooks, and subscriptions (`kody dev job|webhook|emit`).
+See also
+[Package lifecycle](./package-lifecycle.md#local-testing-before-publish) for
+exports, jobs, webhooks, and subscriptions (`kody dev job|webhook|emit`).
 
 ## Smoke with packageAppFetch
 

@@ -129,6 +129,83 @@ export function buildInsertEnablementStatement(input: {
 	return { id, statement }
 }
 
+/**
+ * The webhook variant of the insert: writes nothing (0 changes) when the
+ * instance already has a non-off enablement, so one URL runs as one enabler
+ * even when two approvals race. The `enablements_webhook_one_live` index
+ * backs it up at the database level.
+ */
+export function buildInsertWebhookEnablementStatement(input: {
+	db: D1Database
+	enablement: NewEnablement
+	now: string
+}): { id: string; statement: D1PreparedStatement } {
+	if (input.enablement.triggerKind !== 'webhook') {
+		throw new Error('Only a webhook enablement uses the one-live insert.')
+	}
+	const id = input.enablement.id ?? crypto.randomUUID()
+	const statement = input.db
+		.prepare(
+			`INSERT INTO enablements (
+				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+				enabler_user_id, state, origin, enabled_at, updated_at
+			)
+			SELECT ?, ?, ?, 'webhook', ?, ?, ?, 'on', ?, ?, ?
+			WHERE NOT EXISTS (
+				SELECT 1 FROM enablements
+				WHERE org_id = ? AND trigger_kind = 'webhook'
+				  AND instance_id = ? AND state <> 'off'
+			)`,
+		)
+		.bind(
+			id,
+			input.enablement.orgId,
+			input.enablement.packageId,
+			input.enablement.triggerName,
+			input.enablement.instanceId,
+			input.enablement.enablerUserId,
+			input.enablement.origin,
+			input.now,
+			input.now,
+			input.enablement.orgId,
+			input.enablement.instanceId,
+		)
+	return { id, statement }
+}
+
+/**
+ * A batch statement that fails (malformed JSON, so the whole batch rolls back)
+ * unless enablement `id` exists. Follows a webhook's one-live insert, which
+ * writes nothing when another enabler got there first.
+ */
+export function buildEnablementInsertedGuardStatement(input: {
+	db: D1Database
+	id: string
+}): D1PreparedStatement {
+	return input.db
+		.prepare(
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM enablements WHERE id = ?)
+			THEN 1 ELSE json(?) END AS inserted`,
+		)
+		.bind(input.id, 'webhook enablement was not inserted')
+}
+
+/** True for the unique-index error of a second live webhook enablement. */
+export function isWebhookOneLiveConflict(error: unknown) {
+	let current = error
+	while (current instanceof Error) {
+		if (
+			/enablements_webhook_one_live|unique constraint failed: enablements\.org_id, enablements\.instance_id(?!,)/i.test(
+				current.message,
+			)
+		) {
+			return true
+		}
+		current = current.cause
+	}
+	return false
+}
+
 export async function insertEnablement(input: {
 	db: D1Database
 	enablement: NewEnablement

@@ -6,7 +6,14 @@ register the credential with `webhookUrlApply` (generic HTTPS, including the
 GitHub Hooks API) or copy the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
-package export.
+package export as the person who approved the webhook.
+
+Minting does not turn a webhook on. Mint and rotate return `approval_url` while
+nobody has approved it; a person opens it and clicks Approve, which turns the
+webhook on for them and maps the credentials it uses in the same step. Until
+then deliveries answer **409** `enablement_not_on` with that link. Webhooks
+approved before this rule (including ones turned on by an earlier mint) keep
+running, and remint or rotate never changes who they run as.
 
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
@@ -269,6 +276,10 @@ package settings.
 - `GET` is allowed only when the webhook declares a GET-capable
   [`challenge`](#subscription-challenges); otherwise **405**.
 - Payload > **1 MB** → **413**.
+- Minted but not approved (or its enablement was turned off), or paused because
+  its enabler lost access → **409**
+  `{ "ok": false, "error": { "code": "enablement_not_on", "message", "details": { "approvalUrl" } } }`.
+  The message says which, and includes the approval link.
 - Rate limit per minted webhook → **429**. Default **60**/min; override with
   `rateLimitPerMinute` up to **600**.
 - `ack`: **202** `{ "ok": true }` after Kody durably queues the delivery; the
