@@ -61,7 +61,8 @@ move their storage keys.
 - **Phase 1 (widen).** `users.personal_org_id` is added, backfilled to
   `stable_user_id`, and dual-written on signup. `orgs.id` still equals the
   person id. `personalOrgId()` stays the identity cast.
-- **Phase 2 (switch).** Readers use `users.personal_org_id` / `request.org.id`.
-  New signups mint `orgs.id` distinct from `stable_user_id`. End-to-end proof of
-  distinct ids lands in this phase.
+- **Phase 2 (switch).** Readers use `users.personal_org_id` / `request.org.id`
+  (SQL joins, binding, `isPersonalOrg`, write-lease fence, stamped
+  `mcpUser.personalOrgId`). New signups mint `orgs.id` distinct from
+  `stable_user_id`. Existing personal orgs keep equal ids.
 - **Phase 3 (narrow).** Remove the identity assumption on `personalOrgId()`.

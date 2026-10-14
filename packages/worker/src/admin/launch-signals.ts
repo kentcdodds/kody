@@ -154,7 +154,7 @@ export async function loadAdminLaunchSignals(input: {
 								)
 							THEN 1 ELSE 0 END) AS overlay_pro
 					 FROM users u
-					 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 					 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
 				)
 				.bind(
@@ -177,7 +177,7 @@ export async function loadAdminLaunchSignals(input: {
 						COALESCE(o.stripe_price_id, '') AS stripe_price_id,
 						COUNT(*) AS n
 					 FROM users u
-					 INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 					 WHERE u.deleting_at IS NULL
 						AND o.stripe_plan IN ('standard', 'pro')
 						${andLiveDeletedAtSql('u')}
@@ -199,7 +199,7 @@ export async function loadAdminLaunchSignals(input: {
 						END AS name,
 						COUNT(*) AS n
 					 FROM users u
-					 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 					 WHERE u.deleting_at IS NULL
 						${andLiveDeletedAtSql('u')}
 					 GROUP BY 1`,

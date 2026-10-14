@@ -187,7 +187,11 @@ async function resolveOwnerPackageFilesTarget(input: {
 		kodyId: input.kodyId,
 	})
 	if (page.kind === 'not_found') return null
-	if (page.kind === 'unauthorized') return { kind: 'unauthorized' }
+	// Files stay closed for no-access the same as unauthorized; the package
+	// home page already explains how to request a grant.
+	if (page.kind === 'unauthorized' || page.kind === 'no_access') {
+		return { kind: 'unauthorized' }
+	}
 	const requestedRef = requestedTreeRef(input.ref)
 	if (page.kind === 'redirect') {
 		const ref = isPublicTreeDefaultRefAlias(requestedRef)

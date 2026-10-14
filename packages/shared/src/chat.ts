@@ -16,6 +16,8 @@ export const mcpUserContextSchema = object({
 	email: string(),
 	username: optional(string()),
 	displayName: string(),
+	/** Personal org id from `users.personal_org_id` when loaded from APP_DB. */
+	personalOrgId: optional(string()),
 	roles: optional(array(string())),
 	permissions: optional(array(string())),
 })
@@ -84,13 +86,15 @@ type McpUserContextInferred = InferOutput<typeof mcpUserContextSchema>
 
 export type McpUserContext = Omit<
 	McpUserContextInferred,
-	'userId' | 'roles' | 'permissions' | 'username'
+	'userId' | 'roles' | 'permissions' | 'username' | 'personalOrgId'
 > & {
 	/**
 	 * The signed-in person, or the org's owning account for Automation runs.
 	 * Read `McpCallerContext.request` for the org and the actor.
 	 */
 	userId: PersonId
+	/** Personal org owner id when loaded from `users.personal_org_id`. */
+	personalOrgId?: OwnerId
 	username?: string
 	roles?: Array<string>
 	permissions?: Array<string>

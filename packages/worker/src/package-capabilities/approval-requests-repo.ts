@@ -192,6 +192,38 @@ export async function listPendingPackageApprovalRequests(
 	return results.map(mapRow)
 }
 
+/** Every pending request addressed to one owner, oldest first. */
+export async function listPendingPackageApprovalRequestsForOwner(
+	db: D1Database,
+	input: { ownerUserId: string },
+): Promise<Array<PackageApprovalRequest>> {
+	const { results } = await db
+		.prepare(
+			`SELECT ${columns} FROM package_approval_requests
+			WHERE owner_user_id = ? AND status = 'pending'
+			ORDER BY created_at, id`,
+		)
+		.bind(input.ownerUserId)
+		.all<Record<string, unknown>>()
+	return results.map(mapRow)
+}
+
+/** One request addressed to an owner, whatever package it is for. */
+export async function getPackageApprovalRequestForOwner(
+	db: D1Database,
+	input: { id: string; ownerUserId: string },
+): Promise<PackageApprovalRequest | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${columns} FROM package_approval_requests
+			WHERE id = ? AND owner_user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.id, input.ownerUserId)
+		.first<Record<string, unknown>>()
+	return row ? mapRow(row) : null
+}
+
 export async function getPackageApprovalRequest(
 	db: D1Database,
 	input: { id: string; packageId: string; ownerUserId: string },

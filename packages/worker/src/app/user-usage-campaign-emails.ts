@@ -277,7 +277,7 @@ export async function listUsersForUsageCampaignSweep(
 			        o.plan, o.stripe_plan, o.entitlement_ladder, o.stripe_credits_eligible,
 			        o.admin_credits_eligible
 			 FROM users u
-			 INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
 			 LEFT JOIN user_usage_campaigns c ON c.user_id = u.stable_user_id
 			 WHERE u.email_verified_at IS NOT NULL
 			   AND u.deleting_at IS NULL

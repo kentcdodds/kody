@@ -63,6 +63,10 @@ export {
 	accountPackageApproveCapabilitiesRouteLoader,
 } from './account-package-approve-capabilities.tsx'
 export {
+	ApprovalBundleRoute,
+	approvalBundleRouteLoader,
+} from './approval-bundle.tsx'
+export {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'

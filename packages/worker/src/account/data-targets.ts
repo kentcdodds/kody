@@ -495,6 +495,16 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'credential_mapping_proposals',
 		columns: ['person_user_id'],
 	},
+	{
+		kind: 'user_columns',
+		table: 'approval_bundle_decisions',
+		columns: ['decided_by_user_id'],
+	},
+	{
+		kind: 'user_columns',
+		table: 'approval_bundles',
+		columns: ['person_user_id'],
+	},
 	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
 	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{
@@ -769,6 +779,12 @@ export type UserScopedTargetMatch = {
 				search: string
 				replacement: string
 		  }
+		| {
+				kind: 'replace_json_string_multi'
+				column: string
+				/** Nested REPLACE(...) expression already including column refs. */
+				setExpr: string
+		  }
 }
 
 export function resolveUserScopedTargetTable(
@@ -800,20 +816,58 @@ export function resolveUserScopedTargetTable(
 	}
 }
 
+/**
+ * Owner id (personal org / storage) plus optional person id when they differ.
+ * Distinct personal orgs (#3053) store some rows under the person id and some
+ * under the org id; matching both cleans both without moving legacy equal-id
+ * rows.
+ */
+function storageAndPersonIds(input: {
+	mcpUserId: string
+	personUserId?: string
+}): ReadonlyArray<string> {
+	const person = input.personUserId?.trim() ?? ''
+	if (person !== '' && person !== input.mcpUserId) {
+		return [input.mcpUserId, person]
+	}
+	return [input.mcpUserId]
+}
+
+function columnInIdsSql(
+	column: string,
+	ids: ReadonlyArray<string>,
+): { sql: string; params: ReadonlyArray<string> } {
+	if (ids.length === 1) {
+		return { sql: `${column} = ?`, params: ids }
+	}
+	return {
+		sql: `${column} IN (${ids.map(() => '?').join(', ')})`,
+		params: ids,
+	}
+}
+
 export function buildUserScopedTargetMatch(input: {
 	target: UserScopedDataTarget
 	mcpUserId: string
 	dbUserId: number
+	/**
+	 * Person id when it may differ from {@link mcpUserId} (storage / personal
+	 * org). Omitted or equal keeps single-id matching for legacy equal-id
+	 * accounts and team-org purge.
+	 */
+	personUserId?: string
 }): UserScopedTargetMatch {
 	const { target } = input
 	const table = resolveUserScopedTargetTable(target)
+	const ids = storageAndPersonIds(input)
 	switch (target.kind) {
 		case 'user_id': {
+			const match = columnInIdsSql('user_id', ids)
 			return {
 				table,
-				whereSql: 'user_id = ?',
-				qualifiedWhereSql: `${table}.user_id = ?`,
-				params: [input.mcpUserId],
+				whereSql: match.sql,
+				qualifiedWhereSql: columnInIdsSql(`${table}.user_id`, ids).sql,
+				params: match.params,
 				mutation: { kind: 'delete' },
 			}
 		}
@@ -836,31 +890,39 @@ export function buildUserScopedTargetMatch(input: {
 			}
 		}
 		case 'user_columns': {
+			const clauses = target.columns.map((column) =>
+				columnInIdsSql(column, ids),
+			)
+			const qualified = target.columns.map((column) =>
+				columnInIdsSql(`${table}.${column}`, ids),
+			)
 			return {
 				table,
-				whereSql: target.columns.map((column) => `${column} = ?`).join(' OR '),
-				qualifiedWhereSql: target.columns
-					.map((column) => `${table}.${column} = ?`)
-					.join(' OR '),
-				params: target.columns.map(() => input.mcpUserId),
+				whereSql: clauses.map((clause) => clause.sql).join(' OR '),
+				qualifiedWhereSql: qualified.map((clause) => clause.sql).join(' OR '),
+				params: clauses.flatMap((clause) => clause.params),
 				mutation: { kind: 'delete' },
 			}
 		}
 		case 'null_user_column': {
+			const match = columnInIdsSql(target.matchColumn, ids)
 			return {
 				table,
-				whereSql: `${target.matchColumn} = ?`,
-				qualifiedWhereSql: `${table}.${target.matchColumn} = ?`,
-				params: [input.mcpUserId],
+				whereSql: match.sql,
+				qualifiedWhereSql: columnInIdsSql(`${table}.${target.matchColumn}`, ids)
+					.sql,
+				params: match.params,
 				mutation: { kind: 'null_columns', columns: target.nullColumns },
 			}
 		}
 		case 'replace_user_column': {
+			const match = columnInIdsSql(target.matchColumn, ids)
 			return {
 				table,
-				whereSql: `${target.matchColumn} = ?`,
-				qualifiedWhereSql: `${table}.${target.matchColumn} = ?`,
-				params: [input.mcpUserId],
+				whereSql: match.sql,
+				qualifiedWhereSql: columnInIdsSql(`${table}.${target.matchColumn}`, ids)
+					.sql,
+				params: match.params,
 				mutation: {
 					kind: 'replace_column',
 					column: target.setColumn,
@@ -869,58 +931,87 @@ export function buildUserScopedTargetMatch(input: {
 			}
 		}
 		case 'replace_user_id_in_json_column': {
-			const quotedUserId = `"${input.mcpUserId}"`
+			const quotedIds = ids.map((id) => `"${id}"`)
 			const quotedReplacement = `"${target.value}"`
 			// D1 caps LIKE/GLOB patterns at 50 bytes ("LIKE or GLOB pattern too
 			// complex"); a quoted 64-hex stable user id is 66. instr() has no
 			// such limit and matches the same substring.
+			if (quotedIds.length === 1) {
+				const quotedUserId = quotedIds[0]!
+				return {
+					table,
+					whereSql: `instr(${target.column}, ?) > 0`,
+					qualifiedWhereSql: `instr(${table}.${target.column}, ?) > 0`,
+					params: [quotedUserId],
+					mutation: {
+						kind: 'replace_json_string',
+						column: target.column,
+						search: quotedUserId,
+						replacement: quotedReplacement,
+					},
+				}
+			}
+			const whereSql = quotedIds
+				.map(() => `instr(${target.column}, ?) > 0`)
+				.join(' OR ')
+			const qualifiedWhereSql = quotedIds
+				.map(() => `instr(${table}.${target.column}, ?) > 0`)
+				.join(' OR ')
+			// Nested REPLACE so both person and org id quotes become deleted-user.
+			let setExpr = target.column
+			for (const quoted of quotedIds) {
+				setExpr = `REPLACE(${setExpr}, '${quoted.replace(/'/g, "''")}', '${quotedReplacement.replace(/'/g, "''")}')`
+			}
 			return {
 				table,
-				whereSql: `instr(${target.column}, ?) > 0`,
-				qualifiedWhereSql: `instr(${table}.${target.column}, ?) > 0`,
-				params: [quotedUserId],
+				whereSql,
+				qualifiedWhereSql,
+				params: quotedIds,
 				mutation: {
-					kind: 'replace_json_string',
+					kind: 'replace_json_string_multi',
 					column: target.column,
-					search: quotedUserId,
-					replacement: quotedReplacement,
+					setExpr,
 				},
 			}
 		}
 		case 'bucket_parent': {
+			const parentMatch = columnInIdsSql('user_id', ids)
 			const whereSql = `bucket_id IN (
-						SELECT id FROM ${target.parentTable} WHERE user_id = ?
+						SELECT id FROM ${target.parentTable} WHERE ${parentMatch.sql}
 					)`
 			return {
 				table,
 				whereSql,
 				qualifiedWhereSql: `${table}.${whereSql}`,
-				params: [input.mcpUserId],
+				params: parentMatch.params,
 				mutation: { kind: 'delete' },
 			}
 		}
 		case 'community_listing_child': {
+			const parentMatch = columnInIdsSql('owner_user_id', ids)
 			const whereSql = `${target.listingColumn} IN (
-						SELECT id FROM community_listings WHERE owner_user_id = ?
+						SELECT id FROM community_listings WHERE ${parentMatch.sql}
 					)`
 			return {
 				table,
 				whereSql,
 				qualifiedWhereSql: `${table}.${whereSql}`,
-				params: [input.mcpUserId],
+				params: parentMatch.params,
 				mutation: { kind: 'delete' },
 			}
 		}
 		case 'mcp_memory_suppression': {
+			const match = columnInIdsSql('user_id', ids)
 			return {
 				table,
-				whereSql: 'user_id = ?',
-				qualifiedWhereSql: `${table}.user_id = ?`,
-				params: [input.mcpUserId],
+				whereSql: match.sql,
+				qualifiedWhereSql: columnInIdsSql(`${table}.user_id`, ids).sql,
+				params: match.params,
 				mutation: { kind: 'delete' },
 			}
 		}
 		case 'org_id': {
+			// Org-keyed columns use the storage owner id only.
 			return {
 				table,
 				whereSql: 'org_id = ?',
@@ -986,6 +1077,14 @@ export function buildUserScopedDeleteOrUpdateSql(
 					match.mutation.replacement,
 					...match.params,
 				],
+			}
+		}
+		case 'replace_json_string_multi': {
+			return {
+				sql: `UPDATE ${match.table}
+						SET ${match.mutation.column} = ${match.mutation.setExpr}
+						WHERE ${match.whereSql}`,
+				params: match.params,
 			}
 		}
 		default: {

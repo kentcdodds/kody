@@ -2,6 +2,7 @@ import {
 	personalOrgId,
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
@@ -140,10 +141,14 @@ export async function runSearchTool(input: {
 		storageId,
 	} = callerContextFields(callerContext)
 	// Package/secret/integration discovery and Waiting are keyed by the bound
-	// org. Stamps and onboarding still use the acting person's personal org
-	// (team orgs have no users row for activation columns).
+	// org. Stamps and onboarding still use the acting person's users row
+	// (team orgs have no users row for activation columns). Team detection
+	// compares the bound org to the stamped personal org id (#3053).
 	const personOwnerId = callerUserId ? personalOrgId(callerUserId) : null
-	const userId = callerContext.request?.org.id ?? personOwnerId
+	const personalOrgOwnerId = callerContext.user
+		? personalOrgIdForPerson(callerContext.user)
+		: personOwnerId
+	const userId = callerContext.request?.org.id ?? personalOrgOwnerId
 	const mcpCallerFields = {
 		baseUrl,
 		hasUser,
@@ -320,8 +325,8 @@ export async function runSearchTool(input: {
 		const boundOrgSlug = callerContext.request?.org.slug?.trim() || null
 		const boundToTeamOrg =
 			Boolean(boundOrgSlug) &&
-			Boolean(callerUserId) &&
-			callerContext.request?.org.id !== personOwnerId
+			Boolean(personalOrgOwnerId) &&
+			callerContext.request?.org.id !== personalOrgOwnerId
 		username = boundToTeamOrg
 			? boundOrgSlug
 			: await resolvePublicUsername({

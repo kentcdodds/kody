@@ -49,17 +49,20 @@ guidance. A read remote rejects push with:
 `repo_id` or `name`. Open API / CLI: prefer `POST /v1/repos/git-remote` with a
 JSON body (`name` or `repo_id`) so clients do not need a path id. The alias
 `POST /v1/repos/{repo_id}/git-remote` accepts a UUID or the repo name in that
-segment. Concurrent push lock contention from Artifacts is translated to HTTP
-**503** with `Retry-After` and the body `repository busy, retry` so git clients
-get a clean, retryable rejection instead of `remote end hung up unexpectedly`.
-The result includes `git_author` (signed-in Kody account email and display name)
-and setup commands that set local `user.email` / `user.name` to that identity.
-Use those values for commits; do not invent a git email. Kody's **10 MiB**
-per-file gate (10,485,760 stored bytes) binds on session and file-level writes
-and again at `repoPromoteToPackage`; the proxied push lane does not re-apply
-that gate, so the only ceiling there is Artifacts itself, which rejects pushes
-above ~32 MiB of decompressed pack content with a raw HTTP 413. Plain repos do
-not run the package publish reconcile cron after push—HEAD is live.
+segment. Concurrent push lock contention from Artifacts is held and retried on
+the proxy (bounded wait, same-isolate FIFO) before returning HTTP **503** with
+`Retry-After` and the body `repository busy, retry`, so git clients usually wait
+out the lock instead of hanging up or stampeding retries. The result includes
+`git_author` (signed-in Kody account email and display name) and setup commands
+that set local `user.email` / `user.name` to that identity. Use those values for
+commits; do not invent a git email. Kody's **10 MiB** per-file gate (10,485,760
+stored bytes) binds on session and file-level writes and again at
+`repoPromoteToPackage`; the proxied push lane does not re-apply that gate. Push
+size is bounded by Artifacts, which rejects pushes above ~32 MiB of decompressed
+pack content with a raw HTTP 413, and by the proxy, which buffers each
+receive-pack request body (so busy retries can resend it) and rejects bodies
+above **40 MiB** with HTTP 413. Plain repos do not run the package publish
+reconcile cron after push—HEAD is live.
 
 ## Sessions
 

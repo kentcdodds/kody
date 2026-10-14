@@ -1,8 +1,9 @@
 /**
  * The package Collaborators tab (`/@owner/<kody-id>/collaborators`): who holds
- * a grant on one package, the pending grant invites for it, and what a
- * manager can pick from when adding someone. The server builds this view from
- * the same grants and invites `accessGrant` / `inviteCreate` write.
+ * a grant on one package and which teams and org members a manager can still
+ * add. Changes go through `packageCollaboratorSet` / `packageCollaboratorRemove`,
+ * which only add teams and members of the owning org; inviting people from
+ * outside the org is not offered here.
  */
 import {
 	grantPresets,
@@ -23,7 +24,8 @@ export function isPackageCollaboratorPreset(
 /**
  * `team`: a team in the owning org. `member`: a person with a live
  * membership in the owning org. `outside`: a person who holds this grant but
- * is not a member (an outside collaborator).
+ * is not a member (granted elsewhere); the tab can remove them but not change
+ * their access.
  */
 export type PackageCollaboratorKind = 'team' | 'member' | 'outside'
 
@@ -45,16 +47,6 @@ export type PackageCollaboratorView = {
 	createdAt: string
 }
 
-export type PackageCollaboratorInviteView = {
-	id: string
-	inviteeEmail: string | null
-	inviteeUsername: string | null
-	preset: PackageCollaboratorPreset | null
-	permissions: Array<string> | null
-	expiresAt: string
-	createdAt: string
-}
-
 export type PackageCollaboratorTeamOption = {
 	id: string
 	slug: string
@@ -73,7 +65,6 @@ export type PackageCollaboratorsView = {
 	package: { id: string; kodyId: string; name: string }
 	org: { slug: string; personal: boolean }
 	collaborators: Array<PackageCollaboratorView>
-	invites: Array<PackageCollaboratorInviteView>
 	/** Teams and members not already holding a grant on this package. */
 	options: {
 		teams: Array<PackageCollaboratorTeamOption>
@@ -81,21 +72,10 @@ export type PackageCollaboratorsView = {
 	}
 }
 
-/** Shown once, right after an invite is created. */
-type PackageCollaboratorInviteCreated = {
-	id: string
-	expiresAt: string
-	token: string
-	prompt: string
-}
-
-export type PackageCollaboratorsWriteResult = PackageCollaboratorsView & {
-	invite?: PackageCollaboratorInviteCreated
-}
-
 /**
- * POST body for `communityPackageCollaboratorsApiPost`. `grant` adds a team or
- * member, or changes the preset of one who already holds a grant.
+ * POST body for `communityPackageCollaboratorsApiPost`; the response is the
+ * updated `PackageCollaboratorsView`. `grant` adds a team or org member, or
+ * changes the preset of one who already holds a grant.
  */
 export type PackageCollaboratorsChange =
 	| {
@@ -105,8 +85,6 @@ export type PackageCollaboratorsChange =
 			preset: PackageCollaboratorPreset
 	  }
 	| { intent: 'revoke'; grantId: string }
-	| { intent: 'invite'; invitee: string; preset: PackageCollaboratorPreset }
-	| { intent: 'revoke-invite'; inviteId: string }
 
 export function packageCollaboratorPresetLabel(
 	preset: PackageCollaboratorPreset,

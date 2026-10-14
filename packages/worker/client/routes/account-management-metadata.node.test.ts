@@ -344,12 +344,14 @@ test('workspace rail heading is the org switcher on desktop and in the phone dra
 	expect(drawer).toContain('data-testid="org-switcher-acme"')
 	expect(drawer).toMatch(/<summary>[\s\S]*?>@acme<\/span>/)
 
-	// The account rail has no switcher: it lists every workspace instead.
+	// The account rail has no switcher and no workspaces group: it holds
+	// only the person's own pages.
 	const account = await render('/account/security')
+	expect(account).toContain('aria-label="Account sections"')
 	expect(account).not.toContain('switch organization')
-	expect(account).toContain('aria-label="Workspaces"')
-	expect(account).toContain('href="/@acme"')
-	expect(account).toContain('href="/@ada/-/overview"')
+	expect(account).not.toContain('aria-label="Workspaces"')
+	expect(account).not.toContain('href="/@acme"')
+	expect(account).not.toContain('href="/@ada/-/overview"')
 })
 
 test('account page header puts the phone section menu above the heading', async () => {

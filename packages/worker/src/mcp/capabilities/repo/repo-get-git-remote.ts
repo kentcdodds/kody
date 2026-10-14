@@ -78,7 +78,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 		name: 'repoGetGitRemote',
 		orgPermission: 'package:read',
 		description:
-			"Mint a short-lived git remote for a plain repo (Kody smart-HTTP proxy in front of Cloudflare Artifacts). When scope is omitted, defaults to write if you have org-wide write access, otherwise read. Pass scope explicitly to force read or write; requesting write without write access is denied with guidance (use scope: 'read', or ask an Owner for a grant). Write pushes are live at HEAD — no package publish reconcile step runs afterward. Concurrent push lock contention returns HTTP 503 with Retry-After and \"repository busy, retry\" instead of hanging up. A read remote rejects push with: this remote is read-only; request scope: 'write'. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. The Artifacts backing store fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.",
+			"Mint a short-lived git remote for a plain repo (Kody smart-HTTP proxy in front of Cloudflare Artifacts). When scope is omitted, defaults to write if you have org-wide write access, otherwise read. Pass scope explicitly to force read or write; requesting write without write access is denied with guidance (use scope: 'read', or ask an Owner for a grant). Write pushes are live at HEAD — no package publish reconcile step runs afterward. Concurrent push lock contention is held and retried on the proxy (bounded wait) before HTTP 503 with Retry-After and \"repository busy, retry\". A read remote rejects push with: this remote is read-only; request scope: 'write'. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. The Artifacts backing store fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.",
 		keywords: ['repo', 'git', 'remote', 'artifacts', 'clone', 'push', 'plain'],
 		readOnly: false,
 		idempotent: false,
@@ -159,9 +159,9 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			const token = await repo.createToken(scope, args.ttl_seconds)
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = userRepo.name
-			// Proxy through Kody so receive-pack lock contention is a clean 503
-			// (Retry-After) instead of a hung-up Artifacts connection. Token is
-			// still an Artifacts bearer; the proxy forwards it upstream.
+			// Proxy through Kody so receive-pack lock contention waits/retries
+			// on the server before a clean 503 (Retry-After). Token is still an
+			// Artifacts bearer; the proxy forwards it upstream.
 			const remote = buildPlainRepoGitHttpRemote({
 				baseUrl: ctx.callerContext.baseUrl,
 				sourceId: source.id,

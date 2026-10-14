@@ -11,6 +11,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { NotFoundPage } from '#client/not-found-page.tsx'
+import { PackageNoAccessPage } from '#client/package-no-access-page.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { createCommunityInstallController } from '#client/routes/community-install-controller.ts'
@@ -18,6 +19,7 @@ import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityPackageMovedPayload,
+	type CommunityPackageNoAccessPayload,
 	type CommunityShellSnapshot,
 	buildCommunityDetailFrameSrc,
 	buildReportApiPath,
@@ -82,6 +84,12 @@ export function CommunityDetailRoute(handle: Handle) {
 	let shellRequestedForPathname: string | null = null
 	let shellUnauthorized = false
 	let shellNotFound = false
+	let shellNoAccess: {
+		username: string
+		kodyId: string
+		packageName: string
+		viewerUsername: string
+	} | null = null
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -136,6 +144,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		reportMessage = null
 		shellUnauthorized = false
 		shellNotFound = false
+		shellNoAccess = null
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
 	}
@@ -158,17 +167,44 @@ export function CommunityDetailRoute(handle: Handle) {
 			})
 			if (requestId !== shellLoadRequestId) return
 			const payload = await readJson<
-				CommunityDetailApiPayload | CommunityPackageMovedPayload
+				| CommunityDetailApiPayload
+				| CommunityPackageMovedPayload
+				| CommunityPackageNoAccessPayload
 			>(response)
 			if (response.status === 401) {
 				shellLoadedForPathname = ref.pathname
 				shellUnauthorized = true
+				shellNotFound = false
+				shellNoAccess = null
+				shellStatus = 'ready'
+				handle.update()
+				return
+			}
+			if (
+				response.status === 403 &&
+				payload &&
+				!payload.ok &&
+				'noAccess' in payload &&
+				payload.noAccess
+			) {
+				shellLoadedForPathname = ref.pathname
+				shellNoAccess = {
+					username: payload.username,
+					kodyId: payload.kodyId,
+					packageName: payload.packageName,
+					viewerUsername: payload.viewerUsername,
+				}
+				shellUnauthorized = false
+				shellNotFound = false
 				shellStatus = 'ready'
 				handle.update()
 				return
 			}
 			if (response.status === 404) {
-				const movedTo = payload && !payload.ok ? payload.redirectTo : null
+				const movedTo =
+					payload && !payload.ok && 'redirectTo' in payload
+						? payload.redirectTo
+						: null
 				// A renamed package is a real destination, not a dead link.
 				if (movedTo) {
 					window.location.assign(movedTo)
@@ -177,6 +213,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				shellLoadedForPathname = ref.pathname
 				shellNotFound = true
 				shellUnauthorized = false
+				shellNoAccess = null
 				shellStatus = 'ready'
 				handle.update()
 				return
@@ -331,9 +368,20 @@ export function CommunityDetailRoute(handle: Handle) {
 			if ('unauthorized' in routeData) {
 				shellUnauthorized = true
 				shellNotFound = false
+				shellNoAccess = null
 			} else if ('notFound' in routeData) {
 				shellNotFound = true
 				shellUnauthorized = false
+				shellNoAccess = null
+			} else if ('noAccess' in routeData) {
+				shellNoAccess = {
+					username: routeData.username,
+					kodyId: routeData.kodyId,
+					packageName: routeData.packageName,
+					viewerUsername: routeData.viewerUsername,
+				}
+				shellUnauthorized = false
+				shellNotFound = false
 			} else {
 				const exhaustive: never = routeData
 				throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
@@ -367,6 +415,23 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		if (routeData && !routeData.ok) {
 			applyRouteShellData(routeData, pathname, listingId)
+		}
+		// A later successful load for this pathname must win over a stale
+		// shellNoAccess left from an earlier 403 (access grant mid-session).
+		const noAccessProps = routeData?.ok
+			? null
+			: routeData && !routeData.ok && 'noAccess' in routeData
+				? {
+						username: routeData.username,
+						kodyId: routeData.kodyId,
+						packageName: routeData.packageName,
+						viewerUsername: routeData.viewerUsername,
+					}
+				: shellNoAccess && shellLoadedForPathname === pathname
+					? shellNoAccess
+					: null
+		if (noAccessProps) {
+			return <PackageNoAccessPage {...noAccessProps} />
 		}
 		if (
 			(routeData && !routeData.ok && 'unauthorized' in routeData) ||

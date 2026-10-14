@@ -219,6 +219,33 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS approval_bundles (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				person_user_id TEXT NOT NULL,
+				agent_credential_kind TEXT,
+				agent_credential_id TEXT,
+				note TEXT,
+				items_json TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS approval_bundle_decisions (
+				bundle_id TEXT NOT NULL,
+				item_key TEXT NOT NULL,
+				decision TEXT NOT NULL CHECK (decision IN ('approved', 'denied')),
+				decided_by_user_id TEXT NOT NULL,
+				decided_at TEXT NOT NULL,
+				finalized_at TEXT,
+				PRIMARY KEY (bundle_id, item_key)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS org_invite_links (
 				id TEXT PRIMARY KEY NOT NULL,
 				org_id TEXT NOT NULL,

@@ -74,6 +74,7 @@ const owner: PackageOwnerContext = {
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
 	actorUserId: personIdFromStored('user-1'),
+	actorPersonalOrgId: ownerIdFromStored('user-1'),
 }
 
 function create(
@@ -180,6 +181,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			ownerScope: 'acme',
 			ownerEmail: 'acme@example.com',
 			actorUserId: personIdFromStored('actor-1'),
+			actorPersonalOrgId: ownerIdFromStored('actor-1'),
 		},
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(

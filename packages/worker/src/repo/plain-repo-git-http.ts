@@ -3,6 +3,17 @@ import {
 	parseArtifactTokenSecret,
 	resolveExistingArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
+import {
+	artifactsReceivePackBodyLimitBytes,
+	artifactsReceivePackBusyBackoffMs,
+	artifactsReceivePackWaitBudgetMs,
+	readReceivePackBodyWithLimit,
+	ReceivePackBodyTooLargeError,
+	ReceivePackBodyTimeoutError,
+	ReceivePackWaitTimeoutError,
+	waitOutReceivePackBusy,
+	withReceivePackGate,
+} from '#worker/repo/artifacts-receive-pack-wait.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 const gitUploadPackService = 'git-upload-pack'
@@ -11,6 +22,12 @@ const gitReceivePackService = 'git-receive-pack'
 export const artifactsGitReceivePackBusyCode = 'artifacts_git_receive_pack_busy'
 export const artifactsReceivePackBusyRetryAfterSeconds = 5
 export const repositoryBusyRetryMessage = 'repository busy, retry'
+
+export {
+	artifactsReceivePackBodyLimitBytes,
+	artifactsReceivePackBusyBackoffMs,
+	artifactsReceivePackWaitBudgetMs,
+}
 
 const hopByHopResponseHeaders = new Set([
 	'connection',
@@ -368,6 +385,102 @@ function forwardGitRequestHeaders(input: { request: Request; token: string }) {
 	return headers
 }
 
+function proxiedUpstreamResponse(upstream: Response) {
+	return new Response(upstream.body, {
+		status: upstream.status,
+		statusText: upstream.statusText,
+		headers: filterProxiedResponseHeaders(upstream.headers),
+	})
+}
+
+async function proxyArtifactsReceivePack(input: {
+	target: ResolvedPlainGitTarget
+	sourceId: string
+	request: Request
+	token: string
+}): Promise<Response> {
+	const upstreamUrl = buildArtifactsSmartHttpUrl(input.target.remote, {
+		kind: 'receive-pack',
+		sourceId: input.sourceId,
+	})
+	const headers = forwardGitRequestHeaders({
+		request: input.request,
+		token: input.token,
+	})
+
+	const deadlineMs = Date.now() + artifactsReceivePackWaitBudgetMs
+	try {
+		return await withReceivePackGate(
+			input.sourceId,
+			artifactsReceivePackWaitBudgetMs,
+			async () => {
+				// Buffer only while holding the gate so queued pushes do not each
+				// retain a full pack in isolate memory while they wait their turn.
+				let packBody: Uint8Array
+				try {
+					packBody = await readReceivePackBodyWithLimit(
+						input.request.body,
+						artifactsReceivePackBodyLimitBytes,
+						Math.max(0, deadlineMs - Date.now()),
+					)
+				} catch (error) {
+					if (error instanceof ReceivePackBodyTimeoutError) {
+						return new Response(error.message, {
+							status: 408,
+							headers: {
+								'Cache-Control': 'no-store',
+								'Content-Type': 'text/plain; charset=utf-8',
+							},
+						})
+					}
+					if (error instanceof ReceivePackBodyTooLargeError) {
+						return new Response(error.message, {
+							status: 413,
+							headers: {
+								'Cache-Control': 'no-store',
+								'Content-Type': 'text/plain; charset=utf-8',
+							},
+						})
+					}
+					throw error
+				}
+				const waited = await waitOutReceivePackBusy({
+					deadlineMs,
+					backoffMs: artifactsReceivePackBusyBackoffMs,
+					send: async () =>
+						fetchWithHeadersTimeout(upstreamUrl, {
+							method: 'POST',
+							headers,
+							body: packBody as BodyInit,
+						}),
+					isBusy: (response, bodyText) =>
+						isArtifactsGitReceivePackBusyResponse({
+							status: response.status,
+							bodyText,
+						}),
+					readBusyBody: readCappedResponseText,
+				})
+				if (waited.kind === 'timeout') {
+					return repositoryBusyRetryResponse()
+				}
+				if (waited.response.ok) {
+					return proxiedUpstreamResponse(waited.response)
+				}
+				return new Response(await waited.response.text(), {
+					status: waited.response.status,
+					statusText: waited.response.statusText,
+					headers: filterProxiedResponseHeaders(waited.response.headers),
+				})
+			},
+		)
+	} catch (error) {
+		if (error instanceof ReceivePackWaitTimeoutError) {
+			return repositoryBusyRetryResponse()
+		}
+		throw error
+	}
+}
+
 async function proxyArtifactsGitRequest(input: {
 	target: ResolvedPlainGitTarget
 	parsed: PlainRepoGitHttpPath
@@ -375,6 +488,15 @@ async function proxyArtifactsGitRequest(input: {
 	token: string
 	service?: string | null
 }): Promise<Response> {
+	if (input.parsed.kind === 'receive-pack') {
+		return proxyArtifactsReceivePack({
+			target: input.target,
+			sourceId: input.parsed.sourceId,
+			request: input.request,
+			token: input.token,
+		})
+	}
+
 	const upstreamUrl = buildArtifactsSmartHttpUrl(
 		input.target.remote,
 		input.parsed,
@@ -400,25 +522,12 @@ async function proxyArtifactsGitRequest(input: {
 
 	const upstream = await fetchWithHeadersTimeout(upstreamUrl, init)
 
-	// Never rewrite successful pushes/fetches — accepted packs must pass through.
+	// Never rewrite successful fetches — accepted packs must pass through.
 	if (upstream.ok || input.request.method === 'HEAD') {
-		return new Response(upstream.body, {
-			status: upstream.status,
-			statusText: upstream.statusText,
-			headers: filterProxiedResponseHeaders(upstream.headers),
-		})
+		return proxiedUpstreamResponse(upstream)
 	}
 
 	const bodyText = await readCappedResponseText(upstream)
-	if (
-		isArtifactsGitReceivePackBusyResponse({
-			status: upstream.status,
-			bodyText,
-		})
-	) {
-		return repositoryBusyRetryResponse()
-	}
-
 	return new Response(bodyText, {
 		status: upstream.status,
 		statusText: upstream.statusText,
@@ -428,8 +537,10 @@ async function proxyArtifactsGitRequest(input: {
 
 /**
  * Authenticated smart HTTP Git proxy for plain repos minted by
- * `repoGetGitRemote`. Translates Artifacts receive-pack lock contention into a
- * clean 503 + Retry-After so git clients retry instead of hanging up.
+ * `repoGetGitRemote`. On Artifacts receive-pack lock contention, waits in a
+ * bounded FIFO (same-isolate) and retries upstream before returning 503 +
+ * Retry-After. Ref updates stay atomic at Artifacts; non-fast-forward rejects
+ * pass through unchanged.
  */
 export async function handlePlainRepoGitHttpRequest(
 	request: Request,

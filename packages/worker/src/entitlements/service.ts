@@ -379,7 +379,7 @@ async function loadEntitlementRowForStableUserId(
 			.prepare(
 				`SELECT ${orgColumns}
 				 FROM users u
-				 INNER JOIN orgs o ON o.id = u.stable_user_id
+				 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 			)
 			.bind(email, input.stableUserId)
@@ -607,7 +607,7 @@ export async function findUserAccountByStableUserId(
 		.prepare(
 			`SELECT u.email, o.plan, u.email_verified_at
 			 FROM users u
-			 INNER JOIN orgs o ON o.id = u.stable_user_id
+			 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(trimmed)

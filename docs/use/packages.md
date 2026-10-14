@@ -868,6 +868,44 @@ again. A locked package keeps its locked-publish flow first: approving that
 publish on approve-publish runs this check and pauses there if the needs
 changed. Platform codemods do not pause.
 
+## Approve many changes at once
+
+When several approvals wait on you, an agent can put them on one page.
+**`approvalPendingList`** (`GET /v1/approvals`) lists what waits on the
+signed-in person and what they can decide:
+
+- paused publishes (`publish`): credential needs changed, or the package goes
+  public
+- internet-visible packages whose credentials or storage changed since you
+  approved them (`capabilities`)
+- credential picks an agent proposed with `credentialMappingPropose`
+  (`credential-picks`)
+
+Each item says in plain words what approving grants: the credential, its kind,
+provider, and hosts, plus what you approved before.
+
+**`approvalBundleCreate`** (`POST /v1/approval-bundles`) takes item keys from
+that list, or everything pending (narrowed by `types` and `packages`), plus an
+optional note. It returns a URL, `/@{org}/-/approvals/{bundleId}`, which only
+that person can open. The page groups items by package, with **Approve all** and
+per-item **Approve** or **Deny**.
+
+Approving an item runs that item's own approval, the same code as its package
+page (**Approve and publish**, the capability approval, or the credential
+approval). Approve all approves each item in turn and reports any that need
+another look.
+
+Denying a paused publish drops it, and the published version keeps serving.
+Denying anything else changes nothing. The first decision on an item stands, and
+every decision is recorded in the org activity log.
+
+Agents only create bundles; approving is always the person's click in the
+browser. Package code cannot create bundles. A bundle holds at most 100 items
+and opens for 30 days. When a publish pauses and other paused publishes already
+wait on the same person, `repoPublishSession`, `packagePublishExternalPush`, and
+`packageSave` also return an **`approval_bundle_url`** (or name it in the
+message) that approves them together.
+
 ## Community fork provenance
 
 **`packageList`** and **`packageGet`** return community-fork provenance on each

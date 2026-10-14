@@ -1,7 +1,6 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
@@ -349,8 +348,19 @@ async function authorizePackageAppVisitorForOrg(input: {
 	)
 	// Team org entitlements resolve by org id alone. Pairing the visitor's
 	// email with the team org id would miss the users row and fall to Free.
+	const viewerPersonalOrg = await input.env.APP_DB.prepare(
+		`SELECT personal_org_id, stable_user_id FROM users
+		 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(viewer.userId)
+		.first<{ personal_org_id: string | null; stable_user_id: string }>()
+	const viewerPersonalOrgId = viewerPersonalOrg
+		? personalOrgIdFromUserRow(viewerPersonalOrg)
+		: null
 	const ownerEmail =
-		org.userId === personalOrgId(viewer.userId) ? person.email : ''
+		viewerPersonalOrgId != null && org.userId === viewerPersonalOrgId
+			? person.email
+			: ''
 	return {
 		kind: 'ok',
 		owner: {
@@ -587,8 +597,9 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	if (!org || !canExecute) {
 		// `/@{username}/packages/{kodyId}` hands off only for visitors who
 		// may run the org's app. Everyone else belongs on the saved-package
-		// page, which is the two-segment `/@{username}/{kodyId}` route —
-		// not a 404 that reads like the package itself is missing.
+		// page (`/@{username}/{kodyId}`). That page shows an explicit
+		// no-access shell for signed-in outsiders — never a "doesn't quite
+		// connect" 404 that looks like the package was unpublished.
 		return redirectToPackagePage({ env, request, packagePath })
 	}
 

@@ -36,6 +36,19 @@ export type PackagePageAccess =
 	| { kind: 'redirect'; to: string; shared: boolean }
 	| { kind: 'not_found' }
 	| { kind: 'unauthorized' }
+	/**
+	 * Signed-in viewer reached a real saved package they cannot read. Distinct
+	 * from `not_found` so a shared private-app link never looks like the
+	 * package was deleted — show "you don't have access" with a request path.
+	 * Anonymous visitors still get `not_found` so private packages stay opaque.
+	 */
+	| {
+			kind: 'no_access'
+			username: string
+			kodyId: string
+			packageName: string
+			viewerUsername: string
+	  }
 	| {
 			kind: 'page'
 			username: string
@@ -534,6 +547,22 @@ async function loadPackagePageUncached(input: {
 	}
 
 	if (!target.savedPackage || !isPublicSavedPackage(target.savedPackage)) {
+		// Package exists (or is hidden/private) but this viewer cannot open it.
+		// Signed-in outsiders get an explicit no-access page — never the
+		// generic "doesn't quite connect" 404 that made shared private-app
+		// handoffs look like the package was gone. Anonymous visitors still
+		// get not_found, so private packages stay opaque without a session.
+		// Revealing existence to signed-in people who already know the URL
+		// (share links / handoffs) is intentional product policy.
+		if (viewer && target.savedPackage) {
+			return {
+				kind: 'no_access',
+				username: target.username,
+				kodyId: target.kodyId,
+				packageName: target.savedPackage.name,
+				viewerUsername: viewer.username ?? 'unknown',
+			}
+		}
 		return { kind: 'not_found' }
 	}
 

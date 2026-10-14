@@ -28,3 +28,18 @@ test('usage metering keys off the request org, including team orgs', () => {
 	).toBe(teamOrg)
 	expect(ownerIdFromCaller({ user: { userId } })).toBe(personalOrgId(userId))
 })
+
+test('ownerIdFromCaller and entitlement email prefer stamped personalOrgId', () => {
+	const userId = personIdFromStored('a'.repeat(64))
+	const distinctOrg = ownerIdFromStored('b'.repeat(64))
+	const caller = {
+		user: {
+			userId,
+			email: 'ada@example.com',
+			personalOrgId: distinctOrg,
+		},
+	}
+	expect(ownerIdFromCaller(caller)).toBe(distinctOrg)
+	expect(entitlementEmailForOwner(caller, distinctOrg)).toBe('ada@example.com')
+	expect(entitlementEmailForOwner(caller, personalOrgId(userId))).toBeNull()
+})

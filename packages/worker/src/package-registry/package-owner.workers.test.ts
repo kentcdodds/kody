@@ -69,6 +69,7 @@ test('resolvePackageOwnerContext owns packages in the org the request is bound t
 		ownerScope: person.username,
 		ownerEmail: person.email,
 		actorUserId: person.stableUserId,
+		actorPersonalOrgId: person.stableUserId,
 	})
 
 	const orgId = ownerIdFromStored(`org-${crypto.randomUUID()}`)
@@ -81,6 +82,7 @@ test('resolvePackageOwnerContext owns packages in the org the request is bound t
 		ownerScope: 'acme',
 		ownerEmail: person.email,
 		actorUserId: person.stableUserId,
+		actorPersonalOrgId: person.stableUserId,
 	})
 	// Actor email stays on the owner context for display/audit, but
 	// entitlement lookups must blank it so the team org plan resolves.
@@ -115,5 +117,6 @@ test('resolvePackageOwnerContext owns packages in the org the request is bound t
 		ownerScope: person.username,
 		ownerEmail: staleEmail,
 		actorUserId: person.stableUserId,
+		actorPersonalOrgId: person.stableUserId,
 	})
 })

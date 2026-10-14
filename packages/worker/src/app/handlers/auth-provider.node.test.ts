@@ -295,12 +295,13 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	if (typeof user.personal_org_id !== 'string') {
 		throw new Error('OAuth signup did not store personal_org_id')
 	}
-	expect(user.personal_org_id).toBe(user.stable_user_id)
+	expect(user.personal_org_id).not.toBe(user.stable_user_id)
+	expect(user.personal_org_id).toMatch(/^[a-f0-9]{64}$/)
 	expect(
 		sqlite
 			.prepare(`SELECT id FROM orgs WHERE id = ?`)
 			.get(user.personal_org_id),
-	).toEqual({ id: user.stable_user_id })
+	).toEqual({ id: user.personal_org_id })
 	// Provider-verified email skips the verification-email flow.
 	expect(user.email_verified_at).toBeTruthy()
 	expect(

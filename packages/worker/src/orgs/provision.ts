@@ -1,12 +1,13 @@
 import { normalizeUsername } from '#worker/identity/username.ts'
+import { mintOwnerId } from '#worker/orgs/personal-org-id.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type ProvisionPersonalOrgInput = {
 	stableUserId: string
 	/**
-	 * Org row id. Defaults to `stableUserId`. Phase 1 (#3053) keeps
-	 * `orgs.id = users.stable_user_id` and does not mint a distinct id;
-	 * callers omit this.
+	 * Org row id. Signup callers pass a freshly minted id (phase 2 #3053).
+	 * Seeds and `ensurePersonalOrg` may omit it to keep `orgs.id = stableUserId`
+	 * for fixtures that still model the legacy equal-id shape.
 	 */
 	orgId?: string
 	username: string
@@ -32,6 +33,11 @@ export type ProvisionPersonalOrgInput = {
 function resolveProvisionOrgId(input: ProvisionPersonalOrgInput) {
 	const explicit = input.orgId?.trim() ?? ''
 	return explicit === '' ? input.stableUserId : explicit
+}
+
+/** Mint a personal org id for a new signup (distinct from the person id). */
+export function mintPersonalOrgIdForSignup() {
+	return mintOwnerId()
 }
 
 function orgSlugFromUsername(username: string) {

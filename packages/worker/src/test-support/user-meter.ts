@@ -797,6 +797,11 @@ export function createPermissiveAccountWriteLeaseDbHooks() {
 				compact.includes(
 					'SELECT deleting_at FROM users WHERE stable_user_id',
 				) ||
+				(compact.includes(
+					'SELECT deleting_at, stable_user_id, personal_org_id',
+				) &&
+					compact.includes('FROM users') &&
+					compact.includes('stable_user_id = ? OR personal_org_id = ?')) ||
 				(/FROM orgs\b/.test(compact) &&
 					compact.includes('deleting_at') &&
 					/\bWHERE id = \?/.test(compact))
@@ -806,6 +811,8 @@ export function createPermissiveAccountWriteLeaseDbHooks() {
 			return {
 				deleting_at: null as string | null,
 				deleted_at: null as string | null,
+				stable_user_id: null as string | null,
+				personal_org_id: null as string | null,
 			}
 		},
 	}

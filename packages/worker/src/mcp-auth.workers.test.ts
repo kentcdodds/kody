@@ -233,7 +233,12 @@ function createMockDb(options: MockDbOptions = {}) {
 						password_changed_at: options.passwordChangedAt ?? null,
 					} satisfies MockAccountRow
 				}
-				if (normalized.includes('select deleting_at from users')) {
+				if (
+					normalized.includes('select deleting_at from users') ||
+					normalized.includes(
+						'select deleting_at, stable_user_id, personal_org_id',
+					)
+				) {
 					if (!boundStableUserId) return null
 					if (options.writableCheckDeletingAt !== undefined) {
 						return { deleting_at: options.writableCheckDeletingAt }
@@ -267,7 +272,10 @@ function createMockDb(options: MockDbOptions = {}) {
 					if (!personId) return null
 					return mockPersonalOrgBindingRow(personId)
 				}
-				if (normalized.includes('from org_memberships')) {
+				if (
+					normalized.includes('from org_memberships') ||
+					normalized.includes('join org_memberships')
+				) {
 					return null
 				}
 				const result = await statement.all()

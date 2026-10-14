@@ -79,6 +79,34 @@ export function buildUnauthorizedErrorAgentPrompt(input: {
 	})
 }
 
+/** Signed-in visitor opened a package they cannot read (private / no grant). */
+export function buildPackageNoAccessErrorAgentPrompt(input: {
+	path?: string | null
+	packageName: string
+	ownerUsername: string
+	viewerUsername: string
+}) {
+	return buildErrorAgentPrompt({
+		activity: `Opening ${input.packageName}, which returned the package no-access page (403).`,
+		errorCode: 'package_no_access',
+		errorMessage: `Signed in as @${input.viewerUsername}, but this account cannot open ${input.packageName}.`,
+		ids: { path: input.path, packageName: input.packageName },
+		likelyCause:
+			'The package exists under the owner org, but this person lacks package:read (package Use) and/or app:execute on the matching app resource. Org membership alone does not include app:execute.',
+		nextSteps: [
+			`Ask @${input.ownerUsername} to grant Use on package ${input.packageName} (accessGrant resource_type package, preset use) so @${input.viewerUsername} can open the package page.`,
+			`For the hosted package app handoff, also grant Use on the app resource with the same package id (accessGrant resource_type app, permissions including app:execute).`,
+			'Do not treat this as a missing or unpublished package. Do not assume an org membership invite alone unlocks the app.',
+		],
+		kodyTools: [
+			'search({ entity: "guide:package_sharing" })',
+			'search({ entity: "capability:accessGrant" })',
+			'search({ entity: "capability:inviteCreate" })',
+		],
+		docs: ['search({ entity: "guide:package_sharing" })'],
+	})
+}
+
 export type PackageAppFailureKindForPrompt =
 	| 'host-setup'
 	| 'package-entrypoint'

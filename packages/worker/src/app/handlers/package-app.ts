@@ -1,4 +1,4 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { buildPackagePagePath } from '@kody-internal/shared/public-urls.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requestHasSessionCookie } from '#app/anonymous-html-cache.ts'
@@ -123,7 +123,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 			userId: org.userId,
 			username: org.username,
 			email:
-				org.userId === personalOrgId(user.mcpUser.userId) ? user.email : '',
+				org.userId === personalOrgIdForPerson(user.mcpUser) ? user.email : '',
 			displayName: org.displayName,
 		},
 		visitor: {

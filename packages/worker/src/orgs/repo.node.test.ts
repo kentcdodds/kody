@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { runWithRequestContext } from '#worker/request-context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { isOrgBindingMembershipQuery } from '#worker/test-support/org-binding-query.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { provisionPersonalOrg } from './provision.ts'
 import {
@@ -19,8 +20,28 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 async function createDb(options?: { queries?: Array<string> }) {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite, options)
+	await ensureUsersTestSchema({ db })
 	await ensureOrgsTestSchema(db)
 	return db
+}
+
+async function insertPerson(
+	db: D1Database,
+	input: {
+		stableUserId: string
+		username: string
+		email: string
+		personalOrgId?: string
+	},
+) {
+	const personalOrgId = input.personalOrgId ?? input.stableUserId
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, personal_org_id)
+			 VALUES (?, ?, 'hash', ?, ?)`,
+		)
+		.bind(input.username, input.email, input.stableUserId, personalOrgId)
+		.run()
 }
 
 test('loadOrgBindingForPerson throws when personal org membership is missing', async () => {
@@ -28,6 +49,11 @@ test('loadOrgBindingForPerson throws when personal org membership is missing', a
 	const stableUserId = testStableUserIdFromEmail(
 		'missing-membership@example.com',
 	)
+	await insertPerson(db, {
+		stableUserId,
+		username: 'missing',
+		email: 'missing-membership@example.com',
+	})
 	await expect(loadOrgBindingForPerson(db, stableUserId)).rejects.toThrow(
 		/No live personal-org membership/,
 	)
@@ -36,6 +62,11 @@ test('loadOrgBindingForPerson throws when personal org membership is missing', a
 test('loadOrgBindingForPerson returns personal org slug and owner role', async () => {
 	const db = await createDb()
 	const stableUserId = testStableUserIdFromEmail('ada@example.com')
+	await insertPerson(db, {
+		stableUserId,
+		username: 'ada',
+		email: 'ada@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId,
 		username: 'ada',
@@ -52,6 +83,16 @@ test('loadOrgBindingForOrg requires membership or a live grant', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	const gus = testStableUserIdFromEmail('gus@example.com')
+	await insertPerson(db, {
+		stableUserId: ada,
+		username: 'ada',
+		email: 'ada@example.com',
+	})
+	await insertPerson(db, {
+		stableUserId: gus,
+		username: 'gus',
+		email: 'gus@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId: ada,
 		username: 'ada',

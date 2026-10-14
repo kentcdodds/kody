@@ -6,6 +6,7 @@
  */
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
@@ -55,7 +56,7 @@ const unverifiedPersonEligibilitySql = [
 	`NOT EXISTS (
 			SELECT 1
 			FROM orgs
-			WHERE orgs.id = users.stable_user_id
+			WHERE orgs.id = COALESCE(NULLIF(TRIM(users.personal_org_id), ''), users.stable_user_id)
 				AND orgs.created_by_user_id IS NULL
 		)`,
 	// Exempting any oauth_connections row is sound only because signed-in
@@ -73,6 +74,7 @@ const unverifiedPersonEligibilitySql = [
 type UnverifiedAccountRow = {
 	id: number
 	stable_user_id: OwnerId
+	personal_org_id: string | null
 	email: string
 	created_at: string
 }
@@ -248,7 +250,7 @@ async function listUnverifiedAccountsPage(input: {
 	const { results } = await runD1WithRetry(() =>
 		input.db
 			.prepare(
-				`SELECT id, stable_user_id, email, created_at
+				`SELECT id, stable_user_id, personal_org_id, email, created_at
 				FROM users
 				WHERE ${conditions}
 				ORDER BY (deleting_at IS NULL) DESC, datetime(created_at) ASC, id ASC
@@ -380,7 +382,11 @@ export async function pruneUnverifiedAccounts(input: {
 			await deleteUserAccount({
 				env: input.env,
 				dbUserId: account.id,
-				mcpUserId: account.stable_user_id,
+				mcpUserId: personalOrgIdFromUserRow({
+					personal_org_id: account.personal_org_id,
+					stable_user_id: account.stable_user_id,
+				}),
+				personUserId: account.stable_user_id,
 			})
 			try {
 				await logAuditEvent({

@@ -95,6 +95,13 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'enablements' },
 	{ kind: 'org_id', table: 'credential_mappings' },
 	{ kind: 'org_id', table: 'credential_mapping_proposals' },
+	{
+		kind: 'org_via_parent',
+		table: 'approval_bundle_decisions',
+		parentTable: 'approval_bundles',
+		parentKey: 'bundle_id',
+	},
+	{ kind: 'org_id', table: 'approval_bundles' },
 	{ kind: 'org_id', table: 'credential_org_grants' },
 	{ kind: 'org_id', table: 'org_memberships' },
 	{ kind: 'org_id', table: 'invites' },

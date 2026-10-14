@@ -53,6 +53,7 @@ function createDb() {
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT,
+			personal_org_id TEXT,
 			experiments_opt_in INTEGER NOT NULL DEFAULT 0,
 			deleted_at TEXT
 		);

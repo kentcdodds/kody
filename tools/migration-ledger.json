@@ -531,6 +531,14 @@
 		{
 			"filename": "0143-add-dropbox-content-hosts.sql",
 			"sha256": "4308b3602f4600c10e68a9d99b2b85eba3b9b4dc5fbb6e4dff1b1cfef8918cd2"
+		},
+		{
+			"filename": "0144-approval-bundles.sql",
+			"sha256": "a61972046d238fd6fd8e4c621e549ef8fed3f6bcce0ef36d35f93e29bbfcb457"
+		},
+		{
+			"filename": "0145-approval-bundle-decision-finalized-at.sql",
+			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
 		}
 	]
 }
