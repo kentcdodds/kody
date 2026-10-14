@@ -157,6 +157,7 @@ const packageDetailPathMatcher = (() => {
 	const matcher = createMultiMatcher<true>()
 	matcher.add(routes.communityPackage.pattern, true)
 	matcher.add(routes.communityPackageSettings.pattern, true)
+	matcher.add(routes.communityPackageCollaborators.pattern, true)
 	matcher.add(routes.communityPackageTree.pattern, true)
 	matcher.add(routes.communityPackageFiles.pattern, true)
 	matcher.add(routes.communityDetail.pattern, true)

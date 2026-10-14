@@ -73,6 +73,9 @@ import {
 type ChangeKey = string
 
 export function PackageCollaboratorsRoute(handle: Handle) {
+	let writes = 0
+	/** Writes that had landed when each view's GET started. */
+	const fetchedAfterWrites = new WeakMap<PackageCollaboratorsView, number>()
 	const pageData = createRouteData<
 		'packageCollaborators',
 		PackageCollaboratorsLoaderData
@@ -80,21 +83,26 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		key: 'packageCollaborators',
 		fromLoaderData: (payload) => payload,
 		async load(href, signal) {
+			const writesAtStart = writes
 			const result = await loadPackageCollaboratorsPage(href, signal)
 			if (result.kind === 'redirect') return routeDataRedirect(result.to)
+			if (result.data.ok)
+				fetchedAfterWrites.set(result.data.view, writesAtStart)
 			return result.data
 		},
 	})
 
 	const removeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 	/**
-	 * The view a write returned, shown until a reload started after it lands
-	 * (the loaded view it replaced is kept to tell the two apart).
+	 * The latest view a write returned, shown until a GET that started after
+	 * that write lands; a GET already in flight may predate it.
 	 */
 	let written: {
 		view: PackageCollaboratorsView
-		replaced: PackageCollaboratorsView | null
+		writes: number
 	} | null = null
+	let reloadRequestedFor: PackageCollaboratorsView | null = null
+	let statePathname: string | null = null
 	let busy: ChangeKey | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
@@ -106,7 +114,20 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 	let invitee = ''
 	let invitePreset: PackageCollaboratorPreset = 'use'
 	let page = { username: '', kodyId: '' }
-	let loadedView: PackageCollaboratorsView | null = null
+
+	function resetForPackage(pathname: string) {
+		statePathname = pathname
+		written = null
+		message = null
+		invitePrompt = null
+		teamId = ''
+		memberId = ''
+		invitee = ''
+		teamPreset = 'use'
+		memberPreset = 'use'
+		invitePreset = 'use'
+		removeChecks.clear()
+	}
 
 	function removeCheckFor(key: string) {
 		const existing = removeChecks.get(key)
@@ -156,7 +177,11 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 				)
 			}
 			const { invite, ...view } = payload
-			written = { view: { ...view, ok: true }, replaced: loadedView }
+			writes += 1
+			written = {
+				view: { ...view, ok: true },
+				writes,
+			}
 			message = success
 			messageTone = 'info'
 			pageData.reload(handle, readCurrentRouterHref(handle))
@@ -243,16 +268,19 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 
 	function currentView(
 		loaded: PackageCollaboratorsView | null,
+		currentHref: string,
 		pending: boolean,
 	) {
 		if (!written) return loaded
-		if (!loaded || written.view.package.id !== loaded.package.id) {
+		if (!loaded) return written.view
+		if (written.view.package.id !== loaded.package.id) return loaded
+		if ((fetchedAfterWrites.get(loaded) ?? -1) >= written.writes) {
 			written = null
 			return loaded
 		}
-		if (!pending && loaded !== written.replaced) {
-			written = null
-			return loaded
+		if (!pending && reloadRequestedFor !== loaded) {
+			reloadRequestedFor = loaded
+			pageData.reload(handle, currentHref)
 		}
 		return written.view
 	}
@@ -649,9 +677,9 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		const username = shell?.username ?? path.username
 		const kodyId = shell?.kodyId ?? path.kodyId
 		page = { username, kodyId }
+		if (pathname !== statePathname) resetForPackage(pathname)
 		const pending = snapshot.kind === 'pending'
-		loadedView = data?.view ?? null
-		const view = currentView(loadedView, pending)
+		const view = currentView(data?.view ?? null, currentHref, pending)
 		const statusMessage =
 			snapshot.kind === 'error'
 				? (snapshot.error?.message ?? 'Unable to load this package.')
