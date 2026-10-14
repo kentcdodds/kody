@@ -549,9 +549,9 @@ A delivery that runs nothing answers 409:
 ### Paused on a trigger mapping
 
 Before each run, the run gate checks the credentials the instance's trigger
-mapping names for needs the package still declares (not the defaults, and not
-`[]`). If a named credential was deleted, the enabler can no longer Use it, or
-it no longer fits its need's kind or provider, the enablement pauses instead of
+mapping names for needs the package declares (not the defaults, and not `[]`).
+If a named credential is deleted, the enabler lacks Use on it, or it does not
+fit its need's current kind or provider, the enablement pauses instead of
 running:
 
 ```ts
