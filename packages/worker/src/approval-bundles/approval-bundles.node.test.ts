@@ -11,9 +11,13 @@ import {
 	setupPackageCredentialMappingFixture,
 	type MappingFixturePerson,
 } from '#worker/test-support/package-credential-mapping-fixture.ts'
+import { listPendingCredentialProposals } from '#worker/credentials/agent-credential-proposals.ts'
 import {
 	approvalItemsAwaitingDecision,
+	approvalItemsReadyToApprove,
+	approveAllLabel,
 	type ApprovalBundleView,
+	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import { type ApprovalViewer } from './item-views.ts'
 import { deleteApprovalBundlesForMember } from './repo.ts'
@@ -292,6 +296,173 @@ test('denying a paused publish drops it and records the denial', async () => {
 		'approval.bundle.create',
 		'approval.bundle.deny',
 	])
+})
+
+test('concurrent approve and deny on one item: only the winning decision acts', async () => {
+	const t = await setup()
+	await t.proposeDailyChat()
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		filter: { types: ['credential-picks'] },
+	})
+	const [item] = created.items
+	const [approve, deny] = await Promise.all([
+		t.decide({
+			bundleId: created.bundle.id,
+			action: 'approve',
+			item: item!.key,
+			fingerprint: item!.fingerprint!,
+		}),
+		t.decide({
+			bundleId: created.bundle.id,
+			action: 'deny',
+			item: item!.key,
+			fingerprint: item!.fingerprint!,
+		}),
+	])
+	expect([approve.ok, deny.ok].filter(Boolean)).toHaveLength(1)
+	const loser = approve.ok ? deny : approve
+	expect(loser).toMatchObject({ ok: false, status: 409 })
+	const mapping = await t.db
+		.prepare(
+			`SELECT credential_ids_json FROM credential_mappings
+			WHERE target = 'enablement' AND need_key = 'chat'`,
+		)
+		.first<{ credential_ids_json: string }>()
+	expect(mapping !== null).toBe(approve.ok)
+	const loaded = await loadApprovalBundleView({
+		viewer: t.viewerFor('bea'),
+		bundleId: created.bundle.id,
+	})
+	if (!loaded.ok) throw new Error('bundle did not load')
+	expect(bundleItems(loaded.view)[0]?.status).toBe(
+		approve.ok ? 'approved' : 'denied',
+	)
+	expect(
+		(await t.bundleAudits())
+			.filter((event) => event.result === 'success')
+			.map((event) => event.action),
+	).toEqual([
+		'approval.bundle.create',
+		approve.ok ? 'approval.bundle.approve' : 'approval.bundle.deny',
+	])
+})
+
+test('a failed approve gives the item back so it can still be decided', async () => {
+	const t = await setup()
+	await t.proposeDailyChat()
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		filter: { types: ['credential-picks'] },
+	})
+	const [item] = created.items
+	await t.db
+		.prepare(`DELETE FROM secret_entries WHERE name = 'team-slack'`)
+		.run()
+	const failed = await t.decide({
+		bundleId: created.bundle.id,
+		action: 'approve',
+		item: item!.key,
+		fingerprint: item!.fingerprint!,
+	})
+	expect(failed).toMatchObject({ ok: false, status: 409 })
+	const denied = await t.decide({
+		bundleId: created.bundle.id,
+		action: 'deny',
+		item: item!.key,
+		fingerprint: failed.body.item!.fingerprint!,
+	})
+	expect(denied.body).toMatchObject({ ok: true, item: { status: 'denied' } })
+})
+
+test('a decided item stays decided in its bundle', async () => {
+	const t = await setup()
+	const request = await t.pausePublish()
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		items: [{ type: 'publish', requestId: request.id }],
+	})
+	const [item] = created.items
+	await t.db
+		.prepare(
+			`INSERT INTO approval_bundle_decisions (
+				bundle_id, item_key, decision, decided_by_user_id, decided_at
+			) VALUES (?, ?, 'approved', ?, ?)`,
+		)
+		.bind(
+			created.bundle.id,
+			item!.key,
+			t.people.bea.personId,
+			'2026-10-13T00:00:00.000Z',
+		)
+		.run()
+	const loaded = await loadApprovalBundleView({
+		viewer: t.viewerFor('bea'),
+		bundleId: created.bundle.id,
+	})
+	if (!loaded.ok) throw new Error('bundle did not load')
+	expect(bundleItems(loaded.view)[0]).toMatchObject({
+		status: 'approved',
+		canApprove: false,
+		canDeny: false,
+	})
+	expect(approvalItemsAwaitingDecision(loaded.view)).toEqual([])
+})
+
+test('pending items that cannot be approved yet still count as waiting', () => {
+	const item = (key: string, canApprove: boolean): ApprovalItemView => ({
+		key,
+		type: 'credential-picks',
+		title: 'Choose credentials',
+		summary: '',
+		package: null,
+		status: 'pending',
+		statusMessage: canApprove ? null : 'Fix before approving: revoked.',
+		canApprove,
+		canDeny: true,
+		fingerprint: key,
+		grants: [],
+		reviewHref: null,
+		decision: null,
+	})
+	const view = {
+		groups: [
+			{ package: null, items: [item('ready', true), item('blocked', false)] },
+		],
+	}
+	expect(approvalItemsAwaitingDecision(view).map((entry) => entry.key)).toEqual(
+		['ready', 'blocked'],
+	)
+	expect(approvalItemsReadyToApprove(view).map((entry) => entry.key)).toEqual([
+		'ready',
+	])
+	expect(approveAllLabel(0, 1)).toBe('Nothing here can be approved yet')
+	expect(approveAllLabel(0, 0)).toBe('Nothing left to approve')
+})
+
+test('equal proposals from two agents both wait for approval', async () => {
+	const t = await setup()
+	await t.proposeDailyChat()
+	await t.db
+		.prepare(
+			`INSERT INTO credential_mapping_proposals (
+				id, org_id, package_id, person_user_id, agent_credential_kind,
+				agent_credential_id, proposal_json, created_at
+			)
+			SELECT 'second-agent', org_id, package_id, person_user_id,
+				agent_credential_kind, 'another-agent', proposal_json, created_at
+			FROM credential_mapping_proposals LIMIT 1`,
+		)
+		.run()
+	const pending = await listPendingCredentialProposals({
+		db: t.db,
+		orgId: t.acmeId,
+		personId: t.people.bea.personId,
+	})
+	expect(pending).toHaveLength(2)
+	expect(pending.map((entry) => entry.agentCredentialId)).toContain(
+		'another-agent',
+	)
 })
 
 test('only the person a bundle was made for can open or decide it', async () => {
