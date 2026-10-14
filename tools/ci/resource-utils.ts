@@ -1215,7 +1215,7 @@ function packageAppWildcardDnsRecordName(packageAppHostname: string) {
  * proxied DNS record — Cloudflare for SaaS rejects a fallback origin that is
  * only covered by the wildcard.
  */
-export function packageAppCustomDomainsOriginDnsRecordName(
+function packageAppCustomDomainsOriginDnsRecordName(
 	packageAppHostname: string,
 ) {
 	return `domains.${packageAppHostname}`
