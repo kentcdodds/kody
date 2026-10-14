@@ -889,10 +889,12 @@
 	24%,
 	40%,
 	100% {
-		scale: 1;
+		box-shadow:
+			0 1px 1px var(--pw-shadow),
+			0 0.2em 0.6em var(--pw-shadow);
 	}
 	32% {
-		scale: 1.03;
+		box-shadow: 0 0 0 0.28em var(--pw-int-ring);
 	}
 }
 
@@ -901,13 +903,11 @@
 	58%,
 	80%,
 	100% {
-		scale: 1;
 		box-shadow:
 			0 1px 1px var(--pw-shadow),
 			0 0.2em 0.6em var(--pw-shadow);
 	}
 	66% {
-		scale: 1.025;
 		box-shadow: 0 0 0 0.28em var(--pw-int-ring);
 	}
 }
