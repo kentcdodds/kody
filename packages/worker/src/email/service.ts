@@ -161,6 +161,7 @@ export async function storeIdempotentInboundEmail(input: {
 		await resolveInboundEmailClassification({
 			db: input.db,
 			userId: delivery.userId,
+			fromAddress: parsed.headerFrom,
 			envelopeFrom: parsed.envelopeFrom,
 			authResults: parsed.authResults,
 		})

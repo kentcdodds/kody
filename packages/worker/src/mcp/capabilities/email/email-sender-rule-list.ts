@@ -12,7 +12,7 @@ export const emailSenderRuleListCapability = defineDomainCapability(
 		name: 'emailSenderRuleList',
 		orgPermission: 'email:read',
 		description:
-			'List sender allow/block/quarantine rules for the signed-in user. Inbound mail is classified at receive time after Authentication-Results (SPF/DKIM/DMARC): allow only applies to authenticated From addresses; block/quarantine still apply (address beats domain; subdomain suffix matching).',
+			'List sender allow/block/quarantine rules for the signed-in user. Classification matches rules on RFC5322 From after Authentication-Results (SPF/DKIM/DMARC): allow only when From authenticates (DMARC pass or aligned SPF); block/quarantine still apply (address beats domain; subdomain suffix matching).',
 		keywords: [
 			'email',
 			'sender',

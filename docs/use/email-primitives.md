@@ -231,13 +231,15 @@ Inbound mail is classified at receive time. Each stored message carries
    results first. DMARC `fail`, or SPF `fail`/`softfail` without a DKIM `pass`,
    marks the message suspect. A missing Authentication-Results header fails open
    (not authenticated, not suspect).
-2. **Per-user sender rules** — exact address or domain match (domain rules also
-   match subdomains). Address rules beat domain rules. Effects:
-   - `block` rejects at SMTP before any receive quota is charged.
+2. **Per-user sender rules** — at classification time, rules match the RFC5322
+   From address (exact address or domain, including subdomains; address beats
+   domain). Early SMTP `block` still uses the envelope sender. Effects:
+   - `block` rejects at SMTP before any receive quota is charged (envelope
+     match), and quarantines at classification when From matches.
    - `quarantine` stores the message as quarantined.
-   - `allow` stores the message as accepted only when From passed
-     authentication. Spoofed (auth-failed) mail is never accepted because of an
-     allow rule; it is quarantined by the auth verdict instead.
+   - `allow` stores the message as accepted only when From authenticates (DMARC
+     `pass`, or SPF `pass` with the envelope on the From domain). Spoofed or
+     unaligned From is never accepted because of an allow rule.
 3. **Default** — when no sender rule decides the outcome, suspect mail is
    quarantined and everything else is accepted.
 

@@ -1,11 +1,14 @@
 import { normalizeEmailAddress } from './address.ts'
 import { resolveInboundEmailAuthVerdict } from './auth-verdict.ts'
+import { authenticatesFromAddress } from './inbound-sender.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import { type EmailClassification } from './types.ts'
 
 export async function resolveInboundEmailClassification(input: {
 	db: D1Database
 	userId: string
+	/** RFC5322 From; sender rules match this address, not the envelope. */
+	fromAddress: string | null
 	envelopeFrom: string
 	authResults: string | null
 }): Promise<{
@@ -16,7 +19,9 @@ export async function resolveInboundEmailClassification(input: {
 	// rule cannot accept spoofed (auth-failed) mail.
 	const verdict = resolveInboundEmailAuthVerdict(input.authResults)
 
-	const senderAddress = normalizeEmailAddress(input.envelopeFrom)
+	const senderAddress = input.fromAddress
+		? normalizeEmailAddress(input.fromAddress)
+		: null
 	const ruleMatch = senderAddress
 		? await evaluateEmailSenderRules({
 				db: input.db,
@@ -28,10 +33,22 @@ export async function resolveInboundEmailClassification(input: {
 	if (ruleMatch) {
 		switch (ruleMatch.effect) {
 			case 'allow':
-				if (verdict.authenticated) {
+				if (
+					senderAddress &&
+					authenticatesFromAddress({
+						verdict,
+						fromAddress: senderAddress,
+						envelopeFrom: input.envelopeFrom,
+					})
+				) {
 					return { classification: 'accepted', classificationReason: null }
 				}
-				break
+				return {
+					classification: 'quarantined',
+					classificationReason: verdict.suspect
+						? verdict.reason
+						: 'Sender matched allow rule but From did not authenticate.',
+				}
 			case 'block':
 				return {
 					classification: 'quarantined',

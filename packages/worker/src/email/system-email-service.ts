@@ -76,6 +76,7 @@ export async function storeIdempotentSystemInboundEmail(input: {
 			await resolveInboundEmailClassification({
 				db: input.db,
 				userId: systemEmailOwnerId,
+				fromAddress: parsed.headerFrom,
 				envelopeFrom: parsed.envelopeFrom,
 				authResults: parsed.authResults,
 			})
