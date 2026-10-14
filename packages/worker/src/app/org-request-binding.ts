@@ -62,14 +62,23 @@ export function orgSectionDenial(
 	return null
 }
 
-/** URLs whose org comes from the path, query, or, for account JSON, the Referer. */
+/** URLs whose org comes from the path or, for account JSON, the Referer. */
 export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
 		isCreditsApiPath(pathname) ||
 		isLastUsedOrgCommitApiPath(pathname) ||
-		pathname === routes.connectOauth.href() ||
 		orgSlugFromPageUrl(pathname) !== null
+	)
+}
+
+/**
+ * True when this request can bind a non-signup org: an org-bound path, or
+ * `/connect/oauth?org=<slug>` (the OAuth redirect URI stays path-org-less).
+ */
+export function isOrgBoundRequest(url: URL): boolean {
+	return (
+		isOrgBoundPath(url.pathname) || orgSlugFromConnectOauthUrl(url) !== null
 	)
 }
 
@@ -87,12 +96,12 @@ export async function isOrgRequestDenied(
 	env: Env,
 	personId: string,
 ): Promise<boolean> {
-	const pathname = new URL(request.url).pathname
-	if (!isOrgBoundPath(pathname)) return false
+	const url = new URL(request.url)
+	if (!isOrgBoundRequest(url)) return false
 	const resolution = await loadRequestOrgResolution(request, env, personId)
 	if (resolution === 'denied') return true
 	if (resolution === 'personal') return false
-	const section = orgOwnedSectionForPath(pathname)
+	const section = orgOwnedSectionForPath(url.pathname)
 	return section !== null && orgSectionDenial(resolution, section) !== null
 }
 

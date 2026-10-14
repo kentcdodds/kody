@@ -211,6 +211,7 @@ test('a request naming an org the person cannot use is denied, never the signup 
 	await expect(
 		denied('https://kody.test/connect/oauth?org=acme&provider=github'),
 	).resolves.toBe(false)
+	// ?org= for an org Ada cannot use must not fall through to the signup org.
 	await expect(
 		denied('https://kody.test/connect/oauth?org=ada&provider=github'),
 	).resolves.toBe(true)
