@@ -45,7 +45,7 @@ test('a republish that adds needs notes how live enablements resolve them', asyn
 	)
 })
 
-test('a republish that renames the package still notes added needs, found by its source', async () => {
+test('a republish is found by its source: a rename still notes added needs, another source does not', async () => {
 	const t = await setupPackageCredentialMappingFixture({
 		loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
 	})
@@ -65,4 +65,13 @@ test('a republish that renames the package still notes added needs, found by its
 	expect(await renamed(t.savedPackage.sourceId)).toContain(
 		'This publish adds credential needs calendar.',
 	)
+	expect(
+		await republishedNeedsNote({
+			env: t.env,
+			userId: t.acmeId,
+			sourceId: 'another-source',
+			packageName: '@acme/digest',
+			needs: [...mappingFixtureNeeds, calendar],
+		}),
+	).toBeNull()
 })

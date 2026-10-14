@@ -16,23 +16,24 @@ import {
 export async function republishedNeedsNote(input: {
 	env: Env
 	userId: string
-	/** The source being published; found by it, a rename still finds the package. */
+	/**
+	 * The source being published; found by it, a rename still finds the
+	 * package, and a new source never reads a same-name package's enablements.
+	 */
 	sourceId?: string | null
 	packageName: string
 	needs: ReadonlyArray<CredentialNeed>
 }): Promise<string | null> {
 	if (input.needs.length === 0) return null
-	const saved =
-		(input.sourceId
-			? await getSavedPackageBySourceId(input.env.APP_DB, {
-					userId: input.userId,
-					sourceId: input.sourceId,
-				})
-			: null) ??
-		(await getSavedPackageByName(input.env.APP_DB, {
-			userId: input.userId,
-			name: input.packageName,
-		}))
+	const saved = input.sourceId
+		? await getSavedPackageBySourceId(input.env.APP_DB, {
+				userId: input.userId,
+				sourceId: input.sourceId,
+			})
+		: await getSavedPackageByName(input.env.APP_DB, {
+				userId: input.userId,
+				name: input.packageName,
+			})
 	if (!saved) return null
 	const row = await input.env.APP_DB.prepare(
 		`SELECT COUNT(*) AS live FROM enablements
