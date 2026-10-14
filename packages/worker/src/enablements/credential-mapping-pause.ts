@@ -14,7 +14,7 @@ import { listUsableCredentials } from '#worker/credentials/credential-candidates
 import {
 	loadPackageNeeds,
 	mappedCredentialFitsNeed,
-} from '#worker/credentials/credential-client.ts'
+} from '#worker/credentials/credential-need-fit.ts'
 import { enablementMappingPauseResourceType } from '#universal/credential-contracts.ts'
 import { type EnablementPauseInput } from './repo.ts'
 import { type EnablementPause, type EnablementRecord } from './types.ts'

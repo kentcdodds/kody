@@ -49,7 +49,12 @@ import {
 	loadCredentialMappings,
 	resolveStoredMapping,
 } from './credential-mappings.ts'
-import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
+import {
+	loadPackageNeeds,
+	mappedCredentialFits,
+	type NeedTarget,
+	needTarget,
+} from './credential-need-fit.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import {
 	CredentialLoginFailedError,
@@ -194,18 +199,6 @@ export type OpenedCredentialClient = {
 
 type Picked = { credential: UsableCredential; hint: string | null }
 
-/** What a need key asks for: the declared need, or the key read as a provider. */
-type NeedTarget = {
-	kind: PackageCredentialKind | null
-	provider: string
-	describe: string
-	/**
-	 * How an explicit pick's kind is checked: declared kind, any fetch-capable
-	 * kind when the need omits kind, or any kind for an ad-hoc provider key.
-	 */
-	match: 'exact' | 'fetch-capable' | 'any'
-}
-
 const maxKeyLength = 100
 
 function requireActorRequest(ctx: CredentialClientContext): RequestContext {
@@ -260,24 +253,6 @@ function retryFor(key: string | null, credential: UsableCredential) {
 	}
 }
 
-/** The credential needs `packageId`'s published source declares. */
-export async function loadPackageNeeds(input: {
-	env: Env
-	request: RequestContext
-	packageId: string
-}) {
-	const saved = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.request.org.id,
-		packageId: input.packageId,
-	})
-	if (!saved) return []
-	return await loadPublishedCredentialNeeds({
-		env: input.env,
-		userId: saved.userId,
-		sourceId: saved.sourceId,
-	})
-}
-
 async function loadNeed(ctx: CredentialClientContext, key: string) {
 	if (ctx.runNeeds) return (await ctx.runNeeds()).get(key) ?? null
 	if (!ctx.packageId) return null
@@ -309,32 +284,6 @@ async function createUrlForNeed(
 		packageKodyId: saved?.kodyId ?? null,
 		orgSlug: requireActorRequest(ctx).org.slug,
 	})
-}
-
-function needTarget(key: string, need: CredentialNeed | null): NeedTarget {
-	if (!need) {
-		return {
-			kind: null,
-			provider: key,
-			describe: `provider "${key}"`,
-			match: 'any',
-		}
-	}
-	const provider = need.provider
-	if (need.kind) {
-		return {
-			kind: need.kind,
-			provider,
-			describe: `need "${key}" (${need.kind} from provider "${provider}")`,
-			match: 'exact',
-		}
-	}
-	return {
-		kind: null,
-		provider,
-		describe: `need "${key}" (any fetch-capable credential from provider "${provider}")`,
-		match: 'fetch-capable',
-	}
 }
 
 /**
@@ -423,40 +372,6 @@ function pickOne(input: {
 			...(input.createUrl ? { createUrl: input.createUrl } : {}),
 		},
 	)
-}
-
-/**
- * A stored mapping follows the explicit-pick rule: the kind filter must match,
- * and so must the provider when the credential has one. A need whose kind or
- * provider changed after mapping no longer takes the old credential.
- */
-function mappedCredentialFits(
-	credential: UsableCredential,
-	target: NeedTarget,
-): boolean {
-	if (credential.provider && credential.provider !== target.provider) {
-		return false
-	}
-	switch (target.match) {
-		case 'exact':
-			return target.kind === null || credential.kind === target.kind
-		case 'fetch-capable':
-			return isFetchCapableCredentialKind(credential.kind)
-		case 'any':
-			return true
-		default: {
-			const exhaustive: never = target.match
-			throw new Error(`Unhandled need match: ${String(exhaustive)}`)
-		}
-	}
-}
-
-/** Whether a mapped `credential` still fits declared `need`, as a run checks it. */
-export function mappedCredentialFitsNeed(
-	credential: UsableCredential,
-	need: CredentialNeed,
-): boolean {
-	return mappedCredentialFits(credential, needTarget(need.key, need))
 }
 
 /**
