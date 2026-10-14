@@ -10,10 +10,10 @@ import {
 } from '@kody-internal/shared/public-urls.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import { lookupCachedPackageAppCustomHostname } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import {
 	isVerifiedAppCustomHostname,
 	isVerifiedOrgCustomHostname,
-	lookupPackageAppCustomHostname,
 	lookupVerifiedAppCustomHostnameForPackage,
 	lookupVerifiedOrgCustomHostnameForPackage,
 	normalizeCustomHostname,
@@ -351,7 +351,7 @@ export async function resolveVerifiedCustomHostnameIfEnabled(
 	// Author code on a customer host must stay cross-site from Kody cookies.
 	if (hostnameSharesKodyRegistrableDomain({ env, hostname })) return null
 	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) return null
-	const mapping = await lookupPackageAppCustomHostname({
+	const mapping = await lookupCachedPackageAppCustomHostname({
 		db: env.APP_DB,
 		hostname,
 	})

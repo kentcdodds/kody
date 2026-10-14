@@ -14,6 +14,7 @@ import {
 	getPackageNameScope,
 	isScopedPackageName,
 } from './package-name.ts'
+import { clearCachedPackageAppCustomHostnames } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	kodyPackageIdPattern,
@@ -313,7 +314,14 @@ export async function updateSavedPackage(
 		.bind(...bindValues)
 		.run()
 
-	return (result.meta.changes ?? 0) > 0
+	const changed = (result.meta.changes ?? 0) > 0
+	// App-level custom hostname cache embeds the package name leaf (kodyId).
+	// A rename must drop cached Host mappings in this isolate or handoff
+	// rejects the new slug for up to the cache TTL.
+	if (changed && input.name !== undefined) {
+		clearCachedPackageAppCustomHostnames(db)
+	}
+	return changed
 }
 
 export async function getSavedPackageLockedAt(
