@@ -71,7 +71,7 @@ test('approve-publish SSR renders the promote card without a browser location', 
 	)
 })
 
-test('approve-publish SSR prompts to update the public listing when it is behind', async () => {
+test('approve-publish SSR notes listing sync when the catalog pin still lags', async () => {
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
 			url: approvePublishHref,
@@ -83,7 +83,7 @@ test('approve-publish SSR prompts to update the public listing when it is behind
 							pinnedVersion: '1.4.0',
 							promotedVersion: '1.5.0',
 							behind: true,
-							updateHint: 'Call communityPublish to republish.',
+							updateHint: 'Background sync is catching up.',
 							updateUrl:
 								'/@kodykoala/gmail-drafts/settings#update-public-listing',
 						},
@@ -94,14 +94,12 @@ test('approve-publish SSR prompts to update the public listing when it is behind
 		}),
 	)
 
-	expect(html).toContain('data-testid="approve-publish-update-public-listing"')
-	expect(html).toContain(
-		'href="/@kodykoala/gmail-drafts/settings#update-public-listing"',
-	)
-	expect(html).toContain('Update public listing')
+	expect(html).toContain('data-testid="approve-publish-listing-syncing"')
+	expect(html).toContain('catching up to this published version')
+	expect(html).not.toContain('Update public listing')
 })
 
-test('approve-publish SSR warns when promote would leave the listing behind', async () => {
+test('approve-publish SSR does not warn that promote leaves the listing behind', async () => {
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
 			url: approvePublishHref,
@@ -110,7 +108,7 @@ test('approve-publish SSR warns when promote would leave the listing behind', as
 					accountPackageApprovePublish: {
 						...loaderData,
 						listing: null,
-						listingWillLagAfterPromote: true,
+						listingWillLagAfterPromote: false,
 					},
 				},
 				children: jsx(AccountPackageApprovePublishRoute, {}),
@@ -118,10 +116,8 @@ test('approve-publish SSR warns when promote would leave the listing behind', as
 		}),
 	)
 
-	expect(html).toContain('data-testid="approve-publish-listing-will-lag"')
-	expect(html).not.toContain(
-		'data-testid="approve-publish-update-public-listing-link"',
-	)
+	expect(html).not.toContain('data-testid="approve-publish-listing-will-lag"')
+	expect(html).not.toContain('data-testid="approve-publish-listing-syncing"')
 })
 
 test('unlocked approve-publish SSR offers Publish HEAD', async () => {

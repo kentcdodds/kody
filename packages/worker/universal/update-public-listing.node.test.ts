@@ -31,7 +31,7 @@ test('buildCommunityListingBehindHint returns null when pins match or are missin
 	).toBeNull()
 })
 
-test('buildCommunityListingBehindHint describes versions and how to republish', () => {
+test('buildCommunityListingBehindHint describes versions and that sync catches up', () => {
 	const hint = buildCommunityListingBehindHint({
 		listingPinnedCommit: '7f9dc2fd04074fecd9b3bbdbb8e4a6c75c04b9e8',
 		promotedCommit: '4665dddb7b7347291bd99049ba0f67ca101ee082',
@@ -43,12 +43,12 @@ test('buildCommunityListingBehindHint describes versions and how to republish', 
 		pinnedVersion: '1.4.0',
 		promotedVersion: '1.5.0',
 		behind: true,
-		updateHint: expect.stringContaining('communityPublish'),
+		updateHint: expect.stringContaining('automatically'),
 		updateUrl: '/@danj/hey-email/settings#update-public-listing',
 	})
 	expect(hint?.updateHint).toContain('1.4.0')
 	expect(hint?.updateHint).toContain('1.5.0')
-	expect(hint?.updateHint).toContain('Update public listing')
+	expect(hint?.updateHint).toContain('No manual republish')
 })
 
 test('buildCommunityListingBehindHint falls back to short commits when versions are absent', () => {

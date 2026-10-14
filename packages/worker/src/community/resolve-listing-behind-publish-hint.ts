@@ -10,8 +10,9 @@ import { listingNeedsRepublish } from '#worker/community/listing-needs-republish
 
 /**
  * When the package has an active public listing whose pin lags the given
- * published commit, return the discoverability hint for publish/promote
- * results. Never moves the listing — owners must communityPublish.
+ * published commit, return the discoverability hint. Promote auto-syncs the
+ * listing; this only surfaces when sync or the scheduled backfill has not
+ * caught up yet. Never moves the listing itself.
  */
 export async function resolveListingBehindPublishHint(input: {
 	db: D1Database

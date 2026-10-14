@@ -4,7 +4,6 @@ import { type PackagePageAccess } from '#app/package-page.ts'
 import { type ViewerListingInstall } from '#universal/community-public-types.ts'
 import { type PackageRepoActions } from '#universal/package-title-actions.tsx'
 import { routes } from '#universal/routes.ts'
-import { buildUpdatePublicListingHref } from '#universal/update-public-listing.ts'
 import { buildPackagePublishApprovalPath } from '#worker/package-registry/package-publish-lock.ts'
 
 export function buildSourceAheadPublishHref(input: {
@@ -70,22 +69,11 @@ export function buildPackageRepoActions(input: {
 					headCommit: listing.headCommit,
 				})
 			: null
-	// Trust only the fresh owner projection, never the cached listing pin: a
-	// stale cached pin after republish would keep this visible.
-	const updateListingHref =
-		input.viewerCanManage &&
-		listing != null &&
-		input.ownerPackage?.listingNeedsRepublish === true
-			? buildUpdatePublicListingHref({
-					username: listing.ownerUsername,
-					kodyId: listing.kodyId,
-				})
-			: null
 	const packageAppHref =
 		input.viewerIsOwner && input.ownerPackage?.hasApp === true
 			? buildPackageAppPath({ username: input.username, kodyId: input.kodyId })
 			: null
-	return { fork, publishHref, updateListingHref, packageAppHref }
+	return { fork, publishHref, packageAppHref }
 }
 
 export function buildPackageRepoActionsForPage(

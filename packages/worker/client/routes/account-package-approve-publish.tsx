@@ -112,44 +112,11 @@ export async function accountPackageApprovePublishRouteLoader(
 
 function renderListingBehindPrompt(input: {
 	listing?: AccountPackageListingBehindHint | null
-	willLagAfterPromote?: boolean
 }) {
-	if (input.listing?.behind) {
-		return (
-			<div
-				data-testid="approve-publish-update-public-listing"
-				mix={css({
-					display: 'grid',
-					gap: spacing.xs,
-					padding: spacing.sm,
-					borderRadius: '0.55rem',
-					border: `1px solid ${colors.border}`,
-					backgroundColor: colors.surface,
-				})}
-			>
-				<p mix={css({ margin: 0, color: colors.text })}>
-					The public community listing stays on its pinned snapshot until you
-					republish it. Publish and promote only move the package runtime.
-				</p>
-				<a
-					href={input.listing.updateUrl}
-					data-testid="approve-publish-update-public-listing-link"
-					mix={css({
-						...getPillButtonCss({ size: 'sm' }),
-						display: 'inline-flex',
-						textDecoration: 'none',
-						width: 'fit-content',
-					})}
-				>
-					Update public listing
-				</a>
-			</div>
-		)
-	}
-	if (!input.willLagAfterPromote) return null
+	if (!input.listing?.behind) return null
 	return (
 		<div
-			data-testid="approve-publish-listing-will-lag"
+			data-testid="approve-publish-listing-syncing"
 			mix={css({
 				display: 'grid',
 				gap: spacing.xs,
@@ -160,8 +127,8 @@ function renderListingBehindPrompt(input: {
 			})}
 		>
 			<p mix={css({ margin: 0, color: colors.text })}>
-				After you promote, the public community listing will still show its
-				pinned snapshot until you update it from package settings.
+				The community listing is catching up to this published version. No extra
+				republish step is required.
 			</p>
 		</div>
 	)
@@ -296,11 +263,11 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 					}
 					description={
 						status === 'promoted'
-							? 'The package runtime is on this commit. Update the public community listing if you want the catalog snapshot to match.'
+							? 'This version is live. The community listing follows automatically when the package is public.'
 							: headUpToDate
 								? 'No unpublished commit is waiting. Nothing was approved or changed.'
 								: pinnedCommitAlreadyPublished
-									? 'The commit in this link matches the public version. Open Approve without a commit pin to review default-branch HEAD if it has moved.'
+									? 'The commit in this link matches the live version. Open Approve without a commit pin to review default-branch HEAD if it has moved.'
 									: nothingToPublish
 										? 'No commit is available to publish from this page.'
 										: payload?.package.lockedAt
@@ -391,10 +358,16 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 									: 'This package is not locked. Lock it from the package page if you want later publishes to require approval.'}
 							</p>
 						</div>
-						{renderListingBehindPrompt({
-							listing: payload.listing,
-							willLagAfterPromote: payload.listingWillLagAfterPromote,
-						})}
+						{renderListingBehindPrompt({ listing: payload.listing })}
+						{nothingToPublish && headUpToDate ? (
+							<p
+								data-testid="approve-publish-empty-state"
+								mix={css({ margin: 0, color: colors.textMuted })}
+							>
+								You are all caught up. Come back here when HEAD moves, or when
+								an agent asks you to approve a locked publish.
+							</p>
+						) : null}
 						<MetadataGrid items={approvePublishMetadataItems(payload)} />
 						<div
 							mix={css({

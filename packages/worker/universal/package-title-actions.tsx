@@ -47,20 +47,13 @@ export type PackageRepoActions = {
 	fork: PackageRepoForkAction | null
 	/** Owner: default-branch HEAD is ahead of the last publish. */
 	publishHref: string | null
-	/** Owner: the public listing is pinned behind the published commit. */
-	updateListingHref: string | null
 	/** Owner: the package declares an app. */
 	packageAppHref: string | null
 }
 
 function hasPackageRepoActions(actions: PackageRepoActions | null) {
 	if (!actions) return false
-	return Boolean(
-		actions.fork ||
-		actions.publishHref ||
-		actions.updateListingHref ||
-		actions.packageAppHref,
-	)
+	return Boolean(actions.fork || actions.publishHref || actions.packageAppHref)
 }
 
 /**
@@ -74,6 +67,9 @@ export function renderPackageRepoActions(
 ): RemixNode {
 	if (!actions || !hasPackageRepoActions(actions)) return null
 	const install = actions.fork?.viewerInstall ?? null
+	const publishIsPrimary = Boolean(
+		actions.publishHref && !actions.packageAppHref && !actions.fork,
+	)
 	return (
 		<>
 			{actions.publishHref ? (
@@ -81,36 +77,21 @@ export function renderPackageRepoActions(
 					href={actions.publishHref}
 					data-testid="community-detail-source-ahead-badge"
 					aria-describedby="package-repo-publish-tooltip"
-					mix={css(packageActionSecondaryCss)}
+					mix={css(
+						publishIsPrimary
+							? packageActionPrimaryCss
+							: packageActionSecondaryCss,
+					)}
 				>
 					{renderIcon('arrow-up-right', { size: actionIconSize })}
-					<span>Review &amp; publish</span>
+					<span>Publish changes</span>
 					<span
 						id="package-repo-publish-tooltip"
 						role="tooltip"
 						aria-hidden="true"
 					>
-						Default-branch HEAD is newer than the last publish. Review the
+						Default-branch HEAD is newer than the live version. Review the
 						changes, then publish them.
-					</span>
-				</a>
-			) : null}
-			{actions.updateListingHref ? (
-				<a
-					href={actions.updateListingHref}
-					data-testid="community-detail-update-public-listing"
-					aria-describedby="package-repo-update-listing-tooltip"
-					mix={css(packageActionSecondaryCss)}
-				>
-					{renderIcon('refresh', { size: actionIconSize })}
-					<span>Update public listing</span>
-					<span
-						id="package-repo-update-listing-tooltip"
-						role="tooltip"
-						aria-hidden="true"
-					>
-						The public listing is behind your latest publish. Republish it from
-						settings.
 					</span>
 				</a>
 			) : null}

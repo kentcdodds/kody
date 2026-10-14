@@ -22,6 +22,7 @@ import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconci
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
+import { backfillCommunityListingsBehindPublished } from '#worker/community/listing-behind-backfill.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
@@ -91,6 +92,10 @@ export async function runScheduledLane(input: {
 			return backfillStorageBucketEstimates({
 				env: input.env,
 				now: input.scheduledAt,
+			})
+		case 'community_listing_behind_backfill':
+			return backfillCommunityListingsBehindPublished({
+				env: input.env,
 			})
 		case 'd1_storage_reconciliation':
 			return reconcileD1StorageBytes({

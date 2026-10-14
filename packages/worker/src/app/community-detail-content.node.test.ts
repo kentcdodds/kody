@@ -162,7 +162,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(ownerAheadHtml).toMatch(
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
-	expect(ownerAheadHtml).toContain('Review &amp; publish')
+	expect(ownerAheadHtml).toContain('Publish changes')
 
 	const listingBehindHtml = await render({
 		listing: {
@@ -174,21 +174,12 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		viewerCanManage: true,
 		listingNeedsRepublish: true,
 	})
-	expect(listingBehindHtml).toContain(
+	expect(listingBehindHtml).not.toContain(
 		'data-testid="community-detail-update-public-listing"',
 	)
+	expect(listingBehindHtml).not.toContain('Update public listing')
 	expect(listingBehindHtml).toContain(
-		'href="/@kentcdodds/github-triage/settings#update-public-listing"',
-	)
-	expect(listingBehindHtml).toContain('Update public listing')
-
-	const visitorBehindHtml = await render({
-		viewerIsOwner: false,
-		viewerCanManage: false,
-		listingNeedsRepublish: true,
-	})
-	expect(visitorBehindHtml).not.toContain(
-		'data-testid="community-detail-update-public-listing"',
+		'data-testid="community-detail-source-ahead-badge"',
 	)
 
 	expectMarkers(

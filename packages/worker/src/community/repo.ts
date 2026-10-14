@@ -522,6 +522,47 @@ export async function getCommunityListingByOwnerAndPackage(
 }
 
 /**
+ * Active catalog rows whose pin lags the package runtime `published_commit`.
+ * Used by the one-shot listing-behind backfill after auto-follow landed.
+ */
+export async function listActiveCommunityListingsBehindPublished(
+	db: D1Database,
+	input: { limit: number },
+): Promise<
+	Array<{
+		listing: CommunityListingRecord
+		publishedCommit: string
+	}>
+> {
+	const rows = await db
+		.prepare(
+			`SELECT ${communityListingSelectColumns},
+				entity_sources.published_commit AS source_published_commit
+			FROM community_listings
+			${communityListingSourceJoin}
+			WHERE community_listings.status = 'active'
+				AND entity_sources.published_commit IS NOT NULL
+				AND TRIM(entity_sources.published_commit) != ''
+				AND community_listings.pinned_commit != entity_sources.published_commit
+				${andLiveDeletedAtSql('community_listings')}
+			ORDER BY community_listings.updated_at ASC
+			LIMIT ?`,
+		)
+		.bind(input.limit)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).flatMap((row) => {
+		const publishedCommit = String(row['source_published_commit'] ?? '').trim()
+		if (!publishedCommit) return []
+		return [
+			{
+				listing: mapCommunityListingRow(row),
+				publishedCommit,
+			},
+		]
+	})
+}
+
+/**
  * Lookup behind the canonical `/@owner/kody-id` URL. Only active listings are
  * addressable that way: a delisted listing releases the pair (and the partial
  * unique index that guards it), so a republish can take the URL over.

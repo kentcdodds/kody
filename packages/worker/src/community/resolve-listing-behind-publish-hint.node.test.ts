@@ -67,7 +67,7 @@ test('resolveListingBehindPublishHint builds the update hint for a lagging listi
 		pinnedVersion: '1.4.0',
 		promotedVersion: '1.5.0',
 		behind: true,
-		updateHint: expect.stringContaining('communityPublish'),
+		updateHint: expect.stringContaining('automatically'),
 		updateUrl: '/@danj/hey-email/settings#update-public-listing',
 	})
 })

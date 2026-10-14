@@ -189,6 +189,9 @@ function toPlainRepoOwnerPackage(input: {
 		publishedCommit: input.iconCommit,
 		pendingCommit: input.iconCommit,
 		pendingCommitKnown: true,
+		publishedVersion: null,
+		unpublishedChangeCount: null,
+		ownerIsPersonal: true,
 		communityFork: null,
 	}
 }

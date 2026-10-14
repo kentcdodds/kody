@@ -338,6 +338,9 @@ function plainRepoOwnerPackage(
 		publishedCommit: 'idxabc1',
 		pendingCommit: 'idxabc1',
 		pendingCommitKnown: true,
+		publishedVersion: null,
+		unpublishedChangeCount: null,
+		ownerIsPersonal: true,
 		communityFork: null,
 		...overrides,
 	}
@@ -481,7 +484,6 @@ test('listing files use the package page payload when it resolves and fall back 
 		repoActions: {
 			fork: null,
 			publishHref: null,
-			updateListingHref: null,
 			packageAppHref: null,
 		},
 	})

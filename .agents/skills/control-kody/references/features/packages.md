@@ -20,26 +20,26 @@ updated descending (`updated_at DESC`); name defaults to ascending.
 `package=yes|no` is whether the row has the saved-package extension — distinct
 from `app=yes|no` (Has app / No app). Own-profile GET params:
 `visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
-**Needs republish**: the listing pin is behind `published_commit`, not
-HEAD-ahead-of-published), `hidden=yes|no`, `package=yes|no`, `app=yes|no`,
-`sort=created|name`, and `dir=asc|desc` (omit `dir` when it matches the sort
-field's default). Guests can use `listing=published|unpublished`,
-`package=yes|no`, `app=yes|no`, `sort`, and `dir`. Owner-only params are ignored
-for them. Search is `q=` and filters the already-loaded list as you type (URL
-`replaceState`, no loader). Each row shows Iconic signifiers (native tooltip
-only) for package or repo, private, hidden, published to Community or not
-published to Community (packages only), webhook count, job count, and whether it
-has an app. Private repositories do not also get a “not published to Community”
-signifier — the private icon is enough. List marks come from
-`/@username/:kodyId/icon/:iconCommit` for both packages and plain repos (the
-route falls back to `entity_kind:'repo'` with the same access as the detail
-page). `/account/repos/:repoId/icon/:iconCommit` remains the MCP/owner-only
-lane. Each repository lives at `/@username/:kodyId` (the URL slug is the package
-or repo name leaf; **Repo** tab: description, tags, license, badges),
-`/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
-(README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (**Settings** tab for packages: lock, forkable
-visibility, internet-visible, webhooks, delete),
+**Needs republish**: rare sync lag when the listing pin is briefly behind
+`published_commit` after promote; not HEAD-ahead-of-published), `hidden=yes|no`,
+`package=yes|no`, `app=yes|no`, `sort=created|name`, and `dir=asc|desc` (omit
+`dir` when it matches the sort field's default). Guests can use
+`listing=published|unpublished`, `package=yes|no`, `app=yes|no`, `sort`, and
+`dir`. Owner-only params are ignored for them. Search is `q=` and filters the
+already-loaded list as you type (URL `replaceState`, no loader). Each row shows
+Iconic signifiers (native tooltip only) for package or repo, private, hidden,
+published to Community or not published to Community (packages only), webhook
+count, job count, and whether it has an app. Private repositories do not also
+get a “not published to Community” signifier — the private icon is enough. List
+marks come from `/@username/:kodyId/icon/:iconCommit` for both packages and
+plain repos (the route falls back to `entity_kind:'repo'` with the same access
+as the detail page). `/account/repos/:repoId/icon/:iconCommit` remains the
+MCP/owner-only lane. Each repository lives at `/@username/:kodyId` (the URL slug
+is the package or repo name leaf; **Repo** tab: description, tags, license,
+badges), `/@username/:kodyId/tree/:ref` (**Files** tab),
+`/@username/:kodyId/assets/…` (README-relative images from the published or
+pinned commit), `/@username/:kodyId/settings` (**Settings** tab for packages:
+lock, forkable visibility, internet-visible, webhooks, delete),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
 internet-visible). Opening an allowlisted image or video in the tree renders a
@@ -104,13 +104,14 @@ fixtures use `control-kody execute` / `search` against the same origin.
   of the credential/capability fingerprint (no secret values). Turning either
   off requires typing the package slug. Agents requesting
   `changes.internet_visible: true` get an `approval_url` instead of approving.
-- When default-branch HEAD is newer than the last publish, the Repo tab shows
-  **HEAD ahead of published**. Owners click that badge to review the diff and
-  publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
-  non-empty root `README.md` and `AGENTS.md`.
+- When default-branch HEAD is newer than the last publish, owners see **Publish
+  changes** on the Repo tab and a **Publishing** panel on Settings (live
+  version, who can see it, newer changes, primary CTA). Both open
+  `/@username/:kodyId/approve-publish`. Publish checks require non-empty root
+  `README.md` and `AGENTS.md`. Promote auto-advances an existing community
+  listing; there is no separate Update public listing step.
 - Owners see **Open Package App** on the package page when the package declares
   an app. Other viewers do not.
-- Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
-  `published_commit`. It is not HEAD-ahead-of-published and not `updated_at`
-  after `published_at` (community publish bumps that timestamp even when the pin
-  already matches).
+- Own-profile **Needs republish** (`listing=ahead`) is rare listing-pin lag
+  behind `published_commit` while sync catches up. It is not
+  HEAD-ahead-of-published and not `updated_at` after `published_at`.

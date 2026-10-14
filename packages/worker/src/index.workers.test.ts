@@ -51,6 +51,11 @@ const mocks = vi.hoisted(() => ({
 		updated: 0,
 		failed: 0,
 	})),
+	backfillCommunityListingsBehindPublished: vi.fn(async () => ({
+		scanned: 0,
+		synced: 0,
+		failed: 0,
+	})),
 	reconcileD1StorageBytes: vi.fn(
 		async (
 			_input: Parameters<
@@ -110,6 +115,11 @@ vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
 	backfillStorageBucketEstimates: mocks.backfillStorageBucketEstimates,
 }))
 
+vi.mock('#worker/community/listing-behind-backfill.ts', () => ({
+	backfillCommunityListingsBehindPublished:
+		mocks.backfillCommunityListingsBehindPublished,
+}))
+
 vi.mock('#worker/entitlements/d1-storage-reconciliation.ts', () => ({
 	d1StorageReconciliationBatchSize: 8,
 	reconcileD1StorageBytes: mocks.reconcileD1StorageBytes,
@@ -167,6 +177,7 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		'reconcile_inbound_deliveries',
 		'system_email_retention',
 		'storage_bucket_estimate_backfill',
+		'community_listing_behind_backfill',
 		'd1_storage_reconciliation',
 		'retention',
 		'usage_aggregation',
@@ -182,6 +193,7 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		mocks.checkAuthDenialBurstAndNotify,
 		mocks.checkWebhookAuthRegressionsAndAlert,
 		mocks.backfillStorageBucketEstimates,
+		mocks.backfillCommunityListingsBehindPublished,
 		mocks.pruneRetention,
 	]) {
 		expect(laneMock).toHaveBeenCalledWith(

@@ -37,6 +37,10 @@ import {
 	getCommunityListingByOwnerAndPackage,
 } from '#worker/community/repo.ts'
 import { listingNeedsRepublish } from '#worker/community/listing-needs-republish.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import { buildPublishCommitDiff } from '#app/package-publish-diff.ts'
+import { loadPublicTreeFiles } from '#app/package-files-data.ts'
+import { readArtifactTreeAtCommit } from '#worker/repo/artifact-file.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
 	resolveSavedPackageRefWithCommunityProvenance,
@@ -250,6 +254,8 @@ async function toDetail(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 	listingNeedsRepublish: boolean
+	publishedVersion: string | null
+	ownerIsPersonal: boolean
 }): Promise<AccountPackageDetail> {
 	const [exports, sourceAndPending, communityFork, creditAttribution] =
 		await Promise.all([
@@ -288,6 +294,17 @@ async function toDetail(input: {
 				packageId: input.record.id,
 			}),
 		])
+	const publishedCommit = sourceAndPending.ownedSource?.published_commit ?? null
+	const pendingCommit = sourceAndPending.pendingCommit
+	const unpublishedChangeCount = await countUnpublishedPackageChanges({
+		env: input.env,
+		requestUrl: input.requestUrl,
+		sourceId: input.record.sourceId,
+		sourceRepoId: sourceAndPending.ownedSource?.repo_id ?? null,
+		publishedCommit,
+		pendingCommit,
+		pendingCommitKnown: sourceAndPending.pendingCommitKnown,
+	})
 	return {
 		...toListItem(
 			input.record,
@@ -296,10 +313,13 @@ async function toDetail(input: {
 		),
 		hasCommunityListing: input.hasCommunityListing,
 		listingNeedsRepublish: input.listingNeedsRepublish,
+		publishedVersion: input.publishedVersion,
+		unpublishedChangeCount,
+		ownerIsPersonal: input.ownerIsPersonal,
 		searchText: input.record.searchText,
 		exports,
-		publishedCommit: sourceAndPending.ownedSource?.published_commit ?? null,
-		pendingCommit: sourceAndPending.pendingCommit,
+		publishedCommit,
+		pendingCommit,
 		pendingCommitKnown: sourceAndPending.pendingCommitKnown,
 		communityFork: communityFork
 			? {
@@ -309,6 +329,84 @@ async function toDetail(input: {
 				}
 			: null,
 		creditAttribution,
+	}
+}
+
+async function countUnpublishedPackageChanges(input: {
+	env: Env
+	requestUrl: string
+	sourceId: string
+	sourceRepoId: string | null
+	publishedCommit: string | null
+	pendingCommit: string | null
+	pendingCommitKnown: boolean
+}): Promise<number | null> {
+	if (!input.pendingCommitKnown) return null
+	if (!input.pendingCommit) return null
+	if (
+		input.publishedCommit != null &&
+		input.pendingCommit === input.publishedCommit
+	) {
+		return null
+	}
+	try {
+		const [publishedFiles, pendingFiles] = await Promise.all([
+			loadPublishCompareTreeForCount({
+				env: input.env,
+				requestUrl: input.requestUrl,
+				sourceId: input.sourceId,
+				sourceRepoId: input.sourceRepoId,
+				commit: input.publishedCommit,
+			}),
+			loadPublishCompareTreeForCount({
+				env: input.env,
+				requestUrl: input.requestUrl,
+				sourceId: input.sourceId,
+				sourceRepoId: input.sourceRepoId,
+				commit: input.pendingCommit,
+			}),
+		])
+		if (!publishedFiles.resolved || !pendingFiles.resolved) return null
+		const diff = buildPublishCommitDiff(
+			publishedFiles.files,
+			pendingFiles.files,
+		)
+		return diff.files.length + diff.omittedCount
+	} catch {
+		return null
+	}
+}
+
+async function loadPublishCompareTreeForCount(input: {
+	env: Env
+	requestUrl: string
+	sourceId: string
+	sourceRepoId: string | null
+	commit: string | null
+}): Promise<{ files: Record<string, string>; resolved: boolean }> {
+	if (!input.commit) return { files: {}, resolved: false }
+	const publicTree = await loadPublicTreeFiles({
+		env: input.env,
+		request: new Request(input.requestUrl),
+		sourceId: input.sourceId,
+		sourceRepoId: input.sourceRepoId,
+		commit: input.commit,
+		pinnedCommit: input.commit,
+	})
+	if (Object.keys(publicTree.files).length > 0) {
+		return { files: publicTree.files, resolved: true }
+	}
+	if (!input.sourceRepoId) return { files: {}, resolved: false }
+	try {
+		const files = await readArtifactTreeAtCommit({
+			env: input.env,
+			repoId: input.sourceRepoId,
+			commit: input.commit,
+		})
+		if (files == null) return { files: {}, resolved: false }
+		return { files, resolved: true }
+	} catch {
+		return { files: {}, resolved: false }
 	}
 }
 
@@ -397,6 +495,10 @@ async function loadActiveCommunityListingState(input: {
 				listingPinnedCommit: listing?.pinnedCommit,
 				sourcePublishedCommit: input.publishedCommit,
 			}),
+		publishedVersion:
+			hasCommunityListing && listing?.version?.trim()
+				? listing.version.trim()
+				: null,
 	}
 }
 
@@ -452,22 +554,31 @@ async function toDetailWithListingState(input: {
 	username?: string
 	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
-	const detail = await toDetail({
-		env: input.env,
-		requestUrl: input.requestUrl,
-		userId: input.userId,
-		username: input.username,
-		record: input.record,
-		hasCommunityListing: false,
-		listingNeedsRepublish: false,
-	})
+	const [ownerIsPersonal, detailBase] = await Promise.all([
+		isPersonalOrg(input.env.APP_DB, input.userId),
+		toDetail({
+			env: input.env,
+			requestUrl: input.requestUrl,
+			userId: input.userId,
+			username: input.username,
+			record: input.record,
+			hasCommunityListing: false,
+			listingNeedsRepublish: false,
+			publishedVersion: null,
+			ownerIsPersonal: true,
+		}),
+	])
 	const listingState = await loadActiveCommunityListingState({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		packageId: input.record.id,
-		publishedCommit: detail.publishedCommit,
+		publishedCommit: detailBase.publishedCommit,
 	})
-	return { ...detail, ...listingState }
+	return {
+		...detailBase,
+		...listingState,
+		ownerIsPersonal,
+	}
 }
 
 export async function loadAccountPackagesData(input: {

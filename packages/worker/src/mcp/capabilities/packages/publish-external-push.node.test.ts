@@ -323,7 +323,7 @@ test('publishExternalPush includes listing hint when the public catalog pin lags
 		pinnedVersion: '1.4.0',
 		promotedVersion: '1.5.0',
 		behind: true,
-		updateHint: expect.stringContaining('communityPublish'),
+		updateHint: expect.stringContaining('automatically'),
 		updateUrl:
 			'https://kody.test/@user/demo-package/settings#update-public-listing',
 	})
