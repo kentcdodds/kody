@@ -22,7 +22,9 @@ function setup() {
 	sqlite.exec(`
 		INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
 		VALUES ('org-1', 'dropbox', 'dropbox', 'dbx-client',
-			'https://api.dropboxapi.com/oauth2/token', 'https://api.dropboxapi.com', 'pkce');
+			'https://api.dropboxapi.com/oauth2/token', 'https://api.dropboxapi.com', 'pkce'),
+			('org-1', 'google', 'google', 'g-client',
+			'https://oauth2.googleapis.com/token', 'https://www.googleapis.com', 'pkce');
 		INSERT INTO platform_oauth_apps (
 			slug, provider, client_id, token_url, authorize_url, flow, required_hosts_json
 		) VALUES ('github-platform', 'github', 'gh-client',
@@ -35,6 +37,9 @@ function setup() {
 		) VALUES
 			('cred-dropbox', 'org-1', 'dropbox', 'dropbox', NULL, '["api.dropboxapi.com"]',
 				'ct-dropbox', '2026-10-01T00:00:00.000Z'),
+			('cred-google', 'org-1', 'google', 'google', NULL,
+				'["oauth2.googleapis.com","www.googleapis.com","gmail.googleapis.com"]',
+				'ct-google', '2026-10-01T00:00:00.000Z'),
 			('cred-github', 'org-1', 'github', NULL, 'github-platform',
 				'["api.github.com","uploads.github.com"]',
 				'ct-github', '2026-10-01T00:00:00.000Z'),
@@ -166,29 +171,56 @@ test('an OAuth connection adds hosts beside its fixed API host, audited, token u
 	])
 })
 
-test('a built-in app keeps its fixed hosts even when the edit omits them', async () => {
+test('a distinct token host stays, so refresh keeps working', async () => {
 	const { sqlite, db, audit } = setup()
+	expect(
+		await readCredentialHostSettings({
+			db,
+			orgId,
+			credential: await credential(db, 'cred-google'),
+		}),
+	).toEqual({
+		hosts: ['gmail.googleapis.com'],
+		fixedHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+	})
+
+	await updateCredentialHosts({
+		db,
+		orgId,
+		credentialId: 'cred-google',
+		hosts: [],
+		audit,
+	})
+	const row = sqlite
+		.prepare(
+			`SELECT required_hosts_json FROM user_integrations WHERE id = 'cred-google'`,
+		)
+		.get() as { required_hosts_json: string }
+	expect(JSON.parse(row.required_hosts_json)).toEqual([
+		'oauth2.googleapis.com',
+		'www.googleapis.com',
+	])
+})
+
+test('a connection to a built-in app is not editable, since reconnect resets its hosts', async () => {
+	const { db, auditDb, audit } = setup()
 	expect(
 		await readCredentialHostSettings({
 			db,
 			orgId,
 			credential: await credential(db, 'cred-github'),
 		}),
-	).toEqual({ hosts: ['uploads.github.com'], fixedHosts: ['api.github.com'] })
-
-	await updateCredentialHosts({
-		db,
-		orgId,
-		credentialId: 'cred-github',
-		hosts: [],
-		audit,
-	})
-	const row = sqlite
-		.prepare(
-			`SELECT required_hosts_json FROM user_integrations WHERE id = 'cred-github'`,
-		)
-		.get() as { required_hosts_json: string }
-	expect(JSON.parse(row.required_hosts_json)).toEqual(['api.github.com'])
+	).toBeNull()
+	await expect(
+		updateCredentialHosts({
+			db,
+			orgId,
+			credentialId: 'cred-github',
+			hosts: ['uploads.github.com', 'evil.example.com'],
+			audit,
+		}),
+	).rejects.toThrow('Kody sets the hosts of a connection to a built-in app.')
+	expect(await readAuditRows(auditDb)).toEqual([])
 })
 
 test('a Key replaces its hosts and must keep at least one', async () => {

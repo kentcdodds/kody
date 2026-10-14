@@ -74,8 +74,8 @@ function normalizeTypedHost(raw: string) {
 }
 
 /**
- * Lets the org edit where a Key or an OAuth connection may be sent. Hosts
- * from the connection's API base URL or a built-in app stay fixed.
+ * Lets the org edit where a Key or an OAuth connection may be sent. The hosts
+ * of an OAuth connection's API base and token URLs stay fixed.
  */
 export function CredentialHostsEditor(
 	handle: Handle<CredentialHostsEditorProps>,

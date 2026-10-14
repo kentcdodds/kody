@@ -116,14 +116,17 @@ function parseHostList(json: string | null | undefined) {
 
 type IntegrationHostsRow = {
 	required_hosts_json: string
+	platform_app_slug: string | null
 	api_base_url: string | null
-	app_hosts_json: string | null
+	token_url: string | null
 }
 
 type HostSettingsRead =
 	| {
 			kind: 'integration'
 			stored: Array<string>
+			/** Refresh posts to the token host, so every write keeps it. */
+			tokenHost: string | null
 			settings: CredentialHostSettings
 	  }
 	| { kind: 'secret'; stored: Array<string>; settings: CredentialHostSettings }
@@ -138,26 +141,35 @@ async function readHostSettings(
 			const row = await db
 				.prepare(
 					`SELECT i.required_hosts_json AS required_hosts_json,
-						COALESCE(a.api_base_url, p.api_base_url) AS api_base_url,
-						p.required_hosts_json AS app_hosts_json
+						i.platform_app_slug AS platform_app_slug,
+						a.api_base_url AS api_base_url, a.token_url AS token_url
 					FROM user_integrations i
 					LEFT JOIN user_oauth_apps a
 						ON a.user_id = i.user_id AND a.slug = i.app_slug AND a.deleted_at IS NULL
-					LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
 					WHERE i.id = ? AND i.user_id = ? AND i.deleted_at IS NULL`,
 				)
 				.bind(credential.id, orgId)
 				.first<IntegrationHostsRow>()
 			if (!row) return { refused: 'No credential with that id in this org.' }
+			// Reconnecting a built-in app resets its hosts to the app's, so an
+			// edit there would silently disappear.
+			if (row.platform_app_slug !== null) {
+				return {
+					refused:
+						'Kody sets the hosts of a connection to a built-in app. Ask support to add a host.',
+				}
+			}
 			const apiHost = row.api_base_url ? safeParseHost(row.api_base_url) : null
+			const tokenHost = row.token_url ? safeParseHost(row.token_url) : null
 			const fixedHosts = normalizeAllowedHosts([
-				...parseHostList(row.app_hosts_json),
 				...(apiHost ? [apiHost] : []),
+				...(tokenHost ? [tokenHost] : []),
 			])
 			const stored = parseHostList(row.required_hosts_json)
 			return {
 				kind: 'integration',
 				stored,
+				tokenHost,
 				settings: {
 					hosts: stored.filter((host) => !fixedHosts.includes(host)),
 					fixedHosts,
@@ -270,6 +282,7 @@ export async function updateCredentialHosts(input: {
 					...read.stored.filter((host) =>
 						read.settings.fixedHosts.includes(host),
 					),
+					...(read.tokenHost ? [read.tokenHost] : []),
 				])
 			: editable
 	const now = new Date().toISOString()

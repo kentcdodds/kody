@@ -168,12 +168,13 @@ destinations are operator-pinned rows, so no user-secret allowlist applies.
 The website can also replace a connection's (or a Key's) hosts:
 `POST /account/credentials.json` `{action: 'setHosts'}`
 (`credentials/credential-hosts.ts`) requires the credential family's `:write`
-permission, accepts public HTTPS host names only, keeps the API base host and a
-platform app's `required_hosts_json`, and commits with a
+permission, accepts public HTTPS host names only, always keeps the app's API
+base and token hosts (refresh needs the token host), and commits with a
 `credential.hosts_updated` org audit event. There is no capability for it: an
-agent that could add a host could send the token anywhere. Migration 0143
-backfilled `api`, `content`, and `notify.dropboxapi.com` onto connections whose
-app mints tokens at Dropbox's token endpoint
+agent that could add a host could send the token anywhere. Platform-lane
+connections are refused: reconnect resets them to the app's hosts. Migration
+0143 backfilled `api`, `content`, and `notify.dropboxapi.com` onto connections
+whose app mints tokens at Dropbox's token endpoint
 ([Dropbox guide](../../guides/providers/dropbox.md)); support can check a
 connection's hosts with the `adminOauthConnectionHostsList` capability.
 

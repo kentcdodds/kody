@@ -84,8 +84,9 @@ const response = await fetch('https://api.github.com/user/repos', {
 - To change a Key's or an OAuth connection's hosts later, open it on the
   Credentials page and choose **Edit hosts**. Enter host names only (such as
   `content.dropboxapi.com`); Kody sends credentials only over HTTPS, with no
-  wildcards, ports, or paths. An OAuth connection always keeps its API base
-  host. Each change is recorded in the org audit log. Agents cannot edit hosts.
+  wildcards, ports, or paths. An OAuth connection always keeps its API base and
+  token hosts; a connection to a built-in app keeps the hosts Kody sets for it.
+  Each change is recorded in the org audit log. Agents cannot edit hosts.
 - If the remote service echoes the value back, the gateway replaces it with
   `[REDACTED SECRET]` before your code reads the response.
 - `{{integration-token:name}}` works the same way for an OAuth connection, on

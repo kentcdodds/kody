@@ -94,7 +94,8 @@ export type AccountCredentialDetail = {
 	usageUnreadable: number
 	/**
 	 * The hosts this org can edit on the website, or null when the kind takes
-	 * its hosts some other way or the credential belongs to another org.
+	 * its hosts some other way, it connects to a built-in app, or it belongs
+	 * to another org.
 	 */
 	hostSettings: CredentialHostSettings | null
 }
@@ -103,7 +104,7 @@ export type AccountCredentialDetail = {
 export type CredentialHostSettings = {
 	/** Hosts the credential's manager can add or remove. */
 	hosts: Array<string>
-	/** Hosts the credential always allows: its API base URL and a built-in app's hosts. */
+	/** Hosts the credential always allows: an OAuth connection's API base and token hosts. */
 	fixedHosts: Array<string>
 }
 

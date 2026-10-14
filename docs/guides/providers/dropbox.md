@@ -21,7 +21,7 @@ is a public-client flow, so Kody never needs the app secret.
 
 Once connected, you can ask Kody things like:
 
-- "Upload this report to /Apps/Kody/reports."
+- "Upload this report to my reports folder in Dropbox."
 - "Find last month's invoices in my Dropbox and list them."
 - "Make a share link for the onboarding deck."
 
