@@ -102,8 +102,15 @@ export async function authorizePersonalMemory(
 	memoryId?: string,
 ): Promise<PersonalMemoryAuth> {
 	const auth = requirePersonalMemoryAuth(ctx)
-	const email =
-		auth.email || (await loadPersonEmail(ctx.env.APP_DB, auth.userId)) || ''
+	const user = requireMcpUser(ctx.callerContext)
+	const personId = resolvePersonalMemoryPersonId(ctx)
+	const actorDiffersFromMcpUser =
+		(personId as string) !== (user.userId as string)
+	// When memory is owned by the request actor (team job enabler), never use
+	// the synthetic MCP user's email for entitlements.
+	const email = actorDiffersFromMcpUser
+		? (await loadPersonEmail(ctx.env.APP_DB, auth.userId)) || ''
+		: auth.email || (await loadPersonEmail(ctx.env.APP_DB, auth.userId)) || ''
 	const resolved: PersonalMemoryAuth = { ...auth, email }
 	await authorize(
 		{ env: ctx.env, request: resolved.request },
