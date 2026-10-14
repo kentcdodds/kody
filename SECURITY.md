@@ -1,8 +1,8 @@
 # Security Policy
 
-Kody is a multi-user personal assistant. Every user gets a fully isolated
-assistant, and the core security invariant is that **all data access is scoped
-by `userId`** — cross-user data exposure of any kind is a vulnerability, not a
+Kody is Your agents' cloud for individuals and teams. Every account's data is
+isolated, and the core security invariant is that **all data access is scoped by
+`userId`**. Cross-user data exposure of any kind is a vulnerability, not a
 feature gap.
 
 ## Reporting a vulnerability

@@ -1,7 +1,7 @@
 # Using Kody
 
-Kody is the personal assistant platform for builders who would rather own their
-automations than rent them.
+Kody is Your agents' cloud for individuals and teams (orgs, teams, and grants).
+Builders own their automations instead of renting them.
 
 Kody gives your AI assistant secure, reusable access to your services and lets
 it run durable Worker-native automations while your computer is offline.

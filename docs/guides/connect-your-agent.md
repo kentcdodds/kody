@@ -12,12 +12,13 @@ category: platform
 
 # Connect your agent
 
-Kody is Your agents' cloud, and you reach it over MCP. Keep using the agent you
-like: Cursor, ChatGPT, Codex, Claude Desktop, Claude Code, Copilot, Grok,
-Gemini, OpenCode, OpenClaw, Muse, Devin, or any other agent that supports MCP.
-That agent stays the place you talk and work. Kody adds memory, secrets it never
-reads, saved packages, and jobs that every agent you connect can share. There is
-no separate Kody chat app to learn.
+Kody is Your agents' cloud for individuals and teams (orgs, teams, and grants),
+and you reach it over MCP. Keep using the agent you like: Cursor, ChatGPT,
+Codex, Claude Desktop, Claude Code, Copilot, Grok, Gemini, OpenCode, OpenClaw,
+Muse, Devin, or any other agent that supports MCP. That agent stays the place
+you talk and work. Kody adds memory, credentials it never reads, saved packages,
+and jobs that every agent you connect can share. There is no separate Kody chat
+app to learn.
 
 Getting started is three steps, and the in-app page at `/onboarding` walks you
 through each one.

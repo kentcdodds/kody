@@ -204,10 +204,10 @@ export const publicOgPages = {
 	onboarding: {
 		imageTitle: 'Get started with Kody',
 		imageSubtitle:
-			'Connect your AI agent host and set up your personal assistant.',
+			'Connect your AI agent host and set up Kody for you or your team.',
 		ogTitle: 'Get started — Kody',
 		ogDescription:
-			'Connect your AI agent host and set up your personal assistant.',
+			'Connect your AI agent host and set up Kody for you or your team.',
 		path: '/onboarding',
 	},
 	'reset-password': {
