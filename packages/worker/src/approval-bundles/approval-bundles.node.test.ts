@@ -465,6 +465,46 @@ test('an in-flight claim blocks others until its lease runs out, and never reads
 	})
 })
 
+test('a live claim in one bundle blocks the same item in another bundle', async () => {
+	const t = await setup()
+	const request = await t.pausePublish()
+	const items = [{ type: 'publish' as const, requestId: request.id }]
+	const first = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		items,
+	})
+	const second = await createApprovalBundle({
+		viewer: t.viewerFor('bea'),
+		items,
+	})
+	const [item] = second.items
+	await t.db
+		.prepare(
+			`INSERT INTO approval_bundle_decisions (
+				bundle_id, item_key, decision, decided_by_user_id, decided_at
+			) VALUES (?, ?, 'approved', ?, ?)`,
+		)
+		.bind(
+			first.bundle.id,
+			item!.key,
+			t.people.bea.personId,
+			new Date().toISOString(),
+		)
+		.run()
+	const blocked = await t.decide({
+		bundleId: second.bundle.id,
+		action: 'deny',
+		item: item!.key,
+		fingerprint: item!.fingerprint!,
+	})
+	expect(blocked).toMatchObject({ ok: false, status: 409 })
+	const row = await t.db
+		.prepare(`SELECT status FROM package_approval_requests WHERE id = ?`)
+		.bind(request.id)
+		.first<{ status: string }>()
+	expect(row?.status).toBe('pending')
+})
+
 test('an approved proposal hides its older identical copies', async () => {
 	const t = await setup()
 	await t.proposeDailyChat()
