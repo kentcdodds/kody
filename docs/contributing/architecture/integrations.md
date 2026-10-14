@@ -46,6 +46,20 @@ either lane:
   grant: `any` is execute plus every package; `packages` is only the listed
   saved package ids, and execute is denied)
 - optional `account_label` / `description`, plus connect/refresh timestamps
+- `connected_at` — set on platform-lane connection upsert, on every successful
+  token persist (`COALESCE` so refreshes keep the first connect time), and by
+  migration `0139-backfill-integration-connected-at.sql` for live rows that
+  already held tokens. Credential list status and candidate resolution both
+  treat `connected_at IS NOT NULL` as connected
+  (`packages/worker/src/integrations/connected.ts`); auth failure is a separate
+  list-status overlay.
+- `provider` — derived from the OAuth app slug via `providerFromSlug`
+  (`packages/worker/src/integrations/provider-from-slug.ts`). Collapse into a
+  parent family only when that family is a known provider mark
+  (`google-calendar` → `google`); compound products whose first segment is not a
+  mark (`kody-exchange`, `cal-com`) keep the full slug so package credential
+  needs match. Migration `0140-fix-compound-provider-marks.sql` restores
+  truncated rows.
 
 `JoinedIntegration` (`packages/worker/src/integrations/types.ts`) joins a
 connection to the app that owns its client credentials as a discriminated union

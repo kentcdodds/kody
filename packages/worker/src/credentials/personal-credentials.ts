@@ -29,6 +29,7 @@ import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit-outbox.ts'
 import { runAppDbBatchWithOrgAudit } from '#worker/orgs/org-audit.ts'
 import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { integrationConnectedSql } from '#worker/integrations/connected.ts'
 import {
 	credentialPermissionFamily,
 	getOrgCredential,
@@ -69,7 +70,7 @@ const usableQueries: Record<
 	}),
 	integration: (placeholders) => ({
 		sql: `SELECT id FROM user_integrations
-			WHERE user_id = ? AND deleted_at IS NULL AND connected_at IS NOT NULL
+			WHERE user_id = ? AND deleted_at IS NULL AND ${integrationConnectedSql()}
 				AND id IN (${placeholders})`,
 		binds: () => [],
 	}),

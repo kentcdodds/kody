@@ -35,6 +35,7 @@ import {
 	upsertIntegrationConnection,
 	upsertOauthApp,
 } from './repo.ts'
+import { providerFromSlug } from './provider-from-slug.ts'
 import {
 	normalizeIntegrationUsageMode,
 	type IntegrationUsageMode,
@@ -1177,11 +1178,6 @@ function buildOauthAppRow(input: {
 		created_at: input.createdAt,
 		updated_at: input.updatedAt,
 	}
-}
-
-function providerFromSlug(slug: string) {
-	const separator = slug.indexOf('-')
-	return separator === -1 ? slug : slug.slice(0, separator)
 }
 
 async function allocateAppSlug(input: {

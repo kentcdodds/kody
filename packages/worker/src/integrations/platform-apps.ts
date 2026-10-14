@@ -17,6 +17,7 @@ import {
  * stay on `mcp-event` lines and out of Sentry.
  */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { providerFromSlug } from './provider-from-slug.ts'
 export class PlatformOauthAppValidationError extends Error {
 	constructor(message: string) {
 		super(message)
@@ -585,11 +586,6 @@ function normalizeScopes(scopes: Array<string>) {
 	return Array.from(
 		new Set(scopes.map((scope) => scope.trim()).filter(Boolean)),
 	).sort((left, right) => left.localeCompare(right))
-}
-
-function providerFromSlug(slug: string) {
-	const separator = slug.indexOf('-')
-	return separator === -1 ? slug : slug.slice(0, separator)
 }
 
 function parseJsonRecord(raw: string): Record<string, string> {

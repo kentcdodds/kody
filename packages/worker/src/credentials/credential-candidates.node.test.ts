@@ -21,6 +21,8 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
+import { persistIntegrationTokens } from '#worker/integrations/credentials.ts'
+import { upsertIntegration } from '#worker/integrations/service.ts'
 import {
 	listUsableCredentials,
 	resolveNeedCandidates,
@@ -251,6 +253,133 @@ test('needs resolve by kind and provider; a credential with no provider is only 
 			await t.usableAs('bea', 'owner'),
 		),
 	).toMatchObject({ status: 'ambiguous', autoPick: null })
+})
+
+test('credential() candidates resolve OAuth after token persist stamps connected_at', async () => {
+	const t = await setup()
+	await upsertIntegration({
+		env: t.env,
+		userId: t.acmeId,
+		config: {
+			name: 'linkedin',
+			tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+			apiBaseUrl: 'https://api.linkedin.com',
+			flow: 'confidential',
+			clientId: 'linkedin-client',
+			requiredHosts: ['api.linkedin.com'],
+			authorization: {
+				authorizeUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+				scopes: ['openid'],
+			},
+		},
+	})
+	expect(
+		resolveNeedCandidates(
+			{ kind: 'oauth', provider: 'linkedin' },
+			await t.usableAs('bea', 'owner'),
+		).status,
+	).toBe('unbound')
+	await persistIntegrationTokens({
+		env: t.env,
+		userId: t.acmeId,
+		name: 'linkedin',
+		accessToken: 'linkedin-access',
+		refreshToken: 'linkedin-refresh',
+		refreshPolicy: 'required',
+	})
+	const resolved = resolveNeedCandidates(
+		{ kind: 'oauth', provider: 'linkedin' },
+		await t.usableAs('bea', 'owner'),
+	)
+	expect(resolved).toMatchObject({
+		status: 'ready',
+		autoPick: { name: 'linkedin', kind: 'oauth', provider: 'linkedin' },
+	})
+})
+
+test('kody-exchange OAuth keeps provider kody-exchange so package needs resolve', async () => {
+	const t = await setup()
+	await upsertIntegration({
+		env: t.env,
+		userId: t.acmeId,
+		config: {
+			name: 'kody-exchange',
+			tokenUrl: 'https://kody.exchange/oauth/token',
+			apiBaseUrl: 'https://kody.exchange',
+			flow: 'pkce',
+			clientId: 'kx-client',
+			requiredHosts: ['kody.exchange'],
+			authorization: {
+				authorizeUrl: 'https://kody.exchange/oauth/authorize',
+				scopes: ['profile', 'threads'],
+			},
+		},
+	})
+	await persistIntegrationTokens({
+		env: t.env,
+		userId: t.acmeId,
+		name: 'kody-exchange',
+		accessToken: 'kx-access',
+		refreshPolicy: 'required',
+	})
+	const row = await t.db
+		.prepare(
+			`SELECT i.provider AS connection_provider, a.provider AS app_provider
+			FROM user_integrations i
+			JOIN user_oauth_apps a
+				ON a.user_id = i.user_id AND a.slug = i.app_slug
+			WHERE i.user_id = ? AND i.name = 'kody-exchange'`,
+		)
+		.bind(t.acmeId)
+		.first<{ connection_provider: string; app_provider: string }>()
+	expect(row).toEqual({
+		connection_provider: 'kody-exchange',
+		app_provider: 'kody-exchange',
+	})
+	expect(
+		resolveNeedCandidates(
+			{ kind: 'oauth', provider: 'kody-exchange' },
+			await t.usableAs('bea', 'owner'),
+		),
+	).toMatchObject({
+		status: 'ready',
+		autoPick: {
+			name: 'kody-exchange',
+			kind: 'oauth',
+			provider: 'kody-exchange',
+		},
+	})
+})
+
+test('OAuth candidates require connected_at; token-only rows stay hidden until stamped', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, api_base_url, flow)
+			VALUES (?, 'gh-app', 'github', 'client-id', 'https://github.com/login/oauth/access_token',
+				'https://api.github.com', 'confidential')`,
+		)
+		.bind(t.acmeId)
+		.run()
+	await t.db
+		.prepare(
+			`INSERT INTO user_integrations (id, user_id, name, app_slug, provider, required_hosts_json, access_token_encrypted, connected_at)
+			VALUES ('i-pending', ?, 'gh-pending', 'gh-app', 'github', '[]', 'ct', NULL)`,
+		)
+		.bind(t.acmeId)
+		.run()
+	expect(
+		(await t.usableAs('bea', 'owner')).map((credential) => credential.name),
+	).toEqual([])
+	await t.db
+		.prepare(
+			`UPDATE user_integrations SET connected_at = ? WHERE id = 'i-pending'`,
+		)
+		.bind(now)
+		.run()
+	expect(
+		(await t.usableAs('bea', 'owner')).map((credential) => credential.name),
+	).toEqual(['gh-pending'])
 })
 
 test('omitted kind matches any fetch-capable credential for the provider', async () => {

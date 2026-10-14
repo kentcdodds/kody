@@ -123,6 +123,44 @@ function createHarness(userId: string) {
 	}
 }
 
+test('persistIntegrationTokens stamps connected_at on first write and keeps it across refresh', async () => {
+	const userId = ownerIdFromStored('user-connected-at')
+	const harness = createHarness(userId)
+	await upsertIntegration({
+		env: harness.env,
+		userId,
+		config: googleConfig,
+	})
+	const connectedAt = () =>
+		(
+			harness.sqlite
+				.prepare(
+					`SELECT connected_at FROM user_integrations WHERE user_id = ? AND name = ?`,
+				)
+				.get(userId, 'google') as { connected_at: string | null }
+		).connected_at
+	expect(connectedAt()).toBeNull()
+	await persistIntegrationTokens({
+		env: harness.env,
+		userId,
+		name: 'google',
+		accessToken: 'access-1',
+		refreshToken: 'refresh-1',
+		refreshPolicy: 'required',
+	})
+	const firstConnectedAt = connectedAt()
+	expect(firstConnectedAt).toEqual(expect.any(String))
+	await persistIntegrationTokens({
+		env: harness.env,
+		userId,
+		name: 'google',
+		accessToken: 'access-2',
+		refreshToken: 'refresh-2',
+		refreshPolicy: 'required',
+	})
+	expect(connectedAt()).toBe(firstConnectedAt)
+})
+
 test('integration-owned credentials persist as ciphertext, stay off secret lists, and survive sibling disconnect', async () => {
 	const userId = ownerIdFromStored('user-owned-creds')
 	const harness = createHarness(userId)

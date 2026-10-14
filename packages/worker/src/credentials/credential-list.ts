@@ -21,6 +21,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { isReservedSecretName } from '#mcp/secrets/name-guards.ts'
+import { oauthCredentialListStatus } from '#worker/integrations/connected.ts'
 import {
 	type CredentialInjectView,
 	type CredentialKind,
@@ -208,8 +209,11 @@ async function loadIntegrationRows(input: {
 		return result.results ?? []
 	})
 	return rows.map((row): ListedRow => {
-		const connected = row.connected_at !== null
-		const failed = row.auth_failed_at !== null
+		const { status, statusMessage } = oauthCredentialListStatus({
+			connectedAt: row.connected_at,
+			authFailedAt: row.auth_failed_at,
+			authFailedReason: row.auth_failed_reason,
+		})
 		return {
 			family: 'integration',
 			id: row.id,
@@ -233,12 +237,8 @@ async function loadIntegrationRows(input: {
 			expiresAt: null,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
-			status: connected && !failed ? 'ok' : 'needs_attention',
-			statusMessage: !connected
-				? 'Not connected yet.'
-				: failed
-					? `Reconnect needed${row.auth_failed_reason ? ` (${row.auth_failed_reason})` : ''}.`
-					: null,
+			status,
+			statusMessage,
 			mcp: null,
 		}
 	})

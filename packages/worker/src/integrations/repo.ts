@@ -600,12 +600,16 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 	const now = new Date().toISOString()
 	const leaseFence =
 		input.refreshLeaseId === undefined ? '' : ' AND token_refresh_lease_id = ?'
+	// Stamp connected_at on first successful token write (user-lane OAuth
+	// connect used to leave it null). COALESCE keeps the original connect
+	// time across refreshes and reconnect token rotates.
 	const result = await input.db
 		.prepare(
 			`UPDATE user_integrations
 			SET access_token_encrypted = ?,
 				refresh_token_encrypted = COALESCE(?, refresh_token_encrypted),
 				refresh_policy = ?,
+				connected_at = COALESCE(connected_at, ?),
 				updated_at = ?
 			WHERE user_id = ? AND name = ?${leaseFence}${andLiveDeletedAtSql()}`,
 		)
@@ -613,6 +617,7 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 			input.accessTokenEncrypted,
 			input.refreshTokenEncrypted,
 			input.refreshPolicy,
+			now,
 			now,
 			input.userId,
 			input.name,

@@ -25,6 +25,7 @@ import {
 	loadResourceListScope,
 } from '#worker/authorization/authorize.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import { integrationConnectedSql } from '#worker/integrations/connected.ts'
 import {
 	isFetchCapableCredentialKind,
 	type PackageCredentialKind,
@@ -80,7 +81,7 @@ const usableRowQueries = [
 				ON a.user_id = i.user_id AND a.slug = i.app_slug AND a.deleted_at IS NULL
 			LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
 			WHERE i.user_id = ? AND i.deleted_at IS NULL
-				AND i.connected_at IS NOT NULL${filter('i.id')}`,
+				AND ${integrationConnectedSql('i.connected_at')}${filter('i.id')}`,
 		binds: () => [],
 	},
 	{

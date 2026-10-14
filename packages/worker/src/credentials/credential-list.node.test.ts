@@ -282,6 +282,36 @@ test('a package Key needs package read, not just org-wide secret Use', async () 
 	expect(summary(items)).toEqual(['org:secret:stripeKey'])
 })
 
+test('OAuth status is ok when connected, needs attention when not connected or auth failed', async () => {
+	const t = await setup()
+	t.sqlite
+		.prepare(
+			`INSERT INTO user_integrations (id, user_id, name, app_slug, access_token_encrypted, connected_at)
+			 VALUES ('i-pending', ?, 'pending-oauth', 'gh-app', 'ct', NULL)`,
+		)
+		.run(t.acmeId)
+	t.sqlite
+		.prepare(
+			`INSERT INTO user_integrations (id, user_id, name, app_slug, access_token_encrypted, connected_at, auth_failed_at, auth_failed_reason)
+			 VALUES ('i-failed', ?, 'failed-oauth', 'gh-app', 'ct', ?, ?, 'provider_rejected')`,
+		)
+		.run(t.acmeId, now, now)
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.bea, 'owner'),
+	})
+	const byName = Object.fromEntries(items.map((item) => [item.name, item]))
+	expect(byName.github).toMatchObject({ status: 'ok', statusMessage: null })
+	expect(byName['pending-oauth']).toMatchObject({
+		status: 'needs_attention',
+		statusMessage: 'Not connected yet.',
+	})
+	expect(byName['failed-oauth']).toMatchObject({
+		status: 'needs_attention',
+		statusMessage: 'Reconnect needed (provider_rejected).',
+	})
+})
+
 test('a Key in an expired bucket shows as expired at the bucket expiry', async () => {
 	const t = await setup()
 	const bucketExpiry = '2026-10-01T00:00:00.000Z'

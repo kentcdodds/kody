@@ -498,43 +498,35 @@ async function handleConnectOauthAction(input: {
 						}
 					: null,
 			})
+	const ownerId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	await persistIntegrationTokens({
 		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
+		userId: ownerId,
 		name: integrationName,
 		accessToken,
 		refreshToken,
 		refreshPolicy: inferIntegrationRefreshPolicy(tokenRecord),
 	})
+	const connected = await getJoinedIntegration({
+		env: input.env,
+		userId: ownerId,
+		name: integrationName,
+	})
 	if (!platformApp) {
 		const clientSecret = await resolveConnectClientSecret({
 			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
+			userId: ownerId,
 			provider: integrationName,
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
-		const saved = await getJoinedIntegration({
-			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
-			name: integrationName,
-		})
-		if (clientSecret && saved?.lane === 'user') {
+		if (clientSecret && connected?.lane === 'user') {
 			await persistUserOauthAppClientSecret({
 				env: input.env,
-				userId: ownerIdFromCaller({
-					request: input.user.request,
-					user: input.user.mcpUser,
-				}),
-				slug: saved.app.slug,
+				userId: ownerId,
+				slug: connected.app.slug,
 				value: clientSecret,
 			})
 		}
@@ -559,20 +551,17 @@ async function handleConnectOauthAction(input: {
 
 	await emitConnectOauthAuthSucceeded({
 		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
+		userId: ownerId,
 		integration: {
 			name: integrationName,
 			lane: platformApp ? 'platform' : 'user',
-			account_label: null,
-			description: null,
+			account_label: connected?.connection.accountLabel ?? null,
+			description: connected?.connection.description ?? null,
 			provider: platformApp?.provider ?? null,
 			platform_app_slug: platformApp?.slug ?? null,
 			scopes,
-			connected_at: null,
-			token_refreshed_at: null,
+			connected_at: connected?.connection.connectedAt ?? null,
+			token_refreshed_at: connected?.connection.tokenRefreshedAt ?? null,
 		},
 	})
 
