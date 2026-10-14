@@ -43,6 +43,7 @@ import { SiteHeader } from './site-header.tsx'
 import { Toaster } from './toaster.tsx'
 import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { isDocsPagePath } from '#universal/docs-nav.ts'
+import { isFocusedPagePathname } from '#universal/focused-page-path.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageDetailPathname } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
@@ -291,6 +292,7 @@ export function App(handle: Handle<AppProps>) {
 		// chrome, so the header/footer stand down entirely there.
 		const isAuthShellPath =
 			currentPathname === '/login' || currentPathname === '/signup'
+		const isFocusedPage = isFocusedPagePathname(currentPathname)
 		const routeOwnsItsGutters = appMainOwnsItsGutters({
 			pathname: currentPathname,
 			notFound: handle.props.notFound === true,
@@ -369,6 +371,7 @@ export function App(handle: Handle<AppProps>) {
 								organizations={session?.organizations}
 								inviteCount={session?.inviteCount}
 								lastUsedOrganization={session?.lastUsedOrganization}
+								focused={isFocusedPage}
 							/>
 						)}
 						<main
@@ -460,7 +463,7 @@ export function App(handle: Handle<AppProps>) {
 								}
 							/>
 						</main>
-						{isAuthShellPath ? null : (
+						{isAuthShellPath || isFocusedPage ? null : (
 							<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
 						)}
 						<Toaster />

@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { on } from '#client/event-mixin.ts'
@@ -6,13 +6,15 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
+	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
-	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
 	accountDisclosureCss,
 } from './account-management-components.tsx'
+import { isCredentialKind } from '#universal/credential-contracts.ts'
+import { credentialKindLabel } from '#universal/credentials-list.ts'
 import {
 	type AccountPackageApproveCapabilitiesLoaderData,
 	type AccountPackagePendingApproval,
@@ -32,6 +34,81 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+type CapabilityEntry =
+	AccountPackageApproveCapabilitiesLoaderData['entries'][number]
+
+/** The dependency that reaches an entry, or null when the package itself does. */
+function reachingDependency(entry: CapabilityEntry) {
+	return entry.via.length > 1 ? (entry.via.at(-1) ?? null) : null
+}
+
+function credentialKindText(kind: string | undefined) {
+	if (kind === undefined) return credentialKindLabel('secret')
+	return isCredentialKind(kind) ? credentialKindLabel(kind) : kind
+}
+
+function credentialSummary(entry: CapabilityEntry) {
+	const dependency = reachingDependency(entry)
+	return `${credentialKindText(entry.credentialKind)} · ${
+		dependency ? `used by its dependency ${dependency}` : 'used by this package'
+	}`
+}
+
+function storageSummary(entry: CapabilityEntry) {
+	const dependency = reachingDependency(entry)
+	return dependency
+		? `Its dependency ${dependency} can save and read its own data.`
+		: 'This package can save and read its own data.'
+}
+
+/**
+ * Raw identifiers for the collapsed Details disclosure. The decision itself
+ * reads in plain language; these are copy targets for support and agents.
+ */
+function approveCapabilitiesDetailItems(
+	payload: AccountPackageApproveCapabilitiesLoaderData,
+) {
+	const items: Array<{ key: string; label: string; value: RemixNode }> = [
+		{
+			key: 'published-commit',
+			label: 'Published commit',
+			value: payload.publishedCommit ? (
+				<IdValue value={payload.publishedCommit} label="published commit" />
+			) : (
+				'Not published'
+			),
+		},
+		{
+			key: 'fingerprint',
+			label: 'Capability fingerprint',
+			value: <IdValue value={payload.fingerprint} label="fingerprint" />,
+		},
+	]
+	for (const entry of payload.entries) {
+		if (entry.kind === 'credential' && entry.credentialId) {
+			const name = entry.name ?? 'Credential'
+			items.push({
+				key: `credential:${entry.credentialId}`,
+				label: `${name} credential ID`,
+				value: (
+					<IdValue value={entry.credentialId} label={`${name} credential ID`} />
+				),
+			})
+		} else if (entry.kind === 'storage' && entry.storageId) {
+			const dependency = reachingDependency(entry)
+			const label = dependency
+				? `Package storage ID (${dependency})`
+				: 'Package storage ID'
+			items.push({
+				key: `storage:${entry.storageId}`,
+				label,
+				value: <IdValue value={entry.storageId} label={label} />,
+			})
+		}
+	}
+	return items
+}
 
 const approveCapabilitiesMatcher = createMatcher(
 	routes.communityPackageApproveCapabilities.pattern,
@@ -213,15 +290,31 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		const pendingApprovals = payload?.pendingApprovals ?? []
 
 		return (
-			<AccountManagementShell busy={pending && payload !== null}>
-				<AccountPageHeader
+			<AccountManagementShell
+				busy={pending && payload !== null}
+				maxWidth="46rem"
+			>
+				<AccountManagementHeader
+					eyebrow={
+						payload ? (
+							<p
+								data-testid="package-approve-capabilities-package"
+								mix={css(packageContextCss)}
+							>
+								{payload.package.name}
+							</p>
+						) : null
+					}
 					title={
 						pendingApprovals.length > 0
 							? 'Approve package changes'
 							: 'Approve internet-visible capabilities'
 					}
-					description="Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here."
-					currentHref={currentHref}
+					description={
+						payload
+							? `Before ${payload.package.name} is served on the public internet, check what it can use. Secret values never appear here.`
+							: 'Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here.'
+					}
 				/>
 				{message ? (
 					<AccountManagementMessage tone="error">
@@ -241,14 +334,12 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				(status === 'ready' || status === 'approving') ? (
 					<section
 						data-testid="package-pending-approvals"
+						aria-labelledby="package-pending-approvals-heading"
 						mix={css({ display: 'grid', gap: spacing.md })}
 					>
 						<h2
-							mix={css({
-								margin: 0,
-								fontSize: typography.fontSize.lg,
-								fontWeight: typography.fontWeight.semibold,
-							})}
+							id="package-pending-approvals-heading"
+							mix={css(heroHeadingCss)}
 						>
 							Waiting for your approval
 						</h2>
@@ -259,37 +350,16 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								? 'The previously published version keeps running until you approve.'
 								: 'Internet-visible serving stays off until you approve.'}
 						</p>
-						<ul
-							mix={css({
-								margin: 0,
-								padding: 0,
-								listStyle: 'none',
-								display: 'grid',
-								gap: spacing.sm,
-							})}
-						>
+						<ul mix={css(cardListCss)}>
 							{pendingApprovals.map((approval) => (
 								<li
 									key={approval.id}
 									data-testid="package-pending-approval"
 									mix={css(capabilityRowCss)}
 								>
-									<strong mix={css({ color: colors.text })}>
+									<strong mix={css(cardTitleCss)}>
 										{approval.reasonLabel}
 									</strong>
-									<span mix={css({ color: colors.textMuted })}>
-										{approval.reason === 'went_public'
-											? 'Published commit '
-											: 'Paused commit '}
-										<IdValue
-											value={approval.pendingCommit}
-											label={
-												approval.reason === 'went_public'
-													? 'published commit'
-													: 'paused commit'
-											}
-										/>
-									</span>
 									{approval.changes.length > 0 ? (
 										<ul mix={css({ margin: 0, color: colors.textMuted })}>
 											{approval.changes.map((change) => (
@@ -297,6 +367,29 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 											))}
 										</ul>
 									) : null}
+									<details mix={css(accountDisclosureCss)}>
+										<summary>Details</summary>
+										<MetadataGrid
+											items={[
+												{
+													label:
+														approval.reason === 'went_public'
+															? 'Published commit'
+															: 'Paused commit',
+													value: (
+														<IdValue
+															value={approval.pendingCommit}
+															label={
+																approval.reason === 'went_public'
+																	? 'published commit'
+																	: 'paused commit'
+															}
+														/>
+													),
+												},
+											]}
+										/>
+									</details>
 									{approval.approveAction ? (
 										<div>
 											<button
@@ -324,53 +417,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				{payload && (status === 'ready' || status === 'approving') ? (
 					<section
 						data-testid="package-approve-capabilities-card"
-						mix={css({ display: 'grid', gap: spacing.lg })}
+						aria-label="Capability set"
+						mix={css({ display: 'grid', gap: spacing.xl })}
 					>
-						{pendingApprovals.length > 0 ? (
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								Internet-visible serving
-							</h2>
-						) : null}
-						<MetadataGrid
-							items={[
-								{
-									label: 'Package',
-									value: payload.package.name,
-								},
-								{
-									label: 'Slug',
-									value: (
-										<IdValue
-											value={payload.package.kodyId}
-											label="package slug"
-										/>
-									),
-								},
-								{
-									label: 'Published commit',
-									value: payload.publishedCommit ? (
-										<IdValue
-											value={payload.publishedCommit}
-											label="published commit"
-										/>
-									) : (
-										'Not published'
-									),
-								},
-								{
-									label: 'Fingerprint',
-									value: (
-										<IdValue value={payload.fingerprint} label="fingerprint" />
-									),
-								},
-							]}
-						/>
 						{!payload.publishedCommit ? (
 							<div mix={css(getAccentCalloutCss())}>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -390,96 +439,77 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								</p>
 							</div>
 						) : null}
-						<section mix={css({ display: 'grid', gap: spacing.md })}>
+						<section
+							data-testid="package-approve-capabilities-credentials"
+							aria-labelledby="package-approve-capabilities-credentials-heading"
+							mix={css({ display: 'grid', gap: spacing.md })}
+						>
 							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
+								id="package-approve-capabilities-credentials-heading"
+								mix={css(heroHeadingCss)}
 							>
 								Credentials
 							</h2>
 							{credentialEntries.length === 0 ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No user credentials are reachable from this package's current
-									tree.
+									This package does not use any of your credentials.
 								</p>
 							) : (
-								<ul
-									mix={css({
-										margin: 0,
-										padding: 0,
-										listStyle: 'none',
-										display: 'grid',
-										gap: spacing.sm,
-									})}
-								>
-									{credentialEntries.map((entry) => (
-										<li
-											key={entry.credentialId ?? entry.name}
-											mix={css(capabilityRowCss)}
-										>
-											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<strong mix={css({ color: colors.text })}>
-													{entry.name ?? entry.credentialId}
+								<>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										Once it is internet-visible, requests from anyone can run
+										code that uses these.
+									</p>
+									<ul mix={css(cardListCss)}>
+										{credentialEntries.map((entry) => (
+											<li
+												key={entry.credentialId ?? entry.name}
+												data-testid="package-approve-capabilities-credential"
+												mix={css(capabilityRowCss)}
+											>
+												<strong mix={css(cardTitleCss)}>
+													{entry.name ?? 'Unnamed credential'}
 												</strong>
 												<span mix={css({ color: colors.textMuted })}>
-													{entry.credentialKind ?? 'secret'} · id{' '}
-													<code>{entry.credentialId}</code>
+													{credentialSummary(entry)}
 												</span>
 												<span mix={css({ color: colors.textMuted })}>
-													Hosts:{' '}
 													{entry.hosts.length > 0
-														? entry.hosts.join(', ')
-														: 'none approved'}
+														? `Can only be sent to ${entry.hosts.join(', ')}`
+														: 'No hosts approved yet'}
 												</span>
-												<details mix={css(accountDisclosureCss)}>
-													<summary>How it is reached</summary>
-													<p mix={css({ margin: 0, color: colors.textMuted })}>
-														{entry.via.join(' → ')}
-													</p>
-												</details>
-											</div>
-										</li>
-									))}
-								</ul>
+											</li>
+										))}
+									</ul>
+								</>
 							)}
 						</section>
-						<section mix={css({ display: 'grid', gap: spacing.md })}>
+						<section
+							data-testid="package-approve-capabilities-other"
+							aria-labelledby="package-approve-capabilities-other-heading"
+							mix={css({ display: 'grid', gap: spacing.md })}
+						>
 							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
+								id="package-approve-capabilities-other-heading"
+								mix={css(heroHeadingCss)}
 							>
 								Other capabilities
 							</h2>
 							{storageEntries.length === 0 ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No additional storage capabilities.
+									No other capabilities.
 								</p>
 							) : (
-								<ul
-									mix={css({
-										margin: 0,
-										padding: 0,
-										listStyle: 'none',
-										display: 'grid',
-										gap: spacing.sm,
-									})}
-								>
+								<ul mix={css(cardListCss)}>
 									{storageEntries.map((entry) => (
-										<li key={entry.storageId} mix={css(capabilityRowCss)}>
-											<strong mix={css({ color: colors.text })}>
-												Package storage
-											</strong>
+										<li
+											key={entry.storageId}
+											data-testid="package-approve-capabilities-storage"
+											mix={css(capabilityRowCss)}
+										>
+											<strong mix={css(cardTitleCss)}>Package storage</strong>
 											<span mix={css({ color: colors.textMuted })}>
-												<code>{entry.storageId}</code>
-												{entry.via.length > 0
-													? ` via ${entry.via.join(' → ')}`
-													: ''}
+												{storageSummary(entry)}
 											</span>
 										</li>
 									))}
@@ -514,14 +544,57 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								mix={css(getGhostButtonCss())}
 								data-testid="package-approve-capabilities-back"
 							>
-								Back to settings
+								Back to package settings
 							</a>
 						</div>
+						<details
+							data-testid="package-approve-capabilities-details"
+							mix={css(accountDisclosureCss)}
+						>
+							<summary>Details</summary>
+							<MetadataGrid items={approveCapabilitiesDetailItems(payload)} />
+						</details>
 					</section>
 				) : null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+const packageContextCss = {
+	margin: 0,
+	width: 'fit-content',
+	maxWidth: '100%',
+	overflowWrap: 'anywhere' as const,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.primaryText,
+	backgroundColor: colors.primarySoft,
+	borderRadius: radius.full,
+	padding: '0.2rem 0.7rem',
+}
+
+const heroHeadingCss = {
+	margin: 0,
+	fontSize: '1.35rem',
+	fontWeight: 720,
+	letterSpacing: '-0.014em',
+	lineHeight: 1.2,
+	color: colors.text,
+}
+
+const cardListCss = {
+	margin: 0,
+	padding: 0,
+	listStyle: 'none',
+	display: 'grid',
+	gap: spacing.sm,
+}
+
+const cardTitleCss = {
+	color: colors.text,
+	fontSize: typography.fontSize.base,
+	overflowWrap: 'anywhere' as const,
 }
 
 const capabilityRowCss = {
@@ -531,4 +604,5 @@ const capabilityRowCss = {
 	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,
 	backgroundColor: colors.surface,
+	minWidth: 0,
 }

@@ -50,6 +50,11 @@ export type SiteHeaderProps = {
 	organizations?: Array<OrganizationSummary>
 	inviteCount?: number
 	lastUsedOrganization?: string | null
+	/**
+	 * Single-decision pages (approvals): only the brand and the account menu,
+	 * at every width, so nothing pulls attention from the decision.
+	 */
+	focused?: boolean
 }
 
 /**
@@ -700,6 +705,36 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	}
 
 	return () => {
+		if (handle.props.focused) {
+			return (
+				<header class="site-header" data-focused-header mix={css(headerCss)}>
+					<div mix={css(navCss)}>
+						<a href="/" mix={css(brandCss)}>
+							<img src="/images/kody-mark.png" alt="" width={34} height={34} />
+							<span>Kody</span>
+						</a>
+						<div mix={css({ marginLeft: 'auto', display: 'flex' })}>
+							{handle.props.loggedIn ? (
+								<AccountMenu
+									username={handle.props.username}
+									displayName={handle.props.displayName}
+									avatarUrl={handle.props.avatarUrl}
+									currentPathname={handle.props.currentPathname}
+									organizations={handle.props.organizations ?? []}
+									lastUsedOrganization={
+										handle.props.lastUsedOrganization ?? null
+									}
+								/>
+							) : (
+								<a href={handle.props.loginHref} mix={css(navLoginCss)}>
+									Log in
+								</a>
+							)}
+						</div>
+					</div>
+				</header>
+			)
+		}
 		return (
 			<header class="site-header" mix={css(headerCss)}>
 				<nav aria-label="Main" mix={css(navCss)}>

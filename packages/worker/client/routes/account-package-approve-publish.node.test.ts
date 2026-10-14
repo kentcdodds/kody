@@ -59,8 +59,20 @@ test('approve-publish SSR renders the promote card without a browser location', 
 	expect(html).toContain('Approve package publish')
 	expect(html).toContain('data-testid="package-approve-publish-card"')
 	expect(html).toContain('@kodykoala/gmail-drafts')
-	expect(html).toContain('34f338c19f91c698c3a28edd2992e0ab87dcb4e0')
-	expect(html).toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	// Commit ids live in a collapsed Details disclosure; the slug is gone.
+	const detailsIndex = html.indexOf(
+		'data-testid="package-approve-publish-details"',
+	)
+	expect(detailsIndex).toBeGreaterThan(-1)
+	const details = html.slice(detailsIndex)
+	expect(details.slice(0, details.indexOf('>'))).not.toContain(' open')
+	expect(details).toContain('<summary>Details</summary>')
+	expect(details).toContain('34f338c19f91c698c3a28edd2992e0ab87dcb4e0')
+	expect(details).toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	expect(html.slice(0, detailsIndex)).not.toContain(
+		'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+	)
+	expect(html).not.toContain('Kody id')
 	expect(html).toContain('Promote this commit')
 	expect(html).toContain('Browse published files')
 	expect(html).toContain('data-testid="package-publish-diff"')

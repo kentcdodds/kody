@@ -258,6 +258,8 @@ export function AccountManagementShell(
 }
 
 type AccountManagementHeaderProps = {
+	/** Context above the H1, such as the package a decision is about. */
+	eyebrow?: AccountManagementSlot
 	title: string
 	description: string
 	actions?: AccountManagementSlot
@@ -279,6 +281,7 @@ export function AccountManagementHeader(
 			})}
 		>
 			<div mix={css({ display: 'grid', gap: '0.6rem', minWidth: 0 })}>
+				{handle.props.eyebrow ?? null}
 				<div
 					mix={css({
 						display: 'flex',
@@ -627,6 +630,8 @@ export function AccountManagementPanel(
 
 type MetadataGridProps = {
 	items: Array<{
+		/** Defaults to `label`; pass one when two rows can share a label. */
+		key?: string
 		label: string
 		value: AccountManagementSlot
 	}>
@@ -651,7 +656,7 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 			})}
 		>
 			{handle.props.items.map((item) => (
-				<div key={item.label} mix={css({ minWidth: 0 })}>
+				<div key={item.key ?? item.label} mix={css({ minWidth: 0 })}>
 					<dt mix={css(accountFieldLabelCss)}>{item.label}</dt>
 					<dd
 						mix={css({

@@ -14,6 +14,7 @@ import {
 	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
+	accountDisclosureCss,
 } from './account-management-components.tsx'
 import {
 	type AccountPackageApprovePublishLoaderData,
@@ -39,17 +40,13 @@ type PageStatus = 'loading' | 'ready' | 'error' | 'promoting' | 'promoted'
 
 const loadFailureMessage = 'Unable to load this publish approval.'
 
-function approvePublishMetadataItems(
+/** Raw commit ids for the collapsed Details disclosure. */
+function approvePublishDetailItems(
 	payload: AccountPackageApprovePublishLoaderData,
 ) {
-	const items: Array<{ label: string; value: RemixNode }> = [
-		{
-			label: 'Kody id',
-			value: <IdValue value={payload.package.kodyId} label="Kody id" />,
-		},
-	]
+	const items: Array<{ label: string; value: RemixNode }> = []
 	// Title already names the short public commit when nothing is pending —
-	// do not repeat it in the metadata grid.
+	// do not repeat it in Details.
 	if (payload.alreadyPublished || !payload.pendingCommit) {
 		return items
 	}
@@ -244,6 +241,7 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 			Boolean(payload?.alreadyPublished) &&
 			payload?.pendingIsDefaultHead === false &&
 			upToDateShort != null
+		const detailItems = payload ? approvePublishDetailItems(payload) : []
 
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
@@ -368,7 +366,15 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 								an agent asks you to approve a locked publish.
 							</p>
 						) : null}
-						<MetadataGrid items={approvePublishMetadataItems(payload)} />
+						{detailItems.length > 0 ? (
+							<details
+								data-testid="package-approve-publish-details"
+								mix={css(accountDisclosureCss)}
+							>
+								<summary>Details</summary>
+								<MetadataGrid items={detailItems} />
+							</details>
+						) : null}
 						<div
 							mix={css({
 								display: 'flex',

@@ -485,6 +485,32 @@ test('logged-out header shows Log in without an Account link', async () => {
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
 })
 
+test('focused header keeps only the brand and the account menu', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: true,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@ada/demo/approve-capabilities',
+			focused: true,
+		}),
+	)
+
+	expect(html).toContain('data-focused-header')
+	expect(html).toContain('src="/images/kody-mark.png"')
+	expect(html).toContain('data-testid="account-menu"')
+	expect(html).toContain('aria-label="Ada Lovelace: your account"')
+	expect(html).not.toContain('aria-label="Main"')
+	expect(html).not.toContain('href="/community"')
+	expect(html).not.toContain('href="/admin/users"')
+	expect(html).not.toContain('aria-label="Menu"')
+	expect(html).not.toContain('switch organization')
+})
+
 test('account menu Usage & credits uses the URL org when billing is allowed', () => {
 	const orgs = [
 		{ slug: 'ada', personal: true, role: 'owner' as const },
