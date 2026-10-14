@@ -136,9 +136,11 @@
 	gap: 7px;
 	margin: 18px 0;
 }
+.feature-detail .controls:has(> a:not(.action)) {
+	column-gap: 24px;
+}
 .feature-detail .controls > a:not(.action) {
 	align-self: center;
-	margin-inline: 12px;
 }
 .feature-detail .controls button,
 .feature-detail .run {
