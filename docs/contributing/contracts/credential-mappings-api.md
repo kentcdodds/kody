@@ -566,8 +566,7 @@ export type CredentialClientErrorBody = {
 
 ## Redirects
 
-Once the new Credentials UI has shipped and been proven, these old URLs redirect
-(302, query preserved) instead of 404ing:
+These old URLs redirect (302, query preserved) to the Credentials UI:
 
 | Old                     | New                                   |
 | ----------------------- | ------------------------------------- |
@@ -590,17 +589,20 @@ for the package a need belongs to).
 vault provider access is a different trust decision from using a credential,
 with its own audit trail.
 
-The redirects are defined and tested but not wired. The old pages keep serving
-until their replacement is proven:
+Where they are wired:
 
-- The three org index routes switch on by wrapping their handlers with
-  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`),
-  only after the new Credentials list has shipped and been proven, including the
-  add forms and row editors that live on those index pages today. Until then the
-  Credentials page links to them, and a redirect would loop.
-- `/connect/secret-set` switches on only after `/connect/credential` serves the
-  one-pager and it has been proven. Today `/connect/credential?kind=secret`
-  redirects to `/connect/secret-set`, so redirecting back would loop.
+- The server wraps the three org index handlers and `/connect/secret-set` with
+  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`).
+  The client router wraps the same loaders with `withCredentialRedirectLoader`,
+  so in-app navigation redirects too.
+- `/connect/credential` redirects to the creation one-pager at
+  `/@:org/-/credentials/new` in the signed-in user's signup org, with the query
+  preserved. A legacy `/connect/secret-set` link therefore lands on the
+  one-pager in two hops.
+- URLs the table returns null for keep the legacy page: approval links (`names`,
+  `hosts`, `package_id`, `capability`) and `package=` filters on the index
+  pages. The legacy pages and their add forms stay in place until the
+  Credentials pages are proven, and then they can be deleted.
 
 ## Build order
 
@@ -608,8 +610,8 @@ Each step is a small PR stacked on the previous one:
 
 1. This contract and the ADR amendment.
 2. `universal/credential-contracts.ts`: types and URL codecs, with tests.
-3. Runtime errors carry `createUrl`; `/connect/credential` interim redirect
-   (replaced by the creation one-pager).
+3. Runtime errors carry `createUrl`; `/connect/credential` redirects to the
+   creation one-pager.
 4. Credentials list API and `credentialList` (MCP servers included).
 5. Mapping storage (additive migration) and resolution in `credential()`.
 6. Package credentials API.
