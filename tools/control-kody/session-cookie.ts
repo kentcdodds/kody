@@ -206,7 +206,7 @@ export function looksLikeLoginHtml(rawBody: string) {
 	return false
 }
 
-export function locationPointsToLogin(
+function locationPointsToLogin(
 	location: string | null | undefined,
 	requestOrigin?: string,
 ) {
