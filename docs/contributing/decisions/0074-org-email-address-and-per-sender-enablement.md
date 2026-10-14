@@ -18,7 +18,7 @@ accepted message ([0062](./0062-one-access-check.md)).
 Each org has one address `{slug}@inbox.kody.codes` (personal orgs keep
 `{username}@`). Slugs and usernames share one namespace. Plus-tags resolve to
 the base address; the full tagged recipient stays on `to_addresses`. There are
-no package plus-aliases.
+no package-specific plus aliases.
 
 All accepted mail (including quarantined and unenabled senders) is stored in the
 org's Mailbox DO keyed by org id ([0060](./0060-owner-and-person-ids.md),
