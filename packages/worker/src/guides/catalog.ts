@@ -50,6 +50,7 @@ import textYourAgent from '../../../../docs/guides/text-your-agent.md'
 import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
+import providerDropbox from '../../../../docs/guides/providers/dropbox.md'
 import providerFigma from '../../../../docs/guides/providers/figma.md'
 import providerGithub from '../../../../docs/guides/providers/github.md'
 import providerGoogle from '../../../../docs/guides/providers/google.md'
@@ -124,6 +125,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
 	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'discord', raw: providerDiscord },
+	{ slug: 'dropbox', raw: providerDropbox },
 	{ slug: 'figma', raw: providerFigma },
 	{ slug: 'github', raw: providerGithub },
 	{ slug: 'google', raw: providerGoogle },
