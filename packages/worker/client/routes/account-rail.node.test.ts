@@ -11,17 +11,9 @@ import {
 	workspaceRailGroups,
 	workspaceSwitchHref,
 } from '#client/routes/account-rail.ts'
-import { type OrganizationSummary } from '#universal/org-pages.ts'
-
-const organizations: Array<OrganizationSummary> = [
-	{ slug: 'acme', displayName: 'Acme', role: 'owner', personal: false },
-	{ slug: 'jane-old', displayName: 'Jane', role: 'owner', personal: true },
-]
 
 test('account rail holds the person: profile, security, organizations, experiments, data', () => {
-	const items = accountRailGroups({ organizations: [] }).flatMap(
-		(group) => group.items,
-	)
+	const items = accountRailGroups().flatMap((group) => group.items)
 	expect(items.map((item) => item.label)).toEqual([
 		'Profile',
 		'Security',
@@ -62,19 +54,14 @@ test('account rail holds the person: profile, security, organizations, experimen
 	}
 })
 
-test('account rail lists every workspace, signup org first, each opening its home', () => {
-	const groups = accountRailGroups({ organizations })
-	expect(groups.map((group) => group.label)).toEqual([null, 'Workspaces'])
+test('account rail has no workspaces group; orgs live in the avatar menu', () => {
+	const groups = accountRailGroups()
+	expect(groups.map((group) => group.label)).toEqual([null])
 	expect(
-		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
-	).toEqual([
-		['@jane-old', '/@jane-old/-/overview', 'user'],
-		['@acme', '/@acme', 'users'],
-	])
-	for (const item of groups[1]?.items ?? []) {
-		expect(isAccountRailPath(item.href), item.href).toBe(false)
-		expect(isAccountNavItemActive(item, '/account'), item.href).toBe(false)
-	}
+		groups
+			.flatMap((group) => group.items)
+			.some((item) => item.label.startsWith('@')),
+	).toBe(false)
 })
 
 test('workspace home is the overview for the signup org and /@slug for a team', () => {

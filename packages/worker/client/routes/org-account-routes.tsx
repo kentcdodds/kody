@@ -26,6 +26,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountActivityRouteLoader,
 	),
+	[routePattern(routes.orgApprovalBundle)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.approvalBundleRouteLoader,
+	),
 	[routePattern(routes.orgBilling)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountBillingRouteLoader,
@@ -143,6 +147,9 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 export const orgAccountClientRoutes = {
 	[routePattern(routes.orgActivity)]: (
 		<LazyAccountRoute render={(module) => <module.AccountActivityRoute />} />
+	),
+	[routePattern(routes.orgApprovalBundle)]: (
+		<LazyAccountRoute render={(module) => <module.ApprovalBundleRoute />} />
 	),
 	[routePattern(routes.orgBilling)]: (
 		<LazyAccountRoute render={(module) => <module.AccountBillingRoute />} />

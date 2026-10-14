@@ -669,6 +669,12 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		pending_commit: z.string(),
 		current_published_commit: z.string().nullable(),
 		approval_url: z.string(),
+		approval_bundle_url: z
+			.string()
+			.optional()
+			.describe(
+				'Present when other paused publishes also wait on the owner: one page that approves them together.',
+			),
 		credential_need_changes: z.array(credentialNeedChangeSchema),
 		message: z.string(),
 	}),

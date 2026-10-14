@@ -27,7 +27,6 @@ const view = {
 	package: { id: 'pkg-1', kodyId: 'release-notes', name: 'release-notes' },
 	org: { slug: 'acme', personal: false },
 	collaborators: [],
-	invites: [],
 	options: { teams: [], members: [] },
 }
 

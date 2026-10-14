@@ -424,12 +424,7 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
 			workspaceSwitcher: undefined,
-			groups: accountRailGroups({
-				organizations: organizationsWithSignupFallback({
-					organizations,
-					username: input.session?.username ?? '',
-				}),
-			}),
+			groups: accountRailGroups(),
 		}
 	}
 	const orgSlug = accountRailOrgSlug({

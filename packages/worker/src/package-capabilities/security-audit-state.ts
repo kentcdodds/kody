@@ -14,11 +14,41 @@ async function lookupRecorderUsername(db: D1Database, personId: string) {
 	return username ? `@${username}` : null
 }
 
+type CurrentPackageSecurityAudit = Omit<
+	Extract<AccountPackageSecurityAudit, { status: 'audited' }>,
+	'status'
+>
+
 /**
- * Audit state for the package's current published commit + capability
+ * The audit recorded for exactly this published commit + capability
  * fingerprint. Any newer publish or capability change has no matching row,
  * so it reads as not audited.
  */
+export async function loadCurrentPackageSecurityAudit(
+	db: D1Database,
+	input: {
+		ownerUserId: string
+		packageId: string
+		publishedCommit: string
+		fingerprint: string
+	},
+): Promise<CurrentPackageSecurityAudit | null> {
+	const audit = await getLatestPackageSecurityAudit(db, input)
+	if (!audit) return null
+	const recorder =
+		(await lookupRecorderUsername(db, audit.recordedByUserId)) ??
+		'a former member'
+	const auditor = audit.auditorLabel ?? recorder
+	return {
+		verdict: audit.verdict,
+		summary: audit.summary,
+		auditor,
+		recordedBy: auditor === recorder ? null : recorder,
+		recordedAt: audit.recordedAt,
+	}
+}
+
+/** Approval-page audit state, with the agent prompt when not yet audited. */
 export async function loadPackageSecurityAuditState(input: {
 	db: D1Database
 	ownerUserId: string
@@ -29,34 +59,21 @@ export async function loadPackageSecurityAuditState(input: {
 	approvalUrl: string
 }): Promise<AccountPackageSecurityAudit> {
 	if (!input.publishedCommit) return { status: 'unpublished' }
-	const audit = await getLatestPackageSecurityAudit(input.db, {
-		packageId: input.packageId,
+	const audit = await loadCurrentPackageSecurityAudit(input.db, {
 		ownerUserId: input.ownerUserId,
+		packageId: input.packageId,
 		publishedCommit: input.publishedCommit,
 		fingerprint: input.fingerprint,
 	})
-	if (!audit) {
-		return {
-			status: 'not_audited',
-			prompt: buildPackageSecurityAuditPrompt({
-				packageName: input.packageName,
-				packageId: input.packageId,
-				publishedCommit: input.publishedCommit,
-				fingerprint: input.fingerprint,
-				approvalUrl: input.approvalUrl,
-			}),
-		}
-	}
-	const recorder =
-		(await lookupRecorderUsername(input.db, audit.recordedByUserId)) ??
-		'a former member'
-	const auditor = audit.auditorLabel ?? recorder
+	if (audit) return { status: 'audited', ...audit }
 	return {
-		status: 'audited',
-		verdict: audit.verdict,
-		summary: audit.summary,
-		auditor,
-		recordedBy: auditor === recorder ? null : recorder,
-		recordedAt: audit.recordedAt,
+		status: 'not_audited',
+		prompt: buildPackageSecurityAuditPrompt({
+			packageName: input.packageName,
+			packageId: input.packageId,
+			publishedCommit: input.publishedCommit,
+			fingerprint: input.fingerprint,
+			approvalUrl: input.approvalUrl,
+		}),
 	}
 }

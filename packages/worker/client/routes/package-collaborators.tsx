@@ -1,10 +1,8 @@
 // remix-skill: package Collaborators tab (`/@user/name/collaborators`).
 import { type Handle, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
-import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import {
 	createRouteData,
@@ -19,7 +17,6 @@ import {
 	accountFieldCss,
 	accountFieldLabelCss,
 	accountFieldNoteCss,
-	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
@@ -28,7 +25,6 @@ import {
 	type PackageCollaboratorsChange,
 	type PackageCollaboratorsLoaderData,
 	type PackageCollaboratorsView,
-	type PackageCollaboratorsWriteResult,
 	type PackageCollaboratorView,
 	packageCollaboratorPresetDescription,
 	packageCollaboratorPresetLabel,
@@ -44,7 +40,6 @@ import {
 	getDangerPillCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
-import { spacing } from '#universal/styles/tokens.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	detailArticleCss,
@@ -56,10 +51,8 @@ import {
 	collaboratorName,
 	formCss,
 	iconWellCss,
-	inviteeName,
 	listCss,
 	mutedCopyCss,
-	promptCss,
 	readPreset,
 	renderPresetOptions,
 	rowActionsCss,
@@ -106,26 +99,20 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 	let busy: ChangeKey | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	let invitePrompt: string | null = null
 	let teamId = ''
 	let teamPreset: PackageCollaboratorPreset = 'use'
 	let memberId = ''
 	let memberPreset: PackageCollaboratorPreset = 'use'
-	let invitee = ''
-	let invitePreset: PackageCollaboratorPreset = 'use'
 	let page = { username: '', kodyId: '' }
 
 	function resetForPackage(pathname: string) {
 		statePathname = pathname
 		written = null
 		message = null
-		invitePrompt = null
 		teamId = ''
 		memberId = ''
-		invitee = ''
 		teamPreset = 'use'
 		memberPreset = 'use'
-		invitePreset = 'use'
 		removeChecks.clear()
 	}
 
@@ -142,10 +129,9 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		change: PackageCollaboratorsChange,
 		success: string,
 	) {
-		if (busy) return null
+		if (busy) return
 		busy = key
 		message = null
-		invitePrompt = null
 		handle.update()
 		try {
 			const response = await fetch(
@@ -161,14 +147,14 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 				},
 			)
 			const payload = (await response.json().catch(() => null)) as
-				| PackageCollaboratorsWriteResult
+				| PackageCollaboratorsView
 				| { ok: false; error?: string }
 				| null
 			if (response.status === 401) {
 				window.location.assign(
 					`/login?redirectTo=${encodeURIComponent(window.location.pathname)}`,
 				)
-				return null
+				return
 			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(
@@ -176,21 +162,15 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						'Kody could not save that change.',
 				)
 			}
-			const { invite, ...view } = payload
 			writes += 1
-			written = {
-				view: { ...view, ok: true },
-				writes,
-			}
+			written = { view: payload, writes }
 			message = success
 			messageTone = 'info'
 			pageData.reload(handle, readCurrentRouterHref(handle))
-			return invite ?? null
 		} catch (error) {
 			message =
 				error instanceof Error ? error.message : 'Kody could not save that.'
 			messageTone = 'error'
-			return null
 		} finally {
 			busy = null
 			handle.update()
@@ -252,20 +232,6 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		if (messageTone === 'info') memberId = ''
 	}
 
-	async function invite(event: SubmitEvent) {
-		event.preventDefault()
-		const created = await postChange(
-			'invite',
-			{ intent: 'invite', invitee: invitee.trim(), preset: invitePreset },
-			'Invite created. Send this prompt to them; it is shown only once.',
-		)
-		if (created) {
-			invitee = ''
-			invitePrompt = created.prompt
-			handle.update()
-		}
-	}
-
 	function currentView(
 		loaded: PackageCollaboratorsView | null,
 		currentHref: string,
@@ -314,30 +280,38 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 					</span>
 				</span>
 				<span mix={css(rowActionsCss)}>
-					<select
-						aria-label={`Access for ${name}`}
-						value={collaborator.preset ?? ''}
-						disabled={busy !== null}
-						mix={[
-							css(selectCss),
-							on('change', (event) => {
-								const preset = readPreset(event)
-								if (!preset) return
-								void changePreset(
-									collaborator,
-									preset,
-									event.currentTarget as HTMLSelectElement,
-								)
-							}),
-						]}
-					>
-						{collaborator.preset === null ? (
-							<option value="" disabled selected>
-								Custom ({collaborator.permissions.length} permissions)
-							</option>
-						) : null}
-						{renderPresetOptions(collaborator.preset)}
-					</select>
+					{collaborator.kind === 'outside' ? (
+						<span mix={css(rowDetailCss)}>
+							{collaborator.preset
+								? packageCollaboratorPresetLabel(collaborator.preset)
+								: `Custom (${collaborator.permissions.length} permissions)`}
+						</span>
+					) : (
+						<select
+							aria-label={`Access for ${name}`}
+							value={collaborator.preset ?? ''}
+							disabled={busy !== null}
+							mix={[
+								css(selectCss),
+								on('change', (event) => {
+									const preset = readPreset(event)
+									if (!preset) return
+									void changePreset(
+										collaborator,
+										preset,
+										event.currentTarget as HTMLSelectElement,
+									)
+								}),
+							]}
+						>
+							{collaborator.preset === null ? (
+								<option value="" disabled selected>
+									Custom ({collaborator.permissions.length} permissions)
+								</option>
+							) : null}
+							{renderPresetOptions(collaborator.preset)}
+						</select>
+					)}
 					<button
 						type="button"
 						disabled={busy !== null}
@@ -529,136 +503,6 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		)
 	}
 
-	function renderInvite(view: PackageCollaboratorsView) {
-		return (
-			<AccountManagementPanel
-				title={
-					view.org.personal
-						? 'Invite a collaborator'
-						: 'Invite someone outside the organization'
-				}
-				description="They get access to this package only, not to the rest of the organization or its credentials."
-			>
-				<form
-					data-testid="package-collaborators-invite"
-					mix={[css(formCss), on('submit', (event) => void invite(event))]}
-				>
-					<label mix={css(accountFieldCss)}>
-						<span mix={css(accountFieldLabelCss)}>Email or username</span>
-						<input
-							value={invitee}
-							required
-							data-field-ring
-							autoComplete="off"
-							mix={[
-								css(accountInputCss),
-								on('input', (event) => {
-									invitee = (event.currentTarget as HTMLInputElement).value
-									handle.update()
-								}),
-							]}
-						/>
-						<p mix={css(accountFieldNoteCss)}>
-							They accept by pasting the invite prompt into their agent.
-						</p>
-					</label>
-					{renderPresetField({
-						label: 'Access for the invitee',
-						value: invitePreset,
-						onChange: (preset) => {
-							invitePreset = preset
-						},
-					})}
-					<div mix={css(accountActionsCss)}>
-						<button
-							type="submit"
-							disabled={busy !== null || invitee.trim().length === 0}
-							mix={css(getPillButtonCss({ size: 'sm' }))}
-						>
-							{renderIcon('mail', { size: '1.05rem' })}
-							{busy === 'invite' ? 'Inviting…' : 'Create invite'}
-						</button>
-					</div>
-				</form>
-				{invitePrompt ? (
-					<div mix={css({ display: 'grid', gap: spacing.sm })}>
-						<pre
-							mix={css(promptCss)}
-							data-testid="package-collaborators-prompt"
-						>
-							{invitePrompt}
-						</pre>
-						<CopyTextButton
-							value={invitePrompt}
-							idleLabel="Copy invite prompt"
-						/>
-					</div>
-				) : null}
-			</AccountManagementPanel>
-		)
-	}
-
-	function renderInvites(view: PackageCollaboratorsView) {
-		if (view.invites.length === 0) return null
-		return (
-			<AccountManagementPanel title="Pending invites">
-				<ul mix={css(listCss)} data-testid="package-collaborator-invites">
-					{view.invites.map((pendingInvite) => {
-						const check = removeCheckFor(`invite:${pendingInvite.id}`)
-						const name = inviteeName(pendingInvite)
-						return (
-							<li
-								key={pendingInvite.id}
-								data-testid="package-collaborator-invite"
-								mix={css(rowCss)}
-							>
-								<span aria-hidden="true" mix={css(iconWellCss)}>
-									{renderIcon('mail', { size: '1.25rem' })}
-								</span>
-								<span mix={css(rowTextCss)}>
-									<span mix={css(rowNameCss)}>{name}</span>
-									<span mix={css(rowDetailCss)}>
-										{[
-											pendingInvite.preset
-												? packageCollaboratorPresetLabel(pendingInvite.preset)
-												: 'Custom access',
-											`Expires ${formatTimestampDate(pendingInvite.expiresAt)}`,
-										].join(' · ')}
-									</span>
-								</span>
-								<span mix={css(rowActionsCss)}>
-									<button
-										type="button"
-										disabled={busy !== null}
-										mix={[
-											css(getDangerPillCss({ size: 'sm' })),
-											...check.getButtonMix({
-												on: {
-													click: () =>
-														void postChange(
-															`revoke-invite:${pendingInvite.id}`,
-															{
-																intent: 'revoke-invite',
-																inviteId: pendingInvite.id,
-															},
-															`Revoked the invite for ${name}.`,
-														),
-												},
-											}),
-										]}
-									>
-										{renderIcon('close', { size: '1.05rem' })}
-										{check.doubleCheck ? 'Confirm revoke' : 'Revoke'}
-									</button>
-								</span>
-							</li>
-						)
-					})}
-				</ul>
-			</AccountManagementPanel>
-		)
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const pathname = readRouterPathname(handle)
@@ -732,7 +576,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 							title="Who has access"
 							description={
 								view.org.personal
-									? 'You always have full access to your own packages.'
+									? 'You always have full access to your own packages. Teams and members belong to organizations, so a personal package has no one to add here.'
 									: 'Organization owners always have full access.'
 							}
 						>
@@ -751,8 +595,6 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						</AccountManagementPanel>
 						{view.org.personal ? null : renderAddTeam(view)}
 						{view.org.personal ? null : renderAddMember(view)}
-						{renderInvite(view)}
-						{renderInvites(view)}
 					</>
 				) : null}
 			</article>

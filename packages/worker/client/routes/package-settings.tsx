@@ -10,6 +10,7 @@ import {
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
+import { PackageNoAccessPage } from '#client/package-no-access-page.tsx'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import {
@@ -25,6 +26,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityPackageMovedPayload,
+	type CommunityPackageNoAccessPayload,
 	type PackageSettingsShell,
 	consumePackageSettingsShell,
 	getPackageSettingsPageRef,
@@ -75,11 +77,31 @@ export function PackageSettingsRoute(handle: Handle) {
 				signal,
 			})
 			const payload = await readJson<
-				CommunityDetailApiPayload | CommunityPackageMovedPayload
+				| CommunityDetailApiPayload
+				| CommunityPackageMovedPayload
+				| CommunityPackageNoAccessPayload
 			>(response)
 			if (response.status === 401) return { kind: 'unauthorized' }
+			if (
+				response.status === 403 &&
+				payload &&
+				!payload.ok &&
+				'noAccess' in payload &&
+				payload.noAccess
+			) {
+				return {
+					kind: 'no-access',
+					username: payload.username,
+					kodyId: payload.kodyId,
+					packageName: payload.packageName,
+					viewerUsername: payload.viewerUsername,
+				}
+			}
 			if (response.status === 404) {
-				const movedTo = payload && !payload.ok ? payload.redirectTo : null
+				const movedTo =
+					payload && !payload.ok && 'redirectTo' in payload
+						? payload.redirectTo
+						: null
 				if (movedTo) {
 					return routeDataRedirect(
 						packageMoveDestination(ref.pathname, movedTo),
@@ -194,6 +216,7 @@ export function PackageSettingsRoute(handle: Handle) {
 					break
 				case 'unauthorized':
 				case 'not-found':
+				case 'no-access':
 					break
 				default: {
 					const exhaustive: never = snapshot.data
@@ -206,6 +229,16 @@ export function PackageSettingsRoute(handle: Handle) {
 			return renderMissingListing(
 				'Unauthorized',
 				'You are not allowed to view this page.',
+			)
+		}
+		if (snapshot.data?.kind === 'no-access' && !snapshot.stale) {
+			return (
+				<PackageNoAccessPage
+					username={snapshot.data.username}
+					kodyId={snapshot.data.kodyId}
+					packageName={snapshot.data.packageName}
+					viewerUsername={snapshot.data.viewerUsername}
+				/>
 			)
 		}
 		if (

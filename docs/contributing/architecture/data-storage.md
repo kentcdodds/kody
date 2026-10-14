@@ -1563,6 +1563,22 @@ on write unless a migration backfills existing rows.
   same agent set only those. Unapproved rows older than 30 days are dropped when
   that agent proposes again. A person's rows in an org are hard-deleted when
   they leave it, and with their account.
+- `approval_bundles` and `approval_bundle_decisions`
+  (`0144-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
+  store agent-prefilled approval pages (`approvalBundleCreate`). A bundle row
+  names the person it is for (`person_user_id`), the agent credential that made
+  it (`agent_credential_kind`, `agent_credential_id`), an untrusted note, and
+  `items_json`, an ordered array of item keys (`publish:<requestId>`,
+  `capabilities:<packageId>`, `credential-picks:<proposalId>`). Item state is
+  read live from the item's own tables; a bundle holds no approval state. Each
+  approve or deny first claims the item's decision row (`decided_by_user_id`),
+  so one request acts per item, then sets `finalized_at`
+  (`0145-approval-bundle-decision-finalized-at.sql`) when it is done. Until then
+  the row is an in-flight claim, not a decision, and expires after 10 minutes.
+  Within a bundle, the first finalized decision wins. Denying a capability set
+  or credential proposal changes nothing, so it can still be approved from its
+  own page or another bundle. Bundles open for 30 days. A person's bundles in an
+  org are hard-deleted when they leave it, and with their account.
 
 ### Durable Object id contracts
 

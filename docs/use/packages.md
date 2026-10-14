@@ -868,6 +868,44 @@ again. A locked package keeps its locked-publish flow first: approving that
 publish on approve-publish runs this check and pauses there if the needs
 changed. Platform codemods do not pause.
 
+## Approve many changes at once
+
+When several approvals wait on you, an agent can put them on one page.
+**`approvalPendingList`** (`GET /v1/approvals`) lists what waits on the
+signed-in person and what they can decide:
+
+- paused publishes (`publish`): credential needs changed, or the package goes
+  public
+- internet-visible packages whose credentials or storage changed since you
+  approved them (`capabilities`)
+- credential picks an agent proposed with `credentialMappingPropose`
+  (`credential-picks`)
+
+Each item says in plain words what approving grants: the credential, its kind,
+provider, and hosts, plus what you approved before.
+
+**`approvalBundleCreate`** (`POST /v1/approval-bundles`) takes item keys from
+that list, or everything pending (narrowed by `types` and `packages`), plus an
+optional note. It returns a URL, `/@{org}/-/approvals/{bundleId}`, which only
+that person can open. The page groups items by package, with **Approve all** and
+per-item **Approve** or **Deny**.
+
+Approving an item runs that item's own approval, the same code as its package
+page (**Approve and publish**, the capability approval, or the credential
+approval). Approve all approves each item in turn and reports any that need
+another look.
+
+Denying a paused publish drops it, and the published version keeps serving.
+Denying anything else changes nothing. The first decision on an item stands, and
+every decision is recorded in the org activity log.
+
+Agents only create bundles; approving is always the person's click in the
+browser. Package code cannot create bundles. A bundle holds at most 100 items
+and opens for 30 days. When a publish pauses and other paused publishes already
+wait on the same person, `repoPublishSession`, `packagePublishExternalPush`, and
+`packageSave` also return an **`approval_bundle_url`** (or name it in the
+message) that approves them together.
+
 ## Security audit
 
 The approval page has a **Security audit** field. It reads **No security audit
@@ -884,7 +922,9 @@ The agent records the result with **`packageSecurityAuditRecord`**
 capability rejects a commit or fingerprint that no longer matches the current
 version. Each record stores who recorded it and when, and is audit-logged. The
 field then reads **Audited {date} by {auditor}** and links to the summary. A new
-publish or a changed capability set reads as not audited again.
+publish or a changed capability set reads as not audited again. Capability items
+on an approval bundle page show the same state and link to the package's
+approval page for the prompt or summary.
 
 The audit is informational. It never approves capabilities or makes a package
 internet-visible; **Approve capability set** stays a separate owner click.

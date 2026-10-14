@@ -19,9 +19,7 @@ import {
 
 const dialogTitleId = 'package-security-audit-dialog-title'
 
-function auditedLabel(
-	audit: Extract<AccountPackageSecurityAudit, { status: 'audited' }>,
-) {
+export function auditedLabel(audit: { recordedAt: string; auditor: string }) {
 	return `Audited ${formatTimestampDate(audit.recordedAt)} by ${audit.auditor}`
 }
 

@@ -58,6 +58,25 @@ test('a missing package maps to a not-found settings shell', () => {
 	})
 })
 
+test('signed-in package denial maps to a no-access settings shell, not not-found', () => {
+	expect(
+		toPackageSettingsShell({
+			ok: false,
+			noAccess: true,
+			username: 'kody',
+			kodyId: 'mau-chart',
+			packageName: '@kody/mau-chart',
+			viewerUsername: 'tannerlinsley',
+		}),
+	).toEqual({
+		kind: 'no-access',
+		username: 'kody',
+		kodyId: 'mau-chart',
+		packageName: '@kody/mau-chart',
+		viewerUsername: 'tannerlinsley',
+	})
+})
+
 test('preloaded settings 404 is ready immediately and does not fallback-fetch', async () => {
 	using stub = createStubHandle()
 	const { handle, queuedTasks, flushTasks } = stub

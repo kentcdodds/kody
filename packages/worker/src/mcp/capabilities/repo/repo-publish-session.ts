@@ -28,6 +28,11 @@ import {
 import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import { createCredentialNeedsApprovalMessage } from '#worker/credentials/credential-needs-approval.ts'
+import {
+	bundlePausedPublishes,
+	pausedPublishBundleMessage,
+} from '#worker/approval-bundles/paused-publishes.ts'
+import { optionalApprovalViewerForCaller } from '#mcp/capabilities/packages/approval-bundle-shared.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
@@ -182,11 +187,18 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					username: owner.ownerScope,
 					kodyId: result.approval.kodyId,
 				})
-				const approvalMessage = createCredentialNeedsApprovalMessage({
+				const bundle = await bundlePausedPublishes({
+					viewer: optionalApprovalViewerForCaller(ctx),
+					ownerUserId: owner.ownerUserId,
+				})
+				const needsMessage = createCredentialNeedsApprovalMessage({
 					packageName: result.approval.packageName,
 					changes: result.approval.changes,
 					approvalUrl,
 				})
+				const approvalMessage = bundle
+					? `${needsMessage} ${pausedPublishBundleMessage(bundle)}`
+					: needsMessage
 				await reportCapabilityProgress(ctx.reportProgress, {
 					progress: progressTotal,
 					total: progressTotal,
@@ -200,6 +212,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					pending_commit: result.approval.pendingCommit,
 					current_published_commit: result.currentPublishedCommit,
 					approval_url: approvalUrl,
+					...(bundle ? { approval_bundle_url: bundle.url } : {}),
 					credential_need_changes: result.approval.changes,
 					message: result.credentialNotice
 						? `${approvalMessage}\n\n${result.credentialNotice}`

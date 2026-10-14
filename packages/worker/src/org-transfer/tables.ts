@@ -113,6 +113,12 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'Usage history keyed by the acting person, not the package owner org.',
 	),
 	api_tokens: keep(personOwned),
+	approval_bundle_decisions: keep(
+		'Decisions belong to bundles, which stay with the source org.',
+	),
+	approval_bundles: keep(
+		'Bundles name source-org approvals; an agent bundles again in the target org.',
+	),
 	billing_promo_claims: keep(usageHistory),
 	cli_credential_bootstrap_codes: keep(personOwned),
 	community_activity_events: keep('Historical activity log.'),

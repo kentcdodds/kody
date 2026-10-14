@@ -6,7 +6,7 @@ function sqlString(value: string) {
 	return `'${value.replaceAll("'", "''")}'`
 }
 
-test('package Collaborators tab adds, changes, invites, and removes access', async ({
+test('package Collaborators tab adds, changes, and removes internal access', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -97,21 +97,7 @@ INSERT INTO saved_packages (
 		teamRow.getByRole('combobox', { name: 'Access for Writers' }),
 	).toHaveValue('contribute')
 
-	const invite = page.getByTestId('package-collaborators-invite')
-	await invite
-		.getByRole('textbox', { name: 'Email or username' })
-		.fill(`friend-${runId}@example.com`)
-	await invite.getByRole('button', { name: 'Create invite' }).click()
-	await expect(page.getByTestId('package-collaborators-prompt')).toContainText(
-		'inviteAccept',
-	)
-	const pendingInvite = page
-		.getByTestId('package-collaborator-invite')
-		.filter({ hasText: `friend-${runId}@example.com` })
-	await expect(pendingInvite).toBeVisible()
-	await pendingInvite.getByRole('button', { name: 'Revoke' }).click()
-	await pendingInvite.getByRole('button', { name: 'Confirm revoke' }).click()
-	await expect(pendingInvite).toHaveCount(0)
+	await expect(page.getByTestId('package-collaborators-invite')).toHaveCount(0)
 
 	await memberRow.getByRole('button', { name: 'Remove' }).click()
 	await memberRow.getByRole('button', { name: 'Confirm remove' }).click()
