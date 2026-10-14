@@ -38,6 +38,7 @@ import {
 	type ConnectOauthChooserOption,
 	type ConnectOauthStatusTone,
 	type ConnectOauthStep,
+	approveConnectOauthHosts,
 	buildConnectOauthAuthorizeUrl,
 	buildConnectOauthIntegrationLookupHref,
 	connectOauthAccountFetchInit,
@@ -55,8 +56,10 @@ import {
 	readConnectOauthQueryConfig,
 	readStoredConnectOauthConfig,
 	redirectToLoginOn401,
+	replaceConnectOauthCallbackUrl,
 	restoreConnectOauthOrgSlugInUrl,
 	saveConnectOauthApp,
+	saveConnectOauthConnection,
 	validateConnectOauthState,
 } from './connect-oauth-shared.ts'
 import {
@@ -167,38 +170,16 @@ export function ConnectOauthRoute(handle: Handle) {
 		approvingAllHosts = true
 		update()
 		try {
-			const names = Array.from(
-				new Set(hostApprovalLinks.map((link) => link.secretName)),
-			)
-			const hosts = Array.from(
-				new Set(hostApprovalLinks.map((link) => link.host)),
-			)
-			const requestUrl = new URL(
-				'/account/secrets.json',
-				window.location.origin,
-			)
-			requestUrl.searchParams.set('names', names.join(','))
-			requestUrl.searchParams.set('hosts', hosts.join(','))
-			const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
-			const response = await fetch(
-				`${requestUrl.pathname}${requestUrl.search}`,
-				{
-					method: 'POST',
-					...connectOauthAccountFetchInit(orgSlug),
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ action: 'approve' }),
-				},
-			)
-			if (redirectToLoginOn401(response)) return
-			const payload = (await response.json().catch(() => null)) as {
-				ok?: boolean
-				error?: string
-			} | null
-			if (!response.ok || payload?.ok !== true) {
-				throw new Error(payload?.error || 'Unable to process approval.')
+			const result = await approveConnectOauthHosts({
+				secretNames: hostApprovalLinks.map((link) => link.secretName),
+				hosts: hostApprovalLinks.map((link) => link.host),
+				orgSlug: readConnectOauthOrgSlug(new URL(window.location.href)),
+			})
+			if (!result.ok) {
+				if (result.error !== 'Session expired.') {
+					setStatus(result.error, 'error')
+				}
+				return
 			}
 			hostApprovalLinks = []
 			setStatus('All hosts approved.', 'info')
@@ -396,16 +377,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			persistConnectOauthOrgSlug(orgSlug)
 			const callback = readConnectOauthCallback()
 			if (callback.kind !== 'none') {
-				const clean = new URL(
-					getConnectOauthRedirectUri(ssrRedirectUri),
-					window.location.origin,
-				)
-				if (orgSlug) clean.searchParams.set('org', orgSlug)
-				window.history.replaceState(
-					null,
-					'',
-					`${clean.pathname}${clean.search}`,
-				)
+				replaceConnectOauthCallbackUrl(ssrRedirectUri, orgSlug)
 			}
 			if (callback.kind === 'error') {
 				setStatus(
@@ -441,46 +413,23 @@ export function ConnectOauthRoute(handle: Handle) {
 				)
 				return
 			}
-			const callbackUrl = window.location.href
-			const response = await fetch('/account/secrets.json', {
-				method: 'POST',
-				...connectOauthAccountFetchInit(orgSlug),
-				headers: {
-					'Content-Type': 'application/json',
-					Accept: 'application/json',
-				},
-				body: JSON.stringify({
-					action: 'connect_oauth',
-					provider: config.provider,
-					callbackUrl,
-					...(config.platformAppSlug
-						? { platformAppSlug: config.platformAppSlug }
-						: {}),
-					authorizeUrl: config.authorizeUrl,
-					tokenUrl: config.tokenUrl,
-					apiBaseUrl: config.apiBaseUrl,
-					scopes: config.scopes,
-					scopeSeparator: config.scopeSeparator,
-					extraAuthorizeParams: config.extraAuthorizeParams,
-					flow: config.flow,
-					usePkce: config.usePkce,
-					tokenExchangeStyle: config.tokenExchangeStyle,
-					clientId: config.clientId,
-					allowedHosts: config.allowedHosts,
-					tokenPayload: exchange.data,
-				}),
+			const saved = await saveConnectOauthConnection({
+				config,
+				callbackUrl: window.location.href,
+				tokenPayload: exchange.data,
+				orgSlug,
 			})
-			if (redirectToLoginOn401(response)) return
-			const payload = await response.json().catch(() => null)
-			if (!response.ok || payload?.ok !== true) {
-				setStatus(payload?.error || 'Unable to save OAuth tokens.', 'error')
-				setStep('connect')
+			if (!saved.ok) {
+				if (saved.error !== 'Session expired.') {
+					setStatus(saved.error, 'error')
+					setStep('connect')
+				}
 				return
 			}
-			accessTokenSaved = payload.accessTokenSaved === true
-			refreshTokenSaved = payload.refreshTokenSaved === true
-			hostApprovalLinks = parseHostApprovalLinks(payload.hostApprovalLinks)
-			nextSteps = parseConnectOauthNextSteps(payload.nextSteps)
+			accessTokenSaved = saved.accessTokenSaved
+			refreshTokenSaved = saved.refreshTokenSaved
+			hostApprovalLinks = parseHostApprovalLinks(saved.hostApprovalLinks)
+			nextSteps = parseConnectOauthNextSteps(saved.nextSteps)
 			setStatus('OAuth tokens saved.', 'info')
 			setStep('success')
 		} catch (error) {

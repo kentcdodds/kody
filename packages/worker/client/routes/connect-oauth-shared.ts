@@ -116,7 +116,7 @@ export function persistConnectOauthOrgSlug(orgSlug: string | null) {
 	}
 }
 
-export function readStoredConnectOauthOrgSlug(): string | null {
+function readStoredConnectOauthOrgSlug(): string | null {
 	if (typeof window === 'undefined') return null
 	try {
 		const raw = sessionStorage.getItem(connectOauthOrgStorageKey)?.trim()
@@ -139,6 +139,118 @@ export function restoreConnectOauthOrgSlugInUrl() {
 	if (readOrgSlugFromUrl(url) === org) return
 	url.searchParams.set('org', org)
 	window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+}
+
+/** Drop code/error from the URL while keeping the handoff `org` for account binds. */
+export function replaceConnectOauthCallbackUrl(
+	ssrRedirectUri: string | null,
+	orgSlug: string | null,
+) {
+	const clean = new URL(
+		getConnectOauthRedirectUri(ssrRedirectUri),
+		window.location.origin,
+	)
+	if (orgSlug) clean.searchParams.set('org', orgSlug)
+	window.history.replaceState(null, '', `${clean.pathname}${clean.search}`)
+}
+
+export async function approveConnectOauthHosts(input: {
+	secretNames: ReadonlyArray<string>
+	hosts: ReadonlyArray<string>
+	orgSlug: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+	const requestUrl = new URL('/account/secrets.json', window.location.origin)
+	requestUrl.searchParams.set(
+		'names',
+		[...new Set(input.secretNames)].join(','),
+	)
+	requestUrl.searchParams.set('hosts', [...new Set(input.hosts)].join(','))
+	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
+		method: 'POST',
+		...connectOauthAccountFetchInit(input.orgSlug),
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ action: 'approve' }),
+	})
+	if (redirectToLoginOn401(response)) {
+		return { ok: false, error: 'Session expired.' }
+	}
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		error?: string
+	} | null
+	if (!response.ok || payload?.ok !== true) {
+		return {
+			ok: false,
+			error: payload?.error || 'Unable to process approval.',
+		}
+	}
+	return { ok: true }
+}
+
+export async function saveConnectOauthConnection(input: {
+	config: ConnectOauthConfig
+	callbackUrl: string
+	tokenPayload: Record<string, unknown>
+	orgSlug: string | null
+}): Promise<
+	| {
+			ok: true
+			accessTokenSaved: boolean
+			refreshTokenSaved: boolean
+			hostApprovalLinks: unknown
+			nextSteps: unknown
+	  }
+	| { ok: false; error: string }
+> {
+	const { config, orgSlug } = input
+	const response = await fetch('/account/secrets.json', {
+		method: 'POST',
+		...connectOauthAccountFetchInit(orgSlug),
+		headers: {
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			action: 'connect_oauth',
+			provider: config.provider,
+			callbackUrl: input.callbackUrl,
+			...(config.platformAppSlug
+				? { platformAppSlug: config.platformAppSlug }
+				: {}),
+			authorizeUrl: config.authorizeUrl,
+			tokenUrl: config.tokenUrl,
+			apiBaseUrl: config.apiBaseUrl,
+			scopes: config.scopes,
+			scopeSeparator: config.scopeSeparator,
+			extraAuthorizeParams: config.extraAuthorizeParams,
+			flow: config.flow,
+			usePkce: config.usePkce,
+			tokenExchangeStyle: config.tokenExchangeStyle,
+			clientId: config.clientId,
+			allowedHosts: config.allowedHosts,
+			tokenPayload: input.tokenPayload,
+		}),
+	})
+	if (redirectToLoginOn401(response)) {
+		return { ok: false, error: 'Session expired.' }
+	}
+	const payload = await response.json().catch(() => null)
+	if (!response.ok || payload?.ok !== true) {
+		return {
+			ok: false,
+			error: payload?.error || 'Unable to save OAuth tokens.',
+		}
+	}
+	return {
+		ok: true,
+		accessTokenSaved: payload.accessTokenSaved === true,
+		refreshTokenSaved: payload.refreshTokenSaved === true,
+		hostApprovalLinks: payload.hostApprovalLinks,
+		nextSteps: payload.nextSteps,
+	}
 }
 
 /**
