@@ -59,7 +59,10 @@ conventions, shared helpers, or an existing package to extend.
    (including `## Intent`) and agent `AGENTS.md` aligned with the person's goal.
    Keep provider API calls and durable coordination in package-owned backend
    modules.
-5. Save with `packageSave` (or push through the git lane), reopen the hosted
+5. Before the first publish, prove the app locally with
+   [Local testing with `kody dev`](#local-testing-with-kody-dev) (`kody dev` /
+   `kody dev fetch`). Iterate on mock, then `--target prod`, while unpublished.
+6. Save with `packageSave` (or push through the git lane), reopen the hosted
    package URL, and iterate there instead of pasting large inline HTML blobs
    back into model context.
 
@@ -124,7 +127,7 @@ Node gateway answers package `fetch` calls under mock. Unmatched requests return
 `unmocked_request` with a paste-ready stub; `--passthrough <host,…>` opts hosts
 into real network without real secrets. Ignored on `--target prod` and when the
 file is absent. See
-[Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-kodymocksts).
+[Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-.kody-mocks.ts).
 
 Agents that cannot drive a browser should use `kody dev fetch`. After local mock
 and prod both look right, publish, then use `packageAppFetch` and the handed-off

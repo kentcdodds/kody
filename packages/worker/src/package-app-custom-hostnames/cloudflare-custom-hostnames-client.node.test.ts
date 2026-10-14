@@ -200,6 +200,22 @@ test('custom hostname client refuses a missing token or zone', () => {
 	).toThrow(/PACKAGE_APP_ZONE_ID/)
 })
 
+test('custom hostname client rejects query and fragment delimiters in ids', async () => {
+	const client = new CloudflareCustomHostnamesClient({
+		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,
+		PACKAGE_APP_ZONE_ID: zoneId,
+		fetcher: mockFetcher(async () => {
+			throw new Error('must not fetch')
+		}),
+	})
+	await expect(
+		client.getCustomHostname({ id: 'hostname-1?x=1' }),
+	).rejects.toThrow(/Custom hostname id is invalid/)
+	await expect(
+		client.deleteCustomHostname({ id: 'hostname-1#frag' }),
+	).rejects.toThrow(/Custom hostname id is invalid/)
+})
+
 test('custom hostname get surfaces Cloudflare API errors', async () => {
 	const client = new CloudflareCustomHostnamesClient({
 		CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN: token,

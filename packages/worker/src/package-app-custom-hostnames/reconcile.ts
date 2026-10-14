@@ -71,6 +71,31 @@ function deletedCloudflareHostnameResult(
 	}
 }
 
+async function readReconcileCursor(db: D1Database): Promise<string> {
+	const row = await db
+		.prepare(
+			`SELECT after_id FROM package_app_custom_hostname_reconcile_cursor
+			 WHERE singleton = 1`,
+		)
+		.first<{ after_id: string }>()
+	return row?.after_id ?? ''
+}
+
+async function writeReconcileCursor(
+	db: D1Database,
+	afterId: string,
+	nowIso: string,
+) {
+	await db
+		.prepare(
+			`UPDATE package_app_custom_hostname_reconcile_cursor
+			 SET after_id = ?, updated_at = ?
+			 WHERE singleton = 1`,
+		)
+		.bind(afterId, nowIso)
+		.run()
+}
+
 export async function reconcilePackageAppCustomHostnames(input: {
 	env: Env
 	now?: Date
@@ -95,17 +120,27 @@ export async function reconcilePackageAppCustomHostnames(input: {
 		return result
 	}
 
-	let afterId = ''
+	const batchSize = input.batchSize ?? defaultBatchSize
+	let afterId = await readReconcileCursor(input.env.APP_DB)
+	let wrappedOnce = false
 	while (Date.now() < deadline) {
 		const batch = await listPackageAppCustomHostnamesForReconcile(
 			input.env.APP_DB,
 			{
-				limit: input.batchSize ?? defaultBatchSize,
+				limit: batchSize,
 				afterId,
 			},
 		)
-		if (batch.length === 0) break
-		afterId = batch[batch.length - 1]!.id
+		if (batch.length === 0) {
+			if (afterId !== '' && !wrappedOnce) {
+				// Tail reached mid-sweep: wrap so later ticks cover early rows.
+				wrappedOnce = true
+				afterId = ''
+				await writeReconcileCursor(input.env.APP_DB, '', nowIso)
+				continue
+			}
+			break
+		}
 
 		for (const row of batch) {
 			if (Date.now() >= deadline) {
@@ -116,6 +151,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			const cfId = row.cloudflareHostnameId?.trim()
 			if (!cfId) {
 				result.skipped += 1
+				afterId = row.id
 				continue
 			}
 			try {
@@ -150,6 +186,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 						row,
 					})
 					result.removed += 1
+					afterId = row.id
 					continue
 				}
 				await input.env.APP_DB.prepare(
@@ -172,6 +209,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 					.run()
 				invalidateCachedPackageAppCustomHostname(input.env.APP_DB, row.hostname)
 				result.updated += 1
+				afterId = row.id
 			} catch (error) {
 				console.error(
 					'package_app_custom_hostnames reconcile failed:',
@@ -179,9 +217,32 @@ export async function reconcilePackageAppCustomHostnames(input: {
 					getErrorMessage(error),
 				)
 				result.errors += 1
+				// Advance past the failing row so one bad hostname cannot stall
+				// the keyset for every subsequent tick.
+				afterId = row.id
 			}
 		}
-		if (batch.length < (input.batchSize ?? defaultBatchSize)) break
+
+		if (result.budgetExhausted) {
+			await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
+			break
+		}
+
+		const reachedTail = batch.length < batchSize
+		if (reachedTail) {
+			// Finished a full pass (or a wrap that ended early): reset so the
+			// next tick starts a fresh sweep from the beginning.
+			afterId = ''
+			await writeReconcileCursor(input.env.APP_DB, '', nowIso)
+			break
+		}
+		await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
 	}
+
+	if (!result.budgetExhausted && Date.now() >= deadline) {
+		result.budgetExhausted = true
+		await writeReconcileCursor(input.env.APP_DB, afterId, nowIso)
+	}
+
 	return result
 }
