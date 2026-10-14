@@ -45,6 +45,8 @@ export type PendingApprovalFilter = {
 	packages?: ReadonlyArray<string>
 }
 
+const itemViewConcurrency = 8
+
 function wants(filter: PendingApprovalFilter, type: ApprovalItemType) {
 	return !filter.types || filter.types.length === 0
 		? true
@@ -73,8 +75,6 @@ async function candidateRefs(
 		const packages = await listSavedPackagesByUserId(env.APP_DB, {
 			userId: request.org.id,
 		})
-		// Each candidate computes a full capability summary, so the scan stays
-		// bounded by the bundle size no matter how large the catalog grows.
 		refs.push(
 			...packages
 				.filter(
@@ -82,8 +82,6 @@ async function candidateRefs(
 						savedPackage.isInternetVisible &&
 						namesPackage(filter.packages, savedPackage),
 				)
-				.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-				.slice(0, approvalBundleMaxItems)
 				.map((savedPackage) => ({
 					type: 'capabilities' as const,
 					packageId: savedPackage.id,
@@ -124,9 +122,18 @@ export async function listPendingApprovalItems(
 	filter: PendingApprovalFilter = {},
 ): Promise<Array<ApprovalItemView>> {
 	const refs = await candidateRefs(viewer, filter)
-	const views = await Promise.all(
-		refs.map((ref) => loadApprovalItemView(viewer, ref)),
-	)
+	// Capability candidates each compute a full capability summary; loading
+	// them a few at a time keeps a large catalog from fanning out at once.
+	const views: Array<ApprovalItemView> = []
+	for (let start = 0; start < refs.length; start += itemViewConcurrency) {
+		views.push(
+			...(await Promise.all(
+				refs
+					.slice(start, start + itemViewConcurrency)
+					.map((ref) => loadApprovalItemView(viewer, ref)),
+			)),
+		)
+	}
 	return views.filter(
 		(item) =>
 			item.status === 'pending' && namesPackage(filter.packages, item.package),
