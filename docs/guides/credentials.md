@@ -22,7 +22,9 @@ and show up together on your org's **Credentials** page.
 One rule holds for every kind: **a credential's value never enters package code
 or your code.** Code names a credential. Kody puts the value into the outgoing
 request at the network boundary, only for the hosts that credential allows, and
-only over HTTPS. Agents, packages, logs, and tool output never see it.
+only over HTTPS. Agents, packages, logs, and tool output never see it. The one
+thing code can get back is a signature from a signing credential: a token
+derived from the key, never the key. Treat it like any other bearer token.
 
 ## The kinds
 
@@ -170,8 +172,10 @@ Declare `kind` only when the package needs a specific shape:
 ### Key
 
 Any saved Key can be used through a client. Set its provider so needs match it,
-and its inject if the service does not take `Authorization: Bearer`
-(`credentialList` returns each credential's `id`):
+and its inject if the service does not take `Authorization: Bearer`. This is
+one-time setup from ad hoc `execute` or the API, not package code (package
+runtimes cannot change a credential's provider or inject). `credentialList`
+returns each credential's `id`:
 
 ```ts
 import { kody } from 'kody:runtime'

@@ -14,19 +14,23 @@ import {
  * in the raw markdown, so a figure only illustrates what the caption says.
  * An unknown id renders as an ordinary blockquote.
  */
-const docDiagrams: Readonly<Record<string, () => RemixNode>> = {
-	'placeholder-fill': renderPlaceholderFillDiagram,
-}
+const docDiagrams: ReadonlyMap<string, () => RemixNode> = new Map([
+	['placeholder-fill', renderPlaceholderFillDiagram],
+])
 
 export function renderDocDiagram(input: {
 	id: string
 	key: number
 	caption: RemixNode
 }): RemixNode | null {
-	const draw = docDiagrams[input.id]
+	const draw = docDiagrams.get(input.id)
 	if (!draw) return null
 	return (
 		<figure key={input.key} data-doc-diagram={input.id} mix={css(figureCss)}>
+			<label mix={css(pauseCss)}>
+				<input type="checkbox" mix={css(pauseInputCss)} />
+				Pause animation
+			</label>
 			{draw()}
 			<figcaption mix={css(captionCss)}>{input.caption}</figcaption>
 		</figure>
@@ -189,7 +193,23 @@ const figureCss = {
 		'48%': { opacity: 1, top: '100%', left: '50%' },
 		'49.5%, 100%': { opacity: 0, top: '100%', left: '50%' },
 	},
-	'&:hover *, &:focus-within *': { animationPlayState: 'paused' },
+	'&:hover *, &:has(input:checked) *': { animationPlayState: 'paused' },
+}
+
+const pauseCss = {
+	display: 'none',
+	justifySelf: 'end',
+	alignItems: 'center',
+	gap: spacing.xs,
+	fontSize: typography.fontSize.xs,
+	color: colors.textMuted,
+	cursor: 'pointer',
+	[motionOk]: { display: 'inline-flex' },
+}
+
+const pauseInputCss = {
+	margin: 0,
+	accentColor: colors.primary,
 }
 
 const stageCss = {
