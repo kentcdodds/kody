@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const migrationFileName = '0140-fix-compound-provider-marks.sql'
+const migrationFileName = '0141-fix-compound-provider-marks.sql'
 
 function applyMigrationsBefore(db: DatabaseSync, fileName: string) {
 	for (const name of readdirSync(migrationsDirectory)
