@@ -72,7 +72,9 @@ function sameSender(
  * The enablement a viewer edits for a trigger: their own for a schedule or
  * subscription, or the webhook's single enabler, which may be someone else.
  * An inbound-email subscription with `sender` matches that sender only, so
- * another sender of the same topic stays a separate enablement.
+ * another sender of the same topic stays a separate enablement. With no
+ * sender, one email row is that rule; several rows are ambiguous and match
+ * nothing, so a caller cannot edit an arbitrary sender's credentials.
  */
 export function viewerEnablement(
 	trigger: DeclaredTrigger,
@@ -82,13 +84,17 @@ export function viewerEnablement(
 	const ownRows = trigger.enablements.filter(
 		(enablement) => String(enablement.enablerUserId) === actorId,
 	)
-	const matchSender =
-		sender &&
-		trigger.kind === 'subscription' &&
-		isInboundEmailApprovalTopic(trigger.name)
-	const own = matchSender
-		? (ownRows.find((enablement) => sameSender(enablement, sender)) ?? null)
-		: (ownRows[0] ?? null)
+	const emailTopic =
+		trigger.kind === 'subscription' && isInboundEmailApprovalTopic(trigger.name)
+	let own: EnablementRecord | null
+	if (emailTopic && sender) {
+		own = ownRows.find((enablement) => sameSender(enablement, sender)) ?? null
+	} else if (emailTopic && ownRows.length !== 1) {
+		// Zero rows, or several sender rules and no sender to choose among them.
+		own = null
+	} else {
+		own = ownRows[0] ?? null
+	}
 	if (own) return { enablement: own, otherEnabler: false }
 	if (trigger.kind === 'webhook' && trigger.enablements[0]) {
 		return { enablement: trigger.enablements[0], otherEnabler: true }
