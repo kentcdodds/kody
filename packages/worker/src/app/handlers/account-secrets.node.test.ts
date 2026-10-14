@@ -15,7 +15,6 @@ import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
 import type * as CredentialFields from '#worker/credentials/credential-fields.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
-
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<
 		typeof authenticatedUserModule.readAuthenticatedAppUser
