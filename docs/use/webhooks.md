@@ -6,14 +6,14 @@ register the credential with `webhookUrlApply` (generic HTTPS, including the
 GitHub Hooks API) or copy the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
-package export as the person who approved the webhook.
+package export as its enabler.
 
 Minting does not turn a webhook on. Mint and rotate return `approval_url` while
-nobody has approved it; a person opens it and clicks Approve, which turns the
-webhook on for them and maps the credentials it uses in the same step. Until
-then deliveries answer **409** `enablement_not_on` with that link. An
-already-approved webhook keeps running; remint or rotate never changes who it
-runs as.
+the endpoint has no enablement that is on or paused; a person opens it and
+clicks Approve, which turns the webhook on for them and maps the credentials it
+uses in the same step. Until then deliveries answer **409** `enablement_not_on`
+with that link. An existing enablement is left alone; remint or rotate never
+changes who the webhook runs as.
 
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
