@@ -37,6 +37,13 @@ export class ReceivePackBodyTooLargeError extends Error {
 	}
 }
 
+export class ReceivePackBodyTimeoutError extends Error {
+	constructor(message = 'receive-pack body read timed out') {
+		super(message)
+		this.name = 'ReceivePackBodyTimeoutError'
+	}
+}
+
 type GateEntry = {
 	running: boolean
 	queue: Array<{
@@ -152,14 +159,41 @@ export function defaultReceivePackSleep(ms: number) {
 export async function readReceivePackBodyWithLimit(
 	body: ReadableStream<Uint8Array> | null,
 	limitBytes = artifactsReceivePackBodyLimitBytes,
+	timeoutMs?: number,
 ): Promise<Uint8Array> {
 	if (!body) return new Uint8Array()
 	const reader = body.getReader()
 	const chunks: Array<Uint8Array> = []
 	let total = 0
+	// Bound the whole read so a stalled upload cannot hold the gate forever.
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const timedOut =
+		timeoutMs === undefined
+			? null
+			: new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() => reject(new ReceivePackBodyTimeoutError()),
+						Math.max(0, timeoutMs),
+					)
+				})
 	try {
 		for (;;) {
-			const { done, value } = await reader.read()
+			let result: ReadableStreamReadResult<Uint8Array>
+			try {
+				result = timedOut
+					? await Promise.race([reader.read(), timedOut])
+					: await reader.read()
+			} catch (error) {
+				if (error instanceof ReceivePackBodyTimeoutError) {
+					try {
+						await reader.cancel()
+					} catch {
+						// ignore cancel failures after a timeout
+					}
+				}
+				throw error
+			}
+			const { done, value } = result
 			if (done) break
 			total += value.byteLength
 			if (total > limitBytes) {
@@ -173,6 +207,7 @@ export async function readReceivePackBodyWithLimit(
 			chunks.push(value)
 		}
 	} finally {
+		if (timer !== undefined) clearTimeout(timer)
 		try {
 			reader.releaseLock()
 		} catch {

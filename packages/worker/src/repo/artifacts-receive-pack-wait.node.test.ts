@@ -4,6 +4,7 @@ import {
 	artifactsReceivePackBusyBackoffMs,
 	computeReceivePackBusyBackoffMs,
 	readReceivePackBodyWithLimit,
+	ReceivePackBodyTimeoutError,
 	ReceivePackBodyTooLargeError,
 	ReceivePackWaitTimeoutError,
 	releaseReceivePackGate,
@@ -171,4 +172,31 @@ test('withReceivePackGate releases after a thrown fn', async () => {
 	await expect(withReceivePackGate(key, 1_000, async () => 'ok')).resolves.toBe(
 		'ok',
 	)
+})
+
+test('readReceivePackBodyWithLimit times out a stalled upload', async () => {
+	const stalled = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(new Uint8Array([1, 2, 3]))
+		},
+	})
+	await expect(
+		readReceivePackBodyWithLimit(stalled, 1024, 20),
+	).rejects.toBeInstanceOf(ReceivePackBodyTimeoutError)
+})
+
+test('waitOutReceivePackBusy does not send after the deadline', async () => {
+	let sends = 0
+	const result = await waitOutReceivePackBusy({
+		deadlineMs: 0,
+		now: () => 1,
+		send: async () => {
+			sends += 1
+			return new Response('ok')
+		},
+		isBusy: () => true,
+		readBusyBody: async () => '',
+	})
+	expect(result.kind).toBe('timeout')
+	expect(sends).toBe(0)
 })

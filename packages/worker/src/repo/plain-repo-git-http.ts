@@ -9,6 +9,7 @@ import {
 	artifactsReceivePackWaitBudgetMs,
 	readReceivePackBodyWithLimit,
 	ReceivePackBodyTooLargeError,
+	ReceivePackBodyTimeoutError,
 	ReceivePackWaitTimeoutError,
 	waitOutReceivePackBusy,
 	withReceivePackGate,
@@ -417,8 +418,21 @@ async function proxyArtifactsReceivePack(input: {
 				// retain a full pack in isolate memory while they wait their turn.
 				let packBody: Uint8Array
 				try {
-					packBody = await readReceivePackBodyWithLimit(input.request.body)
+					packBody = await readReceivePackBodyWithLimit(
+						input.request.body,
+						artifactsReceivePackBodyLimitBytes,
+						Math.max(0, deadlineMs - Date.now()),
+					)
 				} catch (error) {
+					if (error instanceof ReceivePackBodyTimeoutError) {
+						return new Response(error.message, {
+							status: 408,
+							headers: {
+								'Cache-Control': 'no-store',
+								'Content-Type': 'text/plain; charset=utf-8',
+							},
+						})
+					}
 					if (error instanceof ReceivePackBodyTooLargeError) {
 						return new Response(error.message, {
 							status: 413,
