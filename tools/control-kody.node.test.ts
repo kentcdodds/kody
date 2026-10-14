@@ -1074,6 +1074,91 @@ test('control-kody request --email does not reuse another user cookie for the sa
 	}
 })
 
+test('control-kody request --skip-login never sends a stored cookie', async () => {
+	const dir = await mkdtemp(
+		path.join(tmpdir(), 'control-kody-skip-login-anon-'),
+	)
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		const seen: Array<{ url?: string; cookie?: string }> = []
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (url === '/pricing') {
+					seen.push({ url, cookie: request.headers.cookie })
+					response.statusCode = 200
+					response.setHeader('Content-Type', 'text/html')
+					response.end('<html><title>Pricing</title><body>ok</body></html>')
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				await writeFile(
+					cookieFile,
+					formatCookieFile(origin, 'kody_session=jane', 'jane@example.com'),
+				)
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/pricing',
+						'--origin',
+						origin,
+						'--skip-login',
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(seen).toEqual([{ url: '/pricing', cookie: undefined }])
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request keeps form POST redirects manual with Location', async () => {
+	await using temp = await createTempDir()
+	const cookieFile = path.join(temp.dir, 'cookie')
+	await withAuthServer(
+		(request, response) => {
+			if (handleAuth(request, response, 'kody_session=abc')) return
+			if (
+				request.method === 'POST' &&
+				request.url === '/account/organizations/new'
+			) {
+				response.statusCode = 302
+				response.setHeader('Location', '/@x-org')
+				response.end('<html><body>should not follow</body></html>')
+				return
+			}
+			notFound(response)
+		},
+		async (origin) => {
+			const code = await runCommand(
+				requestArgv(
+					'POST',
+					'/account/organizations/new',
+					origin,
+					cookieFile,
+					'302',
+					'--form',
+					'slug=x-org',
+					'--form',
+					'displayName=X',
+					'--contains',
+					'/@x-org',
+				),
+			)
+			expect(code).toBe(0)
+		},
+	)
+})
+
 test('control-kody request --skip-login --email does not reuse another user cookie', async () => {
 	const dir = await mkdtemp(
 		path.join(tmpdir(), 'control-kody-skip-login-email-'),

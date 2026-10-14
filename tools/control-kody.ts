@@ -156,8 +156,11 @@ const usageLines = [
 	'sends ?org= and can approve a team organization. The cached bearer token is',
 	'keyed by that org. Switching --org, or omitting it, remints the token and',
 	'keeps the login cookie.',
-	'--skip-login sends the request without authenticating, even when another',
-	"user's cookie is stored for the same origin.",
+	'--skip-login sends the request with no session cookie (anonymous), even',
+	"when another user's cookie is stored for the same origin. It also skips",
+	'login and refresh.',
+	'HTML responses print a short outcome by default (status, Location, title,',
+	'alerts). Pass --dump or --json for the full body.',
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -859,6 +862,9 @@ export async function requestAsSession(input: {
 		method: input.spec.method,
 		headers,
 		body: requestBody,
+		// Match preview --request: agents need the 302 Location, not the
+		// followed HTML document from a successful form POST.
+		redirect: 'manual',
 	})
 	const ttfbMs = Math.round(performance.now() - startedAt)
 	const responseHeaders: Record<string, string> = {}
@@ -873,19 +879,79 @@ export async function requestAsSession(input: {
 		body = rawBody
 	}
 	const expected = input.spec.expectedStatus
-	const ok = expected === null ? response.ok : response.status === expected
+	const statusOk =
+		expected === null
+			? response.status >= 200 && response.status < 400
+			: response.status === expected
+	const location = responseHeaders.location ?? responseHeaders.Location
+	const detailParts = [
+		statusOk
+			? `HTTP ${response.status}`
+			: `expected ${expected ?? '2xx/3xx'}, got HTTP ${response.status}`,
+		location ? `Location: ${location}` : null,
+	].filter((part): part is string => Boolean(part))
 	return {
-		ok,
+		ok: statusOk,
 		status: response.status,
 		path: input.spec.path,
 		body,
 		rawBody,
 		headers: responseHeaders,
 		ttfbMs,
-		detail: ok
-			? `HTTP ${response.status}`
-			: `expected ${expected ?? '2xx'}, got HTTP ${response.status}`,
+		detail: detailParts.join('\n'),
 	}
+}
+
+/** Short human outcome for HTML responses (avoids dumping the whole page). */
+export function summarizeHtmlResponse(input: {
+	status: number
+	headers: Record<string, string>
+	rawBody: string
+}): string {
+	const location = input.headers.location ?? input.headers.Location
+	const lines = [`HTTP ${input.status}`]
+	if (location) lines.push(`Location: ${location}`)
+	const title = input.rawBody.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+	if (title) {
+		const cleaned = title.replace(/\s+/g, ' ').trim()
+		if (cleaned) lines.push(`title: ${cleaned.slice(0, 120)}`)
+	}
+	const alertMatches = [
+		...input.rawBody.matchAll(/role=["']alert["'][^>]*>([\s\S]*?)<\//gi),
+	]
+	for (const match of alertMatches.slice(0, 3)) {
+		const text = match[1]
+			?.replace(/<[^>]+>/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+		if (text) lines.push(`alert: ${text.slice(0, 160)}`)
+	}
+	const errorQuery = input.rawBody.match(
+		/\b(?:error|errors?)=["']?([^"'&\s<]+)/i,
+	)
+	if (errorQuery?.[1]) lines.push(`error: ${errorQuery[1].slice(0, 80)}`)
+	if (lines.length === 1 && input.rawBody.trim()) {
+		lines.push(
+			`body: ${input.rawBody.replace(/\s+/g, ' ').trim().slice(0, 160)}`,
+		)
+	}
+	return lines.join('\n')
+}
+
+function looksLikeHtml(rawBody: string, headers: Record<string, string>) {
+	const contentType = (
+		headers['content-type'] ??
+		headers['Content-Type'] ??
+		''
+	).toLowerCase()
+	if (contentType.includes('text/html')) return true
+	const trimmed = rawBody.trimStart().slice(0, 32).toLowerCase()
+	return (
+		trimmed.startsWith('<!doctype html') ||
+		trimmed.startsWith('<html') ||
+		trimmed.startsWith('<head') ||
+		trimmed.startsWith('<body')
+	)
 }
 
 export function isGitAncestor(
@@ -1331,11 +1397,10 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const origin = await resolveOrigin(options)
 			const requestedEmail = options.email
-			let cookieHeader = readCookieFile(
-				options.cookieFile,
-				origin,
-				requestedEmail,
-			)
+			// --skip-login means anonymous: never attach a stored session cookie.
+			let cookieHeader = options.skipLogin
+				? null
+				: readCookieFile(options.cookieFile, origin, requestedEmail)
 			const method = options.request.method.toUpperCase()
 			if (
 				!options.skipLogin &&
@@ -1358,6 +1423,7 @@ async function runCommand(options: ControlKodyOptions) {
 					path: options.request.path,
 					rawBody: result.rawBody,
 					method: options.request.method,
+					location: result.headers.location ?? result.headers.Location,
 				})
 			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
@@ -1370,7 +1436,11 @@ async function runCommand(options: ControlKodyOptions) {
 				})
 			}
 			const rawBody = result.rawBody
-			const missing = missingContainsNeedles(rawBody, options.contains)
+			const location = result.headers.location ?? result.headers.Location
+			const containsHaystack = location
+				? `${rawBody}\nLocation: ${location}`
+				: rawBody
+			const missing = missingContainsNeedles(containsHaystack, options.contains)
 			let dumpFile: string | null = null
 			if (options.dump) {
 				await writeDumpFile(options.dumpFile, rawBody)
@@ -1403,8 +1473,20 @@ async function runCommand(options: ControlKodyOptions) {
 						console.log(`${name}: ${result.headers[name]}`)
 					}
 				}
-				if (options.dump || typeof result.body === 'string') {
+				if (options.dump) {
 					console.log(rawBody)
+				} else if (typeof result.body === 'string') {
+					if (looksLikeHtml(rawBody, result.headers)) {
+						console.log(
+							summarizeHtmlResponse({
+								status: result.status,
+								headers: result.headers,
+								rawBody,
+							}),
+						)
+					} else {
+						console.log(rawBody)
+					}
 				} else console.log(JSON.stringify(result.body, null, 2))
 			}
 			return output.ok ? 0 : 1
@@ -1430,6 +1512,13 @@ async function runCommand(options: ControlKodyOptions) {
 		}
 		case 'browse': {
 			const origin = await resolveOrigin(options)
+			const playwright = inspectPlaywrightBrowsers({
+				homeDir: homedir(),
+				browsersJsonPath: defaultPlaywrightBrowsersJsonPath(process.cwd()),
+			})
+			if (!playwright.ok) {
+				throw new ControlKodyError(playwright.detail)
+			}
 			const defaults = credentialsForOrigin(origin)
 			const email = options.email ?? defaults.email
 			let cookieHeader = readCookieFile(options.cookieFile, origin, email)
@@ -1466,6 +1555,7 @@ async function runCommand(options: ControlKodyOptions) {
 					path: '/account',
 					rawBody: probe.rawBody,
 					method: 'GET',
+					location: probe.headers.location ?? probe.headers.Location,
 				})
 			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
