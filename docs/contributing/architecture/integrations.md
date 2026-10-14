@@ -57,9 +57,10 @@ either lane:
   (`packages/worker/src/integrations/provider-from-slug.ts`). Collapse into a
   parent family only when that family is a known provider mark
   (`google-calendar` → `google`); compound products whose first segment is not a
-  mark (`kody-exchange`, `cal-com`) keep the full slug so package credential
-  needs match. Migration `0141-fix-compound-provider-marks.sql` restores
-  truncated rows.
+  mark keep the longest known mark prefix (`kody-exchange-work` →
+  `kody-exchange`) so package credential needs match. Migration
+  `0141-fix-compound-provider-marks.sql` restores truncated user and platform
+  rows, including suffixed account names.
 
 `JoinedIntegration` (`packages/worker/src/integrations/types.ts`) joins a
 connection to the app that owns its client credentials as a discriminated union

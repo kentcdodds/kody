@@ -13,28 +13,51 @@ function applyMigrationsBefore(db: DatabaseSync, fileName: string) {
 	}
 }
 
-test('compound provider mark backfill restores kody-exchange and cal-com without touching google families', () => {
+test('compound provider mark backfill restores platform, suffixed, and user rows without touching google families', () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyMigrationsBefore(sqlite, migrationFileName)
 	sqlite.exec(`
+		INSERT INTO platform_oauth_apps (
+			slug, provider, label, client_id, token_url, authorize_url, flow,
+			enabled, visibility
+		) VALUES
+			('kody-exchange', 'kody', 'Kody Exchange', 'plat-kx',
+				'https://kody.exchange/oauth/token',
+				'https://kody.exchange/oauth/authorize', 'pkce', 1, 'published');
 		INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow)
 		VALUES
 			('user-1', 'kody-exchange', 'kody', 'kx-client',
+				'https://kody.exchange/oauth/token', 'pkce'),
+			('user-1', 'kody-exchange-work', 'kody', 'kx-work',
 				'https://kody.exchange/oauth/token', 'pkce'),
 			('user-1', 'cal-com', 'cal', 'cal-client',
 				'https://api.cal.com/oauth/token', 'confidential'),
 			('user-1', 'google-calendar', 'google', 'google-client',
 				'https://oauth2.googleapis.com/token', 'confidential'),
 			('user-1', 'github-kent', 'github', 'gh-client',
-				'https://github.com/login/oauth/access_token', 'confidential');
+				'https://github.com/login/oauth/access_token', 'confidential'),
+			('user-1', 'orphan-kx', 'kody', 'orphan',
+				'https://kody.exchange/oauth/token', 'pkce');
+		UPDATE user_oauth_apps
+		SET deleted_at = '2026-09-01T00:00:00.000Z'
+		WHERE slug = 'orphan-kx';
 		INSERT INTO user_integrations (
-			user_id, name, app_slug, provider, access_token_encrypted, connected_at
+			user_id, name, app_slug, platform_app_slug, provider,
+			access_token_encrypted, connected_at
 		) VALUES
-			('user-1', 'kody-exchange', 'kody-exchange', 'kody', 'ct', '2026-01-01T00:00:00.000Z'),
-			('user-1', 'cal-com', 'cal-com', 'cal', 'ct', '2026-01-01T00:00:00.000Z'),
-			('user-1', 'google-calendar', 'google-calendar', 'google', 'ct',
+			('user-1', 'kody-exchange', 'kody-exchange', NULL, 'kody', 'ct',
 				'2026-01-01T00:00:00.000Z'),
-			('user-1', 'github-kent', 'github-kent', 'github', 'ct',
+			('user-1', 'kody-exchange-work', 'kody-exchange-work', NULL, 'kody',
+				'ct', '2026-01-01T00:00:00.000Z'),
+			('user-1', 'kx-platform', NULL, 'kody-exchange', 'kody', 'ct',
+				'2026-01-01T00:00:00.000Z'),
+			('user-1', 'cal-com', 'cal-com', NULL, 'cal', 'ct',
+				'2026-01-01T00:00:00.000Z'),
+			('user-1', 'google-calendar', 'google-calendar', NULL, 'google', 'ct',
+				'2026-01-01T00:00:00.000Z'),
+			('user-1', 'github-kent', 'github-kent', NULL, 'github', 'ct',
+				'2026-01-01T00:00:00.000Z'),
+			('user-1', 'orphan-conn', 'orphan-kx', NULL, 'kody', 'ct',
 				'2026-01-01T00:00:00.000Z');
 	`)
 
@@ -44,6 +67,13 @@ test('compound provider mark backfill restores kody-exchange and cal-com without
 
 	expect(
 		sqlite
+			.prepare(
+				`SELECT slug, provider FROM platform_oauth_apps WHERE slug = 'kody-exchange'`,
+			)
+			.get(),
+	).toEqual({ slug: 'kody-exchange', provider: 'kody-exchange' })
+	expect(
+		sqlite
 			.prepare(`SELECT slug, provider FROM user_oauth_apps ORDER BY slug`)
 			.all(),
 	).toEqual([
@@ -51,6 +81,8 @@ test('compound provider mark backfill restores kody-exchange and cal-com without
 		{ slug: 'github-kent', provider: 'github' },
 		{ slug: 'google-calendar', provider: 'google' },
 		{ slug: 'kody-exchange', provider: 'kody-exchange' },
+		{ slug: 'kody-exchange-work', provider: 'kody-exchange' },
+		{ slug: 'orphan-kx', provider: 'kody' },
 	])
 	expect(
 		sqlite
@@ -61,5 +93,8 @@ test('compound provider mark backfill restores kody-exchange and cal-com without
 		{ name: 'github-kent', provider: 'github' },
 		{ name: 'google-calendar', provider: 'google' },
 		{ name: 'kody-exchange', provider: 'kody-exchange' },
+		{ name: 'kody-exchange-work', provider: 'kody-exchange' },
+		{ name: 'kx-platform', provider: 'kody-exchange' },
+		{ name: 'orphan-conn', provider: 'kody' },
 	])
 })
