@@ -374,6 +374,7 @@ export function createCommunityPackageHandler(env: Env) {
 							kodyId: page.kodyId,
 							viewerIsOwner: page.viewerIsOwner,
 							viewerCanManage: page.viewerCanManage,
+							viewerCanManageAccess: page.viewerCanManageAccess,
 							viewerCanPublish: page.viewerCanPublish,
 							viewerCanDelete: page.viewerCanDelete,
 							viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
@@ -452,6 +453,7 @@ export function createCommunityPackageHandler(env: Env) {
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
 						viewerCanManage: page.viewerCanManage,
+						viewerCanManageAccess: page.viewerCanManageAccess,
 						viewerCanPublish: page.viewerCanPublish,
 						viewerCanDelete: page.viewerCanDelete,
 						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
@@ -600,6 +602,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					ownerProfilePublic: page.ownerProfilePublic,
 					viewerIsOwner: page.viewerIsOwner,
 					viewerCanManage: page.viewerCanManage,
+					viewerCanManageAccess: page.viewerCanManageAccess,
 					viewerCanPublish: page.viewerCanPublish,
 					viewerCanDelete: page.viewerCanDelete,
 					viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
@@ -685,6 +688,7 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						kodyId: page.kodyId,
 						viewerIsOwner: true,
 						viewerCanManage: true,
+						viewerCanManageAccess: page.viewerCanManageAccess,
 						viewerCanPublish: page.viewerCanPublish,
 						viewerCanDelete: page.viewerCanDelete,
 						viewerCanAdoptCommunityFork: page.viewerCanAdoptCommunityFork,
@@ -699,14 +703,14 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 }
 
 /**
- * The package Credentials, Default mappings, and Triggers tabs. The page
- * renders without loader data so a package whose source cannot load still
- * shows its chrome; the client fetches the credentials view and reports
- * failures in place.
+ * The package Credentials, Default mappings, Triggers, and Collaborators tabs.
+ * The page renders without loader data so a package whose source cannot load
+ * still shows its chrome; the client fetches the tab's view and reports
+ * failures in place. Collaborators is only for people who manage access.
  */
 export function createCommunityPackageCredentialsHandler(
 	env: Env,
-	tab: PackageCredentialsTab,
+	tab: PackageCredentialsTab | 'collaborators',
 ) {
 	return {
 		middleware: [],
@@ -730,13 +734,21 @@ export function createCommunityPackageCredentialsHandler(
 			if (page.kind === 'unauthorized') {
 				return renderPackageUnauthorizedPage({ request, env })
 			}
-			if (!page.viewerIsOwner || !page.hasPackage || !page.ownerPackage) {
+			const allowed =
+				tab === 'collaborators'
+					? page.viewerCanManageAccess
+					: page.viewerIsOwner
+			if (!allowed || !page.hasPackage || !page.ownerPackage) {
 				return renderPackageNotFoundPage({ request, env })
 			}
+			const label =
+				tab === 'collaborators'
+					? 'Collaborators'
+					: packageCredentialsTabLabel(tab)
 			return renderAppPage({
 				request,
 				env,
-				title: `${page.ownerPackage.name} ${packageCredentialsTabLabel(tab).toLowerCase()}`,
+				title: `${page.ownerPackage.name} ${label.toLowerCase()}`,
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageCredentials>

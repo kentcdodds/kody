@@ -330,6 +330,7 @@ registerPreloadPatterns(
 		routePattern(routes.communityPackageCredentials),
 		routePattern(routes.communityPackageMappings),
 		routePattern(routes.communityPackageTriggers),
+		routePattern(routes.communityPackageCollaborators),
 		routePattern(routes.communityPackageApproveCredentials),
 	],
 	{

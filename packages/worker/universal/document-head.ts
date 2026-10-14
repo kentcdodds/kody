@@ -373,6 +373,18 @@ const routeDocumentHeads = {
 		packageCredentialsHead('mappings'),
 	[routePattern(routes.communityPackageTriggers)]:
 		packageCredentialsHead('triggers'),
+	[routePattern(routes.communityPackageCollaborators)]: ({
+		loaderData,
+		pathname,
+	}) => {
+		const page = loaderData?.packageCollaborators
+		if (page && !page.ok) return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+		if (!page) return titleOnly('Package collaborators')
+		return {
+			title: `${page.shell.name} collaborators`,
+			canonicalPath: pathname,
+		}
+	},
 	[routePattern(routes.communityDetailFiles)]: ({ loaderData, pathname }) => {
 		const files = loaderData?.packageFiles
 		if (!files?.ok) return titleOnly('Package files')

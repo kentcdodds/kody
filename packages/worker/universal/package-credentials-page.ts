@@ -96,6 +96,7 @@ type PackageCredentialsPageShell = {
 	publishedCommit: string | null
 	ownerProfilePublic: boolean
 	viewerCanManage: boolean
+	viewerCanManageAccess: boolean
 }
 
 type PackageCredentialsPageData = {

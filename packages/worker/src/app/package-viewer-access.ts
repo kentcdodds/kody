@@ -132,6 +132,22 @@ export async function viewerCanDeleteSavedPackage(input: {
 	).allowed
 }
 
+/** Whether a signed-in person may change who can use the package (Collaborators). */
+export async function viewerCanManageSavedPackageAccess(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+	packageId: string
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	if (!resolved) return false
+	return checkPermission(
+		resolved.access,
+		'package:manage_access',
+		packageResource({ id: input.packageId, userId: input.ownerId }),
+	).allowed
+}
+
 /** Org owner role on the package's owning org (personal or team). */
 export async function viewerIsSavedPackageOrgOwner(input: {
 	env: Env

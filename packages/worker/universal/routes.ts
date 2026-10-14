@@ -300,6 +300,9 @@ export const routes = route({
 	communityPackageCredentials: '/@:username/:kodyId/credentials',
 	communityPackageMappings: '/@:username/:kodyId/mappings',
 	communityPackageTriggers: '/@:username/:kodyId/triggers',
+	// Package Collaborators tab (people with package:manage_access); data comes
+	// from communityPackageCollaboratorsApi.
+	communityPackageCollaborators: '/@:username/:kodyId/collaborators',
 	// Bundled credential mapping approval; the query is the proposal
 	// (buildCredentialApprovalHref). Data: communityPackageApproveCredentialsApi.
 	communityPackageApproveCredentials: '/@:username/:kodyId/approve-credentials',
@@ -333,6 +336,14 @@ export const routes = route({
 	),
 	// Credential approval page data: GET resolves the proposal in the query,
 	// POST `{ action: 'approve', fingerprint }` applies it. Session-only.
+	// Package Collaborators tab: GET the grants and pending invites, POST one
+	// change (grant, revoke, invite, revoke-invite). Session-only; 404 without
+	// package:read, 403 without package:manage_access.
+	communityPackageCollaboratorsApi:
+		'/profiles/:username/packages/:kodyId/collaborators.json',
+	communityPackageCollaboratorsApiPost: post(
+		'/profiles/:username/packages/:kodyId/collaborators.json',
+	),
 	communityPackageApproveCredentialsApi:
 		'/profiles/:username/packages/:kodyId/approve-credentials.json',
 	communityPackageApproveCredentialsApiPost: post(
