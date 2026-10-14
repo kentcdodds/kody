@@ -255,6 +255,7 @@ test('purge deletes only aged unverified person accounts through full account de
 		env: expect.objectContaining({ APP_DB: h.db }),
 		dbUserId: eligible.id,
 		mcpUserId: eligible.stableUserId,
+		personUserId: eligible.stableUserId,
 	})
 	expect(h.usernames()).toEqual([
 		'fenced-unverified',

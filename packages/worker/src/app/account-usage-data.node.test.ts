@@ -53,6 +53,8 @@ function createUsageTestDb(
 							second_agent_standard_gift_expires_at:
 								input.giftExpiresAt ?? null,
 							stable_user_id: stableUserId,
+							personal_org_id: stableUserId,
+							org_id: stableUserId,
 							username: 'usage-user',
 							stripe_customer_id: input.stripeCustomerId ?? null,
 						} as T

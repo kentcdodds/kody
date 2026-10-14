@@ -34,6 +34,7 @@ export type ReferralRewardOutcome =
 
 type ReferralParty = {
 	stable_user_id: string
+	org_id: string
 	username: string
 	email: string
 	email_verified_at: string | null
@@ -194,7 +195,9 @@ async function loadParty(
 ): Promise<ReferralParty | null> {
 	return db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
+			`SELECT u.stable_user_id,
+			        COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id) AS org_id,
+			        u.username, u.email, u.email_verified_at,
 			        o.stripe_customer_id,
 			        o.referral_standard_credit_expires_at
 			 FROM users u
@@ -247,7 +250,7 @@ async function markRejected(
 
 function stackReferralCreditStatement(input: {
 	db: D1Database
-	stableUserId: string
+	orgId: string
 	paidPeriodEndAt: string | null
 	referralId: number
 	invoiceId: string
@@ -280,7 +283,7 @@ function stackReferralCreditStatement(input: {
 			input.paidPeriodEndAt ?? '1970-01-01T00:00:00.000Z',
 			referralStandardCreditDurationMs / 1000,
 			utcSqliteTimestamp(input.now),
-			input.stableUserId,
+			input.orgId,
 			input.referralId,
 			input.invoiceId,
 		)
@@ -364,7 +367,7 @@ export async function rewardReferralForPaidInvoice(input: {
 			.bind(rewardedAt, invoiceId, pending.id),
 		stackReferralCreditStatement({
 			db: input.db,
-			stableUserId: referrer.stable_user_id,
+			orgId: referrer.org_id,
 			paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
 			referralId: pending.id,
 			invoiceId,
@@ -372,7 +375,7 @@ export async function rewardReferralForPaidInvoice(input: {
 		}),
 		stackReferralCreditStatement({
 			db: input.db,
-			stableUserId: referee.stable_user_id,
+			orgId: referee.org_id,
 			paidPeriodEndAt: input.paidPeriodEndAt ?? null,
 			referralId: pending.id,
 			invoiceId,

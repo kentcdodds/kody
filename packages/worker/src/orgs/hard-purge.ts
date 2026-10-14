@@ -102,6 +102,8 @@ export async function hardPurgeSoftDeletedUser(input: {
 	const storageOwnerId = personalOrgRow
 		? personalOrgIdFromUserRow(personalOrgRow)
 		: input.stableUserId
+	const personUserId =
+		personalOrgRow?.stable_user_id?.trim() || input.stableUserId
 	await redactOrgAuditActorIdsForDeletedUser({
 		env: input.env,
 		userId: input.stableUserId,
@@ -110,6 +112,7 @@ export async function hardPurgeSoftDeletedUser(input: {
 		env: input.env,
 		dbUserId: input.dbUserId,
 		mcpUserId: storageOwnerId,
+		personUserId,
 		purgeSoftDeleted: true,
 	})
 	await logOrgAuditEvent({

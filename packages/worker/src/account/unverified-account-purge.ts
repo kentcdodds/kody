@@ -386,6 +386,7 @@ export async function pruneUnverifiedAccounts(input: {
 					personal_org_id: account.personal_org_id,
 					stable_user_id: account.stable_user_id,
 				}),
+				personUserId: account.stable_user_id,
 			})
 			try {
 				await logAuditEvent({

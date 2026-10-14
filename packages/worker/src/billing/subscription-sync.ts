@@ -90,7 +90,7 @@ export async function refreshStripePlanForUser(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT u.email, u.stable_user_id, o.stripe_price_id,
+		`SELECT u.email, u.stable_user_id, o.id AS org_id, o.stripe_price_id,
 		        ${userEntitlementColumnsSql('o')}
 		 FROM users u
 		 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
@@ -101,6 +101,7 @@ export async function refreshStripePlanForUser(input: {
 			UserEntitlementRow & {
 				email: string
 				stable_user_id: OwnerId
+				org_id: OwnerId
 				stripe_price_id: string | null
 			}
 		>()
@@ -119,7 +120,7 @@ export async function refreshStripePlanForUser(input: {
 	if (previous) {
 		await forgiveCreditUsageBeforeUnlock({
 			db: input.env.APP_DB,
-			userId: previous.stable_user_id,
+			userId: previous.org_id,
 			current: previous,
 			next: {
 				...previous,
@@ -130,16 +131,16 @@ export async function refreshStripePlanForUser(input: {
 			now,
 		})
 	}
-	if (!previous?.stable_user_id) {
+	if (!previous?.org_id) {
 		throw new Error(
-			`Cannot refresh Stripe plan: missing stable_user_id for user ${input.userId}.`,
+			`Cannot refresh Stripe plan: missing personal org for user ${input.userId}.`,
 		)
 	}
 	const stripePlanRefreshedAt = now.toISOString()
 	const stripeCreditsEligible = resolved.creditsEligible ? 1 : 0
 	await updateOrgBillingColumns({
 		db: input.env.APP_DB,
-		orgId: previous.stable_user_id,
+		orgId: previous.org_id,
 		setClause: `stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
 		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?, updated_at = ?`,
 		values: [
@@ -160,7 +161,7 @@ export async function refreshStripePlanForUser(input: {
 			stripePlan: resolved.stripePlan,
 		}),
 	)
-	const orgId = previous?.stable_user_id
+	const orgId = previous.org_id
 	if (orgId) {
 		const previousPlan = parseStripePlanName(previous.stripe_plan)
 		const nextPlan = resolved.stripePlan
@@ -267,9 +268,10 @@ export async function resolveBillingUserForCheckoutLink(input: {
 		null
 	if (stableUserIdHint) {
 		const row = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT id, email, stable_user_id FROM users
+			 WHERE (stable_user_id = ? OR personal_org_id = ?)${andLiveDeletedAtSql()}`,
 		)
-			.bind(stableUserIdHint)
+			.bind(stableUserIdHint, stableUserIdHint)
 			.first<{ id: number; email: string; stable_user_id: OwnerId }>()
 		await pushCandidate(
 			row
@@ -287,9 +289,9 @@ export async function resolveBillingUserForCheckoutLink(input: {
 		const orgRow = await input.env.APP_DB.prepare(
 			`SELECT o.id AS org_id, u.id, u.email, u.stable_user_id
 			 FROM orgs o
-			 INNER JOIN users u ON u.stable_user_id = o.id
+			 INNER JOIN users u ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 			 WHERE o.stripe_customer_id = ?
-			   AND o.deleted_at IS NULL`,
+			   AND o.deleted_at IS NULL${andLiveDeletedAtSql('u')}`,
 		)
 			.bind(customerId)
 			.first<{
@@ -329,10 +331,14 @@ export async function resolveBillingUserForCheckoutLink(input: {
 	}
 
 	for (const candidate of candidates) {
-		const expected = await createBillingLinkReference(
-			input.env,
-			candidate.stableUserId,
+		const personalOrg = await input.env.APP_DB.prepare(
+			`SELECT COALESCE(NULLIF(TRIM(personal_org_id), ''), stable_user_id) AS org_id
+			 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
+			.bind(candidate.id)
+			.first<{ org_id: OwnerId }>()
+		const linkOwnerId = personalOrg?.org_id ?? candidate.stableUserId
+		const expected = await createBillingLinkReference(input.env, linkOwnerId)
 		if (expected === clientReferenceId) {
 			return candidate
 		}
@@ -349,9 +355,9 @@ export async function findUserIdByStripeCustomerId(input: {
 	const orgRow = await input.env.APP_DB.prepare(
 		`SELECT u.id
 		 FROM orgs o
-		 INNER JOIN users u ON u.stable_user_id = o.id
+		 INNER JOIN users u ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 		 WHERE o.stripe_customer_id = ?
-		   AND o.deleted_at IS NULL`,
+		   AND o.deleted_at IS NULL${andLiveDeletedAtSql('u')}`,
 	)
 		.bind(customerId)
 		.first<{ id: number }>()
@@ -421,13 +427,14 @@ export async function resolveOrgIdForCheckoutLink(input: {
 	const customerEmail = input.customerEmail?.trim()
 	if (customerEmail) {
 		const row = await input.env.APP_DB.prepare(
-			`SELECT stable_user_id FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
+			`SELECT COALESCE(NULLIF(TRIM(personal_org_id), ''), stable_user_id) AS org_id
+			 FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(normalizeEmail(customerEmail))
-			.first<{ stable_user_id: OwnerId }>()
-		// Personal org id equals the owner's stable user id. Never treat email
-		// as a team-org resolver.
-		pushCandidate(row?.stable_user_id)
+			.first<{ org_id: OwnerId }>()
+		// Personal org id from the account email. Never treat email as a
+		// team-org resolver.
+		pushCandidate(row?.org_id)
 	}
 
 	for (const orgId of candidates) {
@@ -439,13 +446,16 @@ export async function resolveOrgIdForCheckoutLink(input: {
 			.bind(orgId)
 			.first<{ id: OwnerId }>()
 		if (org?.id) return org.id
-		// Personal org before/without an orgs row: stable user id is the org id.
+		// Personal org before/without an orgs row, or hint was the person id.
 		const user = await input.env.APP_DB.prepare(
-			`SELECT stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT COALESCE(NULLIF(TRIM(personal_org_id), ''), stable_user_id) AS org_id
+			 FROM users
+			 WHERE (stable_user_id = ? OR personal_org_id = ?)
+			   ${andLiveDeletedAtSql()}`,
 		)
-			.bind(orgId)
-			.first<{ stable_user_id: OwnerId }>()
-		if (user?.stable_user_id) return user.stable_user_id
+			.bind(orgId, orgId)
+			.first<{ org_id: OwnerId }>()
+		if (user?.org_id) return user.org_id
 	}
 	return null
 }

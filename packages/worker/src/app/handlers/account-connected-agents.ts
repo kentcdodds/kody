@@ -63,6 +63,7 @@ function connectedAgentsScope(user: ConnectedAgentsUser) {
 	return {
 		personId,
 		orgId,
+		personalOrgOwnerId,
 		personalOrg: orgId === personalOrgOwnerId,
 	}
 }
@@ -72,7 +73,8 @@ export async function loadAccountConnectedAgentsData(input: {
 	requestUrl: string | URL
 	user: ConnectedAgentsUser
 }): Promise<AccountConnectedAgentsLoaderData> {
-	const { personId, orgId, personalOrg } = connectedAgentsScope(input.user)
+	const { personId, orgId, personalOrg, personalOrgOwnerId } =
+		connectedAgentsScope(input.user)
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
 	const state = await loadInboundMcpConnectionState(helpers, personId, {
 		env: input.env,
@@ -85,7 +87,7 @@ export async function loadAccountConnectedAgentsData(input: {
 	) {
 		await maybeEvaluateSecondAgentStandardGift({
 			db: input.env.APP_DB,
-			stableUserId: personId,
+			stableUserId: personalOrgOwnerId,
 			ecosystemCount: countConnectedAgentEcosystems(state.agents),
 			listingFailed: state.listingFailed,
 		})

@@ -7,7 +7,10 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -576,17 +579,29 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	env: UserMeterEnv
 	stableUserId: OwnerId
 }) {
+	// Lease / meter keys are OwnerIds (personal org id). Resolve the person by
+	// stable_user_id or personal_org_id so distinct signup orgs restore the fence.
 	const row = await input.db
 		.prepare(
-			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT deleting_at, personal_org_id, stable_user_id
+			 FROM users
+			 WHERE (stable_user_id = ? OR personal_org_id = ?)
+			   ${andLiveDeletedAtSql()}`,
 		)
-		.bind(input.stableUserId)
-		.first<{ deleting_at: string | null }>()
+		.bind(input.stableUserId, input.stableUserId)
+		.first<{
+			deleting_at: string | null
+			personal_org_id: string | null
+			stable_user_id: string
+		}>()
 	const deletingAt = row?.deleting_at
 	if (deletingAt) {
+		const meterOwnerId = ownerIdFromStored(
+			row.personal_org_id?.trim() || row.stable_user_id,
+		)
 		await runUserMeterRpc({
 			env: input.env,
-			stableUserId: input.stableUserId,
+			stableUserId: meterOwnerId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
 		throw new AccountDeletionInProgressError()

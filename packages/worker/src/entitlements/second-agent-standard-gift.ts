@@ -13,6 +13,28 @@ import {
 	type SecondAgentStandardGiftState,
 } from '#universal/second-agent-standard-gift.ts'
 import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { personalOrgIdSql } from '#worker/orgs/personal-org-sql.ts'
+
+/**
+ * Resolve the personal org id for a gift caller that may pass either the
+ * person id or the personal org id (legacy equal-id and distinct signup).
+ */
+async function resolvePersonalOrgIdForGift(
+	db: D1Database,
+	stableUserId: string,
+): Promise<string | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${personalOrgIdSql} AS org_id
+			 FROM users u
+			 WHERE (u.stable_user_id = ? OR u.personal_org_id = ?)
+			   ${andLiveDeletedAtSql('u')}`,
+		)
+		.bind(stableUserId, stableUserId)
+		.first<{ org_id: string }>()
+	return row?.org_id?.trim() || null
+}
 
 export type SecondAgentStandardGiftEvaluation =
 	| { outcome: 'below_threshold' }
@@ -74,6 +96,8 @@ export async function loadSecondAgentStandardGift(
 	stableUserId: string,
 	now: Date = new Date(),
 ): Promise<SecondAgentStandardGiftState> {
+	const orgId = await resolvePersonalOrgIdForGift(db, stableUserId)
+	if (!orgId) return describeSecondAgentStandardGift({ now })
 	const row = await db
 		.prepare(
 			`SELECT second_agent_standard_gift_granted_at,
@@ -81,7 +105,7 @@ export async function loadSecondAgentStandardGift(
 			 FROM orgs
 			 WHERE id = ? AND deleted_at IS NULL`,
 		)
-		.bind(stableUserId)
+		.bind(orgId)
 		.first<{
 			second_agent_standard_gift_granted_at: string | null
 			second_agent_standard_gift_expires_at: string | null
@@ -108,6 +132,8 @@ export async function evaluateSecondAgentStandardGift(input: {
 		return { outcome: 'below_threshold' }
 	}
 	const now = input.now ?? new Date()
+	const orgId = await resolvePersonalOrgIdForGift(input.db, input.stableUserId)
+	if (!orgId) return { outcome: 'no_user' }
 	const row = await input.db
 		.prepare(
 			`SELECT plan, stripe_plan,
@@ -116,7 +142,7 @@ export async function evaluateSecondAgentStandardGift(input: {
 			 FROM orgs
 			 WHERE id = ? AND deleted_at IS NULL`,
 		)
-		.bind(input.stableUserId)
+		.bind(orgId)
 		.first<GiftUserRow>()
 	if (!row) return { outcome: 'no_user' }
 
@@ -140,7 +166,7 @@ export async function evaluateSecondAgentStandardGift(input: {
 	const updatedAt = utcSqliteTimestamp(now)
 	const updated = await updateOrgBillingColumns({
 		db: input.db,
-		orgId: input.stableUserId,
+		orgId,
 		setClause: `second_agent_standard_gift_granted_at = ?,
 				     second_agent_standard_gift_expires_at = ?,
 				     updated_at = ?`,

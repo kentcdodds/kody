@@ -1459,6 +1459,8 @@ async function deleteUserScopedRowsAndUser(input: {
 	env: Env
 	mcpUserId: OwnerId
 	dbUserId: number
+	/** Person id when it may differ from the personal org / storage owner. */
+	personUserId?: string
 	/** When true, delete a soft-deleted users row (purge lane). */
 	allowSoftDeletedUser?: boolean
 }): Promise<{
@@ -1480,6 +1482,7 @@ async function deleteUserScopedRowsAndUser(input: {
 			target,
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
+			personUserId: input.personUserId,
 		})
 		const { sql, params } = buildUserScopedDeleteOrUpdateSql(match)
 		return {
@@ -1751,7 +1754,17 @@ export async function purgeOwnerOutOfBandSurfaces(input: {
 export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
 	dbUserId: number
+	/**
+	 * Storage / personal org OwnerId. Out-of-band surfaces (KV, DO, R2,
+	 * Vectorize, packages) and org-keyed D1 rows use this id.
+	 */
 	mcpUserId: OwnerId
+	/**
+	 * Person id when it may differ from {@link mcpUserId}. Person-keyed D1
+	 * rows (tokens, referrals, …) match either id so distinct personal orgs
+	 * do not leave person records behind. Defaults to mcpUserId.
+	 */
+	personUserId?: string
 	/**
 	 * Purge lane: the account is already soft-deleted and claimed via
 	 * `deleting_at`. Skip the live deletion fence and remove the tombstoned
@@ -1759,6 +1772,7 @@ export async function deleteUserAccount(input: {
 	 */
 	purgeSoftDeleted?: boolean
 }): Promise<AccountDeletionResult> {
+	const personUserId = input.personUserId ?? input.mcpUserId
 	const purgeSoftDeleted = input.purgeSoftDeleted === true
 	let marked: {
 		leaseCount: number
@@ -2151,6 +2165,7 @@ export async function deleteUserAccount(input: {
 			env: input.env,
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
+			personUserId,
 			allowSoftDeletedUser: purgeSoftDeleted,
 		})
 		result.deletedRowCounts = {

@@ -32,6 +32,8 @@ import { orgBillingPath } from '#universal/org-pages.ts'
 type PersonalUsageRow = UserEntitlementRow & {
 	id: number
 	stable_user_id: string
+	personal_org_id: string | null
+	org_id: string
 	username: string
 	stripe_customer_id: string | null
 }
@@ -54,7 +56,8 @@ async function readPersonalUsageOrg(
 	userId: number,
 ): Promise<ResolvedUsageOrg | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT u.id, u.stable_user_id, u.username, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
+		`SELECT u.id, u.stable_user_id, u.personal_org_id, o.id AS org_id,
+		        u.username, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
 		 FROM users u
 		 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
 		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
@@ -62,8 +65,13 @@ async function readPersonalUsageOrg(
 		.bind(userId)
 		.first<PersonalUsageRow>()
 	if (!row) return null
+	const orgId =
+		row.org_id?.trim() ||
+		row.personal_org_id?.trim() ||
+		row.stable_user_id.trim()
 	return {
-		usageUserId: ownerIdFromStored(row.stable_user_id),
+		// Usage / wallets / welcome credits are owner-keyed (personal org id).
+		usageUserId: ownerIdFromStored(orgId),
 		username: row.username,
 		stripeCustomerId: row.stripe_customer_id?.trim() || null,
 		row,

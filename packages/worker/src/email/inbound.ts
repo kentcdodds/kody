@@ -84,6 +84,8 @@ type InboundMailboxAccountRow = {
 async function loadInboundMailboxAccount(db: D1Database, ownerId: OwnerId) {
 	const personal = await isPersonalOrg(db, ownerId)
 	if (personal) {
+		// ownerId is the personal org id (mailbox owner). Match via
+		// personal_org_id or legacy equal-id stable_user_id.
 		const row = await db
 			.prepare(
 				`SELECT u.email AS email, o.plan AS plan, o.stripe_plan AS stripe_plan,
@@ -94,9 +96,12 @@ async function loadInboundMailboxAccount(db: D1Database, ownerId: OwnerId) {
 				        u.suspended_at AS suspended_at
 				 FROM users u
 				 LEFT JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
-				 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
+				 WHERE (
+				 	(u.personal_org_id IS NOT NULL AND TRIM(u.personal_org_id) != '' AND u.personal_org_id = ?)
+				 	OR ((u.personal_org_id IS NULL OR TRIM(u.personal_org_id) = '') AND u.stable_user_id = ?)
+				 )${andLiveDeletedAtSql('u')}`,
 			)
-			.bind(ownerId)
+			.bind(ownerId, ownerId)
 			.first<InboundMailboxAccountRow>()
 		return { personal: true as const, row }
 	}
