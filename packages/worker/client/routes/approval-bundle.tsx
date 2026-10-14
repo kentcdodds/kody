@@ -526,8 +526,9 @@ export function ApprovalBundleRoute(handle: Handle) {
 						<span mix={css(pageEyebrowCss)}>Review approvals</span>
 						<h1 mix={css(pageTitleCss)}>This link expired</h1>
 						<p mix={css(pageDescriptionCss)}>
-							Approval links stop working after 30 days. Ask your agent for a
-							new one; nothing here was approved.
+							Approval links stop working after 30 days. Anything you already
+							approved or denied from this link stays in effect. Ask your agent
+							for a new link to review whatever still waits.
 						</p>
 					</header>
 				</section>
