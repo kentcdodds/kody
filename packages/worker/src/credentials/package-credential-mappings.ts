@@ -14,8 +14,11 @@ import {
 import { type EnablementRecord } from '#worker/enablements/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
+	fetchCapableCredentialKinds,
+	isInboundEmailApprovalTopic,
 	type CredentialKind,
 	type CredentialListItem,
+	type CredentialProposalSender,
 	type CredentialRef,
 	type EffectiveCredentialMapping,
 	type PackageCredentialNeedView,
@@ -23,7 +26,6 @@ import {
 	type PackageCredentialsView,
 	type PackageTriggerView,
 	type StoredCredentialMapping,
-	fetchCapableCredentialKinds,
 } from '#universal/credential-contracts.ts'
 import {
 	listUsableCredentials,
@@ -56,17 +58,37 @@ export type PackageMappingScope = {
 	usernames: Map<string, string>
 }
 
+function sameSender(
+	enablement: EnablementRecord,
+	sender: CredentialProposalSender,
+) {
+	return (
+		enablement.senderKind === sender.kind &&
+		(enablement.senderValue ?? null) === (sender.value ?? null)
+	)
+}
+
 /**
  * The enablement a viewer edits for a trigger: their own for a schedule or
  * subscription, or the webhook's single enabler, which may be someone else.
+ * An inbound-email subscription with `sender` matches that sender only, so
+ * another sender of the same topic stays a separate enablement.
  */
 export function viewerEnablement(
 	trigger: DeclaredTrigger,
 	actorId: string,
+	sender?: CredentialProposalSender | null,
 ): { enablement: EnablementRecord | null; otherEnabler: boolean } {
-	const own = trigger.enablements.find(
+	const ownRows = trigger.enablements.filter(
 		(enablement) => String(enablement.enablerUserId) === actorId,
 	)
+	const matchSender =
+		sender &&
+		trigger.kind === 'subscription' &&
+		isInboundEmailApprovalTopic(trigger.name)
+	const own = matchSender
+		? (ownRows.find((enablement) => sameSender(enablement, sender)) ?? null)
+		: (ownRows[0] ?? null)
 	if (own) return { enablement: own, otherEnabler: false }
 	if (trigger.kind === 'webhook' && trigger.enablements[0]) {
 		return { enablement: trigger.enablements[0], otherEnabler: true }

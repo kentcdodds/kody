@@ -44,12 +44,13 @@ import {
 	accountEmailRouteLoader,
 	buildEmailApiRequestUrl,
 	fetchAccountEmailDestinations,
-	clampedCellCss,
 	directionLabel,
 	emailRoute,
 	getDataKey,
 	messageDate,
 	quarantinedBadgeCss,
+	senderBadgeCss,
+	senderClassificationLabel,
 	readClassificationFilter,
 	readPage,
 	readSearchQuery,
@@ -89,9 +90,11 @@ export function AccountEmailRoute(handle: Handle) {
 				orgAccountApiFetchInit(href, signal),
 			)
 			if (response.status === 401) return routeDataRedirect('/login')
-			const payload = await readJson<AccountEmailLoaderData>(response)
+			const payload = await readJson<
+				AccountEmailLoaderData & { error?: string }
+			>(response)
 			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your email inbox.')
+				throw new Error(payload?.error || 'Unable to load your email inbox.')
 			}
 			return payload
 		},
@@ -493,10 +496,27 @@ export function AccountEmailRoute(handle: Handle) {
 										</span>
 									),
 									from: (
-										<span mix={css(clampedCellCss)}>
-											{emailMessage.from_address ??
-												emailMessage.envelope_from ??
-												'Unknown sender'}
+										<span mix={css(subjectCellCss)}>
+											<span mix={css(truncatedTextCss)}>
+												{emailMessage.from_address ??
+													emailMessage.envelope_from ??
+													'Unknown sender'}
+											</span>
+											{senderClassificationLabel(
+												emailMessage.sender_classification,
+											) ? (
+												<span
+													title={
+														emailMessage.sender_classification_reason ??
+														undefined
+													}
+													mix={css(senderBadgeCss)}
+												>
+													{senderClassificationLabel(
+														emailMessage.sender_classification,
+													)}
+												</span>
+											) : null}
 										</span>
 									),
 									direction: directionLabel(emailMessage.direction),

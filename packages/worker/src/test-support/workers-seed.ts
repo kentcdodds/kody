@@ -222,6 +222,10 @@ export async function enableSubscriptionForOwner(input: {
 			instanceId: input.packageId,
 			enablerUserId: input.userId,
 			origin: 'enabled',
+			...(input.topic === 'email.message.received' ||
+			input.topic === 'email.message.quarantined'
+				? { senderKind: 'any_authenticated' as const }
+				: {}),
 		},
 	})
 }

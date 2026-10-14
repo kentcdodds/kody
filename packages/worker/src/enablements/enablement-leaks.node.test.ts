@@ -416,8 +416,26 @@ async function setup() {
 		person: Person,
 		kind: 'subscription' | 'cron' | 'webhook',
 		name: string,
-	) =>
-		await enableTriggerForCaller({
+	) => {
+		// Email subscriptions are not turned on by enablementEnable. These tests
+		// insert the member sender rule the enabler would approve.
+		if (kind === 'subscription' && name === emailTopic) {
+			return insertEnablement({
+				db,
+				enablement: {
+					orgId,
+					packageId: 'pkg-shared',
+					triggerKind: 'subscription',
+					triggerName: name,
+					instanceId: 'pkg-shared',
+					enablerUserId: people[person].userId,
+					origin: 'enabled',
+					senderKind: 'member',
+					senderValue: people[person].userId,
+				},
+			})
+		}
+		return enableTriggerForCaller({
 			env,
 			baseUrl: 'https://kody.example',
 			request: await sessionFor(person),
@@ -425,6 +443,7 @@ async function setup() {
 			kind,
 			name,
 		})
+	}
 
 	const enableWebhook = async (person: Person, endpointId: string) =>
 		await insertEnablement({
@@ -1144,7 +1163,7 @@ test("webhook- and run-raised events reach only that run's enabler's subscriptio
 	)
 })
 
-test("member email runs only the sender's enablement; other mail runs only the inbox owner's", async () => {
+test("member email runs only that member's rule; unmatched mail runs nothing", async () => {
 	const t = await setup()
 	const owners = await t.enable('owner', 'subscription', emailTopic)
 	const cys = await t.enable('cy', 'subscription', emailTopic)
@@ -1156,16 +1175,28 @@ test("member email runs only the sender's enablement; other mail runs only the i
 
 	t.runs.splice(0)
 	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
-	expect(t.runs.map((run) => run.request?.credential.id)).toEqual([owners.id])
-	expect(t.runs[0]?.request).toMatchObject({
-		actor: { userId: t.people.owner.userId },
-		membership: { role: 'owner' },
-	})
+	expect(t.runs).toEqual([])
 
 	// Bea has no enablement, so her mail runs nothing, not Cy's or Owner's.
 	t.runs.splice(0)
 	await t.sendEmail('bea@acme.example')
 	expect(t.runs).toEqual([])
+
+	await t.db
+		.prepare(
+			`UPDATE enablements
+			 SET sender_kind = 'any_authenticated', sender_value = NULL
+			 WHERE id = ?`,
+		)
+		.bind(owners.id)
+		.run()
+	t.runs.splice(0)
+	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
+	expect(t.runs.map((run) => run.request?.credential.id)).toEqual([owners.id])
+	expect(t.runs[0]?.request).toMatchObject({
+		actor: { userId: t.people.owner.userId },
+		membership: { role: 'owner' },
+	})
 })
 
 test('turning a trigger on again keeps one enablement per person', async () => {
@@ -1275,6 +1306,49 @@ test('enablementEnable refuses a webhook with no enablement and points at Approv
 	expect(await webhookEnablements()).toBe(1)
 })
 
+test('enablementEnable refuses inbound email and points at Approve', async () => {
+	const t = await setup()
+	const count = async () =>
+		(
+			await t.db
+				.prepare(`SELECT COUNT(*) AS n FROM enablements`)
+				.first<{ n: number }>()
+		)?.n
+	const before = await count()
+	const request = deriveRequestContext({
+		user: t.people.bea,
+		source: { kind: 'session' },
+		orgBinding: {
+			org: { id: t.orgId, slug: 'quillworks' },
+			role: 'member',
+		},
+	})
+	const refuse = (name: string) =>
+		enableTriggerForCaller({
+			env: t.env,
+			baseUrl: 'https://kody.example',
+			request,
+			packageIdOrKodyId: 'pkg-shared',
+			kind: 'subscription',
+			name,
+		}).then(
+			() => null,
+			(error: unknown) => error,
+		)
+	const direct = await refuse(emailTopic)
+	expect(direct).toBeInstanceOf(TriggerEnablementError)
+	expect(direct).toMatchObject({ code: 'email_approval_required' })
+	expect((direct as Error).message).toContain(
+		'https://kody.example/@quillworks/pkg-shared/approve-credentials?enable=subscription%3Aemail.message.received',
+	)
+	expect((direct as Error).message).toContain('sender_kind')
+	expect((direct as Error).message).toContain('enablementEnable cannot')
+	expect(await refuse('email.message.quarantined')).toMatchObject({
+		code: 'email_approval_required',
+	})
+	expect(await count()).toBe(before)
+})
+
 test('enablementEnable still turns a cron job and a subscription on', async () => {
 	const t = await setup()
 	expect(await t.enable('bea', 'cron', jobName)).toMatchObject({
@@ -1363,8 +1437,9 @@ test('an org-wide event reaches an enabler holding any permission on its resourc
 	).toEqual([t.people.owner.userId, t.people.bea.userId].map(String).sort())
 })
 
-test('mail from a non-member skips a suspended Owner for the next live one', async () => {
+test('mail from a non-member does not fall back to the next live Owner', async () => {
 	const t = await setup()
+	await t.enable('owner', 'subscription', emailTopic)
 	const deeId = await t.insertAccount({
 		email: 'dee@acme.example',
 		username: 'dee',
@@ -1376,7 +1451,7 @@ test('mail from a non-member skips a suspended Owner for the next live one', asy
 		)
 		.bind(t.orgId, deeId, '2026-10-12T00:00:00.000Z')
 		.run()
-	const dees = await insertEnablement({
+	await insertEnablement({
 		db: t.db,
 		enablement: {
 			orgId: t.orgId,
@@ -1386,6 +1461,8 @@ test('mail from a non-member skips a suspended Owner for the next live one', asy
 			instanceId: 'pkg-shared',
 			enablerUserId: deeId,
 			origin: 'enabled',
+			senderKind: 'member',
+			senderValue: deeId,
 		},
 	})
 	await t.db
@@ -1394,15 +1471,13 @@ test('mail from a non-member skips a suspended Owner for the next live one', asy
 		.run()
 
 	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
-
-	expect(t.runs.map((run) => run.request?.credential.id)).toEqual([dees.id])
-	expect(t.runs[0]?.request?.actor?.userId).toBe(deeId)
+	expect(t.runs).toEqual([])
 })
 
 test("a run as a member reads org mail only with that member's email:read", async () => {
 	const t = await setup()
 	await t.enable('bea', 'subscription', emailTopic)
-	await t.enable('owner', 'subscription', emailTopic)
+	const owners = await t.enable('owner', 'subscription', emailTopic)
 
 	await t.sendEmail('bea@acme.example')
 	const beasRun = t.runs[0]
@@ -1420,6 +1495,14 @@ test("a run as a member reads org mail only with that member's email:read", asyn
 		permission: 'email:read',
 	})
 
+	await t.db
+		.prepare(
+			`UPDATE enablements
+			 SET sender_kind = 'any_authenticated', sender_value = NULL
+			 WHERE id = ?`,
+		)
+		.bind(owners.id)
+		.run()
 	t.runs.splice(0)
 	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
 	const ownersRun = t.runs[0]

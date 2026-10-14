@@ -2625,6 +2625,19 @@ type AccountEmailInbox = {
 	updated_at: string
 }
 
+export type AccountEmailSenderClassification =
+	| 'member'
+	| 'authenticated'
+	| 'unverified'
+
+export type AccountEmailEnableSender = {
+	sender: { kind: 'member' | 'address'; value: string }
+	topic: 'email.message.received' | 'email.message.quarantined'
+	org_slug: string
+	packages_href: string
+	packages: Array<{ kody_id: string }>
+}
+
 export type AccountEmailMessageListItem = {
 	id: string
 	direction: 'inbound' | 'outbound'
@@ -2638,6 +2651,8 @@ export type AccountEmailMessageListItem = {
 	processing_status: string
 	classification: 'accepted' | 'quarantined'
 	classification_reason: string | null
+	sender_classification: AccountEmailSenderClassification | null
+	sender_classification_reason: string | null
 	provider_message_id: string | null
 	delivery_status: string | null
 	delivery_status_at: string | null
@@ -2683,6 +2698,7 @@ export type AccountEmailMessageDetail = AccountEmailMessageListItem & {
 	raw_size: number | null
 	attachments: Array<AccountEmailAttachment>
 	delivery_events: Array<AccountEmailDeliveryEvent>
+	enable_sender: AccountEmailEnableSender | null
 }
 
 export type AccountEmailLoaderData = {

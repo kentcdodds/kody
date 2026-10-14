@@ -538,3 +538,135 @@ test('a webhook another person turns on between resolve and write is a conflict 
 		.first<{ hmac_secret_encrypted: string | null }>()
 	expect(endpoint!.hmac_secret_encrypted).toBeNull()
 })
+
+test('approving an inbound-email subscription stores the sender and refuses a link without one', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+					'email.message.quarantined': { handler: './src/q.ts' },
+				},
+			},
+		},
+	})
+	const received = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'subscription', name: 'email.message.received' }],
+				sender: { kind: 'address', value: 'receipts@shop.example' },
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const scope = await t.scopeFor('bea', 'owner')
+	const reviewed = await resolveCredentialApproval(scope, received)
+	expect(reviewed.view.canApprove).toBe(true)
+	expect(reviewed.view.sender).toEqual({
+		kind: 'address',
+		value: 'receipts@shop.example',
+	})
+	expect(reviewed.view.enable[0]).toMatchObject({
+		willEnable: true,
+		error: null,
+	})
+	const outcome = await approveCredentialProposal({
+		scope,
+		proposal: received,
+		fingerprint: reviewed.view.fingerprint,
+	})
+	expect(outcome.status).toBe('approved')
+	const row = await t.db
+		.prepare(
+			`SELECT trigger_name, sender_kind, sender_value, state
+			 FROM enablements WHERE package_id = ?`,
+		)
+		.bind(t.savedPackage.id)
+		.first<{
+			trigger_name: string
+			sender_kind: string | null
+			sender_value: string | null
+			state: string
+		}>()
+	expect(row).toEqual({
+		trigger_name: 'email.message.received',
+		sender_kind: 'address',
+		sender_value: 'receipts@shop.example',
+		state: 'on',
+	})
+
+	const again = await resolveCredentialApproval(
+		await t.scopeFor('bea', 'owner'),
+		received,
+	)
+	expect(again.view.enable[0]!.willEnable).toBe(false)
+	await approveCredentialProposal({
+		scope: await t.scopeFor('bea', 'owner'),
+		proposal: received,
+		fingerprint: again.view.fingerprint,
+	})
+	expect(await t.enablementCount()).toBe(1)
+
+	const otherSender = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'subscription', name: 'email.message.received' }],
+				sender: { kind: 'domain', value: 'shop.example' },
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const other = await resolveCredentialApproval(
+		await t.scopeFor('bea', 'owner'),
+		otherSender,
+	)
+	expect(other.view.enable[0]!.willEnable).toBe(true)
+	expect(
+		(
+			await approveCredentialProposal({
+				scope: await t.scopeFor('bea', 'owner'),
+				proposal: otherSender,
+				fingerprint: other.view.fingerprint,
+			})
+		).status,
+	).toBe('approved')
+	expect(await t.enablementCount()).toBe(2)
+
+	const missingSender = parseCredentialApprovalQuery(
+		new URL(
+			buildCredentialApprovalHref({
+				username: 'acme-clients',
+				kodyId: 'digest',
+				changes: [],
+				enable: [{ kind: 'subscription', name: 'email.message.quarantined' }],
+			}),
+			'https://kody.test',
+		).searchParams,
+	)
+	const blocked = await resolveCredentialApproval(
+		await t.scopeFor('bea', 'owner'),
+		missingSender,
+	)
+	expect(blocked.view.canApprove).toBe(false)
+	expect(blocked.view.errors.join(' ')).toContain('sender_kind')
+	expect(
+		(
+			await approveCredentialProposal({
+				scope: await t.scopeFor('bea', 'owner'),
+				proposal: missingSender,
+				fingerprint: blocked.view.fingerprint,
+			})
+		).status,
+	).toBe('invalid')
+	expect(await t.enablementCount()).toBe(2)
+})

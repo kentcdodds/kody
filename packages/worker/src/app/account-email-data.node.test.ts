@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite'
 import {
 	ownerIdFromStored,
 	personIdFromStored,
@@ -8,6 +9,9 @@ import type * as EntitlementPlans from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const messageRecord = {
 	id: 'msg-1',
@@ -50,6 +54,7 @@ const mocks = vi.hoisted(() => ({
 	getOwnerEmailMessageById: vi.fn(),
 	listOwnerEmailAttachmentsForMessage: vi.fn(),
 	listOwnerEmailDeliveryEvents: vi.fn(),
+	classifyInboundEmailSender: vi.fn(),
 }))
 
 vi.mock('#app/email-verification.ts', () => ({
@@ -89,6 +94,10 @@ vi.mock('#worker/email/repo.ts', () => ({
 	listEmailInboxAddressesForUser: vi.fn(async () => []),
 }))
 
+vi.mock('#worker/email/inbound-sender.ts', () => ({
+	classifyInboundEmailSender: mocks.classifyInboundEmailSender,
+}))
+
 vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	listOwnerEmailMessagesPage: mocks.listOwnerEmailMessagesPage,
 	getOwnerEmailMessageById: mocks.getOwnerEmailMessageById,
@@ -116,10 +125,14 @@ const authenticatedUser: AuthenticatedAppUser = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-	request: sessionRequestContext('stable-user-1'),
+	request: sessionRequestContext('stable-user-1', 'test-user'),
 }
 
 test('loadAccountEmailData reads USER message graph only through owner Mailbox readers', async () => {
+	mocks.classifyInboundEmailSender.mockResolvedValue({
+		kind: 'unverified',
+		reason: 'From address was not authenticated.',
+	})
 	mocks.listOwnerEmailMessagesPage.mockResolvedValueOnce({
 		total: 1,
 		messages: [messageRecord],
@@ -164,4 +177,126 @@ test('loadAccountEmailData reads USER message graph only through owner Mailbox r
 		messageId: 'msg-1',
 	})
 	expect(prepare).not.toHaveBeenCalled()
+	expect(result.messages[0]?.sender_classification).toBe('unverified')
+	expect(result.selectedMessage?.sender_classification).toBe('unverified')
+	expect(result.selectedMessage?.enable_sender).toBeNull()
+})
+
+test('loadAccountEmailData uses the org slug for a team inbox and exposes a member sender', async () => {
+	const memberId = 'c'.repeat(64)
+	mocks.classifyInboundEmailSender.mockResolvedValue({
+		kind: 'member',
+		actor: { userId: personIdFromStored(memberId), username: 'ada' },
+		role: 'member',
+	})
+	mocks.listOwnerEmailMessagesPage.mockResolvedValueOnce({
+		total: 1,
+		messages: [messageRecord],
+	})
+	mocks.getOwnerEmailMessageById.mockResolvedValueOnce(messageRecord)
+	mocks.listOwnerEmailAttachmentsForMessage.mockResolvedValueOnce([])
+	mocks.listOwnerEmailDeliveryEvents.mockResolvedValueOnce([])
+	const { getPlatformEmailDomain, buildPlatformEmailAddress } =
+		await import('#worker/email/platform-address.ts')
+	vi.mocked(getPlatformEmailDomain).mockReturnValueOnce('inbox.example.com')
+	vi.mocked(buildPlatformEmailAddress).mockImplementationOnce(
+		({ username, domain }) => `${username}@${domain}`,
+	)
+	const prepare = vi.fn(() => ({
+		bind: () => ({
+			all: async () => ({ results: [{ kody_id: 'digest' }] }),
+		}),
+	}))
+	const meter = createInMemoryUserMeterEnv()
+	const orgId = ownerIdFromStored('team-org')
+	const env = {
+		APP_DB: { prepare } as unknown as D1Database,
+		APP_BASE_URL: 'https://example.com',
+		COOKIE_SECRET: 'secret',
+		...meter.env,
+	} as Env
+	const result = await loadAccountEmailData({
+		env,
+		request: new Request(
+			'https://example.com/account/email.json?selected=msg-1',
+		),
+		user: {
+			...authenticatedUser,
+			username: 'viewer',
+			request: deriveRequestContext({
+				user: {
+					userId: personIdFromStored('stable-user-1'),
+					username: 'viewer',
+				},
+				source: { kind: 'session' },
+				orgBinding: { org: { id: orgId, slug: 'acme' }, role: 'owner' },
+			}),
+		},
+	})
+
+	expect(result.inboxAddress).toBe('acme@inbox.example.com')
+	expect(buildPlatformEmailAddress).toHaveBeenCalledWith({
+		username: 'acme',
+		domain: 'inbox.example.com',
+	})
+	expect(result.messages[0]?.sender_classification).toBe('member')
+	expect(result.selectedMessage).toMatchObject({
+		sender_classification: 'member',
+		sender_classification_reason: 'From is a verified org member.',
+		enable_sender: {
+			sender: { kind: 'member', value: memberId },
+			topic: 'email.message.received',
+			org_slug: 'acme',
+			packages: [{ kody_id: 'digest' }],
+		},
+	})
+	expect(result.selectedMessage?.enable_sender?.packages_href).toContain(
+		'/@acme/-/repositories?',
+	)
+	expect(result.selectedMessage?.enable_sender?.packages_href).toContain(
+		'sender_kind=member',
+	)
+	expect(mocks.listOwnerEmailMessagesPage).toHaveBeenCalledWith(
+		expect.objectContaining({ ownerId: orgId }),
+	)
+})
+
+test('loadAccountEmailData refuses a member without email:read', async () => {
+	mocks.listOwnerEmailMessagesPage.mockClear()
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureOrgsTestSchema(db)
+	const orgId = ownerIdFromStored('d'.repeat(64))
+	const now = new Date(0).toISOString()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, created_at, updated_at)
+			 VALUES (?, 'acme', ?, ?)`,
+		)
+		.bind(orgId, now, now)
+		.run()
+	const meter = createInMemoryUserMeterEnv()
+	await expect(
+		loadAccountEmailData({
+			env: {
+				APP_DB: db,
+				APP_BASE_URL: 'https://example.com',
+				COOKIE_SECRET: 'secret',
+				...meter.env,
+			} as Env,
+			request: new Request('https://example.com/account/email.json'),
+			user: {
+				...authenticatedUser,
+				request: deriveRequestContext({
+					user: {
+						userId: personIdFromStored('e'.repeat(64)),
+						username: 'member',
+					},
+					source: { kind: 'session' },
+					orgBinding: { org: { id: orgId, slug: 'acme' }, role: 'member' },
+				}),
+			},
+		}),
+	).rejects.toMatchObject({ permission: 'email:read' })
+	expect(mocks.listOwnerEmailMessagesPage).not.toHaveBeenCalled()
 })

@@ -1,6 +1,7 @@
 import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test } from 'vitest'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	maxPlanEmailLimits,
@@ -24,6 +25,10 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const appBaseUrl = 'https://kody.example.com'
+
+beforeEach(() => {
+	silenceExpectedConsoleWarns(['inbound-email-sender-unverified'])
+})
 
 async function seedAccount(label: string, plan: PlanName) {
 	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`

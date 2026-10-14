@@ -5,10 +5,12 @@ import {
 import {
 	enablementPausedReasons,
 	enablementTriggerKinds,
+	enablementSenderKinds,
 	type EnablementOrigin,
 	type EnablementPause,
 	type EnablementPausedReason,
 	type EnablementRecord,
+	type EnablementSenderKind,
 	type EnablementState,
 	type EnablementTriggerKind,
 } from './types.ts'
@@ -29,6 +31,8 @@ type EnablementRow = {
 	paused_credential_id: string | null
 	paused_at: string | null
 	origin: string
+	sender_kind: string | null
+	sender_value: string | null
 	enabled_at: string
 	disabled_at: string | null
 	updated_at: string
@@ -37,7 +41,7 @@ type EnablementRow = {
 const enablementColumns = `id, org_id, package_id, trigger_kind, trigger_name,
 	instance_id, enabler_user_id, state, paused_reason, paused_permission,
 	paused_resource_type, paused_resource_id, paused_credential_id, paused_at,
-	origin, enabled_at, disabled_at, updated_at`
+	origin, sender_kind, sender_value, enabled_at, disabled_at, updated_at`
 
 function isTriggerKind(value: string): value is EnablementTriggerKind {
 	return (enablementTriggerKinds as ReadonlyArray<string>).includes(value)
@@ -45,6 +49,14 @@ function isTriggerKind(value: string): value is EnablementTriggerKind {
 
 function isPausedReason(value: string): value is EnablementPausedReason {
 	return (enablementPausedReasons as ReadonlyArray<string>).includes(value)
+}
+
+function toSenderKind(value: string | null): EnablementSenderKind | null {
+	if (value === null) return null
+	if ((enablementSenderKinds as ReadonlyArray<string>).includes(value)) {
+		return value as EnablementSenderKind
+	}
+	throw new Error(`Unknown enablement sender kind: ${value}`)
 }
 
 function toState(value: string): EnablementState {
@@ -84,6 +96,8 @@ function toRecord(row: EnablementRow): EnablementRecord {
 		state: toState(row.state),
 		pause: toPause(row),
 		origin: row.origin === 'migrated' ? 'migrated' : 'enabled',
+		senderKind: toSenderKind(row.sender_kind),
+		senderValue: row.sender_value,
 		enabledAt: row.enabled_at,
 		disabledAt: row.disabled_at,
 		updatedAt: row.updated_at,
@@ -99,6 +113,9 @@ export type NewEnablement = {
 	instanceId: string
 	enablerUserId: string
 	origin: EnablementOrigin
+	/** Inbound-email sender rule. Omit for triggers that are not email. */
+	senderKind?: EnablementSenderKind | null
+	senderValue?: string | null
 }
 
 export function buildInsertEnablementStatement(input: {
@@ -111,8 +128,9 @@ export function buildInsertEnablementStatement(input: {
 		.prepare(
 			`INSERT INTO enablements (
 				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
-				enabler_user_id, state, origin, enabled_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?)`,
+				enabler_user_id, state, origin, enabled_at, updated_at,
+				sender_kind, sender_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			id,
@@ -125,6 +143,8 @@ export function buildInsertEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
+			input.enablement.senderKind ?? null,
+			input.enablement.senderValue ?? null,
 		)
 	return { id, statement }
 }
@@ -148,9 +168,10 @@ export function buildInsertWebhookEnablementStatement(input: {
 		.prepare(
 			`INSERT INTO enablements (
 				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
-				enabler_user_id, state, origin, enabled_at, updated_at
+				enabler_user_id, state, origin, enabled_at, updated_at,
+				sender_kind, sender_value
 			)
-			SELECT ?, ?, ?, 'webhook', ?, ?, ?, 'on', ?, ?, ?
+			SELECT ?, ?, ?, 'webhook', ?, ?, ?, 'on', ?, ?, ?, ?, ?
 			WHERE NOT EXISTS (
 				SELECT 1 FROM enablements
 				WHERE org_id = ? AND trigger_kind = 'webhook'
@@ -167,6 +188,8 @@ export function buildInsertWebhookEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
+			input.enablement.senderKind ?? null,
+			input.enablement.senderValue ?? null,
 			input.enablement.orgId,
 			input.enablement.instanceId,
 		)

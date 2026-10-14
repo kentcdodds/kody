@@ -76,6 +76,7 @@ function view(
 		fingerprint: 'fp',
 		changes,
 		enable,
+		sender: null,
 		errors: [],
 	}
 }

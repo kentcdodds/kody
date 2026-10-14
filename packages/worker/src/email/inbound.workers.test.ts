@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test } from 'vitest'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { maxPlanEmailLimits, planLimits } from '#universal/plans.ts'
@@ -28,6 +29,12 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformDomain = 'inbox.kody.example.com'
+
+beforeEach(() => {
+	// Fixture mail has no Authentication-Results, so sender classification
+	// runs nothing and logs. Storage under test still completes.
+	silenceExpectedConsoleWarns(['inbound-email-sender-unverified'])
+})
 
 async function seedAccount(label: string, input: { verified?: boolean } = {}) {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -504,3 +511,53 @@ test('max-plan inbox stores oversized related mail by omitting the large part', 
 		),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 }, 60_000)
+
+async function seedTeamOrg(plan: 'free' | 'pro') {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const slug = `team-${crypto.randomUUID().slice(0, 8)}`
+	const orgId = testStableUserIdFromEmail(`${slug}@teams.example`)
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+	)
+		.bind(orgId, slug, plan, now, now)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO handles (handle, user_id, org_id, created_at)
+		 VALUES (?, NULL, ?, ?)`,
+	)
+		.bind(slug, orgId, now)
+		.run()
+	return { orgId, slug, address: `${slug}@${platformDomain}` }
+}
+
+test('a paid team-org slug routes inbound mail to that org', async () => {
+	const { orgId, slug } = await seedTeamOrg('pro')
+	const taggedAddress = `${slug}+billing@${platformDomain}`
+	const message = inboundMessage({
+		address: taggedAddress,
+		messageId: `team-paid-${crypto.randomUUID()}@example.net`,
+	})
+
+	await handleInboundEmail(message, inboundEnv())
+
+	expect(message.rejectedReason).toBeNull()
+	const messages = await listUserMessages(orgId)
+	expect(messages).toHaveLength(1)
+	expect(messages[0]?.toAddresses).toContain(taggedAddress)
+}, 30_000)
+
+test('a free team org rejects inbound mail', async () => {
+	const { orgId, address } = await seedTeamOrg('free')
+	const message = inboundMessage({
+		address,
+		messageId: `team-free-${crypto.randomUUID()}@example.net`,
+	})
+
+	await handleInboundEmail(message, inboundEnv())
+
+	expect(message.rejectedReason).toBe('Team email requires a paid plan.')
+	expect(await listUserMessages(orgId)).toEqual([])
+}, 30_000)

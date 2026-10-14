@@ -13,6 +13,7 @@ const preClaimAuditPhases = new Set([
 	'size',
 	'account-verification',
 	'account-suspension',
+	'account-plan',
 	'sender-policy',
 	'system-limit',
 ])

@@ -21,6 +21,7 @@ import {
 	credentialApprovalErrorCodes,
 	credentialKinds,
 	credentialMappingLayers,
+	credentialProposalSenderKinds,
 	credentialScopes,
 	credentialTriggerKinds,
 	parseCredentialApprovalQuery,
@@ -99,6 +100,15 @@ const viewSchema = z.object({
 				.nullable(),
 		}),
 	),
+	sender: z
+		.object({
+			kind: z.enum(credentialProposalSenderKinds),
+			value: z.string().nullable(),
+		})
+		.nullable()
+		.describe(
+			'Sender stored when this proposal turns on an inbound-email subscription. Null when the link names no sender.',
+		),
 	enable: z.array(
 		z.object({
 			trigger: triggerRefSchema,

@@ -38,6 +38,8 @@ test('an enablement moves on, paused, on, off, and off is final', async () => {
 		state: 'on',
 		pause: null,
 		origin: 'enabled',
+		senderKind: null,
+		senderValue: null,
 	})
 
 	const pause = {
@@ -205,4 +207,38 @@ test('a webhook instance holds at most one live enablement; cron and subscriptio
 			now,
 		}),
 	).toThrow('one-live')
+})
+
+test('an enablement stores an inbound sender rule', async () => {
+	const db = setup()
+	const created = await insertEnablement({
+		db,
+		enablement: {
+			orgId: 'org-1',
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			instanceId: 'pkg-1',
+			enablerUserId: 'user-1',
+			origin: 'enabled',
+			senderKind: 'address',
+			senderValue: 'receipts@shop.example',
+		},
+	})
+	expect(created).toMatchObject({
+		senderKind: 'address',
+		senderValue: 'receipts@shop.example',
+	})
+	const [listed] = await listEnablementsForInstance({
+		db,
+		orgId: 'org-1',
+		triggerKind: 'subscription',
+		instanceId: 'pkg-1',
+		triggerName: 'email.message.received',
+	})
+	expect(listed).toMatchObject({
+		id: created.id,
+		senderKind: 'address',
+		senderValue: 'receipts@shop.example',
+	})
 })

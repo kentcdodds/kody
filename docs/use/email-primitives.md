@@ -255,28 +255,50 @@ dispatches either topic.
 
 ## Who an inbound email runs as
 
-Before any subscription runs, Kody checks the sender of mail to an org's inbox:
+Mail to `{slug}@inbox.kody.codes` is stored on the org mailbox. A personal org's
+address is still `{username}@`, because that username is the org's handle. Owner
+and Admin see every accepted message. A package runs only when one of its live
+enablements has a sender rule that matches. There is no blanket switch and no
+fallback to the inbox owner.
+
+An Owner or someone with `email:read` turns a package on for one sender from the
+message on `/@<slug>/-/email`. That opens the credential approval page with
+`sender_kind` and `sender_value` filled in (`member` plus the person's id, or
+`address` plus From). `enablementEnable` cannot turn `email.message.received` or
+`email.message.quarantined` on.
+
+Before any subscription runs, Kody classifies the sender. From authenticates
+only on DMARC `pass`, or SPF `pass` with the envelope sender on the From domain.
+A DKIM `pass` alone is not enough, and a missing Authentication-Results header
+does not authenticate From.
 
 - **Org member.** The From address is the verified account email of a current
-  member of the inbox's org, and the message authenticated that address (DMARC
-  `pass`, or SPF `pass` with the envelope sender on the From domain; a DKIM
-  `pass` alone is not enough). The run acts as that member with their own role.
-  Only packages the member can run (`package:execute`) receive the event, and
-  every credential the run resolves is checked and audited under that member. If
-  the member lost access to the org, the credential is denied when the run reads
-  it and the run fails. It never retries with another identity or credential.
-- **Verified non-member** (receipts, notifications, outside collaborators,
-  people who left the org). Mail that passes the authentication check above runs
-  as the org that owns the inbox, as it always has.
+  member, and the message authenticated that address. Only packages that member
+  can run (`package:execute`) are considered. An enablement matches when its
+  sender rule is `member` and the value is that person's id. The run acts as the
+  enablement's enabler. Every credential the run resolves is checked and audited
+  under that enabler. If the enabler lost access, the credential is denied when
+  the run reads it and the run fails. It never retries with another identity or
+  credential.
+- **Authenticated non-member** (receipts, notifications, outside collaborators,
+  people who left the org). The From address authenticated. Packages run only
+  for enablements whose sender rule matches: an exact address, a From domain, or
+  `any_authenticated`. Unmatched mail stays in the admin inbox and runs nothing.
 - **Unverified or spoofed.** Mail that failed authentication (DMARC `fail`, or
-  SPF `fail`/`softfail` without DKIM `pass`), mail with no From address, and
-  mail that claims a member address without authenticating it (or from a member
-  whose account email is unverified or whose account is suspended) runs nothing,
-  even when a sender `allow` rule accepted it. The message is still stored and
-  visible on `/@<slug>/-/email`, and the worker logs
-  `inbound-email-sender-unverified` with the reason.
+  SPF `fail`/`softfail` without DKIM `pass`), mail with no From address, mail
+  whose From did not authenticate (including DKIM-only), and mail that claims a
+  member address without authenticating it (or from a member whose account email
+  is unverified or whose account is suspended) runs nothing, even when a sender
+  `allow` rule accepted it. The message is still stored and visible on
+  `/@<slug>/-/email`, and the worker logs `inbound-email-sender-unverified` with
+  the reason.
 
-Email runs are still billed to the org that owns the inbox.
+Personal orgs' existing live `email.message.received` and
+`email.message.quarantined` enablements were migrated to `any_authenticated` so
+they keep firing. Narrow those rows when you want a specific sender. Team orgs
+were not migrated.
+
+Email runs are still billed to the enabler, in the org that owns the inbox.
 
 ## `email.message.received` package subscription
 

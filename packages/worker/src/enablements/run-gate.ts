@@ -47,6 +47,10 @@ import {
 	type EnablementPauseInput,
 } from './repo.ts'
 import {
+	enablementMatchesInboundSender,
+	type InboundSenderMatch,
+} from './sender-match.ts'
+import {
 	type EnablementPause,
 	type EnablementRecord,
 	type EnablementTriggerKind,
@@ -65,6 +69,8 @@ export type EnablementSkipReason =
 	| 'paused'
 	/** Not the enabler this event may reach (run-raised and emailed events). */
 	| 'other_enabler'
+	/** The inbound sender does not match this enablement's sender rule. */
+	| 'sender'
 	/** The event is about something the enabler cannot see. */
 	| 'audience'
 
@@ -298,8 +304,11 @@ function samePause(
  * Decide which enablements of `trigger` run for one event, pausing the ones
  * whose enabler lost access and resuming the ones whose access is back.
  *
- * - `onlyEnablerId`: events raised by a run, and member-sent email, reach
- *   only that person's enablements.
+ * - `onlyEnablerId`: events raised by a run reach only that person's
+ *   enablements.
+ * - `inboundSender`: inbound email skips enablements whose sender rule does
+ *   not match. A null sender kind never matches. Checked before access, so
+ *   a non-matching row is not paused.
  * - `audience`: the audience rule for org-wide topics. An enabler who cannot
  *   see what the event is about is skipped without pausing.
  */
@@ -309,6 +318,7 @@ export async function planEnablementRuns(input: {
 	packageId: string
 	trigger: EnablementTrigger
 	onlyEnablerId?: string | null
+	inboundSender?: InboundSenderMatch
 	audience?: EnablementAudience | null
 }): Promise<EnablementRunPlan> {
 	const db = input.env.APP_DB
@@ -333,6 +343,17 @@ export async function planEnablementRuns(input: {
 			String(enablement.enablerUserId) !== String(input.onlyEnablerId)
 		) {
 			skip('other_enabler')
+			continue
+		}
+		if (
+			input.inboundSender &&
+			!enablementMatchesInboundSender({
+				senderKind: enablement.senderKind,
+				senderValue: enablement.senderValue,
+				match: input.inboundSender,
+			})
+		) {
+			skip('sender')
 			continue
 		}
 		const check = await checkEnablerAccess({

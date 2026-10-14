@@ -135,6 +135,7 @@ export const credentialTriggerPickSetCapability = defineDomainCapability(
 					},
 				],
 				enable: [],
+				sender: null,
 				reason: null,
 				errors: [],
 			}

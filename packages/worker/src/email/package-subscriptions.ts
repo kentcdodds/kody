@@ -19,7 +19,12 @@ import {
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
-import { classifyInboundEmailSender } from './inbound-sender.ts'
+import { normalizeEmailAddress } from './address.ts'
+import { resolveInboundEmailAuthVerdict } from './auth-verdict.ts'
+import {
+	authenticatesFromAddress,
+	classifyInboundEmailSender,
+} from './inbound-sender.ts'
 import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.ts'
 import { listSystemEmailAttachments } from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
@@ -216,6 +221,16 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 			userId: input.userId,
 			topic,
 		})
+	const fromAddress = input.message.fromAddress
+		? normalizeEmailAddress(input.message.fromAddress)
+		: null
+	const inboundFromAuthenticated = fromAddress
+		? authenticatesFromAddress({
+				verdict: resolveInboundEmailAuthVerdict(input.message.authResults),
+				fromAddress,
+				envelopeFrom: input.message.envelopeFrom,
+			})
+		: false
 	const runnable = await subscriptionsRunnableBySender({
 		env: input.env,
 		orgId: input.userId,
@@ -244,6 +259,8 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 						}),
 						source: 'email',
 						request,
+						inboundFromAddress: input.message.fromAddress,
+						inboundFromAuthenticated,
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

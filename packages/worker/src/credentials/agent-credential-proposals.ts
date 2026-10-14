@@ -60,6 +60,8 @@ function proposalJson(proposal: ParsedCredentialProposal) {
 		changes: proposal.changes,
 		enable: proposal.enable,
 		reason: proposal.reason,
+		// Omit a null sender so proposals recorded before sender existed still match.
+		...(proposal.sender ? { sender: proposal.sender } : {}),
 	})
 }
 

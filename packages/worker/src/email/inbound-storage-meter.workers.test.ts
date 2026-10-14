@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test } from 'vitest'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { planLimits } from '#universal/plans.ts'
 import { estimateEntitlementStorageEntryBytes } from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
@@ -18,6 +19,10 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
+
+beforeEach(() => {
+	silenceExpectedConsoleWarns(['inbound-email-sender-unverified'])
+})
 const inboundStorageMeterTimeoutMs = 30_000
 
 function createInboundEnv() {

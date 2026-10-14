@@ -16,6 +16,7 @@ import {
 	type CredentialApprovalFailure,
 	type CredentialApprovalSuccess,
 	type CredentialApprovalView,
+	type CredentialProposalSender,
 } from '#universal/credential-contracts.ts'
 import { credentialKindLabel } from '#universal/credentials-list.ts'
 import {
@@ -237,6 +238,23 @@ function renderChange(
 			) : null}
 		</li>
 	)
+}
+
+function describeProposalSender(sender: CredentialProposalSender) {
+	switch (sender.kind) {
+		case 'member':
+			return `member ${sender.value}`
+		case 'address':
+			return sender.value ?? 'an address'
+		case 'domain':
+			return `senders at ${sender.value}`
+		case 'any_authenticated':
+			return 'any authenticated sender'
+		default: {
+			const exhaustive: never = sender.kind
+			throw new Error(`Unhandled sender kind: ${String(exhaustive)}`)
+		}
+	}
 }
 
 function renderEnable(
@@ -542,6 +560,9 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 							<p mix={css(mutedCss)}>
 								Triggers this link turns on for you. Their credentials are not
 								changed.
+								{view.sender
+									? ` Inbound email runs for ${describeProposalSender(view.sender)}.`
+									: ''}
 							</p>
 						</div>
 						<ul mix={css(listCss)}>

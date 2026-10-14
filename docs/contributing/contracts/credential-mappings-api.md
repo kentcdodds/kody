@@ -379,6 +379,14 @@ reaches Approve: minting a webhook URL never turns it on, and the mint returns
 `enable=webhook:<name>` as its approval link. Each distinct `enable` value
 counts as one param.
 
+`sender_kind` and `sender_value` name who an inbound-email subscription runs
+for. Kinds are `member`, `address`, `domain`, and `any_authenticated`. `member`
+needs a person id, `address` a normalized email address, and `domain` a bare
+domain. `any_authenticated` ignores `sender_value`. Approving
+`enable=subscription:email.message.received` or `email.message.quarantined`
+stores that sender on the new enablement. `enablementEnable` refuses those
+topics and points at this page.
+
 At most 64 mapping params (a param's repeated values count once). Param names
 that decode to the same target and need (`default[github]` and
 `default[git%68ub]`) are one param. Example:
@@ -409,6 +417,7 @@ export type CredentialApprovalErrorCode =
 	| 'not_allowed'
 	| 'webhook_not_minted'
 	| 'webhook_other_enabler'
+	| 'email_approval_required'
 
 export type CredentialApprovalChangeView = {
 	target: CredentialMappingTarget
@@ -449,6 +458,11 @@ export type CredentialApprovalView = {
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
 	enable: Array<CredentialApprovalEnableView>
+	/** Sender stored on an inbound-email enablement. Null when unnamed. */
+	sender: {
+		kind: 'member' | 'address' | 'domain' | 'any_authenticated'
+		value: string | null
+	} | null
 	/** Proposal-level problems (bad param names, too many params). */
 	errors: Array<string>
 }

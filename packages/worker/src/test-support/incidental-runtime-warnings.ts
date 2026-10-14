@@ -27,6 +27,9 @@ const incidentalRuntimeWarnings = [
 	// workers-unit files that touch storage should not flake when a refresh
 	// fails in the isolate.
 	'storage-bucket-estimate-refresh-failed',
+	// Inbound fixtures often have no Authentication-Results. Classification
+	// then runs nothing and logs; the mailbox write under test still finishes.
+	'inbound-email-sender-unverified',
 ]
 
 export function silenceIncidentalRuntimeWarnings(

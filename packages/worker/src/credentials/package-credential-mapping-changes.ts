@@ -20,14 +20,16 @@ import {
 	type OrgAuditWriter,
 } from '#worker/orgs/org-audit.ts'
 import {
+	describeCredentialMappingTarget,
+	isInboundEmailApprovalTopic,
 	type CredentialApprovalChangeView,
 	type CredentialApprovalEnableView,
 	type CredentialApprovalErrorCode,
 	type CredentialMappingChange,
 	type CredentialPick,
+	type CredentialProposalSender,
 	type CredentialRef,
 	type CredentialTriggerRef,
-	describeCredentialMappingTarget,
 } from '#universal/credential-contracts.ts'
 import { type UsableCredential } from './credential-candidates.ts'
 import {
@@ -156,6 +158,7 @@ type TargetResolution = {
 function resolveViewerTrigger(
 	scope: PackageMappingScope,
 	ref: CredentialTriggerRef,
+	sender?: CredentialProposalSender | null,
 ) {
 	const trigger = scope.triggers.find(
 		(candidate) => candidate.kind === ref.kind && candidate.name === ref.name,
@@ -172,7 +175,11 @@ function resolveViewerTrigger(
 			`Webhook "${trigger.name}" has no URL yet. Mint its URL first, then approve it here.`,
 		)
 	}
-	const { enablement, otherEnabler } = viewerEnablement(trigger, scope.actorId)
+	const { enablement, otherEnabler } = viewerEnablement(
+		trigger,
+		scope.actorId,
+		sender,
+	)
 	if (otherEnabler) {
 		refuse(
 			'webhook_other_enabler',
@@ -355,11 +362,16 @@ export type ResolvedTriggerEnable = CredentialApprovalEnableView & {
 export function resolveTriggerEnables(
 	scope: PackageMappingScope,
 	refs: ReadonlyArray<CredentialTriggerRef>,
+	sender?: CredentialProposalSender | null,
 ): Array<ResolvedTriggerEnable> {
 	return refs.map((ref) => {
 		const trigger = { kind: ref.kind, name: ref.name }
 		try {
-			const { trigger: declared, enablement } = resolveViewerTrigger(scope, ref)
+			const { trigger: declared, enablement } = resolveViewerTrigger(
+				scope,
+				ref,
+				sender,
+			)
 			return {
 				trigger,
 				willEnable: enablement === null,
@@ -425,7 +437,10 @@ export class MappingWriteRefused extends Error {
 	}
 }
 
-/** Planning a turn-on never asks for approval; only `enablementEnable` does. */
+/**
+ * Planning a turn-on never asks for webhook approval; only `enablementEnable`
+ * does. An inbound-email subscription without a sender is a write refusal.
+ */
 export type MappingWriteRefusalCode = Exclude<
 	TriggerEnablementError['code'],
 	'webhook_approval_required'
@@ -482,6 +497,11 @@ export async function writeMappingChanges(
 	options: {
 		now?: string
 		enable?: ReadonlyArray<ResolvedTriggerEnable>
+		/**
+		 * Sender stored on an inbound-email enablement this write turns on.
+		 * Other triggers ignore it.
+		 */
+		sender?: CredentialProposalSender | null
 		also?: ReadonlyArray<D1PreparedStatement>
 		requireUnchanged?: boolean
 	} = {},
@@ -512,6 +532,9 @@ export async function writeMappingChanges(
 	) => {
 		const known = enabledIds.get(trigger)
 		if (known) return known
+		const email =
+			trigger.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(trigger.name)
 		const plan = await planTriggerEnablementForCaller({
 			env: scope.env,
 			baseUrl: scope.baseUrl,
@@ -520,6 +543,7 @@ export async function writeMappingChanges(
 			kind: trigger.kind,
 			name: trigger.name,
 			now,
+			...(email ? { sender: options.sender ?? null } : {}),
 		}).catch((error: unknown) => {
 			if (isMappingWriteRefusal(error)) {
 				throw new MappingWriteRefused(change, error.code, error.message)

@@ -1,6 +1,5 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
-import type * as EnablementsRepo from '#worker/enablements/repo.ts'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import {
 	AccountSuspendedError,
@@ -99,11 +98,6 @@ vi.mock('#worker/enablements/run-gate.ts', () => ({
 		],
 		skipped: [],
 	}),
-}))
-
-vi.mock('#worker/enablements/repo.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof EnablementsRepo>()),
-	loadEarliestLiveOwnerId: async (_db: D1Database, orgId: string) => orgId,
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({

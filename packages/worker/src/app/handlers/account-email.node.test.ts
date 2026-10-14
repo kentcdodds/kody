@@ -74,7 +74,7 @@ const mockModule = await vi.hoisted(async () => {
 			username: 'test-user',
 			displayName: 'user',
 		},
-		request: sessionRequestContext('stable-user-1'),
+		request: sessionRequestContext('stable-user-1', 'test-user'),
 	}
 	return {
 		authenticatedUser,
@@ -273,6 +273,13 @@ vi.mock('#worker/email/repo.ts', () => ({
 	listEmailInboxAddressesForUser: (
 		...args: Parameters<typeof emailRepo.listEmailInboxAddressesForUser>
 	) => mockModule.listEmailInboxAddressesForUser(...args),
+}))
+
+vi.mock('#worker/email/inbound-sender.ts', () => ({
+	classifyInboundEmailSender: vi.fn(async () => ({
+		kind: 'unverified',
+		reason: 'From address was not authenticated.',
+	})),
 }))
 
 vi.mock('#worker/email/owner-email-reader.ts', () => ({

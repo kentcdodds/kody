@@ -184,6 +184,7 @@ test('names that look like prefixes and brackets in names round-trip', () => {
 	expect(parseCredentialApprovalQuery(url.searchParams)).toEqual({
 		changes,
 		enable: [],
+		sender: null,
 		reason: null,
 		errors: [],
 	})
@@ -265,6 +266,7 @@ test('approval links round-trip defaults, personal defaults, triggers, and none'
 			},
 		],
 		enable: [],
+		sender: null,
 		reason: 'Daily digest',
 		errors: [],
 	})
@@ -293,6 +295,7 @@ test('enable params turn triggers on with no mapping, deduped and capped with ma
 			{ kind: 'webhook', name: 'incoming' },
 			{ kind: 'subscription', name: 'acme.thing:happened' },
 		],
+		sender: null,
 		reason: null,
 		errors: [],
 	})
@@ -449,4 +452,84 @@ test('an approval link names the recorded agent proposal without adding a change
 			new URL(plain, 'https://kody.test').searchParams,
 		),
 	)
+})
+
+test('approval links round-trip a sender and reject a sender that cannot be stored', () => {
+	const memberId = 'a'.repeat(64)
+	const href = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'digest',
+		changes: [],
+		enable: [{ kind: 'subscription', name: 'email.message.received' }],
+		sender: { kind: 'address', value: 'receipts@shop.example' },
+	})
+	expect(href).toBe(
+		'/@acme/digest/approve-credentials?enable=subscription%3Aemail.message.received&sender_kind=address&sender_value=receipts%40shop.example',
+	)
+	expect(
+		parseCredentialApprovalQuery(
+			new URL(href, 'https://kody.codes').searchParams,
+		),
+	).toEqual({
+		changes: [],
+		enable: [{ kind: 'subscription', name: 'email.message.received' }],
+		sender: { kind: 'address', value: 'receipts@shop.example' },
+		reason: null,
+		errors: [],
+	})
+
+	const member = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			`enable=subscription:email.message.received&sender_kind=member&sender_value=${memberId.toUpperCase()}`,
+		),
+	)
+	expect(member.sender).toEqual({ kind: 'member', value: memberId })
+	expect(member.errors).toEqual([])
+
+	const domain = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			'sender_kind=domain&sender_value=%40Shop.Example&enable=subscription:email.message.quarantined',
+		),
+	)
+	expect(domain.sender).toEqual({ kind: 'domain', value: 'shop.example' })
+
+	const anyAuthenticated = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			'sender_kind=any_authenticated&sender_value=ignored@shop.example',
+		),
+	)
+	expect(anyAuthenticated.sender).toEqual({
+		kind: 'any_authenticated',
+		value: null,
+	})
+	expect(anyAuthenticated.errors).toEqual([])
+
+	const missingValue = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_kind=address'),
+	)
+	expect(missingValue.sender).toBeNull()
+	expect(missingValue.errors).toEqual([
+		'"sender_kind=address" needs a sender_value that is an email address.',
+	])
+
+	const missingKind = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_value=receipts@shop.example'),
+	)
+	expect(missingKind.sender).toBeNull()
+	expect(missingKind.errors[0]).toContain('sender_kind')
+
+	const unknown = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_kind=everyone&default[github]=org:bot'),
+	)
+	expect(unknown.sender).toBeNull()
+	expect(unknown.changes).toEqual([
+		{
+			target: { type: 'default', layer: 'org' },
+			needKey: 'github',
+			credentials: [{ name: 'bot', scope: 'org' }],
+		},
+	])
+	expect(unknown.errors).toEqual([
+		'"sender_kind=everyone" is not a sender; use member, address, domain, or any_authenticated.',
+	])
 })
