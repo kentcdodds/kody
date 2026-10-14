@@ -4,10 +4,15 @@ import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
-import { workspaceSwitchHref } from '#client/routes/account-rail.ts'
+import {
+	workspaceHomeHref,
+	workspaceSwitchHref,
+} from '#client/routes/account-rail.ts'
 import {
 	currentSwitcherSlug,
+	orderOrganizations,
 	orgIdentity,
+	orgOverviewPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgSlugFromOrgOwnedPath,
@@ -328,8 +333,14 @@ function OrgSwitcher(
 		)
 
 		// The phone menu has no room for a second trigger, so the person's
-		// own links follow the organizations in the same panel.
+		// own links follow the organizations in the same panel. The org rows
+		// are already listed above, so Manage keeps only the Overview row.
 		if (handle.props.menu) {
+			const overview = accountMenuManageLinks({
+				pathname: handle.props.currentPathname,
+				organizations,
+				lastUsedSlug: handle.props.lastUsedOrganization,
+			}).slice(0, 1)
 			return (
 				<div
 					data-menu-group
@@ -337,11 +348,17 @@ function OrgSwitcher(
 					mix={css(switcherMenuGroupCss)}
 				>
 					{body}
+					{renderManageGroup({
+						links: overview,
+						currentPathname: handle.props.currentPathname,
+						divided: true,
+					})}
 					{renderAccountGroup({
 						username: handle.props.username,
 						currentPathname: handle.props.currentPathname,
 						organizations,
 						heading: true,
+						divided: true,
 					})}
 				</div>
 			)
@@ -463,18 +480,98 @@ function accountRows(input: {
 	]
 }
 
+export type AccountMenuManageLink = {
+	key: string
+	href: string
+	label: string
+	detail: string | null
+	icon: IconName
+}
+
+/**
+ * The account menu's Manage links: the current workspace's Overview first,
+ * then every other workspace's home. Each workspace rail lists every
+ * section, so any section stays two clicks from the avatar. Unlike switcher
+ * rows, which keep the current page, these always open a workspace home.
+ */
+export function accountMenuManageLinks(input: {
+	pathname: string
+	organizations: ReadonlyArray<OrganizationSummary>
+	lastUsedSlug: string | null
+}): Array<AccountMenuManageLink> {
+	const currentSlug = currentSwitcherSlug({
+		pathname: input.pathname,
+		organizations: input.organizations,
+		lastUsedSlug: input.lastUsedSlug,
+	})
+	if (!currentSlug) return []
+	const current = input.organizations.find((org) => org.slug === currentSlug)
+	return [
+		{
+			key: 'manage-overview',
+			// A URL org missing from a stale session list could be a renamed
+			// person's signup org, so its kind is unknown. `/-/overview` serves
+			// the signup org and redirects a team to its home.
+			href: current ? workspaceHomeHref(current) : orgOverviewPath(currentSlug),
+			label: 'Overview',
+			detail: `@${currentSlug}`,
+			icon: 'home',
+		},
+		...orderOrganizations(input.organizations)
+			.filter((org) => org.slug !== currentSlug)
+			.map((org): AccountMenuManageLink => ({
+				key: `manage-${org.slug}`,
+				href: workspaceHomeHref(org),
+				label: `@${org.slug}`,
+				detail: null,
+				icon: org.personal ? 'user' : 'users',
+			})),
+	]
+}
+
+function renderManageGroup(input: {
+	links: ReadonlyArray<AccountMenuManageLink>
+	currentPathname: string
+	divided: boolean
+}) {
+	if (input.links.length === 0) return null
+	return (
+		<div
+			role="group"
+			aria-label="Manage"
+			data-testid="account-menu-manage-group"
+			mix={css(input.divided ? switcherActionsCss : switcherAccountListCss)}
+		>
+			<p mix={css(switcherEyebrowCss)}>Manage</p>
+			{input.links.map((link) =>
+				renderSwitcherRow({
+					key: link.key,
+					href: link.href,
+					label: link.label,
+					detail: link.detail,
+					ariaCurrent: input.currentPathname === link.href ? 'page' : undefined,
+					selected: false,
+					leading: renderIconWell(link.icon),
+					badge: null,
+				}),
+			)}
+		</div>
+	)
+}
+
 function renderAccountGroup(input: {
 	username: string
 	currentPathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
 	heading: boolean
+	divided: boolean
 }) {
 	return (
 		<div
 			role="group"
 			aria-label="Your account"
 			data-testid="org-switcher-account-group"
-			mix={css(input.heading ? switcherActionsCss : switcherAccountListCss)}
+			mix={css(input.divided ? switcherActionsCss : switcherAccountListCss)}
 		>
 			{input.heading ? <p mix={css(switcherEyebrowCss)}>Your account</p> : null}
 			{accountRows(input).map(renderSwitcherRow)}
@@ -486,6 +583,8 @@ function renderAccountGroup(input: {
 /**
  * The person's own menu: their avatar, apart from the organization
  * switcher, so "who am I" and "which workspace am I in" are two controls.
+ * Manage leads with the current workspace's Overview so the avatar is
+ * never a dead end for workspace sections.
  */
 function AccountMenu(
 	handle: Handle<{
@@ -494,6 +593,7 @@ function AccountMenu(
 		avatarUrl: string | null
 		currentPathname: string
 		organizations?: Array<OrganizationSummary>
+		lastUsedOrganization?: string | null
 	}>,
 ) {
 	let open = false
@@ -507,6 +607,15 @@ function AccountMenu(
 
 	return () => {
 		const name = handle.props.displayName.trim() || handle.props.username
+		const organizations = organizationsWithSignupFallback({
+			organizations: handle.props.organizations ?? [],
+			username: handle.props.username,
+		})
+		const manageLinks = accountMenuManageLinks({
+			pathname: handle.props.currentPathname,
+			organizations,
+			lastUsedSlug: handle.props.lastUsedOrganization ?? null,
+		})
 		return (
 			<div
 				mix={[
@@ -550,14 +659,17 @@ function AccountMenu(
 							</span>
 						) : null}
 					</div>
+					{renderManageGroup({
+						links: manageLinks,
+						currentPathname: handle.props.currentPathname,
+						divided: false,
+					})}
 					{renderAccountGroup({
 						username: handle.props.username,
 						currentPathname: handle.props.currentPathname,
-						organizations: organizationsWithSignupFallback({
-							organizations: handle.props.organizations ?? [],
-							username: handle.props.username,
-						}),
+						organizations,
 						heading: false,
+						divided: manageLinks.length > 0,
 					})}
 				</div>
 			</div>
@@ -641,6 +753,9 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									avatarUrl={handle.props.avatarUrl}
 									currentPathname={handle.props.currentPathname}
 									organizations={handle.props.organizations ?? []}
+									lastUsedOrganization={
+										handle.props.lastUsedOrganization ?? null
+									}
 								/>
 								{handle.props.showDemoIndicator ? (
 									<span

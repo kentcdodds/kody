@@ -33,6 +33,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
+	getGhostButtonCss,
 	packageDetailPageCss,
 	proseCss,
 } from '#universal/styles/style-primitives.ts'
@@ -58,6 +59,20 @@ function fileByteLength(data: PackageFilesLoaderData) {
 
 function countLines(value: string) {
 	return value.replace(/\n$/, '').split('\n').length
+}
+
+/**
+ * Identity of the cached blob pane. `filesBasePath` carries the ref, so the
+ * same path on another branch or commit rebuilds its content and Raw link.
+ */
+export function packageFilesContentKey(data: PackageFilesLoaderData) {
+	return [
+		data.filesBasePath,
+		data.selectedPath,
+		data.contentPath ?? '',
+		data.imageBaseHref ?? '',
+		data.rawHref ?? '',
+	].join('\n')
 }
 
 export function PackageFilesExplorer(
@@ -119,7 +134,7 @@ export function PackageFilesExplorer(
 	return () => {
 		const { data } = handle.props
 		syncExpanded(data.selectedPath, data.kind === 'directory')
-		const contentKey = `${data.selectedPath}\n${data.contentPath ?? ''}\n${data.imageBaseHref ?? ''}`
+		const contentKey = packageFilesContentKey(data)
 		if (contentFor !== contentKey) {
 			contentFor = contentKey
 			contentNode = renderContent(data)
@@ -408,17 +423,30 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 						</span>
 					) : null}
 				</div>
-				{body &&
-				data.contentKind !== 'binary' &&
-				!isPackageFilesMediaKind(data.contentKind) ? (
-					<CopyTextButton
-						value={body}
-						idleLabel="Copy"
-						variant="ghost"
-						size="sm"
-						ariaLabel={`Copy ${heading}`}
-					/>
-				) : null}
+				<div mix={css(contentActionsCss)}>
+					{data.rawHref ? (
+						<a
+							href={data.rawHref}
+							data-rmx-document
+							data-testid="package-files-raw-link"
+							aria-label={`View raw ${heading}`}
+							mix={css(rawLinkCss)}
+						>
+							Raw
+						</a>
+					) : null}
+					{body &&
+					data.contentKind !== 'binary' &&
+					!isPackageFilesMediaKind(data.contentKind) ? (
+						<CopyTextButton
+							value={body}
+							idleLabel="Copy"
+							variant="ghost"
+							size="sm"
+							ariaLabel={`Copy ${heading}`}
+						/>
+					) : null}
+				</div>
 			</div>
 			{renderFilePreview(data, heading, body)}
 		</div>
@@ -808,6 +836,17 @@ const contentToolbarCss = {
 	gap: spacing.sm,
 	padding: `${spacing.sm} ${spacing.md}`,
 	borderBottom: `1px solid ${colors.border}`,
+}
+
+const contentActionsCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+}
+
+const rawLinkCss = {
+	...getGhostButtonCss({ size: 'sm' }),
+	textDecoration: 'none',
 }
 
 const contentHeadingWrapCss = {

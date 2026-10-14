@@ -123,10 +123,19 @@ export function loadPackagePage(input: {
 	request: Request
 	username: string
 	kodyId: string
+	/**
+	 * Viewer already authenticated another way (a `kody_at_` bearer on raw
+	 * file reads). Omit to read the session cookie; `null` is anonymous.
+	 */
+	viewer?: McpUserContext | null
 }): Promise<PackagePageAccess> {
+	const viewerKey =
+		input.viewer === undefined
+			? 'session'
+			: `viewer:${input.viewer?.userId ?? 'anonymous'}`
 	return memoizePerRequest({
 		request: input.request,
-		key: `package-page:${input.username}:${input.kodyId}`,
+		key: `package-page:${input.username}:${input.kodyId}:${viewerKey}`,
 		load: () =>
 			recordServerTiming(
 				'package-page',
@@ -201,7 +210,7 @@ async function loadPlainRepoPage(input: {
 	request: Request
 	username: string
 	kodyId: string
-	user: Awaited<ReturnType<typeof readAuthenticatedAppUser>>
+	viewer: McpUserContext | null
 }): Promise<PackagePageAccess> {
 	const username = normalizeUsername(input.username.trim())
 	const slug = input.kodyId.trim().toLowerCase()
@@ -217,7 +226,7 @@ async function loadPlainRepoPage(input: {
 	})
 	if (!repo) return { kind: 'not_found' }
 
-	const viewer = input.user?.mcpUser ?? null
+	const viewer = input.viewer
 	const canAccess = await viewerCanAccessPlainRepo({
 		env: input.env,
 		viewer,
@@ -295,7 +304,7 @@ async function loadPlainRepoPage(input: {
 		viewerCanPublish: false,
 		viewerCanDelete: false,
 		viewerCanAdoptCommunityFork: false,
-		loggedIn: Boolean(input.user),
+		loggedIn: Boolean(viewer),
 		invocationUrlOrigin: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
@@ -310,10 +319,11 @@ async function loadPackagePageUncached(input: {
 	request: Request
 	username: string
 	kodyId: string
+	viewer?: McpUserContext | null
 }): Promise<PackagePageAccess> {
 	// The URL lookup only needs the pair; the viewer lookup only needs the
 	// cookie. Neither waits on the other.
-	const [target, user] = await Promise.all([
+	const [target, viewer] = await Promise.all([
 		recordServerTiming(
 			'resolve-url',
 			() =>
@@ -324,11 +334,15 @@ async function loadPackagePageUncached(input: {
 				}),
 			input.request,
 		),
-		recordServerTiming(
-			'auth',
-			() => readAuthenticatedAppUser(input.request, input.env),
-			input.request,
-		),
+		input.viewer === undefined
+			? recordServerTiming(
+					'auth',
+					async () =>
+						(await readAuthenticatedAppUser(input.request, input.env))
+							?.mcpUser ?? null,
+					input.request,
+				)
+			: input.viewer,
 	])
 	if (!target) {
 		return await loadPlainRepoPage({
@@ -336,11 +350,9 @@ async function loadPackagePageUncached(input: {
 			request: input.request,
 			username: input.username,
 			kodyId: input.kodyId,
-			user,
+			viewer,
 		})
 	}
-
-	const viewer = user?.mcpUser ?? null
 
 	if (target.kind === 'redirect') {
 		// A listing move is public. An unlisted rename must not leak the new
@@ -501,7 +513,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanPublish: false,
 			viewerCanDelete: false,
 			viewerCanAdoptCommunityFork: false,
-			loggedIn: Boolean(user),
+			loggedIn: Boolean(viewer),
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
 			ownerProfilePublic: listing.ownerProfilePublic,

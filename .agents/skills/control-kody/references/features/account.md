@@ -37,12 +37,15 @@ The site header has two controls. The org switcher
 (`data-testid="org-switcher"`, "@slug: switch organization") lists orgs, then
 Create organization and an invites row when you have any. The account menu
 (`data-testid="account-menu"`, panel `account-menu-panel`) is the person's
-avatar: name and `@username`, then Your profile, Account settings, Usage &
-credits (current org from the URL only, else the personal org), and Log out.
-Narrow viewports show both in the one menu panel (orgs, then a "Your account"
-group). Own profile (`/@<username>`) also links **Workspace** (lands on
-`/@<slug>/-/repositories`) beside Edit profile. A team org home lists
-**Workspace** above its management links.
+avatar: name and `@username`, then a **Manage** group
+(`account-menu-manage-group`) that leads with the current org's **Overview**
+(the switcher's org: team `/@<slug>`, signup org `/@<slug>/-/overview`) and
+lists every other org's workspace home, then Your profile, Account settings,
+Usage & credits (current org from the URL only, else the personal org), and Log
+out. Narrow viewports show both in the one menu panel (orgs, then Manage with
+Overview only, then a "Your account" group). Own profile (`/@<username>`) also
+links **Workspace** (lands on `/@<slug>/-/repositories`) beside Edit profile. A
+team org home lists **Workspace** above its management links.
 
 ## How to get there
 
