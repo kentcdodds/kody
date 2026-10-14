@@ -206,7 +206,6 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Credentials',
 		'Secret providers',
 		'Agents',
-		'Memories',
 		'Email',
 		'Activity',
 		'Members',
@@ -214,6 +213,9 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Usage & credits',
 		'Billing',
 	])
+	expect(
+		teamOwner.flatMap((group) => group.items).map((item) => item.label),
+	).not.toContain('Memories')
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',
@@ -258,17 +260,23 @@ test('team organization rail shares the sections and keeps members, settings, an
 	).toBe(true)
 })
 
-test('personal and team rails list the same sections in the same order above Organization', () => {
+test('personal rail includes Memories; team rail hides it (ADR 0072)', () => {
 	const sections = (personal: boolean) =>
 		workspaceRailGroups({ orgSlug: 'acme', personal, role: 'owner' })
 			.filter((group) => group.label !== 'Organization')
 			.map((group) => [group.label, group.items.map((item) => item.label)])
-	expect(sections(false)).toEqual(sections(true))
 	expect(sections(true)).toEqual([
 		[null, ['Overview']],
 		['Build', ['Repositories', 'Jobs', 'Webhooks']],
 		['Credentials', ['Credentials', 'Secret providers']],
 		['Agents & data', ['Agents', 'Memories', 'Email']],
+		['Activity', ['Activity']],
+	])
+	expect(sections(false)).toEqual([
+		[null, ['Overview']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Credentials', ['Credentials', 'Secret providers']],
+		['Agents & data', ['Agents', 'Email']],
 		['Activity', ['Activity']],
 	])
 	for (const role of ['owner', 'member', 'billing'] as const) {
@@ -277,7 +285,7 @@ test('personal and team rails list the same sections in the same order above Org
 				.filter((group) => group.label !== 'Organization')
 				.map((group) => [group.label, group.items.map((item) => item.label)]),
 			role,
-		).toEqual(sections(true))
+		).toEqual(sections(false))
 	}
 })
 

@@ -3,13 +3,14 @@
 Durable **personal** facts (ADR 0072). Always stored on the person's personal
 org, regardless of which org the connection uses. Verify-first writes
 (`metaMemoryVerify` before upsert/delete). Ask before copying a personal memory
-into an org package. Team `/@<slug>/-/memories` is read-only.
+into an org package. Team workspaces hide Memories from the nav; a direct team
+URL shows a retired notice.
 
 ## How to get there
 
-`/@<slug>/-/memories` → `/@<slug>/-/memories/:memoryId`.
+Personal: `/@<slug>/-/memories` → `/@<slug>/-/memories/:memoryId`.
 
-Personal org: writable. Team org: read-only.
+Personal org only (writable). Team org: no Memories nav item.
 
 ## Drive it
 
