@@ -29,24 +29,23 @@ import {
 
 export const creditAutoRefillMetadataKey = 'kody_credit_auto_refill'
 
-/** Suffix on auto-refill idempotency keys after org billing metadata landed (#3679). */
-export const creditAutoRefillIdempotencyKeyVersion = 'v2'
-
 export type CreditAutoRefillOutcome =
 	| 'charged'
 	| 'skipped'
 	| 'cap_reached'
 	| 'failed'
 
+/**
+ * Stable Stripe idempotency key for one auto-refill slot. Keep the shape
+ * unchanged across metadata dual-write so Stripe can return a cached intent
+ * when parameters are replayed for a deploy-boundary retry (#3679).
+ */
 export function buildCreditAutoRefillIdempotencyKey(input: {
 	userId: string
 	month: string
 	refillNumber: number
-	version: 'legacy' | typeof creditAutoRefillIdempotencyKeyVersion
 }): string {
-	const base = `kody-credit-auto-refill:${input.userId}:${input.month}:${input.refillNumber}`
-	if (input.version === 'legacy') return base
-	return `${base}:${creditAutoRefillIdempotencyKeyVersion}`
+	return `kody-credit-auto-refill:${input.userId}:${input.month}:${input.refillNumber}`
 }
 
 async function creditLedgerHasStripeReference(
@@ -157,22 +156,11 @@ async function createAutoRefillPaymentIntent(input: {
 	refillNumber: number
 	amountCents: number
 }): Promise<StripePaymentIntent> {
-	const legacyIdempotencyKey = buildCreditAutoRefillIdempotencyKey({
-		userId: input.userId,
-		month: input.month,
-		refillNumber: input.refillNumber,
-		version: 'legacy',
-	})
 	const idempotencyKey = buildCreditAutoRefillIdempotencyKey({
 		userId: input.userId,
 		month: input.month,
 		refillNumber: input.refillNumber,
-		version: creditAutoRefillIdempotencyKeyVersion,
 	})
-	const metadata = {
-		[creditAutoRefillMetadataKey]: '1',
-		...buildOrgBillingMetadata(input.userId),
-	}
 	const chargeInput = {
 		customerId: input.customerId,
 		paymentMethodId: input.paymentMethodId,
@@ -192,18 +180,22 @@ async function createAutoRefillPaymentIntent(input: {
 		return await createOffSessionPaymentIntent(input.env, {
 			...chargeInput,
 			idempotencyKey,
-			metadata,
+			metadata: {
+				[creditAutoRefillMetadataKey]: '1',
+				...buildOrgBillingMetadata(input.userId),
+			},
 		})
 	} catch (error) {
 		if (!(error instanceof StripeApiError)) throw error
 		if (!isStripeIdempotencyParameterMismatchError(error)) throw error
 		try {
-			// Deploy boundary (#3679): the legacy idempotency key may already be
-			// bound to a PaymentIntent created with kody_stable_user_id-only
-			// metadata. Replay that shape so Stripe returns the cached intent.
+			// Deploy boundary (#3679): this key may already be bound to a
+			// PaymentIntent created with kody_stable_user_id-only metadata.
+			// Replay that shape so Stripe returns the cached intent instead of
+			// rejecting the dual-write metadata as a parameter mismatch.
 			return await createOffSessionPaymentIntent(input.env, {
 				...chargeInput,
-				idempotencyKey: legacyIdempotencyKey,
+				idempotencyKey,
 				metadata: {
 					[creditAutoRefillMetadataKey]: '1',
 					[KODY_STABLE_USER_ID_METADATA_KEY]: input.userId,

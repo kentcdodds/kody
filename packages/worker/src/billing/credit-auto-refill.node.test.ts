@@ -94,28 +94,35 @@ test('runCreditAutoRefill heals idempotency mismatch via legacy metadata replay'
 		amount: amountCents,
 		currency: 'usd',
 	}
+	const expectedKey = buildCreditAutoRefillIdempotencyKey({
+		userId,
+		month: '2026-09',
+		refillNumber: 1,
+	})
+	let postCount = 0
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const method = init?.method ?? 'GET'
 		if (method === 'GET' && url.includes('/v1/payment_intents?')) {
 			return jsonResponse({ data: [] })
 		}
 		if (method === 'POST' && url.includes('/v1/payment_intents')) {
+			postCount += 1
 			const key = (init?.headers as Record<string, string>)?.['idempotency-key']
-			if (key?.endsWith(':v2')) {
+			expect(key).toBe(expectedKey)
+			const form = formOf(init)
+			if (postCount === 1) {
+				expect(form).toMatchObject({
+					[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
+					[`metadata[kody_org_id]`]: userId,
+					[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
+				})
 				return idempotencyMismatchResponse()
 			}
-			expect(formOf(init)).toMatchObject({
+			expect(form).toMatchObject({
 				[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
 				[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
 			})
-			expect(key).toBe(
-				buildCreditAutoRefillIdempotencyKey({
-					userId,
-					month: '2026-09',
-					refillNumber: 1,
-					version: 'legacy',
-				}),
-			)
+			expect(form[`metadata[kody_org_id]`]).toBeUndefined()
 			return jsonResponse(succeededIntent)
 		}
 		throw new Error(`Unexpected fetch: ${method} ${url}`)
@@ -202,7 +209,7 @@ test('runCreditAutoRefill applies an unledgered succeeded PaymentIntent from lis
 	}
 })
 
-test('runCreditAutoRefill lists then creates with v2 when no orphan exists', async () => {
+test('runCreditAutoRefill lists then creates with dual-write metadata when no orphan exists', async () => {
 	const { db } = createDb()
 	await seedWallet(db)
 	const env = createTestEnv(db)
@@ -218,11 +225,15 @@ test('runCreditAutoRefill lists then creates with v2 when no orphan exists', asy
 					userId,
 					month: '2026-09',
 					refillNumber: 1,
-					version: 'v2',
 				}),
 			)
+			expect(formOf(init)).toMatchObject({
+				[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
+				[`metadata[kody_org_id]`]: userId,
+				[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
+			})
 			return jsonResponse({
-				id: 'pi_new_v2',
+				id: 'pi_new_dual_write',
 				status: 'succeeded',
 				amount: amountCents,
 				currency: 'usd',
