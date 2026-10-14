@@ -11,6 +11,7 @@ import {
 	type WaitingPausedEnablementSignal,
 	type WaitingSignals,
 } from './waiting.ts'
+import { enablementMappingPauseResourceType } from './credential-contracts.ts'
 
 const emptySignals: WaitingSignals = {
 	username: 'kentcdodds',
@@ -343,4 +344,27 @@ test('paused enablement cards say what the run needed and cap at three', () => {
 		'enablement-paused-more',
 	])
 	expect(capped.at(-1)?.title).toBe('2 more of your automations are paused')
+})
+
+test('a mapping pause names every cause, including a need a republish changed', () => {
+	const [item] = buildWaitingItems(
+		{
+			...emptySignals,
+			pausedEnablements: [
+				{
+					id: 'en-digest',
+					triggerKind: 'cron',
+					triggerName: 'daily',
+					packageName: '@acme/digest',
+					reason: 'credential_access',
+					resourceType: enablementMappingPauseResourceType,
+					resourceId: 'chat',
+				},
+			],
+		},
+		'acme',
+	)
+	expect(item?.why).toContain(
+		'the credential mapped to its need "chat" is gone, you can no longer use it, or it no longer fits the need after a republish. Map another credential',
+	)
 })

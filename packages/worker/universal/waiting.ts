@@ -501,7 +501,7 @@ function pausedEnablementWhy(signal: WaitingPausedEnablementSignal) {
 	switch (signal.reason) {
 		case 'credential_access': {
 			if (signal.resourceType === enablementMappingPauseResourceType) {
-				return `It runs as you, and the credential mapped to its need "${signal.resourceId ?? 'unknown'}" is gone or you can no longer use it. Map another credential on the package's Credentials page, or get Use back. ${resumes}`
+				return `It runs as you, and the credential mapped to its need "${signal.resourceId ?? 'unknown'}" is gone, you can no longer use it, or it no longer fits the need after a republish. Map another credential on the package's Credentials page, or get Use back. ${resumes}`
 			}
 			const credential =
 				signal.resourceType && signal.resourceId
