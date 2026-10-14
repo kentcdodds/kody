@@ -525,8 +525,10 @@ test('pre-push records provenance after a successful test:push and logs progress
 	}
 })
 
-test('withStagedTreeForTypecheck hides unstaged work via diff/checkout/apply', async () => {
+test('withStagedTreeForTypecheck runs typecheck in a detached index worktree', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'hook-staged-'))
+	const treeSha = '1'.repeat(40)
+	const commitSha = '2'.repeat(40)
 	try {
 		const calls: Array<string> = []
 		const git: GitRunner = (args) => {
@@ -534,55 +536,64 @@ test('withStagedTreeForTypecheck hides unstaged work via diff/checkout/apply', a
 			if (args[0] === 'status') {
 				return gitResult(0, 'MM packages/worker/src/app.ts\n')
 			}
-			if (args[0] === 'diff') {
-				return gitResult(
-					0,
-					'diff --git a/packages/worker/src/app.ts b/packages/worker/src/app.ts\n',
-				)
+			if (args[0] === 'write-tree') {
+				return gitResult(0, `${treeSha}\n`)
 			}
-			if (args[0] === 'checkout') {
+			if (args[0] === 'commit-tree') {
+				return gitResult(0, `${commitSha}\n`)
+			}
+			if (args[0] === 'worktree' && args[1] === 'add') {
 				return gitResult(0, '')
 			}
-			if (args[0] === 'apply') {
+			if (args[0] === 'worktree' && args[1] === 'remove') {
 				return gitResult(0, '')
 			}
 			return gitResult(1)
 		}
 		const logs: Array<string> = []
+		let seenCwd: string | undefined
 		const value = await withStagedTreeForTypecheck({
 			git,
 			repoRoot: root,
 			log: (message) => logs.push(message),
-			run: () => 7,
+			run: (cwd) => {
+				seenCwd = cwd
+				return 7
+			},
 		})
 		expect(value).toBe(7)
 		expect(calls[0]).toBe('status --porcelain -uall')
-		expect(calls).toContain('diff --binary --full-index')
-		expect(calls).toContain('checkout -- .')
+		expect(calls).toContain('write-tree')
+		expect(calls.some((line) => line.startsWith('commit-tree'))).toBe(true)
+		expect(calls.some((line) => line.startsWith('worktree add --detach'))).toBe(
+			true,
+		)
 		expect(
-			calls.some((line) => line.startsWith('apply --whitespace=nowarn')),
+			calls.some((line) => line.startsWith('worktree remove --force')),
 		).toBe(true)
+		expect(seenCwd).toContain('pre-commit-typecheck-')
 		expect(logs[0]).toContain('typechecking staged tree')
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
 })
 
-test('withStagedTreeForTypecheck fails the hook when restore apply fails', async () => {
+test('withStagedTreeForTypecheck fails closed when worktree add fails', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'hook-staged-fail-'))
+	const treeSha = '3'.repeat(40)
 	try {
 		const git: GitRunner = (args) => {
 			if (args[0] === 'status') {
 				return gitResult(0, 'MM packages/worker/src/app.ts\n')
 			}
-			if (args[0] === 'diff') {
-				return gitResult(0, 'diff --git a/x b/x\n')
+			if (args[0] === 'write-tree') {
+				return gitResult(0, `${treeSha}\n`)
 			}
-			if (args[0] === 'checkout') {
-				return gitResult(0, '')
+			if (args[0] === 'commit-tree') {
+				return gitResult(0, `${'4'.repeat(40)}\n`)
 			}
-			if (args[0] === 'apply') {
-				return gitResult(1, '', 'patch failed')
+			if (args[0] === 'worktree' && args[1] === 'add') {
+				return gitResult(1, '', 'worktree add failed')
 			}
 			return gitResult(1)
 		}
@@ -594,7 +605,7 @@ test('withStagedTreeForTypecheck fails the hook when restore apply fails', async
 			run: () => 0,
 		})
 		expect(value).toBe(1)
-		expect(logs.some((line) => line.includes('failed to restore'))).toBe(true)
+		expect(logs.some((line) => line.includes('worktree add failed'))).toBe(true)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

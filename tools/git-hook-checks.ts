@@ -1,14 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { join } from 'node:path'
 import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
 import {
 	createFileProvenanceStore,
@@ -42,10 +34,10 @@ import {
  * (#3653 / #3719). Progress logs tick every 30s so a long workers-unit run is
  * not a silent hang (#3547). Workers-unit isolation (ADR 0011) is unchanged.
  *
- * Pre-commit typecheck runs against the staged tree (worktree reset to the
- * index, then unstaged/untracked restored) so unstaged fixes cannot
- * greenlight a broken index (#3695). Avoids `stash --keep-index` + `pop`,
- * which 3-way-merges and conflicts on MM paths.
+ * Pre-commit typecheck runs in a detached git worktree built from
+ * `git write-tree` (the index) so unstaged fixes cannot greenlight a broken
+ * index (#3695). The user's worktree is never mutated — no stash pop, no
+ * checkout -- ., no moving untracked files aside.
  */
 
 export type GitHookName = 'pre-commit' | 'pre-push'
@@ -192,47 +184,28 @@ export function shouldSkipTestPushForProvenance(input: {
 	}
 }
 
-type StagedTreeIsolation = {
-	/** Absolute path to a `git diff` patch of unstaged tracked changes. */
-	patchPath: string | null
-	/** Temp dir holding moved-aside untracked paths (relative layout preserved). */
-	holdDir: string | null
-	untrackedPaths: ReadonlyArray<string>
-}
-
-function parseDirtyWorktreePaths(porcelainStdout: string) {
+function worktreeHasUnstagedOrUntracked(porcelainStdout: string) {
 	const porcelainLine = /^(?:\?\?|[ MADRCU!][ MADRCU!]) /
-	const unstagedTracked: Array<string> = []
-	const untracked: Array<string> = []
 	for (const raw of porcelainStdout.split('\n')) {
 		const line = raw.trimEnd()
 		if (!porcelainLine.test(line)) continue
-		if (line.startsWith('?? ')) {
-			untracked.push(line.slice(3))
-			continue
-		}
+		if (line.startsWith('?? ')) return true
 		// Porcelain XY: second column is worktree; space means clean.
-		if (line[1] !== ' ') {
-			const pathPart = line.slice(3)
-			// Rename/copy: `R  old -> new` / `RM old -> new`
-			const arrow = pathPart.indexOf(' -> ')
-			unstagedTracked.push(arrow === -1 ? pathPart : pathPart.slice(arrow + 4))
-		}
+		if (line[1] !== ' ') return true
 	}
-	return { unstagedTracked, untracked }
+	return false
 }
 
 /**
- * Hide unstaged / untracked work so typecheck sees the index about to be
- * committed (#3695). Uses `git diff` + `checkout -- .` + `git apply`, and
- * moves untracked aside — not `stash --keep-index`/`pop`, which conflicts on
- * MM paths.
+ * Typecheck the index (staged tree) in a detached worktree so the user's
+ * worktree is never mutated (#3695). Unstaged / untracked files stay put.
  */
 export async function withStagedTreeForTypecheck<T>(input: {
 	git: GitRunner
-	run: () => T | Promise<T>
+	/** Optional cwd is the staged-tree worktree path when isolation is active. */
+	run: (cwd?: string) => T | Promise<T>
 	log?: (message: string) => void
-	/** Repo root for patch + hold dirs (tests inject a temp root). */
+	/** Repo root for the temporary worktree (tests inject a temp root). */
 	repoRoot?: string
 }): Promise<T> {
 	const log = input.log ?? (() => {})
@@ -242,137 +215,114 @@ export async function withStagedTreeForTypecheck<T>(input: {
 		log('pre-commit: could not read worktree status; typechecking as-is')
 		return input.run()
 	}
-	const { unstagedTracked, untracked } = parseDirtyWorktreePaths(status.stdout)
-	if (unstagedTracked.length === 0 && untracked.length === 0) {
+	if (!worktreeHasUnstagedOrUntracked(status.stdout)) {
 		return input.run()
 	}
-	log('pre-commit: typechecking staged tree (hiding unstaged changes)')
 
-	let isolation: StagedTreeIsolation
-	try {
-		isolation = captureUnstagedIsolation(input.git, untracked, repoRoot)
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		log(`pre-commit: staged-tree isolation failed (${message})`)
-		return 1 as T
-	}
-
-	const hide = hideUnstagedForTypecheck(input.git)
-	if (hide !== null) {
-		log(`pre-commit: could not reset worktree to index (${hide})`)
-		restoreUnstagedAfterTypecheck(input.git, isolation, repoRoot)
-		return 1 as T
-	}
-
-	let runError: unknown
-	let result: T
-	try {
-		result = await input.run()
-	} catch (error) {
-		runError = error
-		result = 1 as T
-	}
-	const restoreError = restoreUnstagedAfterTypecheck(
-		input.git,
-		isolation,
-		repoRoot,
-	)
-	if (runError) throw runError
-	if (restoreError !== null) {
+	const writeTree = input.git(['write-tree'])
+	if (writeTree.status !== 0) {
 		log(
-			`pre-commit: failed to restore unstaged work after typecheck (${restoreError}). Patch/hold under .tmp if present; resolve manually, then retry the commit.`,
+			`pre-commit: git write-tree failed (${writeTree.stderr.trim() || 'unknown'}); typechecking as-is`,
+		)
+		return input.run()
+	}
+	const indexTree = writeTree.stdout.trim()
+	if (!/^[0-9a-f]{40}$/i.test(indexTree)) {
+		log('pre-commit: git write-tree returned no tree SHA; typechecking as-is')
+		return input.run()
+	}
+
+	const commitTree = input.git([
+		'commit-tree',
+		indexTree,
+		'-m',
+		'kody-pre-commit-typecheck',
+	])
+	if (commitTree.status !== 0) {
+		log(
+			`pre-commit: git commit-tree failed (${commitTree.stderr.trim() || 'unknown'}); typechecking as-is`,
+		)
+		return input.run()
+	}
+	const stagedCommit = commitTree.stdout.trim()
+	if (!/^[0-9a-f]{40}$/i.test(stagedCommit)) {
+		log('pre-commit: git commit-tree returned no commit; typechecking as-is')
+		return input.run()
+	}
+
+	const tmpRoot = join(repoRoot, '.tmp')
+	mkdirSync(tmpRoot, { recursive: true })
+	const worktreePath = join(
+		tmpRoot,
+		`pre-commit-typecheck-${process.pid}-${stagedCommit.slice(0, 8)}`,
+	)
+	if (existsSync(worktreePath)) {
+		rmSync(worktreePath, { recursive: true, force: true })
+	}
+
+	log(
+		`pre-commit: typechecking staged tree in ${worktreePath} (index ${indexTree.slice(0, 12)})`,
+	)
+	const add = input.git([
+		'worktree',
+		'add',
+		'--detach',
+		worktreePath,
+		stagedCommit,
+	])
+	if (add.status !== 0) {
+		log(
+			`pre-commit: git worktree add failed (${add.stderr.trim() || add.stdout.trim() || 'unknown'}); refusing to typecheck a dirty worktree as-is`,
 		)
 		return 1 as T
 	}
-	return result
+
+	const nodeModules = join(repoRoot, 'node_modules')
+	const worktreeNodeModules = join(worktreePath, 'node_modules')
+	if (existsSync(nodeModules) && !existsSync(worktreeNodeModules)) {
+		try {
+			symlinkSync(nodeModules, worktreeNodeModules, 'junction')
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			log(
+				`pre-commit: could not link node_modules into staged worktree (${message})`,
+			)
+			removeStagedTypecheckWorktree(input.git, worktreePath, log)
+			return 1 as T
+		}
+	}
+
+	try {
+		return await input.run(worktreePath)
+	} finally {
+		removeStagedTypecheckWorktree(input.git, worktreePath, log)
+	}
 }
 
-function captureUnstagedIsolation(
+function removeStagedTypecheckWorktree(
 	git: GitRunner,
-	untracked: ReadonlyArray<string>,
-	repoRoot: string,
-): StagedTreeIsolation {
-	const diff = git(['diff', '--binary', '--full-index'])
-	if (diff.status !== 0) {
-		throw new Error(diff.stderr.trim() || 'git diff failed')
-	}
-	let patchPath: string | null = null
-	if (diff.stdout.length > 0) {
-		const tmpRoot = join(repoRoot, '.tmp')
-		mkdirSync(tmpRoot, { recursive: true })
-		patchPath = join(tmpRoot, `kody-pre-commit-unstaged-${process.pid}.patch`)
-		writeFileSync(patchPath, diff.stdout)
-	}
-	let holdDir: string | null = null
-	if (untracked.length > 0) {
-		holdDir = mkdtempSync(join(tmpdir(), 'kody-pre-commit-untracked-'))
-		for (const relative of untracked) {
-			const from = join(repoRoot, relative)
-			const to = join(holdDir, relative)
-			if (!existsSync(from)) continue
-			mkdirSync(dirname(to), { recursive: true })
-			renameSync(from, to)
+	worktreePath: string,
+	log: (message: string) => void,
+) {
+	const remove = git(['worktree', 'remove', '--force', worktreePath])
+	if (remove.status !== 0) {
+		log(
+			`pre-commit: warning: git worktree remove failed (${remove.stderr.trim() || remove.stdout.trim() || 'unknown'}); removing ${worktreePath} from disk`,
+		)
+		try {
+			rmSync(worktreePath, { recursive: true, force: true })
+		} catch {
+			// Best-effort.
 		}
+		git(['worktree', 'prune'])
 	}
-	return { patchPath, holdDir, untrackedPaths: untracked }
-}
-
-function hideUnstagedForTypecheck(git: GitRunner): string | null {
-	const checkout = git(['checkout', '--', '.'])
-	if (checkout.status !== 0) {
-		return checkout.stderr.trim() || 'git checkout -- . failed'
-	}
-	return null
-}
-
-function restoreUnstagedAfterTypecheck(
-	git: GitRunner,
-	isolation: StagedTreeIsolation,
-	repoRoot: string,
-): string | null {
-	let error: string | null = null
-	if (isolation.patchPath) {
-		const apply = git(['apply', '--whitespace=nowarn', isolation.patchPath])
-		if (apply.status !== 0) {
-			error = apply.stderr.trim() || apply.stdout.trim() || 'git apply failed'
-		} else {
-			try {
-				rmSync(isolation.patchPath, { force: true })
-			} catch {
-				// Best-effort cleanup.
-			}
-		}
-	}
-	if (isolation.holdDir) {
-		for (const relative of isolation.untrackedPaths) {
-			const from = join(isolation.holdDir, relative)
-			const to = join(repoRoot, relative)
-			if (!existsSync(from)) continue
-			try {
-				mkdirSync(dirname(to), { recursive: true })
-				renameSync(from, to)
-			} catch (moveError) {
-				const message =
-					moveError instanceof Error ? moveError.message : String(moveError)
-				error = error ?? `restore untracked ${relative}: ${message}`
-			}
-		}
-		if (error === null) {
-			try {
-				rmSync(isolation.holdDir, { recursive: true, force: true })
-			} catch {
-				// Best-effort cleanup.
-			}
-		}
-	}
-	return error
 }
 
 export async function runGitHookChecks(input: {
 	hook: GitHookName
 	stdin?: string | null
 	git?: GitRunner
-	runScript?: (script: string) => number | Promise<number>
+	runScript?: (script: string, cwd?: string) => number | Promise<number>
 	log?: (message: string) => void
 	provenance?: ProvenanceStore
 	now?: () => number
@@ -428,7 +378,7 @@ export async function runGitHookChecks(input: {
 				status = await withStagedTreeForTypecheck({
 					git,
 					log,
-					run: () => runScript(script),
+					run: (cwd) => runScript(script, cwd),
 				})
 			} else {
 				status = await runScript(script)
@@ -694,11 +644,12 @@ export function gitHookScriptEnv(source: NodeJS.ProcessEnv = process.env) {
 	return env
 }
 
-function defaultRunNpmScript(script: string): Promise<number> {
+function defaultRunNpmScript(script: string, cwd?: string): Promise<number> {
 	return new Promise((resolve) => {
 		const child = spawn(resolveNpmCommand(), ['run', script], {
 			stdio: 'inherit',
 			env: gitHookScriptEnv(),
+			cwd,
 		})
 		child.once('error', (error) => {
 			console.error(error.message)
