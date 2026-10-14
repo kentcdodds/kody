@@ -1472,12 +1472,17 @@
 	--hue: 345;
 }
 /* `/features/credentials` nests the secrets and integrations scene wrappers;
-   the whole page takes the credentials green. */
+   the whole page takes the credentials green. The secrets scenes put white
+   labels on their accent, so light mode uses a darker green there to keep
+   4.5:1. */
 .feature-detail:has(.credentials),
 .feature-detail .credentials,
 .feature-detail .credentials :is(.secrets, .integrations) {
 	--hue: 148;
-	--primitive-secrets: var(--primitive-integrations);
+	--primitive-secrets: light-dark(
+		oklch(0.5 0.15 148),
+		var(--primitive-integrations)
+	);
 }
 .feature-detail .credentials :is(.secrets, .integrations) {
 	background: transparent;

@@ -718,7 +718,7 @@ function withAgentHead({
 	pathname: string
 }): DocumentHeadDescriptor {
 	const agent = findWithAgentByPathname(pathname)
-	if (!agent) return { title: NOT_FOUND_DOCUMENT_TITLE }
+	if (!agent) return titleOnly('Agent not found')
 	const title = `Kody for ${agent.name} | Kody`
 	return {
 		title,
