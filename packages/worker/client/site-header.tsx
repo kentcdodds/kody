@@ -82,8 +82,6 @@ const menuPanelId = 'site-menu'
 const orgSwitcherPanelId = 'org-switcher'
 const accountMenuPanelId = 'account-menu'
 
-export { dismissOpenPopoverPanel, isPopoverOpen }
-
 type SwitcherRow = {
 	key: string
 	href: string
