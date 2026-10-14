@@ -12,8 +12,17 @@ test('features overview shows the lantern and gives every primitive card an inte
 	expect(html).toContain('aria-label="The five primitives"')
 	for (const id of ['memory', 'packages', 'triggers', 'integrations', 'apps']) {
 		expect(html).toContain(`data-primitive="${id}"`)
-		expect(html).toContain(`href="/features/${id}"`)
 	}
+	for (const page of [
+		'memory',
+		'packages',
+		'triggers',
+		'credentials',
+		'apps',
+	]) {
+		expect(html).toContain(`href="/features/${page}"`)
+	}
+	expect(html).not.toContain('href="/features/integrations"')
 	expect(html).toContain('aria-pressed="true"')
 	expect(html).toContain('aria-pressed="false"')
 	expect(html).not.toContain('data-motion')
