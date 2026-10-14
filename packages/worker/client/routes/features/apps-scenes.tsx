@@ -5,11 +5,9 @@ import { type Brief } from './apps-intake.tsx'
 /**
  * `/features/apps` scenes. The page's own controls drive them. A keyed
  * `.pw-run` replays a story on each click. The intake fields stay outside
- * those runs so typing never restarts an animation.
+ * those runs so typing never restarts an animation. Every stage sizes to its
+ * content (`apps.css`) and stacks on narrow containers.
  */
-
-const returnHeight = 214
-const shareHeight = 204
 
 export const tomorrowBrief = {
 	name: 'Launch checklist',
@@ -51,7 +49,12 @@ export function AppsHeroScene(
 			children,
 		} = handle.props
 		return (
-			<PrimitiveWidgetFrame id="apps" size="full" class="pw-scene-apx-hero">
+			<PrimitiveWidgetFrame
+				id="apps"
+				size="full"
+				class="pw-scene-apx-hero"
+				stack
+			>
 				<div class="pw-apx-shell">
 					<div class="pw-run pw-apx-prompt-run" key={`prompt-${promptShot}`}>
 						<div class="pw-apx-prompt-row">
@@ -159,8 +162,8 @@ export function AppsReturnScene(
 			<PrimitiveWidgetFrame
 				id="apps"
 				size="full"
-				height={returnHeight}
 				class="pw-scene-apx-return"
+				stack
 			>
 				<div class="pw-run" key={`${signature}-${openedId ?? 'none'}`}>
 					<div class="pw-apx-window pw-apx-window-fill">
@@ -315,8 +318,8 @@ export function AppsShareScene(
 			<PrimitiveWidgetFrame
 				id="apps"
 				size="full"
-				height={shareHeight}
 				class="pw-scene-apx-share"
+				stack
 			>
 				<div
 					class="pw-run"

@@ -229,21 +229,23 @@ export function AppsFeature(handle: Handle) {
 									{opened.kind} · {opened.deadline}
 								</p>
 								<p>{opened.copy}</p>
-								<button
-									type="button"
-									class="run"
-									mix={on('click', () => {
-										if (opened) {
-											draft = { ...opened }
-											view = 'form'
-											promptShot += 1
-											handle.update()
-										}
-									})}
-								>
-									Edit this brief
-								</button>
-								<a href="#intake-demo">Go to intake form ↑</a>
+								<div class="ia-record-actions">
+									<button
+										type="button"
+										class="run"
+										mix={on('click', () => {
+											if (opened) {
+												draft = { ...opened }
+												view = 'form'
+												promptShot += 1
+												handle.update()
+											}
+										})}
+									>
+										Edit this brief
+									</button>
+									<a href="#intake-demo">Go to intake form ↑</a>
+								</div>
 							</div>
 						)}
 					</div>
