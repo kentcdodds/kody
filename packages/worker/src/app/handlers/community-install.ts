@@ -16,6 +16,10 @@ import {
 } from '#app/community-public.ts'
 import { type routes } from '#universal/routes.ts'
 import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
+import {
+	checkPermission,
+	computeEffectivePermissions,
+} from '#worker/authorization/authorize.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -28,6 +32,7 @@ import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { toApiError } from '#worker/open-api/errors.ts'
 import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { entitlementEmailForOwner } from '#worker/request-context/owner-id.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -35,23 +40,33 @@ import { jsonResponse } from '#worker/json-response.ts'
 
 /**
  * Community pages are not org-bound, so install into the last-used org when
- * the person still belongs there; otherwise their personal org.
+ * the person still belongs there and holds `package:create`; otherwise their
+ * personal org (where they are Owner).
  */
 async function resolveCommunityInstallOwnerId(input: {
 	env: Env
 	user: AuthenticatedAppUser
 	request: Request
 }): Promise<OwnerId> {
+	const personalId = personalOrgId(input.user.mcpUser.userId)
 	const remembered = readLastUsedOrgSlug(input.request.headers.get('cookie'))
-	if (remembered) {
-		const binding = await loadOrgBindingForSlug(
-			input.env.APP_DB,
-			input.user.mcpUser.userId,
-			remembered,
-		)
-		if (binding) return binding.org.id
-	}
-	return personalOrgId(input.user.mcpUser.userId)
+	if (!remembered) return personalId
+	const binding = await loadOrgBindingForSlug(
+		input.env.APP_DB,
+		input.user.mcpUser.userId,
+		remembered,
+	)
+	if (!binding || binding.org.id === personalId) return personalId
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: deriveRequestContext({
+			user: input.user.mcpUser,
+			source: { kind: 'session' },
+			orgBinding: binding,
+		}),
+	})
+	if (!checkPermission(access, 'package:create').allowed) return personalId
+	return binding.org.id
 }
 
 const communityInstallPostSchema = z.object({

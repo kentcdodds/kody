@@ -11,7 +11,10 @@ import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import { authorize } from '#worker/authorization/authorize.ts'
+import {
+	AuthorizationError,
+	authorize,
+} from '#worker/authorization/authorize.ts'
 import { type IntegrationTokenRefreshResult } from '#worker/integrations/token-refresh.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
 import { type ResolvedSecret } from '#mcp/secrets/service.ts'
@@ -289,4 +292,30 @@ export async function authorizeActorUse(
 			? credentialResource(input.orgId, { id: credentialId, name: label })
 			: missingCredentialResource(input.orgId, label),
 	)
+}
+
+/**
+ * Personal-credential Use does not go through `authorize`, so scoped tokens
+ * still need an explicit family check (same rule as `listUsableCredentials`).
+ */
+export function assertCredentialScopeAllows(
+	call: ResolverCall,
+	permission: OrgPermission,
+) {
+	const scopes = call.input.actor?.credential.scopes ?? null
+	if (scopes === null || scopes.includes(permission)) return
+	const mintScopes = [...new Set([...scopes, permission])].sort()
+	throw new AuthorizationError({
+		code: 'credential_scope',
+		permission,
+		orgId: call.input.orgId,
+		resource: call.subject.credentialId
+			? credentialResource(call.input.orgId, {
+					id: call.subject.credentialId,
+					name: call.subject.name,
+				})
+			: missingCredentialResource(call.input.orgId, call.subject.name),
+		message: `This credential is not scoped for ${permission}. Mint a token that adds it: from Kody MCP, call cliCredentialBootstrap({ lifetime: "short", scopes: [${mintScopes.map((scope) => JSON.stringify(scope)).join(', ')}] }) and run the returned cli_command; or after \`kody login\`, run \`npx @kodycodes/cli auth bootstrap --lifetime short --scopes ${mintScopes.join(',')}\`. Use those scopes with tokenCreate only for CI/headless.`,
+		mintScopes,
+	})
 }

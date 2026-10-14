@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { buildPackagePagePath } from '@kody-internal/shared/public-urls.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requestHasSessionCookie } from '#app/anonymous-html-cache.ts'
@@ -6,6 +7,7 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { resolvePackageAppOrgOwnerByHandle } from '#app/package-app-owner.ts'
 import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import {
 	logPackageAppAuthFailed,
 	logPackageAppHttpError,
@@ -85,10 +87,16 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 	if (!org) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
+	const slugLookup = await resolveSavedPackageForPackageAppSlug({
+		db: env.APP_DB,
+		userId: org.userId,
+		slug: packagePath.kodyId,
+	})
 	const canExecute = await viewerCanExecutePackageApp({
 		env,
 		viewer: user.mcpUser,
 		ownerId: org.userId,
+		appId: slugLookup?.savedPackage.id ?? null,
 	})
 	if (!canExecute) {
 		return new Response(null, {
@@ -114,7 +122,8 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		owner: {
 			userId: org.userId,
 			username: org.username,
-			email: user.email,
+			email:
+				org.userId === personalOrgId(user.mcpUser.userId) ? user.email : '',
 			displayName: org.displayName,
 		},
 		visitor: {

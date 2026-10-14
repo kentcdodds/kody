@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
@@ -303,6 +306,8 @@ async function authorizePackageAppVisitorForOrg(input: {
 	stableUserId: string
 	issuedAt: number
 	handle: string
+	/** Package slug so app:execute is checked on that app, not any grant. */
+	kodyId?: string
 }): Promise<AuthorizedPackageAppServe> {
 	const person = await resolvePackageAppOwnerByStableUserId({
 		env: input.env,
@@ -319,10 +324,21 @@ async function authorizePackageAppVisitorForOrg(input: {
 		userId: personIdFromStored(input.stableUserId),
 		username: person.username,
 	}
+	let appId: string | null = null
+	const kodyId = input.kodyId?.trim()
+	if (kodyId) {
+		const lookup = await resolveSavedPackageForPackageAppSlug({
+			db: input.env.APP_DB,
+			userId: org.userId,
+			slug: kodyId,
+		})
+		appId = lookup?.savedPackage.id ?? null
+	}
 	const canExecute = await viewerCanExecutePackageApp({
 		env: input.env,
 		viewer,
 		ownerId: org.userId,
+		appId,
 	})
 	if (!canExecute) return { kind: 'forbidden' }
 
@@ -331,12 +347,16 @@ async function authorizePackageAppVisitorForOrg(input: {
 		viewer.userId,
 		org.userId,
 	)
+	// Team org entitlements resolve by org id alone. Pairing the visitor's
+	// email with the team org id would miss the users row and fall to Free.
+	const ownerEmail =
+		org.userId === personalOrgId(viewer.userId) ? person.email : ''
 	return {
 		kind: 'ok',
 		owner: {
 			userId: org.userId,
 			username: org.username,
-			email: person.email,
+			email: ownerEmail,
 			displayName: org.displayName,
 		},
 		visitor: {
@@ -547,11 +567,21 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 		env,
 		handle: packagePath.username,
 	})
+	const handoffAppId = org
+		? (
+				await resolveSavedPackageForPackageAppSlug({
+					db: env.APP_DB,
+					userId: org.userId,
+					slug: packagePath.kodyId,
+				})
+			)?.savedPackage.id
+		: null
 	const canExecute = org
 		? await viewerCanExecutePackageApp({
 				env,
 				viewer: user.mcpUser,
 				ownerId: org.userId,
+				appId: handoffAppId ?? null,
 			})
 		: false
 	if (!org || !canExecute) {
@@ -720,6 +750,7 @@ async function handleUserSubdomainRequest(input: {
 			stableUserId: parsedSession.session.stableUserId,
 			issuedAt: parsedSession.issuedAt,
 			handle: username,
+			kodyId: packagePath.kodyId,
 		}),
 	)
 
@@ -871,6 +902,7 @@ async function handleCustomHostnameRequest(input: {
 			stableUserId: parsedSession.session.stableUserId,
 			issuedAt: parsedSession.issuedAt,
 			handle: mapping.username,
+			kodyId: packagePath.kodyId,
 		}),
 	)
 

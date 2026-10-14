@@ -477,6 +477,7 @@ test('handlePackageAppRequest serves the org named in the slug when the visitor 
 		org: { id: ownerIdFromStored('org-acme'), slug: 'acme' },
 		role: 'member',
 	})
+	mockModule.createPackageAppCallerContext.mockReturnValueOnce({})
 	servePackageEntrypoint(async () => new Response('ok'))
 
 	const response = await request('/@acme/packages/example')
@@ -486,6 +487,21 @@ test('handlePackageAppRequest serves the org named in the slug when the visitor 
 	).toHaveBeenLastCalledWith(
 		expect.objectContaining({ userId: ownerIdFromStored('org-acme') }),
 	)
+	expect(mockModule.viewerCanExecutePackageApp).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			ownerId: ownerIdFromStored('org-acme'),
+			appId: 'package-1',
+		}),
+	)
+	// Team org entitlements key by org id; visitor email would fall to Free.
+	expect(mockModule.createPackageAppCallerContext).toHaveBeenCalledWith(
+		expect.objectContaining({
+			owner: expect.objectContaining({
+				userId: ownerIdFromStored('org-acme'),
+				email: '',
+			}),
+		}),
+	)
 })
 
 test('handlePackageAppRequest redirects when the visitor cannot execute the org app', async () => {
@@ -494,14 +510,18 @@ test('handlePackageAppRequest redirects when the visitor cannot execute the org 
 		username: 'acme',
 		displayName: 'Acme',
 	})
+	mockModule.resolveSavedPackageForPackageAppSlug.mockResolvedValueOnce({
+		savedPackage: { id: 'pkg-acme-example' },
+	} as never)
 	mockModule.viewerCanExecutePackageApp.mockResolvedValueOnce(false)
-	const callsBefore =
-		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length
 
 	const response = await request('/@acme/packages/example')
 	expect(response.status).toBe(302)
 	expect(response.headers.get('Location')).toBe('/@acme/example')
-	expect(
-		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length,
-	).toBe(callsBefore)
+	expect(mockModule.viewerCanExecutePackageApp).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			ownerId: ownerIdFromStored('org-acme'),
+			appId: 'pkg-acme-example',
+		}),
+	)
 })

@@ -37,6 +37,7 @@ import {
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
+	assertCredentialScopeAllows,
 	authorizeActorUse,
 	type CredentialResolver,
 	type ResolverCall,
@@ -122,6 +123,7 @@ async function authorizeSecretNameUse(
 			break
 		case 'personal':
 			call.subject.credentialId = found.credentialId
+			assertCredentialScopeAllows(call, 'secret:use')
 			await authorizePersonalCredentialUse({
 				db: call.input.env.APP_DB,
 				actorPersonId: call.input.actor?.actor?.userId ?? null,

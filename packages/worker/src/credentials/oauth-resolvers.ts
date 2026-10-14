@@ -17,6 +17,7 @@ import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { refreshIntegrationTokens } from '#worker/integrations/token-refresh.ts'
 import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import {
+	assertCredentialScopeAllows,
 	authorizeActorUse,
 	type CredentialResolver,
 	type CredentialTargetFor,
@@ -43,6 +44,7 @@ async function authorizeIntegrationUse(
 			break
 		case 'personal':
 			call.subject.credentialId = lookup.credentialId
+			assertCredentialScopeAllows(call, 'integration:use')
 			await authorizePersonalCredentialUse({
 				db: input.env.APP_DB,
 				actorPersonId: input.actor?.actor?.userId ?? null,
@@ -58,7 +60,9 @@ async function authorizeIntegrationUse(
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: input.orgId,
+		// Package allowlists live on the credential's owning org (run org or
+		// the actor's personal org for a granted personal connection).
+		userId: lookup.ownerId,
 		name: credential.name,
 		packageId: input.packageStamp?.packageId ?? null,
 		packageKodyId: credential.packageKodyId,

@@ -15,6 +15,8 @@ const mockModule = vi.hoisted(() => ({
 	installCommunityListing: vi.fn(),
 	getPackageScopeByUserId: vi.fn(),
 	loadOrgBindingForSlug: vi.fn(),
+	computeEffectivePermissions: vi.fn(),
+	checkPermission: vi.fn(),
 	waitUntil: vi.fn(),
 }))
 
@@ -51,9 +53,31 @@ vi.mock('#worker/orgs/repo.ts', () => ({
 		mockModule.loadOrgBindingForSlug(...args),
 }))
 
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/authorization/authorize.ts')>()
+	return {
+		...actual,
+		computeEffectivePermissions: (...args: Array<unknown>) =>
+			mockModule.computeEffectivePermissions(...args),
+		checkPermission: (...args: Array<unknown>) =>
+			mockModule.checkPermission(...args),
+	}
+})
+
 const env = { APP_DB: {} as D1Database } as Env
 const personalOwnerId = ownerIdFromStored('stable-user-b')
 const teamOrgId = ownerIdFromStored('org-acme')
+
+function allowPackageCreate() {
+	mockModule.computeEffectivePermissions.mockResolvedValue({})
+	mockModule.checkPermission.mockReturnValue({ allowed: true })
+}
+
+function denyPackageCreate() {
+	mockModule.computeEffectivePermissions.mockResolvedValue({})
+	mockModule.checkPermission.mockReturnValue({ allowed: false })
+}
 
 function listing(id: string, name: string) {
 	return { id, name, trusted: false, pinnedCommit: 'commit-1' }
@@ -257,8 +281,9 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	)
 })
 
-test('community install targets the last-used org when the person still belongs', async () => {
+test('community install targets the last-used org when the person holds package:create', async () => {
 	const handler = createCommunityInstallApiPostHandler(env)
+	allowPackageCreate()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'userb@example.com',
 		mcpUser: {
@@ -300,6 +325,10 @@ test('community install targets the last-used org when the person still belongs'
 		personIdFromStored('stable-user-b'),
 		'acme',
 	)
+	expect(mockModule.checkPermission).toHaveBeenCalledWith(
+		expect.anything(),
+		'package:create',
+	)
 	expect(mockModule.getPackageScopeByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
 		teamOrgId,
@@ -309,6 +338,52 @@ test('community install targets the last-used org when the person still belongs'
 			userId: teamOrgId,
 			userEmail: null,
 			expectedPackageScope: 'acme',
+		}),
+	)
+})
+
+test('community install falls back to personal when last-used org lacks package:create', async () => {
+	const handler = createCommunityInstallApiPostHandler(env)
+	denyPackageCreate()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: 'userb@example.com',
+		mcpUser: {
+			userId: personIdFromStored('stable-user-b'),
+			email: 'userb@example.com',
+		},
+	})
+	mockModule.loadOrgBindingForSlug.mockResolvedValue({
+		org: { id: teamOrgId, slug: 'acme' },
+		role: 'member',
+	})
+	mockModule.getPackageScopeByUserId.mockResolvedValue('userb')
+	mockModule.getCommunityListingById.mockResolvedValue(
+		listing('listing-1', '@someone/demo'),
+	)
+	mockModule.installCommunityListing.mockResolvedValue(installed('demo'))
+
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/community/listing-1/install.json',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Cookie: 'kody_last_org=acme',
+				},
+				body: JSON.stringify({ acknowledged: true }),
+			},
+		),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1/install.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: personalOwnerId,
+			userEmail: 'userb@example.com',
+			expectedPackageScope: 'userb',
 		}),
 	)
 })
