@@ -24,12 +24,12 @@ const placeholderNamePattern = /^[a-zA-Z0-9._-]+$/
 
 /**
  * The placeholder code writes for `credential`, or null when none reaches it.
- * Placeholders resolve in the bound org, so a personal credential granted to
- * a team org has none there; packages reach it through `credential()` picks.
+ * Placeholders and `credential()` resolve the same set, so a personal
+ * credential granted to the bound org shows the same placeholder as an org
+ * credential (it still only works in the owner's runs).
  */
 export function credentialPlaceholder(credential: CredentialListItem) {
 	if (!placeholderNamePattern.test(credential.name)) return null
-	if (credential.scope === 'personal') return null
 	switch (credential.kind) {
 		case 'secret':
 			return credential.packageId

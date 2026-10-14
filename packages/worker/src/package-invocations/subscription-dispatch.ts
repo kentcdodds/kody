@@ -1,9 +1,9 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-schema-subset.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	requestLineage,
 	type EnablementRun,
@@ -371,10 +371,11 @@ export function createPackageEventToolsWithToolFactories(input: {
 			if (!sourceId) {
 				throw new Error('events.dispatch requires a published package source.')
 			}
+			const packageOwnerId = ownerIdFromCaller(input.callerContext)
 			const sourceManifest = await loadPackageManifestBySourceId({
 				env: input.env,
 				baseUrl: input.baseUrl,
-				userId: user.userId,
+				userId: packageOwnerId,
 				sourceId,
 			})
 			const declaredEvent = listPackageEmittedEvents(
@@ -405,7 +406,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 				)
 			}
 			const message: PackageEventsDispatchQueueMessage = {
-				userId: personalOrgId(user.userId),
+				userId: packageOwnerId,
 				topic: request.topic,
 				idempotencyKey: request.idempotencyKey,
 				payload: request.payload,

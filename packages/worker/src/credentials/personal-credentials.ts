@@ -8,9 +8,10 @@
  * org never use someone else's personal credential: no grant, role, or
  * package stamp reaches it.
  *
- * Placeholders keep resolving org credentials only. Scoped `credential()`
- * clients resolve granted personal credentials, and the owner manages grants
- * with `credentialOrgGrant`, `credentialOrgRevoke`, and
+ * Placeholders and scoped `credential()` clients both resolve the same set:
+ * the org's credentials the actor can Use, plus the actor's own personal
+ * credentials granted into the org (owner's runs only). The owner manages
+ * grants with `credentialOrgGrant`, `credentialOrgRevoke`, and
  * `credentialOrgGrantList`.
  */
 import {

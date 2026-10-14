@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
@@ -10,7 +13,8 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	installCommunityListing: vi.fn(),
-	getMcpUserPackageScope: vi.fn(),
+	getPackageScopeByUserId: vi.fn(),
+	loadOrgBindingForSlug: vi.fn(),
 	waitUntil: vi.fn(),
 }))
 
@@ -38,11 +42,18 @@ vi.mock('#worker/community/install.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/user-scope.ts', () => ({
-	getMcpUserPackageScope: (...args: Array<unknown>) =>
-		mockModule.getMcpUserPackageScope(...args),
+	getPackageScopeByUserId: (...args: Array<unknown>) =>
+		mockModule.getPackageScopeByUserId(...args),
+}))
+
+vi.mock('#worker/orgs/repo.ts', () => ({
+	loadOrgBindingForSlug: (...args: Array<unknown>) =>
+		mockModule.loadOrgBindingForSlug(...args),
 }))
 
 const env = { APP_DB: {} as D1Database } as Env
+const personalOwnerId = ownerIdFromStored('stable-user-b')
+const teamOrgId = ownerIdFromStored('org-acme')
 
 function listing(id: string, name: string) {
 	return { id, name, trusted: false, pinnedCommit: 'commit-1' }
@@ -90,10 +101,12 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'userb@example.com',
 		mcpUser: {
-			userId: ownerIdFromStored('stable-user-b'),
+			userId: personIdFromStored('stable-user-b'),
 			email: 'userb@example.com',
 		},
 	})
+	mockModule.getPackageScopeByUserId.mockResolvedValue('userb')
+	mockModule.loadOrgBindingForSlug.mockResolvedValue(null)
 	mockModule.getCommunityListingById.mockResolvedValue(null)
 	expect((await post({})).status).toBe(404)
 
@@ -112,7 +125,6 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	mockModule.getCommunityListingById.mockResolvedValue(
 		listing('listing-kody', '@kody/notion-mcp'),
 	)
-	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
 	const kodyOrgListing = await post({})
 	expect(kodyOrgListing.status).toBe(409)
 	expect(kodyOrgListing.payload).toMatchObject({
@@ -141,7 +153,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env,
-			userId: ownerIdFromStored('stable-user-b'),
+			userId: personalOwnerId,
 			userEmail: 'userb@example.com',
 			expectedPackageScope: 'userb',
 			listingId: 'listing-1',
@@ -241,6 +253,62 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		expect.objectContaining({
 			error: expect.stringMatching(/memory limit/),
 			userMessage: expect.stringMatching(/too large to finish forking/),
+		}),
+	)
+})
+
+test('community install targets the last-used org when the person still belongs', async () => {
+	const handler = createCommunityInstallApiPostHandler(env)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: 'userb@example.com',
+		mcpUser: {
+			userId: personIdFromStored('stable-user-b'),
+			email: 'userb@example.com',
+		},
+	})
+	mockModule.loadOrgBindingForSlug.mockResolvedValue({
+		org: { id: teamOrgId, slug: 'acme' },
+		role: 'member',
+	})
+	mockModule.getPackageScopeByUserId.mockResolvedValue('acme')
+	mockModule.getCommunityListingById.mockResolvedValue(
+		listing('listing-1', '@someone/demo'),
+	)
+	mockModule.installCommunityListing.mockResolvedValue(
+		installed('demo', { targetName: '@acme/demo' }),
+	)
+
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/community/listing-1/install.json',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Cookie: 'kody_last_org=acme',
+				},
+				body: JSON.stringify({ acknowledged: true }),
+			},
+		),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1/install.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.loadOrgBindingForSlug).toHaveBeenCalledWith(
+		env.APP_DB,
+		personIdFromStored('stable-user-b'),
+		'acme',
+	)
+	expect(mockModule.getPackageScopeByUserId).toHaveBeenCalledWith(
+		env.APP_DB,
+		teamOrgId,
+	)
+	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: teamOrgId,
+			userEmail: null,
+			expectedPackageScope: 'acme',
 		}),
 	)
 })

@@ -99,6 +99,25 @@ const mockModule = vi.hoisted(() => ({
 		async (_request: Request, _facet?: string | null) =>
 			new Response(JSON.stringify({ ok: true }), { status: 200 }),
 	),
+	resolvePackageAppOrgOwnerByHandle: vi.fn(async (input: { handle: string }) =>
+		input.handle === 'test-user'
+			? {
+					userId: ownerIdFromStored('user-1'),
+					username: 'test-user',
+					displayName: 'User',
+				}
+			: null,
+	),
+	viewerCanExecutePackageApp: vi.fn(async () => true),
+	loadOrgBindingForOrg: vi.fn(
+		async (): Promise<{
+			org: { id: ReturnType<typeof ownerIdFromStored>; slug: string }
+			role: 'owner' | 'member' | 'billing' | null
+		}> => ({
+			org: { id: ownerIdFromStored('user-1'), slug: 'test-user' },
+			role: 'owner',
+		}),
+	),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
@@ -119,6 +138,28 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
 	) => mockModule.readAuthenticatedAppUser(...args),
 }))
+
+vi.mock('#app/package-app-owner.ts', () => ({
+	resolvePackageAppOrgOwnerByHandle: (
+		...args: Parameters<typeof mockModule.resolvePackageAppOrgOwnerByHandle>
+	) => mockModule.resolvePackageAppOrgOwnerByHandle(...args),
+}))
+
+vi.mock('#app/package-viewer-access.ts', () => ({
+	viewerCanExecutePackageApp: (
+		...args: Parameters<typeof mockModule.viewerCanExecutePackageApp>
+	) => mockModule.viewerCanExecutePackageApp(...args),
+}))
+
+vi.mock('#worker/orgs/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#worker/orgs/repo.ts')>()
+	return {
+		...actual,
+		loadOrgBindingForOrg: (
+			...args: Parameters<typeof mockModule.loadOrgBindingForOrg>
+		) => mockModule.loadOrgBindingForOrg(...args),
+	}
+})
 
 vi.mock('#app/auth-redirect.ts', () => ({
 	redirectToLogin: (...args: Parameters<typeof AuthRedirect.redirectToLogin>) =>
@@ -416,8 +457,51 @@ test('handlePackageAppRequest forwards package code a request stripped of owner 
 	await expect(forwarded.json()).resolves.toEqual({ note: 'hello' })
 })
 
-test('handlePackageAppRequest returns not found when the URL username does not match the signed-in user', async () => {
+test('handlePackageAppRequest returns not found when the URL handle has no org', async () => {
+	const callsBefore =
+		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length
 	const response = await request('/@other-user/packages/example')
 	expect(response.status).toBe(404)
-	expect(mockModule.resolveSavedPackageForPackageAppSlug).not.toHaveBeenCalled()
+	expect(
+		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length,
+	).toBe(callsBefore)
+})
+
+test('handlePackageAppRequest serves the org named in the slug when the visitor can execute', async () => {
+	mockModule.resolvePackageAppOrgOwnerByHandle.mockResolvedValueOnce({
+		userId: ownerIdFromStored('org-acme'),
+		username: 'acme',
+		displayName: 'Acme',
+	})
+	mockModule.loadOrgBindingForOrg.mockResolvedValueOnce({
+		org: { id: ownerIdFromStored('org-acme'), slug: 'acme' },
+		role: 'member',
+	})
+	servePackageEntrypoint(async () => new Response('ok'))
+
+	const response = await request('/@acme/packages/example')
+	expect(response.status).toBe(200)
+	expect(
+		mockModule.resolveSavedPackageForPackageAppSlug,
+	).toHaveBeenLastCalledWith(
+		expect.objectContaining({ userId: ownerIdFromStored('org-acme') }),
+	)
+})
+
+test('handlePackageAppRequest redirects when the visitor cannot execute the org app', async () => {
+	mockModule.resolvePackageAppOrgOwnerByHandle.mockResolvedValueOnce({
+		userId: ownerIdFromStored('org-acme'),
+		username: 'acme',
+		displayName: 'Acme',
+	})
+	mockModule.viewerCanExecutePackageApp.mockResolvedValueOnce(false)
+	const callsBefore =
+		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length
+
+	const response = await request('/@acme/packages/example')
+	expect(response.status).toBe(302)
+	expect(response.headers.get('Location')).toBe('/@acme/example')
+	expect(
+		mockModule.resolveSavedPackageForPackageAppSlug.mock.calls.length,
+	).toBe(callsBefore)
 })

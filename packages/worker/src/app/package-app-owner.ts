@@ -5,8 +5,10 @@
  * tombstoned owners via an explicit live `deleted_at` check below.
  */
 import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	invokeContractFreshnessCacheLimit,
 	invokeContractFreshnessTtlMs,
@@ -62,6 +64,37 @@ const packageAppOwnerRowCache =
 		ttlMs: invokeContractFreshnessTtlMs,
 		limit: invokeContractFreshnessCacheLimit,
 	})
+
+/**
+ * The org a hosted package app runs as, resolved from the public handle
+ * (`{slug}.kody.run` or `/@{slug}/packages/...`). Personal and team orgs both
+ * resolve here. Session validity still uses
+ * {@link resolvePackageAppOwnerByStableUserId} for the visiting person.
+ */
+export type PackageAppOrgOwner = {
+	userId: OwnerId
+	username: string
+	displayName: string
+}
+
+export async function resolvePackageAppOrgOwnerByHandle(input: {
+	env: Env
+	handle: string
+}): Promise<PackageAppOrgOwner | null> {
+	const identity = await findPublicOwnerIdentityByHandle({
+		db: input.env.APP_DB,
+		handle: input.handle,
+	})
+	if (!identity) return null
+	const org = await getOrgById(input.env.APP_DB, identity.ownerId)
+	if (!org) return null
+	const displayName = org.display_name?.trim() || org.slug
+	return {
+		userId: identity.ownerId,
+		username: identity.handle,
+		displayName,
+	}
+}
 
 export function invalidatePackageAppOwnerCache(input: {
 	stableUserId: string

@@ -1,5 +1,7 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -61,7 +63,7 @@ export const storageQueryCapability = defineDomainCapability(
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const storageId = authorizeCapabilityStorageId({
 				callerContext: ctx.callerContext,
 				capabilityName: 'storageQuery',
@@ -73,12 +75,13 @@ export const storageQueryCapability = defineDomainCapability(
 				storageId,
 				permission: 'package:write',
 			})
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
 			const writable = args.writable ?? false
 			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({
 					env: ctx.env,
-					userId: personalOrgId(user.userId),
-					email: user.email,
+					userId: ownerId,
+					email: entitlementEmailForOwner(ctx.callerContext, ownerId),
 					storageId,
 					requested: estimateEntitlementStorageSqlWriteBytes({
 						query: args.query,
@@ -89,7 +92,7 @@ export const storageQueryCapability = defineDomainCapability(
 			try {
 				const result = await storageRunnerRpc({
 					env: ctx.env,
-					userId: ownerIdFromCaller(ctx.callerContext),
+					userId: ownerId,
 					storageId,
 				}).sqlQuery({
 					query: args.query,

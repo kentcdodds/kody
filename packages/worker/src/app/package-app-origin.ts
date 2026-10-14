@@ -1,4 +1,5 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
@@ -46,7 +47,12 @@ import {
 	createPackageAppHandoffToken,
 	packageAppHandoffQueryParam,
 } from '#app/package-app-handoff.ts'
-import { resolvePackageAppOwnerByStableUserId } from '#app/package-app-owner.ts'
+import {
+	resolvePackageAppOrgOwnerByHandle,
+	resolvePackageAppOwnerByStableUserId,
+	type PackageAppOwner,
+} from '#app/package-app-owner.ts'
+import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
 import {
 	createPackageAppSessionCookie,
 	readPackageAppSession,
@@ -64,6 +70,7 @@ import {
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
 
@@ -263,6 +270,83 @@ function createPackageAppSessionRequiredResponse(input: {
 	)
 }
 
+function redirectToPackagePage(input: {
+	env: Env
+	request: Request
+	packagePath: PackageAppPath
+}) {
+	return redirectResponse({
+		location: joinAppUrl({
+			env: input.env,
+			path: buildPackagePagePath({
+				username: input.packagePath.username,
+				kodyId: input.packagePath.kodyId,
+			}),
+			requestUrl: input.request.url,
+		}),
+		status: 302,
+	})
+}
+
+type AuthorizedPackageAppServe =
+	| { kind: 'ok'; owner: PackageAppOwner; visitor: RuntimePackageAppVisitor }
+	| { kind: 'session-required' }
+	| { kind: 'forbidden' }
+
+/**
+ * Resolve the org named in the host/path, confirm the session person is still
+ * live, and authorize `app:execute` in that org. The visitor keeps their live
+ * org role; the owner is the org, not the visitor's personal account.
+ */
+async function authorizePackageAppVisitorForOrg(input: {
+	env: Env
+	stableUserId: string
+	issuedAt: number
+	handle: string
+}): Promise<AuthorizedPackageAppServe> {
+	const person = await resolvePackageAppOwnerByStableUserId({
+		env: input.env,
+		stableUserId: input.stableUserId,
+		issuedAt: input.issuedAt,
+	})
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env: input.env,
+		handle: input.handle,
+	})
+	if (!person || !org) return { kind: 'session-required' }
+
+	const viewer = {
+		userId: personIdFromStored(input.stableUserId),
+		username: person.username,
+	}
+	const canExecute = await viewerCanExecutePackageApp({
+		env: input.env,
+		viewer,
+		ownerId: org.userId,
+	})
+	if (!canExecute) return { kind: 'forbidden' }
+
+	const binding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		viewer.userId,
+		org.userId,
+	)
+	return {
+		kind: 'ok',
+		owner: {
+			userId: org.userId,
+			username: org.username,
+			email: person.email,
+			displayName: org.displayName,
+		},
+		visitor: {
+			userId: viewer.userId,
+			username: person.username,
+			role: binding?.role ?? null,
+		},
+	}
+}
+
 /**
  * When a package-app URL still uses a retired slug, permanent-308 to the
  * current leaf so handoff tokens and the served app stay on one canonical path.
@@ -408,10 +492,10 @@ async function buildCustomHostnameHandoffTarget(input: {
 }
 
 /**
- * Mint a handoff token for the signed-in owner and send them to their
- * package-app subdomain, or to a verified custom hostname when one is bound
- * to this package. The app origin never executes package code once
- * `PACKAGE_APP_BASE_URL` is configured.
+ * Mint a handoff token for the signed-in visitor and send them to the
+ * package-app subdomain of the org named in the path, or to a verified
+ * custom hostname when one is bound to this package. The app origin never
+ * executes package code once `PACKAGE_APP_BASE_URL` is configured.
  */
 async function redirectAppOriginToPackageAppOrigin(input: {
 	request: Request
@@ -459,22 +543,23 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) return await redirectToLoginWhenUnauthenticated(request, env)
-	if (user.username !== packagePath.username) {
-		// `/@{username}/packages/{kodyId}` is the owner-only handoff mount.
-		// Everyone else belongs on the saved-package page, which is the
-		// two-segment `/@{username}/{kodyId}` route — not a 404 that reads
-		// like the package itself is missing.
-		return redirectResponse({
-			location: joinAppUrl({
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env,
+		handle: packagePath.username,
+	})
+	const canExecute = org
+		? await viewerCanExecutePackageApp({
 				env,
-				path: buildPackagePagePath({
-					username: packagePath.username,
-					kodyId: packagePath.kodyId,
-				}),
-				requestUrl: request.url,
-			}),
-			status: 302,
-		})
+				viewer: user.mcpUser,
+				ownerId: org.userId,
+			})
+		: false
+	if (!org || !canExecute) {
+		// `/@{username}/packages/{kodyId}` hands off only for visitors who
+		// may run the org's app. Everyone else belongs on the saved-package
+		// page, which is the two-segment `/@{username}/{kodyId}` route —
+		// not a 404 that reads like the package itself is missing.
+		return redirectToPackagePage({ env, request, packagePath })
 	}
 
 	const parsedSession = await readParsedAuthSession(request)
@@ -487,8 +572,9 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 		await createPackageAppHandoffToken({
 			env,
 			claims: {
+				// Visitor person; the org handle lives in `username`.
 				stableUserId: user.mcpUser.userId,
-				username: user.username,
+				username: packagePath.username,
 				kodyId: handoffKodyId,
 			},
 			sessionExpiresAt: getAuthSessionExpiresAtMs({
@@ -621,43 +707,47 @@ async function handleUserSubdomainRequest(input: {
 
 	const parsedSession = await readPackageAppSession({ request, env })
 	const serverTiming: Array<ServerTimingEntry> = []
-	const owner = parsedSession
-		? await pushServerTiming(serverTiming, 'owner', () =>
-				resolvePackageAppOwnerByStableUserId({
-					env,
-					stableUserId: parsedSession.session.stableUserId,
-					issuedAt: parsedSession.issuedAt,
-				}),
-			)
-		: null
-
-	if (!owner || !parsedSession) {
-		return createPackageAppSessionRequiredResponse({
+	const sessionRequired = () =>
+		createPackageAppSessionRequiredResponse({
 			request,
 			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
 			handoffPresented: Boolean(handoffToken),
 		})
-	}
+	if (!parsedSession) return sessionRequired()
+	const authorized = await pushServerTiming(serverTiming, 'owner', () =>
+		authorizePackageAppVisitorForOrg({
+			env,
+			stableUserId: parsedSession.session.stableUserId,
+			issuedAt: parsedSession.issuedAt,
+			handle: username,
+		}),
+	)
 
-	// A token that reaches here is stale, forged, or for another package, so it is
-	// still worthless — but it is still an internal auth artifact, and package code
-	// has no business seeing one. Serve the request as if it never carried a
-	// token, including when the parameter is present but empty.
-	return await servePackageAppRequest({
-		request: url.searchParams.has(packageAppHandoffQueryParam)
-			? new Request(withoutHandoffToken(url), request)
-			: request,
-		env,
-		owner,
-		// Only a person's own personal-org apps serve here, so they are its Owner.
-		visitor: {
-			userId: personIdFromStored(parsedSession.session.stableUserId),
-			username: owner.username,
-			role: 'owner',
-		},
-		packagePath,
-		serverTiming,
-	})
+	switch (authorized.kind) {
+		case 'session-required':
+			return sessionRequired()
+		case 'forbidden':
+			return redirectToPackagePage({ env, request, packagePath })
+		case 'ok':
+			// A token that reaches here is stale, forged, or for another package, so
+			// it is still worthless — but it is still an internal auth artifact, and
+			// package code has no business seeing one. Serve the request as if it
+			// never carried a token, including when the parameter is present but empty.
+			return await servePackageAppRequest({
+				request: url.searchParams.has(packageAppHandoffQueryParam)
+					? new Request(withoutHandoffToken(url), request)
+					: request,
+				env,
+				owner: authorized.owner,
+				visitor: authorized.visitor,
+				packagePath,
+				serverTiming,
+			})
+		default: {
+			authorized satisfies never
+			return sessionRequired()
+		}
+	}
 }
 
 /**
@@ -768,38 +858,43 @@ async function handleCustomHostnameRequest(input: {
 
 	const parsedSession = await readPackageAppSession({ request, env })
 	const serverTiming: Array<ServerTimingEntry> = []
-	const owner = parsedSession
-		? await pushServerTiming(serverTiming, 'owner', () =>
-				resolvePackageAppOwnerByStableUserId({
-					env,
-					stableUserId: parsedSession.session.stableUserId,
-					issuedAt: parsedSession.issuedAt,
-				}),
-			)
-		: null
-
-	if (!owner || !parsedSession) {
-		return createPackageAppSessionRequiredResponse({
+	const sessionRequired = () =>
+		createPackageAppSessionRequiredResponse({
 			request,
 			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
 			handoffPresented: Boolean(handoffToken),
 		})
-	}
+	if (!parsedSession) return sessionRequired()
+	const authorized = await pushServerTiming(serverTiming, 'owner', () =>
+		authorizePackageAppVisitorForOrg({
+			env,
+			stableUserId: parsedSession.session.stableUserId,
+			issuedAt: parsedSession.issuedAt,
+			handle: mapping.username,
+		}),
+	)
 
-	return await servePackageAppRequest({
-		request: url.searchParams.has(packageAppHandoffQueryParam)
-			? new Request(withoutHandoffToken(url), request)
-			: request,
-		env,
-		owner,
-		visitor: {
-			userId: personIdFromStored(parsedSession.session.stableUserId),
-			username: owner.username,
-			role: 'owner',
-		},
-		packagePath,
-		serverTiming,
-	})
+	switch (authorized.kind) {
+		case 'session-required':
+			return sessionRequired()
+		case 'forbidden':
+			return redirectToPackagePage({ env, request, packagePath })
+		case 'ok':
+			return await servePackageAppRequest({
+				request: url.searchParams.has(packageAppHandoffQueryParam)
+					? new Request(withoutHandoffToken(url), request)
+					: request,
+				env,
+				owner: authorized.owner,
+				visitor: authorized.visitor,
+				packagePath,
+				serverTiming,
+			})
+		default: {
+			authorized satisfies never
+			return sessionRequired()
+		}
+	}
 }
 
 /**

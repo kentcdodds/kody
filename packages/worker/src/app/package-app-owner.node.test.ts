@@ -11,6 +11,7 @@ import { applyPasswordChange } from './apply-password-change.ts'
 import {
 	invalidatePackageAppOwnerCache,
 	invalidatePackageAppOwnerCacheForDbUserId,
+	resolvePackageAppOrgOwnerByHandle,
 	resolvePackageAppOwnerByStableUserId,
 } from './package-app-owner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -175,4 +176,40 @@ test('applyPasswordChange invalidates sessions issued before the stamp', async (
 			issuedAt: Date.now(),
 		}),
 	).toMatchObject({ userId: stableUserId })
+})
+
+test('resolvePackageAppOrgOwnerByHandle returns the org named in the handle', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const now = '2026-01-01T00:00:00.000Z'
+	const teamId = 'org-acme'
+	sqlite.exec(`
+		INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+		VALUES ('${teamId}', 'acme', 'Acme Apps', '${now}', '${now}');
+		INSERT INTO handles (handle, org_id, created_at)
+		VALUES ('acme', '${teamId}', '${now}');
+		INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+		VALUES ('person-pat', 'pat', NULL, '${now}', '${now}');
+		INSERT INTO handles (handle, org_id, created_at)
+		VALUES ('pat', 'person-pat', '${now}');
+	`)
+	const env = { APP_DB: createD1FromSqlite(sqlite) } as Env
+
+	await expect(
+		resolvePackageAppOrgOwnerByHandle({ env, handle: 'acme' }),
+	).resolves.toEqual({
+		userId: teamId,
+		username: 'acme',
+		displayName: 'Acme Apps',
+	})
+	await expect(
+		resolvePackageAppOrgOwnerByHandle({ env, handle: 'pat' }),
+	).resolves.toEqual({
+		userId: 'person-pat',
+		username: 'pat',
+		displayName: 'pat',
+	})
+	await expect(
+		resolvePackageAppOrgOwnerByHandle({ env, handle: 'missing' }),
+	).resolves.toBeNull()
 })

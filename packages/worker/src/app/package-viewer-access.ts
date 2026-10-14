@@ -140,3 +140,18 @@ export async function viewerIsSavedPackageOrgOwner(input: {
 	const resolved = await effectivePackageAccess(input)
 	return resolved?.binding.role === 'owner'
 }
+
+/**
+ * Whether a signed-in person may run a hosted package app owned by this org.
+ * Owners always hold `app:execute`. Members and outside collaborators need a
+ * grant that includes it (team member defaults do not, until that ships).
+ */
+export async function viewerCanExecutePackageApp(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	if (!resolved) return false
+	return checkPermission(resolved.access, 'app:execute').allowed
+}

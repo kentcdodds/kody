@@ -1,9 +1,11 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { buildPackagePagePath } from '@kody-internal/shared/public-urls.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requestHasSessionCookie } from '#app/anonymous-html-cache.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
-import { type PackageAppOwner } from '#app/package-app-owner.ts'
+import { resolvePackageAppOrgOwnerByHandle } from '#app/package-app-owner.ts'
+import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import {
 	logPackageAppAuthFailed,
 	logPackageAppHttpError,
@@ -76,22 +78,49 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		}
 		return redirectToLoginWhenUnauthenticated(request, env)
 	}
-	const owner: PackageAppOwner = {
-		userId: personalOrgId(user.mcpUser.userId),
-		username: user.username,
-		email: user.email,
-		displayName: user.displayName,
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env,
+		handle: packagePath.username,
+	})
+	if (!org) {
+		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
+	const canExecute = await viewerCanExecutePackageApp({
+		env,
+		viewer: user.mcpUser,
+		ownerId: org.userId,
+	})
+	if (!canExecute) {
+		return new Response(null, {
+			status: 302,
+			headers: {
+				Location: buildPackagePagePath({
+					username: packagePath.username,
+					kodyId: packagePath.kodyId,
+				}),
+				'Cache-Control': 'no-store',
+			},
+		})
+	}
+	const binding = await loadOrgBindingForOrg(
+		env.APP_DB,
+		user.mcpUser.userId,
+		org.userId,
+	)
 	return await servePackageAppRequest({
 		request,
 		env,
 		packagePath,
-		owner,
-		// Only a person's own personal-org apps serve here, so they are its Owner.
+		owner: {
+			userId: org.userId,
+			username: org.username,
+			email: user.email,
+			displayName: org.displayName,
+		},
 		visitor: {
 			userId: user.mcpUser.userId,
 			username: user.username,
-			role: 'owner',
+			role: binding?.role ?? null,
 		},
 	})
 }

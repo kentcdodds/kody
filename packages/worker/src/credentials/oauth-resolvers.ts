@@ -4,6 +4,10 @@
  * host never triggers a token refresh.
  */
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	createMissingIntegrationAccessTokenMessage,
 	findIntegrationCredentialId,
 	resolveIntegrationAccessToken,
@@ -18,15 +22,39 @@ import {
 	type CredentialTargetFor,
 	type ResolverCall,
 } from './credential-resolver.ts'
+import { authorizePersonalCredentialUse } from './personal-credentials.ts'
+
+type IntegrationNameLookup = {
+	owner: 'org' | 'personal'
+	ownerId: OwnerId
+	credentialId: string | null
+}
 
 async function authorizeIntegrationUse(
 	call: ResolverCall<
 		CredentialTargetFor<'integration-token' | 'integration-refresh'>
 	>,
-	credentialId: string | null,
+	lookup: IntegrationNameLookup,
 ) {
 	const { input, credential } = call
-	await authorizeActorUse(call, credentialId)
+	switch (lookup.owner) {
+		case 'org':
+			await authorizeActorUse(call, lookup.credentialId)
+			break
+		case 'personal':
+			call.subject.credentialId = lookup.credentialId
+			await authorizePersonalCredentialUse({
+				db: input.env.APP_DB,
+				actorPersonId: input.actor?.actor?.userId ?? null,
+				orgId: input.orgId,
+				credentialId: lookup.credentialId ?? '',
+			})
+			break
+		default: {
+			const exhaustive: never = lookup.owner
+			throw new Error(`Unhandled integration owner: ${String(exhaustive)}`)
+		}
+	}
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -46,25 +74,52 @@ async function assertIntegrationUnchanged(
 	call: ResolverCall<
 		CredentialTargetFor<'integration-token' | 'integration-refresh'>
 	>,
-	authorizedId: string | null,
+	lookup: IntegrationNameLookup,
 ) {
-	if ((await findIntegrationId(call)) !== authorizedId) {
+	const current = await findIntegrationCredentialId({
+		env: call.input.env,
+		userId: lookup.ownerId,
+		name: call.credential.name,
+	})
+	if (current !== lookup.credentialId) {
 		throw new Error(
 			createMissingIntegrationAccessTokenMessage(call.credential.name),
 		)
 	}
 }
 
-async function findIntegrationId(
+/** Org integration by name, else the actor's granted personal one. */
+async function findIntegrationByName(
 	call: ResolverCall<
 		CredentialTargetFor<'integration-token' | 'integration-refresh'>
 	>,
-) {
-	return await findIntegrationCredentialId({
+): Promise<IntegrationNameLookup> {
+	const orgId = await findIntegrationCredentialId({
 		env: call.input.env,
 		userId: call.input.orgId,
 		name: call.credential.name,
 	})
+	if (orgId) {
+		return { owner: 'org', ownerId: call.input.orgId, credentialId: orgId }
+	}
+	const person = call.input.actor?.actor?.userId
+	if (!person) {
+		return { owner: 'org', ownerId: call.input.orgId, credentialId: null }
+	}
+	const personalOwner = personalOrgId(person)
+	const personalId = await findIntegrationCredentialId({
+		env: call.input.env,
+		userId: personalOwner,
+		name: call.credential.name,
+	})
+	if (personalId) {
+		return {
+			owner: 'personal',
+			ownerId: personalOwner,
+			credentialId: personalId,
+		}
+	}
+	return { owner: 'org', ownerId: call.input.orgId, credentialId: null }
 }
 
 export const integrationTokenResolver: CredentialResolver<'integration-token'> =
@@ -78,14 +133,14 @@ export const integrationTokenResolver: CredentialResolver<'integration-token'> =
 		}),
 		async resolve(call) {
 			const { input, credential } = call
-			const credentialId = await findIntegrationId(call)
+			const lookup = await findIntegrationByName(call)
 			return {
 				async authorize() {
-					await authorizeIntegrationUse(call, credentialId)
+					await authorizeIntegrationUse(call, lookup)
 					if (!credential.requestHost) return
 					const joined = await getJoinedIntegration({
 						env: input.env,
-						userId: input.orgId,
+						userId: lookup.ownerId,
 						name: credential.name,
 					})
 					if (!joined) {
@@ -105,10 +160,10 @@ export const integrationTokenResolver: CredentialResolver<'integration-token'> =
 				async apply() {
 					const resolved = await resolveIntegrationAccessToken({
 						env: input.env,
-						userId: input.orgId,
+						userId: lookup.ownerId,
 						name: credential.name,
 					})
-					await assertIntegrationUnchanged(call, credentialId)
+					await assertIntegrationUnchanged(call, lookup)
 					return resolved?.accessToken ?? null
 				},
 			}
@@ -126,23 +181,23 @@ export const integrationRefreshResolver: CredentialResolver<'integration-refresh
 		}),
 		async resolve(call) {
 			const { input, credential } = call
-			const credentialId = await findIntegrationId(call)
+			const lookup = await findIntegrationByName(call)
 			return {
-				authorize: () => authorizeIntegrationUse(call, credentialId),
+				authorize: () => authorizeIntegrationUse(call, lookup),
 				async apply() {
 					// A refresh hands back no token. Checking first keeps an old
 					// grant from refreshing a replacement connection; checking
 					// after keeps it from being told a replacement swapped in
 					// mid-refresh was refreshed for it.
-					await assertIntegrationUnchanged(call, credentialId)
+					await assertIntegrationUnchanged(call, lookup)
 					const result = await refreshIntegrationTokens({
 						env: input.env,
-						userId: input.orgId,
+						userId: lookup.ownerId,
 						userEmail: credential.userEmail,
 						name: credential.name,
 						waitUntil: credential.waitUntil,
 					})
-					await assertIntegrationUnchanged(call, credentialId)
+					await assertIntegrationUnchanged(call, lookup)
 					return result
 				},
 			}

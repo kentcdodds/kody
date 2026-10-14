@@ -15,6 +15,7 @@ import {
 	consoleError,
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
@@ -101,6 +102,98 @@ async function seedOwnerSessionCookie() {
 	return setCookie.split(';')[0] ?? ''
 }
 
+const teamOrgSlug = 'acme-apps'
+const teamOwnerEmail = 'acme-boss@example.com'
+const teamOwnerUsername = 'acme-boss'
+const teamRunnerEmail = 'acme-runner@example.com'
+const teamReaderEmail = 'acme-reader@example.com'
+const teamGuestEmail = 'acme-guest@example.com'
+const teamOrgId = testStableUserIdFromEmail('acme-apps-org@example.com')
+const teamPackageAppOrigin = `https://${teamOrgSlug}.packages.isolated.test`
+
+async function sessionCookieFor(email: string) {
+	setAuthSessionSecret(env.COOKIE_SECRET)
+	const setCookie = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail(email),
+			email,
+			rememberMe: false,
+		},
+		true,
+	)
+	return setCookie.split(';')[0] ?? ''
+}
+
+async function seedTeamOrgPackageAppFixture() {
+	await ensureRbacTestSchema(env.APP_DB)
+	await ensurePackageSubscriptionTestSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
+	try {
+		await env.APP_DB.prepare(
+			`ALTER TABLE users ADD COLUMN password_changed_at TEXT`,
+		).run()
+	} catch {
+		// Column already present from an earlier seed in this suite.
+	}
+	for (const [email, username] of [
+		[teamOwnerEmail, teamOwnerUsername],
+		[teamRunnerEmail, 'acme-runner'],
+		[teamReaderEmail, 'acme-reader'],
+		[teamGuestEmail, 'acme-guest'],
+	] as const) {
+		await seedAccount({ db: env.APP_DB, email, username })
+	}
+	const now = '2026-10-14T00:00:00.000Z'
+	const ownerId = testStableUserIdFromEmail(teamOwnerEmail)
+	const runnerId = testStableUserIdFromEmail(teamRunnerEmail)
+	const readerId = testStableUserIdFromEmail(teamReaderEmail)
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO orgs (id, slug, display_name, plan, created_at, updated_at)
+		 VALUES (?, ?, 'Acme Apps', 'free', ?, ?)`,
+	)
+		.bind(teamOrgId, teamOrgSlug, now, now)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO handles (handle, org_id, created_at) VALUES (?, ?, ?)`,
+	)
+		.bind(teamOrgSlug, teamOrgId, now)
+		.run()
+	for (const [personId, role] of [
+		[ownerId, 'owner'],
+		[runnerId, 'member'],
+		[readerId, 'member'],
+	] as const) {
+		await env.APP_DB.prepare(
+			`INSERT OR IGNORE INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, ?, ?)`,
+		)
+			.bind(teamOrgId, personId, role, now)
+			.run()
+	}
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO grants (
+			id, org_id, resource_type, resource_id, subject_type, subject_id,
+			preset, created_by_user_id, created_at, updated_at
+		) VALUES (?, ?, 'org', ?, 'user', ?, 'use', ?, ?, ?)`,
+	)
+		.bind(
+			'grant-acme-apps-execute',
+			teamOrgId,
+			teamOrgId,
+			runnerId,
+			ownerId,
+			now,
+			now,
+		)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO grant_permissions (grant_id, permission)
+		 VALUES (?, 'app:execute')`,
+	)
+		.bind('grant-acme-apps-execute')
+		.run()
+}
+
 async function outcome(response: Response) {
 	return { status: response.status, body: await response.text() }
 }
@@ -167,23 +260,17 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	})
 
 	// 3. With the package-app session, requests reach package-app serving: the
-	// owner is resolved and the saved package lookup 404s (none is seeded), which
-	// is distinct from the origin-level 404 below. A stale or forged token next
-	// to a valid session is ignored and stripped before serving. The session is
-	// bound to one account and the subdomain names the account, so the owner's
-	// cookie on another user's subdomain never serves package code. Sibling
-	// subdomains are same-site, so a Lax cookie would attach to their
-	// cross-origin requests: a mutating request whose Origin is not this
-	// subdomain is rejected before package code runs; same-origin passes.
+	// org named in the host is resolved and the saved package lookup 404s (none
+	// is seeded), which is distinct from the origin-level 404 below. A stale or
+	// forged token next to a valid session is ignored and stripped before
+	// serving. Sibling subdomains are same-site, so a Lax cookie would attach
+	// to their cross-origin requests: a mutating request whose Origin is not
+	// this subdomain is rejected before package code runs; same-origin passes.
 	const staleTokenUrl = new URL(cleanLocation)
 	staleTokenUrl.searchParams.set(packageAppHandoffQueryParam, `${handoffToken}`)
 	const servingCases = [
 		{ name: 'clean URL', url: cleanLocation },
 		{ name: 'stale token', url: staleTokenUrl },
-		{
-			name: 'other user subdomain',
-			url: 'https://other-user.packages.isolated.test/packages/demo',
-		},
 		{
 			name: 'same-origin POST',
 			url: cleanLocation,
@@ -201,6 +288,15 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 			body: buildPackageAppNotFoundMessage(),
 		})
 	}
+	// A session on a handle with no org cannot invent an owner — fail closed
+	// the same way a missing package-app session does.
+	const otherUserSubdomain = await workerFetch(
+		'https://other-user.packages.isolated.test/packages/demo',
+		withPackageSession(),
+	)
+	expect(otherUserSubdomain.status).toBe(403)
+	expect(otherUserSubdomain.headers.get('X-Kody-Handoff')).toBe('required')
+
 	const crossOriginPost = await workerFetch(cleanLocation, {
 		method: 'POST',
 		...withPackageSession({
@@ -424,4 +520,70 @@ test('createPackageCodeRequest drops credential headers in the workers runtime',
 		'application/json',
 	)
 	await expect(packageCodeRequest.json()).resolves.toEqual({ hello: 'world' })
+})
+
+test('team org private apps hand off and open for owners and execute-granted members', async () => {
+	configureOrigins({
+		packageAppBaseUrl: packageAppOrigin,
+		runtime: 'production',
+	})
+	await seedTeamOrgPackageAppFixture()
+	const entryUrl = `${appOrigin}/@${teamOrgSlug}/packages/demo`
+
+	async function expectHandoffAndServe(email: string) {
+		const appOriginResponse = await workerFetch(entryUrl, {
+			headers: { Cookie: await sessionCookieFor(email) },
+		})
+		expect(appOriginResponse.status).toBe(302)
+		const handoffLocation = new URL(
+			appOriginResponse.headers.get('Location') ?? '',
+		)
+		expect(handoffLocation.origin).toBe(teamPackageAppOrigin)
+		expect(handoffLocation.pathname).toBe('/packages/demo')
+		expect(
+			handoffLocation.searchParams.get(packageAppHandoffQueryParam),
+		).toBeTruthy()
+
+		const handoffResponse = await workerFetch(handoffLocation)
+		expect(handoffResponse.status).toBe(302)
+		const packageSessionCookie =
+			handoffResponse.headers.get('Set-Cookie')?.split(';')[0] ?? ''
+		expect(packageSessionCookie).toContain('kody_pkg_session=')
+		const cleanLocation = new URL(handoffResponse.headers.get('Location') ?? '')
+		const served = await workerFetch(cleanLocation, {
+			headers: { Cookie: packageSessionCookie },
+		})
+		// Auth is proven: session accepted on the org subdomain. No package
+		// source is seeded, so serve 404s the same way the personal-org path
+		// does after a successful handoff.
+		expect(served.status).toBe(404)
+		await expect(served.text()).resolves.toBe(buildPackageAppNotFoundMessage())
+	}
+
+	// Team org owner (username ≠ org slug) and a member with app:execute.
+	await expectHandoffAndServe(teamOwnerEmail)
+	await expectHandoffAndServe(teamRunnerEmail)
+
+	// Personal org owner path still works when username == slug.
+	const personalEntry = `${appOrigin}/@${teamOwnerUsername}/packages/demo`
+	const personalHandoff = await workerFetch(personalEntry, {
+		headers: { Cookie: await sessionCookieFor(teamOwnerEmail) },
+	})
+	expect(personalHandoff.status).toBe(302)
+	expect(new URL(personalHandoff.headers.get('Location') ?? '').origin).toBe(
+		`https://${teamOwnerUsername}.packages.isolated.test`,
+	)
+
+	for (const email of [teamReaderEmail, teamGuestEmail]) {
+		const denied = await workerFetch(entryUrl, {
+			headers: { Cookie: await sessionCookieFor(email) },
+		})
+		expect({ email, status: denied.status }).toEqual({
+			email,
+			status: 302,
+		})
+		expect(denied.headers.get('Location')).toBe(
+			`${appOrigin}/@${teamOrgSlug}/demo`,
+		)
+	}
 })
