@@ -161,6 +161,25 @@ function decisionView(decision: ApprovalBundleDecisionRecord | null) {
 		: null
 }
 
+/**
+ * A recorded decision closes the item for this bundle, even when the item
+ * changes later; later changes belong in a new bundle.
+ */
+function decidedState(
+	decision: ApprovalBundleDecisionRecord | null,
+): Pick<
+	ApprovalItemView,
+	'status' | 'statusMessage' | 'canApprove' | 'canDeny'
+> | null {
+	if (!decision) return null
+	return {
+		status: decision.decision,
+		statusMessage: null,
+		canApprove: false,
+		canDeny: false,
+	}
+}
+
 function kindLabel(kind: string | null | undefined) {
 	if (!kind) return null
 	switch (kind) {
@@ -309,10 +328,9 @@ function publishItemState(
 	ApprovalItemView,
 	'status' | 'statusMessage' | 'canApprove' | 'canDeny'
 > {
+	const decided = decidedState(decision)
+	if (decided) return decided
 	const closed = { canApprove: false, canDeny: false }
-	if (decision?.decision === 'denied') {
-		return { ...closed, status: 'denied', statusMessage: null }
-	}
 	switch (request.status) {
 		case 'approved':
 			return { ...closed, status: 'approved', statusMessage: null }
@@ -441,16 +459,15 @@ async function capabilitiesItemView(
 		}),
 		decision: decisionView(decision),
 	}
+	const decided = decidedState(decision)
+	if (decided) return { ...base, ...decided }
 	const closed = { canApprove: false, canDeny: false }
-	if (decision?.decision === 'denied') {
-		return { ...base, ...closed, status: 'denied', statusMessage: null }
-	}
 	if (summary.fingerprintMatchesApproval) {
 		return {
 			...base,
 			...closed,
-			status: decision ? 'approved' : 'resolved',
-			statusMessage: decision ? null : 'This capability set is approved.',
+			status: 'resolved',
+			statusMessage: 'This capability set is approved.',
 		}
 	}
 	if (!summary.isInternetVisible || !summary.publishedCommit) {
@@ -569,10 +586,9 @@ async function credentialPicksItemView(
 		}),
 		decision: decisionView(decision),
 	}
+	const decided = decidedState(decision)
+	if (decided) return { ...base, ...decided }
 	const closed = { canApprove: false, canDeny: false }
-	if (decision?.decision === 'denied') {
-		return { ...base, ...closed, status: 'denied', statusMessage: null }
-	}
 	if (recorded.approvedAt) {
 		return { ...base, ...closed, status: 'approved', statusMessage: null }
 	}
