@@ -15,6 +15,7 @@ import {
 	listUsableCredentials,
 	resolveNeedCandidates,
 } from './credential-candidates.ts'
+import { readCredentialHostSettings } from './credential-hosts.ts'
 import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
 
 /** Each package costs a closure read, so usage checks the most recent ones. */
@@ -132,6 +133,41 @@ async function listUsage(input: {
 	}
 }
 
+/**
+ * A personal credential granted into a team org is edited from the personal
+ * org that owns it, so only the org's own Keys and OAuth connections qualify.
+ */
+async function readEditableHostSettings(input: {
+	db: D1Database
+	orgId: string
+	credential: CredentialListItem
+}) {
+	if (input.credential.scope === 'personal') return null
+	switch (input.credential.kind) {
+		case 'secret':
+		case 'oauth':
+			return readCredentialHostSettings({
+				db: input.db,
+				orgId: input.orgId,
+				credential: {
+					id: input.credential.id,
+					kind: input.credential.kind === 'oauth' ? 'integration' : 'secret',
+					name: input.credential.name,
+					live: true,
+				},
+			})
+		case 'mcp':
+		case 'url':
+		case 'login':
+		case 'signing':
+			return null
+		default: {
+			const exhaustive: never = input.credential.kind
+			return exhaustive
+		}
+	}
+}
+
 export async function loadCredentialDetail(input: {
 	env: Env
 	request: RequestContext
@@ -152,7 +188,7 @@ export async function loadCredentialDetail(input: {
 	const checked = input.credential.packageId
 		? []
 		: reachable.slice(0, maxUsagePackages)
-	const [grants, usage] = await Promise.all([
+	const [grants, usage, hostSettings] = await Promise.all([
 		input.ownedByViewer
 			? listGrants(input.env.APP_DB, input.credential.id)
 			: [],
@@ -165,6 +201,11 @@ export async function loadCredentialDetail(input: {
 					packages: checked,
 				})
 			: { usage: [], unreadable: 0 },
+		readEditableHostSettings({
+			db: input.env.APP_DB,
+			orgId: input.orgId,
+			credential: input.credential,
+		}),
 	])
 	return {
 		id: input.credential.id,
@@ -174,5 +215,6 @@ export async function loadCredentialDetail(input: {
 		usageTruncated:
 			!input.credential.packageId && reachable.length > checked.length,
 		usageUnreadable: usage.unreadable,
+		hostSettings,
 	}
 }

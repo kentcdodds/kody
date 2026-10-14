@@ -3,11 +3,11 @@
  * edits these: an agent that could add a host could send the value anywhere.
  * Every change is committed together with its audit event.
  */
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { classifyApprovalHosts } from '#mcp/secrets/approval-host-shape.ts'
+import { type CredentialHostSettings } from '#universal/credentials-list.ts'
 import {
 	type OrgAuditWriter,
 	runAppDbBatchWithOrgAudit,
@@ -15,13 +15,6 @@ import {
 import { getOrgCredential, type OrgCredential } from './credential-ids.ts'
 
 export const credentialHostsMax = 20
-
-export type CredentialHostSettings = {
-	/** Hosts the credential's manager can add or remove. */
-	hosts: Array<string>
-	/** Hosts the credential always allows: its API base URL and a built-in app's hosts. */
-	fixedHosts: Array<string>
-}
 
 export type ParsedCredentialHosts =
 	| { ok: true; hosts: Array<string> }
@@ -137,7 +130,7 @@ type HostSettingsRead =
 
 async function readHostSettings(
 	db: D1Database,
-	orgId: OwnerId,
+	orgId: string,
 	credential: OrgCredential,
 ): Promise<HostSettingsRead | { refused: string }> {
 	switch (credential.kind) {
@@ -216,7 +209,7 @@ async function readHostSettings(
  */
 export async function readCredentialHostSettings(input: {
 	db: D1Database
-	orgId: OwnerId
+	orgId: string
 	credential: OrgCredential
 }): Promise<CredentialHostSettings | null> {
 	const read = await readHostSettings(input.db, input.orgId, input.credential)
@@ -238,7 +231,7 @@ function sameHosts(left: ReadonlyArray<string>, right: ReadonlyArray<string>) {
  */
 export async function updateCredentialHosts(input: {
 	db: D1Database
-	orgId: OwnerId
+	orgId: string
 	credentialId: string
 	hosts: Array<string>
 	audit: OrgAuditWriter
@@ -291,9 +284,10 @@ export async function updateCredentialHosts(input: {
 			: input.db
 					.prepare(
 						`UPDATE secret_entries SET allowed_hosts = ?, updated_at = ?
-						WHERE id = ? AND kind = 'secret' AND deleted_at IS NULL`,
+						WHERE id = ? AND kind = 'secret' AND deleted_at IS NULL
+							AND bucket_id IN (SELECT id FROM secret_buckets WHERE user_id = ?)`,
 					)
-					.bind(JSON.stringify(after), now, credential.id)
+					.bind(JSON.stringify(after), now, credential.id, input.orgId)
 	const { changed } = await runAppDbBatchWithOrgAudit({
 		appDb: input.db,
 		audit: input.audit,

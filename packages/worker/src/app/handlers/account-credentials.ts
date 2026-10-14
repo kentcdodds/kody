@@ -25,7 +25,10 @@ import {
 import { jsonResponse } from '#worker/json-response.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { readCredentialListFilters } from '#universal/credentials-list.ts'
+import {
+	readCredentialListFilters,
+	type SetCredentialHostsResponse,
+} from '#universal/credentials-list.ts'
 import { type routes } from '#universal/routes.ts'
 
 /**
@@ -113,12 +116,10 @@ async function handleSetHosts(input: {
 			hosts: parsed.hosts,
 			audit: orgAuditWriterFromRequest(input.env, request),
 		})
-		const payload = await loadAccountCredentialsData({
-			env: input.env,
-			user: input.user,
-			selectedId: credential.id,
-		})
-		return jsonResponse({ ...payload, hostsChanged: updated.changed })
+		return jsonResponse({
+			ok: true,
+			...updated,
+		} satisfies SetCredentialHostsResponse)
 	} catch (error) {
 		if (error instanceof AuthorizationError) {
 			return jsonResponse({ ok: false, error: error.message }, 403)

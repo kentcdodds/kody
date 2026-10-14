@@ -1,6 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
@@ -15,7 +14,7 @@ import {
 } from './credential-hosts.ts'
 import { getOrgCredential } from './credential-ids.ts'
 
-const orgId = 'org-1' as OwnerId
+const orgId = 'org-1'
 
 function setup() {
 	const sqlite = new DatabaseSync(':memory:')
