@@ -16,7 +16,13 @@ import {
 
 export type MemoryHeroMode = 'save' | 'recall'
 
-const heroHeight = 220
+const heroHeight = 250
+const heroTop = heroHeight * 0.4
+const heroBottom = heroHeight * 0.6
+const chatRight = 46
+const cardLeft = 63
+const chatEdge = (chatRight / 100) * 360
+const cardEdge = (cardLeft / 100) * 360
 
 export function MemoryHeroScene(
 	handle: Handle<{
@@ -35,12 +41,21 @@ export function MemoryHeroScene(
 				size="full"
 				height={heroHeight}
 				class="pw-scene-mem-hero"
+				stack
 			>
 				<div class="pw-run" key={`${mode}-${shot}`} data-mode={mode}>
 					{wires(
 						<>
-							{wire({ key: 'top', d: 'M170 88 L214 88', on: !recall })}
-							{wire({ key: 'bottom', d: 'M214 132 L170 132', on: recall })}
+							{wire({
+								key: 'top',
+								d: `M${chatEdge} ${heroTop} L${cardEdge} ${heroTop}`,
+								on: !recall,
+							})}
+							{wire({
+								key: 'bottom',
+								d: `M${cardEdge} ${heroBottom} L${chatEdge} ${heroBottom}`,
+								on: recall,
+							})}
 						</>,
 						heroHeight,
 					)}
@@ -65,11 +80,15 @@ export function MemoryHeroScene(
 					</div>
 					<div
 						class="pw-lane pw-mem-lane"
-						style={{ left: '47%', width: '13%', top: recall ? '60%' : '40%' }}
+						style={{
+							left: `${chatRight}%`,
+							width: `${cardLeft - chatRight}%`,
+							top: recall ? '60%' : '40%',
+						}}
 					>
 						<span class="pw-packet">{recall ? 'recall' : 'save'}</span>
 					</div>
-					<div class="pw-node pw-mem-card" style={at(60, 50)}>
+					<div class="pw-node pw-mem-card" style={at(cardLeft, 50)}>
 						<span class="pw-kicker">≡ Kody memory</span>
 						<small class="pw-mem-kind">Writing preference</small>
 						<blockquote class="pw-mem-quote" id="ms-hero-note">
@@ -121,18 +140,19 @@ export function MemoryIndexScene(
 				size="full"
 				height={indexHeight}
 				class="pw-scene-mem-index"
+				stack
 			>
 				<div class="pw-run" key={note.id}>
 					{wires(
 						<>
 							{wire({
 								key: 'search',
-								d: `M206 92 C186 92 176 ${rowY} 152 ${rowY}`,
+								d: `M206 92 C190 92 180 ${rowY} 162 ${rowY}`,
 								on: true,
 							})}
 							{wire({
 								key: 'return',
-								d: `M152 ${rowY + 6} C180 ${rowY + 6} 186 140 206 140`,
+								d: `M162 ${rowY + 6} C184 ${rowY + 6} 190 140 206 140`,
 								on: true,
 							})}
 						</>,
@@ -175,7 +195,12 @@ export function MemoryEditScene(
 	return () => {
 		const { original, updated, isUpdated, shot } = handle.props
 		return (
-			<PrimitiveWidgetFrame id="memory" size="full" class="pw-scene-mem-edit">
+			<PrimitiveWidgetFrame
+				id="memory"
+				size="full"
+				class="pw-scene-mem-edit"
+				stack
+			>
 				<div
 					class="pw-run"
 					key={`edit-${shot}`}

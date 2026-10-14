@@ -1,4 +1,7 @@
-/* Animated scenes for /features/memory, on the shared `.pw` stage (`public/styles.css`). */
+/* Animated scenes for /features/memory, on the shared `.pw` stage (`public/styles.css`).
+ * Every frame of every loop keeps the full example text on screen; motion
+ * only moves the packet and adds emphasis rings, so a first paint or a
+ * replay after a click is already a readable picture. */
 
 .feature-detail .memory .memory-stack {
 	padding: 0 !important;
@@ -14,11 +17,38 @@
 	margin-bottom: 10px;
 }
 
+/* Give the story scenes enough width (over 520px of stage) to keep their
+   wired desktop picture instead of the stacked narrow layout. */
+@media (min-width: 801px) {
+	.feature-detail .memory .story-split:has(> .ms-memory-index) {
+		grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+	}
+
+	.feature-detail .memory .story-split:has(> .ms-edit-scene) {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+	}
+}
+
 .feature-detail .memory :where(.pw) p,
 .feature-detail .memory :where(.pw) blockquote {
 	max-width: none;
 	margin: 0;
 	line-height: inherit;
+}
+
+.pw .pw-mem-chat,
+.pw .pw-mem-card,
+.pw .pw-mem-task {
+	--pw-mem-rest: 0 1px 1px var(--pw-shadow), 0 0.2em 0.6em var(--pw-shadow);
+	--pw-mem-ring: 0 0 0 0.3em
+		color-mix(in oklab, var(--pw-accent) 30%, transparent);
+}
+
+.pw .pw-mem-bubble,
+.pw .pw-mem-draft,
+.pw .pw-mem-row {
+	--pw-mem-ring: 0 0 0 0.22em
+		color-mix(in oklab, var(--pw-accent) 32%, transparent);
 }
 
 /* Hero: one agent saves the preference, the next one recalls it. */
@@ -34,7 +64,7 @@
 }
 
 .pw .pw-mem-chat {
-	width: 44%;
+	width: 43%;
 }
 
 .pw .pw-mem-chat-head {
@@ -43,7 +73,7 @@
 	gap: 0.4em;
 	padding-bottom: 0.45em;
 	border-bottom: 1px solid var(--pw-line);
-	font-size: 0.8em;
+	font-size: 0.82em;
 }
 
 .pw .pw-mem-chat-head strong {
@@ -53,7 +83,7 @@
 .pw .pw-mem-bubble {
 	max-width: 92%;
 	padding: 0.45em 0.65em;
-	font-size: 0.78em;
+	font-size: 0.8em;
 	line-height: 1.35;
 }
 
@@ -71,20 +101,25 @@
 }
 
 .pw .pw-mem-draft {
-	padding-top: 0.45em;
+	padding: 0.45em 0.3em 0;
 	border-top: 1px dashed var(--pw-line);
+	border-radius: 0.3em;
 	color: var(--pw-muted);
-	font-size: 0.74em;
+	font-size: 0.8em;
 	line-height: 1.4;
 }
 
 .pw .pw-mem-card {
-	width: 37%;
+	width: 35%;
+}
+
+.pw .pw-mem-card .pw-kicker {
+	font-size: 0.8em;
 }
 
 .pw .pw-mem-kind {
 	color: var(--pw-ink);
-	font-size: 0.72em;
+	font-size: 0.8em;
 	font-weight: 600;
 }
 
@@ -96,13 +131,14 @@
 
 .pw .pw-mem-foot {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.4em;
 	padding-top: 0.45em;
 	border-top: 1px solid var(--pw-line);
 	color: var(--pw-muted);
-	font-size: 0.68em;
+	font-size: 0.8em;
 }
 
 .pw .pw-mem-foot span {
@@ -123,278 +159,184 @@
 		var(--pw-accent)
 	);
 	color: var(--pw-on-accent);
-	font-size: 0.66em;
+	font-size: 0.8em;
 	font-weight: 650;
 }
 
+/* The chip stays parked between the cards; the lit wire carries the motion. */
 .pw .pw-mem-lane .pw-packet {
-	font-size: 0.7em;
+	left: 50%;
+	opacity: 1;
+	font-size: 0.8em;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-ask {
-	animation: pw-mem-type 8s var(--pw-ease) infinite;
+.pw .pw-mem-stamp {
+	top: -0.8em;
+	right: 0.8em;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-lane {
-	animation: pw-mem-out 8s var(--pw-ease) infinite;
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-ask {
+	animation: pw-mem-ring-early 8s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-lane .pw-packet {
-	animation: pw-mem-packet 8s linear infinite;
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-lane {
+	animation: none;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-card {
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-lane .pw-packet {
+	animation: pw-mem-packet 8s var(--pw-ease) infinite;
+}
+
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-card {
 	animation: pw-mem-card-save 8s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-stamp {
-	animation: pw-mem-stamp-save 8s var(--pw-ease) infinite;
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-stamp {
+	animation: pw-mem-pop-save 8s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-reply {
-	animation: pw-mem-reply-save 8s var(--pw-ease) infinite;
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-reply {
+	animation: pw-mem-ring-late 8s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-lane {
-	animation-name: pw-mem-back;
-}
-
-.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-lane .pw-packet {
+.pw.pw-scene-mem-hero[data-motion]
+	[data-mode='recall']
+	.pw-mem-lane
+	.pw-packet {
 	animation-name: pw-mem-packet-back;
 }
 
-.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-card {
+.pw.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-card {
 	animation-name: pw-mem-card-recall;
 }
 
-.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-stamp {
-	animation-name: pw-mem-stamp-recall;
+.pw.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-stamp {
+	animation-name: pw-mem-pop-recall;
 }
 
-.pw-scene-mem-hero[data-motion] [data-mode='recall'] .pw-mem-reply {
-	animation-name: pw-mem-reply-recall;
+.pw.pw-scene-mem-hero[data-motion] .pw-mem-draft {
+	animation: pw-mem-ring-last 8s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-hero[data-motion] .pw-mem-draft {
-	animation: pw-mem-draft 8s var(--pw-ease) infinite;
-}
-
-@keyframes pw-mem-type {
+@keyframes pw-mem-ring-early {
 	0%,
-	2% {
-		clip-path: inset(0 100% 0 0);
-	}
-	14%,
-	93% {
-		clip-path: inset(0);
-		opacity: 1;
-	}
-	99%,
 	100% {
-		clip-path: inset(0);
-		opacity: 0;
+		box-shadow: none;
+	}
+	4%,
+	14% {
+		box-shadow: var(--pw-mem-ring);
+	}
+	22% {
+		box-shadow: none;
 	}
 }
 
-@keyframes pw-mem-out {
+@keyframes pw-mem-ring-late {
 	0%,
-	16% {
-		transform: translateX(-10%);
-	}
-	34%,
+	48%,
+	72%,
 	100% {
-		transform: translateX(100%);
+		box-shadow: none;
+	}
+	54%,
+	64% {
+		box-shadow: var(--pw-mem-ring);
+	}
+}
+
+@keyframes pw-mem-ring-last {
+	0%,
+	62%,
+	88%,
+	100% {
+		box-shadow: none;
+	}
+	68%,
+	80% {
+		box-shadow: var(--pw-mem-ring);
 	}
 }
 
 @keyframes pw-mem-packet {
 	0%,
-	15% {
-		opacity: 0;
-	}
-	18%,
-	32% {
-		opacity: 1;
-	}
+	16%,
 	36%,
 	100% {
-		opacity: 0;
+		scale: 1;
+		box-shadow: none;
 	}
-}
-
-@keyframes pw-mem-back {
-	0%,
+	24%,
 	30% {
-		transform: translateX(100%);
-	}
-	48%,
-	100% {
-		transform: translateX(-10%);
+		scale: 1.12;
+		box-shadow: 0 0 0 0.25em
+			color-mix(in oklab, var(--pw-accent) 28%, transparent);
 	}
 }
 
 @keyframes pw-mem-packet-back {
 	0%,
-	29% {
-		opacity: 0;
-	}
-	32%,
-	46% {
-		opacity: 1;
-	}
+	30%,
 	50%,
 	100% {
-		opacity: 0;
+		scale: 1;
+		box-shadow: none;
+	}
+	38%,
+	44% {
+		scale: 1.12;
+		box-shadow: 0 0 0 0.25em
+			color-mix(in oklab, var(--pw-accent) 28%, transparent);
 	}
 }
 
 @keyframes pw-mem-card-save {
 	0%,
-	34% {
-		scale: 1;
-		box-shadow:
-			0 1px 1px var(--pw-shadow),
-			0 0.2em 0.6em var(--pw-shadow);
-	}
-	38% {
-		scale: 1.04;
-		box-shadow: 0 0 0 0.3em
-			color-mix(in oklab, var(--pw-accent) 30%, transparent);
-	}
-	48%,
+	34%,
+	50%,
 	100% {
-		scale: 1;
-		box-shadow:
-			0 1px 1px var(--pw-shadow),
-			0 0.2em 0.6em var(--pw-shadow);
+		box-shadow: var(--pw-mem-rest);
+	}
+	38%,
+	44% {
+		box-shadow: var(--pw-mem-ring);
 	}
 }
 
 @keyframes pw-mem-card-recall {
 	0%,
-	15% {
-		box-shadow:
-			0 1px 1px var(--pw-shadow),
-			0 0.2em 0.6em var(--pw-shadow);
-	}
-	20%,
-	28% {
-		box-shadow: 0 0 0 0.3em
-			color-mix(in oklab, var(--pw-accent) 30%, transparent);
-	}
+	12%,
 	40%,
 	100% {
-		box-shadow:
-			0 1px 1px var(--pw-shadow),
-			0 0.2em 0.6em var(--pw-shadow);
+		box-shadow: var(--pw-mem-rest);
+	}
+	18%,
+	30% {
+		box-shadow: var(--pw-mem-ring);
 	}
 }
 
-@keyframes pw-mem-stamp-save {
+@keyframes pw-mem-pop-save {
 	0%,
-	36% {
-		opacity: 0;
-		scale: 0.4;
-	}
-	42%,
-	93% {
-		opacity: 1;
-		scale: 1;
-	}
-	99%,
+	34%,
+	46%,
 	100% {
-		opacity: 0;
 		scale: 1;
+	}
+	40% {
+		scale: 1.18;
 	}
 }
 
-@keyframes pw-mem-stamp-recall {
+@keyframes pw-mem-pop-recall {
 	0%,
-	24% {
-		opacity: 0;
-		scale: 0.4;
-	}
+	18%,
 	30%,
-	93% {
-		opacity: 1;
+	100% {
 		scale: 1;
 	}
-	99%,
-	100% {
-		opacity: 0;
-		scale: 1;
-	}
-}
-
-@keyframes pw-mem-reply-save {
-	0%,
-	42% {
-		opacity: 0;
-		transform: translateY(0.5em);
-	}
-	50%,
-	93% {
-		opacity: 1;
-		transform: none;
-	}
-	99%,
-	100% {
-		opacity: 0;
-		transform: none;
-	}
-}
-
-@keyframes pw-mem-reply-recall {
-	0%,
-	48% {
-		opacity: 0;
-		transform: translateY(0.5em);
-	}
-	56%,
-	93% {
-		opacity: 1;
-		transform: none;
-	}
-	99%,
-	100% {
-		opacity: 0;
-		transform: none;
-	}
-}
-
-@keyframes pw-mem-draft {
-	0%,
-	58% {
-		clip-path: inset(0 0 100% 0);
-		opacity: 1;
-	}
-	74%,
-	93% {
-		clip-path: inset(0);
-		opacity: 1;
-	}
-	99%,
-	100% {
-		clip-path: inset(0);
-		opacity: 0;
-	}
-}
-
-@keyframes pw-mem-draft-early {
-	0%,
-	34% {
-		clip-path: inset(0 0 100% 0);
-		opacity: 1;
-	}
-	50%,
-	93% {
-		clip-path: inset(0);
-		opacity: 1;
-	}
-	99%,
-	100% {
-		clip-path: inset(0);
-		opacity: 0;
+	24% {
+		scale: 1.18;
 	}
 }
 
@@ -404,18 +346,19 @@
 	translate: 0 -50%;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 0.1em;
-	width: 38%;
+	gap: 0.15em;
+	width: 42%;
 	padding: 0.5em 0.75em;
+	white-space: normal;
 }
 
 .pw .pw-mem-row small {
 	color: var(--pw-muted);
-	font-size: 0.68em;
+	font-size: 0.8em;
 }
 
 .pw .pw-mem-row span {
-	font-size: 0.82em;
+	font-size: 0.86em;
 	font-weight: 600;
 }
 
@@ -432,7 +375,7 @@
 	background: var(--pw-surface);
 	color: var(--pw-muted);
 	font-family: var(--font-mono, ui-monospace, monospace);
-	font-size: 0.62em;
+	font-size: 0.8em;
 	white-space: nowrap;
 }
 
@@ -446,6 +389,10 @@
 	white-space: normal;
 }
 
+.pw .pw-mem-task .pw-kicker {
+	font-size: 0.8em;
+}
+
 .pw .pw-mem-task strong {
 	font-size: 0.95em;
 	font-weight: 650;
@@ -453,70 +400,87 @@
 }
 
 .pw .pw-mem-task p {
-	font-size: 0.78em;
+	font-size: 0.82em;
 	line-height: 1.4;
 }
 
 .pw .pw-mem-used {
 	align-self: flex-start;
 	padding: 0.15em 0.5em;
-	border-radius: 99px;
+	border-radius: 0.6em;
 	background: var(--pw-soft);
 	color: var(--pw-ink);
-	font-size: 0.64em;
+	font-size: 0.8em;
 	font-weight: 600;
 }
 
-.pw-scene-mem-index[data-motion] .pw-mem-row[data-on] {
+.pw.pw-scene-mem-index[data-motion] .pw-mem-row[data-on] {
 	animation: pw-mem-hit 7s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-index[data-motion] .pw-mem-query {
+.pw.pw-scene-mem-index[data-motion] .pw-mem-query {
 	animation: pw-mem-query 7s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-index[data-motion] .pw-mem-task strong {
-	animation: pw-mem-type 7s var(--pw-ease) infinite;
+.pw.pw-scene-mem-index[data-motion] .pw-mem-task {
+	animation: pw-mem-task 7s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-index[data-motion] .pw-mem-task p {
-	animation: pw-mem-draft-early 7s var(--pw-ease) infinite;
-}
-
-.pw-scene-mem-index[data-motion] .pw-mem-used {
-	animation: pw-mem-stamp-save 7s var(--pw-ease) infinite;
-	animation-delay: 1.4s;
-}
-
-@keyframes pw-mem-hit {
-	0%,
-	22% {
-		scale: 1;
-	}
-	28% {
-		scale: 1.05;
-	}
-	36%,
-	100% {
-		scale: 1;
-	}
+.pw.pw-scene-mem-index[data-motion] .pw-mem-used {
+	animation: pw-mem-used 7s var(--pw-ease) infinite;
 }
 
 @keyframes pw-mem-query {
 	0%,
-	12% {
-		opacity: 0;
-		translate: -50% -20%;
+	24%,
+	100% {
+		border-color: var(--pw-line);
+		color: var(--pw-muted);
 	}
+	6%,
+	18% {
+		border-color: var(--pw-accent);
+		color: var(--pw-ink);
+	}
+}
+
+@keyframes pw-mem-hit {
+	0%,
 	18%,
-	40% {
-		opacity: 1;
-		translate: -50% -50%;
-	}
 	48%,
 	100% {
-		opacity: 0;
-		translate: -50% -50%;
+		box-shadow: 0 0 0 0.2em
+			color-mix(in oklab, var(--pw-accent) 28%, transparent);
+	}
+	26%,
+	38% {
+		box-shadow: 0 0 0 0.4em
+			color-mix(in oklab, var(--pw-accent) 34%, transparent);
+	}
+}
+
+@keyframes pw-mem-task {
+	0%,
+	40%,
+	70%,
+	100% {
+		box-shadow: var(--pw-mem-rest);
+	}
+	48%,
+	62% {
+		box-shadow: var(--pw-mem-ring);
+	}
+}
+
+@keyframes pw-mem-used {
+	0%,
+	50%,
+	62%,
+	100% {
+		scale: 1;
+	}
+	56% {
+		scale: 1.05;
 	}
 }
 
@@ -530,7 +494,7 @@
 	border-radius: 99px;
 	background: var(--pw-surface);
 	color: var(--pw-muted);
-	font-size: 0.7em;
+	font-size: 0.8em;
 	font-weight: 600;
 	white-space: nowrap;
 }
@@ -550,15 +514,16 @@
 	flex-direction: column;
 	align-items: stretch;
 	gap: 0.35em;
-	width: 72%;
+	width: 76%;
 	padding: 0.85em 1em;
 	overflow: hidden;
 	white-space: normal;
 }
 
 .pw .pw-mem-edit small {
+	padding-right: 5em;
 	color: var(--pw-muted);
-	font-size: 0.7em;
+	font-size: 0.8em;
 }
 
 .pw .pw-mem-old,
@@ -588,7 +553,10 @@
 }
 
 .pw .pw-mem-new {
-	color: var(--pw-ink);
+	margin-inline: -0.25em;
+	padding-inline: 0.25em;
+	border-radius: 0.3em;
+	color: var(--pw-text);
 }
 
 .pw .pw-mem-history {
@@ -596,11 +564,7 @@
 	padding-top: 0.45em;
 	border-top: 1px solid var(--pw-line);
 	color: var(--pw-muted);
-	font-size: 0.66em;
-}
-
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-history {
-	animation: pw-mem-badge 3.4s var(--pw-ease) both;
+	font-size: 0.8em;
 }
 
 .pw .pw-mem-badge {
@@ -621,36 +585,36 @@
 	pointer-events: none;
 }
 
-.pw-scene-mem-edit[data-motion] .pw-mem-scan {
+.pw.pw-scene-mem-edit[data-motion] .pw-mem-scan {
 	animation: pw-mem-scan 7s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-edit[data-motion] .pw-mem-step-find {
+.pw.pw-scene-mem-edit[data-motion] .pw-mem-step-find {
 	animation: pw-mem-step 7s var(--pw-ease) infinite;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-scan {
-	animation: pw-mem-scan 3.4s var(--pw-ease) 1 both;
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-scan {
+	animation: pw-mem-scan 2.4s var(--pw-ease) 1 both;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-step-find {
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-step-find {
 	animation: none;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-old::after {
-	animation: pw-mem-strike 3.4s var(--pw-ease) both;
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-old::after {
+	animation: pw-mem-strike 2.4s var(--pw-ease) both;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-new {
-	animation: pw-mem-write 3.4s var(--pw-ease) both;
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-new {
+	animation: pw-mem-write 2.4s var(--pw-ease) both;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-step-update {
-	animation: pw-mem-step-on 3.4s var(--pw-ease) both;
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-step-update {
+	animation: pw-mem-step 2.4s var(--pw-ease) both;
 }
 
-.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-badge {
-	animation: pw-mem-badge 3.4s var(--pw-ease) both;
+.pw.pw-scene-mem-edit[data-motion] [data-updated] .pw-mem-badge {
+	animation: pw-mem-pop-badge 2.4s var(--pw-ease) both;
 }
 
 @keyframes pw-mem-scan {
@@ -671,6 +635,7 @@
 
 @keyframes pw-mem-step {
 	0%,
+	35%,
 	100% {
 		box-shadow: none;
 	}
@@ -678,17 +643,14 @@
 		box-shadow: 0 0 0 0.3em
 			color-mix(in oklab, var(--pw-accent) 25%, transparent);
 	}
-	35% {
-		box-shadow: none;
-	}
 }
 
 @keyframes pw-mem-strike {
 	0%,
-	30% {
+	10% {
 		transform: scaleX(0);
 	}
-	45%,
+	40%,
 	100% {
 		transform: scaleX(1);
 	}
@@ -696,39 +658,112 @@
 
 @keyframes pw-mem-write {
 	0%,
-	45% {
-		clip-path: inset(0 100% 0 0);
+	30% {
+		background: color-mix(in oklab, var(--pw-accent) 22%, transparent);
 	}
-	80%,
 	100% {
-		clip-path: inset(0);
+		background: transparent;
 	}
 }
 
-@keyframes pw-mem-step-on {
+@keyframes pw-mem-pop-badge {
 	0%,
-	45% {
-		border-color: var(--pw-line);
-		background: var(--pw-surface);
-		color: var(--pw-muted);
-	}
-	55%,
+	40%,
 	100% {
-		border-color: var(--pw-accent);
-		background: var(--pw-soft);
-		color: var(--pw-ink);
-	}
-}
-
-@keyframes pw-mem-badge {
-	0%,
-	80% {
-		opacity: 0;
-		scale: 0.4;
-	}
-	90%,
-	100% {
-		opacity: 1;
 		scale: 1;
+	}
+	55% {
+		scale: 1.18;
+	}
+}
+
+/* Narrow stages: each scene becomes a top-to-bottom story. */
+
+@container (max-width: 520px) {
+	.pw
+		.pw-stage[data-stack]
+		:is(.pw-mem-chat, .pw-mem-card, .pw-mem-row, .pw-mem-task, .pw-mem-edit) {
+		width: auto;
+		translate: none;
+	}
+
+	/* Hero: chat, a "save" arrow, then the memory card; recall reads the
+	   other way, memory first and the next agent below it. */
+	.pw .pw-stage[data-stack] .pw-mem-lane {
+		position: relative;
+		left: auto !important;
+		top: auto !important;
+		width: auto !important;
+		height: auto;
+		display: flex;
+		justify-content: center;
+		margin-block: -0.2em;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-lane .pw-packet {
+		position: static;
+		translate: none;
+		opacity: 1;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-lane .pw-packet::before {
+		content: '↓ ';
+	}
+
+	.pw .pw-stage[data-stack] [data-mode='recall'] .pw-mem-card {
+		order: -2;
+	}
+
+	.pw .pw-stage[data-stack] [data-mode='recall'] .pw-mem-lane {
+		order: -1;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-stamp {
+		top: 0.6em;
+		right: 0.7em;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-bubble {
+		max-width: 88%;
+	}
+
+	/* Index: the search, the notes it looks through, then the draft. */
+	.pw.pw-scene-mem-index .pw-stage[data-stack] .pw-run {
+		gap: 0.6em;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-query {
+		position: relative;
+		left: auto !important;
+		top: auto !important;
+		translate: none;
+		order: -1;
+		align-self: center;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-query::after {
+		content: ' ↓';
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-task {
+		margin-top: 0.4em;
+	}
+
+	/* Edit: the two steps sit above the entry they change. */
+	.pw.pw-scene-mem-edit .pw-stage[data-stack] .pw-run {
+		flex-flow: row wrap;
+		gap: 0.5em;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-step {
+		position: relative;
+		left: auto !important;
+		top: auto !important;
+		translate: none;
+	}
+
+	.pw .pw-stage[data-stack] .pw-mem-edit {
+		flex-basis: 100%;
+		margin-top: 0.25em;
 	}
 }
