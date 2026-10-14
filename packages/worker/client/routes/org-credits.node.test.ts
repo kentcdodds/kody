@@ -10,6 +10,7 @@ import { orgCreditsPath } from '#universal/org-pages.ts'
 import {
 	formatBudgetLine,
 	formatLedgerAmount,
+	formatLedgerMicroUsd,
 	OrgCreditsRoute,
 } from './org-credits.tsx'
 
@@ -49,7 +50,10 @@ const org = { slug: 'acme', displayName: 'Acme', personal: false }
 
 test('sub-cent usage charges keep their value instead of rounding to $0.00', () => {
 	expect(formatLedgerAmount(-4_000)).toBe('−$0.004')
+	expect(formatLedgerAmount(-1)).toBe('−$0.000001')
+	expect(formatLedgerAmount(-12_345)).toBe('−$0.012345')
 	expect(formatLedgerAmount(25_000_000)).toBe('+$25.00')
+	expect(formatLedgerMicroUsd(38_989_999)).toBe('$38.989999')
 	expect(
 		formatBudgetLine({ budgetMicroUsd: 20_000_000, spentMicroUsd: 1_500_000 }),
 	).toBe('$1.50 of $20.00 spent this month')

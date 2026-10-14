@@ -167,21 +167,21 @@ export function describeOrgCreditsLedgerEntry(
 /**
  * A newest-first ledger page with the balance after each row, walked back
  * from the wallet's current balance (every balance change writes one row).
+ * `balanceMicroUsd` is that balance, read in the same snapshot as the page.
  */
 export async function loadOrgCreditsLedgerPage(input: {
 	db: D1Database
 	orgId: OwnerId
-	balanceMicroUsd: number
 	before: CreditLedgerCursor | null
 	limit?: number
-}): Promise<OrgCreditsLedgerPage> {
+}): Promise<{ balanceMicroUsd: number; page: OrgCreditsLedgerPage }> {
 	const page = await listCreditLedgerPage({
 		db: input.db,
 		userId: input.orgId,
 		limit: input.limit ?? orgCreditsLedgerPageSize,
 		before: input.before,
 	})
-	let balanceAfter = input.balanceMicroUsd - page.newerAmountMicroUsd
+	let balanceAfter = page.balanceMicroUsd - page.newerAmountMicroUsd
 	const entries = page.entries.map((entry): OrgCreditsLedgerEntry => {
 		const row: OrgCreditsLedgerEntry = {
 			id: entry.id,
@@ -196,11 +196,14 @@ export async function loadOrgCreditsLedgerPage(input: {
 	})
 	const last = page.entries.at(-1)
 	return {
-		entries,
-		nextCursor:
-			page.hasMore && last
-				? encodeCreditLedgerCursor({ createdAt: last.createdAt, id: last.id })
-				: null,
+		balanceMicroUsd: page.balanceMicroUsd,
+		page: {
+			entries,
+			nextCursor:
+				page.hasMore && last
+					? encodeCreditLedgerCursor({ createdAt: last.createdAt, id: last.id })
+					: null,
+		},
 	}
 }
 
@@ -327,29 +330,24 @@ export async function loadOrgCreditsData(input: {
 			ledger: null,
 		}
 	}
-	const [row, wallet] = await Promise.all([
+	const [row, wallet, ledger] = await Promise.all([
 		readOrgEntitlementRow(db, orgId),
 		readCreditWallet(db, orgId),
+		loadOrgCreditsLedgerPage({ db, orgId, before: input.before }),
 	])
 	if (!row) return null
-	const ledger = await loadOrgCreditsLedgerPage({
-		db,
-		orgId,
-		balanceMicroUsd: wallet.balanceMicroUsd,
-		before: input.before,
-	})
 	return {
 		ok: true,
 		org,
 		access: 'billing',
 		wallet: {
-			balanceMicroUsd: wallet.balanceMicroUsd,
+			balanceMicroUsd: ledger.balanceMicroUsd,
 			creditsEligible: resolveUserPlanFromRow(row, now).creditsEligible,
 			autoRefillEnabled: wallet.autoRefill.enabled,
 			manageHref: orgUsageCreditsPath(input.org.slug),
 			whereItWentHref: orgUsageWhereItWentPath(input.org.slug),
 		},
 		budgets,
-		ledger,
+		ledger: ledger.page,
 	}
 }

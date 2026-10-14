@@ -296,7 +296,7 @@ test('personal and team rails list the same sections in the same order above Org
 	}
 })
 
-test('grant-only collaborators see Agents with a note, and no slug means no team rail', () => {
+test('grant-only collaborators see Agents and Credits with a note, and no slug means no team rail', () => {
 	const collaborator = workspaceRailGroups({
 		orgSlug: 'acme',
 		personal: false,
@@ -307,7 +307,10 @@ test('grant-only collaborators see Agents with a note, and no slug means no team
 			group.label,
 			group.items.map((item) => item.href),
 		]),
-	).toEqual([['Agents & data', ['/@acme/-/agents']]])
+	).toEqual([
+		['Agents & data', ['/@acme/-/agents']],
+		['Organization', ['/@acme/-/credits']],
+	])
 	expect(collaborator[0]?.note).toMatch(/grant/i)
 	expect(
 		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
@@ -349,7 +352,9 @@ test('switching workspaces keeps the page when the role can open it there', () =
 		'/@acme/-/credits',
 	)
 	expect(workspaceSwitchHref('/@acme/-/credits', jane)).toBe('/@jane/-/credits')
-	expect(workspaceSwitchHref('/@jane/-/credits', acmeGuest)).toBe('/@acme')
+	expect(workspaceSwitchHref('/@jane/-/credits', acmeGuest)).toBe(
+		'/@acme/-/credits',
+	)
 	expect(workspaceSwitchHref('/@acme', jane)).toBe('/@jane/-/overview')
 })
 

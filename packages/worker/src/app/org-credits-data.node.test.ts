@@ -145,24 +145,21 @@ beforeEach(async () => {
 
 test('ledger pages walk newest first with the balance after every row', async () => {
 	seedLedger()
-	const first = await loadOrgCreditsLedgerPage({
+	const { balanceMicroUsd, page: first } = await loadOrgCreditsLedgerPage({
 		db,
 		orgId,
-		balanceMicroUsd: 38_990_000,
 		before: null,
 		limit: 2,
 	})
-	const second = await loadOrgCreditsLedgerPage({
+	const { page: second } = await loadOrgCreditsLedgerPage({
 		db,
 		orgId,
-		balanceMicroUsd: 38_990_000,
 		before: decodeCreditLedgerCursor(first.nextCursor),
 		limit: 2,
 	})
-	const third = await loadOrgCreditsLedgerPage({
+	const { page: third } = await loadOrgCreditsLedgerPage({
 		db,
 		orgId,
-		balanceMicroUsd: 38_990_000,
 		before: decodeCreditLedgerCursor(second.nextCursor),
 		limit: 2,
 	})
@@ -177,14 +174,14 @@ test('ledger pages walk newest first with the balance after every row', async ()
 		['signup_welcome:org-acme', 5_000_000, 5_000_000],
 	])
 	expect(third.nextCursor).toBeNull()
+	expect(balanceMicroUsd).toBe(38_990_000)
 })
 
 test('ledger rows say what they are without leaking internal grant notes', async () => {
 	seedLedger()
-	const page = await loadOrgCreditsLedgerPage({
+	const { page } = await loadOrgCreditsLedgerPage({
 		db,
 		orgId,
-		balanceMicroUsd: 38_990_000,
 		before: null,
 	})
 	expect(

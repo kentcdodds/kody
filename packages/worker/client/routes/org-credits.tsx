@@ -68,9 +68,24 @@ export async function orgCreditsRouteLoader(
 	return { orgCredits: payload }
 }
 
-/** Signed amount with sub-cent precision (usage debits are often under a cent). */
+/**
+ * Ledger money keeps every nonzero micro-USD: a rows-read debit can be a
+ * single micro-USD, which the three-decimal rate-card format shows as $0.00.
+ */
+export function formatLedgerMicroUsd(microUsd: number) {
+	if (!Number.isFinite(microUsd) || microUsd === 0) return '$0.00'
+	const sign = microUsd < 0 ? '−' : ''
+	const abs = Math.abs(microUsd)
+	const formatted = (abs / 1_000_000).toLocaleString('en-US', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: abs % 1_000 === 0 ? 3 : 6,
+	})
+	return `${sign}$${formatted}`
+}
+
+/** Signed ledger amount: usage debits are often well under a cent. */
 export function formatLedgerAmount(microUsd: number) {
-	const formatted = formatEstimatedCreditMicroUsd(microUsd)
+	const formatted = formatLedgerMicroUsd(microUsd)
 	return microUsd > 0 ? `+${formatted}` : formatted
 }
 
@@ -140,7 +155,7 @@ function renderBalance(wallet: NonNullable<OrgCreditsLoaderData['wallet']>) {
 					color: wallet.balanceMicroUsd < 0 ? colors.error : colors.text,
 				})}
 			>
-				{formatEstimatedCreditMicroUsd(wallet.balanceMicroUsd)}
+				{formatLedgerMicroUsd(wallet.balanceMicroUsd)}
 			</p>
 			<p mix={css(descriptionCss)}>
 				Auto-refill is {wallet.autoRefillEnabled ? 'on' : 'off'}.{' '}
@@ -160,10 +175,10 @@ function renderLedgerTable(entries: Array<OrgCreditsLedgerEntry>) {
 			scrollHeight="none"
 			columns={[
 				{ key: 'description', label: 'Entry', primary: true },
-				{ key: 'type', label: 'Type', drop: 2 },
+				{ key: 'type', label: 'Type', drop: 1 },
 				{ key: 'date', label: 'Date', drop: 3 },
 				{ key: 'amount', label: 'Amount', align: 'end' },
-				{ key: 'balance', label: 'Balance after', align: 'end', drop: 1 },
+				{ key: 'balance', label: 'Balance after', align: 'end' },
 			]}
 			rows={entries.map((entry) => ({
 				id: entry.id,
@@ -196,7 +211,7 @@ function renderLedgerTable(entries: Array<OrgCreditsLedgerEntry>) {
 							{formatLedgerAmount(entry.amountMicroUsd)}
 						</span>
 					),
-					balance: formatEstimatedCreditMicroUsd(entry.balanceAfterMicroUsd),
+					balance: formatLedgerMicroUsd(entry.balanceAfterMicroUsd),
 				},
 			}))}
 		/>

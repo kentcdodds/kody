@@ -163,8 +163,8 @@ function orgPathOpensFor(
 	org: Pick<OrganizationSummary, 'personal' | 'role'>,
 ) {
 	const section = parseOrgResourcePath(pathname)?.section
-	if (org.role === null) return section === 'agents'
 	if (parseOrgCreditsPath(pathname)) return true
+	if (org.role === null) return section === 'agents'
 	if (parseOrgBillingPath(pathname) || parseOrgUsagePath(pathname)) {
 		return orgRoleManagesBilling(org.role)
 	}
@@ -515,7 +515,7 @@ function workspaceResourceGroups(
  * Grants as tabs), Settings, and Billing for roles that manage it. A
  * personal org has no members or settings of its own (its name and photo
  * are the person's profile), so it lists Grants and Billing. Grant-only
- * collaborators (`role` null) get Agents only, with a note.
+ * collaborators (`role` null) get Agents and their Credits budget, with a note.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -534,7 +534,16 @@ export function workspaceRailGroups(input: {
 			{
 				label: 'Agents & data',
 				items: [agentsRailItem(orgSlug)],
-				note: 'Only Agents is available with a grant. Ask an owner for membership to open the rest of this workspace.',
+				note: 'Only Agents and Credits are available with a grant. Ask an owner for membership to open the rest of this workspace.',
+			},
+			{
+				label: 'Organization',
+				items: [
+					{
+						...creditsRailItem(orgSlug),
+						description: 'Your monthly budget and what it has spent.',
+					},
+				],
 			},
 		]
 	}
