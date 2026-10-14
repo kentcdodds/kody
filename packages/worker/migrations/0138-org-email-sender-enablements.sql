@@ -3,9 +3,9 @@
 -- mail stays in the admin inbox. There is no blanket switch.
 --
 -- Personal orgs (a live users.stable_user_id) keep existing email
--- subscriptions firing. The UI offers narrowing for any_authenticated
--- catch-alls from this migration. Team orgs are not backfilled; they start
--- with no sender rules.
+-- subscriptions firing. Those catch-alls are tagged origin = 'migrated' so
+-- the UI can offer narrowing. Team orgs are not backfilled; they start with
+-- no sender rules.
 
 ALTER TABLE enablements ADD COLUMN sender_kind TEXT CHECK (
 	sender_kind IS NULL
@@ -18,7 +18,8 @@ ALTER TABLE enablements ADD COLUMN sender_value TEXT;
 -- personal-org subscription of the same topic stays sender_kind NULL (it
 -- matches no sender) so this backfill can create the unique index below.
 UPDATE enablements
-SET sender_kind = 'any_authenticated'
+SET sender_kind = 'any_authenticated',
+	origin = 'migrated'
 WHERE id IN (
 	SELECT id FROM (
 		SELECT e.id AS id

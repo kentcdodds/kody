@@ -118,53 +118,62 @@ test('0138 tags live personal-org email subscriptions and leaves team orgs alone
 
 	const rows = db
 		.prepare(
-			`SELECT id, sender_kind, sender_value FROM enablements ORDER BY id`,
+			`SELECT id, sender_kind, sender_value, origin FROM enablements ORDER BY id`,
 		)
 		.all() as Array<{
 		id: string
 		sender_kind: string | null
 		sender_value: string | null
+		origin: string
 	}>
 	expect(rows).toEqual([
 		{
 			id: 'deleted-person',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 		{
 			id: 'personal-cron',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 		{
 			id: 'personal-off',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 		{
 			id: 'personal-other-topic',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 		{
 			id: 'personal-quarantined',
 			sender_kind: 'any_authenticated',
 			sender_value: null,
+			origin: 'migrated',
 		},
 		{
 			id: 'personal-received',
 			sender_kind: 'any_authenticated',
 			sender_value: null,
+			origin: 'migrated',
 		},
 		{
 			id: 'personal-received-later',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 		{
 			id: 'team-received',
 			sender_kind: null,
 			sender_value: null,
+			origin: 'enabled',
 		},
 	])
 })
@@ -206,12 +215,20 @@ test('0138 prefers an on row over an older paused sibling for the catch-all', ()
 	applyMigrationFile(db, '0138-org-email-sender-enablements.sql')
 	const rows = db
 		.prepare(
-			`SELECT id, sender_kind FROM enablements WHERE org_id = 'person-bea' ORDER BY id`,
+			`SELECT id, sender_kind, origin FROM enablements WHERE org_id = 'person-bea' ORDER BY id`,
 		)
-		.all() as Array<{ id: string; sender_kind: string | null }>
+		.all() as Array<{
+		id: string
+		sender_kind: string | null
+		origin: string
+	}>
 	expect(rows).toEqual([
-		{ id: 'on-later', sender_kind: 'any_authenticated' },
-		{ id: 'paused-earlier', sender_kind: null },
+		{
+			id: 'on-later',
+			sender_kind: 'any_authenticated',
+			origin: 'migrated',
+		},
+		{ id: 'paused-earlier', sender_kind: null, origin: 'enabled' },
 	])
 })
 
