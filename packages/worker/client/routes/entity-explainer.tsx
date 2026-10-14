@@ -1,8 +1,12 @@
 import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
-import { dismissOpenPopoverPanel } from '#client/popover-open.ts'
+import { dismissOpenPopoverPanel } from '#client/switcher-menu.tsx'
 import { renderIcon } from '#universal/icon.tsx'
-import { accountAliasPath, parseOrgUsagePath } from '#universal/org-pages.ts'
+import {
+	accountAliasPath,
+	parseOrgCreditsPath,
+	parseOrgUsagePath,
+} from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
@@ -210,6 +214,21 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		paragraphs: [
 			"Usage is how much of this organization's plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements.",
 			'On Pro, the Credits section holds the prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
+		],
+		learnMore: [
+			{
+				href: routes.pricing.href(),
+				label: 'Plans and pricing',
+			},
+		],
+	},
+	{
+		id: 'credits',
+		question: 'What are credits?',
+		match: (pathname) => parseOrgCreditsPath(pathname) !== null,
+		paragraphs: [
+			"Credits are this organization's prepaid balance. On Pro, usage past the monthly include is charged to them and stops when they run out.",
+			'The ledger lists every credit added (purchases, auto-refills, grants) and every usage charge. Budgets cap how much one person or automation can spend each month.',
 		],
 		learnMore: [
 			{

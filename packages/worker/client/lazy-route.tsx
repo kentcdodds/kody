@@ -260,6 +260,7 @@ registerPreloadPatterns(
 		routePattern(routes.orgBilling),
 		routePattern(routes.orgBillingSuccess),
 		routePattern(routes.orgUsage),
+		routePattern(routes.orgCredits),
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountExperiments),
 		routePattern(routes.communityPackageApprovePublish),

@@ -218,6 +218,8 @@ export const routes = route({
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
+	orgCredits: get('/@:orgSlug/-/credits'),
+	orgCreditsApi: get('/@:orgSlug/-/credits.json'),
 	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
 	// The credential creation one-pager for this org.
 	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),

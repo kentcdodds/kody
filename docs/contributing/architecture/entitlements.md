@@ -655,9 +655,11 @@ Cross-UTC-day retries use the original claim's resource/day.
 ### D1 payload storage bytes — UserMeter authority
 
 **Authority:** the UserMeter `storage_bytes_state` singleton is the sole
-enforcement and usage counter. The reconcile lane walks users by
-`stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
-singleton (advanced once per processed page, wrapping at the tail).
+enforcement and usage counter. The reconcile lane walks every live owner —
+personal orgs (`users.stable_user_id`) and team orgs (`orgs.id`, no `users` row)
+— by one keyset from the platform-owned `d1_storage_reconcile_cursor` singleton
+(advanced once per processed page, wrapping at the tail). Cold bootstrap
+zero-inits any live owner; the lane then corrects it to physical bytes.
 
 **Reserve path (`assertWithinStorageBytesEntitlement`):**
 

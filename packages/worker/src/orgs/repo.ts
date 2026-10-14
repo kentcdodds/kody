@@ -6,6 +6,7 @@ import {
 	type OrgRole,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
+import { memoizePerRequest } from '#worker/request-context.ts'
 import {
 	andActiveOrgSql,
 	andLiveDeletedAtSql,
@@ -423,19 +424,30 @@ export function orgBindingForOrgFromRows(rows: {
 	return toBinding({ ...rows.grant, role: null })
 }
 
+/**
+ * Live membership or grant binding for `(personId, orgId)`. Memoized once per
+ * HTTP request (same key) so package-page / viewer-access fans that call this
+ * from several permission helpers do not re-query D1 for the same pair
+ * (KODY-98). Outside a request context every call hits D1.
+ */
 export async function loadOrgBindingForOrg(
 	db: D1Database,
 	personId: string,
 	orgId: string,
 ): Promise<OrgBinding | null> {
-	const statements = orgBindingForOrgStatements(db, personId, orgId)
-	const membership = await statements.membership.first<OrgBindingRow>()
-	if (membership) return toBinding(membership)
-	const grant = await statements.grant.first<{
-		org_id: string
-		org_slug: string
-	}>()
-	return orgBindingForOrgFromRows({ membership: null, grant })
+	return memoizePerRequest({
+		key: `org-binding:${personId}:${orgId}`,
+		load: async () => {
+			const statements = orgBindingForOrgStatements(db, personId, orgId)
+			const membership = await statements.membership.first<OrgBindingRow>()
+			if (membership) return toBinding(membership)
+			const grant = await statements.grant.first<{
+				org_id: string
+				org_slug: string
+			}>()
+			return orgBindingForOrgFromRows({ membership: null, grant })
+		},
+	})
 }
 
 /** True when the org exists and is neither soft-deleted nor suspended. */

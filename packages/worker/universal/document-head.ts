@@ -266,6 +266,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.orgBilling)]: titleOnly('Billing'),
 	[routePattern(routes.orgBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.orgUsage)]: titleOnly('Usage'),
+	[routePattern(routes.orgCredits)]: titleOnly('Credits'),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
 	[routePattern(routes.communityPackageApproveCredentials)]: titleOnly(

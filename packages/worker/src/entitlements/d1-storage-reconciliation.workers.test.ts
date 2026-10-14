@@ -4,6 +4,7 @@ import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	calculateUserD1StorageBytes,
+	listUsersForD1StorageReconciliation,
 	reconcileUserD1StorageBytes,
 } from './service.ts'
 import { reconcileD1StorageBytes } from './d1-storage-reconciliation.ts'
@@ -152,6 +153,60 @@ test('D1 storage reconciliation is UserMeter-authoritative and advances the keys
 		outcome: 'ready',
 		bytes: 0,
 	})
+})
+
+async function seedOrg(orgId: string, input: { deleted?: boolean } = {}) {
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, deleted_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)`,
+	)
+		.bind(
+			orgId,
+			`reconcile-${crypto.randomUUID().slice(0, 8)}`,
+			input.deleted ? '2026-07-01T00:00:00.000Z' : null,
+			'2026-06-01T00:00:00.000Z',
+			'2026-06-01T00:00:00.000Z',
+		)
+		.run()
+}
+
+test('reconciliation sweeps team orgs, which have no users row, and skips deleted orgs', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const teamOrgId = 'b'.repeat(64)
+	await seedOrg('b'.repeat(63) + 'a', { deleted: true })
+	await seedOrg(teamOrgId)
+	await insertTrackedD1Payload(teamOrgId, 256)
+	await setReconcileCursorBefore(teamOrgId)
+	const teamMeter = userMeterRpc({ env, userId: ownerIdFromStored(teamOrgId) })
+	const expectedBytes = await calculateUserD1StorageBytes({
+		db: env.APP_DB,
+		userId: ownerIdFromStored(teamOrgId),
+	})
+	expect(expectedBytes).toBeGreaterThan(128)
+
+	await expect(reconcileLane('2026-07-31T02:00:00.000Z', 1)).resolves.toEqual({
+		scanned: 1,
+		updated: 1,
+		failed: 0,
+		deferred: 0,
+	})
+	await expect(readReconcileCursor()).resolves.toBe(teamOrgId)
+	expect(await teamMeter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: expectedBytes,
+	})
+})
+
+test('reconciliation visits a personal org once even though it has users and orgs rows', async () => {
+	const personal = await seedUser('c'.repeat(64), { cursorBefore: true })
+	await seedOrg(personal.userId)
+
+	const page = await listUsersForD1StorageReconciliation({
+		db: env.APP_DB,
+		limit: 2,
+	})
+	expect(page[0]).toEqual({ userId: personal.userId })
+	expect(page[1]?.userId).not.toBe(personal.userId)
 })
 
 test('reconciliation sets UserMeter to the physical-payload absolute, via the lane and directly', async () => {

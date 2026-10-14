@@ -141,6 +141,10 @@ import {
 	createOrgUsageHandler,
 } from '#app/handlers/org-usage.ts'
 import {
+	createOrgCreditsApiHandler,
+	createOrgCreditsHandler,
+} from '#app/handlers/org-credits.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
@@ -669,6 +673,8 @@ export function createAppRouter(env: Env) {
 			orgBillingPortal: createOrgBillingPortalHandler(env),
 			orgUsage: createOrgUsageHandler(env),
 			orgUsageApi: createOrgUsageApiHandler(env),
+			orgCredits: createOrgCreditsHandler(env),
+			orgCreditsApi: createOrgCreditsApiHandler(env),
 			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
 			orgCredentials: createOrgSectionHandler(env, 'credentials'),
 			orgCredentialNew: createOrgCredentialNewHandler(env),

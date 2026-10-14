@@ -19,6 +19,7 @@ export {
 } from './connect-credential.tsx'
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
+export { OrgCreditsRoute, orgCreditsRouteLoader } from './org-credits.tsx'
 export {
 	AccountWaitingRoute,
 	accountWaitingRouteLoader,
