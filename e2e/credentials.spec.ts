@@ -44,6 +44,9 @@ test('Credentials lists a key, filters by kind, and opens its detail pane withou
 			.locator('xpath=..')
 			.getByRole('link', { name: 'Secret providers' }),
 	).toHaveAttribute('href', `/@${user.username}/-/secret-providers`)
+	await expect(
+		page.getByRole('link', { name: 'How credentials work' }),
+	).toHaveAttribute('href', '/docs/credentials')
 
 	await page
 		.getByRole('combobox', { name: 'Filter credentials by kind' })
