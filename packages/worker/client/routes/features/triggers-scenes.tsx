@@ -25,8 +25,6 @@ type HeroRow = { label: string; value: string }
 
 type HeroLog = { time: string; text: string }
 
-const heroHeight = 220
-const heroMid = Math.round(heroHeight * 0.5)
 const signalHeight = 250
 const scanHeight = 280
 
@@ -341,7 +339,7 @@ function signalCard(id: SignalId) {
 function signalWire(y: number) {
 	const fromY = Math.round((y / 100) * signalHeight)
 	const toY = Math.round(0.22 * signalHeight)
-	return `M150 ${fromY} C188 ${fromY} 200 ${toY} 222 ${toY}`
+	return `M122 ${fromY} C168 ${fromY} 176 ${toY} 209 ${toY}`
 }
 
 export function TriggerHeroScene(
@@ -365,30 +363,15 @@ export function TriggerHeroScene(
 			<PrimitiveWidgetFrame
 				id="triggers"
 				size="full"
-				height={heroHeight}
 				class="pw-scene-trg-hero"
+				stack
 			>
 				<div
 					class="pw-run"
 					key={`${example}-${otherAddress}-${showFlake}-${shot}`}
 					data-example={example}
 				>
-					{wires(
-						<>
-							{wire({
-								key: 'in',
-								d: `M97 ${heroMid} L133 ${heroMid}`,
-								on: true,
-							})}
-							{wire({
-								key: 'out',
-								d: `M227 ${heroMid} L263 ${heroMid}`,
-								on: true,
-							})}
-						</>,
-						heroHeight,
-					)}
-					<div class="pw-node pw-trg-card pw-trg-source" style={at(0, 50)}>
+					<div class="pw-node pw-trg-card pw-trg-source">
 						<div class="pw-trg-head">
 							{SourceMark(kind)}
 							<span>
@@ -405,13 +388,10 @@ export function TriggerHeroScene(
 							))}
 						</div>
 					</div>
-					<div
-						class="pw-lane pw-trg-lane pw-trg-lane-in"
-						style={{ left: '27%', width: '10%', top: '50%' }}
-					>
+					<div class="pw-trg-link pw-trg-link-in" aria-hidden="true">
 						<span class="pw-packet">{arrived}</span>
 					</div>
-					<div class="pw-node pw-trg-card pw-trg-logs" style={at(37, 50)}>
+					<div class="pw-node pw-trg-card pw-trg-logs">
 						<div class="pw-trg-head">
 							<span class="pw-trg-fn" aria-hidden="true">
 								ƒ
@@ -436,13 +416,10 @@ export function TriggerHeroScene(
 							</span>
 						</p>
 					</div>
-					<div
-						class="pw-lane pw-trg-lane pw-trg-lane-out"
-						style={{ left: '63%', width: '10%', top: '50%' }}
-					>
+					<div class="pw-trg-link pw-trg-link-out" aria-hidden="true">
 						<span class="pw-packet">{artifact.packet}</span>
 					</div>
-					<div class="pw-node pw-trg-card pw-trg-outcome" style={at(73, 50)}>
+					<div class="pw-node pw-trg-card pw-trg-outcome">
 						<div class="pw-trg-head">
 							<span class="pw-trg-tick" aria-hidden="true">
 								✓
@@ -479,6 +456,7 @@ export function TriggerSignalsScene(
 				size="full"
 				height={signalHeight}
 				class="pw-scene-trg-signals"
+				stack
 			>
 				<div class="pw-run" key={`${signal}-${shot}`}>
 					{wires(
@@ -492,7 +470,7 @@ export function TriggerSignalsScene(
 							)}
 							{wire({
 								key: 'down',
-								d: 'M292 84 L292 142',
+								d: 'M284 84 L284 132',
 								on: true,
 							})}
 						</>,
@@ -509,7 +487,7 @@ export function TriggerSignalsScene(
 							<span>{row.label}</span>
 						</div>
 					))}
-					<div class="pw-node pw-trg-card pw-trg-pkg" style={at(62, 22)}>
+					<div class="pw-node pw-trg-card pw-trg-pkg" style={at(58, 22)}>
 						<div class="pw-trg-head">
 							<span class="pw-trg-fn" aria-hidden="true">
 								ƒ
@@ -520,7 +498,7 @@ export function TriggerSignalsScene(
 							</span>
 						</div>
 					</div>
-					<div class="pw-node pw-trg-card pw-trg-sig-card" style={at(62, 68)}>
+					<div class="pw-node pw-trg-card pw-trg-sig-card" style={at(58, 68)}>
 						<div class="pw-trg-head">
 							<span>
 								<span class="pw-kicker">{card.kicker}</span>
@@ -565,6 +543,7 @@ export function TriggerScanScene(
 				size="full"
 				height={scanHeight}
 				class="pw-scene-trg-scan"
+				stack
 			>
 				<div
 					class="pw-run"
@@ -575,12 +554,12 @@ export function TriggerScanScene(
 						<>
 							{wire({
 								key: 'clean',
-								d: 'M180 148 C180 176 79 176 79 196',
+								d: 'M180 140 L180 160 C180 180 79 176 79 192',
 								on: result === 'clean',
 							})}
 							{wire({
 								key: 'flake',
-								d: 'M180 148 C180 176 281 176 281 196',
+								d: 'M180 140 L180 160 C180 180 281 176 281 192',
 								on: result === 'flake',
 							})}
 						</>,

@@ -38,131 +38,137 @@ export function TriggersFeature(handle: Handle) {
 					: event.detail
 		return (
 			<div class="study triggers">
-				<img
-					class="feature-orb"
-					src="/images/lantern/kody-primitives-orb-triggers.webp"
-					alt=""
-					width="80"
-					height="80"
-				/>
-				<h1>
-					Give the next step
-					<br />a starting signal.
-				</h1>
-				<p class="lead">
-					A purchase lands. An issue opens. An email arrives. Your package runs,
-					even when the chat is closed.
-				</p>
-				<a class="action" href="/onboarding">
-					Connect your agent
-				</a>
-				<div class="controls" aria-label="Example trigger">
-					<button
-						type="button"
-						aria-pressed={selected === 'purchase'}
-						mix={on('click', () => {
-							selected = 'purchase'
-							ran = false
-							heroShot += 1
-							handle.update()
-						})}
-					>
-						A purchase
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'issue'}
-						mix={on('click', () => {
-							selected = 'issue'
-							ran = false
-							heroShot += 1
-							handle.update()
-						})}
-					>
-						An issue
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'email'}
-						mix={on('click', () => {
-							selected = 'email'
-							ran = false
-							heroShot += 1
-							handle.update()
-						})}
-					>
-						An email
-					</button>
-					<button
-						type="button"
-						aria-pressed={selected === 'schedule'}
-						mix={on('click', () => {
-							selected = 'schedule'
-							ran = false
-							heroShot += 1
-							handle.update()
-						})}
-					>
-						A daily check
-					</button>
-				</div>
-				<TriggerHeroScene
-					example={selected}
-					result={result}
-					otherAddress={otherAddress}
-					showFlake={showFlake}
-					shot={heroShot}
-				/>
-				<p class="result" id="trigger-detail" aria-live="polite">
-					{ran ? detail : 'Run the example to follow the event.'}
-				</p>
-				<div class="controls">
-					{selected === 'email' && (
-						<label>
-							<input
-								type="checkbox"
-								checked={otherAddress}
-								mix={on('change', (event) => {
-									otherAddress = event.currentTarget.checked
+				<div class="split">
+					<div>
+						<img
+							class="feature-orb"
+							src="/images/lantern/kody-primitives-orb-triggers.webp"
+							alt=""
+							width="80"
+							height="80"
+						/>
+						<h1>
+							Give the next step
+							<br />a starting signal.
+						</h1>
+						<p class="lead">
+							A purchase lands. An issue opens. An email arrives. Your package
+							runs, even when the chat is closed.
+						</p>
+						<a class="action" href="/onboarding">
+							Connect your agent
+						</a>
+						<div class="controls trg-examples" aria-label="Example trigger">
+							<button
+								type="button"
+								aria-pressed={selected === 'purchase'}
+								mix={on('click', () => {
+									selected = 'purchase'
 									ran = false
 									heroShot += 1
 									handle.update()
 								})}
-							/>{' '}
-							Use another address
-						</label>
-					)}
-					{selected === 'schedule' && (
-						<label>
-							<input
-								type="checkbox"
-								checked={showFlake}
-								mix={on('change', (event) => {
-									showFlake = event.currentTarget.checked
+							>
+								A purchase
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'issue'}
+								mix={on('click', () => {
+									selected = 'issue'
 									ran = false
 									heroShot += 1
 									handle.update()
 								})}
-							/>{' '}
-							Show a flake
-						</label>
-					)}
-					<button
-						type="button"
-						class="run"
-						mix={on('click', () => {
-							ran = true
-							heroShot += 1
-							handle.update()
-						})}
-					>
-						Run example
-					</button>
+							>
+								An issue
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'email'}
+								mix={on('click', () => {
+									selected = 'email'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								An email
+							</button>
+							<button
+								type="button"
+								aria-pressed={selected === 'schedule'}
+								mix={on('click', () => {
+									selected = 'schedule'
+									ran = false
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								A daily check
+							</button>
+						</div>
+						<div class="controls trg-run">
+							{selected === 'email' && (
+								<label>
+									<input
+										type="checkbox"
+										checked={otherAddress}
+										mix={on('change', (event) => {
+											otherAddress = event.currentTarget.checked
+											ran = false
+											heroShot += 1
+											handle.update()
+										})}
+									/>{' '}
+									Use another address
+								</label>
+							)}
+							{selected === 'schedule' && (
+								<label>
+									<input
+										type="checkbox"
+										checked={showFlake}
+										mix={on('change', (event) => {
+											showFlake = event.currentTarget.checked
+											ran = false
+											heroShot += 1
+											handle.update()
+										})}
+									/>{' '}
+									Show a flake
+								</label>
+							)}
+							<button
+								type="button"
+								class="run"
+								mix={on('click', () => {
+									ran = true
+									heroShot += 1
+									handle.update()
+								})}
+							>
+								Run example
+							</button>
+						</div>
+						<p class="result" id="trigger-detail" aria-live="polite">
+							{ran ? detail : 'Run the example to follow the event.'}
+						</p>
+					</div>
+					<div class="trg-hero-scene">
+						<TriggerHeroScene
+							example={selected}
+							result={result}
+							otherAddress={otherAddress}
+							showFlake={showFlake}
+							shot={heroShot}
+						/>
+						<p class="smallprint">
+							Illustrative events. Ordinary code can do the watching and call an
+							agent when needed.
+						</p>
+					</div>
 				</div>
-				<p class="smallprint">
-					Illustrative events. Ordinary code can do the watching and call an
-					agent when needed.
-				</p>
 				<section class="story-section story-split pt-signals">
 					<div>
 						<h2>
