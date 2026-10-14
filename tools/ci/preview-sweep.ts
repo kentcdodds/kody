@@ -18,7 +18,8 @@ import { cloudflareApiRequest, fail } from './resource-utils.ts'
  * Branch previews (`kody-branch-<slug>*`) have no pull request to check, so
  * they are swept on worker liveness instead: once the bare `kody-branch-<slug>`
  * script is gone, its D1/KV/R2 leftovers are orphaned and swept the same way
- * (#3563). Liveness is judged ONLY from a `/workers/scripts` listing
+ * (#3563). A live branch preview is also swept once its source branch's PRs
+ * are all closed (`planClosedSourceBranchSweep`, #3707). Liveness is judged ONLY from a `/workers/scripts` listing
  * (`listPreviewCandidateNames`'s own `scriptNames`, or the fresh re-fetch in
  * `main` right before branch processing), never from the broader D1/KV/R2/DO
  * discovery names (`names`): a D1 database can share its exact string with
@@ -163,6 +164,91 @@ export function planBranchPreviewSweep(input: {
 		deferred: orphaned.slice(Math.max(0, input.maxPerRun)),
 		live: input.branchWorkerNames.filter((name) => input.liveNames.has(name)),
 	}
+}
+
+/**
+ * Mirrors the slug step in preview.yml's "Resolve preview names" so a
+ * dispatch run's preview name maps back to its `kody-branch-<slug>` Worker.
+ */
+export function previewBranchSlug(previewId: string) {
+	const slug = previewId
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+/, '')
+		.replace(/-+$/, '')
+		.replace(/-+/g, '-')
+		.slice(0, 32)
+	return slug || 'preview'
+}
+
+/** preview.yml's `run-name` for a `workflow_dispatch` branch deploy. */
+const branchDeployRunNamePattern = /^Preview deploy \(branch: (.+)\)$/
+
+type BranchPreviewSource = { branch: string; deployedAt: string }
+
+type BranchPullRequest = {
+	state: 'open' | 'closed'
+	closedAt: string | null
+}
+
+/**
+ * Latest `workflow_dispatch` branch deploy per `kody-branch-<slug>` Worker,
+ * read from preview.yml's `run-name`. `runs` must be newest first, as the
+ * GitHub runs listing returns them.
+ */
+export function collectBranchPreviewSources(
+	runs: ReadonlyArray<{
+		display_title?: unknown
+		head_branch?: unknown
+		created_at?: unknown
+	}>,
+) {
+	const sources = new Map<string, BranchPreviewSource>()
+	for (const run of runs) {
+		if (typeof run.display_title !== 'string') continue
+		if (typeof run.head_branch !== 'string') continue
+		if (typeof run.created_at !== 'string') continue
+		const match = branchDeployRunNamePattern.exec(run.display_title)
+		if (!match?.[1]) continue
+		const workerName = `kody-branch-${previewBranchSlug(match[1])}`
+		if (sources.has(workerName)) continue
+		sources.set(workerName, {
+			branch: run.head_branch,
+			deployedAt: run.created_at,
+		})
+	}
+	return sources
+}
+
+/**
+ * A live branch preview is stale once every PR for the branch it was last
+ * deployed from is closed, and the last close came after that deploy (a
+ * deploy after close is deliberate). Previews deployed from the default
+ * branch, from a branch with no PR, or with no recorded deploy are kept
+ * (#3707).
+ */
+export function planClosedSourceBranchSweep(input: {
+	liveBranchWorkerNames: ReadonlyArray<string>
+	sources: ReadonlyMap<string, BranchPreviewSource>
+	pullRequests: ReadonlyMap<string, ReadonlyArray<BranchPullRequest>>
+	defaultBranch: string
+}) {
+	const stale: Array<{ workerName: string; branch: string }> = []
+	for (const workerName of input.liveBranchWorkerNames) {
+		const source = input.sources.get(workerName)
+		if (!source || source.branch === input.defaultBranch) continue
+		const pulls = input.pullRequests.get(source.branch) ?? []
+		if (pulls.length === 0) continue
+		if (pulls.some((pull) => pull.state !== 'closed' || !pull.closedAt)) {
+			continue
+		}
+		const lastClosedAt = Math.max(
+			...pulls.map((pull) => Date.parse(pull.closedAt ?? '')),
+		)
+		if (!(lastClosedAt > Date.parse(source.deployedAt))) continue
+		stale.push({ workerName, branch: source.branch })
+	}
+	return stale
 }
 
 type CloudflareClient = {
@@ -327,6 +413,75 @@ export async function isPreviewDeployInProgress(input: {
 	return false
 }
 
+async function githubGet(input: {
+	url: string
+	githubToken: string
+	fetcher?: typeof fetch
+}) {
+	const response = await (input.fetcher ?? fetch)(input.url, {
+		headers: {
+			Accept: 'application/vnd.github+json',
+			Authorization: `Bearer ${input.githubToken}`,
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		signal: AbortSignal.timeout(15_000),
+	})
+	if (!response.ok) {
+		await response.body?.cancel()
+		const { pathname, search } = new URL(input.url)
+		throw new Error(
+			`GitHub API GET ${pathname}${search} failed (${String(response.status)}).`,
+		)
+	}
+	return (await response.json()) as unknown
+}
+
+/** Recent `workflow_dispatch` preview.yml runs, newest first. */
+export async function listBranchPreviewSources(input: {
+	repository: string
+	githubToken: string
+	fetcher?: typeof fetch
+	pages?: number
+}) {
+	const runs: Array<Record<string, unknown>> = []
+	for (let page = 1; page <= (input.pages ?? 3); page += 1) {
+		const json = (await githubGet({
+			...input,
+			url: `https://api.github.com/repos/${input.repository}/actions/workflows/preview.yml/runs?event=workflow_dispatch&per_page=100&page=${String(page)}`,
+		})) as { workflow_runs?: unknown }
+		const pageRuns = Array.isArray(json.workflow_runs) ? json.workflow_runs : []
+		runs.push(...(pageRuns as Array<Record<string, unknown>>))
+		if (pageRuns.length < 100) break
+	}
+	return collectBranchPreviewSources(runs)
+}
+
+export async function listBranchPullRequests(input: {
+	repository: string
+	branch: string
+	githubToken: string
+	fetcher?: typeof fetch
+}): Promise<Array<BranchPullRequest>> {
+	const owner = input.repository.split('/')[0] ?? ''
+	const head = encodeURIComponent(`${owner}:${input.branch}`)
+	const json = await githubGet({
+		...input,
+		url: `https://api.github.com/repos/${input.repository}/pulls?head=${head}&state=all&per_page=100`,
+	})
+	if (!Array.isArray(json)) return []
+	return json.flatMap((pull: { state?: unknown; closed_at?: unknown }) =>
+		pull.state === 'open' || pull.state === 'closed'
+			? [
+					{
+						state: pull.state,
+						closedAt:
+							typeof pull.closed_at === 'string' ? pull.closed_at : null,
+					},
+				]
+			: [],
+	)
+}
+
 /**
  * The scheduled job has a 40-minute timeout; this leaves room for
  * `npm ci`, the account-wide listing calls, and GitHub API reads, while
@@ -415,6 +570,7 @@ async function main() {
 	}
 	const repository = requireEnv('GITHUB_REPOSITORY')
 	const githubToken = requireEnv('GITHUB_TOKEN')
+	const defaultBranch = process.env.DEFAULT_BRANCH?.trim() || 'main'
 	const readState = (number: number) =>
 		readPullRequestState({ repository, number, githubToken })
 	const now = Date.now
@@ -495,18 +651,49 @@ async function main() {
 			liveNames,
 			maxPerRun,
 		})
+		const sources = await listBranchPreviewSources({ repository, githubToken })
+		const pullRequests = new Map<string, Array<BranchPullRequest>>()
+		for (const workerName of branchPlan.live) {
+			const branch = sources.get(workerName)?.branch
+			if (!branch || branch === defaultBranch || pullRequests.has(branch)) {
+				continue
+			}
+			pullRequests.set(
+				branch,
+				await listBranchPullRequests({ repository, branch, githubToken }),
+			)
+		}
+		const closedSource = planClosedSourceBranchSweep({
+			liveBranchWorkerNames: branchPlan.live,
+			sources,
+			pullRequests,
+			defaultBranch,
+		})
+		const closedRoom = Math.max(0, maxPerRun - branchPlan.sweep.length)
+		const closedSweep = closedSource.slice(0, closedRoom)
 		console.log(
 			[
 				`Branch preview sweep: ${String(branchWorkerNames.length)} branch preview(s) on the account.`,
 				`  live: ${branchPlan.live.join(', ') || 'none'}`,
 				`  orphaned, sweeping now: ${branchPlan.sweep.join(', ') || 'none'}`,
 				`  orphaned, next run: ${branchPlan.deferred.join(', ') || 'none'}`,
+				`  source PR closed, sweeping now: ${closedSweep.map((entry) => `${entry.workerName} (${entry.branch})`).join(', ') || 'none'}`,
+				`  source PR closed, next run: ${
+					closedSource
+						.slice(closedRoom)
+						.map((entry) => entry.workerName)
+						.join(', ') || 'none'
+				}`,
 			].join('\n'),
 		)
 
-		for (const [index, workerName] of branchPlan.sweep.entries()) {
+		const branchSweep = [
+			...branchPlan.sweep,
+			...closedSweep.map((entry) => entry.workerName),
+		]
+		for (const [index, workerName] of branchSweep.entries()) {
 			if (!hasBudget()) {
-				const remaining = branchPlan.sweep.slice(index)
+				const remaining = branchSweep.slice(index)
 				console.log(
 					`Preview sweep: wall-clock budget used, deferring ${String(remaining.length)} branch cleanup(s) to the next run: ${remaining.join(', ')}.`,
 				)

@@ -1,4 +1,11 @@
 name: 🔎 Preview
+# preview-sweep.ts reads "Preview deploy (branch: <name>)" back to find the
+# branch a branch preview was deployed from (#3707). Keep the format in sync.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && format('Preview {0} ({1}:
+  {2})', inputs.action, inputs.target, inputs.target == 'pr' && inputs.pr_number
+  || inputs.preview_name || github.ref_name) || github.event.pull_request.title
+  }}
 
 on:
   pull_request:

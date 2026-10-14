@@ -70,9 +70,14 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   branch can never read as "live". Branch sweeping is skipped for the whole run
   if a `workflow_dispatch` `preview.yml` deploy is currently queued or in
   progress, since a deploy provisions D1/KV/R2 before it uploads the bare origin
-  Worker. PR-push preview runs don't defer it. Both the PR and branch loops
-  share one wall-clock budget per run, so a run that spends it on PR cleanups
-  still defers branch cleanups cleanly instead of running past the job timeout.
+  Worker. PR-push preview runs don't defer it. A live branch preview is also
+  swept once every PR for the branch it was last deployed from is closed, and
+  the last close came after that deploy. The sweep finds that branch from the
+  `Preview deploy (branch: <name>)` run name `preview.yml` sets on dispatch.
+  Previews deployed from `main`, from a branch with no PR, or before that run
+  name existed are kept. Both the PR and branch loops share one wall-clock
+  budget per run, so a run that spends it on PR cleanups still defers branch
+  cleanups cleanly instead of running past the job timeout.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the

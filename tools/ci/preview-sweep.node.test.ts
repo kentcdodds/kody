@@ -1,12 +1,16 @@
 import { expect, test } from 'vitest'
 import {
+	collectBranchPreviewSources,
 	collectPreviewBranchWorkerNames,
 	collectPreviewPullRequestNumbers,
 	hasBudgetForAnotherCleanup,
 	isPreviewDeployInProgress,
+	listBranchPullRequests,
 	listPreviewCandidateNames,
+	planClosedSourceBranchSweep,
 	planBranchPreviewSweep,
 	planPreviewSweep,
+	previewBranchSlug,
 	previewBranchWorkerName,
 	previewPullRequestNumber,
 	readPullRequestState,
@@ -375,4 +379,121 @@ test('readPullRequestState maps GitHub responses and treats 404 as unknown', asy
 	await expect(read(jsonResponse({ state: 'open' }))).resolves.toBe('open')
 	await expect(read(jsonResponse({}, 404))).resolves.toBe('unknown')
 	await expect(read(jsonResponse({}, 502))).rejects.toThrow(/502/)
+})
+
+test('previewBranchSlug matches the preview.yml slug step', () => {
+	expect(previewBranchSlug('creds-a1-904c')).toBe('creds-a1-904c')
+	expect(previewBranchSlug('cursor/Credentials_List--904c/')).toBe(
+		'cursor-credentials-list-904c',
+	)
+	expect(
+		previewBranchSlug('cursor/a-very-long-branch-name-that-overflows'),
+	).toBe('cursor-a-very-long-branch-name-t')
+	expect(previewBranchSlug('///')).toBe('preview')
+})
+
+test('collectBranchPreviewSources keeps the newest branch deploy per preview', () => {
+	const sources = collectBranchPreviewSources([
+		{
+			display_title: 'Preview deploy (branch: creds-a1-904c)',
+			head_branch: 'cursor/credentials-list-904c',
+			created_at: '2026-10-13T19:24:50Z',
+		},
+		{
+			display_title: 'Preview cleanup (branch: creds-a1-904c)',
+			head_branch: 'main',
+			created_at: '2026-10-13T18:00:00Z',
+		},
+		{
+			display_title: 'Preview deploy (branch: creds-a1-904c)',
+			head_branch: 'main',
+			created_at: '2026-10-12T00:00:00Z',
+		},
+		{
+			display_title: 'Preview deploy (pr: 12)',
+			head_branch: 'main',
+			created_at: '2026-10-12T00:00:00Z',
+		},
+		{
+			display_title: 'feat: some PR title',
+			head_branch: 'feature',
+			created_at: '2026-10-12T00:00:00Z',
+		},
+	])
+	expect([...sources]).toEqual([
+		[
+			'kody-branch-creds-a1-904c',
+			{
+				branch: 'cursor/credentials-list-904c',
+				deployedAt: '2026-10-13T19:24:50Z',
+			},
+		],
+	])
+})
+
+test('planClosedSourceBranchSweep sweeps only previews whose source PRs all closed after the deploy', () => {
+	const deployedAt = '2026-10-13T19:00:00Z'
+	const sources = new Map([
+		['kody-branch-closed', { branch: 'b/closed', deployedAt }],
+		['kody-branch-open', { branch: 'b/open', deployedAt }],
+		['kody-branch-reopened', { branch: 'b/reopened', deployedAt }],
+		['kody-branch-no-pr', { branch: 'b/no-pr', deployedAt }],
+		['kody-branch-from-main', { branch: 'main', deployedAt }],
+		['kody-branch-after-close', { branch: 'b/after-close', deployedAt }],
+	])
+	const closed = (closedAt: string) => ({ state: 'closed' as const, closedAt })
+	const pullRequests = new Map([
+		['b/closed', [closed('2026-10-13T21:55:00Z')]],
+		['b/open', [{ state: 'open' as const, closedAt: null }]],
+		[
+			'b/reopened',
+			[
+				closed('2026-10-13T20:00:00Z'),
+				{ state: 'open' as const, closedAt: null },
+			],
+		],
+		['b/no-pr', []],
+		['main', [closed('2026-10-13T21:00:00Z')]],
+		['b/after-close', [closed('2026-10-13T18:00:00Z')]],
+	])
+	expect(
+		planClosedSourceBranchSweep({
+			liveBranchWorkerNames: [...sources.keys(), 'kody-branch-unrecorded'],
+			sources,
+			pullRequests,
+			defaultBranch: 'main',
+		}),
+	).toEqual([{ workerName: 'kody-branch-closed', branch: 'b/closed' }])
+})
+
+test('listBranchPullRequests queries by owner:branch across states', async () => {
+	const urls: Array<URL> = []
+	const pulls = await listBranchPullRequests({
+		repository: 'kentcdodds/kody',
+		branch: 'cursor/credentials-list-904c',
+		githubToken: 'token',
+		fetcher: (async (input: RequestInfo | URL) => {
+			urls.push(new URL(String(input)))
+			return jsonResponse([
+				{ state: 'closed', closed_at: '2026-10-13T21:55:29Z' },
+				{ state: 'open', closed_at: null },
+			])
+		}) as typeof fetch,
+	})
+	expect(urls[0]?.searchParams.get('head')).toBe(
+		'kentcdodds:cursor/credentials-list-904c',
+	)
+	expect(urls[0]?.searchParams.get('state')).toBe('all')
+	expect(pulls).toEqual([
+		{ state: 'closed', closedAt: '2026-10-13T21:55:29Z' },
+		{ state: 'open', closedAt: null },
+	])
+	await expect(
+		listBranchPullRequests({
+			repository: 'kentcdodds/kody',
+			branch: 'x',
+			githubToken: 'token',
+			fetcher: (async () => jsonResponse({}, 502)) as typeof fetch,
+		}),
+	).rejects.toThrow(/502/)
 })
