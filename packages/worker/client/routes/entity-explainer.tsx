@@ -2,7 +2,7 @@ import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
 import { renderIcon } from '#universal/icon.tsx'
-import { accountAliasPath } from '#universal/org-pages.ts'
+import { accountAliasPath, parseOrgUsagePath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
@@ -192,10 +192,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'usage',
 		question: 'What is usage?',
-		match: accountSection(routes.accountUsage.href()),
+		match: (pathname) =>
+			parseOrgUsagePath(pathname) !== null ||
+			accountSection(routes.accountUsage.href())(pathname),
 		paragraphs: [
-			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements. Limits are per signed-in user.',
-			'On Pro, the Credits section holds your prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
+			"Usage is how much of this organization's plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements.",
+			'On Pro, the Credits section holds the prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
 		],
 		learnMore: [
 			{

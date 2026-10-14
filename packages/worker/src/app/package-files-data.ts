@@ -57,6 +57,7 @@ import {
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
+import { buildPackageRepoActionsForPage } from '#app/package-repo-actions.ts'
 import {
 	getCommunityPackageAssetBaseHref,
 	getCommunityPackageAssetBaseHrefForViewedCommit,
@@ -693,6 +694,7 @@ export async function loadAccessiblePackageFilesData(input: {
 			kodyId: page.kodyId,
 			description: page.listing.listing.description,
 			ownerProfilePublic: page.ownerProfilePublic,
+			repoActions: buildPackageRepoActionsForPage(page),
 		}
 	}
 
@@ -700,7 +702,7 @@ export async function loadAccessiblePackageFilesData(input: {
 
 	if (!page.hasPackage) {
 		// loadPackagePage already gated access for public guests and private members.
-		return loadPlainRepoFilesData({
+		const data = await loadPlainRepoFilesData({
 			env: input.env,
 			request: input.request,
 			ownerUserId: page.ownerUserId,
@@ -717,6 +719,9 @@ export async function loadAccessiblePackageFilesData(input: {
 			viewerCanManage: page.viewerCanManage,
 			ownerProfilePublic: page.ownerProfilePublic,
 		})
+		return data
+			? { ...data, repoActions: buildPackageRepoActionsForPage(page) }
+			: null
 	}
 
 	if (!page.viewerIsOwner) return null
@@ -739,7 +744,61 @@ export async function loadAccessiblePackageFilesData(input: {
 		viewerCanManage: page.viewerCanManage,
 		description: page.ownerPackage.description,
 		ownerProfilePublic: page.ownerProfilePublic,
+		repoActions: buildPackageRepoActionsForPage(page),
 	}
+}
+
+/**
+ * Files for a listing with the viewer's repo actions whenever the package page
+ * resolves (the same payload as the canonical files API). Falls back to the
+ * public listing tree, which carries no viewer actions.
+ */
+export async function loadListingFilesData(input: {
+	env: Env
+	request: Request
+	listingId: string
+	selectedPath: string
+	ref?: string
+	serverTiming?: Array<ServerTimingEntry>
+	/** Skips the listing lookup when the URL already names the package. */
+	packagePath?: { username: string; kodyId: string }
+}): Promise<PackageFilesLoaderData | null> {
+	const packagePath =
+		input.packagePath ?? (await resolveListingPackagePath(input))
+	if (packagePath) {
+		const data = await loadAccessiblePackageFilesData({
+			env: input.env,
+			request: input.request,
+			username: packagePath.username,
+			kodyId: packagePath.kodyId,
+			selectedPath: input.selectedPath,
+			ref: input.ref,
+			serverTiming: input.serverTiming,
+		})
+		if (data) return data
+	}
+	return loadCommunityPackageFilesData({
+		env: input.env,
+		request: input.request,
+		listingId: input.listingId,
+		selectedPath: input.selectedPath,
+		ref: input.ref,
+		serverTiming: input.serverTiming,
+	})
+}
+
+async function resolveListingPackagePath(input: {
+	env: Env
+	listingId: string
+}) {
+	const listing = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listingId,
+		includeDelisted: false,
+	})
+	const username = listing
+		? getOwnerUsernameFromListingName(listing.name)
+		: null
+	return listing && username ? { username, kodyId: listing.kodyId } : null
 }
 
 export async function loadPackagePageHasAgentsDocs(input: {

@@ -6,9 +6,14 @@ import {
 	type AccountUsageLoaderData,
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
-import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { orgBillingPath } from '#universal/org-pages.ts'
+import {
+	orgBillingPath,
+	orgUsageCreditsPath,
+	orgUsagePath,
+	parseOrgUsagePath,
+} from '#universal/org-pages.ts'
+import { routes } from '#universal/routes.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -37,10 +42,7 @@ import {
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
-import {
-	accountCreditsPath,
-	warningOffersCredits,
-} from '#universal/compute-overage.ts'
+import { warningOffersCredits } from '#universal/compute-overage.ts'
 import { formatCappedPercent } from '#universal/usage-presentation.ts'
 import { creditsActionForWallet } from '#client/routes/account-usage-shared.ts'
 import { AccountUsageCreditsSection } from '#client/routes/account-usage-credits.tsx'
@@ -51,13 +53,28 @@ import {
 } from '#client/routes/account-usage-story.tsx'
 import { WhereItWentPanel } from '#client/routes/account-usage-where-it-went.tsx'
 
-const usageApiPath = '/account/usage.json'
+function usageSlugFromHref(href: string) {
+	return (
+		parseOrgUsagePath(new URL(href, 'http://localhost').pathname)?.slug ?? null
+	)
+}
 
-function usageBillingHref(handle: Handle) {
-	const slug = readAppSession(handle).session?.organizations?.find(
-		(org) => org.personal,
-	)?.slug
-	return slug ? orgBillingPath(slug) : '/account'
+function usageOrgSlug(href: string) {
+	const slug = usageSlugFromHref(href)
+	if (!slug) throw new Error(`Not an organization usage URL: ${href}`)
+	return slug
+}
+
+function usageApiPathForHref(href: string) {
+	return routes.orgUsageApi.href({ orgSlug: usageOrgSlug(href) })
+}
+
+function usageBillingHref(href: string) {
+	return orgBillingPath(usageOrgSlug(href))
+}
+
+function usageCreditsHref(href: string) {
+	return orgUsageCreditsPath(usageOrgSlug(href))
 }
 
 const entitlementGroupOrder: Array<
@@ -360,11 +377,39 @@ function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	)
 }
 
-export async function accountUsageRouteLoader(
-	_url: URL,
+/**
+ * Legacy `/account/usage` still has a client route so in-app links work.
+ * Follow the server JSON redirect to the personal org usage URL (hash kept).
+ */
+async function legacyAccountUsageRedirect(
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(usageApiPath, {
+	const response = await fetch(routes.accountUsageApi.href(), {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+		redirect: 'follow',
+	})
+	if (response.status === 401) {
+		return routeLoaderRedirect('/login')
+	}
+	const finalPath = new URL(response.url).pathname
+	const slug = parseOrgUsagePath(finalPath)?.slug
+	if (!slug) {
+		throw new Error('Unable to resolve usage.')
+	}
+	return routeLoaderRedirect(`${orgUsagePath(slug)}${url.search}${url.hash}`)
+}
+
+export async function accountUsageRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	if (!usageSlugFromHref(url.href)) {
+		return legacyAccountUsageRedirect(url, signal)
+	}
+	const response = await fetch(usageApiPathForHref(url.href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
@@ -389,8 +434,8 @@ export function AccountUsageRoute(handle: Handle) {
 
 	const usageData = createRouteData({
 		key: 'accountUsage',
-		async load(_href, signal) {
-			const response = await fetch(usageApiPath, {
+		async load(href, signal) {
+			const response = await fetch(usageApiPathForHref(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
@@ -416,11 +461,13 @@ export function AccountUsageRoute(handle: Handle) {
 		const groupedRows = usage
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
+		const creditsHref = usageCreditsHref(currentHref)
 		const warningAction = usage
 			? creditsActionForWallet(
 					usage.computeOverage.creditWallet,
 					usage.plan,
 					usage.canBuyCredits,
+					creditsHref,
 				)
 			: null
 
@@ -491,11 +538,17 @@ export function AccountUsageRoute(handle: Handle) {
 									gap: spacing.md,
 								})}
 							>
-								<a href={usageBillingHref(handle)} mix={css(primaryLinkCss)}>
+								<a
+									href={usageBillingHref(currentHref)}
+									mix={css(primaryLinkCss)}
+								>
 									Manage billing
 								</a>
 								{usage.computeOverage.creditWallet !== 'none' ? (
-									<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
+									<a
+										href={usageCreditsHref(currentHref)}
+										mix={css(primaryLinkCss)}
+									>
 										Manage credits
 									</a>
 								) : null}
@@ -618,6 +671,7 @@ export function AccountUsageRoute(handle: Handle) {
 						{usage.credits ? (
 							<AccountUsageCreditsSection
 								credits={usage.credits}
+								orgSlug={usageOrgSlug(currentHref)}
 								notice={usage.notice}
 								error={usage.error}
 								onUsageChange={(next) => {

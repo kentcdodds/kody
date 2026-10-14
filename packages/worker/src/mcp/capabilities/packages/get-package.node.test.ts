@@ -135,7 +135,7 @@ function stubSource(
 	files?: Record<string, string>,
 ) {
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: { id: 'source-1' },
+		source: { id: 'source-1', published_commit: null },
 		manifest: {
 			name,
 			exports,
@@ -171,6 +171,7 @@ test('getPackageCapability returns export metadata for personal and org-bound ow
 		has_app: true,
 		visibility: 'public',
 		source_id: 'source-1',
+		published_commit: null,
 		source_listing_id: 'listing-1',
 		listing_current: true,
 		listing_kody_id: 'upstream-discord-gateway',

@@ -9,6 +9,8 @@ import {
 	approvalAfterLabel,
 	approvalBeforeLabel,
 	approvalChangeIsNoop,
+	approvalDoneCopy,
+	approvalEnableStatus,
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
@@ -39,6 +41,7 @@ function change(
 		needKey: 'github',
 		need: null,
 		before: null,
+		beforeUnusableIds: [],
 		after: [bot],
 		willEnable: false,
 		error: null,
@@ -106,15 +109,50 @@ test('before and after read inherit, none, and credentials', () => {
 		),
 	).toBe('Inherits your default')
 	expect(approvalBeforeLabel(change({ before: [] }))).toBe('None on purpose')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [], beforeUnusableIds: ['gone-1', 'gone-2'] }),
+		),
+	).toBe('2 stored credentials you can no longer use')
+	expect(
+		approvalBeforeLabel(
+			change({ before: [bot], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe('acme-bot (+ 1 you can no longer use)')
 	expect(approvalBeforeLabel(change({ before: [bot, mine] }))).toBe(
 		'acme-bot, openai (yours)',
 	)
 	expect(approvalAfterLabel(change({ after: [] }))).toBe(
 		'None on purpose (runs get no credential)',
 	)
+	expect(
+		approvalAfterLabel(
+			change({
+				after: [],
+				error: {
+					code: 'credential_not_found',
+					message: 'No such credential.',
+				},
+			}),
+		),
+	).toBe('Not resolved')
 	expect(approvalChangeIsNoop(change({ before: [bot] }))).toBe(true)
 	expect(approvalChangeIsNoop(change({ before: null }))).toBe(false)
 	expect(approvalChangeIsNoop(change({ before: [mine] }))).toBe(false)
+	expect(
+		approvalChangeIsNoop(
+			change({ before: [], after: [], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe(false)
+	expect(
+		approvalChangeIsNoop(
+			change({
+				before: [],
+				after: [],
+				error: { code: 'credential_not_found', message: 'No such credential.' },
+			}),
+		),
+	).toBe(false)
 })
 
 test('the approve button names the mappings and each trigger it turns on', () => {
@@ -221,6 +259,55 @@ test('mappings and enable[] combine without repeating a trigger', () => {
 	expect(approvalSummary(view([change({})], [enableEntry()]))).toBe(
 		'Approve 1 mapping and turn on Webhook “incoming”',
 	)
+})
+
+test('the approved line names what the reviewed view turned on', () => {
+	expect(approvalDoneCopy(view([], [enableEntry()]))).toBe(
+		'Webhook “incoming” is on.',
+	)
+	expect(
+		approvalDoneCopy(
+			view(
+				[
+					change({
+						target: { type: 'trigger', trigger: daily },
+						willEnable: true,
+					}),
+				],
+				[enableEntry()],
+			),
+		),
+	).toBe('1 mapping is saved and Schedule “daily”, Webhook “incoming” are on.')
+	expect(approvalDoneCopy(view([], [enableEntry({ willEnable: false })]))).toBe(
+		'Nothing needed to change.',
+	)
+})
+
+test('an enable entry reads on, turning on, already on, or only its error', () => {
+	const pending = { approved: false, turnedOn: false }
+	expect(approvalEnableStatus(enableEntry(), pending)).toBe(
+		'Approving turns on Webhook “incoming” for you.',
+	)
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), pending),
+	).toBe('Webhook “incoming” is already on for you.')
+	const failed = enableEntry({
+		willEnable: false,
+		error: { code: 'webhook_other_enabler', message: 'Someone else runs it.' },
+	})
+	expect(approvalEnableStatus(failed, pending)).toBeNull()
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), {
+			approved: true,
+			turnedOn: true,
+		}),
+	).toBe('Webhook “incoming” is on for you.')
+	expect(
+		approvalEnableStatus(enableEntry({ willEnable: false }), {
+			approved: true,
+			turnedOn: false,
+		}),
+	).toBe('Webhook “incoming” is already on for you.')
 })
 
 test('enable errors are problems too', () => {

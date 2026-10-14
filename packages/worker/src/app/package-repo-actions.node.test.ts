@@ -1,0 +1,124 @@
+import { expect, test } from 'vitest'
+import {
+	buildPackageRepoActions,
+	buildSourceAheadPublishHref,
+} from '#app/package-repo-actions.ts'
+import {
+	type PublicCommunityListing,
+	type ViewerListingInstall,
+} from '#universal/community-public-types.ts'
+
+const listing: PublicCommunityListing = {
+	id: 'listing-1',
+	kodyId: 'github-triage',
+	name: '@kentcdodds/github-triage',
+	description: 'Triage GitHub issues.',
+	iconUrl: '/community/listing-1/icon/abc1234567890',
+	tags: ['github'],
+	category: 'integrations',
+	readmeContent: null,
+	license: 'MIT',
+	version: '1.0.4',
+	pinnedCommit: 'abc1234567890',
+	publishedAt: '2026-07-13T00:00:00.000Z',
+	ownerUsername: 'kentcdodds',
+	trusted: false,
+	featured: false,
+	averageStars: null,
+	ratingCount: 0,
+	averageAdaptationEffort: null,
+	forkCount: 0,
+}
+
+const base: Parameters<typeof buildPackageRepoActions>[0] = {
+	username: 'kentcdodds',
+	kodyId: 'github-triage',
+	listing,
+	viewerIsOwner: false,
+	viewerCanManage: false,
+	loggedIn: false,
+	ownerPackage: null,
+}
+
+test('visitors get only a fork action whose login link returns to the Repo tab', () => {
+	expect(buildPackageRepoActions(base)).toEqual({
+		fork: {
+			listingId: 'listing-1',
+			trusted: false,
+			loggedIn: false,
+			loginHref: '/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage',
+			viewerInstall: null,
+		},
+		publishHref: null,
+		updateListingHref: null,
+		packageAppHref: null,
+	})
+	expect(buildPackageRepoActions({ ...base, listing: null }).fork).toBeNull()
+})
+
+test('the page-level viewer install wins over the listing row copy', () => {
+	const pageInstall: ViewerListingInstall = {
+		status: 'installed',
+		targetName: 'github-triage',
+		agentPrompt: '',
+		packageId: 'pkg-page',
+		listingAhead: false,
+		listingAheadPrompt: null,
+		forkAhead: false,
+		listingDiffHref: null,
+	}
+	const actions = buildPackageRepoActions({
+		...base,
+		loggedIn: true,
+		listing: {
+			...listing,
+			viewerInstall: { ...pageInstall, packageId: 'pkg-row' },
+		},
+		viewerInstall: pageInstall,
+	})
+	expect(actions.fork?.viewerInstall?.packageId).toBe('pkg-page')
+})
+
+test('owners get publish, update listing, and open app actions but never fork', () => {
+	const actions = buildPackageRepoActions({
+		...base,
+		listing: { ...listing, sourceAhead: true, headCommit: null },
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		loggedIn: true,
+		ownerPackage: { hasApp: true, listingNeedsRepublish: true },
+	})
+	expect(actions).toEqual({
+		fork: null,
+		publishHref: '/@kentcdodds/github-triage/approve-publish',
+		updateListingHref: expect.stringContaining('/@kentcdodds/github-triage'),
+		packageAppHref: expect.stringContaining('github-triage'),
+	})
+})
+
+test('owner actions stay hidden without a fresh owner projection', () => {
+	const actions = buildPackageRepoActions({
+		...base,
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		loggedIn: true,
+	})
+	expect(actions.updateListingHref).toBeNull()
+	expect(actions.packageAppHref).toBeNull()
+	expect(actions.publishHref).toBeNull()
+})
+
+test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
+	const input = { username: 'kentcdodds', kodyId: 'github-triage' }
+	expect(
+		buildSourceAheadPublishHref({
+			...input,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		}),
+	).toBe(
+		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+	)
+	expect(buildSourceAheadPublishHref({ ...input, headCommit: null })).toBe(
+		'/@kentcdodds/github-triage/approve-publish',
+	)
+})

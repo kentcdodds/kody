@@ -25,6 +25,7 @@ import {
 	accountFieldNoteCss,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import { createOrgSettingsCustomDomains } from '#client/routes/org-settings-custom-domains.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { orgIdentity } from '#universal/org-pages.ts'
@@ -110,6 +111,18 @@ export function OrgSettingsRoute(handle: Handle) {
 	let confirmation = ''
 	let deleting = false
 	let dialogNode: HTMLDialogElement | null = null
+
+	const customDomainsPanel = createOrgSettingsCustomDomains(handle, {
+		onMessage(nextMessage, tone) {
+			message = nextMessage
+			messageTone = tone
+		},
+		reloadSettings() {
+			// Keep appliedKey so an unsaved display-name draft is not wiped when
+			// custom-domain add/sync/remove refreshes settings.
+			settingsData.reload(handle, readCurrentRouterHref(handle))
+		},
+	})
 
 	function applyPayload(payload: OrgSettingsLoaderData) {
 		const key = `${payload.org.id}:${payload.org.slug}:${payload.org.displayName}`
@@ -465,6 +478,11 @@ export function OrgSettingsRoute(handle: Handle) {
 								</p>
 							)}
 						</AccountManagementPanel>
+						{customDomainsPanel.render({
+							orgSlug: data.org.slug,
+							canManage: data.canManage,
+							customDomains: data.customDomains,
+						})}
 						{data.canDelete ? (
 							<AccountManagementPanel title="Delete organization">
 								<p mix={css(accountFieldNoteCss)}>

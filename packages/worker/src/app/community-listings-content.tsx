@@ -192,10 +192,7 @@ function renderCommunityListingCard(
 									Trusted
 								</span>
 							) : null}
-							{renderCommunityViewerInstallBadge({
-								listing,
-								variant: 'card',
-							})}
+							{renderCommunityViewerInstallBadge({ listing })}
 						</span>
 					) : null}
 				</div>
@@ -292,19 +289,12 @@ function renderCommunityListingGrid(
 	)
 }
 
+/** Card-only: on the detail page these live in the repository action group. */
 export function renderCommunityViewerInstallBadge(input: {
 	listing: PublicCommunityListing
-	variant: 'card' | 'detail'
-	loggedIn?: boolean
-	returnTo?: string
-	viewerIsOwner?: boolean
 }) {
-	if (input.viewerIsOwner) return null
 	const install = input.listing.viewerInstall
 	if (install?.listingAhead && install.listingAheadPrompt) {
-		// The package title's link-break icon owns this action on the detail
-		// page. Listing cards keep the pill.
-		if (input.variant === 'detail') return null
 		return renderCopyPromptPill({
 			label: 'Fork outdated',
 			prompt: install.listingAheadPrompt,
@@ -317,16 +307,10 @@ export function renderCommunityViewerInstallBadge(input: {
 	if (install?.forkAhead && install.listingDiffHref) {
 		return renderForkAheadPill({
 			href: install.listingDiffHref,
-			testId:
-				input.variant === 'card'
-					? `community-listing-fork-ahead-${input.listing.id}`
-					: 'community-detail-listing-fork-ahead-badge',
+			testId: `community-listing-fork-ahead-${input.listing.id}`,
 		})
 	}
 	if (install) {
-		// Detail uses the title's open-fork icon (and clipboard when a setup
-		// prompt exists). Cards keep Installed / Forked.
-		if (input.variant === 'detail') return null
 		const testId = `community-listing-viewer-install-${input.listing.id}`
 		if (install.status === 'installed') {
 			return (

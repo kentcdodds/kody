@@ -77,6 +77,11 @@ const viewSchema = z.object({
 				.array(refSchema)
 				.nullable()
 				.describe('The stored override today; null means it inherits.'),
+			beforeUnusableIds: z
+				.array(z.string())
+				.describe(
+					'Stored credential ids left out of before because you can no longer use them (deleted or Use revoked).',
+				),
 			after: z.array(refSchema),
 			willEnable: z
 				.boolean()

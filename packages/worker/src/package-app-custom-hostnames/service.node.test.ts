@@ -10,15 +10,19 @@ import {
 	deletePackageAppCustomHostname,
 	listPackageAppCustomHostnames,
 	PackageAppCustomHostnameError,
+	syncPackageAppCustomHostname,
 } from './service.ts'
 
-const migrationSql = readFileSync(
-	join(
-		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0133-package-app-custom-hostnames.sql',
-	),
-	'utf8',
+const migrationsDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'../../migrations',
 )
+const migrationSql = [
+	'0133-package-app-custom-hostnames.sql',
+	'0135-package-app-custom-hostname-verification.sql',
+]
+	.map((name) => readFileSync(join(migrationsDir, name), 'utf8'))
+	.join('\n')
 
 function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -28,6 +32,7 @@ function createDb() {
 			slug TEXT,
 			suspended_at TEXT,
 			deleted_at TEXT,
+			plan TEXT NOT NULL DEFAULT 'free',
 			stripe_plan TEXT
 		);
 		CREATE TABLE saved_packages (
@@ -56,11 +61,52 @@ function createEnv(db: D1Database) {
 	} as unknown as Env
 }
 
+function cfHostnameResponse(
+	overrides: {
+		id?: string
+		hostname?: string
+		status?: string
+		sslStatus?: string
+		method?: string
+	} = {},
+) {
+	return new Response(
+		JSON.stringify({
+			success: true,
+			result: {
+				id: overrides.id ?? 'cf-1',
+				hostname: overrides.hostname ?? 'team.example.com',
+				status: overrides.status ?? 'pending',
+				ownership_verification: {
+					type: 'txt',
+					name: '_cf-custom-hostname.team.example.com',
+					value: 'ownership-token',
+				},
+				ssl: {
+					status: overrides.sslStatus ?? 'pending_validation',
+					validation_records: [
+						{
+							txt_name: '_acme-challenge.team.example.com',
+							txt_value: 'ssl-token',
+						},
+					],
+				},
+			},
+		}),
+		{ status: 200 },
+	)
+}
+
 test('add rejects app-level hostnames for non-internet-visible packages', async () => {
 	const db = createDb()
 	await db
 		.prepare(
 			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
 		)
 		.run()
 	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue({
@@ -71,21 +117,7 @@ test('add rejects app-level hostnames for non-internet-visible packages', async 
 	} as Awaited<ReturnType<typeof packageRepo.getSavedPackageById>>)
 
 	const fetcher = {
-		fetch: vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'cf-1',
-							hostname: 'app.example.com',
-							status: 'pending',
-							ssl: { status: 'pending' },
-						},
-					}),
-					{ status: 200 },
-				),
-		),
+		fetch: vi.fn(async () => cfHostnameResponse()),
 	} as unknown as Fetcher
 
 	await expect(
@@ -101,7 +133,7 @@ test('add rejects app-level hostnames for non-internet-visible packages', async 
 	expect(fetcher.fetch).not.toHaveBeenCalled()
 })
 
-test('add stores org binding and list returns it', async () => {
+test('add rejects free-plan orgs before calling Cloudflare', async () => {
 	const db = createDb()
 	await db
 		.prepare(
@@ -110,26 +142,49 @@ test('add stores org binding and list returns it', async () => {
 		.run()
 	await db
 		.prepare(
-			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro')`,
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'free')`,
 		)
 		.run()
 
 	const fetcher = {
-		fetch: vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'cf-org',
-							hostname: 'team.example.com',
-							status: 'pending',
-							ssl: { status: 'pending' },
-						},
-					}),
-					{ status: 200 },
-				),
-		),
+		fetch: vi.fn(async () => cfHostnameResponse()),
+	} as unknown as Fetcher
+
+	await expect(
+		addPackageAppCustomHostname({
+			env: { ...createEnv(db), fetcher } as unknown as Env,
+			orgId: 'org-1',
+			createdByUserId: 'person-1',
+			bindingKind: 'org',
+			hostname: 'team.example.com',
+		}),
+	).rejects.toThrow(/paid organization plan/)
+	expect(fetcher.fetch).not.toHaveBeenCalled()
+})
+
+test('add stores org binding with verification records and list returns it', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+
+	const fetcher = {
+		fetch: vi.fn(async (_url: string, init?: RequestInit) => {
+			if (init?.method === 'DELETE') {
+				return cfHostnameResponse({ status: 'deleted' })
+			}
+			return cfHostnameResponse({
+				id: 'cf-org',
+				hostname: 'team.example.com',
+			})
+		}),
 	} as unknown as Fetcher
 
 	const added = await addPackageAppCustomHostname({
@@ -138,15 +193,35 @@ test('add stores org binding and list returns it', async () => {
 		createdByUserId: 'person-1',
 		bindingKind: 'org',
 		hostname: 'team.example.com',
+		sslMethod: 'txt',
 	})
 	expect(added.hostname.hostname).toBe('team.example.com')
 	expect(added.dns.target).toBe('kody.run')
+	expect(added.verification.ownership_verification?.value).toBe(
+		'ownership-token',
+	)
+	expect(added.verification.ssl_validation_records[0]?.value).toBe('ssl-token')
+	expect(
+		JSON.parse(
+			String(
+				(fetcher.fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.body,
+			),
+		),
+	).toMatchObject({
+		ssl: { method: 'txt', type: 'dv' },
+	})
 
 	const listed = await listPackageAppCustomHostnames({
 		env: createEnv(db),
 		orgId: 'org-1',
 	})
 	expect(listed.hostnames).toHaveLength(1)
+	expect(listed.hostnames[0]?.verification.ownership_verification?.value).toBe(
+		'ownership-token',
+	)
+	expect(
+		listed.hostnames[0]?.verification.ssl_validation_records[0]?.value,
+	).toBe('ssl-token')
 
 	await deletePackageAppCustomHostname({
 		env: { ...createEnv(db), fetcher } as unknown as Env,
@@ -156,4 +231,220 @@ test('add stores org binding and list returns it', async () => {
 	expect(
 		await listPackageAppCustomHostnames({ env: createEnv(db), orgId: 'org-1' }),
 	).toEqual({ hostnames: [] })
+})
+
+test('sync refreshes Cloudflare status and returns verification records', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'row-1', 'team.example.com', 'org', NULL, 'org-1',
+				'cf-org', 'zonetest123', 'pending', 'pending', 'person-1',
+				'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z'
+			)`,
+		)
+		.run()
+
+	const fetcher = {
+		fetch: vi.fn(async () =>
+			cfHostnameResponse({
+				id: 'cf-org',
+				hostname: 'team.example.com',
+				status: 'active',
+				sslStatus: 'active',
+			}),
+		),
+	} as unknown as Fetcher
+
+	const synced = await syncPackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		id: 'row-1',
+		now: new Date('2026-10-13T12:00:00.000Z'),
+	})
+	expect(synced.hostname.hostname_status).toBe('active')
+	expect(synced.hostname.ssl_status).toBe('active')
+	expect(synced.hostname.verified_at).toBe('2026-10-13T12:00:00.000Z')
+	expect(synced.verification.ownership_verification?.name).toBe(
+		'_cf-custom-hostname.team.example.com',
+	)
+})
+
+test('add compensates with Cloudflare delete when the local insert fails', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'existing', 'team.example.com', 'org', NULL, 'org-1',
+				'cf-old', 'zonetest123', 'pending', 'pending', 'person-1',
+				'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z'
+			)`,
+		)
+		.run()
+
+	const methods: Array<string> = []
+	const fetcher = {
+		fetch: vi.fn(async (_url: string, init?: RequestInit) => {
+			methods.push(init?.method ?? 'GET')
+			if (init?.method === 'DELETE') {
+				return cfHostnameResponse({ id: 'cf-new', status: 'deleted' })
+			}
+			return cfHostnameResponse({ id: 'cf-new', hostname: 'team.example.com' })
+		}),
+	} as unknown as Fetcher
+
+	await expect(
+		addPackageAppCustomHostname({
+			env: { ...createEnv(db), fetcher } as unknown as Env,
+			orgId: 'org-1',
+			createdByUserId: 'person-1',
+			bindingKind: 'org',
+			hostname: 'team.example.com',
+		}),
+	).rejects.toThrow(/could not be stored/)
+	expect(methods).toEqual(['POST', 'DELETE'])
+})
+
+test('add allows manual paid plan even when stripe_plan is free', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'pro', NULL)`,
+		)
+		.run()
+	const fetcher = {
+		fetch: vi.fn(async () =>
+			cfHostnameResponse({ id: 'cf-manual', hostname: 'manual.example.com' }),
+		),
+	} as unknown as Fetcher
+	const added = await addPackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		createdByUserId: 'person-1',
+		bindingKind: 'org',
+		hostname: 'manual.example.com',
+	})
+	expect(added.hostname.hostname).toBe('manual.example.com')
+})
+
+test('sync prefers id over a conflicting hostname body', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	for (const [id, hostname, cfId] of [
+		['row-a', 'a.example.com', 'cf-a'],
+		['row-b', 'b.example.com', 'cf-b'],
+	] as const) {
+		await db
+			.prepare(
+				`INSERT INTO package_app_custom_hostnames (
+					id, hostname, binding_kind, package_id, org_id,
+					cloudflare_hostname_id, cloudflare_zone_id,
+					hostname_status, ssl_status, created_by_user_id,
+					created_at, updated_at
+				) VALUES (?, ?, 'org', NULL, 'org-1', ?, 'zonetest123', 'pending', 'pending', 'person-1',
+					'2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z')`,
+			)
+			.bind(id, hostname, cfId)
+			.run()
+	}
+
+	await expect(
+		syncPackageAppCustomHostname({
+			env: createEnv(db),
+			orgId: 'org-1',
+			id: 'row-a',
+			hostname: 'b.example.com',
+		}),
+	).rejects.toThrow(/does not match/)
+})
+
+test('sync marks Cloudflare-missing hostnames deleted and starts grace', async () => {
+	const db = createDb()
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled) VALUES ('package-app-custom-domains', 1)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, suspended_at, deleted_at, plan, stripe_plan) VALUES ('org-1', 'acme', NULL, NULL, 'free', 'pro')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO package_app_custom_hostnames (
+				id, hostname, binding_kind, package_id, org_id,
+				cloudflare_hostname_id, cloudflare_zone_id,
+				hostname_status, ssl_status, verified_at, created_by_user_id,
+				created_at, updated_at
+			) VALUES (
+				'row-1', 'team.example.com', 'org', NULL, 'org-1',
+				'cf-gone', 'zonetest123', 'active', 'active', '2026-10-12T00:00:00.000Z',
+				'person-1', '2026-10-12T00:00:00.000Z', '2026-10-12T00:00:00.000Z'
+			)`,
+		)
+		.run()
+
+	const fetcher = {
+		fetch: vi.fn(async () =>
+			Response.json(
+				{ success: false, errors: [{ message: 'not found', code: 1436 }] },
+				{ status: 404 },
+			),
+		),
+	} as unknown as Fetcher
+
+	const synced = await syncPackageAppCustomHostname({
+		env: { ...createEnv(db), fetcher } as unknown as Env,
+		orgId: 'org-1',
+		id: 'row-1',
+		now: new Date('2026-10-13T12:00:00.000Z'),
+	})
+	expect(synced.hostname.hostname_status).toBe('deleted')
+	expect(synced.hostname.dns_missing_since).toBe('2026-10-13T12:00:00.000Z')
+	expect(synced.verification.ownership_verification).toBeNull()
 })

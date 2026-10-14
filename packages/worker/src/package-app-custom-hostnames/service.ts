@@ -1,11 +1,23 @@
-import { parseStripePlanName } from '#universal/plans.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { parseStoredPlanName } from '#universal/plans.ts'
+import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { CloudflareCustomHostnamesClient } from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
+import {
+	CloudflareCustomHostnamesClient,
+	isCloudflareCustomHostnameGone,
+	type CloudflareCustomHostnameResult,
+	type CustomHostnameDnsRecord,
+	type CustomHostnameSslMethod,
+} from '#worker/package-app-custom-hostnames/cloudflare-custom-hostnames-client.ts'
 import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
-import { normalizeCustomHostname } from '#worker/package-app-custom-hostnames/lookup.ts'
+import {
+	isPackageAppCustomHostnameVerified,
+	normalizeCustomHostname,
+} from '#worker/package-app-custom-hostnames/lookup.ts'
 import {
 	type PackageAppCustomHostnameBindingKind,
+	type PackageAppCustomHostnameDnsRecord,
 	type PackageAppCustomHostnameRow,
 } from '#worker/package-app-custom-hostnames/types.ts'
 
@@ -14,6 +26,32 @@ export class PackageAppCustomHostnameError extends Error {
 		super(message)
 		this.name = 'PackageAppCustomHostnameError'
 	}
+}
+
+export type PackageAppCustomHostnameVerification = {
+	ownership_verification: CustomHostnameDnsRecord | null
+	ssl_validation_records: Array<CustomHostnameDnsRecord>
+}
+
+export type PackageAppCustomHostnamePublic = {
+	id: string
+	hostname: string
+	binding_kind: PackageAppCustomHostnameBindingKind
+	package_id: string | null
+	org_id: string | null
+	hostname_status: string
+	ssl_status: string
+	verified_at: string | null
+	dns_missing_since: string | null
+	verification: PackageAppCustomHostnameVerification
+	created_at: string
+	updated_at: string
+}
+
+export type PackageAppCustomHostnameDnsHint = {
+	type: 'CNAME'
+	name: string
+	target: string | null
 }
 
 type CustomHostnameRowSql = {
@@ -28,9 +66,70 @@ type CustomHostnameRowSql = {
 	ssl_status: string
 	verified_at: string | null
 	dns_missing_since: string | null
+	ownership_verification_json: string | null
+	ssl_validation_records_json: string | null
 	created_by_user_id: string | null
 	created_at: string
 	updated_at: string
+}
+
+function parseDnsRecord(
+	value: unknown,
+): PackageAppCustomHostnameDnsRecord | null {
+	if (!value || typeof value !== 'object') return null
+	const record = value as {
+		type?: unknown
+		name?: unknown
+		value?: unknown
+	}
+	if (
+		typeof record.type !== 'string' ||
+		typeof record.name !== 'string' ||
+		typeof record.value !== 'string'
+	) {
+		return null
+	}
+	return { type: record.type, name: record.name, value: record.value }
+}
+
+function parseOwnershipVerificationJson(
+	raw: string | null,
+): PackageAppCustomHostnameDnsRecord | null {
+	if (!raw?.trim()) return null
+	try {
+		return parseDnsRecord(JSON.parse(raw) as unknown)
+	} catch {
+		return null
+	}
+}
+
+function parseSslValidationRecordsJson(
+	raw: string | null,
+): Array<PackageAppCustomHostnameDnsRecord> {
+	if (!raw?.trim()) return []
+	try {
+		const parsed = JSON.parse(raw) as unknown
+		if (!Array.isArray(parsed)) return []
+		return parsed
+			.map((entry) => parseDnsRecord(entry))
+			.filter((entry): entry is PackageAppCustomHostnameDnsRecord =>
+				Boolean(entry),
+			)
+	} catch {
+		return []
+	}
+}
+
+function serializeOwnershipVerification(
+	record: PackageAppCustomHostnameDnsRecord | null,
+): string | null {
+	return record ? JSON.stringify(record) : null
+}
+
+function serializeSslValidationRecords(
+	records: Array<PackageAppCustomHostnameDnsRecord>,
+): string {
+	return JSON.stringify(records)
 }
 
 function rowFromSql(row: CustomHostnameRowSql): PackageAppCustomHostnameRow {
@@ -46,13 +145,30 @@ function rowFromSql(row: CustomHostnameRowSql): PackageAppCustomHostnameRow {
 		sslStatus: row.ssl_status,
 		verifiedAt: row.verified_at,
 		dnsMissingSince: row.dns_missing_since,
+		ownershipVerification: parseOwnershipVerificationJson(
+			row.ownership_verification_json,
+		),
+		sslValidationRecords: parseSslValidationRecordsJson(
+			row.ssl_validation_records_json,
+		),
 		createdByUserId: row.created_by_user_id,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}
 }
 
-function publicRow(row: PackageAppCustomHostnameRow) {
+function verificationFromRow(
+	row: PackageAppCustomHostnameRow,
+): PackageAppCustomHostnameVerification {
+	return {
+		ownership_verification: row.ownershipVerification,
+		ssl_validation_records: row.sslValidationRecords,
+	}
+}
+
+function publicRow(
+	row: PackageAppCustomHostnameRow,
+): PackageAppCustomHostnamePublic {
 	return {
 		id: row.id,
 		hostname: row.hostname,
@@ -63,8 +179,18 @@ function publicRow(row: PackageAppCustomHostnameRow) {
 		ssl_status: row.sslStatus,
 		verified_at: row.verifiedAt,
 		dns_missing_since: row.dnsMissingSince,
+		verification: verificationFromRow(row),
 		created_at: row.createdAt,
 		updated_at: row.updatedAt,
+	}
+}
+
+function verificationFromCloudflare(
+	cf: CloudflareCustomHostnameResult,
+): PackageAppCustomHostnameVerification {
+	return {
+		ownership_verification: cf.ownershipVerification,
+		ssl_validation_records: cf.sslValidationRecords,
 	}
 }
 
@@ -95,6 +221,14 @@ function dnsTargetHostname(env: Env) {
 	}
 }
 
+function dnsHint(env: Env, hostname: string): PackageAppCustomHostnameDnsHint {
+	return {
+		type: 'CNAME',
+		name: hostname,
+		target: dnsTargetHostname(env),
+	}
+}
+
 async function countOrgCustomHostnames(db: D1Database, orgId: string) {
 	const row = await db
 		.prepare(
@@ -109,18 +243,283 @@ async function countOrgCustomHostnames(db: D1Database, orgId: string) {
 	return row?.count ?? 0
 }
 
-async function billingNoteForAdd(db: D1Database, orgId: string) {
+/**
+ * ADR 0071: paying orgs only. Free plans cannot claim custom domains.
+ * Uses the same manual `plan` + `stripe_plan` overlay as entitlements (no
+ * second-agent/referral gift overlays — those are personal-org only).
+ * Stripe $0.10 metering for extras is still deferred; extras get a note.
+ */
+async function requirePaidOrgForCustomDomains(db: D1Database, orgId: string) {
 	const org = await db
 		.prepare(
-			`SELECT stripe_plan FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+			`SELECT plan, stripe_plan FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
-		.first<{ stripe_plan: string | null }>()
-	const paidPlan = parseStripePlanName(org?.stripe_plan ?? null)
-	if (!paidPlan || paidPlan === 'free') return null
+		.first<{ plan: string | null; stripe_plan: string | null }>()
+	if (!org) {
+		throw new PackageAppCustomHostnameError('Organization not found.')
+	}
+	const { plan } = resolvePlanOverlay(
+		parseStoredPlanName(org.plan ?? 'free'),
+		org.stripe_plan,
+		null,
+	)
+	if (plan === 'free') {
+		throw new PackageAppCustomHostnameError(
+			'Custom domains require a paid organization plan. Paying orgs include one domain at no extra charge (ADR 0071).',
+		)
+	}
+	return plan
+}
+
+async function billingNoteForAdd(db: D1Database, orgId: string) {
 	const count = await countOrgCustomHostnames(db, orgId)
 	if (count <= 1) return null
 	return 'Paying orgs include one custom domain at no extra charge. Additional domains are $0.10/month each once billing is wired (ADR 0071); this environment does not charge yet.'
+}
+
+async function loadOwnedCustomHostnameRow(input: {
+	env: Env
+	orgId: string
+	hostname?: string
+	id?: string
+}): Promise<PackageAppCustomHostnameRow> {
+	const hostname = input.hostname
+		? normalizeCustomHostname(input.hostname)
+		: null
+	const id = input.id?.trim() || null
+	if (!hostname && !id) {
+		throw new PackageAppCustomHostnameError('Pass hostname or id.')
+	}
+	// Prefer id when present so Open API path params cannot be overridden by a
+	// conflicting body hostname. Hostname-only remains for MCP.
+	const row = id
+		? await input.env.APP_DB.prepare(
+				`SELECT * FROM package_app_custom_hostnames WHERE id = ?`,
+			)
+				.bind(id)
+				.first<CustomHostnameRowSql>()
+		: await input.env.APP_DB.prepare(
+				`SELECT * FROM package_app_custom_hostnames WHERE hostname = ?`,
+			)
+				.bind(hostname)
+				.first<CustomHostnameRowSql>()
+	if (!row) {
+		throw new PackageAppCustomHostnameError('Custom hostname not found.')
+	}
+	if (id && hostname && row.hostname !== hostname) {
+		throw new PackageAppCustomHostnameError(
+			'hostname does not match the custom hostname id.',
+		)
+	}
+	const owned =
+		row.org_id === input.orgId ||
+		(row.package_id &&
+			(await getSavedPackageById(input.env.APP_DB, {
+				userId: input.orgId,
+				packageId: row.package_id,
+			})) !== null)
+	if (!owned) {
+		throw new PackageAppCustomHostnameError(
+			'This custom hostname does not belong to the bound organization.',
+		)
+	}
+	return rowFromSql(row)
+}
+
+function deletedCloudflareHostnameResult(
+	row: PackageAppCustomHostnameRow,
+): CloudflareCustomHostnameResult {
+	return {
+		id: row.cloudflareHostnameId ?? row.id,
+		hostname: row.hostname,
+		hostnameStatus: 'deleted',
+		sslStatus: row.sslStatus,
+		ownershipVerification: null,
+		sslValidationRecords: [],
+	}
+}
+
+async function insertCustomHostnameRow(input: {
+	env: Env
+	id: string
+	hostname: string
+	bindingKind: PackageAppCustomHostnameBindingKind
+	packageId: string | null
+	orgId: string | null
+	cloudflareHostnameId: string
+	cloudflareZoneId: string | null
+	hostnameStatus: string
+	sslStatus: string
+	ownershipVerification: PackageAppCustomHostnameDnsRecord | null
+	sslValidationRecords: Array<PackageAppCustomHostnameDnsRecord>
+	createdByUserId: string
+	now: string
+}) {
+	const ownershipJson = serializeOwnershipVerification(
+		input.ownershipVerification,
+	)
+	const sslRecordsJson = serializeSslValidationRecords(
+		input.sslValidationRecords,
+	)
+	switch (input.bindingKind) {
+		case 'app': {
+			await input.env.APP_DB.prepare(
+				`INSERT INTO package_app_custom_hostnames (
+						id, hostname, binding_kind, package_id, org_id,
+						cloudflare_hostname_id, cloudflare_zone_id,
+						hostname_status, ssl_status,
+						ownership_verification_json, ssl_validation_records_json,
+						created_by_user_id, created_at, updated_at
+					) VALUES (?, ?, 'app', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+				.bind(
+					input.id,
+					input.hostname,
+					input.packageId,
+					input.cloudflareHostnameId,
+					input.cloudflareZoneId,
+					input.hostnameStatus,
+					input.sslStatus,
+					ownershipJson,
+					sslRecordsJson,
+					input.createdByUserId,
+					input.now,
+					input.now,
+				)
+				.run()
+			return
+		}
+		case 'org': {
+			await input.env.APP_DB.prepare(
+				`INSERT INTO package_app_custom_hostnames (
+						id, hostname, binding_kind, package_id, org_id,
+						cloudflare_hostname_id, cloudflare_zone_id,
+						hostname_status, ssl_status,
+						ownership_verification_json, ssl_validation_records_json,
+						created_by_user_id, created_at, updated_at
+					) VALUES (?, ?, 'org', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+				.bind(
+					input.id,
+					input.hostname,
+					input.orgId,
+					input.cloudflareHostnameId,
+					input.cloudflareZoneId,
+					input.hostnameStatus,
+					input.sslStatus,
+					ownershipJson,
+					sslRecordsJson,
+					input.createdByUserId,
+					input.now,
+					input.now,
+				)
+				.run()
+			return
+		}
+		default: {
+			input.bindingKind satisfies never
+			throw new PackageAppCustomHostnameError('binding_kind is invalid.')
+		}
+	}
+}
+
+async function compensateCloudflareDelete(input: {
+	client: CloudflareCustomHostnamesClient
+	cloudflareHostnameId: string
+	hostname: string
+}) {
+	try {
+		await input.client.deleteCustomHostname({
+			id: input.cloudflareHostnameId,
+		})
+	} catch (error) {
+		console.error(
+			'package_app_custom_hostnames compensating Cloudflare delete failed:',
+			input.hostname,
+			input.cloudflareHostnameId,
+			getErrorMessage(error),
+		)
+	}
+}
+
+function shouldStartDnsMissingGrace(input: {
+	verifiedAt: string | null
+	hostnameStatus: string
+	sslStatus: string
+}) {
+	if (
+		isPackageAppCustomHostnameVerified({
+			hostnameStatus: input.hostnameStatus,
+			sslStatus: input.sslStatus,
+		})
+	) {
+		return false
+	}
+	if (input.verifiedAt) return true
+	return input.hostnameStatus === 'moved' || input.hostnameStatus === 'deleted'
+}
+
+async function applyCloudflareStatus(input: {
+	env: Env
+	row: PackageAppCustomHostnameRow
+	cf: CloudflareCustomHostnameResult
+	nowIso: string
+}): Promise<PackageAppCustomHostnameRow> {
+	const verified = isPackageAppCustomHostnameVerified({
+		hostnameStatus: input.cf.hostnameStatus,
+		sslStatus: input.cf.sslStatus ?? input.row.sslStatus,
+	})
+	let dnsMissingSince = input.row.dnsMissingSince
+	if (verified) {
+		dnsMissingSince = null
+	} else if (
+		shouldStartDnsMissingGrace({
+			verifiedAt: input.row.verifiedAt,
+			hostnameStatus: input.cf.hostnameStatus,
+			sslStatus: input.cf.sslStatus ?? input.row.sslStatus,
+		})
+	) {
+		dnsMissingSince = dnsMissingSince ?? input.nowIso
+	}
+	const verifiedAt =
+		verified && !input.row.verifiedAt ? input.nowIso : input.row.verifiedAt
+	const hostnameStatus = input.cf.hostnameStatus
+	const sslStatus = input.cf.sslStatus ?? input.row.sslStatus
+	const ownershipVerification = input.cf.ownershipVerification
+	const sslValidationRecords = input.cf.sslValidationRecords
+	await input.env.APP_DB.prepare(
+		`UPDATE package_app_custom_hostnames
+			 SET hostname_status = ?,
+			     ssl_status = ?,
+			     verified_at = ?,
+			     dns_missing_since = ?,
+			     ownership_verification_json = ?,
+			     ssl_validation_records_json = ?,
+			     updated_at = ?
+			 WHERE id = ?`,
+	)
+		.bind(
+			hostnameStatus,
+			sslStatus,
+			verifiedAt,
+			dnsMissingSince,
+			serializeOwnershipVerification(ownershipVerification),
+			serializeSslValidationRecords(sslValidationRecords),
+			input.nowIso,
+			input.row.id,
+		)
+		.run()
+	return {
+		...input.row,
+		hostnameStatus,
+		sslStatus,
+		verifiedAt,
+		dnsMissingSince,
+		ownershipVerification,
+		sslValidationRecords,
+		updatedAt: input.nowIso,
+	}
 }
 
 export async function addPackageAppCustomHostname(input: {
@@ -130,30 +529,31 @@ export async function addPackageAppCustomHostname(input: {
 	bindingKind: PackageAppCustomHostnameBindingKind
 	hostname: string
 	packageId?: string
+	sslMethod?: CustomHostnameSslMethod
 }) {
 	await requireCustomDomainsEnabled(input.env.APP_DB)
+	await requirePaidOrgForCustomDomains(input.env.APP_DB, input.orgId)
 	const hostname = normalizeCustomHostname(input.hostname)
 	if (!hostname) {
 		throw new PackageAppCustomHostnameError('hostname is not a valid DNS name.')
 	}
 	const now = new Date().toISOString()
 	const id = crypto.randomUUID()
-	let cloudflareHostnameId: string | null = null
-	let cloudflareZoneId: string | null = null
-	let hostnameStatus = 'pending'
-	let sslStatus = 'pending'
+	const sslMethod = input.sslMethod ?? 'http'
+	let packageId: string | null = null
+	let orgId: string | null = null
 
 	switch (input.bindingKind) {
 		case 'app': {
-			const packageId = input.packageId?.trim()
-			if (!packageId) {
+			const resolvedPackageId = input.packageId?.trim()
+			if (!resolvedPackageId) {
 				throw new PackageAppCustomHostnameError(
 					'package_id is required for an app-level custom hostname.',
 				)
 			}
 			const saved = await getSavedPackageById(input.env.APP_DB, {
 				userId: input.orgId,
-				packageId,
+				packageId: resolvedPackageId,
 			})
 			if (!saved) {
 				throw new PackageAppCustomHostnameError(
@@ -165,63 +565,13 @@ export async function addPackageAppCustomHostname(input: {
 					'App-level custom hostnames are only for internet-visible (public) package apps. Use an org-level domain for private apps.',
 				)
 			}
-			const client = createCloudflareClient(input.env)
-			const cf = await client.addCustomHostname({ hostname })
-			cloudflareHostnameId = cf.id
-			cloudflareZoneId = input.env.PACKAGE_APP_ZONE_ID?.trim() ?? null
-			hostnameStatus = cf.hostnameStatus
-			sslStatus = cf.sslStatus ?? 'pending'
-			await input.env.APP_DB.prepare(
-				`INSERT INTO package_app_custom_hostnames (
-						id, hostname, binding_kind, package_id, org_id,
-						cloudflare_hostname_id, cloudflare_zone_id,
-						hostname_status, ssl_status, created_by_user_id,
-						created_at, updated_at
-					) VALUES (?, ?, 'app', ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-				.bind(
-					id,
-					hostname,
-					packageId,
-					cloudflareHostnameId,
-					cloudflareZoneId,
-					hostnameStatus,
-					sslStatus,
-					input.createdByUserId,
-					now,
-					now,
-				)
-				.run()
+			packageId = resolvedPackageId
+			orgId = null
 			break
 		}
 		case 'org': {
-			const client = createCloudflareClient(input.env)
-			const cf = await client.addCustomHostname({ hostname })
-			cloudflareHostnameId = cf.id
-			cloudflareZoneId = input.env.PACKAGE_APP_ZONE_ID?.trim() ?? null
-			hostnameStatus = cf.hostnameStatus
-			sslStatus = cf.sslStatus ?? 'pending'
-			await input.env.APP_DB.prepare(
-				`INSERT INTO package_app_custom_hostnames (
-						id, hostname, binding_kind, package_id, org_id,
-						cloudflare_hostname_id, cloudflare_zone_id,
-						hostname_status, ssl_status, created_by_user_id,
-						created_at, updated_at
-					) VALUES (?, ?, 'org', NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-				.bind(
-					id,
-					hostname,
-					input.orgId,
-					cloudflareHostnameId,
-					cloudflareZoneId,
-					hostnameStatus,
-					sslStatus,
-					input.createdByUserId,
-					now,
-					now,
-				)
-				.run()
+			packageId = null
+			orgId = input.orgId
 			break
 		}
 		default: {
@@ -230,12 +580,49 @@ export async function addPackageAppCustomHostname(input: {
 		}
 	}
 
+	const client = createCloudflareClient(input.env)
+	const cf = await client.addCustomHostname({ hostname, sslMethod })
+	const cloudflareZoneId = input.env.PACKAGE_APP_ZONE_ID?.trim() ?? null
+	try {
+		await insertCustomHostnameRow({
+			env: input.env,
+			id,
+			hostname,
+			bindingKind: input.bindingKind,
+			packageId,
+			orgId,
+			cloudflareHostnameId: cf.id,
+			cloudflareZoneId,
+			hostnameStatus: cf.hostnameStatus,
+			sslStatus: cf.sslStatus ?? 'pending',
+			ownershipVerification: cf.ownershipVerification,
+			sslValidationRecords: cf.sslValidationRecords,
+			createdByUserId: input.createdByUserId,
+			now,
+		})
+	} catch (error) {
+		await compensateCloudflareDelete({
+			client,
+			cloudflareHostnameId: cf.id,
+			hostname,
+		})
+		if (error instanceof PackageAppCustomHostnameError) throw error
+		throw new PackageAppCustomHostnameError(
+			`Custom hostname could not be stored (${getErrorMessage(error)}).`,
+		)
+	}
+
 	const row = await input.env.APP_DB.prepare(
 		`SELECT * FROM package_app_custom_hostnames WHERE id = ?`,
 	)
 		.bind(id)
 		.first<CustomHostnameRowSql>()
 	if (!row) {
+		await compensateCloudflareDelete({
+			client,
+			cloudflareHostnameId: cf.id,
+			hostname,
+		})
 		throw new PackageAppCustomHostnameError(
 			'Custom hostname row was not stored.',
 		)
@@ -243,11 +630,8 @@ export async function addPackageAppCustomHostname(input: {
 	const billingNote = await billingNoteForAdd(input.env.APP_DB, input.orgId)
 	return {
 		hostname: publicRow(rowFromSql(row)),
-		dns: {
-			type: 'CNAME' as const,
-			name: hostname,
-			target: dnsTargetHostname(input.env),
-		},
+		dns: dnsHint(input.env, hostname),
+		verification: verificationFromCloudflare(cf),
 		billing_note: billingNote,
 	}
 }
@@ -269,6 +653,46 @@ export async function listPackageAppCustomHostnames(input: {
 		.all<CustomHostnameRowSql>()
 	return {
 		hostnames: (rows.results ?? []).map((row) => publicRow(rowFromSql(row))),
+	}
+}
+
+export async function syncPackageAppCustomHostname(input: {
+	env: Env
+	orgId: string
+	hostname?: string
+	id?: string
+	now?: Date
+}) {
+	await requireCustomDomainsEnabled(input.env.APP_DB)
+	const row = await loadOwnedCustomHostnameRow(input)
+	const cfId = row.cloudflareHostnameId?.trim()
+	if (!cfId) {
+		throw new PackageAppCustomHostnameError(
+			'This custom hostname has no Cloudflare hostname id to sync.',
+		)
+	}
+	const now = input.now ?? new Date()
+	const nowIso = now.toISOString()
+	const client = createCloudflareClient(input.env)
+	const cfOrGone = await client.getCustomHostname({ id: cfId })
+	const cf = isCloudflareCustomHostnameGone(cfOrGone)
+		? deletedCloudflareHostnameResult(row)
+		: cfOrGone
+	const updated = await applyCloudflareStatus({
+		env: input.env,
+		row,
+		cf,
+		nowIso,
+	})
+	return {
+		hostname: publicRow(updated),
+		dns: dnsHint(input.env, updated.hostname),
+		verification: isCloudflareCustomHostnameGone(cfOrGone)
+			? {
+					ownership_verification: null,
+					ssl_validation_records: [],
+				}
+			: verificationFromCloudflare(cf),
 	}
 }
 
@@ -294,42 +718,10 @@ export async function deletePackageAppCustomHostname(input: {
 	id?: string
 }) {
 	await requireCustomDomainsEnabled(input.env.APP_DB)
-	const hostname = input.hostname
-		? normalizeCustomHostname(input.hostname)
-		: null
-	const id = input.id?.trim() || null
-	if (!hostname && !id) {
-		throw new PackageAppCustomHostnameError('Pass hostname or id.')
-	}
-	const row = hostname
-		? await input.env.APP_DB.prepare(
-				`SELECT * FROM package_app_custom_hostnames WHERE hostname = ?`,
-			)
-				.bind(hostname)
-				.first<CustomHostnameRowSql>()
-		: await input.env.APP_DB.prepare(
-				`SELECT * FROM package_app_custom_hostnames WHERE id = ?`,
-			)
-				.bind(id)
-				.first<CustomHostnameRowSql>()
-	if (!row) {
-		throw new PackageAppCustomHostnameError('Custom hostname not found.')
-	}
-	const owned =
-		row.org_id === input.orgId ||
-		(row.package_id &&
-			(await getSavedPackageById(input.env.APP_DB, {
-				userId: input.orgId,
-				packageId: row.package_id,
-			})) !== null)
-	if (!owned) {
-		throw new PackageAppCustomHostnameError(
-			'This custom hostname does not belong to the bound organization.',
-		)
-	}
+	const row = await loadOwnedCustomHostnameRow(input)
 	await removePackageAppCustomHostnameRow({
 		env: input.env,
-		row: rowFromSql(row),
+		row,
 	})
 	return { ok: true as const, id: row.id, hostname: row.hostname }
 }

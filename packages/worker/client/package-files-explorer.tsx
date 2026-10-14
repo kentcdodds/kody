@@ -21,6 +21,7 @@ import {
 } from '#universal/package-files.ts'
 import { directoryOfPackageFilePath } from '#universal/package-readme-images.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import { renderPackageRepoActions } from '#universal/package-title-actions.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import {
@@ -32,8 +33,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
-	layoutMaxWidths,
-	pageGutter,
+	packageDetailPageCss,
 	proseCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -61,7 +61,12 @@ function countLines(value: string) {
 }
 
 export function PackageFilesExplorer(
-	handle: Handle<{ data: PackageFilesLoaderData; busy?: boolean }>,
+	handle: Handle<{
+		data: PackageFilesLoaderData
+		busy?: boolean
+		/** Fork result / error under the chrome (see the install controller). */
+		installStrip?: RemixNode
+	}>,
 ) {
 	// Directory open/closed state is the visitor's, so it survives navigation
 	// between files; each newly selected path opens its own ancestors on top of
@@ -145,6 +150,7 @@ export function PackageFilesExplorer(
 						ownerProfilePublic: data.ownerProfilePublic,
 						iconUrl: data.iconUrl ?? null,
 						iconName: data.kodyId,
+						actions: renderPackageRepoActions(data.repoActions ?? null),
 					})
 				) : (
 					<>
@@ -156,6 +162,7 @@ export function PackageFilesExplorer(
 						</header>
 					</>
 				)}
+				{handle.props.installStrip}
 				<div mix={css(layoutCss)}>
 					<nav aria-label="Files" mix={css(treeCss)}>
 						<div mix={css(treeHeadCss)}>
@@ -530,19 +537,10 @@ function searchIcon() {
 	return renderIcon('search', { size: '14' })
 }
 
-// Same box as the site header (`navCss`): `layoutMaxWidths.extended` centered,
-// inset by `pageGutter`. A container that picks its own padding renders wider
-// than the nav above it.
-// This route owns its gutters — the shell leaves it unpadded (`app.tsx`), so
-// the same box as the site header lines the two up at every width.
-const articleCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `${spacing.lg} ${pageGutter} ${spacing['2xl']}`,
-	[mq.tablet]: {
-		padding: `${spacing.md} ${pageGutter} ${spacing.xl}`,
-	},
-}
+// Shared with Repo / Settings (`packageDetailPageCss`): same extended width,
+// gutters, and shirt-pattern background. The shell leaves package detail tabs
+// unpadded (`app.tsx`), so this box lines up with the site header.
+const articleCss = packageDetailPageCss
 
 const backLinkCss = {
 	// Pinned out of the `page` transition with the rest of the explorer chrome.

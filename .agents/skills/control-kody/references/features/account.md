@@ -5,12 +5,14 @@ Pages about the person, split from the org workspace:
 - `/account` (Profile): name, avatar, email, onboarding banner.
 - `/account/security`: password, links to two-factor and passkeys, sign-in
   providers (Connected accounts), former emails.
-- `/account/usage`: usage and credits (`/account/credits` redirects to
-  `#credits`).
 - `/account/organizations`: every org you belong to (Current marks the one the
   switcher is acting in), pending invites (`#invites`), and Create organization.
 - `/account/experiments`: experiments opt-in.
 - `/account/data`: export and delete account.
+
+Usage and credits live on the org workspace at `/@:orgSlug/-/usage` (credits are
+`#credits`). Legacy `/account/usage` and `/account/credits` redirect to the
+personal org's usage page.
 
 The account rail ("Account sections") lists those pages, then a Workspaces group
 with one row per org (`@<slug>`, signup org first). A row opens that org's home:
@@ -19,14 +21,15 @@ workspace section is on a separate "Workspace sections" rail under
 `/@<slug>/-/…`, so any section is two clicks from `/account`. That rail groups
 Build (Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP
 servers, Secret providers), Agents & data (Agents, Memories, Email), Activity,
-and Organization. Activity has Activity, Workflows, and Waiting as tabs under
-the page title (`data-testid="account-section-tabs"`, labelled "Activity
-pages"); the rail item stays current on all three. Repositories is
-`/@<slug>/-/repositories`, distinct from the public profile at `/@<slug>`.
-Former `/@<slug>/-/packages` URLs 301 to `/repositories` (query preserved). The
-signup org's Overview (`/@<slug>/-/overview`) is a card for every workspace
-section; a team org's overview URL redirects to its home at `/@<slug>`. Both
-rails come from `account-rail.ts` and render through `AccountPageHeader` in
+and Organization (Usage & credits and Billing for owners/billing admins).
+Activity has Activity, Workflows, and Waiting as tabs under the page title
+(`data-testid="account-section-tabs"`, labelled "Activity pages"); the rail item
+stays current on all three. Repositories is `/@<slug>/-/repositories`, distinct
+from the public profile at `/@<slug>`. Former `/@<slug>/-/packages` URLs 301 to
+`/repositories` (query preserved). The signup org's Overview
+(`/@<slug>/-/overview`) is a card for every workspace section; a team org's
+overview URL redirects to its home at `/@<slug>`. Both rails come from
+`account-rail.ts` and render through `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
@@ -35,10 +38,11 @@ The site header has two controls. The org switcher
 Create organization and an invites row when you have any. The account menu
 (`data-testid="account-menu"`, panel `account-menu-panel`) is the person's
 avatar: name and `@username`, then Your profile, Account settings, Usage &
-credits, and Log out. Narrow viewports show both in the one menu panel (orgs,
-then a "Your account" group). Own profile (`/@<username>`) also links
-**Workspace** (lands on `/@<slug>/-/repositories`) beside Edit profile. A team
-org home lists **Workspace** above its management links.
+credits (current org from the URL only, else the personal org), and Log out.
+Narrow viewports show both in the one menu panel (orgs, then a "Your account"
+group). Own profile (`/@<username>`) also links **Workspace** (lands on
+`/@<slug>/-/repositories`) beside Edit profile. A team org home lists
+**Workspace** above its management links.
 
 ## How to get there
 

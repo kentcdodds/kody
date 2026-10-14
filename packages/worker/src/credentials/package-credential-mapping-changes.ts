@@ -259,6 +259,7 @@ export async function resolveMappingChanges(
 				: null,
 		}
 		let before: Array<CredentialRef> | null = null
+		let beforeUnusableIds: Array<string> = []
 		let beforeCredentialIds: Array<string> | null = null
 		try {
 			if (!need) {
@@ -273,10 +274,15 @@ export async function resolveMappingChanges(
 				: null
 			before = stored ? refsForIds(scope, stored.credentialIds) : null
 			beforeCredentialIds = stored ? [...stored.credentialIds] : null
+			const beforeUsableIds = new Set(before?.map((ref) => ref.id))
+			beforeUnusableIds = (beforeCredentialIds ?? []).filter(
+				(id) => !beforeUsableIds.has(id),
+			)
 			if (change.credentials === null) {
 				return {
 					...base,
 					before,
+					beforeUnusableIds,
 					after: [],
 					willEnable: false,
 					error: null,
@@ -311,6 +317,7 @@ export async function resolveMappingChanges(
 			return {
 				...base,
 				before,
+				beforeUnusableIds,
 				after: unique.map(toCredentialRef),
 				willEnable: target.willEnable,
 				error: null,
@@ -324,6 +331,7 @@ export async function resolveMappingChanges(
 			return {
 				...base,
 				before,
+				beforeUnusableIds,
 				after: [],
 				willEnable: false,
 				error: error.error,
@@ -533,18 +541,6 @@ export async function writeMappingChanges(
 		}
 	}
 	for (const change of finalChanges) {
-		if (options.requireUnchanged && change.rowTarget) {
-			guards.push(
-				buildCredentialMappingUnchangedStatement({
-					db,
-					orgId: scope.savedPackage.userId,
-					packageId: scope.savedPackage.id,
-					needKey: change.needKey,
-					target: change.rowTarget,
-					credentialIds: change.beforeCredentialIds,
-				}),
-			)
-		}
 		let rowTarget = change.rowTarget
 		if (!rowTarget && change.willEnable && change.trigger) {
 			const enablementId = await enableTrigger(change.trigger, change)
@@ -555,6 +551,20 @@ export async function writeMappingChanges(
 			}
 		}
 		if (!rowTarget) continue
+		// A trigger that was off at resolve may have been turned on and mapped
+		// since; its adopted enablement must still have no row.
+		if (options.requireUnchanged) {
+			guards.push(
+				buildCredentialMappingUnchangedStatement({
+					db,
+					orgId: scope.savedPackage.userId,
+					packageId: scope.savedPackage.id,
+					needKey: change.needKey,
+					target: rowTarget,
+					credentialIds: change.beforeCredentialIds,
+				}),
+			)
+		}
 		statements.push(
 			buildWriteCredentialMappingStatement({
 				db,

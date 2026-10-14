@@ -145,6 +145,8 @@ export function paintPackageTitleInstallConfirm(
 	const idleTooltip =
 		control.getAttribute('data-title-idle-tooltip') ?? idleLabel
 	control.setAttribute('aria-label', armed ? CONFIRM_FORK_LABEL : idleLabel)
+	const label = control.querySelector('[data-title-status-label]')
+	if (label) label.textContent = armed ? CONFIRM_FORK_LABEL : idleLabel
 	const tooltip = control.querySelector('[data-title-status-tooltip]')
 	if (tooltip) {
 		tooltip.textContent = armed ? CONFIRM_FORK_LABEL : idleTooltip

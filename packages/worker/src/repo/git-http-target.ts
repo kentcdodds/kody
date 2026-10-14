@@ -67,6 +67,13 @@ export function parseGitCredentialRepoPath(path: string): {
  * hierarchy: upload-pack needs `package:read`; receive-pack needs
  * `package:write` (write-only tokens may push without clone). Returns null
  * when the caller cannot access for `needWrite`.
+ *
+ * Git auth is **user-wide across orgs** (ADR 0070 / `guide:auth_setup_git`):
+ * there is no `?org=` on the git URL and the login org must not gate access.
+ * Authz binds to the **resource owner's** org via membership or a live grant
+ * (`loadOrgBindingForOrg(viewer, resourceOwnerId)`), plus the token's scopes.
+ * A user-owned `setup-git` token (`org_binding: user`) must therefore open
+ * every `@owner/name.git` the person can already access in any org.
  */
 export async function resolveGitHttpTargetAccess(input: {
 	env: Env
@@ -220,9 +227,11 @@ function apiTokenScopesAllow(
 async function loadScopedPackageAccess(input: {
 	env: Env
 	viewer: Pick<McpUserContext, 'userId' | 'username'>
+	/** Resource owner org id (`@owner` of the git URL), never the login org. */
 	ownerId: string
 	scopes: ReadonlyArray<ApiTokenScope> | null
 }): Promise<EffectivePermissions | null> {
+	// Bind to the resource owner's org — not token.org_id / MCP login org.
 	const binding = await loadOrgBindingForOrg(
 		input.env.APP_DB,
 		input.viewer.userId,
