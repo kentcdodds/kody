@@ -190,7 +190,7 @@ test('a primitive card link and Back/Forward paint styled and at the restored sc
 test('a superseding feature navigation waits for the stylesheet already loading', async ({
 	page,
 }) => {
-	await openWarmHomepage(page, ['/features/memory', '/features/integrations'])
+	await openWarmHomepage(page, ['/features/memory', '/features/credentials'])
 	await page.route('**/feature-pages.css', async (route) => {
 		await new Promise((resolve) => setTimeout(resolve, 2_500))
 		await route.continue()
@@ -203,8 +203,8 @@ test('a superseding feature navigation waits for the stylesheet already loading'
 	await expect(
 		page.locator('link[rel="stylesheet"][href="/feature-pages.css"]'),
 	).toBeAttached()
-	await primitiveCardLink(page, 'integrations').click()
-	await expect(page).toHaveURL(/\/features\/integrations$/)
+	await primitiveCardLink(page, 'credentials').click()
+	await expect(page).toHaveURL(/\/features\/credentials$/)
 	await expect(page.locator('.feature-detail')).toBeVisible()
 	await expectFeatureStylesheetApplied(page)
 	const recording = await stopHistoryRecording(page)

@@ -18,7 +18,7 @@ export type PrimitiveCard = {
 	orb: string
 }
 
-/** Widget scenes also render on `/features/secrets`, which has no card. */
+/** The secrets scenes on `/features/credentials` reuse the widget frame. */
 export type PrimitiveWidgetId = LandingPrimitiveId | 'secrets'
 
 export const primitiveCards = [
@@ -60,5 +60,5 @@ export const primitiveCards = [
 ] as const satisfies ReadonlyArray<PrimitiveCard>
 
 export function primitiveFeatureHref(id: LandingPrimitiveId) {
-	return `/features/${id}`
+	return id === 'integrations' ? '/features/credentials' : `/features/${id}`
 }

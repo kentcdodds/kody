@@ -74,10 +74,10 @@ export const publicOgPages = {
 	features: {
 		imageTitle: 'Your agents’ cloud',
 		imageSubtitle:
-			'Memory, secrets, packages, triggers, integrations, and apps for your connected AI agents.',
+			'Memory, packages, triggers, credentials, and apps for your connected AI agents.',
 		ogTitle: 'Kody features for your AI agents | Kody',
 		ogDescription:
-			'Memory, secrets, packages, triggers, integrations, and apps for your connected AI agents.',
+			'Memory, packages, triggers, credentials, and apps for your connected AI agents.',
 		path: '/features',
 	},
 	'feature-memory': {
@@ -88,15 +88,6 @@ export const publicOgPages = {
 		ogDescription:
 			'Save facts and preferences in Kody and use them with agents connected to your account.',
 		path: '/features/memory',
-	},
-	'feature-secrets': {
-		imageTitle: 'Your agent can use the key. It can’t read it.',
-		imageSubtitle:
-			'Keep credentials out of the conversation and send them only to hosts you approve.',
-		ogTitle: 'API secrets for your AI agents | Kody',
-		ogDescription:
-			'Keep credentials out of the conversation and send them only to hosts you approve.',
-		path: '/features/secrets',
 	},
 	'feature-packages': {
 		imageTitle: 'Work worth keeping.',
@@ -116,14 +107,14 @@ export const publicOgPages = {
 			'Start saved packages from schedules, webhooks, incoming email, and package events.',
 		path: '/features/triggers',
 	},
-	'feature-integrations': {
-		imageTitle: 'Connect once. Keep working.',
+	'feature-credentials': {
+		imageTitle: 'Your agent can use the key. It can’t read it.',
 		imageSubtitle:
-			'Connect service accounts so saved packages can use the authorization your work needs.',
-		ogTitle: 'Service connections for your AI agents | Kody',
+			'API keys and OAuth connections your agents use but never see, sent only to hosts you approve.',
+		ogTitle: 'Credentials for your AI agents | Kody',
 		ogDescription:
-			'Connect service accounts so saved packages can use the authorization your work needs.',
-		path: '/features/integrations',
+			'Keep API keys and OAuth connections out of the conversation. Anything that speaks OAuth can connect, and Kody sends credentials only to hosts you approve.',
+		path: '/features/credentials',
 	},
 	'feature-apps': {
 		imageTitle: 'Give your work an interface.',

@@ -369,6 +369,7 @@ export const routes = route({
 	features: '/features',
 	featureMemory: '/features/memory',
 	featureSecrets: '/features/secrets',
+	featureCredentials: '/features/credentials',
 	featurePackages: '/features/packages',
 	featureTriggers: '/features/triggers',
 	featureIntegrations: '/features/integrations',

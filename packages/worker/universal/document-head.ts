@@ -198,8 +198,9 @@ function publicPageHead(
 function featurePageHead(
 	pageId: PublicOgPageId,
 	title: string,
-	scenes?: string,
+	scenes: string | ReadonlyArray<string> = [],
 ): DocumentHeadDescriptor {
+	const sceneSheets = typeof scenes === 'string' ? [scenes] : scenes
 	return {
 		...publicPageHead(pageId, title, {
 			links: [
@@ -208,15 +209,11 @@ function featurePageHead(
 					hrefPath: '/feature-pages.css',
 					sameOrigin: true,
 				},
-				...(scenes
-					? [
-							{
-								rel: 'stylesheet',
-								hrefPath: `/feature-scenes/${scenes}.css`,
-								sameOrigin: true,
-							},
-						]
-					: []),
+				...sceneSheets.map((scene) => ({
+					rel: 'stylesheet',
+					hrefPath: `/feature-scenes/${scene}.css`,
+					sameOrigin: true,
+				})),
 			],
 		}),
 		description: publicOgPages[pageId].ogDescription,
@@ -487,11 +484,6 @@ const routeDocumentHeads = {
 		'Shared memory for your AI agents | Kody',
 		'memory',
 	),
-	[routePattern(routes.featureSecrets)]: featurePageHead(
-		'feature-secrets',
-		'API secrets for your AI agents | Kody',
-		'secrets',
-	),
 	[routePattern(routes.featurePackages)]: featurePageHead(
 		'feature-packages',
 		'Reusable packages for your AI agents | Kody',
@@ -502,10 +494,10 @@ const routeDocumentHeads = {
 		'Triggers and automation for your AI agents | Kody',
 		'triggers',
 	),
-	[routePattern(routes.featureIntegrations)]: featurePageHead(
-		'feature-integrations',
-		'Service connections for your AI agents | Kody',
-		'integrations',
+	[routePattern(routes.featureCredentials)]: featurePageHead(
+		'feature-credentials',
+		'Credentials for your AI agents | Kody',
+		['secrets', 'integrations'],
 	),
 	[routePattern(routes.featureApps)]: featurePageHead(
 		'feature-apps',

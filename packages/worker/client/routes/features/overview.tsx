@@ -74,7 +74,7 @@ export function FeaturesOverview() {
 					<span aria-hidden="true">→</span>
 					<a href="/features/packages">Run your package</a>
 					<span aria-hidden="true">→</span>
-					<a href="/features/integrations">Use your account</a>
+					<a href="/features/credentials">Use your account</a>
 					<span aria-hidden="true">→</span>
 					<a href="/features/apps">Review in your app</a>
 				</div>

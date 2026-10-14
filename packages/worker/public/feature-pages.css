@@ -1471,6 +1471,17 @@
 .feature-detail:has(.apps) {
 	--hue: 345;
 }
+/* `/features/credentials` nests the secrets and integrations scene wrappers;
+   the whole page takes the credentials green. */
+.feature-detail:has(.credentials),
+.feature-detail .credentials,
+.feature-detail .credentials :is(.secrets, .integrations) {
+	--hue: 148;
+	--primitive-secrets: var(--primitive-integrations);
+}
+.feature-detail .credentials :is(.secrets, .integrations) {
+	background: transparent;
+}
 .feature-detail {
 	background: light-dark(oklch(0.955 0.004 250), oklch(0.22 0.025 var(--hue)));
 }

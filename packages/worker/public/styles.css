@@ -120,8 +120,8 @@
 	   art: memory red, packages blue, triggers yellow, integrations
 	   (credentials) green, apps purple. Apps sits a step lighter than
 	   secrets so the dark ink on its scene buttons clears 4.5:1. Secrets
-	   keeps its purple for the `/features/secrets` scenes; it has no
-	   lantern orb. */
+	   is no longer a card; `/features/credentials` maps it to
+	   the credentials green. */
 	--primitive-memory: oklch(0.63 0.22 29);
 	--primitive-secrets: oklch(0.6 0.22 300);
 	--primitive-packages: oklch(0.6 0.2 255);

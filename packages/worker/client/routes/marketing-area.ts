@@ -11,9 +11,8 @@ export { TermsRoute } from './terms.tsx'
 export {
 	FeaturesRoute,
 	MemoryRoute,
-	SecretsRoute,
 	PackagesRoute,
 	TriggersRoute,
-	IntegrationsRoute,
+	CredentialsRoute,
 	AppsRoute,
 } from './features.tsx'

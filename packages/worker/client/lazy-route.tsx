@@ -396,10 +396,9 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.features),
 		routePattern(routes.featureMemory),
-		routePattern(routes.featureSecrets),
 		routePattern(routes.featurePackages),
 		routePattern(routes.featureTriggers),
-		routePattern(routes.featureIntegrations),
+		routePattern(routes.featureCredentials),
 		routePattern(routes.featureApps),
 		routePattern(routes.business),
 		routePattern(routes.pricing),

@@ -85,10 +85,9 @@ function isRedesignedMarketingPath(pathname: string) {
 		pathname === '/' ||
 		pathname === '/features' ||
 		pathname === '/features/memory' ||
-		pathname === '/features/secrets' ||
 		pathname === '/features/packages' ||
 		pathname === '/features/triggers' ||
-		pathname === '/features/integrations' ||
+		pathname === '/features/credentials' ||
 		pathname === '/features/apps' ||
 		pathname === '/for/business' ||
 		pathname === '/pricing' ||
