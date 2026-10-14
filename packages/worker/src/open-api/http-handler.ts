@@ -388,7 +388,7 @@ async function handleCapabilityProxyGatewayFetchStream(input: {
 			recordUsage(
 				input.env,
 				{
-					userId: input.ctx.callerContext.user.userId,
+					userId: personalOrgIdForPerson(input.ctx.callerContext.user),
 					eventType: 'api_call',
 					entityId: capabilityProxyObservationEntityId({
 						baseEntityId: input.operationId,

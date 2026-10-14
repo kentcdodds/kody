@@ -314,6 +314,10 @@ function inheritedMembership(
 ): RequestContext['membership'] {
 	if (!lineage.actor) return null
 	if (lineage.membership === undefined) {
+		// Legacy equal-id personal orgs only: actor.userId === org.id.
+		// Distinct personal orgs always persist membership on lineage
+		// (requestLineage); do not infer Owner from credential.orgId alone
+		// (that would promote team Members).
 		const personalOwner =
 			String(lineage.actor.userId) === String(binding.org.id)
 		return personalOwner && binding.role ? { role: binding.role } : null
