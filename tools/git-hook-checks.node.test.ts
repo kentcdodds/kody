@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -577,6 +578,100 @@ test('withStagedTreeForTypecheck runs typecheck in a detached index worktree', a
 		).toBe(true)
 		expect(seenCwd).toContain('pre-commit-typecheck-')
 		expect(logs[0]).toContain('typechecking staged tree')
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('withStagedTreeForTypecheck clears GIT_INDEX_FILE for worktree ops', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-index-'))
+	const treeSha = 'a'.repeat(40)
+	const commitSha = 'b'.repeat(40)
+	const previous = process.env.GIT_INDEX_FILE
+	process.env.GIT_INDEX_FILE = join(root, 'alt-index')
+	try {
+		const seen: Array<string | undefined> = []
+		const git: GitRunner = (args) => {
+			if (args[0] === 'worktree') {
+				seen.push(process.env.GIT_INDEX_FILE)
+			}
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'write-tree') {
+				expect(process.env.GIT_INDEX_FILE).toBe(join(root, 'alt-index'))
+				return gitResult(0, `${treeSha}\n`)
+			}
+			if (args.includes('commit-tree')) {
+				return gitResult(0, `${commitSha}\n`)
+			}
+			if (args[0] === 'worktree' && args[1] === 'add') {
+				return gitResult(0, '')
+			}
+			if (args[0] === 'worktree' && args[1] === 'remove') {
+				return gitResult(0, '')
+			}
+			return gitResult(1)
+		}
+		await withStagedTreeForTypecheck({
+			git,
+			repoRoot: root,
+			run: () => 0,
+		})
+		expect(seen.length).toBeGreaterThanOrEqual(2)
+		expect(seen.every((value) => value === undefined)).toBe(true)
+		expect(process.env.GIT_INDEX_FILE).toBe(join(root, 'alt-index'))
+	} finally {
+		if (previous === undefined) {
+			delete process.env.GIT_INDEX_FILE
+		} else {
+			process.env.GIT_INDEX_FILE = previous
+		}
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('withStagedTreeForTypecheck unlinks node_modules before worktree remove', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-nm-'))
+	const repoModules = join(root, 'node_modules')
+	const treeSha = 'c'.repeat(40)
+	const commitSha = 'd'.repeat(40)
+	await mkdir(repoModules, { recursive: true })
+	try {
+		let worktreePath = ''
+		const git: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'write-tree') {
+				return gitResult(0, `${treeSha}\n`)
+			}
+			if (args.includes('commit-tree')) {
+				return gitResult(0, `${commitSha}\n`)
+			}
+			if (args[0] === 'worktree' && args[1] === 'add') {
+				worktreePath = args[3] ?? ''
+				mkdirSync(worktreePath, { recursive: true })
+				return gitResult(0, '')
+			}
+			if (args[0] === 'worktree' && args[1] === 'remove') {
+				expect(existsSync(join(worktreePath, 'node_modules'))).toBe(false)
+				expect(existsSync(repoModules)).toBe(true)
+				return gitResult(0, '')
+			}
+			return gitResult(1)
+		}
+		await withStagedTreeForTypecheck({
+			git,
+			repoRoot: root,
+			run: (cwd) => {
+				expect(cwd).toBeTruthy()
+				expect(existsSync(join(cwd!, 'node_modules'))).toBe(true)
+				return 0
+			},
+		})
+		expect(worktreePath.length).toBeGreaterThan(0)
+		expect(existsSync(repoModules)).toBe(true)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

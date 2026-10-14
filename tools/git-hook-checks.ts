@@ -273,7 +273,10 @@ export async function withStagedTreeForTypecheck<T>(input: {
 	log(
 		`pre-commit: typechecking staged tree in ${worktreePath} (index ${indexTree.slice(0, 12)})`,
 	)
-	const add = input.git([
+	// worktree add/remove must not inherit pre-commit GIT_INDEX_FILE — that
+	// alternate index can be clobbered while the worktree is initialized, so
+	// the hook would typecheck one tree and commit another.
+	const add = gitWithoutIndexFile(input.git, [
 		'worktree',
 		'add',
 		'--detach',
@@ -314,7 +317,20 @@ function removeStagedTypecheckWorktree(
 	worktreePath: string,
 	log: (message: string) => void,
 ) {
-	const remove = git(['worktree', 'remove', '--force', worktreePath])
+	try {
+		// Drop the junction/symlink first so recursive deletes (and older Git
+		// for Windows worktree remove) cannot traverse into the real
+		// repo node_modules.
+		rmSync(join(worktreePath, 'node_modules'), { force: true })
+	} catch {
+		// Missing link is fine.
+	}
+	const remove = gitWithoutIndexFile(git, [
+		'worktree',
+		'remove',
+		'--force',
+		worktreePath,
+	])
 	if (remove.status !== 0) {
 		log(
 			`pre-commit: warning: git worktree remove failed (${remove.stderr.trim() || remove.stdout.trim() || 'unknown'}); removing ${worktreePath} from disk`,
@@ -324,7 +340,28 @@ function removeStagedTypecheckWorktree(
 		} catch {
 			// Best-effort.
 		}
-		git(['worktree', 'prune'])
+		gitWithoutIndexFile(git, ['worktree', 'prune'])
+	}
+}
+
+/**
+ * Run git with `GIT_INDEX_FILE` cleared. Pre-commit may set an alternate
+ * index; `git worktree add/remove` must not rewrite it.
+ */
+function gitWithoutIndexFile(
+	git: GitRunner,
+	args: ReadonlyArray<string>,
+): GitCommandResult {
+	const previous = process.env.GIT_INDEX_FILE
+	delete process.env.GIT_INDEX_FILE
+	try {
+		return git(args)
+	} finally {
+		if (previous === undefined) {
+			delete process.env.GIT_INDEX_FILE
+		} else {
+			process.env.GIT_INDEX_FILE = previous
+		}
 	}
 }
 
@@ -632,7 +669,18 @@ function isZeroSha(sha: string) {
 }
 
 function defaultGit(args: ReadonlyArray<string>): GitCommandResult {
-	const result = spawnSync('git', args, { encoding: 'utf8' })
+	const env =
+		args[0] === 'worktree'
+			? (() => {
+					const next = { ...process.env }
+					delete next.GIT_INDEX_FILE
+					return next
+				})()
+			: undefined
+	const result = spawnSync('git', args, {
+		encoding: 'utf8',
+		...(env ? { env } : {}),
+	})
 	return {
 		status: result.status ?? 1,
 		stdout: result.stdout ?? '',
