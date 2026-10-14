@@ -6,14 +6,11 @@ import {
 	createRouteData,
 	renderRoutePendingStatus,
 } from '#client/route-data.tsx'
-import {
-	fetchOnboardingPayload,
-	type OnboardingPayload,
-} from '#client/routes/onboarding-payload.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import {
@@ -110,6 +107,7 @@ const ecosystemPathSteps = [
 const ecosystemTriggers = ['Webhook', 'Cron', 'HTTP', 'App'] as const
 
 const believeHref = routes.believe.href()
+const connectYourAgentDocHref = docHref('connect-your-agent')
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -141,19 +139,13 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [onboarding, landingHeroVideos] = await Promise.all([
-		fetchOnboardingPayload(signal),
-		fetchLandingHeroVideos(signal),
-	])
-	const result: RouteLoaderResult = {}
-	if (onboarding) result.onboarding = onboarding
-	result.walkthroughHosts = pickWalkthroughHosts()
-	result.landingHeroVideos = landingHeroVideos
-	return result
+	return {
+		walkthroughHosts: pickWalkthroughHosts(),
+		landingHeroVideos: await fetchLandingHeroVideos(signal),
+	}
 }
 
 type HomePagePayloads = {
-	onboarding: OnboardingPayload | null
 	walkthroughHosts?: WalkthroughHostPick
 	landingHeroVideos: Array<LandingHeroVideoItem>
 }
@@ -163,38 +155,25 @@ export function HomeRoute(handle: Handle) {
 	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: HomePagePayloads | null = null
-	const homeData = createRouteData<'onboarding', HomePagePayloads>({
+	const homeData = createRouteData<'landingHeroVideos', HomePagePayloads>({
 		consume(handle, href) {
 			if (!isHomePath(href)) return null
-			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
 			const videos = tryConsumeRouteLoaderData(
 				handle,
 				'landingHeroVideos',
 				href,
 			)
-			// Optional keys stand on their own; apply them even when the
-			// required onboarding key is missing and the fallback fetch runs.
+			// Hosts stand on their own; apply them even when the videos key is
+			// missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			if (videos) landingHeroVideos = presentLandingHeroVideos(videos)
-			if (!onboarding) return null
-			return {
-				onboarding,
-				walkthroughHosts: hosts,
-				landingHeroVideos: videos
-					? presentLandingHeroVideos(videos)
-					: landingHeroVideos,
-			}
+			if (!videos) return null
+			return { walkthroughHosts: hosts, landingHeroVideos: videos }
 		},
 		async load(_href, signal) {
-			const [onboarding, videos] = await Promise.all([
-				fetchOnboardingPayload(signal),
-				fetchLandingHeroVideos(signal),
-			])
 			return {
-				onboarding,
 				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
-				landingHeroVideos: videos,
+				landingHeroVideos: await fetchLandingHeroVideos(signal),
 			}
 		},
 	})
@@ -465,14 +444,27 @@ export function HomeRoute(handle: Handle) {
 	}
 }
 
-/** The page's one call to action: copy an agent-led setup prompt. */
+/**
+ * The page's one call to action: copy an agent-led setup prompt. Copying
+ * needs JavaScript, so without it the same label links to the connect docs.
+ */
 function renderConnectCta() {
 	return (
-		<BuildWithAgentButton
-			label={landingHeroPrimaryCta}
-			variant="pill"
-			onboardingPage={false}
-		/>
+		<>
+			<span class="landing-connect-copy">
+				<BuildWithAgentButton
+					label={landingHeroPrimaryCta}
+					variant="pill"
+					onboardingPage={false}
+				/>
+			</span>
+			<a
+				href={connectYourAgentDocHref}
+				class="landing-connect-fallback landing-inline-link"
+			>
+				{landingHeroPrimaryCta}
+			</a>
+		</>
 	)
 }
 

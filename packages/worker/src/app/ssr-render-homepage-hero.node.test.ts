@@ -96,6 +96,11 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 		]),
 	).toEqual([])
 	expect(landingHeroPrimaryCta).toBe('Connect your agent')
+	// Without JavaScript the copy button cannot work, so the CTA also ships
+	// as a plain link to the connect docs.
+	expect(anonymous.hero).toContain(
+		'href="/docs/connect-your-agent" class="landing-connect-fallback',
+	)
 	expect(anonymous.hero).not.toContain('/signup')
 	expect(anonymous.hero).not.toContain('landing-hero-video')
 	expect(anonymous.hero).not.toContain('landing-hero-agents')

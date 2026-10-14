@@ -2738,6 +2738,12 @@ html.is-settled {
 	margin: 1.8rem auto 0;
 }
 
+/* `page-init.js` sets `html.js` before paint, so exactly one CTA shows. */
+html.js .landing-connect-fallback,
+html:not(.js) .landing-connect-copy {
+	display: none;
+}
+
 /*
  * Cloudflare's managed Turnstile widget is 300×65. Reserve that exact box
  * on every `.kody-turnstile` host from first paint so the iframe cannot
