@@ -194,7 +194,12 @@ function withDeletingAtAfterWritableCheck(
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 			if (
-				!normalized.includes('select deleting_at from users') ||
+				!(
+					normalized.includes('select deleting_at from users') ||
+					normalized.includes(
+						'select deleting_at, stable_user_id, personal_org_id',
+					)
+				) ||
 				!normalized.includes('stable_user_id')
 			) {
 				return statement

@@ -307,7 +307,10 @@ test('buildMcpUserContextWithOrgBindingFromGrantProps reads the user row and org
 					const normalized = sql.replace(/\s+/g, ' ').toLowerCase()
 					let result: unknown = null
 					if (normalized.includes('from users')) result = row
-					else if (normalized.includes('from org_memberships')) {
+					else if (
+						normalized.includes('from org_memberships') ||
+						normalized.includes('join org_memberships')
+					) {
 						result = options.membershipRow
 					} else if (normalized.includes('exists (')) {
 						result = options.grantRow

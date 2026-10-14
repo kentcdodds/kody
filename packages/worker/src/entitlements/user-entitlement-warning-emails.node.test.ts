@@ -133,7 +133,10 @@ function createDb(
 					return null
 				},
 				async all<T>() {
-					if (normalized.includes('from org_memberships')) {
+					if (
+						normalized.includes('from org_memberships') ||
+						normalized.includes('join org_memberships')
+					) {
 						return { results: [] as Array<T> }
 					}
 					if (

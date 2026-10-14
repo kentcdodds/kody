@@ -59,7 +59,10 @@ function withRacingPurge(
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 			const isWritableCheck =
-				normalized.includes('select deleting_at from users') &&
+				(normalized.includes('select deleting_at from users') ||
+					normalized.includes(
+						'select deleting_at, stable_user_id, personal_org_id',
+					)) &&
 				normalized.includes('stable_user_id')
 			const isConnectionInsert = normalized.includes(
 				'insert into oauth_connections',

@@ -19,8 +19,8 @@ function createCommunityDb() {
 		username TEXT NOT NULL UNIQUE,
 		email TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
-		stable_user_id TEXT
-			personal_org_id TEXT,
+		stable_user_id TEXT,
+		personal_org_id TEXT
 	)`)
 	// Mirrors the community_listings, community_ratings, and community_forks
 	// schemas in packages/worker/migrations/0001-squashed-init.sql.

@@ -20,8 +20,8 @@ async function recreateUsersTable(db: D1Database) {
 	username TEXT NOT NULL UNIQUE,
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
-	stable_user_id TEXT NOT NULL
-			personal_org_id TEXT,
+	stable_user_id TEXT NOT NULL,
+			personal_org_id TEXT
 )`,
 		)
 		.run()
