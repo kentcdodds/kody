@@ -75,9 +75,11 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   the last close came after that deploy. The sweep finds that branch from the
   `Preview deploy (branch: <name>)` run name `preview.yml` sets on dispatch.
   Previews deployed from `main`, from a branch with no PR, or before that run
-  name existed are kept. Both the PR and branch loops share one wall-clock
-  budget per run, so a run that spends it on PR cleanups still defers branch
-  cleanups cleanly instead of running past the job timeout.
+  name existed are kept, as is any preview whose newest deploy is still running
+  or whose recent runs came from different branches. Each delete re-checks the
+  PRs first. Both the PR and branch loops share one wall-clock budget per run,
+  so a run that spends it on PR cleanups still defers branch cleanups cleanly
+  instead of running past the job timeout.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the

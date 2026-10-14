@@ -192,30 +192,55 @@ type BranchPullRequest = {
 }
 
 /**
- * Latest `workflow_dispatch` branch deploy per `kody-branch-<slug>` Worker,
- * read from preview.yml's `run-name`. `runs` must be newest first, as the
- * GitHub runs listing returns them.
+ * Source branch and last deploy time per `kody-branch-<slug>` Worker, read
+ * from preview.yml's `run-name`. `runs` must be newest first, as the GitHub
+ * runs listing returns them. A preview's source is recorded only when its
+ * newest dispatch run has completed and every run back to (and including)
+ * its newest successful deploy came from the same branch; otherwise who owns
+ * the Worker is ambiguous (a failed run may or may not have uploaded) and the
+ * preview is kept. `deployedAt` is the newest run's completion time, so a
+ * Worker uploaded after its PR closed is never mistaken for a stale one.
  */
 export function collectBranchPreviewSources(
 	runs: ReadonlyArray<{
 		display_title?: unknown
 		head_branch?: unknown
-		created_at?: unknown
+		status?: unknown
+		conclusion?: unknown
+		updated_at?: unknown
 	}>,
 ) {
 	const sources = new Map<string, BranchPreviewSource>()
+	const pending = new Map<string, BranchPreviewSource>()
+	const decided = new Set<string>()
 	for (const run of runs) {
 		if (typeof run.display_title !== 'string') continue
-		if (typeof run.head_branch !== 'string') continue
-		if (typeof run.created_at !== 'string') continue
 		const match = branchDeployRunNamePattern.exec(run.display_title)
 		if (!match?.[1]) continue
 		const workerName = `kody-branch-${previewBranchSlug(match[1])}`
-		if (sources.has(workerName)) continue
-		sources.set(workerName, {
+		if (decided.has(workerName)) continue
+		const newest = pending.get(workerName)
+		if (
+			typeof run.head_branch !== 'string' ||
+			(newest
+				? newest.branch !== run.head_branch
+				: run.status !== 'completed' || typeof run.updated_at !== 'string')
+		) {
+			decided.add(workerName)
+			pending.delete(workerName)
+			continue
+		}
+		const source = newest ?? {
 			branch: run.head_branch,
-			deployedAt: run.created_at,
-		})
+			deployedAt: String(run.updated_at),
+		}
+		if (run.conclusion === 'success') {
+			sources.set(workerName, source)
+			decided.add(workerName)
+			pending.delete(workerName)
+		} else {
+			pending.set(workerName, source)
+		}
 	}
 	return sources
 }
@@ -249,6 +274,31 @@ export function planClosedSourceBranchSweep(input: {
 		stale.push({ workerName, branch: source.branch })
 	}
 	return stale
+}
+
+/**
+ * Re-checks a source-closed branch preview right before deleting it, like PR
+ * cleanup re-reads PR state: its PRs may have reopened, or a branch deploy may
+ * have started, while earlier cleanups ran.
+ */
+async function isSourceStillClosed(input: {
+	workerName: string
+	branch: string
+	sources: ReadonlyMap<string, BranchPreviewSource>
+	repository: string
+	githubToken: string
+	defaultBranch: string
+}) {
+	if (await isPreviewDeployInProgress(input)) return false
+	const pulls = await listBranchPullRequests(input)
+	return (
+		planClosedSourceBranchSweep({
+			liveBranchWorkerNames: [input.workerName],
+			sources: input.sources,
+			pullRequests: new Map([[input.branch, pulls]]),
+			defaultBranch: input.defaultBranch,
+		}).length === 1
+	)
 }
 
 type CloudflareClient = {
@@ -464,22 +514,28 @@ export async function listBranchPullRequests(input: {
 }): Promise<Array<BranchPullRequest>> {
 	const owner = input.repository.split('/')[0] ?? ''
 	const head = encodeURIComponent(`${owner}:${input.branch}`)
-	const json = await githubGet({
-		...input,
-		url: `https://api.github.com/repos/${input.repository}/pulls?head=${head}&state=all&per_page=100`,
-	})
-	if (!Array.isArray(json)) return []
-	return json.flatMap((pull: { state?: unknown; closed_at?: unknown }) =>
-		pull.state === 'open' || pull.state === 'closed'
-			? [
-					{
-						state: pull.state,
-						closedAt:
-							typeof pull.closed_at === 'string' ? pull.closed_at : null,
-					},
-				]
-			: [],
-	)
+	const pulls: Array<BranchPullRequest> = []
+	for (let page = 1; page <= 5; page += 1) {
+		const json = await githubGet({
+			...input,
+			url: `https://api.github.com/repos/${input.repository}/pulls?head=${head}&state=all&per_page=100&page=${String(page)}`,
+		})
+		if (!Array.isArray(json)) return pulls
+		for (const pull of json as Array<{
+			state?: unknown
+			closed_at?: unknown
+		}>) {
+			if (pull.state !== 'open' && pull.state !== 'closed') continue
+			pulls.push({
+				state: pull.state,
+				closedAt: typeof pull.closed_at === 'string' ? pull.closed_at : null,
+			})
+		}
+		if (json.length < 100) return pulls
+	}
+	// More PRs than we page through: treat as possibly open so it is kept.
+	pulls.push({ state: 'open', closedAt: null })
+	return pulls
 }
 
 /**
@@ -700,8 +756,27 @@ async function main() {
 				break
 			}
 			assertPreviewResourceName(workerName, 'worker')
-			console.log(`Cleaning up ${workerName}${dryRun ? ' (dry run)' : ''}.`)
 			try {
+				const closedEntry = closedSweep.find(
+					(entry) => entry.workerName === workerName,
+				)
+				if (
+					closedEntry &&
+					!(await isSourceStillClosed({
+						workerName,
+						branch: closedEntry.branch,
+						sources,
+						repository,
+						githubToken,
+						defaultBranch,
+					}))
+				) {
+					console.log(
+						`Skipping ${workerName}: its source PR reopened or a branch deploy started since planning.`,
+					)
+					continue
+				}
+				console.log(`Cleaning up ${workerName}${dryRun ? ' (dry run)' : ''}.`)
 				await cleanupPreviewResources({ workerName, dryRun, ...client })
 			} catch (error) {
 				console.error(error instanceof Error ? error.message : String(error))

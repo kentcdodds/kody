@@ -392,41 +392,69 @@ test('previewBranchSlug matches the preview.yml slug step', () => {
 	expect(previewBranchSlug('///')).toBe('preview')
 })
 
-test('collectBranchPreviewSources keeps the newest branch deploy per preview', () => {
+test('collectBranchPreviewSources records the newest unambiguous branch deploy per preview', () => {
+	const run = (
+		name: string,
+		branch: string,
+		updatedAt: string,
+		conclusion: string | null = 'success',
+		status = 'completed',
+	) => ({
+		display_title: `Preview ${name}`,
+		head_branch: branch,
+		status,
+		conclusion,
+		updated_at: updatedAt,
+	})
 	const sources = collectBranchPreviewSources([
+		run(
+			'deploy (branch: creds-a1-904c)',
+			'cursor/creds-904c',
+			'2026-10-13T19:40:00Z',
+		),
+		run('cleanup (branch: creds-a1-904c)', 'main', '2026-10-13T18:00:00Z'),
+		run('deploy (branch: creds-a1-904c)', 'main', '2026-10-12T00:00:00Z'),
+		// Newest run failed on the same branch: its later upload time counts.
+		run(
+			'deploy (branch: same)',
+			'feat/same',
+			'2026-10-13T12:00:00Z',
+			'failure',
+		),
+		run('deploy (branch: same)', 'feat/same', '2026-10-13T10:00:00Z'),
+		// A failed run from another branch may or may not own the Worker.
+		run('deploy (branch: shared)', 'feat/b', '2026-10-13T12:00:00Z', 'failure'),
+		run('deploy (branch: shared)', 'feat/a', '2026-10-13T10:00:00Z'),
+		// Still running: unknown until it finishes.
+		run(
+			'deploy (branch: busy)',
+			'feat/busy',
+			'2026-10-13T12:00:00Z',
+			null,
+			'in_progress',
+		),
+		run('deploy (branch: busy)', 'feat/busy', '2026-10-13T10:00:00Z'),
+		// Never deployed successfully.
+		run(
+			'deploy (branch: broken)',
+			'feat/broken',
+			'2026-10-13T12:00:00Z',
+			'failure',
+		),
+		run('deploy (pr: 12)', 'main', '2026-10-12T00:00:00Z'),
 		{
-			display_title: 'Preview deploy (branch: creds-a1-904c)',
-			head_branch: 'cursor/credentials-list-904c',
-			created_at: '2026-10-13T19:24:50Z',
-		},
-		{
-			display_title: 'Preview cleanup (branch: creds-a1-904c)',
-			head_branch: 'main',
-			created_at: '2026-10-13T18:00:00Z',
-		},
-		{
-			display_title: 'Preview deploy (branch: creds-a1-904c)',
-			head_branch: 'main',
-			created_at: '2026-10-12T00:00:00Z',
-		},
-		{
-			display_title: 'Preview deploy (pr: 12)',
-			head_branch: 'main',
-			created_at: '2026-10-12T00:00:00Z',
-		},
-		{
+			...run('', 'feature', '2026-10-12T00:00:00Z'),
 			display_title: 'feat: some PR title',
-			head_branch: 'feature',
-			created_at: '2026-10-12T00:00:00Z',
 		},
 	])
 	expect([...sources]).toEqual([
 		[
 			'kody-branch-creds-a1-904c',
-			{
-				branch: 'cursor/credentials-list-904c',
-				deployedAt: '2026-10-13T19:24:50Z',
-			},
+			{ branch: 'cursor/creds-904c', deployedAt: '2026-10-13T19:40:00Z' },
+		],
+		[
+			'kody-branch-same',
+			{ branch: 'feat/same', deployedAt: '2026-10-13T12:00:00Z' },
 		],
 	])
 })
@@ -484,6 +512,7 @@ test('listBranchPullRequests queries by owner:branch across states', async () =>
 		'kentcdodds:cursor/credentials-list-904c',
 	)
 	expect(urls[0]?.searchParams.get('state')).toBe('all')
+	expect(urls).toHaveLength(1)
 	expect(pulls).toEqual([
 		{ state: 'closed', closedAt: '2026-10-13T21:55:29Z' },
 		{ state: 'open', closedAt: null },
