@@ -55,7 +55,14 @@ export type MemoryPersonalizeCopyResult = {
 	wouldCopy: number
 	orphanNoReader: number
 	rows: Array<MemoryPersonalizeCopyRow>
+	/** Exclusive keyset: next call passes this as `orgCursor`. */
 	nextOrgCursor: string | null
+	/**
+	 * When non-null, the org after `nextOrgCursor` still has memories past this
+	 * id. Pass both cursors back to resume that org; only advance past the org
+	 * once this is null.
+	 */
+	nextMemoryCursor: string | null
 	warnings: Array<string>
 }
 
@@ -182,12 +189,22 @@ async function listTeamOrgsPage(input: {
 	return results ?? []
 }
 
-async function findPersonalSkipReason(input: {
+type PersonalSkip =
+	| {
+			reason: 'skipped_already_copied'
+			existing: McpMemoryRow
+	  }
+	| {
+			reason: 'skipped_content_duplicate'
+			existing: McpMemoryRow
+	  }
+
+async function findPersonalSkip(input: {
 	db: D1Database
 	personalOrgId: OwnerId
 	source: McpMemoryRow
 	provenanceUri: string
-}): Promise<'skipped_already_copied' | 'skipped_content_duplicate' | null> {
+}): Promise<PersonalSkip | null> {
 	let afterId: string | null = null
 	while (true) {
 		const rows = await listMemoriesByUserIdPage({
@@ -200,14 +217,14 @@ async function findPersonalSkipReason(input: {
 		for (const row of rows) {
 			const uris = parseJsonStringArray(row.source_uris_json)
 			if (uris.includes(input.provenanceUri)) {
-				return 'skipped_already_copied'
+				return { reason: 'skipped_already_copied', existing: row }
 			}
 			if (
 				row.subject === input.source.subject &&
 				row.summary === input.source.summary &&
 				row.details === input.source.details
 			) {
-				return 'skipped_content_duplicate'
+				return { reason: 'skipped_content_duplicate', existing: row }
 			}
 		}
 		if (rows.length < 100) break
@@ -244,21 +261,31 @@ async function copyOneMemoryToPerson(input: {
 		input.fromOrgId,
 		input.source.id,
 	)
-	const skip = await findPersonalSkipReason({
+	const skip = await findPersonalSkip({
 		db: input.env.APP_DB,
 		personalOrgId: toOrgId,
 		source: input.source,
 		provenanceUri,
 	})
 	if (skip) {
+		if (!input.dryRun && skip.reason === 'skipped_already_copied') {
+			// Reconcile Vectorize if a prior insert landed without an embedding.
+			await upsertMemoryVector(input.env, {
+				memoryId: skip.existing.id,
+				userId: toOrgId,
+				category: skip.existing.category,
+				status: skip.existing.status,
+				embedText: buildMemoryEmbedTextFromRow(skip.existing),
+			})
+		}
 		return {
 			sourceMemoryId: input.source.id,
 			fromOrgId: input.fromOrgId,
 			fromOrgSlug: input.fromOrgSlug,
 			personId: input.personId,
 			toOrgId,
-			newMemoryId: null,
-			outcome: skip,
+			newMemoryId: skip.existing.id,
+			outcome: skip.reason,
 		}
 	}
 	if (input.dryRun) {
@@ -276,11 +303,8 @@ async function copyOneMemoryToPerson(input: {
 	const now = new Date().toISOString()
 	const sourceUris = parseJsonStringArray(input.source.source_uris_json)
 	if (!sourceUris.includes(provenanceUri)) sourceUris.push(provenanceUri)
-	const detailsSuffix =
-		input.fromOrgSlug != null
-			? `\n\n(Copied from team org @${input.fromOrgSlug} memory ${input.source.id} during personal-memory migration.)`
-			: `\n\n(Copied from team org ${input.fromOrgId} memory ${input.source.id} during personal-memory migration.)`
-	const details = `${input.source.details}${detailsSuffix}`.slice(0, 2_000)
+	// Keep source details intact; provenance URI records the legacy origin.
+	const details = input.source.details
 	const newId = crypto.randomUUID()
 	const row: McpMemoryRow = {
 		id: newId,
@@ -357,6 +381,8 @@ export async function runMemoryPersonalizeCopy(input: {
 	env: Env
 	dryRun?: boolean
 	orgCursor?: string | null
+	/** Resume memories inside the first org after `orgCursor`. */
+	memoryCursor?: string | null
 	orgLimit?: number
 	memoryLimitPerOrg?: number
 	orgIds?: Array<string> | null
@@ -387,10 +413,20 @@ export async function runMemoryPersonalizeCopy(input: {
 		orgIds: input.orgIds ?? null,
 	})
 
-	for (const org of orgs) {
+	let nextOrgCursor: string | null = null
+	let nextMemoryCursor: string | null = null
+	let stopPaging = false
+	/** Last fully-finished org id in this invocation (exclusive resume point). */
+	let lastCompletedOrgId: string | null = input.orgCursor ?? null
+
+	for (let orgIndex = 0; orgIndex < orgs.length; orgIndex++) {
+		const org = orgs[orgIndex]!
 		scannedOrgs += 1
-		let afterMemoryId: string | null = null
+		let afterMemoryId: string | null =
+			orgIndex === 0 ? (input.memoryCursor ?? null) : null
 		let orgMemoryCount = 0
+		let orgExhausted = false
+
 		while (orgMemoryCount < memoryLimit) {
 			const pageLimit = Math.min(50, memoryLimit - orgMemoryCount)
 			const memories = await listMemoriesByUserIdPage({
@@ -400,10 +436,14 @@ export async function runMemoryPersonalizeCopy(input: {
 				limit: pageLimit,
 				statuses: ['active', 'archived'],
 			})
-			if (memories.length === 0) break
+			if (memories.length === 0) {
+				orgExhausted = true
+				break
+			}
 			for (const memory of memories) {
 				scannedMemories += 1
 				orgMemoryCount += 1
+				afterMemoryId = memory.id
 				const readers = await listMemoryReadersForOrgMemory({
 					db: input.env.APP_DB,
 					orgId: org.id,
@@ -463,14 +503,39 @@ export async function runMemoryPersonalizeCopy(input: {
 					}
 				}
 			}
-			if (memories.length < pageLimit) break
-			afterMemoryId = memories.at(-1)?.id ?? null
-			if (!afterMemoryId) break
+			if (memories.length < pageLimit) {
+				orgExhausted = true
+				break
+			}
 		}
+
+		if (!orgExhausted) {
+			const peek = await listMemoriesByUserIdPage({
+				db: input.env.APP_DB,
+				userId: org.id,
+				afterId: afterMemoryId,
+				limit: 1,
+				statuses: ['active', 'archived'],
+			})
+			if (peek.length > 0) {
+				nextOrgCursor = lastCompletedOrgId
+				nextMemoryCursor = afterMemoryId
+				warnings.push(
+					`Org ${org.slug ?? org.id} has more memories after ${afterMemoryId}; resume with orgCursor=${nextOrgCursor ?? '(start)'} memoryCursor=${nextMemoryCursor}.`,
+				)
+				stopPaging = true
+				break
+			}
+			orgExhausted = true
+		}
+
+		lastCompletedOrgId = org.id
 	}
 
-	const nextOrgCursor =
-		orgs.length === orgLimit ? (orgs.at(-1)?.id ?? null) : null
+	if (!stopPaging) {
+		nextOrgCursor = orgs.length === orgLimit ? (orgs.at(-1)?.id ?? null) : null
+		nextMemoryCursor = null
+	}
 
 	return {
 		dryRun,
@@ -483,6 +548,7 @@ export async function runMemoryPersonalizeCopy(input: {
 		orphanNoReader,
 		rows,
 		nextOrgCursor,
+		nextMemoryCursor,
 		warnings,
 	}
 }

@@ -15,9 +15,9 @@ members no `memory:*`, so the team pool was effectively owners-only, and agents
 could still misfile private facts into a shared pool or copy personal recall
 into org packages.
 
-Research across peer products ([Option A](https://cursor.com/canvas)): automatic
-memory stays personal; shared knowledge lives in human-curated instructions,
-files, or skills — for Kody, documented packages and org instructions.
+Research across peer products (Option A): automatic memory stays personal;
+shared knowledge lives in human-curated instructions, files, or skills — for
+Kody, documented packages and org instructions.
 
 ## Decision
 

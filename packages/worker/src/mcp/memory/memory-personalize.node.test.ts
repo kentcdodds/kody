@@ -279,3 +279,88 @@ test('runMemoryPersonalizeCopy copies to readers, skips content duplicates, and 
 		),
 	).toBe(true)
 })
+
+test('runMemoryPersonalizeCopy resumes an org via memoryCursor when memoryLimitPerOrg caps mid-org', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-page@example.com')
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-page',
+		email: 'ada-page@example.com',
+		personId: ada,
+	})
+	await provisionPersonalOrg(db, { stableUserId: ada, username: 'ada-page' })
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'page-co',
+		displayName: 'Page Co',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'page-co'`)
+		.first<{ id: string }>()
+	for (let i = 0; i < 5; i++) {
+		const id = `mem-page-${String(i).padStart(2, '0')}`
+		sqlite
+			.prepare(
+				`INSERT INTO mcp_memories (
+					id, user_id, status, subject, summary, details, created_at, updated_at
+				) VALUES (?, ?, 'active', ?, ?, '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(id, org!.id, `Subject ${i}`, `Summary ${i}`)
+	}
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+
+	const first = await runMemoryPersonalizeCopy({
+		env,
+		dryRun: false,
+		orgIds: [org!.id],
+		memoryLimitPerOrg: 2,
+	})
+	expect(first.scannedMemories).toBe(2)
+	expect(first.copied).toBe(2)
+	expect(first.nextMemoryCursor).toBeTruthy()
+	expect(first.nextOrgCursor).toBeNull()
+	expect(first.warnings.some((w) => w.includes('more memories'))).toBe(true)
+
+	const second = await runMemoryPersonalizeCopy({
+		env,
+		dryRun: false,
+		orgIds: [org!.id],
+		orgCursor: first.nextOrgCursor,
+		memoryCursor: first.nextMemoryCursor,
+		memoryLimitPerOrg: 2,
+	})
+	expect(second.scannedMemories).toBe(2)
+	expect(second.copied).toBe(2)
+	expect(second.nextMemoryCursor).toBeTruthy()
+
+	const third = await runMemoryPersonalizeCopy({
+		env,
+		dryRun: false,
+		orgIds: [org!.id],
+		orgCursor: second.nextOrgCursor,
+		memoryCursor: second.nextMemoryCursor,
+		memoryLimitPerOrg: 2,
+	})
+	expect(third.scannedMemories).toBe(1)
+	expect(third.copied).toBe(1)
+	expect(third.nextMemoryCursor).toBeNull()
+	expect(third.nextOrgCursor).toBeNull()
+
+	const personalId = personalOrgId(personIdFromStored(ada))
+	const { results: personalRows } = await db
+		.prepare(`SELECT source_uris_json FROM mcp_memories WHERE user_id = ?`)
+		.bind(personalId)
+		.all<{ source_uris_json: string }>()
+	const provenancePrefix = `https://kody.codes/legacy-org-memory/${org!.id}/mem-page-`
+	const copiedFromTeam = (personalRows ?? []).filter((row) =>
+		row.source_uris_json.includes(provenancePrefix),
+	)
+	expect(copiedFromTeam.length).toBe(5)
+})

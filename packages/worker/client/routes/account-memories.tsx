@@ -364,7 +364,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 							})}
 						>
 							{legacyReadOnly
-								? 'Showing up to the 100 most recent legacy memories for this workspace.'
+								? "Showing up to the 100 most recent legacy memories for this workspace. Agents no longer write here — new memories go to each person's personal org."
 								: 'Showing up to the 100 most recent personal memories. Agents create them through verify and upsert.'}
 						</p>
 						<RecordTable
