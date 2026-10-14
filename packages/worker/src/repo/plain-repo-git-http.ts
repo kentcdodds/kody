@@ -4,7 +4,14 @@ import {
 	resolveExistingArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
 import {
+	artifactsGitReceivePackBusyCode,
 	artifactsReceivePackBodyLimitBytes,
+	artifactsReceivePackBusyRetryAfterSeconds,
+	isArtifactsGitReceivePackBusyResponse,
+	plainRepoGitHttpErrorBodyReadLimitBytes,
+	readCappedResponseText,
+	repositoryBusyRetryMessage,
+	repositoryBusyRetryResponse,
 	artifactsReceivePackBusyBackoffMs,
 	artifactsReceivePackWaitBudgetMs,
 	readReceivePackBodyWithLimit,
@@ -13,20 +20,35 @@ import {
 	ReceivePackWaitTimeoutError,
 	waitOutReceivePackBusy,
 	withReceivePackGate,
-} from '#worker/repo/artifacts-receive-pack-wait.ts'
+} from '@kody-internal/shared/artifacts-receive-pack-wait.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { evaluateRepoFeatureFlag } from '#worker/feature-flags/repo-flags.ts'
+import { repoPushQueueFlagKey } from '#universal/feature-flags/registry.ts'
+import {
+	repoPushQueueOutcomeHeader,
+	repoPushQueuePathDirect,
+	repoPushQueuePathHeader,
+	repoPushQueuePathQueued,
+	repoPushQueueRetryAfterSeconds,
+	repoPushQueueSourceIdHeader,
+	repoPushQueueUpstreamHeader,
+	repoPushQueueV1Path,
+} from '@kody-internal/shared/repo-push-queue-protocol.ts'
 
 const gitUploadPackService = 'git-upload-pack'
 const gitReceivePackService = 'git-receive-pack'
-/** Upstream Artifacts lock-contention code observed on concurrent receive-pack. */
-export const artifactsGitReceivePackBusyCode = 'artifacts_git_receive_pack_busy'
-export const artifactsReceivePackBusyRetryAfterSeconds = 5
-export const repositoryBusyRetryMessage = 'repository busy, retry'
 
 export {
+	artifactsGitReceivePackBusyCode,
 	artifactsReceivePackBodyLimitBytes,
 	artifactsReceivePackBusyBackoffMs,
+	artifactsReceivePackBusyRetryAfterSeconds,
 	artifactsReceivePackWaitBudgetMs,
+	isArtifactsGitReceivePackBusyResponse,
+	plainRepoGitHttpErrorBodyReadLimitBytes,
+	readCappedResponseText,
+	repositoryBusyRetryMessage,
+	repositoryBusyRetryResponse,
 }
 
 const hopByHopResponseHeaders = new Set([
@@ -126,47 +148,6 @@ export function buildPlainRepoGitHttpRemote(input: {
 	return `${origin}/git/sources/${input.sourceId}.git`
 }
 
-export const plainRepoGitHttpErrorBodyReadLimitBytes = 64 * 1024
-
-/** Read up to `limitBytes` of an error response for busy-code sniffing. */
-export async function readCappedResponseText(
-	response: Response,
-	limitBytes = plainRepoGitHttpErrorBodyReadLimitBytes,
-): Promise<string> {
-	if (!response.body) return ''
-	const reader = response.body.getReader()
-	const decoder = new TextDecoder()
-	let result = ''
-	let totalBytes = 0
-	try {
-		while (totalBytes < limitBytes) {
-			let chunk: ReadableStreamReadResult<Uint8Array>
-			try {
-				chunk = await reader.read()
-			} catch {
-				// Partial body is still useful when the upstream stream errors mid-read.
-				break
-			}
-			if (chunk.done) break
-			totalBytes += chunk.value.byteLength
-			result += decoder.decode(chunk.value, { stream: true })
-		}
-	} catch {
-		// Return whatever we sniffed before an unexpected failure.
-	} finally {
-		try {
-			reader.releaseLock()
-		} catch {
-			try {
-				await reader.cancel()
-			} catch {
-				// ignore
-			}
-		}
-	}
-	return result
-}
-
 const plainRepoGitHttpHeadersTimeoutMs = 120_000
 
 async function fetchWithHeadersTimeout(
@@ -184,27 +165,6 @@ async function fetchWithHeadersTimeout(
 		clearTimeout(timeoutId)
 		throw error
 	}
-}
-
-export function isArtifactsGitReceivePackBusyResponse(input: {
-	status: number
-	bodyText: string
-}) {
-	if (input.status >= 200 && input.status < 300) return false
-	return input.bodyText.includes(artifactsGitReceivePackBusyCode)
-}
-
-export function repositoryBusyRetryResponse(
-	retryAfterSeconds = artifactsReceivePackBusyRetryAfterSeconds,
-) {
-	return new Response(repositoryBusyRetryMessage, {
-		status: 503,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'text/plain; charset=utf-8',
-			'Retry-After': String(retryAfterSeconds),
-		},
-	})
 }
 
 function notFoundResponse() {
@@ -293,6 +253,8 @@ function artifactsAuthHeaders(token: string) {
 
 type ResolvedPlainGitTarget = {
 	remote: string
+	/** `entity_sources.user_id`, for repo-scoped flag evaluation. */
+	ownerId: string
 }
 
 async function resolvePlainRepoGitTarget(input: {
@@ -346,7 +308,10 @@ async function resolvePlainRepoGitTarget(input: {
 		}
 	}
 
-	return { kind: 'ok', target: { remote: info.remote } }
+	return {
+		kind: 'ok',
+		target: { remote: info.remote, ownerId: source.user_id },
+	}
 }
 
 function buildArtifactsSmartHttpUrl(
@@ -481,7 +446,83 @@ async function proxyArtifactsReceivePack(input: {
 	}
 }
 
+/**
+ * Repo-scoped `repo-push-queue` flag. Evaluation failures fail closed to the
+ * isolate-local wait-and-retry path, like every other flag.
+ */
+async function isRepoPushQueueEnabled(
+	db: D1Database,
+	subject: { sourceId: string; ownerId: string },
+) {
+	try {
+		return (await evaluateRepoFeatureFlag(db, repoPushQueueFlagKey, subject))
+			.enabled
+	} catch (error) {
+		console.warn('repo-push-queue-flag-evaluation-failed', {
+			sourceId: subject.sourceId,
+			error: error instanceof Error ? error.message : String(error),
+		})
+		return false
+	}
+}
+
+/**
+ * Hand the push to the per-repo `RepoPushQueueV1` Durable Object
+ * (`kody-push-queue`). The queue acks only after the pack has landed in its
+ * storage, sends one push at a time, and returns the Artifacts response. No
+ * fallback when the queue is unhealthy: the client gets a retryable 503.
+ */
+async function proxyReceivePackViaQueue(input: {
+	pushQueue: Fetcher
+	target: ResolvedPlainGitTarget
+	sourceId: string
+	request: Request
+	token: string
+}): Promise<Response> {
+	const headers = forwardGitRequestHeaders({
+		request: input.request,
+		token: input.token,
+	})
+	headers.set(repoPushQueueSourceIdHeader, input.sourceId)
+	headers.set(
+		repoPushQueueUpstreamHeader,
+		buildArtifactsSmartHttpUrl(input.target.remote, {
+			kind: 'receive-pack',
+			sourceId: input.sourceId,
+		}),
+	)
+	let queued: Response
+	try {
+		queued = await input.pushQueue.fetch(
+			`https://push-queue.internal${repoPushQueueV1Path}`,
+			{
+				method: 'POST',
+				headers,
+				body: input.request.body,
+				duplex: 'half',
+			} as RequestInit,
+		)
+	} catch (error) {
+		console.warn('repo-push-queue-handoff-failed', {
+			sourceId: input.sourceId,
+			error: error instanceof Error ? error.message : String(error),
+		})
+		const unavailable = repositoryBusyRetryResponse(
+			repoPushQueueRetryAfterSeconds,
+		)
+		unavailable.headers.set(repoPushQueuePathHeader, repoPushQueuePathQueued)
+		unavailable.headers.set(repoPushQueueOutcomeHeader, 'unavailable')
+		return unavailable
+	}
+	return new Response(queued.body, {
+		status: queued.status,
+		statusText: queued.statusText,
+		headers: filterProxiedResponseHeaders(queued.headers),
+	})
+}
+
 async function proxyArtifactsGitRequest(input: {
+	env: Env
 	target: ResolvedPlainGitTarget
 	parsed: PlainRepoGitHttpPath
 	request: Request
@@ -489,12 +530,30 @@ async function proxyArtifactsGitRequest(input: {
 	service?: string | null
 }): Promise<Response> {
 	if (input.parsed.kind === 'receive-pack') {
-		return proxyArtifactsReceivePack({
+		const pushQueue = input.env.REPO_PUSH_QUEUE
+		if (
+			pushQueue &&
+			(await isRepoPushQueueEnabled(input.env.APP_DB, {
+				sourceId: input.parsed.sourceId,
+				ownerId: input.target.ownerId,
+			}))
+		) {
+			return proxyReceivePackViaQueue({
+				pushQueue,
+				target: input.target,
+				sourceId: input.parsed.sourceId,
+				request: input.request,
+				token: input.token,
+			})
+		}
+		const direct = await proxyArtifactsReceivePack({
 			target: input.target,
 			sourceId: input.parsed.sourceId,
 			request: input.request,
 			token: input.token,
 		})
+		direct.headers.set(repoPushQueuePathHeader, repoPushQueuePathDirect)
+		return direct
 	}
 
 	const upstreamUrl = buildArtifactsSmartHttpUrl(
@@ -603,6 +662,7 @@ export async function handlePlainRepoGitHttpRequest(
 
 	try {
 		return await proxyArtifactsGitRequest({
+			env,
 			target: resolved.target,
 			parsed,
 			request,

@@ -288,6 +288,7 @@ const registryKeys = [
 	'mcp-skills-extension',
 	'mcp-events-extension',
 	'package-app-custom-domains',
+	'repo-push-queue',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {

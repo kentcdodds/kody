@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "Preserve",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"types": ["@cloudflare/workers-types", "node"],
+		"paths": {
+			"#worker/*": ["../worker/src/*"]
+		},
+		"skipLibCheck": true
+	},
+	"include": [
+		"src/**/*.ts",
+		"../shared/src/artifacts-receive-pack-wait.ts",
+		"../shared/src/repo-push-queue-protocol.ts"
+	]
+}

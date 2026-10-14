@@ -167,6 +167,15 @@ export const featureFlagDefinitions = [
 				'Users with a working custom-hostname package app keep executing against that package more than comparable flag-off users.',
 		},
 	},
+	{
+		key: 'repo-push-queue',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Per-repo Durable Object write queue for plain-repo git pushes (git-receive-pack): pushes land in the kody-push-queue Worker (RepoPushQueueV1) and reach Artifacts one at a time in FIFO order, with a 90s per-push budget and a clean 503 + Retry-After instead of a raw busy error. Evaluated per repo: repo allowlist (adminFeatureFlagRepoOverride), then the repo owner override, then the global switch with percentage rollout bucketed by repo, then the audience gate on the repo owner. Off repos keep the isolate-local wait-and-retry proxy. Delete the flag and gate sites when the queue ships to everyone.',
+		// Intentionally no successMetric: git pushes are not a metered usage
+		// event, so exposures would not join any readout.
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -187,6 +196,8 @@ export const mcpEventsExtensionFlagKey =
 
 export const packageAppCustomDomainsFlagKey =
 	'package-app-custom-domains' satisfies FeatureFlagKey
+
+export const repoPushQueueFlagKey = 'repo-push-queue' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

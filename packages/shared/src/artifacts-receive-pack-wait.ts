@@ -23,6 +23,11 @@ export const artifactsReceivePackBusyBackoffMs = [
 
 export const artifactsReceivePackBodyLimitBytes = 40 * 1024 * 1024
 
+/** Upstream Artifacts lock-contention code observed on concurrent receive-pack. */
+export const artifactsGitReceivePackBusyCode = 'artifacts_git_receive_pack_busy'
+export const artifactsReceivePackBusyRetryAfterSeconds = 5
+export const repositoryBusyRetryMessage = 'repository busy, retry'
+
 export class ReceivePackWaitTimeoutError extends Error {
 	constructor(message = 'receive-pack wait timed out') {
 		super(message)
@@ -282,4 +287,66 @@ export async function waitOutReceivePackBusy(input: {
 			return { kind: 'timeout' }
 		}
 	}
+}
+
+export const plainRepoGitHttpErrorBodyReadLimitBytes = 64 * 1024
+
+/** Read up to `limitBytes` of an error response for busy-code sniffing. */
+export async function readCappedResponseText(
+	response: Response,
+	limitBytes = plainRepoGitHttpErrorBodyReadLimitBytes,
+): Promise<string> {
+	if (!response.body) return ''
+	const reader = response.body.getReader()
+	const decoder = new TextDecoder()
+	let result = ''
+	let totalBytes = 0
+	try {
+		while (totalBytes < limitBytes) {
+			let chunk: ReadableStreamReadResult<Uint8Array>
+			try {
+				chunk = await reader.read()
+			} catch {
+				// Partial body is still useful when the upstream stream errors mid-read.
+				break
+			}
+			if (chunk.done) break
+			totalBytes += chunk.value.byteLength
+			result += decoder.decode(chunk.value, { stream: true })
+		}
+	} catch {
+		// Return whatever we sniffed before an unexpected failure.
+	} finally {
+		try {
+			reader.releaseLock()
+		} catch {
+			try {
+				await reader.cancel()
+			} catch {
+				// ignore
+			}
+		}
+	}
+	return result
+}
+
+export function isArtifactsGitReceivePackBusyResponse(input: {
+	status: number
+	bodyText: string
+}) {
+	if (input.status >= 200 && input.status < 300) return false
+	return input.bodyText.includes(artifactsGitReceivePackBusyCode)
+}
+
+export function repositoryBusyRetryResponse(
+	retryAfterSeconds = artifactsReceivePackBusyRetryAfterSeconds,
+) {
+	return new Response(repositoryBusyRetryMessage, {
+		status: 503,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+			'Retry-After': String(retryAfterSeconds),
+		},
+	})
 }

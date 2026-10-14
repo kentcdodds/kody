@@ -1,0 +1,70 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Repo push queue worker: owns the per-repo receive-pack write queue
+	// (`RepoPushQueueV1`). Origin owns no Durable Objects (ADR 0034) and
+	// reaches it through the REPO_PUSH_QUEUE service binding (named
+	// `RepoPushQueueGateway` entrypoint). A dedicated script keeps origin,
+	// platform, and runtime deploys from resetting in-flight pushes.
+	"name": "kody-push-queue",
+	"main": "./src/index.ts",
+	// Pending I/O keeps a DO from idle eviction, so an accepted push whose
+	// caller disconnected still reaches Artifacts.
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": [
+		"global_fetch_strictly_public",
+		"durable_object_io_tasks_prevent_eviction",
+	],
+	"minify": true,
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "RepoPushQueueV1",
+				"name": "REPO_PUSH_QUEUE_V1",
+			},
+		],
+	},
+	// Versioned class names: a breaking change adds `RepoPushQueueV2` in a
+	// new migration tag; never rename or delete V1 while objects may hold
+	// queued pushes.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["RepoPushQueueV1"],
+		},
+	],
+	"env": {
+		"production": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "RepoPushQueueV1",
+						"name": "REPO_PUSH_QUEUE_V1",
+					},
+				],
+			},
+			"vars": {
+				"SENTRY_ENVIRONMENT": "production",
+			},
+		},
+		"preview": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "RepoPushQueueV1",
+						"name": "REPO_PUSH_QUEUE_V1",
+					},
+				],
+			},
+			"vars": {
+				"SENTRY_ENVIRONMENT": "preview",
+			},
+		},
+	},
+}
