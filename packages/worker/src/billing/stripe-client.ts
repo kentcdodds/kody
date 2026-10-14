@@ -265,6 +265,16 @@ export function isStripeNothingToRefundError(error: unknown) {
 	)
 }
 
+/**
+ * Stripe rejects a reused idempotency key when the new request body does not
+ * match the first request (for example after billing metadata keys changed).
+ */
+export function isStripeIdempotencyParameterMismatchError(error: unknown) {
+	if (!(error instanceof StripeApiError)) return false
+	if (error.status !== 400 || !error.stripeMessage) return false
+	return /can only be used with the same parameters/i.test(error.stripeMessage)
+}
+
 function resolveStripeApiBaseUrl(env: StripeEnv) {
 	return (env.STRIPE_API_BASE_URL?.trim() || defaultStripeApiBaseUrl).replace(
 		/\/$/,
@@ -1309,4 +1319,53 @@ export async function createOffSessionPaymentIntent(
 		})
 	}
 	return parsed.value
+}
+
+const paymentIntentListItemSchema = object({
+	id: string(),
+	status: string(),
+	amount: number(),
+	currency: string(),
+	metadata: optional(record(string(), string())),
+})
+
+const paymentIntentListSchema = object({
+	data: array(paymentIntentListItemSchema),
+})
+
+export type StripePaymentIntentListItem = InferOutput<
+	typeof paymentIntentListItemSchema
+>
+
+/** Recent PaymentIntents for a customer (newest first). */
+export async function listPaymentIntentsForCustomer(
+	env: StripeEnv,
+	customerId: string,
+	options?: { limit?: number },
+): Promise<Array<StripePaymentIntentListItem>> {
+	const trimmed = customerId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	const limit = options?.limit ?? 100
+	if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+		throw new StripeApiError('Payment intent list limit must be 1–100.', {
+			status: 400,
+		})
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/payment_intents',
+		query: {
+			customer: trimmed,
+			limit: String(limit),
+		},
+	})
+	const parsed = parseSafe(paymentIntentListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe payment intent list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data
 }
