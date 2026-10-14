@@ -22,6 +22,8 @@ function fromDomain(fromAddress: string | null) {
 /**
  * Canonical form stored on enablements and used in the live unique index.
  * Address and domain are lowercased; `any_authenticated` drops the value.
+ * A kind that needs a value but cannot normalize one becomes null/null so
+ * it never becomes a live rule that matches nothing.
  */
 export function canonicalizeEnablementSender(input: {
 	senderKind: EnablementSenderKind | null | undefined
@@ -34,26 +36,36 @@ export function canonicalizeEnablementSender(input: {
 			return { senderKind, senderValue: null }
 		case 'member': {
 			const value = input.senderValue?.trim().toLowerCase() ?? ''
-			return { senderKind, senderValue: value.length > 0 ? value : null }
+			if (!value) return { senderKind: null, senderValue: null }
+			return { senderKind, senderValue: value }
 		}
 		case 'address': {
 			const value = input.senderValue
 				? normalizeEmailAddress(input.senderValue)
 				: null
+			if (!value) return { senderKind: null, senderValue: null }
 			return { senderKind, senderValue: value }
 		}
 		case 'domain': {
 			const value = input.senderValue?.trim().toLowerCase().replace(/^@+/, '')
-			return {
-				senderKind,
-				senderValue: value && value.length > 0 ? value : null,
-			}
+			if (!value) return { senderKind: null, senderValue: null }
+			return { senderKind, senderValue: value }
 		}
 		default: {
 			const exhaustive: never = senderKind
 			throw new Error(`Unhandled enablement sender kind: ${String(exhaustive)}`)
 		}
 	}
+}
+
+/** True when a canonical sender is safe to store as a live email rule. */
+export function isCompleteEnablementSender(input: {
+	senderKind: EnablementSenderKind | null
+	senderValue: string | null
+}): boolean {
+	if (!input.senderKind) return false
+	if (input.senderKind === 'any_authenticated') return true
+	return Boolean(input.senderValue)
 }
 
 /**

@@ -387,3 +387,24 @@ test('sender writes store a canonical form so case variants share one live rule'
 	})
 	expect(catchAll.senderValue).toBeNull()
 })
+
+test('a blank address sender is refused instead of becoming a live empty rule', async () => {
+	const db = setup()
+	expect(() =>
+		buildInsertEnablementStatement({
+			db,
+			enablement: {
+				orgId: 'org-1',
+				packageId: 'pkg-1',
+				triggerKind: 'subscription',
+				triggerName: 'email.message.received',
+				instanceId: 'pkg-1',
+				enablerUserId: 'user-1',
+				origin: 'enabled',
+				senderKind: 'address',
+				senderValue: 'not-an-email',
+			},
+			now: new Date().toISOString(),
+		}),
+	).toThrow(/usable sender/)
+})

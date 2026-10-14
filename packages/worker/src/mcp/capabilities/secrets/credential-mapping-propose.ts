@@ -29,7 +29,10 @@ import {
 	type CredentialPick,
 	type CredentialProposalSender,
 } from '#universal/credential-contracts.ts'
-import { canonicalizeEnablementSender } from '#worker/enablements/sender-match.ts'
+import {
+	canonicalizeEnablementSender,
+	isCompleteEnablementSender,
+} from '#worker/enablements/sender-match.ts'
 
 const picksSchema = z
 	.union([credentialPickSchema, z.array(credentialPickSchema)])
@@ -141,7 +144,9 @@ function proposalSender(
 		senderKind: sender.kind,
 		senderValue: sender.value,
 	})
-	if (!canonical.senderKind) return null
+	if (!isCompleteEnablementSender(canonical) || !canonical.senderKind) {
+		return null
+	}
 	return { kind: canonical.senderKind, value: canonical.senderValue }
 }
 

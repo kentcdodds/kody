@@ -44,7 +44,10 @@ import {
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 } from './repo.ts'
-import { canonicalizeEnablementSender } from './sender-match.ts'
+import {
+	canonicalizeEnablementSender,
+	isCompleteEnablementSender,
+} from './sender-match.ts'
 import {
 	type EnablementRecord,
 	type EnablementSenderKind,
@@ -534,7 +537,7 @@ export async function planTriggerEnablementForCaller(input: {
 			senderKind: input.sender.kind,
 			senderValue: input.sender.value,
 		})
-		if (!canonical.senderKind) {
+		if (!isCompleteEnablementSender(canonical) || !canonical.senderKind) {
 			throw new TriggerEnablementError(
 				'email_approval_required',
 				emailApprovalRequiredMessage({

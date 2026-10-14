@@ -2,7 +2,10 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { canonicalizeEnablementSender } from './sender-match.ts'
+import {
+	canonicalizeEnablementSender,
+	isCompleteEnablementSender,
+} from './sender-match.ts'
 import {
 	enablementPausedReasons,
 	enablementTriggerKinds,
@@ -125,10 +128,16 @@ export function buildInsertEnablementStatement(input: {
 	now: string
 }): { id: string; statement: D1PreparedStatement } {
 	const id = input.enablement.id ?? crypto.randomUUID()
+	const requestedKind = input.enablement.senderKind ?? null
 	const sender = canonicalizeEnablementSender({
-		senderKind: input.enablement.senderKind,
+		senderKind: requestedKind,
 		senderValue: input.enablement.senderValue,
 	})
+	if (requestedKind && !isCompleteEnablementSender(sender)) {
+		throw new Error(
+			'Inbound email enablement needs a usable sender_kind and sender_value.',
+		)
+	}
 	const statement = input.db
 		.prepare(
 			`INSERT INTO enablements (
