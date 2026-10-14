@@ -19,6 +19,7 @@ import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityPackageMovedPayload,
+	type CommunityPackageNoAccessPayload,
 	type CommunityShellSnapshot,
 	buildCommunityDetailFrameSrc,
 	buildReportApiPath,
@@ -143,6 +144,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		reportMessage = null
 		shellUnauthorized = false
 		shellNotFound = false
+		shellNoAccess = null
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
 	}
@@ -165,17 +167,44 @@ export function CommunityDetailRoute(handle: Handle) {
 			})
 			if (requestId !== shellLoadRequestId) return
 			const payload = await readJson<
-				CommunityDetailApiPayload | CommunityPackageMovedPayload
+				| CommunityDetailApiPayload
+				| CommunityPackageMovedPayload
+				| CommunityPackageNoAccessPayload
 			>(response)
 			if (response.status === 401) {
 				shellLoadedForPathname = ref.pathname
 				shellUnauthorized = true
+				shellNotFound = false
+				shellNoAccess = null
+				shellStatus = 'ready'
+				handle.update()
+				return
+			}
+			if (
+				response.status === 403 &&
+				payload &&
+				!payload.ok &&
+				'noAccess' in payload &&
+				payload.noAccess
+			) {
+				shellLoadedForPathname = ref.pathname
+				shellNoAccess = {
+					username: payload.username,
+					kodyId: payload.kodyId,
+					packageName: payload.packageName,
+					viewerUsername: payload.viewerUsername,
+				}
+				shellUnauthorized = false
+				shellNotFound = false
 				shellStatus = 'ready'
 				handle.update()
 				return
 			}
 			if (response.status === 404) {
-				const movedTo = payload && !payload.ok ? payload.redirectTo : null
+				const movedTo =
+					payload && !payload.ok && 'redirectTo' in payload
+						? payload.redirectTo
+						: null
 				// A renamed package is a real destination, not a dead link.
 				if (movedTo) {
 					window.location.assign(movedTo)
@@ -184,6 +213,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				shellLoadedForPathname = ref.pathname
 				shellNotFound = true
 				shellUnauthorized = false
+				shellNoAccess = null
 				shellStatus = 'ready'
 				handle.update()
 				return
