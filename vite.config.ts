@@ -7,6 +7,7 @@ import { defineConfig } from 'vite'
 import { parseJsonc } from './tools/ci/resource-utils.ts'
 import {
 	collectLocalOriginDevVars,
+	localGeneratedConfigBasename,
 	writeLocalOriginDevConfig,
 } from './tools/local-origin-dev-config.ts'
 import { writeLocalAuxiliaryDevConfig } from './tools/local-auxiliary-dev-config.ts'
@@ -63,10 +64,14 @@ export default defineConfig(async ({ command }) => {
 		// Vite's Cloudflare plugin reads Worker bindings from the Wrangler
 		// config, not process env. Write the same local-dev vars wrangler-env
 		// used to pass with `--var` so origin `env` still sees them.
+		// E2E uses a separate generated basename so it cannot overwrite a
+		// concurrent `dev:ensure` config on reload (#3731).
+		const generatedBasename = localGeneratedConfigBasename(process.env)
 		serveWranglerConfigPath = await writeLocalOriginDevConfig({
 			originConfigPath: wranglerConfigPath,
 			envName,
 			vars: collectLocalOriginDevVars(process.env, process.env.PORT),
+			generatedBasename,
 		})
 		// Jobs + highlight stay attached in the test env (Playwright e2e).
 		// Platform/runtime have no test env and stay skipped there. Pin the
@@ -77,11 +82,13 @@ export default defineConfig(async ({ command }) => {
 			configPath: 'packages/jobs-worker/wrangler.jsonc',
 			envName,
 			mainWorkerDevName: `kody-${envName}`,
+			generatedBasename,
 		})
 		const highlightDevConfigPath = await writeLocalAuxiliaryDevConfig({
 			configPath: 'packages/highlight-worker/wrangler.jsonc',
 			envName,
 			mainWorkerDevName: `kody-${envName}`,
+			generatedBasename,
 		})
 		auxiliaryWorkers.push(
 			{
@@ -99,12 +106,14 @@ export default defineConfig(async ({ command }) => {
 				envName,
 				mainWorkerDevName: `kody-${envName}`,
 				port: process.env.PORT,
+				generatedBasename,
 			})
 			const platformDevConfigPath = await writeLocalPlatformDevConfig({
 				platformConfigPath: 'packages/platform-worker/wrangler.jsonc',
 				envName,
 				mainWorkerDevName: `kody-${envName}`,
 				port: process.env.PORT,
+				generatedBasename,
 			})
 			auxiliaryWorkers.push(
 				{ configPath: runtimeDevConfigPath, devOnly: true },
@@ -140,6 +149,7 @@ export default defineConfig(async ({ command }) => {
 					if (process.env.KODY_VITE_INSPECTOR_PORT === 'false') return false
 					const raw = process.env.KODY_VITE_INSPECTOR_PORT?.trim()
 					if (!raw) return undefined
+					if (!/^\d+$/.test(raw)) return undefined
 					const port = Number.parseInt(raw, 10)
 					return Number.isFinite(port) ? port : undefined
 				})(),

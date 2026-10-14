@@ -21,11 +21,13 @@ export async function writeLocalRuntimeDevConfig({
 	envName,
 	mainWorkerDevName,
 	port,
+	generatedBasename = 'wrangler-local-dev.generated.json',
 }: {
 	runtimeConfigPath: string
 	envName: string
 	mainWorkerDevName: string
 	port: string | undefined
+	generatedBasename?: string
 }) {
 	const sourceText = await readFile(runtimeConfigPath, 'utf8')
 	const config = parseJsonc<JsonRecord>(sourceText)
@@ -92,7 +94,7 @@ export async function writeLocalRuntimeDevConfig({
 	// module, migrations_dir) keep resolving.
 	const outputPath = path.join(
 		path.dirname(runtimeConfigPath),
-		'wrangler-local-dev.generated.json',
+		generatedBasename,
 	)
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath

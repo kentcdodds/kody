@@ -85,9 +85,20 @@ export function treeShaForCommit(git: GitRunner, commitSha: string) {
 }
 
 /**
- * Tree SHA covering the current index + worktree (including unstaged and
- * untracked tracked-by-stash-create). Falls back to `HEAD^{tree}` when the
- * worktree is clean enough that `stash create` is empty.
+ * True when `git status` lists untracked paths. `stash create` cannot include
+ * them, so provenance must decline rather than certify an incomplete tree.
+ */
+export function hasUntrackedFiles(git: GitRunner) {
+	const status = git(['status', '--porcelain', '-uall'])
+	if (status.status !== 0) return true
+	return status.stdout.split('\n').some((line) => line.startsWith('?? '))
+}
+
+/**
+ * Tree SHA covering the current index + tracked worktree (via `stash create`).
+ * Falls back to `HEAD^{tree}` when the worktree is clean enough that
+ * `stash create` is empty. Does not include untracked files — callers should
+ * check `hasUntrackedFiles` before recording provenance.
  */
 export function treeShaForWorktree(git: GitRunner) {
 	const stash = git(['stash', 'create'])
@@ -137,14 +148,19 @@ export function recordProvenanceCheck(
 
 /**
  * After a green `npm run validate`, mark the current worktree tree as having
- * already proven `test:push` so the next pre-push can skip.
+ * already proven `test:push` so the next pre-push can skip. Only records when
+ * `treeShaBefore` matches the post-run tree (caller captures before suites
+ * start) and there are no untracked files.
  */
 export function recordValidateTreeProvenance(
 	git: GitRunner,
 	store: ProvenanceStore = createFileProvenanceStore(),
+	treeShaBefore?: string | null,
 ) {
+	if (hasUntrackedFiles(git)) return null
 	const treeSha = treeShaForWorktree(git)
 	if (!treeSha) return null
+	if (treeShaBefore != null && treeShaBefore !== treeSha) return null
 	recordProvenanceCheck(store, {
 		check: 'test:push',
 		treeSha,

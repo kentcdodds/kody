@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import {
 	createFileProvenanceStore,
 	hasProvenanceCheck,
+	hasUntrackedFiles,
 	provenanceFilePath,
 	recordProvenanceCheck,
 	recordValidateTreeProvenance,
@@ -81,6 +82,9 @@ test('recordValidateTreeProvenance writes the worktree tree SHA', async () => {
 	try {
 		const store = createFileProvenanceStore(join(root, 'provenance.json'))
 		const dirty: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, '')
+			}
 			if (args[0] === 'stash' && args[1] === 'create') {
 				return gitResult(0, `${commitA}\n`)
 			}
@@ -89,8 +93,38 @@ test('recordValidateTreeProvenance writes the worktree tree SHA', async () => {
 			}
 			return gitResult(1)
 		}
-		expect(recordValidateTreeProvenance(dirty, store)).toBe(treeA)
+		expect(recordValidateTreeProvenance(dirty, store, treeA)).toBe(treeA)
 		expect(hasProvenanceCheck(store, 'test:push', treeA)).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('recordValidateTreeProvenance skips when the tree drifted or untracked exist', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-validate-skip-'))
+	try {
+		const store = createFileProvenanceStore(join(root, 'provenance.json'))
+		const drifted: GitRunner = (args) => {
+			if (args[0] === 'status') return gitResult(0, '')
+			if (args[0] === 'stash' && args[1] === 'create') {
+				return gitResult(0, `${commitA}\n`)
+			}
+			if (args[0] === 'rev-parse' && args.at(-1) === `${commitA}^{tree}`) {
+				return gitResult(0, `${treeA}\n`)
+			}
+			return gitResult(1)
+		}
+		expect(recordValidateTreeProvenance(drifted, store, treeB)).toBe(null)
+		expect(hasProvenanceCheck(store, 'test:push', treeA)).toBe(false)
+
+		const untracked: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, '?? tools/new-file.ts\n')
+			}
+			return gitResult(1)
+		}
+		expect(hasUntrackedFiles(untracked)).toBe(true)
+		expect(recordValidateTreeProvenance(untracked, store, treeA)).toBe(null)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

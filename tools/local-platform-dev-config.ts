@@ -20,11 +20,13 @@ export async function writeLocalPlatformDevConfig({
 	envName,
 	mainWorkerDevName,
 	port,
+	generatedBasename = 'wrangler-local-dev.generated.json',
 }: {
 	platformConfigPath: string
 	envName: string
 	mainWorkerDevName: string
 	port: string | undefined
+	generatedBasename?: string
 }) {
 	const sourceText = await readFile(platformConfigPath, 'utf8')
 	const config = parseJsonc<JsonRecord>(sourceText)
@@ -91,7 +93,7 @@ export async function writeLocalPlatformDevConfig({
 
 	const outputPath = path.join(
 		path.dirname(platformConfigPath),
-		'wrangler-local-dev.generated.json',
+		generatedBasename,
 	)
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath

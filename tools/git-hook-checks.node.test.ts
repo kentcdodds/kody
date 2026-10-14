@@ -27,8 +27,12 @@ const remoteSha = 'a'.repeat(40)
 const localSha = 'b'.repeat(40)
 const otherSha = 'd'.repeat(40)
 
-function gitResult(status: number, stdout = ''): ReturnType<GitRunner> {
-	return { status, stdout, stderr: '' }
+function gitResult(
+	status: number,
+	stdout = '',
+	stderr = '',
+): ReturnType<GitRunner> {
+	return { status, stdout, stderr }
 }
 
 function plannedScripts(
@@ -473,6 +477,15 @@ test('pre-push records provenance after a successful test:push and logs progress
 			if (args[0] === 'diff') {
 				return gitResult(0, 'packages/worker/src/app.ts\0')
 			}
+			if (args[0] === 'status') {
+				return gitResult(0, '')
+			}
+			if (args[0] === 'stash' && args[1] === 'create') {
+				return gitResult(0, '')
+			}
+			if (args[0] === 'rev-parse' && args.at(-1) === 'HEAD^{tree}') {
+				return gitResult(0, `${treeSha}\n`)
+			}
 			if (args[0] === 'rev-parse' && args.at(-1) === `${localSha}^{tree}`) {
 				return gitResult(0, `${treeSha}\n`)
 			}
@@ -512,34 +525,79 @@ test('pre-push records provenance after a successful test:push and logs progress
 	}
 })
 
-test('withStagedTreeForTypecheck stashes unstaged work then restores it', async () => {
-	const calls: Array<string> = []
-	const git: GitRunner = (args) => {
-		calls.push(args.join(' '))
-		if (args[0] === 'status') {
-			return gitResult(0, 'MM packages/worker/src/app.ts\n')
+test('withStagedTreeForTypecheck hides unstaged work via diff/checkout/apply', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-'))
+	try {
+		const calls: Array<string> = []
+		const git: GitRunner = (args) => {
+			calls.push(args.join(' '))
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'diff') {
+				return gitResult(
+					0,
+					'diff --git a/packages/worker/src/app.ts b/packages/worker/src/app.ts\n',
+				)
+			}
+			if (args[0] === 'checkout') {
+				return gitResult(0, '')
+			}
+			if (args[0] === 'apply') {
+				return gitResult(0, '')
+			}
+			return gitResult(1)
 		}
-		if (args[0] === 'stash' && args[1] === 'push') {
-			return gitResult(0, 'Saved working directory and index state\n')
-		}
-		if (args[0] === 'stash' && args[1] === 'pop') {
-			return gitResult(0, '')
-		}
-		return gitResult(1)
+		const logs: Array<string> = []
+		const value = await withStagedTreeForTypecheck({
+			git,
+			repoRoot: root,
+			log: (message) => logs.push(message),
+			run: () => 7,
+		})
+		expect(value).toBe(7)
+		expect(calls[0]).toBe('status --porcelain -uall')
+		expect(calls).toContain('diff --binary --full-index')
+		expect(calls).toContain('checkout -- .')
+		expect(
+			calls.some((line) => line.startsWith('apply --whitespace=nowarn')),
+		).toBe(true)
+		expect(logs[0]).toContain('typechecking staged tree')
+	} finally {
+		await rm(root, { recursive: true, force: true })
 	}
-	const logs: Array<string> = []
-	const value = await withStagedTreeForTypecheck({
-		git,
-		log: (message) => logs.push(message),
-		run: () => 7,
-	})
-	expect(value).toBe(7)
-	expect(calls).toEqual([
-		'status --porcelain -uall',
-		'stash push --keep-index --include-untracked -m kody-pre-commit-typecheck',
-		'stash pop --quiet',
-	])
-	expect(logs[0]).toContain('typechecking staged tree')
+})
+
+test('withStagedTreeForTypecheck fails the hook when restore apply fails', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-fail-'))
+	try {
+		const git: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'diff') {
+				return gitResult(0, 'diff --git a/x b/x\n')
+			}
+			if (args[0] === 'checkout') {
+				return gitResult(0, '')
+			}
+			if (args[0] === 'apply') {
+				return gitResult(1, '', 'patch failed')
+			}
+			return gitResult(1)
+		}
+		const logs: Array<string> = []
+		const value = await withStagedTreeForTypecheck({
+			git,
+			repoRoot: root,
+			log: (message) => logs.push(message),
+			run: () => 0,
+		})
+		expect(value).toBe(1)
+		expect(logs.some((line) => line.includes('failed to restore'))).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
 })
 
 test('hook scripts can create foreign repositories without inherited worktree state', async () => {

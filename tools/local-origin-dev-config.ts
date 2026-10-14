@@ -43,14 +43,35 @@ function asRecord(value: unknown): JsonRecord {
 	return value && typeof value === 'object' ? (value as JsonRecord) : {}
 }
 
+/** Default generated config next to the committed wrangler jsonc. */
+export const localDevGeneratedConfigBasename =
+	'wrangler-local-dev.generated.json'
+
+/**
+ * E2E webServer writes a separate basename so a concurrent `dev:ensure` Vite
+ * does not reload E2E-generated bindings (#3731 / Devin on #3745).
+ */
+export const localE2eGeneratedConfigBasename =
+	'wrangler-local-e2e.generated.json'
+
+export function localGeneratedConfigBasename(
+	env: NodeJS.ProcessEnv = process.env,
+) {
+	return env.KODY_E2E_WEB_SERVER === '1'
+		? localE2eGeneratedConfigBasename
+		: localDevGeneratedConfigBasename
+}
+
 export async function writeLocalOriginDevConfig({
 	originConfigPath,
 	envName,
 	vars,
+	generatedBasename = localDevGeneratedConfigBasename,
 }: {
 	originConfigPath: string
 	envName: string
 	vars: Record<string, string>
+	generatedBasename?: string
 }) {
 	const sourceText = await readFile(originConfigPath, 'utf8')
 	const config = parseJsonc<JsonRecord>(sourceText)
@@ -74,7 +95,7 @@ export async function writeLocalOriginDevConfig({
 
 	const outputPath = path.join(
 		path.dirname(originConfigPath),
-		'wrangler-local-dev.generated.json',
+		generatedBasename,
 	)
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath

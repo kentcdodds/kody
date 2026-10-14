@@ -17,10 +17,12 @@ export async function writeLocalAuxiliaryDevConfig({
 	configPath,
 	envName,
 	mainWorkerDevName,
+	generatedBasename = 'wrangler-local-dev.generated.json',
 }: {
 	configPath: string
 	envName: string
 	mainWorkerDevName: string
+	generatedBasename?: string
 }) {
 	const sourceText = await readFile(configPath, 'utf8')
 	const config = parseJsonc<JsonRecord>(sourceText)
@@ -66,10 +68,7 @@ export async function writeLocalAuxiliaryDevConfig({
 	envRecord.vars = vars
 	vars.WRANGLER_IS_LOCAL_DEV = 'true'
 
-	const outputPath = path.join(
-		path.dirname(configPath),
-		'wrangler-local-dev.generated.json',
-	)
+	const outputPath = path.join(path.dirname(configPath), generatedBasename)
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath
 }
