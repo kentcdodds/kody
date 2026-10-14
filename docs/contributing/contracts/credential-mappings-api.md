@@ -599,6 +599,10 @@ Where they are wired:
   `/@:org/-/credentials/new` in the signed-in user's signup org, with the query
   preserved. A legacy `/connect/secret-set` link therefore lands on the
   one-pager in two hops.
+- `/account/credentials` redirects to the signup org's Credentials list, query
+  preserved. Org-less pages (`/connect/secrets`, `/connect/secret-set`) link
+  back to it with `data-rmx-document`, because the client router would otherwise
+  intercept the org-less path.
 - URLs the table returns null for keep the legacy page: approval links (`names`,
   `hosts`, `package_id`, `capability`) and `package=` filters on the index
   pages. The legacy pages and their add forms stay in place until the

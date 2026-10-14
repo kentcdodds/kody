@@ -259,4 +259,11 @@ test('the legacy secret intake link opens the Key form with its prefill', async 
 		'This link names a package that is not in this org.',
 	)
 	await expect(page.getByTestId('connect-credential-save')).toBeDisabled()
+
+	// Org-less pages link back here; it opens the signup org's list.
+	await page.goto('/account/credentials?kind=secret')
+	await waitForClientHydration(page)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/-/credentials\\?kind=secret$`),
+	)
 })

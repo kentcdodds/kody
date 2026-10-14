@@ -16,6 +16,7 @@ export const routes = route({
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	connectCredential: '/connect/credential',
+	accountCredentials: '/account/credentials',
 	connectSecrets: '/connect/secrets',
 	connectSecretSet: '/connect/secret-set',
 	connectWebhookApply: '/connect/webhook-apply',

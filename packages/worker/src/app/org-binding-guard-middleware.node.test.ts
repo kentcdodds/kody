@@ -57,6 +57,7 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountWaitingClickPost: 'click analytics for the person',
 	// Legacy redirects to the personal org's `/@:slug/-/usage` page.
 	accountUsage: 'redirects to the personal org usage page',
+	accountCredentials: 'redirects to the signup org Credentials list',
 	accountUsageApi: 'redirects to the personal org usage JSON',
 }
 
