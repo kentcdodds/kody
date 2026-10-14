@@ -14,15 +14,14 @@ Usage and credits live on the org workspace at `/@:orgSlug/-/usage` (credits are
 `#credits`). Legacy `/account/usage` and `/account/credits` redirect to the
 personal org's usage page.
 
-The account rail ("Account sections") lists those pages, then a Workspaces group
-with one row per org (`@<slug>`, signup org first). A row opens that org's home:
-the signup org's `/@<slug>/-/overview`, or a team org's `/@<slug>`. Every
-workspace section is on a separate "Workspace sections" rail under
-`/@<slug>/-/…`, so any section is two clicks from `/account`. That rail groups
-Build (Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP
-servers, Secret providers), Agents & data (Agents, Memories, Email), Activity,
-and Organization (Usage & credits and Billing for owners/billing admins).
-Activity has Activity, Workflows, and Waiting as tabs under the page title
+The account rail ("Account sections") lists only those pages; it has no
+workspaces group. From account pages, orgs are reached through the avatar menu's
+Manage group (below) and the Organizations page. Every workspace section is on a
+separate "Workspace sections" rail under `/@<slug>/-/…`. That rail groups Build
+(Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP servers,
+Secret providers), Agents & data (Agents, Memories, Email), Activity, and
+Organization (Usage & credits and Billing for owners/billing admins). Activity
+has Activity, Workflows, and Waiting as tabs under the page title
 (`data-testid="account-section-tabs"`, labelled "Activity pages"); the rail item
 stays current on all three. Repositories is `/@<slug>/-/repositories`, distinct
 from the public profile at `/@<slug>`. Former `/@<slug>/-/packages` URLs 301 to
@@ -41,7 +40,7 @@ you have any. Each org row keeps the current section when that org can open it,
 otherwise it opens that org's workspace home (`workspaceSwitchHref`). Below
 860px the same switcher is the first item in the rail's `<details>` drawer
 (`org-switcher-drawer`, panel `org-switcher-drawer-panel`). The account rail has
-no switcher; its Workspaces group lists every org. Source:
+no switcher and no org list. Source:
 `packages/worker/client/workspace-switcher.tsx`.
 
 The site header has one session control, the account menu

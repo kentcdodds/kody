@@ -14,7 +14,6 @@ import {
 	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
 	orgUsagePath,
-	orderOrganizations,
 	parseOrgBillingPath,
 	parseOrgCreditsPath,
 	parseOrgManagementPath,
@@ -191,27 +190,12 @@ export function workspaceSwitchHref(
 }
 
 /**
- * The account rail: settings that belong to the person, then a Workspaces
- * group with one row per organization they belong to. Each row opens that
- * workspace, whose own rail lists every section, so any section is two
- * clicks from `/account`.
+ * The account rail: only the settings that belong to the person. Workspaces
+ * are reached from the avatar menu's Manage group and the Organizations page,
+ * not listed here.
  */
-export function accountRailGroups(input: {
-	organizations: ReadonlyArray<OrganizationSummary>
-}): Array<AccountRailGroup> {
-	const person: AccountRailGroup = { label: null, items: accountRailItems }
-	if (input.organizations.length === 0) return [person]
-	return [
-		person,
-		{
-			label: 'Workspaces',
-			items: orderOrganizations(input.organizations).map((org) => ({
-				href: workspaceHomeHref(org),
-				label: `@${org.slug}`,
-				icon: org.personal ? 'user' : 'users',
-			})),
-		},
-	]
+export function accountRailGroups(): Array<AccountRailGroup> {
+	return [{ label: null, items: accountRailItems }]
 }
 
 function overviewRailItem(

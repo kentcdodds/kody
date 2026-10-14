@@ -151,7 +151,7 @@ test('every workspace section is two clicks from the account menu', async ({
 	).toBeVisible()
 })
 
-test('every workspace section is two clicks from /account', async ({
+test('every workspace section is reachable from /account through the avatar menu', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -171,15 +171,23 @@ test('every workspace section is two clicks from /account', async ({
 		page.getByRole('heading', { level: 1, name: 'Profile' }),
 	).toBeVisible()
 
-	// The account rail lists each workspace; the signup org opens its
-	// overview, whose rail names every section.
+	// The account rail holds only the person's pages. The avatar menu's
+	// Manage group opens the signup org's overview, whose rail names every
+	// section.
 	const accountRail = page.getByRole('navigation', {
 		name: 'Account sections',
 	})
-	const workspaceRow = accountRail.getByRole('link', {
-		name: `@${user.username}`,
-		exact: true,
-	})
+	await expect(
+		accountRail.getByRole('group', { name: 'Workspaces' }),
+	).toHaveCount(0)
+	await expect(
+		accountRail.getByRole('link', { name: `@${user.username}`, exact: true }),
+	).toHaveCount(0)
+	await page.getByTestId('account-menu').click()
+	const workspaceRow = page
+		.getByTestId('account-menu-panel')
+		.getByRole('group', { name: 'Manage' })
+		.getByRole('link', { name: `@${user.username}`, exact: true })
 	await expect(workspaceRow).toHaveAttribute(
 		'href',
 		`/@${user.username}/-/overview`,
