@@ -92,10 +92,11 @@ export function buildPackageNoAccessErrorAgentPrompt(input: {
 		errorMessage: `Signed in as @${input.viewerUsername}, but this account cannot open ${input.packageName}.`,
 		ids: { path: input.path, packageName: input.packageName },
 		likelyCause:
-			'The package exists under the owner org, but this person is not a member and holds no Use/Contribute/Manage grant on it.',
+			'The package exists under the owner org, but this person lacks package:read (package Use) and/or app:execute on the matching app resource. Org membership alone does not include app:execute.',
 		nextSteps: [
-			`Ask @${input.ownerUsername} to grant Use on ${input.packageName} (accessGrant / inviteCreate kind grant), or invite @${input.viewerUsername} to the org.`,
-			'Do not treat this as a missing or unpublished package.',
+			`Ask @${input.ownerUsername} to grant Use on package ${input.packageName} (accessGrant resource_type package, preset use) so @${input.viewerUsername} can open the package page.`,
+			`For the hosted package app handoff, also grant Use on the app resource with the same package id (accessGrant resource_type app, permissions including app:execute).`,
+			'Do not treat this as a missing or unpublished package. Do not assume an org membership invite alone unlocks the app.',
 		],
 		kodyTools: [
 			'search({ entity: "guide:package_sharing" })',

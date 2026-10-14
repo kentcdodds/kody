@@ -537,7 +537,10 @@ async function loadPackagePageUncached(input: {
 		// Package exists (or is hidden/private) but this viewer cannot open it.
 		// Signed-in outsiders get an explicit no-access page — never the
 		// generic "doesn't quite connect" 404 that made shared private-app
-		// handoffs look like the package was gone.
+		// handoffs look like the package was gone. Anonymous visitors still
+		// get not_found, so private packages stay opaque without a session.
+		// Revealing existence to signed-in people who already know the URL
+		// (share links / handoffs) is intentional product policy.
 		if (viewer && target.savedPackage) {
 			return {
 				kind: 'no_access',

@@ -416,8 +416,11 @@ export function CommunityDetailRoute(handle: Handle) {
 		if (routeData && !routeData.ok) {
 			applyRouteShellData(routeData, pathname, listingId)
 		}
-		const noAccessProps =
-			routeData && !routeData.ok && 'noAccess' in routeData
+		// A later successful load for this pathname must win over a stale
+		// shellNoAccess left from an earlier 403 (access grant mid-session).
+		const noAccessProps = routeData?.ok
+			? null
+			: routeData && !routeData.ok && 'noAccess' in routeData
 				? {
 						username: routeData.username,
 						kodyId: routeData.kodyId,

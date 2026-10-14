@@ -32,7 +32,9 @@ export function PackageNoAccessPage(handle: Handle<PackageNoAccessPageProps>) {
 	const packageHref = routes.communityPackage.href({ username, kodyId })
 	const sharingDocsHref = routes.docDetail.href({ slug: 'package-sharing' })
 	const requestMessage = [
-		`Hi — please grant me Use on ${packageName}`,
+		`Hi — please grant me Use on package ${packageName}`,
+		`and Use on its hosted app (app:execute),`,
+		`so I can open the package page and the package app.`,
 		`(I'm @${viewerUsername}).`,
 		`Package page: ${packageHref}`,
 	].join(' ')
@@ -59,7 +61,8 @@ export function PackageNoAccessPage(handle: Handle<PackageNoAccessPageProps>) {
 			<p mix={css(illustratedErrorCopyCss)}>
 				<code mix={css(packageNameCss)}>{packageName}</code> is real, but your
 				account (@{viewerUsername}) cannot open it. Ask the @{username} owner to
-				grant you Use on this package (or invite you to the org).
+				grant you Use on this package and Use on its hosted app (app:execute).
+				An org invite alone is not enough unless those grants come with it.
 			</p>
 			<nav aria-label="What to try next" mix={css(illustratedErrorActionsCss)}>
 				<CopyTextButton
