@@ -544,7 +544,9 @@ export function ApprovalBundleRoute(handle: Handle) {
 		const groups = view ? currentGroups(view) : []
 		const remaining = view ? awaitingDecision(view).length : 0
 		const ready = view ? readyToApprove(view).length : 0
-		const total = groups.reduce((sum, group) => sum + group.items.length, 0)
+		const items = groups.flatMap((group) => group.items)
+		const allDecided =
+			items.length > 0 && items.every((item) => item.decision !== null)
 
 		return (
 			<section
@@ -555,11 +557,15 @@ export function ApprovalBundleRoute(handle: Handle) {
 				<header mix={css(pageHeaderCss)}>
 					<span mix={css(pageEyebrowCss)}>Review approvals</span>
 					<h1 mix={css(pageTitleCss)}>
-						{remaining === 0
-							? `All ${total} ${total === 1 ? 'change is' : 'changes are'} decided`
-							: remaining === 1
-								? '1 change waits for you'
-								: `${remaining} changes wait for you`}
+						{!view
+							? 'Review approvals'
+							: remaining > 0
+								? remaining === 1
+									? '1 change waits for you'
+									: `${remaining} changes wait for you`
+								: allDecided
+									? `All ${items.length} ${items.length === 1 ? 'change is' : 'changes are'} decided`
+									: 'Nothing here waits for you'}
 					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						An agent
