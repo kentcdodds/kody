@@ -1,6 +1,9 @@
 /**
  * Hosts that can appear as the three conversations in the How Kody works
- * walkthrough (and the homepage factory loop). Coding hosts create the
+ * walkthrough (and the homepage factory loop and agent orbit). Only agents
+ * that work well with Kody today belong here: each one has a featured
+ * connect path on Get started (`onboardingDesktopFeaturedAgentIds` or
+ * `onboardingMobileFeaturedAgentIds`). Coding hosts create the
  * package; invoke is a chat/phone host; notify can be either kind. A coding
  * host with a real phone surface (its own mobile app, a mobile tab in its
  * company's chat app, or a chat-app bridge) is `both`, so it also fills the
@@ -14,17 +17,9 @@ type WalkthroughHostCompany =
 	| 'opencode'
 	| 'openai'
 	| 'google'
-	| 'sourcegraph'
-	| 'warp'
-	| 'block'
-	| 'zed'
 	| 'cognition'
-	| 'pi'
 	| 'openclaw'
 	| 'meta'
-	| 'wajo'
-	| 'cue'
-	| 'copilotkit'
 
 export type WalkthroughHostSlot = 'coding' | 'invoke' | 'notify'
 
@@ -123,46 +118,11 @@ export const walkthroughHostCatalog = [
 		kind: 'chat',
 	},
 	{
-		id: 'amp',
-		label: 'Amp',
-		icon: 'amp',
-		company: 'sourcegraph',
-		kind: 'coding',
-	},
-	{
-		id: 'warp',
-		label: 'Warp',
-		icon: 'warp',
-		company: 'warp',
-		kind: 'coding',
-	},
-	{
-		id: 'goose',
-		label: 'Goose',
-		icon: 'goose',
-		company: 'block',
-		kind: 'coding',
-	},
-	{
-		id: 'zed',
-		label: 'Zed',
-		icon: 'zed',
-		company: 'zed',
-		kind: 'coding',
-	},
-	{
 		id: 'devin',
 		label: 'Devin',
 		icon: 'devin',
 		company: 'cognition',
 		kind: 'both',
-	},
-	{
-		id: 'pi',
-		label: 'Pi',
-		icon: 'pi',
-		company: 'pi',
-		kind: 'coding',
 	},
 	{
 		id: 'openclaw',
@@ -176,34 +136,6 @@ export const walkthroughHostCatalog = [
 		label: 'Muse',
 		icon: 'muse',
 		company: 'meta',
-		kind: 'coding',
-	},
-	{
-		id: 'wajo',
-		label: 'Wajo',
-		icon: 'wajo',
-		company: 'wajo',
-		kind: 'coding',
-	},
-	{
-		id: 'cue',
-		label: 'Cue',
-		icon: 'cue',
-		company: 'cue',
-		kind: 'coding',
-	},
-	{
-		id: 'openmuse',
-		label: 'OpenMuse',
-		icon: 'openmuse',
-		company: 'copilotkit',
-		kind: 'coding',
-	},
-	{
-		id: 'dots',
-		label: 'Dots',
-		icon: 'dots',
-		company: 'openai',
 		kind: 'coding',
 	},
 ] as const satisfies ReadonlyArray<WalkthroughHost>
