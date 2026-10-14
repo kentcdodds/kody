@@ -98,7 +98,15 @@ test('admin reserved username capabilities: admin-only, audit, permanent refusal
 
 	const holderEmail = 'holder@example.com'
 	const holderStableId = testStableUserIdFromEmail(holderEmail)
+	const adminStableId = testStableUserIdFromEmail('admin@example.com')
 	sqlite.exec(`
+		INSERT INTO users (username, email, stable_user_id, password_hash)
+		VALUES (
+			'opslead',
+			'admin@example.com',
+			${quoteSqlString(adminStableId)},
+			'hash'
+		);
 		INSERT INTO users (username, email, stable_user_id, password_hash)
 		VALUES (
 			'brandnew',

@@ -91,13 +91,33 @@ const fullReport = {
 }
 
 function createContext(roles: Array<string>) {
+	const actorId = personIdFromStored('actor-1')
 	return {
-		env: { APP_DB: {} as D1Database } as Env,
+		env: {
+			APP_DB: {
+				prepare(_sql: string) {
+					return {
+						bind(stableUserId: string) {
+							return {
+								async first() {
+									if (stableUserId !== actorId) return null
+									return {
+										id: 1,
+										email: 'actor@example.com',
+										username: 'actor',
+									}
+								},
+							}
+						},
+					}
+				},
+			} as unknown as D1Database,
+		} as Env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: personIdFromStored('actor-1'),
+				userId: actorId,
 				username: 'actor',
 				email: 'actor@example.com',
 				displayName: 'Actor',
