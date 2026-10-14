@@ -74,7 +74,7 @@ const mockModule = await vi.hoisted(async () => {
 			username: 'test-user',
 			displayName: 'user',
 		},
-		request: sessionRequestContext('stable-user-1'),
+		request: sessionRequestContext('stable-user-1', 'test-user'),
 	}
 	return {
 		authenticatedUser,
@@ -192,7 +192,15 @@ const mockModule = await vi.hoisted(async () => {
 		deleteEmailMessage: vi.fn<typeof emailService.deleteEmailMessage>(
 			async () => true,
 		),
-		prepare: vi.fn(),
+		// Unverified personal inboxes ask whether the org is a users row.
+		// A hit keeps the verification shell; this file's viewer is personal.
+		prepare: vi.fn((_query: string) => ({
+			bind: () => ({
+				first: async () => ({ ok: 1 }),
+				all: async () => ({ results: [] }),
+				run: async () => ({ success: true, meta: {} }),
+			}),
+		})),
 	}
 })
 
@@ -275,6 +283,13 @@ vi.mock('#worker/email/repo.ts', () => ({
 	) => mockModule.listEmailInboxAddressesForUser(...args),
 }))
 
+vi.mock('#worker/email/inbound-sender.ts', () => ({
+	classifyInboundEmailSender: vi.fn(async () => ({
+		kind: 'unverified',
+		reason: 'From address was not authenticated.',
+	})),
+}))
+
 vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	listOwnerEmailMessagesPage: (
 		...args: Parameters<typeof ownerEmailReader.listOwnerEmailMessagesPage>
@@ -317,7 +332,7 @@ function createEnv(input?: {
 	}))
 	return {
 		APP_DB: {
-			prepare: (...args: Array<unknown>) => mockModule.prepare(...args),
+			prepare: (query: string) => mockModule.prepare(query),
 		} as unknown as D1Database,
 		APP_BASE_URL: 'https://example.com',
 		COOKIE_SECRET: 'secret',

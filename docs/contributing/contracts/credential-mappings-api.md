@@ -7,9 +7,8 @@ on [ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md),
 including the 2026-10-12 amendments and the
 [credential mappings amendment](../decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-13-credential-mappings).
 
-"Credentials" is the umbrella term: Keys (today's secrets), OAuth integrations,
-MCP servers, and the opt-in `url`, `login`, and `signing` kinds are all
-credentials.
+"Credentials" is the umbrella term: Keys (secrets), OAuth integrations, MCP
+servers, and the opt-in `url`, `login`, and `signing` kinds are all credentials.
 
 Shapes here are the API contract. The TypeScript types and URL codecs live in
 [`credential-contracts.ts`](../../../packages/worker/universal/credential-contracts.ts)
@@ -24,8 +23,8 @@ payloads for UI fixtures.
 - Every option list holds only credentials the viewer can Use.
 - Agents can only **propose** mappings. A proposal takes effect only when a
   signed-in person clicks Approve on the approval page.
-- Key placeholders (`{{secret:NAME}}`, `{{integration-token:NAME}}`) are
-  unaffected by mappings and keep working exactly as they do.
+- Key placeholders (`{{secret:NAME}}`, `{{integration-token:NAME}}`) resolve by
+  name and do not use mappings.
 - Hosted and `--local` runs resolve mappings the same way (the host resolves;
   values never reach the local machine).
 
@@ -380,6 +379,14 @@ reaches Approve: minting a webhook URL never turns it on, and the mint returns
 `enable=webhook:<name>` as its approval link. Each distinct `enable` value
 counts as one param.
 
+`sender_kind` and `sender_value` name who an inbound-email subscription runs
+for. Kinds are `member`, `address`, `domain`, and `any_authenticated`. `member`
+needs a person id, `address` a normalized email address, and `domain` a bare
+domain. `any_authenticated` ignores `sender_value`. Approving
+`enable=subscription:email.message.received` or `email.message.quarantined`
+stores that sender on the new enablement. `enablementEnable` refuses those
+topics and points at this page.
+
 At most 64 mapping params (a param's repeated values count once). Param names
 that decode to the same target and need (`default[github]` and
 `default[git%68ub]`) are one param. Example:
@@ -410,6 +417,7 @@ export type CredentialApprovalErrorCode =
 	| 'not_allowed'
 	| 'webhook_not_minted'
 	| 'webhook_other_enabler'
+	| 'email_approval_required'
 
 export type CredentialApprovalChangeView = {
 	target: CredentialMappingTarget
@@ -450,6 +458,11 @@ export type CredentialApprovalView = {
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
 	enable: Array<CredentialApprovalEnableView>
+	/** Sender stored on an inbound-email enablement. Null when unnamed. */
+	sender: {
+		kind: 'member' | 'address' | 'domain' | 'any_authenticated'
+		value: string | null
+	} | null
 	/** Proposal-level problems (bad param names, too many params). */
 	errors: Array<string>
 }
@@ -488,7 +501,7 @@ export type CredentialApprovalSuccess = {
   POST; it is not a mapping param. Approve records the trigger picks it applied
   on that proposal only when the viewer is the person the agent acted for and
   the link still matches the recorded proposal exactly. Otherwise it records
-  nothing and the write is unchanged.
+  nothing; the mapping write still applies.
 
 ### `credentialMappingPropose` (MCP / Open API)
 
@@ -507,6 +520,15 @@ Input:
 	}>
 	/** Triggers to turn on with no mapping (a webhook with no needs). */
 	enable?: Array<{ kind: CredentialTriggerKind; name: string }>
+	/**
+	 * Sender an inbound-email subscription runs for. Required when `enable`
+	 * or a trigger mapping turns on `email.message.received` or
+	 * `email.message.quarantined`. `any_authenticated` omits `value`.
+	 */
+	sender?: {
+		kind: 'member' | 'address' | 'domain' | 'any_authenticated'
+		value?: string | null
+	}
 	reason?: string
 }
 ```
@@ -566,8 +588,7 @@ Output: `{ trigger, needKey, credentials: Array<CredentialRef>, message }`.
 Minting a webhook URL never turns it on. `webhookUrlMint` / `webhookUrlRotate`
 return `approval_url` (the website mint and rotate responses: `approvalUrl`)
 while the endpoint has no enablement that is on or paused; it is null once one
-exists. Enablements from before this rule, migrated or created by an earlier
-mint, are untouched.
+exists. An existing enablement is left alone.
 
 A delivery that runs nothing answers 409:
 
@@ -637,7 +658,7 @@ export type CredentialClientErrorBody = {
 - A failure fails only that `credential()` call. In a trigger run, a need a
   republish added that has no single matching credential (unbound or ambiguous)
   never pauses the trigger: the call fails with the error and its link, and the
-  trigger's other calls and later runs keep working, as for any other runtime
+  trigger's other calls and later runs continue, as for any other runtime
   credential error. Only a credential the trigger mapping names pauses it (see
   "Paused on a trigger mapping").
 - `credential_not_found` for `credential.named(name)` links with `name`
@@ -648,9 +669,9 @@ export type CredentialClientErrorBody = {
 
 ## Redirects
 
-These old URLs redirect (302, query preserved) to the Credentials UI:
+These URLs redirect (302, query preserved) to the Credentials UI:
 
-| Old                     | New                                   |
+| From                    | To                                    |
 | ----------------------- | ------------------------------------- |
 | `/@:org/-/secrets`      | `/@:org/-/credentials?kind=secret`    |
 | `/@:org/-/integrations` | `/@:org/-/credentials?kind=oauth`     |

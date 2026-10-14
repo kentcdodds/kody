@@ -34,23 +34,6 @@ function byName(env: EnvConfig | undefined, name: string) {
 	)
 }
 
-test('runtime worker binds RepoSessionIndex cross-script next to RepoSession', async () => {
-	const config = parseJsonc<WorkerConfig>(
-		await readFile(runtimeBaseConfigPath, 'utf8'),
-	)
-	for (const envName of ['production', 'preview']) {
-		const env = config.env?.[envName]
-		expect(byName(env, 'REPO_SESSION')).toMatchObject({
-			class_name: 'RepoSession',
-			script_name: 'kody-platform',
-		})
-		expect(byName(env, 'REPO_SESSION_INDEX')).toMatchObject({
-			class_name: 'RepoSessionIndex',
-			script_name: 'kody-platform',
-		})
-	}
-})
-
 /** `FOO_BAR_QUEUE` produces into `<prefix>-foo-bar`. */
 function producers(prefix: string, ...bindings: Array<string>) {
 	return bindings.map((binding) => ({

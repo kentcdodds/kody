@@ -124,6 +124,126 @@ export function isRetryableCloudflareApiError(error: unknown) {
 	return isRetryableCloudflareFailure(error.message)
 }
 
+/**
+ * Cloudflare answered 404 or 410 for a resource that was just created, listed,
+ * or deleted. Vectorize recycled preview names keep answering 410
+ * `vectorize.index.deleted` for a while after create (#3674 #3712 #3718);
+ * Queues can 404 by id after a concurrent delete (#3693). Callers wait or
+ * recreate under a deadline — these are not permanent "does not exist"
+ * outcomes for ensure-style flows.
+ */
+export function isTransientCloudflareGone(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return /Cloudflare API request failed \((404|410)\)/.test(error.message)
+}
+
+/**
+ * Account / service quota failures that must surface as a distinct class
+ * (not a generic ensure flake). Cloudflare 10067 is the Durable Object
+ * namespace cap (~500); 10090 is the broader Workers service limit (#3707).
+ */
+export function isCloudflareQuotaExceededFailure(message: string) {
+	return (
+		/\[code:\s*10067\]/.test(message) ||
+		/\[code:\s*10090\]/.test(message) ||
+		/Cloudflare API request failed \(\d+\):.*\b10067\b/.test(message) ||
+		/Cloudflare API request failed \(\d+\):.*\b10090\b/.test(message)
+	)
+}
+
+/** Account Durable Object namespace cap that preview leftovers fill (#3396). */
+const cloudflareDurableObjectNamespaceLimit = 500
+
+/**
+ * Namespaces one fresh preview fleet typically creates (platform + runtime +
+ * jobs owned classes, plus a small cushion for origin/highlight/workflow
+ * bindings). Ensure refuses to start when remaining headroom is below this.
+ */
+const previewDurableObjectNamespaceHeadroom = 40
+
+/**
+ * Count Durable Object namespaces on the account. The listing has answered
+ * both `[...]` and `{ namespaces: [...] }` (same as preview-sweep /
+ * origin-production-deploy-state).
+ */
+async function countCloudflareDurableObjectNamespaces(input: {
+	accountId: string
+	apiToken: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
+}) {
+	let count = 0
+	let page = 1
+	for (;;) {
+		const payload = await cloudflareApiRequest<unknown>({
+			...input,
+			pathname: `/workers/durable_objects/namespaces?page=${String(page)}&per_page=100`,
+		})
+		const result = payload.result
+		const batch = Array.isArray(result)
+			? result
+			: result &&
+				  typeof result === 'object' &&
+				  Array.isArray((result as { namespaces?: unknown }).namespaces)
+				? (result as { namespaces: Array<unknown> }).namespaces
+				: null
+		if (!batch) {
+			throw new Error(
+				'Cloudflare Durable Object namespace listing returned a malformed result.',
+			)
+		}
+		count += batch.length
+		const totalPages = payload.result_info?.total_pages
+		if (typeof totalPages === 'number') {
+			if (page >= totalPages) break
+		} else if (batch.length < 100) {
+			break
+		}
+		page += 1
+		if (page > 100) break
+	}
+	return count
+}
+
+/**
+ * Fail before preview ensure provisions more Workers when the account is near
+ * the Durable Object namespace cap. Reports remaining vs required headroom so
+ * the job points at sweep/quota rather than a later opaque 10067 mid-deploy.
+ */
+export async function assertDurableObjectNamespaceHeadroom(input: {
+	accountId: string
+	apiToken: string
+	requiredHeadroom?: number
+	limit?: number
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
+}) {
+	const limit = input.limit ?? cloudflareDurableObjectNamespaceLimit
+	const required =
+		input.requiredHeadroom ?? previewDurableObjectNamespaceHeadroom
+	const count = await countCloudflareDurableObjectNamespaces(input)
+	const remaining = limit - count
+	if (remaining >= required) {
+		console.error(
+			`Durable Object namespace headroom: ${String(remaining)} free of ${String(limit)} (${String(count)} in use; need ${String(required)}).`,
+		)
+		return { count, remaining, limit, required }
+	}
+	throw new CloudflareResourceError(
+		'durable-object-namespaces',
+		'account',
+		`Cloudflare Durable Object namespace headroom exhausted: ${String(count)} of ${String(limit)} in use (${String(remaining)} free, need ${String(required)}). Wait for preview-sweep or close leftover previews (quota codes 10067/10090).`,
+	)
+}
+
 type CloudflareEventSubscription = {
 	id: string
 	name: string

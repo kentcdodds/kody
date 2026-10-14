@@ -170,6 +170,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 	let actionState: 'idle' | 'busy' = 'idle'
 	let memories: Array<AccountMemoryListItem> = []
 	let selectedMemory: AccountMemoryDetail | null = null
+	let legacyReadOnly = false
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	let deleteMode: DeleteMode = null
@@ -227,6 +228,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 	function applyPayload(payload: AccountMemoriesLoaderData) {
 		memories = payload.memories
 		selectedMemory = payload.selectedMemory
+		legacyReadOnly = payload.legacyReadOnly
 		deleteMode = null
 	}
 
@@ -321,7 +323,11 @@ export function AccountMemoriesRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Memories"
-					description="Long-term memories Kody stores for your account. Agents create and update them; you can browse, filter, and delete here."
+					description={
+						legacyReadOnly
+							? 'Legacy team-org memories (read-only). Memory is personal now — new facts live on your personal account. Shared org knowledge belongs in documented packages and org instructions.'
+							: 'Personal long-term memories for your account. Agents create and update them; you can browse, filter, and delete here.'
+					}
 					currentHref={currentHref}
 				/>
 
@@ -342,6 +348,14 @@ export function AccountMemoriesRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
+						{legacyReadOnly ? (
+							<AccountManagementMessage tone="info">
+								These rows are a read-only legacy copy for this workspace.
+								Writable memory is personal — open your personal org Memories
+								page to manage what agents recall. A later cleanup will remove
+								this list.
+							</AccountManagementMessage>
+						) : null}
 						<p
 							mix={css({
 								margin: 0,
@@ -349,8 +363,9 @@ export function AccountMemoriesRoute(handle: Handle) {
 								fontSize: typography.fontSize.sm,
 							})}
 						>
-							Showing up to the 100 most recent memories. Agents create them
-							through verify and upsert.
+							{legacyReadOnly
+								? "Showing up to the 100 most recent legacy memories for this workspace. Agents no longer write here — new memories go to each person's personal org."
+								: 'Showing up to the 100 most recent personal memories. Agents create them through verify and upsert.'}
 						</p>
 						<RecordTable
 							mode="expand"
@@ -563,80 +578,87 @@ export function AccountMemoriesRoute(handle: Handle) {
 											)}
 										</div>
 
-										<div
-											mix={css({
-												display: 'flex',
-												gap: spacing.sm,
-												flexWrap: 'wrap',
-												alignItems: 'center',
-											})}
-										>
-											<button
-												type="button"
-												disabled={
-													isMutating || detailMemory.status === 'deleted'
-												}
-												mix={[
-													on('click', () => {
-														if (deleteMode !== 'soft') {
-															deleteMode = 'soft'
-															handle.update()
-															return
-														}
-														void postDelete({
-															memoryId: detailMemory.id,
-															force: false,
-														})
-													}),
-													css(dangerButtonCss),
-												]}
+										{legacyReadOnly ? (
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												Read-only legacy row. Manage personal memories on your
+												personal org.
+											</p>
+										) : (
+											<div
+												mix={css({
+													display: 'flex',
+													gap: spacing.sm,
+													flexWrap: 'wrap',
+													alignItems: 'center',
+												})}
 											>
-												{actionState === 'busy' && deleteMode === 'soft'
-													? 'Deleting...'
-													: deleteMode === 'soft'
-														? 'Confirm soft delete'
-														: 'Soft delete'}
-											</button>
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', () => {
-														if (deleteMode !== 'hard') {
-															deleteMode = 'hard'
-															handle.update()
-															return
-														}
-														void postDelete({
-															memoryId: detailMemory.id,
-															force: true,
-														})
-													}),
-													css(dangerButtonCss),
-												]}
-											>
-												{actionState === 'busy' && deleteMode === 'hard'
-													? 'Deleting...'
-													: deleteMode === 'hard'
-														? 'Confirm permanent delete'
-														: 'Delete permanently'}
-											</button>
-											{deleteMode ? (
+												<button
+													type="button"
+													disabled={
+														isMutating || detailMemory.status === 'deleted'
+													}
+													mix={[
+														on('click', () => {
+															if (deleteMode !== 'soft') {
+																deleteMode = 'soft'
+																handle.update()
+																return
+															}
+															void postDelete({
+																memoryId: detailMemory.id,
+																force: false,
+															})
+														}),
+														css(dangerButtonCss),
+													]}
+												>
+													{actionState === 'busy' && deleteMode === 'soft'
+														? 'Deleting...'
+														: deleteMode === 'soft'
+															? 'Confirm soft delete'
+															: 'Soft delete'}
+												</button>
 												<button
 													type="button"
 													disabled={isMutating}
 													mix={[
 														on('click', () => {
-															deleteMode = null
-															handle.update()
+															if (deleteMode !== 'hard') {
+																deleteMode = 'hard'
+																handle.update()
+																return
+															}
+															void postDelete({
+																memoryId: detailMemory.id,
+																force: true,
+															})
 														}),
-														css(secondaryButtonCss),
+														css(dangerButtonCss),
 													]}
 												>
-													Cancel
+													{actionState === 'busy' && deleteMode === 'hard'
+														? 'Deleting...'
+														: deleteMode === 'hard'
+															? 'Confirm permanent delete'
+															: 'Delete permanently'}
 												</button>
-											) : null}
-										</div>
+												{deleteMode ? (
+													<button
+														type="button"
+														disabled={isMutating}
+														mix={[
+															on('click', () => {
+																deleteMode = null
+																handle.update()
+															}),
+															css(secondaryButtonCss),
+														]}
+													>
+														Cancel
+													</button>
+												) : null}
+											</div>
+										)}
 									</section>
 								) : showMemoryNotFound ? (
 									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>

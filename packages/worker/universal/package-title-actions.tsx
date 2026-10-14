@@ -47,20 +47,13 @@ export type PackageRepoActions = {
 	fork: PackageRepoForkAction | null
 	/** Owner: default-branch HEAD is ahead of the last publish. */
 	publishHref: string | null
-	/** Owner: the public listing is pinned behind the published commit. */
-	updateListingHref: string | null
 	/** Owner: the package declares an app. */
 	packageAppHref: string | null
 }
 
 function hasPackageRepoActions(actions: PackageRepoActions | null) {
 	if (!actions) return false
-	return Boolean(
-		actions.fork ||
-		actions.publishHref ||
-		actions.updateListingHref ||
-		actions.packageAppHref,
-	)
+	return Boolean(actions.fork || actions.publishHref || actions.packageAppHref)
 }
 
 /**
@@ -74,6 +67,9 @@ export function renderPackageRepoActions(
 ): RemixNode {
 	if (!actions || !hasPackageRepoActions(actions)) return null
 	const install = actions.fork?.viewerInstall ?? null
+	const publishIsPrimary = Boolean(
+		actions.publishHref && !actions.packageAppHref && !actions.fork,
+	)
 	return (
 		<>
 			{actions.publishHref ? (
@@ -81,36 +77,21 @@ export function renderPackageRepoActions(
 					href={actions.publishHref}
 					data-testid="community-detail-source-ahead-badge"
 					aria-describedby="package-repo-publish-tooltip"
-					mix={css(packageActionSecondaryCss)}
+					mix={css(
+						publishIsPrimary
+							? packageActionPrimaryCss
+							: packageActionSecondaryCss,
+					)}
 				>
 					{renderIcon('arrow-up-right', { size: actionIconSize })}
-					<span>Review &amp; publish</span>
+					<span>Publish changes</span>
 					<span
 						id="package-repo-publish-tooltip"
 						role="tooltip"
 						aria-hidden="true"
 					>
-						Default-branch HEAD is newer than the last publish. Review the
+						Default-branch HEAD is newer than the live version. Review the
 						changes, then publish them.
-					</span>
-				</a>
-			) : null}
-			{actions.updateListingHref ? (
-				<a
-					href={actions.updateListingHref}
-					data-testid="community-detail-update-public-listing"
-					aria-describedby="package-repo-update-listing-tooltip"
-					mix={css(packageActionSecondaryCss)}
-				>
-					{renderIcon('refresh', { size: actionIconSize })}
-					<span>Update public listing</span>
-					<span
-						id="package-repo-update-listing-tooltip"
-						role="tooltip"
-						aria-hidden="true"
-					>
-						The public listing is behind your latest publish. Republish it from
-						settings.
 					</span>
 				</a>
 			) : null}
@@ -338,7 +319,13 @@ const edgeAnchoredTooltipCss = {
  */
 function compactActionCss<
 	T extends ReturnType<typeof getPillButtonCss | typeof getGhostButtonCss>,
->(base: T) {
+>(
+	base: T,
+	ink: {
+		backgroundColor: string
+		color: string
+	},
+) {
 	return {
 		...base,
 		...copyPromptTooltipCss,
@@ -346,6 +333,18 @@ function compactActionCss<
 		position: 'relative' as const,
 		padding: '0.5rem 0.95rem',
 		font: `650 0.875rem/1 ${typography.fontFamilyDisplay}`,
+		// Re-assert fill/ink after tooltip chrome spreads. Remix styles sit in
+		// `@layer rmx`; without this, an unlayered page `a { color: … }` (or a
+		// missing `--color-on-primary`) can leave the label the same green as
+		// the pill fill — a solid box with no visible text.
+		backgroundColor: ink.backgroundColor,
+		color: ink.color,
+		'& > span:not([role="tooltip"])': {
+			color: 'inherit',
+		},
+		'& > svg': {
+			color: 'inherit',
+		},
 		'&:focus-visible': {
 			outline: `2px solid ${colors.primary}`,
 			outlineOffset: '2px',
@@ -359,9 +358,11 @@ function compactActionCss<
 
 const packageActionPrimaryCss = compactActionCss(
 	getPillButtonCss({ size: 'sm' }),
+	{ backgroundColor: colors.primary, color: colors.onPrimary },
 )
 const packageActionSecondaryCss = compactActionCss(
 	getGhostButtonCss({ size: 'sm' }),
+	{ backgroundColor: 'transparent', color: colors.text },
 )
 
 const spinnerCss = {

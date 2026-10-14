@@ -43,12 +43,13 @@ present.
 ## Automatic memory surfacing
 
 When retrieval runs, Kody may return the top one or two relevant active
-memories, including ones surfaced earlier, in the tool text (as
-`## Relevant memories`) and in structured content. Auto-surface is compact:
-**subject**, **summary**, and **id** (structured). Details stay behind
-`metaMemoryGet`. Later ranked hits that share a non-empty `dedupe_key` are
-collapsed so two copies of the same fact cannot spend both slots; blank or
-missing keys surface independently.
+**personal** memories, including ones surfaced earlier, in the tool text (as
+`## Relevant memories (personal)`, each line tagged `[personal]`) and in
+structured content (`scope: "personal"`). Auto-surface is compact: **subject**,
+**summary**, and **id** (structured). Details stay behind `metaMemoryGet`. Later
+ranked hits that share a non-empty `dedupe_key` are collapsed so two copies of
+the same fact cannot spend both slots; blank or missing keys surface
+independently. Ask before copying a personal memory into an org package.
 
 That retrieval is:
 
@@ -69,19 +70,20 @@ they mean. See [Shared memory](../guides/memory.md#writing-memory-verify-first).
 
 Use these through **`execute`**:
 
-- **`metaMemoryVerify`** — required first step before mutating memory
-- **`metaMemoryUpsert`** — create a new memory when `memory_id` is omitted, or
-  update an existing memory when `memory_id` is provided
+- **`metaMemoryVerify`** — required first step before mutating **personal**
+  memory (always the signed-in person's personal org)
+- **`metaMemoryUpsert`** — create a new personal memory when `memory_id` is
+  omitted, or update when `memory_id` is provided
 - **`metaMemoryDelete`** — soft-delete by default; pass `force: true` for
   permanent deletion
-- **`metaMemoryGet`** — load one stored memory by id
-- **`metaMemorySearch`** — browse/search stored memories directly
+- **`metaMemoryGet`** — load one personal memory by id
+- **`metaMemorySearch`** — browse/search personal memories directly
 
 Memory records can also include optional **`source_uris`** — opaque canonical
 document URLs such as GitHub files, R2 object URLs, or Notion pages.
 
 ## Account download and categories
 
-Download memories as JSON from `/@<slug>/-/memories`. Categories are freeform;
-suggested values and the account-download details are in
-[Shared memory](../guides/memory.md).
+Download personal memories as JSON from your personal org's
+`/@<slug>/-/memories`. Categories are freeform; suggested values and the
+account-download details are in [Shared memory](../guides/memory.md).

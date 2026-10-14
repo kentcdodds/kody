@@ -721,16 +721,28 @@ export function suggestFreeMigrationPrefix(input: {
 	return formatMigrationPrefix(prefix)
 }
 
+export type OpenPullRequestMigrationOverlap = {
+	prefix: string
+	pullNumbers: Array<number>
+}
+
 export type OpenPullRequestMigrationAdvisory = {
 	suggestedPrefix: string
 	lines: Array<string>
 	warning: string | null
+	/**
+	 * Prefixes this checkout uses that other open PRs also claim. Non-empty
+	 * means the migration check must fail so the author renumbers before
+	 * mid-ship collisions (#3592). Skipped scans never report overlaps.
+	 */
+	overlaps: Array<OpenPullRequestMigrationOverlap>
 }
 
 /**
  * Lists prefixes claimed by other open pull requests and suggests the lowest
  * prefix at or above the local next that none of them use. Gaps stay allowed.
  * Missing auth is silent. A GitHub failure is a warning, not a check failure.
+ * Overlaps with open PRs fail the check (see `overlaps`).
  */
 export function formatOpenPullRequestMigrationAdvisory(input: {
 	migrationsDir: string
@@ -762,13 +774,19 @@ function skippedMigrationPrefixAdvisory(
 	switch (scan.reason) {
 		case 'no-token':
 		case 'no-repository':
-			return { suggestedPrefix: localNextPrefix, lines: [], warning: null }
+			return {
+				suggestedPrefix: localNextPrefix,
+				lines: [],
+				warning: null,
+				overlaps: [],
+			}
 		case 'unauthorized':
 		case 'error':
 			return {
 				suggestedPrefix: localNextPrefix,
 				lines: [],
 				warning: `Open pull request migration prefix scan skipped: ${scan.detail ?? scan.reason}.`,
+				overlaps: [],
 			}
 		default: {
 			const neverReason: never = scan.reason
@@ -794,10 +812,11 @@ function claimedMigrationPrefixAdvisory(input: {
 			lines: [],
 			warning:
 				'No free 4-digit migration prefix remains. The ledger result is unchanged.',
+			overlaps: [],
 		}
 	}
 	if (claims.length === 0) {
-		return { suggestedPrefix, lines: [], warning: null }
+		return { suggestedPrefix, lines: [], warning: null, overlaps: [] }
 	}
 	const grouped = groupClaimedPrefixes(claims)
 	const localPrefixes = new Set(
@@ -817,6 +836,7 @@ function claimedMigrationPrefixAdvisory(input: {
 			...overlaps.map(
 				(group) => `  ${group.prefix}: ${formatPullNumbers(group)}`,
 			),
+			`Rename to the next free prefix ${suggestedPrefix} (for example, ${suggestedPrefix}-your-change.sql) before merging.`,
 		)
 	}
 	if (suggestedPrefix !== input.localNextPrefix) {
@@ -824,7 +844,7 @@ function claimedMigrationPrefixAdvisory(input: {
 			`Next prefix free of this checkout and those claims: ${suggestedPrefix}.`,
 		)
 	}
-	return { suggestedPrefix, lines, warning: null }
+	return { suggestedPrefix, lines, warning: null, overlaps }
 }
 
 function prefixesFromFileClaims(
@@ -893,6 +913,15 @@ export async function main(
 		for (const error of result.errors) {
 			console.error(`  - ${error}`)
 		}
+		printMigrationPrefixAdvisory(advisory, console.error)
+		process.exitCode = 1
+		return
+	}
+
+	if (advisory.overlaps.length > 0) {
+		console.error(
+			`Migration prefix check failed for ${migrationsDir}: open pull requests claim the same prefix(es). Use ${advisory.suggestedPrefix}.`,
+		)
 		printMigrationPrefixAdvisory(advisory, console.error)
 		process.exitCode = 1
 		return

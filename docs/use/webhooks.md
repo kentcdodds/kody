@@ -6,14 +6,14 @@ register the credential with `webhookUrlApply` (generic HTTPS, including the
 GitHub Hooks API) or copy the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
-package export as the person who approved the webhook.
+package export as its enabler.
 
 Minting does not turn a webhook on. Mint and rotate return `approval_url` while
-nobody has approved it; a person opens it and clicks Approve, which turns the
-webhook on for them and maps the credentials it uses in the same step. Until
-then deliveries answer **409** `enablement_not_on` with that link. Webhooks
-approved before this rule (including ones turned on by an earlier mint) keep
-running, and remint or rotate never changes who they run as.
+the endpoint has no enablement that is on or paused; a person opens it and
+clicks Approve, which turns the webhook on for them and maps the credentials it
+uses in the same step. Until then deliveries answer **409** `enablement_not_on`
+with that link. An existing enablement is left alone; remint or rotate never
+changes who the webhook runs as.
 
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
@@ -674,9 +674,8 @@ A webhook that declares an HMAC type never falls back to the URL secret: a
 request without a valid signature is refused with 401, even on the right URL.
 Prefer an HMAC type whenever the sender can sign.
 
-A webhook that declares no `verification` keeps working the same way: it is
-treated as `url-secret`, and publish accepts it. That will not change. Declaring
-a type is still recommended so the manifest says how the webhook authenticates:
+A webhook that omits `verification` is treated as `url-secret`, and publish
+accepts it. Declare a type so the manifest says how the webhook authenticates:
 `url-secret` when the sender cannot sign, an HMAC type when it can.
 
 Either way, the webhook runs as its enabler, the person who turned it on; with

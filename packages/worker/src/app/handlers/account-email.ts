@@ -1,4 +1,8 @@
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import {
+	AuthorizationError,
+	authorize,
+} from '#worker/authorization/authorize.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountEmailData } from '#app/account-email-data.ts'
@@ -54,20 +58,29 @@ export function createAccountEmailHandler(env: Env) {
 				return user
 			}
 
-			const [accountEmail, destinations] = await Promise.all([
-				loadAccountEmailData({
+			let accountEmail: Awaited<ReturnType<typeof loadAccountEmailData>>
+			try {
+				accountEmail = await loadAccountEmailData({
 					env,
 					request,
 					user,
 					pathMessageId: readPathMessageId(params),
-				}),
-				listEmailNotificationDestinations({
-					db: env.APP_DB,
-					dbUserId: user.userId,
-					accountEmail: user.email,
-					accountEmailVerified: user.emailVerified,
-				}),
-			])
+				})
+			} catch (error) {
+				if (!(error instanceof AuthorizationError)) throw error
+				return renderAppPage({
+					request,
+					env,
+					title: 'Email inbox',
+					status: 403,
+				})
+			}
+			const destinations = await listEmailNotificationDestinations({
+				db: env.APP_DB,
+				dbUserId: user.userId,
+				accountEmail: user.email,
+				accountEmailVerified: user.emailVerified,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -93,6 +106,12 @@ export function createAccountEmailApiHandler(env: Env) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			try {
+				await authorize({ env, request: user.request }, 'email:read')
+			} catch (error) {
+				if (!(error instanceof AuthorizationError)) throw error
+				return jsonResponse({ ok: false, error: error.message }, 403)
 			}
 
 			if (request.method === 'GET') {

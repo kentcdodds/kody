@@ -149,11 +149,9 @@ enabler's) switch for one trigger instance: the job id, the subscribing package
 id plus topic, or the webhook endpoint id. Its state is `on`, `paused` (with the
 cause), or `off`. One person may hold several enablements of the same trigger.
 
-Every org runs its triggers through enablements. `#3388` removed the legacy
-lane, and migration `0115` drops `enablement_org_migrations`. A unique index
-still allows one `origin = 'migrated'` row per trigger instance, which is the
-audit of the backfill that already ran. New enablements are
-`origin = 'enabled'`.
+Every org runs its triggers through enablements. A person turning a trigger on
+writes `origin = 'enabled'`. A unique index allows one `origin = 'migrated'` row
+per trigger instance. Migration `0115` drops `enablement_org_migrations`.
 
 `planEnablementRuns` (`enablements/run-gate.ts`) is the one gate every trigger
 passes:

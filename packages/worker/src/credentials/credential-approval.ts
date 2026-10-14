@@ -9,6 +9,7 @@
  * since review fails Approve.
  */
 import {
+	isInboundEmailApprovalTopic,
 	type CredentialApprovalView,
 	type ParsedCredentialProposal,
 } from '#universal/credential-contracts.ts'
@@ -49,6 +50,7 @@ function fingerprintOf(
 			actorId: scope.actorId,
 			reason: proposal.reason,
 			errors: proposal.errors,
+			sender: proposal.sender,
 			// Stored ids (usable or not) catch any edit since review; names
 			// and scopes catch a rename of a credential picked by id.
 			changes: resolved.map((change) => [
@@ -81,8 +83,20 @@ export async function resolveCredentialApproval(
 	scope: PackageMappingScope,
 	proposal: ParsedCredentialProposal,
 ): Promise<ResolvedCredentialApproval> {
-	const resolved = await resolveMappingChanges(scope, proposal.changes)
-	const enable = resolveTriggerEnables(scope, proposal.enable)
+	const resolved = await resolveMappingChanges(
+		scope,
+		proposal.changes,
+		proposal.sender,
+	)
+	const enable = resolveTriggerEnables(scope, proposal.enable, proposal.sender)
+	const errors = [...proposal.errors]
+	const emailWithoutSender = emailTopicsTurningOn(resolved, enable)
+	if (emailWithoutSender.length > 0 && !proposal.sender) {
+		const listed = emailWithoutSender.map((topic) => `"${topic}"`).join(' and ')
+		errors.push(
+			`Turning on ${listed} needs a sender. Add sender_kind and sender_value (member, address, domain, or any_authenticated).`,
+		)
+	}
 	return {
 		resolved,
 		enable,
@@ -94,7 +108,7 @@ export async function resolveCredentialApproval(
 			},
 			reason: proposal.reason,
 			canApprove:
-				proposal.errors.length === 0 &&
+				errors.length === 0 &&
 				resolved.length + enable.length > 0 &&
 				resolved.every((change) => change.error === null) &&
 				enable.every((entry) => entry.error === null),
@@ -114,9 +128,36 @@ export async function resolveCredentialApproval(
 				willEnable: entry.willEnable,
 				error: entry.error,
 			})),
-			errors: proposal.errors,
+			sender: proposal.sender,
+			errors,
 		},
 	}
+}
+
+function emailTopicsTurningOn(
+	resolved: ReadonlyArray<ResolvedMappingChange>,
+	enable: ReadonlyArray<ResolvedTriggerEnable>,
+) {
+	const topics = new Set<string>()
+	for (const entry of enable) {
+		if (
+			entry.willEnable &&
+			entry.trigger.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(entry.trigger.name)
+		) {
+			topics.add(entry.trigger.name)
+		}
+	}
+	for (const change of resolved) {
+		if (
+			change.willEnable &&
+			change.trigger?.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(change.trigger.name)
+		) {
+			topics.add(change.trigger.name)
+		}
+	}
+	return [...topics]
 }
 
 export type CredentialApprovalOutcome =
@@ -171,6 +212,7 @@ export async function approveCredentialProposal(input: {
 	try {
 		await writeMappingChanges(scope, current.resolved, {
 			enable: current.enable,
+			sender: proposal.sender,
 			requireUnchanged: true,
 			also: approval ? [approval] : [],
 		})
@@ -178,7 +220,8 @@ export async function approveCredentialProposal(input: {
 		// Something changed between this resolve and the write.
 		if (
 			error instanceof MappingWriteRefused &&
-			error.code === 'webhook_other_enabler'
+			(error.code === 'webhook_other_enabler' ||
+				error.code === 'email_sender_conflict')
 		) {
 			return {
 				status: 'conflict',

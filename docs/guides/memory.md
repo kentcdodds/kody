@@ -2,19 +2,22 @@
 id: memory
 title: Shared memory
 summary:
-  What a Kody memory is, why it lives on the account instead of in one host's
-  chat, how memories surface automatically on search and execute, the
-  verify-first rule for writes, and what does not belong in memory (package
-  state, config, credentials). Load this when someone asks what their agents
-  remember about them or how memory travels between agents.
+  What a Kody memory is (personal-only), why it follows the person instead of
+  one host's chat or a team org, how memories surface automatically on search
+  and execute, the verify-first rule for writes, and what does not belong in
+  memory (package state, config, credentials, shared org knowledge). Load this
+  when someone asks what their agents remember about them or how memory travels
+  between agents.
 category: platform
 ---
 
 # Shared memory
 
-A memory is a durable fact or preference attached to your Kody account. Say it
-once in one agent and every other agent connected to the same account can use
-it. That is the whole point: memory follows the person, not the product.
+A memory is a durable **personal** fact or preference attached to you — your
+personal org — not to a team workspace. Say it once in one agent and every other
+agent connected as you can use it, including when that connection is bound to a
+team org. That is the whole point: memory follows the person, not the product
+and not the org.
 
 Your agents have their own memory too: Claude's memory, Codex notes, Cursor
 rules, a personal agent's notes on your machine. Those are good at what that one
@@ -47,26 +50,31 @@ Categories are freeform strings; those are suggestions, not a closed list.
 
 Kody has a home for each kind of state, and memory is only one of them:
 
-| State                                 | Home                                  |
-| ------------------------------------- | ------------------------------------- |
-| A durable fact without a better home  | **Memory**                            |
-| Repeatable behavior and task defaults | Package code and documentation        |
-| A credential                          | [Secrets](./secrets.md)               |
-| A cursor, checkpoint, or runtime knob | `packageStorage()` inside the package |
-| Versioned configuration               | The package repository                |
-| An OAuth login                        | An integration                        |
+| State                                 | Home                                     |
+| ------------------------------------- | ---------------------------------------- |
+| A durable **personal** fact           | **Memory** (your personal org)           |
+| Shared org / team knowledge           | Documented packages and org instructions |
+| Repeatable behavior and task defaults | Package code and documentation           |
+| A credential                          | [Secrets](./secrets.md)                  |
+| A cursor, checkpoint, or runtime knob | `packageStorage()` inside the package    |
+| Versioned configuration               | The package repository                   |
+| An OAuth login                        | An integration                           |
 
-If the fact is about a package's job rather than about you, it does not belong
-in memory. Choosing among MCP server instructions, package docs, export JSDoc,
-and memory is covered in [Where agent guidance lives](./agent-guidance.md).
+If the fact is about a package's job or about the org rather than about you, it
+does not belong in memory. Agents must **ask before copying** a personal memory
+into an org package. Choosing among MCP server instructions, package docs,
+export JSDoc, and memory is covered in
+[Where agent guidance lives](./agent-guidance.md).
 
 ## How memories surface
 
 Your agent does not have to ask for memories. When it calls `search`, Kody
-retrieves the one or two most relevant active memories for the query and adds
-them to the response as a compact `## Relevant memories` block: subject,
-summary, and id. `execute` does the same when the agent passes a short
-`memoryContext` (the task, the query, key entities and constraints).
+retrieves the one or two most relevant active **personal** memories for the
+query and adds them to the response as a compact
+`## Relevant memories (personal)` block, labeled `[personal]`: subject, summary,
+and id. `execute` does the same when the agent passes a short `memoryContext`
+(the task, the query, key entities and constraints). Agents should ask you
+before copying any of those into an org package.
 
 That auto-surface is deliberately small and repeatable. The same one-liner may
 show up again later so the rule stays in context after a long conversation is
@@ -104,9 +112,11 @@ source.
 
 ## Your copy
 
-You can download your memories as JSON from `/@<slug>/-/memories`. The file is
-memories only: no credentials or other account primitives. Deleted memories are
-included only when you turn on **Include deleted**.
+You can download your **personal** memories as JSON from your personal org's
+`/@<slug>/-/memories` page. Team workspace Memories pages are read-only;
+writable memory is always personal. The export file is memories only: no
+credentials or other account primitives. Deleted memories are included only when
+you turn on **Include deleted**.
 
 ## Where to go next
 

@@ -236,8 +236,8 @@ async function setup() {
 		})
 	}
 
-	// Each email subscription runs only for the people who turned it on: Bea
-	// for pkg-shared, the Owner for all three.
+	// Each email subscription is a member sender rule for the person who
+	// turned it on. Unmatched senders run nothing.
 	const enablementIds = new Map<string, string>()
 	for (const [packageId, enablerUserId] of [
 		['pkg-shared', beaId],
@@ -255,6 +255,8 @@ async function setup() {
 				instanceId: packageId,
 				enablerUserId: personIdFromStored(enablerUserId),
 				origin: 'enabled',
+				senderKind: 'member',
+				senderValue: enablerUserId,
 			},
 		})
 		enablementIds.set(`${packageId}:${enablerUserId}`, enablement.id)
@@ -504,7 +506,7 @@ test('a member email runs as that member, only their packages, audited under the
 	expectNoValueIn(rows)
 })
 
-test('a verified non-member runs the inbox owner’s enablements, as the Owner', async () => {
+test('an authenticated sender with no matching rule runs nothing', async () => {
 	const t = await setup()
 
 	for (const from of [
@@ -514,36 +516,57 @@ test('a verified non-member runs the inbox owner’s enablements, as the Owner',
 	]) {
 		t.runs.splice(0)
 		await t.sendEmail({ from, authResults: 'mx; spf=pass; dkim=none' })
-		expect(t.runs.map((run) => run.packageId).sort()).toEqual([
-			'pkg-ops',
-			'pkg-private',
-			'pkg-shared',
-		])
-		for (const run of t.runs) {
-			expect(run.error).toBeNull()
-			expect(run.request).toMatchObject({
-				org: { id: t.orgId },
-				actor: { userId: t.ownerId },
-				membership: { role: 'owner' },
-				attribution: { kind: 'user', userId: t.ownerId },
-				credential: {
-					kind: 'inbound-email',
-					id: t.enablementId(run.packageId, t.ownerId),
-				},
-			})
-		}
+		expect(t.runs).toEqual([])
 	}
+	expect(await t.auditRows()).toEqual([])
+})
 
-	const rows = await t.auditRows()
-	expect(rows).toHaveLength(6)
-	for (const row of rows) {
-		expect(row).toMatchObject({
-			actor_user_id: t.ownerId,
-			credential_kind: 'inbound-email',
-			result: 'success',
+test('a migrated any_authenticated catch-all runs the enabler for authenticated mail', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`UPDATE enablements
+			 SET sender_kind = 'any_authenticated', sender_value = NULL
+			 WHERE org_id = ? AND enabler_user_id = ?`,
+		)
+		.bind(t.orgId, t.ownerId)
+		.run()
+
+	await t.sendEmail({
+		from: 'receipts@shop.example',
+		authResults: 'mx; spf=pass; dkim=none',
+	})
+
+	expect(t.runs.map((run) => run.packageId).sort()).toEqual([
+		'pkg-ops',
+		'pkg-private',
+		'pkg-shared',
+	])
+	for (const run of t.runs) {
+		expect(run.error).toBeNull()
+		expect(run.request).toMatchObject({
+			org: { id: t.orgId },
+			actor: { userId: t.ownerId },
+			membership: { role: 'owner' },
+			attribution: { kind: 'user', userId: t.ownerId },
+			credential: {
+				kind: 'inbound-email',
+				id: t.enablementId(run.packageId, t.ownerId),
+			},
 		})
-		expect(details(row)).toMatchObject({ actorKind: 'person' })
 	}
+	// DKIM-only still does not match the catch-all.
+	consoleWarn.mockImplementation(() => {})
+	t.runs.splice(0)
+	await t.sendEmail({
+		from: 'receipts@shop.example',
+		authResults: 'mx; spf=none; dkim=pass',
+	})
+	expect(t.runs).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-sender-unverified',
+		expect.objectContaining({ outcome: 'no package subscriptions ran' }),
+	)
 })
 
 test('leak test 8: an unverified sender or a spoofed member address runs nothing', async () => {
@@ -588,6 +611,14 @@ test('leak test 8: an unverified sender or a spoofed member address runs nothing
 			email: {
 				from: 'receipts@shop.example',
 				authResults: 'mx; spf=fail; dkim=none',
+			},
+		},
+		{
+			label: 'external sender with DKIM pass only',
+			email: {
+				from: 'receipts@shop.example',
+				envelopeFrom: 'receipts@shop.example',
+				authResults: 'mx; spf=none; dkim=pass',
 			},
 		},
 	]
@@ -647,15 +678,12 @@ test('a member who lost org access is denied at resolve time, with no fallback',
 	expect(details(rows[0])).toMatchObject({ reason: 'wrong_org' })
 	expectNoValueIn(rows)
 
-	// Once removed, Bea is a non-member: her next email runs the inbox
-	// owner's enablements under the non-member rule, never as her.
+	// Once removed, Bea is a non-member. Her member rule no longer matches,
+	// and nothing falls back to the Owner.
 	t.setBeforeResolve(async () => {})
 	t.runs.splice(0)
 	await t.sendEmail({ from: 'bea@acme.example', authResults: dmarcPass })
-	expect(t.runs.length).toBeGreaterThan(0)
-	expect(t.runs.every((run) => run.request?.actor?.userId === t.ownerId)).toBe(
-		true,
-	)
+	expect(t.runs).toEqual([])
 })
 
 test('classification reads live account state for the inbox org', async () => {
@@ -711,4 +739,29 @@ test('classification reads live account state for the inbox org', async () => {
 			},
 		}),
 	).resolves.toMatchObject({ kind: 'unverified' })
+
+	// DKIM pass alone does not authenticate From, so an external sender is
+	// unverified and must not be classified as the inbox owner.
+	await expect(
+		classifyInboundEmailSender({
+			db: t.db,
+			orgId: t.orgId,
+			message: {
+				fromAddress: 'receipts@shop.example',
+				envelopeFrom: 'receipts@shop.example',
+				authResults: 'mx; spf=none; dkim=pass',
+			},
+		}),
+	).resolves.toMatchObject({ kind: 'unverified' })
+	await expect(
+		classifyInboundEmailSender({
+			db: t.db,
+			orgId: t.orgId,
+			message: {
+				fromAddress: 'receipts@shop.example',
+				envelopeFrom: 'bounce@shop.example',
+				authResults: 'mx; spf=pass; dkim=none',
+			},
+		}),
+	).resolves.toMatchObject({ kind: 'inbox-owner' })
 })

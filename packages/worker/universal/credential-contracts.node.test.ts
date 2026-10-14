@@ -1,44 +1,11 @@
 import { expect, test } from 'vitest'
 import {
-	type CredentialApprovalChangeView,
-	type CredentialApprovalErrorCode,
-	type CredentialInjectView,
-	type CredentialListItem,
-	type CredentialTriggerRef,
-	type EffectiveCredentialMapping,
-	type EffectiveCredentialMappingStatus,
-	type PackageCredentialNeedView,
-	type PackageCredentialsIncomplete,
-	type PackageCredentialsWriteError,
-	type PackageCredentialsWriteFailure,
-	type PackageTriggerView,
-	type StoredCredentialMapping,
-	type CredentialApprovalView,
-	type CredentialKind,
-	type CredentialKindMode,
-	type CredentialListFilters,
-	type CredentialListItemStatus,
-	type CredentialListResponse,
-	type CredentialMappingChange,
 	type CredentialMappingProposalChange,
-	type CredentialMappingLayer,
-	type CredentialMappingSource,
-	type CredentialRef,
-	type CredentialScope,
-	type CredentialTriggerKind,
-	type PackageCredentialsView,
 	buildCredentialApprovalHref,
-	credentialApprovalErrorCodes,
-	credentialCreatePath,
-	credentialKinds,
-	credentialMappingLayers,
-	credentialScopes,
-	credentialTriggerKinds,
-	describeCredentialMappingTarget,
-	fetchCapableCredentialKinds,
-	isCredentialKind,
 	buildCredentialCreateHref,
 	buildCredentialCreateUrl,
+	describeCredentialMappingTarget,
+	isCredentialKind,
 	maxCredentialProposalValues,
 	orgCredentialCreatePath,
 	parseCredentialApprovalQuery,
@@ -170,6 +137,17 @@ test('picks parse names, scoped names, and ids', () => {
 	expect(parseCredentialPick('  ')).toBeNull()
 	expect(parseCredentialPick('org:')).toBeNull()
 	expect(parseCredentialPick('name:')).toBeNull()
+	expect(isCredentialKind('mcp')).toBe(true)
+	expect(isCredentialKind('vault')).toBe(false)
+	expect(
+		describeCredentialMappingTarget({ type: 'default', layer: 'org' }),
+	).toBe('org default')
+	expect(
+		describeCredentialMappingTarget({
+			type: 'trigger',
+			trigger: { kind: 'webhook', name: 'push' },
+		}),
+	).toBe('webhook "push"')
 })
 
 test('names that look like prefixes and brackets in names round-trip', () => {
@@ -206,6 +184,7 @@ test('names that look like prefixes and brackets in names round-trip', () => {
 	expect(parseCredentialApprovalQuery(url.searchParams)).toEqual({
 		changes,
 		enable: [],
+		sender: null,
 		reason: null,
 		errors: [],
 	})
@@ -287,6 +266,7 @@ test('approval links round-trip defaults, personal defaults, triggers, and none'
 			},
 		],
 		enable: [],
+		sender: null,
 		reason: 'Daily digest',
 		errors: [],
 	})
@@ -315,6 +295,7 @@ test('enable params turn triggers on with no mapping, deduped and capped with ma
 			{ kind: 'webhook', name: 'incoming' },
 			{ kind: 'subscription', name: 'acme.thing:happened' },
 		],
+		sender: null,
 		reason: null,
 		errors: [],
 	})
@@ -442,243 +423,6 @@ test('a blank pick name never encodes as none on purpose', () => {
 	])
 })
 
-test('vocabularies match the contract', () => {
-	expect(credentialKinds).toEqual([
-		'secret',
-		'oauth',
-		'mcp',
-		'url',
-		'login',
-		'signing',
-	] satisfies Array<CredentialKind>)
-	expect(fetchCapableCredentialKinds).toEqual(['secret', 'oauth', 'login'])
-	expect(isCredentialKind('mcp')).toBe(true)
-	expect(isCredentialKind('vault')).toBe(false)
-	expect(credentialScopes).toEqual([
-		'org',
-		'personal',
-	] satisfies Array<CredentialScope>)
-	expect(credentialMappingLayers).toEqual([
-		'org',
-		'mine',
-	] satisfies Array<CredentialMappingLayer>)
-	expect(credentialTriggerKinds).toEqual([
-		'cron',
-		'subscription',
-		'webhook',
-	] satisfies Array<CredentialTriggerKind>)
-	expect(credentialApprovalErrorCodes).toContain(
-		'webhook_other_enabler' satisfies CredentialApprovalErrorCode,
-	)
-	expect(credentialCreatePath).toBe('/connect/credential')
-	expect(
-		describeCredentialMappingTarget({ type: 'default', layer: 'org' }),
-	).toBe('org default')
-	expect(
-		describeCredentialMappingTarget({
-			type: 'trigger',
-			trigger: { kind: 'webhook', name: 'push' },
-		}),
-	).toBe('webhook "push"')
-})
-
-const acmeBot: CredentialRef = {
-	id: 'cred-1',
-	name: 'acme-bot',
-	scope: 'org',
-	kind: 'oauth',
-}
-
-/** Sample payloads in the contract's shapes, for UI fixtures. */
-const samplePackageCredentials = {
-	ok: true,
-	package: { id: 'pkg-1', kodyId: 'pr-digest', canManage: true },
-	needs: [
-		{
-			key: 'github',
-			kind: null,
-			provider: 'github',
-			description: 'Read PRs to summarize them',
-			multiple: false,
-			defaults: {
-				org: {
-					credentials: [acmeBot],
-					unusableIds: [],
-					updatedAt: '2026-10-13T00:00:00.000Z',
-					updatedBy: { username: 'kent' },
-				},
-				mine: null,
-			},
-			effective: {
-				source: 'org' satisfies CredentialMappingSource,
-				status: 'ready',
-				credentials: [acmeBot],
-				candidates: [],
-				createUrl: null,
-			},
-			options: [acmeBot],
-			createUrl:
-				'https://kody.codes/connect/credential?provider=github&name=github',
-		},
-	],
-	triggers: [
-		{
-			trigger: { kind: 'cron', name: 'daily' },
-			instanceId: 'job-1',
-			enablement: { id: 'en-1', state: 'on', enabledByYou: true },
-			canEdit: true,
-			mappings: [
-				{
-					needKey: 'github',
-					override: null,
-					effective: {
-						source: 'org',
-						status: 'ready',
-						credentials: [acmeBot],
-						candidates: [],
-						createUrl: null,
-					},
-				},
-			],
-		},
-	],
-	locked: [
-		{
-			id: 'cred-3',
-			kind: 'mcp',
-			name: 'linear',
-			scope: 'org',
-			provider: 'linear',
-			description: '',
-			hosts: ['mcp.linear.app'],
-			inject: null,
-			packageId: null,
-			lockedToPackageIds: ['pkg-1'],
-			expiresAt: null,
-			createdAt: '2026-10-13T00:00:00.000Z',
-			updatedAt: '2026-10-13T00:00:00.000Z',
-			status: 'ok' satisfies CredentialListItemStatus,
-			statusMessage: null,
-			mcp: { url: 'https://mcp.linear.app/mcp', enabled: true },
-		},
-	],
-	incomplete: [],
-} satisfies PackageCredentialsView
-
-const sampleApproval = {
-	ok: true,
-	package: { id: 'pkg-1', kodyId: 'pr-digest' },
-	reason: 'Daily digest',
-	canApprove: true,
-	fingerprint: 'abc',
-	changes: [
-		{
-			target: { type: 'default', layer: 'org' },
-			needKey: 'github',
-			need: {
-				kind: null,
-				provider: 'github',
-				description: 'Read PRs to summarize them',
-				multiple: false,
-			},
-			before: null,
-			beforeUnusableIds: [],
-			after: [acmeBot],
-			willEnable: false,
-			error: null,
-		},
-	],
-	enable: [
-		{
-			trigger: { kind: 'webhook', name: 'incoming' },
-			willEnable: true,
-			error: null,
-		},
-	],
-	errors: [],
-} satisfies CredentialApprovalView
-
-test('sample payloads line up with the proposal codecs', () => {
-	const change = sampleApproval.changes[0]!
-	const proposal: CredentialMappingChange = {
-		target: change.target,
-		needKey: change.needKey,
-		credentials: change.after.map((ref) => ({
-			name: ref.name,
-			scope: ref.scope,
-		})),
-	}
-	const href = buildCredentialApprovalHref({
-		username: 'acme',
-		kodyId: samplePackageCredentials.package.kodyId,
-		changes: [{ ...proposal, credentials: proposal.credentials ?? [] }],
-	})
-	expect(href).toBe(
-		'/@acme/pr-digest/approve-credentials?default%5Bgithub%5D=org%3Aacme-bot',
-	)
-	const list: CredentialListResponse = {
-		ok: true,
-		credentials: samplePackageCredentials.locked,
-	}
-	const filters: CredentialListFilters = { kinds: ['mcp'], locked: 'pkg-1' }
-	expect(
-		list.credentials.filter((item) => filters.kinds?.includes(item.kind)),
-	).toHaveLength(1)
-	const mode: CredentialKindMode = 'required'
-	expect(buildCredentialCreateHref({ kind: 'mcp', kindMode: mode })).toBe(
-		'/connect/credential?kind=mcp&kindMode=required',
-	)
-})
-
-test('each view part is addressable on its own', () => {
-	const need: PackageCredentialNeedView = samplePackageCredentials.needs[0]!
-	const stored: StoredCredentialMapping | null = need.defaults.org
-	const effective: EffectiveCredentialMapping = need.effective
-	const status: EffectiveCredentialMappingStatus = effective.status
-	const trigger: PackageTriggerView = samplePackageCredentials.triggers[0]!
-	const triggerRef: CredentialTriggerRef = trigger.trigger
-	const locked: CredentialListItem = samplePackageCredentials.locked[0]!
-	const inject: CredentialInjectView = {
-		kind: 'header',
-		name: 'Authorization',
-		format: 'Bearer {value}',
-	}
-	const incomplete: PackageCredentialsIncomplete = {
-		needKey: 'slack',
-		where: { type: 'trigger', trigger: triggerRef },
-		status: 'unbound',
-	}
-	const change: CredentialApprovalChangeView = sampleApproval.changes[0]!
-	const writeError: PackageCredentialsWriteError = {
-		needKey: 'github',
-		target: change.target,
-		code: 'need_unknown',
-		message: 'No such need.',
-	}
-	const failure: PackageCredentialsWriteFailure = {
-		ok: false,
-		errors: [writeError],
-	}
-	expect(failure.errors[0]?.code).toBe('need_unknown')
-	expect([
-		stored?.credentials[0]?.name,
-		status,
-		triggerRef.name,
-		locked.kind,
-		inject.kind,
-		incomplete.status,
-		change.needKey,
-	]).toEqual([
-		'acme-bot',
-		'ready',
-		'daily',
-		'mcp',
-		'header',
-		'unbound',
-		'github',
-	])
-})
-
 test('an approval link names the recorded agent proposal without adding a change', () => {
 	const changes: Array<CredentialMappingProposalChange> = [
 		{
@@ -708,4 +452,84 @@ test('an approval link names the recorded agent proposal without adding a change
 			new URL(plain, 'https://kody.test').searchParams,
 		),
 	)
+})
+
+test('approval links round-trip a sender and reject a sender that cannot be stored', () => {
+	const memberId = 'a'.repeat(64)
+	const href = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'digest',
+		changes: [],
+		enable: [{ kind: 'subscription', name: 'email.message.received' }],
+		sender: { kind: 'address', value: 'receipts@shop.example' },
+	})
+	expect(href).toBe(
+		'/@acme/digest/approve-credentials?enable=subscription%3Aemail.message.received&sender_kind=address&sender_value=receipts%40shop.example',
+	)
+	expect(
+		parseCredentialApprovalQuery(
+			new URL(href, 'https://kody.codes').searchParams,
+		),
+	).toEqual({
+		changes: [],
+		enable: [{ kind: 'subscription', name: 'email.message.received' }],
+		sender: { kind: 'address', value: 'receipts@shop.example' },
+		reason: null,
+		errors: [],
+	})
+
+	const member = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			`enable=subscription:email.message.received&sender_kind=member&sender_value=${memberId.toUpperCase()}`,
+		),
+	)
+	expect(member.sender).toEqual({ kind: 'member', value: memberId })
+	expect(member.errors).toEqual([])
+
+	const domain = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			'sender_kind=domain&sender_value=%40Shop.Example&enable=subscription:email.message.quarantined',
+		),
+	)
+	expect(domain.sender).toEqual({ kind: 'domain', value: 'shop.example' })
+
+	const anyAuthenticated = parseCredentialApprovalQuery(
+		new URLSearchParams(
+			'sender_kind=any_authenticated&sender_value=ignored@shop.example',
+		),
+	)
+	expect(anyAuthenticated.sender).toEqual({
+		kind: 'any_authenticated',
+		value: null,
+	})
+	expect(anyAuthenticated.errors).toEqual([])
+
+	const missingValue = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_kind=address'),
+	)
+	expect(missingValue.sender).toBeNull()
+	expect(missingValue.errors).toEqual([
+		'"sender_kind=address" needs a sender_value that is an email address.',
+	])
+
+	const missingKind = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_value=receipts@shop.example'),
+	)
+	expect(missingKind.sender).toBeNull()
+	expect(missingKind.errors[0]).toContain('sender_kind')
+
+	const unknown = parseCredentialApprovalQuery(
+		new URLSearchParams('sender_kind=everyone&default[github]=org:bot'),
+	)
+	expect(unknown.sender).toBeNull()
+	expect(unknown.changes).toEqual([
+		{
+			target: { type: 'default', layer: 'org' },
+			needKey: 'github',
+			credentials: [{ name: 'bot', scope: 'org' }],
+		},
+	])
+	expect(unknown.errors).toEqual([
+		'"sender_kind=everyone" is not a sender; use member, address, domain, or any_authenticated.',
+	])
 })

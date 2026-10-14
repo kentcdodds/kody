@@ -194,15 +194,12 @@ const tokenIdInputSchema = z
 	})
 
 /** Normalize `token_id` / `id` alias after tokenIdInputSchema parse. */
-export function resolveTokenIdInput(input: {
+function resolveTokenIdInput(input: {
 	token_id?: string
 	id?: string
 }): string {
 	return input.token_id ?? input.id!
 }
-
-/** Exported for unit tests of the id alias. */
-export const tokenIdInputSchemaForTests = tokenIdInputSchema
 
 const tokenRevokeOutputSchema = z.object({
 	id: z.string(),

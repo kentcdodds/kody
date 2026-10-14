@@ -14,25 +14,27 @@ export type InboundMailboxRoute =
 			systemDomain: string
 	  }
 	| {
-			kind: 'user'
+			kind: 'org'
 			recipient: string
-			username: string
+			/** Base local part: the org handle (personal username or team slug). */
+			localPart: string
 	  }
 
 /**
- * Classify an inbound envelope recipient as operator system mail, user
+ * Classify an inbound envelope recipient as operator system mail, org
  * inbox mail, or a permanent reject.
  *
- * RFC 5233 plus-tags are stripped before reserved, system-local, and
- * username matching. `user+kody@inbox…` (and `+support`, `+admin`, …) is
- * user mail for `user` when that username exists — never the reserved
- * apex local `kody`. The plus-tag is not consulted for those checks.
- * Callers keep the full tagged `recipient` on stored `to_addresses`.
+ * Each org has one address, `{handle}@`. RFC 5233 plus-tags are stripped
+ * before reserved, system-local, and handle matching. `acme+kody@inbox…`
+ * (and `+support`, `+admin`, …) is org mail for `acme` when that handle
+ * exists — never the reserved apex local `kody`. The plus-tag is not
+ * consulted for those checks. Callers keep the full tagged `recipient`
+ * on stored `to_addresses`.
  *
  * Do not reuse the username-claim denylist
  * (`usernameCollidesWithReservedNames` / `isReservedUsername`) on a
  * tagged local: that matcher substring-matches brand/system roots, so
- * `alice+kody` would look reserved even though the mailbox owner is
+ * `alice+kody` would look reserved even though the mailbox org is
  * `alice`.
  */
 export function resolveInboundMailboxRoute(input: {
@@ -78,5 +80,5 @@ export function resolveInboundMailboxRoute(input: {
 			reason: 'This address is reserved for system mail.',
 		}
 	}
-	return { kind: 'user', recipient, username: localBase }
+	return { kind: 'org', recipient, localPart: localBase }
 }

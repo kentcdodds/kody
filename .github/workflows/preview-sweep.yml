@@ -2,7 +2,8 @@ name: 🧹 Preview Sweep
 
 # Removes Cloudflare resources left by PR previews whose PR is closed but whose
 # close-time cleanup never ran or failed (#3396), and by branch previews whose
-# worker is already gone (#3563). Leftover preview Workers keep their Durable
+# worker is already gone (#3563) or whose source branch's PRs are all closed
+# (#3707). Leftover preview Workers keep their Durable
 # Object namespaces until the account cap blocks new previews.
 # tools/ci/preview-sweep.ts only deletes kody-pr-<number>* and
 # kody-branch-<slug>* names, through the preview naming guard in

@@ -34,7 +34,7 @@ function addressDomain(address: string | null) {
  * the signing domain is not parsed, so it may belong to anyone, and the
  * envelope sender is attacker-chosen unless SPF vouches for it.
  */
-function authenticatesFromAddress(input: {
+export function authenticatesFromAddress(input: {
 	verdict: EmailAuthVerdict
 	fromAddress: string
 	envelopeFrom: string | null
@@ -74,8 +74,10 @@ async function loadSenderAccount(db: D1Database, address: string) {
  *   verified, the account is live, and the From address authenticated.
  *   Otherwise it is a spoofed or unverified member address and runs nothing;
  *   it never falls back to the inbox owner.
- * - Any other sender that passes the auth gate (receipts, notifications,
- *   outside collaborators, former members) runs as the inbox owner.
+ * - Any other sender runs as `inbox-owner` only when the From address
+ *   itself authenticated (DMARC pass or aligned SPF). A DKIM pass alone
+ *   does not. Packages still run only through a matching sender rule;
+ *   this kind does not fall back to an inbox-owner enablement.
  */
 export async function classifyInboundEmailSender(input: {
 	db: D1Database
@@ -100,13 +102,25 @@ export async function classifyInboundEmailSender(input: {
 		return { kind: 'unverified', reason: 'Message has no From address.' }
 	}
 	const account = await loadSenderAccount(input.db, fromAddress)
-	if (!account) return { kind: 'inbox-owner' }
-	const binding = await loadOrgBindingForOrg(
-		input.db,
-		account.stable_user_id,
-		input.orgId,
-	)
-	if (!binding?.role) return { kind: 'inbox-owner' }
+	const binding = account
+		? await loadOrgBindingForOrg(input.db, account.stable_user_id, input.orgId)
+		: null
+	if (!account || !binding?.role) {
+		if (
+			!authenticatesFromAddress({
+				verdict,
+				fromAddress,
+				envelopeFrom: input.message.envelopeFrom,
+			})
+		) {
+			return {
+				kind: 'unverified',
+				reason:
+					'From address was not authenticated (DMARC pass or aligned SPF is required).',
+			}
+		}
+		return { kind: 'inbox-owner' }
+	}
 	if (!account.email_verified_at) {
 		return {
 			kind: 'unverified',

@@ -53,6 +53,25 @@ export type EnablementPause = {
 
 export type EnablementOrigin = 'enabled' | 'migrated'
 
+/**
+ * Who an inbound-email subscription enablement runs for. Null matches
+ * nothing. `any_authenticated` is the migrated personal-org catch-all
+ * (ADR 0072); the UI may offer narrowing it.
+ *
+ * - `member`: the classified sender is that person.
+ * - `address`: From is this normalized address and it authenticated.
+ * - `domain`: From's domain is this value and the address authenticated.
+ * - `any_authenticated`: From authenticated (DMARC pass or aligned SPF).
+ */
+export const enablementSenderKinds = [
+	'member',
+	'address',
+	'domain',
+	'any_authenticated',
+] as const
+
+export type EnablementSenderKind = (typeof enablementSenderKinds)[number]
+
 export type EnablementRecord = {
 	id: string
 	orgId: OwnerId
@@ -64,6 +83,8 @@ export type EnablementRecord = {
 	state: EnablementState
 	pause: EnablementPause | null
 	origin: EnablementOrigin
+	senderKind: EnablementSenderKind | null
+	senderValue: string | null
 	enabledAt: string
 	disabledAt: string | null
 	updatedAt: string

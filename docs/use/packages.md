@@ -164,11 +164,11 @@ credentials; opt-in types that a package can declare are described in
   a PAT, oauth, login); declare it only when a specific shape is needed
   (`secret`, `oauth`, `mcp`, or the opt-in types `url`, `login`, and `signing`).
   When `kind` is omitted, matching accepts any fetch-capable credential for the
-  provider; a declared `kind` keeps today's narrowing. `provider` is optional
-  and defaults to the key; a second account from the same provider gets its own
-  key with an explicit `provider`. `description` is required, never affects
-  matching, and says why the package wants access. `multiple: true` means the
-  package uses several accounts at once. A typical need looks like
+  provider; a declared `kind` narrows matching to that kind. `provider` is
+  optional and defaults to the key; a second account from the same provider gets
+  its own key with an explicit `provider`. `description` is required, never
+  affects matching, and says why the package wants access. `multiple: true`
+  means the package uses several accounts at once. A typical need looks like
   `"github": { "description": "Read PRs to summarize them" }`.
 - Publish rejects any other key or a missing required field and names the slot.
   If a later rule rejects a slot in a version that is already published, the
@@ -808,19 +808,19 @@ artifacts, projections) for that SHA. Promoting one commit does not unlock the
 package.
 
 Unlocked packages use the same review page. When default-branch HEAD is newer
-than the last publish, the package Repo tab shows a **HEAD ahead of published**
-badge. Owners click it to open
+than the last publish, owners see **Publish changes** on the Repo tab and a
+**Publishing** panel on Settings. Both open
 `/@{username}/{package-name}/approve-publish?commit=<sha>`, where `<sha>` is the
-resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
-Visitors see the badge but not the link. The five-minute reconcile job still
-auto-publishes unlocked packages; this page is the explicit website path.
+resolved default-branch HEAD, to publish with **Publish HEAD**. Visitors may
+still see a non-interactive status when HEAD is ahead. The five-minute reconcile
+job still auto-publishes unlocked packages; this page is the explicit website
+path.
 
-Publishing or promoting does **not** move a public community listing. The
-catalog pin stays on the last `communityPublish` until you republish — see
+Once a package is listed, publishing or promoting advances the public community
+listing with the runtime — see
 [Listing vs publish and promote](./community-packages.md#listing-vs-publish-and-promote).
-`packagePublishExternalPush` success results include a `listing` hint when the
-listing is behind; the promote page and Repo tab offer **Update public
-listing**.
+`packagePublishExternalPush` may still include a `listing` hint if auto-sync has
+not caught up yet.
 
 Fleet package-codemod apply for `head-and-published` codemods does the same HEAD
 write on locked packages: the transform commits and pushes so you can review it

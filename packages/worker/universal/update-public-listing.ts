@@ -1,7 +1,7 @@
 import { routes } from '#universal/routes.ts'
 
 /** Settings fragment for the website republish control. */
-export const updatePublicListingSectionId = 'update-public-listing'
+const updatePublicListingSectionId = 'update-public-listing'
 
 export function buildUpdatePublicListingHref(input: {
 	username: string
@@ -20,9 +20,9 @@ export type CommunityListingBehindHint = {
 
 /**
  * Build the discoverability hint when a public catalog listing pin lags the
- * package runtime published commit. Listings do not auto-follow promote;
- * owners must call communityPublish (or the website Update public listing
- * action) to move the pin.
+ * package runtime published commit. Promote auto-syncs active listings; this
+ * hint only surfaces when best-effort sync or the scheduled backfill has not
+ * caught up yet.
  */
 export function buildCommunityListingBehindHint(input: {
 	listingPinnedCommit: string
@@ -44,7 +44,7 @@ export function buildCommunityListingBehindHint(input: {
 		pinnedVersion,
 		promotedVersion,
 		behind: true,
-		updateHint: `The public community listing is still pinned to ${pinnedLabel}, while the package runtime is at ${promotedLabel}. Publish and promote do not move the catalog listing. Call communityPublish (or use Update public listing on the package settings page) to republish the listing to the current published commit.`,
+		updateHint: `The public community listing is still pinned to ${pinnedLabel}, while the package runtime is at ${promotedLabel}. Promote normally advances the listing automatically; a background sync is catching this one up. No manual republish step is required.`,
 		updateUrl: input.updateUrl,
 	}
 }

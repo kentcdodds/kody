@@ -1,12 +1,18 @@
 import { expect, test } from 'vitest'
 import {
+	collectBranchPreviewSources,
 	collectPreviewBranchWorkerNames,
 	collectPreviewPullRequestNumbers,
 	hasBudgetForAnotherCleanup,
 	isPreviewDeployInProgress,
+	listBranchPullRequests,
 	listPreviewCandidateNames,
+	branchPreviewTtlMs,
+	planClosedSourceBranchSweep,
 	planBranchPreviewSweep,
+	planExpiredBranchPreviewSweep,
 	planPreviewSweep,
+	previewBranchSlug,
 	previewBranchWorkerName,
 	previewPullRequestNumber,
 	readPullRequestState,
@@ -375,4 +381,187 @@ test('readPullRequestState maps GitHub responses and treats 404 as unknown', asy
 	await expect(read(jsonResponse({ state: 'open' }))).resolves.toBe('open')
 	await expect(read(jsonResponse({}, 404))).resolves.toBe('unknown')
 	await expect(read(jsonResponse({}, 502))).rejects.toThrow(/502/)
+})
+
+test('previewBranchSlug matches the preview.yml slug step', () => {
+	expect(previewBranchSlug('creds-a1-904c')).toBe('creds-a1-904c')
+	expect(previewBranchSlug('cursor/Credentials_List--904c/')).toBe(
+		'cursor-credentials-list-904c',
+	)
+	expect(
+		previewBranchSlug('cursor/a-very-long-branch-name-that-overflows'),
+	).toBe('cursor-a-very-long-branch-name-t')
+	expect(previewBranchSlug('///')).toBe('preview')
+})
+
+test('collectBranchPreviewSources records the newest unambiguous branch deploy per preview', () => {
+	const run = (
+		name: string,
+		branch: string,
+		updatedAt: string,
+		conclusion: string | null = 'success',
+		status = 'completed',
+	) => ({
+		display_title: `Preview ${name}`,
+		head_branch: branch,
+		status,
+		conclusion,
+		updated_at: updatedAt,
+	})
+	const sources = collectBranchPreviewSources([
+		run(
+			'deploy (branch: creds-a1-904c)',
+			'cursor/creds-904c',
+			'2026-10-13T19:40:00Z',
+		),
+		run('cleanup (branch: creds-a1-904c)', 'main', '2026-10-13T18:00:00Z'),
+		run('deploy (branch: creds-a1-904c)', 'main', '2026-10-12T00:00:00Z'),
+		// Newest run failed on the same branch: its later upload time counts.
+		run(
+			'deploy (branch: same)',
+			'feat/same',
+			'2026-10-13T12:00:00Z',
+			'failure',
+		),
+		run('deploy (branch: same)', 'feat/same', '2026-10-13T10:00:00Z'),
+		// A failed run from another branch may or may not own the Worker.
+		run('deploy (branch: shared)', 'feat/b', '2026-10-13T12:00:00Z', 'failure'),
+		run('deploy (branch: shared)', 'feat/a', '2026-10-13T10:00:00Z'),
+		// Still running: unknown until it finishes.
+		run(
+			'deploy (branch: busy)',
+			'feat/busy',
+			'2026-10-13T12:00:00Z',
+			null,
+			'in_progress',
+		),
+		run('deploy (branch: busy)', 'feat/busy', '2026-10-13T10:00:00Z'),
+		// Never deployed successfully.
+		run(
+			'deploy (branch: broken)',
+			'feat/broken',
+			'2026-10-13T12:00:00Z',
+			'failure',
+		),
+		run('deploy (pr: 12)', 'main', '2026-10-12T00:00:00Z'),
+		{
+			...run('', 'feature', '2026-10-12T00:00:00Z'),
+			display_title: 'feat: some PR title',
+		},
+	])
+	expect([...sources]).toEqual([
+		[
+			'kody-branch-creds-a1-904c',
+			{ branch: 'cursor/creds-904c', deployedAt: '2026-10-13T19:40:00Z' },
+		],
+		[
+			'kody-branch-same',
+			{ branch: 'feat/same', deployedAt: '2026-10-13T12:00:00Z' },
+		],
+	])
+})
+
+test('planExpiredBranchPreviewSweep sweeps live branch previews past the TTL', () => {
+	const nowMs = Date.parse('2026-10-14T00:00:00Z')
+	const sources = new Map([
+		[
+			'kody-branch-old',
+			{
+				branch: 'feat/old',
+				deployedAt: new Date(nowMs - branchPreviewTtlMs - 1_000).toISOString(),
+			},
+		],
+		[
+			'kody-branch-fresh',
+			{
+				branch: 'feat/fresh',
+				deployedAt: new Date(nowMs - branchPreviewTtlMs + 60_000).toISOString(),
+			},
+		],
+	])
+	expect(
+		planExpiredBranchPreviewSweep({
+			liveBranchWorkerNames: [
+				'kody-branch-old',
+				'kody-branch-fresh',
+				'kody-branch-unknown',
+			],
+			sources,
+			nowMs,
+		}),
+	).toEqual([
+		{
+			workerName: 'kody-branch-old',
+			branch: 'feat/old',
+			deployedAt: sources.get('kody-branch-old')!.deployedAt,
+		},
+	])
+})
+
+test('planClosedSourceBranchSweep sweeps only previews whose source PRs all closed after the deploy', () => {
+	const deployedAt = '2026-10-13T19:00:00Z'
+	const sources = new Map([
+		['kody-branch-closed', { branch: 'b/closed', deployedAt }],
+		['kody-branch-open', { branch: 'b/open', deployedAt }],
+		['kody-branch-reopened', { branch: 'b/reopened', deployedAt }],
+		['kody-branch-no-pr', { branch: 'b/no-pr', deployedAt }],
+		['kody-branch-from-main', { branch: 'main', deployedAt }],
+		['kody-branch-after-close', { branch: 'b/after-close', deployedAt }],
+	])
+	const closed = (closedAt: string) => ({ state: 'closed' as const, closedAt })
+	const pullRequests = new Map([
+		['b/closed', [closed('2026-10-13T21:55:00Z')]],
+		['b/open', [{ state: 'open' as const, closedAt: null }]],
+		[
+			'b/reopened',
+			[
+				closed('2026-10-13T20:00:00Z'),
+				{ state: 'open' as const, closedAt: null },
+			],
+		],
+		['b/no-pr', []],
+		['main', [closed('2026-10-13T21:00:00Z')]],
+		['b/after-close', [closed('2026-10-13T18:00:00Z')]],
+	])
+	expect(
+		planClosedSourceBranchSweep({
+			liveBranchWorkerNames: [...sources.keys(), 'kody-branch-unrecorded'],
+			sources,
+			pullRequests,
+			defaultBranch: 'main',
+		}),
+	).toEqual([{ workerName: 'kody-branch-closed', branch: 'b/closed' }])
+})
+
+test('listBranchPullRequests queries by owner:branch across states', async () => {
+	const urls: Array<URL> = []
+	const pulls = await listBranchPullRequests({
+		repository: 'kentcdodds/kody',
+		branch: 'cursor/credentials-list-904c',
+		githubToken: 'token',
+		fetcher: (async (input: RequestInfo | URL) => {
+			urls.push(new URL(String(input)))
+			return jsonResponse([
+				{ state: 'closed', closed_at: '2026-10-13T21:55:29Z' },
+				{ state: 'open', closed_at: null },
+			])
+		}) as typeof fetch,
+	})
+	expect(urls[0]?.searchParams.get('head')).toBe(
+		'kentcdodds:cursor/credentials-list-904c',
+	)
+	expect(urls[0]?.searchParams.get('state')).toBe('all')
+	expect(urls).toHaveLength(1)
+	expect(pulls).toEqual([
+		{ state: 'closed', closedAt: '2026-10-13T21:55:29Z' },
+		{ state: 'open', closedAt: null },
+	])
+	await expect(
+		listBranchPullRequests({
+			repository: 'kentcdodds/kody',
+			branch: 'x',
+			githubToken: 'token',
+			fetcher: (async () => jsonResponse({}, 502)) as typeof fetch,
+		}),
+	).rejects.toThrow(/502/)
 })

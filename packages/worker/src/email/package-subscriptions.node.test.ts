@@ -31,6 +31,7 @@ vi.mock('./repo.ts', () => ({
 
 vi.mock('./inbound-sender.ts', () => ({
 	classifyInboundEmailSender: async () => ({ kind: 'inbox-owner' }),
+	authenticatesFromAddress: () => false,
 }))
 
 vi.mock('./mailbox-internal-read.ts', () => ({
@@ -221,6 +222,8 @@ test('accepted inbound messages dispatch email.message.received with classificat
 				sourceId: 'inbox-1',
 				sender: { kind: 'inbox-owner' },
 			},
+			inboundFromAddress: 'sender@example.net',
+			inboundFromAuthenticated: false,
 			params: expect.objectContaining({
 				event: inboundEmailReceiptTopic,
 				message: expect.objectContaining({

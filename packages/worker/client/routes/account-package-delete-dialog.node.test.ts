@@ -29,6 +29,9 @@ const packageDetail: AccountPackageDetail = {
 	publishedCommit: null,
 	pendingCommit: null,
 	pendingCommitKnown: true,
+	publishedVersion: null,
+	unpublishedChangeCount: null,
+	ownerIsPersonal: true,
 	communityFork: null,
 }
 

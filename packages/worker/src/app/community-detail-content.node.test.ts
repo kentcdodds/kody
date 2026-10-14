@@ -162,7 +162,35 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(ownerAheadHtml).toMatch(
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
-	expect(ownerAheadHtml).toContain('Review &amp; publish')
+	expect(ownerAheadHtml).toContain('Publish changes')
+	// Primary pill ink must stay on-primary (not page link green-on-green).
+	const publishClass =
+		/data-testid="community-detail-source-ahead-badge"[^>]*class="(rmxc-[^"\s]+)/.exec(
+			ownerAheadHtml,
+		)?.[1]
+	expect(publishClass).toBeTruthy()
+	const publishLayer = new RegExp(
+		`@layer rmx\\.${publishClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(publishLayer).toMatch(/color:\s*var\(--color-on-primary\)/)
+	const navClass =
+		/data-testid="package-repo-nav"[^>]*class="(rmxc-[^"\s]+)/.exec(
+			ownerAheadHtml,
+		)?.[1]
+	expect(navClass).toBeTruthy()
+	const navLayer = new RegExp(
+		`@layer rmx\\.${navClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(navLayer).toMatch(/gap:\s*0\.35rem/)
+	const tabClass =
+		/data-testid="package-repo-nav-repo"[^>]*class="(rmxc-[^"\s]+)/.exec(
+			ownerAheadHtml,
+		)?.[1]
+	expect(tabClass).toBeTruthy()
+	const tabLayer = new RegExp(
+		`@layer rmx\\.${tabClass}\\s*\\{([\\s\\S]*?)\\n\\}`,
+	).exec(ownerAheadHtml)?.[1]
+	expect(tabLayer).toMatch(/padding:\s*0\.55rem 0\.55rem/)
 
 	const listingBehindHtml = await render({
 		listing: {
@@ -174,21 +202,12 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		viewerCanManage: true,
 		listingNeedsRepublish: true,
 	})
-	expect(listingBehindHtml).toContain(
+	expect(listingBehindHtml).not.toContain(
 		'data-testid="community-detail-update-public-listing"',
 	)
+	expect(listingBehindHtml).not.toContain('Update public listing')
 	expect(listingBehindHtml).toContain(
-		'href="/@kentcdodds/github-triage/settings#update-public-listing"',
-	)
-	expect(listingBehindHtml).toContain('Update public listing')
-
-	const visitorBehindHtml = await render({
-		viewerIsOwner: false,
-		viewerCanManage: false,
-		listingNeedsRepublish: true,
-	})
-	expect(visitorBehindHtml).not.toContain(
-		'data-testid="community-detail-update-public-listing"',
+		'data-testid="community-detail-source-ahead-badge"',
 	)
 
 	expectMarkers(

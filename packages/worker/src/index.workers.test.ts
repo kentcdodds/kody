@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { env, runInDurableObject } from 'cloudflare:test'
 import type * as SystemEmail from '#worker/email/system-email.ts'
 import type * as D1StorageReconciliation from '#worker/entitlements/d1-storage-reconciliation.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	oauthPurgeContinuationStorageKey,
 	type OAuthPurgeCoordinator,
@@ -174,6 +175,22 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 	] as const) {
 		await runScheduledLane({ env, lane, scheduledAt })
 	}
+	// community_listing_behind_backfill: mocking it here breaks OAuth Durable
+	// Object RPC in this file; the live path soft-fails when community_listings
+	// is absent (workers harness). Behavior is covered in node tests.
+	consoleWarn.mockImplementation(() => {})
+	await expect(
+		runScheduledLane({
+			env,
+			lane: 'community_listing_behind_backfill',
+			scheduledAt,
+		}),
+	).resolves.toEqual({ scanned: 0, synced: 0, failed: 0 })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'community-listing-behind-backfill-scan-failed',
+		expect.anything(),
+	)
+	consoleWarn.mockReset()
 
 	for (const laneMock of [
 		mocks.reconcileArtifactsPushes,

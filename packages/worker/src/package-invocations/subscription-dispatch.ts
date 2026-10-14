@@ -13,7 +13,6 @@ import {
 	planEnablementRuns,
 	type EnablementAudience,
 } from '#worker/enablements/run-gate.ts'
-import { loadEarliestLiveOwnerId } from '#worker/enablements/repo.ts'
 import { fanOutPackageEventToMcpSubscriptions } from '#mcp/events/fan-out.ts'
 import {
 	type PackageEventDispatchInput,
@@ -21,6 +20,7 @@ import {
 } from '#mcp/run-kody-registry.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { isInboundEmailApprovalTopic } from '#universal/credential-contracts.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
@@ -486,6 +486,12 @@ type SubscriptionInvocationInput = {
 	request: RequestSource
 	/** What an org-wide event is about, for the enablement audience rule. */
 	audience?: EnablementAudience | null
+	/**
+	 * Inbound From, for per-sender enablement matching. Address, domain, and
+	 * `any_authenticated` also need `inboundFromAuthenticated`.
+	 */
+	inboundFromAddress?: string | null
+	inboundFromAuthenticated?: boolean
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -493,33 +499,26 @@ type SubscriptionInvocationInput = {
 
 /**
  * Who a subscription event may reach:
- * `{ onlyEnablerId }` narrows to one person, `null` reaches nobody.
+ * `{ onlyEnablerId: id }` narrows to one person, `{ onlyEnablerId: null }`
+ * does not narrow, and `null` reaches nobody.
  *
  * - An event raised by a run (and the smoke test) reaches only the run's
- *   person, and nobody when the run had no person. A member-sent email
- *   reaches only the sender.
- * - Mail from a verified non-member reaches the inbox owner: the person in a
- *   personal org, else the org's earliest current Owner.
+ *   person, and nobody when the run had no person.
+ * - Inbound email does not narrow by enabler. Per-sender enablement rows
+ *   decide which runs fire. A member sender still limits the package list
+ *   to packages they can execute, before this gate.
  * - Platform topics reach every enablement, narrowed by the audience rule.
  */
-async function subscriptionEnablerScope(input: {
-	env: Env
-	orgId: string
-	request: RequestSource
-}): Promise<{ onlyEnablerId: string | null } | null> {
-	const { request } = input
+function subscriptionEnablerScope(
+	request: RequestSource,
+): { onlyEnablerId: string | null } | null {
 	switch (request.kind) {
 		case 'inherited': {
 			const actorId = request.lineage.actor?.userId
 			return actorId ? { onlyEnablerId: actorId } : null
 		}
-		case 'inbound-email': {
-			if (request.sender.kind === 'member') {
-				return { onlyEnablerId: request.sender.actor.userId }
-			}
-			const owner = await loadEarliestLiveOwnerId(input.env.APP_DB, input.orgId)
-			return owner ? { onlyEnablerId: owner } : null
-		}
+		case 'inbound-email':
+			return { onlyEnablerId: null }
 		case 'schedule':
 		case 'webhook': {
 			const enablerId = request.enablement?.enabler.userId
@@ -586,11 +585,7 @@ export async function invokePackageSubscriptionWithToolFactories(
 		input.trustedSyntheticDispatch,
 	)
 	const orgId = input.savedPackage.userId
-	const scope = await subscriptionEnablerScope({
-		env: input.env,
-		orgId,
-		request: input.request,
-	})
+	const scope = subscriptionEnablerScope(input.request)
 	const plan = await planEnablementRuns({
 		env: input.env,
 		orgId,
@@ -601,6 +596,15 @@ export async function invokePackageSubscriptionWithToolFactories(
 			triggerName: topic,
 		},
 		onlyEnablerId: scope?.onlyEnablerId,
+		...(input.request.kind === 'inbound-email'
+			? {
+					inboundSender: {
+						sender: input.request.sender,
+						fromAddress: input.inboundFromAddress ?? null,
+						authenticated: input.inboundFromAuthenticated === true,
+					},
+				}
+			: {}),
 		audience: input.audience,
 	})
 	const runs = scope ? plan.runs : []
@@ -609,7 +613,9 @@ export async function invokePackageSubscriptionWithToolFactories(
 			return buildJsonErrorResponse({
 				status: 409,
 				code: 'enablement_not_on',
-				message: `You have no on enablement of subscription "${topic}" on package "${input.savedPackage.kodyId}". Turn it on for yourself with enablementEnable, then dispatch again.`,
+				message: isInboundEmailApprovalTopic(topic)
+					? `You have no on enablement of subscription "${topic}" on package "${input.savedPackage.kodyId}" for this sender. Approve one from the inbox; enablementEnable cannot turn email on.`
+					: `You have no on enablement of subscription "${topic}" on package "${input.savedPackage.kodyId}". Turn it on for yourself with enablementEnable, then dispatch again.`,
 				idempotencyKey,
 			})
 		}

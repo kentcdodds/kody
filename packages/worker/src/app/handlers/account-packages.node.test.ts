@@ -8,6 +8,7 @@ import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
 import type * as packageSource from '#worker/package-registry/source.ts'
 import type * as entitySources from '#worker/repo/entity-sources.ts'
+import type * as publishedSource from '#worker/repo/published-source.ts'
 import type * as communityRepo from '#worker/community/repo.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
@@ -30,8 +31,36 @@ const mockModule = vi.hoisted(() => {
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
 	}
+	const sourceRow = {
+		id: 'source-1',
+		user_id: 'stable-user-1' as OwnerId,
+		entity_kind: 'package' as const,
+		entity_id: 'pkg-1',
+		repo_id: 'repo-1',
+		published_commit: 'commit-1',
+		indexed_commit: 'commit-1',
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: new Date(0).toISOString(),
+		updated_at: new Date(0).toISOString(),
+	}
+	const publishedManifestContent = JSON.stringify({
+		name: '@test/discord-gateway',
+		version: '1.2.3',
+		exports: {
+			'./dispatch-message-created': { import: './src/index.ts' },
+		},
+		kody: {
+			id: 'discord-gateway',
+			description: 'Dispatch Discord gateway events.',
+		},
+	})
 	return {
 		savedPackage,
+		sourceRow,
+		publishedManifestContent,
 		readAuthenticatedAppUser: vi.fn<
 			typeof authenticatedUserModule.readAuthenticatedAppUser
 		>(async () => ({
@@ -88,24 +117,14 @@ const mockModule = vi.hoisted(() => {
 			async () => null,
 		),
 		getAppBaseUrl: () => 'https://example.com',
-		loadPackageManifestBySourceId: vi.fn<
-			typeof packageSource.loadPackageManifestBySourceId
+		loadPackageSourceRowForUser: vi.fn<
+			typeof packageSource.loadPackageSourceRowForUser
+		>(async () => sourceRow),
+		loadPublishedEntityManifest: vi.fn<
+			typeof publishedSource.loadPublishedEntityManifest
 		>(async () => ({
-			source: {
-				id: 'source-1',
-				user_id: ownerIdFromStored('stable-user-1'),
-				entity_kind: 'package',
-				entity_id: 'pkg-1',
-				repo_id: 'repo-1',
-				published_commit: 'commit-1',
-				indexed_commit: 'commit-1',
-				manifest_path: 'package.json',
-				source_root: '/',
-				last_external_check_at: null,
-				external_check_until: null,
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
+			source: sourceRow,
+			content: publishedManifestContent,
 			manifest: {
 				name: '@test/discord-gateway',
 				exports: {
@@ -207,9 +226,15 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageManifestBySourceId: (
-		...args: Parameters<typeof packageSource.loadPackageManifestBySourceId>
-	) => mockModule.loadPackageManifestBySourceId(...args),
+	loadPackageSourceRowForUser: (
+		...args: Parameters<typeof packageSource.loadPackageSourceRowForUser>
+	) => mockModule.loadPackageSourceRowForUser(...args),
+}))
+
+vi.mock('#worker/repo/published-source.ts', () => ({
+	loadPublishedEntityManifest: (
+		...args: Parameters<typeof publishedSource.loadPublishedEntityManifest>
+	) => mockModule.loadPublishedEntityManifest(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -321,21 +346,31 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 			id: 'pkg-1',
 			searchText: 'discord gateway websocket',
 			exports: ['./dispatch-message-created'],
+			publishedVersion: '1.2.3',
 		},
 	})
-	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
+	expect(mockModule.loadPackageSourceRowForUser).toHaveBeenCalledWith({
 		env,
-		baseUrl: 'https://example.com',
 		userId: 'stable-user-1' as OwnerId,
 		sourceId: 'source-1',
 	})
+	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledWith({
+		env,
+		userId: 'stable-user-1' as OwnerId,
+		sourceId: 'source-1',
+		source: mockModule.sourceRow,
+	})
 
-	mockModule.loadPackageManifestBySourceId.mockRejectedValueOnce(
+	mockModule.loadPublishedEntityManifest.mockRejectedValueOnce(
 		new Error('Saved package source bindings are not available.'),
 	)
 	await expect((await get('?selected=pkg-1')).json()).resolves.toMatchObject({
 		ok: true,
-		selectedPackage: { id: 'pkg-1', exports: null },
+		selectedPackage: {
+			id: 'pkg-1',
+			exports: null,
+			publishedVersion: null,
+		},
 	})
 
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue(
@@ -410,12 +445,15 @@ test('packages API loads the selected package detail while list provenance is st
 
 	const responding = createPackagesClient().get('?selected=pkg-1')
 	await vi.waitFor(() => {
-		expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalled()
+		expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalled()
 	})
 	releaseProvenance()
 	const response = await responding
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toMatchObject({
-		selectedPackage: expect.objectContaining({ id: 'pkg-1' }),
+		selectedPackage: expect.objectContaining({
+			id: 'pkg-1',
+			publishedVersion: '1.2.3',
+		}),
 	})
 })

@@ -4,7 +4,7 @@
  * (ADR 0071) — not the apex itself, so customer DNS never points at a
  * misleading "fallback" label.
  */
-export function packageAppCustomDomainsCnameTarget(
+function packageAppCustomDomainsCnameTarget(
 	packageAppHostname: string,
 ): string {
 	return `domains.${packageAppHostname}`

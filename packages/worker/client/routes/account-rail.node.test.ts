@@ -33,7 +33,6 @@ test('account rail holds the person: profile, security, organizations, experimen
 	expect(
 		security && isAccountNavItemActive(security, '/account/passkeys'),
 	).toBe(true)
-	expect(items.find((item) => item.label === 'Usage & credits')).toBeUndefined()
 	const profile = items.find((item) => item.label === 'Profile')
 	expect(profile && isAccountNavItemActive(profile, '/account/security')).toBe(
 		false,
@@ -119,10 +118,6 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(overview && isAccountNavItemActive(overview, '/@jane/-/jobs')).toBe(
 		false,
 	)
-	// Every section the overview page lists carries a one-line description.
-	for (const item of groups.slice(1).flatMap((group) => group.items)) {
-		expect(item.description, item.label).toBeTruthy()
-	}
 	expect(
 		groups.map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([

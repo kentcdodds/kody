@@ -1,5 +1,3 @@
-import { loadResourceListScope } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -8,12 +6,11 @@ import {
 	memorySearchMutationGuidance,
 	searchMemoryRecords,
 } from '#mcp/memory/service.ts'
+import { memoryMatchSchema, verifyFirstWarning } from './meta-memory-shared.ts'
 import {
-	memoryMatchSchema,
-	requireMcpUser,
-	verifyFirstWarning,
-} from './meta-memory-shared.ts'
-import { requireMcpRequest } from './require-user.ts'
+	memoryPersonalOnlyOrgPermission,
+	personalMemoryReadScope,
+} from './meta-memory-owner.ts'
 
 const mutableMemoryMatchSchema = memoryMatchSchema.extend({
 	can_mutate: z.boolean(),
@@ -24,10 +21,17 @@ export const metaMemorySearchCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemorySearch',
-		orgPermission: 'memory:read',
+		orgPermission: memoryPersonalOnlyOrgPermission,
 		description:
-			'Search stored memories for the signed-in user. Returned matches are mutable for this signed-in user unless can_mutate is false. If you are considering writing or deleting a memory, prefer metaMemoryVerify first and review the related memories before taking action.',
-		keywords: ['memory', 'search', 'lookup', 'related', 'verify'],
+			"Search the signed-in person's **personal** memories (always their personal org, regardless of which org this connection uses). Returned matches are mutable for this person unless can_mutate is false. If you are considering writing or deleting a memory, prefer metaMemoryVerify first. Do not copy a personal memory into an org package without asking the person first.",
+		keywords: [
+			'memory',
+			'search',
+			'lookup',
+			'related',
+			'verify',
+			'personal memory',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -57,16 +61,11 @@ export const metaMemorySearchCapability = defineDomainCapability(
 			warning: z.string(),
 		}),
 		async handler(args, ctx: CapabilityContext) {
-			requireMcpUser(ctx.callerContext)
-			const request = requireMcpRequest(ctx.callerContext)
+			const { auth, scope } = await personalMemoryReadScope(ctx)
 			const result = await searchMemoryRecords({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-				scope: await loadResourceListScope(
-					{ env: ctx.env, request },
-					'memory:read',
-					'memory',
-				),
+				userId: auth.userId,
+				scope,
 				query: args.query,
 				category: args.category ?? null,
 				limit: args.limit,

@@ -49,6 +49,12 @@ test('production deploy retries transient Cloudflare flakes and fails fast on re
 		'  GET /accounts/acct/workers/scripts/kody-platform/deployments -> 200 OK',
 	].join('\n')
 
+	const gatewayTimeout504Log = [
+		'✘ [ERROR] Received a malformed response from the API',
+		'',
+		'  GET /accounts/acct/workers/scripts/kody-pr-3501-runtime/deployments -> 504 Gateway Timeout',
+	].join('\n')
+
 	expect(isRetryableDeployFailure(startupCpuLog)).toBe(true)
 	expect(
 		isRetryableDeployFailure('Error: Script startup exceeded CPU time limit.'),
@@ -57,6 +63,8 @@ test('production deploy retries transient Cloudflare flakes and fails fast on re
 	expect(isRetryableDeployFailure(apiAuthFlakeLog)).toBe(true)
 	expect(isRetryableDeployFailure(secretBulk503Log)).toBe(true)
 	expect(isRetryableDeployFailure(deploymentsList200Log)).toBe(true)
+	expect(isRetryableDeployFailure(gatewayTimeout504Log)).toBe(true)
+	expect(isRetryableDeployFailure('504 Gateway Timeout')).toBe(true)
 	expect(isRetryableDeployFailure(durableObjectMigrationLog)).toBe(false)
 	expect(isRetryableDeployFailure('')).toBe(false)
 

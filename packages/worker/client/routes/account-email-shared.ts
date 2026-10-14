@@ -6,7 +6,6 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { recordCellClamp } from '#client/routes/record-table.tsx'
 import {
 	colors,
 	radius,
@@ -28,6 +27,36 @@ const accountEmailApiPath = '/account/email.json'
 const destinationsApiPath = '/account/email-destinations.json'
 export const emailRoute = createListDetailRoute('/account/email')
 export const accountEmailDestinationsLocationKey = 'account-email-destinations'
+
+export function senderClassificationLabel(
+	classification: AccountEmailMessageListItem['sender_classification'],
+) {
+	switch (classification) {
+		case 'member':
+			return 'Member'
+		case 'authenticated':
+			return 'Authenticated'
+		case 'unverified':
+			return 'Unverified'
+		case null:
+			return null
+		default: {
+			const exhaustive: never = classification
+			throw new Error(`Unhandled sender classification: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export const senderBadgeCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	padding: `0.2rem ${spacing.sm}`,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+} as const
 
 export const quarantinedBadgeCss = {
 	display: 'inline-flex',
@@ -65,8 +94,6 @@ export const subjectCellCss = {
 	maxWidth: 'min(34ch, 100%)',
 	minWidth: 0,
 } as const
-
-export const clampedCellCss = recordCellClamp(26)
 
 export function readSearchQuery(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
@@ -144,9 +171,11 @@ export async function accountEmailRouteLoader(
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
-	const payload = await readJson<AccountEmailLoaderData>(response)
+	const payload = await readJson<AccountEmailLoaderData & { error?: string }>(
+		response,
+	)
 	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load your email inbox.')
+		throw new Error(payload?.error || 'Unable to load your email inbox.')
 	}
 	if (accountAliasPath(url.pathname) !== '/account/email') {
 		return { accountEmail: payload }

@@ -12,6 +12,7 @@ import {
 	type MemoryRecord,
 	type MemoryStatus,
 } from '#mcp/memory/types.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -44,6 +45,8 @@ export type AccountMemoriesLoaderData = {
 	selectedMemory: AccountMemoryDetail | null
 	query: string
 	includeDeleted: boolean
+	/** Team-org legacy list: read-only until cleanup (ADR 0072). */
+	legacyReadOnly: boolean
 }
 
 /**
@@ -173,6 +176,7 @@ export async function loadAccountMemoriesData(input: {
 		request: input.user.request,
 		user: input.user.mcpUser,
 	})
+	const legacyReadOnly = !(await isPersonalOrg(input.env.APP_DB, userId))
 	const query = readAccountMemoriesQuery(input.request.url)
 	const includeDeleted = readAccountMemoriesIncludeDeleted(input.request.url)
 	const selectedMemoryId = readAccountMemoriesSelectedMemoryId(
@@ -221,6 +225,7 @@ export async function loadAccountMemoriesData(input: {
 		selectedMemory,
 		query,
 		includeDeleted,
+		legacyReadOnly,
 	}
 }
 

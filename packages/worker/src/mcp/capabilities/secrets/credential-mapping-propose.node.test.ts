@@ -147,7 +147,64 @@ test('credentialMappingPropose tells the agent to read view.enable[].error when 
 	expect(result.message).toContain('view.enable[].error')
 	expect(result.message).toContain('view.changes[].error')
 	expect(result.message).toContain('view.errors')
-	expect(credentialMappingProposeCapability.description).toContain(
-		'view.enable[].error',
+})
+
+test('credentialMappingPropose puts an email sender on the approval link', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+				},
+			},
+		},
+	})
+	const result = await credentialMappingProposeCapability.handler(
+		{
+			kodyId: 'digest',
+			enable: [{ kind: 'subscription', name: 'email.message.received' }],
+			sender: { kind: 'address', value: 'receipts@shop.example' },
+		},
+		t.caller('bea', 'owner'),
 	)
+	const url = new URL(result.approvalUrl)
+	expect(url.searchParams.get('sender_kind')).toBe('address')
+	expect(url.searchParams.get('sender_value')).toBe('receipts@shop.example')
+	expect(result.view.canApprove).toBe(true)
+	expect(result.view.sender).toEqual({
+		kind: 'address',
+		value: 'receipts@shop.example',
+	})
+	expect(result.view.enable[0]).toMatchObject({ willEnable: true, error: null })
+	expect(await t.enablementCount()).toBe(0)
+})
+
+test('credentialMappingPropose refuses an unusable sender instead of omitting it', async () => {
+	const t = await setup()
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				subscriptions: {
+					'email.message.received': { handler: './src/h.ts' },
+				},
+			},
+		},
+	})
+	await expect(
+		credentialMappingProposeCapability.handler(
+			{
+				kodyId: 'digest',
+				enable: [{ kind: 'subscription', name: 'email.message.received' }],
+				sender: { kind: 'address', value: 'not-an-email' },
+			},
+			t.caller('bea', 'owner'),
+		),
+	).rejects.toThrow(/usable value/)
 })

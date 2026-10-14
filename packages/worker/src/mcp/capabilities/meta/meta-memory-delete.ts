@@ -1,5 +1,3 @@
-import { authorize, orgResource } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -13,7 +11,10 @@ import {
 	memoryRecordSchema,
 	verifyFirstGuidance,
 } from './meta-memory-shared.ts'
-import { requireMcpRequest, requireMcpUser } from './require-user.ts'
+import {
+	authorizePersonalMemory,
+	memoryPersonalOnlyOrgPermission,
+} from './meta-memory-owner.ts'
 
 const outputSchema = z.object({
 	ok: z.boolean(),
@@ -26,9 +27,9 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryDelete',
-		orgPermission: 'memory:delete',
+		orgPermission: memoryPersonalOnlyOrgPermission,
 		description:
-			'Soft-delete a stored memory by default, or hard-delete it when `force` is true. Always run `metaMemoryVerify` before deleting memory. Do not delete memory blindly. Review related memories first, decide the correct action, then delete.',
+			'Soft-delete a **personal** memory by default, or hard-delete it when `force` is true. Always run `metaMemoryVerify` first. Memory is personal-only; team-org legacy rows cannot be deleted through this tool.',
 		keywords: [
 			'memory',
 			'delete',
@@ -36,6 +37,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			'verify first',
 			'soft delete',
 			'hard delete',
+			'personal memory',
 		],
 		readOnly: false,
 		idempotent: false,
@@ -63,21 +65,19 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			requireMcpUser(ctx.callerContext)
 			if (!args.verified_by_agent) {
 				throw new Error(
 					'Agents must run metaMemoryVerify before calling metaMemoryDelete. Set verified_by_agent=true only after review.',
 				)
 			}
-			const request = requireMcpRequest(ctx.callerContext)
-			await authorize(
-				{ env: ctx.env, request },
+			const auth = await authorizePersonalMemory(
+				ctx,
 				'memory:delete',
-				orgResource(request, 'memory', args.memory_id),
+				args.memory_id,
 			)
 			const existing = await getMemory({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: auth.userId,
 				memoryId: args.memory_id,
 			})
 			if (!existing) {
@@ -85,7 +85,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			}
 			const memory = await deleteMemory({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: auth.userId,
 				memoryId: args.memory_id,
 				force: args.force ?? false,
 			})

@@ -56,10 +56,15 @@ Feature Map PR.
 After `login`, keep using `request` for HTML and JSON assertions. Do not `cat`
 the session cookie into `curl` or Python. `request --dump` writes the raw body
 to `.tmp/control-kody-body`. `request --contains <text>` fails unless that
-substring is in the body. `request` fetches GET/HEAD first and only POSTs
-`/auth` when the response is HTTP 401 or login HTML, so public pages such as
-`/pricing` do not need a session. Mutating methods log in first when no cookie
-exists.
+substring is in the body (Location is included for redirects). `request` uses
+`redirect: 'manual'` (same as `preview --request`), so form POSTs that 302 stay
+as status + Location instead of dumping the followed HTML. Without `--dump` or
+`--json`, HTML responses print a short outcome (status, Location, title,
+alerts). `request` fetches GET/HEAD first and only POSTs `/auth` when the
+response is HTTP 401 or login HTML, so public pages such as `/pricing` do not
+need a session. Mutating methods log in first when no cookie exists.
+`--skip-login` sends the request with no session cookie (anonymous) and skips
+login/refresh, even when a cookie file exists for the origin.
 
 `preview` forwards its flags to `preview:manual-test`. `--pr`, `--request`, and
 `--check` work without a `--` separator. A `--request` spec accepts the same
@@ -92,15 +97,17 @@ The same `--header` works inside a `preview --request` spec.
 `browse` reuses the seed cookie stored in `.tmp/control-kody-cookie` (from
 `login` or `preview`) and injects it into headed Playwright Chromium via
 `addCookies` (same pattern as `e2e/playwright-utils.ts`). It opens `--path`
-already signed in. Pass `--record` to write video under
-`.tmp/control-kody-browse` (needs Playwright ffmpeg:
-`npx playwright install ffmpeg` — small download; do not run
-`playwright install chromium` on Cloud Agents), `--headless` for environments
-without a display, and `--close-after <ms>` for scripted smoke. Prefer
-MCP/API/`execute` for proof; use `browse` only when UI is under test. Cursor
-`computerUse` drives its own browser and cannot attach to the CLI-opened
-Chromium — for computerUse, open `/login?redirectTo=<path>` with the public seed
-credentials instead of retyping a long package URL after landing on `/account`.
+already signed in. Before launch it runs the same Playwright revision doctor as
+`doctor` and fails with the `npm run test:e2e:ensure` / unzip remediation when
+Chromium is missing — do not run `playwright install chromium` on Cloud Agents.
+Pass `--record` to write video under `.tmp/control-kody-browse` (needs
+Playwright ffmpeg: `npx playwright install ffmpeg` — small download),
+`--headless` for environments without a display, and `--close-after <ms>` for
+scripted smoke. Prefer MCP/API/`execute` for proof; use `browse` only when UI is
+under test. Cursor `computerUse` drives its own browser and cannot attach to the
+CLI-opened Chromium — for computerUse, open `/login?redirectTo=<path>` with the
+public seed credentials instead of retyping a long package URL after landing on
+`/account`.
 
 `doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
 unseeded D1) prints:

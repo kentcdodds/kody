@@ -1,3 +1,4 @@
+import { buildCredentialApprovalHref } from '#universal/credential-contracts.ts'
 import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { css, unsafeHTML } from 'remix/component'
@@ -26,6 +27,8 @@ import {
 	directionLabel,
 	messageDate,
 	quarantinedBadgeCss,
+	senderBadgeCss,
+	senderClassificationLabel,
 } from './account-email-shared.ts'
 
 const emailBodyPreCss = css({
@@ -98,6 +101,14 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 							mix={css(quarantinedBadgeCss)}
 						>
 							Quarantined
+						</span>
+					) : null}
+					{senderClassificationLabel(selectedMessage.sender_classification) ? (
+						<span
+							title={selectedMessage.sender_classification_reason ?? undefined}
+							mix={css(senderBadgeCss)}
+						>
+							{senderClassificationLabel(selectedMessage.sender_classification)}
 						</span>
 					) : null}
 				</div>
@@ -183,6 +194,87 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 							: 'Delete'}
 				</button>
 			</div>
+			{selectedMessage.enable_sender ? (
+				<form
+					mix={[
+						on('submit', (event) => {
+							event.preventDefault()
+							const form = event.currentTarget
+							if (!(form instanceof HTMLFormElement)) return
+							const kodyId = new FormData(form).get('kodyId')
+							if (typeof kodyId !== 'string' || !kodyId.trim()) return
+							const enableSender = selectedMessage.enable_sender
+							if (!enableSender) return
+							window.location.assign(
+								buildCredentialApprovalHref({
+									username: enableSender.org_slug,
+									kodyId: kodyId.trim(),
+									changes: [],
+									enable: [{ kind: 'subscription', name: enableSender.topic }],
+									sender: enableSender.sender,
+								}),
+							)
+						}),
+						css({
+							display: 'flex',
+							flexWrap: 'wrap',
+							gap: spacing.sm,
+							alignItems: 'center',
+						}),
+					]}
+				>
+					{selectedMessage.enable_sender.packages.length > 0 ? (
+						<select
+							name="kodyId"
+							aria-label="Package to enable for this sender"
+							mix={css({
+								fontSize: typography.fontSize.sm,
+								color: colors.text,
+							})}
+						>
+							{selectedMessage.enable_sender.packages.map((pkg) => (
+								<option key={pkg.kody_id} value={pkg.kody_id}>
+									{pkg.kody_id}
+								</option>
+							))}
+						</select>
+					) : (
+						<input
+							name="kodyId"
+							required
+							aria-label="Package to enable for this sender"
+							placeholder="Package name"
+							mix={css({
+								fontSize: typography.fontSize.sm,
+								color: colors.text,
+							})}
+						/>
+					)}
+					<button type="submit" mix={css(secondaryButtonCss)}>
+						Enable a package for this sender
+					</button>
+					<a
+						href={selectedMessage.enable_sender.packages_href}
+						mix={css({
+							color: colors.textMuted,
+							fontSize: typography.fontSize.sm,
+						})}
+					>
+						Browse packages
+					</a>
+				</form>
+			) : selectedMessage.direction === 'inbound' &&
+			  selectedMessage.sender_classification === 'unverified' ? (
+				<p
+					mix={css({
+						margin: 0,
+						color: colors.textMuted,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					Packages cannot run for an unverified sender.
+				</p>
+			) : null}
 			<MetadataGrid
 				items={[
 					{

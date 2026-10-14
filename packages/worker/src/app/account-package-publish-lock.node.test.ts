@@ -302,7 +302,7 @@ test('approve-publish hrefs use the owning org slug for team packages', async ()
 	expect(loaded.filesHref).toContain('/@acme/shared')
 })
 
-test('approve-publish loader hints when the catalog pin already lags published, and warns when promote would lag', async () => {
+test('approve-publish loader hints when the catalog pin already lags published, and never claims promote will lag', async () => {
 	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 	mockModule.writablePackage = unlockedPackage
@@ -322,7 +322,7 @@ test('approve-publish loader hints when the catalog pin already lags published, 
 		pinnedVersion: '1.4.0',
 		promotedVersion: null,
 		behind: true,
-		updateHint: expect.stringContaining('communityPublish'),
+		updateHint: expect.stringContaining('automatically'),
 		updateUrl: '/@user/notes/settings#update-public-listing',
 	})
 	expect(alreadyBehind.listingWillLagAfterPromote).toBe(false)
@@ -333,10 +333,10 @@ test('approve-publish loader hints when the catalog pin already lags published, 
 		pinnedCommit: publishedCommit,
 		version: '1.4.0',
 	})
-	const willLag = await loadApprove(pendingCommit)
-	if (!willLag.ok) throw new Error('expected loader success')
-	expect(willLag.listing).toBeNull()
-	expect(willLag.listingWillLagAfterPromote).toBe(true)
+	const matchedPin = await loadApprove(pendingCommit)
+	if (!matchedPin.ok) throw new Error('expected loader success')
+	expect(matchedPin.listing).toBeNull()
+	expect(matchedPin.listingWillLagAfterPromote).toBe(false)
 })
 
 test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {

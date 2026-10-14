@@ -2,6 +2,7 @@ import { CAPABILITY_EMBEDDING_DIMENSIONS } from '#worker/vectorize/embedding.ts'
 import {
 	CloudflareResourceError,
 	cloudflareApiRequest,
+	isTransientCloudflareGone,
 } from './resource-utils.ts'
 
 /**
@@ -20,12 +21,6 @@ const vectorizeMetadataIndexProperties = [
 
 const vectorizeIndexMetric = 'cosine'
 
-type VectorizeIndexInfo = { name: string }
-
-type VectorizeMetadataIndexList = {
-	metadataIndexes?: Array<{ propertyName: string; indexType: string }>
-}
-
 type VectorizeClient = {
 	accountId: string
 	apiToken: string
@@ -42,13 +37,6 @@ type VectorizeClient = {
  * Look the index up by name rather than scanning the list endpoint, which
  * pages once the account holds many preview indexes.
  */
-function isTransientVectorizeGone(error: unknown) {
-	const message = error instanceof Error ? error.message : String(error)
-	// A just-deleted (or not-yet-visible) index answers 410
-	// vectorize.index.deleted, not only 404.
-	return /Cloudflare API request failed \((404|410)\)/.test(message)
-}
-
 async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 	try {
 		const response = await cloudflareApiRequest<VectorizeIndexInfo>({
@@ -58,9 +46,15 @@ async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 		})
 		return response.result?.name === name
 	} catch (error) {
-		if (isTransientVectorizeGone(error)) return false
+		if (isTransientCloudflareGone(error)) return false
 		throw error
 	}
+}
+
+type VectorizeIndexInfo = { name: string }
+
+type VectorizeMetadataIndexList = {
+	metadataIndexes?: Array<{ propertyName: string; indexType: string }>
 }
 
 /**
@@ -77,32 +71,57 @@ async function vectorizeIndexReady(client: VectorizeClient, name: string) {
 		})
 		return true
 	} catch (error) {
-		if (isTransientVectorizeGone(error)) return false
+		if (isTransientCloudflareGone(error)) return false
 		throw error
 	}
 }
 
 const vectorizeRecreateVisibleDelaysMs = [1_000, 2_000, 4_000, 8_000, 15_000]
 
+function clientNow(client: VectorizeClient) {
+	return (client.now ?? Date.now)()
+}
+
+function timeLeftMs(client: VectorizeClient) {
+	if (client.deadlineMs === undefined) return Number.POSITIVE_INFINITY
+	return client.deadlineMs - clientNow(client)
+}
+
+async function waitRespectingDeadline(
+	client: VectorizeClient,
+	delayMs: number,
+	context: string,
+) {
+	const wait =
+		client.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+	const left = timeLeftMs(client)
+	if (left <= 0) {
+		throw new Error(
+			`Vectorize ${context} ran out of deadline before waiting ${String(delayMs)}ms.`,
+		)
+	}
+	await wait(Math.min(delayMs, left))
+}
+
 /**
  * Re-creating a name that was deleted minutes earlier (a preview redeploy
  * after its cleanup) succeeds, but reads keep answering 410
  * vectorize.index.deleted for a while. Wait until the index is operable
- * (metadata list succeeds) before configuring it.
+ * (metadata list succeeds) before configuring it. Honors `deadlineMs` so a
+ * stuck 410 cannot burn the whole preview job budget.
  */
 async function waitForCreatedVectorizeIndex(
 	client: VectorizeClient,
 	name: string,
 ) {
-	const wait =
-		client.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 	if (await vectorizeIndexReady(client, name)) return
 	for (const delayMs of vectorizeRecreateVisibleDelaysMs) {
+		if (timeLeftMs(client) <= 0) break
 		console.error(
 			`Waiting ${String(delayMs)}ms for new Vectorize index ${name} to be readable.`,
 		)
-		await wait(delayMs)
+		await waitRespectingDeadline(client, delayMs, `wait for ${name}`)
 		if (await vectorizeIndexReady(client, name)) return
 	}
 	throw new Error(
@@ -113,26 +132,28 @@ async function waitForCreatedVectorizeIndex(
 /**
  * Readiness can flap: metadata_index/list succeeds once, then the next read
  * or metadata create on a recycled name answers 410 again. Retry the whole
- * ready-then-configure step a bounded number of times.
+ * ready-then-configure step a bounded number of times (#3715).
  */
 async function configureVectorizeIndexWhenReady(
 	client: VectorizeClient,
 	name: string,
 ) {
-	const wait =
-		client.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 	for (const delayMs of [...vectorizeRecreateVisibleDelaysMs, null]) {
 		await waitForCreatedVectorizeIndex(client, name)
 		try {
 			await ensureVectorizeMetadataIndexes(client, name)
 			return
 		} catch (error) {
-			if (delayMs == null || !isTransientVectorizeGone(error)) throw error
+			if (delayMs == null || !isTransientCloudflareGone(error)) throw error
+			if (timeLeftMs(client) <= 0) throw error
 			console.error(
 				`Vectorize index ${name} answered 404/410 after reading as ready; retrying metadata setup in ${String(delayMs)}ms.`,
 			)
-			await wait(delayMs)
+			await waitRespectingDeadline(
+				client,
+				delayMs,
+				`retry metadata setup for ${name}`,
+			)
 		}
 	}
 }
@@ -161,10 +182,58 @@ async function ensureVectorizeMetadataIndexes(
 	}
 }
 
+async function createVectorizeIndex(client: VectorizeClient, name: string) {
+	await cloudflareApiRequest({
+		...client,
+		pathname: '/vectorize/v2/indexes',
+		method: 'POST',
+		body: {
+			name,
+			config: {
+				dimensions: CAPABILITY_EMBEDDING_DIMENSIONS,
+				metric: vectorizeIndexMetric,
+			},
+		},
+	})
+	console.error(`Created Vectorize index: ${name}`)
+}
+
+/**
+ * Delete-by-name then create once. Used when configure keeps answering 410
+ * after the flap-retry window — a stuck soft-deleted name will not converge
+ * with more sleeps (#3718 #3712 #3674).
+ */
+async function recreateVectorizeIndexOnce(
+	input: VectorizeClient & { name: string },
+) {
+	if (input.dryRun) {
+		console.error(`[dry-run] recreate Vectorize index once: ${input.name}`)
+		return { name: input.name }
+	}
+	console.error(
+		`Recreating Vectorize index once after persistent 404/410: ${input.name}`,
+	)
+	try {
+		await cloudflareApiRequest({
+			...input,
+			pathname: `/vectorize/v2/indexes/${encodeURIComponent(input.name)}`,
+			method: 'DELETE',
+		})
+		console.error(`Deleted Vectorize index before recreate: ${input.name}`)
+	} catch (error) {
+		if (!isTransientCloudflareGone(error)) throw error
+		console.error(`Vectorize index already gone before recreate: ${input.name}`)
+	}
+	await createVectorizeIndex(input, input.name)
+	return { name: input.name }
+}
+
 /**
  * Create the Vectorize index (384-dimension cosine, matching
  * `CAPABILITY_EMBEDDING_DIMENSIONS`) when missing, then make sure every
- * metadata index the query filters need exists. Idempotent.
+ * metadata index the query filters need exists. Idempotent. On persistent
+ * 410 during configure after the flap retries, deletes and recreates the
+ * index once, then configures again.
  */
 export async function ensureVectorizeIndex(
 	input: VectorizeClient & { name: string },
@@ -177,23 +246,21 @@ export async function ensureVectorizeIndex(
 		if (await vectorizeIndexExists(input, input.name)) {
 			console.error(`Vectorize index exists: ${input.name}`)
 		} else {
-			await cloudflareApiRequest({
-				...input,
-				pathname: '/vectorize/v2/indexes',
-				method: 'POST',
-				body: {
-					name: input.name,
-					config: {
-						dimensions: CAPABILITY_EMBEDDING_DIMENSIONS,
-						metric: vectorizeIndexMetric,
-					},
-				},
-			})
-			console.error(`Created Vectorize index: ${input.name}`)
+			await createVectorizeIndex(input, input.name)
 		}
 		// Wait even when GET already succeeded: metadata_index/list can still
 		// answer 410 briefly after create/recreate on a recycled preview name.
-		await configureVectorizeIndexWhenReady(input, input.name)
+		try {
+			await configureVectorizeIndexWhenReady(input, input.name)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			const persistentGone =
+				isTransientCloudflareGone(error) ||
+				/kept returning 404\/410/.test(message)
+			if (!persistentGone) throw error
+			await recreateVectorizeIndexOnce(input)
+			await configureVectorizeIndexWhenReady(input, input.name)
+		}
 	} catch (error) {
 		if (error instanceof CloudflareResourceError) throw error
 		throw new CloudflareResourceError(

@@ -34,5 +34,6 @@ own org before their copy can be internet-visible. See
 
 ## Out of scope
 
-Custom domains; Kody-account login for public apps with roles; third-party
-visitor auth; image storage via other packages.
+Kody-account login for public apps with roles; third-party visitor auth; image
+storage via other packages. Custom domains are a separate feature
+([0071](./decisions/0071-package-app-custom-domains.md)).

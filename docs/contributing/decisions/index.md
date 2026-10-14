@@ -188,12 +188,24 @@ Open these before proposing a new primitive, surface, or storage home.
   per-app for public; CNAME/ALIAS only (no Enterprise apex A/wildcards); org
   admins; one free domain then $0.10/mo; verify before serve; 24–48h DNS grace
   then remove
+- [0072 — Memory is personal-only](./0072-memory-is-personal-only.md) — one
+  writable pool per person (personal org); tools always use personal regardless
+  of connection org; shared org knowledge is packages + org instructions;
+  team-org rows are write-frozen legacy until cleanup
+
+- [0074 — One email address per org; admins see all mail, packages only through per-sender enablements](./0074-org-email-address-and-per-sender-enablement.md)
+  — `{slug}@inbox.kody.codes`; Mailbox keyed by org id; per-sender enablement
+  rows; inbox-owner fallback retired; migrated personal catch-alls tagged
+  `any_authenticated`
 
 ## Historical / UI / implementation
 
 Accepted or superseded records that do **not** change the next product proposal.
 Do not treat this list as homework. History stays; it is not silently deleted.
 
+- [0073 — Community listing pin follows promote](./0073-community-listing-follows-promote.md)
+  — active listings auto-follow `published_commit`; no separate Update public
+  listing step; Settings **Publishing** panel is the owner surface
 - [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
   — superseded by 0058; Skills over MCP now ship behind a flag
 - [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)

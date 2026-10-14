@@ -23,12 +23,12 @@ If the fact is package- or export-scoped, edit the package instead.
 
 ## The four layers
 
-| Layer                                                                                                        | Reaches                                                       | Put here                                                                                                            | Do not put here                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **MCP server instructions** (short built-in stub + optional user overlay via `metaSetMcpServerInstructions`) | Every conversation on new MCP sessions                        | Short, general nudges: start with `search`, verify-first memory, pointers to docs / local CLI                       | Package inventory, export gotchas, account-specific durable facts, long runbooks, prefer-over-host policy               |
-| **Package documentation** (`README.md` human / `AGENTS.md` agent)                                            | Agents (and people) working on or invoking that package       | Intent, how pieces fit, workflows, staging or upload steps, smoke tests, edge cases that apply to the whole package | Account-wide personal facts, which cloud account owns what, one-export call limits that belong on that export           |
-| **JSDoc on exports**                                                                                         | Agents reading search Purpose / entity detail for that export | Call shape specifics, limits, when to pick this export over a sibling                                               | Package-wide workflows, durable user facts, always-on session policy                                                    |
-| **Memories**                                                                                                 | Agents on this account via search/execute auto-surface        | Account-wide personal facts without a better home: identifiers, relationships, which account owns which resources   | Repeatable behavior, task defaults, how a package moves bytes, export limits, credentials (use [secrets](./secrets.md)) |
+| Layer                                                                                                        | Reaches                                                       | Put here                                                                                                               | Do not put here                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **MCP server instructions** (short built-in stub + optional user overlay via `metaSetMcpServerInstructions`) | Every conversation on new MCP sessions                        | Short, general nudges: start with `search`, verify-first memory, pointers to docs / local CLI                          | Package inventory, export gotchas, account-specific durable facts, long runbooks, prefer-over-host policy                                 |
+| **Package documentation** (`README.md` human / `AGENTS.md` agent)                                            | Agents (and people) working on or invoking that package       | Intent, how pieces fit, workflows, staging or upload steps, smoke tests, edge cases that apply to the whole package    | Account-wide personal facts, which cloud account owns what, one-export call limits that belong on that export                             |
+| **JSDoc on exports**                                                                                         | Agents reading search Purpose / entity detail for that export | Call shape specifics, limits, when to pick this export over a sibling                                                  | Package-wide workflows, durable user facts, always-on session policy                                                                      |
+| **Memories**                                                                                                 | Agents acting as you (personal org), any connection org       | Personal facts without a better home: identifiers, relationships, preferences. Ask before copying into an org package. | Shared org knowledge (use package docs / org instructions), repeatable behavior, task defaults, credentials (use [secrets](./secrets.md)) |
 
 Higher layers appear more often and cost more context. Lower layers stay close
 to the code or fact they describe. Prefer the lowest layer that still works.
@@ -80,11 +80,12 @@ when ready to publish."
 user's preferred timezone.
 
 **Memory (good):** Project nicknames, handles and ids not recorded elsewhere,
-which cloud or billing account owns which resources.
+personal preferences, which of _your_ cloud accounts you use for what.
 
-**Memory (bad):** "Package foo's upload flow is …" or "Export bar rejects binary
-bodies." Those belong in package docs or JSDoc so every consumer of the package
-sees them without depending on one account's memories.
+**Memory (bad):** "Package foo's upload flow is …", "Export bar rejects binary
+bodies," or org-wide facts teammates should share. Those belong in package docs,
+JSDoc, or org instructions — ask before copying a personal memory into an org
+package.
 
 ## Built-in MCP instructions and the user overlay
 

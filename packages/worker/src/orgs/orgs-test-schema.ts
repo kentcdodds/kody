@@ -166,12 +166,24 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				paused_at TEXT,
 				credential_mapping_json TEXT,
 				origin TEXT NOT NULL,
+				sender_kind TEXT,
+				sender_value TEXT,
 				enabled_at TEXT NOT NULL,
 				disabled_at TEXT,
 				updated_at TEXT NOT NULL
 			)`,
 		)
 		.run()
+	for (const statement of [
+		`ALTER TABLE enablements ADD COLUMN sender_kind TEXT`,
+		`ALTER TABLE enablements ADD COLUMN sender_value TEXT`,
+	]) {
+		try {
+			await db.prepare(statement).run()
+		} catch {
+			// Column already present on fuller schemas / re-runs.
+		}
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS credential_mappings (

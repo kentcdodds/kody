@@ -417,6 +417,7 @@ export async function recordBoundedEmailRejectionEvent(input: {
 		| 'size'
 		| 'account-verification'
 		| 'account-suspension'
+		| 'account-plan'
 		| 'sender-policy'
 		| 'system-limit'
 	now?: Date

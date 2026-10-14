@@ -1,5 +1,3 @@
-import { loadResourceListScope } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -9,9 +7,11 @@ import {
 	memoryRecordSchema,
 	memorySourceUriSchema,
 	memoryVerifyInputSchema,
-	requireMcpUser,
 } from './meta-memory-shared.ts'
-import { requireMcpRequest } from './require-user.ts'
+import {
+	memoryPersonalOnlyOrgPermission,
+	personalMemoryReadScope,
+} from './meta-memory-owner.ts'
 
 const recommendedActions: Array<
 	'upsert' | 'delete' | 'upsert_and_delete' | 'none'
@@ -51,15 +51,16 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryVerify',
-		orgPermission: 'memory:read',
+		orgPermission: memoryPersonalOnlyOrgPermission,
 		description:
-			'Always run this capability before writing or deleting memory. Submit the candidate memory, review the related memories returned here, then decide whether to upsert, delete, both, or do nothing. Do not upsert memory blindly. If the candidate is really package- or export-scoped guidance, do not upsert — update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" }), Where agent guidance lives / /docs/agent-guidance).',
+			'Always run this before writing or deleting **personal** memory (always the signed-in person\'s personal org, regardless of which org this connection uses). Submit the candidate, review related memories, then decide whether to upsert, delete, both, or do nothing. Do not upsert blindly. Do not copy a personal memory into an org package without asking the person first — shared org knowledge belongs in documented packages and org instructions. If the candidate is really package- or export-scoped guidance, update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" })).',
 		keywords: [
 			'memory',
 			'verify',
 			'related memories',
 			'dedupe',
 			'search',
+			'personal memory',
 			'agent guidance',
 			'package docs',
 			'jsdoc',
@@ -70,16 +71,11 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 		inputSchema: memoryVerifyInputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			requireMcpUser(ctx.callerContext)
-			const request = requireMcpRequest(ctx.callerContext)
+			const { auth, scope } = await personalMemoryReadScope(ctx)
 			const result = await verifyMemoryCandidate({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-				scope: await loadResourceListScope(
-					{ env: ctx.env, request },
-					'memory:read',
-					'memory',
-				),
+				userId: auth.userId,
+				scope,
 				candidate: {
 					category: args.category ?? null,
 					subject: args.subject,

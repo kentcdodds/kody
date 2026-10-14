@@ -15,7 +15,6 @@ import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
 import type * as CredentialFields from '#worker/credentials/credential-fields.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
-
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<
 		typeof authenticatedUserModule.readAuthenticatedAppUser
@@ -1195,6 +1194,23 @@ test('account secrets save sets the provider from a creation link on org Keys on
 				...body,
 			}),
 		)
+
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([makeSecret('resend')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'fresh-secret',
+	} as never)
+	mockModule.updateCredentialFields.mockRejectedValueOnce(
+		new Error('credential provider update failed'),
+	)
+	const linkFailed = await save({ scope: 'user', provider: 'resend' })
+	expect(linkFailed.status).toBe(200)
+	await expect(linkFailed.json()).resolves.toMatchObject({
+		ok: true,
+		providerLinkError: 'credential provider update failed',
+	})
 
 	mockModule.updateCredentialFields.mockClear()
 	expect((await save({ scope: 'user', provider: 'resend' })).status).toBe(200)

@@ -10,7 +10,6 @@ import {
 	canEditTrigger,
 	draftFromStored,
 	draftToChange,
-	mappingEditorKey,
 	mappingOptions,
 	type MappingDraft,
 	mappingSaveAgentPrompt,
@@ -160,23 +159,6 @@ test('the org default offers org credentials only', () => {
 			trigger: { kind: 'cron', name: 'daily' },
 		}),
 	).toEqual([orgRef, mineRef])
-})
-
-test('editor keys tell targets and needs apart', () => {
-	const keys = new Set([
-		mappingEditorKey({ type: 'default', layer: 'org' }, 'a'),
-		mappingEditorKey({ type: 'default', layer: 'mine' }, 'a'),
-		mappingEditorKey(
-			{ type: 'trigger', trigger: { kind: 'cron', name: 'a' } },
-			'a',
-		),
-		mappingEditorKey(
-			{ type: 'trigger', trigger: { kind: 'webhook', name: 'a' } },
-			'a',
-		),
-		mappingEditorKey({ type: 'default', layer: 'org' }, 'b'),
-	])
-	expect(keys.size).toBe(5)
 })
 
 test('only the enabler edits a trigger, and an off trigger turns on when saved', () => {

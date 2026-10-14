@@ -70,9 +70,20 @@ allows 500. When that cap is hit, every preview deploy fails (Cloudflare code
   branch can never read as "live". Branch sweeping is skipped for the whole run
   if a `workflow_dispatch` `preview.yml` deploy is currently queued or in
   progress, since a deploy provisions D1/KV/R2 before it uploads the bare origin
-  Worker. PR-push preview runs don't defer it. Both the PR and branch loops
-  share one wall-clock budget per run, so a run that spends it on PR cleanups
-  still defers branch cleanups cleanly instead of running past the job timeout.
+  Worker. PR-push preview runs don't defer it. A live branch preview is also
+  swept once every PR for the branch it was last deployed from is closed, and
+  the last close came after that deploy. The sweep finds that branch from the
+  `Preview deploy (branch: <name>)` run name `preview.yml` sets on dispatch.
+  Previews deployed from `main`, from a branch with no PR, or before that run
+  name existed are kept, as is any preview whose newest deploy is still running
+  or whose recent runs came from different branches. Live branch previews whose
+  last recorded deploy is older than 7 days are also swept (TTL for rehearsal
+  leftovers that never close a PR). Each delete re-checks the PRs first. Both
+  the PR and branch loops share one wall-clock budget per run, so a run that
+  spends it on PR cleanups still defers branch cleanups cleanly instead of
+  running past the job timeout. Preview ensure also asserts Durable Object
+  namespace headroom before provisioning so the job fails with a clear quota
+  message near the 500-namespace cap instead of mid-deploy 10067/10090.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
@@ -116,12 +127,10 @@ the exact invocation and
 [Manual preview testing](../preview-manual-testing.md#feature-flags-on-the-preview-seed).
 
 Preview deploys do **not** set a GitHub Actions `environment:` on the deploy
-job, so they no longer create per-PR `preview-<n>` (or `preview-<run_id>`)
-GitHub Environments. The preview URL is posted as a PR comment instead.
+job. The preview URL is posted as a PR comment instead.
 
-Cleanup still deletes any leftover `preview-<pr-number>` GitHub Environment on
-PR close (legacy entries, or recreations from in-flight deploys before this
-change). That API requires repository administration write access, so the repo
+Cleanup deletes any leftover `preview-<pr-number>` GitHub Environment on PR
+close. That API requires repository administration write access, so the repo
 must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions secret with a token that
 has that permission. Cleanup intentionally fails when that secret is missing or
 under-scoped so permission regressions are visible.

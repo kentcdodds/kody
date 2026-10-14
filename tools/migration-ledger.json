@@ -507,6 +507,10 @@
 		{
 			"filename": "0137-credential-mapping-proposals.sql",
 			"sha256": "6c5afdd32f2d3bfa0b4781d93b793e4ced8c86b56e5593b9f8e11392ca14284b"
+		},
+		{
+			"filename": "0138-org-email-sender-enablements.sql",
+			"sha256": "9df1826c836f2dba8125adc82453c9352524cc79972b5822965371aae9e5c258"
 		}
 	]
 }

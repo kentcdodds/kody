@@ -1,5 +1,10 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { authorize } from '#worker/authorization/authorize.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -13,6 +18,8 @@ import {
 	listOwnerEmailDeliveryEvents,
 	listOwnerEmailMessagesPage,
 } from '#worker/email/owner-email-reader.ts'
+import { normalizeEmailAddress } from '#worker/email/address.ts'
+import { classifyInboundEmailSender } from '#worker/email/inbound-sender.ts'
 import {
 	buildPlatformEmailAddress,
 	getPlatformEmailDomain,
@@ -29,7 +36,9 @@ import {
 	type EmailMessageRecord,
 	type EmailProcessingStatus,
 } from '#worker/email/types.ts'
+import { orgResourcePath } from '#universal/org-pages.ts'
 import { resolveEntitlementLimit, type PlanName } from '#universal/plans.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	getUserEntitlement,
 	readCurrentEntitlementResourceUsage,
@@ -78,6 +87,19 @@ export type AccountEmailInbox = {
 	updated_at: string
 }
 
+export type AccountEmailSenderClassification =
+	| 'member'
+	| 'authenticated'
+	| 'unverified'
+
+export type AccountEmailEnableSender = {
+	sender: { kind: 'member' | 'address'; value: string }
+	topic: 'email.message.received' | 'email.message.quarantined'
+	org_slug: string
+	packages_href: string
+	packages: Array<{ kody_id: string }>
+}
+
 export type AccountEmailMessageListItem = {
 	id: string
 	direction: EmailDirection
@@ -91,6 +113,9 @@ export type AccountEmailMessageListItem = {
 	processing_status: EmailProcessingStatus
 	classification: EmailClassification
 	classification_reason: string | null
+	/** Null for outbound mail, which has no inbound sender to classify. */
+	sender_classification: AccountEmailSenderClassification | null
+	sender_classification_reason: string | null
 	provider_message_id: string | null
 	delivery_status: EmailDeliveryStatus | null
 	delivery_status_at: string | null
@@ -136,6 +161,8 @@ export type AccountEmailMessageDetail = AccountEmailMessageListItem & {
 	raw_size: number | null
 	attachments: Array<AccountEmailAttachment>
 	delivery_events: Array<AccountEmailDeliveryEvent>
+	/** Package approval for this sender. Null when the sender cannot be enabled. */
+	enable_sender: AccountEmailEnableSender | null
 }
 
 /**
@@ -213,6 +240,8 @@ function messageToListItem(
 		processing_status: message.processingStatus,
 		classification: message.classification,
 		classification_reason: message.classificationReason,
+		sender_classification: null,
+		sender_classification_reason: null,
 		provider_message_id: message.providerMessageId,
 		delivery_status: message.deliveryStatus,
 		delivery_status_at: message.deliveryStatusAt,
@@ -228,7 +257,7 @@ async function loadUsage(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
 	userId: OwnerId
-	email: string
+	email: string | null
 }): Promise<AccountEmailUsage> {
 	const now = new Date()
 	const entitlement = await getUserEntitlement(input.db, {
@@ -310,9 +339,102 @@ async function loadInboxes(input: {
 	}))
 }
 
+type ClassifiedSender = {
+	sender_classification: AccountEmailSenderClassification | null
+	sender_classification_reason: string | null
+	enableSender: AccountEmailEnableSender['sender'] | null
+}
+
+async function classifyMessageSender(input: {
+	db: D1Database
+	orgId: OwnerId
+	message: Pick<
+		EmailMessageRecord,
+		'direction' | 'fromAddress' | 'envelopeFrom' | 'authResults'
+	>
+}): Promise<ClassifiedSender> {
+	if (input.message.direction !== 'inbound') {
+		return {
+			sender_classification: null,
+			sender_classification_reason: null,
+			enableSender: null,
+		}
+	}
+	const classified = await classifyInboundEmailSender({
+		db: input.db,
+		orgId: input.orgId,
+		message: input.message,
+	})
+	switch (classified.kind) {
+		case 'member':
+			return {
+				sender_classification: 'member',
+				sender_classification_reason: 'From is a verified org member.',
+				enableSender: {
+					kind: 'member',
+					value: String(classified.actor.userId),
+				},
+			}
+		case 'inbox-owner': {
+			const address = input.message.fromAddress
+				? normalizeEmailAddress(input.message.fromAddress)
+				: null
+			return {
+				sender_classification: 'authenticated',
+				sender_classification_reason:
+					'From authenticated and is not an org member.',
+				enableSender: address ? { kind: 'address', value: address } : null,
+			}
+		}
+		case 'unverified':
+			return {
+				sender_classification: 'unverified',
+				sender_classification_reason: classified.reason,
+				enableSender: null,
+			}
+		default: {
+			const exhaustive: never = classified
+			throw new Error(
+				`Unhandled inbound sender classification: ${String(exhaustive)}`,
+			)
+		}
+	}
+}
+
+function packagesHrefForSender(input: {
+	orgSlug: string
+	sender: AccountEmailEnableSender['sender']
+	topic: AccountEmailEnableSender['topic']
+}) {
+	const params = new URLSearchParams({
+		enable_sender: '1',
+		sender_kind: input.sender.kind,
+		sender_value: input.sender.value,
+		topic: input.topic,
+	})
+	return `${orgResourcePath(input.orgSlug, 'repositories')}?${params.toString()}`
+}
+
+async function listOrgPackageKodyIds(db: D1Database, orgId: OwnerId) {
+	const rows = await db
+		.prepare(
+			`SELECT kody_id FROM saved_packages
+			 WHERE user_id = ?${andLiveDeletedAtSql()}
+			 ORDER BY kody_id
+			 LIMIT 100`,
+		)
+		.bind(orgId)
+		.all<{ kody_id: string }>()
+	return (rows.results ?? [])
+		.map((row) => row.kody_id)
+		.filter((kodyId) => kodyId.length > 0)
+		.map((kodyId) => ({ kody_id: kodyId }))
+}
+
 async function loadSelectedMessage(input: {
 	env: Env
 	stableUserId: OwnerId
+	orgSlug: string | null
 	messageId: string
 }): Promise<AccountEmailMessageDetail | null> {
 	const message = await getOwnerEmailMessageById({
@@ -335,10 +457,39 @@ async function loadSelectedMessage(input: {
 		}),
 	])
 	const detail = toMessageDetail(message, attachments)
+	const sender = await classifyMessageSender({
+		db: input.env.APP_DB,
+		orgId: input.stableUserId,
+		message,
+	})
+	const topic: AccountEmailEnableSender['topic'] =
+		message.classification === 'quarantined'
+			? 'email.message.quarantined'
+			: 'email.message.received'
+	const enable_sender =
+		sender.enableSender && input.orgSlug
+			? {
+					sender: sender.enableSender,
+					topic,
+					org_slug: input.orgSlug,
+					packages_href: packagesHrefForSender({
+						orgSlug: input.orgSlug,
+						sender: sender.enableSender,
+						topic,
+					}),
+					packages: await listOrgPackageKodyIds(
+						input.env.APP_DB,
+						input.stableUserId,
+					),
+				}
+			: null
 	return {
 		...detail,
 		classification: message.classification,
 		classification_reason: message.classificationReason,
+		sender_classification: sender.sender_classification,
+		sender_classification_reason: sender.sender_classification_reason,
+		enable_sender,
 		delivery_events: deliveryEvents.map((event) => ({
 			id: event.id,
 			event_type: event.eventType,
@@ -351,14 +502,18 @@ async function loadSelectedMessage(input: {
 	}
 }
 
+function orgSlugFor(user: AuthenticatedUser) {
+	return user.request.org.slug?.trim() || null
+}
+
 function resolveInboxAddress(input: {
 	env: Env
-	username: string
+	orgSlug: string | null
 }): string | null {
 	const domain = getPlatformEmailDomain(input.env)
-	if (!domain || !input.username.trim()) return null
+	if (!domain || !input.orgSlug) return null
 	return buildPlatformEmailAddress({
-		username: input.username,
+		username: input.orgSlug,
 		domain,
 	})
 }
@@ -379,7 +534,7 @@ function emptyVerifiedShell(input: {
 		username: input.user.username,
 		inboxAddress: resolveInboxAddress({
 			env: input.env,
-			username: input.user.username,
+			orgSlug: orgSlugFor(input.user),
 		}),
 		verificationMessage: input.emailVerified
 			? null
@@ -402,6 +557,7 @@ export async function loadAccountEmailData(input: {
 	user: AuthenticatedUser
 	pathMessageId?: string
 }): Promise<AccountEmailLoaderData> {
+	await authorize({ env: input.env, request: input.user.request }, 'email:read')
 	const url = new URL(input.request.url, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
 		defaultPageSize,
@@ -421,7 +577,10 @@ export async function loadAccountEmailData(input: {
 			stableUserId: input.user.mcpUser.userId,
 		}))
 
-	if (!emailVerified) {
+	// Personal inboxes stay behind account email verification. A team mailbox
+	// is the org's: a viewer with email:read sees it even when their own
+	// address is unverified.
+	if (!emailVerified && (await isPersonalOrg(input.env.APP_DB, userId))) {
 		return emptyVerifiedShell({
 			user: input.user,
 			env: input.env,
@@ -437,6 +596,7 @@ export async function loadAccountEmailData(input: {
 		input.request.url,
 		input.pathMessageId,
 	)
+	const orgSlug = orgSlugFor(input.user)
 	const [listResult, inboxes, usage, selectedMessage] = await Promise.all([
 		listOwnerEmailMessagesPage({
 			env: input.env,
@@ -451,16 +611,31 @@ export async function loadAccountEmailData(input: {
 			db: input.env.APP_DB,
 			env: input.env,
 			userId,
-			email: input.user.email,
+			email: entitlementEmailForOwner({ user: input.user.mcpUser }, userId),
 		}),
 		selectedMessageId
 			? loadSelectedMessage({
 					env: input.env,
 					stableUserId: userId,
+					orgSlug,
 					messageId: selectedMessageId,
 				})
 			: Promise.resolve(null),
 	])
+	const messages = await Promise.all(
+		listResult.messages.map(async (message) => {
+			const sender = await classifyMessageSender({
+				db: input.env.APP_DB,
+				orgId: userId,
+				message,
+			})
+			return {
+				...messageToListItem(message),
+				sender_classification: sender.sender_classification,
+				sender_classification_reason: sender.sender_classification_reason,
+			}
+		}),
+	)
 
 	return {
 		ok: true,
@@ -469,11 +644,11 @@ export async function loadAccountEmailData(input: {
 		username: input.user.username,
 		inboxAddress: resolveInboxAddress({
 			env: input.env,
-			username: input.user.username,
+			orgSlug,
 		}),
 		verificationMessage: null,
 		inboxes,
-		messages: listResult.messages.map(messageToListItem),
+		messages,
 		selectedMessage,
 		usage,
 		page,

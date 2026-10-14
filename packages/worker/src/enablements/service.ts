@@ -20,6 +20,11 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	buildCredentialApprovalHref,
+	isInboundEmailApprovalTopic,
+	type CredentialProposalSender,
+} from '#universal/credential-contracts.ts'
 import { buildWebhookApprovalUrl } from '#worker/webhooks/approval.ts'
 import {
 	buildSetWebhookEndpointHmacSecretStatement,
@@ -31,18 +36,31 @@ import {
 	buildInsertEnablementStatement,
 	buildInsertWebhookEnablementStatement,
 	disableEnablement,
+	emailSenderEnablementConflictMessage,
+	findLiveEmailSenderEnablement,
 	getEnablementById,
+	isEmailSenderOneLiveConflict,
 	isWebhookOneLiveConflict,
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 } from './repo.ts'
-import { type EnablementRecord, type EnablementTriggerKind } from './types.ts'
+import {
+	canonicalizeEnablementSender,
+	isCompleteEnablementSender,
+} from './sender-match.ts'
+import {
+	type EnablementRecord,
+	type EnablementSenderKind,
+	type EnablementTriggerKind,
+} from './types.ts'
 
 export type TriggerEnablementErrorCode =
 	| 'trigger_unknown'
 	| 'webhook_not_minted'
 	| 'webhook_other_enabler'
 	| 'webhook_approval_required'
+	| 'email_approval_required'
+	| 'email_sender_conflict'
 
 /** A trigger the caller cannot turn on, with a code mapping surfaces can show. */
 export class TriggerEnablementError extends McpCallerError {
@@ -244,6 +262,10 @@ export type NewTriggerEnablementPlan = {
 	orgId: string
 	instanceId: string
 	enablementId: string
+	/** Set for an inbound-email insert so a unique-index race can re-read it. */
+	enablerUserId?: string
+	senderKind?: EnablementSenderKind | null
+	senderValue?: string | null
 	/**
 	 * Inserts the caller's enablement; run it with `runNewEnablementPlans`
 	 * (a webhook insert writes nothing when another enabler got there first).
@@ -251,6 +273,17 @@ export type NewTriggerEnablementPlan = {
 	statement: D1PreparedStatement
 	/** Writes that land in the same batch, just before the insert. */
 	prepareStatements: () => Promise<Array<D1PreparedStatement>>
+}
+
+/**
+ * The email-sender insert lost to a row this same enabler already holds.
+ * The batch rolled back. The caller plans again and writes against that row.
+ */
+export class EmailSenderInsertAdopted extends Error {
+	constructor() {
+		super('An email sender enablement already exists for this enabler.')
+		this.name = 'EmailSenderInsertAdopted'
+	}
 }
 
 export type TriggerEnablementPlan =
@@ -268,8 +301,10 @@ function webhookOtherEnablerError(triggerName: string) {
  * Runs new-enablement inserts in one batch, between `before` and `after`
  * (related writes such as credential mappings). A webhook insert that lost a
  * race with another enabler rolls the whole batch back; the caller gets
- * `webhook_other_enabler` when another live enablement holds the webhook,
- * and the batch error otherwise.
+ * `webhook_other_enabler` when another live enablement holds the webhook.
+ * An inbound-email sender insert that loses its unique index rolls back too:
+ * `EmailSenderInsertAdopted` when the same enabler already holds the row,
+ * `email_sender_conflict` when someone else does.
  */
 export async function runNewEnablementPlans(input: {
 	db: D1Database
@@ -298,8 +333,65 @@ export async function runNewEnablementPlans(input: {
 			const firstWebhook = plans.find((plan) => plan.kind === 'webhook')
 			if (firstWebhook) throw webhookOtherEnablerError(firstWebhook.triggerName)
 		}
+		if (isEmailSenderOneLiveConflict(error)) {
+			const race = await classifyEmailSenderRace(db, plans)
+			if (race === 'adopt') throw new EmailSenderInsertAdopted()
+			if (race === 'conflict') {
+				throw new TriggerEnablementError(
+					'email_sender_conflict',
+					emailSenderEnablementConflictMessage,
+				)
+			}
+		}
 		throw error
 	}
+}
+
+/**
+ * After a unique failure, the winner's row is committed and this batch is
+ * not. Same enabler adopts that row; anyone else is a conflict.
+ */
+async function classifyEmailSenderRace(
+	db: D1Database,
+	plans: ReadonlyArray<NewTriggerEnablementPlan>,
+): Promise<'adopt' | 'conflict' | 'unrelated'> {
+	const emailPlans = plans.filter(
+		(plan) =>
+			plan.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(plan.triggerName) &&
+			plan.senderKind &&
+			plan.enablerUserId,
+	)
+	if (emailPlans.length === 0) return 'unrelated'
+	let adopt = false
+	for (const plan of emailPlans) {
+		const senderKind = plan.senderKind
+		const enablerUserId = plan.enablerUserId
+		if (!senderKind || !enablerUserId) continue
+		const sender = canonicalizeEnablementSender({
+			senderKind,
+			senderValue: plan.senderValue,
+		})
+		if (!sender.senderKind) continue
+		const existing = await findLiveEmailSenderEnablement({
+			db,
+			orgId: plan.orgId,
+			instanceId: plan.instanceId,
+			triggerName: plan.triggerName,
+			senderKind: sender.senderKind,
+			senderValue: sender.senderValue,
+		})
+		if (!existing) continue
+		const same =
+			String(existing.enablerUserId) === enablerUserId &&
+			existing.senderKind === sender.senderKind &&
+			(existing.senderValue ?? '') === (sender.senderValue ?? '')
+		if (!same) return 'conflict'
+		adopt = true
+	}
+	// No live winner found yet (replication lag / transient read): rethrow the
+	// original unique failure instead of blaming another enabler.
+	return adopt ? 'adopt' : 'unrelated'
 }
 
 async function findWebhookRaceLoser(
@@ -325,6 +417,51 @@ async function findWebhookRaceLoser(
  * insert to batch with related writes. The caller has already been
  * authorized for `package:execute` on `savedPackage`.
  */
+function emailApprovalRequiredMessage(input: {
+	baseUrl: string
+	orgSlug: string | null
+	kodyId: string
+	topic: string
+}) {
+	const topic = input.topic.trim()
+	const href = input.orgSlug
+		? new URL(
+				buildCredentialApprovalHref({
+					username: input.orgSlug,
+					kodyId: input.kodyId,
+					changes: [],
+					enable: [{ kind: 'subscription', name: topic }],
+				}),
+				input.baseUrl,
+			).toString()
+		: null
+	return `Subscription "${topic}" runs only for a sender you approve. Approve it${
+		href ? ` at ${href}` : ` from package "${input.kodyId}"`
+	} with sender_kind and sender_value (member, address, domain, or any_authenticated). enablementEnable cannot turn it on.`
+}
+
+function senderMatches(
+	row: EnablementRecord,
+	sender: CredentialProposalSender,
+) {
+	const canonical = canonicalizeEnablementSender({
+		senderKind: sender.kind,
+		senderValue: sender.value,
+	})
+	return (
+		row.senderKind === canonical.senderKind &&
+		(row.senderValue ?? null) === (canonical.senderValue ?? null)
+	)
+}
+
+function findCallerEnablement(
+	rows: ReadonlyArray<EnablementRecord>,
+	sender: CredentialProposalSender | null,
+) {
+	if (!sender) return rows[0]
+	return rows.find((row) => senderMatches(row, sender))
+}
+
 export async function planTriggerEnablementForCaller(input: {
 	env: Env
 	baseUrl: string
@@ -333,6 +470,8 @@ export async function planTriggerEnablementForCaller(input: {
 	kind: EnablementTriggerKind
 	name: string
 	now?: string
+	/** Required when turning on an inbound-email subscription. */
+	sender?: CredentialProposalSender | null
 }): Promise<TriggerEnablementPlan> {
 	const actor = requireActor(input.request)
 	const { savedPackage } = input
@@ -378,7 +517,43 @@ export async function planTriggerEnablementForCaller(input: {
 		if (statements.length > 0) await db.batch(statements)
 		return { enablement: webhookEnabler }
 	}
-	const ownExisting = (
+	const email =
+		input.kind === 'subscription' &&
+		isInboundEmailApprovalTopic(trigger.triggerName)
+	let storedSender: CredentialProposalSender | null = null
+	if (email) {
+		if (!input.sender) {
+			throw new TriggerEnablementError(
+				'email_approval_required',
+				emailApprovalRequiredMessage({
+					baseUrl: input.baseUrl,
+					orgSlug: input.request.org.slug,
+					kodyId: savedPackage.kodyId,
+					topic: trigger.triggerName,
+				}),
+			)
+		}
+		const canonical = canonicalizeEnablementSender({
+			senderKind: input.sender.kind,
+			senderValue: input.sender.value,
+		})
+		if (!isCompleteEnablementSender(canonical) || !canonical.senderKind) {
+			throw new TriggerEnablementError(
+				'email_approval_required',
+				emailApprovalRequiredMessage({
+					baseUrl: input.baseUrl,
+					orgSlug: input.request.org.slug,
+					kodyId: savedPackage.kodyId,
+					topic: trigger.triggerName,
+				}),
+			)
+		}
+		storedSender = {
+			kind: canonical.senderKind,
+			value: canonical.senderValue,
+		}
+	}
+	const ownRows = (
 		await listEnablementsForInstance({
 			db,
 			orgId,
@@ -388,7 +563,8 @@ export async function planTriggerEnablementForCaller(input: {
 				? { triggerName: trigger.triggerName }
 				: {}),
 		})
-	).find((row) => String(row.enablerUserId) === String(actor.userId))
+	).filter((row) => String(row.enablerUserId) === String(actor.userId))
+	const ownExisting = findCallerEnablement(ownRows, storedSender)
 	if (ownExisting) return { enablement: ownExisting }
 	const buildInsert =
 		input.kind === 'webhook'
@@ -404,6 +580,8 @@ export async function planTriggerEnablementForCaller(input: {
 			instanceId: trigger.instanceId,
 			enablerUserId: actor.userId,
 			origin: 'enabled',
+			senderKind: storedSender?.kind ?? null,
+			senderValue: storedSender?.value ?? null,
 		},
 		now: input.now ?? new Date().toISOString(),
 	})
@@ -414,6 +592,9 @@ export async function planTriggerEnablementForCaller(input: {
 		orgId,
 		instanceId: trigger.instanceId,
 		enablementId: id,
+		enablerUserId: String(actor.userId),
+		senderKind: storedSender?.kind ?? null,
+		senderValue: storedSender?.value ?? null,
 		statement,
 		prepareStatements,
 	}
@@ -423,7 +604,8 @@ export async function planTriggerEnablementForCaller(input: {
  * Turn a declared trigger on for the caller. The caller needs
  * `package:execute` on the package, and every run then acts as them. A
  * webhook's first turn-on is refused here: a person approves it (credential
- * approval), which also reviews what it will use.
+ * approval), which also reviews what it will use. Inbound email is refused
+ * here too: it runs only for a sender on that same approval page.
  */
 export async function enableTriggerForCaller(input: {
 	env: Env
@@ -448,6 +630,18 @@ export async function enableTriggerForCaller(input: {
 			label: savedPackage.kodyId,
 		}),
 	)
+	const topic = input.name.trim()
+	if (input.kind === 'subscription' && isInboundEmailApprovalTopic(topic)) {
+		throw new TriggerEnablementError(
+			'email_approval_required',
+			emailApprovalRequiredMessage({
+				baseUrl: input.baseUrl,
+				orgSlug: input.request.org.slug,
+				kodyId: savedPackage.kodyId,
+				topic,
+			}),
+		)
+	}
 	const plan = await planTriggerEnablementForCaller({
 		env: input.env,
 		baseUrl: input.baseUrl,

@@ -288,6 +288,7 @@ test('reserved system locals store under the operator-owned system inbox', async
 }, 30_000)
 
 test('user-subdomain mail delivers to live users (including reserved-local plus-tags) and rejects permanent or unowned reserved locals', async () => {
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const username = `normal-${crypto.randomUUID().slice(0, 8)}`

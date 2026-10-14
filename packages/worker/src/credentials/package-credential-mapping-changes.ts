@@ -5,6 +5,7 @@
  * never saved that the other path would refuse.
  */
 import {
+	EmailSenderInsertAdopted,
 	planTriggerEnablementForCaller,
 	runNewEnablementPlans,
 	TriggerEnablementError,
@@ -20,14 +21,16 @@ import {
 	type OrgAuditWriter,
 } from '#worker/orgs/org-audit.ts'
 import {
+	describeCredentialMappingTarget,
+	isInboundEmailApprovalTopic,
 	type CredentialApprovalChangeView,
 	type CredentialApprovalEnableView,
 	type CredentialApprovalErrorCode,
 	type CredentialMappingChange,
 	type CredentialPick,
+	type CredentialProposalSender,
 	type CredentialRef,
 	type CredentialTriggerRef,
-	describeCredentialMappingTarget,
 } from '#universal/credential-contracts.ts'
 import { type UsableCredential } from './credential-candidates.ts'
 import {
@@ -156,6 +159,7 @@ type TargetResolution = {
 function resolveViewerTrigger(
 	scope: PackageMappingScope,
 	ref: CredentialTriggerRef,
+	sender?: CredentialProposalSender | null,
 ) {
 	const trigger = scope.triggers.find(
 		(candidate) => candidate.kind === ref.kind && candidate.name === ref.name,
@@ -172,7 +176,11 @@ function resolveViewerTrigger(
 			`Webhook "${trigger.name}" has no URL yet. Mint its URL first, then approve it here.`,
 		)
 	}
-	const { enablement, otherEnabler } = viewerEnablement(trigger, scope.actorId)
+	const { enablement, otherEnabler } = viewerEnablement(
+		trigger,
+		scope.actorId,
+		sender,
+	)
 	if (otherEnabler) {
 		refuse(
 			'webhook_other_enabler',
@@ -185,6 +193,7 @@ function resolveViewerTrigger(
 function resolveTarget(
 	scope: PackageMappingScope,
 	change: CredentialMappingChange,
+	sender?: CredentialProposalSender | null,
 ): TargetResolution {
 	const { target } = change
 	switch (target.type) {
@@ -208,6 +217,7 @@ function resolveTarget(
 			const { trigger, enablement } = resolveViewerTrigger(
 				scope,
 				target.trigger,
+				sender,
 			)
 			return enablement
 				? {
@@ -240,6 +250,11 @@ function resolveTarget(
 export async function resolveMappingChanges(
 	scope: PackageMappingScope,
 	changes: ReadonlyArray<CredentialMappingChange>,
+	/**
+	 * Inbound-email sender the changes apply to. Without it, an enabler with
+	 * several sender rules would edit the oldest one.
+	 */
+	sender?: CredentialProposalSender | null,
 ): Promise<Array<ResolvedMappingChange>> {
 	const createUrls = await needCreateUrls(scope)
 	return changes.map((change): ResolvedMappingChange => {
@@ -268,7 +283,7 @@ export async function resolveMappingChanges(
 					`Package "${scope.savedPackage.kodyId}" has no credential need "${change.needKey}".`,
 				)
 			}
-			const target = resolveTarget(scope, change)
+			const target = resolveTarget(scope, change, sender)
 			const stored = target.rowTarget
 				? findStoredRow(scope, need.key, target.rowTarget)
 				: null
@@ -355,11 +370,16 @@ export type ResolvedTriggerEnable = CredentialApprovalEnableView & {
 export function resolveTriggerEnables(
 	scope: PackageMappingScope,
 	refs: ReadonlyArray<CredentialTriggerRef>,
+	sender?: CredentialProposalSender | null,
 ): Array<ResolvedTriggerEnable> {
 	return refs.map((ref) => {
 		const trigger = { kind: ref.kind, name: ref.name }
 		try {
-			const { trigger: declared, enablement } = resolveViewerTrigger(scope, ref)
+			const { trigger: declared, enablement } = resolveViewerTrigger(
+				scope,
+				ref,
+				sender,
+			)
 			return {
 				trigger,
 				willEnable: enablement === null,
@@ -425,7 +445,10 @@ export class MappingWriteRefused extends Error {
 	}
 }
 
-/** Planning a turn-on never asks for approval; only `enablementEnable` does. */
+/**
+ * Planning a turn-on never asks for webhook approval; only `enablementEnable`
+ * does. An inbound-email subscription without a sender is a write refusal.
+ */
 export type MappingWriteRefusalCode = Exclude<
 	TriggerEnablementError['code'],
 	'webhook_approval_required'
@@ -482,6 +505,11 @@ export async function writeMappingChanges(
 	options: {
 		now?: string
 		enable?: ReadonlyArray<ResolvedTriggerEnable>
+		/**
+		 * Sender stored on an inbound-email enablement this write turns on.
+		 * Other triggers ignore it.
+		 */
+		sender?: CredentialProposalSender | null
 		also?: ReadonlyArray<D1PreparedStatement>
 		requireUnchanged?: boolean
 	} = {},
@@ -501,106 +529,128 @@ export async function writeMappingChanges(
 	]
 	const db = scope.env.APP_DB
 	const audit = orgAuditWriterFromRequest(scope.env, scope.request)
-	const newEnablements: Array<NewTriggerEnablementPlan> = []
-	const enabledIds = new Map<DeclaredTrigger, string>()
-	const guards: Array<D1PreparedStatement> = []
-	const statements: Array<D1PreparedStatement> = []
-	const auditPlans: Array<OrgAuditOutboxPlan> = []
-	const enableTrigger = async (
-		trigger: DeclaredTrigger,
-		change: ResolvedMappingChange | null,
-	) => {
-		const known = enabledIds.get(trigger)
-		if (known) return known
-		const plan = await planTriggerEnablementForCaller({
-			env: scope.env,
-			baseUrl: scope.baseUrl,
-			request: scope.request,
-			savedPackage: scope.savedPackage,
-			kind: trigger.kind,
-			name: trigger.name,
-			now,
-		}).catch((error: unknown) => {
-			if (isMappingWriteRefusal(error)) {
-				throw new MappingWriteRefused(change, error.code, error.message)
+	const commitMappingWrite = async () => {
+		const newEnablements: Array<NewTriggerEnablementPlan> = []
+		const enabledIds = new Map<DeclaredTrigger, string>()
+		const guards: Array<D1PreparedStatement> = []
+		const statements: Array<D1PreparedStatement> = []
+		const auditPlans: Array<OrgAuditOutboxPlan> = []
+		const enableTrigger = async (
+			trigger: DeclaredTrigger,
+			change: ResolvedMappingChange | null,
+		) => {
+			const known = enabledIds.get(trigger)
+			if (known) return known
+			const email =
+				trigger.kind === 'subscription' &&
+				isInboundEmailApprovalTopic(trigger.name)
+			const plan = await planTriggerEnablementForCaller({
+				env: scope.env,
+				baseUrl: scope.baseUrl,
+				request: scope.request,
+				savedPackage: scope.savedPackage,
+				kind: trigger.kind,
+				name: trigger.name,
+				now,
+				...(email ? { sender: options.sender ?? null } : {}),
+			}).catch((error: unknown) => {
+				if (isMappingWriteRefusal(error)) {
+					throw new MappingWriteRefused(change, error.code, error.message)
+				}
+				throw error
+			})
+			let enablementId: string
+			if (plan.enablement) {
+				enablementId = plan.enablement.id
+			} else {
+				enablementId = plan.enablementId
+				newEnablements.push(plan)
 			}
-			throw error
-		})
-		let enablementId: string
-		if (plan.enablement) {
-			enablementId = plan.enablement.id
-		} else {
-			enablementId = plan.enablementId
-			newEnablements.push(plan)
+			enabledIds.set(trigger, enablementId)
+			return enablementId
 		}
-		enabledIds.set(trigger, enablementId)
-		return enablementId
-	}
-	for (const entry of enable) {
-		if (entry.willEnable && entry.declared) {
-			await enableTrigger(entry.declared, null)
-		}
-	}
-	for (const change of finalChanges) {
-		let rowTarget = change.rowTarget
-		if (!rowTarget && change.willEnable && change.trigger) {
-			const enablementId = await enableTrigger(change.trigger, change)
-			rowTarget = {
-				target: 'enablement',
-				enablementId,
-				personId: scope.actorId,
+		for (const entry of enable) {
+			if (entry.willEnable && entry.declared) {
+				await enableTrigger(entry.declared, null)
 			}
 		}
-		if (!rowTarget) continue
-		// A trigger that was off at resolve may have been turned on and mapped
-		// since; its adopted enablement must still have no row.
-		if (options.requireUnchanged) {
-			guards.push(
-				buildCredentialMappingUnchangedStatement({
+		for (const change of finalChanges) {
+			let rowTarget = change.rowTarget
+			if (!rowTarget && change.willEnable && change.trigger) {
+				const enablementId = await enableTrigger(change.trigger, change)
+				rowTarget = {
+					target: 'enablement',
+					enablementId,
+					personId: scope.actorId,
+				}
+			}
+			if (!rowTarget) continue
+			// A trigger that was off at resolve may have been turned on and mapped
+			// since; its adopted enablement must still have no row.
+			if (options.requireUnchanged) {
+				guards.push(
+					buildCredentialMappingUnchangedStatement({
+						db,
+						orgId: scope.savedPackage.userId,
+						packageId: scope.savedPackage.id,
+						needKey: change.needKey,
+						target: rowTarget,
+						credentialIds: change.beforeCredentialIds,
+					}),
+				)
+			}
+			statements.push(
+				buildWriteCredentialMappingStatement({
 					db,
 					orgId: scope.savedPackage.userId,
 					packageId: scope.savedPackage.id,
 					needKey: change.needKey,
 					target: rowTarget,
-					credentialIds: change.beforeCredentialIds,
+					credentialIds: change.credentialIds,
+					updatedByUserId: scope.actorId,
+					now,
 				}),
 			)
+			auditPlans.push(mappingAuditPlan(audit, scope, change))
 		}
-		statements.push(
-			buildWriteCredentialMappingStatement({
+		try {
+			await runNewEnablementPlans({
 				db,
-				orgId: scope.savedPackage.userId,
-				packageId: scope.savedPackage.id,
-				needKey: change.needKey,
-				target: rowTarget,
-				credentialIds: change.credentialIds,
-				updatedByUserId: scope.actorId,
-				now,
-			}),
-		)
-		auditPlans.push(mappingAuditPlan(audit, scope, change))
-	}
-	try {
-		await runNewEnablementPlans({
-			db,
-			plans: newEnablements,
-			before: guards,
-			after: [
-				...statements,
-				...auditPlans.map((plan) => orgAuditOutboxInsertStatement(db, plan)),
-				...(options.also ?? []),
-			],
-		})
-	} catch (error) {
-		if (isMappingWriteRefusal(error)) {
-			throw new MappingWriteRefused(null, error.code, error.message)
+				plans: newEnablements,
+				before: guards,
+				after: [
+					...statements,
+					...auditPlans.map((plan) => orgAuditOutboxInsertStatement(db, plan)),
+					...(options.also ?? []),
+				],
+			})
+		} catch (error) {
+			if (isMappingWriteRefusal(error)) {
+				throw new MappingWriteRefused(null, error.code, error.message)
+			}
+			if (guards.length > 0 && isMalformedJsonError(error)) {
+				throw new MappingChangedSinceResolve()
+			}
+			throw error
 		}
-		if (guards.length > 0 && isMalformedJsonError(error)) {
-			throw new MappingChangedSinceResolve()
+		for (const plan of auditPlans) {
+			await commitOrgAuditOutbox({ ...audit, appDb: db }, plan)
 		}
-		throw error
 	}
-	for (const plan of auditPlans) {
-		await commitOrgAuditOutbox({ ...audit, appDb: db }, plan)
+	// A concurrent approval of the same sender inserts first. The batch rolls
+	// back; planning again attaches mappings to that row instead of a second run.
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			await commitMappingWrite()
+			return
+		} catch (error) {
+			if (!(error instanceof EmailSenderInsertAdopted)) throw error
+			if (attempt === 0) continue
+			throw new MappingWriteRefused(
+				null,
+				'email_sender_conflict',
+				'This sender already has a live email enablement. Approve again to use it.',
+			)
+		}
 	}
 }

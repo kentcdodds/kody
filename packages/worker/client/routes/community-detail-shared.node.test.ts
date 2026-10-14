@@ -92,7 +92,6 @@ test('settings loader keeps the repo actions for client navigation', async () =>
 	const repoActions = {
 		fork: null,
 		publishHref: null,
-		updateListingHref: null,
 		packageAppHref: '/@owner/packages/demo',
 	}
 	const result = await load(

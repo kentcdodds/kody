@@ -1,5 +1,5 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
@@ -8,6 +8,13 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
+
+vi.mock('#worker/orgs/is-personal-org.ts', () => ({
+	// This suite uses an in-memory fake DB without a users table; freeze
+	// behavior is covered in memory-owner.node.test.ts.
+	isPersonalOrg: async () => true,
+}))
+
 import { rankMemoryVectorIdsWithin } from './memory-search.ts'
 import {
 	acknowledgeSurfacedMemories,

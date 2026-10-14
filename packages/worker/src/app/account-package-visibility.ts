@@ -59,9 +59,9 @@ export async function handleAccountPackageVisibilityAction(input: {
 					400,
 				)
 			}
-			// First publish and republish both call publishCommunityListing: the
-			// catalog pin only moves on this path (or communityPublish), never on
-			// package publish / promote alone.
+			// First publish and explicit visibility-public refresh call
+			// publishCommunityListing. Promote also syncs an active listing via
+			// finalizePublishedEntitySource.
 			await publishCommunityListing({
 				env: input.env,
 				baseUrl: new URL(input.request.url).origin,

@@ -10,8 +10,8 @@ import {
 
 test('buildOrgBillingMetadata dual-writes the same org id on both keys', () => {
 	expect(buildOrgBillingMetadata('org-acme')).toEqual({
-		[KODY_ORG_ID_METADATA_KEY]: 'org-acme',
-		[KODY_STABLE_USER_ID_METADATA_KEY]: 'org-acme',
+		kody_org_id: 'org-acme',
+		kody_stable_user_id: 'org-acme',
 	})
 })
 

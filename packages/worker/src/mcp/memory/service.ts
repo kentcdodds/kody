@@ -36,6 +36,7 @@ import {
 	type MemoryRecord,
 	type MemorySearchMatch,
 } from './types.ts'
+import { assertPersonalMemoryWritable } from './memory-owner.ts'
 
 const maxSubjectLength = 200
 const maxSummaryLength = 500
@@ -190,6 +191,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 	memory: MemoryRecord
 	warnings: Array<string>
 }> {
+	await assertPersonalMemoryWritable(input.env.APP_DB, input.userId)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
@@ -344,6 +346,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 export async function deleteMemory(
 	input: MemoryDeleteInput,
 ): Promise<MemoryRecord | null> {
+	await assertPersonalMemoryWritable(input.env.APP_DB, input.userId)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,

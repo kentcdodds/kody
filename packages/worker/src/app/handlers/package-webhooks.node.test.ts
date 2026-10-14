@@ -143,6 +143,8 @@ async function setup(sessionUsername = 'owner') {
 			paused_at TEXT,
 			credential_mapping_json TEXT,
 			origin TEXT NOT NULL,
+			sender_kind TEXT,
+			sender_value TEXT,
 			enabled_at TEXT NOT NULL,
 			disabled_at TEXT,
 			updated_at TEXT NOT NULL

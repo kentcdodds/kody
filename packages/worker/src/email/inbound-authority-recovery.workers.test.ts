@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test } from 'vitest'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
@@ -21,12 +22,17 @@ import { reconcileUserStaleInboundDeliveries } from './inbound-delivery-reconcil
 import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { RetryableInboundStorageError } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const appBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
+
+beforeEach(() => {
+	silenceExpectedConsoleWarns(['inbound-email-sender-unverified'])
+})
 
 async function seedAccount(label: string) {
 	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
@@ -39,6 +45,11 @@ async function seedAccount(label: string) {
 	)
 		.bind(username, email, new Date().toISOString(), userId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	return {
 		address: `${username}@${platformDomain}`,
 		email,

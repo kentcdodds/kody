@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
-import { expect, test, vi } from 'vitest'
-import type * as UserLookupModule from '#worker/identity/user-lookup.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { expect, test } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
@@ -10,25 +10,8 @@ import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
-
-const userLookupMockModule = vi.hoisted(() => ({
-	findPublicUserIdentityByUsername: vi.fn(),
-}))
-
-vi.mock('#worker/identity/user-lookup.ts', async () => {
-	const actual = await vi.importActual<typeof UserLookupModule>(
-		'#worker/identity/user-lookup.ts',
-	)
-	return {
-		...actual,
-		findPublicUserIdentityByUsername: (
-			...args: Parameters<typeof actual.findPublicUserIdentityByUsername>
-		) => userLookupMockModule.findPublicUserIdentityByUsername(...args),
-	}
-})
 
 function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
@@ -63,7 +46,7 @@ async function seedAccount(input: {
 // Boots the full inbound pipeline plus mailbox DOs; needs headroom beyond the
 // 5s local default when the whole suite runs in parallel.
 test(
-	'inbound account plan/verification requires matching email and stable_user_id (per-user isolation)',
+	'inbound verification is the resolved org person, not another account',
 	{ timeout: 30_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
@@ -92,18 +75,8 @@ test(
 			stableUserId: recipientUserId,
 		})
 
-		userLookupMockModule.findPublicUserIdentityByUsername.mockImplementation(
-			async () => ({
-				userId: 0,
-				username: recipientUsername,
-				// Stale / mismatched grant-style pair: another account's email with
-				// this mailbox owner's stable id must not load that other plan or
-				// verified state.
-				email: otherEmail,
-				mcpUserId: recipientUserId,
-			}),
-		)
-
+		// The handle resolves to the recipient's org. Verification is that
+		// person's row, so the other account's verified max plan cannot apply.
 		const address = `${recipientUsername}@${platformDomain}`
 		const message = createForwardableEmailMessage({
 			from: 'stranger@example.net',

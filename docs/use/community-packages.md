@@ -81,27 +81,17 @@ Three commits matter for a public package:
 | ---------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
 | Default-branch **HEAD**                  | Artifacts tip    | `git push` / repo session edits                                                                           |
 | Package **runtime** (`published_commit`) | Last publish     | `packagePublishExternalPush`, `repoPublishSession`, or website **Publish HEAD** / **Promote this commit** |
-| Community **listing** (`pinned_commit`)  | Catalog snapshot | `communityPublish` or website **Update public listing**                                                   |
+| Community **listing** (`pinned_commit`)  | Catalog snapshot | Same publish/promote paths once a listing exists; first list via `communityPublish` / visibility public   |
 
-Publish and promote do **not** advance the public community listing. The catalog
-keeps serving the last `communityPublish` pin (and its `package.json#version`
-label) until you republish. Successful `packagePublishExternalPush` results (and
-website approve-publish / promote responses) include a `listing` hint when the
-pin is behind, with `updateHint` and `updateUrl`. `repoPublishSession` does not
-yet attach that field — use the package page or `communityPublish` after a
-session publish. On the website, managers see **Update public listing** on the
-promote page and on the package Repo tab (next to **HEAD ahead of published**
-when that badge also applies), linking to
-`/@username/{kodyId}/settings#update-public-listing`.
+Once a package is listed on the community, publish and promote advance the
+catalog pin with the runtime. There is no separate republish step. First-time
+listing still uses `packageUpdate` with `changes.visibility: "public"` (or
+`communityPublish`). A scheduled backfill catches any listing whose pin drifted
+from the published commit.
 
-To move the listing after promoting a new version:
-
-1. Agents: call `communityPublish({ package_id })` (or ask the agent to).
-2. Website: open package **Settings**, type the slug, click **Update public
-   listing**.
-
-Listings intentionally do not auto-follow promote — that keeps catalog updates
-an explicit owner choice.
+The package **Settings** tab has one **Publishing** panel: the live version, who
+can see it (only you, your organization, or anyone on the community), what is
+newer on HEAD, and a single primary publish/promote button.
 
 ### Icon
 
@@ -130,16 +120,16 @@ trusted-listing review mark.
 
 The Repo tab shows package chrome first: the name, then the install control
 beside it for non-owners (see [One-click install](#one-click-install)). Below
-that, a badge row can show **HEAD ahead of published**, **Featured**, and **Fork
-ahead**. Owners click **HEAD ahead of published** to review the unpublished file
-diff and publish HEAD. The facts block lists version from `package.json#version`
-when the author set a string (same label on catalog cards), plus license, last
-publish date, pinned commit, rating, forks, and adaptation effort. The README
-renders under the frame. You can also ask your agent to use `communitySearch` or
-`communityGet`. After `communityPublish`, confirm `license`, `pinned_commit`,
-and the other listing fields match intent — see
-[Listing verification](../guides/package-apps.md#listing-verification) in the
-package apps guide.
+that, a badge row can show **Featured** and **Fork ahead**. Owners with
+unpublished HEAD see **Publish changes** in the repository action group (or the
+**Publishing** panel on Settings). The facts block lists version from
+`package.json#version` when the author set a string (same label on catalog
+cards), plus license, last publish date, pinned commit, rating, forks, and
+adaptation effort. The README renders under the frame. You can also ask your
+agent to use `communitySearch` or `communityGet`. After `communityPublish`,
+confirm `license`, `pinned_commit`, and the other listing fields match intent —
+see [Listing verification](../guides/package-apps.md#listing-verification) in
+the package apps guide.
 
 ## Forking a listing
 
@@ -283,8 +273,9 @@ not `package.json#private`:
   signifier and a fork affordance (same inert-fork rules as
   [forking a listing](#forking-a-listing)).
 - The owner’s own profile can filter **Needs republish** when the listing pin is
-  behind the package published commit. `communityPublish` also bumps
-  `updated_at` after `published_at`; that timestamp order is not this signal.
+  briefly behind the package published commit (promote auto-follows; this is a
+  sync-lag signal). `communityPublish` also bumps `updated_at` after
+  `published_at`; that timestamp order is not this signal.
 
 ### Private mode
 

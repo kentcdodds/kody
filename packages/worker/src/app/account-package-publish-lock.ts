@@ -97,9 +97,8 @@ export async function loadAccountPackageApprovePublishData(input: {
 		ownerUserId,
 	)
 	const ownerUsername = ownerBinding?.org.slug ?? input.user.username
-	// Compare against the current published tip only. Settings Update public
-	// listing keys off listingNeedsRepublish vs published_commit, so a
-	// pending-ahead hint would link to a page that is not yet behind.
+	// Listing auto-follows promote. A behind hint here means sync or backfill
+	// has not caught up yet — rare, and not a manual republish step.
 	const listing =
 		publishedCommit == null
 			? null
@@ -111,18 +110,6 @@ export async function loadAccountPackageApprovePublishData(input: {
 					kodyId: savedPackage.kodyId,
 					promotedCommit: publishedCommit,
 				})
-	const listingWillLagAfterPromote =
-		!alreadyPublished &&
-		pendingCommit != null &&
-		listing == null &&
-		(await resolveListingBehindPublishHint({
-			db: input.env.APP_DB,
-			ownerUserId,
-			packageId: savedPackage.id,
-			ownerUsername,
-			kodyId: savedPackage.kodyId,
-			promotedCommit: pendingCommit,
-		})) != null
 	return {
 		ok: true,
 		email: input.user.email,
@@ -146,7 +133,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 			kodyId: savedPackage.kodyId,
 		}),
 		listing,
-		listingWillLagAfterPromote,
+		listingWillLagAfterPromote: false,
 		diff:
 			unpublishedCompare || pendingMissing
 				? { files: [], omittedCount: 0 }

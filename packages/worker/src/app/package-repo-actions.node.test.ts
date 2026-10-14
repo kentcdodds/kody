@@ -50,7 +50,6 @@ test('visitors get only a fork action whose login link returns to the Repo tab',
 			viewerInstall: null,
 		},
 		publishHref: null,
-		updateListingHref: null,
 		packageAppHref: null,
 	})
 	expect(buildPackageRepoActions({ ...base, listing: null }).fork).toBeNull()
@@ -79,7 +78,7 @@ test('the page-level viewer install wins over the listing row copy', () => {
 	expect(actions.fork?.viewerInstall?.packageId).toBe('pkg-page')
 })
 
-test('owners get publish, update listing, and open app actions but never fork', () => {
+test('owners get publish and open app actions but never fork', () => {
 	const actions = buildPackageRepoActions({
 		...base,
 		listing: { ...listing, sourceAhead: true, headCommit: null },
@@ -91,8 +90,28 @@ test('owners get publish, update listing, and open app actions but never fork', 
 	expect(actions).toEqual({
 		fork: null,
 		publishHref: '/@kentcdodds/github-triage/approve-publish',
-		updateListingHref: expect.stringContaining('/@kentcdodds/github-triage'),
 		packageAppHref: expect.stringContaining('github-triage'),
+	})
+})
+
+test('owners get Publish changes when HEAD is ahead even without a listing', () => {
+	const actions = buildPackageRepoActions({
+		...base,
+		listing: null,
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		loggedIn: true,
+		ownerPackage: {
+			hasApp: false,
+			sourceAhead: true,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		},
+	})
+	expect(actions).toEqual({
+		fork: null,
+		publishHref:
+			'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		packageAppHref: null,
 	})
 })
 
@@ -103,7 +122,6 @@ test('owner actions stay hidden without a fresh owner projection', () => {
 		viewerCanManage: true,
 		loggedIn: true,
 	})
-	expect(actions.updateListingHref).toBeNull()
 	expect(actions.packageAppHref).toBeNull()
 	expect(actions.publishHref).toBeNull()
 })

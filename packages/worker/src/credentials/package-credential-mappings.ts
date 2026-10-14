@@ -11,11 +11,15 @@ import {
 	listDeclaredTriggers,
 	type DeclaredTrigger,
 } from '#worker/enablements/service.ts'
+import { canonicalizeEnablementSender } from '#worker/enablements/sender-match.ts'
 import { type EnablementRecord } from '#worker/enablements/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
+	fetchCapableCredentialKinds,
+	isInboundEmailApprovalTopic,
 	type CredentialKind,
 	type CredentialListItem,
+	type CredentialProposalSender,
 	type CredentialRef,
 	type EffectiveCredentialMapping,
 	type PackageCredentialNeedView,
@@ -23,7 +27,6 @@ import {
 	type PackageCredentialsView,
 	type PackageTriggerView,
 	type StoredCredentialMapping,
-	fetchCapableCredentialKinds,
 } from '#universal/credential-contracts.ts'
 import {
 	listUsableCredentials,
@@ -56,17 +59,47 @@ export type PackageMappingScope = {
 	usernames: Map<string, string>
 }
 
+function sameSender(
+	enablement: EnablementRecord,
+	sender: CredentialProposalSender,
+) {
+	const canonical = canonicalizeEnablementSender({
+		senderKind: sender.kind,
+		senderValue: sender.value,
+	})
+	return (
+		enablement.senderKind === canonical.senderKind &&
+		(enablement.senderValue ?? null) === (canonical.senderValue ?? null)
+	)
+}
+
 /**
  * The enablement a viewer edits for a trigger: their own for a schedule or
  * subscription, or the webhook's single enabler, which may be someone else.
+ * An inbound-email subscription with `sender` matches that sender only, so
+ * another sender of the same topic stays a separate enablement. With no
+ * sender, one email row is that rule; several rows are ambiguous and match
+ * nothing, so a caller cannot edit an arbitrary sender's credentials.
  */
 export function viewerEnablement(
 	trigger: DeclaredTrigger,
 	actorId: string,
+	sender?: CredentialProposalSender | null,
 ): { enablement: EnablementRecord | null; otherEnabler: boolean } {
-	const own = trigger.enablements.find(
+	const ownRows = trigger.enablements.filter(
 		(enablement) => String(enablement.enablerUserId) === actorId,
 	)
+	const emailTopic =
+		trigger.kind === 'subscription' && isInboundEmailApprovalTopic(trigger.name)
+	let own: EnablementRecord | null
+	if (emailTopic && sender) {
+		own = ownRows.find((enablement) => sameSender(enablement, sender)) ?? null
+	} else if (emailTopic && ownRows.length !== 1) {
+		// Zero rows, or several sender rules and no sender to choose among them.
+		own = null
+	} else {
+		own = ownRows[0] ?? null
+	}
 	if (own) return { enablement: own, otherEnabler: false }
 	if (trigger.kind === 'webhook' && trigger.enablements[0]) {
 		return { enablement: trigger.enablements[0], otherEnabler: true }
@@ -116,6 +149,16 @@ export async function loadPackageMappingScope(input: {
 		}),
 	])
 	const ownEnablementIds = triggers.flatMap((trigger) => {
+		// One person can hold several inbound-email enablements. Load every
+		// one of theirs so a sender-specific edit sees that sender's mapping.
+		if (
+			trigger.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(trigger.name)
+		) {
+			return trigger.enablements
+				.filter((enablement) => String(enablement.enablerUserId) === actorId)
+				.map((enablement) => enablement.id)
+		}
 		const { enablement, otherEnabler } = viewerEnablement(trigger, actorId)
 		return enablement && !otherEnabler ? [enablement.id] : []
 	})

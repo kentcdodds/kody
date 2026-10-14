@@ -1,5 +1,3 @@
-import { authorize, orgResource } from '#worker/authorization/authorize.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -13,7 +11,10 @@ import {
 	memorySummaryField,
 	memoryTagsField,
 } from '#mcp/capabilities/meta/meta-memory-shared.ts'
-import { requireMcpRequest, requireMcpUser } from './require-user.ts'
+import {
+	authorizePersonalMemory,
+	memoryPersonalOnlyOrgPermission,
+} from './meta-memory-owner.ts'
 
 const inputSchema = z.object({
 	memory_id: z
@@ -70,9 +71,9 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryUpsert',
-		orgPermission: 'memory:write',
+		orgPermission: memoryPersonalOnlyOrgPermission,
 		description:
-			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification. If the candidate is really package- or export-scoped guidance, do not upsert — update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" }), Where agent guidance lives / /docs/agent-guidance).',
+			'Create or update a **personal** memory for the signed-in person (always their personal org, regardless of which org this connection uses). Agents must run `metaMemoryVerify` first. Do not blindly write durable memory without verification. Do not copy a personal memory into an org package without asking the person first. Shared org knowledge belongs in documented packages and org instructions, not memory. If the candidate is really package- or export-scoped guidance, update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" })).',
 		keywords: [
 			'memory',
 			'upsert',
@@ -80,6 +81,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			'update',
 			'verify-first',
 			'long-term memory',
+			'personal memory',
 			'agent guidance',
 			'package docs',
 			'jsdoc',
@@ -90,26 +92,18 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
 			if (!args.verified_by_agent) {
 				throw new Error(
 					'Agents must run metaMemoryVerify before calling metaMemoryUpsert. Set verified_by_agent=true only after review.',
 				)
 			}
-			const request = requireMcpRequest(ctx.callerContext)
-			if (args.memory_id) {
-				await authorize(
-					{ env: ctx.env, request },
-					'memory:write',
-					orgResource(request, 'memory', args.memory_id),
-				)
-			} else {
-				await authorize({ env: ctx.env, request }, 'memory:create')
-			}
+			const auth = args.memory_id
+				? await authorizePersonalMemory(ctx, 'memory:write', args.memory_id)
+				: await authorizePersonalMemory(ctx, 'memory:create')
 			const result = await upsertMemory({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-				userEmail: user.email,
+				userId: auth.userId,
+				userEmail: auth.email,
 				memoryId: args.memory_id ?? null,
 				category: args.category ?? null,
 				subject: args.subject,

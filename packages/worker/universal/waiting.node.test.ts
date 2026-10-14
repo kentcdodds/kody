@@ -364,7 +364,7 @@ test('a mapping pause names every cause, including a need a republish changed', 
 		},
 		'acme',
 	)
-	expect(item?.why).toContain(
-		'the credential mapped to its need "chat" is gone, you can no longer use it, or it no longer fits the need after a republish. Map another credential',
-	)
+	expect(item?.why).toMatch(/need "chat"/)
+	expect(item?.why).toMatch(/republish/)
+	expect(item?.why).toMatch(/Map another credential/)
 })

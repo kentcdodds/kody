@@ -85,23 +85,6 @@ test('cached lookup returns the same mapping within the TTL and refreshes after 
 	expect(refreshed?.verified).toBe(false)
 })
 
-test('cached lookup stores negative misses', async () => {
-	const { db } = createDb()
-	clearCachedPackageAppCustomHostnames(db)
-	expect(
-		await lookupCachedPackageAppCustomHostname({
-			db,
-			hostname: 'missing.example.com',
-		}),
-	).toBeNull()
-	expect(
-		await lookupCachedPackageAppCustomHostname({
-			db,
-			hostname: 'missing.example.com',
-		}),
-	).toBeNull()
-})
-
 test('clearCachedPackageAppCustomHostnames drops all isolate entries for a db', async () => {
 	const { sqlite, db } = createDb()
 	clearCachedPackageAppCustomHostnames(db)

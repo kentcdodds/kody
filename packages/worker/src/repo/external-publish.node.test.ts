@@ -36,6 +36,9 @@ const mockModule = vi.hoisted(() => ({
 	requireCredentialNeedsApproval: vi.fn<
 		typeof NeedsApproval.requireCredentialNeedsApproval
 	>(async () => null),
+	syncActiveCommunityListingToPublishedCommit: vi.fn(
+		async (_input?: unknown) => 'skipped' as const,
+	),
 }))
 
 vi.mock(
@@ -97,6 +100,11 @@ vi.mock('#worker/repo/identity-icon.ts', () => ({
 	refreshIdentityIconForSource: (
 		...args: Parameters<typeof IdentityIcon.refreshIdentityIconForSource>
 	) => mockModule.refreshIdentityIconForSource(...args),
+}))
+
+vi.mock('#worker/community/sync-active-community-listing.ts', () => ({
+	syncActiveCommunityListingToPublishedCommit: (input: unknown) =>
+		mockModule.syncActiveCommunityListingToPublishedCommit(input),
 }))
 
 vi.mock(
@@ -458,6 +466,32 @@ test('finalize writes the published snapshot before flipping published_commit', 
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({ publishedCommit: 'commit-new' }),
+	)
+})
+
+test('finalize forwards actorUserId into listing auto-follow sync', async () => {
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
+	mockModule.updateEntitySource.mockResolvedValue(true)
+	mockModule.refreshSavedPackageProjection.mockResolvedValue(undefined)
+	mockModule.syncActiveCommunityListingToPublishedCommit.mockClear()
+
+	await finalizePublishedEntitySource({
+		env: kvEnv,
+		source: source() as ReturnType<typeof source> & { entity_kind: 'package' },
+		publishedCommit: 'commit-new',
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+		actorUserId: 'actor-approver',
+	})
+
+	expect(
+		mockModule.syncActiveCommunityListingToPublishedCommit,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: 'package-1',
+			publishedCommit: 'commit-new',
+			actorUserId: 'actor-approver',
+		}),
 	)
 })
 

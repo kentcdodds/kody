@@ -10,7 +10,7 @@ vi.mock('#worker/community/repo.ts', () => ({
 		mockModule.getCommunityListingByOwnerAndPackage(...args),
 }))
 
-const { readPromotedVersionFromManifest, resolveListingBehindPublishHint } =
+const { resolveListingBehindPublishHint } =
 	await import('./resolve-listing-behind-publish-hint.ts')
 
 test('resolveListingBehindPublishHint returns null without an active behind listing', async () => {
@@ -67,7 +67,7 @@ test('resolveListingBehindPublishHint builds the update hint for a lagging listi
 		pinnedVersion: '1.4.0',
 		promotedVersion: '1.5.0',
 		behind: true,
-		updateHint: expect.stringContaining('communityPublish'),
+		updateHint: expect.stringContaining('automatically'),
 		updateUrl: '/@danj/hey-email/settings#update-public-listing',
 	})
 })
@@ -92,10 +92,4 @@ test('resolveListingBehindPublishHint returns null when the catalog lookup rejec
 		expect.stringContaining('listing-behind-hint'),
 		'D1 unavailable',
 	)
-})
-
-test('readPromotedVersionFromManifest reads package.json version strings', () => {
-	expect(readPromotedVersionFromManifest({ version: '1.5.0' })).toBe('1.5.0')
-	expect(readPromotedVersionFromManifest({ version: 2 })).toBeNull()
-	expect(readPromotedVersionFromManifest(null)).toBeNull()
 })

@@ -206,15 +206,36 @@ export function looksLikeLoginHtml(rawBody: string) {
 	return false
 }
 
+function locationPointsToLogin(
+	location: string | null | undefined,
+	requestOrigin?: string,
+) {
+	if (!location) return false
+	try {
+		const base = requestOrigin ?? 'https://control-kody.invalid'
+		return new URL(location, base).pathname === '/login'
+	} catch {
+		return false
+	}
+}
+
 export function shouldRefreshSession(input: {
 	skipLogin: boolean
 	status: number
 	path: string
 	rawBody: string
 	method?: string
+	/** Response Location (redirect:manual 302 to /login). */
+	location?: string | null
 }) {
 	if (input.skipLogin) return false
 	if (input.status === 401) return true
 	if (input.path === '/login') return false
+	if (
+		(input.status === 302 || input.status === 303 || input.status === 307) &&
+		locationPointsToLogin(input.location)
+	) {
+		return true
+	}
 	return looksLikeLoginHtml(input.rawBody)
 }

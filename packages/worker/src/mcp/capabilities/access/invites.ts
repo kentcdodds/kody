@@ -4,11 +4,13 @@ import {
 	type OrgPermission,
 	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { assertMemoryGrantsAllowedOnOrg } from '#mcp/memory/memory-owner.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
 import {
@@ -268,6 +270,13 @@ async function acceptStoredInvite(input: {
 			orgId: invite.orgId,
 			userId: input.acceptedByUserId,
 		})
+	}
+	// Block redeem of pending team-memory grants created before personal-only.
+	if (invite.kind === 'grant' && grantTarget?.resourceType === 'memory') {
+		await assertMemoryGrantsAllowedOnOrg(
+			input.db,
+			ownerIdFromStored(invite.orgId),
+		)
 	}
 	// Claim the invite before side effects so a concurrent redeem loses the
 	// pending→accepted compare-and-set instead of applying access twice.

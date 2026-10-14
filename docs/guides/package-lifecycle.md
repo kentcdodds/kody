@@ -187,8 +187,7 @@ continuing in the tool-only lane.
 **Prefer `@kodycodes/cli` `kody dev` before the first publish.** From the
 package directory, test all four package surfaces locally. One
 `--target prod|mock` switch decides where server-side calls go (default **`mock`
-for `kody dev`**, **`prod` for `execute` / `search`** so existing workflows stay
-unchanged).
+for `kody dev`**, **`prod` for `execute` / `search`**).
 
 | Surface           | How to test locally                                                                                                                                      |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -201,7 +200,8 @@ unchanged).
 
 Mock first (safe iteration; scratch storage; no real secrets), then the same
 commands with `--target prod`, then publish. Share previews for unpublished
-packages are out of scope. `execute --local` without `--target` is unchanged.
+packages are out of scope. `execute --local` without `--target` talks to the
+hosted account.
 
 ```bash
 cd ./my-package

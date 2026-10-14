@@ -1,9 +1,8 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
-import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
+import { isPaidOrg } from '#worker/orgs/billing.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { resolveEntitlementLimit } from '#universal/plans.ts'
 import {
@@ -65,6 +64,54 @@ import {
 } from './service.ts'
 import { handleSystemInboundEmail } from './system-inbound-email.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+
+type InboundMailboxAccountRow = {
+	email: string | null
+	plan: string | null
+	stripe_plan: string | null
+	entitlement_ladder: string | null
+	stripe_credits_eligible: number | null
+	admin_credits_eligible: number | null
+	email_verified_at: string | null
+	suspended_at: string | null
+}
+
+/**
+ * Personal orgs keep the account email's verified and suspended gates.
+ * Team orgs are already live (`findPublicOwnerIdentityByHandle` uses
+ * `andActiveOrgSql`); their plan comes from `orgs` and must be paid.
+ */
+async function loadInboundMailboxAccount(db: D1Database, ownerId: OwnerId) {
+	const personal = await isPersonalOrg(db, ownerId)
+	if (personal) {
+		const row = await db
+			.prepare(
+				`SELECT u.email AS email, o.plan AS plan, o.stripe_plan AS stripe_plan,
+				        o.entitlement_ladder AS entitlement_ladder,
+				        o.stripe_credits_eligible AS stripe_credits_eligible,
+				        o.admin_credits_eligible AS admin_credits_eligible,
+				        u.email_verified_at AS email_verified_at,
+				        u.suspended_at AS suspended_at
+				 FROM users u
+				 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+				 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
+			)
+			.bind(ownerId)
+			.first<InboundMailboxAccountRow>()
+		return { personal: true as const, row }
+	}
+	const row = await db
+		.prepare(
+			`SELECT NULL AS email, plan, stripe_plan, entitlement_ladder,
+			        stripe_credits_eligible, admin_credits_eligible,
+			        NULL AS email_verified_at, NULL AS suspended_at
+			 FROM orgs
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(ownerId)
+		.first<InboundMailboxAccountRow>()
+	return { personal: false as const, row }
+}
 
 /**
  * Rejection audit writes are best-effort (the SMTP reject already happened),
@@ -200,7 +247,7 @@ export async function handleInboundEmail(
 				ctx,
 			})
 			return
-		case 'user':
+		case 'org':
 			break
 		default: {
 			const exhaustive: never = route
@@ -210,7 +257,7 @@ export async function handleInboundEmail(
 		}
 	}
 	const recipient = route.recipient
-	const localBase = route.username
+	const localPart = route.localPart
 	// Provisioning always records the canonical address (first accepted
 	// domain), even when the message arrived on a legacy domain.
 	const platformDomain = acceptedUserDomains[0]
@@ -223,16 +270,18 @@ export async function handleInboundEmail(
 		APP_DB: inputEnv.APP_DB,
 	}
 
-	const identity = await findPublicUserIdentityByUsername({
+	const identity = await findPublicOwnerIdentityByHandle({
 		db: env.APP_DB,
-		username: localBase,
+		handle: localPart,
 	})
 	if (!identity) {
 		message.setReject('Unknown Kody email address.')
 		return
 	}
 
-	const userId = personalOrgId(identity.mcpUserId)
+	const ownerId = identity.ownerId
+	// Mailbox, quota, and storage are keyed by org id (personal or team).
+	const userId = ownerId
 	return await withAccountWriteLease({
 		db: env.APP_DB,
 		stableUserId: userId,
@@ -246,22 +295,8 @@ export async function handleInboundEmail(
 			// Require email + canonical stable id together (same contract as
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
-			const accountRow = await env.APP_DB.prepare(
-				`SELECT o.plan, o.stripe_plan, o.entitlement_ladder, o.stripe_credits_eligible, o.admin_credits_eligible, u.email_verified_at, u.suspended_at
-			FROM users u
-			LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
-			WHERE u.email = ? AND u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
-			)
-				.bind(identity.email, userId)
-				.first<{
-					plan: string | null
-					stripe_plan: string | null
-					entitlement_ladder: string | null
-					stripe_credits_eligible: number | null
-					admin_credits_eligible: number | null
-					email_verified_at: string | null
-					suspended_at: string | null
-				}>()
+			const loadedAccount = await loadInboundMailboxAccount(env.APP_DB, userId)
+			const accountRow = loadedAccount.row
 			// A missing org (or missing user) keeps the synthetic max plan.
 			// Verification and suspension still come from the users row.
 			const orgPlan = accountRow?.plan
@@ -285,7 +320,8 @@ export async function handleInboundEmail(
 						},
 			})
 			const account = {
-				email: identity.email,
+				personal: loadedAccount.personal,
+				email: accountRow?.email ?? null,
 				entitlement: accountEntitlement,
 				plan: accountEntitlement.plan,
 				ladder: accountEntitlement.ladder,
@@ -297,7 +333,7 @@ export async function handleInboundEmail(
 			const provisioned = await ensureDefaultEmailInbox({
 				db: env.APP_DB,
 				userId,
-				username: identity.username,
+				username: identity.handle,
 				domain: platformDomain,
 			})
 			if (!provisioned) {
@@ -328,7 +364,7 @@ export async function handleInboundEmail(
 			}
 
 			// Inbound volume is attacker-controlled (anyone can send to a
-			// {username}@<platform domain> address), so every fail-closed gate runs
+			// {handle}@<platform domain> address), so every fail-closed gate runs
 			// before any parsing work, cheapest rejection first: verified account,
 			// per-message size cap, storage bytes, per-day receive rate, and
 			// stored-message cap (entitlements, including max-plan email caps).
@@ -338,7 +374,7 @@ export async function handleInboundEmail(
 			// or trip the other counters. Rejection rows go through the bounded
 			// recorder because unverified-alias floods are the same
 			// attacker-controlled row-growth shape as over-quota floods.
-			if (!account.emailVerified) {
+			if (account.personal && !account.emailVerified) {
 				const reason = 'Account email is not verified.'
 				message.setReject(reason)
 				await recordBoundedEmailRejectionEvent({
@@ -354,10 +390,29 @@ export async function handleInboundEmail(
 				return
 			}
 
+			// A free team org has a live handle but cannot receive mail.
+			// Personal orgs keep the free plan's own receive caps. Use the
+			// effective entitlement (stripe_plan ranked in), not orgs.plan alone.
+			if (!account.personal && !isPaidOrg(account.plan)) {
+				const reason = 'Team email requires a paid plan.'
+				message.setReject(reason)
+				await recordBoundedEmailRejectionEvent({
+					env,
+					db: env.APP_DB,
+					userId,
+					inboxId: inbox.id,
+					recipient,
+					reason,
+					phase: 'account-plan',
+				}).catch(warnRejectionAuditWriteFailed)
+				await recordReceiveUsage({ outcome: 'error' })
+				return
+			}
+
 			// A platform-suspended account cannot receive mail either; the
 			// rejection goes through the same bounded recorder so suspended
 			// aliases cannot be used to grow storage.
-			if (account.suspended) {
+			if (account.personal && account.suspended) {
 				const reason = 'Account is suspended.'
 				message.setReject(reason)
 				await recordBoundedEmailRejectionEvent({

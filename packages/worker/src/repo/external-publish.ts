@@ -1,6 +1,7 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
+import { syncActiveCommunityListingToPublishedCommit } from '#worker/community/sync-active-community-listing.ts'
 import { refreshIdentityIconForSource } from '#worker/repo/identity-icon.ts'
 import {
 	createPackagePublishLockedError,
@@ -36,6 +37,8 @@ export type FinalizePublishedSourceInput = {
 	baseUrl?: string
 	rebuildPackageArtifacts?: boolean
 	allowLockedPublish?: boolean
+	/** Actor who requested the publish; forwarded to listing auto-follow ban checks. */
+	actorUserId?: string
 }
 
 export async function finalizePublishedEntitySource(
@@ -204,6 +207,26 @@ export async function finalizePublishedEntitySource(
 		}
 		throw projectionError
 	}
+	const listingBaseUrl = input.baseUrl ?? input.source.source_root
+	// Best-effort: an active community listing must follow the runtime pin.
+	// Failures must not unwind an otherwise successful publish — the scheduled
+	// listing-behind backfill retries stuck rows.
+	try {
+		await syncActiveCommunityListingToPublishedCommit({
+			env: input.env,
+			baseUrl: listingBaseUrl,
+			ownerUserId: input.source.user_id,
+			packageId: input.source.entity_id,
+			publishedCommit: input.publishedCommit,
+			actorUserId: input.actorUserId,
+		})
+	} catch (error) {
+		console.error(
+			'community-listing-publish-sync-failed',
+			input.source.entity_id,
+			error,
+		)
+	}
 	// Best-effort: an active community listing derives its public icon from
 	// the package's published commit, so superseded cached icon revisions are
 	// dropped and the public listing cache is invalidated. Failures must not
@@ -366,6 +389,7 @@ export async function publishFromExternalRef(input: {
 		baseUrl: input.baseUrl,
 		rebuildPackageArtifacts: input.rebuildPackageArtifacts,
 		allowLockedPublish: input.allowLockedPublish,
+		actorUserId: input.requestedByUserId ?? undefined,
 	})
 	return {
 		status: 'published',

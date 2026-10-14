@@ -57,6 +57,7 @@ test('GET resolves the query proposal for the signed-in viewer', async () => {
 			},
 		],
 		enable: [],
+		sender: null,
 		reason: 'Digest',
 		errors: [],
 	})

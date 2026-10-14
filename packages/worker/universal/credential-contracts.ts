@@ -6,6 +6,7 @@
  *
  * Nothing here carries a credential value.
  */
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const credentialKinds = [
 	'secret',
@@ -44,7 +45,7 @@ export type CredentialPick =
 	| { id: string }
 
 export const credentialMappingLayers = ['org', 'mine'] as const
-export type CredentialMappingLayer = (typeof credentialMappingLayers)[number]
+type CredentialMappingLayer = (typeof credentialMappingLayers)[number]
 
 export const credentialTriggerKinds = [
 	'cron',
@@ -53,6 +54,34 @@ export const credentialTriggerKinds = [
 ] as const
 export type CredentialTriggerKind = (typeof credentialTriggerKinds)[number]
 export type CredentialTriggerRef = { kind: CredentialTriggerKind; name: string }
+
+/**
+ * Who an inbound-email subscription enablement runs for. The same vocabulary
+ * as an enablement's `sender_kind`. `any_authenticated` stores no value.
+ */
+export const credentialProposalSenderKinds = [
+	'member',
+	'address',
+	'domain',
+	'any_authenticated',
+] as const
+type CredentialProposalSenderKind =
+	(typeof credentialProposalSenderKinds)[number]
+
+export type CredentialProposalSender = {
+	kind: CredentialProposalSenderKind
+	value: string | null
+}
+
+/** Subscription topics that run only through a per-sender approval. */
+const inboundEmailApprovalTopics = [
+	'email.message.received',
+	'email.message.quarantined',
+] as const
+
+export function isInboundEmailApprovalTopic(name: string) {
+	return (inboundEmailApprovalTopics as ReadonlyArray<string>).includes(name)
+}
 
 export type StoredCredentialMapping = {
 	/** `[]` is "none on purpose". */
@@ -221,6 +250,7 @@ export const credentialApprovalErrorCodes = [
 	'not_allowed',
 	'webhook_not_minted',
 	'webhook_other_enabler',
+	'email_approval_required',
 ] as const
 export type CredentialApprovalErrorCode =
 	(typeof credentialApprovalErrorCodes)[number]
@@ -265,6 +295,11 @@ export type CredentialApprovalView = {
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
 	enable: Array<CredentialApprovalEnableView>
+	/**
+	 * Sender stored on an inbound-email enablement this proposal turns on.
+	 * Null when the link names no sender.
+	 */
+	sender: CredentialProposalSender | null
 	errors: Array<string>
 }
 
@@ -317,7 +352,7 @@ export function orgCredentialCreatePath(orgSlug: string) {
 	return `/@${encodeURIComponent(orgSlug)}/-/credentials/new`
 }
 
-export type CredentialKindMode = 'hint' | 'required'
+type CredentialKindMode = 'hint' | 'required'
 
 export type CredentialCreateLinkInput = {
 	/** The org the credential is saved in. Omit only when no org is known. */
@@ -556,10 +591,15 @@ function buildCredentialProposalSearch(input: {
 	changes: ReadonlyArray<CredentialMappingProposalChange>
 	enable?: ReadonlyArray<CredentialTriggerRef>
 	reason?: string | null
+	sender?: CredentialProposalSender | null
 }): URLSearchParams {
 	const params = new URLSearchParams()
 	for (const trigger of input.enable ?? []) {
 		params.append('enable', `${trigger.kind}:${trigger.name}`)
+	}
+	if (input.sender) {
+		params.set('sender_kind', input.sender.kind)
+		if (input.sender.value) params.set('sender_value', input.sender.value)
 	}
 	for (const change of input.changes) {
 		const name = proposalParamName(change)
@@ -587,6 +627,11 @@ export function buildCredentialApprovalHref(input: {
 	changes: ReadonlyArray<CredentialMappingProposalChange>
 	/** Triggers to turn on even when they map nothing (a webhook, say). */
 	enable?: ReadonlyArray<CredentialTriggerRef>
+	/**
+	 * Sender rule stored when this link turns on an inbound-email
+	 * subscription. Omitted for every other trigger.
+	 */
+	sender?: CredentialProposalSender | null
 	reason?: string | null
 	/** The recorded agent proposal this link approves. */
 	proposalId?: string | null
@@ -607,6 +652,8 @@ export function readCredentialProposalId(
 export type ParsedCredentialProposal = {
 	changes: Array<CredentialMappingProposalChange>
 	enable: Array<CredentialTriggerRef>
+	/** Null when the link names no sender. */
+	sender: CredentialProposalSender | null
 	reason: string | null
 	errors: Array<string>
 }
@@ -657,18 +704,106 @@ function parseProposalParamName(
 	return null
 }
 
+const proposalAddressPattern = /<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>?/i
+
+function normalizeProposalAddress(value: string) {
+	const match = value.trim().match(proposalAddressPattern)
+	const address = match?.[1]?.trim().toLowerCase() ?? ''
+	return address.length > 0 ? address : null
+}
+
+function normalizeProposalDomain(value: string) {
+	const domain = value.trim().toLowerCase().replace(/^@+/, '')
+	if (
+		!domain ||
+		domain.includes('@') ||
+		/\s/.test(domain) ||
+		!domain.includes('.') ||
+		/[%_*]/.test(domain)
+	) {
+		return null
+	}
+	return domain
+}
+
+function normalizeProposalSenderValue(
+	kind: Exclude<CredentialProposalSenderKind, 'any_authenticated'>,
+	value: string,
+) {
+	switch (kind) {
+		case 'member':
+			return parsePersonId(value.trim().toLowerCase())
+		case 'address':
+			return normalizeProposalAddress(value)
+		case 'domain':
+			return normalizeProposalDomain(value)
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unhandled sender kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * `sender_kind` plus `sender_value`. Absent params are no sender. A kind
+ * without a usable value, or a value without a kind, is an error.
+ * `any_authenticated` ignores `sender_value`.
+ */
+function parseProposalSender(
+	search: URLSearchParams,
+	errors: Array<string>,
+): CredentialProposalSender | null {
+	const kindRaw = search.get('sender_kind')
+	const valueRaw = search.get('sender_value')
+	const kindText = kindRaw?.trim() ?? ''
+	const valueText = valueRaw?.trim() ?? ''
+	if (!kindText && !valueText) return null
+	if (!kindText) {
+		errors.push(
+			'"sender_value" needs a sender_kind (member, address, domain, or any_authenticated).',
+		)
+		return null
+	}
+	if (
+		!(credentialProposalSenderKinds as ReadonlyArray<string>).includes(kindText)
+	) {
+		errors.push(
+			`"sender_kind=${kindRaw}" is not a sender; use member, address, domain, or any_authenticated.`,
+		)
+		return null
+	}
+	const kind = kindText as CredentialProposalSenderKind
+	if (kind === 'any_authenticated') return { kind, value: null }
+	const value = normalizeProposalSenderValue(kind, valueRaw ?? '')
+	if (!value) {
+		errors.push(
+			`"${kind === 'member' ? 'sender_kind=member' : `sender_kind=${kind}`}" needs a sender_value${
+				kind === 'member'
+					? ' that is a person id.'
+					: kind === 'address'
+						? ' that is an email address.'
+						: ' that is a bare domain.'
+			}`,
+		)
+		return null
+	}
+	return { kind, value }
+}
+
 /**
  * Reads a proposal from the approval page's query. Values for one target and
  * need accumulate in order, even when their param names are spelled
  * differently; only a lone empty value maps the need to `[]`. A value that is
  * not a pick, or an empty value beside others, is an error and drops that
  * change. Params that look like mapping params but do not parse are reported;
- * other params are ignored.
+ * other params are ignored. `sender_kind` and `sender_value` name the sender
+ * an inbound-email enablement runs for.
  */
 export function parseCredentialApprovalQuery(
 	search: URLSearchParams,
 ): ParsedCredentialProposal {
 	const errors: Array<string> = []
+	const sender = parseProposalSender(search, errors)
 	const byTarget = new Map<
 		string,
 		{
@@ -714,6 +849,7 @@ export function parseCredentialApprovalQuery(
 		return {
 			changes: [],
 			enable: [],
+			sender,
 			reason: null,
 			errors: [
 				`A proposal holds at most ${maxCredentialProposalValues} mapping parameters; this one has ${valueCount}.`,
@@ -749,6 +885,7 @@ export function parseCredentialApprovalQuery(
 	return {
 		changes,
 		enable: [...enableByKey.values()],
+		sender,
 		reason: reason ? reason.slice(0, maxCredentialProposalReasonLength) : null,
 		errors,
 	}

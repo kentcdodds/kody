@@ -2075,7 +2075,8 @@ export type AccountPackageListItem = {
 	hasCommunityListing: boolean
 	/**
 	 * True when an active community listing pin lags `publishedCommit`.
-	 * Owners use Update public listing on settings to move the catalog pin.
+	 * Promote auto-syncs the listing; this is only true briefly while a
+	 * best-effort sync or scheduled backfill catches up.
 	 */
 	listingNeedsRepublish: boolean
 	listingAhead: AccountPackageListingAhead | null
@@ -2104,6 +2105,18 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	 * up to date or demote Approve until this is true.
 	 */
 	pendingCommitKnown: boolean
+	/**
+	 * Author-supplied `package.json#version` on the package's published commit,
+	 * when known. Display metadata only — not the community listing pin.
+	 */
+	publishedVersion: string | null
+	/**
+	 * Changed-file count between `publishedCommit` and `pendingCommit` when
+	 * HEAD is ahead. Null when up to date, unknown, or the compare failed.
+	 */
+	unpublishedChangeCount: number | null
+	/** True when the owning org is a personal org (not a team). */
+	ownerIsPersonal: boolean
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
 	/**
@@ -2150,14 +2163,14 @@ export type AccountPackageApprovePublishLoaderData = {
 	filesHref: string
 	packageHref: string
 	/**
-	 * When an active community listing pin is behind the current published
-	 * commit, how to update the public catalog (settings Update public listing).
+	 * Present only when an active community listing pin still lags after a
+	 * promote (auto-sync failed). Owners rarely see this; the scheduled
+	 * backfill retries.
 	 */
 	listing: AccountPackageListingBehindHint | null
 	/**
-	 * True when promoting the pending commit would leave the catalog pin
-	 * behind. Shown as copy on the promote step; the settings link appears
-	 * only after promote (see promote response `listing`).
+	 * Always false after listing auto-follow: promote advances the catalog
+	 * pin with the runtime. Kept for loader shape compatibility.
 	 */
 	listingWillLagAfterPromote: boolean
 	diff: {
@@ -2319,6 +2332,12 @@ export type AccountSecretsLoaderData = {
 		currentAllowedPackages: Array<string>
 	} | null
 	approvalError: string | null
+	/**
+	 * Set when the secret value/access writes committed but linking the Key to
+	 * a credential provider failed. Callers must not treat this as a failed
+	 * save (retrying create would 409).
+	 */
+	providerLinkError?: string | null
 }
 
 export type AccountValueListItem = {
@@ -2568,6 +2587,11 @@ export type AccountMemoriesLoaderData = {
 	selectedMemory: AccountMemoryDetail | null
 	query: string
 	includeDeleted: boolean
+	/**
+	 * Team-org legacy list: read-only until cleanup. Personal org is writable.
+	 * Memory is personal-only (ADR 0072).
+	 */
+	legacyReadOnly: boolean
 }
 
 type AccountEmailUsageEntry = {
@@ -2601,6 +2625,19 @@ type AccountEmailInbox = {
 	updated_at: string
 }
 
+type AccountEmailSenderClassification =
+	| 'member'
+	| 'authenticated'
+	| 'unverified'
+
+type AccountEmailEnableSender = {
+	sender: { kind: 'member' | 'address'; value: string }
+	topic: 'email.message.received' | 'email.message.quarantined'
+	org_slug: string
+	packages_href: string
+	packages: Array<{ kody_id: string }>
+}
+
 export type AccountEmailMessageListItem = {
 	id: string
 	direction: 'inbound' | 'outbound'
@@ -2614,6 +2651,8 @@ export type AccountEmailMessageListItem = {
 	processing_status: string
 	classification: 'accepted' | 'quarantined'
 	classification_reason: string | null
+	sender_classification: AccountEmailSenderClassification | null
+	sender_classification_reason: string | null
 	provider_message_id: string | null
 	delivery_status: string | null
 	delivery_status_at: string | null
@@ -2659,6 +2698,7 @@ export type AccountEmailMessageDetail = AccountEmailMessageListItem & {
 	raw_size: number | null
 	attachments: Array<AccountEmailAttachment>
 	delivery_events: Array<AccountEmailDeliveryEvent>
+	enable_sender: AccountEmailEnableSender | null
 }
 
 export type AccountEmailLoaderData = {

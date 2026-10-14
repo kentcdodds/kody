@@ -48,7 +48,7 @@ export function oauthAttemptActorMatches(input: {
  * Where to send the person after a refused grant write. MCP reconnect still
  * lives on the account MCP servers list (`/connect/credential` is not on main).
  */
-export function mcpOAuthAttemptReconnectHref() {
+function mcpOAuthAttemptReconnectHref() {
 	return '/account/mcp-servers'
 }
 

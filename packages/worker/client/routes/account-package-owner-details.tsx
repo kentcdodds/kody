@@ -1,6 +1,5 @@
 import { type Handle, css } from 'remix/component'
 import { buildPackageAppPath } from '@kody-internal/shared/public-urls.ts'
-import { shortCommunityCommit } from '#universal/community-display.ts'
 import { routes } from '#universal/routes.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
@@ -16,7 +15,6 @@ import {
 } from '#universal/fork-outdated-copy-button.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import {
-	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	visuallyHiddenCss,
@@ -30,7 +28,7 @@ import {
 import { RecordChips, recordBodyCss } from './record-table.tsx'
 import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
 import { AccountPackageForkAdoption } from './account-package-fork-adoption.tsx'
-import { AccountPackageUpdatePublicListing } from './account-package-update-public-listing.tsx'
+import { renderPackagePublishingPanel } from './account-package-publishing-panel.tsx'
 import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
@@ -38,45 +36,6 @@ import {
 
 function isPackageLocked(lockedAt: string | null | undefined) {
 	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
-}
-
-function hasUnpublishedPackageCommit(packageDetail: AccountPackageDetail) {
-	if (!packageDetail.pendingCommitKnown) return false
-	const pending = packageDetail.pendingCommit
-	if (!pending) return false
-	return (
-		packageDetail.publishedCommit == null ||
-		packageDetail.publishedCommit !== pending
-	)
-}
-
-/** Primary Approve only when unpublished HEAD is known, or HEAD is unknown. */
-function showApprovePublishPrimary(packageDetail: AccountPackageDetail) {
-	return (
-		!packageDetail.pendingCommitKnown ||
-		hasUnpublishedPackageCommit(packageDetail)
-	)
-}
-
-function publishStateCopy(packageDetail: AccountPackageDetail) {
-	const published = packageDetail.publishedCommit
-	const pending = packageDetail.pendingCommit
-	if (!packageDetail.pendingCommitKnown) {
-		return published
-			? `Published at ${shortCommunityCommit(published)}. Could not check for an unpublished commit.`
-			: 'Could not check for an unpublished commit.'
-	}
-	if (hasUnpublishedPackageCommit(packageDetail) && pending) {
-		const pendingShort = shortCommunityCommit(pending)
-		if (!published) {
-			return `No published commit yet. Unpublished HEAD is at ${pendingShort}.`
-		}
-		return `Published at ${shortCommunityCommit(published)}. Unpublished commit pending at ${pendingShort}.`
-	}
-	if (published) {
-		return `Published version is up to date at ${shortCommunityCommit(published)}.`
-	}
-	return 'No published commit yet.'
 }
 
 export function AccountPackageOwnerDetails(
@@ -318,24 +277,44 @@ export function AccountPackageOwnerDetails(
 						<span mix={css(statusBadgeCss)}>Not listed</span>
 					)}
 				</div>
+				{viewerCanPublish
+					? renderPackagePublishingPanel({
+							ownerUsername: handle.props.ownerUsername,
+							packageDetail,
+						})
+					: null}
 				{viewerCanPublish ? (
-					<div
+					<section
 						mix={css({ display: 'grid', gap: spacing.md })}
 						data-testid="package-visibility-controls"
+						aria-labelledby="package-visibility-heading"
 					>
-						<AccountPackageUpdatePublicListing
-							packageDetail={packageDetail}
-							onPackagesPayload={handle.props.onPackagesPayload}
-						/>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h3
+								id="package-visibility-heading"
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.base,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								})}
+							>
+								Visibility
+							</h3>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								Who can open this package and whether the app is public. Type
+								the slug to confirm each change.
+							</p>
+						</div>
 						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								{packageDetail.isPrivate
-									? "Lists the source on /community so anyone can read and fork it. Doesn't host your app."
-									: 'Turning off forkable unlists the package from /community and 404s public source URLs. Existing forks keep their copies. Does not change internet-visible app hosting. Type the slug to confirm.'}
+									? 'Make it public on the community so anyone can read and fork the source. This does not host your app.'
+									: 'Turn off public community listing. Public source URLs will 404; existing forks keep their copies. Does not change whether the app is internet-visible.'}
 							</p>
 							<label mix={css({ display: 'grid', gap: spacing.xs })}>
 								<span mix={css(visuallyHiddenCss)}>
-									Type {packageDetail.kodyId} to change forkable
+									Type {packageDetail.kodyId} to change who can see the source
 								</span>
 								<input
 									value={confirmName}
@@ -386,8 +365,8 @@ export function AccountPackageOwnerDetails(
 								{visibilityState === 'submitting'
 									? 'Saving…'
 									: packageDetail.isPrivate
-										? 'Make forkable'
-										: 'Turn off forkable'}
+										? 'Make public on the community'
+										: 'Make private'}
 							</button>
 							{visibilityMessage ? (
 								<p mix={css({ margin: 0, color: colors.danger })} role="alert">
@@ -401,14 +380,13 @@ export function AccountPackageOwnerDetails(
 						>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								{packageDetail.isInternetVisible
-									? 'Turning off internet-visible returns the app to owner-session serving. Community listing stays unchanged.'
-									: "Kody hosts your app at a public URL anyone can open without signing in. This is separate from Community listing. Don't use it for apps that show your private data."}
+									? 'Turning off internet-visible returns the app to signed-in owner serving. Community listing stays unchanged.'
+									: 'Host the app at a public URL anyone can open without signing in. Separate from community listing. Do not use this for apps that show private data.'}
 							</p>
 							{packageDetail.hasApp ? null : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This package has no app yet. You can still approve
-									capabilities after publish; serving stays inactive until an
-									app exists.
+									This package has no app yet. You can still review credentials
+									after publish; serving stays inactive until an app exists.
 								</p>
 							)}
 							<label mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -486,7 +464,7 @@ export function AccountPackageOwnerDetails(
 										textDecoration: 'none',
 									})}
 								>
-									Review capabilities
+									Review credentials
 								</a>
 							</div>
 							{internetVisibleMessage ? (
@@ -503,7 +481,7 @@ export function AccountPackageOwnerDetails(
 								</p>
 							) : null}
 						</div>
-					</div>
+					</section>
 				) : null}
 				{packageDetail.tags.length > 0 ? (
 					<RecordChips items={packageDetail.tags} />
@@ -559,57 +537,6 @@ export function AccountPackageOwnerDetails(
 						},
 					]}
 				/>
-				<div mix={css(getAccentCalloutCss())}>
-					<p
-						mix={css({ margin: 0, color: colors.text })}
-						data-testid="package-publish-state"
-					>
-						{publishStateCopy(packageDetail)}
-					</p>
-					<p mix={css({ margin: 0, color: colors.textMuted })}>
-						{packageDetail.lockedAt
-							? 'Publishes stay on this reviewed tree until you promote a commit on the website. Click the lock icon to unlock.'
-							: 'Click the lock icon so agents cannot publish without your approval.'}
-					</p>
-					{packageDetail.lockedAt ? (
-						<div
-							mix={css({
-								display: 'flex',
-								flexWrap: 'wrap',
-								gap: spacing.xs,
-								alignItems: 'center',
-							})}
-						>
-							{showApprovePublishPrimary(packageDetail) ? (
-								<a
-									href={routes.communityPackageApprovePublish.href({
-										username: handle.props.ownerUsername,
-										kodyId: packageDetail.kodyId,
-									})}
-									data-testid="account-approve-publish"
-									mix={css({
-										...getPillButtonCss({ size: 'sm' }),
-										display: 'inline-flex',
-										textDecoration: 'none',
-									})}
-								>
-									Approve a publish
-								</a>
-							) : (
-								<a
-									href={routes.communityPackageApprovePublish.href({
-										username: handle.props.ownerUsername,
-										kodyId: packageDetail.kodyId,
-									})}
-									data-testid="account-approve-publish"
-									mix={css(approvePublishQuietLinkCss)}
-								>
-									Approve a publish
-								</a>
-							)}
-						</div>
-					) : null}
-				</div>
 				{viewerCanAdoptCommunityFork && packageDetail.communityFork ? (
 					<AccountPackageForkAdoption
 						packageDetail={packageDetail}
@@ -711,16 +638,6 @@ const packageAppLinkCss = {
 	color: colors.primaryText,
 	fontWeight: typography.fontWeight.semibold,
 	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
-}
-
-const approvePublishQuietLinkCss = {
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-	textDecoration: 'underline',
-	textUnderlineOffset: '0.15em',
 	'&:hover': {
 		color: colors.text,
 	},

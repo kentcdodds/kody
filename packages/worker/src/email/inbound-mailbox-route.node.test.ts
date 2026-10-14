@@ -21,7 +21,7 @@ function routeFor(envelopeTo: string) {
 	})
 }
 
-test('plus tags on user inbox hosts are never reserved system locals', () => {
+test('plus tags on org inbox hosts are never reserved system locals', () => {
 	expect(normalizeEmailAddress('Kent <alice+Kody@Inbox.Kody.CODES>')).toBe(
 		'alice+kody@inbox.kody.codes',
 	)
@@ -47,26 +47,26 @@ test('plus tags on user inbox hosts are never reserved system locals', () => {
 	expect(isPermanentlyReservedUsername('alice+kody')).toBe(false)
 
 	expect(routeFor('alice+kody@inbox.kody.codes')).toEqual({
-		kind: 'user',
+		kind: 'org',
 		recipient: 'alice+kody@inbox.kody.codes',
-		username: 'alice',
+		localPart: 'alice',
 	})
 	expect(routeFor('alice+patch@inbox.kody.codes')).toEqual({
-		kind: 'user',
+		kind: 'org',
 		recipient: 'alice+patch@inbox.kody.codes',
-		username: 'alice',
+		localPart: 'alice',
 	})
 	expect(routeFor('Alice+Support@inbox.heykody.app')).toEqual({
-		kind: 'user',
+		kind: 'org',
 		recipient: 'alice+support@inbox.heykody.app',
-		username: 'alice',
+		localPart: 'alice',
 	})
 
 	for (const tag of systemEmailLocals) {
 		expect(routeFor(`alice+${tag}@${userDomain}`)).toEqual({
-			kind: 'user',
+			kind: 'org',
 			recipient: `alice+${tag}@${userDomain}`,
-			username: 'alice',
+			localPart: 'alice',
 		})
 	}
 

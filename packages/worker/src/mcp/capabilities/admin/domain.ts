@@ -60,6 +60,7 @@ import { adminPublishedImportableArtifactBackfillCapability } from './admin-publ
 import { adminPublishedSourceSnapshotBackfillCapability } from './admin-published-source-snapshot-backfill.ts'
 import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
 import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
+import { adminMemoryPersonalizeCopyCapability } from './admin-memory-personalize-copy.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -115,6 +116,9 @@ export const adminDomain = defineDomain({
 		'move org resources',
 		'credential inventory',
 		'credential backfill',
+		'memory personalize',
+		'memory copy',
+		'personal memory migration',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -151,6 +155,7 @@ export const adminDomain = defineDomain({
 		adminPublishedSourceSnapshotBackfillCapability,
 		adminCredentialInventoryScanCapability,
 		adminCredentialBackfillCapability,
+		adminMemoryPersonalizeCopyCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
 		adminCreditWalletGetCapability,

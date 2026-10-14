@@ -3,12 +3,18 @@ import {
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
+	canonicalizeEnablementSender,
+	isCompleteEnablementSender,
+} from './sender-match.ts'
+import {
 	enablementPausedReasons,
 	enablementTriggerKinds,
+	enablementSenderKinds,
 	type EnablementOrigin,
 	type EnablementPause,
 	type EnablementPausedReason,
 	type EnablementRecord,
+	type EnablementSenderKind,
 	type EnablementState,
 	type EnablementTriggerKind,
 } from './types.ts'
@@ -29,6 +35,8 @@ type EnablementRow = {
 	paused_credential_id: string | null
 	paused_at: string | null
 	origin: string
+	sender_kind: string | null
+	sender_value: string | null
 	enabled_at: string
 	disabled_at: string | null
 	updated_at: string
@@ -37,7 +45,7 @@ type EnablementRow = {
 const enablementColumns = `id, org_id, package_id, trigger_kind, trigger_name,
 	instance_id, enabler_user_id, state, paused_reason, paused_permission,
 	paused_resource_type, paused_resource_id, paused_credential_id, paused_at,
-	origin, enabled_at, disabled_at, updated_at`
+	origin, sender_kind, sender_value, enabled_at, disabled_at, updated_at`
 
 function isTriggerKind(value: string): value is EnablementTriggerKind {
 	return (enablementTriggerKinds as ReadonlyArray<string>).includes(value)
@@ -45,6 +53,14 @@ function isTriggerKind(value: string): value is EnablementTriggerKind {
 
 function isPausedReason(value: string): value is EnablementPausedReason {
 	return (enablementPausedReasons as ReadonlyArray<string>).includes(value)
+}
+
+function toSenderKind(value: string | null): EnablementSenderKind | null {
+	if (value === null) return null
+	if ((enablementSenderKinds as ReadonlyArray<string>).includes(value)) {
+		return value as EnablementSenderKind
+	}
+	throw new Error(`Unknown enablement sender kind: ${value}`)
 }
 
 function toState(value: string): EnablementState {
@@ -84,6 +100,8 @@ function toRecord(row: EnablementRow): EnablementRecord {
 		state: toState(row.state),
 		pause: toPause(row),
 		origin: row.origin === 'migrated' ? 'migrated' : 'enabled',
+		senderKind: toSenderKind(row.sender_kind),
+		senderValue: row.sender_value,
 		enabledAt: row.enabled_at,
 		disabledAt: row.disabled_at,
 		updatedAt: row.updated_at,
@@ -99,6 +117,9 @@ export type NewEnablement = {
 	instanceId: string
 	enablerUserId: string
 	origin: EnablementOrigin
+	/** Inbound-email sender rule. Omit for triggers that are not email. */
+	senderKind?: EnablementSenderKind | null
+	senderValue?: string | null
 }
 
 export function buildInsertEnablementStatement(input: {
@@ -107,12 +128,23 @@ export function buildInsertEnablementStatement(input: {
 	now: string
 }): { id: string; statement: D1PreparedStatement } {
 	const id = input.enablement.id ?? crypto.randomUUID()
+	const requestedKind = input.enablement.senderKind ?? null
+	const sender = canonicalizeEnablementSender({
+		senderKind: requestedKind,
+		senderValue: input.enablement.senderValue,
+	})
+	if (requestedKind && !isCompleteEnablementSender(sender)) {
+		throw new Error(
+			'Inbound email enablement needs a usable sender_kind and sender_value.',
+		)
+	}
 	const statement = input.db
 		.prepare(
 			`INSERT INTO enablements (
 				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
-				enabler_user_id, state, origin, enabled_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?)`,
+				enabler_user_id, state, origin, enabled_at, updated_at,
+				sender_kind, sender_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			id,
@@ -125,6 +157,8 @@ export function buildInsertEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
+			sender.senderKind,
+			sender.senderValue,
 		)
 	return { id, statement }
 }
@@ -144,13 +178,18 @@ export function buildInsertWebhookEnablementStatement(input: {
 		throw new Error('Only a webhook enablement uses the one-live insert.')
 	}
 	const id = input.enablement.id ?? crypto.randomUUID()
+	const sender = canonicalizeEnablementSender({
+		senderKind: input.enablement.senderKind,
+		senderValue: input.enablement.senderValue,
+	})
 	const statement = input.db
 		.prepare(
 			`INSERT INTO enablements (
 				id, org_id, package_id, trigger_kind, trigger_name, instance_id,
-				enabler_user_id, state, origin, enabled_at, updated_at
+				enabler_user_id, state, origin, enabled_at, updated_at,
+				sender_kind, sender_value
 			)
-			SELECT ?, ?, ?, 'webhook', ?, ?, ?, 'on', ?, ?, ?
+			SELECT ?, ?, ?, 'webhook', ?, ?, ?, 'on', ?, ?, ?, ?, ?
 			WHERE NOT EXISTS (
 				SELECT 1 FROM enablements
 				WHERE org_id = ? AND trigger_kind = 'webhook'
@@ -167,6 +206,8 @@ export function buildInsertWebhookEnablementStatement(input: {
 			input.enablement.origin,
 			input.now,
 			input.now,
+			sender.senderKind,
+			sender.senderValue,
 			input.enablement.orgId,
 			input.enablement.instanceId,
 		)
@@ -206,6 +247,76 @@ export function isWebhookOneLiveConflict(error: unknown) {
 	return false
 }
 
+/** True for the unique-index error of a second live inbound-email sender rule. */
+export function isEmailSenderOneLiveConflict(error: unknown) {
+	let current = error
+	while (current instanceof Error) {
+		if (/enablements_email_sender_one_live/i.test(current.message)) return true
+		current = current.cause
+	}
+	return false
+}
+
+export const emailSenderEnablementConflictMessage =
+	'This sender already has a live email enablement for another person. Only one live rule runs for a sender.'
+
+/** Another person already holds the live rule for this sender. */
+export class EmailSenderEnablementConflict extends Error {
+	constructor(message = emailSenderEnablementConflictMessage) {
+		super(message)
+		this.name = 'EmailSenderEnablementConflict'
+	}
+}
+
+/** The live inbound-email enablement for one sender, if one exists. */
+export async function findLiveEmailSenderEnablement(input: {
+	db: D1Database
+	orgId: string
+	instanceId: string
+	triggerName: string
+	senderKind: EnablementSenderKind
+	senderValue: string | null
+}): Promise<EnablementRecord | null> {
+	const sender = canonicalizeEnablementSender({
+		senderKind: input.senderKind,
+		senderValue: input.senderValue,
+	})
+	if (!sender.senderKind) return null
+	const row = await input.db
+		.prepare(
+			`SELECT ${enablementColumns} FROM enablements
+			 WHERE org_id = ? AND instance_id = ? AND trigger_kind = 'subscription'
+			   AND trigger_name = ? AND sender_kind = ?
+			   AND IFNULL(sender_value, '') = IFNULL(?, '')
+			   AND state <> 'off'
+			 LIMIT 1`,
+		)
+		.bind(
+			input.orgId,
+			input.instanceId,
+			input.triggerName,
+			sender.senderKind,
+			sender.senderValue,
+		)
+		.first<EnablementRow>()
+	return row ? toRecord(row) : null
+}
+
+function sameEnablerAndSender(
+	existing: EnablementRecord,
+	enablement: NewEnablement,
+) {
+	const sender = canonicalizeEnablementSender({
+		senderKind: enablement.senderKind,
+		senderValue: enablement.senderValue,
+	})
+	return (
+		String(existing.enablerUserId) === String(enablement.enablerUserId) &&
+		existing.senderKind === sender.senderKind &&
+		(existing.senderValue ?? '') === (sender.senderValue ?? '')
+	)
+}
+
 export async function insertEnablement(input: {
 	db: D1Database
 	enablement: NewEnablement
@@ -217,7 +328,27 @@ export async function insertEnablement(input: {
 		enablement: input.enablement,
 		now,
 	})
-	await statement.run()
+	try {
+		await statement.run()
+	} catch (error) {
+		if (!isEmailSenderOneLiveConflict(error) || !input.enablement.senderKind) {
+			throw error
+		}
+		const existing = await findLiveEmailSenderEnablement({
+			db: input.db,
+			orgId: input.enablement.orgId,
+			instanceId: input.enablement.instanceId,
+			triggerName: input.enablement.triggerName,
+			senderKind: input.enablement.senderKind,
+			senderValue: input.enablement.senderValue ?? null,
+		})
+		if (existing && sameEnablerAndSender(existing, input.enablement)) {
+			return existing
+		}
+		if (existing) throw new EmailSenderEnablementConflict()
+		// Unique failed but the winner is not readable yet — surface the DB error.
+		throw error
+	}
 	const record = await getEnablementById({
 		db: input.db,
 		orgId: input.enablement.orgId,

@@ -54,10 +54,11 @@ it is. The browser equivalent is `AuthenticatedAppUser.request`
 | Sealed secret provider                | `inherited`                              | Inherited |
 
 \* `classifyInboundEmailSender` (`packages/worker/src/email/inbound-sender.ts`)
-sets `sender`. A verified org member is the actor with their own role; any other
-verified sender is `inbox-owner` (Automation, no actor). Attribution stays
-Automation (`email`) either way, so the inbox's org is billed. Unverified mail
-never builds a source: it runs nothing.
+sets `sender`. A verified org member is `member`; any other sender whose From
+authenticated (DMARC pass or aligned SPF, never DKIM-only) is `inbox-owner`.
+Packages run only through a matching per-sender enablement, as that enablement's
+enabler. Attribution stays Automation (`email`) either way, so the inbox's org
+is billed. Unverified mail never builds a source: it runs nothing.
 
 `inherited` carries a `RequestLineage` (actor, attribution, credential,
 membership). Membership is the starter's role in its own org, so a downstream

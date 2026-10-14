@@ -25,8 +25,8 @@ import {
  * - `member`: the sender is a verified account email of a current member of
  *   the inbox's org, and the message authenticated. The member is the actor,
  *   with their own role.
- * - `inbox-owner`: a verified non-member (receipts, notifications). Runs the
- *   inbox owner's enablements (the earliest live Owner in a team org).
+ * - `inbox-owner`: an authenticated non-member (receipts, notifications).
+ *   Which enablements run is a per-sender rule, not an inbox-owner fallback.
  */
 export type InboundEmailSender =
 	| { kind: 'member'; actor: RequestActor; role: OrgRole }

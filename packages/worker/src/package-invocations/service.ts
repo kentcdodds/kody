@@ -102,6 +102,8 @@ export async function invokePackageSubscription(input: {
 	actorTokenId?: string
 	request: RequestSource
 	audience?: EnablementAudience | null
+	inboundFromAddress?: string | null
+	inboundFromAuthenticated?: boolean
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

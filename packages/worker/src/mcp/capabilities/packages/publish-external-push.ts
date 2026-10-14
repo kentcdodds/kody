@@ -333,7 +333,7 @@ const communityListingBehindHintSchema = z
 		updateUrl: z.string(),
 	})
 	.describe(
-		'Present when this package has a public community listing whose pinned snapshot is behind the published commit. Listings do not auto-follow publish or promote; call communityPublish or open updateUrl to republish the catalog row.',
+		'Present when this package has a public community listing whose pinned snapshot is still behind the published commit after promote auto-sync. Rare; a background backfill retries. No manual republish step is required.',
 	)
 
 const outputSchema = z.discriminatedUnion('status', [
