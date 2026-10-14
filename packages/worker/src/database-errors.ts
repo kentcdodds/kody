@@ -1,5 +1,6 @@
 const uniqueIndexFieldNames: Record<string, string> = {
 	idx_users_stable_user_id: 'stable_user_id',
+	idx_users_personal_org_id: 'personal_org_id',
 	idx_user_email_claims_active_email: 'email',
 }
 

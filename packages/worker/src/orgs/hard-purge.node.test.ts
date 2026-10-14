@@ -4,18 +4,29 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createSuccessfulDeletionEnv } from '#worker/test-support/account-deletion.ts'
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	purgeJobManagerForUser: vi.fn(async () => ({
 		ok: true as const,
 		userId: ownerIdFromStored('mock'),
-		purged: false,
+		purged: true,
 	})),
 }))
 
 vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	jobsData: () => ({
 		purgeUserJobsData: vi.fn(async () => undefined),
+		listJobStorageIdsForUser: vi.fn(async () => [] as Array<string>),
+	}),
+	jobsService: () => ({
+		listJobIdsForUser: async () => [] as Array<string>,
+		listJobStorageIdsForUser: async () => [] as Array<string>,
+		purgeUser: async (input: { userId: string }) => ({
+			ok: true as const,
+			userId: input.userId,
+			purged: true,
+		}),
 	}),
 }))
 
@@ -35,13 +46,38 @@ function createAuditDb() {
 	return createD1FromSqlite(auditSqlite)
 }
 
-test('hardPurgeOrg deletes org-owned children and the org graph from one inventory', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	const appDb = createD1FromSqlite(sqlite)
-	const auditDb = createAuditDb()
-	const orgId = ownerIdFromStored('org-hard-purge')
-	const ts = '2026-01-01T00:00:00.000Z'
+function createKv() {
+	const store = new Map<string, string>()
+	return {
+		store,
+		kv: {
+			get: async (key: string) => store.get(key) ?? null,
+			put: async (key: string, value: string) => {
+				store.set(key, value)
+			},
+			delete: async (key: string) => {
+				store.delete(key)
+			},
+			list: async (options?: { prefix?: string }) => {
+				const prefix = options?.prefix ?? ''
+				return {
+					keys: [...store.keys()]
+						.filter((name) => name.startsWith(prefix))
+						.map((name) => ({ name })),
+					list_complete: true as const,
+					cursor: undefined,
+				}
+			},
+		},
+	}
+}
+
+async function seedTeamOrgGraph(input: {
+	appDb: D1Database
+	orgId: string
+	ts: string
+}) {
+	const { appDb, orgId, ts } = input
 	await appDb
 		.prepare(
 			`INSERT INTO orgs (
@@ -106,6 +142,23 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		)
 		.bind(orgId, ts)
 		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
+			 VALUES ('outbox-purge', ?, '{"id":"outbox-purge"}', ?)`,
+		)
+		.bind(orgId, ts)
+		.run()
+}
+
+test('hardPurgeOrg deletes org-owned children and the org graph from one inventory', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const appDb = createD1FromSqlite(sqlite)
+	const auditDb = createAuditDb()
+	const orgId = ownerIdFromStored('org-hard-purge')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await seedTeamOrgGraph({ appDb, orgId, ts })
 	const otherOrgId = 'org-hard-purge-other'
 	await appDb
 		.prepare(
@@ -171,18 +224,11 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		)
 		.bind(otherOrgId, ts)
 		.run()
-	await appDb
-		.prepare(
-			`INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
-			 VALUES ('outbox-purge', ?, '{"id":"outbox-purge"}', ?)`,
-		)
-		.bind(orgId, ts)
-		.run()
 
-	await hardPurgeOrg({
-		env: { APP_DB: appDb, AUDIT_DB: auditDb } as Env,
-		orgId,
+	const env = createSuccessfulDeletionEnv(appDb, {
+		AUDIT_DB: auditDb,
 	})
+	await hardPurgeOrg({ env, orgId })
 
 	for (const [sql, label] of [
 		[`SELECT COUNT(*) AS n FROM orgs WHERE id = ?`, 'orgs'],
@@ -252,4 +298,178 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		permissions: 1,
 		handles: 1,
 	})
+})
+
+test('hardPurgeOrg removes team-org published_bundle_artifacts and their KV keys', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const appDb = createD1FromSqlite(sqlite)
+	const auditDb = createAuditDb()
+	const orgId = ownerIdFromStored('org-team-artifacts')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await seedTeamOrgGraph({ appDb, orgId, ts })
+	const kvKey = 'bundle-artifact:v1:team-src-1'
+	await appDb
+		.prepare(
+			`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, artifact_name,
+				entry_point, kv_key, dependencies_json, created_at, updated_at
+			) VALUES (
+				'pba-team-1', ?, 'team-src-1', 'abc123', 'module', 'main',
+				'index.js', ?, '[]', ?, ?
+			)`,
+		)
+		.bind(orgId, kvKey, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO vector_embed_fingerprints (
+				user_id, vector_id, content_hash, updated_at
+			) VALUES (?, 'vec-team-1', 'hash-1', ?)`,
+		)
+		.bind(orgId, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO saved_package_search_index_debt (
+				package_id, user_id, generation, embed_text, created_at, updated_at
+			) VALUES ('pkg-debt-1', ?, 1, 'embed', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	const { store, kv } = createKv()
+	await kv.put(kvKey, 'artifact-bytes')
+	await kv.put('bundle-artifact:v1:other-org', 'keep')
+
+	const env = createSuccessfulDeletionEnv(appDb, {
+		AUDIT_DB: auditDb,
+		BUNDLE_ARTIFACTS_KV: kv,
+	})
+	await hardPurgeOrg({ env, orgId })
+
+	const artifactCount = await appDb
+		.prepare(
+			`SELECT COUNT(*) AS n FROM published_bundle_artifacts WHERE user_id = ?`,
+		)
+		.bind(orgId)
+		.first<{ n: number }>()
+	expect(artifactCount?.n).toBe(0)
+	const fingerprintCount = await appDb
+		.prepare(
+			`SELECT COUNT(*) AS n FROM vector_embed_fingerprints WHERE user_id = ?`,
+		)
+		.bind(orgId)
+		.first<{ n: number }>()
+	expect(fingerprintCount?.n).toBe(0)
+	const debtCount = await appDb
+		.prepare(
+			`SELECT COUNT(*) AS n FROM saved_package_search_index_debt WHERE user_id = ?`,
+		)
+		.bind(orgId)
+		.first<{ n: number }>()
+	expect(debtCount?.n).toBe(0)
+	expect(store.has(kvKey)).toBe(false)
+	expect(store.has('bundle-artifact:v1:other-org')).toBe(true)
+})
+
+test('hardPurgeOrg leaves personal-org owner inventory for the following user purge', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const appDb = createD1FromSqlite(sqlite)
+	const auditDb = createAuditDb()
+	const personId = ownerIdFromStored('person-hard-purge')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, username, email, password_hash, stable_user_id,
+				created_at, updated_at, deleted_at
+			) VALUES (1, 'person-purge', 'person@example.com', 'hash', ?, ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder, deleted_at,
+				created_at, updated_at
+			) VALUES (?, 'person-purge', 'Person', 'free', 'public', ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO handles (handle, org_id, created_at) VALUES ('person-purge', ?, ?)`,
+		)
+		.bind(personId, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (
+				org_id, user_id, role, created_at, deleted_at
+			) VALUES (?, ?, 'owner', ?, ?)`,
+		)
+		.bind(personId, personId, ts, ts)
+		.run()
+	const kvKey = 'bundle-artifact:v1:person-src-1'
+	await appDb
+		.prepare(
+			`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, artifact_name,
+				entry_point, kv_key, dependencies_json, created_at, updated_at
+			) VALUES (
+				'pba-person-1', ?, 'person-src-1', 'def456', 'module', 'main',
+				'index.js', ?, '[]', ?, ?
+			)`,
+		)
+		.bind(personId, kvKey, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at, deleted_at
+			) VALUES ('sec-person', ?, 'user', 'default', ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts, ts)
+		.run()
+	const { store, kv } = createKv()
+	await kv.put(kvKey, 'person-artifact')
+
+	const env = createSuccessfulDeletionEnv(appDb, {
+		AUDIT_DB: auditDb,
+		BUNDLE_ARTIFACTS_KV: kv,
+	})
+	await hardPurgeOrg({ env, orgId: personId })
+
+	const orgGone = await appDb
+		.prepare(`SELECT COUNT(*) AS n FROM orgs WHERE id = ?`)
+		.bind(personId)
+		.first<{ n: number }>()
+	expect(orgGone?.n).toBe(0)
+	const handleGone = await appDb
+		.prepare(`SELECT COUNT(*) AS n FROM handles WHERE org_id = ?`)
+		.bind(personId)
+		.first<{ n: number }>()
+	expect(handleGone?.n).toBe(0)
+	const membershipGone = await appDb
+		.prepare(`SELECT COUNT(*) AS n FROM org_memberships WHERE org_id = ?`)
+		.bind(personId)
+		.first<{ n: number }>()
+	expect(membershipGone?.n).toBe(0)
+	const artifactRemains = await appDb
+		.prepare(`SELECT kv_key FROM published_bundle_artifacts WHERE user_id = ?`)
+		.bind(personId)
+		.first<{ kv_key: string }>()
+	expect(artifactRemains?.kv_key).toBe(kvKey)
+	expect(store.has(kvKey)).toBe(true)
+	const bucketRemains = await appDb
+		.prepare(`SELECT COUNT(*) AS n FROM secret_buckets WHERE user_id = ?`)
+		.bind(personId)
+		.first<{ n: number }>()
+	expect(bucketRemains?.n).toBe(1)
+	const audit = await auditDb
+		.prepare(`SELECT action FROM org_audit_events WHERE org_id = ?`)
+		.bind(personId)
+		.first<{ action: string }>()
+	expect(audit?.action).toBe('org.purged')
 })

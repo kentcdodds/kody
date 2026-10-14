@@ -916,13 +916,6 @@ const triggeredAdminRefusals: Array<{
 	denial: string
 }> = [
 	{
-		name: 'caller lacks the admin role',
-		roles: ['user'],
-		error:
-			/MCP user lacks required role "admin" for capability "adminUserVerify"/,
-		denial: 'role',
-	},
-	{
 		name: 'enabler admin role revoked in D1 while cached roles still say admin',
 		prepare: (sqlite) =>
 			sqlite
@@ -988,3 +981,51 @@ test.each(triggeredAdminRefusals)(
 		expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
 	},
 )
+
+test('a team-org triggered run with org caller roles still reaches site-admin when the enabler is admin (#3541)', async () => {
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const source: RequestSource = {
+		kind: 'schedule',
+		jobId: 'job-team',
+		enablement: adminEnablement,
+	}
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'], {
+		source,
+	})
+	t.ctx.callerContext = createMcpCallerContext({
+		source,
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(teamOrgId),
+			email: '',
+			username: 'team-org',
+			displayName: 'Team Org',
+			roles: ['user'],
+		},
+		storageContext: {
+			sessionId: null,
+			appId: automationPackageId,
+			packageId: automationPackageId,
+			storageId: null,
+		},
+	})
+	expect(t.ctx.callerContext.request?.actor?.userId).toBe(adminPersonId)
+	const verified = await adminUserVerifyCapability.handler(
+		{ email: 'jane@example.com', action: 'mark_verified' },
+		t.ctx,
+	)
+	expect(verified.user.email_verified).toBe(true)
+})
+
+test('an interactive caller without the admin role is still refused', async () => {
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'])
+	await expect(
+		adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mark_verified' },
+			t.ctx,
+		),
+	).rejects.toThrow(
+		/MCP user lacks required role "admin" for capability "adminUserVerify"/,
+	)
+	expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
+})

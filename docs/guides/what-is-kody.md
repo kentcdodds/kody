@@ -2,12 +2,12 @@
 id: what_is_kody
 title: What is Kody?
 summary:
-  Start here. Kody is Your agents' cloud. Connect the AI agent you already use
-  over MCP and it gains durable memory, secrets it never reads, saved packages,
-  and jobs that keep running while you are offline. Covers what Kody is, how it
-  pairs with personal agents, what you cannot get elsewhere, the building
-  blocks, real uses, and notes for an agent running a discovery interview.
-  Nothing here requires an account.
+  Start here. Kody is Your agents' cloud for individuals and teams. Connect the
+  AI agent you already use over MCP and it gains durable memory, credentials it
+  never reads, saved packages, and jobs that keep running while you are offline.
+  Covers what Kody is, how it pairs with the agents you already use, what you
+  cannot get elsewhere, the building blocks, real uses, and notes for an agent
+  running a discovery interview. Nothing here requires an account.
 category: platform
 ---
 
@@ -35,12 +35,12 @@ Agent notes — for AI agents running a discovery conversation from this page:
   markdown at /docs/<slug>.md.
 -->
 
-Kody is Your agents' cloud. You keep using the AI agent you already have
-(Claude, ChatGPT, Cursor, Codex, Copilot, Grok, OpenClaw, or any other
-MCP-capable host) and connect it to your Kody account. That agent gains durable
-state that outlives the conversation and keeps working while your computer is
-off. Connect a second agent tomorrow and it finds the same home already
-furnished.
+Kody is Your agents' cloud for individuals and teams (orgs, teams, and grants).
+You keep using the AI agent you already have (Claude, ChatGPT, Cursor, Codex,
+Copilot, Grok, OpenClaw, or any other MCP-capable host) and connect it to your
+Kody account. That agent gains durable state that outlives the conversation and
+keeps working while your computer is off. Connect a second agent tomorrow and it
+finds the same home already furnished.
 
 This page is for people deciding whether Kody is worth setting up, and for AI
 agents running a discovery conversation on someone's behalf. Everything here is
@@ -62,8 +62,8 @@ the things that should not live in one chat window:
 
 - **Memory**: useful facts without a better home, available to connected agents
   when relevant.
-- **Secrets** — API keys and OAuth grants your code can use but your agent can
-  never read (mount `get` returns an opaque placeholder only). There is
+- **Credentials** - API keys and OAuth grants your code can use but your agent
+  can never read (mount `get` returns an opaque placeholder only). There is
   deliberately no plaintext `secret_get`.
 - **Packages**: reusable code with typed inputs and documented defaults,
   callable from any agent, with exports, a hosted app surface, and its own
@@ -111,7 +111,7 @@ Kody is good at:
 Together, the agent does the thinking once and Kody keeps the result:
 
 - **Ask again tomorrow** becomes a saved export. No model in the loop.
-- **A key in chat or a `.env`** becomes a secret the agent never sees.
+- **A key in chat or a `.env`** becomes a credential the agent never sees.
 - **Re-run the agent on a timer** becomes a job that runs while you are offline.
 - **Facts without another home** become memories that follow the account.
 - **Repeated task instructions** become package code and documented defaults.
@@ -140,16 +140,16 @@ exists. Everything in the next section is supporting cast.
    to respond. See [How Kody works](./how-kody-works.md) and
    [Jobs, workflows, and webhooks](./triggers.md).
 2. **Your agent uses your keys without ever reading them.** It writes whatever
-   code the job needs and still cannot see a credential — no capability returns
-   one. Code references secrets by name and Kody substitutes them at the network
-   boundary, only for hosts you approved. When a provider token is coarser than
-   the job — Gmail has a send scope and no drafts-only scope — a locked package
-   is the real grant: published code cannot silently start sending. See
-   [Secrets](./secrets.md) and
+   code the job needs and still cannot see a credential (no capability returns
+   one). Code references credentials by name and Kody substitutes them at the
+   network boundary, only for hosts you approved. When a provider token is
+   coarser than the job (Gmail has a send scope and no drafts-only scope), a
+   locked package is the real grant: published code cannot silently start
+   sending. See [Secrets](./secrets.md) and
    [Gmail drafts without send](./locked-gmail-drafts.md).
 3. **Every agent you connect shares one home, and every install is a fork you
    own.** Switch from Claude to Cursor to a phone agent and the memories,
-   secrets, packages, and jobs are already there. Installing someone else's
+   credentials, packages, and jobs are already there. Installing someone else's
    automation puts code in your account, on your credentials, that you can open,
    change, schedule, and republish. Nothing stays locked in someone else's
    runtime or in one vendor's chat history. See
@@ -160,8 +160,8 @@ exists. Everything in the next section is supporting cast.
 
 - **Shared memory** — say something once, reuse it from every agent. See
   [Shared memory](./memory.md).
-- **Secrets and integrations** — bring your own API keys and OAuth apps for the
-  services you already use; verified per-provider walkthroughs live under
+- **Credentials and integrations** - bring your own API keys and OAuth apps for
+  the services you already use; verified per-provider walkthroughs live under
   [Connect a provider](https://kody.codes/docs/connect). Credentials stay
   server-side and never enter your agent's context. See [Secrets](./secrets.md)
   and [Integration bootstrap](./integration-bootstrap.md).

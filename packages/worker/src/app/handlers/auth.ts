@@ -84,7 +84,7 @@ const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 
 function signupUniqueConflict(
-	uniqueField: 'email' | 'username' | 'stable_user_id',
+	uniqueField: 'email' | 'username' | 'stable_user_id' | 'personal_org_id',
 ) {
 	switch (uniqueField) {
 		case 'username':
@@ -98,6 +98,7 @@ function signupUniqueConflict(
 				error: 'Email already registered.',
 			}
 		case 'stable_user_id':
+		case 'personal_org_id':
 			return {
 				reason: 'former_email_claimed',
 				error: formerEmailClaimedSignupMessage,
@@ -337,6 +338,7 @@ export function createAuthHandler(env: Env) {
 							username: normalizedUsername,
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
+							personal_org_id: stableUserId,
 							password_hash: passwordHash,
 							...firstTouchAttributionCreateFields(signupAttribution),
 							last_active_at: createdAt,
@@ -351,7 +353,8 @@ export function createAuthHandler(env: Env) {
 					if (
 						uniqueField === 'email' ||
 						uniqueField === 'username' ||
-						uniqueField === 'stable_user_id'
+						uniqueField === 'stable_user_id' ||
+						uniqueField === 'personal_org_id'
 					) {
 						const conflict = signupUniqueConflict(uniqueField)
 						void logAuditEvent({
@@ -369,8 +372,11 @@ export function createAuthHandler(env: Env) {
 						if (uniqueField === 'email') {
 							return Response.json(signupAcceptedBody(normalizedMode))
 						}
+						const personIdConflict =
+							uniqueField === 'stable_user_id' ||
+							uniqueField === 'personal_org_id'
 						return Response.json(
-							uniqueField === 'stable_user_id'
+							personIdConflict
 								? {
 										error: conflict.error,
 										code: formerEmailClaimedSignupCode,

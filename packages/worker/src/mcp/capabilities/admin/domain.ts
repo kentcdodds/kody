@@ -28,6 +28,8 @@ import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-ge
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
 import { adminUserUsageCapability } from './admin-user-usage.ts'
+import { adminOrgUsageCapability } from './admin-org-usage.ts'
+import { adminUserOauthGrantsCapability } from './admin-user-oauth-grants.ts'
 import { adminSystemEmailDeleteCapability } from './admin-system-email-delete.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
@@ -61,6 +63,7 @@ import { adminPublishedSourceSnapshotBackfillCapability } from './admin-publishe
 import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
 import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
 import { adminMemoryPersonalizeCopyCapability } from './admin-memory-personalize-copy.ts'
+import { adminMemoryPersonalizePurgeCapability } from './admin-memory-personalize-purge.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -119,6 +122,9 @@ export const adminDomain = defineDomain({
 		'memory personalize',
 		'memory copy',
 		'personal memory migration',
+		'org usage',
+		'oauth grants',
+		'grant bindings',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -156,8 +162,11 @@ export const adminDomain = defineDomain({
 		adminCredentialInventoryScanCapability,
 		adminCredentialBackfillCapability,
 		adminMemoryPersonalizeCopyCapability,
+		adminMemoryPersonalizePurgeCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
+		adminOrgUsageCapability,
+		adminUserOauthGrantsCapability,
 		adminCreditWalletGetCapability,
 		adminCreditGrantCapability,
 		adminCreditEligibilitySetCapability,

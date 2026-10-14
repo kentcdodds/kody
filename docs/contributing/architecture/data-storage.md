@@ -203,7 +203,12 @@ same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account/data-targets.ts` (`accountUserDataTargets`,
 `buildUserScopedTargetMatch`); export redaction columns also live there. Org and
 person hard purge share that inventory through `hardPurgeDataTargets` in
-`orgs/data-targets.ts` (`person` is `accountUserDataTargets`).
+`orgs/data-targets.ts` (`person` is `accountUserDataTargets`). Team org hard
+purge collects the same out-of-band keys account deletion collects for the owner
+id (`purgeOwnerOutOfBandSurfaces`), deletes those objects, then deletes D1 rows
+including owner-scoped inventory without `deleted_at` (for example
+`published_bundle_artifacts`). Personal org hard purge (org id == person id) is
+org-graph only so the following user purge can still inventory those keys.
 `SOFT_DELETE_PURGE_ENABLED` stays `false`, so the purge lane dry-runs.
 Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
 declared in `user-owned-surfaces.ts` and consumed by both deletion and export.

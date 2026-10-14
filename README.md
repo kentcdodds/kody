@@ -24,10 +24,10 @@ package runtime plumbing, and OAuth-protected MCP endpoints. The project favors
 a compact MCP surface with powerful `search` and Code Mode `execute` flows over
 a large static tool catalog.
 
-Kody is a multi-user personal assistant: each signed-in user gets a fully
-isolated assistant (packages, jobs, secrets, memories, and related state). Tests
-and fixtures may seed deterministic local accounts, but no account is privileged
-at runtime. The repo follows several
+Kody works for individuals and teams (orgs, teams, grants): each account holds
+isolated packages, jobs, credentials, memories, and related state. Tests and
+fixtures may seed deterministic local accounts, but no account is privileged at
+runtime. The repo follows several
 [epicflare](https://github.com/epicweb-dev/epicflare) starter conventions.
 
 The repo is organized as an Nx monorepo, with shared modules in
@@ -75,7 +75,8 @@ If you are trying to understand what this repository is for, start with
 
 ## Scope
 
-- Fair Source personal assistant platform, not a general-purpose agent harness
+- Fair Source platform for individuals and teams, not a general-purpose agent
+  harness
 - MCP-first architecture intended to work across compatible AI agent hosts
 - Compact MCP surface area preferred over a large static tool inventory
 - ChatGPT is a likely primary host target, while keeping the server usable from

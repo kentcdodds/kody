@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	credentialOtherContexts,
 	credentialPlacementTypes,
@@ -17,6 +16,7 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminPerson,
 } from './admin-shared.ts'
 
 const count = z.number().int().nonnegative()
@@ -151,7 +151,7 @@ export const adminCredentialInventoryScanCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const admin = await resolveActingAdminPerson(ctx)
 			return await auditAdminCapabilityInvocation(
 				ctx,
 				'adminCredentialInventoryScan',
@@ -159,7 +159,7 @@ export const adminCredentialInventoryScanCapability = defineDomainCapability(
 					const step = await runCredentialInventoryScanStep({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
-						initiatedByUserId: user.userId,
+						initiatedByUserId: admin.stableUserId,
 						runId: args.runId,
 						limit: args.limit,
 					})

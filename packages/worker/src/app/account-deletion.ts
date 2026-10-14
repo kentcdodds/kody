@@ -1509,6 +1509,229 @@ async function deleteUserScopedRowsAndUser(input: {
 	return { deletedRowCounts, updatedRowCounts }
 }
 
+function emptyAccountDeletionResult(
+	warnings: Array<string>,
+): AccountDeletionResult {
+	const clearedDurableObjects: Record<string, number> = {}
+	for (const key of getAccountDeletionDurableObjectResultKeys()) {
+		clearedDurableObjects[key] = 0
+	}
+	return {
+		deletedRowCounts: {},
+		updatedRowCounts: {},
+		deletedKvKeys: 0,
+		deletedCommunityAssets: 0,
+		deletedEmailBlobs: 0,
+		deletedArtifactRepos: 0,
+		revokedOAuthGrants: 0,
+		clearedDurableObjects,
+		deletedVectors: 0,
+		stripeRefunds: [],
+		warnings,
+	}
+}
+
+/**
+ * Collect the same out-of-band identifiers account deletion collects for an
+ * owner id, delete those objects, then return. Does not delete D1 projection
+ * rows, cancel Stripe, or revoke person OAuth clients — callers that need
+ * those (account deletion) run them around this step. Team org hard purge
+ * calls this before deleting owner-scoped D1 rows (#3121).
+ *
+ * Omit `dbUserId` for team orgs (no person row). Inventory still enumerates
+ * owner-scoped KV/R2/Vectorize/Artifacts/DO surfaces keyed by `ownerId`.
+ */
+export async function purgeOwnerOutOfBandSurfaces(input: {
+	env: AccountDeletionEnv
+	ownerId: OwnerId
+	dbUserId?: number
+}): Promise<AccountDeletionResult> {
+	const warnings: Array<string> = []
+	const result = emptyAccountDeletionResult(warnings)
+	const dbUserId = input.dbUserId ?? -1
+
+	const inventory = await collectUserDeletionInventory({
+		env: input.env,
+		userId: input.ownerId,
+		dbUserId,
+		warnings,
+	})
+
+	const workflowRunsCancelled = await cancelActiveWorkflowRuns({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	})
+	if (!workflowRunsCancelled) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	result.deletedVectors = await deleteVectorsByIds({
+		env: input.env,
+		ids: inventory.vectorIds,
+		warnings,
+	})
+
+	result.deletedArtifactRepos = await cleanupAllUserArtifactRepos({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	}).catch((error) => {
+		const message = getErrorMessage(error)
+		warnings.push(`Artifact repo cleanup failed unexpectedly: ${message}`)
+		return 0
+	})
+
+	result.clearedDurableObjects.repoSessions = await purgeRepoSessions({
+		env: input.env,
+		userId: input.ownerId,
+		sessions: inventory.repoSessions,
+		warnings,
+	})
+	result.clearedDurableObjects.repoSessionIndexes = await purgeRepoSessionIndex(
+		{
+			env: input.env,
+			userId: input.ownerId,
+			warnings,
+		},
+	)
+	result.clearedDurableObjects.mcpClientHubs = await purgeMcpClientHub({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	})
+	result.clearedDurableObjects.mcpAgentSessions = await purgeMcpAgentSessions({
+		env: input.env,
+		userId: input.ownerId,
+		sessions: inventory.mcpAgentSessions,
+		warnings,
+	})
+	result.clearedDurableObjects.packageRealtimeSessions =
+		await purgePackageRealtimeSessions({
+			env: input.env,
+			userId: input.ownerId,
+			packages: inventory.savedPackages,
+			warnings,
+		})
+	result.clearedDurableObjects.storageRunners = await clearStorageRunners({
+		env: input.env,
+		userId: input.ownerId,
+		storageIds: inventory.storageIds,
+		warnings,
+	})
+	result.clearedDurableObjects.runLogs = await clearRunLog({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	})
+	result.clearedDurableObjects.userMeters = await purgeUserMeter({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	})
+	result.clearedDurableObjects.stripePlanRefreshes =
+		await purgeStripePlanRefresh({
+			env: input.env,
+			userId: input.ownerId,
+			warnings,
+		})
+
+	if (input.env.BUNDLE_ARTIFACTS_KV) {
+		const sourceSnapshotKeys = await listKvKeysByPrefix({
+			kv: input.env.BUNDLE_ARTIFACTS_KV,
+			prefixes: [
+				...inventory.sourceSnapshots.flatMap((source) => [
+					`source-snapshot:v1:${source.sourceId}:`,
+					`source-manifest-snapshot:v1:${source.sourceId}:`,
+					`credential-needs:v1:${source.sourceId}:`,
+				]),
+				...inventory.communityListings.flatMap((listing) =>
+					communityIconKvListingPrefixes(listing.id),
+				),
+				...inventory.sourceSnapshots.flatMap((source) =>
+					identityIconKvRepoPrefixes(source.repoId),
+				),
+				`package-codemod-revert:${input.ownerId}:`,
+				...mcpOAuthRefreshFamilyUserKvPrefixes(input.ownerId),
+			],
+			warnings,
+		})
+		result.deletedKvKeys =
+			(await deleteKvKeys({
+				kv: input.env.BUNDLE_ARTIFACTS_KV,
+				keys: Array.from(
+					new Set([...inventory.bundleKvKeys, ...sourceSnapshotKeys]),
+				),
+				warnings,
+			})) +
+			(await deleteRetrieverCache({
+				env: input.env,
+				userId: input.ownerId,
+				warnings,
+			}))
+	} else if (
+		inventory.bundleKvKeys.length > 0 ||
+		inventory.savedPackages.length > 0
+	) {
+		warnings.push(
+			`BUNDLE_ARTIFACTS_KV binding was unavailable; ${inventory.bundleKvKeys.length} bundle/source/community key(s) and retriever cache entries for ${inventory.savedPackages.length} package(s) referenced by the deleted user were not removed and must be cleaned up manually.`,
+		)
+	}
+
+	try {
+		result.deletedCommunityAssets = await deleteAccountCommunityAssetPrefixes({
+			bucket: input.env.COMMUNITY_ASSETS,
+			stableUserId: input.ownerId,
+			listingIds: inventory.communityListings.map((listing) => listing.id),
+			repoIds: inventory.sourceSnapshots.map((source) => source.repoId),
+		})
+	} catch (error) {
+		warnings.push(getErrorMessage(error))
+	}
+	const emailCleanup = await cleanupAccountEmailBlobs({
+		env: input.env,
+		userId: input.ownerId,
+		r2Objects: inventory.r2Objects,
+		warnings,
+	})
+	result.deletedEmailBlobs = emailCleanup.deletedEmailBlobs
+	if (input.env.OPERATOR_BACKUPS) {
+		try {
+			await deleteOrgTransferBackupsForOwner({
+				bucket: input.env.OPERATOR_BACKUPS,
+				ownerId: input.ownerId,
+			})
+		} catch (error) {
+			warnings.push(
+				`Org transfer backup cleanup failed: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+
+	if (emailCleanup.emailCleanupComplete && warnings.length === 0) {
+		result.clearedDurableObjects.mailboxes = await purgeMailbox({
+			env: input.env,
+			userId: input.ownerId,
+			warnings,
+		})
+	}
+
+	if (warnings.length > 0) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	result.clearedDurableObjects.jobManagers = await purgeJobManager({
+		env: input.env,
+		userId: input.ownerId,
+		warnings,
+	})
+	if (warnings.length > 0) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	return result
+}
+
 /**
  * Orchestrate a full per-user data cleanup. The caller is responsible for
  * verifying the user's identity before invoking this; the orchestrator does
