@@ -178,8 +178,10 @@ This project uses the following resources:
     `{ pattern: "kody.run/*", zone_name: "kody.run" }`,
     `{ pattern: "*.kody.run/*", zone_name: "kody.run" }`, and
     `{ pattern: "*/*", zone_name: "kody.run" }` on the runtime Worker. The
-    catch-all is required for Cloudflare for SaaS custom hostnames; more
-    specific apex/wildcard routes still win for first-party package-app traffic.
+    catch-all is required for Cloudflare for SaaS custom hostnames and is
+    published only for the **canonical** package-app zone (not
+    `PACKAGE_APP_LEGACY_HOSTS` zones, which may be shared). More specific
+    apex/wildcard routes still win for first-party package-app traffic.
     Cloudflare Universal SSL covers one wildcard label (`*.kody.run`), which is
     enough for `{username}.kody.run`. Do **not** attach `*kody.run/*` to
     `kody-domain-redirect`: that wildcard would shadow the runtime Worker.
