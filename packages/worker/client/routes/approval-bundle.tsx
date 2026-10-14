@@ -10,6 +10,11 @@ import {
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
+	IdValue,
+	MetadataGrid,
+	accountDisclosureCss,
+} from '#client/routes/account-management-components.tsx'
+import {
 	approvalBundleApiPath,
 	approvalItemsAwaitingDecision,
 	approvalItemsReadyToApprove,
@@ -147,6 +152,24 @@ function changeLabel(change: ApprovalGrantLine['change']) {
 		default: {
 			const exhaustive: never = change
 			throw new Error(`Unknown grant change: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function itemDetailLabel(type: ApprovalItemView['type']) {
+	switch (type) {
+		case 'publish':
+			return { label: 'Paused commit', copyLabel: 'paused commit' }
+		case 'capabilities':
+			return {
+				label: 'Capability fingerprint',
+				copyLabel: 'capability fingerprint',
+			}
+		case 'credential-picks':
+			return { label: 'Proposal id', copyLabel: 'proposal id' }
+		default: {
+			const exhaustive: never = type
+			throw new Error(`Unknown approval item type: ${String(exhaustive)}`)
 		}
 	}
 }
@@ -393,6 +416,28 @@ export function ApprovalBundleRoute(handle: Handle) {
 				<p mix={css({ margin: 0, whiteSpace: 'pre-wrap' })}>{item.summary}</p>
 				{item.grants.length > 0 ? (
 					<ul mix={css(listCss)}>{item.grants.map(renderGrant)}</ul>
+				) : null}
+				{item.fingerprint ? (
+					<details
+						data-testid="approval-bundle-item-details"
+						mix={css(accountDisclosureCss)}
+					>
+						<summary>Details</summary>
+						<MetadataGrid
+							items={[
+								{
+									key: 'id',
+									label: itemDetailLabel(item.type).label,
+									value: (
+										<IdValue
+											value={item.fingerprint}
+											label={itemDetailLabel(item.type).copyLabel}
+										/>
+									),
+								},
+							]}
+						/>
+					</details>
 				) : null}
 				{item.statusMessage ? (
 					<p mix={css(mutedCss)}>{item.statusMessage}</p>

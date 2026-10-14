@@ -293,7 +293,6 @@ async function publishItemView(
 		decision: decisionView(decision),
 	}
 	const state = publishItemState(request, publishedCommit, decision)
-	const shortCommit = request.pendingCommit.slice(0, 7)
 	switch (request.reason) {
 		case 'credential_needs_changed': {
 			const changes = readCredentialNeedChanges(request.details)
@@ -301,7 +300,8 @@ async function publishItemView(
 				...base,
 				...state,
 				title: 'Publish with changed credential needs',
-				summary: `Approving publishes commit ${shortCommit}, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.`,
+				summary:
+					'Approving publishes this version, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.',
 				grants: await Promise.all(
 					changes.map((change) => credentialNeedGrant(viewer, change)),
 				),
@@ -312,7 +312,7 @@ async function publishItemView(
 				...base,
 				...state,
 				title: 'Serve on the public internet',
-				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for commit ${shortCommit}. Denying leaves it off.`,
+				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for this version. Denying leaves it off.`,
 				grants: [
 					{
 						change: 'added',
