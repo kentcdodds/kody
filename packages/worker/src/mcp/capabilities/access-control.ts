@@ -25,7 +25,10 @@ import {
 	recordMcpAuthDenial,
 } from '#mcp/auth-audit.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
-import { requiresSiteAccess } from './triggered-site-access.ts'
+import {
+	requiresSiteAccess,
+	type SiteAccessActorTrigger,
+} from './triggered-site-access.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -241,32 +244,65 @@ export async function resolveCallerFeatureFlags(
 }
 
 /**
- * Enablement-backed runs (job, webhook, subscription, email) defer the
- * caller's site-admin role/permission check to `request.actor` in D1. The
- * caller's roles name the org's identity and are not trusted on their own.
- * Package-app and unattended runs still fail closed on caller roles.
+ * Whether site-admin role/permission checks should key on `request.actor`
+ * (D1) instead of `callerContext.user.roles`.
+ *
+ * Enablement-backed runs (job, webhook, subscription, email) always defer:
+ * the MCP user is the org's identity (`roles: ['user']`) and is not trusted
+ * for site-admin. Package-app and unattended runs still fail closed on
+ * caller roles.
+ *
+ * Background `jobRunNow` inherits a live-person credential, so it is not a
+ * non-interactive trigger, but the MCP user is still the org when the job
+ * belongs to a team org. Defer whenever a background run's actor is a
+ * different person from the MCP user so admin tools stay visible and the
+ * actor D1 gate can run (#3541 follow-up).
  */
 export function shouldDeferSiteAccessToActor(
 	callerContext: McpCallerContext,
 ): boolean {
 	const trigger = nonInteractiveTriggerOf(callerContext.request)
-	if (!trigger) return false
-	const type: NonInteractiveTriggerType = trigger.type
-	switch (type) {
-		case 'job':
-		case 'webhook':
-		case 'subscription':
-		case 'email':
-			return true
-		case 'package-app':
-		case 'unattended':
-			return false
-		default: {
-			const exhaustive: never = type
-			throw new Error(
-				`Unhandled non-interactive trigger: ${String(exhaustive)}`,
-			)
+	if (trigger) {
+		const type: NonInteractiveTriggerType = trigger.type
+		switch (type) {
+			case 'job':
+			case 'webhook':
+			case 'subscription':
+			case 'email':
+				return true
+			case 'package-app':
+			case 'unattended':
+				return false
+			default: {
+				const exhaustive: never = type
+				throw new Error(
+					`Unhandled non-interactive trigger: ${String(exhaustive)}`,
+				)
+			}
 		}
+	}
+	if (callerContext.executionOrigin !== 'background') return false
+	const actorId = callerContext.request?.actor?.userId
+	const userId = callerContext.user?.userId
+	if (!actorId || !userId) return false
+	return String(actorId) !== String(userId)
+}
+
+/**
+ * The actor-gate trigger when site-admin access defers to `request.actor`,
+ * or null when the caller's roles are checked instead.
+ */
+export function siteAccessActorTriggerOf(
+	callerContext: McpCallerContext,
+): SiteAccessActorTrigger | null {
+	if (!shouldDeferSiteAccessToActor(callerContext)) return null
+	const trigger = nonInteractiveTriggerOf(callerContext.request)
+	if (trigger) return trigger
+	const request = callerContext.request
+	if (!request?.actor) return null
+	return {
+		type: 'run-now',
+		credentialId: request.credential.id,
 	}
 }
 

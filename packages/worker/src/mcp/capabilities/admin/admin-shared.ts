@@ -8,13 +8,13 @@ import {
 	logAuditEvent,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
-import { nonInteractiveTriggerOf } from '#worker/authorization/authorize.ts'
 import {
 	emailVerificationDeliveryClassValues,
 	emailVerificationDeliveryStatusValues,
 } from '#universal/email-verification-delivery.ts'
 import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
+import { shouldDeferSiteAccessToActor } from '#mcp/capabilities/access-control.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -28,8 +28,8 @@ export type ActingAdminPerson = {
 
 /**
  * Site-admin tools: the `admin` role gates them, not org permissions. A job,
- * webhook, subscription, or package run may call them when the person it acts
- * for holds the role (see `triggered-site-access.ts`).
+ * webhook, subscription, package run, or team-org `jobRunNow` may call them
+ * when the person it acts for holds the role (see `triggered-site-access.ts`).
  */
 export const adminCapabilityAccess = {
 	orgPermission: 'none',
@@ -277,17 +277,17 @@ export function buildCreatedUserAuditReason(input: {
 }
 
 /**
- * The person a site-admin capability acts as for attribution. Non-interactive
- * runs with `request.actor` resolve that actor (the enabler); otherwise the
- * authenticated MCP caller.
+ * The person a site-admin capability acts as for attribution. When site-admin
+ * access defers to `request.actor` (enablement-backed runs, or background
+ * team-org `jobRunNow`), resolve that actor; otherwise the authenticated MCP
+ * caller.
  */
 export async function resolveActingAdminPerson(
 	ctx: CapabilityContext,
 ): Promise<ActingAdminPerson> {
-	const trigger = nonInteractiveTriggerOf(ctx.callerContext.request)
 	const actor = ctx.callerContext.request?.actor
 	const stableUserId =
-		trigger && actor
+		shouldDeferSiteAccessToActor(ctx.callerContext) && actor
 			? String(actor.userId).trim()
 			: requireMcpUser(ctx.callerContext).userId.trim()
 	if (!stableUserId) {

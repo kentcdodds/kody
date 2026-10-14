@@ -14,23 +14,32 @@ type SiteAccessRequirement = Pick<
 	'name' | 'requiredRole' | 'requiredPermission'
 >
 
+/**
+ * Who a deferred site-admin check and audit row name. Enablement-backed
+ * triggers reuse {@link NonInteractiveTrigger}; background `jobRunNow` (live
+ * person credential, org MCP user) is `run-now`.
+ */
+export type SiteAccessActorTrigger =
+	| NonInteractiveTrigger
+	| { type: 'run-now'; credentialId: string | null }
+
 /** Site-admin capabilities: a site role or permission gates them. */
 export function requiresSiteAccess(capability: SiteAccessRequirement): boolean {
 	return Boolean(capability.requiredRole || capability.requiredPermission)
 }
 
 /**
- * A site-admin capability called from a run no live person made (a job,
- * webhook, subscription, or inbound email, or package code one of those
- * started) acts for the person the run acts as, usually its enabler. That
- * person must hold the role or permission in D1 right now: the caller's
- * roles are cached and belong to the org's identity, not the enabler.
+ * A site-admin capability called from a run whose MCP user is not the acting
+ * person (team-org schedule/webhook/email, or team-org `jobRunNow`) acts for
+ * `request.actor`. That person must hold the role or permission in D1 right
+ * now: the caller's roles are cached and belong to the org's identity, not
+ * the enabler or clicker.
  */
 export async function assertTriggeredRunCanAccessSiteCapability(input: {
 	env: Env
 	callerContext: McpCallerContext
 	capability: SiteAccessRequirement
-	trigger: NonInteractiveTrigger
+	trigger: SiteAccessActorTrigger
 }): Promise<void> {
 	const { capability, trigger } = input
 	const actor = input.callerContext.request?.actor
@@ -55,9 +64,10 @@ export async function assertTriggeredRunCanAccessSiteCapability(input: {
 function describeDenial(
 	access: Awaited<ReturnType<typeof getActiveStableUserRolesAndPermissions>>,
 	capability: SiteAccessRequirement,
-	trigger: NonInteractiveTrigger,
+	trigger: SiteAccessActorTrigger,
 ): { reason: McpAuthDenialReason; message: string } | null {
-	const run = `This ${trigger.type} run`
+	const run =
+		trigger.type === 'run-now' ? 'This run-now' : `This ${trigger.type} run`
 	if (!access) {
 		return {
 			reason: 'no_user',
@@ -97,7 +107,7 @@ export async function auditTriggeredSiteCapabilityCall<TResult>(
 		env: Env
 		callerContext: McpCallerContext
 		capabilityName: string
-		trigger: NonInteractiveTrigger
+		trigger: SiteAccessActorTrigger
 	},
 	run: () => Promise<TResult>,
 ): Promise<TResult> {

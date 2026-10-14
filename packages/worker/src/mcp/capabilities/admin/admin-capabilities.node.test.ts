@@ -994,6 +994,7 @@ test('a team-org triggered run with org caller roles still reaches site-admin wh
 	})
 	t.ctx.callerContext = createMcpCallerContext({
 		source,
+		executionOrigin: 'background',
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(teamOrgId),
@@ -1015,6 +1016,61 @@ test('a team-org triggered run with org caller roles still reaches site-admin wh
 		t.ctx,
 	)
 	expect(verified.user.email_verified).toBe(true)
+})
+
+test('a team-org jobRunNow with org caller roles reaches site-admin when the clicker is admin (#3541)', async () => {
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const clickerLineage = createMcpCallerContext({
+		source: { kind: 'session' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: adminPersonId,
+			email: 'admin@example.com',
+			username: 'admin',
+			displayName: 'admin',
+			roles: ['admin'],
+		},
+	}).request!
+	const source: RequestSource = {
+		kind: 'inherited',
+		lineage: clickerLineage,
+	}
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'], {
+		source,
+	})
+	t.ctx.callerContext = createMcpCallerContext({
+		source,
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(teamOrgId),
+			email: '',
+			username: 'team-org',
+			displayName: 'Team Org',
+			roles: ['user'],
+		},
+		storageContext: {
+			sessionId: null,
+			appId: automationPackageId,
+			packageId: automationPackageId,
+			storageId: null,
+		},
+	})
+	expect(t.ctx.callerContext.request?.actor?.userId).toBe(adminPersonId)
+	const verified = await adminUserVerifyCapability.handler(
+		{ email: 'jane@example.com', action: 'mark_verified' },
+		t.ctx,
+	)
+	expect(verified.user.email_verified).toBe(true)
+	expect(t.auditEvents()).toEqual(
+		expect.arrayContaining([
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: triggerAudit('run-now', ''),
+			},
+		]),
+	)
 })
 
 test('an interactive caller without the admin role is still refused', async () => {
