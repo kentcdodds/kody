@@ -140,7 +140,8 @@ export async function listMemoryReadersForOrgMemory(input: {
 	return [...readers] as Array<PersonId>
 }
 
-async function listTeamOrgsPage(input: {
+/** Team orgs only (excludes personal). Shared by copy and verified purge. */
+export async function listTeamOrgsPage(input: {
 	db: D1Database
 	afterOrgId: string | null
 	limit: number
@@ -199,7 +200,8 @@ type PersonalSkip =
 			existing: McpMemoryRow
 	  }
 
-async function findPersonalSkip(input: {
+/** Exported for verified purge: prove a personal copy exists before deleting. */
+export async function findPersonalSkip(input: {
 	db: D1Database
 	personalOrgId: OwnerId
 	source: McpMemoryRow

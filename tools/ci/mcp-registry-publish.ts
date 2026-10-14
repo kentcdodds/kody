@@ -2,8 +2,9 @@
  * MCP Registry publish decisions for `server.json`.
  *
  * The registry rejects a republish of an existing version (`cannot publish
- * duplicate version`). Metadata edits must bump `version` in the same change.
- * A matching already-published payload is a successful no-op.
+ * duplicate version`) and a `description` longer than 100 characters.
+ * Metadata edits must bump `version` in the same change. A matching
+ * already-published payload is a successful no-op.
  *
  * Usage:
  *   node tools/ci/mcp-registry-publish.ts decide
@@ -22,6 +23,8 @@ export const defaultServerJsonPath = 'server.json'
 export const mcpRegistryBaseUrl = 'https://registry.modelcontextprotocol.io'
 export const duplicateVersionPublishErrorPattern =
 	/cannot publish duplicate version/i
+/** Matches `ServerDetail.description.maxLength` in the MCP server.json schema. */
+export const serverJsonDescriptionMaxLength = 100
 
 export type ServerJson = {
 	name: string
@@ -42,7 +45,12 @@ export type PublishedLookup =
 
 export type VersionBumpCheckResult = {
 	ok: boolean
-	kind: 'ok' | 'unchanged' | 'needs-version-bump' | 'skipped'
+	kind:
+		| 'ok'
+		| 'unchanged'
+		| 'needs-version-bump'
+		| 'skipped'
+		| 'invalid-description'
 	message: string
 }
 
@@ -85,13 +93,24 @@ export function parseServerJson(raw: string): ServerJson {
 	const record = parsed as Record<string, unknown>
 	const name = record['name']
 	const version = record['version']
+	const description = record['description']
 	if (typeof name !== 'string' || name.trim() === '') {
 		throw new Error('server.json is missing a non-empty "name".')
 	}
 	if (typeof version !== 'string' || version.trim() === '') {
 		throw new Error('server.json is missing a non-empty "version".')
 	}
+	if (typeof description !== 'string' || description.trim() === '') {
+		throw new Error('server.json is missing a non-empty "description".')
+	}
 	return record as ServerJson
+}
+
+export function serverJsonDescriptionLengthError(
+	description: string,
+): string | null {
+	if (description.length <= serverJsonDescriptionMaxLength) return null
+	return `server.json description is ${String(description.length)} characters; the MCP Registry limit is ${String(serverJsonDescriptionMaxLength)}.`
 }
 
 export function registryServerVersionUrl(name: string, version: string) {
@@ -188,6 +207,13 @@ export async function decidePublish(input: {
 	local: ServerJson
 	fetchImpl?: typeof fetch
 }): Promise<PublishDecision> {
+	const description = input.local['description']
+	if (typeof description === 'string') {
+		const descriptionError = serverJsonDescriptionLengthError(description)
+		if (descriptionError) {
+			return { action: 'fail', reason: descriptionError }
+		}
+	}
 	const lookup = await lookupPublishedServer({
 		name: input.local.name,
 		version: input.local.version,
@@ -318,6 +344,17 @@ export async function checkServerJsonVersionBump(
 	const head =
 		input.head ??
 		parseServerJson(readFileSync(path.join(cwd, defaultServerJsonPath), 'utf8'))
+	const description = head['description']
+	if (typeof description === 'string') {
+		const descriptionError = serverJsonDescriptionLengthError(description)
+		if (descriptionError) {
+			return {
+				ok: false,
+				kind: 'invalid-description',
+				message: descriptionError,
+			}
+		}
+	}
 	const baseRef = await resolveServerJsonValidationBase({
 		cwd,
 		env: input.env,

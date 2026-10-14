@@ -213,6 +213,8 @@ export type PackageFilesLoaderData = {
 	language: string | null
 	contentByteLength?: number | null
 	mediaHref?: string | null
+	/** `/raw/` URL for the selected file; null on directory views. */
+	rawHref?: string | null
 	contentHighlighted?: HighlightedCode | null
 	contentFences?: Array<HighlightedCode>
 	username?: string

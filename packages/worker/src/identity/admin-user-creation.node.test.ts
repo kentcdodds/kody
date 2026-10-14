@@ -62,9 +62,10 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	expect(
 		sqlite
 			.prepare(
-				`SELECT u.email, u.username, u.email_verified_at, u.password_hash, o.plan
+				`SELECT u.email, u.username, u.email_verified_at, u.password_hash,
+					u.personal_org_id, u.stable_user_id, o.id AS org_id, o.plan
 				FROM users u
-				INNER JOIN orgs o ON o.id = u.stable_user_id
+				INNER JOIN orgs o ON o.id = u.personal_org_id
 				WHERE u.id = ?`,
 			)
 			.get(created.userId),
@@ -73,6 +74,9 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		username: 'person-launch',
 		email_verified_at: now.toISOString(),
 		password_hash: 'admin_created_no_usable_password',
+		personal_org_id: created.stableUserId,
+		stable_user_id: created.stableUserId,
+		org_id: created.stableUserId,
 		plan: 'free',
 	})
 	expect(

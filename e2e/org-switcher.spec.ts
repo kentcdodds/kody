@@ -131,8 +131,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto(`/@pinned-${runId}/-/settings`)
 	await waitForClientHydration(page)
-	// Team workspace rail matches the personal shape: same resource sections
-	// (Credentials, Agents, …) plus Members, Settings, and Billing.
+	// Team workspace rail matches the personal shape for Build / Credentials /
+	// Agents & data / Activity, except Memories (personal-only after ADR 0072),
+	// plus Members, Settings, and Billing.
 	const teamRail = page.getByRole('navigation', { name: 'Workspace sections' })
 	for (const label of [
 		'Overview',
@@ -142,7 +143,6 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		'Credentials',
 		'Secret providers',
 		'Agents',
-		'Memories',
 		'Email',
 		'Activity',
 		'Members',
@@ -153,6 +153,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 			teamRail.getByRole('link', { name: label, exact: true }),
 		).toBeVisible()
 	}
+	await expect(
+		teamRail.getByRole('link', { name: 'Memories', exact: true }),
+	).toHaveCount(0)
 	await expect(
 		teamRail.getByRole('link', { name: 'Overview', exact: true }),
 	).toHaveAttribute('href', `/@pinned-${runId}`)

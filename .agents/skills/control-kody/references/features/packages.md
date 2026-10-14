@@ -44,7 +44,9 @@ lock, forkable visibility, internet-visible, webhooks, delete),
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
 internet-visible). Opening an allowlisted image or video in the tree renders a
 preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the
-tree). `/account/packages` 404s. `/account/packages/:packageId` redirects to the
+tree, 404 on every denial). Every file view links that URL as **Raw**; agents
+can fetch it with `Authorization: Bearer kody_at_…` (`package:read`).
+`/account/packages` 404s. `/account/packages/:packageId` redirects to the
 canonical package page.
 
 ## Drive it
@@ -82,7 +84,7 @@ fixtures use `control-kody execute` / `search` against the same origin.
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /@:username/:kodyId/icon/:iconCommit` (package or plain-repo list mark)
 - `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
-- `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
+- `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (raw file bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)

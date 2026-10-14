@@ -264,6 +264,47 @@ export function sniffPackageFileMedia(input: {
 	return media
 }
 
+export type PackageFileRawType = {
+	contentType: string
+	disposition: 'inline' | 'attachment'
+}
+
+function isValidUtf8(bytes: Uint8Array) {
+	try {
+		new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+		return true
+	} catch {
+		return false
+	}
+}
+
+/**
+ * How `/raw/` serves a file. Sniffed media keeps its type so `<img>` /
+ * `<video>` previews work. Everything else is inert on the app origin:
+ * text (HTML, SVG that fails the sniff, JS, …) is `text/plain`, and binaries
+ * download as `application/octet-stream`.
+ */
+export function resolvePackageFileRawType(input: {
+	path: string
+	bytes: Uint8Array
+}): PackageFileRawType {
+	const media = sniffPackageFileMedia(input)
+	if (media) return { contentType: media.contentType, disposition: 'inline' }
+	const extension = packageFileExtension(input.path)
+	if (
+		input.bytes.includes(0) ||
+		!isValidUtf8(input.bytes) ||
+		binaryExtensions.has(extension) ||
+		(extension !== 'svg' && Object.hasOwn(mediaTypesByExtension, extension))
+	) {
+		return {
+			contentType: 'application/octet-stream',
+			disposition: 'attachment',
+		}
+	}
+	return { contentType: 'text/plain; charset=utf-8', disposition: 'inline' }
+}
+
 /**
  * Explorer classification. Allowlisted media becomes a preview kind (content
  * is omitted from the page payload). Known binaries and NUL blobs become
@@ -316,6 +357,7 @@ export function packageFileKindLabel(
 }
 
 export function safeContentDispositionFilename(path: string) {
-	const name = packageFileBaseName(path).replace(/["\\\r\n]/g, '_')
+	// Header values must stay printable ASCII; `Headers` throws otherwise.
+	const name = packageFileBaseName(path).replace(/["\\]|[^\x20-\x7e]/g, '_')
 	return name || 'file'
 }

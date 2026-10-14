@@ -1773,33 +1773,29 @@ test("an Owner's job, webhook, and email handler cannot change roles, and reach 
 			},
 		}),
 	)
-	// A team org's runs call as the org's identity, which holds no site role,
-	// so site-admin tools refuse them. The schedule run below calls as its
-	// admin enabler, so they run, while the role change still needs a person.
-	const lacksAdmin = (name: string) =>
-		`MCP user lacks required role "admin" for capability "${name}".`
-	const refusedAsOrg = Object.fromEntries(
-		Object.keys(siteAdminCalls).map((name) => [name, lacksAdmin(name)]),
-	)
+	// Enablement-backed team-org runs defer site-admin role checks to the
+	// enabler in D1, so email/webhook/schedule all reach site-admin tools when
+	// the Owner is a site admin. Role changes still need a live person.
+	const siteAdminOk = {
+		adminCreditGrant: 'ok',
+		adminUserUpdate: 'ok',
+		adminFeatureFlagSet: 'ok',
+	}
 	expect(attempts).toEqual([
 		{
 			credential: 'inbound-email',
 			roleChange: 'LivePersonRequiredError',
-			siteAdmin: refusedAsOrg,
+			siteAdmin: siteAdminOk,
 		},
 		{
 			credential: 'webhook',
 			roleChange: 'LivePersonRequiredError',
-			siteAdmin: refusedAsOrg,
+			siteAdmin: siteAdminOk,
 		},
 		{
 			credential: 'schedule',
 			roleChange: 'LivePersonRequiredError',
-			siteAdmin: {
-				adminCreditGrant: 'ok',
-				adminUserUpdate: 'ok',
-				adminFeatureFlagSet: 'ok',
-			},
+			siteAdmin: siteAdminOk,
 		},
 	])
 	expect(t.runs.map((run) => run.request?.actor?.userId)).toEqual([

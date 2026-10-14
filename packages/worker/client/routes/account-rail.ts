@@ -384,8 +384,7 @@ function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'memories'),
 		label: 'Memories',
 		icon: 'book',
-		description:
-			'Personal long-term memories (team workspaces show a read-only legacy list).',
+		description: 'Personal long-term memories for this account.',
 	}
 }
 
@@ -439,13 +438,15 @@ function membersRailItem(orgSlug: string, role: OrgRole): AccountRailItem {
 }
 
 /**
- * Sections every organization has, in the same order for personal and team
- * orgs. The server opens each of them for member roles (`orgSectionDenial`
- * only closes grant-only collaborators). Credentials are one group: the
- * kinds of thing Kody uses on your behalf, plus the vaults they can come from.
+ * Workspace sections shared by personal and team orgs, except Memories
+ * (personal-only after ADR 0072). The server opens each of them for member
+ * roles (`orgSectionDenial` only closes grant-only collaborators). Credentials
+ * are one group: the kinds of thing Kody uses on your behalf, plus the vaults
+ * they can come from.
  */
 function workspaceResourceGroups(
 	orgSlug: string | null | undefined,
+	personal: boolean,
 ): Array<AccountRailGroup> {
 	return [
 		{
@@ -477,7 +478,7 @@ function workspaceResourceGroups(
 			label: 'Agents & data',
 			items: [
 				agentsRailItem(orgSlug),
-				memoriesRailItem(orgSlug),
+				...(personal ? [memoriesRailItem(orgSlug)] : []),
 				{
 					href: orgSectionHref(orgSlug, 'email'),
 					label: 'Email',
@@ -493,12 +494,13 @@ function workspaceResourceGroups(
 
 /**
  * The workspace rail: everything the organization owns, grouped by job.
- * Personal and team orgs share every section above Organization. A team
- * org's Organization group holds Members (with Teams, Collaborators, and
- * Grants as tabs), Settings, and Billing for roles that manage it. A
- * personal org has no members or settings of its own (its name and photo
- * are the person's profile), so it lists Grants and Billing. Grant-only
- * collaborators (`role` null) get Agents only, with a note.
+ * Personal and team orgs share Build, Credentials, Agents & data (without
+ * Memories on team orgs), and Activity above Organization. A team org's
+ * Organization group holds Members (with Teams, Collaborators, and Grants as
+ * tabs), Settings, and Billing for roles that manage it. A personal org has
+ * no members or settings of its own (its name and photo are the person's
+ * profile), so it lists Grants and Billing. Grant-only collaborators (`role`
+ * null) get Agents only, with a note.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -549,7 +551,7 @@ export function workspaceRailGroups(input: {
 		...(orgSlug
 			? [{ label: null, items: [overviewRailItem(orgSlug, personal)] }]
 			: []),
-		...workspaceResourceGroups(orgSlug),
+		...workspaceResourceGroups(orgSlug, personal),
 		{ label: 'Organization', items: organizationItems },
 	]
 }

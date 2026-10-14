@@ -1,7 +1,7 @@
 # Project intent
 
-`kody` is an experiment in building a personal assistant that can work from any
-AI agent host that supports MCP.
+`kody` is an experiment in building Your agents' cloud for individuals and teams
+that can work from any AI agent host that supports MCP.
 
 The core idea is to keep the public MCP surface small while making a large
 number of capabilities available behind that surface. This repo follows
@@ -17,22 +17,23 @@ This repository is:
 - A working Cloudflare Workers application.
 - A place to experiment with OAuth-protected MCP endpoints.
 - A place to experiment with MCP apps, packages, and supporting infrastructure.
-- The foundation for a personal assistant rather than a general-purpose SaaS
-  product.
+- The foundation for Your agents' cloud for individuals and teams, rather than a
+  general-purpose SaaS product.
 
 When docs or code reflect starter-oriented conventions and conflict with the
 guidance here, treat this document as the project's intent.
 
 ## Who this is for
 
-Kody is a multi-user personal assistant. Each authenticated user gets a strictly
-isolated assistant in their personal org: their own packages, jobs, secrets,
-memories, chat threads, MCP servers, email inboxes, and durable storage. Orgs
-share no state. The one way to give someone else access is an org membership or
-an access grant ([Authorization](./architecture/authorization.md)).
+Kody is Your agents' cloud for individuals and teams (orgs, teams, grants). Each
+authenticated account holds strictly isolated state in its orgs: packages, jobs,
+credentials, memories, chat threads, MCP servers, email inboxes, and durable
+storage. Orgs share no state by default. The way to give someone else access is
+an org membership or an access grant
+([Authorization](./architecture/authorization.md)).
 
-- Optimization target: a high-quality personal assistant for each individual
-  signed-in user, with hard isolation between orgs
+- Optimization target: a high-quality agents' cloud for each individual and
+  team, with hard isolation between orgs
 - Onboarding: signup is open. Anyone can create an account from `/signup`. New
   signups must verify their email address; unverified accounts can sign in but
   cannot send outbound email. Person accounts that stay unverified for seven
@@ -65,7 +66,8 @@ It does not need to optimize for:
 
 This project is meant to:
 
-1. Build a personal assistant that can be reached from MCP-capable AI agents.
+1. Build Your agents' cloud for individuals and teams, reachable from
+   MCP-capable AI agents.
 2. Keep the MCP contract compact enough that it does not bloat host context.
 3. Hide most capability complexity behind `search` for discovery and Code Mode
    `execute` for capability calls.
@@ -109,8 +111,8 @@ that exists in the repository.
 
 When updating docs or explaining architecture:
 
-- Describe the repo as a multi-user personal-assistant platform with strict
-  per-org isolation, not a shared workspace product.
+- Describe the repo as Your agents' cloud for individuals and teams with strict
+  per-org isolation. Sharing happens through orgs, teams, and grants.
 - Mention the per-org isolation invariant when it materially affects product,
   auth, or storage decisions.
 - Keep present behavior separate from design notes and proposals.

@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
@@ -19,9 +20,10 @@ import {
 import {
 	isPackageFilesMediaKind,
 	maxPackageFilePreviewBytes,
+	resolvePackageFileRawType,
 	safeContentDispositionFilename,
-	sniffPackageFileMedia,
 	snapshotStringToBytes,
+	type PackageFileRawType,
 } from '#universal/package-file-media.ts'
 import {
 	buildPackageFilesView,
@@ -88,7 +90,7 @@ async function toLoaderData(input: {
 	iconUrl?: string | null
 	viewedCommit?: string | null
 	assetCommit?: string | null
-	mediaHref?: string | null
+	rawHref?: string | null
 	description?: string
 	ownerProfilePublic?: boolean
 }): Promise<PackageFilesLoaderData> {
@@ -130,8 +132,14 @@ async function toLoaderData(input: {
 		language,
 		contentByteLength: input.view.contentByteLength,
 		mediaHref: isPackageFilesMediaKind(contentKind)
-			? (input.mediaHref ?? null)
+			? (input.rawHref ?? null)
 			: null,
+		// `/raw/` buffers the whole blob, so it shares the preview size cap.
+		rawHref:
+			input.view.kind === 'file' &&
+			(input.view.contentByteLength ?? 0) <= maxPackageFilePreviewBytes
+				? (input.rawHref ?? null)
+				: null,
 		contentFences,
 		contentHighlighted,
 		username: input.username,
@@ -236,7 +244,7 @@ export async function loadCommunityPackageFilesData(input: {
 		}),
 		viewedCommit: resolved.commit,
 		assetCommit: listing.pinnedCommit,
-		mediaHref: view.contentPath
+		rawHref: view.contentPath
 			? getCommunityPackageRawHref({
 					listingId: listing.id,
 					ownerUsername,
@@ -526,7 +534,7 @@ export async function loadAccountPackageFilesData(input: {
 		}),
 		viewedCommit: resolved.commit,
 		assetCommit: source?.published_commit ?? '',
-		mediaHref: view.contentPath
+		rawHref: view.contentPath
 			? getPackageRawHref({
 					username: input.username,
 					kodyId: record.kodyId,
@@ -645,7 +653,7 @@ export async function loadPlainRepoFilesData(input: {
 		// Plain repos have no package /assets/ publish snapshot; leave null so
 		// README images are not rewritten to an unservable prefix.
 		assetCommit: null,
-		mediaHref: view.contentPath
+		rawHref: view.contentPath
 			? getPackageRawHref({
 					username: input.username,
 					kodyId: input.kodyId,
@@ -991,30 +999,25 @@ async function loadOwnerPackageReadmeFromArtifactsHead(input: {
 	}
 }
 
+type PackageFileRawBytes = {
+	kind: 'ok'
+	bytes: Uint8Array
+	filename: string
+} & PackageFileRawType
+
 export type PackageFileRawResult =
-	| {
-			kind: 'ok'
-			bytes: Uint8Array
-			contentType: string
-			filename: string
-			isPrivate: boolean
-	  }
+	| (PackageFileRawBytes & { isPrivate: boolean })
 	| { kind: 'not-found' }
-	| { kind: 'unauthorized' }
-	| { kind: 'not-media' }
 	| { kind: 'too-large' }
 
-async function readPackageFileMediaBytes(input: {
+async function readPackageFileRawBytes(input: {
 	env: Env
 	files: Record<string, string>
 	filePath: string
 	sourceRepoId: string | null
 	commit: string | null
 }): Promise<
-	| { kind: 'ok'; bytes: Uint8Array; contentType: string; filename: string }
-	| { kind: 'not-found' }
-	| { kind: 'not-media' }
-	| { kind: 'too-large' }
+	PackageFileRawBytes | { kind: 'not-found' } | { kind: 'too-large' }
 > {
 	if (!Object.hasOwn(input.files, input.filePath)) {
 		return { kind: 'not-found' }
@@ -1040,15 +1043,10 @@ async function readPackageFileMediaBytes(input: {
 	if (bytes.byteLength > maxPackageFilePreviewBytes) {
 		return { kind: 'too-large' }
 	}
-	const media = sniffPackageFileMedia({
-		path: input.filePath,
-		bytes,
-	})
-	if (!media) return { kind: 'not-media' }
 	return {
 		kind: 'ok',
 		bytes,
-		contentType: media.contentType,
+		...resolvePackageFileRawType({ path: input.filePath, bytes }),
 		filename: safeContentDispositionFilename(input.filePath),
 	}
 }
@@ -1076,15 +1074,15 @@ export async function loadCommunityPackageFileRaw(input: {
 	})
 	if (!tree) return { kind: 'not-found' }
 	const { source, resolved, loaded } = tree
-	const media = await readPackageFileMediaBytes({
+	const raw = await readPackageFileRawBytes({
 		env: input.env,
 		files: loaded.files,
 		filePath: input.selectedPath,
 		sourceRepoId: source?.repo_id ?? null,
 		commit: resolved.commit,
 	})
-	if (media.kind !== 'ok') return media
-	return { ...media, isPrivate: false }
+	if (raw.kind !== 'ok') return raw
+	return { ...raw, isPrivate: false }
 }
 
 export async function loadAccountPackageFileRaw(input: {
@@ -1138,15 +1136,15 @@ export async function loadAccountPackageFileRaw(input: {
 			files = {}
 		}
 	}
-	const media = await readPackageFileMediaBytes({
+	const raw = await readPackageFileRawBytes({
 		env: input.env,
 		files,
 		filePath: input.selectedPath,
 		sourceRepoId: source?.repo_id ?? null,
 		commit: resolved.commit,
 	})
-	if (media.kind !== 'ok') return media
-	return { ...media, isPrivate: record.isPrivate }
+	if (raw.kind !== 'ok') return raw
+	return { ...raw, isPrivate: record.isPrivate }
 }
 
 export async function loadPlainRepoFileRaw(input: {
@@ -1200,15 +1198,15 @@ export async function loadPlainRepoFileRaw(input: {
 			files = {}
 		}
 	}
-	const media = await readPackageFileMediaBytes({
+	const raw = await readPackageFileRawBytes({
 		env: input.env,
 		files,
 		filePath: input.selectedPath,
 		sourceRepoId: source.repo_id,
 		commit: resolved.commit,
 	})
-	if (media.kind !== 'ok') return media
-	return { ...media, isPrivate: input.isPrivate }
+	if (raw.kind !== 'ok') return raw
+	return { ...raw, isPrivate: input.isPrivate }
 }
 
 export async function loadAccessiblePackageFileRaw(input: {
@@ -1218,14 +1216,31 @@ export async function loadAccessiblePackageFileRaw(input: {
 	kodyId: string
 	selectedPath: string
 	ref?: string
+	/** See `loadPackagePage`; omit to use the session cookie. */
+	viewer?: McpUserContext | null
+	/** Org an org-bound token is fixed to; other orgs read as anonymous. */
+	viewerOrgId?: string | null
 }): Promise<PackageFileRawResult> {
-	const page = await loadPackagePage({
-		env: input.env,
-		request: input.request,
-		username: input.username,
-		kodyId: input.kodyId,
-	})
-	if (page.kind === 'unauthorized') return { kind: 'unauthorized' }
+	const loadPage = (viewer: McpUserContext | null | undefined) =>
+		loadPackagePage({
+			env: input.env,
+			request: input.request,
+			username: input.username,
+			kodyId: input.kodyId,
+			viewer,
+		})
+	let page = await loadPage(input.viewer)
+	if (
+		input.viewer &&
+		input.viewerOrgId &&
+		page.kind === 'page' &&
+		page.ownerUserId !== input.viewerOrgId
+	) {
+		page = await loadPage(null)
+	}
+	// Same gate as `loadAccessiblePackageFilesData`. Every denial, including
+	// "sign in to see this unlisted package", is a 404 so raw URLs never
+	// confirm a package exists.
 	if (page.kind !== 'page') return { kind: 'not-found' }
 
 	if (page.listing?.listing) {
@@ -1253,6 +1268,7 @@ export async function loadAccessiblePackageFileRaw(input: {
 		})
 	}
 
+	if (!page.viewerIsOwner) return { kind: 'not-found' }
 	return loadAccountPackageFileRaw({
 		env: input.env,
 		request: input.request,

@@ -11,10 +11,10 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
  * Prefer-local one-liner is {@link preferLocalCliExecuteGuidance} (shared with
  * execute + api tool descriptions).
  */
-export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's personal software platform of primitives including:
+export const baseMcpServerInstructions = `Kody is Your agents' cloud: a software platform of primitives for individuals and teams including:
 
 - memory
-- secrets
+- credentials
 - packages (published code you compose)
 - integrations
 - triggers

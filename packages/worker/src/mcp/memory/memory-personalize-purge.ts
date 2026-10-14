@@ -1,0 +1,471 @@
+/**
+ * Soft-delete verified legacy team-org memories and memory grants (ADR 0072
+ * cleanup). Never deletes a team-org memory until every effective reader has a
+ * personal copy (provenance URI or identical subject+summary+details).
+ */
+import {
+	parseOwnerId,
+	personalOrgId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import { listGrants, softDeleteGrant } from '#worker/orgs/access-writes.ts'
+import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
+import { legacyOrgMemoryProvenanceUri } from './memory-owner.ts'
+import {
+	findPersonalSkip,
+	listMemoryReadersForOrgMemory,
+	listTeamOrgsPage,
+} from './memory-personalize.ts'
+import { deleteMemoryVector } from './memory-vectorize.ts'
+import { listMemoriesByUserIdPage, updateMemory } from './repo.ts'
+import { type McpMemoryRow } from './types.ts'
+
+const defaultOrgPageSize = 20
+const defaultMemoryPageSize = 50
+
+export type MemoryPersonalizePurgeOutcome =
+	| 'would_purge'
+	| 'purged'
+	| 'blocked_missing_copy'
+	| 'orphan_purged'
+	| 'orphan_would_purge'
+	| 'already_gone'
+
+export type MemoryPersonalizePurgeRow = {
+	sourceMemoryId: string
+	fromOrgId: string
+	fromOrgSlug: string | null
+	readerCount: number
+	verifiedCopyCount: number
+	missingReaderPersonIds: Array<string>
+	/** Provenance URI pattern samples only — never subject/summary/details. */
+	provenanceUrisChecked: Array<string>
+	outcome: MemoryPersonalizePurgeOutcome
+}
+
+export type MemoryPersonalizePurgeGrantRow = {
+	grantId: string
+	orgId: string
+	orgSlug: string | null
+	resourceId: string
+	outcome: 'would_revoke' | 'revoked' | 'skipped_error'
+	error?: string
+}
+
+export type MemoryPersonalizePurgeResult = {
+	dryRun: boolean
+	scannedOrgs: number
+	scannedMemories: number
+	wouldPurge: number
+	purged: number
+	blockedMissingCopy: number
+	orphanWouldPurge: number
+	orphanPurged: number
+	grantsWouldRevoke: number
+	grantsRevoked: number
+	rows: Array<MemoryPersonalizePurgeRow>
+	grantRows: Array<MemoryPersonalizePurgeGrantRow>
+	nextOrgCursor: string | null
+	nextMemoryCursor: string | null
+	warnings: Array<string>
+}
+
+async function softDeleteTeamMemory(input: {
+	env: Env
+	orgId: string
+	memory: McpMemoryRow
+}): Promise<boolean> {
+	const ownerId = parseOwnerId(input.orgId)
+	if (!ownerId) {
+		throw new Error(`Team org id is not a valid OwnerId: ${input.orgId}`)
+	}
+	const now = new Date().toISOString()
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: ownerId,
+		env: input.env,
+		async write() {
+			const updated = await updateMemory(
+				input.env.APP_DB,
+				input.orgId,
+				input.memory.id,
+				{
+					category: input.memory.category,
+					status: 'deleted',
+					subject: input.memory.subject,
+					summary: input.memory.summary,
+					details: input.memory.details,
+					tags_json: input.memory.tags_json,
+					source_uris_json: input.memory.source_uris_json,
+					dedupe_key: input.memory.dedupe_key,
+					last_accessed_at: input.memory.last_accessed_at,
+					deleted_at: now,
+				},
+			)
+			if (!updated) return false
+			try {
+				await deleteMemoryVector(input.env, input.memory.id)
+			} catch {
+				// Soft-delete in D1 still stands; vector cleanup can retry later.
+			}
+			return true
+		},
+	})
+}
+
+async function verifyReadersHaveCopies(input: {
+	db: D1Database
+	orgId: string
+	memory: McpMemoryRow
+	readers: Array<PersonId>
+}): Promise<{
+	verifiedCopyCount: number
+	missingReaderPersonIds: Array<string>
+	provenanceUrisChecked: Array<string>
+}> {
+	const provenanceUri = legacyOrgMemoryProvenanceUri(
+		input.orgId,
+		input.memory.id,
+	)
+	const missingReaderPersonIds: Array<string> = []
+	let verifiedCopyCount = 0
+	for (const personId of input.readers) {
+		const skip = await findPersonalSkip({
+			db: input.db,
+			personalOrgId: personalOrgId(personId),
+			source: input.memory,
+			provenanceUri,
+		})
+		if (skip) verifiedCopyCount += 1
+		else missingReaderPersonIds.push(personId)
+	}
+	return {
+		verifiedCopyCount,
+		missingReaderPersonIds,
+		provenanceUrisChecked: [provenanceUri],
+	}
+}
+
+/**
+ * Soft-delete live team-org memories only when every reader has a personal
+ * copy. Also soft-deletes `resource_type: memory` grants on scanned team orgs.
+ */
+export async function runMemoryPersonalizePurge(input: {
+	env: Env
+	audit: OrgAuditWriter
+	dryRun?: boolean
+	orgCursor?: string | null
+	memoryCursor?: string | null
+	orgLimit?: number
+	memoryLimitPerOrg?: number
+	orgIds?: Array<string> | null
+	/** When true (default), soft-delete team memories with zero readers. */
+	purgeOrphans?: boolean
+}): Promise<MemoryPersonalizePurgeResult> {
+	const dryRun = input.dryRun !== false
+	const purgeOrphans = input.purgeOrphans !== false
+	const orgLimit = Math.max(
+		1,
+		Math.min(input.orgLimit ?? defaultOrgPageSize, 50),
+	)
+	const memoryLimit = Math.max(
+		1,
+		Math.min(input.memoryLimitPerOrg ?? defaultMemoryPageSize, 200),
+	)
+	const warnings: Array<string> = []
+	const rows: Array<MemoryPersonalizePurgeRow> = []
+	const grantRows: Array<MemoryPersonalizePurgeGrantRow> = []
+	let scannedOrgs = 0
+	let scannedMemories = 0
+	let wouldPurge = 0
+	let purged = 0
+	let blockedMissingCopy = 0
+	let orphanWouldPurge = 0
+	let orphanPurged = 0
+	let grantsWouldRevoke = 0
+	let grantsRevoked = 0
+
+	const orgs = await listTeamOrgsPage({
+		db: input.env.APP_DB,
+		afterOrgId: input.orgCursor ?? null,
+		limit: orgLimit,
+		orgIds: input.orgIds ?? null,
+	})
+
+	let nextOrgCursor: string | null = null
+	let nextMemoryCursor: string | null = null
+	let stopPaging = false
+	let lastCompletedOrgId: string | null = input.orgCursor ?? null
+
+	for (let orgIndex = 0; orgIndex < orgs.length; orgIndex++) {
+		const org = orgs[orgIndex]!
+		scannedOrgs += 1
+		let afterMemoryId: string | null =
+			orgIndex === 0 ? (input.memoryCursor ?? null) : null
+		let orgMemoryCount = 0
+		let orgExhausted = false
+
+		while (orgMemoryCount < memoryLimit) {
+			const pageLimit = Math.min(50, memoryLimit - orgMemoryCount)
+			const memories = await listMemoriesByUserIdPage({
+				db: input.env.APP_DB,
+				userId: org.id,
+				afterId: afterMemoryId,
+				limit: pageLimit,
+				statuses: ['active', 'archived'],
+			})
+			if (memories.length === 0) {
+				orgExhausted = true
+				break
+			}
+			for (const memory of memories) {
+				scannedMemories += 1
+				orgMemoryCount += 1
+				afterMemoryId = memory.id
+				const readers = await listMemoryReadersForOrgMemory({
+					db: input.env.APP_DB,
+					orgId: org.id,
+					memoryId: memory.id,
+				})
+
+				if (readers.length === 0) {
+					if (!purgeOrphans) {
+						blockedMissingCopy += 1
+						rows.push({
+							sourceMemoryId: memory.id,
+							fromOrgId: org.id,
+							fromOrgSlug: org.slug,
+							readerCount: 0,
+							verifiedCopyCount: 0,
+							missingReaderPersonIds: [],
+							provenanceUrisChecked: [
+								legacyOrgMemoryProvenanceUri(org.id, memory.id),
+							],
+							outcome: 'blocked_missing_copy',
+						})
+						continue
+					}
+					if (dryRun) {
+						orphanWouldPurge += 1
+						rows.push({
+							sourceMemoryId: memory.id,
+							fromOrgId: org.id,
+							fromOrgSlug: org.slug,
+							readerCount: 0,
+							verifiedCopyCount: 0,
+							missingReaderPersonIds: [],
+							provenanceUrisChecked: [
+								legacyOrgMemoryProvenanceUri(org.id, memory.id),
+							],
+							outcome: 'orphan_would_purge',
+						})
+						continue
+					}
+					const ok = await softDeleteTeamMemory({
+						env: input.env,
+						orgId: org.id,
+						memory,
+					})
+					if (ok) {
+						orphanPurged += 1
+						rows.push({
+							sourceMemoryId: memory.id,
+							fromOrgId: org.id,
+							fromOrgSlug: org.slug,
+							readerCount: 0,
+							verifiedCopyCount: 0,
+							missingReaderPersonIds: [],
+							provenanceUrisChecked: [
+								legacyOrgMemoryProvenanceUri(org.id, memory.id),
+							],
+							outcome: 'orphan_purged',
+						})
+					} else {
+						warnings.push(
+							`Failed soft-deleting orphan memory ${memory.id} on org ${org.slug ?? org.id}`,
+						)
+					}
+					continue
+				}
+
+				const verified = await verifyReadersHaveCopies({
+					db: input.env.APP_DB,
+					orgId: org.id,
+					memory,
+					readers,
+				})
+				if (verified.missingReaderPersonIds.length > 0) {
+					blockedMissingCopy += 1
+					rows.push({
+						sourceMemoryId: memory.id,
+						fromOrgId: org.id,
+						fromOrgSlug: org.slug,
+						readerCount: readers.length,
+						verifiedCopyCount: verified.verifiedCopyCount,
+						missingReaderPersonIds: verified.missingReaderPersonIds,
+						provenanceUrisChecked: verified.provenanceUrisChecked,
+						outcome: 'blocked_missing_copy',
+					})
+					continue
+				}
+
+				if (dryRun) {
+					wouldPurge += 1
+					rows.push({
+						sourceMemoryId: memory.id,
+						fromOrgId: org.id,
+						fromOrgSlug: org.slug,
+						readerCount: readers.length,
+						verifiedCopyCount: verified.verifiedCopyCount,
+						missingReaderPersonIds: [],
+						provenanceUrisChecked: verified.provenanceUrisChecked,
+						outcome: 'would_purge',
+					})
+					continue
+				}
+
+				const ok = await softDeleteTeamMemory({
+					env: input.env,
+					orgId: org.id,
+					memory,
+				})
+				if (!ok) {
+					warnings.push(
+						`Failed soft-deleting memory ${memory.id} on org ${org.slug ?? org.id}`,
+					)
+					rows.push({
+						sourceMemoryId: memory.id,
+						fromOrgId: org.id,
+						fromOrgSlug: org.slug,
+						readerCount: readers.length,
+						verifiedCopyCount: verified.verifiedCopyCount,
+						missingReaderPersonIds: [],
+						provenanceUrisChecked: verified.provenanceUrisChecked,
+						outcome: 'already_gone',
+					})
+					continue
+				}
+				purged += 1
+				rows.push({
+					sourceMemoryId: memory.id,
+					fromOrgId: org.id,
+					fromOrgSlug: org.slug,
+					readerCount: readers.length,
+					verifiedCopyCount: verified.verifiedCopyCount,
+					missingReaderPersonIds: [],
+					provenanceUrisChecked: verified.provenanceUrisChecked,
+					outcome: 'purged',
+				})
+			}
+			if (memories.length < pageLimit) {
+				orgExhausted = true
+				break
+			}
+		}
+
+		if (!orgExhausted) {
+			const peek = await listMemoriesByUserIdPage({
+				db: input.env.APP_DB,
+				userId: org.id,
+				afterId: afterMemoryId,
+				limit: 1,
+				statuses: ['active', 'archived'],
+			})
+			if (peek.length > 0) {
+				nextOrgCursor = lastCompletedOrgId
+				nextMemoryCursor = afterMemoryId
+				warnings.push(
+					`Org ${org.slug ?? org.id} has more memories after ${afterMemoryId}; resume with orgCursor=${nextOrgCursor ?? '(start)'} memoryCursor=${nextMemoryCursor}.`,
+				)
+				stopPaging = true
+				break
+			}
+			orgExhausted = true
+		}
+
+		// Soft-delete obsolete memory grants for this org, except grants whose
+		// live memory was blocked (copy not proven — leave grant with the row).
+		const blockedMemoryIds = new Set(
+			rows
+				.filter(
+					(row) =>
+						row.fromOrgId === org.id && row.outcome === 'blocked_missing_copy',
+				)
+				.map((row) => row.sourceMemoryId),
+		)
+		const memoryGrants = await listGrants({
+			db: input.env.APP_DB,
+			orgId: org.id,
+			resourceType: 'memory',
+		})
+		for (const grant of memoryGrants) {
+			if (blockedMemoryIds.has(grant.resourceId)) continue
+			if (dryRun) {
+				grantsWouldRevoke += 1
+				grantRows.push({
+					grantId: grant.id,
+					orgId: org.id,
+					orgSlug: org.slug,
+					resourceId: grant.resourceId,
+					outcome: 'would_revoke',
+				})
+				continue
+			}
+			try {
+				await softDeleteGrant({
+					db: input.env.APP_DB,
+					orgId: org.id,
+					grantId: grant.id,
+					audit: input.audit,
+				})
+				grantsRevoked += 1
+				grantRows.push({
+					grantId: grant.id,
+					orgId: org.id,
+					orgSlug: org.slug,
+					resourceId: grant.resourceId,
+					outcome: 'revoked',
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				warnings.push(
+					`Failed revoking memory grant ${grant.id} on org ${org.slug ?? org.id}: ${message}`,
+				)
+				grantRows.push({
+					grantId: grant.id,
+					orgId: org.id,
+					orgSlug: org.slug,
+					resourceId: grant.resourceId,
+					outcome: 'skipped_error',
+					error: message,
+				})
+			}
+		}
+
+		lastCompletedOrgId = org.id
+	}
+
+	if (!stopPaging) {
+		nextOrgCursor = orgs.length === orgLimit ? (orgs.at(-1)?.id ?? null) : null
+		nextMemoryCursor = null
+	}
+
+	return {
+		dryRun,
+		scannedOrgs,
+		scannedMemories,
+		wouldPurge,
+		purged,
+		blockedMissingCopy,
+		orphanWouldPurge,
+		orphanPurged,
+		grantsWouldRevoke,
+		grantsRevoked,
+		rows,
+		grantRows,
+		nextOrgCursor,
+		nextMemoryCursor,
+		warnings,
+	}
+}

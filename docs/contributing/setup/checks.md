@@ -141,9 +141,12 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   misspellings to empty strings instead of failing the run, so a typo in
   `deploy.yml` would otherwise first appear on a production deploy. It also
   requires a `server.json` version bump when registry metadata changes: the MCP
-  Registry cannot republish a version. CI passes the PR base SHA or the pre-push
-  `github.event.before` as `MCP_REGISTRY_VALIDATION_BASE` so a multi-commit main
-  push that already bumped the version is one change.
+  Registry cannot republish a version. It also rejects a `description` longer
+  than 100 characters (`ServerDetail.description.maxLength` in the MCP
+  server.json schema) so a copy edit fails `validate` instead of the publish
+  job. CI passes the PR base SHA or the pre-push `github.event.before` as
+  `MCP_REGISTRY_VALIDATION_BASE` so a multi-commit main push that already bumped
+  the version is one change.
 - `npm run validate:fix` runs `lint:fix` then `format` (formatting last, as in
   the pre-commit hook) and is the explicit opt-in for mutating auto-fixes. It is
   never required to pass `validate`.

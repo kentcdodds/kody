@@ -14,7 +14,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 
 export const memoryLegacyWriteFrozenMessage =
-	'Memory is personal-only. Team-org memories are read-only legacy rows until cleanup; write or delete only in your personal org.'
+	'Memory is personal-only. Write or delete only in your personal org. Shared org knowledge belongs in documented packages and org instructions.'
 
 export const memoryLegacyGrantBlockedMessage =
 	'Memory is personal-only. New memory grants are only allowed on a personal org. Shared org knowledge belongs in documented packages and org instructions.'

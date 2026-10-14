@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	creditAdminGrantMaxCents,
 	creditAdminGrantNoteMaxLength,
@@ -15,6 +14,7 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminPerson,
 } from './admin-shared.ts'
 import {
 	adminCreditTargetSchema,
@@ -55,7 +55,7 @@ export const adminCreditGrantCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			const admin = requireMcpUser(ctx.callerContext)
+			const admin = await resolveActingAdminPerson(ctx)
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'adminCreditGrant',
@@ -68,7 +68,10 @@ export const adminCreditGrantCapability = defineDomainCapability(
 								email: args.email,
 								username: args.username,
 							},
-							grantedBy: { stableUserId: admin.userId, email: admin.email },
+							grantedBy: {
+								stableUserId: admin.stableUserId,
+								email: admin.email,
+							},
 							amountCents: args.amountCents,
 							note: args.note,
 							path: '/mcp',

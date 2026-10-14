@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	applyAdminOrgLimitOverrideChanges,
 	orgLimitOverrideReasonMaxLength,
@@ -13,6 +12,7 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminPerson,
 } from './admin-shared.ts'
 import {
 	adminOrgLimitsSchema,
@@ -79,12 +79,12 @@ export const adminOrgLimitOverridesSetCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const admin = await resolveActingAdminPerson(ctx)
 			const audit = ctx.callerContext.request
 				? orgAuditWriterFromRequest(ctx.env, ctx.callerContext.request)
 				: orgAuditWriterForPerson(ctx.env, {
-						userId: user.userId,
-						username: user.username ?? null,
+						userId: admin.stableUserId,
+						username: admin.username,
 					})
 			return auditAdminCapabilityInvocation(
 				ctx,
@@ -92,7 +92,10 @@ export const adminOrgLimitOverridesSetCapability = defineDomainCapability(
 				async () =>
 					await applyAdminOrgLimitOverrideChanges({
 						db: ctx.env.APP_DB,
-						audit: { ...audit, actorUserId: audit.actorUserId ?? user.userId },
+						audit: {
+							...audit,
+							actorUserId: audit.actorUserId ?? admin.stableUserId,
+						},
 						target: { orgId: args.orgId, org: args.org },
 						changes: args.changes,
 						reason: args.reason,

@@ -260,7 +260,7 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/agents"')
 	expect(html).toContain('href="/@acme/-/credentials"')
 	expect(html).toContain('href="/@acme/-/secret-providers"')
-	expect(html).toContain('href="/@acme/-/memories"')
+	expect(html).not.toContain('href="/@acme/-/memories"')
 	expect(html).toContain('href="/@acme/-/email"')
 	expect(html).toContain('href="/@acme/-/activity"')
 	// Workflows and Waiting are tabs on the Activity page, and usage is the

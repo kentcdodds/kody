@@ -1,6 +1,10 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 import {
+	nonInteractiveTriggerOf,
+	type NonInteractiveTriggerType,
+} from '#worker/authorization/authorize.ts'
+import {
 	type PermissionString,
 	type RoleName,
 	userHasPermission,
@@ -21,6 +25,7 @@ import {
 	recordMcpAuthDenial,
 } from '#mcp/auth-audit.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
+import { requiresSiteAccess } from './triggered-site-access.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -235,6 +240,36 @@ export async function resolveCallerFeatureFlags(
 	return await promise
 }
 
+/**
+ * Enablement-backed runs (job, webhook, subscription, email) defer the
+ * caller's site-admin role/permission check to `request.actor` in D1. The
+ * caller's roles name the org's identity and are not trusted on their own.
+ * Package-app and unattended runs still fail closed on caller roles.
+ */
+export function shouldDeferSiteAccessToActor(
+	callerContext: McpCallerContext,
+): boolean {
+	const trigger = nonInteractiveTriggerOf(callerContext.request)
+	if (!trigger) return false
+	const type: NonInteractiveTriggerType = trigger.type
+	switch (type) {
+		case 'job':
+		case 'webhook':
+		case 'subscription':
+		case 'email':
+			return true
+		case 'package-app':
+		case 'unattended':
+			return false
+		default: {
+			const exhaustive: never = type
+			throw new Error(
+				`Unhandled non-interactive trigger: ${String(exhaustive)}`,
+			)
+		}
+	}
+}
+
 export function callerCanAccessCapability(
 	callerContext: McpCallerContext,
 	capability: CapabilityAccessRequirement,
@@ -251,9 +286,17 @@ export function callerCanAccessCapability(
 	// evaluated per user, so there is no meaningful anonymous flag state.
 	const user = getUserAccessContext(callerContext)
 	if (!user) return false
-	if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
-	if (requiredPermission && !hasRequiredPermission(user, requiredPermission)) {
-		return false
+	const deferSiteAccess =
+		requiresSiteAccess(capability) &&
+		shouldDeferSiteAccessToActor(callerContext)
+	if (!deferSiteAccess) {
+		if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
+		if (
+			requiredPermission &&
+			!hasRequiredPermission(user, requiredPermission)
+		) {
+			return false
+		}
 	}
 	if (requiredFeatureFlag) {
 		// Fail closed when the per-request flag map was not resolved.
@@ -281,7 +324,7 @@ export async function assertCallerCanAccessCapability(
 	}
 
 	const user = getUserAccessContext(callerContext)
-	const denial = describeCapabilityDenial(user, capability)
+	const denial = describeCapabilityDenial(callerContext, user, capability)
 	// A denial is the one signal we would have that a principal is walking the
 	// capability surface, so it is recorded even though it is not an error.
 	await recordMcpAuthDenial({
@@ -295,6 +338,7 @@ export async function assertCallerCanAccessCapability(
 }
 
 function describeCapabilityDenial(
+	callerContext: McpCallerContext,
 	user: ReturnType<typeof getUserAccessContext>,
 	capability: CapabilityAccessRequirement,
 ): { reason: McpAuthDenialReason; message: string } {
@@ -304,22 +348,27 @@ function describeCapabilityDenial(
 			message: `Authenticated MCP user is required to execute capability "${capability.name}".`,
 		}
 	}
-	if (
-		capability.requiredRole &&
-		!hasRequiredRole(user, capability.requiredRole)
-	) {
-		return {
-			reason: 'role',
-			message: `MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+	const deferSiteAccess =
+		requiresSiteAccess(capability) &&
+		shouldDeferSiteAccessToActor(callerContext)
+	if (!deferSiteAccess) {
+		if (
+			capability.requiredRole &&
+			!hasRequiredRole(user, capability.requiredRole)
+		) {
+			return {
+				reason: 'role',
+				message: `MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+			}
 		}
-	}
-	if (
-		capability.requiredPermission &&
-		!hasRequiredPermission(user, capability.requiredPermission)
-	) {
-		return {
-			reason: 'permission',
-			message: `MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+		if (
+			capability.requiredPermission &&
+			!hasRequiredPermission(user, capability.requiredPermission)
+		) {
+			return {
+				reason: 'permission',
+				message: `MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+			}
 		}
 	}
 	if (capability.featureFlag) {

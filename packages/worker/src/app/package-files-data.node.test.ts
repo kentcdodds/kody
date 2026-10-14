@@ -19,7 +19,9 @@ import {
 } from '#worker/community/types.ts'
 import type * as publishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type PublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as packageRegistryRepo from '#worker/package-registry/repo.ts'
 import type * as packageSource from '#worker/package-registry/source.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import type * as artifactFile from '#worker/repo/artifact-file.ts'
 import type * as artifactHeadCache from '#worker/repo/artifact-head-cache.ts'
 import type * as artifactSourceSnapshot from '#worker/repo/artifact-source-snapshot.ts'
@@ -27,6 +29,7 @@ import type * as entitySources from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+import { maxPackageFilePreviewBytes } from '#universal/package-file-media.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCommunityListingById:
@@ -59,6 +62,13 @@ const mockModule = vi.hoisted(() => ({
 		vi.fn<typeof artifactFile.readArtifactTreeAtCommit>(),
 	getUserSocialRowByUsername:
 		vi.fn<typeof profileRepo.getUserSocialRowByUsername>(),
+	getSavedPackageById: vi.fn<typeof packageRegistryRepo.getSavedPackageById>(),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (
+		...args: Parameters<typeof packageRegistryRepo.getSavedPackageById>
+	) => mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
@@ -595,6 +605,7 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 		kind: 'ok',
 		bytes: pngBytes,
 		contentType: 'image/png',
+		disposition: 'inline',
 		filename: 'logo.png',
 		isPrivate: false,
 	})
@@ -602,7 +613,11 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(
 		new TextEncoder().encode('<!DOCTYPE html><script>alert(1)</script>'),
 	)
-	expect(await loadRaw('logo.png')).toEqual({ kind: 'not-media' })
+	expect(await loadRaw('logo.png')).toMatchObject({
+		kind: 'ok',
+		contentType: 'application/octet-stream',
+		disposition: 'attachment',
+	})
 })
 
 test('community raw 404s a hex that only has the listing pin snapshot', async () => {
@@ -619,6 +634,7 @@ test('community raw 404s a hex that only has the listing pin snapshot', async ()
 	expect(pinRaw).toMatchObject({
 		kind: 'ok',
 		contentType: 'image/png',
+		disposition: 'inline',
 		filename: 'logo.png',
 		isPrivate: false,
 	})
@@ -846,6 +862,7 @@ test('plain repo raw serves media for guests who passed loadPackagePage', async 
 		kind: 'ok',
 		bytes: pngBytes,
 		contentType: 'image/png',
+		disposition: 'inline',
 		filename: 'logo.png',
 		isPrivate: false,
 	})
@@ -905,5 +922,206 @@ test('accessible files return null when loadPackagePage denies the viewer', asyn
 			kodyId: 'notes',
 			selectedPath: 'README.md',
 		}),
-	).toEqual({ kind: 'unauthorized' })
+	).toEqual({ kind: 'not-found' })
+})
+
+const skillGetSource = "export const skillGet = 'skill'\n"
+
+const privateSkillsPackage: SavedPackageRecord = {
+	id: 'pkg-skills',
+	userId: ownerIdFromStored('owner-1'),
+	name: '@kentcdodds/skills',
+	kodyId: 'skills',
+	description: 'Private skills',
+	tags: [],
+	searchText: null,
+	sourceId: 'src-1',
+	hasApp: false,
+	hasSkills: true,
+	hidden: false,
+	isPrivate: true,
+	isInternetVisible: false,
+	lockedAt: null,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
+}
+
+/** `loadPackagePage` only resolves an unlisted package for readers. */
+function publishPrivateSkillsPackage({ viewerIsOwner = true } = {}) {
+	mockModule.loadPackagePage.mockResolvedValue(
+		plainRepoPage({
+			kodyId: 'skills',
+			hasPackage: true,
+			viewerIsOwner,
+			viewerCanManage: viewerIsOwner,
+			loggedIn: viewerIsOwner,
+			ownerPackage: plainRepoOwnerPackage({
+				id: 'pkg-skills',
+				name: '@kentcdodds/skills',
+				kodyId: 'skills',
+				sourceId: 'src-1',
+				isPrivate: true,
+			}),
+		}),
+	)
+	mockModule.getSavedPackageById.mockResolvedValue(privateSkillsPackage)
+	mockModule.getEntitySourceById.mockResolvedValue(entitySource)
+	mockModule.getUserSocialRowByUsername.mockResolvedValue(
+		ownerSocialRow('public'),
+	)
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(
+		publishedSnapshot({
+			'README.md': '# Skills\n',
+			'src/skill-get.ts': skillGetSource,
+		}),
+	)
+	mockModule.readArtifactFileAtCommit.mockResolvedValue(null)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		viewerIsOwner ? viewer('owner-1') : null,
+	)
+}
+
+function loadSkillGetRaw(
+	extra: Partial<Parameters<typeof loadAccessiblePackageFileRaw>[0]> = {},
+) {
+	return loadAccessiblePackageFileRaw({
+		env,
+		request: new Request(
+			'https://kody.codes/@kentcdodds/skills/raw/main/src/skill-get.ts',
+		),
+		username: 'kentcdodds',
+		kodyId: 'skills',
+		selectedPath: 'src/skill-get.ts',
+		ref: 'main',
+		...extra,
+	})
+}
+
+test('owner reads their private unlisted package source as text at /raw/main/', async () => {
+	publishPrivateSkillsPackage()
+	const result = await loadSkillGetRaw()
+	expect(result).toMatchObject({
+		kind: 'ok',
+		contentType: 'text/plain; charset=utf-8',
+		disposition: 'inline',
+		filename: 'skill-get.ts',
+		isPrivate: true,
+	})
+	expect(result.kind === 'ok' && new TextDecoder().decode(result.bytes)).toBe(
+		skillGetSource,
+	)
+	expect(mockModule.readPublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ publishedCommit: 'abc123' }),
+	)
+})
+
+test('private package raw 404s for viewers without access and missing files', async () => {
+	publishPrivateSkillsPackage({ viewerIsOwner: false })
+	expect(await loadSkillGetRaw()).toEqual({ kind: 'not-found' })
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+
+	publishPrivateSkillsPackage()
+	expect(await loadSkillGetRaw({ selectedPath: 'src/missing.ts' })).toEqual({
+		kind: 'not-found',
+	})
+})
+
+test('raw forwards a bearer-authenticated viewer to the package page gate', async () => {
+	publishPrivateSkillsPackage()
+	const tokenViewer = viewer('owner-1').mcpUser
+	await loadSkillGetRaw({ viewer: tokenViewer })
+	expect(mockModule.loadPackagePage).toHaveBeenCalledWith(
+		expect.objectContaining({ viewer: tokenViewer }),
+	)
+	await loadSkillGetRaw({ viewer: null })
+	expect(mockModule.loadPackagePage).toHaveBeenLastCalledWith(
+		expect.objectContaining({ viewer: null }),
+	)
+})
+
+test('file views carry a raw href and directory views do not', async () => {
+	publishPrivateSkillsPackage()
+	const file = await loadAccessiblePackageFilesData({
+		env,
+		request: new Request(
+			'https://kody.codes/@kentcdodds/skills/tree/main/src/skill-get.ts',
+		),
+		username: 'kentcdodds',
+		kodyId: 'skills',
+		selectedPath: 'src/skill-get.ts',
+		ref: 'main',
+	})
+	expect(file).toMatchObject({
+		kind: 'file',
+		rawHref: '/@kentcdodds/skills/raw/main/src/skill-get.ts',
+		mediaHref: null,
+	})
+	const directory = await loadAccessiblePackageFilesData({
+		env,
+		request: new Request('https://kody.codes/@kentcdodds/skills/tree/main'),
+		username: 'kentcdodds',
+		kodyId: 'skills',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(directory).toMatchObject({ kind: 'directory', rawHref: null })
+
+	publishListing()
+	expect(await loadTree('README.md')).toMatchObject({
+		rawHref: '/@kentcdodds/sentry/raw/main/README.md',
+	})
+})
+
+test('an org-bound token reads another org like a signed-out visitor', async () => {
+	publishPrivateSkillsPackage()
+	const tokenViewer = viewer('owner-1').mcpUser
+	const ownOrg = await loadSkillGetRaw({
+		viewer: tokenViewer,
+		viewerOrgId: ownerIdFromStored('owner-1'),
+	})
+	expect(ownOrg).toMatchObject({ kind: 'ok', isPrivate: true })
+	expect(mockModule.loadPackagePage).toHaveBeenCalledTimes(1)
+
+	mockModule.loadPackagePage.mockClear()
+	mockModule.loadPackagePage
+		.mockResolvedValueOnce(
+			plainRepoPage({
+				kodyId: 'skills',
+				hasPackage: true,
+				viewerIsOwner: true,
+				ownerPackage: plainRepoOwnerPackage({ isPrivate: true }),
+			}),
+		)
+		.mockResolvedValueOnce({ kind: 'not_found' })
+	expect(
+		await loadSkillGetRaw({ viewer: tokenViewer, viewerOrgId: 'team-a' }),
+	).toEqual({ kind: 'not-found' })
+	expect(mockModule.loadPackagePage).toHaveBeenLastCalledWith(
+		expect.objectContaining({ viewer: null }),
+	)
+})
+
+test('files above the raw size cap get no Raw link', async () => {
+	publishPrivateSkillsPackage()
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(
+		publishedSnapshot({
+			'data/large.csv': 'a'.repeat(maxPackageFilePreviewBytes + 1),
+		}),
+	)
+	expect(
+		await loadAccessiblePackageFilesData({
+			env,
+			request: new Request(
+				'https://kody.codes/@kentcdodds/skills/tree/main/data/large.csv',
+			),
+			username: 'kentcdodds',
+			kodyId: 'skills',
+			selectedPath: 'data/large.csv',
+			ref: 'main',
+		}),
+	).toMatchObject({ kind: 'file', rawHref: null })
 })

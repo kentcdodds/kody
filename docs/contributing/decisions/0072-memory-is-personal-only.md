@@ -38,9 +38,10 @@ We do **not**:
 `memory:read` on that memory at snapshot time (owners, org-wide `memory:read`
 grantees, per-memory user/team grant subjects). Skip when the personal org
 already has identical subject+summary+details; otherwise insert with a
-provenance `source_uri`. Originals stay on the team org, write-frozen, until a
-follow-up cleanup verifies copies and removes (or hides) the legacy list. Team
-`/@slug/-/memories` is a read-only legacy view for the soak.
+provenance `source_uri`. After copies are verified,
+`adminMemoryPersonalizePurge` soft-deletes the team-org originals and obsolete
+memory grants. Team workspaces hide Memories from the nav; a direct URL shows a
+retired notice instead of a list.
 
 ## Consequences
 
