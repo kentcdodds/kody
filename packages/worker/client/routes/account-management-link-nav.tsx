@@ -3,8 +3,10 @@ import { routerEvents } from '#client/client-router.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import { hoverMq, pageGutter } from '#universal/styles/style-primitives.ts'
+import { dismissOpenPopoverPanel } from '#client/switcher-menu.tsx'
 import {
 	WorkspaceSwitcher,
+	workspaceSwitcherPanelId,
 	type WorkspaceSwitcherData,
 } from '#client/workspace-switcher.tsx'
 
@@ -312,6 +314,18 @@ export function AccountManagementLinkNav(
 								node.open = false
 							}
 							routerEvents.addEventListener('navigate', close, { signal })
+							// The switcher panel is in the top layer, so closing the
+							// drawer would otherwise leave it floating.
+							node.addEventListener(
+								'toggle',
+								() => {
+									if (node.open) return
+									dismissOpenPopoverPanel(
+										document.getElementById(workspaceSwitcherPanelId('drawer')),
+									)
+								},
+								{ signal },
+							)
 						}),
 					]}
 				>

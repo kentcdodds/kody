@@ -47,7 +47,9 @@ export type WorkspaceSwitcherData = {
  */
 export type WorkspaceSwitcherPlacement = 'rail' | 'drawer'
 
-function panelId(placement: WorkspaceSwitcherPlacement) {
+export function workspaceSwitcherPanelId(
+	placement: WorkspaceSwitcherPlacement,
+) {
 	return `workspace-switcher-${placement}`
 }
 
@@ -168,7 +170,7 @@ export function WorkspaceSwitcher(
 
 	listenToRouterNavigation(handle, () => {
 		dismissOpenPopoverPanel(
-			document.getElementById(panelId(handle.props.placement)),
+			document.getElementById(workspaceSwitcherPanelId(handle.props.placement)),
 		)
 	})
 
@@ -181,7 +183,7 @@ export function WorkspaceSwitcher(
 
 	return () => {
 		const { placement } = handle.props
-		const id = panelId(placement)
+		const id = workspaceSwitcherPanelId(placement)
 		const { current, orgRows, actionRows } = workspaceSwitcherRows(handle.props)
 		const identity = current
 			? orgIdentity(current, {
