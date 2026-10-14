@@ -562,7 +562,6 @@ test('account menu Manage leads with the current workspace Overview, then every 
 			pathname,
 			organizations,
 			lastUsedSlug,
-			username: 'kentcdodds',
 		}).map((link) => [link.label, link.href, link.detail])
 	// The org in the URL is the one Manage opens first.
 	expect(links('/@kody/-/credentials')).toEqual([
@@ -577,15 +576,16 @@ test('account menu Manage leads with the current workspace Overview, then every 
 		['@acme', '/@acme', null],
 		['@kody', '/@kody', null],
 	])
-	// A stale session list still opens the URL org's overview.
+	// A stale session list leaves the URL org's kind unknown (a renamed
+	// person's signup org keeps its old slug), so Overview takes the path
+	// that serves the signup org and redirects a team to its home.
 	expect(
 		accountMenuManageLinks({
-			pathname: '/@zeta/-/settings',
+			pathname: '/@kent-old/-/overview',
 			organizations: [],
 			lastUsedSlug: null,
-			username: 'kentcdodds',
-		}).map((link) => link.href),
-	).toEqual(['/@zeta'])
+		}).map((link) => [link.label, link.href, link.detail]),
+	).toEqual([['Overview', '/@kent-old/-/overview', '@kent-old']])
 })
 
 test('account menu shows a Manage section before the person links; the phone menu keeps Overview', async () => {

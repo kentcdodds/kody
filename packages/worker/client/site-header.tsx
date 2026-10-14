@@ -12,6 +12,7 @@ import {
 	currentSwitcherSlug,
 	orderOrganizations,
 	orgIdentity,
+	orgOverviewPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgSlugFromOrgOwnedPath,
@@ -339,7 +340,6 @@ function OrgSwitcher(
 				pathname: handle.props.currentPathname,
 				organizations,
 				lastUsedSlug: handle.props.lastUsedOrganization,
-				username: handle.props.username,
 			}).slice(0, 1)
 			return (
 				<div
@@ -498,7 +498,6 @@ export function accountMenuManageLinks(input: {
 	pathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
 	lastUsedSlug: string | null
-	username: string
 }): Array<AccountMenuManageLink> {
 	const currentSlug = currentSwitcherSlug({
 		pathname: input.pathname,
@@ -506,15 +505,16 @@ export function accountMenuManageLinks(input: {
 		lastUsedSlug: input.lastUsedSlug,
 	})
 	if (!currentSlug) return []
-	const current = input.organizations.find(
-		(org) => org.slug === currentSlug,
-	) ?? { slug: currentSlug, personal: currentSlug === input.username }
+	const current = input.organizations.find((org) => org.slug === currentSlug)
 	return [
 		{
 			key: 'manage-overview',
-			href: workspaceHomeHref(current),
+			// A URL org missing from a stale session list could be a renamed
+			// person's signup org, so its kind is unknown. `/-/overview` serves
+			// the signup org and redirects a team to its home.
+			href: current ? workspaceHomeHref(current) : orgOverviewPath(currentSlug),
 			label: 'Overview',
-			detail: `@${current.slug}`,
+			detail: `@${currentSlug}`,
 			icon: 'home',
 		},
 		...orderOrganizations(input.organizations)
@@ -615,7 +615,6 @@ function AccountMenu(
 			pathname: handle.props.currentPathname,
 			organizations,
 			lastUsedSlug: handle.props.lastUsedOrganization ?? null,
-			username: handle.props.username,
 		})
 		return (
 			<div
