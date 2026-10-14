@@ -142,7 +142,7 @@ export function renderAuthForm(
 		onPasskeySignIn: () => void
 		signupUsername: string
 		onSignupUsernameInput: (value: string) => void
-		onSignupUsernameBlur?: () => void
+		onSignupUsernameBlur?: (value: string) => void
 	},
 ) {
 	const statusId = `${props.handleId}-form-status`
@@ -211,7 +211,11 @@ export function renderAuthForm(
 								)
 							}),
 							props.onSignupUsernameBlur
-								? on('blur', () => props.onSignupUsernameBlur?.())
+								? on('blur', (event) => {
+										props.onSignupUsernameBlur?.(
+											(event.currentTarget as HTMLInputElement).value,
+										)
+									})
 								: null,
 						]}
 					/>

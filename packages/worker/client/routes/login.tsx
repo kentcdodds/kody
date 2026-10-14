@@ -8,6 +8,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
+import { invalidFieldsForMessage } from '#client/form-error-fields.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
@@ -125,9 +126,14 @@ export function LoginRoute(handle: Handle) {
 			setState('error', usernameError)
 			return true
 		}
-		// Autofill may fix the value without an input event; clear a stale
-		// format error when the field is now valid.
-		if (status === 'error') clearFieldError()
+		// Autofill may fix the value without an input event. Only clear a
+		// username-tied message — never wipe email, password, or network errors.
+		if (
+			status === 'error' &&
+			invalidFieldsForMessage('error', message, []).has('username')
+		) {
+			clearFieldError()
+		}
 		return false
 	}
 
@@ -136,9 +142,11 @@ export function LoginRoute(handle: Handle) {
 		clearFieldError()
 	}
 
-	function onSignupUsernameBlur() {
+	function onSignupUsernameBlur(value: string) {
+		signupUsername = value
 		signupUsernameFormatLive = true
 		refreshSignupUsernameFormatError()
+		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
