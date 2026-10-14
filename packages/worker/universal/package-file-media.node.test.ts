@@ -7,6 +7,7 @@ import {
 	looksLikeSvg,
 	maxPackageFilePreviewBytes,
 	packageFileKindLabel,
+	resolvePackageFileRawType,
 	safeContentDispositionFilename,
 	shouldStoreArtifactBlobAsLatin1,
 	sniffPackageFileMedia,
@@ -139,4 +140,56 @@ test('latin1 snapshot helpers recover binary bytes and skip SVG', () => {
 	expect(safeContentDispositionFilename('docs/my"file\n.png')).toBe(
 		'my_file_.png',
 	)
+})
+
+test('raw type keeps sniffed media and serves everything else inert', () => {
+	const encode = (value: string) => new TextEncoder().encode(value)
+	expect(
+		resolvePackageFileRawType({ path: 'logo.png', bytes: pngBytes }),
+	).toEqual({ contentType: 'image/png', disposition: 'inline' })
+	expect(
+		resolvePackageFileRawType({
+			path: 'icon.svg',
+			bytes: encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+		}),
+	).toEqual({ contentType: 'image/svg+xml', disposition: 'inline' })
+	const text = {
+		contentType: 'text/plain; charset=utf-8',
+		disposition: 'inline',
+	}
+	expect(
+		resolvePackageFileRawType({
+			path: 'src/skill-get.ts',
+			bytes: encode('export {}\n'),
+		}),
+	).toEqual(text)
+	expect(
+		resolvePackageFileRawType({
+			path: 'index.html',
+			bytes: encode('<html><script>alert(1)</script></html>'),
+		}),
+	).toEqual(text)
+	expect(
+		resolvePackageFileRawType({
+			path: 'evil.svg',
+			bytes: encode('<html><script>alert(1)</script></html>'),
+		}),
+	).toEqual(text)
+	const download = {
+		contentType: 'application/octet-stream',
+		disposition: 'attachment',
+	}
+	expect(
+		resolvePackageFileRawType({ path: 'fake.png', bytes: encode('<html>') }),
+	).toEqual(download)
+	expect(
+		resolvePackageFileRawType({ path: 'app.wasm', bytes: encode('asm') }),
+	).toEqual(download)
+	expect(
+		resolvePackageFileRawType({
+			path: 'data.txt',
+			bytes: Uint8Array.from([104, 0, 105]),
+		}),
+	).toEqual(download)
+	expect(safeContentDispositionFilename('docs/résumé.md')).toBe('r_sum_.md')
 })
