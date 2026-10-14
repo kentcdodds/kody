@@ -17,7 +17,13 @@ export type PackageTab = 'intent' | 'source' | 'result'
 export type PackageAccess = 'use' | 'contribute' | 'manage'
 export type PackageSharing = 'share' | 'fork'
 
-const heroHeight = 232
+/** `at()` plus the same spot as custom properties, so the page CSS can put
+ *  a node back once the shared stack rules have overridden `left`/`top`. */
+function place(x: number, y: number) {
+	return at(x, y, { '--pkg-x': `${x}%`, '--pkg-y': `${y}%` })
+}
+
+const heroHeight = 196
 const publishHeight = 348
 const shareHeight = 300
 
@@ -106,6 +112,7 @@ export function PackageWorkbenchScene(
 				size="full"
 				height={heroHeight}
 				class="pw-scene-pkg-hero"
+				stack
 			>
 				<div
 					class="pw-run"
@@ -126,12 +133,12 @@ function heroBody(tab: PackageTab, live: boolean) {
 			return (
 				<>
 					{wires(
-						wire({ key: 'into', d: 'M168 116 L220 116', on: true }),
+						wire({ key: 'into', d: 'M168 98 L220 98', on: true }),
 						heroHeight,
 					)}
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-chat"
-						style={at(2, 50)}
+						style={place(2, 50)}
 					>
 						<span class="pw-kicker">Your agent</span>
 						<p class="pw-pkg-ask">
@@ -141,7 +148,7 @@ function heroBody(tab: PackageTab, live: boolean) {
 					</div>
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-born"
-						style={at(62, 50)}
+						style={place(62, 50)}
 					>
 						<span class="pw-pkg-card-head">
 							<span class="pw-kicker pw-pkg-name">◇ weekly-brief</span>
@@ -161,12 +168,12 @@ function heroBody(tab: PackageTab, live: boolean) {
 			return (
 				<>
 					{wires(
-						wire({ key: 'open', d: 'M154 128 L206 128', on: true }),
+						wire({ key: 'open', d: 'M115 98 L133 98', on: true }),
 						heroHeight,
 					)}
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-tree"
-						style={at(2, 50)}
+						style={place(2, 50)}
 					>
 						<span class="pw-kicker">weekly-brief</span>
 						<ul class="pw-pkg-files">
@@ -182,7 +189,7 @@ function heroBody(tab: PackageTab, live: boolean) {
 					</div>
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-editor"
-						style={at(58, 50)}
+						style={place(37, 50)}
 					>
 						<span class="pw-kicker">src/brief.ts</span>
 						<code class="pw-pkg-code">
@@ -203,12 +210,12 @@ function heroBody(tab: PackageTab, live: boolean) {
 			return (
 				<>
 					{wires(
-						wire({ key: 'run', d: 'M154 116 L206 116', on: true }),
+						wire({ key: 'run', d: 'M144 98 L162 98', on: true }),
 						heroHeight,
 					)}
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-log"
-						style={at(2, 50)}
+						style={place(2, 50)}
 					>
 						<span class="pw-kicker">Run</span>
 						<ol class="pw-pkg-loglines">
@@ -219,7 +226,7 @@ function heroBody(tab: PackageTab, live: boolean) {
 					</div>
 					<div
 						class="pw-node pw-pkg-card pw-pkg-side pw-pkg-result"
-						style={at(58, 50)}
+						style={place(45, 50)}
 					>
 						<span class="pw-kicker">Result</span>
 						<div class="pw-pkg-brief">{renderBrief(live)}</div>
@@ -253,6 +260,7 @@ export function PackagePublishScene(
 				size="full"
 				height={publishHeight}
 				class="pw-scene-pkg-publish"
+				stack
 			>
 				<div
 					class="pw-run pw-pkg-board"
@@ -337,6 +345,7 @@ export function PackageShareScene(
 				size="full"
 				height={shareHeight}
 				class="pw-scene-pkg-share"
+				stack
 			>
 				<div
 					class="pw-run"
@@ -388,12 +397,12 @@ function renderShareDiagram(access: PackageAccess) {
 				</>,
 				shareHeight,
 			)}
-			<div class="pw-node pw-pkg-card pw-pkg-package" style={at(50, 34)}>
+			<div class="pw-node pw-pkg-card pw-pkg-package" style={place(50, 34)}>
 				<span class="pw-kicker">◇ weekly-brief</span>
 				<strong>One live package</strong>
 				<span class="pw-pkg-meta">Shared · runs in your organization</span>
 			</div>
-			<div class="pw-node pw-pkg-card pw-pkg-person" style={at(24, 58)}>
+			<div class="pw-node pw-pkg-card pw-pkg-person" style={place(24, 58)}>
 				<span class="pw-pkg-who">
 					<span class="pw-pkg-avatar" aria-hidden="true">
 						Y
@@ -404,7 +413,7 @@ function renderShareDiagram(access: PackageAccess) {
 			</div>
 			<div
 				class="pw-node pw-pkg-card pw-pkg-person pw-pkg-mate"
-				style={at(76, 58)}
+				style={place(76, 58)}
 			>
 				<span class="pw-pkg-who">
 					<span class="pw-pkg-avatar" aria-hidden="true">
@@ -449,10 +458,10 @@ function renderForkDiagram(copyEdited: boolean) {
 				</>,
 				shareHeight,
 			)}
-			<span class="pw-pkg-origin" style={at(50, 10)}>
+			<span class="pw-pkg-origin" style={place(50, 10)}>
 				◇ weekly-brief · public
 			</span>
-			<div class="pw-node pw-pkg-card pw-pkg-copy" style={at(24, 52)}>
+			<div class="pw-node pw-pkg-card pw-pkg-copy" style={place(24, 52)}>
 				<span class="pw-pkg-who">
 					<span class="pw-pkg-avatar" aria-hidden="true">
 						Y
@@ -464,7 +473,7 @@ function renderForkDiagram(copyEdited: boolean) {
 			</div>
 			<div
 				class="pw-node pw-pkg-card pw-pkg-copy pw-pkg-fork-copy"
-				style={at(76, 52)}
+				style={place(76, 52)}
 				data-edited={copyEdited ? '' : undefined}
 			>
 				<span class="pw-pkg-who">

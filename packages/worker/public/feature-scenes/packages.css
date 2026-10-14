@@ -49,6 +49,14 @@
 	line-height: inherit;
 	color: inherit;
 }
+/* Ink and tint tuned for AA text on the package blue in both themes. */
+.pw.pw-scene-pkg-hero,
+.pw.pw-scene-pkg-publish,
+.pw.pw-scene-pkg-share {
+	--pw-ink: light-dark(oklch(0.43 0.16 255), oklch(0.87 0.08 255));
+	--pw-soft: light-dark(oklch(0.95 0.03 255), oklch(0.32 0.06 255));
+	--pw-pkg-flash: light-dark(oklch(0.9 0.07 255), oklch(0.4 0.09 255));
+}
 
 .pw .pw-pkg-card {
 	display: flex;
@@ -59,6 +67,11 @@
 	padding: 0.7em 0.75em;
 	white-space: normal;
 	overflow-wrap: break-word;
+}
+
+.pw .pw-pkg-card .pw-kicker {
+	font-size: 0.82em;
+	line-height: 1.3;
 }
 
 .pw .pw-pkg-card-head {
@@ -81,18 +94,19 @@
 .pw .pw-pkg-badge {
 	flex: none;
 	white-space: nowrap;
-	padding: 0.12em 0.5em;
+	padding: 0.1em 0.5em;
 	border: 1px solid var(--pw-accent);
 	border-radius: 99em;
 	background: var(--pw-soft);
 	color: var(--pw-ink);
-	font-size: 0.66em;
+	font-size: 0.8em;
 	font-weight: 650;
 	line-height: 1.3;
 }
 
+/* Hero: two cards joined by one wire. */
+
 .pw .pw-pkg-side {
-	width: 40%;
 	translate: 0 -50%;
 }
 
@@ -104,11 +118,27 @@
 	width: 36%;
 }
 
+.pw .pw-pkg-tree {
+	width: 30%;
+}
+
+.pw .pw-pkg-editor {
+	width: 61%;
+}
+
+.pw .pw-pkg-log {
+	width: 38%;
+}
+
+.pw .pw-pkg-result {
+	width: 53%;
+}
+
 .feature-detail .packages .pw .pw-pkg-ask {
 	padding: 0.5em 0.65em;
 	border-radius: 0.8em 0.8em 0.2em 0.8em;
 	background: var(--pw-soft);
-	font-size: 0.78em;
+	font-size: 0.86em;
 	line-height: 1.35;
 }
 
@@ -117,7 +147,7 @@
 .pw .pw-pkg-chips {
 	display: flex;
 	flex-direction: column;
-	gap: 0.28em;
+	gap: 0.2em;
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -125,10 +155,10 @@
 
 .feature-detail .packages .pw .pw-pkg-files li,
 .feature-detail .packages .pw .pw-pkg-loglines li {
-	padding: 0.16em 0.4em;
+	padding: 0.1em 0.4em;
 	border-radius: 0.35em;
 	font:
-		0.68em/1.35 ui-monospace,
+		0.8em/1.35 ui-monospace,
 		monospace;
 }
 
@@ -141,9 +171,9 @@
 .pw .pw-pkg-code {
 	display: flex;
 	flex-direction: column;
-	gap: 0.18em;
+	gap: 0.12em;
 	font:
-		0.64em/1.35 ui-monospace,
+		0.8em/1.35 ui-monospace,
 		monospace;
 	white-space: pre-wrap;
 }
@@ -152,12 +182,13 @@
 	display: block;
 	width: fit-content;
 	max-width: 100%;
+	padding: 0 0.2em;
 	border-radius: 0.2em;
 }
 
 .pw .pw-pkg-add {
 	padding: 0.08em 0.3em;
-	background: color-mix(in oklab, var(--pw-accent) 18%, var(--pw-surface));
+	background: var(--pw-soft);
 	color: var(--pw-text);
 	font-weight: 650;
 }
@@ -170,13 +201,13 @@
 
 .feature-detail .packages .pw .pw-pkg-brief p,
 .feature-detail .packages .pw .pw-pkg-wait p {
-	font-size: 0.74em;
+	font-size: 0.84em;
 	line-height: 1.35;
 }
 
 .feature-detail .packages .pw .pw-pkg-out small {
 	color: var(--pw-muted);
-	font-size: 0.68em;
+	font-size: 0.8em;
 	font-weight: 650;
 	line-height: 1.3;
 }
@@ -187,12 +218,12 @@
 }
 
 .pw .pw-pkg-packet {
-	padding: 0.12em 0.42em;
+	padding: 0.08em 0.42em;
 	border: 1px solid var(--pw-accent);
 	border-radius: 99em;
 	background: var(--pw-soft);
 	color: var(--pw-ink);
-	font-size: 0.62em;
+	font-size: 0.8em;
 	font-weight: 650;
 	line-height: 1.3;
 	white-space: nowrap;
@@ -239,7 +270,7 @@
 	position: relative;
 	align-self: flex-start;
 	width: 2px;
-	height: 2em;
+	height: 1.8em;
 	margin-left: 16%;
 	background: var(--pw-line);
 }
@@ -257,7 +288,7 @@
 
 .pw .pw-pkg-step-label {
 	color: var(--pw-ink);
-	font-size: 0.68em;
+	font-size: 0.8em;
 	font-weight: 650;
 	line-height: 1.3;
 	white-space: nowrap;
@@ -272,7 +303,7 @@
 .pw .pw-pkg-bridge .pw-pkg-packet {
 	position: absolute;
 	top: 0.1em;
-	left: 0.5em;
+	left: 0.6em;
 }
 
 .pw .pw-pkg-runs {
@@ -309,25 +340,25 @@
 	display: flex;
 	align-items: center;
 	gap: 0.4em;
-	font-size: 0.84em;
+	font-size: 0.9em;
 	font-weight: 650;
 }
 
 .pw .pw-pkg-avatar {
 	display: grid;
 	place-items: center;
-	width: 1.45em;
-	height: 1.45em;
+	width: 1.5em;
+	height: 1.5em;
 	border-radius: 50%;
 	background: var(--pw-soft);
 	color: var(--pw-ink);
-	font-size: 0.78em;
+	font-size: 0.9em;
 	font-weight: 700;
 }
 
 .pw .pw-pkg-meta {
 	color: var(--pw-text);
-	font-size: 0.68em;
+	font-size: 0.82em;
 	line-height: 1.35;
 }
 
@@ -338,12 +369,12 @@
 }
 
 .feature-detail .packages .pw .pw-pkg-chip {
-	padding: 0.16em 0.42em;
+	padding: 0.1em 0.42em;
 	border: 1px solid var(--pw-line);
 	border-radius: 99em;
 	background: var(--pw-surface);
 	color: var(--pw-text);
-	font-size: 0.64em;
+	font-size: 0.8em;
 	font-weight: 650;
 	line-height: 1.3;
 	white-space: nowrap;
@@ -365,7 +396,7 @@
 	border: 1px solid var(--pw-line);
 	border-radius: 99em;
 	background: var(--pw-surface);
-	font-size: 0.68em;
+	font-size: 0.82em;
 	font-weight: 650;
 	translate: -50% -50%;
 	white-space: nowrap;
@@ -377,66 +408,144 @@
 		color-mix(in oklab, var(--pw-accent) 28%, transparent);
 }
 
-/* Motion. Without data-motion the rules above are the finished still. */
+/* The shared stack rules start at 520px, which also catches the two-column
+   desktop layout (about 465px). Keep the hero and share diagrams down to
+   420px and stack below that. */
 
-.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-ask,
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line,
-.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-loglines li,
-.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-files li {
-	animation: pw-pkg-type 8s var(--pw-ease) infinite;
+@container (min-width: 420px) and (max-width: 520px) {
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack],
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] {
+		aspect-ratio: var(--pw-ratio);
+	}
+
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack] .pw-run,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-run {
+		position: absolute;
+		inset: 0;
+		display: block;
+	}
+
+	.pw.pw-scene-pkg-hero .pw-stage[data-stack] .pw-node,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-node,
+	.pw.pw-scene-pkg-share .pw-stage[data-stack] .pw-pkg-origin {
+		position: absolute;
+		left: var(--pkg-x) !important;
+		top: var(--pkg-y) !important;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-side {
+		translate: 0 -50%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-chat {
+		width: 44%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-born {
+		width: 36%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-tree {
+		width: 30%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-editor {
+		width: 61%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-log {
+		width: 38%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-result {
+		width: 53%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-package {
+		width: 62%;
+		translate: -50% -100%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-person {
+		width: 42%;
+		translate: -50% 0;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-copy {
+		width: 42%;
+		translate: -50% -50%;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-board {
+		gap: 0.15em;
+	}
 }
 
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line:nth-child(2),
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='result']
-	.pw-pkg-loglines
-	li:nth-child(2),
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='intent']
-	.pw-pkg-files
-	li:nth-child(2) {
-	animation-name: pw-pkg-type-b;
+/* Narrow stages: the cards stack in story order and short connectors stand
+   in for the hidden wires. */
+
+@container (max-width: 419.98px) {
+	.feature-detail .packages .pw .pw-stage[data-stack] .pw-wires {
+		display: none;
+	}
+
+	.pw .pw-stage[data-stack] .pw-pkg-board {
+		gap: 0;
+		padding: 0;
+	}
+
+	.pw .pw-pkg-compare {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.6em;
+	}
+
+	.pw .pw-pkg-bridge {
+		height: 1.6em;
+		margin-left: 1.5em;
+	}
+
+	.pw .pw-pkg-bridge-pub {
+		margin-left: 0;
+	}
+
+	.pw .pw-pkg-runs {
+		margin-top: 0;
+	}
+
+	/* Hold the tallest tab's height so switching tabs does not move the page. */
+	.pw.pw-scene-pkg-hero .pw-run {
+		justify-content: center;
+		min-height: 19.5em;
+	}
+
+	.pw.pw-scene-pkg-share .pw-run {
+		justify-content: center;
+		min-height: 17.75em;
+	}
+
+	.pw .pw-pkg-side + .pw-pkg-side::before,
+	.pw .pw-pkg-person::before,
+	.pw .pw-pkg-copy::before {
+		content: '';
+		position: absolute;
+		bottom: 100%;
+		left: 1.5em;
+		width: 2px;
+		height: 0.75em;
+		background: var(--pw-accent);
+	}
+
+	.pw .pw-pkg-origin {
+		position: relative;
+		top: auto !important;
+		left: auto !important;
+		align-self: flex-start;
+		translate: none;
+	}
 }
 
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line:nth-child(3),
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='result']
-	.pw-pkg-loglines
-	li:nth-child(3),
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='intent']
-	.pw-pkg-files
-	li:nth-child(3) {
-	animation-name: pw-pkg-type-c;
-}
-
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line:nth-child(4),
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='intent']
-	.pw-pkg-files
-	li:nth-child(4) {
-	animation-name: pw-pkg-type-d;
-}
-
-.pw-scene-pkg-hero[data-motion]
-	[data-mode='source']
-	.pw-pkg-line:nth-child(n + 5) {
-	animation-name: pw-pkg-type-e;
-}
-
-.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-born,
-.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-files li[data-on],
-.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-result {
-	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
-}
-
-.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-badge {
-	animation: pw-pkg-badge 8s var(--pw-ease) infinite;
-}
-
-.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-brief {
-	animation: pw-pkg-brief 8s var(--pw-ease) infinite;
-}
+/* Motion. Every scene starts complete; loops move emphasis, not content.
+   Without data-motion the rules above are the finished still. */
 
 .pw-scene-pkg-hero[data-motion] .pw-pulse,
 .pw-scene-pkg-share[data-motion] .pw-pulse {
@@ -451,12 +560,43 @@
 	animation: none;
 }
 
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-ask,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-files li[data-on],
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-loglines li {
+	animation: pw-pkg-scan 8s var(--pw-ease) infinite;
+	animation-delay: calc(var(--i, 0) * 0.5s + 0.2s);
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-files li[data-on] {
+	animation-name: pw-pkg-scan-on;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-born,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-editor,
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-result {
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-badge {
+	animation: pw-pkg-badge 8s var(--pw-ease) infinite;
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='intent'] .pw-pkg-files li,
+.pw-scene-pkg-hero[data-motion] [data-mode='source'] .pw-pkg-line {
+	animation: pw-pkg-scan 8s var(--pw-ease) infinite;
+	animation-delay: calc(var(--i) * 0.45s + 3.6s);
+}
+
+.pw-scene-pkg-hero[data-motion] [data-mode='result'] .pw-pkg-brief {
+	animation: pw-pkg-scan 8s var(--pw-ease) 3.6s infinite;
+}
+
 .pw-scene-pkg-publish[data-motion] .pw-pkg-bridge-pub .pw-pkg-packet {
 	animation: pw-pkg-drop 8s var(--pw-ease) infinite;
 }
 
 .pw-scene-pkg-publish[data-motion] [data-acted] .pw-pkg-add {
-	animation: pw-pkg-once 7s var(--pw-ease) 1 both;
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
 }
 
 .pw-scene-pkg-publish[data-motion]
@@ -466,25 +606,26 @@
 	animation: pw-pkg-drop 7s var(--pw-ease) 1 both;
 }
 
-.pw-scene-pkg-publish[data-motion]
-	[data-preview]
-	.pw-pkg-out:not(.pw-pkg-current)
-	.pw-pkg-brief {
-	animation: pw-pkg-once 7s var(--pw-ease) 1 both;
-}
-
+.pw-scene-pkg-publish[data-motion] [data-preview] .pw-pkg-out[data-diff],
 .pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-runs {
-	animation: pw-pkg-arrive 7s var(--pw-ease) 1 both;
+	animation: pw-pkg-arrive 4s var(--pw-ease) 1 both;
 }
 
-.pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-badge,
+.pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-badge {
+	animation: pw-pkg-badge 4s var(--pw-ease) 1 both;
+}
+
 .pw-scene-pkg-publish[data-motion] [data-published] .pw-pkg-question {
-	animation: pw-pkg-badge-once 7s var(--pw-ease) 1 both;
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
 }
 
 .pw-scene-pkg-share[data-motion] [data-mode='share'] .pw-pkg-chip[data-on] {
 	animation: pw-pkg-chip 8s var(--pw-ease) infinite;
-	animation-delay: calc(var(--i) * -0.22s);
+	animation-delay: calc(var(--i) * 0.25s + 3.2s);
+}
+
+.pw-scene-pkg-share[data-motion] [data-mode='share'] .pw-pkg-mate {
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
 }
 
 .pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-origin {
@@ -492,85 +633,48 @@
 }
 
 .pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-copy {
-	animation: pw-pkg-split-left 8s var(--pw-ease) infinite;
+	animation: pw-pkg-arrive 8s var(--pw-ease) infinite;
 }
 
 .pw-scene-pkg-share[data-motion] [data-mode='fork'] .pw-pkg-fork-copy {
-	animation: pw-pkg-split-right 8s var(--pw-ease) infinite;
+	animation-delay: 0.5s;
 }
 
 .pw-scene-pkg-share[data-motion] [data-edited] .pw-pkg-copy-title,
 .pw-scene-pkg-share[data-motion] [data-edited] .pw-pkg-fork-copy .pw-pkg-meta {
-	animation: pw-pkg-rename 8s var(--pw-ease) infinite;
+	border-radius: 0.25em;
+	animation: pw-pkg-flash 2.4s var(--pw-ease) 1 backwards;
 }
 
-@keyframes pw-pkg-type {
+/* A highlight that sweeps down a list; the line is readable throughout. */
+@keyframes pw-pkg-scan {
 	0%,
-	8% {
-		clip-path: inset(0 100% 0 0);
-	}
-	18%,
-	92% {
-		clip-path: inset(0);
-	}
+	8%,
 	100% {
-		clip-path: inset(0 100% 0 0);
+		background-color: transparent;
 	}
-}
-
-@keyframes pw-pkg-type-b {
-	0%,
-	14% {
-		clip-path: inset(0 100% 0 0);
-	}
-	24%,
-	92% {
-		clip-path: inset(0);
-	}
-	100% {
-		clip-path: inset(0 100% 0 0);
+	2%,
+	5% {
+		background-color: var(--pw-soft);
 	}
 }
 
-@keyframes pw-pkg-type-c {
+@keyframes pw-pkg-scan-on {
 	0%,
-	20% {
-		clip-path: inset(0 100% 0 0);
-	}
-	30%,
-	92% {
-		clip-path: inset(0);
-	}
+	8%,
 	100% {
-		clip-path: inset(0 100% 0 0);
+		background-color: var(--pw-soft);
+	}
+	2%,
+	5% {
+		background-color: var(--pw-pkg-flash);
 	}
 }
 
-@keyframes pw-pkg-type-d {
+@keyframes pw-pkg-flash {
 	0%,
-	26% {
-		clip-path: inset(0 100% 0 0);
-	}
-	36%,
-	92% {
-		clip-path: inset(0);
-	}
-	100% {
-		clip-path: inset(0 100% 0 0);
-	}
-}
-
-@keyframes pw-pkg-type-e {
-	0%,
-	32% {
-		clip-path: inset(0 100% 0 0);
-	}
-	42%,
-	92% {
-		clip-path: inset(0);
-	}
-	100% {
-		clip-path: inset(0 100% 0 0);
+	30% {
+		background-color: var(--pw-pkg-flash);
 	}
 }
 
@@ -595,29 +699,13 @@
 
 @keyframes pw-pkg-badge {
 	0%,
-	30% {
-		transform: scale(0.86);
-	}
-	44% {
-		transform: scale(1.06);
-	}
+	36%,
 	54%,
 	100% {
 		transform: none;
 	}
-}
-
-@keyframes pw-pkg-brief {
-	0%,
-	34% {
-		clip-path: inset(0 100% 0 0);
-	}
-	58%,
-	92% {
-		clip-path: inset(0);
-	}
-	100% {
-		clip-path: inset(0 100% 0 0);
+	44% {
+		transform: scale(1.1);
 	}
 }
 
@@ -654,51 +742,24 @@
 	}
 	46% {
 		opacity: 1;
-		transform: translateY(0.45em);
+		transform: translateY(0.4em);
 	}
 	58%,
 	100% {
 		opacity: 0;
-		transform: translateY(0.45em);
-	}
-}
-
-@keyframes pw-pkg-once {
-	0%,
-	10% {
-		clip-path: inset(0 100% 0 0);
-	}
-	42%,
-	100% {
-		clip-path: inset(0);
-	}
-}
-
-@keyframes pw-pkg-badge-once {
-	0%,
-	12% {
-		clip-path: inset(0 100% 0 0);
-		transform: scale(0.92);
-	}
-	36%,
-	100% {
-		clip-path: inset(0);
-		transform: none;
+		transform: translateY(0.4em);
 	}
 }
 
 @keyframes pw-pkg-chip {
 	0%,
-	16% {
-		border-color: var(--pw-line);
-		background: var(--pw-surface);
-		color: var(--pw-text);
-	}
-	32%,
+	10%,
 	100% {
-		border-color: var(--pw-accent);
-		background: var(--pw-soft);
-		color: var(--pw-ink);
+		box-shadow: none;
+	}
+	5% {
+		box-shadow: 0 0 0 0.2em
+			color-mix(in oklab, var(--pw-accent) 32%, transparent);
 	}
 }
 
@@ -709,48 +770,6 @@
 		scale: 1;
 	}
 	8% {
-		scale: 1.12;
-	}
-}
-
-@keyframes pw-pkg-split-left {
-	0%,
-	10% {
-		transform: translateX(62%);
-	}
-	32%,
-	92% {
-		transform: none;
-	}
-	100% {
-		transform: translateX(62%);
-	}
-}
-
-@keyframes pw-pkg-split-right {
-	0%,
-	10% {
-		transform: translateX(-62%);
-	}
-	32%,
-	92% {
-		transform: none;
-	}
-	100% {
-		transform: translateX(-62%);
-	}
-}
-
-@keyframes pw-pkg-rename {
-	0%,
-	34% {
-		clip-path: inset(0 100% 0 0);
-	}
-	52%,
-	92% {
-		clip-path: inset(0);
-	}
-	100% {
-		clip-path: inset(0 100% 0 0);
+		scale: 1.08;
 	}
 }
