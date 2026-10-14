@@ -1,4 +1,4 @@
-# 0072: Community listing pin follows promote
+# 0073: Community listing pin follows promote
 
 - **Status:** accepted
 - **Date:** 2026-10-14
