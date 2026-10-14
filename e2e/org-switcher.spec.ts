@@ -73,7 +73,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await accountMenu.click()
 	const accountPanel = page.getByTestId('account-menu-panel')
 	await expect(accountPanel).toBeVisible()
-	const accountGroup = accountPanel.getByRole('group', { name: 'Your account' })
+	const accountGroup = accountPanel.getByRole('group', {
+		name: 'Your account',
+	})
 	await expect(
 		accountGroup.getByRole('link', { name: 'Your profile' }),
 	).toHaveAttribute('href', `/@${user.username}`)
@@ -87,6 +89,20 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(
 		accountGroup.getByRole('button', { name: 'Log out' }),
 	).toBeVisible()
+	// Manage leads with the current workspace's Overview, then every other
+	// workspace, so the avatar menu is never a dead end for org sections.
+	const manageGroup = accountPanel.getByRole('group', { name: 'Manage' })
+	const manageLinks = manageGroup.getByRole('link')
+	await expect(manageLinks).toHaveCount(2)
+	await expect(manageLinks.nth(0)).toHaveAccessibleName(
+		`Overview @pinned-${runId}`,
+	)
+	await expect(manageLinks.nth(0)).toHaveAttribute('href', `/@pinned-${runId}`)
+	await expect(manageLinks.nth(1)).toHaveAccessibleName(`@${user.username}`)
+	await expect(manageLinks.nth(1)).toHaveAttribute(
+		'href',
+		`/@${user.username}/-/overview`,
+	)
 	await page.keyboard.press('Escape')
 	await expect(accountPanel).toBeHidden()
 	await openSwitcher(page)

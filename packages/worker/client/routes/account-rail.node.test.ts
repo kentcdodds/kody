@@ -258,6 +258,29 @@ test('team organization rail shares the sections and keeps members, settings, an
 	).toBe(true)
 })
 
+test('personal and team rails list the same sections in the same order above Organization', () => {
+	const sections = (personal: boolean) =>
+		workspaceRailGroups({ orgSlug: 'acme', personal, role: 'owner' })
+			.filter((group) => group.label !== 'Organization')
+			.map((group) => [group.label, group.items.map((item) => item.label)])
+	expect(sections(false)).toEqual(sections(true))
+	expect(sections(true)).toEqual([
+		[null, ['Overview']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Credentials', ['Credentials', 'Secret providers']],
+		['Agents & data', ['Agents', 'Memories', 'Email']],
+		['Activity', ['Activity']],
+	])
+	for (const role of ['owner', 'member', 'billing'] as const) {
+		expect(
+			workspaceRailGroups({ orgSlug: 'acme', personal: false, role })
+				.filter((group) => group.label !== 'Organization')
+				.map((group) => [group.label, group.items.map((item) => item.label)]),
+			role,
+		).toEqual(sections(true))
+	}
+})
+
 test('grant-only collaborators see Agents with a note, and no slug means no team rail', () => {
 	const collaborator = workspaceRailGroups({
 		orgSlug: 'acme',

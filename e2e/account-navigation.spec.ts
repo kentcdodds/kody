@@ -115,6 +115,42 @@ test('account section switches keep the current page on screen (no loading flash
 	)
 })
 
+test('every workspace section is two clicks from the account menu', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `menu-manage-${runId}@example.com`,
+		username: `menu-manage-${runId}`,
+		password: 'account-menu-manage-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.setViewportSize({ width: 1440, height: 900 })
+	await page.goto('/account/security')
+	await waitForClientHydration(page)
+
+	await page.getByTestId('account-menu').click()
+	const manageGroup = page
+		.getByTestId('account-menu-panel')
+		.getByRole('group', { name: 'Manage' })
+	await expect(manageGroup.getByRole('link').first()).toHaveAccessibleName(
+		`Overview @${user.username}`,
+	)
+	await manageGroup.getByRole('link', { name: /^Overview/ }).click()
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
+	await page
+		.getByRole('navigation', { name: 'Workspace sections' })
+		.getByRole('link', { name: 'Credentials', exact: true })
+		.click()
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/credentials$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Credentials' }),
+	).toBeVisible()
+})
+
 test('every workspace section is two clicks from /account', async ({
 	page,
 	seedE2eUser,

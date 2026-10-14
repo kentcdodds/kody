@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
 import {
+	accountMenuManageLinks,
 	dismissOpenPopoverPanel,
 	SiteHeader,
 	usageHrefForAccountMenu,
@@ -538,4 +539,112 @@ test('account menu Usage & credits falls back when the URL org lacks billing', (
 			username: 'ada',
 		}),
 	).toBe('/@ada/-/usage')
+})
+
+test('account menu Manage leads with the current workspace Overview, then every other workspace', () => {
+	const organizations = [
+		{
+			slug: 'kody',
+			displayName: 'Kody',
+			role: 'owner' as const,
+			personal: false,
+		},
+		{
+			slug: 'kentcdodds',
+			displayName: 'Kent',
+			role: 'owner' as const,
+			personal: true,
+		},
+		{ slug: 'acme', displayName: 'Acme', role: null, personal: false },
+	]
+	const links = (pathname: string, lastUsedSlug: string | null = null) =>
+		accountMenuManageLinks({
+			pathname,
+			organizations,
+			lastUsedSlug,
+			username: 'kentcdodds',
+		}).map((link) => [link.label, link.href, link.detail])
+	// The org in the URL is the one Manage opens first.
+	expect(links('/@kody/-/credentials')).toEqual([
+		['Overview', '/@kody', '@kody'],
+		['@kentcdodds', '/@kentcdodds/-/overview', null],
+		['@acme', '/@acme', null],
+	])
+	// Off an org page, the switcher's org (last used) leads.
+	expect(links('/account', 'kody')).toEqual(links('/@kody'))
+	expect(links('/account')).toEqual([
+		['Overview', '/@kentcdodds/-/overview', '@kentcdodds'],
+		['@acme', '/@acme', null],
+		['@kody', '/@kody', null],
+	])
+	// A stale session list still opens the URL org's overview.
+	expect(
+		accountMenuManageLinks({
+			pathname: '/@zeta/-/settings',
+			organizations: [],
+			lastUsedSlug: null,
+			username: 'kentcdodds',
+		}).map((link) => link.href),
+	).toEqual(['/@zeta'])
+})
+
+test('account menu shows a Manage section before the person links; the phone menu keeps Overview', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'kentcdodds',
+			username: 'kentcdodds',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@kody',
+			organizations: [
+				{ slug: 'kody', displayName: 'Kody', role: 'owner', personal: false },
+				{
+					slug: 'kentcdodds',
+					displayName: null,
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'kody',
+		}),
+	)
+	const accountPanel = html.slice(
+		html.indexOf('data-testid="account-menu-panel"'),
+		html.indexOf('data-testid="org-switcher-menu"'),
+	)
+	const manage = accountPanel.slice(
+		accountPanel.lastIndexOf(
+			'<div',
+			accountPanel.indexOf('data-testid="account-menu-manage-group"'),
+		),
+		accountPanel.indexOf('data-testid="org-switcher-account-group"'),
+	)
+	expect(manage).toContain('aria-label="Manage"')
+	expect(manage).toContain('>Manage<')
+	expect(manage).toMatch(
+		/href="\/@kody"[^>]*aria-current="page"[^>]*>[\s\S]*?>Overview<[\s\S]*?>@kody</,
+	)
+	expect(manage).toMatch(
+		/href="\/@kentcdodds\/-\/overview"[^>]*>[\s\S]*?>@kentcdodds</,
+	)
+	expect(manage.indexOf('>Overview<')).toBeLessThan(
+		manage.indexOf('>@kentcdodds<'),
+	)
+	expect(accountPanel.indexOf('account-menu-manage-group')).toBeLessThan(
+		accountPanel.indexOf('>Your profile<'),
+	)
+
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	const phoneManage = menu.slice(
+		menu.indexOf('data-testid="account-menu-manage-group"'),
+		menu.indexOf('data-testid="org-switcher-account-group"'),
+	)
+	expect(phoneManage).toMatch(/href="\/@kody"[^>]*>[\s\S]*?>Overview</)
+	// The org rows are already listed above the phone Manage group.
+	expect(phoneManage).not.toContain(
+		'data-testid="org-switcher-manage-kentcdodds"',
+	)
 })
