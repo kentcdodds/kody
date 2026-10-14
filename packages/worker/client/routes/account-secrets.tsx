@@ -182,6 +182,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			: null
 		syncEditorState(selection)
 		message =
+			payload.providerLinkError ??
 			nextMessage ??
 			payload.approvalError ??
 			(selection.selectedId && !payload.selectedSecret && !payload.approval

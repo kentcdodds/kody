@@ -2319,6 +2319,12 @@ export type AccountSecretsLoaderData = {
 		currentAllowedPackages: Array<string>
 	} | null
 	approvalError: string | null
+	/**
+	 * Set when the secret value/access writes committed but linking the Key to
+	 * a credential provider failed. Callers must not treat this as a failed
+	 * save (retrying create would 409).
+	 */
+	providerLinkError?: string | null
 }
 
 export type AccountValueListItem = {

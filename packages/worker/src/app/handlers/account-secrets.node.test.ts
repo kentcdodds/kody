@@ -1181,6 +1181,40 @@ test('account secrets save returns the new secret after a successful write', asy
 	)
 })
 
+test('account secrets save keeps ok:true when provider link fails after save', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([makeSecret('resend')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'fresh-secret',
+	} as never)
+	const call = createHandler()
+	mockModule.updateCredentialFields.mockRejectedValueOnce(
+		new Error('credential provider update failed'),
+	)
+	const response = await call(
+		postRequest({
+			action: 'save',
+			name: 'resend',
+			value: 'fresh-secret',
+			scope: 'user',
+			provider: 'resend',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		providerLinkError: 'credential provider update failed',
+		selectedSecret: expect.objectContaining({ name: 'resend' }),
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalled()
+})
+
 test('account secrets save sets the provider from a creation link on org Keys only', async () => {
 	mockSecretsListing([])
 	const call = createHandler()

@@ -1501,14 +1501,22 @@ async function handleSaveAction(input: {
 				packageId,
 			}),
 		})
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error ? error.message : 'Unable to save secret.',
+			},
+			400,
+		)
+	}
 
-		// Only org Keys carry credential fields; the link's provider makes the
-		// new Key match the need that asked for it.
-		if (
-			(provider?.success || clearProvider) &&
-			scope === 'user' &&
-			!credential
-		) {
+	// Post-commit provider link must not claim the save failed — a create retry
+	// with currentId null would 409 on the same name (#3725 / #3698).
+	let providerLinkError: string | null = null
+	if ((provider?.success || clearProvider) && scope === 'user' && !credential) {
+		try {
 			const stored = await findSecret({
 				env: input.env,
 				userId: ownerIdFromCaller({
@@ -1535,9 +1543,16 @@ async function handleSaveAction(input: {
 					audit: orgAuditWriterFromRequest(input.env, input.user.request),
 				})
 			}
+		} catch (error) {
+			providerLinkError =
+				error instanceof Error
+					? error.message
+					: 'Secret saved, but linking the credential provider failed.'
 		}
+	}
 
-		if (currentSecret && currentSecret.id !== nextId) {
+	if (currentSecret && currentSecret.id !== nextId) {
+		try {
 			await deleteSecret({
 				env: input.env,
 				userId: ownerIdFromCaller({
@@ -1548,16 +1563,9 @@ async function handleSaveAction(input: {
 				scope: currentSecret.scope,
 				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
+		} catch {
+			// New secret is already saved; leaving the prior name is recoverable.
 		}
-	} catch (error) {
-		return jsonResponse(
-			{
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to save secret.',
-			},
-			400,
-		)
 	}
 
 	try {
@@ -1569,7 +1577,9 @@ async function handleSaveAction(input: {
 			savedPackages,
 			selectedSecretId: nextId,
 		})
-		return jsonResponse(payload)
+		return jsonResponse(
+			providerLinkError ? { ...payload, providerLinkError } : payload,
+		)
 	} catch {
 		// Write already succeeded. Do not report ok:false — a create retry with
 		// currentId null would 409 on the same name.
@@ -1623,6 +1633,7 @@ async function handleSaveAction(input: {
 			selectedSecret,
 			approval: null,
 			approvalError: null,
+			...(providerLinkError ? { providerLinkError } : {}),
 		}
 		return jsonResponse(fallback)
 	}
