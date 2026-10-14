@@ -47,33 +47,60 @@ need manage access on the package.
 }
 ```
 
-`accessList` shows who holds what across the org. `packageCollaboratorList`
-(`{ "package_id": "<package id or kody id>" }`) lists everyone who holds a grant
-on one package: teams, members, and outside collaborators with their username or
-team slug and preset, plus pending grant invites. It needs Manage on the
-package. `accessRevoke` removes one grant by `grant_id`. To change someone's
-preset, call `accessGrant` again for the same subject; it updates the grant.
+`accessList` shows who holds what across the org. `accessRevoke` removes one
+grant by `grant_id`. To change someone's preset, call `accessGrant` again for
+the same subject; it updates the grant.
+
+## Package collaborators
+
+For one package, three calls cover teams and members of the owning org. Each
+needs Manage on the package, and `package_id` takes the package id or its kody
+id.
+
+- `packageCollaboratorList` (`{ "package_id": "…" }`) lists everyone who holds a
+  grant on the package: teams, members, and outside collaborators, each with
+  `grant_id`, `kind`, username or team slug, and preset.
+- `packageCollaboratorSet` adds a team or org member, or changes the preset of
+  one already listed. Pass exactly one of `team_slug`, `team_id`, `username`, or
+  `user_id`. People outside the org are refused, and Owners already have full
+  access:
+
+  ```json
+  {
+  	"package_id": "release-notes",
+  	"team_slug": "writers",
+  	"preset": "contribute"
+  }
+  ```
+
+- `packageCollaboratorRemove` (`{ "package_id": "…", "grant_id": "…" }`) removes
+  one collaborator, including an outside collaborator.
+
+These run through `accessGrant` and `accessRevoke`, so they are checked and
+audited the same way.
 
 ## On the web
 
 People with Manage on a package see a **Collaborators** tab on the package page
 (`/@owner/<package>/collaborators`). It lists who has access and their preset,
-adds a team or org member, changes a preset, removes access, and invites someone
-outside the organization by email or username. Each change goes through the same
-calls as the capabilities on this page, so it is checked and audited the same
-way. Org owners always have full access and are not listed.
+adds a team or org member, changes a preset, and removes access, using the
+package collaborator calls. Outside collaborators are listed and can be removed;
+their access is changed through `accessGrant`. Org owners always have full
+access and are not listed.
 
 ## Open API
 
 The same calls are on the [Open API](/docs/open-api) (`/openapi.json`):
 
-| Call                                          | Capability                |
-| --------------------------------------------- | ------------------------- |
-| `GET /v1/packages/{package_id}/collaborators` | `packageCollaboratorList` |
-| `POST /v1/access/grants`                      | `accessGrant`             |
-| `POST /v1/access/grants/{grant_id}/revoke`    | `accessRevoke`            |
-| `POST /v1/access/invites`                     | `inviteCreate`            |
-| `POST /v1/access/invites/{invite_id}/revoke`  | `inviteRevoke`            |
+| Call                                                        | Capability                  |
+| ----------------------------------------------------------- | --------------------------- |
+| `GET /v1/packages/{package_id}/collaborators`               | `packageCollaboratorList`   |
+| `POST /v1/packages/{package_id}/collaborators`              | `packageCollaboratorSet`    |
+| `DELETE /v1/packages/{package_id}/collaborators/{grant_id}` | `packageCollaboratorRemove` |
+| `POST /v1/access/grants`                                    | `accessGrant`               |
+| `POST /v1/access/grants/{grant_id}/revoke`                  | `accessRevoke`              |
+| `POST /v1/access/invites`                                   | `inviteCreate`              |
+| `POST /v1/access/invites/{invite_id}/revoke`                | `inviteRevoke`              |
 
 ## Invite someone who has no access yet
 
@@ -177,6 +204,8 @@ into your own org and import the copy.
 ## Which call to use
 
 - Who has access to one package: `packageCollaboratorList`
+- Add a team or org member to one package, or change their preset:
+  `packageCollaboratorSet`; remove one with `packageCollaboratorRemove`
 - One person or team, already known: `accessGrant`
 - Someone without access or an account yet: `inviteCreate` with `kind: "grant"`
 - The whole org: `inviteCreate` with `kind: "membership"` or `orgMemberUpdate`

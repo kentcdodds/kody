@@ -4,7 +4,6 @@ import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { listTeams } from '#worker/orgs/org-teams-list.ts'
 import {
 	isPackageCollaboratorPreset,
-	type PackageCollaboratorInviteView,
 	type PackageCollaboratorKind,
 	type PackageCollaboratorMemberOption,
 	type PackageCollaboratorTeamOption,
@@ -13,7 +12,6 @@ import {
 
 export type PackageCollaborators = {
 	collaborators: Array<PackageCollaboratorView>
-	invites: Array<PackageCollaboratorInviteView>
 	options: {
 		teams: Array<PackageCollaboratorTeamOption>
 		members: Array<PackageCollaboratorMemberOption>
@@ -29,18 +27,6 @@ type UserRow = {
 
 function readPreset(value: string | null) {
 	return value !== null && isPackageCollaboratorPreset(value) ? value : null
-}
-
-function parsePermissions(value: string | null): Array<string> | null {
-	if (!value) return null
-	try {
-		const parsed: unknown = JSON.parse(value)
-		return Array.isArray(parsed)
-			? parsed.filter((entry): entry is string => typeof entry === 'string')
-			: null
-	} catch {
-		return null
-	}
 }
 
 const kindOrder: Record<PackageCollaboratorKind, number> = {
@@ -63,65 +49,21 @@ async function loadUsers(db: D1Database, userIds: ReadonlyArray<string>) {
 	return new Map((rows.results ?? []).map((row) => [row.user_id, row]))
 }
 
-async function listPendingPackageInvites(
-	db: D1Database,
-	input: { orgId: string; packageId: string; now: string },
-): Promise<Array<PackageCollaboratorInviteView>> {
-	const rows = await db
-		.prepare(
-			`SELECT id, preset, permissions_json, invitee_email, invitee_username,
-			        expires_at, created_at
-			 FROM invites
-			 WHERE org_id = ?
-			   AND kind = 'grant'
-			   AND resource_type = 'package'
-			   AND resource_id = ?
-			   AND status = 'pending'
-			   AND expires_at > ?
-			 ORDER BY created_at DESC`,
-		)
-		.bind(input.orgId, input.packageId, input.now)
-		.all<{
-			id: string
-			preset: string | null
-			permissions_json: string | null
-			invitee_email: string | null
-			invitee_username: string | null
-			expires_at: string
-			created_at: string
-		}>()
-	return (rows.results ?? []).map((row) => ({
-		id: row.id,
-		inviteeEmail: row.invitee_email,
-		inviteeUsername: row.invitee_username,
-		preset: readPreset(row.preset),
-		permissions: parsePermissions(row.permissions_json),
-		expiresAt: row.expires_at,
-		createdAt: row.created_at,
-	}))
-}
-
 /**
  * Everyone who holds a live grant on one package in its owning org (teams,
- * members, and outside collaborators), the pending grant invites for it, and
- * the teams and members a manager can still add. Callers authorize first.
+ * members, and outside collaborators) and the teams and members a manager can
+ * still add. Callers authorize first.
  */
 export async function listPackageCollaborators(input: {
 	db: D1Database
 	orgId: string
 	packageId: string
-	now?: string
 }): Promise<PackageCollaborators> {
 	const { db, orgId, packageId } = input
-	const [grants, members, teams, invites] = await Promise.all([
+	const [grants, members, teams] = await Promise.all([
 		listGrants({ db, orgId, resourceType: 'package', resourceId: packageId }),
 		listOrgMembers(db, orgId),
 		listTeams(db, orgId),
-		listPendingPackageInvites(db, {
-			orgId,
-			packageId,
-			now: input.now ?? new Date().toISOString(),
-		}),
 	])
 	const memberIds = new Set(members.map((member) => member.userId))
 	const teamsById = new Map(teams.map((team) => [team.id, team]))
@@ -198,7 +140,6 @@ export async function listPackageCollaborators(input: {
 	)
 	return {
 		collaborators,
-		invites,
 		options: {
 			teams: teams
 				.filter((team) => !grantedTeams.has(team.id))

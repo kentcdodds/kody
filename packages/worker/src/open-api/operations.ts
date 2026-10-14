@@ -241,6 +241,16 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'/v1/packages/{package_id}/collaborators',
 			'packageCollaboratorList',
 		],
+		[
+			'POST',
+			'/v1/packages/{package_id}/collaborators',
+			'packageCollaboratorSet',
+		],
+		[
+			'DELETE',
+			'/v1/packages/{package_id}/collaborators/{grant_id}',
+			'packageCollaboratorRemove',
+		],
 		['PATCH', '/v1/packages/{package_id}', 'packageUpdate'],
 		['DELETE', '/v1/packages/{package_id}', 'packageDelete'],
 		['POST', '/v1/packages/{package_id}/git-remote', 'packageGetGitRemote'],
