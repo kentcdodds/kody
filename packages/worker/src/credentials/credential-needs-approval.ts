@@ -7,6 +7,8 @@
  */
 import * as Sentry from '@sentry/cloudflare'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { isCredentialKind } from '#universal/credential-contracts.ts'
+import { credentialKindLabel } from '#universal/credentials-list.ts'
 import { enqueuePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -105,14 +107,19 @@ export function diffCredentialNeeds(
 	return changes
 }
 
+function describeNeedKind(kind: NeedShape['kind']) {
+	if (kind === undefined) return 'any fetch-capable kind'
+	return isCredentialKind(kind) ? credentialKindLabel(kind) : kind
+}
+
 function describeNeedTail(need: NeedShape) {
 	const viaMultiple = need.multiple ? ' (several allowed)' : ''
-	return `from ${need.provider}${viaMultiple}`
+	return `${describeNeedKind(need.kind)} from ${need.provider}${viaMultiple}`
 }
 
 /**
  * Plain-language change line for the approval UI and agent pause message.
- * Example: `This version adds a credential need: NEXTDNS_API_KEY from nextdns`
+ * Example: `This version adds a credential need: NEXTDNS_API_KEY Key from nextdns`
  */
 export function describeCredentialNeedChange(change: CredentialNeedChange) {
 	const via = change.from ? ` (via ${change.from})` : ''
@@ -131,7 +138,7 @@ export function describeCredentialNeedChange(change: CredentialNeedChange) {
 export function describeCredentialNeedChanges(
 	changes: ReadonlyArray<CredentialNeedChange>,
 ) {
-	return changes.map(describeCredentialNeedChange).join(' ')
+	return changes.map(describeCredentialNeedChange).join('. ')
 }
 
 export function createCredentialNeedsApprovalMessage(input: {

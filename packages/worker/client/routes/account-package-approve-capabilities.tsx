@@ -130,13 +130,15 @@ function credentialsSectionIntro(input: {
 	isInternetVisible: boolean
 	mentionInternet: boolean
 }) {
+	// Credential-needs-only review must not imply the pending credentials are
+	// already reachable via public requests (even on an internet-visible package).
+	if (!input.mentionInternet) {
+		return 'This publish asks to use these credentials.'
+	}
 	if (input.isInternetVisible) {
 		return 'It is internet-visible, so requests from anyone can run code that uses these.'
 	}
-	if (input.mentionInternet) {
-		return 'Once it is internet-visible, requests from anyone can run code that uses these.'
-	}
-	return 'This publish asks to use these credentials.'
+	return 'Once it is internet-visible, requests from anyone can run code that uses these.'
 }
 
 /**
@@ -610,21 +612,23 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								alignItems: 'center',
 							})}
 						>
-							<button
-								type="button"
-								disabled={status === 'approving' || !payload.publishedCommit}
-								data-testid="package-approve-capabilities"
-								mix={[
-									css(getPrimaryButtonCss()),
-									on('click', () => void approveCapabilities()),
-								]}
-							>
-								{status === 'approving'
-									? 'Approving…'
-									: payload.package.isInternetVisible
-										? 'Re-approve capability set'
-										: 'Approve capability set'}
-							</button>
+							{pageCopy.mentionInternet ? (
+								<button
+									type="button"
+									disabled={status === 'approving' || !payload.publishedCommit}
+									data-testid="package-approve-capabilities"
+									mix={[
+										css(getPrimaryButtonCss()),
+										on('click', () => void approveCapabilities()),
+									]}
+								>
+									{status === 'approving'
+										? 'Approving…'
+										: payload.package.isInternetVisible
+											? 'Re-approve capability set'
+											: 'Approve capability set'}
+								</button>
+							) : null}
 							<a
 								href={payload.settingsHref}
 								mix={css(getGhostButtonCss())}

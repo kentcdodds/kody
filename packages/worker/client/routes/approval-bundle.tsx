@@ -156,22 +156,8 @@ function changeLabel(change: ApprovalGrantLine['change']) {
 	}
 }
 
-function itemDetailLabel(type: ApprovalItemView['type']) {
-	switch (type) {
-		case 'publish':
-			return { label: 'Paused commit', copyLabel: 'paused commit' }
-		case 'capabilities':
-			return {
-				label: 'Capability fingerprint',
-				copyLabel: 'capability fingerprint',
-			}
-		case 'credential-picks':
-			return { label: 'Proposal id', copyLabel: 'proposal id' }
-		default: {
-			const exhaustive: never = type
-			throw new Error(`Unknown approval item type: ${String(exhaustive)}`)
-		}
-	}
+function itemDetailCopyLabel(label: string) {
+	return label.toLowerCase()
 }
 
 function renderGrant(grant: ApprovalGrantLine, index: number) {
@@ -417,7 +403,7 @@ export function ApprovalBundleRoute(handle: Handle) {
 				{item.grants.length > 0 ? (
 					<ul mix={css(listCss)}>{item.grants.map(renderGrant)}</ul>
 				) : null}
-				{item.fingerprint ? (
+				{item.fingerprint && item.detailLabel ? (
 					<details
 						data-testid="approval-bundle-item-details"
 						mix={css(accountDisclosureCss)}
@@ -427,11 +413,11 @@ export function ApprovalBundleRoute(handle: Handle) {
 							items={[
 								{
 									key: 'id',
-									label: itemDetailLabel(item.type).label,
+									label: item.detailLabel,
 									value: (
 										<IdValue
 											value={item.fingerprint}
-											label={itemDetailLabel(item.type).copyLabel}
+											label={itemDetailCopyLabel(item.detailLabel)}
 										/>
 									),
 								},

@@ -538,6 +538,7 @@ test('pending items that cannot be approved yet still count as waiting', () => {
 		canApprove,
 		canDeny: true,
 		fingerprint: key,
+		detailLabel: 'Approval fingerprint',
 		grants: [],
 		reviewHref: null,
 		decision: null,

@@ -248,7 +248,7 @@ test('a credential-needs-only approval states the change and never claims public
 					pendingCommit,
 					createdAt: '2026-10-14T00:00:00.000Z',
 					changes: [
-						'This version adds a credential need: NEXTDNS_API_KEY from nextdns',
+						'This version adds a credential need: NEXTDNS_API_KEY Key from nextdns',
 					],
 					approveAction: 'approve-credential-needs',
 				},
@@ -258,7 +258,7 @@ test('a credential-needs-only approval states the change and never claims public
 
 	expect(html).toContain('Approve credential needs')
 	expect(html).toContain(
-		'This version adds a credential need: NEXTDNS_API_KEY from nextdns',
+		'This version adds a credential need: NEXTDNS_API_KEY Key from nextdns',
 	)
 	expect(html).toContain(
 		'The previously published version keeps running until you approve.',
@@ -266,6 +266,8 @@ test('a credential-needs-only approval states the change and never claims public
 	expect(html).toContain('Credential values never appear here.')
 	expect(html).toContain('This publish asks to use these credentials.')
 	expect(html).toContain('Approve and publish')
+	expect(html).not.toContain('Approve capability set')
+	expect(html).not.toContain('data-testid="package-approve-capabilities"')
 
 	expect(html).not.toContain('Approve internet-visible capabilities')
 	expect(html).not.toContain('public internet')
@@ -310,6 +312,40 @@ test('a went_public pending approval still mentions internet visibility', async 
 	)
 	expect(html).toContain('Approve and make internet-visible')
 	expect(html).toContain('Once it is internet-visible')
+	expect(html).toContain('Approve capability set')
+})
+
+test('credential-needs-only copy wins over an already internet-visible package', async () => {
+	const html = await render(
+		loaderData({
+			package: {
+				...loaderData().package,
+				isInternetVisible: true,
+			},
+			pendingApprovals: [
+				{
+					id: 'req-cred-1',
+					reason: 'credential_needs_changed',
+					reasonLabel: 'Credential needs changed',
+					pendingCommit: 'dddddddddddddddddddddddddddddddddddddddd',
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: [
+						'This version changes the credential need MAIL: was Key from resend, now OAuth from resend',
+					],
+					approveAction: 'approve-credential-needs',
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('Approve credential needs')
+	expect(html).toContain('This publish asks to use these credentials.')
+	expect(html).not.toContain(
+		'It is internet-visible, so requests from anyone can run code that uses these.',
+	)
+	expect(html).not.toContain('Approve capability set')
+	expect(html).not.toContain('Re-approve capability set')
+	expect(html).not.toContain('public internet')
 })
 
 test('capability approval says so plainly when nothing is reachable', async () => {

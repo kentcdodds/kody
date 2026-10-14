@@ -164,7 +164,9 @@ test('only added or reshaped needs count as a change', () => {
 			change: 'added',
 			after: { kind: 'secret', provider: 'nextdns', multiple: false },
 		}),
-	).toBe('This version adds a credential need: NEXTDNS_API_KEY from nextdns')
+	).toBe(
+		'This version adds a credential need: NEXTDNS_API_KEY Key from nextdns',
+	)
 	expect(
 		describeCredentialNeedChange({
 			key: 'MAIL',
@@ -173,16 +175,56 @@ test('only added or reshaped needs count as a change', () => {
 			after: { kind: 'secret', provider: 'postmark', multiple: false },
 		}),
 	).toBe(
-		'This version changes the credential need MAIL: was from resend, now from postmark',
+		'This version changes the credential need MAIL: was Key from resend, now Key from postmark',
+	)
+	expect(
+		describeCredentialNeedChange({
+			key: 'MAIL',
+			change: 'changed',
+			before: { kind: 'secret', provider: 'resend', multiple: false },
+			after: { kind: 'oauth', provider: 'resend', multiple: false },
+		}),
+	).toBe(
+		'This version changes the credential need MAIL: was Key from resend, now OAuth from resend',
+	)
+	expect(
+		describeCredentialNeedChange({
+			key: 'MAIL',
+			change: 'changed',
+			before: { kind: 'secret', provider: 'resend', multiple: false },
+			after: { kind: 'secret', provider: 'resend', multiple: true },
+		}),
+	).toBe(
+		'This version changes the credential need MAIL: was Key from resend, now Key from resend (several allowed)',
+	)
+	expect(
+		describeCredentialNeedChange({
+			key: 'MAIL',
+			change: 'added',
+			after: { provider: 'resend', multiple: false },
+		}),
+	).toBe(
+		'This version adds a credential need: MAIL any fetch-capable kind from resend',
 	)
 	expect(
 		createCredentialNeedsApprovalMessage({
 			packageName: '@acme/mailer',
-			changes: diffCredentialNeeds([], [need('MAIL', { multiple: true })]),
+			changes: [
+				...diffCredentialNeeds([], [need('MAIL', { multiple: true })]),
+				{
+					key: 'SMS',
+					change: 'added' as const,
+					after: {
+						kind: 'login' as const,
+						provider: 'twilio',
+						multiple: false,
+					},
+				},
+			],
 			approvalUrl: 'https://kody.test/approve',
 		}),
 	).toBe(
-		'Package "@acme/mailer" changed its credential needs. This version adds a credential need: MAIL from resend (several allowed). This publish waits for approval, and the previously published version keeps running until then. The owner approves it at https://kody.test/approve.',
+		'Package "@acme/mailer" changed its credential needs. This version adds a credential need: MAIL Key from resend (several allowed). This version adds a credential need: SMS Login from twilio. This publish waits for approval, and the previously published version keeps running until then. The owner approves it at https://kody.test/approve.',
 	)
 })
 
@@ -238,7 +280,7 @@ test('a needs change queues one pending approval per package; unchanged, removed
 			reason: 'credential_needs_changed',
 			reasonLabel: 'Credential needs changed',
 			pendingCommit: 'commit-newer',
-			changes: ['This version adds a credential need: NEW from resend'],
+			changes: ['This version adds a credential need: NEW Key from resend'],
 			approveAction: 'approve-credential-needs',
 		}),
 	])

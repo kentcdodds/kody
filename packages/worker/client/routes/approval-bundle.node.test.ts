@@ -90,6 +90,7 @@ function credentialNeedsItem(
 		canApprove: true,
 		canDeny: true,
 		fingerprint: pausedCommit,
+		detailLabel: 'Paused commit',
 		grants: [
 			{
 				change: 'added',
@@ -179,6 +180,7 @@ test('a went_public bundle item still mentions public internet visibility', asyn
 		bundleLoaderData(
 			credentialNeedsItem({
 				title: 'Serve on the public internet',
+				detailLabel: 'Published commit',
 				summary:
 					'Serve this package on the public internet. Approving turns on internet-visible serving for this version. Denying leaves it off.',
 				grants: [
@@ -201,4 +203,26 @@ test('a went_public bundle item still mentions public internet visibility', asyn
 	expect(html).toContain('Serve on the public internet')
 	expect(html).toContain('internet-visible serving')
 	expect(html).toContain('Public internet')
+	expect(html).toContain('Published commit')
+	expect(html).not.toContain('Paused commit')
+})
+
+test('credential-picks Details label the approval fingerprint, not a proposal id', async () => {
+	const html = await renderBundle(
+		bundleLoaderData(
+			credentialNeedsItem({
+				key: 'credential-picks:prop-1',
+				type: 'credential-picks',
+				title: 'Choose credentials',
+				summary: 'Approving saves these credential mappings.',
+				fingerprint: 'fp-decision-abc',
+				detailLabel: 'Approval fingerprint',
+				grants: [],
+			}),
+		),
+	)
+
+	expect(html).toContain('Approval fingerprint')
+	expect(html).toContain('fp-decision-abc')
+	expect(html).not.toContain('Proposal id')
 })

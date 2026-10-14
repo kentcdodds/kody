@@ -127,6 +127,11 @@ export type ApprovalItemView = {
 	canDeny: boolean
 	/** Pins what was reviewed; a decision sends it back. */
 	fingerprint: string | null
+	/**
+	 * Human label for the fingerprint in Details (paused commit, published
+	 * commit, capability fingerprint, or approval fingerprint).
+	 */
+	detailLabel: string | null
 	grants: Array<ApprovalGrantLine>
 	/** The item's own approval page. */
 	reviewHref: string | null
