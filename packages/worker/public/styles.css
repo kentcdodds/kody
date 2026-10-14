@@ -3091,6 +3091,8 @@ html.is-settled {
 	--pw-ink: color-mix(in oklab, var(--pw-accent) 55%, var(--pw-text));
 	--pw-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 	container-type: inline-size;
+	overflow: clip;
+	isolation: isolate;
 	padding: 4%;
 	border-radius: 12px;
 	background:
@@ -3111,6 +3113,38 @@ html.is-settled {
 .pw-run {
 	position: absolute;
 	inset: 0;
+}
+
+.pw-stage[data-stack] {
+	font-size: max(calc(100cqw / 30), 14px);
+}
+
+@container (max-width: 520px) {
+	.pw-stage[data-stack] {
+		aspect-ratio: auto;
+		font-size: 15px;
+	}
+
+	.pw-stage[data-stack] .pw-run {
+		position: relative;
+		inset: auto;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.75em;
+	}
+
+	.pw-stage[data-stack] .pw-node {
+		position: relative;
+		left: auto !important;
+		top: auto !important;
+		translate: none;
+		width: auto;
+	}
+
+	.pw-stage[data-stack] .pw-wires {
+		display: none;
+	}
 }
 
 .pw-node {

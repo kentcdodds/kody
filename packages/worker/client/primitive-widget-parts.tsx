@@ -13,6 +13,10 @@ import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
  * across), so a scene is the same picture at any size. Loops are CSS gated by
  * `data-motion` from `primitiveWidgetMotion`; without it the scene is a
  * finished still, which is also the reduced-motion and no-JS view.
+ *
+ * `stack` scenes reflow below 520px: the stage drops its aspect ratio, nodes
+ * flow top to bottom in DOM order, wires hide, and type stops scaling down
+ * (`.pw-stage[data-stack]` in `public/styles.css`).
  */
 
 export type PrimitiveWidgetSize = 'full' | 'mini'
@@ -27,12 +31,14 @@ export function PrimitiveWidgetFrame(
 		height?: number
 		/** Extra classes, e.g. a scene name for scene-scoped styles. */
 		class?: string
+		/** Reflow into a vertical stack on narrow containers. */
+		stack?: boolean
 		children?: RemixNode
 	}>,
 ) {
 	const motion = primitiveWidgetMotion()
 	return () => {
-		const { id, size, height, class: extra, children } = handle.props
+		const { id, size, height, class: extra, stack, children } = handle.props
 		return (
 			<div
 				class={extra ? `pw pw-${id} ${extra}` : `pw pw-${id}`}
@@ -44,7 +50,9 @@ export function PrimitiveWidgetFrame(
 				}}
 				mix={motion}
 			>
-				<div class="pw-stage">{children}</div>
+				<div class="pw-stage" data-stack={stack ? '' : undefined}>
+					{children}
+				</div>
 			</div>
 		)
 	}
