@@ -154,24 +154,31 @@ export async function provisionPersonalOrg(
 	])
 }
 
-/** Best-effort cleanup when account creation rolls back after user insert. */
+/**
+ * Best-effort cleanup when account creation rolls back after user insert.
+ * Deletes membership and org by the provisioned org id (defaults to the
+ * person id). Handle cleanup matches either the person id or that org id so
+ * a distinct `orgId` from provision does not leave a reserved handle.
+ */
 export async function deletePersonalOrgForRollback(
 	db: D1Database,
 	stableUserId: string,
+	orgId?: string,
 ) {
+	const resolvedOrgId = orgId?.trim() || stableUserId
 	try {
 		await runProvisionStatements([
 			db
 				.prepare(
 					`DELETE FROM org_memberships WHERE org_id = ?${andLiveDeletedAtSql()}`,
 				)
-				.bind(stableUserId),
+				.bind(resolvedOrgId),
 			db
 				.prepare(`DELETE FROM handles WHERE user_id = ? OR org_id = ?`)
-				.bind(stableUserId, stableUserId),
+				.bind(stableUserId, resolvedOrgId),
 			db
 				.prepare(`DELETE FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
-				.bind(stableUserId),
+				.bind(resolvedOrgId),
 		])
 	} catch (error) {
 		console.error('Failed to roll back personal org rows:', error)

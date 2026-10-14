@@ -14,6 +14,7 @@ export async function provisionPersonalOrgForSignup(
 export async function rollbackPersonalOrgAfterFailedSignup(
 	db: D1Database,
 	stableUserId: string,
+	orgId?: string,
 ) {
-	await deletePersonalOrgForRollback(db, stableUserId)
+	await deletePersonalOrgForRollback(db, stableUserId, orgId)
 }
