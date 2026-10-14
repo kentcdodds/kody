@@ -215,6 +215,10 @@ test('a request naming an org the person cannot use is denied, never the signup 
 	await expect(
 		denied('https://kody.test/connect/oauth?org=ada&provider=github'),
 	).resolves.toBe(true)
+	// Explicit empty org must not fall through to the signup org either.
+	await expect(
+		denied('https://kody.test/connect/oauth?org=&provider=github'),
+	).resolves.toBe(true)
 	await expect(
 		denied(
 			'https://kody.test/account/profile.json',

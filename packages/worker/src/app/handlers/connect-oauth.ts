@@ -11,6 +11,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { joinAppUrl } from '#worker/app-base-url.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { type ConnectOauthLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 
@@ -63,6 +64,7 @@ async function loadConnectOauthLoaderData(
 				? await loadConnectOauthChooser({
 						env,
 						userId: user.mcpUser.userId,
+						orgSlug: readOrgSlugFromUrl(requestUrl),
 					})
 				: { options: [] },
 		}

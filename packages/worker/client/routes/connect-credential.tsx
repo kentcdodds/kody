@@ -169,6 +169,8 @@ export function ConnectCredentialRoute(handle: Handle) {
 	let savedName: string | null = null
 	let savedPackageId: string | null = null
 	let message: string | null = null
+	/** Seed existing package locks once per credential when Replace is checked. */
+	let seededReplaceLocksForId: string | null = null
 
 	function resetFor(href: string) {
 		const query = parseCredentialCreateQuery(
@@ -179,6 +181,7 @@ export function ConnectCredentialRoute(handle: Handle) {
 		savedName = null
 		message = null
 		showValue = false
+		seededReplaceLocksForId = null
 	}
 
 	async function refreshCredentials() {
@@ -342,12 +345,13 @@ export function ConnectCredentialRoute(handle: Handle) {
 							placeholder="OPENAI_API_KEY"
 							mix={[
 								css(inputCss),
-								on('input', (event) =>
+								on('input', (event) => {
+									seededReplaceLocksForId = null
 									update({
 										name: event.currentTarget.value,
 										replaceExisting: false,
-									}),
-								),
+									})
+								}),
 							]}
 						/>
 						<span mix={css(mutedCss)}>
@@ -382,15 +386,18 @@ export function ConnectCredentialRoute(handle: Handle) {
 								data-testid="connect-credential-replace"
 								mix={on('change', (event) => {
 									const replaceExisting = event.currentTarget.checked
+									const seedLocks =
+										replaceExisting && seededReplaceLocksForId !== existing.id
+									if (seedLocks) seededReplaceLocksForId = existing.id
 									update({
 										replaceExisting,
 										provider:
 											replaceExisting && !state.provider.trim()
 												? (existing.provider ?? '')
 												: state.provider,
-										// Replacement checkboxes are authoritative: seed them
-										// from the existing locks (plus any link prefills).
-										allowedPackages: replaceExisting
+										// Seed existing locks once per credential; later
+										// Replace toggles keep the user's edited set.
+										allowedPackages: seedLocks
 											? [
 													...new Set([
 														...(existing.lockedToPackageIds ?? []),

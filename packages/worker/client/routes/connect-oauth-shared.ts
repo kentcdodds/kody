@@ -7,6 +7,7 @@ import {
 	type AccountIntegrationDetailLoaderData,
 	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
+import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -100,8 +101,8 @@ export function buildConnectOauthIntegrationLookupHref(
 
 /**
  * Destination org for `/connect/oauth`. The redirect URI stays org-less; the
- * creation handoff and restored callback put `org` in the query (and mirror it
- * in sessionStorage across the provider round-trip).
+ * creation handoff mirrors `org` in sessionStorage only for the in-flight
+ * provider round-trip. Fresh visits use the URL alone (or the signup org).
  */
 export function persistConnectOauthOrgSlug(orgSlug: string | null) {
 	if (typeof window === 'undefined') return
@@ -126,16 +127,27 @@ function readStoredConnectOauthOrgSlug(): string | null {
 	}
 }
 
+/**
+ * Explicit `?org=` wins. Storage is only consulted on the provider callback
+ * (registered redirect URI has no org), so a later org-less visit cannot
+ * inherit a previous team handoff.
+ */
 export function readConnectOauthOrgSlug(url: URL): string | null {
-	return readOrgSlugFromUrl(url) ?? readStoredConnectOauthOrgSlug()
+	const fromUrl = readOrgSlugFromUrl(url)
+	if (fromUrl) return fromUrl
+	if (isConnectOauthCallbackUrl(url)) {
+		return readStoredConnectOauthOrgSlug()
+	}
+	return null
 }
 
 /** After the provider redirect, put `org` back on the URL before account writes. */
 export function restoreConnectOauthOrgSlugInUrl() {
 	if (typeof window === 'undefined') return
+	const url = new URL(window.location.href)
+	if (!isConnectOauthCallbackUrl(url)) return
 	const org = readStoredConnectOauthOrgSlug()
 	if (!org) return
-	const url = new URL(window.location.href)
 	if (readOrgSlugFromUrl(url) === org) return
 	url.searchParams.set('org', org)
 	window.history.replaceState(null, '', `${url.pathname}${url.search}`)
@@ -271,6 +283,19 @@ export function connectOauthAccountFetchInit(
 	return orgAccountApiFetchInit(`/@${orgSlug}/-/credentials`, signal)
 }
 
+/** Keep the page's org on chooser links from org-less integrations.json. */
+export function withConnectOauthChooserOrg(
+	options: ReadonlyArray<ConnectOauthChooserOption>,
+	orgSlug: string | null,
+): Array<ConnectOauthChooserOption> {
+	if (!orgSlug) return [...options]
+	return options.map((option) => {
+		const url = new URL(option.href, 'https://kody.local')
+		url.searchParams.set('org', orgSlug)
+		return { ...option, href: `${url.pathname}${url.search}` }
+	})
+}
+
 /**
  * SPA-navigation prefetch mirroring the server handler's SSR embed: the
  * stored or built-in record for `?provider=` visits, resolved before the
@@ -283,8 +308,12 @@ export async function connectOauthRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const params = url.searchParams
+	// Fresh visits: URL org is authoritative (clears a leftover team handoff).
+	// Callback visits: keep storage until restoreConsume below.
+	if (!isConnectOauthCallbackUrl(url)) {
+		persistConnectOauthOrgSlug(readOrgSlugFromUrl(url))
+	}
 	const orgSlug = readConnectOauthOrgSlug(url)
-	if (orgSlug) persistConnectOauthOrgSlug(orgSlug)
 	const provider = params.get('provider')?.trim()
 	if (params.get('code') || params.get('error')) {
 		return { connectOauth: emptyConnectOauthLoaderData }
@@ -306,10 +335,12 @@ export async function connectOauthRouteLoader(
 				ok: true,
 				provider: null,
 				integration: null,
-				chooser:
-					response.ok && payload?.ok === true && payload.chooser
-						? payload.chooser
-						: { options: [] },
+				chooser: {
+					options:
+						response.ok && payload?.ok === true && payload.chooser
+							? withConnectOauthChooserOrg(payload.chooser.options, orgSlug)
+							: [],
+				},
 			},
 		}
 	}

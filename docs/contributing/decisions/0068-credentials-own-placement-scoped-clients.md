@@ -289,7 +289,8 @@ credentials.
 8. **Drift:** a need that auto-resolved becomes ambiguous when a second match is
    added, and the error carries a ready-to-retry call. Pinned trigger mappings
    store ids and do not drift; a trigger need without an override follows the
-   current defaults on each run. There is never a default credential.
+   current defaults on each run. There is no global default credential
+   (per-person and org default mappings are the only defaults).
 
 ### Errors
 

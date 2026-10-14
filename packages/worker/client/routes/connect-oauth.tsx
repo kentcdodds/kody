@@ -8,6 +8,7 @@ import {
 	resolveOauthScopeMenu,
 	uniqueOauthScopes,
 } from '#universal/oauth-scopes.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -61,6 +62,7 @@ import {
 	saveConnectOauthApp,
 	saveConnectOauthConnection,
 	validateConnectOauthState,
+	withConnectOauthChooserOrg,
 } from './connect-oauth-shared.ts'
 import {
 	type ConnectOauthConfig,
@@ -430,6 +432,8 @@ export function ConnectOauthRoute(handle: Handle) {
 			refreshTokenSaved = saved.refreshTokenSaved
 			hostApprovalLinks = parseHostApprovalLinks(saved.hostApprovalLinks)
 			nextSteps = parseConnectOauthNextSteps(saved.nextSteps)
+			// Callback finished — drop storage; this page still has ?org= if needed.
+			persistConnectOauthOrgSlug(null)
 			setStatus('OAuth tokens saved.', 'info')
 			setStep('success')
 		} catch (error) {
@@ -458,7 +462,10 @@ export function ConnectOauthRoute(handle: Handle) {
 		routeDataApplied = true
 		ssrRedirectUri = routeData.redirectUri ?? null
 		existingConnection = routeData.existingConnection ?? null
-		chooserOptions = routeData.chooser?.options ?? []
+		chooserOptions = withConnectOauthChooserOrg(
+			routeData.chooser?.options ?? [],
+			readConnectOauthOrgSlug(url),
+		)
 		if (url.searchParams.get('code') || url.searchParams.get('error')) {
 			return
 		}
@@ -511,7 +518,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (!hrefStillCurrent()) return false
 		chooserOptions =
 			response.ok && payload?.ok === true
-				? (payload.chooser?.options ?? [])
+				? withConnectOauthChooserOrg(payload.chooser?.options ?? [], orgSlug)
 				: []
 		return true
 	}
@@ -523,10 +530,15 @@ export function ConnectOauthRoute(handle: Handle) {
 		const hrefStillCurrent = () =>
 			taskHref === normalizeConnectHref(readCurrentRouterHref(handle))
 		try {
-			const visitOrg = readConnectOauthOrgSlug(new URL(window.location.href))
-			if (visitOrg) persistConnectOauthOrgSlug(visitOrg)
-			restoreConnectOauthOrgSlugInUrl()
-			const callback = readConnectOauthCallback()
+			const visitUrl = new URL(window.location.href)
+			const callbackPeek = readConnectOauthCallback()
+			if (callbackPeek.kind === 'success' || callbackPeek.kind === 'error') {
+				restoreConnectOauthOrgSlugInUrl()
+			} else {
+				// Fresh visit: URL org only — drop a leftover team handoff.
+				persistConnectOauthOrgSlug(readOrgSlugFromUrl(visitUrl))
+			}
+			const callback = callbackPeek
 			if (callback.kind === 'success' || callback.kind === 'error') {
 				const storedConfig = readStoredConnectOauthConfig()
 				let nextConfig = storedConfig
