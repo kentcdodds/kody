@@ -118,6 +118,7 @@ const wranglerConfigPaths = [
 	'packages/platform-worker/wrangler.jsonc',
 	'packages/jobs-worker/wrangler.jsonc',
 	'packages/highlight-worker/wrangler.jsonc',
+	'packages/push-queue-worker/wrangler.jsonc',
 	'packages/status/wrangler.jsonc',
 ]
 
@@ -297,6 +298,7 @@ test('assertPreviewResourceName accepts every derived preview name kind, includi
 			[`${workerName}-platform`, 'worker'],
 			[`${workerName}-jobs`, 'worker'],
 			[`${workerName}-highlight`, 'worker'],
+			[`${workerName}-push-queue`, 'worker'],
 			[`${workerName}-api`, 'worker'],
 			[`${workerName}-mock-cloudflare`, 'worker'],
 			[derived.d1DatabaseName, 'd1'],
@@ -441,6 +443,7 @@ test('dry-run cleanup of a PR preview walks every resource without Cloudflare cr
 			'[dry-run] delete Worker script: kody-pr-42',
 			'[dry-run] delete Worker script: kody-pr-42-jobs',
 			'[dry-run] delete Worker script: kody-pr-42-highlight',
+			'[dry-run] delete Worker script: kody-pr-42-push-queue',
 			'[dry-run] delete Worker script: kody-pr-42-mock-cloudflare',
 			'[dry-run] delete Queue: kody-pr-42-webhook-dispatch',
 			'[dry-run] delete Queue: kody-pr-42-webhook-dispatch-dlq',
