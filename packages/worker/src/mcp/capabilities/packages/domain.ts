@@ -1,5 +1,7 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { approvalBundleCreateCapability } from './approval-bundle-create.ts'
+import { approvalPendingListCapability } from './approval-pending-list.ts'
 import { deletePackageCapability } from './delete-package.ts'
 import { enablementDisableCapability } from './enablement-disable.ts'
 import { enablementEnableCapability } from './enablement-enable.ts'
@@ -35,6 +37,8 @@ export const packagesDomain = defineDomain({
 		'synthetic',
 		'enablement',
 		'enable',
+		'approval',
+		'approve',
 	],
 	capabilities: [
 		savePackageCapability,
@@ -50,5 +54,7 @@ export const packagesDomain = defineDomain({
 		enablementListCapability,
 		enablementEnableCapability,
 		enablementDisableCapability,
+		approvalPendingListCapability,
+		approvalBundleCreateCapability,
 	],
 })

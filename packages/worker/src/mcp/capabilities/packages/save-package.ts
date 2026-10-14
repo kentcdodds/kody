@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import {
+	bundlePausedPublishes,
+	pausedPublishBundleMessage,
+} from '#worker/approval-bundles/paused-publishes.ts'
+import { optionalApprovalViewerForCaller } from './approval-bundle-shared.ts'
+import {
 	createCredentialNeedsApprovalMessage,
 	PackageCredentialNeedsApprovalError,
 } from '#worker/credentials/credential-needs-approval.ts'
@@ -411,16 +416,23 @@ export const savePackageCapability = defineDomainCapability(
 				})
 			} catch (error) {
 				if (error instanceof PackageCredentialNeedsApprovalError) {
-					throw new McpCallerError(
-						createCredentialNeedsApprovalMessage({
-							packageName: error.approval.packageName,
-							changes: error.approval.changes,
-							approvalUrl: buildPackageCapabilityApprovalUrl({
-								baseUrl: ctx.callerContext.baseUrl,
-								username: owner.ownerScope,
-								kodyId: error.approval.kodyId,
-							}),
+					const message = createCredentialNeedsApprovalMessage({
+						packageName: error.approval.packageName,
+						changes: error.approval.changes,
+						approvalUrl: buildPackageCapabilityApprovalUrl({
+							baseUrl: ctx.callerContext.baseUrl,
+							username: owner.ownerScope,
+							kodyId: error.approval.kodyId,
 						}),
+					})
+					const bundle = await bundlePausedPublishes({
+						viewer: optionalApprovalViewerForCaller(ctx),
+						ownerUserId: owner.ownerUserId,
+					})
+					throw new McpCallerError(
+						bundle
+							? `${message} ${pausedPublishBundleMessage(bundle)}`
+							: message,
 						{ cause: error },
 					)
 				}

@@ -141,6 +141,10 @@ import {
 	createOrgUsageHandler,
 } from '#app/handlers/org-usage.ts'
 import {
+	createOrgApprovalBundleApiHandler,
+	createOrgApprovalBundleHandler,
+} from '#app/handlers/approval-bundle.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
@@ -661,6 +665,9 @@ export function createAppRouter(env: Env) {
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
 			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgApprovalBundle: createOrgApprovalBundleHandler(env),
+			orgApprovalBundleApi: createOrgApprovalBundleApiHandler(env),
+			orgApprovalBundleApiPost: createOrgApprovalBundleApiHandler(env),
 			orgAgents: createOrgSectionHandler(env, 'agents'),
 			orgBilling: createOrgBillingHandler(env),
 			orgBillingApi: createOrgBillingApiHandler(env),

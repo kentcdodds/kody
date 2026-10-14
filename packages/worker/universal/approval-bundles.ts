@@ -158,7 +158,7 @@ export type ApprovalBundleView = {
 
 export type ApprovalBundleLoaderData =
 	| { ok: true; view: ApprovalBundleView }
-	| { ok: false; notFound: true }
+	| { ok: false; reason: 'not-found' | 'expired' }
 
 export type ApprovalBundleDecisionRequest = {
 	action: 'approve' | 'deny'
@@ -228,6 +228,19 @@ export function approvalItemStatusLabel(status: ApprovalItemStatus) {
 export function approveAllLabel(count: number) {
 	if (count === 0) return 'Nothing left to approve'
 	return count === 1 ? 'Approve 1 change' : `Approve all ${count} changes`
+}
+
+export function approvalBundleCreatedVia(kind: string | null) {
+	switch (kind) {
+		case 'mcp-oauth':
+			return 'an MCP client'
+		case 'cli':
+			return 'the Kody CLI'
+		case 'api-token':
+			return 'an API token'
+		default:
+			return null
+	}
 }
 
 /** One line per item, for agents that read text. */

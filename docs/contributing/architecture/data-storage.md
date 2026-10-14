@@ -1557,6 +1557,17 @@ on write unless a migration backfills existing rows.
   same agent set only those. Unapproved rows older than 30 days are dropped when
   that agent proposes again. A person's rows in an org are hard-deleted when
   they leave it, and with their account.
+- `approval_bundles` and `approval_bundle_decisions`
+  (`0140-approval-bundles.sql`, `packages/worker/src/approval-bundles/repo.ts`)
+  store agent-prefilled approval pages (`approvalBundleCreate`). A bundle row
+  names the person it is for (`person_user_id`), the agent credential that made
+  it (`agent_credential_kind`, `agent_credential_id`), an untrusted note, and
+  `items_json`, an ordered array of item keys (`publish:<requestId>`,
+  `capabilities:<packageId>`, `credential-picks:<proposalId>`). Item state is
+  read live from the item's own tables; a bundle holds no approval state. Each
+  approve or deny writes one decision row (`decided_by_user_id`), first decision
+  wins. Bundles open for 30 days. A person's bundles in an org are hard-deleted
+  when they leave it, and with their account.
 
 ### Durable Object id contracts
 

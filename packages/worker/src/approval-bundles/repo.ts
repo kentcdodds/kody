@@ -50,19 +50,20 @@ function mapBundleRow(row: Record<string, unknown>): ApprovalBundleRecord {
 	}
 }
 
-export async function insertApprovalBundle(
+/** The new bundle and the statement that stores it, for an audited batch. */
+export function planApprovalBundleInsert(
 	db: D1Database,
 	input: Omit<ApprovalBundleRecord, 'id' | 'createdAt'> & {
 		id?: string
 		createdAt?: string
 	},
-): Promise<ApprovalBundleRecord> {
+): { record: ApprovalBundleRecord; statement: D1PreparedStatement } {
 	const record: ApprovalBundleRecord = {
 		...input,
 		id: input.id ?? crypto.randomUUID(),
 		createdAt: input.createdAt ?? new Date().toISOString(),
 	}
-	await db
+	const statement = db
 		.prepare(
 			`INSERT INTO approval_bundles (
 				id, org_id, person_user_id, agent_credential_kind,
@@ -79,8 +80,7 @@ export async function insertApprovalBundle(
 			JSON.stringify(record.items.map(approvalItemKey)),
 			record.createdAt,
 		)
-		.run()
-	return record
+	return { record, statement }
 }
 
 /** The bundle when it belongs to this person in this org; null otherwise. */
@@ -157,6 +157,14 @@ export async function deleteApprovalBundlesForMember(input: {
 	orgId: string
 	personId: string
 }) {
+	await input.db
+		.prepare(
+			`DELETE FROM approval_bundle_decisions WHERE bundle_id IN (
+				SELECT id FROM approval_bundles WHERE org_id = ? AND person_user_id = ?
+			)`,
+		)
+		.bind(input.orgId, input.personId)
+		.run()
 	const result = await input.db
 		.prepare(
 			`DELETE FROM approval_bundles WHERE org_id = ? AND person_user_id = ?`,

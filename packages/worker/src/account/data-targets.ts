@@ -495,6 +495,16 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'credential_mapping_proposals',
 		columns: ['person_user_id'],
 	},
+	{
+		kind: 'user_columns',
+		table: 'approval_bundle_decisions',
+		columns: ['decided_by_user_id'],
+	},
+	{
+		kind: 'user_columns',
+		table: 'approval_bundles',
+		columns: ['person_user_id'],
+	},
 	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
 	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{

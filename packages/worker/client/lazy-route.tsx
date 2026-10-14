@@ -271,6 +271,7 @@ registerPreloadPatterns(
 		routePattern(routes.accountOrganizations),
 		routePattern(routes.orgActivity),
 		routePattern(routes.orgAgents),
+		routePattern(routes.orgApprovalBundle),
 		routePattern(routes.orgCredentials),
 		routePattern(routes.orgCredentialNew),
 		routePattern(routes.orgEmail),
