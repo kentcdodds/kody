@@ -143,3 +143,62 @@ test('a second refresh with the same parent token reuses the completed response 
 	await coalesce('https://auth.example/token', { method: 'POST', body })
 	expect(posts).toBe(2)
 })
+
+test('failed refresh responses are not cached for the grace window', async () => {
+	const scope = {}
+	let posts = 0
+	const baseFetch: typeof fetch = async () => {
+		posts += 1
+		return new Response(JSON.stringify({ error: 'server_error' }), {
+			status: 503,
+			headers: { 'Content-Type': 'application/json' },
+		})
+	}
+	const coalesce = wrapFetchForMcpOAuthRefreshCoalesce(scope, baseFetch)
+	const body = 'grant_type=refresh_token&refresh_token=rt-1'
+	const first = await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body,
+	})
+	expect(first.status).toBe(503)
+	expect(posts).toBe(1)
+	const second = await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body,
+	})
+	expect(second.status).toBe(503)
+	expect(posts).toBe(2)
+})
+
+test('successful parent-token cache survives saveTokens-shaped release skip', async () => {
+	const scope = {}
+	let posts = 0
+	const baseFetch: typeof fetch = async () => {
+		posts += 1
+		return new Response(
+			JSON.stringify({
+				access_token: 'at-1',
+				refresh_token: 'rt-2',
+				token_type: 'Bearer',
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		)
+	}
+	const coalesce = wrapFetchForMcpOAuthRefreshCoalesce(scope, baseFetch)
+	const body = 'grant_type=refresh_token&refresh_token=rt-parent'
+	await coalesce('https://auth.example/token', { method: 'POST', body })
+	// Simulate saveTokens completing without release: a concurrent auth() that
+	// still holds rt-parent must reuse the completed exchange.
+	const late = await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body,
+	})
+	expect(posts).toBe(1)
+	expect(await late.json()).toMatchObject({ refresh_token: 'rt-2' })
+	// Rotated token is a different key and may refresh independently.
+	await coalesce('https://auth.example/token', {
+		method: 'POST',
+		body: 'grant_type=refresh_token&refresh_token=rt-2',
+	})
+	expect(posts).toBe(2)
+})

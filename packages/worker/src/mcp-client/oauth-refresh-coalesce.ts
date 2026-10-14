@@ -9,9 +9,11 @@
  * One HTTP exchange per refresh_token value; concurrent callers share the
  * buffered response (including the rotated refresh token) so both
  * `saveTokens` writes are idempotent. A successful exchange stays shared
- * until {@link releaseMcpOAuthRefreshCoalesce} runs after `saveTokens` (or a
- * grace timeout), so a second 401 before persistence still reuses the first
- * response instead of spending the parent token again.
+ * for {@link mcpOAuthRefreshCoalesceGraceMs} (and through `saveTokens`) so a
+ * late 401 that still holds the parent refresh token reuses the first
+ * response instead of spending it again. {@link releaseMcpOAuthRefreshCoalesce}
+ * clears state on invalidate; do not release on a successful save — the
+ * parent-token cache must outlive persistence for concurrent auth() races.
  */
 
 type BufferedRefreshResponse = {
@@ -135,10 +137,15 @@ export function wrapFetchForMcpOAuthRefreshCoalesce(
 		maps.inFlight.set(refreshToken, flight)
 		try {
 			const buffered = await flight
-			maps.completed.set(refreshToken, {
-				buffered,
-				expiresAt: Date.now() + mcpOAuthRefreshCoalesceGraceMs,
-			})
+			// Cache only successful exchanges. 4xx/5xx must not replay for the
+			// grace window — saveTokens never runs to release them, and a
+			// later 401 needs a fresh token-endpoint attempt.
+			if (buffered.status >= 200 && buffered.status < 300) {
+				maps.completed.set(refreshToken, {
+					buffered,
+					expiresAt: Date.now() + mcpOAuthRefreshCoalesceGraceMs,
+				})
+			}
 			return responseFromBuffered(buffered)
 		} finally {
 			if (maps.inFlight.get(refreshToken) === flight) {

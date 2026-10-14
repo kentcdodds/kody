@@ -1012,12 +1012,18 @@ class McpClientHubBase extends DurableObject<Env> {
 			if (refreshed.state === 'authenticating' && refreshed.authUrl) {
 				return refreshed
 			}
-			// Authenticated but discovery incomplete (or a transient connect
-			// failure that left the grant intact): keep tokens. Reminting would
-			// force the user through consent for a tools/list timeout.
+			// Authenticated but discovery incomplete: keep tokens. Reminting
+			// would force consent for a tools/list timeout.
+			if (refreshed.state === 'connected') {
+				return refreshed
+			}
+			// authenticating without authUrl (or failed) while tokens remain:
+			// fall through to remint so the user can re-approve. Do not treat
+			// leftover tokens alone as a reason to return a stuck snapshot.
 			const presenceAfter = await this.readTokenPresence(input.serverId)
 			if (
-				refreshed.state === 'connected' ||
+				refreshed.state !== 'authenticating' &&
+				refreshed.state !== 'failed' &&
 				shouldAttemptMcpOAuthRefresh(presenceAfter)
 			) {
 				return refreshed

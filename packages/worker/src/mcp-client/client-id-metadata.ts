@@ -396,8 +396,11 @@ function installMcpOAuthTokenPreservation(
 				resolveLiveServerIdentity: resolveLive,
 			})
 			tokenWriteGeneration += 1
-			// Persistence finished: allow the next refresh to use the rotated token.
-			releaseMcpOAuthRefreshCoalesce(provider)
+			// Do not release coalesce here. The parent refresh token must stay
+			// shareable until grace expires so a concurrent auth() that already
+			// read it still joins the completed exchange. The rotated token is a
+			// different coalesce key, so the next refresh is unblocked. Invalidate
+			// clears the maps when the grant is dropped.
 			return result
 		})
 		saveQueue = run.then(
