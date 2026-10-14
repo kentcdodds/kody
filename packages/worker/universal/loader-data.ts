@@ -2625,12 +2625,12 @@ type AccountEmailInbox = {
 	updated_at: string
 }
 
-export type AccountEmailSenderClassification =
+type AccountEmailSenderClassification =
 	| 'member'
 	| 'authenticated'
 	| 'unverified'
 
-export type AccountEmailEnableSender = {
+type AccountEmailEnableSender = {
 	sender: { kind: 'member' | 'address'; value: string }
 	topic: 'email.message.received' | 'email.message.quarantined'
 	org_slug: string

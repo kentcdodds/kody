@@ -6,7 +6,6 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { recordCellClamp } from '#client/routes/record-table.tsx'
 import {
 	colors,
 	radius,
@@ -95,8 +94,6 @@ export const subjectCellCss = {
 	maxWidth: 'min(34ch, 100%)',
 	minWidth: 0,
 } as const
-
-export const clampedCellCss = recordCellClamp(26)
 
 export function readSearchQuery(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''

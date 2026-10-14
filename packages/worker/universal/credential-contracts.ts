@@ -65,7 +65,7 @@ export const credentialProposalSenderKinds = [
 	'domain',
 	'any_authenticated',
 ] as const
-export type CredentialProposalSenderKind =
+type CredentialProposalSenderKind =
 	(typeof credentialProposalSenderKinds)[number]
 
 export type CredentialProposalSender = {
@@ -74,7 +74,7 @@ export type CredentialProposalSender = {
 }
 
 /** Subscription topics that run only through a per-sender approval. */
-export const inboundEmailApprovalTopics = [
+const inboundEmailApprovalTopics = [
 	'email.message.received',
 	'email.message.quarantined',
 ] as const

@@ -1,4 +1,4 @@
--- ADR 0073: one inbox address per org, packages only through per-sender
+-- ADR 0074: one inbox address per org, packages only through per-sender
 -- enablement rows. NULL sender_kind matches no inbound sender, so unmatched
 -- mail stays in the admin inbox. There is no blanket switch.
 --

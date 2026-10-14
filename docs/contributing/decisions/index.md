@@ -192,7 +192,8 @@ Open these before proposing a new primitive, surface, or storage home.
   writable pool per person (personal org); tools always use personal regardless
   of connection org; shared org knowledge is packages + org instructions;
   team-org rows are write-frozen legacy until cleanup
-- [0073 — One email address per org; admins see all mail, packages only through per-sender enablements](./0073-org-email-address-and-per-sender-enablement.md)
+
+- [0074 — One email address per org; admins see all mail, packages only through per-sender enablements](./0074-org-email-address-and-per-sender-enablement.md)
   — `{slug}@inbox.kody.codes`; Mailbox keyed by org id; per-sender enablement
   rows; inbox-owner fallback retired; migrated personal catch-alls tagged
   `any_authenticated`

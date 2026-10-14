@@ -1,4 +1,4 @@
-# 0073: One email address per org; admins see all mail, packages only through per-sender enablements
+# 0074: One email address per org; admins see all mail, packages only through per-sender enablements
 
 - **Status:** accepted
 - **Date:** 2026-10-13
