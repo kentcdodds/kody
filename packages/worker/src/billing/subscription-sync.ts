@@ -839,13 +839,24 @@ export async function refreshStripePlanForOrg(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const orgId = input.orgId.trim()
 	const personalUser = await input.env.APP_DB.prepare(
-		`SELECT id FROM users
-		 WHERE (stable_user_id = ? OR personal_org_id = ?)
-		   ${andLiveDeletedAtSql()}`,
+		`SELECT u.id AS id, o.stripe_customer_id AS stripe_customer_id
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
+		 WHERE (u.stable_user_id = ? OR u.personal_org_id = ?)
+		   ${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(orgId, orgId)
-		.first<{ id: number }>()
+		.first<{ id: number; stripe_customer_id: string | null }>()
 	if (personalUser?.id != null) {
+		// Match the team-org guard: do not forgive/refresh against a foreign
+		// or unlinked Stripe customer while the org UPDATE would no-op.
+		if (personalUser.stripe_customer_id !== input.customerId) {
+			throw new Error(
+				personalUser.stripe_customer_id == null
+					? `Cannot refresh Stripe plan: org ${orgId} has no Stripe customer linked yet.`
+					: `Cannot refresh Stripe plan: Stripe customer mismatch for org ${orgId}.`,
+			)
+		}
 		return refreshStripePlanForUser({
 			env: input.env,
 			userId: personalUser.id,
