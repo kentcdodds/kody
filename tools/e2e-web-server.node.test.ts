@@ -111,6 +111,15 @@ test('e2e webServer names an unhealthy leftover origin before starting Vite', as
 			protectedPids: new Set(),
 		}),
 	).toMatch(/\/health is failing/)
+	expect(
+		await findUnhealthyOriginDevServerMessage({
+			ports: [3742],
+			probeHealth: async () => false,
+			listListenerPids: () => [9],
+			readProcess: () => identity,
+			protectedPids: new Set(),
+		}),
+	).toMatch(/healthy origin can stay up/)
 
 	expect(
 		await findUnhealthyOriginDevServerMessage({

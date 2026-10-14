@@ -13,8 +13,14 @@ import {
 	isSkillsLockHookPath,
 	planGitHookChecks,
 	runGitHookChecks,
+	shouldSkipTestPushForProvenance,
+	withStagedTreeForTypecheck,
 	type GitRunner,
 } from './git-hook-checks.ts'
+import {
+	createFileProvenanceStore,
+	recordProvenanceCheck,
+} from './git-hook-provenance.ts'
 
 const zeroSha = '0'.repeat(40)
 const remoteSha = 'a'.repeat(40)
@@ -406,6 +412,134 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
+})
+
+test('pre-push skips test:push when the pushed tree is already green', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-skip-'))
+	try {
+		const treeSha = 'e'.repeat(40)
+		const store = createFileProvenanceStore(join(root, 'provenance.json'))
+		recordProvenanceCheck(store, {
+			check: 'test:push',
+			treeSha,
+			source: 'validate',
+			at: '2026-10-14T00:00:00.000Z',
+		})
+		const git: GitRunner = (args) => {
+			if (args[0] === 'diff') {
+				return gitResult(0, 'packages/worker/src/app.ts\0')
+			}
+			if (args[0] === 'rev-parse' && args.at(-1) === `${localSha}^{tree}`) {
+				return gitResult(0, `${treeSha}\n`)
+			}
+			return gitResult(1)
+		}
+		expect(
+			shouldSkipTestPushForProvenance({
+				git,
+				stdin: `refs/heads/feature ${localSha} refs/heads/feature ${remoteSha}\n`,
+				store,
+			}),
+		).toMatchObject({ skip: true, treeSha })
+
+		const logs: Array<string> = []
+		const scripts: Array<string> = []
+		const code = await runGitHookChecks({
+			hook: 'pre-push',
+			stdin: `refs/heads/feature ${localSha} refs/heads/feature ${remoteSha}\n`,
+			git,
+			provenance: store,
+			runScript: (script) => {
+				scripts.push(script)
+				return 0
+			},
+			log: (message) => logs.push(message),
+			progressIntervalMs: 60_000,
+		})
+		expect(code).toBe(0)
+		expect(scripts).toEqual([])
+		expect(logs.some((line) => line.includes('already green'))).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('pre-push records provenance after a successful test:push and logs progress', async () => {
+	const treeSha = 'f'.repeat(40)
+	const root = await mkdtemp(join(tmpdir(), 'hook-progress-'))
+	try {
+		const store = createFileProvenanceStore(join(root, 'provenance.json'))
+		const git: GitRunner = (args) => {
+			if (args[0] === 'diff') {
+				return gitResult(0, 'packages/worker/src/app.ts\0')
+			}
+			if (args[0] === 'rev-parse' && args.at(-1) === `${localSha}^{tree}`) {
+				return gitResult(0, `${treeSha}\n`)
+			}
+			return gitResult(1)
+		}
+		const logs: Array<string> = []
+		let clock = 0
+		const code = await runGitHookChecks({
+			hook: 'pre-push',
+			stdin: `refs/heads/feature ${localSha} refs/heads/feature ${remoteSha}\n`,
+			git,
+			provenance: store,
+			now: () => {
+				clock += 1
+				return clock * 1_000
+			},
+			progressIntervalMs: 60_000,
+			runScript: async () => 0,
+			log: (message) => logs.push(message),
+		})
+		expect(code).toBe(0)
+		expect(
+			logs.some((line) => line.includes('starting npm run test:push')),
+		).toBe(true)
+		expect(
+			logs.some((line) => line.includes('finished npm run test:push')),
+		).toBe(true)
+		expect(
+			shouldSkipTestPushForProvenance({
+				git,
+				stdin: `refs/heads/feature ${localSha} refs/heads/feature ${remoteSha}\n`,
+				store,
+			}).skip,
+		).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('withStagedTreeForTypecheck stashes unstaged work then restores it', async () => {
+	const calls: Array<string> = []
+	const git: GitRunner = (args) => {
+		calls.push(args.join(' '))
+		if (args[0] === 'status') {
+			return gitResult(0, 'MM packages/worker/src/app.ts\n')
+		}
+		if (args[0] === 'stash' && args[1] === 'push') {
+			return gitResult(0, 'Saved working directory and index state\n')
+		}
+		if (args[0] === 'stash' && args[1] === 'pop') {
+			return gitResult(0, '')
+		}
+		return gitResult(1)
+	}
+	const logs: Array<string> = []
+	const value = await withStagedTreeForTypecheck({
+		git,
+		log: (message) => logs.push(message),
+		run: () => 7,
+	})
+	expect(value).toBe(7)
+	expect(calls).toEqual([
+		'status --porcelain -uall',
+		'stash push --keep-index --include-untracked -m kody-pre-commit-typecheck',
+		'stash pop --quiet',
+	])
+	expect(logs[0]).toContain('typechecking staged tree')
 })
 
 test('hook scripts can create foreign repositories without inherited worktree state', async () => {

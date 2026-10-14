@@ -131,6 +131,18 @@ export default defineConfig(async ({ command }) => {
 				configPath: serveWranglerConfigPath,
 				viteEnvironment: { name: 'ssr' },
 				persistState: { path: persistPath },
+				// E2E webServer sets KODY_E2E_WEB_SERVER=1 and uses its own
+				// persist dir + port. Disabling the inspector avoids fighting
+				// a healthy `dev:ensure` origin for the default inspector port
+				// (Parent environment not initialized / #3731).
+				inspectorPort: (() => {
+					if (process.env.KODY_E2E_WEB_SERVER === '1') return false
+					if (process.env.KODY_VITE_INSPECTOR_PORT === 'false') return false
+					const raw = process.env.KODY_VITE_INSPECTOR_PORT?.trim()
+					if (!raw) return undefined
+					const port = Number.parseInt(raw, 10)
+					return Number.isFinite(port) ? port : undefined
+				})(),
 				remoteBindings: false,
 				auxiliaryWorkers,
 			}),

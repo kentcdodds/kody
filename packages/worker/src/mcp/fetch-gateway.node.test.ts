@@ -71,6 +71,9 @@ const env = {
 	...userMeter.env,
 	COOKIE_SECRET: 'test-cookie-secret',
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	// Opt out of credential-resolution audit writes (no AUDIT_DB in this
+	// gateway fixture); see auditDatabaseFromEnv (#3456).
+	SENTRY_ENVIRONMENT: 'test',
 } as unknown as Env
 
 const props = {

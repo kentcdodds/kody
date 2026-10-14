@@ -24,6 +24,7 @@ import {
 } from './module-graph.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
+import { ensureSecretBucketsTestSchema } from '#worker/secrets-test-schema.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
@@ -86,33 +87,9 @@ async function ensureSecretAuthorityTestSchema() {
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`)
-	await runSql(`CREATE TABLE IF NOT EXISTS secret_buckets (
-		id TEXT PRIMARY KEY NOT NULL,
-		user_id TEXT NOT NULL,
-		scope TEXT NOT NULL CHECK (scope IN ('session', 'package', 'user')),
-		binding_key TEXT NOT NULL,
-		expires_at TEXT,
-		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-		UNIQUE(user_id, scope, binding_key)
-	)`)
-	await runSql(`CREATE TABLE IF NOT EXISTS secret_entries (
-		id TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
-		bucket_id TEXT NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		encrypted_value TEXT NOT NULL,
-		kind TEXT NOT NULL DEFAULT 'secret',
-		inject_json TEXT NOT NULL DEFAULT '{"kind":"header","name":"Authorization","format":"Bearer {value}"}',
-		config_json TEXT,
-		allowed_hosts TEXT NOT NULL DEFAULT '[]',
-		allowed_packages TEXT NOT NULL DEFAULT '[]',
-		lookup_hash TEXT,
-		expires_at TEXT,
-		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-		PRIMARY KEY (bucket_id, name)
-	)`)
+	// Shared helper mirrors migrations (including secret_entries.kind); do not
+	// hand-copy the table DDL here (#3523).
+	await ensureSecretBucketsTestSchema(env.APP_DB)
 	await runSql(`CREATE TABLE IF NOT EXISTS community_forks (
 		id TEXT PRIMARY KEY NOT NULL,
 		listing_id TEXT NOT NULL,

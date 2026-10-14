@@ -7,6 +7,8 @@ import {
 	storageRunnerRpc,
 	storageRunnerTransferStub,
 } from '#worker/storage-runner.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import {
 	clearOwnerStorage,
 	copyOwnerStorage,
@@ -14,6 +16,8 @@ import {
 } from './storage-copy.ts'
 
 async function seedSource() {
+	silenceIncidentalRuntimeWarnings()
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const fromUserId = ownerIdFromStored(`org-from-${crypto.randomUUID()}`)

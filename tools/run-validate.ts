@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { availableParallelism, totalmem } from 'node:os'
 import concurrently from 'concurrently'
+import { recordValidateTreeProvenance } from './git-hook-provenance.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 import {
 	formatValidatePlan,
@@ -114,7 +115,22 @@ export async function runValidate(
 	}
 	const runSerial = options.runSerial ?? runShellCommand
 	const status = await runSerial(serialValidateCommand)
-	return status === 0 ? 0 : status
+	if (status !== 0) return status
+	// Same tree already proven green: pre-push can skip test:push (#3653).
+	const treeSha = recordValidateTreeProvenance((args) => {
+		const result = spawnSync('git', args, { encoding: 'utf8' })
+		return {
+			status: result.status ?? 1,
+			stdout: result.stdout ?? '',
+			stderr: result.stderr ?? '',
+		}
+	})
+	if (treeSha) {
+		log(
+			`validate: recorded test:push provenance for tree ${treeSha.slice(0, 12)}`,
+		)
+	}
+	return 0
 }
 
 if (isExecutedDirectly(import.meta.url)) {

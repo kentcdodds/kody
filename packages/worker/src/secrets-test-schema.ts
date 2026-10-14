@@ -1,8 +1,10 @@
 /**
  * Workers-unit D1 does not apply migrations. Suites that call packageGet
- * (which lists package-scoped secret metadata) need these tables. Production
- * assigns credential ids with an insert trigger (migration 0110); a column
- * default gives inserts and upserts the same ids here.
+ * (which lists package-scoped secret metadata) need these tables. Keep this
+ * helper aligned with `packages/worker/migrations` (including
+ * `secret_entries.kind` from 0117) so tests do not hand-copy DDL (#3523).
+ * Production assigns credential ids with an insert trigger (migration 0110); a
+ * column default gives inserts and upserts the same ids here.
  */
 export async function ensureSecretBucketsTestSchema(db: D1Database) {
 	await db

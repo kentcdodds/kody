@@ -149,6 +149,8 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		...userMeter.env,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		// Opt out of credential-resolution audit writes (#3456).
+		SENTRY_ENVIRONMENT: 'test',
 	} as unknown as Env
 
 	mockSecretForUse(userSecret('org-secret-value', ['example.com']))
@@ -439,6 +441,8 @@ async function setupDeclaredPackage(input: {
 		...createInMemoryUserMeterEnv().env,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		// Opt out of credential-resolution audit writes (#3456).
+		SENTRY_ENVIRONMENT: 'test',
 	} as unknown as Env
 	const expandAsPackage = async (url: string, init: RequestInit = {}) => {
 		const { request: expanded, bodyFillDone } = await expandSecretPlaceholders({

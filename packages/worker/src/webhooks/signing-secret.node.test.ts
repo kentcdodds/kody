@@ -89,7 +89,9 @@ function endpoint(
 const env = {
 	APP_DB: {} as D1Database,
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-} as Env
+	// Opt out of credential-resolution audit writes (#3456).
+	SENTRY_ENVIRONMENT: 'test',
+} as unknown as Env
 
 const stripeVerification = {
 	type: 'hmac-sha256',
@@ -286,7 +288,9 @@ test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', 
 	const env = {
 		APP_DB: db,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
+		// Opt out of credential-resolution audit writes (#3456).
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env
 	vi.mocked(resolveSecret).mockClear()
 	const encrypted = await resolveHmacCiphertextForMint({
 		env,
@@ -344,7 +348,9 @@ async function seededEndpointEnv() {
 	const env = {
 		APP_DB: db,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
+		// Opt out of credential-resolution audit writes (#3456).
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env
 	const userId = ownerIdFromStored('user-1')
 	const endpointId = 'ep-rotate-1'
 	await upsertWebhookEndpointSecret({

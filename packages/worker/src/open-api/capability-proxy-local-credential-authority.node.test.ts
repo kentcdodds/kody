@@ -115,6 +115,8 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 		APP_DB: db,
 		...userMeter.env,
 		COOKIE_SECRET: 'test-cookie-secret',
+		// Opt out of credential-resolution audit writes (#3456).
+		SENTRY_ENVIRONMENT: 'test',
 	} as unknown as Env
 
 	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(

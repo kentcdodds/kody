@@ -1,5 +1,12 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
+import {
+	createFileProvenanceStore,
+	hasProvenanceCheck,
+	recordProvenanceCheck,
+	treeShaForCommit,
+	type ProvenanceStore,
+} from './git-hook-provenance.ts'
 
 /**
  * Husky pre-commit and pre-push gates.
@@ -17,6 +24,14 @@ import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
  *
  * Rename detection is off so a source file renamed to markdown still lists
  * the deleted path.
+ *
+ * Pre-push skips `test:push` when the pushed commit's tree SHA is already
+ * recorded green from `npm run validate` or a prior successful pre-push
+ * (#3653 / #3719). Progress logs tick every 30s so a long workers-unit run is
+ * not a silent hang (#3547). Workers-unit isolation (ADR 0011) is unchanged.
+ *
+ * Pre-commit typecheck runs against the staged tree (`stash --keep-index`)
+ * so unstaged fixes cannot greenlight a broken index (#3695).
  */
 
 export type GitHookName = 'pre-commit' | 'pre-push'
@@ -53,6 +68,9 @@ const licenseBasenamePattern =
 	/^(?:license|licence|copying|notice)(?:\.(?:md|txt))?$/i
 
 const newRefBaseCandidates = ['origin/HEAD', 'origin/main', 'main'] as const
+
+/** Heartbeat while a long hook script (test:push) inherits silence from vitest. */
+export const gitHookProgressIntervalMs = 30_000
 
 function normalizeHookPath(filePath: string) {
 	// Git path output uses `/` even on Windows. A literal backslash is part of
@@ -120,16 +138,118 @@ export function listHookPaths(input: {
 	}
 }
 
+export function pushedCommitShas(stdin: string | null): ReadonlyArray<string> {
+	const updates = parsePrePushUpdates(stdin)
+	if (updates === null) return []
+	return updates
+		.filter((update) => !isZeroSha(update.localSha))
+		.map((update) => update.localSha)
+}
+
+export function shouldSkipTestPushForProvenance(input: {
+	git: GitRunner
+	stdin?: string | null
+	store: ProvenanceStore
+}): { skip: boolean; treeSha: string | null; reason: string | null } {
+	const shas = pushedCommitShas(input.stdin ?? null)
+	if (shas.length === 0) {
+		return { skip: false, treeSha: null, reason: null }
+	}
+	const trees: Array<string> = []
+	for (const sha of shas) {
+		const treeSha = treeShaForCommit(input.git, sha)
+		if (!treeSha) {
+			return { skip: false, treeSha: null, reason: null }
+		}
+		trees.push(treeSha)
+	}
+	const unique = [...new Set(trees)]
+	if (unique.length !== 1) {
+		return { skip: false, treeSha: null, reason: null }
+	}
+	const treeSha = unique[0]!
+	if (!hasProvenanceCheck(input.store, 'test:push', treeSha)) {
+		return { skip: false, treeSha, reason: null }
+	}
+	return {
+		skip: true,
+		treeSha,
+		reason: `pre-push: skipping test:push (tree ${treeSha.slice(0, 12)} already green)`,
+	}
+}
+
+/**
+ * Hide unstaged / untracked work so typecheck sees the index about to be
+ * committed (#3695). No-op when the worktree already matches the index.
+ */
+export function withStagedTreeForTypecheck<T>(input: {
+	git: GitRunner
+	run: () => T | Promise<T>
+	log?: (message: string) => void
+}): Promise<T> {
+	const log = input.log ?? (() => {})
+	const status = input.git(['status', '--porcelain', '-uall'])
+	if (status.status !== 0) {
+		log('pre-commit: could not read worktree status; typechecking as-is')
+		return Promise.resolve(input.run())
+	}
+	const porcelainLine = /^(?:\?\?|[ MADRCU!][ MADRCU!]) /
+	const needsStash = status.stdout
+		.split('\n')
+		.map((line) => line.trimEnd())
+		.filter((line) => porcelainLine.test(line))
+		.some((line) => {
+			// Porcelain XY: second column is worktree; ?? is untracked.
+			const worktree = line[1]
+			return worktree !== ' '
+		})
+	if (!needsStash) {
+		return Promise.resolve(input.run())
+	}
+	log('pre-commit: typechecking staged tree (hiding unstaged changes)')
+	const stash = input.git([
+		'stash',
+		'push',
+		'--keep-index',
+		'--include-untracked',
+		'-m',
+		'kody-pre-commit-typecheck',
+	])
+	if (stash.status !== 0) {
+		log(
+			`pre-commit: stash --keep-index failed (${stash.stderr.trim() || 'unknown'}); typechecking as-is`,
+		)
+		return Promise.resolve(input.run())
+	}
+	const stashed = !/No local changes to save/i.test(stash.stdout)
+	return Promise.resolve(input.run()).finally(() => {
+		if (!stashed) return
+		const pop = input.git(['stash', 'pop', '--quiet'])
+		if (pop.status !== 0) {
+			log(
+				`pre-commit: warning: stash pop failed after typecheck (${pop.stderr.trim() || pop.stdout.trim() || 'unknown'})`,
+			)
+		}
+	})
+}
+
 export async function runGitHookChecks(input: {
 	hook: GitHookName
 	stdin?: string | null
 	git?: GitRunner
-	runScript?: (script: string) => number
+	runScript?: (script: string) => number | Promise<number>
 	log?: (message: string) => void
+	provenance?: ProvenanceStore
+	now?: () => number
+	progressIntervalMs?: number
 }) {
 	const git = input.git ?? defaultGit
-	const runScript = input.runScript ?? runNpmScript
+	const runScript = input.runScript ?? defaultRunNpmScript
 	const log = input.log ?? console.log
+	const provenance = input.provenance ?? createFileProvenanceStore()
+	const now = input.now ?? Date.now
+	const progressIntervalMs =
+		input.progressIntervalMs ?? gitHookProgressIntervalMs
 	const paths = listHookPaths({
 		hook: input.hook,
 		git,
@@ -137,9 +257,57 @@ export async function runGitHookChecks(input: {
 	})
 	const plan = planGitHookChecks({ hook: input.hook, paths })
 	log(plan.summary)
-	for (const script of hookScripts(plan)) {
-		const status = runScript(script)
+
+	let scripts = hookScripts(plan)
+	if (input.hook === 'pre-push' && scripts.includes('test:push')) {
+		const skip = shouldSkipTestPushForProvenance({
+			git,
+			stdin: input.stdin,
+			store: provenance,
+		})
+		if (skip.skip && skip.reason) {
+			log(skip.reason)
+			scripts = scripts.filter((script) => script !== 'test:push')
+		}
+	}
+
+	for (const script of scripts) {
+		const started = now()
+		log(`hook: starting npm run ${script}`)
+		const heartbeat = setInterval(() => {
+			const elapsedSec = Math.max(1, Math.round((now() - started) / 1000))
+			log(`hook: still running npm run ${script} (${elapsedSec}s)`)
+		}, progressIntervalMs)
+		// Unref so a stuck interval cannot keep the process alive after exit.
+		heartbeat.unref?.()
+		let status: number
+		try {
+			if (input.hook === 'pre-commit' && script === 'typecheck') {
+				status = await withStagedTreeForTypecheck({
+					git,
+					log,
+					run: () => runScript(script),
+				})
+			} else {
+				status = await runScript(script)
+			}
+		} finally {
+			clearInterval(heartbeat)
+		}
+		const elapsedSec = Math.max(0, Math.round((now() - started) / 1000))
+		log(`hook: finished npm run ${script} in ${elapsedSec}s (exit ${status})`)
 		if (status !== 0) return status
+		if (script === 'test:push') {
+			for (const sha of pushedCommitShas(input.stdin ?? null)) {
+				const treeSha = treeShaForCommit(git, sha)
+				if (!treeSha) continue
+				recordProvenanceCheck(provenance, {
+					check: 'test:push',
+					treeSha,
+					source: 'pre-push',
+				})
+			}
+		}
 	}
 	return 0
 }
@@ -367,16 +535,20 @@ export function gitHookScriptEnv(source: NodeJS.ProcessEnv = process.env) {
 	return env
 }
 
-function runNpmScript(script: string) {
-	const result = spawnSync(resolveNpmCommand(), ['run', script], {
-		stdio: 'inherit',
-		env: gitHookScriptEnv(),
+function defaultRunNpmScript(script: string): Promise<number> {
+	return new Promise((resolve) => {
+		const child = spawn(resolveNpmCommand(), ['run', script], {
+			stdio: 'inherit',
+			env: gitHookScriptEnv(),
+		})
+		child.once('error', (error) => {
+			console.error(error.message)
+			resolve(1)
+		})
+		child.once('close', (code) => {
+			resolve(code ?? 1)
+		})
 	})
-	if (result.error) {
-		console.error(result.error.message)
-		return 1
-	}
-	return result.status ?? 1
 }
 
 async function readHookStdin() {

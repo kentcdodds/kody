@@ -27,6 +27,9 @@ export default defineConfig({
 		baseURL,
 		trace: 'on-first-retry',
 	},
+	// When PLAYWRIGHT_BASE_URL is set, reuse that origin (targeted specs against
+	// `dev:ensure`). Otherwise start an isolated e2e webServer on 3847 that
+	// does not require killing a healthy local origin (#3731).
 	webServer: {
 		command: webServerCommand,
 		url: `${baseURL}/health`,

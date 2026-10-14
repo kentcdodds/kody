@@ -35,7 +35,7 @@ export function resolveE2eWebServerHealthUrl(
  * suite-level dead-server retry can start a fresh run.
  */
 function formatUnhealthyOriginDevServerHint() {
-	return 'An existing kody `dev:ensure` server is listening but /health is failing. Stop that Vite/workerd process before `npm run test:e2e:run`; a crash-looping origin on 3742 collides with the e2e web server (inspector port / fetchWorkerExportTypes).'
+	return 'An existing kody `dev:ensure` server is listening but /health is failing. Stop or restart that Vite/workerd process before `npm run test:e2e:run`; a crash-looping origin on 3742–3751 collides with the e2e web server (inspector / fetchWorkerExportTypes). A healthy origin can stay up — e2e isolates on port 3847 with its own persist dir and inspector disabled (#3731). Or set PLAYWRIGHT_BASE_URL to reuse a server.'
 }
 
 export async function findUnhealthyOriginDevServerMessage(input: {
@@ -131,6 +131,10 @@ async function startE2eWebServer() {
 	}
 
 	const extraArgs = process.argv.slice(2)
+	// Isolate from a concurrent healthy `dev:ensure` origin: own persist dir,
+	// dedicated e2e flag (disables the Vite Cloudflare inspector), and the
+	// Playwright port (default 3847). PLAYWRIGHT_BASE_URL still opts into
+	// reuseExistingServer in playwright.config.ts (#3731).
 	const viteEnv = {
 		...process.env,
 		CLOUDFLARE_API_BASE_URL: mock.origin,
@@ -140,6 +144,7 @@ async function startE2eWebServer() {
 		WRANGLER_IS_LOCAL_DEV: 'true',
 		WRANGLER_PERSIST_TO: '.wrangler/state/e2e',
 		X_LOCAL_EXPLORER: 'false',
+		KODY_E2E_WEB_SERVER: '1',
 	}
 
 	function spawnVite() {

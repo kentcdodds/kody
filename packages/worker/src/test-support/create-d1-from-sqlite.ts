@@ -25,11 +25,16 @@ type StatementRunner = {
  *
  * Prefer importing this over copy-pasting a local helper. Pass options only when
  * a test needs query capture, binding limits, or row-count hooks.
+ *
+ * Overlapping `batch()` calls are serialized (mutex) to match production D1,
+ * which queues concurrent batches instead of nesting transactions (#3634).
  */
 export function createD1FromSqlite(
 	db: DatabaseSync,
 	options: CreateD1FromSqliteOptions = {},
 ): D1Database {
+	let batchTail: Promise<unknown> = Promise.resolve()
+
 	function assertBindingCount(params: Array<unknown>) {
 		if (
 			options.maxBindings !== undefined &&
@@ -99,6 +104,30 @@ export function createD1FromSqlite(
 		}
 	}
 
+	async function runBatch(
+		statements: Array<
+			StatementRunner & { all?: () => Promise<unknown>; query?: string }
+		>,
+	) {
+		const results = []
+		db.exec('BEGIN')
+		try {
+			for (const statement of statements) {
+				const isSelect = /^\s*select\b/i.test(statement.query ?? '')
+				if (isSelect && typeof statement.all === 'function') {
+					results.push(await statement.all())
+				} else {
+					results.push(await statement.run())
+				}
+			}
+			db.exec('COMMIT')
+			return results
+		} catch (error) {
+			db.exec('ROLLBACK')
+			throw error
+		}
+	}
+
 	return {
 		prepare(query: string) {
 			options.queries?.push(query.replace(/\s+/g, ' ').trim())
@@ -109,23 +138,16 @@ export function createD1FromSqlite(
 				StatementRunner & { all?: () => Promise<unknown>; query?: string }
 			>,
 		) {
-			const results = []
-			db.exec('BEGIN')
-			try {
-				for (const statement of statements) {
-					const isSelect = /^\s*select\b/i.test(statement.query ?? '')
-					if (isSelect && typeof statement.all === 'function') {
-						results.push(await statement.all())
-					} else {
-						results.push(await statement.run())
-					}
-				}
-				db.exec('COMMIT')
-				return results
-			} catch (error) {
-				db.exec('ROLLBACK')
-				throw error
-			}
+			const run = batchTail.then(
+				() => runBatch(statements),
+				() => runBatch(statements),
+			)
+			// Keep the chain alive without retaining a rejected reason.
+			batchTail = run.then(
+				() => undefined,
+				() => undefined,
+			)
+			return run
 		},
 		async exec(query: string) {
 			db.exec(query)

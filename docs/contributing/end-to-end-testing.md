@@ -106,12 +106,16 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   (Friction #1789). `tools/e2e-web-server.ts` refuses to start when a leftover
   `dev:ensure` origin on 3742–3751 is listening but `/health` fails (a
   crash-looping Vite after `npm ci` collides on the inspector port and fails
-  `fetchWorkerExportTypes`). It also restarts Vite once if the first process
-  exits before Playwright reaches `/health`. On CI, the `🎭 E2E` job also
-  retries the suite once when `tools/ci/is-retryable-e2e-failure.ts` matches a
-  webServer start crash (`Process from config.webServer was not able to start`,
-  including Vite `__LOAD__ is not defined` during Cloudflare export-type
-  inspection), a mid-suite death on port 3847, or a recovered workerd crash
+  `fetchWorkerExportTypes`). A **healthy** origin can stay up: e2e uses port
+  3847, `.wrangler/state/e2e`, and `KODY_E2E_WEB_SERVER=1` (disables the Vite
+  Cloudflare inspector) so validate does not require killing `dev:ensure`
+  (#3731). Set `PLAYWRIGHT_BASE_URL` to reuse an existing server instead. It
+  also restarts Vite once if the first process exits before Playwright reaches
+  `/health`. On CI, the `🎭 E2E` job also retries the suite once when
+  `tools/ci/is-retryable-e2e-failure.ts` matches a webServer start crash
+  (`Process from config.webServer was not able to start`, including Vite
+  `__LOAD__ is not defined` during Cloudflare export-type inspection), a
+  mid-suite death on port 3847, or a recovered workerd crash
   (`The Workers runtime crashed unexpectedly and is being restarted`). Genuine
   assertion failures do not retry. The job uploads `logs.local/` as the
   `e2e-wrangler-logs` artifact when the suite fails.

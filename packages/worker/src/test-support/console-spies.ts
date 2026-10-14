@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, vi, type MockInstance } from 'vitest'
+import { afterEach, beforeEach, vi, type MockInstance } from 'vitest'
 
 // Epic Stack-style console guard. Tests fail loudly when code under test
 // calls console.error/console.warn unless the test opts in with
@@ -26,24 +26,10 @@ function recordUnexpectedCall(message: string) {
 	return error
 }
 
-// Files that made unexpected console calls the call-site throw never
-// surfaced when afterEach enforcement landed. They keep the call-site throw
-// only until each is fixed; tracked in
-// https://github.com/kentcdodds/kody/issues/3456. Do not add new entries.
-const filesPendingAfterEachEnforcement = [
-	'packages/worker/src/mcp/fetch-gateway.node.test.ts',
-	'packages/worker/src/mcp/fetch-gateway-credential-use.node.test.ts',
-	'packages/worker/src/open-api/capability-proxy-local-credential-authority.node.test.ts',
-	'packages/worker/src/webhooks/signing-secret.node.test.ts',
-	'packages/worker/src/org-transfer/storage-copy.workers.test.ts',
-]
-
-function enforcesRecordedCalls() {
-	const testPath = expect.getState().testPath?.replaceAll('\\', '/') ?? ''
-	return !filesPendingAfterEachEnforcement.some((file) =>
-		testPath.endsWith(`/${file}`),
-	)
-}
+// AfterEach enforcement applies to every test file (#3456). Suites that hit
+// incidental operational logs must silence them with
+// `silenceExpectedConsoleErrors` / `silenceExpectedConsoleWarns` (or provide
+// the missing test schema / AUDIT_DB / SENTRY_ENVIRONMENT=test opt-out).
 
 function failOnUnexpectedCall(
 	method: 'error' | 'warn',
@@ -116,7 +102,7 @@ afterEach(() => {
 	const calls = unexpectedCalls
 	unexpectedCalls = []
 	const [first] = calls
-	if (!first || !enforcesRecordedCalls()) return
+	if (!first) return
 	if (calls.length === 1) throw first
 	throw new AggregateError(
 		calls,
