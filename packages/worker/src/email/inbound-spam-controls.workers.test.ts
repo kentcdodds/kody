@@ -190,14 +190,23 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 	await handleInboundEmail(quarantined, createInboundEnv())
 	expect(quarantined.rejectedReason).toBeNull()
 
-	const allowed = mail(
+	const spoofedAllow = mail(
 		'friend@example.net',
 		address,
-		'Allowed despite DMARC fail',
+		'Spoofed allow does not bypass auth',
 		[`Authentication-Results: ${dmarcFailAuthResults()}`],
 	)
-	await handleInboundEmail(allowed, createInboundEnv())
-	expect(allowed.rejectedReason).toBeNull()
+	await handleInboundEmail(spoofedAllow, createInboundEnv())
+	expect(spoofedAllow.rejectedReason).toBeNull()
+
+	const allowedAuthenticated = mail(
+		'friend@example.net',
+		address,
+		'Allowed when authenticated',
+		['Authentication-Results: mx.example.com; spf=pass; dkim=pass; dmarc=pass'],
+	)
+	await handleInboundEmail(allowedAuthenticated, createInboundEnv())
+	expect(allowedAuthenticated.rejectedReason).toBeNull()
 
 	const suspect = mail('stranger@example.net', address, 'Suspect auth', [
 		`Authentication-Results: ${dmarcFailAuthResults()}`,
@@ -220,7 +229,11 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 		classification: 'quarantined',
 		classificationReason: 'Sender matched quarantine rule suspect.example.',
 	})
-	expect(bySubject['Allowed despite DMARC fail']).toMatchObject({
+	expect(bySubject['Spoofed allow does not bypass auth']).toMatchObject({
+		classification: 'quarantined',
+		classificationReason: 'Sender failed DMARC authentication.',
+	})
+	expect(bySubject['Allowed when authenticated']).toMatchObject({
 		classification: 'accepted',
 		classificationReason: null,
 	})

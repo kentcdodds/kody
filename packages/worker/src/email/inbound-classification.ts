@@ -12,6 +12,10 @@ export async function resolveInboundEmailClassification(input: {
 	classification: EmailClassification
 	classificationReason: string | null
 }> {
+	// Authentication is decided before sender rules so an allow address/domain
+	// rule cannot accept spoofed (auth-failed) mail.
+	const verdict = resolveInboundEmailAuthVerdict(input.authResults)
+
 	const senderAddress = normalizeEmailAddress(input.envelopeFrom)
 	const ruleMatch = senderAddress
 		? await evaluateEmailSenderRules({
@@ -24,7 +28,10 @@ export async function resolveInboundEmailClassification(input: {
 	if (ruleMatch) {
 		switch (ruleMatch.effect) {
 			case 'allow':
-				return { classification: 'accepted', classificationReason: null }
+				if (verdict.authenticated) {
+					return { classification: 'accepted', classificationReason: null }
+				}
+				break
 			case 'block':
 				return {
 					classification: 'quarantined',
@@ -42,7 +49,6 @@ export async function resolveInboundEmailClassification(input: {
 		}
 	}
 
-	const verdict = resolveInboundEmailAuthVerdict(input.authResults)
 	if (verdict.suspect) {
 		return {
 			classification: 'quarantined',
