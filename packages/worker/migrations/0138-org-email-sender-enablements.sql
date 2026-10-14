@@ -47,7 +47,11 @@ WHERE id IN (
 						'email.message.received',
 						'email.message.quarantined'
 					)
-				ORDER BY e2.enabled_at, e2.id
+				-- Prefer an `on` row so a older paused sibling does not steal
+				-- the catch-all and leave the live subscription unmatched.
+				ORDER BY CASE WHEN e2.state = 'on' THEN 0 ELSE 1 END,
+					e2.enabled_at,
+					e2.id
 				LIMIT 1
 			)
 	)

@@ -380,7 +380,9 @@ async function classifyEmailSenderRace(
 		if (!same) return 'conflict'
 		adopt = true
 	}
-	return adopt ? 'adopt' : 'conflict'
+	// No live winner found yet (replication lag / transient read): rethrow the
+	// original unique failure instead of blaming another enabler.
+	return adopt ? 'adopt' : 'unrelated'
 }
 
 async function findWebhookRaceLoser(

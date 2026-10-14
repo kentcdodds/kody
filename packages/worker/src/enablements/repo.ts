@@ -318,7 +318,9 @@ export async function insertEnablement(input: {
 		if (existing && sameEnablerAndSender(existing, input.enablement)) {
 			return existing
 		}
-		throw new EmailSenderEnablementConflict()
+		if (existing) throw new EmailSenderEnablementConflict()
+		// Unique failed but the winner is not readable yet — surface the DB error.
+		throw error
 	}
 	const record = await getEnablementById({
 		db: input.db,

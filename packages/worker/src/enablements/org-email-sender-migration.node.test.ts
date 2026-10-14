@@ -169,6 +169,52 @@ test('0138 tags live personal-org email subscriptions and leaves team orgs alone
 	])
 })
 
+test('0138 prefers an on row over an older paused sibling for the catch-all', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, '0138-org-email-sender-enablements.sql')
+	db.prepare(
+		`INSERT INTO users (
+			username, email, password_hash, stable_user_id, deleted_at
+		) VALUES (?, ?, 'hash', ?, ?)`,
+	).run('bea', 'bea@example.com', 'person-bea', null)
+	db.prepare(
+		`INSERT INTO enablements (
+			id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+			enabler_user_id, state, origin, enabled_at, updated_at
+		) VALUES (?, ?, 'pkg', 'subscription', 'email.message.received', 'pkg',
+			'person', ?, 'enabled', ?, ?)`,
+	).run(
+		'paused-earlier',
+		'person-bea',
+		'paused',
+		'2026-10-01T00:00:00.000Z',
+		'2026-10-01T00:00:00.000Z',
+	)
+	db.prepare(
+		`INSERT INTO enablements (
+			id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+			enabler_user_id, state, origin, enabled_at, updated_at
+		) VALUES (?, ?, 'pkg', 'subscription', 'email.message.received', 'pkg',
+			'person', ?, 'enabled', ?, ?)`,
+	).run(
+		'on-later',
+		'person-bea',
+		'on',
+		'2026-10-13T00:00:00.000Z',
+		'2026-10-13T00:00:00.000Z',
+	)
+	applyMigrationFile(db, '0138-org-email-sender-enablements.sql')
+	const rows = db
+		.prepare(
+			`SELECT id, sender_kind FROM enablements WHERE org_id = 'person-bea' ORDER BY id`,
+		)
+		.all() as Array<{ id: string; sender_kind: string | null }>
+	expect(rows).toEqual([
+		{ id: 'on-later', sender_kind: 'any_authenticated' },
+		{ id: 'paused-earlier', sender_kind: null },
+	])
+})
+
 test('0138 allows one live email sender rule per org, instance, topic, and sender', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, '0138-org-email-sender-enablements.sql')
