@@ -281,6 +281,7 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	// sit in a shared zone (e.g. legacy-apps.example.org → example.org); a
 	// `*/*` there would steal unrelated hostnames without more-specific routes.
 	const canonicalHostname = hostnames[0]
+	if (!canonicalHostname) return
 	const canonicalZoneName = readPackageAppZoneName(canonicalHostname)
 	if (!canonicalZoneName) {
 		fail(
@@ -315,7 +316,14 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 		? runtimeEnv.routes.filter((route) => {
 				if (!route || typeof route !== 'object') return true
 				const pattern = (route as JsonRecord).pattern
-				return typeof pattern !== 'string' || !publishedPatterns.has(pattern)
+				if (typeof pattern !== 'string') return true
+				// Replace `*/*` only on the canonical SaaS zone so a base config
+				// (or `--base-config`) can keep a different-zone catch-all.
+				if (pattern === catchAllPattern) {
+					const zoneName = (route as JsonRecord).zone_name
+					return zoneName !== canonicalZoneName
+				}
+				return !publishedPatterns.has(pattern)
 			})
 		: []
 	runtimeEnv.routes = [...existingRoutes, ...newRoutes]
