@@ -20,6 +20,7 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
 	ensureR2BucketLifecycle,
+	isCloudflareQueueAlreadyGoneError,
 	isPermanentCloudflareAuthFailure,
 	isR2BucketAlreadyExistsOutput,
 	isR2BucketNotEmptyOutput,
@@ -142,6 +143,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		[isWranglerNotFoundOutput, 'Worker not found', true],
 		[isWranglerNotFoundOutput, 'No such script exists', true],
 		[isWranglerNotFoundOutput, 'The requested resource does not exist', true],
+		[
+			isWranglerNotFoundOutput,
+			"Couldn't find a D1 DB with name or binding 'kody-pr-3694-db' in your config or the API.",
+			true,
+		],
 		[isWranglerNotFoundOutput, 'Authentication error [code: 10000]', false],
 		[
 			isR2BucketAlreadyExistsOutput,
@@ -778,6 +784,31 @@ test('deleteCloudflareQueue deletes immediately, retries binding release, then g
 	).rejects.toThrow('still referenced by a binding in a Worker')
 	// One list call plus five delete attempts.
 	expect(stuckFetcher).toHaveBeenCalledTimes(6)
+
+	const goneAfterList = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		deleteCloudflareQueue({
+			...creds,
+			name: previewQueue,
+			fetcher: goneAfterList,
+		}),
+	).resolves.toBeUndefined()
+	expect(goneAfterList).toHaveBeenCalledTimes(2)
 })
 
 test('removeCloudflareQueueConsumers deregisters consumers and no-ops when none exist', async () => {
@@ -813,6 +844,123 @@ test('removeCloudflareQueueConsumers deregisters consumers and no-ops when none 
 		fetcher: emptyConsumersFetcher,
 	})
 	expect(emptyConsumersFetcher).toHaveBeenCalledTimes(2)
+})
+
+test('removeCloudflareQueueConsumers treats a 404 after name resolution as already deleted (#3693)', async () => {
+	consoleError.mockImplementation(() => {})
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error(
+				"Cloudflare API request failed (404): Queue 'fc60be3040614f35a7e833befee8804c' not found. Please verify it exists and try again.",
+			),
+		),
+	).toBe(true)
+	// cloudflareApiRequest falls back to the pathname when errors[] has no
+	// message — still a gone queue, must not fail cleanup.
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error(
+				'Cloudflare API request failed (404): /queues/queue-preview/consumers',
+			),
+		),
+	).toBe(true)
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error('Cloudflare API request failed (500): internal server error'),
+		),
+	).toBe(false)
+
+	const queueGoneOnListConsumers = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: queueGoneOnListConsumers,
+		}),
+	).resolves.toBeUndefined()
+	expect(queueGoneOnListConsumers).toHaveBeenCalledTimes(2)
+
+	const queueGoneOnDeleteConsumer = mockFetch(
+		listedPreviewQueue(),
+		ok([{ consumer_id: 'consumer-1', script: 'kody-pr-123', type: 'worker' }]),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: queueGoneOnDeleteConsumer,
+		}),
+	).resolves.toBeUndefined()
+	expect(queueGoneOnDeleteConsumer).toHaveBeenCalledTimes(3)
+
+	const non404Fetcher = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: non404Fetcher,
+			sleep: async () => {},
+			maxAttempts: 4,
+		}),
+	).rejects.toThrow(/429/)
 })
 
 test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not 403', async () => {
@@ -980,6 +1128,8 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		ok(aaaa('dns-apex', 'kodyapps.dev')),
 		ok([]),
 		ok(aaaa('dns-wildcard', '*.kodyapps.dev')),
+		ok([]),
+		ok(aaaa('dns-domains', 'domains.kodyapps.dev')),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: createFetcher })
 
@@ -1004,15 +1154,18 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		[records, createRecord('kodyapps.dev')],
 		[`${records}?name=${encodeURIComponent('*.kodyapps.dev')}`, get],
 		[records, createRecord('*.kodyapps.dev')],
+		[`${records}?name=domains.kodyapps.dev`, get],
+		[records, createRecord('domains.kodyapps.dev')],
 	])
 
 	const reuseFetcher = mockFetch(
 		kodyappsZone(),
 		ok([aaaa('dns-existing-apex', 'kodyapps.dev')]),
 		ok([aaaa('dns-existing', '*.kodyapps.dev')]),
+		ok([aaaa('dns-existing-domains', 'domains.kodyapps.dev')]),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: reuseFetcher })
-	expect(reuseFetcher).toHaveBeenCalledTimes(3)
+	expect(reuseFetcher).toHaveBeenCalledTimes(4)
 })
 
 test('ensurePackageAppDnsRecords fails closed on conflicting DNS records', async () => {

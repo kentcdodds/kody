@@ -3,17 +3,29 @@
 import { type RemixNode, css } from 'remix/component'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
+import {
+	type PackageCredentialsTab,
+	packageCredentialsTabHref,
+	packageCredentialsTabLabel,
+	packageCredentialsTabs,
+} from '#universal/package-credentials-page.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import { routes } from '#universal/routes.ts'
 import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 
-export type PackageRepoNavActive = 'repo' | 'files' | 'settings'
+export type PackageRepoNavActive =
+	| 'repo'
+	| 'files'
+	| 'settings'
+	| PackageCredentialsTab
 
 function renderPackageRepoNav(input: {
 	username: string
 	kodyId: string
 	filesHref: string
 	viewerCanManage: boolean
+	/** Saved packages the viewer's org owns: credential and trigger tabs. */
+	showCredentialTabs: boolean
 	/** Defaults to true. Pass false only to hide Files intentionally. */
 	showFilesNav?: boolean
 	active: PackageRepoNavActive
@@ -51,6 +63,23 @@ function renderPackageRepoNav(input: {
 					Files
 				</a>
 			) : null}
+			{input.showCredentialTabs
+				? packageCredentialsTabs.map((tab) => (
+						<a
+							key={tab}
+							href={packageCredentialsTabHref({
+								username: input.username,
+								kodyId: input.kodyId,
+								tab,
+							})}
+							aria-current={input.active === tab ? 'page' : undefined}
+							data-testid={`package-repo-nav-${tab}`}
+							mix={css(tabCss)}
+						>
+							{packageCredentialsTabLabel(tab)}
+						</a>
+					))
+				: null}
 			{input.viewerCanManage ? (
 				<a
 					href={settingsHref}
@@ -159,6 +188,7 @@ export function renderPackageRepoChrome(input: {
 					kodyId: input.kodyId,
 					filesHref: input.filesHref,
 					viewerCanManage: input.viewerCanManage,
+					showCredentialTabs: input.viewerIsOwner && hasPackage,
 					active: input.active,
 				})}
 				{input.actions ? (
@@ -271,6 +301,7 @@ const actionsCss = {
 const navCss = {
 	display: 'flex',
 	alignItems: 'center',
+	flexWrap: 'wrap' as const,
 	gap: spacing.sm,
 }
 

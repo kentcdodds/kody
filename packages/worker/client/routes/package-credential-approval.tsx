@@ -17,6 +17,7 @@ import {
 	type CredentialApprovalSuccess,
 	type CredentialApprovalView,
 } from '#universal/credential-contracts.ts'
+import { credentialKindLabel } from '#universal/credentials-list.ts'
 import {
 	type CredentialApprovalGroup,
 	type PackageCredentialApprovalLoaderData,
@@ -28,10 +29,9 @@ import {
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
-	credentialKindLabel,
-	describeTrigger,
 	groupApprovalChanges,
 } from '#universal/package-credential-approval-page.ts'
+import { describeTrigger } from '#universal/package-credentials-page.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	cardCss,
@@ -410,7 +410,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 				? currentHref
 				: new URL(currentHref, window.location.origin).href
 		const packageName = `@${path.username}/${path.kodyId}`
-		const settingsHref = routes.communityPackageSettings.href({
+		const credentialsHref = routes.communityPackageCredentials.href({
 			username: path.username,
 			kodyId: path.kodyId,
 		})
@@ -493,7 +493,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 								</>
 							) : null}
 						</p>
-						<a href={settingsHref}>See this package’s settings</a>
+						<a href={credentialsHref}>See this package’s credentials</a>
 					</section>
 				) : null}
 
@@ -615,7 +615,7 @@ export function PackageCredentialApprovalRoute(handle: Handle) {
 								{approving ? 'Approving…' : approvalSummary(view)}
 							</button>
 							<a
-								href={settingsHref}
+								href={credentialsHref}
 								mix={css({
 									...secondaryButtonCss,
 									display: 'inline-flex',

@@ -302,10 +302,11 @@ export function ConnectSecretsRoute(handle: Handle) {
 						</div>
 						{showBackToSecrets ? (
 							<a
-								href={'/account/secrets'}
+								href={routes.accountCredentials.href()}
+								data-rmx-document
 								mix={css(connectSecretsSecondaryButtonCss)}
 							>
-								Back to secrets
+								Back to credentials
 							</a>
 						) : (
 							<div

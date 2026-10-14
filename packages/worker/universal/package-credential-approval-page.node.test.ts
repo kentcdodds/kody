@@ -14,11 +14,13 @@ import {
 	approvalProblems,
 	approvalSummary,
 	credentialApprovalAgentPrompt,
-	credentialKindLabel,
-	credentialRefLabel,
-	describeTrigger,
 	groupApprovalChanges,
 } from './package-credential-approval-page.ts'
+import { credentialKindLabel } from './credentials-list.ts'
+import {
+	credentialRefLabel,
+	describeTrigger,
+} from './package-credentials-page.ts'
 
 const bot: CredentialRef = {
 	id: 'cred-1',
@@ -140,8 +142,16 @@ test('before and after read inherit, none, and credentials', () => {
 	expect(approvalChangeIsNoop(change({ before: null }))).toBe(false)
 	expect(approvalChangeIsNoop(change({ before: [mine] }))).toBe(false)
 	expect(
+		approvalChangeIsNoop(change({ before: [bot, mine], after: [mine, bot] })),
+	).toBe(false)
+	expect(
 		approvalChangeIsNoop(
 			change({ before: [], after: [], beforeUnusableIds: ['gone-1'] }),
+		),
+	).toBe(false)
+	expect(
+		approvalChangeIsNoop(
+			change({ before: [bot], beforeUnusableIds: ['cred-gone'] }),
 		),
 	).toBe(false)
 	expect(

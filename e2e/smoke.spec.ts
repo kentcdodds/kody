@@ -62,21 +62,21 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		name: 'Workspace sections',
 	})
 	await expect(
-		workspaceRail.getByRole('link', { name: 'Secrets', exact: true }),
+		workspaceRail.getByRole('link', { name: 'Credentials', exact: true }),
 	).toBeVisible()
 
-	// SPA-navigate to secrets: the client refetch must hit the same origin
+	// SPA-navigate to credentials: the client refetch must hit the same origin
 	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
 	await workspaceRail
-		.getByRole('link', { name: 'Secrets', exact: true })
+		.getByRole('link', { name: 'Credentials', exact: true })
 		.click()
 	await expect(page).toHaveURL(
-		new RegExp(`/@${primaryTestUser.username}/-/secrets$`),
+		new RegExp(`/@${primaryTestUser.username}/-/credentials$`),
 	)
 	// The list is a named region; it replaced the sidebar heading that used to
 	// carry this name, and it is present whether or not the account has rows.
 	await expect(
-		page.getByRole('region', { name: 'Saved secrets', exact: true }),
+		page.getByRole('region', { name: 'Credentials', exact: true }),
 	).toBeVisible()
 	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
 

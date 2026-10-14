@@ -3,6 +3,7 @@ import {
 	dynamicCallableWorkflowName,
 	listPackageAppHostnames,
 	packageAppApexRoutePattern,
+	packageAppCustomHostnameCatchAllRoutePattern,
 	packageAppWildcardRoutePattern,
 	parseJsonc,
 	readPackageAppZoneName,
@@ -275,6 +276,18 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 
 	const publishedPatterns = new Set<string>()
 	const newRoutes: Array<Record<string, unknown>> = []
+	const catchAllPattern = packageAppCustomHostnameCatchAllRoutePattern()
+	// Catch-all only on the canonical SaaS zone. Legacy dual-served hosts may
+	// sit in a shared zone (e.g. legacy-apps.example.org → example.org); a
+	// `*/*` there would steal unrelated hostnames without more-specific routes.
+	const canonicalHostname = hostnames[0]
+	if (!canonicalHostname) return
+	const canonicalZoneName = readPackageAppZoneName(canonicalHostname)
+	if (!canonicalZoneName) {
+		fail(
+			`runtime env.${envName}.vars package-app host "${canonicalHostname}" has no registrable zone name. Use a hostname on a public suffix (for example kody.run).`,
+		)
+	}
 	for (const hostname of hostnames) {
 		const zoneName = readPackageAppZoneName(hostname)
 		if (!zoneName) {
@@ -292,11 +305,25 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			{ pattern: wildcardPattern, zone_name: zoneName },
 		)
 	}
+	// Cloudflare for SaaS custom hostnames on the canonical zone (ADR 0071).
+	// Apex/wildcard routes stay more specific for first-party package-app traffic.
+	publishedPatterns.add(catchAllPattern)
+	newRoutes.push({
+		pattern: catchAllPattern,
+		zone_name: canonicalZoneName,
+	})
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
 		? runtimeEnv.routes.filter((route) => {
 				if (!route || typeof route !== 'object') return true
 				const pattern = (route as JsonRecord).pattern
-				return typeof pattern !== 'string' || !publishedPatterns.has(pattern)
+				if (typeof pattern !== 'string') return true
+				// Replace `*/*` only on the canonical SaaS zone so a base config
+				// (or `--base-config`) can keep a different-zone catch-all.
+				if (pattern === catchAllPattern) {
+					const zoneName = (route as JsonRecord).zone_name
+					return zoneName !== canonicalZoneName
+				}
+				return !publishedPatterns.has(pattern)
 			})
 		: []
 	runtimeEnv.routes = [...existingRoutes, ...newRoutes]

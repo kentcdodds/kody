@@ -61,7 +61,7 @@ export function OrgOverviewRoute(handle: Handle) {
 					title="Overview"
 					description={
 						slug
-							? `Everything @${slug} holds: repositories, agents, MCP servers, secrets, jobs, memories, and the rest.`
+							? `Everything @${slug} holds: repositories, agents, credentials, jobs, memories, and the rest.`
 							: 'Everything your workspace holds.'
 					}
 					currentHref={currentHref}

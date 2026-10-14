@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import {
 	assertInjectFitsKind,
@@ -18,6 +19,7 @@ import {
 } from '#worker/credentials/credential-fields.ts'
 import {
 	type OrgAuditOutboxEvent,
+	type OrgAuditWriter,
 	orgAuditWriterFromRequest,
 } from '#worker/orgs/org-audit.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
@@ -105,15 +107,30 @@ function exchangeHost(exchange: z.infer<typeof loginExchangeSchema> | null) {
 	return exchange ? new URL(exchange.url).hostname : null
 }
 
-/**
- * Validates the opt-in fields before anything is written, so a bad kind,
- * host, or value fails without touching the stored secret. Only the org's
- * own user scope, outside package runtimes, carries these fields.
- */
 export async function planOptInCredentialFields(
 	ctx: CapabilityContext,
 	input: { input: OptInInput; authorityPackageId: string | null | undefined },
 ): Promise<OptInCredentialPlan> {
+	return planOptInCredentialFieldsForOrg({
+		db: ctx.env.APP_DB,
+		orgId: ownerIdFromCaller(ctx.callerContext),
+		...input,
+	})
+}
+
+/**
+ * Validates the opt-in fields before anything is written, so a bad kind,
+ * host, or value fails without touching the stored secret. Only the org's
+ * own user scope, outside package runtimes, carries these fields. Shared by
+ * `secretSet` and the website save so both refuse the same inputs.
+ */
+export async function planOptInCredentialFieldsForOrg(input: {
+	db: D1Database
+	orgId: OwnerId
+	input: OptInInput
+	authorityPackageId: string | null | undefined
+}): Promise<OptInCredentialPlan> {
+	const { orgId } = input
 	const {
 		kind,
 		hosts,
@@ -141,8 +158,8 @@ export async function planOptInCredentialFields(
 		)
 	}
 	const existing = await readStoredCredentialPlacement({
-		db: ctx.env.APP_DB,
-		orgId: ownerIdFromCaller(ctx.callerContext),
+		db: input.db,
+		orgId,
 		name,
 	})
 	if (touchesFields && !hasValue) {
@@ -234,7 +251,6 @@ export async function planOptInCredentialFields(
 				inject: { before: before.inject, after: report.inject },
 			}
 		: {}
-	const orgId = ownerIdFromCaller(ctx.callerContext)
 	return {
 		mode: 'with-value',
 		credential: {
@@ -280,16 +296,17 @@ export function toSaveSecretCredential(
 	ctx: CapabilityContext,
 	plan: Extract<OptInCredentialPlan, { mode: 'with-value' }>,
 ): SaveSecretCredential {
-	return {
-		...plan.credential,
-		audit: {
-			writer: orgAuditWriterFromRequest(
-				ctx.env,
-				requireMcpRequest(ctx.callerContext),
-			),
-			event: plan.auditEvent,
-		},
-	}
+	return withCredentialAudit(
+		plan,
+		orgAuditWriterFromRequest(ctx.env, requireMcpRequest(ctx.callerContext)),
+	)
+}
+
+export function withCredentialAudit(
+	plan: Extract<OptInCredentialPlan, { mode: 'with-value' }>,
+	writer: OrgAuditWriter,
+): SaveSecretCredential {
+	return { ...plan.credential, audit: { writer, event: plan.auditEvent } }
 }
 
 /** Applies a provider/inject-only plan without rewriting the secret entry. */

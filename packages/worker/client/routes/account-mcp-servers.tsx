@@ -32,6 +32,7 @@ import {
 	type McpServerUsageDraft,
 	type MessageTone,
 	filterServers,
+	readAddServerPrefill,
 	readOAuthResultFromHref,
 	readSearchFilter,
 	renderNamedServer,
@@ -98,6 +99,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let addName = ''
 	let addUrl = ''
 	let addBearerToken = ''
+	/**
+	 * The link prefill (`name` and `url`) last applied to the add-server form.
+	 * Keyed on those values, not the href, so a search (`q`) keeps typing.
+	 */
+	let prefilledKey: string | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	/** Payload last applied to the closure state above. */
@@ -315,6 +321,17 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = mcpServersRoute.getSelection(currentHref)
+		if (selection.isCreating) {
+			const prefill = readAddServerPrefill(currentHref)
+			const prefillKey = `${prefill.name}\n${prefill.url}`
+			if (prefilledKey !== prefillKey) {
+				prefilledKey = prefillKey
+				addName = prefill.name
+				addUrl = prefill.url
+			}
+		} else {
+			prefilledKey = null
+		}
 		const search = readSearchFilter(currentHref)
 		const filteredServers = filterServers(servers, search)
 		const server =

@@ -183,6 +183,11 @@ Open these before proposing a new primitive, surface, or storage home.
   — CLI bootstrap defaults to person-owned tokens (`?org=` per request);
   `tokenCreate` defaults to org-bound; `kody auth setup-git` stores long-lived
   `kody_at_…` for clone/fetch/push of `kody.codes/@owner/name.git`
+- [0071 — Custom domains for package apps (Cloudflare for SaaS on kody.run)](./0071-package-app-custom-domains.md)
+  — SaaS custom hostnames on the package-app zone; org-level for private apps,
+  per-app for public; CNAME/ALIAS only (no Enterprise apex A/wildcards); org
+  admins; one free domain then $0.10/mo; verify before serve; 24–48h DNS grace
+  then remove
 
 ## Historical / UI / implementation
 

@@ -14,11 +14,11 @@ const providerSlugPattern = /^[a-z0-9-]+$/
 export async function buildNeedCreateUrl(input: {
 	db: D1Database
 	baseUrl: string
+	orgSlug: string | null
 	key: string
 	provider: string
 	need: CredentialNeed | null
 	packageKodyId: string | null
-	orgSlug: string | null
 }) {
 	const declaredKind: PackageCredentialKind | null = input.need?.kind ?? null
 	const providerSlug = providerSlugPattern.test(input.provider)
@@ -33,13 +33,13 @@ export async function buildNeedCreateUrl(input: {
 			: null
 	return buildCredentialCreateUrl(input.baseUrl, {
 		kind: declaredKind ?? (builtInOauth ? 'oauth' : 'secret'),
+		orgSlug: input.orgSlug,
 		kindMode: declaredKind ? 'required' : 'hint',
 		name: input.key,
 		provider: providerSlug,
 		description: input.need?.description,
 		packageKodyId: input.packageKodyId,
 		needKey: input.need ? input.key : null,
-		orgSlug: input.orgSlug,
 		extra: builtInOauth && providerSlug ? { platform: providerSlug } : {},
 	})
 }

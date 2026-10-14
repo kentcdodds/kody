@@ -29,6 +29,7 @@ import {
 	type CredentialScope,
 	isCredentialKind,
 } from '#universal/credential-contracts.ts'
+import { filterCredentialList } from '#universal/credentials-list.ts'
 import { readCredentialInject } from './credential-fields.ts'
 import { listPersonalCredentialCandidates } from './personal-credentials.ts'
 
@@ -316,64 +317,6 @@ async function loadOwnerRows(input: {
 		loadMcpRows(input),
 	])
 	return groups.flat()
-}
-
-function matchesQuery(item: CredentialListItem, query: string) {
-	const needle = query.toLowerCase()
-	return [item.name, item.provider ?? '', item.description, ...item.hosts].some(
-		(field) => field.toLowerCase().includes(needle),
-	)
-}
-
-/** Applies the list filters; exported so the client can filter the same way. */
-export function filterCredentialList(
-	items: ReadonlyArray<CredentialListItem>,
-	filters: CredentialListFilters,
-): Array<CredentialListItem> {
-	const query = filters.q?.trim() ?? ''
-	return items.filter((item) => {
-		if (query && !matchesQuery(item, query)) return false
-		if (filters.kinds?.length && !filters.kinds.includes(item.kind)) {
-			return false
-		}
-		if (filters.scope && item.scope !== filters.scope) return false
-		if (
-			filters.packageScoped !== undefined &&
-			(item.packageId !== null) !== filters.packageScoped
-		) {
-			return false
-		}
-		if (filters.locked === true && item.lockedToPackageIds.length === 0) {
-			return false
-		}
-		if (
-			typeof filters.locked === 'string' &&
-			!item.lockedToPackageIds.includes(filters.locked)
-		) {
-			return false
-		}
-		return true
-	})
-}
-
-/** Reads list filters from a query string (`kind` may repeat). */
-export function readCredentialListFilters(
-	search: URLSearchParams,
-): CredentialListFilters {
-	const filters: CredentialListFilters = {}
-	const q = search.get('q')?.trim()
-	if (q) filters.q = q
-	const kinds = search.getAll('kind').filter(isCredentialKind)
-	if (kinds.length > 0) filters.kinds = kinds
-	const scope = search.get('scope')
-	if (scope === 'org' || scope === 'personal') filters.scope = scope
-	const packageScoped = search.get('packageScoped')
-	if (packageScoped === 'true') filters.packageScoped = true
-	if (packageScoped === 'false') filters.packageScoped = false
-	const locked = search.get('locked')?.trim()
-	if (locked === 'true') filters.locked = true
-	else if (locked && locked !== 'false') filters.locked = locked
-	return filters
 }
 
 /**

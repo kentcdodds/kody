@@ -9,8 +9,9 @@ name: 🧹 Preview Sweep
 # tools/ci/preview-resources.ts. Branch candidates are discovered from
 # Worker, Durable Object, D1, KV, and R2 names, but liveness is judged only
 # from the Worker scripts listing; branch sweeping is skipped entirely for a
-# run if any preview.yml deploy is queued or in progress, since a deploy
-# provisions D1/KV/R2 before uploading its Worker.
+# run if a workflow_dispatch preview.yml deploy (the only kind that creates
+# branch previews) is queued or in progress, since a deploy provisions
+# D1/KV/R2 before uploading its Worker.
 
 on:
   schedule:

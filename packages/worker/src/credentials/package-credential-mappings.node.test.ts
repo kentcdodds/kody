@@ -285,7 +285,9 @@ test('changes that cannot apply carry a coded error and nothing is written', asy
 		'trigger_unknown',
 		null,
 	])
-	expect(resolved[3]!.error?.createUrl).toContain('/connect/credential?')
+	expect(resolved[3]!.error?.createUrl).toContain(
+		'/@acme-clients/-/credentials/new?',
+	)
 	expect(resolved[7]).toMatchObject({ willEnable: true, after: [{ id: prod }] })
 	expect(await t.enablementCount()).toBe(0)
 	await expect(

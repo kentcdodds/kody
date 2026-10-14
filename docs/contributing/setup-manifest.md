@@ -166,15 +166,22 @@ This project uses the following resources:
     publishes.
   - **DNS records (idempotent, per deploy).** Zone routes do not create DNS
     records. Production CI (`tools/ci/production-resources.ts ensure`)
-    idempotently ensures proxied records for both names in every package-app
-    zone (canonical plus any `PACKAGE_APP_LEGACY_HOSTS`): `kody.run` and
-    `*.kody.run` → AAAA `100::` (orange-cloud proxied). The deploy token needs
-    **DNS:Edit** on those zones (in addition to Workers deploy permissions).
-    Forks must create the zone and either run `ensure` or add the records
-    manually before the first per-user-subdomain deploy.
+    idempotently ensures proxied records for these names in every package-app
+    zone (canonical plus any `PACKAGE_APP_LEGACY_HOSTS`): `kody.run`,
+    `*.kody.run`, and `domains.kody.run` → AAAA `100::` (orange-cloud proxied).
+    `domains.<apex>` is the Cloudflare for SaaS fallback origin and the CNAME
+    target customers point at (ADR 0071). The deploy token needs **DNS:Edit** on
+    those zones (in addition to Workers deploy permissions). Forks must create
+    the zone and either run `ensure` or add the records manually before the
+    first per-user-subdomain deploy.
   - **Zone routes.** `tools/ci/runtime-worker-config.ts` publishes
-    `{ pattern: "kody.run/*", zone_name: "kody.run" }` and
-    `{ pattern: "*.kody.run/*", zone_name: "kody.run" }` on the runtime Worker.
+    `{ pattern: "kody.run/*", zone_name: "kody.run" }`,
+    `{ pattern: "*.kody.run/*", zone_name: "kody.run" }`, and
+    `{ pattern: "*/*", zone_name: "kody.run" }` on the runtime Worker. The
+    catch-all is required for Cloudflare for SaaS custom hostnames and is
+    published only for the **canonical** package-app zone (not
+    `PACKAGE_APP_LEGACY_HOSTS` zones, which may be shared). More specific
+    apex/wildcard routes still win for first-party package-app traffic.
     Cloudflare Universal SSL covers one wildcard label (`*.kody.run`), which is
     enough for `{username}.kody.run`. Do **not** attach `*kody.run/*` to
     `kody-domain-redirect`: that wildcard would shadow the runtime Worker.
@@ -584,6 +591,15 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that
   owns the user email sending domain; Email Sending event subscriptions require
   both this zone id and the domain)
+- `PACKAGE_APP_ZONE_ID` (GitHub Actions **variable**; Cloudflare zone id for the
+  package-app SaaS zone — production `kody.run`. Written into origin and
+  platform Worker vars so custom-hostname add/sync/reconcile can call the Custom
+  Hostnames API. Required before enabling `package-app-custom-domains`.)
+- `CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN` (optional GitHub Actions **secret**;
+  zone-limited **SSL and Certificates Edit** on the package-app SaaS zone.
+  Synced to `kody-production` and `kody-platform` when present. Do not reuse
+  `CLOUDFLARE_API_TOKEN`. Required before enabling
+  `package-app-custom-domains`.)
 - `COOKIE_SECRET` (same format as local)
 - `SECRET_STORE_KEY` (same format as local; required for deploys; also sealed
   into the DR bucket via `.github/workflows/dr-escrow.yml` using

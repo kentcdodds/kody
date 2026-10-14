@@ -446,14 +446,14 @@ test('a declared need picks by its kind and provider, and offers same-kind crede
 	).resolves.toMatchObject({ key: 'MAIL', name: 'resend-prod' })
 })
 
-test('unbound and not-found errors always carry a creation link, locking a declared kind', async () => {
+test('unbound and not-found errors always carry a creation link for the bound org, locking a declared kind', async () => {
 	const t = await setup()
 	const bea = t.requestAs('bea', 'owner')
 	const adHoc = await rejection(
 		openCredentialClient(t.contextFor({ request: bea }), { key: 'resend' }),
 	)
 	const adHocUrl =
-		'https://example.com/connect/credential?kind=secret&name=resend&provider=resend&org=acme-clients'
+		'https://example.com/@acme-clients/-/credentials/new?kind=secret&name=resend&provider=resend'
 	expect(adHoc.body).toMatchObject({
 		code: 'credential_unbound',
 		createUrl: adHocUrl,
@@ -479,7 +479,7 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 	const declaredUrl = new URL(
 		(declared.body as { createUrl: string }).createUrl,
 	)
-	expect(declaredUrl.pathname).toBe('/connect/credential')
+	expect(declaredUrl.pathname).toBe('/@acme-clients/-/credentials/new')
 	expect(Object.fromEntries(declaredUrl.searchParams)).toEqual({
 		kind: 'oauth',
 		kindMode: 'required',
@@ -488,7 +488,6 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 		description: 'Read PRs to summarize them',
 		forPackage: expect.any(String),
 		need: 'github',
-		org: 'acme-clients',
 	})
 
 	const named = await rejection(
@@ -497,7 +496,7 @@ test('unbound and not-found errors always carry a creation link, locking a decla
 	expect(named.body).toMatchObject({
 		code: 'credential_not_found',
 		createUrl:
-			'https://example.com/connect/credential?name=missing&org=acme-clients',
+			'https://example.com/@acme-clients/-/credentials/new?name=missing',
 	})
 })
 
@@ -525,7 +524,6 @@ test('an unbound link selects a built-in OAuth app, and kinds with no form point
 		kind: 'oauth',
 		name: 'github',
 		provider: 'github',
-		org: 'acme-clients',
 		platform: 'github',
 	})
 
@@ -551,9 +549,7 @@ test('an unbound link selects a built-in OAuth app, and kinds with no form point
 			key: 'deploy-hook',
 		}),
 	)
-	expect(urlNeed.message).toContain(
-		'To create it, call secretSet with kind "url" and provider "vercel".',
-	)
+	expect(urlNeed.message).not.toContain('secretSet')
 	expect(urlNeed.message).toMatch(/Create one at https:\/\/\S+kind=url/)
 })
 
@@ -848,7 +844,7 @@ test('stored mappings pick the credential: trigger override, then your default, 
 	const none = await rejection(open(bea))
 	expect(none.body).toMatchObject({
 		code: 'credential_unbound',
-		createUrl: expect.stringContaining('/connect/credential?'),
+		createUrl: expect.stringContaining('/@acme-clients/-/credentials/new?'),
 	})
 	expect(none.message).toContain('mapped to no credential on purpose')
 
@@ -880,7 +876,7 @@ test('stored mappings pick the credential: trigger override, then your default, 
 	const unusable = await rejection(open(annTrigger))
 	expect(unusable.body).toMatchObject({
 		code: 'credential_not_found',
-		createUrl: expect.stringContaining('/connect/credential?'),
+		createUrl: expect.stringContaining('/@acme-clients/-/credentials/new?'),
 	})
 	await expect(open(ann)).resolves.toMatchObject({ name: 'resend-a' })
 	await map(trigger, [keyA])
@@ -947,8 +943,7 @@ test('a need a republish added fails only that call in a trigger run, with an or
 	const unbound = await rejection(open('chat'))
 	const unboundUrl = new URL((unbound.body as { createUrl: string }).createUrl)
 	expect(unbound.body).toMatchObject({ code: 'credential_unbound' })
-	expect(unboundUrl.pathname).toBe('/connect/credential')
-	expect(unboundUrl.searchParams.get('org')).toBe('acme-clients')
+	expect(unboundUrl.pathname).toBe('/@acme-clients/-/credentials/new')
 	expect(unboundUrl.searchParams.get('need')).toBe('chat')
 	expect(unbound.message).toContain(`Create one at ${unboundUrl.href}`)
 	// The rest of the trigger keeps working.
@@ -965,10 +960,8 @@ test('a need a republish added fails only that call in a trigger run, with an or
 		],
 	})
 	expect(
-		new URL(
-			(ambiguous.body as { createUrl: string }).createUrl,
-		).searchParams.get('org'),
-	).toBe('acme-clients')
+		new URL((ambiguous.body as { createUrl: string }).createUrl).pathname,
+	).toBe('/@acme-clients/-/credentials/new')
 	await expect(open('mail')).resolves.toMatchObject({ name: 'resend-prod' })
 })
 
@@ -1229,7 +1222,6 @@ test('a call map is validated before code runs: unknown keys fail an invoke and 
 		kind: 'secret',
 		kindMode: 'required',
 		name: 'missing',
-		org: 'acme-clients',
 	})
 	const emptyPick = await rejection(
 		openCredentialClient(

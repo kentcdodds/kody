@@ -173,6 +173,10 @@ async function generateRuntime(input: {
 	workerPrefix: string
 	mainWorkerName: string
 	mainVars?: Record<string, unknown>
+	/** Optional base runtime config path; defaults to the committed wrangler. */
+	baseConfigPath?: string
+	/** When set, copy the committed base and merge these env routes before generate. */
+	baseEnvRoutes?: Array<Record<string, unknown>>
 }) {
 	consoleError.mockImplementation(() => {})
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-config-'))
@@ -182,13 +186,29 @@ async function generateRuntime(input: {
 		const mainConfigPath = path.join(tempDir, 'main.generated.json')
 		await writeFile(mainConfigPath, JSON.stringify(mainConfig))
 		const outConfigPath = path.join(tempDir, 'runtime.generated.json')
+		let baseConfigPath = input.baseConfigPath ?? runtimeBaseConfigPath
+		if (input.baseEnvRoutes) {
+			const base = parseJsonc<WorkerConfig>(
+				await readFile(runtimeBaseConfigPath, 'utf8'),
+			)
+			const env = base.env?.[input.envName]
+			if (!env) {
+				throw new Error(`missing env.${input.envName} in runtime base config`)
+			}
+			env.routes = [
+				...(Array.isArray(env.routes) ? env.routes : []),
+				...input.baseEnvRoutes,
+			]
+			baseConfigPath = path.join(tempDir, 'runtime.base.json')
+			await writeFile(baseConfigPath, JSON.stringify(base))
+		}
 		await generate({
 			envName: input.envName,
 			mainConfigPath,
 			runtimeWorkerName: `${input.workerPrefix}-runtime`,
 			platformWorkerName: `${input.workerPrefix}-platform`,
 			mainWorkerName: input.mainWorkerName,
-			baseConfigPath: runtimeBaseConfigPath,
+			baseConfigPath,
 			outConfigPath,
 		})
 		const read = async (filePath: string) =>
@@ -292,9 +312,17 @@ test('generate truncates long branch preview workflow names to 64 chars', async 
 	).toBe(72)
 })
 
-const packageAppRoutes = [
+const packageAppApexAndWildcardRoutes = [
 	{ pattern: 'kody.run/*', zone_name: 'kody.run' },
 	{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+]
+const packageAppCatchAllRoute = {
+	pattern: '*/*',
+	zone_name: 'kody.run',
+}
+const packageAppRoutes = [
+	...packageAppApexAndWildcardRoutes,
+	packageAppCatchAllRoute,
 ]
 
 test('generate publishes the package-app custom domain for production', async () => {
@@ -330,9 +358,26 @@ test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone r
 		PACKAGE_APP_LEGACY_HOSTS: 'legacy-apps.example.org',
 		PACKAGE_APP_LEGACY_REDIRECT: 'true',
 	})
+	// Catch-all stays on the canonical SaaS zone only — never on a shared
+	// legacy zone where unrelated hosts may lack more-specific Worker routes.
 	expect(runtime.env?.production?.routes).toEqual([
-		...packageAppRoutes,
+		...packageAppApexAndWildcardRoutes,
 		{ pattern: 'legacy-apps.example.org/*', zone_name: 'example.org' },
 		{ pattern: '*.legacy-apps.example.org/*', zone_name: 'example.org' },
+		packageAppCatchAllRoute,
+	])
+})
+
+test('generate preserves a different-zone */* from the runtime base config', async () => {
+	const otherZoneCatchAll = { pattern: '*/*', zone_name: 'other.example' }
+	const { runtime } = await generateRuntime({
+		envName: 'production',
+		workerPrefix: 'kody',
+		mainWorkerName: 'kody',
+		baseEnvRoutes: [otherZoneCatchAll],
+	})
+	expect(runtime.env?.production?.routes).toEqual([
+		otherZoneCatchAll,
+		...packageAppRoutes,
 	])
 })

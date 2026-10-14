@@ -8,56 +8,14 @@ import {
 	type CredentialApprovalChangeView,
 	type CredentialApprovalEnableView,
 	type CredentialApprovalView,
-	type CredentialKind,
 	type CredentialMappingTarget,
 	type CredentialRef,
-	type CredentialTriggerKind,
 	type CredentialTriggerRef,
 } from '#universal/credential-contracts.ts'
-
-function credentialTriggerKindLabel(kind: CredentialTriggerKind) {
-	switch (kind) {
-		case 'cron':
-			return 'Schedule'
-		case 'subscription':
-			return 'Subscription'
-		case 'webhook':
-			return 'Webhook'
-		default: {
-			const exhaustive: never = kind
-			return exhaustive
-		}
-	}
-}
-
-export function describeTrigger(trigger: CredentialTriggerRef) {
-	return `${credentialTriggerKindLabel(trigger.kind)} “${trigger.name}”`
-}
-
-export function credentialRefLabel(ref: CredentialRef) {
-	return ref.scope === 'personal' ? `${ref.name} (yours)` : ref.name
-}
-
-export function credentialKindLabel(kind: CredentialKind) {
-	switch (kind) {
-		case 'secret':
-			return 'Key'
-		case 'oauth':
-			return 'OAuth'
-		case 'mcp':
-			return 'MCP server'
-		case 'url':
-			return 'URL'
-		case 'login':
-			return 'Login'
-		case 'signing':
-			return 'Signing'
-		default: {
-			const exhaustive: never = kind
-			return exhaustive
-		}
-	}
-}
+import {
+	credentialRefLabel,
+	describeTrigger,
+} from '#universal/package-credentials-page.ts'
 
 /** Not found also covers a viewer without `package:execute`, as the API does. */
 export type PackageCredentialApprovalLoaderData =
@@ -161,8 +119,8 @@ export function approvalChangeIsNoop(change: CredentialApprovalChangeView) {
 	if (change.before === null || change.error) return false
 	// Stored unusable ids are rewritten on Approve even when usable refs match.
 	if (change.beforeUnusableIds.length > 0) return false
-	const before = change.before.map((ref) => ref.id).sort()
-	const after = change.after.map((ref) => ref.id).sort()
+	const before = change.before.map((ref) => ref.id)
+	const after = change.after.map((ref) => ref.id)
 	return (
 		before.length === after.length &&
 		before.every((id, index) => id === after[index])

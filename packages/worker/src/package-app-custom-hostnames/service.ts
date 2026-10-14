@@ -16,12 +16,13 @@ import {
 	listOrgCustomHostnameRows,
 	orgOwnsPackageIncludingDeleted,
 } from '#worker/package-app-custom-hostnames/count-org.ts'
-import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import { isPackageAppCustomDomainsEnabledForUser } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	packageAppCustomHostnameAddRateLimit,
 	packageAppCustomHostnameAddRateLimitKey,
 	packageAppCustomHostnameMaxPerOrg,
 } from '#worker/package-app-custom-hostnames/limits.ts'
+import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
 import { invalidateCachedPackageAppCustomHostname } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import {
 	isPackageAppCustomHostnameVerified,
@@ -206,10 +207,13 @@ function verificationFromCloudflare(
 	}
 }
 
-async function requireCustomDomainsEnabled(db: D1Database) {
-	if (!(await isPackageAppCustomDomainsEnabled(db))) {
+async function requireCustomDomainsEnabled(
+	db: D1Database,
+	actingUserId: number | null,
+) {
+	if (!(await isPackageAppCustomDomainsEnabledForUser(db, actingUserId))) {
 		throw new PackageAppCustomHostnameError(
-			'Package-app custom domains are not enabled for this environment.',
+			'Package-app custom domains are not enabled for this user.',
 		)
 	}
 }
@@ -223,21 +227,13 @@ function createCloudflareClient(env: Env & { fetcher?: Fetcher }) {
 	})
 }
 
-function dnsTargetHostname(env: Env) {
-	const base = env.PACKAGE_APP_BASE_URL?.trim()
-	if (!base) return null
-	try {
-		return new URL(base).hostname
-	} catch {
-		return null
-	}
-}
-
 function dnsHint(env: Env, hostname: string): PackageAppCustomHostnameDnsHint {
 	return {
 		type: 'CNAME',
 		name: hostname,
-		target: dnsTargetHostname(env),
+		target: packageAppCustomDomainsCnameTargetFromBaseUrl(
+			env.PACKAGE_APP_BASE_URL,
+		),
 	}
 }
 
@@ -523,13 +519,15 @@ async function applyCloudflareStatus(input: {
 export async function addPackageAppCustomHostname(input: {
 	env: Env
 	orgId: string
+	/** Numeric `users.id` for feature-flag audience evaluation. */
+	actingUserId: number
 	createdByUserId: string
 	bindingKind: PackageAppCustomHostnameBindingKind
 	hostname: string
 	packageId?: string
 	sslMethod?: CustomHostnameSslMethod
 }) {
-	await requireCustomDomainsEnabled(input.env.APP_DB)
+	await requireCustomDomainsEnabled(input.env.APP_DB, input.actingUserId)
 	await requirePaidOrgForCustomDomains(input.env.APP_DB, input.orgId)
 	const hostname = normalizeCustomHostname(input.hostname)
 	if (!hostname) {
@@ -723,8 +721,10 @@ export async function addPackageAppCustomHostname(input: {
 export async function listPackageAppCustomHostnames(input: {
 	env: Env
 	orgId: string
+	/** Numeric `users.id` for feature-flag audience evaluation. */
+	actingUserId: number
 }) {
-	await requireCustomDomainsEnabled(input.env.APP_DB)
+	await requireCustomDomainsEnabled(input.env.APP_DB, input.actingUserId)
 	const rows = await listOrgCustomHostnameRows<CustomHostnameRowSql>(
 		input.env.APP_DB,
 		input.orgId,
@@ -737,11 +737,13 @@ export async function listPackageAppCustomHostnames(input: {
 export async function syncPackageAppCustomHostname(input: {
 	env: Env
 	orgId: string
+	/** Numeric `users.id` for feature-flag audience evaluation. */
+	actingUserId: number
 	hostname?: string
 	id?: string
 	now?: Date
 }) {
-	await requireCustomDomainsEnabled(input.env.APP_DB)
+	await requireCustomDomainsEnabled(input.env.APP_DB, input.actingUserId)
 	const row = await loadOwnedCustomHostnameRow(input)
 	const cfId = row.cloudflareHostnameId?.trim()
 	if (!cfId) {
@@ -794,10 +796,12 @@ export async function removePackageAppCustomHostnameRow(input: {
 export async function deletePackageAppCustomHostname(input: {
 	env: Env
 	orgId: string
+	/** Numeric `users.id` for feature-flag audience evaluation. */
+	actingUserId: number
 	hostname?: string
 	id?: string
 }) {
-	await requireCustomDomainsEnabled(input.env.APP_DB)
+	await requireCustomDomainsEnabled(input.env.APP_DB, input.actingUserId)
 	const row = await loadOwnedCustomHostnameRow(input)
 	await removePackageAppCustomHostnameRow({
 		env: input.env,

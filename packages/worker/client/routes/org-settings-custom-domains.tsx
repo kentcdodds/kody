@@ -169,7 +169,7 @@ export function createOrgSettingsCustomDomains(
 					<p mix={css(accountFieldNoteCss)}>
 						Point a CNAME at{' '}
 						<code mix={css(handleValueCss)}>
-							{customDomains.dnsTarget ?? 'the package-app zone'}
+							{customDomains.dnsTarget ?? 'domains.<package-app host>'}
 						</code>
 						, publish any ownership and SSL validation records shown per domain,
 						then sync until hostname and certificate are both active. Prefer TXT

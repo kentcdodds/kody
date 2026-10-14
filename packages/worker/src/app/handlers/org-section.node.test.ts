@@ -146,3 +146,40 @@ test('team Connections are open to every member role and to grant-only collabora
 	)
 	expect(orgSectionDenial('denied', 'agents')).toBe('Organization unavailable')
 })
+
+test('the credential creation page passes the team-org gate and keeps its URL through sign-in', async () => {
+	const env = await createEnv()
+	signInAs(adaId, 'ada')
+	const { createOrgCredentialNewHandler } = await import('./org-section.ts')
+	const open = (orgSlug: string) =>
+		createOrgCredentialNewHandler(env).handler({
+			request: new Request(
+				`https://kody.test/@${orgSlug}/-/credentials/new?name=x`,
+			),
+			params: { orgSlug },
+		})
+	const response = await open('acme')
+	// A gate denial is a 404; past the gate, the unmocked page auth sends the
+	// request to sign-in with its URL kept.
+	expect(response.status).toBe(302)
+	expect(response.headers.get('location')).toBe(
+		`https://kody.test/login?redirectTo=${encodeURIComponent('/@acme/-/credentials/new?name=x')}`,
+	)
+})
+
+test('the org-less creation link keeps its query on the signup org page', async () => {
+	const { signupOrgCredentialCreateHref } =
+		await import('./connect-credential.ts')
+	expect(
+		signupOrgCredentialCreateHref(
+			{ username: 'ada', request: { org: { slug: 'ada' } } } as never,
+			'?kind=secret&name=x',
+		),
+	).toBe('/@ada/-/credentials/new?kind=secret&name=x')
+	expect(
+		signupOrgCredentialCreateHref(
+			{ username: 'ada', request: { org: { slug: null } } } as never,
+			'',
+		),
+	).toBe('/@ada/-/credentials/new')
+})

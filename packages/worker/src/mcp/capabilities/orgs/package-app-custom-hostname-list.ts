@@ -4,6 +4,8 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
 import { packageAppCustomHostnameRowSchema } from '#mcp/capabilities/orgs/package-app-custom-hostname-schemas.ts'
+import { resolvePackageAppCustomHostnameActingUserId } from '#mcp/capabilities/orgs/package-app-custom-hostname-acting-user.ts'
+import { packageAppCustomDomainsFlagKey } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	listPackageAppCustomHostnames,
 	PackageAppCustomHostnameError,
@@ -14,6 +16,7 @@ export const packageAppCustomHostnameListCapability = defineDomainCapability(
 	{
 		name: 'packageAppCustomHostnameList',
 		orgPermission: 'org:write',
+		featureFlag: packageAppCustomDomainsFlagKey,
 		description:
 			'List custom hostnames registered for this organization’s package apps, including app-level and org-level bindings and their Cloudflare verification status.',
 		keywords: ['custom domain', 'hostname', 'package app', 'list', 'DNS'],
@@ -26,10 +29,15 @@ export const packageAppCustomHostnameListCapability = defineDomainCapability(
 		}),
 		async handler(_args, ctx) {
 			const request = requireMcpRequest(ctx.callerContext)
+			const actingUserId = await resolvePackageAppCustomHostnameActingUserId({
+				db: ctx.env.APP_DB,
+				stableUserId: request.actor?.userId,
+			})
 			try {
 				return await listPackageAppCustomHostnames({
 					env: ctx.env,
 					orgId: request.org.id,
+					actingUserId,
 				})
 			} catch (error) {
 				if (error instanceof PackageAppCustomHostnameError) {

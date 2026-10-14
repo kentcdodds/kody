@@ -73,7 +73,7 @@ test('account section switches keep the current page on screen (no loading flash
 		'Workspace sections',
 		[
 			{ link: 'Memories', heading: 'Memories' },
-			{ link: 'Secrets', heading: 'Secrets' },
+			{ link: 'Credentials', heading: 'Credentials' },
 			{ link: 'Agents', heading: 'Agents' },
 			{ link: 'Activity', heading: 'Activity' },
 			{ link: 'Webhooks', heading: 'Webhooks' },
@@ -154,14 +154,14 @@ test('every workspace section is two clicks from /account', async ({
 		name: 'Workspace sections',
 	})
 	await workspaceRail
-		.getByRole('link', { name: 'MCP servers', exact: true })
+		.getByRole('link', { name: 'Credentials', exact: true })
 		.click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/mcp-servers$`))
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/credentials$`))
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'MCP servers' }),
+		page.getByRole('heading', { level: 1, name: 'Credentials' }),
 	).toBeVisible()
 	await expect(
-		workspaceRail.getByRole('link', { name: 'MCP servers', exact: true }),
+		workspaceRail.getByRole('link', { name: 'Credentials', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
 	// From an account page the signup org row opens the workspace overview,
@@ -184,7 +184,7 @@ test('every workspace section is two clicks from /account', async ({
 	for (const label of [
 		'Repositories',
 		'Agents',
-		'Secrets',
+		'Credentials',
 		'Jobs',
 		'Memories',
 		'Billing',
@@ -195,11 +195,11 @@ test('every workspace section is two clicks from /account', async ({
 	}
 	await page
 		.getByTestId('org-overview-credentials')
-		.getByRole('link', { name: /^MCP servers/ })
+		.getByRole('link', { name: /^Credentials/ })
 		.click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/mcp-servers$`))
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/credentials$`))
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'MCP servers' }),
+		page.getByRole('heading', { level: 1, name: 'Credentials' }),
 	).toBeVisible()
 
 	// The organizations list opens the signup org's overview too.
@@ -451,22 +451,26 @@ test('account live search keeps the same focused input while the list filters', 
 	})
 	expect(betaSecret.ok()).toBe(true)
 
-	await page.goto(`/@${user.username}/-/secrets`)
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/secrets$`))
+	await page.goto(`/@${user.username}/-/credentials`)
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/credentials$`))
 	await waitForClientHydration(page)
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Secrets' }),
+		page.getByRole('heading', { level: 1, name: 'Credentials' }),
 	).toBeVisible()
 	await expect(page.getByText(`alphaSecret${runId}`)).toBeVisible()
 	await expect(page.getByText(`betaSecret${runId}`)).toBeVisible()
 
-	const secretsSearch = page.getByRole('searchbox', { name: 'Search secrets' })
-	await secretsSearch.click()
-	await markSearchNode(secretsSearch)
-	await secretsSearch.pressSequentially(`alphaSecret${runId}`, { delay: 20 })
-	await expect(secretsSearch).toBeFocused()
-	await expect(secretsSearch).toHaveAttribute('data-kody-search-mount', '1')
-	await expect(secretsSearch).toHaveValue(`alphaSecret${runId}`)
+	const credentialsSearch = page.getByRole('searchbox', {
+		name: 'Search credentials',
+	})
+	await credentialsSearch.click()
+	await markSearchNode(credentialsSearch)
+	await credentialsSearch.pressSequentially(`alphaSecret${runId}`, {
+		delay: 20,
+	})
+	await expect(credentialsSearch).toBeFocused()
+	await expect(credentialsSearch).toHaveAttribute('data-kody-search-mount', '1')
+	await expect(credentialsSearch).toHaveValue(`alphaSecret${runId}`)
 	await expect(page.getByText(`alphaSecret${runId}`)).toBeVisible()
 	await expect(page.getByText(`betaSecret${runId}`)).toHaveCount(0)
 

@@ -16,6 +16,7 @@ export const routes = route({
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	connectCredential: '/connect/credential',
+	accountCredentials: '/account/credentials',
 	connectSecrets: '/connect/secrets',
 	connectSecretSet: '/connect/secret-set',
 	connectWebhookApply: '/connect/webhook-apply',
@@ -217,6 +218,9 @@ export const routes = route({
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
+	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
+	// The credential creation one-pager for this org.
+	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),
 	orgUsage: get('/@:orgSlug/-/usage'),
 	orgUsageApi: get('/@:orgSlug/-/usage.json'),
 	orgEmail: get('/@:orgSlug/-/email(/*rest)'),
@@ -291,6 +295,11 @@ export const routes = route({
 	// public). Third-segment noun so it cannot collide with a kodyId.
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
+	// Package Credentials / Default mappings / Triggers tabs (people with
+	// package:execute); data comes from communityPackageCredentialsApi.
+	communityPackageCredentials: '/@:username/:kodyId/credentials',
+	communityPackageMappings: '/@:username/:kodyId/mappings',
+	communityPackageTriggers: '/@:username/:kodyId/triggers',
 	// Bundled credential mapping approval; the query is the proposal
 	// (buildCredentialApprovalHref). Data: communityPackageApproveCredentialsApi.
 	communityPackageApproveCredentials: '/@:username/:kodyId/approve-credentials',

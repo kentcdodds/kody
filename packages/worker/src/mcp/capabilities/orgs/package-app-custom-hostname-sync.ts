@@ -8,6 +8,8 @@ import {
 	packageAppCustomHostnameRowSchema,
 	packageAppCustomHostnameVerificationSchema,
 } from '#mcp/capabilities/orgs/package-app-custom-hostname-schemas.ts'
+import { resolvePackageAppCustomHostnameActingUserId } from '#mcp/capabilities/orgs/package-app-custom-hostname-acting-user.ts'
+import { packageAppCustomDomainsFlagKey } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	PackageAppCustomHostnameError,
 	syncPackageAppCustomHostname,
@@ -18,6 +20,7 @@ export const packageAppCustomHostnameSyncCapability = defineDomainCapability(
 	{
 		name: 'packageAppCustomHostnameSync',
 		orgPermission: 'org:write',
+		featureFlag: packageAppCustomDomainsFlagKey,
 		description:
 			'Refresh one custom hostname from Cloudflare for SaaS: pull hostname and SSL status, ownership TXT / SSL validation records, and update the local row. Use after the customer publishes DNS (CNAME and optional ownership/SSL TXT). Pass hostname or the row id from packageAppCustomHostnameList.',
 		keywords: [
@@ -46,10 +49,15 @@ export const packageAppCustomHostnameSyncCapability = defineDomainCapability(
 			if (!args.hostname && !args.id) {
 				throw new McpCallerError('Pass hostname or id.')
 			}
+			const actingUserId = await resolvePackageAppCustomHostnameActingUserId({
+				db: ctx.env.APP_DB,
+				stableUserId: request.actor?.userId,
+			})
 			try {
 				return await syncPackageAppCustomHostname({
 					env: ctx.env,
 					orgId: request.org.id,
+					actingUserId,
 					hostname: args.hostname,
 					id: args.id,
 				})

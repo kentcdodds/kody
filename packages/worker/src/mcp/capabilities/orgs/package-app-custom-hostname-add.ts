@@ -9,6 +9,8 @@ import {
 	packageAppCustomHostnameVerificationSchema,
 } from '#mcp/capabilities/orgs/package-app-custom-hostname-schemas.ts'
 import { packageAppCustomHostnameBindingKinds } from '#worker/package-app-custom-hostnames/types.ts'
+import { resolvePackageAppCustomHostnameActingUserId } from '#mcp/capabilities/orgs/package-app-custom-hostname-acting-user.ts'
+import { packageAppCustomDomainsFlagKey } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	addPackageAppCustomHostname,
 	PackageAppCustomHostnameError,
@@ -19,6 +21,7 @@ export const packageAppCustomHostnameAddCapability = defineDomainCapability(
 	{
 		name: 'packageAppCustomHostnameAdd',
 		orgPermission: 'org:write',
+		featureFlag: packageAppCustomDomainsFlagKey,
 		description:
 			'Register a custom hostname for this organization’s package apps (Cloudflare for SaaS). App-level hostnames apply to one internet-visible public app and serve it at the host root. Org-level hostnames apply to private apps and serve them at /packages/{kodyId} on the custom host. Only org admins on a paid plan may add domains. Point DNS (usually a CNAME) at the package-app zone before verification completes. Optional ssl_method=txt pre-validates the certificate via TXT before traffic switches.',
 		keywords: [
@@ -64,10 +67,15 @@ export const packageAppCustomHostnameAddCapability = defineDomainCapability(
 					'Custom hostnames must be added by a person with org:write.',
 				)
 			}
+			const actingUserId = await resolvePackageAppCustomHostnameActingUserId({
+				db: ctx.env.APP_DB,
+				stableUserId: request.actor.userId,
+			})
 			try {
 				return await addPackageAppCustomHostname({
 					env: ctx.env,
 					orgId: request.org.id,
+					actingUserId,
 					createdByUserId: request.actor.userId,
 					bindingKind: args.binding_kind,
 					hostname: args.hostname,

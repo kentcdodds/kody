@@ -177,6 +177,9 @@ const packageRepoChromeMatchers = [
 	createMatcher(routes.communityPackageSettings.pattern),
 	createMatcher(routes.communityPackageTree.pattern),
 	createMatcher(routes.communityPackageFiles.pattern),
+	createMatcher(routes.communityPackageCredentials.pattern),
+	createMatcher(routes.communityPackageMappings.pattern),
+	createMatcher(routes.communityPackageTriggers.pattern),
 ] as const
 
 /**
@@ -188,7 +191,8 @@ export function getPackageRepoChromeKey(pathname: string) {
 	const url = new URL(pathname, 'http://localhost')
 	for (const matcher of packageRepoChromeMatchers) {
 		const match = matcher.match(url)
-		if (match) {
+		// `/@org/-/…` are org pages, not a package named `-`.
+		if (match && match.params.kodyId !== '-') {
 			return `${match.params.username.toLowerCase()}/${match.params.kodyId.toLowerCase()}`
 		}
 	}

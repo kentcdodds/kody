@@ -23,17 +23,28 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { buildConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
+import { z } from 'zod'
 import {
+	credentialHostsSchema,
 	credentialProviderSchema,
+	loginExchangeSchema,
+	optInStoredCredentialKinds,
+	readStoredCredentialPlacement,
 	updateCredentialFields,
 } from '#worker/credentials/credential-fields.ts'
+import { type LoginExchange } from '#worker/credentials/login-resolver.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
+import {
+	planOptInCredentialFieldsForOrg,
+	withCredentialAudit,
+} from '#mcp/capabilities/secrets/secret-set-opt-in.ts'
 import {
 	deleteSecret,
 	findSecret,
 	listSecrets,
 	resolveSecret,
 	saveSecret,
+	type SaveSecretCredential,
 	setSecretAllowedHosts,
 	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
@@ -1238,9 +1249,39 @@ async function handleSaveAction(input: {
 	const provider = providerText
 		? credentialProviderSchema.safeParse(providerText)
 		: null
+	// An empty string clears the provider; null or a missing field keeps it.
+	const clearProvider = providerText === ''
 	if (provider && !provider.success) {
 		return jsonResponse(
 			{ ok: false, error: provider.error.issues[0]?.message },
+			400,
+		)
+	}
+	const optIn = readOptInCredentialInput(input.body)
+	if (!optIn.ok) {
+		return jsonResponse({ ok: false, error: optIn.error }, 400)
+	}
+	const touchesKind =
+		optIn.kind !== undefined ||
+		optIn.hosts !== undefined ||
+		optIn.loginExchange !== undefined
+	if (touchesKind && !value) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'Enter the value again to set its kind or hosts: whoever supplies the value decides where it may go.',
+			},
+			400,
+		)
+	}
+	if (touchesKind && optIn.kind !== 'secret' && allowedHosts.length > 0) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'URL, login, and signing credentials take hosts, not approved hosts.',
+			},
 			400,
 		)
 	}
@@ -1330,6 +1371,86 @@ async function handleSaveAction(input: {
 		)
 	}
 
+	const orgId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
+	let credential: SaveSecretCredential | null = null
+	// Without an explicit kind an existing opt-in credential keeps its hosts;
+	// Key host approvals below must not overwrite them.
+	let keepsOptInHosts = false
+	try {
+		if (touchesKind) {
+			const plan = await planOptInCredentialFieldsForOrg({
+				db: input.env.APP_DB,
+				orgId,
+				input: {
+					name,
+					scope,
+					value,
+					kind: optIn.kind,
+					hosts: optIn.hosts,
+					login_exchange: optIn.loginExchange,
+					...(provider?.success
+						? { provider: provider.data }
+						: clearProvider
+							? { provider: null }
+							: {}),
+				},
+				authorityPackageId: null,
+			})
+			if (plan.mode === 'with-value') {
+				credential = withCredentialAudit(
+					plan,
+					orgAuditWriterFromRequest(input.env, input.user.request),
+				)
+			}
+		} else if (scope === 'user' || currentSecret?.scope === 'user') {
+			const placement = await readStoredCredentialPlacement({
+				db: input.env.APP_DB,
+				orgId,
+				name: currentSecret?.scope === 'user' ? currentSecret.name : name,
+			})
+			keepsOptInHosts = placement != null && placement.kind !== 'secret'
+			if (placement && keepsOptInHosts) {
+				if (currentSecret && currentId !== nextId) {
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								'Renaming or moving a URL, login, or signing credential here would drop its kind. Create it again under the new name instead.',
+						},
+						400,
+					)
+				}
+				if (
+					allowedHosts.length > 0 &&
+					!sameHostList(allowedHosts, placement.allowedHosts)
+				) {
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								'URL, login, and signing credentials take hosts, not approved hosts. Edit its hosts from the credential creation page with its value.',
+						},
+						400,
+					)
+				}
+			}
+		}
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error ? error.message : 'Unable to save secret.',
+			},
+			400,
+		)
+	}
+	const setsKeyHosts =
+		credential == null ? !keepsOptInHosts : credential.kind === 'secret'
+
 	let saved: Awaited<ReturnType<typeof saveSecret>>
 	try {
 		saved = await saveSecret({
@@ -1348,21 +1469,24 @@ async function handleSaveAction(input: {
 				scope,
 				packageId,
 			}),
+			...(credential ? { credential } : {}),
 		})
-		await setSecretAllowedHosts({
-			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
-			name,
-			scope,
-			allowedHosts,
-			storageContext: getSecretContextForAccountSecret({
+		if (setsKeyHosts) {
+			await setSecretAllowedHosts({
+				env: input.env,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
+				name,
 				scope,
-				packageId,
-			}),
-		})
+				allowedHosts,
+				storageContext: getSecretContextForAccountSecret({
+					scope,
+					packageId,
+				}),
+			})
+		}
 		await setSecretAllowedPackages({
 			env: input.env,
 			userId: ownerIdFromCaller({
@@ -1378,34 +1502,13 @@ async function handleSaveAction(input: {
 			}),
 		})
 
-		if (currentSecret && currentSecret.id !== nextId) {
-			await deleteSecret({
-				env: input.env,
-				userId: ownerIdFromCaller({
-					request: input.user.request,
-					user: input.user.mcpUser,
-				}),
-				name: currentSecret.name,
-				scope: currentSecret.scope,
-				storageContext: getSecretContextForAccountSecret(currentSecret),
-			})
-		}
-	} catch (error) {
-		return jsonResponse(
-			{
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to save secret.',
-			},
-			400,
-		)
-	}
-
-	// Only org Keys carry credential fields; the link's provider makes the new
-	// Key match the need that asked for it. The save has already committed, so
-	// a failure here must not report it as failed (a create retry would 409).
-	if (provider?.success && scope === 'user') {
-		try {
+		// Only org Keys carry credential fields; the link's provider makes the
+		// new Key match the need that asked for it.
+		if (
+			(provider?.success || clearProvider) &&
+			scope === 'user' &&
+			!credential
+		) {
 			const stored = await findSecret({
 				env: input.env,
 				userId: ownerIdFromCaller({
@@ -1428,16 +1531,33 @@ async function handleSaveAction(input: {
 						user: input.user.mcpUser,
 					}),
 					credentialId: stored.credentialId,
-					update: { provider: provider.data },
+					update: { provider: provider?.success ? provider.data : null },
 					audit: orgAuditWriterFromRequest(input.env, input.user.request),
 				})
 			}
-		} catch (error) {
-			console.warn('account secret save could not set the link provider', {
-				name,
-				error,
+		}
+
+		if (currentSecret && currentSecret.id !== nextId) {
+			await deleteSecret({
+				env: input.env,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
+				name: currentSecret.name,
+				scope: currentSecret.scope,
+				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
 		}
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error ? error.message : 'Unable to save secret.',
+			},
+			400,
+		)
 	}
 
 	try {
@@ -1583,6 +1703,14 @@ function readStringArray(body: object, key: string) {
 	return value.filter((item): item is string => typeof item === 'string')
 }
 
+function sameHostList(left: Array<string>, right: Array<string>) {
+	const rightSet = new Set(right.map((host) => host.toLowerCase()))
+	return (
+		left.length === rightSet.size &&
+		left.every((host) => rightSet.has(host.toLowerCase()))
+	)
+}
+
 function readStringRecord(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -1593,6 +1721,50 @@ function readStringRecord(body: object, key: string) {
 			)
 			.map(([recordKey, recordValue]) => [recordKey, recordValue]),
 	)
+}
+
+const storedCredentialKindSchema = z.enum([
+	'secret',
+	...optInStoredCredentialKinds,
+])
+
+/** The opt-in credential fields (ADR 0068); each is undefined when absent. */
+function readOptInCredentialInput(body: object):
+	| {
+			ok: true
+			kind: z.infer<typeof storedCredentialKindSchema> | undefined
+			hosts: Array<string> | undefined
+			loginExchange: LoginExchange | undefined
+	  }
+	| { ok: false; error: string } {
+	const record = body as Record<string, unknown>
+	const fields = z
+		.object({
+			kind: storedCredentialKindSchema.optional(),
+			hosts: credentialHostsSchema.optional(),
+			loginExchange: loginExchangeSchema.optional(),
+		})
+		.safeParse({
+			kind: record.kind ?? undefined,
+			hosts: record.hosts ?? undefined,
+			loginExchange: record.loginExchange ?? undefined,
+		})
+	if (!fields.success) {
+		const issue = fields.error.issues[0]
+		const field = issue?.path[0] === 'loginExchange' ? 'Login exchange' : null
+		return {
+			ok: false,
+			error: field
+				? `${field}: ${issue?.message ?? 'invalid.'}`
+				: (issue?.message ?? 'Invalid credential fields.'),
+		}
+	}
+	return {
+		ok: true,
+		kind: fields.data.kind,
+		hosts: fields.data.hosts,
+		loginExchange: fields.data.loginExchange,
+	}
 }
 
 function readAccountSecretScope(

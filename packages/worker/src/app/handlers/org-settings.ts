@@ -20,7 +20,8 @@ import { softDeleteOrg } from '#worker/orgs/soft-delete.ts'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
-import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
+import { isPackageAppCustomDomainsEnabledForUser } from '#worker/package-app-custom-hostnames/feature-flag.ts'
 import {
 	addPackageAppCustomHostname,
 	deletePackageAppCustomHostname,
@@ -61,23 +62,25 @@ function renderDenied(
 async function loadCustomDomainsView(
 	env: Env,
 	orgId: string,
+	actingUserId: number,
 ): Promise<OrgSettingsLoaderData['customDomains']> {
-	if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) {
+	// Same gate as mutations/MCP: audience + per-user overrides. Global-only
+	// would hide the panel for override users who can still add/sync.
+	if (
+		!(await isPackageAppCustomDomainsEnabledForUser(env.APP_DB, actingUserId))
+	) {
 		return null
 	}
 	try {
-		const listed = await listPackageAppCustomHostnames({ env, orgId })
-		const dnsTarget = (() => {
-			const base = env.PACKAGE_APP_BASE_URL?.trim()
-			if (!base) return null
-			try {
-				return new URL(base).hostname
-			} catch {
-				return null
-			}
-		})()
+		const listed = await listPackageAppCustomHostnames({
+			env,
+			orgId,
+			actingUserId,
+		})
 		return {
-			dnsTarget,
+			dnsTarget: packageAppCustomDomainsCnameTargetFromBaseUrl(
+				env.PACKAGE_APP_BASE_URL,
+			),
 			hostnames: listed.hostnames.map((row) => ({
 				id: row.id,
 				hostname: row.hostname,
@@ -119,7 +122,7 @@ async function loadOrgSettingsData(input: {
 		canDelete:
 			teamOrg && (await orgHasPermission(input.env, input.user, 'org:delete')),
 		customDomains: canManage
-			? await loadCustomDomainsView(input.env, input.org.id)
+			? await loadCustomDomainsView(input.env, input.org.id, input.user.userId)
 			: null,
 	}
 }
@@ -432,12 +435,16 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 					400,
 				)
 			}
-			if (!(await isPackageAppCustomDomainsEnabled(env.APP_DB))) {
+			if (
+				!(await isPackageAppCustomDomainsEnabledForUser(
+					env.APP_DB,
+					user.userId,
+				))
+			) {
 				return jsonResponse(
 					{
 						ok: false,
-						error:
-							'Package-app custom domains are not enabled for this environment.',
+						error: 'Package-app custom domains are not enabled for this user.',
 					},
 					404,
 				)
@@ -473,6 +480,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await addPackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							createdByUserId: user.mcpUser.userId,
 							bindingKind,
 							hostname,
@@ -488,6 +496,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await syncPackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							hostname:
 								typeof body.hostname === 'string' ? body.hostname : undefined,
 							id: typeof body.id === 'string' ? body.id : undefined,
@@ -498,6 +507,7 @@ export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
 						await deletePackageAppCustomHostname({
 							env,
 							orgId: access.org.id,
+							actingUserId: user.userId,
 							hostname:
 								typeof body.hostname === 'string' ? body.hostname : undefined,
 							id: typeof body.id === 'string' ? body.id : undefined,

@@ -2757,8 +2757,7 @@ html.is-settled {
 	}
 }
 
-.landing-ecosystem,
-.landing-byok {
+.landing-ecosystem {
 	max-width: 72rem;
 	margin-inline: auto;
 	padding: clamp(2rem, 5vw, 4rem) clamp(1.25rem, 4vw, 2.5rem);
@@ -2771,26 +2770,13 @@ html.is-settled {
 	grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
-.landing-byok {
-	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-}
-
-.landing-ecosystem-art,
-.landing-byok-art {
+.landing-ecosystem-art {
 	width: min(100%, 400px);
 	max-width: 100%;
 	height: auto;
 	aspect-ratio: 1;
 	display: block;
 	margin-inline: auto;
-}
-
-.landing-byok-art {
-	width: min(100%, 380px);
-}
-
-.landing-byok-copy {
-	max-width: 48ch;
 }
 
 .landing-split-copy {
@@ -3034,8 +3020,7 @@ html.is-settled {
 		padding: 1.75rem 1.25rem;
 	}
 
-	.landing-ecosystem,
-	.landing-byok {
+	.landing-ecosystem {
 		grid-template-columns: 1fr;
 		text-align: center;
 		padding: 1.75rem 1.25rem;
@@ -3044,15 +3029,6 @@ html.is-settled {
 	.landing-ecosystem-art {
 		order: -1;
 		width: min(60%, 300px);
-	}
-
-	.landing-byok-art {
-		width: min(60%, 300px);
-	}
-
-	.landing-byok-copy {
-		max-width: 46ch;
-		margin-inline: auto;
 	}
 
 	.landing-split-copy {
@@ -3082,174 +3058,6 @@ html.is-settled {
 @media (max-width: 560px) {
 	.landing-path-fan {
 		grid-template-columns: 1fr;
-	}
-}
-
-/* BYOK “agent never sees the key” demo. Parked still without JS / after
-   SSR; `html.js` + `.is-playing` (added post-hydrate) start the loop. */
-.landing-byok-demo {
-	display: block;
-	width: fit-content;
-	max-width: 100%;
-	margin-top: 1.15rem;
-	margin-inline: auto;
-	text-align: left;
-	user-select: none;
-}
-
-.landing-byok-stage {
-	position: relative;
-	display: flex;
-	align-items: center;
-	padding: 0.55rem 0.15rem 2.75rem;
-	min-height: 5rem;
-	overflow: visible;
-}
-
-.landing-byok-field {
-	display: flex;
-	align-items: stretch;
-	min-width: 0;
-	background: var(--color-surface);
-	border: 1px solid var(--color-field-border);
-	border-radius: 0.9rem;
-	box-shadow:
-		0 10px 24px oklch(from var(--color-text) l c h / 0.08),
-		inset 0 1px 0 oklch(from var(--color-surface) calc(l + 0.06) c h);
-}
-
-.landing-byok-input {
-	font: 550 1rem/1.2 var(--font-body);
-	letter-spacing: 0.22em;
-	color: var(--color-text);
-	background: transparent;
-	border: none;
-	border-radius: 0.9rem 0 0 0.9rem;
-	padding: 0.72rem 0.7rem 0.72rem 1rem;
-	width: 11.5rem;
-	min-width: 0;
-	pointer-events: none;
-}
-
-.landing-byok-input:focus {
-	outline: none;
-}
-
-.landing-byok-eye {
-	display: grid;
-	place-items: center;
-	flex: none;
-	width: 2.65rem;
-	color: var(--color-text-muted);
-	background: transparent;
-	border: none;
-	border-left: 1px solid var(--color-border);
-	border-radius: 0 0.9rem 0.9rem 0;
-}
-
-.landing-byok-cursor {
-	position: absolute;
-	left: -3.15rem;
-	top: 50%;
-	z-index: 2;
-	width: 3.2rem;
-	height: 4.2rem;
-	color: var(--color-text);
-	translate: var(--byok-x, 0px) var(--byok-y, 0px);
-	pointer-events: none;
-}
-
-.landing-byok-hotspot {
-	position: absolute;
-	left: 0;
-	top: 0;
-	width: 1px;
-	height: 1px;
-}
-
-.landing-byok-cursor-shape {
-	display: block;
-	width: 20px;
-	height: 30px;
-	overflow: visible;
-	rotate: -16deg;
-	scale: var(--byok-scale, 1);
-	transform-origin: 0 0;
-	filter: drop-shadow(0 2px 4px oklch(from var(--color-text) l c h / 0.16));
-}
-
-.landing-byok-cursor-mark {
-	position: absolute;
-	left: 0.85rem;
-	top: 1.12rem;
-	display: grid;
-	place-items: center;
-	width: 2.25rem;
-	height: 2.25rem;
-	border-radius: 0.75rem;
-	color: var(--color-text);
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
-	box-shadow:
-		0 10px 24px oklch(from var(--color-text) l c h / 0.1),
-		inset 0 1px 0 oklch(from var(--color-surface) calc(l + 0.06) c h);
-}
-
-.landing-byok-cursor-mark-icon {
-	display: block;
-	width: 1.15rem;
-	height: 1.15rem;
-	object-fit: contain;
-}
-
-@media (prefers-color-scheme: dark) {
-	.landing-byok-cursor-mark-icon {
-		filter: invert(1);
-	}
-}
-
-@keyframes landing-byok-shake {
-	0% {
-		translate: 0;
-	}
-
-	16% {
-		translate: -7px;
-	}
-
-	32% {
-		translate: 7px;
-	}
-
-	48% {
-		translate: -5px;
-	}
-
-	64% {
-		translate: 4px;
-	}
-
-	80% {
-		translate: -2px;
-	}
-
-	100% {
-		translate: 0;
-	}
-}
-
-@media (prefers-reduced-motion: no-preference) {
-	html.js .landing-byok-demo.is-playing.is-clicking .landing-byok-eye {
-		color: var(--color-primary-text);
-		background: oklch(from var(--color-primary) l c h / 0.12);
-	}
-
-	html.js .landing-byok-demo.is-playing.is-clicking .landing-byok-eye svg {
-		scale: 0.88;
-	}
-
-	html.js .landing-byok-demo.is-playing.is-shaking .landing-byok-input {
-		animation: landing-byok-shake 0.42s linear;
 	}
 }
 

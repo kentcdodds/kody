@@ -597,6 +597,7 @@ export function isWranglerNotFoundOutput(output: string) {
 	const lower = output.toLowerCase()
 	return (
 		lower.includes('not found') ||
+		lower.includes("couldn't find") ||
 		lower.includes('no such') ||
 		lower.includes('does not exist')
 	)
@@ -1197,22 +1198,43 @@ export function packageAppWildcardRoutePattern(packageAppHostname: string) {
 	return `*.${packageAppHostname}/*`
 }
 
+/**
+ * Catch-all route for Cloudflare for SaaS custom hostnames on the package-app
+ * zone (ADR 0071). More-specific `apex/*` and `*.apex/*` routes stay ahead of
+ * this pattern for first-party package-app traffic.
+ */
+export function packageAppCustomHostnameCatchAllRoutePattern() {
+	return '*/*'
+}
+
 function packageAppWildcardDnsRecordName(packageAppHostname: string) {
 	return `*.${packageAppHostname}`
 }
 
 /**
- * DNS record names the package-app zone needs: the apex and the per-user
- * wildcard. Both are served by zone routes, which do not create DNS records,
- * so both need a proxied placeholder record. Neither may be a Workers custom
- * domain: a custom domain in a zone whose route table the deploy also
- * publishes gets detached (and its DNS record deleted) when the routes are
- * replaced.
+ * SaaS origin + customer CNAME target (`domains.<apex>`). Must be an explicit
+ * proxied DNS record — Cloudflare for SaaS rejects a fallback origin that is
+ * only covered by the wildcard.
+ */
+function packageAppCustomDomainsOriginDnsRecordName(
+	packageAppHostname: string,
+) {
+	return `domains.${packageAppHostname}`
+}
+
+/**
+ * DNS record names the package-app zone needs: the apex, the per-user
+ * wildcard, and the SaaS origin (`domains.<apex>`). All are served by zone
+ * routes, which do not create DNS records, so each needs a proxied
+ * placeholder record. None may be a Workers custom domain: a custom domain in
+ * a zone whose route table the deploy also publishes gets detached (and its
+ * DNS record deleted) when the routes are replaced.
  */
 function packageAppDnsRecordNames(packageAppHostname: string) {
 	return [
 		packageAppHostname,
 		packageAppWildcardDnsRecordName(packageAppHostname),
+		packageAppCustomDomainsOriginDnsRecordName(packageAppHostname),
 	]
 }
 
@@ -1460,9 +1482,29 @@ type CloudflareQueueConsumer = {
 }
 
 /**
+ * True when a Cloudflare Queues API call failed because the queue (or a
+ * consumer on it) is already gone. Preview cleanup lists queues by name,
+ * then addresses them by id; a concurrent delete can 404 the id path even
+ * though the name was present a moment earlier (#3693).
+ *
+ * Match only the HTTP 404 envelope: when Cloudflare omits an error message,
+ * `cloudflareApiRequest` falls back to the pathname, so requiring
+ * "not found" would miss a real already-gone response.
+ */
+export function isCloudflareQueueAlreadyGoneError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return error.message.startsWith('Cloudflare API request failed (404):')
+}
+
+/**
  * Deregister every consumer of a queue. Cloudflare refuses to delete a
  * Worker while it is registered as a queue consumer (code 10064), so
  * preview cleanup must remove the consumers before the Worker scripts.
+ *
+ * A 404 after the name was resolved (queue or consumer already gone) is
+ * treated as success — same as a miss on the name listing — so a
+ * half-torn-down preview does not fail the sweep (#3693). Non-404 errors
+ * still throw.
  */
 export async function removeCloudflareQueueConsumers(input: {
 	accountId: string
@@ -1489,21 +1531,42 @@ export async function removeCloudflareQueueConsumers(input: {
 		)
 		return
 	}
-	const payload = await cloudflareApiRequest<Array<CloudflareQueueConsumer>>({
-		...input,
-		pathname: `/queues/${queue.queue_id}/consumers`,
-	})
-	const consumers = payload.result ?? []
+	let consumers: Array<CloudflareQueueConsumer>
+	try {
+		const payload = await cloudflareApiRequest<Array<CloudflareQueueConsumer>>({
+			...input,
+			pathname: `/queues/${queue.queue_id}/consumers`,
+		})
+		consumers = payload.result ?? []
+	} catch (error) {
+		if (isCloudflareQueueAlreadyGoneError(error)) {
+			console.error(
+				`Queue already deleted (no consumers to remove): ${input.name}`,
+			)
+			return
+		}
+		throw error
+	}
 	if (consumers.length === 0) {
 		console.error(`Queue has no consumers: ${input.name}`)
 		return
 	}
 	for (const consumer of consumers) {
-		await cloudflareApiRequest({
-			...input,
-			pathname: `/queues/${queue.queue_id}/consumers/${consumer.consumer_id}`,
-			method: 'DELETE',
-		})
+		try {
+			await cloudflareApiRequest({
+				...input,
+				pathname: `/queues/${queue.queue_id}/consumers/${consumer.consumer_id}`,
+				method: 'DELETE',
+			})
+		} catch (error) {
+			if (isCloudflareQueueAlreadyGoneError(error)) {
+				console.error(
+					`Queue consumer already deleted: ${input.name} <- ${consumer.script ?? consumer.consumer_id}`,
+				)
+				continue
+			}
+			throw error
+		}
 		console.error(
 			`Removed Queue consumer: ${input.name} <- ${consumer.script ?? consumer.consumer_id}`,
 		)
@@ -1560,6 +1623,12 @@ export async function deleteCloudflareQueue(input: {
 			})
 			break
 		} catch (error) {
+			// Same race as consumer removal: listed by name, deleted by id
+			// elsewhere before this DELETE lands (#3693).
+			if (isCloudflareQueueAlreadyGoneError(error)) {
+				console.error(`Queue already deleted: ${input.name}`)
+				return
+			}
 			const timeLeft =
 				input.deadlineMs === undefined
 					? Number.POSITIVE_INFINITY
