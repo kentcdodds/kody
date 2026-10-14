@@ -3,6 +3,12 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type ProvisionPersonalOrgInput = {
 	stableUserId: string
+	/**
+	 * Org row id. Defaults to `stableUserId`. Phase 1 (#3053) keeps
+	 * `orgs.id = users.stable_user_id` and does not mint a distinct id;
+	 * callers omit this.
+	 */
+	orgId?: string
 	username: string
 	createdAt?: string
 	displayName?: string | null
@@ -21,6 +27,11 @@ export type ProvisionPersonalOrgInput = {
 	secondAgentStandardGiftExpiresAt?: string | null
 	referralStandardCreditExpiresAt?: string | null
 	signupWelcomeCreditsPending?: number | null
+}
+
+function resolveProvisionOrgId(input: ProvisionPersonalOrgInput) {
+	const explicit = input.orgId?.trim() ?? ''
+	return explicit === '' ? input.stableUserId : explicit
 }
 
 function orgSlugFromUsername(username: string) {
@@ -45,9 +56,10 @@ export async function ensurePersonalOrg(
 	db: D1Database,
 	input: ProvisionPersonalOrgInput,
 ) {
+	const orgId = resolveProvisionOrgId(input)
 	const existing = await db
 		.prepare(`SELECT id FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
-		.bind(input.stableUserId)
+		.bind(orgId)
 		.first<{ id: string }>()
 	if (existing) return
 	await provisionPersonalOrg(db, input)
@@ -62,6 +74,7 @@ export async function provisionPersonalOrg(
 	input: ProvisionPersonalOrgInput,
 ) {
 	const createdAt = input.createdAt ?? new Date().toISOString()
+	const orgId = resolveProvisionOrgId(input)
 	const slug = orgSlugFromUsername(input.username)
 	const handle = slug
 	const plan = input.plan?.trim() || 'free'
@@ -103,7 +116,7 @@ export async function provisionPersonalOrg(
 				)`,
 			)
 			.bind(
-				input.stableUserId,
+				orgId,
 				slug,
 				input.displayName ?? null,
 				input.bio ?? null,
@@ -131,13 +144,13 @@ export async function provisionPersonalOrg(
 					org_id, user_id, role, invited_by_user_id, created_at, deleted_at
 				) VALUES (?, ?, 'owner', NULL, ?, NULL)`,
 			)
-			.bind(input.stableUserId, input.stableUserId, createdAt),
+			.bind(orgId, input.stableUserId, createdAt),
 		db
 			.prepare(
 				`INSERT INTO handles (handle, user_id, org_id, created_at)
 				 VALUES (?, ?, ?, ?)`,
 			)
-			.bind(handle, input.stableUserId, input.stableUserId, createdAt),
+			.bind(handle, input.stableUserId, orgId, createdAt),
 	])
 }
 

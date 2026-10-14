@@ -150,12 +150,15 @@ export async function seedAccount(input: {
 	const passwordHash = input.passwordHash ?? 'test-password-hash'
 	await input.db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-			 VALUES (?, ?, ?, ?, ?)
+			`INSERT INTO users (
+				username, email, password_hash, email_verified_at,
+				stable_user_id, personal_org_id
+			) VALUES (?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(email) DO UPDATE SET
 				username = excluded.username,
 				email_verified_at = excluded.email_verified_at,
 				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+				personal_org_id = COALESCE(NULLIF(TRIM(users.personal_org_id), ''), excluded.personal_org_id),
 				updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(
@@ -163,6 +166,7 @@ export async function seedAccount(input: {
 			input.email,
 			passwordHash,
 			emailVerifiedAt,
+			stableUserId,
 			stableUserId,
 		)
 		.run()

@@ -781,6 +781,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						username,
 						email,
 						stable_user_id: stableUserId,
+						personal_org_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: createdAt,
 						...firstTouchAttributionCreateFields(signupAttribution),
@@ -801,7 +802,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					await rollbackNewUser(newUser.id)
 				}
 				const uniqueField = getUniqueConstraintField(error)
-				if (uniqueField === 'stable_user_id') {
+				if (
+					uniqueField === 'stable_user_id' ||
+					uniqueField === 'personal_org_id'
+				) {
 					return fail('email-claimed', 'former_email_claimed')
 				}
 				if (uniqueField) {
