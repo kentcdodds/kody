@@ -134,6 +134,23 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 		})
 	}
 
+	// Signed-in outsiders must see no-access for private packages, never the
+	// generic "doesn't quite connect" 404 that made shared app handoffs look
+	// like the package was unpublished.
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'guest',
+		mcpUser: { userId: ownerIdFromStored('guest-1'), username: 'guest' },
+	})
+	resolvesTo('package', pkg({ isPrivate: true, name: '@owner/notes' }))
+	await expect(load()).resolves.toEqual({
+		kind: 'no_access',
+		username: 'owner',
+		kodyId: 'notes',
+		packageName: '@owner/notes',
+		viewerUsername: 'guest',
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+
 	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail)
 	resolvesTo('package', { listingId: 'listing-1' })
 	expect(await load()).toMatchObject({
@@ -220,16 +237,23 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 	})
 })
 
-test('loadPackagePage hides a private package from a signed-in non-owner', async () => {
+test('loadPackagePage tells a signed-in non-owner they lack access to a private package', async () => {
 	setProfileVisibility('private')
 	mockModule.loadCommunityDetailData.mockResolvedValue(null)
 	mockModule.loadAccountPackageDetail.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'guest@example.com',
-		mcpUser: { userId: ownerIdFromStored('guest-1') },
+		username: 'guest',
+		mcpUser: { userId: ownerIdFromStored('guest-1'), username: 'guest' },
 	})
-	resolvesTo('package', pkg({ isPrivate: true }))
-	expect(await load()).toEqual({ kind: 'not_found' })
+	resolvesTo('package', pkg({ isPrivate: true, name: '@owner/notes' }))
+	expect(await load()).toEqual({
+		kind: 'no_access',
+		username: 'owner',
+		kodyId: 'notes',
+		packageName: '@owner/notes',
+		viewerUsername: 'guest',
+	})
 	expect(mockModule.loadAccountPackageDetail).not.toHaveBeenCalled()
 })
 

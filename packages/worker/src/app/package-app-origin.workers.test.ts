@@ -587,3 +587,44 @@ test('team org private apps hand off and open for owners and execute-granted mem
 		)
 	}
 })
+
+test('denied handoff for a real private package still redirects to the package page (no-access HTML is covered by package-page + e2e)', async () => {
+	configureOrigins({
+		packageAppBaseUrl: packageAppOrigin,
+		runtime: 'production',
+	})
+	await seedTeamOrgPackageAppFixture()
+	const now = '2026-10-14T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, hidden, is_private, created_at, updated_at
+		) VALUES (?, ?, ?, ?, '', '[]', NULL, ?, 1, 0, 1, ?, ?)`,
+	)
+		.bind(
+			'pkg-acme-private-demo',
+			teamOrgId,
+			`@${teamOrgSlug}/demo`,
+			'demo',
+			'src-acme-private-demo',
+			now,
+			now,
+		)
+		.run()
+
+	// Guest has no app:execute on the seeded private app. Handoff must not mint
+	// a token; it sends them to `/@{org}/{kodyId}` where the package page now
+	// renders an explicit no-access shell (see package-page + e2e coverage —
+	// full Remix SSR needs AUTH_RATE_LIMITER, which this suite does not bind).
+	const denied = await workerFetch(
+		`${appOrigin}/@${teamOrgSlug}/packages/demo`,
+		{ headers: { Cookie: await sessionCookieFor(teamGuestEmail) } },
+	)
+	expect(denied.status).toBe(302)
+	expect(denied.headers.get('Location')).toBe(
+		`${appOrigin}/@${teamOrgSlug}/demo`,
+	)
+	expect(denied.headers.get('Location')).not.toContain(
+		packageAppHandoffQueryParam,
+	)
+})

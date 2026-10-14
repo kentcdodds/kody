@@ -187,6 +187,113 @@ function renderPackageUnauthorizedPage(input: { request: Request; env: Env }) {
 	})
 }
 
+function renderPackageNoAccessPage(input: {
+	request: Request
+	env: Env
+	username: string
+	kodyId: string
+	packageName: string
+	viewerUsername: string
+}) {
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: 'Access required',
+		status: 403,
+		loaderData: {
+			communityDetailShell: {
+				ok: false,
+				noAccess: true,
+				username: input.username,
+				kodyId: input.kodyId,
+				packageName: input.packageName,
+				viewerUsername: input.viewerUsername,
+			},
+		},
+	})
+}
+
+function renderPackagePageDenial(
+	page:
+		| { kind: 'not_found' }
+		| { kind: 'unauthorized' }
+		| {
+				kind: 'no_access'
+				username: string
+				kodyId: string
+				packageName: string
+				viewerUsername: string
+		  },
+	input: { request: Request; env: Env },
+) {
+	switch (page.kind) {
+		case 'not_found':
+			return renderPackageNotFoundPage(input)
+		case 'unauthorized':
+			return renderPackageUnauthorizedPage(input)
+		case 'no_access':
+			return renderPackageNoAccessPage({
+				request: input.request,
+				env: input.env,
+				username: page.username,
+				kodyId: page.kodyId,
+				packageName: page.packageName,
+				viewerUsername: page.viewerUsername,
+			})
+		default: {
+			page satisfies never
+			return renderPackageNotFoundPage(input)
+		}
+	}
+}
+
+function jsonPackagePageDenial(
+	page:
+		| { kind: 'not_found' }
+		| { kind: 'unauthorized' }
+		| {
+				kind: 'no_access'
+				username: string
+				kodyId: string
+				packageName: string
+				viewerUsername: string
+		  },
+	request: Request,
+) {
+	switch (page.kind) {
+		case 'not_found':
+			return jsonResponse(
+				request,
+				{ ok: false, error: 'Catalog entry not found.' },
+				404,
+			)
+		case 'unauthorized':
+			return jsonResponse(request, { ok: false, error: 'Unauthorized.' }, 401)
+		case 'no_access':
+			return jsonResponse(
+				request,
+				{
+					ok: false,
+					error: 'You do not have access to this package.',
+					noAccess: true,
+					username: page.username,
+					kodyId: page.kodyId,
+					packageName: page.packageName,
+					viewerUsername: page.viewerUsername,
+				},
+				403,
+			)
+		default: {
+			page satisfies never
+			return jsonResponse(
+				request,
+				{ ok: false, error: 'Catalog entry not found.' },
+				404,
+			)
+		}
+	}
+}
+
 async function highlightReadmeFences(
 	env: Env,
 	readmeContent: string | null,
@@ -301,11 +408,12 @@ export function createCommunityPackageHandler(env: Env) {
 					cache: page.shared ? 'public' : 'private',
 				})
 			}
-			if (page.kind === 'not_found') {
-				return renderPackageNotFoundPage({ request, env })
-			}
-			if (page.kind === 'unauthorized') {
-				return renderPackageUnauthorizedPage({ request, env })
+			if (
+				page.kind === 'not_found' ||
+				page.kind === 'unauthorized' ||
+				page.kind === 'no_access'
+			) {
+				return renderPackagePageDenial(page, { request, env })
 			}
 
 			if (page.listing?.listing) {
@@ -544,15 +652,12 @@ export function createCommunityPackageApiHandler(env: Env) {
 					404,
 				)
 			}
-			if (page.kind === 'not_found') {
-				return jsonResponse(
-					request,
-					{ ok: false, error: 'Catalog entry not found.' },
-					404,
-				)
-			}
-			if (page.kind === 'unauthorized') {
-				return jsonResponse(request, { ok: false, error: 'Unauthorized.' }, 401)
+			if (
+				page.kind === 'not_found' ||
+				page.kind === 'unauthorized' ||
+				page.kind === 'no_access'
+			) {
+				return jsonPackagePageDenial(page, request)
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
@@ -648,11 +753,12 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 					cache: page.shared ? 'public' : 'private',
 				})
 			}
-			if (page.kind === 'not_found') {
-				return renderPackageNotFoundPage({ request, env })
-			}
-			if (page.kind === 'unauthorized') {
-				return renderPackageUnauthorizedPage({ request, env })
+			if (
+				page.kind === 'not_found' ||
+				page.kind === 'unauthorized' ||
+				page.kind === 'no_access'
+			) {
+				return renderPackagePageDenial(page, { request, env })
 			}
 			if (!page.viewerCanManage || !page.ownerPackage) {
 				return renderPackageNotFoundPage({ request, env })
@@ -724,11 +830,12 @@ export function createCommunityPackageCredentialsHandler(
 					cache: page.shared ? 'public' : 'private',
 				})
 			}
-			if (page.kind === 'not_found') {
-				return renderPackageNotFoundPage({ request, env })
-			}
-			if (page.kind === 'unauthorized') {
-				return renderPackageUnauthorizedPage({ request, env })
+			if (
+				page.kind === 'not_found' ||
+				page.kind === 'unauthorized' ||
+				page.kind === 'no_access'
+			) {
+				return renderPackagePageDenial(page, { request, env })
 			}
 			if (!page.viewerIsOwner || !page.hasPackage || !page.ownerPackage) {
 				return renderPackageNotFoundPage({ request, env })

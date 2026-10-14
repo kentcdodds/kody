@@ -52,6 +52,16 @@ export type CommunityPackageMovedPayload = {
 	redirectTo?: string
 }
 
+export type CommunityPackageNoAccessPayload = {
+	ok: false
+	noAccess: true
+	username: string
+	kodyId: string
+	packageName: string
+	viewerUsername: string
+	error?: string
+}
+
 export type CommunityInstallApiPayload = {
 	ok: boolean
 	requiresAcknowledgement?: boolean
@@ -217,6 +227,7 @@ export function toPackageSettingsShell(
 	if (!routeData.ok) {
 		if ('unauthorized' in routeData) return { kind: 'unauthorized' }
 		if ('notFound' in routeData) return { kind: 'not-found' }
+		if ('noAccess' in routeData) return { kind: 'not-found' }
 		const exhaustive: never = routeData
 		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
 	}
@@ -295,15 +306,38 @@ export async function communityDetailRouteLoader(
 
 	const response = await shellPromise
 	const payload = await readJson<
-		CommunityDetailApiPayload | CommunityPackageMovedPayload
+		| CommunityDetailApiPayload
+		| CommunityPackageMovedPayload
+		| CommunityPackageNoAccessPayload
 	>(response)
 	if (response.status === 401) {
 		return {
 			communityDetailShell: { ok: false, unauthorized: true },
 		}
 	}
+	if (
+		response.status === 403 &&
+		payload &&
+		!payload.ok &&
+		'noAccess' in payload &&
+		payload.noAccess
+	) {
+		return {
+			communityDetailShell: {
+				ok: false,
+				noAccess: true,
+				username: payload.username,
+				kodyId: payload.kodyId,
+				packageName: payload.packageName,
+				viewerUsername: payload.viewerUsername,
+			},
+		}
+	}
 	if (response.status === 404) {
-		const movedTo = payload && !payload.ok ? payload.redirectTo : null
+		const movedTo =
+			payload && !payload.ok && 'redirectTo' in payload
+				? payload.redirectTo
+				: null
 		// A renamed package is a real destination, not a dead link: leave the SPA
 		// so the visitor lands on (and can copy) the canonical URL.
 		if (movedTo) {

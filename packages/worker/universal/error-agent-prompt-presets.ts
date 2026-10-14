@@ -79,6 +79,33 @@ export function buildUnauthorizedErrorAgentPrompt(input: {
 	})
 }
 
+/** Signed-in visitor opened a package they cannot read (private / no grant). */
+export function buildPackageNoAccessErrorAgentPrompt(input: {
+	path?: string | null
+	packageName: string
+	ownerUsername: string
+	viewerUsername: string
+}) {
+	return buildErrorAgentPrompt({
+		activity: `Opening ${input.packageName}, which returned the package no-access page (403).`,
+		errorCode: 'package_no_access',
+		errorMessage: `Signed in as @${input.viewerUsername}, but this account cannot open ${input.packageName}.`,
+		ids: { path: input.path, packageName: input.packageName },
+		likelyCause:
+			'The package exists under the owner org, but this person is not a member and holds no Use/Contribute/Manage grant on it.',
+		nextSteps: [
+			`Ask @${input.ownerUsername} to grant Use on ${input.packageName} (accessGrant / inviteCreate kind grant), or invite @${input.viewerUsername} to the org.`,
+			'Do not treat this as a missing or unpublished package.',
+		],
+		kodyTools: [
+			'search({ entity: "guide:package_sharing" })',
+			'search({ entity: "capability:accessGrant" })',
+			'search({ entity: "capability:inviteCreate" })',
+		],
+		docs: ['search({ entity: "guide:package_sharing" })'],
+	})
+}
+
 export type PackageAppFailureKindForPrompt =
 	| 'host-setup'
 	| 'package-entrypoint'

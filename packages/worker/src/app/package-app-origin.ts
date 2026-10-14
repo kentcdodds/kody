@@ -587,8 +587,9 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	if (!org || !canExecute) {
 		// `/@{username}/packages/{kodyId}` hands off only for visitors who
 		// may run the org's app. Everyone else belongs on the saved-package
-		// page, which is the two-segment `/@{username}/{kodyId}` route —
-		// not a 404 that reads like the package itself is missing.
+		// page (`/@{username}/{kodyId}`). That page shows an explicit
+		// no-access shell for signed-in outsiders — never a "doesn't quite
+		// connect" 404 that looks like the package was unpublished.
 		return redirectToPackagePage({ env, request, packagePath })
 	}
 
