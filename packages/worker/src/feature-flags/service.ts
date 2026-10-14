@@ -553,6 +553,10 @@ export async function listFeatureFlagsForAdmin(
 		overridesByKey.set(row.flag_key, list)
 	}
 
+	const repoOverrideKeyResult = await db
+		.prepare(`SELECT DISTINCT flag_key FROM feature_flag_repo_overrides`)
+		.all<{ flag_key: string }>()
+
 	const flags: Array<AdminFeatureFlag> = []
 	const seenKeys = new Set<string>()
 
@@ -587,6 +591,9 @@ export async function listFeatureFlagsForAdmin(
 	}
 	for (const key of overridesByKey.keys()) {
 		if (!seenKeys.has(key)) staleKeys.add(key)
+	}
+	for (const row of repoOverrideKeyResult.results ?? []) {
+		if (!seenKeys.has(row.flag_key)) staleKeys.add(row.flag_key)
 	}
 
 	for (const key of [...staleKeys].sort()) {
@@ -629,10 +636,11 @@ export async function deleteStaleFeatureFlag(
 		db
 			.prepare(`DELETE FROM feature_flag_user_overrides WHERE flag_key = ?`)
 			.bind(key),
+		db
+			.prepare(`DELETE FROM feature_flag_repo_overrides WHERE flag_key = ?`)
+			.bind(key),
 		db.prepare(`DELETE FROM feature_flags WHERE key = ?`).bind(key),
 	])
 
-	return (
-		(results[0]?.meta.changes ?? 0) > 0 || (results[1]?.meta.changes ?? 0) > 0
-	)
+	return results.some((result) => (result?.meta.changes ?? 0) > 0)
 }

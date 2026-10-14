@@ -41,6 +41,7 @@ type UserRow = {
 type TestDb = D1Database & {
 	globals: Map<string, GlobalRow>
 	overrides: Map<string, OverrideRow>
+	repoOverrides: Array<{ flag_key: string; source_id: string }>
 }
 
 type FlagKey = Parameters<typeof isFeatureEnabled>[1]
@@ -59,8 +60,10 @@ function createFeatureFlagsTestDb(
 		globals?: Array<GlobalRow>
 		overrides?: Array<OverrideRow>
 		users?: Array<UserRow>
+		repoOverrides?: Array<{ flag_key: string; source_id: string }>
 	} = {},
 ) {
+	const repoOverrides = [...(input.repoOverrides ?? [])]
 	const globals = new Map(
 		(input.globals ?? []).map((row) => [row.key, { ...row }]),
 	)
@@ -171,6 +174,13 @@ function createFeatureFlagsTestDb(
 							),
 					)
 				}
+				if (has('select distinct flag_key from feature_flag_repo_overrides')) {
+					return allResults<T>(
+						[...new Set(repoOverrides.map((row) => row.flag_key))].map(
+							(flag_key) => ({ flag_key }),
+						),
+					)
+				}
 				throw new Error(`Unsupported all query: ${query}`)
 			},
 			async run() {
@@ -234,6 +244,18 @@ function createFeatureFlagsTestDb(
 					const existed = globals.delete(String(params[0]))
 					return { meta: { changes: existed ? 1 : 0 } }
 				}
+				if (
+					normalized.startsWith('delete from feature_flag_repo_overrides') &&
+					has('where flag_key = ?')
+				) {
+					const before = repoOverrides.length
+					for (let index = repoOverrides.length - 1; index >= 0; index -= 1) {
+						if (repoOverrides[index]!.flag_key === params[0]) {
+							repoOverrides.splice(index, 1)
+						}
+					}
+					return { meta: { changes: before - repoOverrides.length } }
+				}
 				throw new Error(`Unsupported run query: ${query}`)
 			},
 		}
@@ -277,6 +299,7 @@ function createFeatureFlagsTestDb(
 		},
 		globals,
 		overrides,
+		repoOverrides,
 	} as unknown as TestDb
 }
 
@@ -540,6 +563,10 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 				updated_at: '2026-06-01T00:00:00.000Z',
 			},
 		],
+		repoOverrides: [
+			{ flag_key: 'repo-push-queue', source_id: 'repo-a' },
+			{ flag_key: 'retired-repo-flag', source_id: 'repo-b' },
+		],
 		overrides: [
 			{
 				flag_key: 'demo-indicator',
@@ -621,6 +648,13 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		},
 		overrides: [],
 	})
+	expect(byKey('retired-repo-flag')).toEqual({
+		key: 'retired-repo-flag',
+		...staleShape,
+		global: null,
+		overrides: [],
+	})
+	expect(byKey('repo-push-queue')?.stale).toBe(false)
 	expect(byKey('orphan-override')).toEqual({
 		key: 'orphan-override',
 		...staleShape,
@@ -649,6 +683,10 @@ test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', asyn
 	const db = createFeatureFlagsTestDb({
 		users: [{ id: 3, username: 'alice' }],
 		globals: [globalRow('demo-indicator'), globalRow('retired-flag')],
+		repoOverrides: [
+			{ flag_key: 'retired-flag', source_id: 'repo-a' },
+			{ flag_key: 'retired-repo-only', source_id: 'repo-b' },
+		],
 		overrides: [
 			{
 				flag_key: 'retired-flag',
@@ -668,7 +706,14 @@ test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', asyn
 	await expect(deleteStaleFeatureFlag(db, 'retired-flag')).resolves.toBe(true)
 	expect(db.globals.has('retired-flag')).toBe(false)
 	expect(db.overrides.size).toBe(0)
+	expect(db.repoOverrides).toEqual([
+		{ flag_key: 'retired-repo-only', source_id: 'repo-b' },
+	])
 	await expect(deleteStaleFeatureFlag(db, 'retired-flag')).resolves.toBe(false)
+	await expect(deleteStaleFeatureFlag(db, 'retired-repo-only')).resolves.toBe(
+		true,
+	)
+	expect(db.repoOverrides).toEqual([])
 })
 
 test('experiments_opt_in audience requires users.experiments_opt_in; overrides still win', async () => {
