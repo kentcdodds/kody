@@ -38,7 +38,11 @@ async function loadTriggerPicks(db: D1Database, enablement: EnablementRecord) {
 		.bind(enablement.orgId, enablement.packageId, enablement.id)
 		.all<{ need_key: string; credential_ids_json: string }>()
 	return (result.results ?? []).map((row) => {
-		const parsed: unknown = JSON.parse(row.credential_ids_json)
+		// A corrupt row reads as unset, as the run's own resolution reads it.
+		let parsed: unknown = null
+		try {
+			parsed = JSON.parse(row.credential_ids_json)
+		} catch {}
 		return {
 			needKey: row.need_key,
 			ids: Array.isArray(parsed)

@@ -120,6 +120,22 @@ test('none on purpose and default-layer mappings never pause an enablement', asy
 	expect((await t.readEnablement())?.state).toBe('on')
 })
 
+test('a corrupt trigger mapping row reads as unset and never pauses or blocks the run', async () => {
+	const t = await setup()
+	await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	await t.db
+		.prepare(
+			`UPDATE credential_mappings SET credential_ids_json = '{not json'
+			WHERE target = 'enablement'`,
+		)
+		.run()
+	expect((await t.plan()).runs).toHaveLength(1)
+	expect((await t.readEnablement())?.state).toBe('on')
+})
+
 test('a need a republish added with no single match never pauses the trigger', async () => {
 	const t = await setup()
 	await t.storeKey('team-slack', 'slack')
