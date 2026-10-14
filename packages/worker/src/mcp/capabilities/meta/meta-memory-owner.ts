@@ -21,6 +21,7 @@ import {
 	personalMemoryOwnerId,
 	personalMemoryOwnerRequest,
 } from '#mcp/memory/memory-owner.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { requireMcpRequest, requireMcpUser } from './require-user.ts'
 
 export const memoryPersonalOnlyOrgPermission = 'none' as const
@@ -70,7 +71,28 @@ export function requirePersonalMemoryAuth(
 	return {
 		userId: personalMemoryOwnerId(personId),
 		request,
+		// May be empty for team synthetic MCP users; authorizePersonalMemory
+		// loads the acting person's email before entitlement checks.
 		email: user.email,
+	}
+}
+
+async function loadPersonEmail(
+	db: D1Database | undefined,
+	personOwnerId: OwnerId,
+): Promise<string | null> {
+	if (!db) return null
+	try {
+		const row = await db
+			.prepare(
+				`SELECT email FROM users
+				 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(personOwnerId)
+			.first<{ email: string | null }>()
+		return row?.email ?? null
+	} catch {
+		return null
 	}
 }
 
@@ -80,12 +102,15 @@ export async function authorizePersonalMemory(
 	memoryId?: string,
 ): Promise<PersonalMemoryAuth> {
 	const auth = requirePersonalMemoryAuth(ctx)
+	const email =
+		auth.email || (await loadPersonEmail(ctx.env.APP_DB, auth.userId)) || ''
+	const resolved: PersonalMemoryAuth = { ...auth, email }
 	await authorize(
-		{ env: ctx.env, request: auth.request },
+		{ env: ctx.env, request: resolved.request },
 		permission,
-		memoryId ? orgResource(auth.request, 'memory', memoryId) : undefined,
+		memoryId ? orgResource(resolved.request, 'memory', memoryId) : undefined,
 	)
-	return auth
+	return resolved
 }
 
 export async function personalMemoryReadScope(
