@@ -200,13 +200,18 @@ test('every workspace section is two clicks from /account', async ({
 		workspaceRail.getByRole('link', { name: 'Credentials', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
-	// From an account page the signup org row opens the workspace overview,
-	// which links every section.
+	// Account pages have no workspace rail (so no switcher); the avatar
+	// menu's Manage group opens the signup org's overview, which links every
+	// section.
 	await page.goto('/account/security')
 	await waitForClientHydration(page)
-	await page.getByTestId('org-switcher').click()
-	const panel = page.getByTestId('org-switcher-panel')
-	await panel.getByTestId(`org-switcher-${user.username}`).click()
+	await expect(page.getByTestId('org-switcher')).toHaveCount(0)
+	await page.getByTestId('account-menu').click()
+	await page
+		.getByTestId('account-menu-panel')
+		.getByRole('group', { name: 'Manage' })
+		.getByRole('link', { name: `Overview @${user.username}` })
+		.click()
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Overview' }),

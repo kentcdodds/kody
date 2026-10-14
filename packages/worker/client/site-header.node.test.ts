@@ -3,10 +3,10 @@ import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
 import {
 	accountMenuManageLinks,
-	dismissOpenPopoverPanel,
 	SiteHeader,
 	usageHrefForAccountMenu,
 } from './site-header.tsx'
+import { dismissOpenPopoverPanel } from './switcher-menu.tsx'
 
 test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or closed', () => {
 	const unavailableMatches = vi.fn(() => {
@@ -38,7 +38,7 @@ test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or
 	expect(closedHidePopover).not.toHaveBeenCalled()
 })
 
-test('logged-in header has an organization switcher and a separate account menu with Log out', async () => {
+test('logged-in header has only the account menu; the org switcher lives in the workspace rail', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -48,421 +48,52 @@ test('logged-in header has an organization switcher and a separate account menu 
 			showAdminLink: false,
 			showDemoIndicator: false,
 			loginHref: '/login',
-			currentPathname: '/account',
+			currentPathname: '/@acme/-/secrets',
+			organizations: [
+				{ slug: 'ada', displayName: 'Ada', role: 'owner', personal: true },
+				{ slug: 'acme', displayName: 'Acme', role: 'member', personal: false },
+			],
 		}),
 	)
 
-	expect(html).toContain('aria-label="@ada: switch organization"')
+	expect(html).not.toContain('switch organization')
+	expect(html).not.toContain('data-testid="org-switcher"')
+	expect(html).not.toContain('data-testid="org-switcher-panel"')
+	expect(html).not.toContain('>Create organization<')
 	expect(html).toContain('aria-label="Ada Lovelace: your account"')
-	// The switcher popover lists organizations only; the person's own links
-	// live in the account menu.
-	const switcherPanel = html.slice(
-		html.indexOf('data-testid="org-switcher-panel"'),
-		html.indexOf('data-testid="account-menu"'),
-	)
-	expect(switcherPanel).not.toContain('>Account settings<')
-	expect(switcherPanel).not.toContain('action="/logout"')
+	// The avatar is the only session control in the header.
+	expect(html.match(/avatar\/abc\.jpg/g)).toHaveLength(1)
 	const accountPanel = html.slice(
 		html.indexOf('data-testid="account-menu-panel"'),
-		html.indexOf('data-testid="org-switcher-menu"'),
+		html.indexOf('data-testid="site-menu-account"'),
 	)
 	expect(accountPanel).toContain('>@ada<')
 	expect(accountPanel).not.toContain('>Your account<')
 	expect(accountPanel).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Your profile</)
 	expect(accountPanel).toMatch(
-		/href="\/account"[^>]*aria-current="page"[^>]*>[\s\S]*?>Account settings</,
-	)
-	expect(accountPanel).toMatch(
-		/href="\/@ada\/-\/usage"[^>]*>[\s\S]*?>Usage &amp; credits</,
+		/href="\/account"[^>]*>[\s\S]*?>Account settings</,
 	)
 	expect(accountPanel).toContain('action="/logout"')
-	// From an account page, the signup org row opens the overview too, not
-	// the public profile (that is "Your profile").
-	const adaRowAt = html.indexOf('data-testid="org-switcher-ada"')
-	expect(html.slice(html.lastIndexOf('<a', adaRowAt), adaRowAt)).toContain(
-		'href="/@ada/-/overview"',
-	)
-	// The photo is drawn once on the switcher trigger (the signup org is the
-	// person) and once on the signup org row in each panel.
-	const trigger = html.slice(
-		html.indexOf('data-testid="org-switcher"'),
-		html.indexOf('data-testid="org-switcher-panel"'),
-	)
-	expect(trigger.match(/avatar\/abc\.jpg/g)).toHaveLength(1)
 
-	// A single organization is the person: their name and handle, no role,
-	// and the mobile menu does not list the handle twice.
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	expect(menu).toContain('>Ada Lovelace<')
-	expect(menu).toContain('>@ada<')
-	expect(menu).toContain('>Create organization<')
-	// No invites waiting: the row stays out of the way.
-	expect(menu).not.toContain('>Invites<')
-	expect(html).not.toContain('Owner')
-	expect(menu.match(/data-testid="org-switcher-ada"/g)).toHaveLength(1)
-
+	// The phone menu folds the avatar menu in: Manage reaches every
+	// workspace, then the person's own links.
+	const menu = html.slice(html.indexOf('data-testid="site-menu-account"'))
+	expect(menu).not.toContain('switch organization')
+	const manage = menu.slice(
+		menu.indexOf('data-testid="account-menu-manage-group"'),
+		menu.indexOf('data-testid="org-switcher-account-group"'),
+	)
+	expect(manage).toMatch(/href="\/@acme"[^>]*>[\s\S]*?>Overview</)
+	expect(manage).toMatch(/href="\/@ada\/-\/overview"[^>]*>[\s\S]*?>@ada</)
 	const account = menu.slice(
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
-	// The phone menu has one panel: organizations, then the account links.
 	expect(account).toContain('>Your account<')
 	expect(account).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Your profile</)
 	expect(account).toContain('>Usage &amp; credits<')
 	expect(account).toMatch(
-		/href="\/account"[^>]*aria-current="page"[^>]*>[\s\S]*?>Account settings</,
-	)
-	expect(account).toMatch(
 		/<form[^>]*action="\/logout"[\s\S]*?data-testid="org-switcher-logout"[\s\S]*?>Log out</,
 	)
-})
-
-test('org switcher lists the signup organization, then others with roles, then create and waiting invites', async () => {
-	const html = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: null,
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/@acme/-/secrets',
-			organizations: [
-				{
-					slug: 'acme',
-					displayName: 'Acme',
-					role: 'member',
-					personal: false,
-				},
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-				},
-			],
-			inviteCount: 2,
-			lastUsedOrganization: 'ada',
-		}),
-	)
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	const adaAt = menu.indexOf('>@ada · Owner<')
-	const acmeAt = menu.indexOf('>@acme · Member<')
-	const createAt = menu.indexOf('>Create organization<')
-	const invitesAt = menu.indexOf('>Invites<')
-	expect(adaAt).toBeGreaterThan(-1)
-	expect(acmeAt).toBeGreaterThan(adaAt)
-	expect(createAt).toBeGreaterThan(acmeAt)
-	expect(invitesAt).toBeGreaterThan(createAt)
-	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain('aria-label="@acme: switch organization"')
-	// Secrets stays on the org row. Settings is a different page's row.
-	expect(menu).not.toContain('href="/@acme/-/settings"')
-	expect(menu).toContain('href="/account/organizations#invites"')
-	// The org in the URL is current: checked and announced, the other is not.
-	const acmeRow = menu.slice(
-		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
-		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
-	)
-	expect(acmeRow).toContain('aria-current="true"')
-	expect(acmeRow).toContain('data-selected')
-	const adaRow = menu.slice(
-		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-ada"')),
-		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-ada"')) + 1,
-	)
-	expect(adaRow).not.toContain('aria-current')
-	expect(adaRow).not.toContain('data-selected')
-	// Secrets follow the org, so both organizations keep the section.
-	expect(html).toContain('href="/@ada/-/secrets"')
-	expect(html).toContain('href="/@acme/-/secrets"')
-	expect(html).toContain('data-icon="plus"')
-	expect(html).toContain('data-icon="mail"')
-})
-
-test('org switcher on team settings stays on the URL org when session lists only personal', async () => {
-	const html = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: null,
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/@acme/-/settings',
-			organizations: [
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-				},
-			],
-			lastUsedOrganization: 'ada',
-		}),
-	)
-	expect(html).toContain('aria-label="@acme: switch organization"')
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	// Synthesized current appears as its own row (session list was personal-only).
-	expect(menu).toContain('data-testid="org-switcher-acme"')
-	expect(menu).toContain('href="/@acme/-/settings"')
-})
-
-test('org switcher from account pages opens the team home and the signup overview', async () => {
-	const html = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: null,
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/account',
-			organizations: [
-				{
-					slug: 'acme',
-					displayName: 'Acme',
-					role: 'owner',
-					personal: false,
-				},
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-				},
-			],
-			lastUsedOrganization: 'acme',
-		}),
-	)
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	// Switching into the team org from an account page lands on its home,
-	// the team overview; the signup org lands on its workspace overview.
-	const acmeRow = menu.slice(
-		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
-		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
-	)
-	expect(acmeRow).toContain('href="/@acme"')
-	const adaRow = menu.slice(
-		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-ada"')),
-		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-ada"')) + 1,
-	)
-	expect(adaRow).toContain('href="/@ada/-/overview"')
-})
-
-test('org switcher opens the org home when the current page is not open to that role there', async () => {
-	const collaborator = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: null,
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/account',
-			organizations: [
-				{
-					slug: 'acme',
-					displayName: 'Acme',
-					role: null,
-					personal: false,
-				},
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-				},
-			],
-		}),
-	)
-	const collaboratorRow = collaborator.slice(
-		collaborator.lastIndexOf(
-			'<a',
-			collaborator.indexOf('data-testid="org-switcher-acme"'),
-		),
-		collaborator.indexOf(
-			'>',
-			collaborator.indexOf('data-testid="org-switcher-acme"'),
-		) + 1,
-	)
-	expect(collaboratorRow).toContain('href="/@acme"')
-	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	expect(collaborator).toContain('href="/@ada/-/overview"')
-
-	const billing = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Cara',
-			username: 'cara',
-			avatarUrl: null,
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/@zeta/-/teams',
-			organizations: [
-				{
-					slug: 'acme',
-					displayName: 'Acme',
-					role: 'billing',
-					personal: false,
-				},
-				{
-					slug: 'cara',
-					displayName: 'Cara',
-					role: 'owner',
-					personal: true,
-				},
-			],
-			lastUsedOrganization: 'acme',
-		}),
-	)
-	const billingRow = billing.slice(
-		billing.lastIndexOf(
-			'<a',
-			billing.indexOf('data-testid="org-switcher-acme"'),
-		),
-		billing.indexOf('>', billing.indexOf('data-testid="org-switcher-acme"')) +
-			1,
-	)
-	expect(billingRow).toContain('href="/@acme"')
-	expect(billing).not.toContain('href="/@acme/-/teams"')
-	// The signup org has no Teams page either, so it opens its overview.
-	expect(billing).toContain('href="/@cara/-/overview"')
-})
-
-test('org switcher keeps every org-owned section when switching between orgs', async () => {
-	const sections = [
-		'activity',
-		'agents',
-		'email',
-		'integrations',
-		'jobs',
-		'mcp-servers',
-		'memories',
-		'repositories',
-		'secret-providers',
-		'secrets',
-		'values',
-		'waiting',
-		'webhooks',
-		'workflows',
-	]
-	for (const section of sections) {
-		const html = await renderToString(
-			jsx(SiteHeader, {
-				loggedIn: true,
-				displayName: 'Ada Lovelace',
-				username: 'ada',
-				avatarUrl: null,
-				showAdminLink: false,
-				showDemoIndicator: false,
-				loginHref: '/login',
-				currentPathname: `/@ada/-/${section}`,
-				organizations: [
-					{ slug: 'ada', displayName: 'Ada', role: 'owner', personal: true },
-					{
-						slug: 'acme',
-						displayName: 'Acme',
-						role: 'member',
-						personal: false,
-					},
-				],
-			}),
-		)
-		const rowHref = (slug: string) => {
-			const at = html.indexOf(`data-testid="org-switcher-${slug}"`)
-			const row = html.slice(html.lastIndexOf('<a', at), at)
-			return /href="([^"]*)"/.exec(row)?.[1]
-		}
-		expect([section, rowHref('acme')]).toEqual([section, `/@acme/-/${section}`])
-		expect([section, rowHref('ada')]).toEqual([section, `/@ada/-/${section}`])
-	}
-})
-
-test('org switcher draws a team photo on the button and in the open menu', async () => {
-	const html = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: '/profiles/ada/avatar/ada.png',
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/@kody/-/settings',
-			organizations: [
-				{
-					slug: 'kody',
-					displayName: 'Kody',
-					role: 'owner',
-					personal: false,
-					avatarUrl: '/orgs/kody/avatar/new.png',
-				},
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-					avatarUrl: null,
-				},
-			],
-		}),
-	)
-	const trigger = html.slice(
-		html.indexOf('data-testid="org-switcher"'),
-		html.indexOf('data-testid="org-switcher-panel"'),
-	)
-	expect(trigger).toContain('src="/orgs/kody/avatar/new.png"')
-	expect(trigger).not.toContain('/profiles/ada/avatar/ada.png')
-
-	const panel = html.slice(
-		html.indexOf('data-testid="org-switcher-panel"'),
-		html.indexOf('data-testid="org-switcher-menu"'),
-	)
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
-	for (const section of [panel, menu]) {
-		const adaAt = section.indexOf('data-testid="org-switcher-ada"')
-		const kodyAt = section.indexOf('data-testid="org-switcher-kody"')
-		const createAt = section.indexOf('data-testid="org-switcher-create"')
-		const adaRow = section.slice(section.lastIndexOf('<a', adaAt), kodyAt)
-		const kodyRow = section.slice(section.lastIndexOf('<a', kodyAt), createAt)
-		expect(kodyRow).toContain('src="/orgs/kody/avatar/new.png"')
-		expect(adaRow).toContain('src="/profiles/ada/avatar/ada.png"')
-		expect(kodyRow).not.toContain('>K<')
-	}
-})
-
-test('org switcher uses the account photo for the personal organization', async () => {
-	const html = await renderToString(
-		jsx(SiteHeader, {
-			loggedIn: true,
-			displayName: 'Ada Lovelace',
-			username: 'ada',
-			avatarUrl: '/profiles/ada/avatar/ada.png',
-			showAdminLink: false,
-			showDemoIndicator: false,
-			loginHref: '/login',
-			currentPathname: '/account',
-			organizations: [
-				{
-					slug: 'ada',
-					displayName: 'Ada',
-					role: 'owner',
-					personal: true,
-					avatarUrl: '/orgs/ada/avatar/ignored.png',
-				},
-			],
-		}),
-	)
-	const trigger = html.slice(
-		html.indexOf('data-testid="org-switcher"'),
-		html.indexOf('data-testid="org-switcher-panel"'),
-	)
-	expect(trigger).toContain('src="/profiles/ada/avatar/ada.png"')
-	expect(html).not.toContain('/orgs/ada/avatar/ignored.png')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {
@@ -637,14 +268,13 @@ test('account menu shows a Manage section before the person links; the phone men
 		accountPanel.indexOf('>Your profile<'),
 	)
 
-	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	const menu = html.slice(html.indexOf('data-testid="site-menu-account"'))
 	const phoneManage = menu.slice(
 		menu.indexOf('data-testid="account-menu-manage-group"'),
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
 	expect(phoneManage).toMatch(/href="\/@kody"[^>]*>[\s\S]*?>Overview</)
-	// The org rows are already listed above the phone Manage group.
-	expect(phoneManage).not.toContain(
-		'data-testid="org-switcher-manage-kentcdodds"',
-	)
+	// No org switcher in the header, so the phone Manage group lists every
+	// other workspace too.
+	expect(phoneManage).toContain('data-testid="org-switcher-manage-kentcdodds"')
 })

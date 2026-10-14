@@ -21,7 +21,7 @@ import { parseOgTheme } from '#worker/og/palette.ts'
 
 /**
  * A non-personal organization has no person profile behind its handle. Its
- * members and grant-only collaborators (the people its header switcher lists)
+ * members and grant-only collaborators (the people its org switcher lists)
  * get the organization home there; everyone else gets the 404.
  */
 async function findMemberOrganization(

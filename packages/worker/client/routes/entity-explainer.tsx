@@ -1,6 +1,6 @@
 import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
-import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
+import { dismissOpenPopoverPanel } from '#client/switcher-menu.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { accountAliasPath, parseOrgUsagePath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'

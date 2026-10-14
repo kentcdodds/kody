@@ -3,6 +3,10 @@ import { routerEvents } from '#client/client-router.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import { hoverMq, pageGutter } from '#universal/styles/style-primitives.ts'
+import {
+	WorkspaceSwitcher,
+	type WorkspaceSwitcherData,
+} from '#client/workspace-switcher.tsx'
 
 /** Account nav collapses to a wrapping row below this width (prototype 860px). */
 export const accountManagementNarrowMq = '@media (max-width: 860px)'
@@ -25,6 +29,8 @@ type AccountManagementLinkNavProps = {
 	label: string
 	/** Names whose settings these are: "Account", or "Workspace" plus `@slug`. */
 	heading?: { eyebrow: string; name?: string }
+	/** Draws the heading as the organization switcher (workspace rails). */
+	workspaceSwitcher?: WorkspaceSwitcherData
 	groups: Array<AccountManagementLinkNavGroup>
 }
 
@@ -286,7 +292,14 @@ export function AccountManagementLinkNav(
 							}),
 						]}
 					>
-						{renderRailHeading(handle.props.heading)}
+						{handle.props.workspaceSwitcher ? (
+							<WorkspaceSwitcher
+								{...handle.props.workspaceSwitcher}
+								placement="rail"
+							/>
+						) : (
+							renderRailHeading(handle.props.heading)
+						)}
 						{renderRailGroups(handle.props.groups, accountNavLinkCss)}
 					</div>
 				</nav>
@@ -316,6 +329,12 @@ export function AccountManagementLinkNav(
 						) : null}
 					</summary>
 					<nav aria-label={handle.props.label}>
+						{handle.props.workspaceSwitcher ? (
+							<WorkspaceSwitcher
+								{...handle.props.workspaceSwitcher}
+								placement="drawer"
+							/>
+						) : null}
 						{renderRailGroups(handle.props.groups, accountMobileNavLinkCss)}
 					</nav>
 				</details>
