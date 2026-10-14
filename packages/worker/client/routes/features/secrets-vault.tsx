@@ -10,7 +10,7 @@ export function SecretsVault(handle: Handle) {
 	let shot = 0
 	return () => (
 		<section class="story-section">
-			<div class="story-split">
+			<div class="story-split ms-vault-split">
 				<div class="ms-vault-scene">
 					<SecretsVaultScene source={source} shot={shot} />
 					<div class="controls" aria-label="Example credential source">

@@ -4,6 +4,7 @@ import { FeatureRelated } from './feature-related.tsx'
 import {
 	SecretsAccessScene,
 	SecretsTripScene,
+	tripResultCopy,
 	type SecretApproval,
 	type SecretHost,
 } from './secrets-scenes.tsx'
@@ -24,70 +25,79 @@ export function SecretsFeature(handle: Handle) {
 	let approvalShot = 0
 	return () => (
 		<div class="study secrets">
-			<img
-				class="feature-orb"
-				src="/images/lantern/kody-primitives-orb-secrets.webp"
-				alt=""
-				width="80"
-				height="80"
-			/>
-			<h1>
-				Your agent can use the key.
-				<br />
-				<em>It can't read it.</em>
-			</h1>
-			<p class="lead">
-				Give your agent the API access it needs. Kody sends the credential only
-				to hosts you approve.
-			</p>
-			<a class="action" href="/onboarding">
-				Connect your agent
-			</a>
-			<SecretsTripScene host={host} sent={sent} shot={tripShot} />
-			<div class="controls">
-				<button
-					type="button"
-					aria-pressed={host === 'approved'}
-					mix={on('click', () => {
-						host = 'approved'
-						sent = false
-						tripShot += 1
-						handle.update()
-					})}
-				>
-					Approved host
-				</button>
-				<button
-					type="button"
-					aria-pressed={host === 'blocked'}
-					mix={on('click', () => {
-						host = 'blocked'
-						sent = false
-						tripShot += 1
-						handle.update()
-					})}
-				>
-					Unapproved host
-				</button>
-				<button
-					type="button"
-					class="run"
-					id="send-request"
-					mix={on('click', () => {
-						sent = true
-						tripShot += 1
-						handle.update()
-					})}
-				>
-					Send example request
-				</button>
+			<div class="split">
+				<div>
+					<img
+						class="feature-orb"
+						src="/images/lantern/kody-primitives-orb-secrets.webp"
+						alt=""
+						width="80"
+						height="80"
+					/>
+					<h1>
+						Your agent can use the key.
+						<br />
+						<em>It can't read it.</em>
+					</h1>
+					<p class="lead">
+						Give your agent the API access it needs. Kody sends the credential
+						only to hosts you approve.
+					</p>
+					<a class="action" href="/onboarding">
+						Connect your agent
+					</a>
+				</div>
+				<div class="ms-trip">
+					<SecretsTripScene host={host} sent={sent} shot={tripShot} />
+					<div class="controls" aria-label="Example request">
+						<button
+							type="button"
+							aria-pressed={host === 'approved'}
+							mix={on('click', () => {
+								host = 'approved'
+								sent = false
+								tripShot += 1
+								handle.update()
+							})}
+						>
+							Approved host
+						</button>
+						<button
+							type="button"
+							aria-pressed={host === 'blocked'}
+							mix={on('click', () => {
+								host = 'blocked'
+								sent = false
+								tripShot += 1
+								handle.update()
+							})}
+						>
+							Unapproved host
+						</button>
+						<button
+							type="button"
+							class="run"
+							id="send-request"
+							mix={on('click', () => {
+								sent = true
+								tripShot += 1
+								handle.update()
+							})}
+						>
+							Send example request
+						</button>
+					</div>
+					<p id="secret-result" role="status">
+						{tripResultCopy(host, sent)}
+					</p>
+					<p class="smallprint">
+						Illustration only. The approved API receives the credential. The
+						agent does not.
+					</p>
+				</div>
 			</div>
-			<p class="smallprint">
-				Illustration only. The approved API receives the credential. The agent
-				does not.
-			</p>
 			<section class="story-section">
-				<div class="story-split">
+				<div class="story-split ms-access-split">
 					<div>
 						<h2>
 							Approve the destination.
