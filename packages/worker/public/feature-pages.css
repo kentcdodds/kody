@@ -1469,7 +1469,7 @@
 	--hue: 148;
 }
 .feature-detail:has(.apps) {
-	--hue: 345;
+	--hue: 300;
 }
 /* `/features/credentials` nests the secrets and integrations scene wrappers;
    the whole page takes the credentials green. The secrets scenes put white
