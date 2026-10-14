@@ -127,10 +127,8 @@ export async function reconcilePackageAppCustomHostnames(input: {
 	}
 
 	const batchSize = input.batchSize ?? defaultBatchSize
-	const startedAfterId = await readReconcileCursor(input.env.APP_DB)
-	let afterId = startedAfterId
-	let persistedAfterId = startedAfterId
-	let wrappedOnce = false
+	let afterId = await readReconcileCursor(input.env.APP_DB)
+	let persistedAfterId = afterId
 
 	const persistCursor = async (nextAfterId: string) => {
 		const swapped = await compareAndSwapReconcileCursor({
@@ -146,6 +144,10 @@ export async function reconcilePackageAppCustomHostnames(input: {
 		return swapped
 	}
 
+	// Forward-only keyset: resume from the persisted cursor, walk to the tail
+	// (or until the budget), then reset. Do not wrap within a tick — a prior
+	// incomplete sweep already covered the head, and wrapping would re-GET
+	// those rows and can CAS-regress the cursor when the wrap itself times out.
 	while (Date.now() < deadline) {
 		const batch = await listPackageAppCustomHostnamesForReconcile(
 			input.env.APP_DB,
@@ -155,29 +157,15 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			},
 		)
 		if (batch.length === 0) {
-			if (afterId !== '' && !wrappedOnce && startedAfterId !== '') {
-				// Resumed mid-table and hit the tail: wrap once to cover the head.
-				wrappedOnce = true
-				if (!(await persistCursor(''))) break
-				continue
-			}
-			// Empty at head, already wrapped, or finished an exact-batch pass
-			// that began at the head — do not start a second full sweep.
 			if (persistedAfterId !== '') {
 				await persistCursor('')
 			}
 			break
 		}
 
-		let stopAfterCoveringHead = false
 		for (const row of batch) {
 			if (Date.now() >= deadline) {
 				result.budgetExhausted = true
-				break
-			}
-			if (wrappedOnce && startedAfterId !== '' && row.id > startedAfterId) {
-				// Head coverage reached the resume point; full sweep done.
-				stopAfterCoveringHead = true
 				break
 			}
 			result.scanned += 1
@@ -256,25 +244,12 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			}
 		}
 
-		if (stopAfterCoveringHead) {
-			await persistCursor('')
-			break
-		}
-
 		if (result.budgetExhausted) {
 			await persistCursor(afterId)
 			break
 		}
 
-		const reachedTail = batch.length < batchSize
-		if (reachedTail) {
-			if (startedAfterId !== '' && !wrappedOnce) {
-				// Mid-sweep resume hit a short final page: wrap to cover the head.
-				wrappedOnce = true
-				if (!(await persistCursor(''))) break
-				continue
-			}
-			// Finished a full pass that began at the head (or finished after wrap).
+		if (batch.length < batchSize) {
 			await persistCursor('')
 			break
 		}

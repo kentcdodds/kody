@@ -220,8 +220,8 @@ test('reconcile persists the scan cursor across budget-exhausted ticks', async (
 	expect(first.budgetExhausted).toBe(true)
 	expect((await readCursor(db))?.after_id).toBe('row-a')
 
-	// Second tick resumes after row-a, finishes the tail, then wraps once to
-	// cover the unvisited head (row-a) before resetting the cursor.
+	// Second tick resumes after row-a and finishes the remaining rows without
+	// wrapping back over the already-scanned head.
 	nowMs = 2_000
 	fetchMock.mockImplementation(originalFetch)
 	const second = await reconcilePackageAppCustomHostnames({
@@ -230,7 +230,7 @@ test('reconcile persists the scan cursor across budget-exhausted ticks', async (
 		batchSize: 10,
 		timeBudgetMs: 60_000,
 	})
-	expect(second.scanned).toBe(3)
+	expect(second.scanned).toBe(2)
 	expect(second.budgetExhausted).toBe(false)
 	expect((await readCursor(db))?.after_id).toBe('')
 
