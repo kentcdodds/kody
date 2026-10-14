@@ -75,10 +75,11 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 		id: 'concepts',
 		label: 'Concepts',
 		description:
-			'The primitives every connected agent shares: memory, secrets, packages, triggers, and the runtime.',
+			'The primitives every connected agent shares: memory, credentials, packages, triggers, and the runtime.',
 		items: [
 			{ slug: 'memory', label: 'Shared memory' },
 			{ slug: 'agent-guidance', label: 'Agent guidance' },
+			{ slug: 'credentials', label: 'Credentials' },
 			{ slug: 'secrets', label: 'Secrets' },
 			{ slug: 'secret-providers', label: 'Custom secret providers' },
 			{

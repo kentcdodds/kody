@@ -421,6 +421,37 @@ test('first-party watch blocks render a lite youtube player; untrusted markdown 
 	expect(untrusted).toContain('<blockquote>')
 })
 
+test('first-party diagram blocks render a registered figure with the quote as its caption', async () => {
+	const markdown = [
+		'> [!DIAGRAM] placeholder-fill',
+		'> Your code sends `{{secret:github}}` and the gateway fills it.',
+		'',
+		'> [!DIAGRAM] not-a-diagram',
+		'> Unknown ids stay a quote.',
+	].join('\n')
+
+	const firstParty = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				linkPolicy: 'first-party',
+				headingOffset: 0,
+			}),
+		}),
+	)
+	expect(firstParty).toContain('data-doc-diagram="placeholder-fill"')
+	expect(firstParty).toMatch(
+		/<figcaption[^>]*><p>Your code sends <code>\{\{secret:github\}\}<\/code> and the gateway fills it\.<\/p><\/figcaption>/,
+	)
+	expect(firstParty).toContain('Kody gateway')
+	expect(firstParty).toMatch(
+		/<blockquote><p>\[!DIAGRAM\] not-a-diagram\nUnknown ids stay a quote\.<\/p><\/blockquote>/,
+	)
+
+	const untrusted = await renderMarkdown(markdown)
+	expect(untrusted).not.toContain('data-doc-diagram')
+	expect(untrusted).toContain('[!DIAGRAM] placeholder-fill')
+})
+
 test('markdown tables keep last-column nowrap only when every last cell is a short label', async () => {
 	const compact = await renderMarkdown(
 		[

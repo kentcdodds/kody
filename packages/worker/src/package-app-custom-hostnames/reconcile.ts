@@ -71,6 +71,37 @@ function deletedCloudflareHostnameResult(
 	}
 }
 
+async function readReconcileCursor(db: D1Database): Promise<string> {
+	const row = await db
+		.prepare(
+			`SELECT after_id FROM package_app_custom_hostname_reconcile_cursor
+			 WHERE singleton = 1`,
+		)
+		.first<{ after_id: string }>()
+	return row?.after_id ?? ''
+}
+
+/**
+ * Compare-and-swap the singleton cursor. Returns false when another reconcile
+ * run already advanced (or reset) the cursor past `expectedAfterId`.
+ */
+async function compareAndSwapReconcileCursor(input: {
+	db: D1Database
+	afterId: string
+	expectedAfterId: string
+	nowIso: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`UPDATE package_app_custom_hostname_reconcile_cursor
+			 SET after_id = ?, updated_at = ?
+			 WHERE singleton = 1 AND after_id = ?`,
+		)
+		.bind(input.afterId, input.nowIso, input.expectedAfterId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function reconcilePackageAppCustomHostnames(input: {
 	env: Env
 	now?: Date
@@ -95,17 +126,42 @@ export async function reconcilePackageAppCustomHostnames(input: {
 		return result
 	}
 
-	let afterId = ''
+	const batchSize = input.batchSize ?? defaultBatchSize
+	let afterId = await readReconcileCursor(input.env.APP_DB)
+	let persistedAfterId = afterId
+
+	const persistCursor = async (nextAfterId: string) => {
+		const swapped = await compareAndSwapReconcileCursor({
+			db: input.env.APP_DB,
+			afterId: nextAfterId,
+			expectedAfterId: persistedAfterId,
+			nowIso,
+		})
+		if (swapped) {
+			persistedAfterId = nextAfterId
+			afterId = nextAfterId
+		}
+		return swapped
+	}
+
+	// Forward-only keyset: resume from the persisted cursor, walk to the tail
+	// (or until the budget), then reset. Do not wrap within a tick — a prior
+	// incomplete sweep already covered the head, and wrapping would re-GET
+	// those rows and can CAS-regress the cursor when the wrap itself times out.
 	while (Date.now() < deadline) {
 		const batch = await listPackageAppCustomHostnamesForReconcile(
 			input.env.APP_DB,
 			{
-				limit: input.batchSize ?? defaultBatchSize,
+				limit: batchSize,
 				afterId,
 			},
 		)
-		if (batch.length === 0) break
-		afterId = batch[batch.length - 1]!.id
+		if (batch.length === 0) {
+			if (persistedAfterId !== '') {
+				await persistCursor('')
+			}
+			break
+		}
 
 		for (const row of batch) {
 			if (Date.now() >= deadline) {
@@ -116,6 +172,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 			const cfId = row.cloudflareHostnameId?.trim()
 			if (!cfId) {
 				result.skipped += 1
+				afterId = row.id
 				continue
 			}
 			try {
@@ -150,6 +207,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 						row,
 					})
 					result.removed += 1
+					afterId = row.id
 					continue
 				}
 				await input.env.APP_DB.prepare(
@@ -172,6 +230,7 @@ export async function reconcilePackageAppCustomHostnames(input: {
 					.run()
 				invalidateCachedPackageAppCustomHostname(input.env.APP_DB, row.hostname)
 				result.updated += 1
+				afterId = row.id
 			} catch (error) {
 				console.error(
 					'package_app_custom_hostnames reconcile failed:',
@@ -179,9 +238,28 @@ export async function reconcilePackageAppCustomHostnames(input: {
 					getErrorMessage(error),
 				)
 				result.errors += 1
+				// Advance past the failing row so one bad hostname cannot stall
+				// the keyset for every subsequent tick.
+				afterId = row.id
 			}
 		}
-		if (batch.length < (input.batchSize ?? defaultBatchSize)) break
+
+		if (result.budgetExhausted) {
+			await persistCursor(afterId)
+			break
+		}
+
+		if (batch.length < batchSize) {
+			await persistCursor('')
+			break
+		}
+		if (!(await persistCursor(afterId))) break
 	}
+
+	if (!result.budgetExhausted && Date.now() >= deadline) {
+		result.budgetExhausted = true
+		await persistCursor(afterId)
+	}
+
 	return result
 }

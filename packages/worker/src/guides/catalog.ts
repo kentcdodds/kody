@@ -60,6 +60,7 @@ import providerSlack from '../../../../docs/guides/providers/slack.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
 import secretProviders from '../../../../docs/guides/secret-providers.md'
+import credentials from '../../../../docs/guides/credentials.md'
 import secrets from '../../../../docs/guides/secrets.md'
 import triggers from '../../../../docs/guides/triggers.md'
 import values from '../../../../docs/guides/values.md'
@@ -89,6 +90,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'memory', raw: memory },
 	{ slug: 'agent-guidance', raw: agentGuidance },
+	{ slug: 'credentials', raw: credentials },
 	{ slug: 'secrets', raw: secrets },
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
