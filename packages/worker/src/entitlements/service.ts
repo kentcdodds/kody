@@ -1165,10 +1165,19 @@ export async function reconcileUserD1StorageBytes(input: {
 }
 
 /**
+ * Live storage owners: personal orgs (`users.stable_user_id`) and team orgs
+ * (`orgs.id`, which have no `users` row). Personal org ids appear in both
+ * tables; `UNION` dedupes them.
+ */
+const liveStorageOwnerIdsSql = `SELECT stable_user_id AS owner_id FROM users WHERE ${liveDeletedAtSql()}
+	UNION
+	SELECT id AS owner_id FROM orgs WHERE ${liveDeletedAtSql()}`
+
+/**
  * Keyset sweep page for the reconcile lane. The platform-owned
- * `d1_storage_reconcile_cursor` singleton stores the last processed stable
- * user id; pages walk `users.stable_user_id` ascending and wrap to the start
- * when the tail is reached. No per-user cursor state exists.
+ * `d1_storage_reconcile_cursor` singleton stores the last processed owner id;
+ * pages walk live owner ids (personal and team orgs) ascending and wrap to the
+ * start when the tail is reached. No per-owner cursor state exists.
  */
 export async function listUsersForD1StorageReconciliation(input: {
 	db: D1Database
@@ -1183,10 +1192,10 @@ export async function listUsersForD1StorageReconciliation(input: {
 	const lastUserId = cursorRow?.position ?? ''
 	const page = await input.db
 		.prepare(
-			`SELECT stable_user_id AS userId
-			FROM users
-			WHERE stable_user_id > ?${andLiveDeletedAtSql()}
-			ORDER BY stable_user_id ASC LIMIT ?`,
+			`SELECT owner_id AS userId
+			FROM (${liveStorageOwnerIdsSql})
+			WHERE owner_id > ?
+			ORDER BY owner_id ASC LIMIT ?`,
 		)
 		.bind(lastUserId, input.limit)
 		.all<{ userId: OwnerId }>()
@@ -1195,10 +1204,9 @@ export async function listUsersForD1StorageReconciliation(input: {
 	// Tail reached: wrap to the start of the keyset for the next full sweep.
 	const wrapped = await input.db
 		.prepare(
-			`SELECT stable_user_id AS userId
-			FROM users
-			WHERE ${liveDeletedAtSql()}
-			ORDER BY stable_user_id ASC
+			`SELECT owner_id AS userId
+			FROM (${liveStorageOwnerIdsSql})
+			ORDER BY owner_id ASC
 			LIMIT ?`,
 		)
 		.bind(input.limit)

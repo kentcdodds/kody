@@ -390,8 +390,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `referee_stable_user_id`) and the invoice-gated reward ledger (`status`,
   `reward_invoice_id`, held invoice fields while email is unverified). See
   [Entitlements](./entitlements.md#referral-pro-credit). The
-  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
-  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
+  `d1_storage_reconciliation` lane sweeps live owners (personal orgs by
+  `users.stable_user_id` and team orgs by `orgs.id`) in one keyset from the
+  platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see
   [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
   reverse-resolve stable ids — it uses the indexed username lookup
@@ -801,9 +802,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `reserveStorageBytes` (atomic increment with limit check),
   `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
-  and usage reads via `readStorageBytes`; the reconcile lane sweeps by
-  `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner and
-  RepoSession bucket estimates stay outside this row (see
+  and usage reads via `readStorageBytes`; the reconcile lane sweeps personal and
+  team org owner ids by keyset from `d1_storage_reconcile_cursor`. StorageRunner
+  and RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
