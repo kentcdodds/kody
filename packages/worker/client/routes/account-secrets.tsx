@@ -190,8 +190,12 @@ export function AccountSecretsRoute(handle: Handle) {
 		syncEditorState(selection)
 		const saveWarning = readAccountSecretsSaveWarning(payload)
 		if (saveWarning) stickySaveWarning = saveWarning
+		const sticky = stickySaveWarning
+		// Consume after one apply so post-save navigate → GET keeps the
+		// warning once, without pinning it across later secret views.
+		if (sticky && !saveWarning) stickySaveWarning = null
 		message =
-			stickySaveWarning ??
+			sticky ??
 			nextMessage ??
 			payload.approvalError ??
 			(selection.selectedId && !payload.selectedSecret && !payload.approval

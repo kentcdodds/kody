@@ -394,7 +394,6 @@ const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')
 
 const secretsUrl = 'https://example.com/account/secrets.json'
 const epoch = new Date(0).toISOString()
-const userStorage = { sessionId: null, appId: null, packageId: null }
 
 function createHandler() {
 	const { handler } = createAccountSecretsApiHandler({
@@ -404,10 +403,6 @@ function createHandler() {
 	return (request: Request) => handler({ request, params: {} } as never)
 }
 
-function getRequest(search: string) {
-	return new Request(`${secretsUrl}${search}`, { method: 'GET' })
-}
-
 function postRequest(body: Record<string, unknown>, search = '') {
 	return new Request(`${secretsUrl}${search}`, {
 		method: 'POST',
@@ -415,8 +410,6 @@ function postRequest(body: Record<string, unknown>, search = '') {
 		body: JSON.stringify(body),
 	})
 }
-
-const approve = (search: string) => postRequest({ action: 'approve' }, search)
 
 function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
 	return {
@@ -433,12 +426,6 @@ function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
 		ttlMs: null,
 		...overrides,
 	}
-}
-
-function mockSecretsListing(secrets: Array<unknown>) {
-	mockModule.listSecrets.mockResolvedValue(secrets as never)
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
 }
 
 test('account secrets save reports rename cleanup failure without failing the save', async () => {
