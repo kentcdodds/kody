@@ -74,7 +74,11 @@ function withVerifyAfterUnverifiedAccountSelect(
 		...db,
 		prepare(query: string) {
 			const statement = originalPrepare(query)
-			if (!query.includes('SELECT id, stable_user_id, email, created_at')) {
+			if (
+				!query.includes(
+					'SELECT id, stable_user_id, personal_org_id, email, created_at',
+				)
+			) {
 				return statement
 			}
 			return {

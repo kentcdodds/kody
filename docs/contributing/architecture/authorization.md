@@ -557,7 +557,8 @@ grant props. They would go stale on revocation.
 const userId = grantProps.userId.trim()
 const row = await env.APP_DB.prepare(
 	`SELECT id, email, username, display_name, stable_user_id,
-		deleting_at, email_verified_at, suspended_at, password_changed_at
+		personal_org_id, deleting_at, email_verified_at, suspended_at,
+		password_changed_at
 	 FROM users
 	 WHERE stable_user_id = ?`,
 )

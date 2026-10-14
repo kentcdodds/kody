@@ -23,6 +23,7 @@ type GrantUserRow = {
 	username: string | null
 	display_name: string | null
 	stable_user_id: string
+	personal_org_id?: string | null
 	deleting_at?: string | null
 	email_verified_at?: string | null
 	suspended_at?: string | null
@@ -158,13 +159,20 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		})
 		const { result, db, queries } = await build({ row }, grantProps)
 		expect(result).toEqual({
-			user: { userId: grantProps.userId, ...user, roles, permissions },
+			user: {
+				userId: grantProps.userId,
+				personalOrgId: ownerIdFromStored(row.stable_user_id),
+				...user,
+				roles,
+				permissions,
+			},
 			emailVerified: false,
 			suspended: false,
 			passwordChangedAt: null,
 		})
 		expect(queries.map((query) => query.params)).toEqual([[grantProps.userId]])
 		for (const column of [
+			'personal_org_id',
 			'email_verified_at',
 			'suspended_at',
 			'password_changed_at',

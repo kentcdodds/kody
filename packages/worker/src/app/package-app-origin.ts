@@ -1,5 +1,6 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
@@ -348,7 +349,8 @@ async function authorizePackageAppVisitorForOrg(input: {
 	// Team org entitlements resolve by org id alone. Pairing the visitor's
 	// email with the team org id would miss the users row and fall to Free.
 	const viewerPersonalOrg = await input.env.APP_DB.prepare(
-		`SELECT personal_org_id, stable_user_id FROM users WHERE stable_user_id = ?`,
+		`SELECT personal_org_id, stable_user_id FROM users
+		 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(viewer.userId)
 		.first<{ personal_org_id: string | null; stable_user_id: string }>()

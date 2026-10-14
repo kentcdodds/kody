@@ -41,6 +41,7 @@ function createParityTestDb() {
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
+			personal_org_id TEXT,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			password_hash TEXT,

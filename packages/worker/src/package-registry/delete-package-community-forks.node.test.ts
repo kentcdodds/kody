@@ -96,6 +96,7 @@ function createDeleteForkDb() {
 	sqlite.exec(`
 		CREATE TABLE users (
 			stable_user_id TEXT PRIMARY KEY NOT NULL,
+			personal_org_id TEXT,
 			deleting_at TEXT,
 			deleted_at TEXT
 		);

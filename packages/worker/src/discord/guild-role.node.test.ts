@@ -444,6 +444,7 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT,
+			personal_org_id TEXT,
 			deleted_at TEXT
 		);
 		CREATE TABLE orgs (

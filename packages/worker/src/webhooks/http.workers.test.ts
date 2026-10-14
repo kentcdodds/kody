@@ -138,6 +138,7 @@ async function ensureSchema(db: D1Database) {
 				email TEXT NOT NULL UNIQUE,
 				password_hash TEXT NOT NULL,
 				stable_user_id TEXT NOT NULL,
+			personal_org_id TEXT,
 				deleting_at TEXT,
 				deleted_at TEXT,
 				suspended_at TEXT
