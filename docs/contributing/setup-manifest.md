@@ -591,10 +591,12 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that
   owns the user email sending domain; Email Sending event subscriptions require
   both this zone id and the domain)
-- `PACKAGE_APP_ZONE_ID` (GitHub Actions **variable**; Cloudflare zone id for the
-  package-app SaaS zone — production `kody.run`. Written into origin and
-  platform Worker vars so custom-hostname add/sync/reconcile can call the Custom
-  Hostnames API. Required before enabling `package-app-custom-domains`.)
+- `PACKAGE_APP_ZONE_ID` (GitHub Actions production environment **secret** or
+  **variable**; Cloudflare zone id for the package-app SaaS zone — production
+  `kody.run`. Deploy prefers `secrets.PACKAGE_APP_ZONE_ID`, then
+  `vars.PACKAGE_APP_ZONE_ID`. Written into origin and platform Worker vars so
+  custom-hostname add/sync/reconcile can call the Custom Hostnames API. Required
+  before enabling `package-app-custom-domains`.)
 - `CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN` (optional GitHub Actions **secret**;
   zone-limited **SSL and Certificates Edit** on the package-app SaaS zone.
   Synced to `kody-production` and `kody-platform` when present. Do not reuse
