@@ -205,6 +205,13 @@ export type PackageSettingsShell =
 	| { kind: 'unauthorized' }
 	| { kind: 'not-found' }
 	| {
+			kind: 'no-access'
+			username: string
+			kodyId: string
+			packageName: string
+			viewerUsername: string
+	  }
+	| {
 			kind: 'owner'
 			ownerPackage: AccountPackageDetail
 			username: string
@@ -227,7 +234,15 @@ export function toPackageSettingsShell(
 	if (!routeData.ok) {
 		if ('unauthorized' in routeData) return { kind: 'unauthorized' }
 		if ('notFound' in routeData) return { kind: 'not-found' }
-		if ('noAccess' in routeData) return { kind: 'not-found' }
+		if ('noAccess' in routeData) {
+			return {
+				kind: 'no-access',
+				username: routeData.username,
+				kodyId: routeData.kodyId,
+				packageName: routeData.packageName,
+				viewerUsername: routeData.viewerUsername,
+			}
+		}
 		const exhaustive: never = routeData
 		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
 	}
