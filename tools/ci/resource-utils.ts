@@ -166,7 +166,7 @@ const previewDurableObjectNamespaceHeadroom = 40
  * both `[...]` and `{ namespaces: [...] }` (same as preview-sweep /
  * origin-production-deploy-state).
  */
-export async function countCloudflareDurableObjectNamespaces(input: {
+async function countCloudflareDurableObjectNamespaces(input: {
 	accountId: string
 	apiToken: string
 	apiBaseUrl?: string
