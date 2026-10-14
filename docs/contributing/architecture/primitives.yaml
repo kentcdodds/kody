@@ -110,6 +110,18 @@ primitives:
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
+  - id: push-queue-worker
+    group: surfaces
+    name: Push queue worker
+    summary:
+      Service-binding-only worker owning RepoPushQueueV1, the per-repo Durable
+      Object that lands receive-pack packs in storage and sends them to
+      Artifacts one at a time in FIFO order for repo-push-queue flagged repos.
+    code:
+      - packages/push-queue-worker/
+    docs:
+      - docs/contributing/decisions/0075-repo-push-queue-worker.md
+
   - id: open-api
     group: surfaces
     name: Open API (api.kody.codes)
