@@ -74,11 +74,11 @@ beforeEach(() => {
 	})
 })
 
-test('the signup org overview renders and remembers the org', async () => {
+test('the signup org overview renders without remembering the org', async () => {
 	const response = await getOverview(await createEnv(), 'ada')
 	expect(response.status).toBe(200)
 	expect(await response.text()).toBe('Overview')
-	expect(response.headers.get('Set-Cookie')).toContain('ada')
+	expect(response.headers.get('Set-Cookie')).toBeNull()
 })
 
 test('a team org overview redirects to the team home', async () => {

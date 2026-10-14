@@ -1,6 +1,5 @@
 import { type Action } from 'remix/router'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	orgHasPermission,
@@ -50,7 +49,6 @@ import {
 	type OrgMemberView,
 	type OrgMembersLoaderData,
 } from '#universal/loader-data.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { orgRoleLabel } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -75,22 +73,6 @@ function generateInviteToken() {
 
 function inviteAcceptPrompt(input: { orgSlug: string; token: string }) {
 	return `You are invited to the ${input.orgSlug} organization. Call inviteAccept with this token: ${input.token}. The token is shown once and cannot be looked up later.`
-}
-
-function withLastUsedOrg(request: Request, slug: string, response: Response) {
-	const headers = new Headers(response.headers)
-	headers.append(
-		'Set-Cookie',
-		serializeLastUsedOrgCookie({
-			slug,
-			secure: isSecureRequest(request),
-		}),
-	)
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	})
 }
 
 function renderDenied(
@@ -225,22 +207,18 @@ export function createOrgMembersHandler(env: Env) {
 				permission: 'member:read',
 			})
 			if (!access.ok) return renderDenied(request, env, access)
-			return withLastUsedOrg(
+			return await renderAppPage({
 				request,
-				access.org.slug,
-				await renderAppPage({
-					request,
-					env,
-					title: 'Members',
-					loaderData: {
-						orgMembers: await loadOrgMembersData({
-							env,
-							user,
-							org: access.org,
-						}),
-					},
-				}),
-			)
+				env,
+				title: 'Members',
+				loaderData: {
+					orgMembers: await loadOrgMembersData({
+						env,
+						user,
+						org: access.org,
+					}),
+				},
+			})
 		},
 	} satisfies Action<typeof routes.orgMembers>
 }

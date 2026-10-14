@@ -529,29 +529,21 @@ export function orgIdentity(
 	}
 }
 
-export function currentSwitcherSlug(input: {
+/**
+ * The org this URL is in, or null. The URL is the only source of truth for
+ * which org is current; pages without an org in the URL have none.
+ */
+export function urlOrgSlug(input: {
 	pathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
-	lastUsedSlug: string | null
 }) {
 	// Org-owned `/@slug/-/…` pages already authorized the URL org. Trust that
-	// slug even when the session membership list is empty or stale — otherwise
-	// the switcher falls back to the personal org beside team Settings.
+	// slug even when the session membership list is empty or stale.
 	const ownedPathSlug = orgSlugFromOrgOwnedPath(input.pathname)
 	if (ownedPathSlug) return ownedPathSlug
 	const fromPath = orgSlugFromPathname(input.pathname)
 	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
 		return fromPath
 	}
-	if (
-		input.lastUsedSlug &&
-		input.organizations.some((org) => org.slug === input.lastUsedSlug)
-	) {
-		return input.lastUsedSlug
-	}
-	return (
-		input.organizations.find((org) => org.personal)?.slug ??
-		input.organizations[0]?.slug ??
-		null
-	)
+	return null
 }

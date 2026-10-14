@@ -1,3 +1,5 @@
+import { routes } from '#universal/routes.ts'
+
 export type CommunityInstallUiState = 'idle' | 'submitting' | 'error'
 
 export type CommunityInstallClickDecision = 'ignore' | 'arm' | 'submit'
@@ -165,4 +167,15 @@ export function shouldResetInstallOnShellSnapshot(input: {
 }): boolean {
 	if (input.releasedProgress) return true
 	return input.installState !== 'submitting'
+}
+
+/**
+ * The install POST for a listing. Community pages have no org in their path, so
+ * an explicit `?org=<slug>` on the page names the target org; without one the
+ * server installs into the personal org.
+ */
+export function communityInstallHref(listingId: string, pageSearch: string) {
+	const href = routes.communityInstallApiPost.href({ listingId })
+	const org = new URLSearchParams(pageSearch).get('org')?.trim()
+	return org ? `${href}?${new URLSearchParams({ org })}` : href
 }

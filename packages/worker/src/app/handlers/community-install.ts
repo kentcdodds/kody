@@ -15,7 +15,7 @@ import {
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
 import { type routes } from '#universal/routes.ts'
-import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
@@ -39,9 +39,10 @@ import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
 /**
- * Community pages are not org-bound, so install into the last-used org when
- * the person still belongs there and holds `package:create`; otherwise their
- * personal org (where they are Owner).
+ * Community pages have no org in their path, so the target org must be named
+ * in the URL (`?org=<slug>`, forwarded from the listing page). It is used when
+ * the person belongs there and holds `package:create`; otherwise the install
+ * goes to their personal org (where they are Owner).
  */
 async function resolveCommunityInstallOwnerId(input: {
 	env: Env
@@ -49,12 +50,12 @@ async function resolveCommunityInstallOwnerId(input: {
 	request: Request
 }): Promise<OwnerId> {
 	const personalId = personalOrgId(input.user.mcpUser.userId)
-	const remembered = readLastUsedOrgSlug(input.request.headers.get('cookie'))
-	if (!remembered) return personalId
+	const requested = readOrgSlugFromUrl(input.request.url)
+	if (!requested) return personalId
 	const binding = await loadOrgBindingForSlug(
 		input.env.APP_DB,
 		input.user.mcpUser.userId,
-		remembered,
+		requested,
 	)
 	if (!binding || binding.org.id === personalId) return personalId
 	const access = await computeEffectivePermissions({

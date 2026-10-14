@@ -281,7 +281,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	)
 })
 
-test('community install targets the last-used org when the person holds package:create', async () => {
+test('community install targets the ?org= org when the person holds package:create', async () => {
 	const handler = createCommunityInstallApiPostHandler(env)
 	allowPackageCreate()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
@@ -305,18 +305,17 @@ test('community install targets the last-used org when the person holds package:
 
 	const response = await handler.handler({
 		request: new Request(
-			'https://example.com/community/listing-1/install.json',
+			'https://example.com/community/listing-1/install.json?org=acme',
 			{
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Cookie: 'kody_last_org=acme',
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ acknowledged: true }),
 			},
 		),
 		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1/install.json'),
+		url: new URL(
+			'https://example.com/community/listing-1/install.json?org=acme',
+		),
 	} as never)
 
 	expect(response.status).toBe(200)
@@ -342,7 +341,7 @@ test('community install targets the last-used org when the person holds package:
 	)
 })
 
-test('community install falls back to personal when last-used org lacks package:create', async () => {
+test('community install falls back to personal when the ?org= org lacks package:create', async () => {
 	const handler = createCommunityInstallApiPostHandler(env)
 	denyPackageCreate()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
@@ -355,6 +354,46 @@ test('community install falls back to personal when last-used org lacks package:
 	mockModule.loadOrgBindingForSlug.mockResolvedValue({
 		org: { id: teamOrgId, slug: 'acme' },
 		role: 'member',
+	})
+	mockModule.getPackageScopeByUserId.mockResolvedValue('userb')
+	mockModule.getCommunityListingById.mockResolvedValue(
+		listing('listing-1', '@someone/demo'),
+	)
+	mockModule.installCommunityListing.mockResolvedValue(installed('demo'))
+
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/community/listing-1/install.json?org=acme',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ acknowledged: true }),
+			},
+		),
+		params: { listingId: 'listing-1' },
+		url: new URL(
+			'https://example.com/community/listing-1/install.json?org=acme',
+		),
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: personalOwnerId,
+			userEmail: 'userb@example.com',
+			expectedPackageScope: 'userb',
+		}),
+	)
+})
+
+test('community install ignores a leftover last-used org cookie', async () => {
+	const handler = createCommunityInstallApiPostHandler(env)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: 'userb@example.com',
+		mcpUser: {
+			userId: personIdFromStored('stable-user-b'),
+			email: 'userb@example.com',
+		},
 	})
 	mockModule.getPackageScopeByUserId.mockResolvedValue('userb')
 	mockModule.getCommunityListingById.mockResolvedValue(
@@ -379,10 +418,10 @@ test('community install falls back to personal when last-used org lacks package:
 	} as never)
 
 	expect(response.status).toBe(200)
+	expect(mockModule.loadOrgBindingForSlug).not.toHaveBeenCalled()
 	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: personalOwnerId,
-			userEmail: 'userb@example.com',
 			expectedPackageScope: 'userb',
 		}),
 	)

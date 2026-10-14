@@ -231,7 +231,6 @@ test('team settings rail names the URL org when the session list is personal-onl
 				personal: true,
 			},
 		],
-		lastUsedOrganization: 'ada',
 	}
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {

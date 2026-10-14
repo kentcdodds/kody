@@ -71,7 +71,6 @@ export const routes = route({
 	accountWaitingClickPost: post('/account/waiting/click.json'),
 	// Prefetch-adopt cookie write for org SPA navigations (#3517). Not a
 	// section twin; keep distinct so navigation e2e does not see a refetch.
-	accountLastUsedOrgApi: '/account/last-used-org.json',
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),

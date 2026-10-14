@@ -10,6 +10,7 @@ import {
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	type CommunityInstallUiState,
+	communityInstallHref,
 	createPackageTitleInstallArm,
 	decideCommunityInstallClick,
 	isCommunityInstallConfirmArmed,
@@ -22,7 +23,6 @@ import {
 	type CommunityInstallApiPayload,
 	type CommunityInstallOutcome,
 } from '#client/routes/community-detail-shared.ts'
-import { routes } from '#universal/routes.ts'
 
 /**
  * The Fork control in the repository action group, shared by every tab that
@@ -67,7 +67,7 @@ export function createCommunityInstallController(
 
 		try {
 			const response = await fetch(
-				routes.communityInstallApiPost.href({ listingId }),
+				communityInstallHref(listingId, window.location.search),
 				{
 					method: 'POST',
 					headers: {

@@ -369,7 +369,6 @@ export function App(handle: Handle<AppProps>) {
 								loginHref={loginHref}
 								currentPathname={currentPathname}
 								organizations={session?.organizations}
-								lastUsedOrganization={session?.lastUsedOrganization}
 								focused={isFocusedPage}
 							/>
 						)}
