@@ -439,7 +439,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 			<AccountManagementPanel title="Add an org member">
 				{view.options.members.length === 0 ? (
 					<p mix={css(mutedCopyCss)}>
-						Every member of this organization already has access.
+						No members left to add. Owners already have full access.
 					</p>
 				) : (
 					<form
