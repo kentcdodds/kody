@@ -121,9 +121,14 @@ export function LoginRoute(handle: Handle) {
 		if (!signupUsernameFormatLive) return false
 		if (getCurrentAuthMode(handle) !== 'signup') return false
 		const usernameError = getHandleFormatError(signupUsername)
-		if (!usernameError) return false
-		setState('error', usernameError)
-		return true
+		if (usernameError) {
+			setState('error', usernameError)
+			return true
+		}
+		// Autofill may fix the value without an input event; clear a stale
+		// format error when the field is now valid.
+		if (status === 'error') clearFieldError()
+		return false
 	}
 
 	function onFieldEdit() {

@@ -47,8 +47,21 @@ export function normalizeHandle(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
+/**
+ * True when the value is a valid handle after trim + lowercase. Use on the
+ * client where the person may still be typing mixed case.
+ */
 export function isValidHandle(value: string) {
 	return dnsSafeUsernamePattern.test(normalizeHandle(value))
+}
+
+/**
+ * True when the value is already in canonical form (lowercase DNS label).
+ * Server paths that receive a pre-normalized username must use this — do not
+ * accept uppercase here or callers skip their own canonicalize step.
+ */
+export function isCanonicalHandle(value: string) {
+	return typeof value === 'string' && dnsSafeUsernamePattern.test(value)
 }
 
 /**

@@ -5,7 +5,7 @@ export {
 import {
 	handleFormatRequirements,
 	handleMaxLength,
-	isValidHandle,
+	isCanonicalHandle,
 	normalizeHandle,
 } from '@kody-internal/shared/handle-rules.ts'
 import { getEffectiveReservedUsernameError } from '#worker/identity/reserved-username-settings.ts'
@@ -30,16 +30,18 @@ export function usernameNotPersistedError(username: string) {
 }
 
 /**
- * Every username is a valid DNS label (shared {@link isValidHandle}): each
- * user owns a `{username}.` subdomain on the package-app domain. There is no
- * lenient legacy shape — the underscore-era usernames were migrated out of
- * production on 2026-08-12 (decision 0017).
+ * Every username is a valid DNS label (shared {@link isCanonicalHandle}): each
+ * user owns a `{username}.` subdomain on the package-app domain. Callers must
+ * pass an already-normalized value — uppercase is rejected so lookup paths
+ * cannot skip canonicalize. There is no lenient legacy shape — the
+ * underscore-era usernames were migrated out of production on 2026-08-12
+ * (decision 0017).
  */
 export function getUsernameFormatValidationError(username: string) {
 	if (!username) {
 		return 'Username is required.'
 	}
-	if (!isValidHandle(username)) {
+	if (!isCanonicalHandle(username)) {
 		return usernameRequirements
 	}
 	return null

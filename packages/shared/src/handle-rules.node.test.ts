@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	diagnoseHandleFormat,
 	getHandleFormatError,
+	isCanonicalHandle,
 	isValidHandle,
 	normalizeHandle,
 	suggestHandle,
@@ -64,4 +65,10 @@ test('isValidHandle matches the DNS-safe username pattern', () => {
 	expect(isValidHandle('kent ')).toBe(true)
 	expect(isValidHandle('kent_cdodds')).toBe(false)
 	expect(isValidHandle('ján')).toBe(false)
+})
+
+test('isCanonicalHandle requires already-lowercase form', () => {
+	expect(isCanonicalHandle('kent')).toBe(true)
+	expect(isCanonicalHandle('Kent')).toBe(false)
+	expect(isCanonicalHandle('kent ')).toBe(false)
 })
