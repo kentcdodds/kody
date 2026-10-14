@@ -160,7 +160,7 @@ test('the creation link saves Key, URL, and login credentials from their prefill
 	)
 	await expect(page.getByTestId('connect-credential-continue')).toHaveAttribute(
 		'href',
-		'/connect/oauth?kind=oauth&provider=github',
+		`/connect/oauth?kind=oauth&provider=github&org=${user.username}`,
 	)
 
 	// A URL credential takes its hosts; a value off those hosts is refused
