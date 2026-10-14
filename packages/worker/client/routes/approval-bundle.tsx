@@ -20,10 +20,13 @@ import {
 	type ApprovalBundlePackageGroup,
 	type ApprovalBundleView,
 	type ApprovalGrantLine,
+	type ApprovalItemSecurityAudit,
 	type ApprovalItemStatus,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import { parseOrgApprovalBundlePath } from '#universal/org-pages.ts'
+import { packageSecurityAuditAnchor } from '#universal/package-security-audit-prompt.ts'
+import { auditedLabel } from '#client/routes/package-security-audit-field.tsx'
 import {
 	cardCss,
 	cardTitleCss,
@@ -52,6 +55,11 @@ const approveButtonCss = getPrimaryButtonCss({ size: 'md' })
 const denyButtonCss = getSecondaryButtonCss({ size: 'md' })
 const denyConfirmButtonCss = getDangerButtonCss({ size: 'md' })
 const mutedCss = { margin: 0, color: colors.textMuted }
+
+function securityAuditText(audit: ApprovalItemSecurityAudit) {
+	if (audit.status === 'not_audited') return 'No security audit performed'
+	return `${auditedLabel(audit)} · ${audit.verdict === 'pass' ? 'Pass' : 'Concerns'}`
+}
 const smallMutedCss = { ...mutedCss, fontSize: typography.fontSize.sm }
 const listCss = {
 	margin: 0,
@@ -396,6 +404,17 @@ export function ApprovalBundleRoute(handle: Handle) {
 				) : null}
 				{item.statusMessage ? (
 					<p mix={css(mutedCss)}>{item.statusMessage}</p>
+				) : null}
+				{item.securityAudit && item.reviewHref ? (
+					<p
+						data-testid="approval-bundle-security-audit"
+						mix={css(smallMutedCss)}
+					>
+						Security audit:{' '}
+						<a href={`${item.reviewHref}#${packageSecurityAuditAnchor}`}>
+							{securityAuditText(item.securityAudit)}
+						</a>
+					</p>
 				) : null}
 				{error ? (
 					<p

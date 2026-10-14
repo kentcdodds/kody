@@ -541,7 +541,11 @@
 			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
 		},
 		{
-			"filename": "0146-feature-flag-repo-overrides.sql",
+			"filename": "0146-package-security-audits.sql",
+			"sha256": "18d8fb033af7e5f4e2aab1311a95ae24be9e60a2aac454c7d2c764129bc49ae9"
+		},
+		{
+			"filename": "0147-feature-flag-repo-overrides.sql",
 			"sha256": "b1d86122ab55b8ec74f3edd53844f4da24f0f3c35099d0cb21a5f92a9f767c63"
 		}
 	]

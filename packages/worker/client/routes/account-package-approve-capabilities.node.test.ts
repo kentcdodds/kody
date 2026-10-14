@@ -5,6 +5,7 @@ import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
 import { AccountPackageApproveCapabilitiesRoute } from '#client/routes/account-package-approve-capabilities.tsx'
 import { type AccountPackageApproveCapabilitiesLoaderData } from '#universal/loader-data.ts'
+import { buildPackageSecurityAuditPrompt } from '#universal/package-security-audit-prompt.ts'
 
 const approveHref = '/@kody/mau-chart/approve-capabilities'
 const packageId = 'ae81fd4e-7c1b-4b8e-9d0a-6f2b1c3d4e5f'
@@ -56,6 +57,16 @@ function loaderData(
 		],
 		fingerprintMatchesApproval: false,
 		latestApprovedAt: null,
+		securityAudit: {
+			status: 'not_audited',
+			prompt: buildPackageSecurityAuditPrompt({
+				packageName: '@kody/mau-chart',
+				packageId,
+				publishedCommit,
+				fingerprint,
+				approvalUrl: `https://kody.codes${approveHref}`,
+			}),
+		},
 		settingsHref: '/@kody/mau-chart/settings',
 		packageHref: '/@kody/mau-chart',
 		approveHref,
@@ -75,12 +86,23 @@ async function render(data: AccountPackageApproveCapabilitiesLoaderData) {
 	)
 }
 
+/** Visible page text: everything before Details, minus closed dialogs. */
 function beforeDetails(html: string) {
 	const index = html.indexOf(
 		'data-testid="package-approve-capabilities-details"',
 	)
 	expect(index).toBeGreaterThan(-1)
-	return html.slice(0, index)
+	return withoutDialogs(html.slice(0, index))
+}
+
+function withoutDialogs(html: string) {
+	return html.replace(/<dialog[\s\S]*?<\/dialog>/g, '')
+}
+
+function securityAuditField(html: string) {
+	const start = html.indexOf('data-testid="package-security-audit"')
+	expect(start).toBeGreaterThan(-1)
+	return html.slice(start, html.indexOf('</section>', start))
 }
 
 test('capability approval leads with the package, credentials, and other capabilities in plain language', async () => {
@@ -230,4 +252,95 @@ test('capability approval says so plainly when nothing is reachable', async () =
 
 	expect(html).toContain('This package does not use any of your credentials.')
 	expect(html).toContain('No other capabilities.')
+})
+
+test('security audit reads "No security audit performed" and offers a copyable agent prompt', async () => {
+	const html = await render(loaderData())
+	const field = securityAuditField(html)
+
+	expect(field).toContain('data-audit-status="not_audited"')
+	expect(field).toContain('>Security audit<')
+	expect(field).toContain('No security audit performed')
+	expect(field).toContain('aria-haspopup="dialog"')
+	expect(field).toContain('Ask your agent for a security audit')
+
+	const prompt = field.slice(
+		field.indexOf('data-testid="package-security-audit-prompt"'),
+	)
+	for (const value of [packageId, publishedCommit, fingerprint]) {
+		expect(prompt).toContain(value)
+	}
+	expect(prompt).toContain('packageSecurityAuditRecord')
+	expect(field).toContain('aria-label="Copy security audit prompt"')
+	expect(withoutDialogs(field)).not.toContain(publishedCommit)
+
+	// Informational only: Approve stays its own button.
+	expect(html).toContain('data-testid="package-approve-capabilities"')
+	expect(field).not.toContain('data-testid="package-approve-capabilities"')
+})
+
+test('security audit shows who audited when, with a link to the summary', async () => {
+	const html = await render(
+		loaderData({
+			securityAudit: {
+				status: 'audited',
+				verdict: 'concerns',
+				summary: 'FATHOM_API_KEY is only sent to api.usefathom.com.',
+				auditor: 'Audit Agent',
+				recordedBy: '@kody',
+				recordedAt: '2026-10-14T15:30:00.000Z',
+			},
+		}),
+	)
+	const field = securityAuditField(html)
+
+	expect(field).toContain('data-audit-status="audited"')
+	expect(field).toMatch(/Audited [^<]+ by Audit Agent/)
+	expect(field).toContain('href="#security-audit"')
+	expect(field).toContain('>Concerns<')
+	expect(field).toContain('Security audit summary')
+	expect(field).toContain('recorded by @kody')
+	expect(field).toContain('FATHOM_API_KEY is only sent to api.usefathom.com.')
+	expect(field).not.toContain('No security audit performed')
+	expect(field).not.toContain(publishedCommit)
+})
+
+test('security audit asks for a publish before an unpublished package can be audited', async () => {
+	const html = await render(
+		loaderData({
+			publishedCommit: null,
+			securityAudit: { status: 'unpublished' },
+		}),
+	)
+	const field = securityAuditField(html)
+
+	expect(field).toContain(
+		'No security audit performed. Publish this package to audit it.',
+	)
+	expect(field).not.toContain('<dialog')
+})
+
+test('security audit says it does not cover a paused publish waiting on the page', async () => {
+	const paused = await render(
+		loaderData({
+			pendingApprovals: [
+				{
+					id: 'req-2',
+					reason: 'credential_needs_changed',
+					reasonLabel: 'Credential needs changed',
+					pendingCommit: 'cccccccccccccccccccccccccccccccccccccccc',
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: [],
+					approveAction: 'approve-credential-needs',
+				},
+			],
+		}),
+	)
+	expect(securityAuditField(paused)).toContain(
+		'Covers the published version only, not the paused publish waiting',
+	)
+
+	expect(securityAuditField(await render(loaderData()))).not.toContain(
+		'data-testid="package-security-audit-paused-note"',
+	)
 })
