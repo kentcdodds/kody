@@ -232,6 +232,72 @@ test('0138 prefers an on row over an older paused sibling for the catch-all', ()
 	])
 })
 
+test('0138 frees an off migrated sibling before tagging the live catch-all', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, '0138-org-email-sender-enablements.sql')
+	db.prepare(
+		`INSERT INTO users (
+			username, email, password_hash, stable_user_id, deleted_at
+		) VALUES (?, ?, 'hash', ?, ?)`,
+	).run('cal', 'cal@example.com', 'person-cal', null)
+	db.prepare(
+		`INSERT INTO enablements (
+			id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+			enabler_user_id, state, origin, enabled_at, updated_at
+		) VALUES (?, ?, 'pkg', 'subscription', 'email.message.received', 'pkg',
+			'person', ?, ?, ?, ?)`,
+	).run(
+		'off-migrated',
+		'person-cal',
+		'off',
+		'migrated',
+		'2026-09-01T00:00:00.000Z',
+		'2026-09-01T00:00:00.000Z',
+	)
+	db.prepare(
+		`INSERT INTO enablements (
+			id, org_id, package_id, trigger_kind, trigger_name, instance_id,
+			enabler_user_id, state, origin, enabled_at, updated_at
+		) VALUES (?, ?, 'pkg', 'subscription', 'email.message.received', 'pkg',
+			'person', ?, ?, ?, ?)`,
+	).run(
+		'live-enabled',
+		'person-cal',
+		'on',
+		'enabled',
+		'2026-10-13T00:00:00.000Z',
+		'2026-10-13T00:00:00.000Z',
+	)
+	expect(() =>
+		applyMigrationFile(db, '0138-org-email-sender-enablements.sql'),
+	).not.toThrow()
+	const rows = db
+		.prepare(
+			`SELECT id, sender_kind, origin, state FROM enablements
+			 WHERE org_id = 'person-cal' ORDER BY id`,
+		)
+		.all() as Array<{
+		id: string
+		sender_kind: string | null
+		origin: string
+		state: string
+	}>
+	expect(rows).toEqual([
+		{
+			id: 'live-enabled',
+			sender_kind: 'any_authenticated',
+			origin: 'migrated',
+			state: 'on',
+		},
+		{
+			id: 'off-migrated',
+			sender_kind: null,
+			origin: 'enabled',
+			state: 'off',
+		},
+	])
+})
+
 test('0138 allows one live email sender rule per org, instance, topic, and sender', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, '0138-org-email-sender-enablements.sql')
