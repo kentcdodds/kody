@@ -546,6 +546,8 @@ declare module "kody:runtime" {
     readonly scope: "org" | "personal";
     readonly kind: "secret" | "oauth" | "url" | "login" | "mcp" | "signing";
     readonly hosts: ReadonlyArray<string>;
+    /** Set when an explicit pick has no provider and could resolve on its own. */
+    readonly hint?: string;
     fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
     sign?: (operation: Record<string, unknown>) => Promise<string>;
     callTool?: (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -563,6 +565,10 @@ declare module "kody:runtime" {
       options?: { scope?: "org" | "personal" | null },
     ): Promise<KodyCredentialClient>;
   };
+  /**
+   * Every credential the caller's \`credentials\` map picks for the key, or
+   * the one match when it picks none.
+   */
   export function credentials(key: string): Promise<Array<KodyCredentialClient>>;
   export const packageSecrets:
     | {
@@ -1457,6 +1463,7 @@ async function runChunkedBundleValidation(input: {
 async function buildCredentialNeedsCheck(input: {
 	env?: Env
 	userId?: string
+	sourceId?: string
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 }): Promise<RepoCheckResult | null> {
@@ -1476,6 +1483,7 @@ async function buildCredentialNeedsCheck(input: {
 					? await republishedNeedsNote({
 							env: input.env,
 							userId: input.userId,
+							sourceId: input.sourceId ?? null,
 							packageName: input.manifest.name,
 							needs: closure.needs,
 						})
@@ -1524,6 +1532,8 @@ export async function runRepoChecks(input: {
 	env?: Env
 	baseUrl?: string
 	userId?: string
+	/** The entity source being published, when there is one. */
+	sourceId?: string
 	expectedPackageScope?: string
 	phaseTimings?: PublishPhaseTimings
 	/**
@@ -1651,6 +1661,7 @@ export async function runRepoChecks(input: {
 	const credentialNeedsCheck = await buildCredentialNeedsCheck({
 		env: input.env,
 		userId: input.userId,
+		...(input.sourceId ? { sourceId: input.sourceId } : {}),
 		manifest,
 		sourceFiles,
 	})

@@ -27,7 +27,9 @@ and package-graph routes.
 **Agents already on MCP:** call `cliCredentialBootstrap` with a required
 lifetime (single-task agents use `short`). It returns a one-shot `kody_bc_…`
 code and a `cli_command` that already includes lifetime flags (**not** a
-`kody_at_…`). Run the CLI command (no second OAuth, no `tokenCreate`):
+`kody_at_…`). Bootstrap tokens are person-owned (`org_binding: user`); pass
+`?org=<slug>` on API calls to act in a team org (default: personal). Run the CLI
+command (no second OAuth, no `tokenCreate`):
 
 ```json
 {
@@ -44,9 +46,12 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 pass both `--idle-ttl-seconds` and `--max-lifetime-seconds`. Lifetime is
 required; missing it fails with the exact flag syntax.
 
-**Opt-in scopes:** bootstrap defaults stay least-privilege (no `package:write`,
-for example). When a task needs more, pass `scopes` when minting. The list
-replaces the defaults, so include every scope you need:
+**Default scopes:** bootstrap tokens include local-execute use scopes
+(`org:execute`, `org:read`, and package/integration/secret/email/job/app/memory
+use scopes), plus `package:write` (plain-repo / package pushes) and
+`token:delete` (self-revoke). They do not include `search:read`. When a task
+needs a different set, pass `scopes` when minting. The list replaces the
+defaults, so include every scope you need:
 
 ```bash
 # Agents on MCP: cliCredentialBootstrap({ lifetime: "short", scopes: ["org:execute", "org:read", "package:execute", "package:read", "package:write"] })

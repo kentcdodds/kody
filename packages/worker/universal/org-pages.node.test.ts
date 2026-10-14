@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
 	orgResourcePathForAccountPath,
+	orgUsagePath,
 	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
@@ -16,6 +17,7 @@ import {
 	parseOrgManagementPath,
 	parseOrgOverviewPath,
 	parseOrgResourcePath,
+	parseOrgUsagePath,
 	switchOrgPath,
 	type OrganizationSummary,
 } from './org-pages.ts'
@@ -57,6 +59,12 @@ test('account-shaped section paths become canonical org links', () => {
 	)
 	expect(orgResourcePathForAccountPath('/account/billing/success', 'ada')).toBe(
 		'/@ada/-/billing/success',
+	)
+	expect(orgResourcePathForAccountPath('/account/usage', 'ada')).toBe(
+		'/@ada/-/usage',
+	)
+	expect(orgResourcePathForAccountPath('/account/credits', 'ada')).toBe(
+		'/@ada/-/usage',
 	)
 	expect(orgResourcePathForAccountPath('/account/packages/pkg-1', 'ada')).toBe(
 		null,
@@ -109,6 +117,8 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/-/billing/success', 'other')).toBe(
 		'/@other/-/billing',
 	)
+	expect(switchOrgPath('/@acme/-/usage', 'other')).toBe('/@other/-/usage')
+	expect(switchOrgPath('/@acme/-/usage.json', 'other')).toBe('/@other/-/usage')
 	expect(switchOrgPath('/@acme/-/settings', 'other')).toBe('/@other/-/settings')
 	expect(switchOrgPath('/@acme/-/members.json', 'other')).toBe(
 		'/@other/-/members',
@@ -330,16 +340,33 @@ test('billing paths bind to the organization in the URL', () => {
 	expect(parseOrgBillingPath('/@Not A Slug/billing')).toBeNull()
 })
 
+test('usage paths bind to the organization in the URL', () => {
+	expect(orgUsagePath('acme')).toBe('/@acme/-/usage')
+	for (const pathname of [
+		'/@acme/-/usage',
+		'/@acme/-/usage/',
+		'/@acme/-/usage.json',
+	]) {
+		expect(parseOrgUsagePath(pathname)).toEqual({ slug: 'acme' })
+	}
+	expect(parseOrgUsagePath('/account/usage')).toBeNull()
+	expect(parseOrgUsagePath('/@acme/-/usage/extra')).toBeNull()
+	expect(parseOrgUsagePath('/@acme/usage')).toBeNull()
+	expect(parseOrgUsagePath('/@Not A Slug/usage')).toBeNull()
+	expect(orgSlugFromOrgOwnedPath('/@acme/-/usage')).toBe('acme')
+	expect(orgSlugFromOrgOwnedPath('/@acme/-/usage.json')).toBe('acme')
+})
+
 test('org account JSON names the section', () => {
 	expect(orgOwnedAccountApiSection('/account/secrets.json')).toBe('secrets')
 	expect(orgOwnedAccountApiSection('/account/jobs.json')).toBe('jobs')
 	expect(orgOwnedAccountApiSection('/account/connected-agents.json')).toBe(
-		'connections',
+		'agents',
 	)
 	expect(orgOwnedAccountApiSection('/account/connection-usage.json')).toBe(
-		'connections',
+		'agents',
 	)
-	// Sign-in providers belong to the person, not the Connections page.
+	// Sign-in providers belong to the person, not the Agents page.
 	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/packages.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()

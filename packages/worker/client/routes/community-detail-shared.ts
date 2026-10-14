@@ -10,6 +10,7 @@ import {
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { type PackageRepoActions } from '#universal/package-title-actions.tsx'
 import {
 	type PublicCommunityListing,
 	type ViewerListingInstall,
@@ -42,6 +43,7 @@ export type CommunityDetailApiPayload = {
 	kodyId: string
 	isPrivate: boolean
 	invocationUrlOrigin: string
+	repoActions?: PackageRepoActions | null
 }
 
 export type CommunityPackageMovedPayload = {
@@ -206,6 +208,7 @@ export type PackageSettingsShell =
 			viewerCanPublish: boolean
 			viewerCanDelete: boolean
 			viewerCanAdoptCommunityFork: boolean
+			repoActions: PackageRepoActions | null
 	  }
 
 export function toPackageSettingsShell(
@@ -230,6 +233,7 @@ export function toPackageSettingsShell(
 		viewerCanPublish: routeData.viewerCanPublish === true,
 		viewerCanDelete: routeData.viewerCanDelete === true,
 		viewerCanAdoptCommunityFork: routeData.viewerCanAdoptCommunityFork === true,
+		repoActions: routeData.repoActions ?? null,
 	}
 }
 
@@ -356,6 +360,7 @@ export async function communityDetailRouteLoader(
 				'',
 			isPrivate: payload.isPrivate ?? payload.ownerPackage?.isPrivate ?? false,
 			invocationUrlOrigin: payload.invocationUrlOrigin,
+			repoActions: payload.repoActions ?? null,
 		},
 	}
 }

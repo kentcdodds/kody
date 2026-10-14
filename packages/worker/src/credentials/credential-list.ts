@@ -6,10 +6,15 @@
  * viewer's own credentials granted to the org. Nothing here reads a value.
  */
 import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
+import {
 	personalOrgId,
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import {
 	listScopeIncludes,
 	loadResourceListScope,
@@ -24,6 +29,7 @@ import {
 	type CredentialScope,
 	isCredentialKind,
 } from '#universal/credential-contracts.ts'
+import { filterCredentialList } from '#universal/credentials-list.ts'
 import { readCredentialInject } from './credential-fields.ts'
 import { listPersonalCredentialCandidates } from './personal-credentials.ts'
 
@@ -57,12 +63,30 @@ const bearerInject: CredentialInjectView = {
 	format: 'Bearer {value}',
 }
 
-function idFilter(column: string, ids: ReadonlyArray<string> | null) {
-	if (ids === null) return { sql: '', binds: [] as Array<string> }
-	return {
-		sql: ` AND ${column} IN (${ids.map(() => '?').join(', ')})`,
-		binds: [...ids],
-	}
+type IdFilter = { sql: string; binds: Array<string> }
+
+/**
+ * Runs `query` once with no id filter, or once per chunk of `ids` so each
+ * statement stays under D1's bound-parameter cap. `fixedBinds` counts the
+ * query's other bound parameters.
+ */
+async function queryByIds<Row>(
+	column: string,
+	ids: ReadonlyArray<string> | null,
+	fixedBinds: number,
+	query: (filter: IdFilter) => Promise<Array<Row>>,
+): Promise<Array<Row>> {
+	if (ids === null) return query({ sql: '', binds: [] })
+	const groups = await Promise.all(
+		chunkArray([...new Set(ids)], maxD1BoundParameters - fixedBinds).map(
+			(chunk) =>
+				query({
+					sql: ` AND ${column} IN (${chunk.map(() => '?').join(', ')})`,
+					binds: chunk,
+				}),
+		),
+	)
+	return groups.flat()
 }
 
 type SecretRow = {
@@ -79,6 +103,7 @@ type SecretRow = {
 	created_at: string
 	updated_at: string
 	expires_at: string | null
+	bucket_expires_at: string | null
 }
 
 async function loadSecretRows(input: {
@@ -87,25 +112,32 @@ async function loadSecretRows(input: {
 	ids: ReadonlyArray<string> | null
 	now: string
 }): Promise<Array<ListedRow>> {
-	const filter = idFilter('e.id', input.ids)
-	const result = await input.db
-		.prepare(
-			`SELECT e.id, e.name, e.kind, e.provider, e.description, e.allowed_hosts,
-				e.allowed_packages, e.inject_json, b.scope AS bucket_scope,
-				b.binding_key, e.created_at, e.updated_at, e.expires_at
-			FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
-			WHERE b.user_id = ? AND b.scope IN ('user', 'package')
-				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
-				AND e.id IS NOT NULL${filter.sql}`,
-		)
-		.bind(input.ownerId, ...filter.binds)
-		.all<SecretRow>()
-	return (result.results ?? []).flatMap((row): Array<ListedRow> => {
+	const rows = await queryByIds('e.id', input.ids, 1, async (filter) => {
+		const result = await input.db
+			.prepare(
+				`SELECT e.id, e.name, e.kind, e.provider, e.description, e.allowed_hosts,
+					e.allowed_packages, e.inject_json, b.scope AS bucket_scope,
+					b.binding_key, e.created_at, e.updated_at, e.expires_at,
+					b.expires_at AS bucket_expires_at
+				FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
+				WHERE b.user_id = ? AND b.scope IN ('user', 'package')
+					AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+					AND e.id IS NOT NULL${filter.sql}`,
+			)
+			.bind(input.ownerId, ...filter.binds)
+			.all<SecretRow>()
+		return result.results ?? []
+	})
+	return rows.flatMap((row): Array<ListedRow> => {
 		if (isReservedSecretName(row.name) || !isCredentialKind(row.kind)) {
 			return []
 		}
 		const kind: CredentialKind = row.kind
-		const expired = row.expires_at !== null && row.expires_at <= input.now
+		const expiresAt = earliestSecretExpiresAt(
+			row.expires_at,
+			row.bucket_expires_at,
+		)
+		const expired = expiresAt !== null && expiresAt <= input.now
 		return [
 			{
 				family: 'secret',
@@ -121,7 +153,7 @@ async function loadSecretRows(input: {
 						: null,
 				packageId: row.bucket_scope === 'package' ? row.binding_key : null,
 				lockedToPackageIds: parseStringArray(row.allowed_packages),
-				expiresAt: row.expires_at,
+				expiresAt,
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 				status: expired ? 'expired' : 'ok',
@@ -154,10 +186,10 @@ async function loadIntegrationRows(input: {
 	ownerId: string
 	ids: ReadonlyArray<string> | null
 }): Promise<Array<ListedRow>> {
-	const filter = idFilter('i.id', input.ids)
-	const result = await input.db
-		.prepare(
-			`SELECT i.id, i.name, COALESCE(i.provider, p.provider, a.provider) AS provider,
+	const rows = await queryByIds('i.id', input.ids, 1, async (filter) => {
+		const result = await input.db
+			.prepare(
+				`SELECT i.id, i.name, COALESCE(i.provider, p.provider, a.provider) AS provider,
 				i.description, i.required_hosts_json,
 				p.required_hosts_json AS app_hosts_json,
 				CASE WHEN i.platform_app_slug IS NOT NULL THEN p.api_base_url
@@ -170,10 +202,12 @@ async function loadIntegrationRows(input: {
 			LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
 			WHERE i.user_id = ? AND i.deleted_at IS NULL
 				AND i.id IS NOT NULL${filter.sql}`,
-		)
-		.bind(input.ownerId, ...filter.binds)
-		.all<IntegrationRow>()
-	return (result.results ?? []).map((row): ListedRow => {
+			)
+			.bind(input.ownerId, ...filter.binds)
+			.all<IntegrationRow>()
+		return result.results ?? []
+	})
+	return rows.map((row): ListedRow => {
 		const connected = row.connected_at !== null
 		const failed = row.auth_failed_at !== null
 		return {
@@ -228,17 +262,19 @@ async function loadMcpRows(input: {
 	ownerId: string
 	ids: ReadonlyArray<string> | null
 }): Promise<Array<ListedRow>> {
-	const filter = idFilter('id', input.ids)
-	const result = await input.db
-		.prepare(
-			`SELECT id, name, url, provider, enabled, usage_mode,
-				allowed_packages_json, last_error, created_at, updated_at
-			FROM mcp_server_settings
-			WHERE user_id = ? AND deleted_at IS NULL${filter.sql}`,
-		)
-		.bind(input.ownerId, ...filter.binds)
-		.all<McpRow>()
-	return (result.results ?? []).map((row): ListedRow => {
+	const rows = await queryByIds('id', input.ids, 1, async (filter) => {
+		const result = await input.db
+			.prepare(
+				`SELECT id, name, url, provider, enabled, usage_mode,
+					allowed_packages_json, last_error, created_at, updated_at
+				FROM mcp_server_settings
+				WHERE user_id = ? AND deleted_at IS NULL${filter.sql}`,
+			)
+			.bind(input.ownerId, ...filter.binds)
+			.all<McpRow>()
+		return result.results ?? []
+	})
+	return rows.map((row): ListedRow => {
 		const enabled = row.enabled === 1
 		return {
 			family: 'integration',
@@ -283,64 +319,6 @@ async function loadOwnerRows(input: {
 	return groups.flat()
 }
 
-function matchesQuery(item: CredentialListItem, query: string) {
-	const needle = query.toLowerCase()
-	return [item.name, item.provider ?? '', item.description, ...item.hosts].some(
-		(field) => field.toLowerCase().includes(needle),
-	)
-}
-
-/** Applies the list filters; exported so the client can filter the same way. */
-export function filterCredentialList(
-	items: ReadonlyArray<CredentialListItem>,
-	filters: CredentialListFilters,
-): Array<CredentialListItem> {
-	const query = filters.q?.trim() ?? ''
-	return items.filter((item) => {
-		if (query && !matchesQuery(item, query)) return false
-		if (filters.kinds?.length && !filters.kinds.includes(item.kind)) {
-			return false
-		}
-		if (filters.scope && item.scope !== filters.scope) return false
-		if (
-			filters.packageScoped !== undefined &&
-			(item.packageId !== null) !== filters.packageScoped
-		) {
-			return false
-		}
-		if (filters.locked === true && item.lockedToPackageIds.length === 0) {
-			return false
-		}
-		if (
-			typeof filters.locked === 'string' &&
-			!item.lockedToPackageIds.includes(filters.locked)
-		) {
-			return false
-		}
-		return true
-	})
-}
-
-/** Reads list filters from a query string (`kind` may repeat). */
-export function readCredentialListFilters(
-	search: URLSearchParams,
-): CredentialListFilters {
-	const filters: CredentialListFilters = {}
-	const q = search.get('q')?.trim()
-	if (q) filters.q = q
-	const kinds = search.getAll('kind').filter(isCredentialKind)
-	if (kinds.length > 0) filters.kinds = kinds
-	const scope = search.get('scope')
-	if (scope === 'org' || scope === 'personal') filters.scope = scope
-	const packageScoped = search.get('packageScoped')
-	if (packageScoped === 'true') filters.packageScoped = true
-	if (packageScoped === 'false') filters.packageScoped = false
-	const locked = search.get('locked')?.trim()
-	if (locked === 'true') filters.locked = true
-	else if (locked && locked !== 'false') filters.locked = locked
-	return filters
-}
-
 /**
  * The viewer's credentials list for the request's org, sorted by name then
  * scope. Personal rows follow a scoped token's Use scopes like the resolver.
@@ -355,16 +333,18 @@ export async function listCredentialsForViewer(input: {
 	const orgId = input.request.org.id
 	const now = (input.now ?? new Date()).toISOString()
 	const actor = input.request.actor?.userId ?? null
-	const [secretScope, integrationScope, orgRows, personal] = await Promise.all([
-		loadResourceListScope(input, 'secret:use', 'credential'),
-		loadResourceListScope(input, 'integration:read', 'credential'),
-		loadOwnerRows({ db, ownerId: orgId, ids: null, now }),
-		listPersonalCredentialCandidates({
-			db,
-			actorPersonId: actor,
-			orgId: orgId as OwnerId,
-		}),
-	])
+	const [secretScope, integrationScope, packageScope, orgRows, personal] =
+		await Promise.all([
+			loadResourceListScope(input, 'secret:use', 'credential'),
+			loadResourceListScope(input, 'integration:read', 'credential'),
+			loadResourceListScope(input, 'package:read', 'package'),
+			loadOwnerRows({ db, ownerId: orgId, ids: null, now }),
+			listPersonalCredentialCandidates({
+				db,
+				actorPersonId: actor,
+				orgId: orgId as OwnerId,
+			}),
+		])
 	const withScope = (
 		row: ListedRow,
 		scope: CredentialScope,
@@ -374,11 +354,16 @@ export async function listCredentialsForViewer(input: {
 		return item
 	}
 	const items: Array<CredentialListItem> = orgRows
-		.filter((row) =>
-			listScopeIncludes(
-				row.family === 'secret' ? secretScope : integrationScope,
-				row.id,
-			),
+		.filter(
+			(row) =>
+				listScopeIncludes(
+					row.family === 'secret' ? secretScope : integrationScope,
+					row.id,
+				) &&
+				// A package Key is that package's own; org-wide Use alone does
+				// not reveal it to someone who cannot read the package.
+				(row.packageId === null ||
+					listScopeIncludes(packageScope, row.packageId)),
 		)
 		.map((row) => withScope(row, 'org'))
 	if (actor && personal.length > 0) {
@@ -396,7 +381,13 @@ export async function listCredentialsForViewer(input: {
 		})
 		items.push(
 			...personalRows
-				.filter((row) => row.packageId === null && tokenAllows(row.family))
+				// credential() refuses a personal MCP server, so it is not usable here.
+				.filter(
+					(row) =>
+						row.packageId === null &&
+						row.kind !== 'mcp' &&
+						tokenAllows(row.family),
+				)
 				.map((row) => withScope(row, 'personal')),
 		)
 	}

@@ -803,29 +803,6 @@ async function processPackageForMode(input: {
 					checkSummary: gated.checkSummary,
 				})
 			}
-			// Published-only codemods skip locked packages entirely: a locked
-			// aligned apply leaves HEAD at afterCommit while published stays
-			// behind, and revert cannot open a RepoSession (HEAD != published).
-			// A locked drifted apply would hide the pending tip on kody-published.
-			if (
-				applyMode === 'published-only' &&
-				isSavedPackageLocked(input.savedPackage.lockedAt)
-			) {
-				return emptyItemResult({
-					itemId: gated.itemId,
-					userId: input.savedPackage.userId,
-					packageId: input.savedPackage.id,
-					kodyId: input.savedPackage.kodyId,
-					status: 'failed',
-					changedPaths: gated.changedPaths,
-					findings: gated.findings,
-					beforeCommit: publishedCommit,
-					checkSummary: gated.checkSummary,
-					error:
-						'Published-only apply skips locked packages: unlock the package before applying so HEAD and published_commit stay restorable.',
-				})
-			}
-
 			const revertSnapshotKey = buildPackageCodemodRevertSnapshotKvKey({
 				userId: input.savedPackage.userId,
 				itemId: gated.itemId,
@@ -843,9 +820,16 @@ async function processPackageForMode(input: {
 				{ expirationTtl: revertSnapshotTtlSeconds },
 			)
 
-			const promotePublished = !isSavedPackageLocked(
-				input.savedPackage.lockedAt,
-			)
+			const locked = isSavedPackageLocked(input.savedPackage.lockedAt)
+			// published-only fleet migrations always finalize published_commit
+			// (including locked packages via allowLockedPublish) so they never
+			// leave a pending approve-publish tip on HEAD or kody-published.
+			// Approving a sibling pending HEAD after this uses allowForce on the
+			// approve-publish action (owner click is the overwrite confirmation).
+			// head-and-published keeps the existing locked → pending path.
+			const promotePublished = applyMode === 'published-only' ? true : !locked
+			const allowLockedPublish =
+				applyMode === 'published-only' && locked ? true : undefined
 			const commitMessage = `codemod(${input.codemod.id}): ${input.codemod.description}`
 
 			try {
@@ -858,6 +842,9 @@ async function processPackageForMode(input: {
 							files: gated.transformedFiles,
 							expectedPublishedCommit: publishedCommit,
 							promotePublished,
+							...(allowLockedPublish === true
+								? { allowLockedPublish: true }
+								: {}),
 							commitMessage,
 						})
 					: await syncArtifactSourceSnapshot({
@@ -867,7 +854,12 @@ async function processPackageForMode(input: {
 							sourceId: input.savedPackage.sourceId,
 							files: gated.transformedFiles,
 							destructiveOverwriteConfirmed: true,
+							// Platform migrations do not wait in the owner approval queue.
+							credentialNeedsApproved: true,
 							promotePublished,
+							...(allowLockedPublish === true
+								? { allowLockedPublish: true }
+								: {}),
 							commitMessage,
 							// Align with runChecksOnFiles preflight (requirePackageDocs:
 							// false) so legacy packages without README/AGENTS can publish
@@ -1129,6 +1121,7 @@ async function processRevertStep(input: {
 													: null,
 										})
 									} else {
+										const locked = isSavedPackageLocked(savedPackage.lockedAt)
 										const afterCommit = await syncPublishedSourceSnapshotOnly({
 											env: input.env,
 											baseUrl: input.baseUrl,
@@ -1136,9 +1129,8 @@ async function processRevertStep(input: {
 											sourceId: savedPackage.sourceId,
 											files: snapshot.files,
 											expectedPublishedCommit: publishedCommit,
-											promotePublished: !isSavedPackageLocked(
-												savedPackage.lockedAt,
-											),
+											promotePublished: true,
+											...(locked ? { allowLockedPublish: true } : {}),
 											commitMessage: `revert codemod(${input.codemod.id})`,
 										})
 										if (afterCommit == null) {
@@ -1218,6 +1210,10 @@ async function processRevertStep(input: {
 											beforeCommit: priorItem.afterCommit,
 										})
 									} else {
+										const locked = isSavedPackageLocked(savedPackage.lockedAt)
+										const publishedOnlyAlignedRevert = usesPublishedOnlyLane(
+											input.codemod,
+										)
 										const afterCommit = await syncArtifactSourceSnapshot({
 											env: input.env,
 											baseUrl: input.baseUrl,
@@ -1225,9 +1221,13 @@ async function processRevertStep(input: {
 											sourceId: savedPackage.sourceId,
 											files: snapshot.files,
 											destructiveOverwriteConfirmed: true,
-											promotePublished: !isSavedPackageLocked(
-												savedPackage.lockedAt,
-											),
+											credentialNeedsApproved: true,
+											promotePublished: publishedOnlyAlignedRevert
+												? true
+												: !locked,
+											...(publishedOnlyAlignedRevert && locked
+												? { allowLockedPublish: true }
+												: {}),
 											commitMessage: `revert codemod(${input.codemod.id})`,
 											// Same docs exemption as apply and preflight.
 											requirePackageDocs: false,

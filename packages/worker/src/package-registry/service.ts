@@ -79,6 +79,7 @@ import {
 } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { deleteCredentialMappingsForPackage } from '#worker/credentials/credential-mappings.ts'
 
 const packageStorageClearAttempts = 3
 
@@ -253,7 +254,8 @@ function toSavedPackageInsertRow(input: {
 		id: input.packageId,
 		user_id: input.userId,
 		name: projection.name,
-		kody_id: projection.kodyId,
+		// Leftover column; insert/update derive the same leaf from `name`.
+		kody_id: getPackageNameLeaf(projection.name),
 		description: projection.description,
 		tags_json: serializeTags(projection.tags),
 		search_text: projection.searchText,
@@ -373,7 +375,6 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 					name: row.name,
-					kodyId: row.kody_id,
 					description: row.description,
 					tagsJson: row.tags_json,
 					searchText: row.search_text,
@@ -815,6 +816,11 @@ export async function deleteSavedPackageProjection(input: {
 			})
 			await deleteSavedPackage(input.env.APP_DB, {
 				userId: input.userId,
+				packageId: input.packageId,
+			})
+			await deleteCredentialMappingsForPackage({
+				db: input.env.APP_DB,
+				orgId: input.userId,
 				packageId: input.packageId,
 			})
 			// Capture retired leaves before deleting redirect rows so the

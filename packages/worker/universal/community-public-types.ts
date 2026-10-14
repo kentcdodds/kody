@@ -64,6 +64,11 @@ export type PublicCommunityListing = {
 	 * can advance the pin without a community republish.
 	 */
 	sourceAhead?: boolean
+	/**
+	 * Owner-only overlay: true when the catalog pin lags the package
+	 * `published_commit`. Guests never see this field.
+	 */
+	listingBehind?: boolean
 	publishedAt: string
 	ownerUsername: string
 	/** Always false. Trusted listings were removed. */

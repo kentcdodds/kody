@@ -20,7 +20,15 @@ import { softDeleteOrg } from '#worker/orgs/soft-delete.ts'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
-
+import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
+import { isPackageAppCustomDomainsEnabledForUser } from '#worker/package-app-custom-hostnames/feature-flag.ts'
+import {
+	addPackageAppCustomHostname,
+	deletePackageAppCustomHostname,
+	listPackageAppCustomHostnames,
+	PackageAppCustomHostnameError,
+	syncPackageAppCustomHostname,
+} from '#worker/package-app-custom-hostnames/service.ts'
 function withLastUsedOrg(request: Request, slug: string, response: Response) {
 	const headers = new Headers(response.headers)
 	headers.append(
@@ -51,6 +59,52 @@ function renderDenied(
 	})
 }
 
+async function loadCustomDomainsView(
+	env: Env,
+	orgId: string,
+	actingUserId: number,
+): Promise<OrgSettingsLoaderData['customDomains']> {
+	// Same gate as mutations/MCP: audience + per-user overrides. Global-only
+	// would hide the panel for override users who can still add/sync.
+	if (
+		!(await isPackageAppCustomDomainsEnabledForUser(env.APP_DB, actingUserId))
+	) {
+		return null
+	}
+	try {
+		const listed = await listPackageAppCustomHostnames({
+			env,
+			orgId,
+			actingUserId,
+		})
+		return {
+			dnsTarget: packageAppCustomDomainsCnameTargetFromBaseUrl(
+				env.PACKAGE_APP_BASE_URL,
+			),
+			hostnames: listed.hostnames.map((row) => ({
+				id: row.id,
+				hostname: row.hostname,
+				bindingKind: row.binding_kind,
+				packageId: row.package_id,
+				hostnameStatus: row.hostname_status,
+				sslStatus: row.ssl_status,
+				verifiedAt: row.verified_at,
+				dnsMissingSince: row.dns_missing_since,
+				ownershipVerification: row.verification.ownership_verification,
+				sslValidationRecords: row.verification.ssl_validation_records,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			})),
+		}
+	} catch (error) {
+		if (error instanceof PackageAppCustomHostnameError) {
+			// Flag flipped mid-request or env not ready — hide the panel.
+			return null
+		}
+		throw error
+	}
+}
+
 async function loadOrgSettingsData(input: {
 	env: Env
 	user: Parameters<typeof orgHasPermission>[1]
@@ -59,13 +113,17 @@ async function loadOrgSettingsData(input: {
 	// Signup orgs keep identity and deletion on Account pages even when
 	// another owner somehow holds org:write on that org.
 	const teamOrg = !input.org.personal
+	const canManage =
+		teamOrg && (await orgHasPermission(input.env, input.user, 'org:write'))
 	return {
 		ok: true,
 		org: input.org,
-		canManage:
-			teamOrg && (await orgHasPermission(input.env, input.user, 'org:write')),
+		canManage,
 		canDelete:
 			teamOrg && (await orgHasPermission(input.env, input.user, 'org:delete')),
+		customDomains: canManage
+			? await loadCustomDomainsView(input.env, input.org.id, input.user.userId)
+			: null,
 	}
 }
 
@@ -349,4 +407,128 @@ export function createOrgSettingsDeletePostHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.orgSettingsDeletePost>
+}
+
+export function createOrgSettingsCustomHostnamesPostHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			const access = await resolveOrgManagementAccess({
+				request,
+				env,
+				user,
+				permission: 'org:write',
+			})
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+			if (access.org.personal) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Custom domains are only available on team organizations.',
+					},
+					400,
+				)
+			}
+			if (
+				!(await isPackageAppCustomDomainsEnabledForUser(
+					env.APP_DB,
+					user.userId,
+				))
+			) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Package-app custom domains are not enabled for this user.',
+					},
+					404,
+				)
+			}
+			const body = (await request.json().catch(() => null)) as {
+				action?: unknown
+				hostname?: unknown
+				id?: unknown
+				binding_kind?: unknown
+				package_id?: unknown
+				ssl_method?: unknown
+			} | null
+			if (!body || typeof body !== 'object') {
+				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
+			}
+			const action = typeof body.action === 'string' ? body.action.trim() : ''
+			try {
+				switch (action) {
+					case 'add': {
+						const hostname =
+							typeof body.hostname === 'string' ? body.hostname : ''
+						const bindingKind = body.binding_kind
+						if (bindingKind !== 'app' && bindingKind !== 'org') {
+							return jsonResponse(
+								{ ok: false, error: 'binding_kind must be app or org.' },
+								400,
+							)
+						}
+						const sslMethod =
+							body.ssl_method === 'txt' || body.ssl_method === 'http'
+								? body.ssl_method
+								: undefined
+						await addPackageAppCustomHostname({
+							env,
+							orgId: access.org.id,
+							actingUserId: user.userId,
+							createdByUserId: user.mcpUser.userId,
+							bindingKind,
+							hostname,
+							packageId:
+								typeof body.package_id === 'string'
+									? body.package_id
+									: undefined,
+							sslMethod,
+						})
+						break
+					}
+					case 'sync': {
+						await syncPackageAppCustomHostname({
+							env,
+							orgId: access.org.id,
+							actingUserId: user.userId,
+							hostname:
+								typeof body.hostname === 'string' ? body.hostname : undefined,
+							id: typeof body.id === 'string' ? body.id : undefined,
+						})
+						break
+					}
+					case 'delete': {
+						await deletePackageAppCustomHostname({
+							env,
+							orgId: access.org.id,
+							actingUserId: user.userId,
+							hostname:
+								typeof body.hostname === 'string' ? body.hostname : undefined,
+							id: typeof body.id === 'string' ? body.id : undefined,
+						})
+						break
+					}
+					default:
+						return jsonResponse(
+							{ ok: false, error: 'action must be add, sync, or delete.' },
+							400,
+						)
+				}
+			} catch (error) {
+				if (error instanceof PackageAppCustomHostnameError) {
+					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
+				throw error
+			}
+			return jsonResponse(
+				await loadOrgSettingsData({ env, user, org: access.org }),
+			)
+		},
+	} satisfies Action<typeof routes.orgSettingsCustomHostnamesPost>
 }

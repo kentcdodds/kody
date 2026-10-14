@@ -1,8 +1,6 @@
 import { z } from 'zod'
-import {
-	filterCredentialList,
-	listCredentialsForViewer,
-} from '#worker/credentials/credential-list.ts'
+import { listCredentialsForViewer } from '#worker/credentials/credential-list.ts'
+import { filterCredentialList } from '#universal/credentials-list.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'

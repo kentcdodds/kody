@@ -5,6 +5,10 @@ import { listBlogPosts } from '#worker/blog/catalog.ts'
 /** Public discovery excludes account access and recovery screens. */
 const accountPaths = new Set(['/login', '/signup', '/reset-password'])
 
+/**
+ * Catalog of signed-out website pages for public discovery (llms.txt, sitemap,
+ * docs index). Excludes account access/recovery paths.
+ */
 export function listPublicWebsitePages() {
 	return [
 		...acquisitionPageSummaries,
@@ -33,6 +37,9 @@ export function listPublicWebsitePages() {
 	]
 }
 
+/**
+ * Catalog of public blog post URLs for discovery feeds (llms.txt, sitemap).
+ */
 export function listPublicBlogPages() {
 	return listBlogPosts().map((post) => ({
 		path: `/blog/${post.slug}`,

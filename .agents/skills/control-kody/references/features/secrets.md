@@ -8,8 +8,10 @@ Canonical pages are `/@<slug>/-/secrets` (and `/@<slug>/-/secret-providers`).
 Detail stays under `/@<slug>/-/secrets/{user|session|package}/…`, including
 `/@<slug>/-/secrets/new` and `/@<slug>/-/secrets/approve`. Prefill agent links:
 `/connect/secret-set?name=…` (same family as `/connect/secrets`). Host approval:
-`/connect/secrets`. External providers live at `/@<slug>/-/secret-providers`.
-Docs: `/docs/secret-providers`.
+`/connect/secrets`. Those org-less pages link back through
+`/account/credentials`, which redirects to the signup org's
+`/@<slug>/-/credentials`. External providers live at
+`/@<slug>/-/secret-providers`. Docs: `/docs/secret-providers`.
 
 ## Drive it
 

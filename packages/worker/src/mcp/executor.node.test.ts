@@ -1320,6 +1320,14 @@ test('executor maps secret errors, formats guidance, and truncates on UTF-8 boun
 	).toContain(
 		'/connect/credential?kind=secret&kindMode=required&name=missingToken',
 	)
+	expect(
+		getExecutionErrorDetails(
+			new Error(createMissingSecretMessage('missingToken')),
+			{ orgSlug: 'acme' },
+		)?.nextStep,
+	).toContain(
+		'/@acme/-/credentials/new?kind=secret&kindMode=required&name=missingToken',
+	)
 
 	const reconnectHref =
 		'/connect/oauth?provider=google&loginHint=kent%40gmail.com'

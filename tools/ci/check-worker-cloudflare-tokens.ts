@@ -16,6 +16,18 @@ export const workerTokenPermissions = {
 	CLOUDFLARE_STATUS_API_TOKEN: 'kody-status: Account Email Sending Edit',
 } as const
 
+/**
+ * Tokens that must not block deploy. `CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN`
+ * is Zone SSL and Certificates Edit on the package-app SaaS zone. It is
+ * uploaded only when present (`--set-from-env-optional` on kody-production,
+ * kody-platform, and kody-runtime). Keep it out of
+ * {@link workerTokenPermissions} so the required-token check does not fail.
+ */
+export const optionalWorkerTokenPermissions = {
+	CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN:
+		'kody-production and kody-platform package-app zone: Zone SSL and Certificates Edit (Cloudflare for SaaS custom hostnames). Runtime serves verified hosts from D1 and does not call the SaaS API.',
+} as const
+
 export type WorkerTokenEnvName = keyof typeof workerTokenPermissions
 
 function isWorkerTokenEnvName(name: string): name is WorkerTokenEnvName {

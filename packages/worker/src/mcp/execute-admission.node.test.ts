@@ -3,7 +3,12 @@ import {
 	buildExecuteUsageReport,
 	claimedUsageForNow,
 	executeDailyWarningCrossing,
+	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
+import {
+	normalizeCredentialCallMap,
+	type CredentialCallMapInput,
+} from '#worker/credentials/credential-call-map.ts'
 
 test('the daily warning crossing fires only on the claim that lands on 80% or 100%', () => {
 	const kinds = [119, 120, 121, 149, 150].map((used) =>
@@ -58,4 +63,25 @@ test('claimed usage is reused only within the UTC day it was claimed', () => {
 		claimedUsageForNow(claimed, new Date('2026-10-12T00:00:20.000Z')),
 	).toBeNull()
 	expect(claimedUsageForNow(null, new Date())).toBeNull()
+})
+
+test('the loop brake key tells credential picks apart and keeps old keys', async () => {
+	const base = {
+		credential: null,
+		actorUserId: 'u1',
+		conversationId: undefined,
+		code: undefined,
+		invoke: 'kody:@acme/digest',
+		params: { day: 'mon' },
+	}
+	const keyFor = async (credentials: CredentialCallMapInput | undefined) =>
+		await executeRepeatKey({
+			...base,
+			credentials: normalizeCredentialCallMap(credentials),
+		})
+	const work = await keyFor({ github: 'work' })
+	expect(work).not.toBe(await keyFor({ github: 'personal' }))
+	expect(await keyFor({ github: ['work'] })).toBe(work)
+	expect(await keyFor({ github: { name: 'work' } })).toBe(work)
+	expect(await keyFor(undefined)).toBe(await executeRepeatKey(base))
 })

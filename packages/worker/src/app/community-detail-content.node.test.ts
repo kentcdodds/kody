@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
-import {
-	buildSourceAheadPublishHref,
-	renderCommunityDetailContentHtml,
-} from '#app/community-detail-content.tsx'
+import { renderCommunityDetailContentHtml } from '#app/community-detail-content.tsx'
+import { buildPackageRepoActions } from '#app/package-repo-actions.ts'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
 
 const sampleListing = {
@@ -27,12 +25,22 @@ const sampleListing = {
 	forkCount: 1,
 } satisfies PublicCommunityListing
 
-type RenderInput = Parameters<typeof renderCommunityDetailContentHtml>[0]
+type RenderInput = Omit<
+	Parameters<typeof renderCommunityDetailContentHtml>[0],
+	'repoActions'
+> & {
+	loggedIn: boolean
+	hasApp: boolean
+	listingNeedsRepublish: boolean
+}
 type ViewerInstall = NonNullable<PublicCommunityListing['viewerInstall']>
 
-/** Signed-in, non-owner view of the sample listing unless overridden. */
+/**
+ * Signed-in, non-owner view of the sample listing unless overridden. The
+ * action group comes from the same builder the frame uses.
+ */
 function render(overrides: Partial<RenderInput> = {}) {
-	return renderCommunityDetailContentHtml({
+	const { loggedIn, hasApp, listingNeedsRepublish, ...props }: RenderInput = {
 		listing: sampleListing,
 		username: 'kentcdodds',
 		kodyId: 'github-triage',
@@ -41,9 +49,22 @@ function render(overrides: Partial<RenderInput> = {}) {
 		ownerProfilePublic: true,
 		viewerIsOwner: false,
 		viewerCanManage: false,
-		returnTo: '/@kentcdodds/github-triage',
 		loggedIn: true,
+		hasApp: false,
+		listingNeedsRepublish: false,
 		...overrides,
+	}
+	return renderCommunityDetailContentHtml({
+		...props,
+		repoActions: buildPackageRepoActions({
+			username: props.username,
+			kodyId: props.kodyId,
+			listing: props.listing,
+			viewerIsOwner: props.viewerIsOwner,
+			viewerCanManage: props.viewerCanManage,
+			loggedIn,
+			ownerPackage: { hasApp, listingNeedsRepublish },
+		}),
 	})
 }
 
@@ -81,16 +102,17 @@ const testId = (id: string) => `data-testid="${id}"`
 test('community detail head covers install, installed, and listing-ahead badges', async () => {
 	const installHtml = await render()
 	expectMarkers(installHtml, [
-		testId('package-title-actions'),
+		testId('package-repo-actions'),
 		testId('community-detail-install'),
 		'data-community-install',
 		'data-package-title-status="verify"',
 		'data-icon="git-fork"',
 		'data-trusted="false"',
+		'data-title-status-label>Fork<',
 	])
-	expect(installHtml.indexOf(testId('package-title-actions'))).toBeLessThan(
-		installHtml.indexOf(testId('package-repo-nav')),
-	)
+	expect(
+		installHtml.indexOf(testId('community-detail-install')),
+	).toBeGreaterThan(installHtml.indexOf(testId('package-repo-actions')))
 
 	expectMarkers(
 		await render({ listing: withInstall({}) }),
@@ -135,11 +157,38 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		},
 		viewerIsOwner: true,
 		viewerCanManage: true,
-		publishCompareHref: ownerAheadHref,
 	})
 	expect(ownerAheadHtml).toContain(`href="${ownerAheadHref}"`)
 	expect(ownerAheadHtml).toMatch(
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
+	)
+	expect(ownerAheadHtml).toContain('Review &amp; publish')
+
+	const listingBehindHtml = await render({
+		listing: {
+			...sampleListing,
+			sourceAhead: true,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		},
+		viewerIsOwner: false,
+		viewerCanManage: true,
+		listingNeedsRepublish: true,
+	})
+	expect(listingBehindHtml).toContain(
+		'data-testid="community-detail-update-public-listing"',
+	)
+	expect(listingBehindHtml).toContain(
+		'href="/@kentcdodds/github-triage/settings#update-public-listing"',
+	)
+	expect(listingBehindHtml).toContain('Update public listing')
+
+	const visitorBehindHtml = await render({
+		viewerIsOwner: false,
+		viewerCanManage: false,
+		listingNeedsRepublish: true,
+	})
+	expect(visitorBehindHtml).not.toContain(
+		'data-testid="community-detail-update-public-listing"',
 	)
 
 	expectMarkers(
@@ -149,7 +198,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		}),
 		[],
 		[
-			testId('package-title-actions'),
+			testId('package-repo-actions'),
 			testId('community-detail-install'),
 			'data-copy-prompt',
 		],
@@ -166,7 +215,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				listingAheadPrompt: aheadPrompt,
 				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
 			}),
-			returnTo: '/community',
 		}),
 		[
 			'data-package-title-status="outdated"',
@@ -186,7 +234,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				forkAhead: true,
 				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
 			}),
-			returnTo: '/community',
 		}),
 		[
 			testId('community-detail-listing-fork-ahead-badge'),
@@ -205,13 +252,20 @@ test('package chrome is shared for public listings and private owner packages', 
 	const titleNameAt = publicHtml.indexOf(testId('package-title-name'))
 	const leafNameAt = publicHtml.indexOf('>github-triage<', titleNameAt)
 	const titleActionsAt = publicHtml.indexOf(
-		testId('package-title-actions'),
+		testId('community-detail-install'),
 		titleNameAt,
 	)
 	expect(titleNameAt).toBeGreaterThan(-1)
 	expect(leafNameAt).toBeGreaterThan(titleNameAt)
-	expect(titleActionsAt).toBeGreaterThan(leafNameAt)
-	expect(titleActionsAt).toBeLessThan(publicHtml.indexOf('</h1>', titleNameAt))
+	expect(titleActionsAt).toBeGreaterThan(
+		publicHtml.indexOf('</h1>', titleNameAt),
+	)
+	expect(titleActionsAt).toBeGreaterThan(
+		publicHtml.indexOf(testId('package-repo-actions')),
+	)
+	expect(publicHtml).toContain(
+		'href="/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage"',
+	)
 	expectMarkers(
 		publicHtml,
 		[
@@ -410,20 +464,5 @@ test('open package app link shows for the owner, and hides without an app or acc
 		await render(privateApp),
 		['data-signifier="private"', 'data-icon="lock"'],
 		[openApp, 'data-signifier="unpublished"'],
-	)
-})
-
-test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
-	const input = { username: 'kentcdodds', kodyId: 'github-triage' }
-	expect(
-		buildSourceAheadPublishHref({
-			...input,
-			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-		}),
-	).toBe(
-		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-	)
-	expect(buildSourceAheadPublishHref({ ...input, headCommit: null })).toBe(
-		'/@kentcdodds/github-triage/approve-publish',
 	)
 })

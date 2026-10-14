@@ -52,8 +52,71 @@ test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt 
 		],
 	}
 	expect(diffSnapshots(before, after)).toEqual([
-		{ path: '.people[0].proofs.user', before: 'h1', after: 'h2' },
-		{ path: '.people[0].tokens[1]', before: undefined, after: { id: 't2' } },
+		{ path: '.people.alice.proofs.user', before: 'h1', after: 'h2' },
+		{ path: '.people.alice.tokens.t2', before: undefined, after: { id: 't2' } },
+	])
+})
+
+test('diffSnapshots keys D1 databases by role and tables by name', () => {
+	const before = {
+		databases: [
+			{
+				role: 'app',
+				tables: [
+					{ table: 'users', rows: 2 },
+					{ table: 'z_late', rows: 1 },
+				],
+			},
+		],
+	}
+	const after = {
+		databases: [
+			{
+				role: 'app',
+				tables: [
+					{ table: 'credential_inventory_items', rows: 0 },
+					{ table: 'users', rows: 2 },
+					{ table: 'z_late', rows: 3 },
+				],
+			},
+		],
+	}
+	expect(diffSnapshots(before, after)).toEqual([
+		{
+			path: '.databases.app.tables.credential_inventory_items',
+			before: undefined,
+			after: { table: 'credential_inventory_items', rows: 0 },
+		},
+		{ path: '.databases.app.tables.z_late.rows', before: 1, after: 3 },
+	])
+})
+
+test('diffSnapshots keeps keyed identities named observed and __proto__', () => {
+	expect(
+		diffSnapshots(
+			{
+				databases: [{ role: 'app', tables: [{ table: 'observed', rows: 1 }] }],
+			},
+			{
+				databases: [{ role: 'app', tables: [{ table: 'observed', rows: 2 }] }],
+			},
+		),
+	).toEqual([
+		{ path: '.databases.app.tables.observed.rows', before: 1, after: 2 },
+	])
+	expect(
+		diffSnapshots(
+			{ databases: [{ role: 'app', tables: [] }] },
+			{
+				databases: [{ role: 'app', tables: [{ table: '__proto__', rows: 1 }] }],
+			},
+		),
+	).toEqual([
+		{
+			path: '.databases.app.tables.__proto__',
+			before: undefined,
+			after: { table: '__proto__', rows: 1 },
+		},
 	])
 })
 

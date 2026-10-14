@@ -45,6 +45,8 @@ export async function executeAppMcp(input: {
 	password: string
 	code: string
 	params?: Record<string, unknown>
+	/** Other execute arguments, such as a `credentials` call map. */
+	extraArguments?: Record<string, unknown>
 	cookieHeader?: string
 	oauth?: AppMcpOAuthSession
 	orgSlug?: string | null
@@ -59,6 +61,7 @@ export async function executeAppMcp(input: {
 		password: input.password,
 		tool: 'execute',
 		arguments: {
+			...input.extraArguments,
 			code: input.code,
 			...(input.params ? { params: input.params } : {}),
 		},

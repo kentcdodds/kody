@@ -181,11 +181,14 @@ function toPlainRepoOwnerPackage(input: {
 		isPrivate: input.repo.isPrivate,
 		isInternetVisible: false,
 		hasCommunityListing: false,
+		listingNeedsRepublish: false,
 		listingAhead: null,
 		forkAhead: null,
 		searchText: null,
 		exports: null,
 		publishedCommit: input.iconCommit,
+		pendingCommit: input.iconCommit,
+		pendingCommitKnown: true,
 		communityFork: null,
 	}
 }

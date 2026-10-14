@@ -20,8 +20,12 @@ import {
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
+import { type AccountCredentialsResponse } from '#universal/credentials-list.ts'
+import { type PackageCredentialApprovalLoaderData } from '#universal/package-credential-approval-page.ts'
+import { type PackageCredentialsLoaderData } from '#universal/package-credentials-page.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
+import { type PackageRepoActions } from '#universal/package-title-actions.tsx'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
@@ -224,6 +228,8 @@ export type PackageFilesLoaderData = {
 	description?: string
 	/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 	ownerProfilePublic?: boolean
+	/** Repository action group (same model as the Repo and Settings tabs). */
+	repoActions?: PackageRepoActions | null
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -258,6 +264,8 @@ type CommunityDetailShellLoaderData = {
 	viewerCanAdoptCommunityFork?: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
+	/** Repository action group for client-rendered tabs (Settings). */
+	repoActions?: PackageRepoActions | null
 }
 
 type CommunityPackageUnauthorizedLoaderData = {
@@ -1236,11 +1244,42 @@ type OrgManagementOrg = {
 	role: 'owner' | 'member' | 'billing'
 }
 
+type OrgSettingsCustomHostnameDnsRecord = {
+	type: string
+	name: string
+	value: string
+}
+
+type OrgSettingsCustomHostnameView = {
+	id: string
+	hostname: string
+	bindingKind: 'app' | 'org'
+	packageId: string | null
+	hostnameStatus: string
+	sslStatus: string
+	verifiedAt: string | null
+	dnsMissingSince: string | null
+	ownershipVerification: OrgSettingsCustomHostnameDnsRecord | null
+	sslValidationRecords: Array<OrgSettingsCustomHostnameDnsRecord>
+	createdAt: string
+	updatedAt: string
+}
+
+export type OrgSettingsCustomDomainsView = {
+	hostnames: Array<OrgSettingsCustomHostnameView>
+	dnsTarget: string | null
+}
+
 export type OrgSettingsLoaderData = {
 	ok: true
 	org: OrgManagementOrg
 	canManage: boolean
 	canDelete: boolean
+	/**
+	 * Present only when `package-app-custom-domains` is on for this
+	 * environment. Null when the flag is off (panel stays hidden).
+	 */
+	customDomains: OrgSettingsCustomDomainsView | null
 }
 
 export type OrgMemberView = {
@@ -1354,7 +1393,17 @@ export type OrgGrantView = {
 export type OrgGrantsLoaderData = {
 	ok: true
 	org: OrgManagementOrg
-	grants: Array<OrgGrantView>
+	grants: Array<
+		OrgGrantView & {
+			/**
+			 * True when `authorizeGrantRevoke` allows this viewer to revoke the
+			 * grant. Denial (including a missing resource permission) is false.
+			 * The page still requires `canManage` (`member:write`) before showing
+			 * Revoke, matching the delete handler.
+			 */
+			canRevoke: boolean
+		}
+	>
 	canManage: boolean
 }
 
@@ -1621,6 +1670,10 @@ export type PackageWebhookListItem = {
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
+	/** True once a person approved it (a live enablement exists). */
+	approved: boolean
+	/** Where to approve a minted webhook; null when unminted or approved. */
+	approvalUrl: string | null
 	/**
 	 * False for mints that predate encrypted secret storage. The UI offers
 	 * Rotate instead of Reveal for those, since the hash cannot rebuild the
@@ -2020,6 +2073,11 @@ export type AccountPackageListItem = {
 	 */
 	isInternetVisible: boolean
 	hasCommunityListing: boolean
+	/**
+	 * True when an active community listing pin lags `publishedCommit`.
+	 * Owners use Update public listing on settings to move the catalog pin.
+	 */
+	listingNeedsRepublish: boolean
 	listingAhead: AccountPackageListingAhead | null
 	forkAhead: AccountPackageForkAhead | null
 }
@@ -2034,6 +2092,18 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
 	publishedCommit: string | null
+	/**
+	 * Default-branch HEAD when the owner can resolve the artifact source.
+	 * Compared with `publishedCommit` to show whether a publish is pending.
+	 * Null when there is no HEAD or the lookup failed — see
+	 * `pendingCommitKnown`.
+	 */
+	pendingCommit: string | null
+	/**
+	 * False when the artifact HEAD lookup failed. Do not treat the package as
+	 * up to date or demote Approve until this is true.
+	 */
+	pendingCommitKnown: boolean
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
 	/**
@@ -2049,6 +2119,15 @@ type AccountPackagePublishDiffFile = {
 	patch: string | null
 }
 
+/** Catalog listing pin lags the package runtime published commit. */
+export type AccountPackageListingBehindHint = {
+	pinnedVersion: string | null
+	promotedVersion: string | null
+	behind: true
+	updateHint: string
+	updateUrl: string
+}
+
 export type AccountPackageApprovePublishLoaderData = {
 	ok: true
 	email: string
@@ -2062,16 +2141,47 @@ export type AccountPackageApprovePublishLoaderData = {
 	publishedCommit: string | null
 	pendingCommit: string | null
 	alreadyPublished: boolean
+	/**
+	 * True when `pendingCommit` is default-branch HEAD (no `?commit=` pin).
+	 * False when the URL named a specific commit — alreadyPublished then means
+	 * that pin matches the public version, not that HEAD has nothing pending.
+	 */
+	pendingIsDefaultHead: boolean
 	filesHref: string
 	packageHref: string
+	/**
+	 * When an active community listing pin is behind the current published
+	 * commit, how to update the public catalog (settings Update public listing).
+	 */
+	listing: AccountPackageListingBehindHint | null
+	/**
+	 * True when promoting the pending commit would leave the catalog pin
+	 * behind. Shown as copy on the promote step; the settings link appears
+	 * only after promote (see promote response `listing`).
+	 */
+	listingWillLagAfterPromote: boolean
 	diff: {
 		files: Array<AccountPackagePublishDiffFile>
 		omittedCount: number
 	}
 }
 
+/** A publish waiting in the package's owner approval queue. */
+export type AccountPackagePendingApproval = {
+	id: string
+	reason: 'credential_needs_changed' | 'went_public'
+	reasonLabel: string
+	pendingCommit: string
+	createdAt: string
+	/** One line per credential need the paused publish adds or reshapes. */
+	changes: Array<string>
+	/** The POST action that approves it. */
+	approveAction: 'approve-credential-needs' | 'approve-went-public'
+}
+
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
+	pendingApprovals: Array<AccountPackagePendingApproval>
 	email: string
 	package: {
 		id: string
@@ -2664,6 +2774,9 @@ export type AppLoaderData = {
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
 	accountPackageApproveCapabilities?: AccountPackageApproveCapabilitiesLoaderData
+	accountCredentials?: AccountCredentialsResponse
+	packageCredentials?: PackageCredentialsLoaderData
+	packageCredentialApproval?: PackageCredentialApprovalLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData
@@ -2714,9 +2827,9 @@ export type AccountBillingLoaderData = {
 	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
 	creditsEligible: boolean
 	/** Deep link to the Credits section of the usage page; null off the signup org. */
-	creditsHref: '/account/usage#credits' | null
+	creditsHref: string | null
 	/** Account usage page (limits / consumption); null off the signup org. */
-	usageHref: '/account/usage' | null
+	usageHref: string | null
 	referralProgram: ReferralProgramSummary | null
 	org: AccountBillingOrg
 	error?: string

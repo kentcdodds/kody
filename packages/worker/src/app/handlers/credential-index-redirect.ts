@@ -1,25 +1,25 @@
 import { credentialRedirectFor } from '#universal/credential-redirects.ts'
 
-type OrgSectionHandler = {
+type RedirectableHandler<Context extends { request: Request }> = {
 	middleware: Array<never>
-	handler: (ctx: {
-		request: Request
-		params: { orgSlug?: string; rest?: string }
-	}) => Promise<Response>
+	handler: (ctx: Context) => Promise<Response>
 }
 
 /**
- * The old Secrets, Integrations, MCP servers, and Secret providers index pages
- * move to the Credentials list. Their deeper paths (approvals, OAuth
- * authorize) still reach `inner`. Wrap a route only once nothing on the
- * Credentials page links back to its index, or the visit loops.
+ * The old Secrets, Integrations, and MCP servers index pages move to the
+ * Credentials list, and the legacy `/connect/secret-set` intake opens the Key
+ * form. Deeper paths (approvals, OAuth authorize) still reach `inner`, and
+ * `/connect/secret-set` keeps its `inner` wired until that intake is removed.
+ * Wrap a route only once the Credentials list has shipped and been proven and
+ * nothing on it links back to that index, or the visit loops.
  */
-export function withCredentialIndexRedirect<Handler extends OrgSectionHandler>(
-	inner: Handler,
-): Handler {
+export function withCredentialIndexRedirect<
+	Context extends { request: Request },
+	Handler extends RedirectableHandler<Context>,
+>(inner: Handler & RedirectableHandler<Context>): Handler {
 	return {
 		...inner,
-		async handler(ctx) {
+		async handler(ctx: Context) {
 			const location = credentialRedirectFor(new URL(ctx.request.url))
 			if (!location) return inner.handler(ctx)
 			return new Response(null, {

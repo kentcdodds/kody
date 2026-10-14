@@ -434,9 +434,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 			createAccountHandler(env, title)
 	const account = await signedIn(accountPage('Profile'), '/account')
 	expect(account.response.status).toBe(200)
-	// `/account` is the Profile view in the account rail. The header has one
-	// menu: organizations, then the person's own links and Log out. The
-	// workspace sections and connected agents live elsewhere.
+	// `/account` is the Profile view in the account rail. The header has an
+	// organization switcher and an account menu with the person's own links
+	// and Log out. The workspace sections and connected agents live elsewhere.
 	expectHtml(
 		account.html,
 		[
@@ -635,7 +635,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// server-renders the verify note instead of a copy card.
 	const connections = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections',
+		'/@account-user/-/agents',
 	)
 	expect(connections.response.status).toBe(200)
 	expectHtml(connections.html, [
@@ -651,7 +651,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="account-connections-add"',
 	])
 	expect(connections.html).toMatch(
-		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/agents"[^>]*aria-current="page"/,
 	)
 	expect(connections.loaderData?.accountConnectedAgents).toEqual({
 		ok: true,
@@ -666,7 +666,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// agent segments 404 instead of rendering an empty grid.
 	const addGrid = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections/new',
+		'/@account-user/-/agents/new',
 	)
 	expectHtml(
 		addGrid.html,
@@ -675,7 +675,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 	const addCursor = await signedIn(
 		createAccountConnectionsHandler,
-		'/@account-user/-/connections/new/cursor',
+		'/@account-user/-/agents/new/cursor',
 	)
 	expect(addCursor.response.status).toBe(200)
 	expectHtml(addCursor.html, [
@@ -683,11 +683,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Connect Cursor"',
 	])
 	expect(addCursor.html).toMatch(
-		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/agents"[^>]*aria-current="page"/,
 	)
 	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),
-		get('/@account-user/-/connections/new/not-a-client', cookie),
+		get('/@account-user/-/agents/new/not-a-client', cookie),
 	)
 	expect(unknownAgent.response.status).toBe(404)
 
@@ -918,7 +918,7 @@ test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS
 
 	expectHtml(
 		await renderWithCss(':root { --inline-marker: 1; }'),
-		['<style>:root { --inline-marker: 1; }</style>'],
+		['<style>:root{--inline-marker:1;}</style>'],
 		['href="/styles.css'],
 	)
 	// Comments may mention HTML (`<main>`) without blocking inlining.
@@ -926,7 +926,7 @@ test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS
 		await renderWithCss(
 			'/* The router moves focus to <main> */\n:root { --comment-ok: 1; }',
 		),
-		['<style>:root { --comment-ok: 1; }</style>'],
+		['<style>:root{--comment-ok:1;}</style>'],
 		['href="/styles.css', '<main>'],
 	)
 	// CSS needing HTML escaping must fall back to the <link> (the stream
@@ -1123,6 +1123,8 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expectHtml(missingHtml, [
 		'role="alert"',
 		'data-testid="connect-oauth-incomplete"',
+		'data-error-agent-prompt',
+		'Copy prompt for your agent',
 	])
 	expect(
 		missingHtml.split('Missing required OAuth configuration parameters.')

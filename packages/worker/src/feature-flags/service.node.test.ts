@@ -287,6 +287,7 @@ const registryKeys = [
 	'connection-profiles',
 	'mcp-skills-extension',
 	'mcp-events-extension',
+	'package-app-custom-domains',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {

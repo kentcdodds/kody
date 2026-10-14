@@ -62,7 +62,7 @@ test('connected agents JSON from a team Connections page binds that org', async 
 	const request = new Request(
 		'https://kody.test/account/connected-agents.json',
 		{
-			headers: { referer: 'https://kody.test/@acme/-/connections' },
+			headers: { referer: 'https://kody.test/@acme/-/agents' },
 		},
 	)
 	const resolution = await loadRequestOrgResolution(request, env, adaId)
@@ -72,7 +72,7 @@ test('connected agents JSON from a team Connections page binds that org', async 
 test('sign-in providers JSON stays on the signup org from a team page', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/connections.json', {
-		headers: { referer: 'https://kody.test/@acme/-/connections' },
+		headers: { referer: 'https://kody.test/@acme/-/agents' },
 	})
 	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
 		'personal',
@@ -85,6 +85,41 @@ test('account JSON without an org page stays on the signup org', async () => {
 	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
 		'personal',
 	)
+})
+
+test('credits mutations without a usage Referer are denied', async () => {
+	const env = await createEnv()
+	await expect(
+		loadRequestOrgResolution(
+			new Request('https://kody.test/account/credits/top-up.json', {
+				method: 'POST',
+			}),
+			env,
+			adaId,
+		),
+	).resolves.toBe('denied')
+	await expect(
+		isOrgRequestDenied(
+			new Request('https://kody.test/account/credits/settings.json', {
+				method: 'POST',
+			}),
+			env,
+			adaId,
+		),
+	).resolves.toBe(true)
+})
+
+test('credits mutations bind the usage page Referer org', async () => {
+	const env = await createEnv()
+	const resolution = await loadRequestOrgResolution(
+		new Request('https://kody.test/account/credits/top-up.json', {
+			method: 'POST',
+			headers: { referer: 'https://kody.test/@acme/-/usage' },
+		}),
+		env,
+		adaId,
+	)
+	expect(resolution).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
 })
 
 test('account JSON from another site does not bind an org', async () => {
@@ -173,20 +208,20 @@ test('org sections follow the page gate for grant-only collaborators', async () 
 	await expect(
 		denied(
 			'https://kody.test/account/connected-agents.json',
-			'https://kody.test/@acme/-/connections',
+			'https://kody.test/@acme/-/agents',
 		),
 	).resolves.toBe(false)
 	await expect(
 		denied(
 			'https://kody.test/account/memories.json',
-			'https://kody.test/@acme/-/connections',
+			'https://kody.test/@acme/-/agents',
 		),
 	).resolves.toBe(true)
 	const deniedPage = (url: string) =>
 		isOrgRequestDenied(new Request(url), env, adaId)
-	await expect(
-		deniedPage('https://kody.test/@acme/-/connections'),
-	).resolves.toBe(false)
+	await expect(deniedPage('https://kody.test/@acme/-/agents')).resolves.toBe(
+		false,
+	)
 	await expect(deniedPage('https://kody.test/@acme/-/memories')).resolves.toBe(
 		true,
 	)

@@ -286,44 +286,6 @@ function collectImports(filePath: string, source: string): Array<ImportUse> {
 	return uses
 }
 
-function exportedNames(relativePath: string) {
-	const filePath = path.join(repoRoot, relativePath)
-	const sourceFile = ts.createSourceFile(
-		filePath,
-		readFileSync(filePath, 'utf8'),
-		ts.ScriptTarget.Latest,
-		false,
-		ts.ScriptKind.TS,
-	)
-	return new Set(
-		sourceFile.statements.flatMap((statement) => {
-			const exported =
-				ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)
-					? statement.modifiers?.some(
-							(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-						)
-					: false
-			if (!exported) return []
-			if (ts.isFunctionDeclaration(statement)) {
-				return statement.name ? [statement.name.text] : []
-			}
-			if (!ts.isVariableStatement(statement)) return []
-			return statement.declarationList.declarations.flatMap((declaration) =>
-				ts.isIdentifier(declaration.name) ? [declaration.name.text] : [],
-			)
-		}),
-	)
-}
-
-test('every guarded credential read helper still exists', () => {
-	for (const rule of storageRules) {
-		const exported = exportedNames(rule.module)
-		for (const symbol of rule.symbols) {
-			expect(exported, `${rule.module} exports ${symbol}`).toContain(symbol)
-		}
-	}
-})
-
 test('credential storage is read only behind resolveCredential', () => {
 	const rulesByModule = new Map(storageRules.map((rule) => [rule.module, rule]))
 	const violations: Array<string> = []

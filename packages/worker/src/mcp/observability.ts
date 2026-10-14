@@ -15,6 +15,7 @@ import {
 	isRepoDiffTooLargeMessage,
 	isRepoLargeFileMessage,
 } from '#worker/repo/large-file-policy.ts'
+import { isRepoChecksFailedError } from '#worker/repo/repo-checks-failed-error.ts'
 import {
 	isGitPushNotFastForwardMessage,
 	isRepoDisallowedPathMessage,
@@ -249,6 +250,12 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error && isKodyDescriptionLengthMessage(entry.message),
 		)
 	) {
+		return true
+	}
+	// Failed publish/repo checks (KODY-96). packageSave rewraps as
+	// McpCallerError; match the named error (and DO/JSRPC-flattened form)
+	// so a leftover plain throw still stays off Sentry.
+	if (getErrorCauseChain(cause).some(isRepoChecksFailedError)) {
 		return true
 	}
 	// OAuth token refresh preconditions and provider 4xx rejections

@@ -129,10 +129,7 @@ export function packageFileLanguageLabel(path: string | null | undefined) {
 }
 
 /**
- * The `/files` explorer routes, in every public shape. The app shell asks
- * this so it can leave the page unpadded: the explorer owns its gutters (like
- * the package listing it hangs off), and the shell's generic `main` padding
- * would stack on top and push the content in past the site header.
+ * The `/files` explorer routes, in every public shape.
  */
 const packageFilesPathMatcher = (() => {
 	const matcher = createMultiMatcher<true>()
@@ -149,11 +146,40 @@ export function isPackageFilesPathname(pathname: string) {
 	)
 }
 
+/**
+ * Every package detail tab (Repo / Files / Settings, plus listing-uuid and
+ * account-files shapes). The app shell asks this so `<main>` stays unpadded:
+ * these pages share `packageDetailPageCss` and own their gutters. Files used
+ * to be the only special case; treating all tabs the same keeps width and
+ * background consistent when switching.
+ */
+const packageDetailPathMatcher = (() => {
+	const matcher = createMultiMatcher<true>()
+	matcher.add(routes.communityPackage.pattern, true)
+	matcher.add(routes.communityPackageSettings.pattern, true)
+	matcher.add(routes.communityPackageTree.pattern, true)
+	matcher.add(routes.communityPackageFiles.pattern, true)
+	matcher.add(routes.communityDetail.pattern, true)
+	matcher.add(routes.communityDetailFiles.pattern, true)
+	matcher.add(routes.accountPackageFiles.pattern, true)
+	return matcher
+})()
+
+export function isPackageDetailPathname(pathname: string) {
+	return (
+		packageDetailPathMatcher.match(new URL(pathname, 'http://localhost')) !=
+		null
+	)
+}
+
 const packageRepoChromeMatchers = [
 	createMatcher(routes.communityPackage.pattern),
 	createMatcher(routes.communityPackageSettings.pattern),
 	createMatcher(routes.communityPackageTree.pattern),
 	createMatcher(routes.communityPackageFiles.pattern),
+	createMatcher(routes.communityPackageCredentials.pattern),
+	createMatcher(routes.communityPackageMappings.pattern),
+	createMatcher(routes.communityPackageTriggers.pattern),
 ] as const
 
 /**
@@ -165,7 +191,8 @@ export function getPackageRepoChromeKey(pathname: string) {
 	const url = new URL(pathname, 'http://localhost')
 	for (const matcher of packageRepoChromeMatchers) {
 		const match = matcher.match(url)
-		if (match) {
+		// `/@org/-/…` are org pages, not a package named `-`.
+		if (match && match.params.kodyId !== '-') {
 			return `${match.params.username.toLowerCase()}/${match.params.kodyId.toLowerCase()}`
 		}
 	}

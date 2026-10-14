@@ -190,14 +190,15 @@ Subscriptions also apply an audience rule (`subscriptionEnablerScope`):
   can see the resource the event is about (`enablerCanSee`). Run errors with no
   package or job reach Owners only.
 
-People turn triggers on for themselves with `enablementEnable` and off with
-`enablementDisable` (the enabler or an Owner); `enablementList` lists them.
-Publishing never turns anything on, and neither does minting a webhook URL: the
-mint returns an approval link, and Approve on that page creates the enablement.
-Enablements created before minting stopped enabling keep running. A webhook
-verifies a signature only when its manifest declares `verification`; otherwise
-its URL secret is the credential. The generated signing secret on unsigned
-endpoints is stored but not checked.
+People turn jobs and subscriptions on for themselves with `enablementEnable` (a
+webhook's first turn-on is Approve only) and off with `enablementDisable` (the
+enabler or an Owner); `enablementList` lists them. Publishing never turns
+anything on, and neither does minting a webhook URL: the mint returns an
+approval link, and Approve on that page creates the enablement. Enablements
+created before minting stopped enabling keep running. A webhook verifies a
+signature only when its manifest declares `verification`; otherwise its URL
+secret is the credential. The generated signing secret on unsigned endpoints is
+stored but not checked.
 
 ### Checking many resources
 
@@ -268,9 +269,9 @@ execute started from an MCP call is. A denial throws `LivePersonRequiredError`,
 which names the capability; Open API maps it to 403 `insufficient_scope` with
 `denial: 'live_person_required'`.
 
-Declared today: `orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`,
-`inviteAccept`, `inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member
-or billing grants. Org billing writes are session-only web handlers.
+Declared: `orgMemberUpdate`, `orgMemberRemove`, `inviteCreate`, `inviteAccept`,
+`inviteRevoke`, `teamMemberAdd`, `teamMemberRemove`, and member or billing
+grants. Org billing writes are session-only web handlers.
 `registry.node.test.ts` fails when a member-changing capability does not declare
 it, and when a site-admin capability does.
 
@@ -301,7 +302,7 @@ finds no live person behind the request:
 
 Both steps live in
 `packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
-calls are unchanged.
+calls skip those two steps and use the usual role check.
 
 A team org's runs call as the org's identity, which holds no site role, so the
 role check still refuses them even when the enabler is an admin. Site-admin
@@ -316,7 +317,7 @@ the missing one. Its message prints the exact
 `cliCredentialBootstrap({ lifetime, scopes })` call and the matching
 `kody auth bootstrap --scopes` command. Open API adds `required_scope` and
 `mint_scopes` to the 403 `insufficient_scope` details so clients can print the
-same commands. Default bootstrap scopes cover local-execute parity plus
+same commands. Default bootstrap scopes include local-execute use scopes plus
 `package:write` and `token:delete`; callers can still narrow or expand via
 explicit `scopes`.
 

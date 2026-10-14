@@ -84,6 +84,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 			const { setting, connection } = await addMcpServer({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
+				personId: ctx.callerContext.user?.userId,
 				name: args.name,
 				url: args.url,
 				baseUrl: oauth.clientOrigin,

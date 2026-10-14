@@ -6,6 +6,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { authorizeMcpServer } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { mcpOAuthAttemptActorFromIds } from '#worker/mcp-client/oauth-attempt.ts'
 import { buildMcpServerAuthorizeUrl } from '#worker/mcp-client/authorize-consent.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
@@ -53,18 +54,23 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				env: ctx.env,
 				requestUrl: ctx.callerContext.baseUrl,
 			})
+			const ownerOrgId = ownerIdFromCaller(ctx.callerContext)
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: ownerOrgId,
 				waitUntil: ctx.waitUntil,
 			})
 			const result = await hub.reconnectServer({
 				serverId: setting.id,
 				callbackUrl: oauth.callbackUrl,
+				actor: mcpOAuthAttemptActorFromIds({
+					ownerOrgId,
+					personId: ctx.callerContext.user?.userId,
+				}),
 			})
 			await persistMcpServerLastErrorIfChanged({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: ownerOrgId,
 				id: setting.id,
 				state: result.state,
 				lastError: result.lastError ?? null,

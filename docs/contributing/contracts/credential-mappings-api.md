@@ -144,36 +144,24 @@ Agents hand people this link the way they hand out `/connect/secret-set` and
 `/connect/oauth` today. Runtime errors build it (see
 [Runtime errors](#runtime-errors)).
 
-| Param                | Meaning                                                                                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`               | One of `credentialKinds`. Absent: the chooser starts on `secret`.                                                                                                                                                      |
-| `kindMode`           | `hint` (default): `kind` is preselected and the kind chooser is shown. `required`: the kind is locked and no chooser is shown. Ignored without `kind`.                                                                 |
-| `name`               | Prefilled credential name.                                                                                                                                                                                             |
-| `provider`           | Prefilled provider slug (`^[a-z0-9-]+$`).                                                                                                                                                                              |
-| `description`        | Prefilled description.                                                                                                                                                                                                 |
-| `allowedHosts`       | Prefilled hosts, comma separated or repeated (same as `/connect/secret-set`).                                                                                                                                          |
-| `forPackage`, `need` | The package (kody id) and need key this credential is for. After saving, the page offers the approval link that maps it as the default. (`package` is taken: `/connect/secret-set` reads it as an allowed package id.) |
-| `org`                | Slug of the org the credential is for: the run's org on runtime links. The interim redirect lands on that org's pages, and the secret form saves into it (membership is still checked).                                |
-| anything else        | Passed through unchanged to the reused form: `/connect/secret-set` params (`scope`, `packageId`, `expiresAt`, `allowedPackages`) or `/connect/oauth` params (`authorizeUrl`, `tokenUrl`, `scopes`, `flow`, ...).       |
+| Param                | Meaning                                                                                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`               | One of `credentialKinds`. Absent: the chooser starts on `secret`.                                                                                                                                                                                    |
+| `kindMode`           | `hint` (default): `kind` is preselected and the kind chooser is shown. `required`: the kind is locked and no chooser is shown. Ignored without `kind`.                                                                                               |
+| `name`               | Prefilled credential name.                                                                                                                                                                                                                           |
+| `provider`           | Prefilled provider slug (`^[a-z0-9-]+$`).                                                                                                                                                                                                            |
+| `description`        | Prefilled description.                                                                                                                                                                                                                               |
+| `allowedHosts`       | Prefilled hosts, comma separated or repeated (same as `/connect/secret-set`).                                                                                                                                                                        |
+| `forPackage`, `need` | The package (kody id) and need key this credential is for. After saving, the page offers the approval link that maps it as the default. (`package` is taken: `/connect/secret-set` reads it as an allowed package id.)                               |
+| `loginExchange`      | For `kind=login`: the `login_exchange` JSON (`url`, `bodyFormat`, `body`, `tokenPath`, ...) the need expects. The page asks only for the login fields its `body` names (`{email}`, `{password}`, ...). Without it, the person fills in the exchange. |
+| anything else        | Passed through unchanged to the reused form: `/connect/secret-set` params (`scope`, `packageId`, `expiresAt`, `allowedPackages`) or `/connect/oauth` params (`authorizeUrl`, `tokenUrl`, `scopes`, `flow`, ...).                                     |
 
-The page body reuses the existing secret-intake form for `secret`, `url`,
-`login`, and `signing`, the OAuth connect form for `oauth`, and the MCP server
-add form for `mcp`.
-
-Until the one-pager ships, the server answers `/connect/credential` with a 302
-to the existing page for the kind, carrying the same query:
-
-- `secret` or no kind: `/connect/secret-set`. Saving there also stores
-  `provider` from the link, so the new Key auto-resolves for the need.
-- `oauth`: `/connect/oauth`. When a built-in OAuth app exists for the provider,
-  runtime links add `platform=<slug>` so that page opens the built-in app.
-- `mcp`: `/@<org>/-/mcp-servers`.
-- `url`, `login`, `signing`: the existing forms cannot create these kinds, so
-  the redirect goes to `/@<org>/-/secrets` without a prefilled form. Runtime
-  errors for these kinds also tell the agent to create the credential with
-  `secretSet` and that `kind`.
-
-Links built today keep working when the one-pager replaces the redirect.
+The page saves `secret`, `url`, `login`, and `signing` in place through the
+website save (`POST /account/secrets.json`, `action: "save"`), which accepts
+`kind`, `hosts`, and `loginExchange` and validates them exactly as `secretSet`
+does. The person types the value, so no agent ever holds it. `oauth` hands off
+to `/connect/oauth` with the same query, and `mcp` to
+`/@<org>/-/mcp-servers/new`.
 
 Codecs: `buildCredentialCreateHref(input)` and
 `parseCredentialCreateQuery(url)`.
@@ -324,13 +312,21 @@ MCP and API tokens cannot reach it.
   `400 { ok: false, error }`.
 - Changes that cannot apply are `400 PackageCredentialsWriteFailure`:
   `{ ok: false, errors: Array<{ needKey, target, code, message, createUrl? }> }`
-  with the approval error codes. Nothing is written.
-- `409 { ok: false, error }` when a trigger was turned on by someone else
-  between reading and writing (webhooks).
+  with the approval error codes. Nothing is written. A trigger that disappears
+  between reading and writing is the same `400` (`trigger_unknown` or
+  `webhook_not_minted`).
+- `409 { ok: false, error }` only when a webhook was turned on by someone else
+  between reading and writing.
+- When one request edits the same need and target more than once, the last edit
+  wins (a set then clear on a trigger that is off never turns it on).
 - A webhook another person enabled shows `enablement.enabledByYou: false`,
   `canEdit: false`, and no `mappings` (its overrides are theirs).
 - `incomplete` lists the default per need, plus each trigger the viewer has
   turned on (a trigger that is off never runs).
+- Every written mapping (create, update, or clear), including Approve, records
+  one `credential.mapping.update` org audit event. The row names the actor and
+  automation credential (kind/id), and details carry package, trigger (when
+  applicable), need, and old/new credential ids — never values.
 
 Who can write:
 
@@ -590,8 +586,10 @@ A delivery that runs nothing answers 409:
 ### Paused on a trigger mapping
 
 Before each run, the run gate checks the credentials the instance's trigger
-mapping names (not the defaults, and not `[]`). One the enabler can no longer
-Use, or one that was deleted, pauses the enablement instead of running:
+mapping names for needs the package declares (not the defaults, and not `[]`).
+If a named credential is deleted, the enabler lacks Use on it, or it does not
+fit its need's current kind or provider, the enablement pauses instead of
+running:
 
 ```ts
 pause: {
@@ -632,7 +630,8 @@ export type CredentialClientErrorBody = {
   `kindMode=required`; for a need without `kind` it links with `kindMode=hint`
   (`oauth` when a platform OAuth app exists for the provider, plus
   `platform=<slug>`; else `secret`). `provider`, `name` (the need key),
-  `description`, `forPackage`, `need`, and `org` (the run's org) are prefilled.
+  `description`, `forPackage`, and `need` are prefilled. When the run's org is
+  known, the link opens that org's page (`/@<org>/-/credentials/new`).
 - `credential_ambiguous` carries the same link beside `options` and `retryWith`,
   so the person can create a dedicated credential instead of picking one.
 - A failure fails only that `credential()` call. In a trigger run, a need a
@@ -641,9 +640,6 @@ export type CredentialClientErrorBody = {
   trigger's other calls and later runs keep working, as for any other runtime
   credential error. Only a credential the trigger mapping names pauses it (see
   "Paused on a trigger mapping").
-- For a need that declares `url`, `login`, or `signing`, the message also says
-  to create it with `secretSet` and that `kind`, since the website cannot create
-  those kinds until the one-pager ships.
 - `credential_not_found` for `credential.named(name)` links with `name`
   prefilled and no kind.
 - A missing `{{secret:NAME}}` placeholder in a run keeps its `secret_required`
@@ -652,16 +648,14 @@ export type CredentialClientErrorBody = {
 
 ## Redirects
 
-When the credentials list page ships, these old URLs redirect (302, query
-preserved) instead of 404ing:
+These old URLs redirect (302, query preserved) to the Credentials UI:
 
-| Old                         | New                                               |
-| --------------------------- | ------------------------------------------------- |
-| `/@:org/-/secrets`          | `/@:org/-/credentials?kind=secret`                |
-| `/@:org/-/integrations`     | `/@:org/-/credentials?kind=oauth`                 |
-| `/@:org/-/mcp-servers`      | `/@:org/-/credentials?kind=mcp`                   |
-| `/@:org/-/secret-providers` | `/@:org/-/credentials` (custom providers section) |
-| `/connect/secret-set`       | `/connect/credential?kind=secret&...`             |
+| Old                     | New                                   |
+| ----------------------- | ------------------------------------- |
+| `/@:org/-/secrets`      | `/@:org/-/credentials?kind=secret`    |
+| `/@:org/-/integrations` | `/@:org/-/credentials?kind=oauth`     |
+| `/@:org/-/mcp-servers`  | `/@:org/-/credentials?kind=mcp`       |
+| `/connect/secret-set`   | `/connect/credential?kind=secret&...` |
 
 Only index pages redirect. Deeper paths that are approval or OAuth flows
 (`/@:org/-/secrets/approve`, `/@:org/-/mcp-servers/:serverId/authorize`,
@@ -673,15 +667,28 @@ new path and query or null so the router and tests share one table. Legacy
 redirect renames it to `allowedPackages` (the creation link uses `forPackage`
 for the package a need belongs to).
 
-Wiring waits on the pages that replace the old ones:
+`/@:org/-/secret-providers` stays its own page and never redirects: granting a
+vault provider access is a different trust decision from using a credential,
+with its own audit trail.
 
-- The four org index routes switch on by wrapping their handlers with
-  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`) in
-  the PR that moves the add forms and row editors off those index pages. Until
-  then the Credentials page links to them, and a redirect would loop.
-- `/connect/secret-set` switches on when `/connect/credential` serves the
-  one-pager. Today `/connect/credential?kind=secret` redirects to
-  `/connect/secret-set`, so redirecting back would loop.
+Where they are wired:
+
+- The server wraps the three org index handlers and `/connect/secret-set` with
+  `withCredentialIndexRedirect` (`app/handlers/credential-index-redirect.ts`).
+  The client router wraps the same loaders with `withCredentialRedirectLoader`,
+  so in-app navigation redirects too.
+- `/connect/credential` redirects to the creation one-pager at
+  `/@:org/-/credentials/new` in the signed-in user's signup org, with the query
+  preserved. A legacy `/connect/secret-set` link therefore lands on the
+  one-pager in two hops.
+- `/account/credentials` redirects to the signup org's Credentials list, query
+  preserved. Org-less pages (`/connect/secrets`, `/connect/secret-set`) link
+  back to it with `data-rmx-document`, because the client router would otherwise
+  intercept the org-less path.
+- URLs the table returns null for keep the legacy page: approval links (`names`,
+  `hosts`, `package_id`, `capability`) and `package=` filters on the index
+  pages. The legacy pages and their add forms stay in place until the
+  Credentials pages are proven, and then they can be deleted.
 
 ## Build order
 
@@ -689,7 +696,8 @@ Each step is a small PR stacked on the previous one:
 
 1. This contract and the ADR amendment.
 2. `universal/credential-contracts.ts`: types and URL codecs, with tests.
-3. Runtime errors carry `createUrl`; `/connect/credential` interim redirect.
+3. Runtime errors carry `createUrl`; `/connect/credential` redirects to the
+   creation one-pager.
 4. Credentials list API and `credentialList` (MCP servers included).
 5. Mapping storage (additive migration) and resolution in `credential()`.
 6. Package credentials API.

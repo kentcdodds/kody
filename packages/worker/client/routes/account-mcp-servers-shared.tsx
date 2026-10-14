@@ -87,6 +87,15 @@ export function readSearchFilter(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
 }
 
+/** The add-server form's starting `name` and `url`, from a credential creation link. */
+export function readAddServerPrefill(href: string) {
+	const params = new URL(href, 'http://localhost').searchParams
+	return {
+		name: params.get('name')?.trim() ?? '',
+		url: params.get('url')?.trim() ?? '',
+	}
+}
+
 export function filterServers(
 	servers: Array<McpServerListItem>,
 	search: string,

@@ -19,9 +19,9 @@ import { type CredentialListItem } from '#universal/credential-contracts.ts'
 import { findCredentialIdsByLegacyName } from './credential-ids.ts'
 import {
 	filterCredentialList,
-	listCredentialsForViewer,
 	readCredentialListFilters,
-} from './credential-list.ts'
+} from '#universal/credentials-list.ts'
+import { listCredentialsForViewer } from './credential-list.ts'
 import { grantPersonalCredentialToOrg } from './personal-credentials.ts'
 
 const now = '2026-10-13T00:00:00.000Z'
@@ -185,7 +185,18 @@ async function setup() {
 			.prepare(`UPDATE orgs SET access_epoch = access_epoch + 1 WHERE id = ?`)
 			.run(acmeId)
 	}
-	return { env, ann, bea, annTokenId, stripeKeyId, requestAs, grantToAnn }
+	return {
+		env,
+		sqlite,
+		ann,
+		bea,
+		annOrgId,
+		acmeId,
+		annTokenId,
+		stripeKeyId,
+		requestAs,
+		grantToAnn,
+	}
 }
 
 const summary = (items: Array<CredentialListItem>) =>
@@ -260,6 +271,85 @@ test('a scoped token without secret Use drops personal Keys', async () => {
 		request: t.requestAs(t.ann, 'member', ['secret:read', 'integration:read']),
 	})
 	expect(summary(withoutSecretUse)).not.toContain('personal:secret:annToken')
+})
+
+test('a package Key needs package read, not just org-wide secret Use', async () => {
+	const t = await setup()
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.bea, 'owner', ['secret:use']),
+	})
+	expect(summary(items)).toEqual(['org:secret:stripeKey'])
+})
+
+test('a Key in an expired bucket shows as expired at the bucket expiry', async () => {
+	const t = await setup()
+	const bucketExpiry = '2026-10-01T00:00:00.000Z'
+	t.sqlite
+		.prepare(
+			`UPDATE secret_buckets SET expires_at = ?
+			 WHERE id = (SELECT bucket_id FROM secret_entries WHERE id = ?)`,
+		)
+		.run(bucketExpiry, t.stripeKeyId)
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.bea, 'owner'),
+		now: new Date(now),
+	})
+	expect(items.find((item) => item.name === 'stripeKey')).toMatchObject({
+		status: 'expired',
+		expiresAt: bucketExpiry,
+	})
+})
+
+test('lists more granted personal credentials than one D1 statement can bind', async () => {
+	const t = await setup()
+	t.sqlite
+		.prepare(
+			`INSERT INTO user_oauth_apps (user_id, slug, provider, client_id, token_url, flow, api_base_url)
+			 VALUES (?, 'ann-app', 'github', 'client', 'https://github.com/token', 'confidential', 'https://api.github.com')`,
+		)
+		.run(t.annOrgId)
+	const insertIntegration = t.sqlite.prepare(
+		`INSERT INTO user_integrations (id, user_id, name, app_slug, access_token_encrypted, connected_at)
+		 VALUES (?, ?, ?, 'ann-app', 'ct', ?)`,
+	)
+	for (let index = 0; index < 120; index++) {
+		const id = `i-ann-${index}`
+		insertIntegration.run(id, t.annOrgId, `annGithub${index}`, now)
+		await grantPersonalCredentialToOrg({
+			db: t.env.APP_DB,
+			ownerPersonId: t.ann.personId,
+			credentialId: id,
+			orgId: t.acmeId,
+		})
+	}
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.ann, 'member'),
+	})
+	expect(items.filter((item) => item.scope === 'personal')).toHaveLength(121)
+})
+
+test('a granted personal MCP server is not listed; credential() cannot use it', async () => {
+	const t = await setup()
+	t.sqlite
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled)
+			 VALUES ('mcp-ann', ?, 'annMcp', 'https://mcp.example.com/sse', 1)`,
+		)
+		.run(t.annOrgId)
+	await grantPersonalCredentialToOrg({
+		db: t.env.APP_DB,
+		ownerPersonId: t.ann.personId,
+		credentialId: 'mcp-ann',
+		orgId: t.acmeId,
+	})
+	const items = await listCredentialsForViewer({
+		env: t.env,
+		request: t.requestAs(t.ann, 'member'),
+	})
+	expect(summary(items)).toEqual(['personal:secret:annToken'])
 })
 
 test('filters by text, kind, scope, package scope, and package lock', async () => {

@@ -21,6 +21,7 @@ import {
 	resolveMcpClientMetadataUrl,
 } from './client-id-metadata.ts'
 import { createMcpClientHubClient } from './hub-client.ts'
+import { mcpOAuthAttemptActorFromIds } from './oauth-attempt.ts'
 import { scheduleMcpServerFaviconFill } from './mcp-server-favicon.ts'
 import { deleteMcpServerLogoAsset } from './mcp-server-logo.ts'
 import {
@@ -204,6 +205,8 @@ export async function addMcpServer(input: {
 	name: string
 	url: string
 	baseUrl: string
+	/** Signed-in person who started the add; stamped onto in-flight OAuth attempts. */
+	personId?: string | null
 	/**
 	 * Optional static credential for servers that authenticate with a bearer
 	 * token (or other Authorization scheme) instead of OAuth. Never stored in
@@ -263,6 +266,10 @@ export async function addMcpServer(input: {
 			name,
 			url: urlValidation.url,
 			callbackUrl: buildMcpServerOAuthCallbackUrl(input.baseUrl),
+			actor: mcpOAuthAttemptActorFromIds({
+				ownerOrgId: input.userId,
+				personId: input.personId,
+			}),
 			...(headers ? { headers } : {}),
 		})
 	} catch (error) {
@@ -379,6 +386,7 @@ export async function setMcpServerPreRegisteredOAuthClient(input: {
 	userId: OwnerId
 	id: string
 	callbackUrl: string
+	personId?: string | null
 	client: { clientId: string; clientSecret: string } | null
 }): Promise<
 	McpServerOAuthClientChange & { setting: McpServerSettingMetadata }
@@ -411,6 +419,10 @@ export async function setMcpServerPreRegisteredOAuthClient(input: {
 			serverId: existing.id,
 			callbackUrl: input.callbackUrl,
 			client: sealed,
+			actor: mcpOAuthAttemptActorFromIds({
+				ownerOrgId: input.userId,
+				personId: input.personId,
+			}),
 		})
 	} catch (error) {
 		throw new Error(

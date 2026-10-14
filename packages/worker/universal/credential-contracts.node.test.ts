@@ -39,8 +39,8 @@ import {
 	isCredentialKind,
 	buildCredentialCreateHref,
 	buildCredentialCreateUrl,
-	credentialCreateInterimHref,
 	maxCredentialProposalValues,
+	orgCredentialCreatePath,
 	parseCredentialApprovalQuery,
 	parseCredentialCreateQuery,
 	parseCredentialPick,
@@ -90,32 +90,68 @@ test('creation links lock the kind only when required and round-trip prefill', (
 	).toBe('https://kody.codes/connect/credential?name=x')
 })
 
-test('the interim creation redirect picks the existing page for the kind', () => {
-	const interim = (query: string) =>
-		credentialCreateInterimHref({
-			search: new URLSearchParams(query),
+test('links that know their org open that org, and carry package scope, expiry, and locks', () => {
+	expect(orgCredentialCreatePath('acme clients')).toBe(
+		'/@acme%20clients/-/credentials/new',
+	)
+	expect(buildCredentialCreateHref({ orgSlug: 'acme', name: 'x' })).toBe(
+		'/@acme/-/credentials/new?name=x',
+	)
+	expect(buildCredentialCreateHref({ orgSlug: ' ', name: 'x' })).toBe(
+		'/connect/credential?name=x',
+	)
+
+	const packageKey = new URL(
+		buildCredentialCreateHref({
 			orgSlug: 'acme',
-		})
-	expect(interim('kind=oauth&provider=github')).toBe(
-		'/connect/oauth?kind=oauth&provider=github',
+			kind: 'secret',
+			name: 'TOKEN',
+			packageScopedTo: 'pkg-1',
+			expiresAt: '2026-12-31',
+			allowedPackages: ['pkg-2'],
+		}),
+		'https://kody.codes',
 	)
-	expect(interim('kind=secret&name=x&forPackage=pr-digest')).toBe(
-		'/connect/secret-set?kind=secret&name=x&forPackage=pr-digest',
+	expect(Object.fromEntries(packageKey.searchParams)).toEqual({
+		kind: 'secret',
+		name: 'TOKEN',
+		scope: 'package',
+		packageId: 'pkg-1',
+		expiresAt: '2026-12-31',
+	})
+	expect(parseCredentialCreateQuery(packageKey.searchParams)).toMatchObject({
+		packageScopedTo: 'pkg-1',
+		packageScopeMissingId: false,
+		expiresAt: '2026-12-31',
+		allowedPackages: [],
+	})
+
+	const locked = parseCredentialCreateQuery(
+		new URL(
+			buildCredentialCreateHref({
+				allowedPackages: ['pkg-2', ' pkg-1 ', 'pkg-2'],
+			}),
+			'https://kody.codes',
+		).searchParams,
 	)
-	expect(interim('')).toBe('/connect/secret-set')
-	expect(interim('kind=mcp&name=linear')).toBe(
-		'/@acme/-/mcp-servers?kind=mcp&name=linear',
+	expect(locked).toMatchObject({
+		packageScopedTo: null,
+		allowedPackages: ['pkg-2', 'pkg-1'],
+	})
+	expect(locked.passthrough.toString()).toBe('')
+
+	const parse = (search: string) =>
+		parseCredentialCreateQuery(new URLSearchParams(search))
+	expect(parse('packageId=pkg-1')).toMatchObject({
+		packageScopedTo: 'pkg-1',
+	})
+	expect(parse('scope=package')).toMatchObject({
+		packageScopedTo: null,
+		packageScopeMissingId: true,
+	})
+	expect(parse('scope=user&packageId=pkg-1&allowedPackages=a,b')).toMatchObject(
+		{ packageScopedTo: null, allowedPackages: ['a', 'b'] },
 	)
-	for (const kind of ['url', 'login', 'signing']) {
-		expect(interim(`kind=${kind}&name=x`)).toBe('/@acme/-/secrets')
-	}
-	const noOrg = (query: string) =>
-		credentialCreateInterimHref({
-			search: new URLSearchParams(query),
-			orgSlug: null,
-		})
-	expect(noOrg('kind=mcp')).toBe('/account?kind=mcp')
-	expect(noOrg('kind=login')).toBe('/account')
 })
 
 test('picks parse names, scoped names, and ids', () => {
@@ -173,6 +209,32 @@ test('names that look like prefixes and brackets in names round-trip', () => {
 		reason: null,
 		errors: [],
 	})
+})
+
+test('a leading space before a reserved prefix still escapes the name', () => {
+	const href = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'pr-digest',
+		changes: [
+			{
+				target: { type: 'default', layer: 'mine' },
+				needKey: 'google',
+				credentials: [{ name: ' org:bot' }, { name: '  id:abc' }],
+			},
+		],
+	})
+	const url = new URL(href, 'https://kody.codes')
+	expect(url.searchParams.getAll('mine[google]')).toEqual([
+		'name: org:bot',
+		'name:  id:abc',
+	])
+	expect(parseCredentialApprovalQuery(url.searchParams).changes).toEqual([
+		{
+			target: { type: 'default', layer: 'mine' },
+			needKey: 'google',
+			credentials: [{ name: 'org:bot' }, { name: 'id:abc' }],
+		},
+	])
 })
 
 test('approval links round-trip defaults, personal defaults, triggers, and none', () => {
@@ -520,6 +582,7 @@ const sampleApproval = {
 				multiple: false,
 			},
 			before: null,
+			beforeUnusableIds: [],
 			after: [acmeBot],
 			willEnable: false,
 			error: null,
@@ -614,31 +677,6 @@ test('each view part is addressable on its own', () => {
 		'unbound',
 		'github',
 	])
-})
-
-test('a creation link names its org, and the interim redirect lands in that org', () => {
-	const href = buildCredentialCreateHref({
-		kind: 'mcp',
-		name: 'linear',
-		orgSlug: 'acme-clients',
-	})
-	const search = new URL(href, 'https://kody.test').searchParams
-	expect(search.get('org')).toBe('acme-clients')
-	expect(parseCredentialCreateQuery(search)).toMatchObject({
-		orgSlug: 'acme-clients',
-		passthrough: new URLSearchParams(),
-	})
-	expect(credentialCreateInterimHref({ search, orgSlug: 'ada' })).toBe(
-		`/@acme-clients/-/mcp-servers?${search}`,
-	)
-	const signing = new URLSearchParams({ kind: 'signing', org: 'acme-clients' })
-	expect(credentialCreateInterimHref({ search: signing, orgSlug: 'ada' })).toBe(
-		'/@acme-clients/-/secrets',
-	)
-	const secret = new URLSearchParams({ kind: 'secret', org: 'acme-clients' })
-	expect(credentialCreateInterimHref({ search: secret, orgSlug: 'ada' })).toBe(
-		`/connect/secret-set?${secret}`,
-	)
 })
 
 test('an approval link names the recorded agent proposal without adding a change', () => {

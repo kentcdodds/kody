@@ -5,7 +5,6 @@
  * credential ids only. A mapping grants nothing: resolution keeps only refs
  * the actor can Use right now.
  */
-import { type PackageCredentialKind } from '#worker/package-registry/types.ts'
 import { type UsableCredential } from './credential-candidates.ts'
 
 export type CredentialMappingRowTarget =
@@ -32,15 +31,23 @@ type Row = {
 	updated_at: string
 }
 
-function parseIds(json: string): Array<string> {
+/**
+ * Null when the stored JSON is not an array of ids: a corrupt row must not
+ * read as `[]`, which means "none on purpose".
+ */
+function parseIds(json: string): Array<string> | null {
 	try {
 		const parsed: unknown = JSON.parse(json)
-		return Array.isArray(parsed)
-			? parsed.filter((entry): entry is string => typeof entry === 'string')
-			: []
+		if (
+			Array.isArray(parsed) &&
+			parsed.every((entry) => typeof entry === 'string')
+		) {
+			return parsed
+		}
 	} catch {
-		return []
+		// Reported by the caller with the row's identity.
 	}
+	return null
 }
 
 function toTarget(row: Row): CredentialMappingRowTarget | null {
@@ -118,11 +125,24 @@ export async function loadCredentialMappings(input: {
 	return (result.results ?? []).flatMap((row): Array<CredentialMappingRow> => {
 		const target = toTarget(row)
 		if (!target) return []
+		const credentialIds = parseIds(row.credential_ids_json)
+		if (!credentialIds) {
+			console.error(
+				JSON.stringify({
+					message: 'credential mapping row has corrupt credential ids',
+					orgId: input.orgId,
+					packageId: input.packageId,
+					needKey: row.need_key,
+					target: row.target,
+				}),
+			)
+			return []
+		}
 		return [
 			{
 				needKey: row.need_key,
 				target,
-				credentialIds: parseIds(row.credential_ids_json),
+				credentialIds,
 				updatedByUserId: row.updated_by_user_id,
 				updatedAt: row.updated_at,
 			},
@@ -185,6 +205,58 @@ export function buildWriteCredentialMappingStatement(input: {
 		)
 }
 
+/** The invalid JSON a failed unchanged-guard evaluates. */
+const credentialMappingChangedMarker = 'credential mapping changed'
+
+/**
+ * A batch guard: fails the statement (and so the whole D1 batch) unless the
+ * row still holds `credentialIds` (null: no row). SQLite has no RAISE outside
+ * triggers, so a mismatch evaluates `json()` on invalid text.
+ */
+export function buildCredentialMappingUnchangedStatement(input: {
+	db: D1Database
+	orgId: string
+	packageId: string
+	needKey: string
+	target: CredentialMappingRowTarget
+	credentialIds: ReadonlyArray<string> | null
+}): D1PreparedStatement {
+	const { personUserId, enablementId } = targetColumns(input.target)
+	return input.db
+		.prepare(
+			`SELECT CASE WHEN (
+				SELECT credential_ids_json FROM credential_mappings
+				WHERE org_id = ? AND package_id = ? AND target = ?
+					AND person_user_id = ? AND enablement_id = ? AND need_key = ?
+			) IS ? THEN 1 ELSE json(?) END AS unchanged`,
+		)
+		.bind(
+			input.orgId,
+			input.packageId,
+			input.target.target,
+			personUserId,
+			enablementId,
+			input.needKey,
+			input.credentialIds === null ? null : JSON.stringify(input.credentialIds),
+			credentialMappingChangedMarker,
+		)
+}
+
+/** Deleting a package drops every mapping for its needs. */
+export async function deleteCredentialMappingsForPackage(input: {
+	db: D1Database
+	orgId: string
+	packageId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM credential_mappings WHERE org_id = ? AND package_id = ?`,
+		)
+		.bind(input.orgId, input.packageId)
+		.run()
+	return result.meta?.changes ?? 0
+}
+
 /** A member leaving an org takes their own defaults and trigger overrides with them. */
 export async function deleteCredentialMappingsForMember(input: {
 	db: D1Database
@@ -212,7 +284,7 @@ export type StoredMappingResolution =
 /**
  * The first stored layer that yields a mapping: the trigger override, then
  * `mine`, then `org`. A trigger override naming a credential the actor cannot
- * Use (or of the wrong kind) is `unusable` and never falls through; a default
+ * Use (or one `accepts` rejects) is `unusable` and never falls through; a default
  * layer keeps only usable refs and counts as absent when none are left. Null
  * means nothing stored applies, so the caller auto-resolves.
  */
@@ -221,11 +293,12 @@ export function resolveStoredMapping(input: {
 	mine: ReadonlyArray<string> | null
 	org: ReadonlyArray<string> | null
 	usable: ReadonlyArray<UsableCredential>
-	kind: PackageCredentialKind | null
+	/** Whether a usable credential still fits the need (kind and provider). */
+	accepts: (credential: UsableCredential) => boolean
 }): StoredMappingResolution | null {
 	const usableById = new Map(
 		input.usable
-			.filter((credential) => !input.kind || credential.kind === input.kind)
+			.filter(input.accepts)
 			.map((credential) => [credential.id, credential]),
 	)
 	if (input.trigger) {

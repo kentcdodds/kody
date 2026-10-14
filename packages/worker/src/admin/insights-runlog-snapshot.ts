@@ -271,7 +271,7 @@ export function hoursFromVerifiedToActivation(
 	return hours
 }
 
-async function mapWithConcurrency<T, R>(
+export async function mapWithConcurrency<T, R>(
 	items: ReadonlyArray<T>,
 	concurrency: number,
 	mapper: (item: T) => Promise<R>,

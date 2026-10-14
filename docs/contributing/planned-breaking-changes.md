@@ -27,9 +27,11 @@ first-class identity.
 
 Server lookups go through `resolveSavedPackageRef` (leaf, `@scope/leaf`, or
 UUID; slug = leaf of `saved_packages.name`). The `saved_packages.kody_id` and
-`community_listings.kody_id` columns are still written but are not lookup keys.
-Rename redirects dual-write `package_slug_redirects` and the legacy
-`package_kody_id_redirects`. Dropping the columns and the legacy table is
+`community_listings.kody_id` columns are still written but are not lookup keys;
+`insertSavedPackage` / `updateSavedPackage` derive `saved_packages.kody_id` from
+the name leaf. Rename redirects write only `package_slug_redirects`; the legacy
+`package_kody_id_redirects` table is still read as a fallback and cleared on
+release/delete. Dropping the columns and the legacy table is
 [#1909](https://github.com/kentcdodds/kody/issues/1909) phase 4.
 
 **Ready when:** agent transcripts and create/resolve traffic no longer need the
@@ -39,21 +41,3 @@ codemod.
 
 **Introduced as leftover by:** the change that documents identity as scoped
 `name` or `package_id` while leaving the leftover param in the runtime contract.
-
-## Webhooks without a `verification` declaration
-
-A webhook that declares no `verification` is treated as
-`verification: { type: 'url-secret' }`, which stays a supported type for senders
-that cannot sign
-([inbound webhooks](../use/webhooks.md#senders-that-cannot-sign-url-secret)).
-Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
-declaration to existing packages. Then publish requires `verification` on every
-webhook, and the implicit default goes away
-([#3477](https://github.com/kentcdodds/kody/issues/3477)). No deliveries are
-refused by this change.
-
-**Ready when:** `adminWebhookVerificationScan` reports zero
-`implicit_url_secret` webhooks after codemod 0012 is applied.
-
-**Introduced as leftover by:** restoring URL-secret-only auth (`#3463`) and the
-explicit `url-secret` type.

@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import {
+	buildPackageAppCustomHostnamePath,
+	buildPackageAppCustomHostnameUrl,
 	buildPackageAppPath,
 	buildPackageAppSubdomainPath,
 	buildPackagePagePath,
@@ -27,6 +29,25 @@ test('saved-package pages and hosted package-app mounts use different paths', ()
 	expect(
 		buildPackageAppSubdomainPath({ kodyId: 'hn-pulse', restPath: '/report' }),
 	).toBe('/packages/hn-pulse/report')
+	expect(buildPackageAppCustomHostnamePath({})).toBe('/')
+	expect(buildPackageAppCustomHostnamePath({ restPath: '/' })).toBe('/')
+	expect(buildPackageAppCustomHostnamePath({ restPath: '/report' })).toBe(
+		'/report',
+	)
+	expect(buildPackageAppCustomHostnamePath({ restPath: 'report' })).toBe(
+		'/report',
+	)
+	expect(
+		buildPackageAppCustomHostnameUrl({
+			origin: 'https://app.customer.example/',
+		}),
+	).toBe('https://app.customer.example/')
+	expect(
+		buildPackageAppCustomHostnameUrl({
+			origin: 'https://app.customer.example',
+			restPath: '/report',
+		}),
+	).toBe('https://app.customer.example/report')
 })
 
 test('dns-safe handle source is the anchored pattern without a second copy', () => {

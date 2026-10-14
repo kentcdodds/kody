@@ -1728,6 +1728,30 @@ function getUsernameFromPackageName(packageName: string) {
 	return packageName.slice(1, separatorIndex)
 }
 
+function packageAppPublicBasePath(input: {
+	mount: PackageAppMount | undefined
+	username: string
+	kodyId: string
+}): string {
+	switch (input.mount) {
+		case 'user-subdomain':
+			return buildPackageAppSubdomainPath({ kodyId: input.kodyId })
+		case 'custom-hostname':
+			// Customer hosts serve the app at `/`, so assets live at `/_assets`.
+			return ''
+		case 'username-path':
+		case undefined:
+			return buildPackageAppPath({
+				username: input.username,
+				kodyId: input.kodyId,
+			})
+		default: {
+			input.mount satisfies never
+			throw new Error(`Unknown package app mount: ${String(input.mount)}`)
+		}
+	}
+}
+
 function buildPackageAppPublicContext(input: {
 	env: Env
 	baseUrl: string
@@ -1749,10 +1773,11 @@ function buildPackageAppPublicContext(input: {
 		// per-user subdomain the username lives in the hostname, so the app is
 		// mounted at `/packages/{slug}`; inline serving keeps the
 		// `/@{username}` path prefix.
-		const appBasePath =
-			input.runtime.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({ kodyId: urlSlug })
-				: buildPackageAppPath({ username, kodyId: urlSlug })
+		const appBasePath = packageAppPublicBasePath({
+			mount: input.runtime.mount,
+			username,
+			kodyId: urlSlug,
+		})
 		return {
 			appBasePath,
 			hostedUrl: `${input.runtime.hostedOrigin.replace(/\/+$/, '')}${appBasePath}`,

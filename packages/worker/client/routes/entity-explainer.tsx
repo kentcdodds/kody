@@ -2,7 +2,7 @@ import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
 import { renderIcon } from '#universal/icon.tsx'
-import { accountAliasPath } from '#universal/org-pages.ts'
+import { accountAliasPath, parseOrgUsagePath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
@@ -99,6 +99,18 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
+		id: 'credentials',
+		question: 'What is a credential?',
+		match: accountSection('/account/credentials'),
+		paragraphs: [
+			'A credential is anything Kody uses to reach a service for you: a key (an API key or token), an OAuth connection, an MCP server, a login, a URL secret, a signing key, or a vault. Agents and packages name the credential; Kody places its value at the network boundary and never returns it.',
+		],
+		learnMore: [
+			{ href: docHref('secrets'), label: 'Secrets' },
+			packagesIntegrationsMcpGuide,
+		],
+	},
+	{
 		id: 'secrets',
 		question: 'What is a secret?',
 		match: accountSection('/account/secrets'),
@@ -129,10 +141,10 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	},
 	{
 		id: 'connections',
-		question: 'What is a connection?',
-		match: accountSection('/account/connections'),
+		question: 'What is a connected agent?',
+		match: accountSection('/account/agents'),
 		paragraphs: [
-			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
+			'A connected agent is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
 		],
 		learnMore: [
 			{
@@ -192,10 +204,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'usage',
 		question: 'What is usage?',
-		match: accountSection(routes.accountUsage.href()),
+		match: (pathname) =>
+			parseOrgUsagePath(pathname) !== null ||
+			accountSection(routes.accountUsage.href())(pathname),
 		paragraphs: [
-			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements. Limits are per signed-in user.',
-			'On Pro, the Credits section holds your prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
+			"Usage is how much of this organization's plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements.",
+			'On Pro, the Credits section holds the prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
 		],
 		learnMore: [
 			{

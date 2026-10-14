@@ -46,6 +46,7 @@ const gatewayFetchForwardHeaderNames = [
 const corsAllowHeaders = [
 	'Authorization',
 	'Content-Type',
+	'If-None-Match',
 	'X-Kody-Gateway-Url',
 	'X-Kody-Gateway-Method',
 	'X-Kody-Gateway-Package-Id',
@@ -55,7 +56,7 @@ const corsAllowHeaders = [
 
 const corsHeaders = {
 	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Expose-Headers': 'WWW-Authenticate, Retry-After, Allow',
+	'Access-Control-Expose-Headers': 'WWW-Authenticate, Retry-After, Allow, ETag',
 } as const
 
 const corsPreflightHeaders = {
@@ -110,7 +111,7 @@ export function gatewayFetchUploadLimitMessage() {
 }
 
 /**
- * Only the API credential and content negotiation reach origin. Cookies
+ * Only the API credential, content negotiation and cache validators reach origin. Cookies
  * never authenticate the API, and `X-Kody-*` headers are internal fleet
  * signals a public caller must not be able to set. Gateway-fetch also
  * forwards the allowlisted hop metadata headers.
@@ -124,6 +125,7 @@ function buildForwardHeaders(
 		'Authorization',
 		'Content-Type',
 		'Accept',
+		'If-None-Match',
 		'User-Agent',
 		'CF-Connecting-IP',
 		...extraNames,

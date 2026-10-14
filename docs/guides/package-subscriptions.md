@@ -80,6 +80,22 @@ and unpublish refresh the cache. Prefer that pattern (normalized source +
 computed cache, invalidate on the write that changes the source, no TTL) over a
 denormalized topic-index table.
 
+## Local testing before publish
+
+While the package is still unpublished, prefer `@kodycodes/cli` `kody dev emit`:
+
+```bash
+npx @kodycodes/cli@latest dev emit email.message.received --body ./fixtures/event.json
+```
+
+That delivers the platform subscription envelope (`synthetic: true`, and an
+`idempotency_key` when the body omits one) to the local handler declared in
+`package.json#kody.subscriptions`. On `--target mock` (the `kody dev` default),
+any declared event type is allowed — the mock does not restrict to the live
+platform catalog. See
+[Package lifecycle → Local testing before publish](./package-lifecycle.md#local-testing-before-publish)
+for the other three surfaces (exports, jobs, webhooks).
+
 ## Synthetic dispatch
 
 `packageSubscriptionDispatch` is the **interactive MCP** post-publish smoke test
@@ -723,7 +739,7 @@ type PackageCodemodSubscriptionEnvelope = {
 `before_commit` and `after_commit` are the package's published commit before and
 after apply. The event deliberately omits file contents — fetch the current
 published source with repo or package capabilities when a handler needs diffs or
-full files. Community listing snapshots are unchanged by apply; only the owning
+full files. Apply does not rewrite community listing snapshots; only the owning
 saved package advances. `run.item_id` is the apply ledger item id.
 
 Use this topic for notifier packages that record migrations, ping owners, or

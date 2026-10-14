@@ -20,6 +20,7 @@ const signedInSession: session.SessionInfo = {
 		'connection-profiles': false,
 		'mcp-skills-extension': false,
 		'mcp-events-extension': false,
+		'package-app-custom-domains': false,
 	},
 }
 
@@ -210,6 +211,31 @@ test('error pages own main gutters on the SSR URL and at explicit /404 and /500;
 		[
 			{
 				pathname: '/compare/n8n-alternatives',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		// Package detail tabs own the shared page box (Repo / Files / Settings).
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot/settings',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/@kentcdodds/grok-bot/tree/main',
 				notFound: false,
 				onSsrUrl: false,
 			},

@@ -7,15 +7,64 @@ import { join } from 'node:path'
 import { hashMigrationContent } from '../check-migrations.ts'
 import {
 	assertPreviewOnlyD1Target,
+	historicalMigrationRevListGitArgs,
 	isAllowedPreviewD1DatabaseName,
 	parseArgs,
 	planRenamedMigrationRewrites,
 	readD1DatabaseNameFromConfig,
 	resolveHistoricalMigrationContent,
+	resolveHistoricalMigrationContentViaRenameChain,
+	resolveHistoricalMigrationContentWithFallback,
 } from './rewrite-renamed-preview-migrations.ts'
 
 function digest(filename: string, sql: string) {
 	return { filename, sha256: hashMigrationContent(sql) }
+}
+
+function initGitRepo(dir: string) {
+	const run = (args: Array<string>) => {
+		const result = spawnSync('git', args, {
+			cwd: dir,
+			encoding: 'utf8',
+		})
+		if (result.status !== 0) {
+			throw new Error(
+				`git ${args.join(' ')} failed (status ${String(result.status)}):\n${result.stderr}`,
+			)
+		}
+		return result.stdout
+	}
+	run(['init'])
+	run(['config', 'user.email', 'test@example.com'])
+	run(['config', 'user.name', 'test'])
+	return run
+}
+
+/**
+ * GitHub PR merge ref shape: first parent = main (path never existed), second =
+ * feature tip, tree = feature tip.
+ */
+function checkoutSyntheticMergeRef(
+	dir: string,
+	run: (args: Array<string>) => string,
+) {
+	const feature = run(['rev-parse', 'HEAD']).trim()
+	run(['checkout', 'main'])
+	const main = run(['rev-parse', 'HEAD']).trim()
+	const tree = run(['rev-parse', `${feature}^{tree}`]).trim()
+	const mergeResult = spawnSync(
+		'git',
+		['commit-tree', tree, '-p', main, '-p', feature, '-m', 'Merge PR'],
+		{ cwd: dir, encoding: 'utf8' },
+	)
+	if (mergeResult.status !== 0) {
+		throw new Error(
+			`git commit-tree failed (status ${String(mergeResult.status)}):\n${mergeResult.stderr}`,
+		)
+	}
+	const merge = mergeResult.stdout.trim()
+	run(['checkout', merge])
+	return merge
 }
 
 test('planRenamedMigrationRewrites renames when historical sha matches one current file', () => {
@@ -167,22 +216,28 @@ test('parseArgs requires remote, binding, config, and migrations-dir', () => {
 	})
 })
 
+test('historicalMigrationRevListGitArgs caps rev-list during enumeration with -n', () => {
+	expect(
+		historicalMigrationRevListGitArgs(
+			'packages/worker/migrations/0074-platform-oauth-app-visibility.sql',
+		),
+	).toEqual([
+		'rev-list',
+		'-n',
+		'32',
+		'--full-history',
+		'HEAD',
+		'--',
+		'packages/worker/migrations/0074-platform-oauth-app-visibility.sql',
+	])
+})
+
 test('resolveHistoricalMigrationContent recovers SQL from rename via commit parent', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'rewrite-git-rename-'))
 	const migrationsDir = join(dir, 'packages', 'worker', 'migrations')
 	mkdirSync(migrationsDir, { recursive: true })
-	const run = (args: Array<string>) => {
-		const result = spawnSync('git', args, {
-			cwd: dir,
-			encoding: 'utf8',
-		})
-		expect(result.status, result.stderr).toBe(0)
-		return result.stdout
-	}
 	try {
-		run(['init'])
-		run(['config', 'user.email', 'test@example.com'])
-		run(['config', 'user.name', 'test'])
+		const run = initGitRepo(dir)
 		const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
 		const oldName = '0074-platform-oauth-app-visibility.sql'
 		const newName = '0075-platform-oauth-app-visibility.sql'
@@ -203,6 +258,164 @@ test('resolveHistoricalMigrationContent recovers SQL from rename via commit pare
 				cwd: dir,
 			}),
 		).toBe(sql)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('resolveHistoricalMigrationContent recovers rename on PR merge ref with --full-history', () => {
+	// Without --full-history, rev-list on GitHub's merge commit follows the main
+	// parent (TREESAME for a path that never existed there) and prints nothing.
+	const dir = mkdtempSync(join(tmpdir(), 'rewrite-git-merge-ref-'))
+	const migrationsDir = join(dir, 'packages', 'worker', 'migrations')
+	mkdirSync(migrationsDir, { recursive: true })
+	try {
+		const run = initGitRepo(dir)
+		writeFileSync(join(migrationsDir, '0001-init.sql'), 'SELECT 1;\n')
+		run(['add', '.'])
+		run(['commit', '-m', 'main baseline'])
+		run(['branch', '-M', 'main'])
+
+		run(['checkout', '-b', 'feature'])
+		const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+		const oldName = '0074-platform-oauth-app-visibility.sql'
+		const newName = '0075-platform-oauth-app-visibility.sql'
+		writeFileSync(join(migrationsDir, oldName), sql)
+		run(['add', '.'])
+		run(['commit', '-m', 'add migration'])
+		run([
+			'mv',
+			`packages/worker/migrations/${oldName}`,
+			`packages/worker/migrations/${newName}`,
+		])
+		run(['commit', '-m', 'renumber migration'])
+
+		checkoutSyntheticMergeRef(dir, run)
+
+		const withoutFullHistory = spawnSync(
+			'git',
+			[
+				'rev-list',
+				'-n',
+				'1',
+				'HEAD',
+				'--',
+				`packages/worker/migrations/${oldName}`,
+			],
+			{ cwd: dir, encoding: 'utf8' },
+		)
+		expect(withoutFullHistory.stdout.trim()).toBe('')
+
+		expect(
+			resolveHistoricalMigrationContent({
+				migrationsDir: 'packages/worker/migrations',
+				filename: oldName,
+				cwd: dir,
+			}),
+		).toBe(sql)
+
+		const plan = planRenamedMigrationRewrites({
+			appliedNames: [oldName],
+			currentFiles: [digest(newName, sql)],
+			resolveHistoricalContent: (filename) =>
+				resolveHistoricalMigrationContentWithFallback({
+					migrationsDir: 'packages/worker/migrations',
+					filename,
+					currentFilenames: [newName],
+					cwd: dir,
+				}),
+		})
+		expect(plan.skipped).toEqual([])
+		expect(plan.rewrites).toEqual([
+			{
+				kind: 'rename',
+				from: oldName,
+				to: newName,
+				sha256: hashMigrationContent(sql),
+			},
+		])
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('resolveHistoricalMigrationContent recovers multi-hop renumber and matches by sha256', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'rewrite-git-multihop-'))
+	const migrationsDir = join(dir, 'packages', 'worker', 'migrations')
+	mkdirSync(migrationsDir, { recursive: true })
+	try {
+		const run = initGitRepo(dir)
+		writeFileSync(join(migrationsDir, '0001-init.sql'), 'SELECT 1;\n')
+		run(['add', '.'])
+		run(['commit', '-m', 'main baseline'])
+		run(['branch', '-M', 'main'])
+
+		run(['checkout', '-b', 'feature'])
+		const sql =
+			'ALTER TABLE webhooks ADD COLUMN credential_id TEXT NOT NULL DEFAULT "";\n'
+		const names = [
+			'0121-webhook-apply-destination-credential-ids.sql',
+			'0122-webhook-apply-destination-credential-ids.sql',
+			'0123-webhook-apply-destination-credential-ids.sql',
+		] as const
+		writeFileSync(join(migrationsDir, names[0]), sql)
+		run(['add', '.'])
+		run(['commit', '-m', 'add 0121'])
+		run([
+			'mv',
+			`packages/worker/migrations/${names[0]}`,
+			`packages/worker/migrations/${names[1]}`,
+		])
+		run(['commit', '-m', '0121 to 0122'])
+		run([
+			'mv',
+			`packages/worker/migrations/${names[1]}`,
+			`packages/worker/migrations/${names[2]}`,
+		])
+		run(['commit', '-m', '0122 to 0123'])
+
+		checkoutSyntheticMergeRef(dir, run)
+
+		expect(
+			resolveHistoricalMigrationContent({
+				migrationsDir: 'packages/worker/migrations',
+				filename: names[0],
+				cwd: dir,
+			}),
+		).toBe(sql)
+
+		expect(
+			resolveHistoricalMigrationContentViaRenameChain({
+				migrationsDir: 'packages/worker/migrations',
+				appliedFilename: names[0],
+				currentFilename: names[2],
+				cwd: dir,
+			}),
+		).toBe(sql)
+
+		const plan = planRenamedMigrationRewrites({
+			appliedNames: [names[0]],
+			currentFiles: [
+				digest('0001-init.sql', 'SELECT 1;\n'),
+				digest(names[2], sql),
+			],
+			resolveHistoricalContent: (filename) =>
+				resolveHistoricalMigrationContentWithFallback({
+					migrationsDir: 'packages/worker/migrations',
+					filename,
+					currentFilenames: ['0001-init.sql', names[2]],
+					cwd: dir,
+				}),
+		})
+		expect(plan.skipped).toEqual([])
+		expect(plan.rewrites).toEqual([
+			{
+				kind: 'rename',
+				from: names[0],
+				to: names[2],
+				sha256: hashMigrationContent(sql),
+			},
+		])
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}

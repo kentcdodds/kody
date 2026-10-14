@@ -48,8 +48,14 @@ export function buildPackageAppUrl(input: {
  * - `username-path`: `/@{username}/packages/{kodyId}` — the app-origin entry
  *   point (which redirects into the handoff) and the non-production inline
  *   serving shape.
+ * - `custom-hostname`: `https://{customer-host}/{rest}` — a verified app-level
+ *   custom hostname. The package is bound by hostname, so the path has no
+ *   username or slug. The app is mounted at `/`.
  */
-export type PackageAppMount = 'user-subdomain' | 'username-path'
+export type PackageAppMount =
+	| 'user-subdomain'
+	| 'username-path'
+	| 'custom-hostname'
 
 /**
  * The username shape: a valid DNS label (lowercase letters, digits, hyphens;
@@ -113,6 +119,23 @@ export function buildPackageAppSubdomainUrl(input: {
 	restPath?: string | null
 }) {
 	return `${buildPackageAppSubdomainOrigin(input)}${buildPackageAppSubdomainPath(input)}`
+}
+
+/**
+ * Path on a customer custom hostname. The bound app owns the host root, so
+ * there is no `/packages/{kodyId}` prefix. An empty rest path is `/`.
+ */
+export function buildPackageAppCustomHostnamePath(input: {
+	restPath?: string | null
+}) {
+	return buildRestPathSuffix(input.restPath) || '/'
+}
+
+export function buildPackageAppCustomHostnameUrl(input: {
+	origin: string
+	restPath?: string | null
+}) {
+	return `${input.origin.trim().replace(/\/+$/, '')}${buildPackageAppCustomHostnamePath(input)}`
 }
 
 /**

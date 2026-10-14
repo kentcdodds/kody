@@ -1,20 +1,32 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
+import { isLastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
 import {
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
 	orgSlugFromOrgOwnedPath,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
+import { routes } from '#universal/routes.ts'
+
+/** Credits top-up / settings stay on `/account/credits/*.json` and bind via Referer. */
+function isCreditsApiPath(pathname: string) {
+	return (
+		pathname === routes.accountCreditsTopUpPost.href() ||
+		pathname === routes.accountCreditsSettingsPost.href()
+	)
+}
 
 export type RequestOrgResolution = OrgBinding | 'personal' | 'denied'
 
 const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
 
 /**
- * The organization for this request. Resource, billing, and management URLs
- * under `/@slug/...` bind that organization when the actor is a member or
- * holds a grant. Org-owned `/account/<section>.json` fetches from those pages
- * bind the same org via Referer. Every other URL keeps the signup organization.
+ * The organization for this request. Resource, billing, usage, and management
+ * URLs under `/@slug/...` bind that organization when the actor is a member or
+ * holds a grant. Org-owned `/account/<section>.json` and credits mutation APIs
+ * bind the same org via Referer. Credits mutations without a usable Referer
+ * are denied (no personal fallback). Every other URL keeps the signup
+ * organization.
  */
 export function loadRequestOrgResolution(
 	request: Request,
@@ -41,7 +53,7 @@ export function orgSectionDenial(
 	// A grant without a membership is not access to the whole workspace.
 	// Connections only lists the viewer's own agents bound to this org, which
 	// is how a collaborator starts using what was shared with them.
-	if (resolution.role == null && section !== 'connections') {
+	if (resolution.role == null && section !== 'agents') {
 		return 'Organization resources unavailable'
 	}
 	return null
@@ -51,6 +63,8 @@ export function orgSectionDenial(
 export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
+		isCreditsApiPath(pathname) ||
+		isLastUsedOrgCommitApiPath(pathname) ||
 		orgSlugFromPageUrl(pathname) !== null
 	)
 }
@@ -112,10 +126,16 @@ async function resolveRequestOrg(
 	const url = new URL(request.url)
 	const slugOnPage = orgSlugFromPageUrl(url.pathname)
 	const apiSection = orgOwnedAccountApiSection(url.pathname)
+	const creditsApi = isCreditsApiPath(url.pathname)
+	const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
 	const slug =
 		slugOnPage ??
-		(apiSection ? orgSlugFromAccountApiReferer(request, url.origin) : null)
-	if (!slug) return 'personal'
+		(apiSection || creditsApi || lastUsedCommit
+			? orgSlugFromAccountApiReferer(request, url.origin)
+			: null)
+	// Credits mutations must name an org (path or usage-page Referer). Falling
+	// back to personal would top up the wrong wallet when Referer is missing.
+	if (!slug) return creditsApi ? 'denied' : 'personal'
 	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'
 }

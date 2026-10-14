@@ -120,6 +120,61 @@ test('none on purpose and default-layer mappings never pause an enablement', asy
 	expect((await t.readEnablement())?.state).toBe('on')
 })
 
+test('a stored credential-access pause stays in place while a mapping breaks and after it is fixed', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.grantPackageUse('ann')
+	await t.grantUse(slack, 'ann')
+	const applied = await t.apply('ann', 'member', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	expect(applied.map((change) => change.error)).toEqual([null])
+	// Paused at run time on a permission ann lacks (she only has Use).
+	const storedPause = {
+		state: 'paused',
+		paused_reason: 'credential_access',
+		paused_resource_type: 'credential',
+		paused_resource_id: slack,
+		paused_credential_id: null,
+	}
+	await t.db
+		.prepare(
+			`UPDATE enablements SET state = 'paused', paused_reason = 'credential_access',
+				paused_permission = 'secret:write', paused_resource_type = 'credential',
+				paused_resource_id = ?, paused_credential_id = NULL,
+				paused_at = '2026-10-13T00:00:00.000Z'
+			WHERE package_id = ?`,
+		)
+		.bind(slack, t.savedPackage.id)
+		.run()
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+
+	await t.setDeleted(slack, false)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toEqual(storedPause)
+})
+
+test('a corrupt trigger mapping row reads as unset and never pauses or blocks the run', async () => {
+	const t = await setup()
+	await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	await t.db
+		.prepare(
+			`UPDATE credential_mappings SET credential_ids_json = '{not json'
+			WHERE target = 'enablement'`,
+		)
+		.run()
+	expect((await t.plan()).runs).toHaveLength(1)
+	expect((await t.readEnablement())?.state).toBe('on')
+})
+
 test('a need a republish added with no single match never pauses the trigger', async () => {
 	const t = await setup()
 	await t.storeKey('team-slack', 'slack')
@@ -140,4 +195,60 @@ test('a need a republish added with no single match never pauses the trigger', a
 	// trigger keeps running.
 	expect((await t.plan()).runs).toHaveLength(1)
 	expect((await t.readEnablement())?.state).toBe('on')
+})
+
+test('a mapping row left by a need a republish removed never pauses the trigger', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue(
+		mappingFixtureNeeds.filter((need) => need.key !== 'chat'),
+	)
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toHaveLength(1)
+	expect((await t.readEnablement())?.state).toBe('on')
+})
+
+test('a pick that no longer fits its need after a republish changed the kind pauses the trigger', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+	])
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue(
+		mappingFixtureNeeds.map((need) =>
+			need.key === 'chat' ? { ...need, kind: 'oauth' } : need,
+		),
+	)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toMatchObject({
+		state: 'paused',
+		paused_resource_type: 'credential-mapping',
+		paused_resource_id: 'chat',
+		paused_credential_id: slack,
+	})
+})
+
+test('a paused enablement whose cause moved to another need names the new one', async () => {
+	const t = await setup()
+	const slack = await t.storeKey('team-slack', 'slack')
+	const prod = await t.storeKey('resend-prod', 'resend')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'chat', credentials: [{ name: 'team-slack' }] },
+		{ target: daily, needKey: 'mail', credentials: [{ name: 'resend-prod' }] },
+	])
+	await t.setDeleted(slack, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect((await t.readEnablement())?.paused_resource_id).toBe('chat')
+
+	await t.setDeleted(slack, false)
+	await t.setDeleted(prod, true)
+	expect((await t.plan()).runs).toEqual([])
+	expect(await t.readEnablement()).toMatchObject({
+		state: 'paused',
+		paused_resource_id: 'mail',
+		paused_credential_id: prod,
+	})
 })

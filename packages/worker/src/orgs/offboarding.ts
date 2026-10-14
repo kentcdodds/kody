@@ -368,11 +368,15 @@ async function revokeOrgBoundCredentials(input: {
 	// still matches via org_id = memberUserId).
 	let revokedApiTokens = 0
 	let revokedCliBootstrapCodes = 0
+	// Only org-bound tokens are revoked on leave. User-owned tokens
+	// (`org_binding = 'user'`) stay; membership/grant checks deny the left org
+	// on the next request.
 	const tokenResult = await input.appDb
 		.prepare(
 			`UPDATE api_tokens
 			 SET revoked_at = ?, updated_at = ?
 			 WHERE user_id = ?
+			   AND org_binding = 'org'
 			   AND COALESCE(org_id, user_id) = ?
 			   AND revoked_at IS NULL
 			   AND deleted_at IS NULL`,
@@ -384,7 +388,9 @@ async function revokeOrgBoundCredentials(input: {
 	const bootstrap = await input.appDb
 		.prepare(
 			`DELETE FROM cli_credential_bootstrap_codes
-			 WHERE user_id = ? AND COALESCE(org_id, user_id) = ?`,
+			 WHERE user_id = ?
+			   AND org_binding = 'org'
+			   AND COALESCE(org_id, user_id) = ?`,
 		)
 		.bind(input.memberUserId, input.orgId)
 		.run()

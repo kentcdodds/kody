@@ -11,7 +11,7 @@ import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 } from '#universal/loader-data.ts'
-import { routes } from '#universal/routes.ts'
+import { orgUsagePath } from '#universal/org-pages.ts'
 import {
 	includedComputeSummary,
 	presentIncludedCompute,
@@ -92,11 +92,12 @@ const week = (current: number, limit: number) => ({
 })
 
 test('credits action follows the wallet: add, switch, subscribe, or nothing', () => {
-	const add = { label: 'Add credits', href: '/account/usage#credits' }
-	const switchToPro = { label: 'Switch to Pro', href: '/account/usage#credits' }
+	const creditsHref = '/@danj/-/usage#credits'
+	const add = { label: 'Add credits', href: creditsHref }
+	const switchToPro = { label: 'Switch to Pro', href: creditsHref }
 	const subscribe = {
 		label: 'Subscribe to Pro',
-		href: '/account/usage#credits',
+		href: creditsHref,
 	}
 	const cases = [
 		['empty', 'pro', true, add],
@@ -111,7 +112,7 @@ test('credits action follows the wallet: add, switch, subscribe, or nothing', ()
 			wallet,
 			plan,
 			canBuy,
-			creditsActionForWallet(wallet, plan, canBuy),
+			creditsActionForWallet(wallet, plan, canBuy, creditsHref),
 		]),
 	).toEqual(cases)
 })
@@ -287,7 +288,7 @@ function usagePage(input: {
 async function renderUsagePage(accountUsage: AccountUsageLoaderData) {
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
-			url: routes.accountUsage.href(),
+			url: orgUsagePath(session.username),
 			children: jsx(AppSessionProvider, {
 				session,
 				status: 'ready',

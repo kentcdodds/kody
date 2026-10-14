@@ -3,17 +3,29 @@
 import { type RemixNode, css } from 'remix/component'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
+import {
+	type PackageCredentialsTab,
+	packageCredentialsTabHref,
+	packageCredentialsTabLabel,
+	packageCredentialsTabs,
+} from '#universal/package-credentials-page.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import { routes } from '#universal/routes.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 
-export type PackageRepoNavActive = 'repo' | 'files' | 'settings'
+export type PackageRepoNavActive =
+	| 'repo'
+	| 'files'
+	| 'settings'
+	| PackageCredentialsTab
 
 function renderPackageRepoNav(input: {
 	username: string
 	kodyId: string
 	filesHref: string
 	viewerCanManage: boolean
+	/** Saved packages the viewer's org owns: credential and trigger tabs. */
+	showCredentialTabs: boolean
 	/** Defaults to true. Pass false only to hide Files intentionally. */
 	showFilesNav?: boolean
 	active: PackageRepoNavActive
@@ -51,6 +63,23 @@ function renderPackageRepoNav(input: {
 					Files
 				</a>
 			) : null}
+			{input.showCredentialTabs
+				? packageCredentialsTabs.map((tab) => (
+						<a
+							key={tab}
+							href={packageCredentialsTabHref({
+								username: input.username,
+								kodyId: input.kodyId,
+								tab,
+							})}
+							aria-current={input.active === tab ? 'page' : undefined}
+							data-testid={`package-repo-nav-${tab}`}
+							mix={css(tabCss)}
+						>
+							{packageCredentialsTabLabel(tab)}
+						</a>
+					))
+				: null}
 			{input.viewerCanManage ? (
 				<a
 					href={settingsHref}
@@ -82,7 +111,8 @@ export function renderPackageRepoChrome(input: {
 	iconName?: string
 	iconTestId?: string
 	animate?: boolean
-	titleActions?: RemixNode
+	/** Labeled controls on the tab row; status icons stay in the title. */
+	actions?: RemixNode
 }) {
 	const backHref = input.viewerIsOwner
 		? routes.profile.href({ username: input.username })
@@ -139,7 +169,6 @@ export function renderPackageRepoChrome(input: {
 					<span mix={css(slashCss)}>/</span>
 					<span data-testid="package-title-name" mix={css(titleNameCss)}>
 						<span mix={css(titleLeafCss)}>{input.kodyId}</span>
-						{input.titleActions}
 						{renderPackageStatusSignifiers({
 							isPrivate: input.isPrivate,
 							isListed,
@@ -153,14 +182,25 @@ export function renderPackageRepoChrome(input: {
 					{input.description}
 				</p>
 			) : null}
-			<div {...rise('3')}>
+			<div {...rise('3')} mix={css(navRowCss)}>
 				{renderPackageRepoNav({
 					username: input.username,
 					kodyId: input.kodyId,
 					filesHref: input.filesHref,
 					viewerCanManage: input.viewerCanManage,
+					showCredentialTabs: input.viewerIsOwner && hasPackage,
 					active: input.active,
 				})}
+				{input.actions ? (
+					<div
+						role="group"
+						aria-label="Repository actions"
+						data-testid="package-repo-actions"
+						mix={css(actionsCss)}
+					>
+						{input.actions}
+					</div>
+				) : null}
 			</div>
 		</div>
 	)
@@ -238,11 +278,31 @@ const descriptionCss = {
 	maxWidth: '58ch',
 }
 
+const navRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	flexWrap: 'wrap' as const,
+	gap: '0.75rem 1rem',
+	marginTop: '1.1rem',
+	[mq.mobile]: {
+		flexDirection: 'column-reverse' as const,
+		alignItems: 'stretch',
+	},
+}
+
+const actionsCss = {
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.5rem',
+}
+
 const navCss = {
 	display: 'flex',
 	alignItems: 'center',
+	flexWrap: 'wrap' as const,
 	gap: spacing.sm,
-	marginTop: '1.1rem',
 }
 
 const tabCss = {

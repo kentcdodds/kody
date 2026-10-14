@@ -8,15 +8,6 @@ import {
 	AccountConnectionsRoute,
 	accountConnectionsRouteLoader,
 } from '#client/routes/account-connections.tsx'
-import {
-	accountPackagesNavHref,
-	accountRailGroups,
-	accountRailOrgSlug,
-	isAccountNavItemActive,
-	isAccountRailPath,
-	workspaceLandingItem,
-	workspaceRailGroups,
-} from '#client/routes/account-rail.ts'
 import { type SessionInfo } from '#client/session.ts'
 import {
 	accountConnectionAgentIds,
@@ -40,7 +31,7 @@ const session: SessionInfo = {
 
 function renderConnectionsPage(
 	accountConnectedAgents: AccountConnectedAgentsLoaderData,
-	url: string = '/account/connections',
+	url: string = '/account/agents',
 ) {
 	return renderToString(
 		jsx(RouterLocationProvider, {
@@ -76,19 +67,19 @@ const connectedCursor: AccountConnectedAgentsLoaderData = {
 test('connections page renders the connected list with Add connection, the MCP URL card, and the rail from SSR data', async () => {
 	const html = await renderConnectionsPage(connectedCursor)
 
-	expect(html).toContain('>Connections</h1>')
+	expect(html).toContain('>Agents</h1>')
 	// The connected list is the panel Overview used to host, plus the entry
 	// point to the client wall.
 	expect(html).toContain('aria-label="Connected agents"')
 	expect(html).toContain('data-agent-label="Cursor"')
 	expect(html).toContain('aria-label="Revoke Cursor"')
 	expect(html).toContain('data-testid="connected-agent-view-steps"')
-	expect(html).toContain('href="/account/connections/new/cursor"')
+	expect(html).toContain('href="/account/agents/new/cursor"')
 	expect(html).toMatch(/Last used <span[^>]*>unknown<\/span>/)
 	expect(html).toMatch(
-		/data-testid="account-connections-add"[^>]*>Add connection</,
+		/data-testid="account-connections-add"[^>]*>Connect an agent</,
 	)
-	expect(html).toContain(`href="${'/account/connections/new'}"`)
+	expect(html).toContain(`href="${'/account/agents/new'}"`)
 	expect(html).toContain('aria-label="MCP URL"')
 	expect(html).toContain('>https://kody.example/mcp<')
 	expect(html).toContain('Copy MCP URL')
@@ -102,7 +93,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	// The workspace rail marks this page current and links Repositories to
 	// the workspace list, not the public profile.
 	expect(html).toContain('aria-label="Workspace sections"')
-	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/agents"[^>]*aria-current="page"/)
 	expect(html).toMatch(
 		/href="\/@jane\/-\/repositories"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
@@ -112,15 +103,15 @@ test('connections page renders the connected list with Add connection, the MCP U
 test('Add connection shows every named client on every viewport; already-connected hosts stay links with a Connected mark', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new',
+		'/account/agents/new',
 	)
 
 	expect(html).toContain('data-testid="account-connections-agent-grid"')
-	expect(html).toContain('aria-label="Add connection"')
+	expect(html).toContain('aria-label="Connect an agent"')
 	expect(html).toMatch(
-		/data-testid="account-connections-back"[^>]*>← back to connections</,
+		/data-testid="account-connections-back"[^>]*>← back to agents</,
 	)
-	expect(html).toContain(`href="${'/account/connections'}"`)
+	expect(html).toContain(`href="${'/account/agents'}"`)
 	// The list is its own page; it does not wrap the grid.
 	expect(html).not.toContain('aria-label="Connected agents"')
 	expect(html).not.toContain('data-testid="account-connections-add"')
@@ -129,13 +120,13 @@ test('Add connection shows every named client on every viewport; already-connect
 	for (const id of accountConnectionAgentIds) {
 		expect(html).toMatch(
 			new RegExp(
-				`href="/account/connections/new/${id}"[^>]*data-testid="onboarding-agent-${id}"`,
+				`href="/account/agents/new/${id}"[^>]*data-testid="onboarding-agent-${id}"`,
 			),
 		)
 	}
 	// Already-connected Cursor keeps a Connected mark and remains a link.
 	expect(html).toMatch(
-		/href="\/account\/connections\/new\/cursor"[^>]*data-greyed="true"/,
+		/href="\/account\/agents\/new\/cursor"[^>]*data-greyed="true"/,
 	)
 	expect(html).toContain('data-greyed-reason="connected"')
 	expect(html).toContain(
@@ -145,7 +136,7 @@ test('Add connection shows every named client on every viewport; already-connect
 	// card `<li>` shares one class whose rules never reach `display: none`.
 	const cards = [
 		...html.matchAll(
-			/<li class="(rmxc-[^"]+)"><a href="\/account\/connections\/new\//g,
+			/<li class="(rmxc-[^"]+)"><a href="\/account\/agents\/new\//g,
 		),
 	]
 	expect(cards).toHaveLength(accountConnectionAgentIds.length)
@@ -167,7 +158,7 @@ test('Add connection shows every named client on every viewport; already-connect
 test('picking a client shows that host’s install steps with a way back to the grid', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new/claude-code',
+		'/account/agents/new/claude-code',
 	)
 
 	expect(html).toContain('aria-label="Connect Claude Code"')
@@ -179,22 +170,22 @@ test('picking a client shows that host’s install steps with a way back to the 
 	expect(html).toContain('data-testid="onboarding-authenticate-callout"')
 	expect(html).toMatch(
 		new RegExp(
-			`href="${'/account/connections/new'}"[^>]*data-testid="account-connections-change-agent"`,
+			`href="${'/account/agents/new'}"[^>]*data-testid="account-connections-change-agent"`,
 		),
 	)
 	expect(html).not.toContain('data-testid="account-connections-agent-grid"')
 	expect(html).toMatch(
-		/data-testid="account-connections-back"[^>]*>← back to connections</,
+		/data-testid="account-connections-back"[^>]*>← back to agents</,
 	)
 	expect(html).not.toContain('aria-label="Connected agents"')
 	// Connections stays the current rail item on the add views.
-	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/agents"[^>]*aria-current="page"/)
 })
 
 test('an unknown agent segment renders the fallback instead of instructions', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/account/connections/new/not-a-client',
+		'/account/agents/new/not-a-client',
 	)
 	expect(html).toContain('>Unknown agent</h2>')
 	expect(html).toContain('data-testid="account-connections-back"')
@@ -206,17 +197,17 @@ test('an unknown agent segment renders the fallback instead of instructions', as
 
 test('connections views parse from the pathname', () => {
 	const cases = [
-		['/account/connections', { kind: 'list' }],
-		['/account/connections/new', { kind: 'new', agent: null }],
-		['/account/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
-		['/account/connections/new/other', null],
-		['/account/connections/new/nope', null],
-		['/account/connections/new/cursor/x', null],
-		['/account/connections/nope', null],
-		['/@jane/-/connections', { kind: 'list' }],
-		['/@jane/-/connections/new', { kind: 'new', agent: null }],
-		['/@jane/-/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
-		['/@jane/-/connections/new/nope', null],
+		['/account/agents', { kind: 'list' }],
+		['/account/agents/new', { kind: 'new', agent: null }],
+		['/account/agents/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/account/agents/new/other', null],
+		['/account/agents/new/nope', null],
+		['/account/agents/new/cursor/x', null],
+		['/account/agents/nope', null],
+		['/@jane/-/agents', { kind: 'list' }],
+		['/@jane/-/agents/new', { kind: 'new', agent: null }],
+		['/@jane/-/agents/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/@jane/-/agents/new/nope', null],
 	] as const
 	expect(
 		cases.map(([pathname]) => [
@@ -224,30 +215,25 @@ test('connections views parse from the pathname', () => {
 			parseAccountConnectionsPathname(pathname),
 		]),
 	).toEqual(cases)
-	expect(accountConnectionsNewHref(null)).toBe('/account/connections/new')
+	expect(accountConnectionsNewHref(null)).toBe('/account/agents/new')
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
-		'/account/connections/new/grok-cli',
+		'/account/agents/new/grok-cli',
 	)
-	expect(accountConnectionsListHref('/@jane/-/connections')).toBe(
-		'/@jane/-/connections',
+	expect(accountConnectionsListHref('/@jane/-/agents')).toBe('/@jane/-/agents')
+	expect(accountConnectionsNewHref(null, '/@jane/-/agents')).toBe(
+		'/@jane/-/agents/new',
 	)
-	expect(accountConnectionsNewHref(null, '/@jane/-/connections')).toBe(
-		'/@jane/-/connections/new',
-	)
-	expect(accountConnectionsNewHref('cursor', '/@jane/-/connections')).toBe(
-		'/@jane/-/connections/new/cursor',
+	expect(accountConnectionsNewHref('cursor', '/@jane/-/agents')).toBe(
+		'/@jane/-/agents/new/cursor',
 	)
 })
 
 test('connections list under /@slug keeps Add and View steps on org paths', async () => {
-	const html = await renderConnectionsPage(
-		connectedCursor,
-		'/@jane/-/connections',
-	)
-	expect(html).toContain('href="/@jane/-/connections/new"')
-	expect(html).toContain('href="/@jane/-/connections/new/cursor"')
-	expect(html).not.toContain('href="/account/connections/new"')
-	expect(html).not.toContain('href="/account/connections/new/cursor"')
+	const html = await renderConnectionsPage(connectedCursor, '/@jane/-/agents')
+	expect(html).toContain('href="/@jane/-/agents/new"')
+	expect(html).toContain('href="/@jane/-/agents/new/cursor"')
+	expect(html).not.toContain('href="/account/agents/new"')
+	expect(html).not.toContain('href="/account/agents/new/cursor"')
 })
 
 test('connections page swaps the copy card for a verify note while the email is unverified', async () => {
@@ -322,371 +308,6 @@ test('connection profiles list only granted packages and add more through a pack
 	expect(createForm).not.toContain('pkg-3"')
 })
 
-test('account rail holds the person: profile, security, organizations, experiments, data', () => {
-	const items = accountRailGroups({ workspaceSlug: null }).flatMap(
-		(group) => group.items,
-	)
-	expect(items.map((item) => item.label)).toEqual([
-		'Profile',
-		'Security',
-		'Organizations',
-		'Experiments',
-		'Data & deletion',
-	])
-	const security = items.find((item) => item.label === 'Security')
-	expect(
-		security && isAccountNavItemActive(security, '/account/passkeys'),
-	).toBe(true)
-	const profile = items.find((item) => item.label === 'Profile')
-	expect(profile && isAccountNavItemActive(profile, '/account/security')).toBe(
-		false,
-	)
-	for (const path of [
-		'/account',
-		'/account/security',
-		'/account/two-factor',
-		'/account/passkeys',
-		'/account/organizations',
-		'/account/organizations/new',
-		'/account/experiments',
-		'/account/data',
-	]) {
-		expect(isAccountRailPath(path), path).toBe(true)
-	}
-	for (const path of [
-		'/account/billing',
-		'/account/usage',
-		'/account/credits',
-		'/account/mcp-oauth-clients',
-		'/@jane/-/secrets',
-		'/@jane/-/repositories',
-	]) {
-		expect(isAccountRailPath(path), path).toBe(false)
-	}
-})
-
-test('workspace landing opens Repositories so the rail is one click away', () => {
-	expect(workspaceLandingItem('jane')).toEqual({
-		href: '/@jane/-/repositories',
-		label: 'Workspace',
-		icon: 'box',
-	})
-	expect(workspaceLandingItem(null).href).toBe('/account')
-})
-
-test('account rail opens the signup workspace: overview, repositories, connections, MCP servers, secrets, jobs, memories', () => {
-	const groups = accountRailGroups({ workspaceSlug: 'jane-old' })
-	expect(groups.map((group) => group.label)).toEqual([null, 'Workspace'])
-	expect(
-		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
-	).toEqual([
-		['Overview', '/@jane-old/-/overview', 'home'],
-		['Repositories', '/@jane-old/-/repositories', 'box'],
-		['Connections', '/@jane-old/-/connections', 'link'],
-		['MCP servers', '/@jane-old/-/mcp-servers', 'server'],
-		['Secrets', '/@jane-old/-/secrets', 'key'],
-		['Jobs', '/@jane-old/-/jobs', 'briefcase'],
-		['Memories', '/@jane-old/-/memories', 'book'],
-	])
-	// Workspace links leave the account rail: those pages take the workspace
-	// rail, and nothing in the Workspace group is current on an account page.
-	for (const item of groups[1]?.items ?? []) {
-		expect(isAccountRailPath(item.href), item.href).toBe(false)
-		expect(isAccountNavItemActive(item, '/account'), item.href).toBe(false)
-	}
-})
-
-test('workspace rail groups what the organization owns and keeps its slug in every link', () => {
-	const groups = workspaceRailGroups({
-		orgSlug: 'jane',
-		personal: true,
-		role: 'owner',
-	})
-	const items = groups.flatMap((group) => group.items)
-	// Overview leads the personal rail and is current only on its own page.
-	expect(groups[0]).toEqual({
-		label: null,
-		items: [
-			{
-				href: '/@jane/-/overview',
-				label: 'Overview',
-				icon: 'home',
-				description: 'Every section this workspace owns, one click away.',
-			},
-		],
-	})
-	const overview = items[0]
-	expect(
-		overview && isAccountNavItemActive(overview, '/@jane/-/overview'),
-	).toBe(true)
-	expect(overview && isAccountNavItemActive(overview, '/@jane/-/jobs')).toBe(
-		false,
-	)
-	// Every section the overview page lists carries a one-line description.
-	for (const item of groups.slice(1).flatMap((group) => group.items)) {
-		expect(item.description, item.label).toBeTruthy()
-	}
-	// Repositories is the workspace list, not the public profile.
-	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@jane/-/repositories',
-	)
-	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
-		'/@jane/-/secret-providers',
-	)
-	const billing = items.find((item) => item.label === 'Billing')
-	expect(billing?.href).toBe('/@jane/-/billing')
-	expect(billing && isAccountNavItemActive(billing, '/@jane/-/billing')).toBe(
-		true,
-	)
-	const usage = items.find((item) => item.label === 'Usage')
-	expect(usage && isAccountNavItemActive(usage, '/account/credits')).toBe(true)
-	const connections = items.find((item) => item.label === 'Connections')
-	expect(
-		connections &&
-			isAccountNavItemActive(connections, '/account/mcp-oauth-clients'),
-	).toBe(true)
-	expect(
-		connections &&
-			isAccountNavItemActive(connections, '/@jane/-/connections/new'),
-	).toBe(true)
-	expect(accountPackagesNavHref(null)).toBe('/account')
-})
-
-test('workspace rail for a team organization matches the personal section shape', () => {
-	const personalLabels = workspaceRailGroups({
-		orgSlug: 'ada',
-		personal: true,
-		role: 'owner',
-	})
-		.flatMap((group) => group.items)
-		.map((item) => item.label)
-	const teamOwner = workspaceRailGroups({
-		orgSlug: 'acme',
-		personal: false,
-		role: 'owner',
-	})
-	const teamLabels = teamOwner
-		.flatMap((group) => group.items)
-		.map((item) => item.label)
-	// Same resource sections in the same order; team adds management links
-	// before the shared person-scoped Usage row.
-	expect(personalLabels).toEqual([
-		'Overview',
-		'Repositories',
-		'Jobs',
-		'Workflows',
-		'Webhooks',
-		'Connections',
-		'Integrations',
-		'MCP servers',
-		'Secrets',
-		'Secret providers',
-		'Memories',
-		'Email',
-		'Activity',
-		'Waiting',
-		'Billing',
-		'Usage',
-	])
-	expect(teamLabels).toEqual([
-		'Overview',
-		'Repositories',
-		'Jobs',
-		'Workflows',
-		'Webhooks',
-		'Connections',
-		'Integrations',
-		'MCP servers',
-		'Secrets',
-		'Secret providers',
-		'Memories',
-		'Email',
-		'Activity',
-		'Waiting',
-		'Settings',
-		'Members',
-		'Teams',
-		'Grants',
-		'Collaborators',
-		'Billing',
-		'Usage',
-	])
-	expect(
-		teamOwner.map((group) => [
-			group.label,
-			group.items.map((item) => item.href),
-		]),
-	).toEqual([
-		[null, ['/@acme']],
-		[
-			'Build',
-			[
-				'/@acme/-/repositories',
-				'/@acme/-/jobs',
-				'/@acme/-/workflows',
-				'/@acme/-/webhooks',
-			],
-		],
-		[
-			'Access',
-			['/@acme/-/connections', '/@acme/-/integrations', '/@acme/-/mcp-servers'],
-		],
-		[
-			'Data',
-			[
-				'/@acme/-/secrets',
-				'/@acme/-/secret-providers',
-				'/@acme/-/memories',
-				'/@acme/-/email',
-			],
-		],
-		['Activity', ['/@acme/-/activity', '/@acme/-/waiting']],
-		[
-			'Organization',
-			[
-				'/@acme/-/settings',
-				'/@acme/-/members',
-				'/@acme/-/teams',
-				'/@acme/-/grants',
-				'/@acme/-/collaborators',
-				'/@acme/-/billing',
-				'/account/usage',
-			],
-		],
-	])
-	expect(
-		workspaceRailGroups({
-			orgSlug: 'acme',
-			personal: false,
-			role: 'billing',
-		})
-			.flatMap((group) => group.items)
-			.map((item) => item.label),
-	).toEqual([
-		'Overview',
-		'Repositories',
-		'Jobs',
-		'Workflows',
-		'Webhooks',
-		'Connections',
-		'Integrations',
-		'MCP servers',
-		'Secrets',
-		'Secret providers',
-		'Memories',
-		'Email',
-		'Activity',
-		'Waiting',
-		'Settings',
-		'Members',
-		'Grants',
-		'Collaborators',
-		'Billing',
-		'Usage',
-	])
-	expect(
-		workspaceRailGroups({
-			orgSlug: 'acme',
-			personal: false,
-			role: 'member',
-		})
-			.flatMap((group) => group.items)
-			.map((item) => item.label),
-	).toEqual([
-		'Overview',
-		'Repositories',
-		'Jobs',
-		'Workflows',
-		'Webhooks',
-		'Connections',
-		'Integrations',
-		'MCP servers',
-		'Secrets',
-		'Secret providers',
-		'Memories',
-		'Email',
-		'Activity',
-		'Waiting',
-		'Settings',
-		'Members',
-		'Teams',
-		'Grants',
-		'Collaborators',
-		'Usage',
-	])
-	// Grant-only collaborators can open Connections (their own agents bound
-	// to the org) but get a 404 on Repositories and the rest — with a note.
-	const collaborator = workspaceRailGroups({
-		orgSlug: 'acme',
-		personal: false,
-		role: null,
-	})
-	expect(
-		collaborator.map((group) => [
-			group.label,
-			group.items.map((item) => item.href),
-		]),
-	).toEqual([['Access', ['/@acme/-/connections']]])
-	expect(collaborator[0]?.note).toMatch(/grant/i)
-	expect(
-		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
-	).toEqual([])
-	// Team Overview is the org home; exact match so section pages stay off.
-	const teamOverview = teamOwner
-		.flatMap((group) => group.items)
-		.find((item) => item.label === 'Overview')
-	expect(teamOverview?.href).toBe('/@acme')
-	expect(teamOverview?.exact).toBe(true)
-	expect(teamOverview && isAccountNavItemActive(teamOverview, '/@acme')).toBe(
-		true,
-	)
-	expect(
-		teamOverview &&
-			isAccountNavItemActive(teamOverview, '/@acme/-/repositories'),
-	).toBe(false)
-	expect(
-		teamOverview && isAccountNavItemActive(teamOverview, '/@acme/-/overview'),
-	).toBe(true)
-})
-
-test('account rail org slug prefers the path org over username', () => {
-	const organizations = [
-		{ slug: 'ada-old', personal: true },
-		{ slug: 'acme', personal: false },
-	]
-	expect(
-		accountRailOrgSlug({
-			pathname: '/@acme/-/jobs',
-			organizations,
-			username: 'ada-new',
-		}),
-	).toBe('acme')
-	expect(
-		accountRailOrgSlug({
-			pathname: '/account',
-			organizations,
-			username: 'ada-new',
-		}),
-	).toBe('ada-old')
-})
-
-test('account rail org slug trusts org-owned URLs when the session list is stale', () => {
-	expect(
-		accountRailOrgSlug({
-			pathname: '/@acme/-/settings',
-			organizations: [{ slug: 'ada-old', personal: true }],
-			username: 'ada-new',
-		}),
-	).toBe('acme')
-	expect(
-		accountRailOrgSlug({
-			pathname: '/@acme/-/grants',
-			organizations: [],
-			username: 'ada-new',
-		}),
-	).toBe('acme')
-})
-
 test('the connections loader names the destination org page as referrer', async () => {
 	vi.stubGlobal('window', { location: { origin: 'https://kody.test' } })
 	const fetchMock = vi.fn(
@@ -700,13 +321,13 @@ test('the connections loader names the destination org page as referrer', async 
 		// A client navigation from another org: the loader runs before the URL
 		// commits, so the Referer would otherwise name the source org.
 		await accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections'),
+			new URL('https://kody.test/@acme/-/agents'),
 			new AbortController().signal,
 		)
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/account/connected-agents.json',
 			expect.objectContaining({
-				referrer: 'https://kody.test/@acme/-/connections',
+				referrer: 'https://kody.test/@acme/-/agents',
 			}),
 		)
 	} finally {
@@ -736,7 +357,7 @@ test('the connections loader binds usage to the destination org, skips it on Add
 	vi.useFakeTimers()
 	try {
 		const listLoad = accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections'),
+			new URL('https://kody.test/@acme/-/agents'),
 			new AbortController().signal,
 		)
 		await vi.advanceTimersByTimeAsync(1500)
@@ -744,13 +365,13 @@ test('the connections loader binds usage to the destination org, skips it on Add
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/account/connection-usage.json',
 			expect.objectContaining({
-				referrer: 'https://kody.test/@acme/-/connections',
+				referrer: 'https://kody.test/@acme/-/agents',
 			}),
 		)
 
 		fetchMock.mockClear()
 		await accountConnectionsRouteLoader(
-			new URL('https://kody.test/@acme/-/connections/new'),
+			new URL('https://kody.test/@acme/-/agents/new'),
 			new AbortController().signal,
 		)
 		expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([

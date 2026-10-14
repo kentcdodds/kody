@@ -21,11 +21,14 @@ const packageDetail: AccountPackageDetail = {
 	isPrivate: false,
 	isInternetVisible: false,
 	hasCommunityListing: false,
+	listingNeedsRepublish: false,
 	listingAhead: null,
 	forkAhead: null,
 	searchText: null,
 	exports: null,
 	publishedCommit: null,
+	pendingCommit: null,
+	pendingCommitKnown: true,
 	communityFork: null,
 }
 

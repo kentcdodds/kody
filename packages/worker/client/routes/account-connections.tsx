@@ -1,5 +1,5 @@
 import { type Handle, css } from 'remix/component'
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -56,12 +56,10 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 const connectYourAgentDocHref = docHref('connect-your-agent')
 
 async function fetchConnectedAgents(href: string, signal: AbortSignal) {
-	const response = await fetch(connectedAgentsApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(href),
-		signal,
-	})
+	const response = await fetch(
+		connectedAgentsApiPath,
+		orgAccountApiFetchInit(href, signal),
+	)
 	if (response.status === 401) return { kind: 'unauthorized' as const }
 	const payload = await readJson<AccountConnectedAgentsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
@@ -91,7 +89,7 @@ export async function accountConnectionsRouteLoader(
 
 /**
  * Usage is a secondary panel. The loader waits for it only briefly so a slow
- * usage request never holds the Connections navigation; after a miss or a
+ * usage request never holds the Agents navigation; after a miss or a
  * failure the route data fallback fetches it once the page commits.
  */
 const loaderUsageBudgetMs = 1500
@@ -138,7 +136,7 @@ function connectionsLatchKey(href: string) {
 	const slug = orgSlugFromOrgOwnedPath(
 		new URL(href, 'http://localhost').pathname,
 	)
-	return slug ? `/@${slug}/-/connections` : '/account/connections'
+	return slug ? `/@${slug}/-/agents` : '/account/agents'
 }
 
 function readView(href: string): AccountConnectionsView | null {
@@ -148,8 +146,8 @@ function readView(href: string): AccountConnectionsView | null {
 }
 
 /**
- * `/account/connections` — the durable home for inbound MCP hosts. The
- * connected list is the same panel Overview used to host. Add connection
+ * `/@slug/-/agents` — the durable home for inbound MCP hosts. The
+ * connected list is the same panel Overview used to host. Connect an agent
  * is its own page (`/new`): the full client wall from onboarding Step 1
  * with no phone/desktop split and nothing folded under Not listed, not a
  * nested child of the list. `/new/:agent` shows that host's install
@@ -230,14 +228,14 @@ export function AccountConnectionsRoute(handle: Handle) {
 		return (
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
-					title="Connections"
+					title="Agents"
 					description="The agents connected to this Kody account, and how to connect another."
 					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading connections…
+						Loading agents…
 					</p>
 				) : null}
 				{message ? (
@@ -269,7 +267,7 @@ function renderBackToConnections(pathname: string) {
 			data-testid="account-connections-back"
 			mix={css(backLinkCss)}
 		>
-			← back to connections
+			← back to agents
 		</a>
 	)
 }
@@ -303,7 +301,7 @@ function renderReadyView(input: {
 								data-testid="account-connections-add"
 								mix={css(primaryButtonCss)}
 							>
-								Add connection
+								Connect an agent
 							</a>
 						),
 					})}
@@ -392,7 +390,7 @@ function renderMcpUrlPanel(input: { mcpServerUrl: string }) {
 	return (
 		<AccountManagementPanel
 			title="MCP URL"
-			description="Every host reaches the same account through one MCP URL. Add connection walks through a specific agent; any other agent that speaks MCP can paste this URL and approve the Kody OAuth window."
+			description="Every host reaches the same account through one MCP URL. Connect an agent walks through a specific one; any other agent that speaks MCP can paste this URL and approve the Kody OAuth window."
 			ariaLabel="MCP URL"
 		>
 			{input.mcpServerUrl ? (
@@ -424,9 +422,9 @@ function renderAgentGrid(input: {
 	)
 	return (
 		<AccountManagementPanel
-			title="Add connection"
+			title="Connect an agent"
 			description="Pick the agent you want to connect — including ones already connected, when you need the steps again for a second login, new machine, or reinstall. Every agent Kody knows how to connect is listed here, on every device; the next step shows that host's install path."
-			ariaLabel="Add connection"
+			ariaLabel="Connect an agent"
 		>
 			{input.mcpServerUrl ? (
 				<div
@@ -477,7 +475,7 @@ function renderAgentInstructions(input: {
 	return (
 		<AccountManagementPanel
 			title={`Connect ${label}`}
-			description="Follow the steps for this host, then approve the Kody OAuth window when it opens. The new connection appears on the connections list once the host authorizes."
+			description="Follow the steps for this host, then approve the Kody OAuth window when it opens. The new connection appears on the Agents list once the host authorizes."
 			ariaLabel={`Connect ${label}`}
 		>
 			<div mix={css(accountActionsCss)}>

@@ -20,6 +20,7 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
 	ensureR2BucketLifecycle,
+	isCloudflareQueueAlreadyGoneError,
 	isPermanentCloudflareAuthFailure,
 	isR2BucketAlreadyExistsOutput,
 	isR2BucketNotEmptyOutput,
@@ -142,6 +143,11 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		[isWranglerNotFoundOutput, 'Worker not found', true],
 		[isWranglerNotFoundOutput, 'No such script exists', true],
 		[isWranglerNotFoundOutput, 'The requested resource does not exist', true],
+		[
+			isWranglerNotFoundOutput,
+			"Couldn't find a D1 DB with name or binding 'kody-pr-3694-db' in your config or the API.",
+			true,
+		],
 		[isWranglerNotFoundOutput, 'Authentication error [code: 10000]', false],
 		[
 			isR2BucketAlreadyExistsOutput,
@@ -183,6 +189,43 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 			'Authentication error [code: 10000]',
 			true,
 		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			false,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Authentication error',
+			true,
+		],
+		// 401/403 win over "Internal authentication error" wording so a real
+		// unauthorized response is never retried with the same token.
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			true,
+		],
+		[
+			isPermanentCloudflareAuthFailure,
+			'Cloudflare API request failed (401): Internal authentication error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'✘ [ERROR] Internal authentication error: internal server error',
+			true,
+		],
+		[
+			isRetryableCloudflareFailure,
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
+		],
 	]
 	expect(cases.filter(([fn, value, want]) => fn(value) !== want)).toEqual([])
 
@@ -199,6 +242,14 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		['Cloudflare API request failed (429): Rate limited', true],
 		['Cloudflare API request failed (403): Authentication error', false],
 		['Cloudflare API request failed (401): unauthorized', false],
+		[
+			'Cloudflare API request failed (500): Internal authentication error: internal server error',
+			true,
+		],
+		[
+			'Cloudflare API request failed (403): Internal authentication error',
+			false,
+		],
 	]
 	expect(
 		apiErrors.filter(
@@ -733,6 +784,31 @@ test('deleteCloudflareQueue deletes immediately, retries binding release, then g
 	).rejects.toThrow('still referenced by a binding in a Worker')
 	// One list call plus five delete attempts.
 	expect(stuckFetcher).toHaveBeenCalledTimes(6)
+
+	const goneAfterList = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		deleteCloudflareQueue({
+			...creds,
+			name: previewQueue,
+			fetcher: goneAfterList,
+		}),
+	).resolves.toBeUndefined()
+	expect(goneAfterList).toHaveBeenCalledTimes(2)
 })
 
 test('removeCloudflareQueueConsumers deregisters consumers and no-ops when none exist', async () => {
@@ -770,6 +846,123 @@ test('removeCloudflareQueueConsumers deregisters consumers and no-ops when none 
 	expect(emptyConsumersFetcher).toHaveBeenCalledTimes(2)
 })
 
+test('removeCloudflareQueueConsumers treats a 404 after name resolution as already deleted (#3693)', async () => {
+	consoleError.mockImplementation(() => {})
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error(
+				"Cloudflare API request failed (404): Queue 'fc60be3040614f35a7e833befee8804c' not found. Please verify it exists and try again.",
+			),
+		),
+	).toBe(true)
+	// cloudflareApiRequest falls back to the pathname when errors[] has no
+	// message — still a gone queue, must not fail cleanup.
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error(
+				'Cloudflare API request failed (404): /queues/queue-preview/consumers',
+			),
+		),
+	).toBe(true)
+	expect(
+		isCloudflareQueueAlreadyGoneError(
+			new Error('Cloudflare API request failed (500): internal server error'),
+		),
+	).toBe(false)
+
+	const queueGoneOnListConsumers = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: queueGoneOnListConsumers,
+		}),
+	).resolves.toBeUndefined()
+	expect(queueGoneOnListConsumers).toHaveBeenCalledTimes(2)
+
+	const queueGoneOnDeleteConsumer = mockFetch(
+		listedPreviewQueue(),
+		ok([{ consumer_id: 'consumer-1', script: 'kody-pr-123', type: 'worker' }]),
+		Response.json(
+			{
+				success: false,
+				errors: [
+					{
+						code: 10000,
+						message:
+							"Queue 'queue-preview' not found. Please verify it exists and try again.",
+					},
+				],
+			},
+			{ status: 404 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: queueGoneOnDeleteConsumer,
+		}),
+	).resolves.toBeUndefined()
+	expect(queueGoneOnDeleteConsumer).toHaveBeenCalledTimes(3)
+
+	const non404Fetcher = mockFetch(
+		listedPreviewQueue(),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Rate limited' }],
+			},
+			{ status: 429 },
+		),
+	)
+	await expect(
+		removeCloudflareQueueConsumers({
+			...creds,
+			name: previewQueue,
+			fetcher: non404Fetcher,
+			sleep: async () => {},
+			maxAttempts: 4,
+		}),
+	).rejects.toThrow(/429/)
+})
+
 test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not 403', async () => {
 	consoleError.mockImplementation(() => {})
 	type Request = Pick<
@@ -800,6 +993,24 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 			),
 			create,
 		],
+		[
+			// Cloudflare platform blip seen on preview-sweep listings: HTTP 500
+			// with "Internal authentication error". Must retry, not treat as a
+			// permanent bad-token failure (which would skip backoff entirely).
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+			{ pathname: '/workers/scripts' },
+		],
 	]
 	for (const [firstResponse, request] of retried) {
 		const result = { queue_id: 'queue-1', queue_name: 'kody-email-delivery' }
@@ -815,25 +1026,60 @@ test('Cloudflare API requests retry gateway blips, null bodies, and 429s but not
 		expect(fetcher).toHaveBeenCalledTimes(2)
 	}
 
-	const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
-		Response.json(
-			{
-				success: false,
-				errors: [{ code: 10000, message: 'Authentication error' }],
-			},
-			{ status: 403 },
-		),
-	)
+	for (const authMessage of [
+		'Authentication error',
+		'Internal authentication error',
+	]) {
+		const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
+			Response.json(
+				{
+					success: false,
+					errors: [{ code: 10000, message: authMessage }],
+				},
+				{ status: 403 },
+			),
+		)
+		await expect(
+			cloudflareApiRequest({
+				accountId: 'account-1',
+				apiToken: 'token-1',
+				pathname: '/queues?page=1&per_page=100',
+				fetcher: forbidden,
+				sleep: async () => {},
+			}),
+		).rejects.toThrow(`Cloudflare API request failed (403): ${authMessage}`)
+		expect(forbidden).toHaveBeenCalledTimes(1)
+	}
+
+	const persistentInternalAuth = vi
+		.fn<typeof fetch>()
+		.mockImplementation(async () =>
+			Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 10000,
+							message: 'Internal authentication error: internal server error',
+						},
+					],
+				},
+				{ status: 500 },
+			),
+		)
 	await expect(
 		cloudflareApiRequest({
 			accountId: 'account-1',
 			apiToken: 'token-1',
-			pathname: '/queues?page=1&per_page=100',
-			fetcher: forbidden,
+			pathname: '/workers/scripts',
+			fetcher: persistentInternalAuth,
 			sleep: async () => {},
+			maxAttempts: 3,
 		}),
-	).rejects.toThrow('Cloudflare API request failed (403): Authentication error')
-	expect(forbidden).toHaveBeenCalledTimes(1)
+	).rejects.toThrow(
+		'Cloudflare API request failed (500): Internal authentication error: internal server error',
+	)
+	expect(persistentInternalAuth).toHaveBeenCalledTimes(3)
 })
 
 test('emptyR2Bucket deletes nested keys with literal slashes', async () => {
@@ -882,6 +1128,8 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		ok(aaaa('dns-apex', 'kodyapps.dev')),
 		ok([]),
 		ok(aaaa('dns-wildcard', '*.kodyapps.dev')),
+		ok([]),
+		ok(aaaa('dns-domains', 'domains.kodyapps.dev')),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: createFetcher })
 
@@ -906,15 +1154,18 @@ test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuse
 		[records, createRecord('kodyapps.dev')],
 		[`${records}?name=${encodeURIComponent('*.kodyapps.dev')}`, get],
 		[records, createRecord('*.kodyapps.dev')],
+		[`${records}?name=domains.kodyapps.dev`, get],
+		[records, createRecord('domains.kodyapps.dev')],
 	])
 
 	const reuseFetcher = mockFetch(
 		kodyappsZone(),
 		ok([aaaa('dns-existing-apex', 'kodyapps.dev')]),
 		ok([aaaa('dns-existing', '*.kodyapps.dev')]),
+		ok([aaaa('dns-existing-domains', 'domains.kodyapps.dev')]),
 	)
 	await ensurePackageAppDnsRecords({ ...dnsArgs, fetcher: reuseFetcher })
-	expect(reuseFetcher).toHaveBeenCalledTimes(3)
+	expect(reuseFetcher).toHaveBeenCalledTimes(4)
 })
 
 test('ensurePackageAppDnsRecords fails closed on conflicting DNS records', async () => {

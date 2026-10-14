@@ -1,4 +1,4 @@
-import { orgAccountApiReferrer } from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -32,6 +32,7 @@ import {
 	type McpServerUsageDraft,
 	type MessageTone,
 	filterServers,
+	readAddServerPrefill,
 	readOAuthResultFromHref,
 	readSearchFilter,
 	renderNamedServer,
@@ -72,12 +73,10 @@ export async function accountMcpServersRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(accountMcpServersApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		referrer: orgAccountApiReferrer(url.href),
-		signal,
-	})
+	const response = await fetch(
+		accountMcpServersApiPath,
+		orgAccountApiFetchInit(url.href, signal),
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -100,6 +99,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let addName = ''
 	let addUrl = ''
 	let addBearerToken = ''
+	/**
+	 * The link prefill (`name` and `url`) last applied to the add-server form.
+	 * Keyed on those values, not the href, so a search (`q`) keeps typing.
+	 */
+	let prefilledKey: string | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	/** Payload last applied to the closure state above. */
@@ -110,12 +114,10 @@ export function AccountMcpServersRoute(handle: Handle) {
 		key: 'accountMcpServers',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(accountMcpServersApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				referrer: orgAccountApiReferrer(href),
-				signal,
-			})
+			const response = await fetch(
+				accountMcpServersApiPath,
+				orgAccountApiFetchInit(href, signal),
+			)
 			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountMcpServersPayload>(response)
 			if (!response.ok || !payload?.ok) {
@@ -319,6 +321,17 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = mcpServersRoute.getSelection(currentHref)
+		if (selection.isCreating) {
+			const prefill = readAddServerPrefill(currentHref)
+			const prefillKey = `${prefill.name}\n${prefill.url}`
+			if (prefilledKey !== prefillKey) {
+				prefilledKey = prefillKey
+				addName = prefill.name
+				addUrl = prefill.url
+			}
+		} else {
+			prefilledKey = null
+		}
 		const search = readSearchFilter(currentHref)
 		const filteredServers = filterServers(servers, search)
 		const server =

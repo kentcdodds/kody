@@ -133,7 +133,7 @@ export type CredentialReference = {
 
 export type CredentialSlotDeclaration = {
 	name: string
-	kind: PackageCredentialKind
+	kind?: PackageCredentialKind
 	provider: string
 }
 
@@ -145,6 +145,11 @@ export type PackageCredentialScan = {
 	vaultPlacements: Array<CredentialPlacement>
 	/** `secretJwtSign` calls: signatures made with a saved secret by name. */
 	jwtSignCalls: number
+	/**
+	 * Secret names passed as `private_key_secret_name` (or aliases) to
+	 * `secretJwtSign`. Used so hints can skip names already declared as slots.
+	 */
+	jwtSignSecretNames: Array<string>
 	slots: Array<CredentialSlotDeclaration>
 	/** Modules that did not parse and were read as plain text. */
 	unparsedModules: number
@@ -258,9 +263,10 @@ export function scanPackageCredentials(input: {
 		references: [],
 		vaultPlacements: [],
 		jwtSignCalls: 0,
+		jwtSignSecretNames: [],
 		slots: Object.entries(input.slots ?? {}).map(([name, slot]) => ({
 			name,
-			kind: slot.kind,
+			...(slot.kind ? { kind: slot.kind } : {}),
 			provider: slot.provider ?? name,
 		})),
 		unparsedModules: 0,
@@ -661,7 +667,11 @@ function scanParsedModule(
 			node.type === 'CallExpression' ||
 			node.type === 'OptionalCallExpression'
 		) {
-			if (getCalleeName(node.callee) === 'secretJwtSign') scan.jwtSignCalls += 1
+			if (getCalleeName(node.callee) === 'secretJwtSign') {
+				scan.jwtSignCalls += 1
+				const name = secretJwtSignSecretName(node)
+				if (name) scan.jwtSignSecretNames.push(name)
+			}
 			return
 		}
 		const placementFor = (text: string) => (match: PlaceholderMatch) =>
@@ -758,6 +768,29 @@ function parentOf(ancestors: ReadonlyArray<AstNode>, from = ancestors.length) {
 function propertyKey(node: AstNode) {
 	if (node.type !== 'ObjectProperty' || node.computed === true) return null
 	return getNodeName(node.key)
+}
+
+/** `private_key_secret_name` (or `secret_name`) string from a secretJwtSign call. */
+function secretJwtSignSecretName(call: AstNode): string | null {
+	if (
+		call.type !== 'CallExpression' &&
+		call.type !== 'OptionalCallExpression'
+	) {
+		return null
+	}
+	const [first] = call.arguments ?? []
+	if (first?.type !== 'ObjectExpression') return null
+	for (const property of first.properties ?? []) {
+		const key = propertyKey(property)
+		if (key !== 'private_key_secret_name' && key !== 'secret_name') continue
+		if (property.type !== 'ObjectProperty') continue
+		const value = property.value as AstNode | undefined
+		if (value?.type === 'StringLiteral') {
+			const name = getNodeName(value)?.trim()
+			return name && name.length > 0 ? name : null
+		}
+	}
+	return null
 }
 
 function safeIdentifier(value: string | null) {

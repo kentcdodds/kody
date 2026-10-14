@@ -47,7 +47,16 @@ export function isAllowedRequestHost(input: {
 	}
 
 	if (input.allowedHealthPath && url.pathname === input.allowedHealthPath) {
-		return true
+		const hostname = requestHostname(url)
+		// Deploy probes hit `*.workers.dev`; product hosts use their real
+		// origins. Do not expose health on arbitrary customer custom hostnames.
+		if (hostname.endsWith('.workers.dev')) return true
+		if (hostname === configuredAppHostname(input.env)) return true
+		if (parseLegacyHosts(input.env.APP_LEGACY_HOSTS).includes(hostname)) {
+			return true
+		}
+		if (parsePackageAppRequestHost({ env: input.env, url })) return true
+		return false
 	}
 
 	const hostname = requestHostname(url)

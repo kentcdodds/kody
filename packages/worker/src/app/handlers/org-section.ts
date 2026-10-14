@@ -17,6 +17,7 @@ import {
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createAccountActivityHandler } from '#app/handlers/account-activity.ts'
 import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
+import { createAccountCredentialsHandler } from '#app/handlers/account-credentials.ts'
 import { createAccountEmailHandler } from '#app/handlers/account-email.ts'
 import { createAccountIntegrationsHandler } from '#app/handlers/account-integrations.ts'
 import { createAccountJobsHandler } from '#app/handlers/account-jobs.ts'
@@ -53,8 +54,10 @@ function sectionHandler(
 	switch (section) {
 		case 'activity':
 			return createAccountActivityHandler(env)
-		case 'connections':
+		case 'agents':
 			return createAccountConnectionsHandler(env)
+		case 'credentials':
+			return createAccountCredentialsHandler(env)
 		case 'email':
 			return createAccountEmailHandler(env)
 		case 'integrations':
@@ -105,7 +108,7 @@ function sectionParams(
 			return first ? { messageId: first } : {}
 		case 'values':
 			return first && first !== 'new' ? { valueId: first } : {}
-		case 'connections':
+		case 'agents':
 			return first === 'new' && parts[1] ? { agent: parts[1] } : {}
 		case 'integrations':
 			if (first === 'apps' && parts[1]) return { appSlug: parts[1] }
@@ -118,6 +121,8 @@ function sectionParams(
 				return { serverId: first }
 			}
 			return {}
+		case 'credentials':
+			return first ? { credentialId: first } : {}
 		case 'repositories':
 		case 'secret-providers':
 		case 'secrets':
@@ -201,6 +206,20 @@ export function createOrgSectionHandler(
 			})
 		},
 	}
+}
+
+/** `/@slug/-/credentials/new`: the Credentials section's creation one-pager. */
+export function createOrgCredentialNewHandler(env: Env) {
+	const credentials = createOrgSectionHandler(env, 'credentials')
+	return {
+		middleware: [],
+		handler(ctx: { request: Request; params: { orgSlug: string } }) {
+			return credentials.handler({
+				request: ctx.request,
+				params: { orgSlug: ctx.params.orgSlug, rest: 'new' },
+			})
+		},
+	} satisfies Action<typeof routes.orgCredentialNew>
 }
 
 async function renderTeamRepositoriesPage(input: {

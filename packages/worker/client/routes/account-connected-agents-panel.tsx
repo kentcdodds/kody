@@ -153,7 +153,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 		listAgents() {
 			return agents
 		},
-		/** `actions` renders under the list (the Connections list page puts Add connection there). */
+		/** `actions` renders under the list (the Agents list page puts Connect an agent there). */
 		render(options?: { actions?: RemixNode; pathname?: string }) {
 			const groups = groupConnectedAgents(agents)
 			return (

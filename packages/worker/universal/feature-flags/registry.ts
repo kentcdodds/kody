@@ -115,7 +115,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Named connection profiles on /account/connections: package grant allowlists (read/execute) for MCP ?profile= URLs and profile-bound API tokens. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
+			'Named connection profiles on the Agents page (/@slug/-/agents): package grant allowlists (read/execute) for MCP ?profile= URLs and profile-bound API tokens. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',
@@ -153,6 +153,20 @@ export const featureFlagDefinitions = [
 				'Experimenters whose MCP clients subscribe to package events run more event-driven execute calls than comparable flag-off users.',
 		},
 	},
+	{
+		key: 'package-app-custom-domains',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Serve package apps on customer custom hostnames (Cloudflare for SaaS on the package-app zone). Off by default; enable with audience experiments_opt_in so only opted-in users can manage domains. Anonymous serve still uses the global on switch once a hostname is verified. Delete the flag when custom domains ship.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Users with a working custom-hostname package app keep executing against that package more than comparable flag-off users.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -170,6 +184,9 @@ export const mcpSkillsExtensionFlagKey =
 
 export const mcpEventsExtensionFlagKey =
 	'mcp-events-extension' satisfies FeatureFlagKey
+
+export const packageAppCustomDomainsFlagKey =
+	'package-app-custom-domains' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

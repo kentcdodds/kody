@@ -98,6 +98,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 			listingId: 'listing-1',
 			selectedPath: '',
 			ref,
+			packagePath: { username: 'kentcdodds', kodyId: 'devin' },
 		})
 	}
 	expect(mockModule.resolveArtifactSourceHead).not.toHaveBeenCalled()

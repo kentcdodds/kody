@@ -16,6 +16,7 @@ export const routes = route({
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	connectCredential: '/connect/credential',
+	accountCredentials: '/account/credentials',
 	connectSecrets: '/connect/secrets',
 	connectSecretSet: '/connect/secret-set',
 	connectWebhookApply: '/connect/webhook-apply',
@@ -67,6 +68,9 @@ export const routes = route({
 	accountActivityApi: '/account/activity.json',
 	accountWaitingApi: '/account/waiting.json',
 	accountWaitingClickPost: post('/account/waiting/click.json'),
+	// Prefetch-adopt cookie write for org SPA navigations (#3517). Not a
+	// section twin; keep distinct so navigation e2e does not see a refetch.
+	accountLastUsedOrgApi: '/account/last-used-org.json',
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),
@@ -76,7 +80,7 @@ export const routes = route({
 	accountMemoriesApi: '/account/memories.json',
 	accountMemoriesApiPost: post('/account/memories.json'),
 	accountEmailApi: '/account/email.json',
-	// The Connections page (`/@:orgSlug/-/connections`) is the home for inbound
+	// The Agents page (`/@:orgSlug/-/agents`) is the home for inbound
 	// MCP hosts. Its data twin is `/account/connected-agents.json`.
 	// `/account/connections.json` is the older sign-in provider (GitHub,
 	// Google, and the rest) list on the Overview page.
@@ -84,7 +88,7 @@ export const routes = route({
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',
 	accountConnectedAgentsApiPost: post('/account/connected-agents.json'),
-	// Per-connection usage for the Connections page (same org binding).
+	// Per-connection usage for the Agents page (same org binding).
 	accountConnectionUsageApi: '/account/connection-usage.json',
 	accountPasskeys: '/account/passkeys',
 	accountPasskeysApi: '/account/passkeys.json',
@@ -101,7 +105,8 @@ export const routes = route({
 	accountBillingCancellationFeedbackPost: post(
 		'/account/billing/cancellation-feedback.json',
 	),
-	// Old `/account/credits` links open the usage page's Credits section.
+	// Old `/account/credits` and `/account/usage` links redirect to the
+	// signed-in person's personal-org usage page (and its Credits section).
 	accountCredits: '/account/credits',
 	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
 	accountCreditsSettingsPost: post('/account/credits/settings.json'),
@@ -207,12 +212,17 @@ export const routes = route({
 	// `repositories` and `webhooks` are index-only so package apps and ingress
 	// (`/@owner/packages/…`, `/@owner/webhooks/…`) stay put.
 	orgActivity: get('/@:orgSlug/-/activity(/*rest)'),
+	orgAgents: get('/@:orgSlug/-/agents(/*rest)'),
 	orgBilling: get('/@:orgSlug/-/billing'),
 	orgBillingApi: get('/@:orgSlug/-/billing.json'),
 	orgBillingCheckoutPost: post('/@:orgSlug/-/billing/checkout.json'),
 	orgBillingSuccess: get('/@:orgSlug/-/billing/success'),
 	orgBillingPortal: get('/@:orgSlug/-/billing/portal'),
-	orgConnections: get('/@:orgSlug/-/connections(/*rest)'),
+	orgCredentials: get('/@:orgSlug/-/credentials(/*rest)'),
+	// The credential creation one-pager for this org.
+	orgCredentialNew: get('/@:orgSlug/-/credentials/new'),
+	orgUsage: get('/@:orgSlug/-/usage'),
+	orgUsageApi: get('/@:orgSlug/-/usage.json'),
 	orgEmail: get('/@:orgSlug/-/email(/*rest)'),
 	orgIntegrations: get('/@:orgSlug/-/integrations(/*rest)'),
 	orgJobs: get('/@:orgSlug/-/jobs(/*rest)'),
@@ -230,6 +240,8 @@ export const routes = route({
 	// Previous spelling of the repository list. 301 to `/repositories`.
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),
+	// Previous name of the Agents page. 301 to `/agents` (rest and query kept).
+	orgConnections: get('/@:orgSlug/-/connections(/*rest)'),
 	orgSecretProviders: get('/@:orgSlug/-/secret-providers(/*rest)'),
 	orgSecrets: get('/@:orgSlug/-/secrets(/*rest)'),
 	orgValues: get('/@:orgSlug/-/values(/*rest)'),
@@ -242,6 +254,9 @@ export const routes = route({
 	orgSettingsPost: post('/@:orgSlug/-/settings.json'),
 	orgSettingsAvatarPost: post('/@:orgSlug/-/settings/avatar.json'),
 	orgSettingsDeletePost: post('/@:orgSlug/-/settings/delete.json'),
+	orgSettingsCustomHostnamesPost: post(
+		'/@:orgSlug/-/settings/custom-hostnames.json',
+	),
 	orgMembers: get('/@:orgSlug/-/members'),
 	orgMembersApi: get('/@:orgSlug/-/members.json'),
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
@@ -280,6 +295,14 @@ export const routes = route({
 	// public). Third-segment noun so it cannot collide with a kodyId.
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
+	// Package Credentials / Default mappings / Triggers tabs (people with
+	// package:execute); data comes from communityPackageCredentialsApi.
+	communityPackageCredentials: '/@:username/:kodyId/credentials',
+	communityPackageMappings: '/@:username/:kodyId/mappings',
+	communityPackageTriggers: '/@:username/:kodyId/triggers',
+	// Bundled credential mapping approval; the query is the proposal
+	// (buildCredentialApprovalHref). Data: communityPackageApproveCredentialsApi.
+	communityPackageApproveCredentials: '/@:username/:kodyId/approve-credentials',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	communityPackageApproveCapabilities:
 		'/@:username/:kodyId/approve-capabilities',

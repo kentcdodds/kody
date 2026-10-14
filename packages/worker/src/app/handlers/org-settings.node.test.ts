@@ -82,7 +82,10 @@ async function seed() {
 	sqlite = new DatabaseSync(':memory:')
 	db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
-	await ensureUsersTestSchema({ db, columns: ['avatar_key'] })
+	await ensureUsersTestSchema({
+		db,
+		columns: ['avatar_key', 'experiments_opt_in'],
+	})
 	const now = '2026-01-01T00:00:00.000Z'
 	for (const [username, person] of Object.entries(people)) {
 		sqlite

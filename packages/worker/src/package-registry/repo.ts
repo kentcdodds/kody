@@ -14,6 +14,7 @@ import {
 	getPackageNameScope,
 	isScopedPackageName,
 } from './package-name.ts'
+import { clearCachedPackageAppCustomHostnames } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	kodyPackageIdPattern,
@@ -153,22 +154,32 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
  * `users.first_saved_package_at` for the actor (or the owning user when no
  * actor is passed). Callers that stamp before a projection refresh must Kit
  * sync when this returns true — refresh sees an existing row and will not.
+ *
+ * `kody_id` is always the leaf of `name` (#1909 phase 2). Callers must not
+ * invent a second id; an optional leftover `kody_id` field is ignored.
  */
 export async function insertSavedPackage(
 	db: D1Database,
 	row: Omit<
 		SavedPackageRow,
-		'created_at' | 'updated_at' | 'locked_at' | 'is_internet_visible'
+		| 'created_at'
+		| 'updated_at'
+		| 'locked_at'
+		| 'is_internet_visible'
+		| 'kody_id'
 	> & {
 		created_at?: string
 		updated_at?: string
 		/** Defaults to 0 (private app serving). */
 		is_internet_visible?: 0 | 1
+		/** @deprecated Ignored; derived from `name` leaf (#1909 phase 2). */
+		kody_id?: string
 	},
 	telemetry?: OnboardingFunnelEnv | null,
 	options?: { stamp?: boolean; actorUserId?: PersonId },
 ): Promise<boolean> {
 	const now = new Date().toISOString()
+	const kodyId = getPackageNameLeaf(row.name)
 	await db
 		.prepare(
 			`INSERT INTO saved_packages (
@@ -181,7 +192,7 @@ export async function insertSavedPackage(
 			row.id,
 			row.user_id,
 			row.name,
-			row.kody_id,
+			kodyId,
 			row.description,
 			row.tags_json,
 			row.search_text ?? null,
@@ -206,13 +217,26 @@ export async function insertSavedPackage(
 	)
 }
 
+/**
+ * Next `updated_at` that is strictly after `previous` (ISO). Same-ms clears
+ * still advance so a concurrent CAS writer cannot reuse a stale stamp.
+ */
+export function nextSavedPackageUpdatedAt(
+	previous: string | null | undefined,
+): string {
+	const now = new Date().toISOString()
+	if (!previous || now > previous) return now
+	const bumpedMs = Date.parse(previous) + 1
+	if (Number.isNaN(bumpedMs)) return now
+	return new Date(bumpedMs).toISOString()
+}
+
 export async function updateSavedPackage(
 	db: D1Database,
 	input: {
 		userId: string
 		packageId: string
 		name?: string
-		kodyId?: string
 		description?: string
 		tagsJson?: string
 		searchText?: string | null
@@ -222,6 +246,13 @@ export async function updateSavedPackage(
 		hidden?: boolean
 		isPrivate?: boolean
 		isInternetVisible?: boolean
+		/** Override the stamp written to `updated_at` (defaults to now). */
+		updatedAt?: string
+		/**
+		 * When set, the update only applies if `updated_at` still matches.
+		 * Used so a concurrent clearer cannot be overwritten by a stale writer.
+		 */
+		expectedUpdatedAt?: string
 	},
 ) {
 	const assignments: Array<string> = []
@@ -234,9 +265,8 @@ export async function updateSavedPackage(
 
 	if (input.name !== undefined) {
 		addAssignment('name', input.name)
-	}
-	if (input.kodyId !== undefined) {
-		addAssignment('kody_id', input.kodyId)
+		// Keep the leftover column in lockstep with the name leaf until phase 4.
+		addAssignment('kody_id', getPackageNameLeaf(input.name))
 	}
 	if (input.description !== undefined) {
 		addAssignment('description', input.description)
@@ -266,18 +296,32 @@ export async function updateSavedPackage(
 		addAssignment('is_internet_visible', input.isInternetVisible ? 1 : 0)
 	}
 
-	addAssignment('updated_at', new Date().toISOString())
+	addAssignment('updated_at', input.updatedAt ?? new Date().toISOString())
+
+	const expectedUpdatedAtClause =
+		input.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?'
+	const bindValues =
+		input.expectedUpdatedAt === undefined
+			? [...values, input.packageId, input.userId]
+			: [...values, input.packageId, input.userId, input.expectedUpdatedAt]
 
 	const result = await db
 		.prepare(
 			`UPDATE saved_packages
 			SET ${assignments.join(', ')}
-			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}${expectedUpdatedAtClause}`,
 		)
-		.bind(...values, input.packageId, input.userId)
+		.bind(...bindValues)
 		.run()
 
-	return (result.meta.changes ?? 0) > 0
+	const changed = (result.meta.changes ?? 0) > 0
+	// App-level custom hostname cache embeds the package name leaf (kodyId).
+	// A rename must drop cached Host mappings in this isolate or handoff
+	// rejects the new slug for up to the cache TTL.
+	if (changed && input.name !== undefined) {
+		clearCachedPackageAppCustomHostnames(db)
+	}
+	return changed
 }
 
 export async function getSavedPackageLockedAt(
@@ -560,6 +604,25 @@ export async function getSavedPackageByName(
 			WHERE name = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.name, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageRow(row) : null
+}
+
+/** The live saved package published from entity source `sourceId`. */
+export async function getSavedPackageBySourceId(
+	db: D1Database,
+	input: {
+		userId: string
+		sourceId: string
+	},
+): Promise<SavedPackageRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageSelectColumns}
+			FROM saved_packages
+			WHERE source_id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.sourceId, input.userId)
 		.first<Record<string, unknown>>()
 	return row ? mapSavedPackageRow(row) : null
 }

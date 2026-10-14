@@ -13,6 +13,7 @@ import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
 import {
 	buildKodyFns,
 	createWorkflowTools,
+	credentialNeedsEntryPackageIds,
 	executeBundleTimeoutMs,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
@@ -976,4 +977,33 @@ test('runModuleWithRegistry begins a run before bundling and records a clear tim
 			}),
 		)
 	}
+})
+
+test('credential needs come from entry closures, never a pinned dependency', () => {
+	const dependencies = [
+		{ sourceId: 's1', publishedCommit: 'c1', kodyId: 'dep', packageId: 'dep' },
+		{
+			sourceId: 's2',
+			publishedCommit: 'c2',
+			kodyId: 'nested',
+			packageId: 'nested',
+			transitive: true as const,
+		},
+	]
+	const entries = (
+		packageId: string | null,
+		computedImportCalleePackageId: string | null = null,
+	) =>
+		credentialNeedsEntryPackageIds({
+			packageContext: packageId
+				? ({ packageId, kodyId: packageId } as never)
+				: null,
+			computedImportCalleePackageId,
+			dependencies,
+			dynamicDependencyPackageIds: ['dynamic'],
+		})
+	expect(entries(null)).toEqual(['dep', 'dynamic'])
+	expect(entries('own')).toEqual(['own', 'dynamic'])
+	expect(entries('own', 'callee')).toEqual(['own', 'callee', 'dynamic'])
+	expect(entries(null, 'callee')).toEqual(['callee', 'dynamic'])
 })

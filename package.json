@@ -68,6 +68,7 @@
     "overrides:check": "node tools/check-dependency-overrides.ts",
     "mermaid:check": "node tools/check-mermaid-syntax.ts",
     "file-size-ratchet:check": "node tools/check-file-size-ratchet.ts",
+    "error-agent-prompt:check": "node tools/check-error-agent-prompt.ts",
     "decorative-banners:check": "node tools/check-decorative-banners.ts",
     "slop-ratchet:check": "node tools/check-file-size-ratchet.ts && node tools/check-decorative-banners.ts",
     "knip": "knip",

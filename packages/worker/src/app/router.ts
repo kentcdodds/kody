@@ -1,4 +1,5 @@
 import { createRouter } from 'remix/router'
+import { withCredentialIndexRedirect } from '#app/handlers/credential-index-redirect.ts'
 import {
 	createAdminHandler,
 	createAdminUsersApiHandler,
@@ -61,6 +62,7 @@ import { createAccountActivityApiHandler } from '#app/handlers/account-activity.
 import { createAccountJobsApiHandler } from '#app/handlers/account-jobs.ts'
 import { createAccountWorkflowsApiHandler } from '#app/handlers/account-workflows.ts'
 import { createAccountWebhooksApiHandler } from '#app/handlers/account-webhooks.ts'
+import { createAccountCredentialsApiHandler } from '#app/handlers/account-credentials.ts'
 import {
 	createAccountMcpServersApiHandler,
 	createAccountMcpServersOauthCallbackHandler,
@@ -135,9 +137,14 @@ import {
 	createAccountUsageHandler,
 } from '#app/handlers/account-usage.ts'
 import {
+	createOrgUsageApiHandler,
+	createOrgUsageHandler,
+} from '#app/handlers/org-usage.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
+import { createAccountLastUsedOrgApiHandler } from '#app/handlers/account-last-used-org.ts'
 import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
@@ -147,7 +154,6 @@ import { createPackageCredentialsApiHandler } from '#app/handlers/package-creden
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
-import { createAccountCredentialsApiHandler } from '#app/handlers/account-credentials.ts'
 import { createAccountSecretsApiHandler } from '#app/handlers/account-secrets.ts'
 import { createAccountSecretProvidersApiHandler } from '#app/handlers/account-secret-providers.ts'
 import { createAccountValuesApiHandler } from '#app/handlers/account-values.ts'
@@ -161,7 +167,10 @@ import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import { createConnectSecretsHandler } from '#app/handlers/connect-secrets.ts'
 import { createConnectSecretSetHandler } from '#app/handlers/connect-secret-set.ts'
 import { createConnectWebhookApplyHandler } from '#app/handlers/connect-webhook-apply.ts'
-import { createConnectCredentialHandler } from '#app/handlers/connect-credential.ts'
+import {
+	createAccountCredentialsHandler,
+	createConnectCredentialHandler,
+} from '#app/handlers/connect-credential.ts'
 import { createAccountWebhooksApproveApplyApiHandler } from '#app/handlers/account-webhooks-approve-apply.ts'
 import {
 	createCommunityApiHandler,
@@ -174,6 +183,8 @@ import {
 	createCommunityPackageApiHandler,
 	createCommunityPackageHandler,
 	createCommunityPackageSettingsHandler,
+	createCommunityPackageCredentialsHandler,
+	createCommunityPackageCredentialApprovalHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
@@ -301,11 +312,13 @@ import {
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
+import { createLegacyOrgConnectionsRedirectHandler } from '#app/handlers/legacy-org-connections-redirect.ts'
 import {
 	createLegacyOrgPackagesApiRedirectHandler,
 	createLegacyOrgPackagesRedirectHandler,
 } from '#app/handlers/legacy-org-packages-redirect.ts'
 import {
+	createOrgCredentialNewHandler,
 	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
@@ -343,6 +356,7 @@ import { createOrgOverviewHandler } from '#app/handlers/org-overview.ts'
 import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
+	createOrgSettingsCustomHostnamesPostHandler,
 	createOrgSettingsDeletePostHandler,
 	createOrgSettingsHandler,
 	createOrgSettingsPostHandler,
@@ -522,13 +536,14 @@ export function createAppRouter(env: Env) {
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
 			accountBillingCancellationFeedbackPost:
 				createAccountBillingCancellationFeedbackApiHandler(env),
-			accountCredits: createAccountCreditsHandler(),
+			accountCredits: createAccountCreditsHandler(env),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountWaitingClickPost: createAccountWaitingClickHandler(env),
+			accountLastUsedOrgApi: createAccountLastUsedOrgApiHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
@@ -615,6 +630,20 @@ export function createAppRouter(env: Env) {
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageSettings: createCommunityPackageSettingsHandler(env),
+			communityPackageCredentials: createCommunityPackageCredentialsHandler(
+				env,
+				'credentials',
+			),
+			communityPackageMappings: createCommunityPackageCredentialsHandler(
+				env,
+				'mappings',
+			),
+			communityPackageTriggers: createCommunityPackageCredentialsHandler(
+				env,
+				'triggers',
+			),
+			communityPackageApproveCredentials:
+				createCommunityPackageCredentialApprovalHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageRaw: createCommunityPackageRawHandler(env),
@@ -632,16 +661,25 @@ export function createAppRouter(env: Env) {
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
 			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgAgents: createOrgSectionHandler(env, 'agents'),
 			orgBilling: createOrgBillingHandler(env),
 			orgBillingApi: createOrgBillingApiHandler(env),
 			orgBillingCheckoutPost: createOrgBillingCheckoutApiHandler(env),
 			orgBillingSuccess: createOrgBillingSuccessHandler(env),
 			orgBillingPortal: createOrgBillingPortalHandler(env),
-			orgConnections: createOrgSectionHandler(env, 'connections'),
+			orgUsage: createOrgUsageHandler(env),
+			orgUsageApi: createOrgUsageApiHandler(env),
+			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
+			orgCredentials: createOrgSectionHandler(env, 'credentials'),
+			orgCredentialNew: createOrgCredentialNewHandler(env),
 			orgEmail: createOrgSectionHandler(env, 'email'),
-			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
+			orgIntegrations: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'integrations'),
+			),
 			orgJobs: createOrgSectionHandler(env, 'jobs'),
-			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
+			orgMcpServers: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'mcp-servers'),
+			),
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
@@ -651,7 +689,9 @@ export function createAppRouter(env: Env) {
 			orgPackages: createLegacyOrgPackagesRedirectHandler(env),
 			orgPackagesApi: createLegacyOrgPackagesApiRedirectHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
-			orgSecrets: createOrgSectionHandler(env, 'secrets'),
+			orgSecrets: withCredentialIndexRedirect(
+				createOrgSectionHandler(env, 'secrets'),
+			),
 			orgValues: createOrgSectionHandler(env, 'values'),
 			orgWaiting: createOrgSectionHandler(env, 'waiting'),
 			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
@@ -661,6 +701,8 @@ export function createAppRouter(env: Env) {
 			orgSettingsPost: createOrgSettingsPostHandler(env),
 			orgSettingsAvatarPost: createOrgSettingsAvatarPostHandler(env),
 			orgSettingsDeletePost: createOrgSettingsDeletePostHandler(env),
+			orgSettingsCustomHostnamesPost:
+				createOrgSettingsCustomHostnamesPostHandler(env),
 			orgMembers: createOrgMembersHandler(env),
 			orgMembersApi: createOrgMembersApiHandler(env),
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),
@@ -690,8 +732,11 @@ export function createAppRouter(env: Env) {
 			stripeWebhook: createStripeWebhookHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			connectSecrets: createConnectSecretsHandler(env),
-			connectSecretSet: createConnectSecretSetHandler(env),
+			connectSecretSet: withCredentialIndexRedirect(
+				createConnectSecretSetHandler(env),
+			),
 			connectCredential: createConnectCredentialHandler(env),
+			accountCredentials: createAccountCredentialsHandler(env),
 			connectWebhookApply: createConnectWebhookApplyHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),

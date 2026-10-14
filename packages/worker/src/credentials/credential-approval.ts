@@ -8,13 +8,14 @@
  * for this viewer, so a rename, a replaced credential, or a mapping edited
  * since review fails Approve.
  */
-import { isMcpCallerError } from '#mcp/caller-error.ts'
 import {
 	type CredentialApprovalView,
 	type ParsedCredentialProposal,
 } from '#universal/credential-contracts.ts'
 import { planCredentialProposalApproval } from './agent-credential-proposals.ts'
 import {
+	MappingChangedSinceResolve,
+	MappingWriteRefused,
 	resolveMappingChanges,
 	resolveTriggerEnables,
 	writeMappingChanges,
@@ -48,11 +49,14 @@ function fingerprintOf(
 			actorId: scope.actorId,
 			reason: proposal.reason,
 			errors: proposal.errors,
+			// Stored ids (usable or not) catch any edit since review; names
+			// and scopes catch a rename of a credential picked by id.
 			changes: resolved.map((change) => [
 				change.target,
 				change.needKey,
-				change.before?.map((ref) => ref.id) ?? null,
-				change.after.map((ref) => ref.id),
+				change.beforeCredentialIds,
+				change.before?.map((ref) => [ref.id, ref.name, ref.scope]) ?? null,
+				change.after.map((ref) => [ref.id, ref.name, ref.scope]),
 				change.willEnable,
 				change.error?.code ?? null,
 			]),
@@ -100,6 +104,7 @@ export async function resolveCredentialApproval(
 				needKey: change.needKey,
 				need: change.need,
 				before: change.before,
+				beforeUnusableIds: change.beforeUnusableIds,
 				after: change.after,
 				willEnable: change.willEnable,
 				error: change.error,
@@ -166,16 +171,28 @@ export async function approveCredentialProposal(input: {
 	try {
 		await writeMappingChanges(scope, current.resolved, {
 			enable: current.enable,
+			requireUnchanged: true,
 			also: approval ? [approval] : [],
 		})
 	} catch (error) {
-		// A trigger someone else turned on between resolve and write.
-		if (!isMcpCallerError(error) || !(error instanceof Error)) throw error
-		return {
-			status: 'conflict',
-			message: error.message,
-			view: await resolveFresh(scope, proposal),
+		// Something changed between this resolve and the write.
+		if (
+			error instanceof MappingWriteRefused &&
+			error.code === 'webhook_other_enabler'
+		) {
+			return {
+				status: 'conflict',
+				message: error.message,
+				view: await resolveFresh(scope, proposal),
+			}
 		}
+		if (
+			error instanceof MappingWriteRefused ||
+			error instanceof MappingChangedSinceResolve
+		) {
+			return { status: 'stale', view: await resolveFresh(scope, proposal) }
+		}
+		throw error
 	}
 	return { status: 'approved', view: await resolveFresh(scope, proposal) }
 }

@@ -95,6 +95,7 @@ function createContext(db: D1Database): ApiInvocationContext {
 			'connection-profiles': false,
 			'mcp-skills-extension': false,
 			'mcp-events-extension': false,
+			'package-app-custom-domains': false,
 		}),
 	}
 }

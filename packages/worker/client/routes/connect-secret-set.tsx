@@ -1,7 +1,9 @@
 import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/component'
+import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { buildHumanApprovalErrorAgentPrompt } from '#universal/error-agent-prompt-presets.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -495,16 +497,37 @@ export function ConnectSecretSetRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.danger })}>
 							{loadError ?? setupError}
 						</p>
+						<ErrorAgentPromptButton
+							prompt={buildHumanApprovalErrorAgentPrompt({
+								activity:
+									'Setting a secret value from a /connect/secret-set setup link.',
+								errorMessage:
+									loadError ?? setupError ?? 'Unable to load setup.',
+								ids: { path: '/connect/secret-set' },
+							})}
+						/>
 					</section>
 				) : null}
 
 				{message ? (
-					<p
-						mix={css({ margin: 0, color: colors.danger })}
-						data-testid="connect-secret-set-message"
-					>
-						{message}
-					</p>
+					<>
+						<p
+							mix={css({ margin: 0, color: colors.danger })}
+							data-testid="connect-secret-set-message"
+						>
+							{message}
+						</p>
+						{loadError || setupError ? null : (
+							<ErrorAgentPromptButton
+								prompt={buildHumanApprovalErrorAgentPrompt({
+									activity:
+										'Setting a secret value from a /connect/secret-set setup link.',
+									errorMessage: message,
+									ids: { path: '/connect/secret-set' },
+								})}
+							/>
+						)}
+					</>
 				) : null}
 
 				{view.showForm && !setupError ? (
@@ -675,20 +698,22 @@ export function ConnectSecretSetRoute(handle: Handle) {
 							</div>
 						</div>
 						<a
-							href={'/account/secrets'}
+							href={routes.accountCredentials.href()}
+							data-rmx-document
 							mix={css(secondaryButtonCss)}
 							data-testid="connect-secret-set-back"
 						>
-							Back to secrets
+							Back to credentials
 						</a>
 					</section>
 				) : view.showBackToSecrets ? (
 					<a
-						href={'/account/secrets'}
+						href={routes.accountCredentials.href()}
+						data-rmx-document
 						mix={css(secondaryButtonCss)}
 						data-testid="connect-secret-set-back"
 					>
-						Back to secrets
+						Back to credentials
 					</a>
 				) : null}
 			</section>

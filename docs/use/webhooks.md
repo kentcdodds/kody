@@ -507,27 +507,23 @@ export async function handleSentryWebhook(input) {
 
 ### Signing presets
 
-Every webhook should declare `verification`. Pick the row for your sender and
-copy its block into `verification` (full examples follow). Omit `secretName`
-where the table says so: mint then stores a package-owned signing secret on the
-URL record, and `webhookUrlApply` can hand it to the sender as
-`{{webhookSecret}}`.
+Every webhook should declare `verification`. Match your sender in the table,
+then copy the JSON from its section. Omit `secretName` where the table says so:
+mint then stores a package-owned signing secret on the URL record, and
+`webhookUrlApply` can hand it to the sender as `{{webhookSecret}}`.
 
 | Sender                               | `verification`                                                                                                            | Secret                                       |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | Stripe                               | `hmac-sha256`, header `Stripe-Signature`, `hex`, `signedPayload: "timestamp.body"`, plus `replay` (see [Stripe](#stripe)) | `secretName` (Stripe's signing secret)       |
 | GitHub                               | `hmac-sha256`, header `x-hub-signature-256`, `hex`, prefix `sha256=`                                                      | Omit `secretName`; apply `{{webhookSecret}}` |
-| Sentry                               | `hmac-sha256`, header `sentry-hook-signature`, `hex`                                                                      | `secretName` (Sentry's client secret)        |
+| Sentry Integration Platform webhook  | `hmac-sha256`, header `sentry-hook-signature`, `hex`                                                                      | `secretName` (Sentry's client secret)        |
 | X Account Activity                   | `hmac-sha256`, header `X-Twitter-Webhooks-Signature`, `base64`, prefix `sha256=`                                          | `secretName` (consumer secret)               |
-| Bitbucket Cloud                      | `hmac-sha256`, header `X-Hub-Signature`, `hex`, prefix `sha256=`                                                          | Omit `secretName`; apply `{{webhookSecret}}` |
-| Your own caller (script, server, CI) | `hmac-sha256`, header `x-kody-signature`, `hex`, prefix `sha256=`                                                         | Omit `secretName`; apply `{{webhookSecret}}` |
+| Bitbucket Cloud                      | `hmac-sha256`, header `X-Hub-Signature`, `hex`, prefix `sha256=` (see [Bitbucket Cloud](#bitbucket-cloud))                | Omit `secretName`; apply `{{webhookSecret}}` |
+| Your own caller (script, server, CI) | `hmac-sha256`, header `x-kody-signature`, `hex`, prefix `sha256=` (see [Your own caller](#your-own-caller))               | Omit `secretName`; apply `{{webhookSecret}}` |
 | A sender that cannot sign            | `{ "type": "url-secret" }` (see [Senders that cannot sign](#senders-that-cannot-sign-url-secret))                         | The URL itself                               |
 
-A caller you control signs each request with
-`x-kody-signature: sha256=<lowercase hex HMAC-SHA256 of the raw request body>`,
-keyed by the secret `webhookUrlApply` delivered as `{{webhookSecret}}`. Kody
-package code cannot compute that signature yet (packages never see secret
-plaintext), so package-to-webhook calls use `url-secret` for now.
+X Account Activity's `verification` block is on the
+[CRC example](#x-activity-crc-example-for-kentcdodds-x), next to its challenge.
 
 Kody cannot verify these senders yet. Declare `url-secret` for them (Discord
 also needs a relay):
@@ -542,9 +538,14 @@ also needs a relay):
 - **Telegram.** Bots send a static `X-Telegram-Bot-Api-Secret-Token` header, not
   an HMAC.
 - **Gmail Pub/Sub push** (OIDC JWT), **Microsoft Graph** (`clientState`),
-  **Azure DevOps service hooks** (basic auth), and **PostHog** (unsigned).
+  **Azure DevOps service hooks** (basic auth), and **PostHog** (Standard
+  Webhooks; not yet verifiable).
 
-### Sentry
+### Sentry Integration Platform webhook
+
+Integration Platform webhooks sign the raw body with the integration client
+secret and send it in `sentry-hook-signature`. Project Service Hooks differ:
+they use the hook secret from registration, so this block does not verify them.
 
 ```json
 {
@@ -617,6 +618,40 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
+### Bitbucket Cloud
+
+Omit `secretName` so `webhookUrlMint` stores package-owned HMAC on the URL
+record (not in account secrets). Bitbucket Cloud sends
+`X-Hub-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Put
+`{{webhookSecret}}` in the webhook secret when you register the URL:
+
+```json
+{
+	"type": "hmac-sha256",
+	"header": "X-Hub-Signature",
+	"encoding": "hex",
+	"prefix": "sha256="
+}
+```
+
+### Your own caller
+
+Omit `secretName`. A caller you control signs each request with
+`x-kody-signature: sha256=<lowercase hex HMAC-SHA256 of the raw request body>`,
+keyed by the secret `webhookUrlApply` delivered as `{{webhookSecret}}`:
+
+```json
+{
+	"type": "hmac-sha256",
+	"header": "x-kody-signature",
+	"encoding": "hex",
+	"prefix": "sha256="
+}
+```
+
+Kody package code cannot compute that signature yet (packages never see secret
+plaintext), so package-to-webhook calls use `url-secret` for now.
+
 ### Senders that cannot sign: `url-secret`
 
 Declare `url-secret` when the sender has no way to sign requests, or signs in a
@@ -639,11 +674,10 @@ A webhook that declares an HMAC type never falls back to the URL secret: a
 request without a valid signature is refused with 401, even on the right URL.
 Prefer an HMAC type whenever the sender can sign.
 
-A webhook that declares no `verification` is treated as `url-secret` for now.
-Codemod `0012-explicit-webhook-url-secret-verification` adds the explicit
-declaration to existing packages; once none are left, publish will require
-`verification` on every webhook
-([#3477](https://github.com/kentcdodds/kody/issues/3477)).
+A webhook that declares no `verification` keeps working the same way: it is
+treated as `url-secret`, and publish accepts it. That will not change. Declaring
+a type is still recommended so the manifest says how the webhook authenticates:
+`url-secret` when the sender cannot sign, an HMAC type when it can.
 
 Either way, the webhook runs as its enabler, the person who turned it on; with
 no `on` enablement the delivery answers 409 `enablement_not_on`.

@@ -11,6 +11,12 @@ export {
 	AccountConnectionsRoute,
 	accountConnectionsRouteLoader,
 } from './account-connections.tsx'
+export { AccountCredentialsRoute } from './account-credentials.tsx'
+export { accountCredentialsRouteLoader } from './account-credentials-shared.ts'
+export {
+	ConnectCredentialRoute,
+	connectCredentialRouteLoader,
+} from './connect-credential.tsx'
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
 export {

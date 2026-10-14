@@ -520,8 +520,8 @@ export does not list them.
    attribution on the event (or rely on the `usageEventBlobs()` defaults) so
    these columns are not left null when actor or automation context exists.
 
-4. **D1 `usage_connection_daily`** (per-connection usage for the Connections
-   page) stores daily units per org billing id, connection (`credential_kind`,
+4. **D1 `usage_connection_daily`** (per-connection usage for the Agents page)
+   stores daily units per org billing id, connection (`credential_kind`,
    `holder_user_id`, `credential_id` split from `blob12`), package (`blob9`),
    and event type (`execute`, `dynamic_worker_day`, `dynamic_worker_invoke`).
    The hourly `usage_aggregation` lane runs `aggregateConnectionUsageDaily`
@@ -534,11 +534,11 @@ export does not list them.
    connection tracking. `/account/connection-usage.json` (`loadConnectionUsage`
    in `connection-usage.ts`) reads it for the page org: everyone sees their own
    connections; `billing:read` adds Automation, other people by username only,
-   and untracked units. The org comes from the Referer on
-   `/@slug/-/connections`, like `/account/connected-agents.json`. Package names
-   follow the team Repositories rule (`canSeeResource`): a package the viewer
-   cannot see keeps its units under a generic label, and team packages do not
-   link until they have detail pages.
+   and untracked units. The org comes from the Referer on `/@slug/-/agents`,
+   like `/account/connected-agents.json`. Package names follow the team
+   Repositories rule (`canSeeResource`): a package the viewer cannot see keeps
+   its units under a generic label, and team packages do not link until they
+   have detail pages.
 
 ## Agent package conversation uses
 

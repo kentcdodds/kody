@@ -1,30 +1,18 @@
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import {
-	buildSourceAheadPublishHref,
-	renderCommunityDetailContentHtml,
-} from '#app/community-detail-content.tsx'
+import { renderCommunityDetailContentHtml } from '#app/community-detail-content.tsx'
 import { resolveCommunityListingRoute } from '#app/community-package-route.ts'
 import { registerFrame } from '#app/frame-registry.ts'
 import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
-import { type PublicCommunityListing } from '#app/community-public.ts'
+import {
+	buildPackageRepoActions,
+	buildPackageRepoActionsForPage,
+} from '#app/package-repo-actions.ts'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
-
-function resolvePublishCompareHref(input: {
-	viewerCanManage: boolean
-	listing: PublicCommunityListing | null
-}) {
-	if (!input.viewerCanManage || !input.listing?.sourceAhead) return null
-	return buildSourceAheadPublishHref({
-		username: input.listing.ownerUsername,
-		kodyId: input.listing.kodyId,
-		headCommit: input.listing.headCommit,
-	})
-}
 
 registerFrame(COMMUNITY_DETAIL_TARGET, {
 	routes: [routes.communityPackage, routes.communityDetail],
@@ -47,15 +35,9 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 					listing?.description ?? page.ownerPackage?.description ?? '',
 				isPrivate: packagePageIsPrivate(page),
 				ownerProfilePublic: page.ownerProfilePublic,
-				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
 				viewerCanManage: page.viewerCanManage,
-				returnTo: url.pathname,
-				publishCompareHref: resolvePublishCompareHref({
-					viewerCanManage: page.viewerCanManage,
-					listing,
-				}),
-				hasApp: page.ownerPackage?.hasApp === true,
+				repoActions: buildPackageRepoActionsForPage(page),
 				hasPackage: page.hasPackage,
 				packageShaped: page.packageShaped === true,
 				iconUrl:
@@ -80,22 +62,27 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 		if (!detail) {
 			return ''
 		}
+		const username = detail.listing?.ownerUsername ?? ''
+		const kodyId = detail.listing?.kodyId ?? ''
 		return renderCommunityDetailContentHtml({
 			listing: detail.listing,
-			username: detail.listing?.ownerUsername ?? '',
-			kodyId: detail.listing?.kodyId ?? '',
+			username,
+			kodyId,
 			description: detail.listing?.description ?? '',
 			isPrivate: false,
 			ownerProfilePublic: detail.ownerProfilePublic,
-			loggedIn: detail.loggedIn,
 			viewerIsOwner: detail.viewerIsOwner,
 			viewerCanManage: detail.viewerCanManage,
-			returnTo: url.pathname,
-			publishCompareHref: resolvePublishCompareHref({
-				viewerCanManage: detail.viewerCanManage,
+			repoActions: buildPackageRepoActions({
+				username,
+				kodyId,
 				listing: detail.listing,
+				viewerInstall: detail.viewerInstall,
+				viewerIsOwner: detail.viewerIsOwner,
+				viewerCanManage: detail.viewerCanManage,
+				loggedIn: detail.loggedIn,
+				ownerPackage: detail.ownerPackage,
 			}),
-			hasApp: detail.ownerPackage?.hasApp === true,
 		})
 	},
 })

@@ -253,7 +253,10 @@ reserves `GITHUB_*`. Deploy maps them to Worker secrets `GITHUB_CLIENT_ID` /
 `GITHUB_CLIENT_SECRET`. Callback: `https://kody.codes/auth/github/callback`.
 
 `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` is a PAT (or equivalent) with repository
-administration write, used to delete `preview-<pr>` GitHub Environments.
+administration write, used by preview cleanup to delete leftover `preview-<pr>`
+GitHub Environments on PR close. Preview deploys no longer create those
+Environments; the token remains so cleanup can remove legacy and race-recreated
+entries.
 
 `KODY_WEBHOOK_URL_RUN` is the minted inbound webhook URL for
 `@kentcdodds/weekly-site-perf` webhook `run`. Copy of the Kody user secret

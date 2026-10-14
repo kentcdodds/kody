@@ -4,6 +4,10 @@ import { isAccountConnectionAgent } from '#universal/account-connections.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { onboardingAgentLabel } from '#universal/onboarding-mcp-clients.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
+import {
+	type PackageCredentialsTab,
+	packageCredentialsTabLabel,
+} from '#universal/package-credentials-page.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
@@ -94,6 +98,21 @@ function truncateText(text: string, maxLength: number) {
 
 function titleOnly(title: string): DocumentHeadDescriptor {
 	return { title }
+}
+
+function packageCredentialsHead(
+	tab: PackageCredentialsTab,
+): DocumentHeadResolver {
+	return ({ loaderData, pathname }) => {
+		const page = loaderData?.packageCredentials
+		const label = packageCredentialsTabLabel(tab)
+		if (page && !page.ok) return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+		if (!page) return titleOnly(`Package ${label.toLowerCase()}`)
+		return {
+			title: `${page.shell.name} ${label.toLowerCase()}`,
+			canonicalPath: pathname,
+		}
+	}
 }
 
 /**
@@ -231,8 +250,12 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountOrganizations)]: titleOnly('Organizations'),
 	[routePattern(routes.orgBilling)]: titleOnly('Billing'),
 	[routePattern(routes.orgBillingSuccess)]: titleOnly("You're in"),
+	[routePattern(routes.orgUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
+	[routePattern(routes.communityPackageApproveCredentials)]: titleOnly(
+		'Approve credential mappings',
+	),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),
@@ -329,6 +352,12 @@ const routeDocumentHeads = {
 			canonicalPath: pathname,
 		}
 	},
+	[routePattern(routes.communityPackageCredentials)]:
+		packageCredentialsHead('credentials'),
+	[routePattern(routes.communityPackageMappings)]:
+		packageCredentialsHead('mappings'),
+	[routePattern(routes.communityPackageTriggers)]:
+		packageCredentialsHead('triggers'),
 	[routePattern(routes.communityDetailFiles)]: ({ loaderData, pathname }) => {
 		const files = loaderData?.packageFiles
 		if (!files?.ok) return titleOnly('Package files')
@@ -518,6 +547,7 @@ const routeDocumentHeads = {
 		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')
 	},
 	[routePattern(routes.connectSecrets)]: titleOnly('Allow secret hosts'),
+	[routePattern(routes.connectCredential)]: titleOnly('Add a credential'),
 	[routePattern(routes.connectSecretSet)]: titleOnly('Set secret'),
 	[routePattern(routes.connectWebhookApply)]: titleOnly(
 		'Approve webhook apply destination',
@@ -528,9 +558,9 @@ const routeDocumentHeads = {
 
 const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgActivity)]: titleOnly('Activity'),
-	[routePattern(routes.orgConnections)]: ({ pathname }) => {
-		const rest = pathname.split('/-/connections/')[1]?.replace(/\/$/, '') ?? ''
-		if (rest === 'new') return titleOnly('Add connection')
+	[routePattern(routes.orgAgents)]: ({ pathname }) => {
+		const rest = pathname.split('/-/agents/')[1]?.replace(/\/$/, '') ?? ''
+		if (rest === 'new') return titleOnly('Connect an agent')
 		if (rest === 'usage') return titleOnly('Connection usage')
 		if (rest.startsWith('new/')) {
 			const agent = rest.slice('new/'.length).split('/')[0] ?? ''
@@ -543,11 +573,13 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 			return titleOnly(
 				isAccountConnectionAgent(decoded)
 					? `Connect ${onboardingAgentLabel(decoded)}`
-					: 'Add connection',
+					: 'Connect an agent',
 			)
 		}
-		return titleOnly('Connections')
+		return titleOnly('Agents')
 	},
+	[routePattern(routes.orgCredentials)]: titleOnly('Credentials'),
+	[routePattern(routes.orgCredentialNew)]: titleOnly('Add a credential'),
 	[routePattern(routes.orgEmail)]: titleOnly('Email inbox'),
 	[routePattern(routes.orgIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),

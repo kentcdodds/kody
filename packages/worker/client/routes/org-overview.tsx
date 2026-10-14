@@ -61,7 +61,7 @@ export function OrgOverviewRoute(handle: Handle) {
 					title="Overview"
 					description={
 						slug
-							? `Everything @${slug} holds: repositories, connections, MCP servers, secrets, jobs, memories, and the rest.`
+							? `Everything @${slug} holds: repositories, agents, credentials, jobs, memories, and the rest.`
 							: 'Everything your workspace holds.'
 					}
 					currentHref={currentHref}
@@ -75,7 +75,9 @@ export function OrgOverviewRoute(handle: Handle) {
 						) : null}
 						<ul
 							aria-label={group.label}
-							data-testid={`org-overview-${group.label.toLowerCase()}`}
+							data-testid={`org-overview-${group.label
+								.toLowerCase()
+								.replace(/[^a-z0-9]+/g, '-')}`}
 							mix={css(cardGridCss)}
 						>
 							{group.items.map(renderCard)}

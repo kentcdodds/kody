@@ -6,6 +6,10 @@ import { bytesToBase64Url } from './base64.ts'
  * The id is the `api_tokens` primary key, so authentication is one keyed
  * lookup plus a hash compare (no global hash index). The fixed prefix lets
  * secret scanners and log redaction recognize a token without a lookup.
+ *
+ * The same token authenticates Open API, CapabilityProxy / local execute, and
+ * git HTTPS (`kody.codes/@owner/name.git` Basic/Bearer) after
+ * `kody auth setup-git`.
  */
 export const apiTokenPrefix = 'kody_at_'
 

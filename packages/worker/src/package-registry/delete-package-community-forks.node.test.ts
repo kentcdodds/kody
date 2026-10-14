@@ -163,6 +163,10 @@ function createDeleteForkDb() {
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, old_slug)
 		);
+		CREATE TABLE credential_mappings (
+			org_id TEXT NOT NULL,
+			package_id TEXT NOT NULL
+		);
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
 			storage_id TEXT NOT NULL,

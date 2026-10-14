@@ -17,6 +17,10 @@ import {
 	getPackageTreeHref,
 } from '#universal/package-files.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import {
+	type PackageRepoActions,
+	renderPackageRepoActions,
+} from '#universal/package-title-actions.tsx'
 import { routes } from '#universal/routes.ts'
 import {
 	type CommunityDetailApiPayload,
@@ -49,6 +53,7 @@ export function PackageSettingsRoute(handle: Handle) {
 	let viewerCanPublish = false
 	let viewerCanDelete = false
 	let viewerCanAdoptCommunityFork = false
+	let repoActions: PackageRepoActions | null = null
 	let ownerDetailsMessage: string | null = null
 	/** Payload last applied to the closure state above. */
 	let appliedShell: PackageSettingsShell | null = null
@@ -105,6 +110,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				viewerCanDelete: payload.viewerCanDelete === true,
 				viewerCanAdoptCommunityFork:
 					payload.viewerCanAdoptCommunityFork === true,
+				repoActions: payload.repoActions ?? null,
 			}
 		},
 	})
@@ -180,6 +186,7 @@ export function PackageSettingsRoute(handle: Handle) {
 					viewerCanDelete = snapshot.data.viewerCanDelete
 					viewerCanAdoptCommunityFork =
 						snapshot.data.viewerCanAdoptCommunityFork
+					repoActions = snapshot.data.repoActions
 					ownerDetailsMessage = null
 					break
 				case 'unauthorized':
@@ -254,6 +261,7 @@ export function PackageSettingsRoute(handle: Handle) {
 								publishedCommit: ownerPackage?.publishedCommit ?? null,
 							}),
 							iconName: ownerPackage?.kodyId ?? chromeKodyId,
+							actions: renderPackageRepoActions(repoActions),
 						})
 					: null}
 				{renderShellStatus(statusMessage)}

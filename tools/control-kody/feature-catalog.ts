@@ -126,9 +126,9 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 	},
 	{
 		id: 'connections',
-		title: 'Connections (connected agents)',
+		title: 'Agents (connected agents)',
 		file: 'connections.md',
-		paths: ['/@:orgSlug/-/connections(/*rest)'],
+		paths: ['/@:orgSlug/-/agents(/*rest)'],
 		apis: ['/account/connected-agents.json'],
 	},
 	{
@@ -163,6 +163,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		paths: [
 			'/connect/secrets',
 			'/connect/secret-set',
+			'/account/credentials',
 			'/@:orgSlug/-/secrets(/*rest)',
 			'/@:orgSlug/-/secret-providers(/*rest)',
 		],
@@ -266,12 +267,14 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/@:orgSlug/-/billing',
 			'/@:orgSlug/-/billing/success',
 			'/@:orgSlug/-/billing/portal',
+			'/@:orgSlug/-/usage',
 			'/account/credits',
 			'/account/usage',
 		],
 		apis: [
 			'/@:orgSlug/-/billing.json',
 			'/@:orgSlug/-/billing/checkout.json',
+			'/@:orgSlug/-/usage.json',
 			'/account/billing/cancellation-feedback.json',
 			'/account/credits/top-up.json',
 			'/account/credits/settings.json',

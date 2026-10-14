@@ -105,7 +105,7 @@ test('credentialMappingPropose reports what to fix and refuses package code and 
 	expect(fixable.view.canApprove).toBe(false)
 	expect(fixable.view.changes[0]!.error).toMatchObject({
 		code: 'credential_not_found',
-		createUrl: expect.stringContaining('/connect/credential?'),
+		createUrl: expect.stringContaining('/@acme-clients/-/credentials/new?'),
 	})
 	expect(fixable.message).toContain('cannot be approved yet')
 
@@ -133,4 +133,21 @@ test('credentialMappingPropose reports what to fix and refuses package code and 
 			t.caller('bea', 'owner'),
 		),
 	).rejects.toThrow(/Package not found/)
+})
+
+test('credentialMappingPropose tells the agent to read view.enable[].error when an enable cannot be approved', async () => {
+	const t = await setup()
+	const result = await credentialMappingProposeCapability.handler(
+		{ kodyId: 'digest', enable: [{ kind: 'webhook', name: 'incoming' }] },
+		t.caller('bea', 'owner'),
+	)
+	expect(result.view.canApprove).toBe(false)
+	expect(result.view.changes).toEqual([])
+	expect(result.view.enable[0]!.error?.code).toBe('webhook_not_minted')
+	expect(result.message).toContain('view.enable[].error')
+	expect(result.message).toContain('view.changes[].error')
+	expect(result.message).toContain('view.errors')
+	expect(credentialMappingProposeCapability.description).toContain(
+		'view.enable[].error',
+	)
 })

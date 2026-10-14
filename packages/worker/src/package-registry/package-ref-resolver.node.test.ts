@@ -149,8 +149,15 @@ test('resolveSavedPackageRef follows slug redirects only when asked and never pa
 		idOf(db, { userId: otherOwnerId, ref: 'notes', followRedirects: true }),
 	).resolves.toBeNull()
 
-	// Rows that only exist in the legacy table still resolve.
+	// Rows that only exist in the legacy table still resolve (pre-phase-2
+	// retires, or soak leftovers until phase 4 drops the table).
 	sqlite.exec(`DELETE FROM package_slug_redirects`)
+	sqlite
+		.prepare(
+			`INSERT INTO package_kody_id_redirects (user_id, old_kody_id, package_id)
+			 VALUES (?, 'notes', ?)`,
+		)
+		.run(ownerId, notesId)
 	await expect(
 		idOf(db, { userId: ownerId, ref: 'notes', followRedirects: true }),
 	).resolves.toBe(notesId)

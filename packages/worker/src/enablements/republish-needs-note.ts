@@ -1,6 +1,9 @@
 import { loadPublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
 import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
-import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageByName,
+	getSavedPackageBySourceId,
+} from '#worker/package-registry/repo.ts'
 
 /**
  * A publish note (ADR 0068) when a republish adds credential needs while the
@@ -13,14 +16,23 @@ import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
 export async function republishedNeedsNote(input: {
 	env: Env
 	userId: string
+	/** The source being published; found by it, a rename still finds the package. */
+	sourceId?: string | null
 	packageName: string
 	needs: ReadonlyArray<CredentialNeed>
 }): Promise<string | null> {
 	if (input.needs.length === 0) return null
-	const saved = await getSavedPackageByName(input.env.APP_DB, {
-		userId: input.userId,
-		name: input.packageName,
-	})
+	const saved =
+		(input.sourceId
+			? await getSavedPackageBySourceId(input.env.APP_DB, {
+					userId: input.userId,
+					sourceId: input.sourceId,
+				})
+			: null) ??
+		(await getSavedPackageByName(input.env.APP_DB, {
+			userId: input.userId,
+			name: input.packageName,
+		}))
 	if (!saved) return null
 	const row = await input.env.APP_DB.prepare(
 		`SELECT COUNT(*) AS live FROM enablements

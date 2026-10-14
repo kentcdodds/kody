@@ -235,6 +235,8 @@ export type CredentialApprovalChangeView = {
 		multiple: boolean
 	} | null
 	before: Array<CredentialRef> | null
+	/** Stored refs left out of `before` because the viewer can no longer Use them; ids only. */
+	beforeUnusableIds: Array<string>
 	after: Array<CredentialRef>
 	willEnable: boolean
 	error: {
@@ -304,11 +306,22 @@ export function describeCredentialMappingTarget(
 // Creation link: /connect/credential
 // ---------------------------------------------------------------------------
 
+/**
+ * The org-less creation link. It redirects to the signed-in person's signup
+ * org; links that know their org use {@link orgCredentialCreatePath}.
+ */
 export const credentialCreatePath = '/connect/credential'
+
+/** The creation page for one org: the org the link's MCP connection or CLI is bound to. */
+export function orgCredentialCreatePath(orgSlug: string) {
+	return `/@${encodeURIComponent(orgSlug)}/-/credentials/new`
+}
 
 export type CredentialKindMode = 'hint' | 'required'
 
 export type CredentialCreateLinkInput = {
+	/** The org the credential is saved in. Omit only when no org is known. */
+	orgSlug?: string | null
 	kind?: CredentialKind | null
 	kindMode?: CredentialKindMode
 	name?: string | null
@@ -318,8 +331,12 @@ export type CredentialCreateLinkInput = {
 	/** The package (kody id) and need key the credential is for. */
 	packageKodyId?: string | null
 	needKey?: string | null
-	/** Slug of the org the credential is for (the run's org). */
-	orgSlug?: string | null
+	/** A Key only this saved package (id) can read. */
+	packageScopedTo?: string | null
+	/** UTC ISO timestamp or YYYY-MM-DD. */
+	expiresAt?: string | null
+	/** Saved package ids the Key is locked to. */
+	allowedPackages?: ReadonlyArray<string>
 	/** Passed through to the reused form (secret-set or OAuth params). */
 	extra?: Record<string, string>
 }
@@ -333,8 +350,17 @@ const createLinkKnownParams = new Set([
 	'allowedHosts',
 	'forPackage',
 	'need',
-	'org',
+	'scope',
+	'packageId',
+	'expiresAt',
+	'allowedPackages',
 ])
+
+function commaList(values: ReadonlyArray<string> | undefined) {
+	return [...new Set((values ?? []).map((value) => value.trim()))].filter(
+		Boolean,
+	)
+}
 
 function trimmed(value: string | null | undefined) {
 	const text = value?.trim()
@@ -357,19 +383,28 @@ export function buildCredentialCreateHref(
 	set('name', input.name)
 	set('provider', input.provider)
 	set('description', input.description)
-	const hosts = (input.allowedHosts ?? [])
-		.map((host) => host.trim())
-		.filter(Boolean)
+	const hosts = commaList(input.allowedHosts)
 	if (hosts.length > 0) params.set('allowedHosts', hosts.join(','))
 	set('forPackage', input.packageKodyId)
 	set('need', input.needKey)
-	set('org', input.orgSlug)
+	const packageScopedTo = trimmed(input.packageScopedTo)
+	if (packageScopedTo) {
+		params.set('scope', 'package')
+		params.set('packageId', packageScopedTo)
+	}
+	set('expiresAt', input.expiresAt)
+	const allowedPackages = commaList(input.allowedPackages)
+	if (!packageScopedTo && allowedPackages.length > 0) {
+		params.set('allowedPackages', allowedPackages.join(','))
+	}
 	for (const [key, value] of Object.entries(input.extra ?? {})) {
 		if (createLinkKnownParams.has(key)) continue
 		params.set(key, value)
 	}
+	const orgSlug = trimmed(input.orgSlug)
+	const path = orgSlug ? orgCredentialCreatePath(orgSlug) : credentialCreatePath
 	const query = params.toString()
-	return query ? `${credentialCreatePath}?${query}` : credentialCreatePath
+	return query ? `${path}?${query}` : path
 }
 
 /** The creation link as an absolute URL on `baseUrl`'s origin. */
@@ -390,9 +425,20 @@ export type ParsedCredentialCreateQuery = {
 	allowedHosts: Array<string>
 	packageKodyId: string | null
 	needKey: string | null
-	orgSlug: string | null
+	/** `scope=package&packageId=…`: a Key only that saved package can read. */
+	packageScopedTo: string | null
+	/** True when `scope=package` came without a `packageId`. */
+	packageScopeMissingId: boolean
+	/** The raw `expiresAt`; the page validates it. */
+	expiresAt: string | null
+	/** Saved package ids the Key is locked to (ignored for package Keys). */
+	allowedPackages: Array<string>
 	/** Every other param, for the reused form. */
 	passthrough: URLSearchParams
+}
+
+function readCommaList(search: URLSearchParams, key: string) {
+	return commaList(search.getAll(key).flatMap((value) => value.split(',')))
 }
 
 export function parseCredentialCreateQuery(
@@ -404,57 +450,26 @@ export function parseCredentialCreateQuery(
 	for (const [key, value] of search) {
 		if (!createLinkKnownParams.has(key)) passthrough.append(key, value)
 	}
+	const scope = trimmed(search.get('scope'))
+	const packageId = trimmed(search.get('packageId'))
+	// A bare `packageId` means a package Key, as on the legacy intake page.
+	const packageScope = scope === 'package' || (scope === null && !!packageId)
 	return {
 		kind,
 		kindLocked: kind !== null && search.get('kindMode') === 'required',
 		name: trimmed(search.get('name')),
 		provider: trimmed(search.get('provider')),
 		description: trimmed(search.get('description')),
-		allowedHosts: search
-			.getAll('allowedHosts')
-			.flatMap((value) => value.split(','))
-			.map((host) => host.trim())
-			.filter(Boolean),
+		allowedHosts: readCommaList(search, 'allowedHosts'),
 		packageKodyId: trimmed(search.get('forPackage')),
 		needKey: trimmed(search.get('need')),
-		orgSlug: trimmed(search.get('org')),
+		packageScopedTo: packageScope ? packageId : null,
+		packageScopeMissingId: packageScope && !packageId,
+		expiresAt: trimmed(search.get('expiresAt')),
+		allowedPackages: packageScope
+			? []
+			: readCommaList(search, 'allowedPackages'),
 		passthrough,
-	}
-}
-
-/**
- * Where `/connect/credential` sends a visit until the one-pager ships: the
- * existing page for the kind, with the same query. No existing form creates
- * `url`, `login`, or `signing`, so those land on the Secrets list instead of
- * a form that would save the wrong kind. The link's `org` wins over the
- * visitor's `orgSlug`; org pages still check membership.
- */
-export function credentialCreateInterimHref(input: {
-	search: URLSearchParams
-	orgSlug: string | null
-}): string {
-	const parsed = parseCredentialCreateQuery(input.search)
-	const orgSlug = parsed.orgSlug ?? input.orgSlug
-	const query = input.search.toString()
-	const withQuery = (path: string) => (query ? `${path}?${query}` : path)
-	switch (parsed.kind) {
-		case 'oauth':
-			return withQuery('/connect/oauth')
-		case 'mcp':
-			return orgSlug
-				? withQuery(`/@${encodeURIComponent(orgSlug)}/-/mcp-servers`)
-				: withQuery('/account')
-		case 'url':
-		case 'login':
-		case 'signing':
-			return orgSlug ? `/@${encodeURIComponent(orgSlug)}/-/secrets` : '/account'
-		case 'secret':
-		case null:
-			return withQuery('/connect/secret-set')
-		default: {
-			const exhaustive: never = parsed.kind
-			throw new Error(`Unhandled credential kind: ${String(exhaustive)}`)
-		}
 	}
 }
 
@@ -478,7 +493,9 @@ function formatCredentialPick(pick: CredentialPick): string {
 	if ('id' in pick) return `id:${pick.id}`
 	if (pick.scope) return `${pick.scope}:${pick.name}`
 	// A blank value means "none on purpose"; `name:` keeps a blank name invalid.
-	return reservedPickPrefix.test(pick.name) || !pick.name.trim()
+	// The parser trims first, so check the prefix on the trimmed name.
+	const trimmedName = pick.name.trim()
+	return reservedPickPrefix.test(trimmedName) || !trimmedName
 		? `name:${pick.name}`
 		: pick.name
 }

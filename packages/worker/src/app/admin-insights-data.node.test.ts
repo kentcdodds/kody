@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
@@ -12,6 +13,9 @@ import {
 	type AggregatedRunLogInsights,
 } from '#worker/admin/insights-runlog-snapshot.ts'
 import type * as fleetPackageErrorRate from '#worker/usage/fleet-package-error-rate.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	buildAuthDays,
 	buildEmailDays,
@@ -414,10 +418,10 @@ const allRows: Array<[Array<string>, Array<object>]> = [
 		],
 	],
 	[
-		["coalesce(plan, 'none')"],
+		['from orgs', 'group by plan'],
 		[
 			{ plan: 'pro', n: 2 },
-			{ plan: 'none', n: 6 },
+			{ plan: 'free', n: 6 },
 		],
 	],
 	[
@@ -560,6 +564,17 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus the Run
 	expect(data.authByDay.at(-1)?.success).toBe(4)
 	expect(data.authByCategory).toEqual([{ category: 'auth', count: 4 }])
 	expect(data.authHeatmap).toEqual([{ weekday: 3, hour: 9, count: 4 }])
+	expect(data.plans).toEqual([
+		{ plan: 'pro', count: 2 },
+		{ plan: 'free', count: 6 },
+	])
+	expect(
+		loaded.db.seenQueries
+			.map(normalizeQuery)
+			.filter((query) => query.includes('from orgs')),
+	).toEqual([
+		'select plan as plan, count(*) as n from orgs where deleted_at is null group by plan order by n desc',
+	])
 	expect(data.workflowStatuses).toEqual([
 		{ status: 'complete', count: 8 },
 		{ status: 'errored', count: 1 },
@@ -816,4 +831,65 @@ test('admin insights reads email reporting from Analytics Engine and degrades wh
 		{ error: expect.any(Error) },
 	)
 	fetchSpy.mockRestore()
+})
+
+/**
+ * Regression for KODY-94: after migration 0100 dropped `users.plan`, the
+ * plan-breakdown query must read `orgs.plan` against the real migrated
+ * schema (mocked D1 cannot catch dropped-column SQL).
+ */
+test('loadAdminInsightsData plan breakdown reads orgs.plan on migrated schema', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	expect(() => sqlite.prepare('SELECT plan FROM users').get()).toThrow(
+		/no such column: plan/i,
+	)
+
+	const nowIso = '2026-07-08T12:00:00.000Z'
+	const insertOrg = (
+		id: string,
+		slug: string,
+		plan: string,
+		deletedAt: string | null = null,
+	) => {
+		sqlite
+			.prepare(
+				`INSERT INTO orgs (id, slug, plan, deleted_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+			)
+			.run(id, slug, plan, deletedAt, nowIso, nowIso)
+	}
+	insertOrg(ownerIdFromStored('org-free-1'), 'free-1', 'free')
+	insertOrg(ownerIdFromStored('org-free-2'), 'free-2', 'free')
+	insertOrg(ownerIdFromStored('org-free-3'), 'free-3', 'free')
+	insertOrg(ownerIdFromStored('org-pro-1'), 'pro-1', 'pro')
+	insertOrg(ownerIdFromStored('org-pro-2'), 'pro-2', 'pro')
+	insertOrg(ownerIdFromStored('org-max-1'), 'max-1', 'max')
+	insertOrg(
+		ownerIdFromStored('org-deleted'),
+		'deleted-org',
+		'standard',
+		'2026-07-01T00:00:00.000Z',
+	)
+
+	const appDb = createD1FromSqlite(sqlite)
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: appDb,
+			AUDIT_DB: createAuditTestDb(),
+			JOBS: {
+				getJobInsights: async () => ({ total: 0, enabled: 0 }),
+			},
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as unknown as Env,
+		now,
+	)
+
+	expect(data.ok).toBe(true)
+	expect(data.plans).toEqual([
+		{ plan: 'free', count: 3 },
+		{ plan: 'pro', count: 2 },
+		{ plan: 'max', count: 1 },
+	])
 })

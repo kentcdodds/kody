@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
 			serverId: string
 		}) => Promise<McpServerPendingAuthorization | null>
 	>(async () => null),
+	bindOAuthAttemptActor: vi.fn(async (): Promise<{ ok: boolean }> => ({
+		ok: true,
+	})),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -47,6 +50,7 @@ vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 					ownerId: input.userId,
 					serverId: readInput.serverId,
 				}),
+			bindOAuthAttemptActor: mocks.bindOAuthAttemptActor,
 		}) as Partial<McpClientHubClient>,
 }))
 
@@ -136,6 +140,8 @@ async function seed() {
 				}
 			: null,
 	)
+	mocks.bindOAuthAttemptActor.mockReset()
+	mocks.bindOAuthAttemptActor.mockResolvedValue({ ok: true })
 	return {
 		APP_DB: createD1FromSqlite(sqlite),
 		APP_BASE_URL: origin,
@@ -289,6 +295,17 @@ test('consent page shows the connection and only hands out the provider URL afte
 		ok: true,
 		authorizationUrl: providerUrl,
 	})
+})
+
+test('consent Continue refuses when the pending attempt cannot be rebound', async () => {
+	const env = await seed()
+	const token = await consentToken(env, 'ada')
+	mocks.bindOAuthAttemptActor.mockResolvedValue({ ok: false })
+	const refused = await clickContinue(env, { person: 'ada', csrf: token })
+	expect(refused.status).toBe(409)
+	const body = refusedConsent(await readContinue(refused))
+	expect(body.error).toMatch(/Reconnect at \/account\/mcp-servers/)
+	expect(body.consent?.pending?.csrfToken).toEqual(expect.any(String))
 })
 
 test('consent form tokens are bound to the person and the pending authorization', async () => {

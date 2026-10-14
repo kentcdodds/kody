@@ -21,12 +21,10 @@ const mockModule = vi.hoisted(() => ({
 				...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
 			) => Promise<unknown>
 		>(),
-	loadCommunityPackageFilesData:
+	loadListingFilesData:
 		vi.fn<
 			(
-				...args: Parameters<
-					typeof PackageFilesData.loadCommunityPackageFilesData
-				>
+				...args: Parameters<typeof PackageFilesData.loadListingFilesData>
 			) => Promise<unknown>
 		>(),
 	loadAccountPackageFilesData:
@@ -109,9 +107,9 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#app/package-files-data.ts', () => ({
-	loadCommunityPackageFilesData: (
-		...args: Parameters<typeof PackageFilesData.loadCommunityPackageFilesData>
-	) => mockModule.loadCommunityPackageFilesData(...args),
+	loadListingFilesData: (
+		...args: Parameters<typeof PackageFilesData.loadListingFilesData>
+	) => mockModule.loadListingFilesData(...args),
 	loadAccountPackageFilesData: (
 		...args: Parameters<typeof PackageFilesData.loadAccountPackageFilesData>
 	) => mockModule.loadAccountPackageFilesData(...args),
@@ -294,4 +292,32 @@ test('unlisted leftover tree redirects stay private; listed leftovers stay publi
 			cacheControl,
 		})
 	}
+})
+
+test('canonical listed tree HTML loads listing files with the URL package path', async () => {
+	const handler = createCommunityPackageFilesHandler({} as Env)
+	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
+		kind: 'listing',
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+		packagePath: { username: 'owner', kodyId: 'demo' },
+	})
+	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
+	const withActions = { ...filesPayload, repoActions: null }
+	mockModule.loadListingFilesData.mockResolvedValue(withActions)
+
+	await handler.handler({
+		request: new Request('https://example.com/@owner/demo/tree/main'),
+	} as never)
+	expect(mockModule.loadListingFilesData).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			listingId: 'listing-1',
+			ref: 'main',
+			packagePath: { username: 'owner', kodyId: 'demo' },
+		}),
+	)
+	expect(mockModule.renderAppPage).toHaveBeenLastCalledWith(
+		expect.objectContaining({ loaderData: { packageFiles: withActions } }),
+	)
 })

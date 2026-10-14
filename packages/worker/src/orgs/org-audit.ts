@@ -152,29 +152,42 @@ export function orgAuditWriterForPerson(
 /**
  * Commits an APP_DB mutation and its org audit outbox row in one batch, then
  * delivers to AUDIT_DB inline (scheduled drain is backup).
+ *
+ * With `onlyIfChanged`, the audit row is written only when the last statement
+ * changed a row, decided inside the batch so concurrent no-op writes never
+ * audit. Returns whether the last statement changed a row.
  */
 export async function runAppDbBatchWithOrgAudit(input: {
 	appDb: D1Database
 	audit: OrgAuditWriter
 	statements: Array<{ run(): Promise<unknown> }>
 	event: OrgAuditOutboxEvent
-}) {
+	onlyIfChanged?: boolean
+}): Promise<{ changed: boolean }> {
 	const plan = planOrgAuditOutbox(input.audit, input.event)
+	const outbox = orgAuditOutboxInsertStatement(input.appDb, plan, {
+		onlyIfChanged: input.onlyIfChanged,
+	})
+	let results: Array<unknown>
 	if (typeof input.appDb.batch === 'function') {
-		await input.appDb.batch([
+		results = await input.appDb.batch([
 			...input.statements,
-			orgAuditOutboxInsertStatement(input.appDb, plan),
+			outbox,
 		] as Array<D1PreparedStatement>)
 	} else {
-		for (const statement of [
-			...input.statements,
-			orgAuditOutboxInsertStatement(input.appDb, plan),
-		]) {
-			await statement.run()
+		results = []
+		for (const statement of [...input.statements, outbox]) {
+			results.push(await statement.run())
 		}
 	}
+	const last = results[input.statements.length - 1] as
+		| { meta?: { changes?: number } }
+		| undefined
+	const changed = (last?.meta?.changes ?? 0) > 0
+	if (input.onlyIfChanged && !changed) return { changed }
 	// Deliver against the same APP_DB the outbox row was written to.
 	await commitOrgAuditOutbox({ ...input.audit, appDb: input.appDb }, plan)
+	return { changed }
 }
 
 /**

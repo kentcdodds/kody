@@ -1,10 +1,9 @@
 import { type AdminPlanName } from '#universal/loader-data.ts'
 import { type CreditWalletState } from '#universal/plans.ts'
-import { accountCreditsPath } from '#universal/compute-overage.ts'
 
 type CreditsAction = {
 	label: 'Add credits' | 'Switch to Pro' | 'Subscribe to Pro'
-	href: typeof accountCreditsPath
+	href: string
 }
 
 /** Where a capped account goes next; funded wallets and operator plans need nothing. */
@@ -12,6 +11,7 @@ export function creditsActionForWallet(
 	creditWallet: CreditWalletState,
 	plan: AdminPlanName,
 	canBuyCredits: boolean,
+	creditsHref: string,
 ): CreditsAction | null {
 	switch (creditWallet) {
 		case 'funded':
@@ -19,12 +19,12 @@ export function creditsActionForWallet(
 		case 'empty':
 			return {
 				label: canBuyCredits ? 'Add credits' : 'Subscribe to Pro',
-				href: accountCreditsPath,
+				href: creditsHref,
 			}
 		case 'none':
 			return plan === 'max'
 				? null
-				: { label: 'Switch to Pro', href: accountCreditsPath }
+				: { label: 'Switch to Pro', href: creditsHref }
 		default: {
 			const exhaustive: never = creditWallet
 			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
