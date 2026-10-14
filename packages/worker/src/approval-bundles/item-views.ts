@@ -386,7 +386,32 @@ function describeCapabilityEntry(entry: CapabilitySetEntry) {
 	return `${kindLabel(entry.credentialKind ?? 'secret')} sent to ${hosts}${entry.placement ? ` (${entry.placement})` : ''}`
 }
 
-function capabilityGrantLines(
+function capabilityEntrySignature(entry: CapabilitySetEntry) {
+	return JSON.stringify([
+		entry.kind,
+		entry.credentialId ?? null,
+		entry.credentialKind ?? 'secret',
+		entry.hosts.map((host) => host.toLowerCase()).sort(),
+		entry.placement ?? null,
+		entry.storageId ?? null,
+		entry.via,
+	])
+}
+
+function describeCapabilityChange(
+	entry: CapabilitySetEntry,
+	other: CapabilitySetEntry | null,
+) {
+	const description = describeCapabilityEntry(entry)
+	if (!other || description !== describeCapabilityEntry(other)) {
+		return description
+	}
+	return entry.via.length > 0
+		? `${description}, reached via ${entry.via.join(' → ')}`
+		: `${description}, used directly by this package`
+}
+
+export function capabilityGrantLines(
 	before: ReadonlyArray<CapabilitySetEntry>,
 	after: ReadonlyArray<CapabilitySetEntry>,
 ): Array<ApprovalGrantLine> {
@@ -406,8 +431,10 @@ function capabilityGrantLines(
 		kind: entry.kind === 'storage' ? null : kindLabel(entry.credentialKind),
 		provider: null,
 		hosts: entry.hosts,
-		before: prior ? describeCapabilityEntry(prior) : null,
-		after: change === 'removed' ? null : describeCapabilityEntry(entry),
+		before: prior
+			? describeCapabilityChange(prior, change === 'changed' ? entry : null)
+			: null,
+		after: change === 'removed' ? null : describeCapabilityChange(entry, prior),
 		match: null,
 	})
 	const lines: Array<ApprovalGrantLine> = []
@@ -416,7 +443,7 @@ function capabilityGrantLines(
 		if (!prior) {
 			lines.push(line('added', entry, null))
 		} else if (
-			describeCapabilityEntry(prior) !== describeCapabilityEntry(entry)
+			capabilityEntrySignature(prior) !== capabilityEntrySignature(entry)
 		) {
 			lines.push(line('changed', entry, prior))
 		}
@@ -481,6 +508,25 @@ async function capabilitiesItemView(
 	}
 	return {
 		...base,
+		grants:
+			grants.length > 0
+				? grants
+				: [
+						{
+							change: 'changed',
+							label: 'Capability set',
+							where: null,
+							kind: null,
+							provider: null,
+							hosts: [],
+							before: summary.latestApproval
+								? 'A different capability set'
+								: 'Nothing approved yet',
+							after:
+								'The current set differs in details this page cannot show. Open its approval page to review every entry.',
+							match: null,
+						},
+					],
 		status: 'pending',
 		statusMessage: null,
 		canApprove: true,

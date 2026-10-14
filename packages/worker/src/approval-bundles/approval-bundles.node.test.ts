@@ -19,7 +19,7 @@ import {
 	type ApprovalBundleView,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
-import { type ApprovalViewer } from './item-views.ts'
+import { type ApprovalViewer, capabilityGrantLines } from './item-views.ts'
 import {
 	approvalBundleClaimLeaseMs,
 	deleteApprovalBundlesForMember,
@@ -653,4 +653,28 @@ test('bundles expire after 30 days and leave with the member', async () => {
 			bundleId: created.bundle.id,
 		}),
 	).toEqual({ ok: false, reason: 'not-found' })
+})
+
+test('a capability that only moved to another dependency still shows a change', () => {
+	const entry = {
+		kind: 'credential' as const,
+		credentialId: 'cred_slack',
+		name: 'team-slack',
+		credentialKind: 'secret',
+		hosts: ['slack.com'],
+		via: ['@me/app'],
+	}
+	const lines = capabilityGrantLines(
+		[entry],
+		[{ ...entry, via: ['@me/app', '@me/slack-helper'] }],
+	)
+	expect(lines).toHaveLength(1)
+	expect(lines[0]).toMatchObject({
+		change: 'changed',
+		before: 'Key sent to slack.com, reached via @me/app',
+		after: 'Key sent to slack.com, reached via @me/app → @me/slack-helper',
+	})
+	expect(
+		capabilityGrantLines([entry], [{ ...entry, name: 'renamed-slack' }]),
+	).toEqual([])
 })
