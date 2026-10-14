@@ -2,7 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
 	orgResourcePathForAccountPath,
+	orgCreditsPath,
 	orgUsagePath,
+	orgUsageWhereItWentPath,
 	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
@@ -17,6 +19,7 @@ import {
 	parseOrgManagementPath,
 	parseOrgOverviewPath,
 	parseOrgResourcePath,
+	parseOrgCreditsPath,
 	parseOrgUsagePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -355,6 +358,23 @@ test('usage paths bind to the organization in the URL', () => {
 	expect(parseOrgUsagePath('/@Not A Slug/usage')).toBeNull()
 	expect(orgSlugFromOrgOwnedPath('/@acme/-/usage')).toBe('acme')
 	expect(orgSlugFromOrgOwnedPath('/@acme/-/usage.json')).toBe('acme')
+})
+
+test('credits paths bind to the organization in the URL', () => {
+	expect(orgCreditsPath('acme')).toBe('/@acme/-/credits')
+	expect(orgUsageWhereItWentPath('acme')).toBe('/@acme/-/usage#where-it-went')
+	for (const pathname of [
+		'/@acme/-/credits',
+		'/@acme/-/credits/',
+		'/@acme/-/credits.json',
+	]) {
+		expect(parseOrgCreditsPath(pathname)).toEqual({ slug: 'acme' })
+		expect(orgSlugFromOrgOwnedPath(pathname)).toBe('acme')
+	}
+	expect(parseOrgCreditsPath('/@acme/-/credits/extra')).toBeNull()
+	expect(parseOrgCreditsPath('/@acme/credits')).toBeNull()
+	expect(parseOrgCreditsPath('/@Not A Slug/-/credits')).toBeNull()
+	expect(switchOrgPath('/@acme/-/credits', 'other')).toBe('/@other/-/credits')
 })
 
 test('org account JSON names the section', () => {

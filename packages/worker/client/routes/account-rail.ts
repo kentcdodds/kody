@@ -257,7 +257,7 @@ function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 function usageRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
 		href: orgSlug ? orgUsagePath(orgSlug) : routes.account.href(),
-		label: 'Usage & credits',
+		label: 'Usage',
 		icon: 'chart',
 		alsoActiveFor: orgSlug
 			? [routes.accountUsage.href(), routes.accountCredits.href()]
@@ -541,7 +541,7 @@ export function workspaceRailGroups(input: {
 
 	const usage: AccountRailItem = {
 		...usageRailItem(orgSlug),
-		description: 'Activity, included compute, plan limits, and credits.',
+		description: 'Activity, included compute, plan limits, and adding credits.',
 	}
 	const billing: AccountRailItem = {
 		...billingRailItem(orgSlug),

@@ -129,7 +129,15 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 			['/@jane/-/agents', '/@jane/-/memories', '/@jane/-/email'],
 		],
 		['Activity', ['/@jane/-/activity']],
-		['Organization', ['/@jane/-/grants', '/@jane/-/usage', '/@jane/-/billing']],
+		[
+			'Organization',
+			[
+				'/@jane/-/grants',
+				'/@jane/-/usage',
+				'/@jane/-/credits',
+				'/@jane/-/billing',
+			],
+		],
 	])
 	// The Key, OAuth, and MCP server editors still count as Credentials.
 	const credentials = items.find((item) => item.label === 'Credentials')
@@ -147,7 +155,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		credentials &&
 			isAccountNavItemActive(credentials, '/@jane/-/secret-providers'),
 	).toBe(false)
-	const usage = items.find((item) => item.label === 'Usage & credits')
+	const usage = items.find((item) => item.label === 'Usage')
 	expect(usage && isAccountNavItemActive(usage, '/@jane/-/usage')).toBe(true)
 	expect(usage && isAccountNavItemActive(usage, '/account/usage')).toBe(true)
 	const billing = items.find((item) => item.label === 'Billing')
@@ -211,13 +219,15 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Activity',
 		'Members',
 		'Settings',
-		'Usage & credits',
+		'Usage',
+		'Credits',
 		'Billing',
 	])
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',
 		'/@acme/-/usage',
+		'/@acme/-/credits',
 		'/@acme/-/billing',
 	])
 	expect(railTabsForPath(teamOwner, '/@acme/-/grants')?.tabs).toEqual([
@@ -236,12 +246,17 @@ test('team organization rail shares the sections and keeps members, settings, an
 		teamRail('billing')
 			.at(-1)
 			?.items.map((item) => item.label),
-	).toEqual(['Members', 'Settings', 'Usage & credits', 'Billing'])
+	).toEqual(['Members', 'Settings', 'Usage', 'Credits', 'Billing'])
+	// Members cannot open usage or billing, but Credits shows their budget.
 	expect(
 		teamRail('member')
 			.at(-1)
-			?.items.map((item) => item.label),
-	).toEqual(['Members', 'Settings'])
+			?.items.map((item) => [item.label, item.description]),
+	).toEqual([
+		['Members', expect.any(String)],
+		['Settings', expect.any(String)],
+		['Credits', 'Your monthly budget and what it has spent.'],
+	])
 	// Team Overview is the org home; exact match so section pages stay off.
 	const teamOverview = teamOwner[0]?.items[0]
 	expect(teamOverview?.href).toBe('/@acme')
@@ -328,6 +343,13 @@ test('switching workspaces keeps the page when the role can open it there', () =
 	)
 	expect(workspaceSwitchHref('/@jane/-/secrets', acmeGuest)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@jane/-/usage', acmeGuest)).toBe('/@acme')
+	const acmeMember = { ...acmeOwner, role: 'member' } as const
+	expect(workspaceSwitchHref('/@jane/-/usage', acmeMember)).toBe('/@acme')
+	expect(workspaceSwitchHref('/@jane/-/credits', acmeMember)).toBe(
+		'/@acme/-/credits',
+	)
+	expect(workspaceSwitchHref('/@acme/-/credits', jane)).toBe('/@jane/-/credits')
+	expect(workspaceSwitchHref('/@jane/-/credits', acmeGuest)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@acme', jane)).toBe('/@jane/-/overview')
 })
 

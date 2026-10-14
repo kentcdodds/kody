@@ -337,7 +337,7 @@ test('credits live on the usage page: /account/credits redirects there', async (
 
 	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(
-		rail.getByRole('link', { name: 'Usage & credits', exact: true }),
+		rail.getByRole('link', { name: 'Usage', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 })
 
