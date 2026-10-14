@@ -15,6 +15,8 @@ import {
 import { getOrgCredential, type OrgCredential } from './credential-ids.ts'
 
 export const credentialHostsMax = 20
+/** A bound on one request, above any list an existing credential holds. */
+const credentialHostsInputMax = 200
 
 export type ParsedCredentialHosts =
 	| { ok: true; hosts: Array<string> }
@@ -81,6 +83,9 @@ function parseCredentialHost(
 export function parseCredentialHostsInput(
 	raw: ReadonlyArray<unknown>,
 ): ParsedCredentialHosts {
+	if (raw.length > credentialHostsInputMax) {
+		return { ok: false, error: 'Too many hosts in one request.' }
+	}
 	const hosts: Array<string> = []
 	for (const value of raw) {
 		if (typeof value !== 'string') {
@@ -91,14 +96,7 @@ export function parseCredentialHostsInput(
 		if (!parsed.ok) return parsed
 		hosts.push(parsed.host)
 	}
-	const normalized = normalizeAllowedHosts(hosts)
-	if (normalized.length > credentialHostsMax) {
-		return {
-			ok: false,
-			error: `A credential can allow at most ${credentialHostsMax} hosts.`,
-		}
-	}
-	return { ok: true, hosts: normalized }
+	return { ok: true, hosts: normalizeAllowedHosts(hosts) }
 }
 
 function parseHostList(json: string | null | undefined) {
@@ -266,7 +264,11 @@ export async function updateCredentialHosts(input: {
 			'Keep at least one host. To stop using this credential, delete it instead.',
 		)
 	}
-	if (editable.length > credentialHostsMax) {
+	// A list already over the cap may still shrink or be saved unchanged.
+	if (
+		editable.length > credentialHostsMax &&
+		editable.length > read.settings.hosts.length
+	) {
 		throw new McpCallerError(
 			`A credential can allow at most ${credentialHostsMax} hosts.`,
 		)

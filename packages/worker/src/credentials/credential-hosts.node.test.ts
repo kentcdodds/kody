@@ -106,16 +106,40 @@ test.each([
 	if (!parsed.ok) expect(parsed.error).toContain(message)
 })
 
-test('host input rejects non-strings and more than the maximum', () => {
+test('host input rejects non-strings', () => {
 	expect(parseCredentialHostsInput([42]).ok).toBe(false)
-	const many = Array.from(
-		{ length: credentialHostsMax + 1 },
-		(_, index) => `h${index}.example.com`,
+})
+
+test('a list cannot grow past the maximum, but one already over it can shrink', async () => {
+	const { sqlite, db, audit } = setup()
+	const hostsOf = (count: number) =>
+		Array.from({ length: count }, (_, index) => `h${index}.example.com`)
+	await expect(
+		updateCredentialHosts({
+			db,
+			orgId,
+			credentialId: 'cred-key',
+			hosts: hostsOf(credentialHostsMax + 1),
+			audit,
+		}),
+	).rejects.toThrow(
+		`A credential can allow at most ${credentialHostsMax} hosts.`,
 	)
-	expect(parseCredentialHostsInput(many)).toEqual({
-		ok: false,
-		error: `A credential can allow at most ${credentialHostsMax} hosts.`,
+
+	sqlite
+		.prepare(
+			`UPDATE secret_entries SET allowed_hosts = ? WHERE id = 'cred-key'`,
+		)
+		.run(JSON.stringify(hostsOf(credentialHostsMax + 3)))
+	const shrunk = await updateCredentialHosts({
+		db,
+		orgId,
+		credentialId: 'cred-key',
+		hosts: hostsOf(credentialHostsMax + 2),
+		audit,
 	})
+	expect(shrunk.changed).toBe(true)
+	expect(shrunk.hosts).toHaveLength(credentialHostsMax + 2)
 })
 
 test('an OAuth connection adds hosts beside its fixed API host, audited, token untouched', async () => {

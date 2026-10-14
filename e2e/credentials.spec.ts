@@ -170,6 +170,16 @@ test('a Key detail pane edits its allowed hosts, HTTPS host names only', async (
 	await expect(pane.getByText('api.example.com')).toHaveCount(0)
 	await expect(page.getByText(value)).toHaveCount(0)
 
+	// Reopening right after a save starts from what was saved.
+	await pane.getByTestId('credential-hosts-edit').click()
+	await expect(
+		editor.getByRole('button', { name: 'Remove uploads.example.com' }),
+	).toBeVisible()
+	await expect(
+		editor.getByRole('button', { name: 'Remove api.example.com' }),
+	).toHaveCount(0)
+	await editor.getByRole('button', { name: 'Cancel' }).click()
+
 	const listed = await page.request.get('/account/credentials.json', {
 		headers: { Referer: page.url() },
 	})

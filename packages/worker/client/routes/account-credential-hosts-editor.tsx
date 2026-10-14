@@ -86,10 +86,21 @@ export function CredentialHostsEditor(
 	let saving = false
 	let error: string | null = null
 	let status: string | null = null
+	// What the last save returned, until the page's refetch replaces `settings`.
+	let saved: {
+		settings: CredentialHostSettings
+		from: CredentialHostSettings
+	} | null = null
+
+	function currentSettings() {
+		return saved && saved.from === handle.props.settings
+			? saved.settings
+			: handle.props.settings
+	}
 
 	function startEditing() {
 		editing = true
-		draft = [...handle.props.settings.hosts]
+		draft = [...currentSettings().hosts]
 		typed = ''
 		error = null
 		status = null
@@ -113,10 +124,7 @@ export function CredentialHostsEditor(
 			return
 		}
 		const host = normalizeTypedHost(raw)
-		if (
-			draft.includes(host) ||
-			handle.props.settings.fixedHosts.includes(host)
-		) {
+		if (draft.includes(host) || currentSettings().fixedHosts.includes(host)) {
 			error = `${host} is already allowed.`
 			handle.update()
 			return
@@ -140,15 +148,19 @@ export function CredentialHostsEditor(
 		handle.update()
 		const pending = normalizeTypedHost(typed)
 		try {
-			const saved = await saveCredentialHosts({
+			const result = await saveCredentialHosts({
 				href: handle.props.href,
 				credentialId: handle.props.credentialId,
 				hosts: pending ? [...draft, pending] : draft,
 			})
+			saved = {
+				settings: { hosts: result.hosts, fixedHosts: result.fixedHosts },
+				from: handle.props.settings,
+			}
 			typed = ''
 			saving = false
 			editing = false
-			status = saved.changed ? 'Hosts saved.' : 'No changes to save.'
+			status = result.changed ? 'Hosts saved.' : 'No changes to save.'
 			handle.props.onSaved()
 		} catch (caught) {
 			saving = false
@@ -159,7 +171,8 @@ export function CredentialHostsEditor(
 	}
 
 	return () => {
-		const { settings, credentialName } = handle.props
+		const { credentialName } = handle.props
+		const settings = currentSettings()
 		if (!editing) {
 			return (
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
