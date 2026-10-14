@@ -415,6 +415,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>Team</span>
 							<select
+								aria-label="Team"
 								value={teamId}
 								required
 								mix={[
@@ -481,6 +482,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>Member</span>
 							<select
+								aria-label="Member"
 								value={memberId}
 								required
 								mix={[

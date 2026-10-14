@@ -40,6 +40,9 @@ badges), `/@username/:kodyId/tree/:ref` (**Files** tab),
 `/@username/:kodyId/assets/…` (README-relative images from the published or
 pinned commit), `/@username/:kodyId/settings` (**Settings** tab for packages:
 lock, forkable visibility, internet-visible, webhooks, delete),
+`/@username/:kodyId/collaborators` (**Collaborators** tab, shown only with
+`package:manage_access`: teams, org members, and outside collaborators with
+their preset; add, change preset, remove, invite, revoke invite),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
 internet-visible). Opening an allowlisted image or video in the tree renders a
@@ -86,6 +89,9 @@ fixtures use `control-kody execute` / `search` against the same origin.
 - `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (raw file bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
+- `GET|POST /profiles/:username/packages/:kodyId/collaborators.json` (view / one
+  change: `grant`, `revoke`, `invite`, `revoke-invite`; 403 without
+  `package:manage_access`)
 - `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`

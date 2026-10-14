@@ -47,8 +47,33 @@ need manage access on the package.
 }
 ```
 
-`accessList` shows who holds what. `accessRevoke` removes one grant by
-`grant_id`.
+`accessList` shows who holds what across the org. `packageCollaboratorList`
+(`{ "package_id": "<package id or kody id>" }`) lists everyone who holds a grant
+on one package: teams, members, and outside collaborators with their username or
+team slug and preset, plus pending grant invites. It needs Manage on the
+package. `accessRevoke` removes one grant by `grant_id`. To change someone's
+preset, call `accessGrant` again for the same subject; it updates the grant.
+
+## On the web
+
+People with Manage on a package see a **Collaborators** tab on the package page
+(`/@owner/<package>/collaborators`). It lists who has access and their preset,
+adds a team or org member, changes a preset, removes access, and invites someone
+outside the organization by email or username. Each change goes through the same
+calls as the capabilities on this page, so it is checked and audited the same
+way. Org owners always have full access and are not listed.
+
+## Open API
+
+The same calls are on the [Open API](/docs/open-api) (`/openapi.json`):
+
+| Call                                          | Capability                |
+| --------------------------------------------- | ------------------------- |
+| `GET /v1/packages/{package_id}/collaborators` | `packageCollaboratorList` |
+| `POST /v1/access/grants`                      | `accessGrant`             |
+| `POST /v1/access/grants/{grant_id}/revoke`    | `accessRevoke`            |
+| `POST /v1/access/invites`                     | `inviteCreate`            |
+| `POST /v1/access/invites/{invite_id}/revoke`  | `inviteRevoke`            |
 
 ## Invite someone who has no access yet
 
@@ -151,6 +176,7 @@ into your own org and import the copy.
 
 ## Which call to use
 
+- Who has access to one package: `packageCollaboratorList`
 - One person or team, already known: `accessGrant`
 - Someone without access or an account yet: `inviteCreate` with `kind: "grant"`
 - The whole org: `inviteCreate` with `kind: "membership"` or `orgMemberUpdate`

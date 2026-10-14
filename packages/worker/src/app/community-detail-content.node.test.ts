@@ -324,6 +324,27 @@ test('package chrome is shared for public listings and private owner packages', 
 		'href="/@kentcdodds"',
 		'← @kentcdodds',
 	])
+	expect(
+		await render({ viewerIsOwner: true, viewerCanManage: true }),
+	).not.toContain(testId('package-repo-nav-collaborators'))
+	expectMarkers(
+		await render({
+			viewerIsOwner: true,
+			viewerCanManage: true,
+			viewerCanManageAccess: true,
+		}),
+		[
+			testId('package-repo-nav-collaborators'),
+			'href="/@kentcdodds/github-triage/collaborators"',
+		],
+	)
+	expect(
+		await render({
+			viewerIsOwner: true,
+			viewerCanManageAccess: true,
+			hasPackage: false,
+		}),
+	).not.toContain(testId('package-repo-nav-collaborators'))
 
 	// A teammate who can read a team package opens it but cannot manage it.
 	expectMarkers(
