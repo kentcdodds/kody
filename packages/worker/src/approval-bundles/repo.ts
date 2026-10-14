@@ -125,29 +125,74 @@ export async function listApprovalBundleDecisions(
 	)
 }
 
-/** Records one decision; the first decision for an item stands. */
-export function approvalBundleDecisionStatement(
+type DecisionClaim = {
+	bundleId: string
+	itemKey: string
+	decision: 'approved' | 'denied'
+	decidedByUserId: string
+	decidedAt: string
+}
+
+/**
+ * Claims an item's decision before anything is approved or denied, so only
+ * one request ever acts on an item. False when another request already
+ * decided or is deciding it.
+ */
+export async function claimApprovalBundleDecision(
 	db: D1Database,
-	input: {
-		bundleId: string
-		itemKey: string
-		decision: 'approved' | 'denied'
-		decidedByUserId: string
-		decidedAt?: string
-	},
-): D1PreparedStatement {
-	return db
+	claim: DecisionClaim,
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`INSERT OR IGNORE INTO approval_bundle_decisions (
 				bundle_id, item_key, decision, decided_by_user_id, decided_at
 			) VALUES (?, ?, ?, ?, ?)`,
 		)
 		.bind(
-			input.bundleId,
-			input.itemKey,
-			input.decision,
-			input.decidedByUserId,
-			input.decidedAt ?? new Date().toISOString(),
+			claim.bundleId,
+			claim.itemKey,
+			claim.decision,
+			claim.decidedByUserId,
+			claim.decidedAt,
+		)
+		.run()
+	return (result.meta?.changes ?? 0) > 0
+}
+
+/** Gives back a claim whose approve or deny did not happen. */
+export async function releaseApprovalBundleDecision(
+	db: D1Database,
+	claim: DecisionClaim,
+) {
+	await db
+		.prepare(
+			`DELETE FROM approval_bundle_decisions
+			WHERE bundle_id = ? AND item_key = ? AND decision = ? AND decided_at = ?`,
+		)
+		.bind(claim.bundleId, claim.itemKey, claim.decision, claim.decidedAt)
+		.run()
+}
+
+/**
+ * Stamps the claim's final time once its approve or deny is done; batched with
+ * the audit row so a recorded decision is always audited.
+ */
+export function finalizeApprovalBundleDecisionStatement(
+	db: D1Database,
+	claim: DecisionClaim,
+	finalizedAt: string,
+): D1PreparedStatement {
+	return db
+		.prepare(
+			`UPDATE approval_bundle_decisions SET decided_at = ?
+			WHERE bundle_id = ? AND item_key = ? AND decision = ? AND decided_at = ?`,
+		)
+		.bind(
+			finalizedAt,
+			claim.bundleId,
+			claim.itemKey,
+			claim.decision,
+			claim.decidedAt,
 		)
 }
 

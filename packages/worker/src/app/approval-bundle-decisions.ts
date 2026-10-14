@@ -17,9 +17,11 @@ import {
 	type ApprovalViewer,
 } from '#worker/approval-bundles/item-views.ts'
 import {
-	approvalBundleDecisionStatement,
+	claimApprovalBundleDecision,
+	finalizeApprovalBundleDecisionStatement,
 	getApprovalBundleForPerson,
 	listApprovalBundleDecisions,
+	releaseApprovalBundleDecision,
 	type ApprovalBundleRecord,
 } from '#worker/approval-bundles/repo.ts'
 import { approvalBundleExpiresAt } from '#worker/approval-bundles/service.ts'
@@ -227,18 +229,31 @@ async function approveItem(input: {
 }
 
 /** Denying a paused publish drops it; other denials leave everything as is. */
-async function denyItem(viewer: ApprovalViewer, ref: ApprovalItemRef) {
+async function denyItem(
+	viewer: ApprovalViewer,
+	ref: ApprovalItemRef,
+): Promise<ApproveOutcome> {
 	switch (ref.type) {
-		case 'publish':
-			await resolvePackageApprovalRequest(viewer.env.APP_DB, {
-				id: ref.requestId,
-				status: 'superseded',
-				resolvedByUserId: viewer.request.actor?.userId ?? null,
-			})
-			return
+		case 'publish': {
+			const superseded = await resolvePackageApprovalRequest(
+				viewer.env.APP_DB,
+				{
+					id: ref.requestId,
+					status: 'superseded',
+					resolvedByUserId: viewer.request.actor?.userId ?? null,
+				},
+			)
+			return superseded
+				? { ok: true }
+				: {
+						ok: false,
+						error:
+							'This publish was already approved or replaced, so there is nothing to deny.',
+					}
+		}
 		case 'capabilities':
 		case 'credential-picks':
-			return
+			return { ok: true }
 		default: {
 			const exhaustive: never = ref
 			throw new Error(`Unknown approval item: ${JSON.stringify(exhaustive)}`)
@@ -355,44 +370,61 @@ export async function decideApprovalBundleItem(input: {
 			current,
 		)
 	}
-	if (approving) {
-		const outcome = await approveItem({
+	const decision = approving ? 'approved' : 'denied'
+	const claim = {
+		bundleId: bundle.id,
+		itemKey,
+		decision,
+		decidedByUserId: personId,
+		decidedAt: new Date().toISOString(),
+	} as const
+	if (!(await claimApprovalBundleDecision(viewer.env.APP_DB, claim))) {
+		return failure(
+			409,
+			'This item was already decided.',
+			await loadCurrentItemView(viewer, bundle.id, ref),
+		)
+	}
+	let outcome: ApproveOutcome
+	try {
+		outcome = approving
+			? await approveItem({
+					viewer,
+					request: input.request,
+					user: input.user,
+					ref,
+					fingerprint: input.decision.fingerprint,
+				})
+			: await denyItem(viewer, ref)
+	} catch (error) {
+		await releaseApprovalBundleDecision(viewer.env.APP_DB, claim)
+		throw error
+	}
+	if (!outcome.ok) {
+		await releaseApprovalBundleDecision(viewer.env.APP_DB, claim)
+		await auditFailure({
 			viewer,
-			request: input.request,
-			user: input.user,
-			ref,
-			fingerprint: input.decision.fingerprint,
+			bundle,
+			item: current,
+			action: approving ? 'approve' : 'deny',
+			error: outcome.error,
 		})
-		if (!outcome.ok) {
-			await auditFailure({
-				viewer,
-				bundle,
-				item: current,
-				action: 'approve',
-				error: outcome.error,
-			})
-			return failure(
-				409,
-				outcome.error,
-				await loadApprovalItemView(viewer, ref, null),
-			)
-		}
-	} else {
-		await denyItem(viewer, ref)
+		return failure(
+			409,
+			outcome.error,
+			await loadApprovalItemView(viewer, ref, null),
+		)
 	}
 	const decidedAt = new Date().toISOString()
-	const decision = approving ? 'approved' : 'denied'
 	await runAppDbBatchWithOrgAudit({
 		appDb: viewer.env.APP_DB,
 		audit: orgAuditWriterFromRequest(viewer.env, viewer.request),
 		statements: [
-			approvalBundleDecisionStatement(viewer.env.APP_DB, {
-				bundleId: bundle.id,
-				itemKey,
-				decision,
-				decidedByUserId: personId,
+			finalizeApprovalBundleDecisionStatement(
+				viewer.env.APP_DB,
+				claim,
 				decidedAt,
-			}),
+			),
 		],
 		event: {
 			orgId: viewer.request.org.id,
@@ -401,7 +433,6 @@ export async function decideApprovalBundleItem(input: {
 			resourceId: bundle.id,
 			details: auditDetails(bundle, current),
 		},
-		onlyIfChanged: true,
 	})
 	return {
 		ok: true,
@@ -416,4 +447,20 @@ export async function decideApprovalBundleItem(input: {
 			}),
 		},
 	}
+}
+
+async function loadCurrentItemView(
+	viewer: ApprovalViewer,
+	bundleId: string,
+	ref: ApprovalItemRef,
+) {
+	const decisions = await listApprovalBundleDecisions(
+		viewer.env.APP_DB,
+		bundleId,
+	)
+	return loadApprovalItemView(
+		viewer,
+		ref,
+		decisions.get(approvalItemKey(ref)) ?? null,
+	)
 }
