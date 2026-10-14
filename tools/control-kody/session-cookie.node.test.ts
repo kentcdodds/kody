@@ -194,6 +194,16 @@ test('login HTML on an account path refreshes the session', () => {
 			location: '/@x-org',
 		}),
 	).toBe(false)
+	expect(
+		shouldRefreshSession({
+			skipLogin: false,
+			status: 302,
+			path: '/logout',
+			rawBody: '',
+			method: 'POST',
+			location: '/login',
+		}),
+	).toBe(false)
 })
 
 test('a login nav link on a real account page does not refresh the session', () => {
