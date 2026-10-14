@@ -187,6 +187,11 @@ credentials; opt-in types that a package can declare are described in
   credentials with no provider, which resolve automatically once their provider
   is set (`credentialUpdate`). Only credentials you can Use are listed, and
   needs inherited from a dependency carry `from`.
+- To choose which credential a need uses, an agent calls
+  `credentialMappingPropose` with org defaults, your own defaults, or mappings
+  for your instance of a trigger. It writes nothing and returns an approval
+  link. The mappings apply when you open the link and click Approve, which
+  applies them all at once and turns on any trigger they map.
 - Slots take no `placement`. Publish rejects one with a message to remove it.
   Published versions that include it load with it ignored. The fetch gateway
   fills `{{secret:NAME}}` and `{{integration-token:NAME}}` anywhere in a request

@@ -110,6 +110,33 @@ async function waitForCreatedVectorizeIndex(
 	)
 }
 
+/**
+ * Readiness can flap: metadata_index/list succeeds once, then the next read
+ * or metadata create on a recycled name answers 410 again. Retry the whole
+ * ready-then-configure step a bounded number of times.
+ */
+async function configureVectorizeIndexWhenReady(
+	client: VectorizeClient,
+	name: string,
+) {
+	const wait =
+		client.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+	for (const delayMs of [...vectorizeRecreateVisibleDelaysMs, null]) {
+		await waitForCreatedVectorizeIndex(client, name)
+		try {
+			await ensureVectorizeMetadataIndexes(client, name)
+			return
+		} catch (error) {
+			if (delayMs == null || !isTransientVectorizeGone(error)) throw error
+			console.error(
+				`Vectorize index ${name} answered 404/410 after reading as ready; retrying metadata setup in ${String(delayMs)}ms.`,
+			)
+			await wait(delayMs)
+		}
+	}
+}
+
 async function ensureVectorizeMetadataIndexes(
 	client: VectorizeClient,
 	name: string,
@@ -166,8 +193,7 @@ export async function ensureVectorizeIndex(
 		}
 		// Wait even when GET already succeeded: metadata_index/list can still
 		// answer 410 briefly after create/recreate on a recycled preview name.
-		await waitForCreatedVectorizeIndex(input, input.name)
-		await ensureVectorizeMetadataIndexes(input, input.name)
+		await configureVectorizeIndexWhenReady(input, input.name)
 	} catch (error) {
 		if (error instanceof CloudflareResourceError) throw error
 		throw new CloudflareResourceError(

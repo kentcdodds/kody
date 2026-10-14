@@ -50,8 +50,12 @@ request.
 - **Default:** personal org (person `stable_user_id`).
 - **Errors:** inaccessible or unknown `org` → `401 unauthorized` with a message
   that names `?org=`.
-- **Git HTTPS:** there is no `?org=` on the git URL. Authz uses the **resource
-  owner's** org (membership or live grant) plus the token's scopes.
+- **Git HTTPS:** there is no `?org=` on the git URL. Authz is **user-wide across
+  orgs**: the login / MCP org never gates git. Access uses the **resource
+  owner's** org (membership or live grant) plus the token's scopes. One
+  `setup-git` credential (`org_binding: user`) must open every `@owner/name.git`
+  the person can already access in any org. API / MCP calls for `@owner`
+  packages still need `?org=` / `--org` when acting in that org.
 
 ### Minting
 
@@ -127,7 +131,9 @@ Caller must:
 1. Hold `package:read` (clone/fetch) or `package:write` (push) on the API token
    scopes. Scopes have no hierarchy (`package:write` does not imply read).
 2. Be able to access the target via org membership or a live grant on the
-   **resource owner's** org.
+   **resource owner's** org — not the MCP / API login org. Git is user-wide; a
+   missing package and a private package the caller cannot access both look like
+   `404 repository not found`.
 
 Name collision: if both a package and a plain repo exist under the same
 `@owner/name`, a readable **package** wins.

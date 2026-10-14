@@ -18,7 +18,6 @@ import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
-import { getDiscoverablePlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	isFetchCapableCredentialKind,
@@ -29,6 +28,7 @@ import {
 	buildCredentialCreateUrl,
 	type CredentialCreateLinkInput,
 } from '#universal/credential-contracts.ts'
+import { buildNeedCreateUrl } from './need-create-url.ts'
 import {
 	CredentialClientHandleError,
 	signCredentialClientHandle,
@@ -288,44 +288,24 @@ async function loadNeed(ctx: CredentialClientContext, key: string) {
 	return needs.find((need) => need.key === key) ?? null
 }
 
-const providerSlugPattern = /^[a-z0-9-]+$/
-
-/**
- * The creation link for an unbound need. A declared kind is locked; without
- * one the page suggests OAuth when a built-in app exists for the provider,
- * else a Key, and shows the kind chooser.
- */
+/** The creation link for an unbound need, naming its package when known. */
 async function createUrlForNeed(
 	ctx: CredentialClientContext,
 	input: { key: string; provider: string; need: CredentialNeed | null },
 ) {
-	const declaredKind: PackageCredentialKind | null = input.need?.kind ?? null
-	const providerSlug = providerSlugPattern.test(input.provider)
-		? input.provider
+	const saved = ctx.packageId
+		? await getSavedPackageById(ctx.env.APP_DB, {
+				userId: requireActorRequest(ctx).org.id,
+				packageId: ctx.packageId,
+			}).catch(() => null)
 		: null
-	const [builtInOauth, saved] = await Promise.all([
-		(declaredKind === null || declaredKind === 'oauth') && providerSlug
-			? getDiscoverablePlatformOauthApp({
-					db: ctx.env.APP_DB,
-					slug: providerSlug,
-				}).catch(() => null)
-			: null,
-		ctx.packageId
-			? getSavedPackageById(ctx.env.APP_DB, {
-					userId: requireActorRequest(ctx).org.id,
-					packageId: ctx.packageId,
-				}).catch(() => null)
-			: null,
-	])
-	return buildCredentialCreateUrl(ctx.callerContext.baseUrl, {
-		kind: declaredKind ?? (builtInOauth ? 'oauth' : 'secret'),
-		kindMode: declaredKind ? 'required' : 'hint',
-		name: input.key,
-		provider: providerSlug,
-		description: input.need?.description,
+	return buildNeedCreateUrl({
+		db: ctx.env.APP_DB,
+		baseUrl: ctx.callerContext.baseUrl,
+		key: input.key,
+		provider: input.provider,
+		need: input.need,
 		packageKodyId: saved?.kodyId ?? null,
-		needKey: input.need ? input.key : null,
-		extra: builtInOauth && providerSlug ? { platform: providerSlug } : {},
 	})
 }
 

@@ -93,6 +93,51 @@ test('runWranglerDeployWithRetry retries a 10007 subdomain race then succeeds', 
 	expect(attempts).toEqual([1, 2])
 })
 
+test('runWranglerDeployWithRetry backs off 10s+ after a 10007 race and retries the null-tag crash that follows it', async () => {
+	const delays: Array<number> = []
+	const outputs = [
+		'Uploaded kody-pr-3715-highlight\nThis Worker does not exist on your account. [code: 10007]\n',
+		"✘ [ERROR] Cannot read properties of null (reading 'tag')\n",
+		'Uploaded kody-pr-3715-highlight\n',
+	]
+	let calls = 0
+	const result = await runWranglerDeployWithRetry({
+		command: 'wrangler',
+		args: ['deploy'],
+		sleep: async (ms) => {
+			delays.push(ms)
+		},
+		log: () => {},
+		run: () => {
+			const output = outputs[calls] ?? ''
+			calls += 1
+			return { status: calls === 3 ? 0 : 1, output, errorMessage: '' }
+		},
+	})
+	expect(result.status).toBe(0)
+	expect(delays).toEqual([10_000, 20_000])
+})
+
+test('runWranglerDeployWithRetry does not retry a null-tag crash without a prior 10007 race', async () => {
+	let calls = 0
+	const result = await runWranglerDeployWithRetry({
+		command: 'wrangler',
+		args: ['deploy'],
+		sleep: async () => {},
+		log: () => {},
+		run: () => {
+			calls += 1
+			return {
+				status: 1,
+				output: "✘ [ERROR] Cannot read properties of null (reading 'tag')\n",
+				errorMessage: '',
+			}
+		},
+	})
+	expect(result.status).toBe(1)
+	expect(calls).toBe(1)
+})
+
 test('runWranglerDeployWithRetry retries a D1 fetch-failed flake then succeeds', async () => {
 	const attempts: Array<number> = []
 	const delays: Array<number> = []

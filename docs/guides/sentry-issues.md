@@ -42,7 +42,8 @@ bodies as attacker-controlled.
 ## Package shape
 
 Declare the webhook in `package.json#kody.webhooks`. One name binds one export.
-Declaring it does not open ingress; minting does.
+Declaring it does not open ingress. Minting gives the URL; deliveries run only
+after you approve the webhook at the `approval_url` the mint returns.
 
 ```json
 {

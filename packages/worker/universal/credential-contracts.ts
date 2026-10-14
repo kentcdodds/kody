@@ -196,6 +196,20 @@ export type PackageCredentialsView = {
 	incomplete: Array<PackageCredentialsIncomplete>
 }
 
+/** One change POST credentials.json refused; nothing was written. */
+export type PackageCredentialsWriteError = {
+	needKey: string
+	target: CredentialMappingTarget
+	code: CredentialApprovalErrorCode
+	message: string
+	createUrl?: string
+}
+
+export type PackageCredentialsWriteFailure = {
+	ok: false
+	errors: Array<PackageCredentialsWriteError>
+}
+
 export const credentialApprovalErrorCodes = [
 	'need_unknown',
 	'trigger_unknown',
@@ -221,12 +235,25 @@ export type CredentialApprovalChangeView = {
 		multiple: boolean
 	} | null
 	before: Array<CredentialRef> | null
+	/** Stored refs left out of `before` because the viewer can no longer Use them; ids only. */
+	beforeUnusableIds: Array<string>
 	after: Array<CredentialRef>
 	willEnable: boolean
 	error: {
 		code: CredentialApprovalErrorCode
 		message: string
 		createUrl?: string
+	} | null
+}
+
+/** A trigger the proposal turns on with no mapping of its own. */
+export type CredentialApprovalEnableView = {
+	trigger: CredentialTriggerRef
+	/** False when it is already on (or paused) for you; Approve is a no-op. */
+	willEnable: boolean
+	error: {
+		code: CredentialApprovalErrorCode
+		message: string
 	} | null
 }
 
@@ -237,7 +264,20 @@ export type CredentialApprovalView = {
 	canApprove: boolean
 	fingerprint: string
 	changes: Array<CredentialApprovalChangeView>
+	enable: Array<CredentialApprovalEnableView>
 	errors: Array<string>
+}
+
+/** Approve refused; nothing was written. `view` is resolved fresh. */
+export type CredentialApprovalFailure = {
+	ok: false
+	error: string
+	view: CredentialApprovalView
+}
+
+export type CredentialApprovalSuccess = {
+	ok: true
+	view: CredentialApprovalView
 }
 
 export function describeCredentialMappingTarget(
@@ -488,9 +528,13 @@ function proposalParamName(change: CredentialMappingChange): string {
 
 function buildCredentialProposalSearch(input: {
 	changes: ReadonlyArray<CredentialMappingProposalChange>
+	enable?: ReadonlyArray<CredentialTriggerRef>
 	reason?: string | null
 }): URLSearchParams {
 	const params = new URLSearchParams()
+	for (const trigger of input.enable ?? []) {
+		params.append('enable', `${trigger.kind}:${trigger.name}`)
+	}
 	for (const change of input.changes) {
 		const name = proposalParamName(change)
 		if (change.credentials.length === 0) {
@@ -512,6 +556,8 @@ export function buildCredentialApprovalHref(input: {
 	username: string
 	kodyId: string
 	changes: ReadonlyArray<CredentialMappingProposalChange>
+	/** Triggers to turn on even when they map nothing (a webhook, say). */
+	enable?: ReadonlyArray<CredentialTriggerRef>
 	reason?: string | null
 }): string {
 	const path = credentialApprovalPath(input)
@@ -521,8 +567,23 @@ export function buildCredentialApprovalHref(input: {
 
 export type ParsedCredentialProposal = {
 	changes: Array<CredentialMappingProposalChange>
+	enable: Array<CredentialTriggerRef>
 	reason: string | null
 	errors: Array<string>
+}
+
+/** `webhook:incoming` (split at the first colon); null when it is not one. */
+function parseCredentialTriggerRef(value: string): CredentialTriggerRef | null {
+	const text = value.trim()
+	const colon = text.indexOf(':')
+	if (colon < 0) return null
+	const kind = text.slice(0, colon).trim()
+	const name = text.slice(colon + 1).trim()
+	if (!name) return null
+	if (!(credentialTriggerKinds as ReadonlyArray<string>).includes(kind)) {
+		return null
+	}
+	return { kind: kind as CredentialTriggerKind, name }
 }
 
 const defaultParamPattern = /^(default|mine)\[([^\]]+)\]$/
@@ -577,8 +638,20 @@ export function parseCredentialApprovalQuery(
 			values: Array<string>
 		}
 	>()
+	const enableByKey = new Map<string, CredentialTriggerRef>()
 	for (const [name, value] of search) {
 		if (name === 'reason') continue
+		if (name === 'enable') {
+			const trigger = parseCredentialTriggerRef(value)
+			if (!trigger) {
+				errors.push(
+					`"enable=${value}" is not a trigger; use <cron|subscription|webhook>:<name>.`,
+				)
+				continue
+			}
+			enableByKey.set(`${trigger.kind}:${trigger.name}`, trigger)
+			continue
+		}
 		const parsed = parseProposalParamName(name)
 		if (!parsed) {
 			if (/^(default|mine|trigger)/.test(name)) {
@@ -597,12 +670,14 @@ export function parseCredentialApprovalQuery(
 		entry.values.push(value)
 		byTarget.set(key, entry)
 	}
-	if (byTarget.size > maxCredentialProposalValues) {
+	const valueCount = byTarget.size + enableByKey.size
+	if (valueCount > maxCredentialProposalValues) {
 		return {
 			changes: [],
+			enable: [],
 			reason: null,
 			errors: [
-				`A proposal holds at most ${maxCredentialProposalValues} mapping parameters; this one has ${byTarget.size}.`,
+				`A proposal holds at most ${maxCredentialProposalValues} mapping parameters; this one has ${valueCount}.`,
 			],
 		}
 	}
@@ -634,6 +709,7 @@ export function parseCredentialApprovalQuery(
 	const reason = trimmed(search.get('reason'))
 	return {
 		changes,
+		enable: [...enableByKey.values()],
 		reason: reason ? reason.slice(0, maxCredentialProposalReasonLength) : null,
 		errors,
 	}

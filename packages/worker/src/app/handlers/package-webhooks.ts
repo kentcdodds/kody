@@ -140,7 +140,7 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 			}
 
 			try {
-				const revealed = await runWebhookAction({
+				const { revealed, approvalUrl } = await runWebhookAction({
 					env,
 					request,
 					user,
@@ -157,6 +157,7 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 						kodyId: packageKodyId,
 					})),
 					...(revealed ? { revealed } : {}),
+					...(approvalUrl ? { approvalUrl } : {}),
 				}
 				return jsonResponse(payload)
 			} catch (error) {
@@ -191,7 +192,10 @@ async function runWebhookAction(input: {
 	intent: WebhookActionIntent
 	packageKodyId: string
 	webhookName: string
-}): Promise<PackageWebhookRevealedUrl | null> {
+}): Promise<{
+	revealed: PackageWebhookRevealedUrl | null
+	approvalUrl: string | null
+}> {
 	const { env, request, user, intent, packageKodyId, webhookName } = input
 	const shared = {
 		env,
@@ -212,23 +216,32 @@ async function runWebhookAction(input: {
 					'This webhook already has a URL. Rotate it to issue a new one.',
 				)
 			}
-			await mintWebhookUrlForUser(shared)
-			return revealForUi({ ...shared, packageKodyId })
+			const { approvalUrl } = await mintWebhookUrlForUser(shared)
+			return {
+				revealed: await revealForUi({ ...shared, packageKodyId }),
+				approvalUrl,
+			}
 		}
 		case 'rotate': {
-			await rotateWebhookUrlForUser(shared)
-			return revealForUi({ ...shared, packageKodyId })
+			const { approvalUrl } = await rotateWebhookUrlForUser(shared)
+			return {
+				revealed: await revealForUi({ ...shared, packageKodyId }),
+				approvalUrl,
+			}
 		}
 		case 'reveal': {
-			return revealForUi({ ...shared, packageKodyId })
+			return {
+				revealed: await revealForUi({ ...shared, packageKodyId }),
+				approvalUrl: null,
+			}
 		}
 		case 'enable': {
 			await setWebhookEnabledForUser({ ...shared, enabled: true })
-			return null
+			return { revealed: null, approvalUrl: null }
 		}
 		case 'disable': {
 			await setWebhookEnabledForUser({ ...shared, enabled: false })
-			return null
+			return { revealed: null, approvalUrl: null }
 		}
 		default: {
 			const exhaustive: never = intent

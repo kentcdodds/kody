@@ -500,6 +500,56 @@ test('Mailbox retention ends after one item so a queued update can save the next
 		expiredRemaining: false,
 	})
 	expect(await env.EMAIL_BLOBS.get(updatedRawKey)).toBeNull()
+	// The finished pass clears the continuation alarm the first turn armed.
+	expect(
+		await runInDurableObject(
+			stubFor(userId),
+			async (_instance: Mailbox, state) => state.storage.getAlarm(),
+		),
+	).toBeNull()
+})
+
+test('Mailbox idle retention pass keeps the alarm serving an overdue provider repair', async () => {
+	const userId = uniqueUserId('retention-overdue-repair')
+	const mailbox = rpcFor(userId)
+	await mailbox.upsertMessageGraph({
+		ownerId: userId,
+		message: baseMessage(userId, { id: 'retention-overdue-repair-message' }),
+	})
+	const pendingAlarmAtMs = Date.now() + 60_000
+	await runInDurableObject(
+		stubFor(userId),
+		async (_instance: Mailbox, state) => {
+			const overdueAt = new Date(Date.now() - 60_000).toISOString()
+			state.storage.sql.exec(
+				`INSERT INTO email_outbound_provider_index_repairs
+					(provider, provider_message_id, message_id, inbox_id, created_at,
+						updated_at, retry_at, attempt_count)
+				VALUES ('cloudflare', 'overdue-repair-id', 'retention-overdue-repair-message',
+					NULL, ?, ?, ?, 0)`,
+				overdueAt,
+				overdueAt,
+				overdueAt,
+			)
+			await state.storage.setAlarm(pendingAlarmAtMs)
+		},
+	)
+	await expect(
+		mailbox.runRetentionNow({ ownerId: userId }),
+	).resolves.toMatchObject({ expiredRemaining: false })
+	expect(
+		await runInDurableObject(
+			stubFor(userId),
+			async (_instance: Mailbox, state) => {
+				const alarmAtMs = await state.storage.getAlarm()
+				state.storage.sql.exec(
+					'DELETE FROM email_outbound_provider_index_repairs',
+				)
+				await state.storage.deleteAlarm()
+				return alarmAtMs
+			},
+		),
+	).toBe(pendingAlarmAtMs)
 })
 
 test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {

@@ -36,11 +36,13 @@ one org.
 ## Automation runs as the person who turned it on
 
 A scheduled job, subscription, or webhook runs only after a person turns it on
-for themselves with `enablementEnable`. Minting a webhook URL also turns it on
-for the minter when the URL has no enabler yet and the minter holds
-`package:execute`; a webhook URL runs as one enabler. A migrated trigger already
-has an enabler (its creator, or the earliest Owner if the creator left). That
-person is the **enabler**, and every run acts as them:
+for themselves, by approving it on the package's approval page (or, for a job or
+subscription, with `enablementEnable`). Minting a webhook URL does not turn it
+on: the mint returns the approval link, and deliveries fail with that link until
+someone approves. A webhook URL runs as one enabler. Triggers that were already
+running when enablements arrived were turned on for their creator, or the
+earliest Owner if the creator had left. That person is the **enabler**, and
+every run acts as them:
 
 - The run has the enabler's live access in the org, checked on every run. It can
   do only what the enabler could do by hand at that moment, never more.

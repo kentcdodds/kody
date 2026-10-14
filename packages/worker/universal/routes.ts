@@ -250,6 +250,9 @@ export const routes = route({
 	orgSettingsPost: post('/@:orgSlug/-/settings.json'),
 	orgSettingsAvatarPost: post('/@:orgSlug/-/settings/avatar.json'),
 	orgSettingsDeletePost: post('/@:orgSlug/-/settings/delete.json'),
+	orgSettingsCustomHostnamesPost: post(
+		'/@:orgSlug/-/settings/custom-hostnames.json',
+	),
 	orgMembers: get('/@:orgSlug/-/members'),
 	orgMembersApi: get('/@:orgSlug/-/members.json'),
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
@@ -288,6 +291,9 @@ export const routes = route({
 	// public). Third-segment noun so it cannot collide with a kodyId.
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
+	// Bundled credential mapping approval; the query is the proposal
+	// (buildCredentialApprovalHref). Data: communityPackageApproveCredentialsApi.
+	communityPackageApproveCredentials: '/@:username/:kodyId/approve-credentials',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	communityPackageApproveCapabilities:
 		'/@:username/:kodyId/approve-capabilities',
@@ -308,6 +314,20 @@ export const routes = route({
 		'/profiles/:username/packages/:kodyId/webhooks.json',
 	communityPackageWebhooksApiPost: post(
 		'/profiles/:username/packages/:kodyId/webhooks.json',
+	),
+	// Package Credentials / Default mappings / Triggers tabs: GET the view,
+	// POST mapping changes. Session-only; 404 without package:execute.
+	communityPackageCredentialsApi:
+		'/profiles/:username/packages/:kodyId/credentials.json',
+	communityPackageCredentialsApiPost: post(
+		'/profiles/:username/packages/:kodyId/credentials.json',
+	),
+	// Credential approval page data: GET resolves the proposal in the query,
+	// POST `{ action: 'approve', fingerprint }` applies it. Session-only.
+	communityPackageApproveCredentialsApi:
+		'/profiles/:username/packages/:kodyId/approve-credentials.json',
+	communityPackageApproveCredentialsApiPost: post(
+		'/profiles/:username/packages/:kodyId/approve-credentials.json',
 	),
 	profileApi: '/profiles/:username.json',
 	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`

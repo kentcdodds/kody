@@ -38,8 +38,10 @@ helper — not a short-lived per-repo mint.
 ## Consequences
 
 - CLI `--org` maps to `?org=` on Open API / CapabilityProxy (not a custom
-  header; the API edge strips those). Git URLs do not use `?org=`; authz uses
-  the resource owner's org.
+  header; the API edge strips those). Git URLs do not use `?org=`; authz is
+  user-wide across orgs and uses the **resource owner's** org (membership or
+  live grant), never the login org. API calls for another org's packages still
+  require `?org=` / `--org`.
 - Leaving an org no longer needs to revoke user-owned tokens; checks fail closed
   on the next call. Org-bound tokens are still revoked on leave. Revoking the
   API token (`token:delete`) stops git on the next request.

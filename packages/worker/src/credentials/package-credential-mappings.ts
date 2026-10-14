@@ -1,0 +1,453 @@
+/**
+ * The package credentials view (contract: docs/contributing/contracts/
+ * credential-mappings-api.md, "Package credentials API"): a package's needs
+ * with their default mappings, its triggers with the viewer's overrides, and
+ * what a run would use for each. Everything is seen as the viewer: options
+ * and effective mappings hold only credentials they can Use, and only their
+ * own `mine` layer and enablements show. Nothing here reads a value.
+ */
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	listDeclaredTriggers,
+	type DeclaredTrigger,
+} from '#worker/enablements/service.ts'
+import { type EnablementRecord } from '#worker/enablements/types.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	type CredentialKind,
+	type CredentialListItem,
+	type CredentialRef,
+	type EffectiveCredentialMapping,
+	type PackageCredentialNeedView,
+	type PackageCredentialsIncomplete,
+	type PackageCredentialsView,
+	type PackageTriggerView,
+	type StoredCredentialMapping,
+	fetchCapableCredentialKinds,
+} from '#universal/credential-contracts.ts'
+import {
+	listUsableCredentials,
+	resolveNeedCandidates,
+	type UsableCredential,
+} from './credential-candidates.ts'
+import { listCredentialsForViewer } from './credential-list.ts'
+import {
+	loadCredentialMappings,
+	resolveStoredMapping,
+	type CredentialMappingRow,
+	type CredentialMappingRowTarget,
+} from './credential-mappings.ts'
+import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
+import { type CredentialNeed } from './credential-needs.ts'
+import { buildNeedCreateUrl } from './need-create-url.ts'
+
+export type PackageMappingScope = {
+	env: Env
+	baseUrl: string
+	/** A session context bound to the package's org. */
+	request: RequestContext
+	actorId: string
+	savedPackage: SavedPackageRecord
+	canManage: boolean
+	needs: Array<CredentialNeed>
+	usable: Array<UsableCredential>
+	triggers: Array<DeclaredTrigger>
+	rows: Array<CredentialMappingRow>
+	usernames: Map<string, string>
+}
+
+/**
+ * The enablement a viewer edits for a trigger: their own for a schedule or
+ * subscription, or the webhook's single enabler, which may be someone else.
+ */
+export function viewerEnablement(
+	trigger: DeclaredTrigger,
+	actorId: string,
+): { enablement: EnablementRecord | null; otherEnabler: boolean } {
+	const own = trigger.enablements.find(
+		(enablement) => String(enablement.enablerUserId) === actorId,
+	)
+	if (own) return { enablement: own, otherEnabler: false }
+	if (trigger.kind === 'webhook' && trigger.enablements[0]) {
+		return { enablement: trigger.enablements[0], otherEnabler: true }
+	}
+	return { enablement: null, otherEnabler: false }
+}
+
+async function loadUsernames(db: D1Database, ids: ReadonlyArray<string>) {
+	const unique = [...new Set(ids.filter(Boolean))]
+	if (unique.length === 0) return new Map<string, string>()
+	const result = await db
+		.prepare(
+			`SELECT stable_user_id, username FROM users
+			WHERE stable_user_id IN (${unique.map(() => '?').join(', ')})
+				AND deleted_at IS NULL`,
+		)
+		.bind(...unique)
+		.all<{ stable_user_id: string; username: string }>()
+	return new Map(
+		(result.results ?? []).map((row) => [row.stable_user_id, row.username]),
+	)
+}
+
+export async function loadPackageMappingScope(input: {
+	env: Env
+	baseUrl: string
+	request: RequestContext
+	savedPackage: SavedPackageRecord
+	canManage: boolean
+}): Promise<PackageMappingScope> {
+	const actorId = input.request.actor?.userId
+	if (!actorId) {
+		throw new Error('Package credentials are only available to a person.')
+	}
+	const { savedPackage } = input
+	const [needs, usable, triggers] = await Promise.all([
+		loadPublishedCredentialNeeds({
+			env: input.env,
+			userId: savedPackage.userId,
+			sourceId: savedPackage.sourceId,
+		}),
+		listUsableCredentials({ env: input.env, request: input.request }),
+		listDeclaredTriggers({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			savedPackage,
+		}),
+	])
+	const ownEnablementIds = triggers.flatMap((trigger) => {
+		const { enablement, otherEnabler } = viewerEnablement(trigger, actorId)
+		return enablement && !otherEnabler ? [enablement.id] : []
+	})
+	const rows = await loadCredentialMappings({
+		db: input.env.APP_DB,
+		orgId: savedPackage.userId,
+		packageId: savedPackage.id,
+		personId: actorId,
+		enablementIds: ownEnablementIds,
+	})
+	const usernames = await loadUsernames(
+		input.env.APP_DB,
+		rows.map((row) => row.updatedByUserId ?? ''),
+	)
+	return {
+		env: input.env,
+		baseUrl: input.baseUrl,
+		request: input.request,
+		actorId,
+		savedPackage,
+		canManage: input.canManage,
+		needs,
+		usable,
+		triggers,
+		rows,
+		usernames,
+	}
+}
+
+export function toCredentialRef(credential: UsableCredential): CredentialRef {
+	return {
+		id: credential.id,
+		name: credential.name,
+		scope: credential.scope,
+		kind: credential.kind,
+	}
+}
+
+/** Kinds that can fill a need: its own, or any fetch-capable kind without one. */
+export function needAcceptsKind(
+	needKind: CredentialKind | null | undefined,
+	kind: CredentialKind,
+) {
+	return needKind == null
+		? (fetchCapableCredentialKinds as ReadonlyArray<CredentialKind>).includes(
+				kind,
+			)
+		: needKind === kind
+}
+
+/** A provider matches when both sides have one and they agree. */
+export function needAcceptsProvider(
+	needProvider: string,
+	provider: string | null,
+) {
+	return provider === null || provider === needProvider
+}
+
+export function findStoredRow(
+	scope: PackageMappingScope,
+	needKey: string,
+	target: CredentialMappingRowTarget,
+): CredentialMappingRow | null {
+	return (
+		scope.rows.find((row) => {
+			if (row.needKey !== needKey) return false
+			switch (target.target) {
+				case 'org':
+					return row.target.target === 'org'
+				case 'mine':
+					return row.target.target === 'mine'
+				case 'enablement':
+					return (
+						row.target.target === 'enablement' &&
+						row.target.enablementId === target.enablementId
+					)
+				default: {
+					const exhaustive: never = target
+					throw new Error(
+						`Unhandled mapping target: ${JSON.stringify(exhaustive)}`,
+					)
+				}
+			}
+		}) ?? null
+	)
+}
+
+export function refsForIds(
+	scope: PackageMappingScope,
+	ids: ReadonlyArray<string>,
+): Array<CredentialRef> {
+	const byId = new Map(
+		scope.usable.map((credential) => [credential.id, credential]),
+	)
+	return ids.flatMap((id) => {
+		const credential = byId.get(id)
+		return credential ? [toCredentialRef(credential)] : []
+	})
+}
+
+function storedView(
+	scope: PackageMappingScope,
+	row: CredentialMappingRow | null,
+): StoredCredentialMapping | null {
+	if (!row) return null
+	const usableIds = new Set(scope.usable.map((credential) => credential.id))
+	const username = row.updatedByUserId
+		? scope.usernames.get(row.updatedByUserId)
+		: undefined
+	return {
+		credentials: refsForIds(scope, row.credentialIds),
+		unusableIds: row.credentialIds.filter((id) => !usableIds.has(id)),
+		updatedAt: row.updatedAt,
+		updatedBy: username ? { username } : null,
+	}
+}
+
+function effectiveMapping(
+	scope: PackageMappingScope,
+	need: CredentialNeed,
+	input: { trigger: CredentialMappingRow | null; createUrl: string },
+): EffectiveCredentialMapping {
+	const layer = (target: CredentialMappingRowTarget) =>
+		findStoredRow(scope, need.key, target)?.credentialIds ?? null
+	const stored = resolveStoredMapping({
+		trigger: input.trigger?.credentialIds ?? null,
+		mine: layer({ target: 'mine', personId: scope.actorId }),
+		org: layer({ target: 'org' }),
+		usable: scope.usable,
+		accepts: (credential) =>
+			needAcceptsKind(need.kind, credential.kind) &&
+			needAcceptsProvider(need.provider, credential.provider),
+	})
+	const notReady = (
+		status: Exclude<EffectiveCredentialMapping['status'], 'ready'>,
+		source: EffectiveCredentialMapping['source'],
+		candidates: Array<CredentialRef> = [],
+	): EffectiveCredentialMapping => ({
+		source,
+		status,
+		credentials: [],
+		candidates,
+		createUrl: input.createUrl,
+	})
+	if (stored) {
+		switch (stored.status) {
+			case 'ready':
+				return {
+					source: stored.source,
+					status: 'ready',
+					credentials: stored.credentials.map(toCredentialRef),
+					candidates: [],
+					createUrl: null,
+				}
+			case 'none':
+				return notReady('none', stored.source)
+			case 'unusable':
+				return notReady('unusable', stored.source)
+			default: {
+				const exhaustive: never = stored
+				throw new Error(
+					`Unhandled mapping status: ${JSON.stringify(exhaustive)}`,
+				)
+			}
+		}
+	}
+	const { candidates } = resolveNeedCandidates(need, scope.usable)
+	const [only, second] = candidates
+	if (only && !second) {
+		return {
+			source: 'auto',
+			status: 'ready',
+			credentials: [toCredentialRef(only)],
+			candidates: [],
+			createUrl: null,
+		}
+	}
+	return only
+		? notReady('ambiguous', 'auto', candidates.map(toCredentialRef))
+		: notReady('unbound', 'auto')
+}
+
+function isIncomplete(
+	status: EffectiveCredentialMapping['status'],
+): status is PackageCredentialsIncomplete['status'] {
+	return status === 'unbound' || status === 'ambiguous' || status === 'unusable'
+}
+
+export async function needCreateUrls(scope: PackageMappingScope) {
+	const urls = await Promise.all(
+		scope.needs.map(
+			async (need) =>
+				[
+					need.key,
+					await buildNeedCreateUrl({
+						db: scope.env.APP_DB,
+						baseUrl: scope.baseUrl,
+						key: need.key,
+						provider: need.provider,
+						need,
+						packageKodyId: scope.savedPackage.kodyId,
+					}),
+				] as const,
+		),
+	)
+	return new Map(urls)
+}
+
+function lockedToPackage(
+	items: ReadonlyArray<CredentialListItem>,
+	packageId: string,
+) {
+	return items.filter(
+		(item) =>
+			item.packageId === packageId ||
+			item.lockedToPackageIds.includes(packageId),
+	)
+}
+
+export async function buildPackageCredentialsView(
+	scope: PackageMappingScope,
+): Promise<PackageCredentialsView> {
+	const createUrls = await needCreateUrls(scope)
+	const createUrlFor = (key: string) => createUrls.get(key)!
+	const incomplete: Array<PackageCredentialsIncomplete> = []
+	const needs = scope.needs.map((need): PackageCredentialNeedView => {
+		const effective = effectiveMapping(scope, need, {
+			trigger: null,
+			createUrl: createUrlFor(need.key),
+		})
+		if (isIncomplete(effective.status)) {
+			incomplete.push({
+				needKey: need.key,
+				where: { type: 'default' },
+				status: effective.status,
+			})
+		}
+		return {
+			key: need.key,
+			kind: need.kind ?? null,
+			provider: need.provider,
+			description: need.description,
+			multiple: need.multiple,
+			...(need.from ? { from: need.from } : {}),
+			defaults: {
+				org: storedView(
+					scope,
+					findStoredRow(scope, need.key, { target: 'org' }),
+				),
+				mine: storedView(
+					scope,
+					findStoredRow(scope, need.key, {
+						target: 'mine',
+						personId: scope.actorId,
+					}),
+				),
+			},
+			effective,
+			options: scope.usable
+				.filter(
+					(credential) =>
+						needAcceptsKind(need.kind, credential.kind) &&
+						needAcceptsProvider(need.provider, credential.provider),
+				)
+				.map(toCredentialRef),
+			createUrl: createUrlFor(need.key),
+		}
+	})
+	const triggers = scope.triggers.map((trigger): PackageTriggerView => {
+		const { enablement, otherEnabler } = viewerEnablement(
+			trigger,
+			scope.actorId,
+		)
+		const ref = { kind: trigger.kind, name: trigger.name }
+		const mappings = otherEnabler
+			? []
+			: scope.needs.map((need) => {
+					const override = enablement
+						? findStoredRow(scope, need.key, {
+								target: 'enablement',
+								enablementId: enablement.id,
+								personId: scope.actorId,
+							})
+						: null
+					const effective = effectiveMapping(scope, need, {
+						trigger: override,
+						createUrl: createUrlFor(need.key),
+					})
+					if (enablement && isIncomplete(effective.status)) {
+						incomplete.push({
+							needKey: need.key,
+							where: { type: 'trigger', trigger: ref },
+							status: effective.status,
+						})
+					}
+					return {
+						needKey: need.key,
+						override: storedView(scope, override),
+						effective,
+					}
+				})
+		return {
+			trigger: ref,
+			instanceId: trigger.instanceId,
+			enablement: enablement
+				? {
+						id: enablement.id,
+						state: enablement.state,
+						enabledByYou: !otherEnabler,
+					}
+				: null,
+			canEdit:
+				trigger.kind === 'webhook'
+					? trigger.instanceId !== null && !otherEnabler
+					: true,
+			mappings,
+		}
+	})
+	const listed = await listCredentialsForViewer({
+		env: scope.env,
+		request: scope.request,
+	})
+	return {
+		ok: true,
+		package: {
+			id: scope.savedPackage.id,
+			kodyId: scope.savedPackage.kodyId,
+			canManage: scope.canManage,
+		},
+		needs,
+		triggers,
+		locked: lockedToPackage(listed, scope.savedPackage.id),
+		incomplete,
+	}
+}

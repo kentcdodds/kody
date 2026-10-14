@@ -19,7 +19,7 @@ export const enablementEnableCapability = defineDomainCapability(
 		name: 'enablementEnable',
 		orgPermission: 'package:execute',
 		description:
-			'Turn a package trigger (cron job, subscription topic, or minted webhook) on for yourself. Every run then acts as you: your access, your credentials, billed and audited to you. Publishing never turns a trigger on, and nobody can enable one for someone else. Needs package:execute on the package. If you lose access later, the enablement pauses and resumes by itself once access is back.',
+			'Turn a package cron job or subscription topic on for yourself. A webhook is different: its first turn-on needs a person to Approve it at the approval URL (webhookUrlMint or credentialMappingPropose returns it), so this refuses a webhook that is not already on, and only returns an existing enablement. Every run then acts as you: your access, your credentials, billed and audited to you. Publishing never turns a trigger on, and nobody can enable one for someone else. Needs package:execute on the package. If you lose access later, the enablement pauses and resumes by itself once access is back.',
 		keywords: [
 			'enable',
 			'enablement',
