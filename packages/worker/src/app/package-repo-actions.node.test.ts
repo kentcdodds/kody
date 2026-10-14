@@ -94,6 +94,27 @@ test('owners get publish and open app actions but never fork', () => {
 	})
 })
 
+test('owners get Publish changes when HEAD is ahead even without a listing', () => {
+	const actions = buildPackageRepoActions({
+		...base,
+		listing: null,
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		loggedIn: true,
+		ownerPackage: {
+			hasApp: false,
+			sourceAhead: true,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		},
+	})
+	expect(actions).toEqual({
+		fork: null,
+		publishHref:
+			'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		packageAppHref: null,
+	})
+})
+
 test('owner actions stay hidden without a fresh owner projection', () => {
 	const actions = buildPackageRepoActions({
 		...base,

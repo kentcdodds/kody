@@ -30,6 +30,18 @@ export function buildSourceAheadPublishHref(input: {
  * stays the same for every anonymous visitor and the anonymous files payload
  * remains shareable.
  */
+export type PackageRepoOwnerPackageActions = {
+	hasApp: boolean
+	listingNeedsRepublish?: boolean
+	/**
+	 * Default-branch HEAD is newer than `published_commit`. Set for saved
+	 * packages even when there is no community listing yet — owners still need
+	 * Publish changes on the Repo tab.
+	 */
+	sourceAhead?: boolean
+	headCommit?: string | null
+}
+
 export function buildPackageRepoActions(input: {
 	username: string
 	kodyId: string
@@ -39,10 +51,7 @@ export function buildPackageRepoActions(input: {
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
 	loggedIn: boolean
-	ownerPackage: {
-		hasApp: boolean
-		listingNeedsRepublish?: boolean
-	} | null
+	ownerPackage: PackageRepoOwnerPackageActions | null
 }): PackageRepoActions {
 	const { listing } = input
 	const repoHref = routes.communityPackage.href({
@@ -61,12 +70,16 @@ export function buildPackageRepoActions(input: {
 					viewerInstall: input.viewerInstall ?? listing.viewerInstall ?? null,
 				}
 			: null
+	const listingAhead = listing?.sourceAhead === true
+	const ownerAhead = input.ownerPackage?.sourceAhead === true
 	const publishHref =
-		input.viewerCanManage && listing?.sourceAhead
+		input.viewerCanManage && (listingAhead || ownerAhead)
 			? buildSourceAheadPublishHref({
-					username: listing.ownerUsername,
-					kodyId: listing.kodyId,
-					headCommit: listing.headCommit,
+					username: listing?.ownerUsername ?? input.username,
+					kodyId: listing?.kodyId ?? input.kodyId,
+					headCommit: listingAhead
+						? listing?.headCommit
+						: (input.ownerPackage?.headCommit ?? null),
 				})
 			: null
 	const packageAppHref =
@@ -76,9 +89,20 @@ export function buildPackageRepoActions(input: {
 	return { fork, publishHref, packageAppHref }
 }
 
+function ownerPackageSourceAhead(ownerPackage: {
+	pendingCommitKnown: boolean
+	pendingCommit: string | null
+	publishedCommit: string | null
+}): boolean {
+	if (!ownerPackage.pendingCommitKnown) return false
+	if (!ownerPackage.pendingCommit) return false
+	return ownerPackage.pendingCommit !== ownerPackage.publishedCommit
+}
+
 export function buildPackageRepoActionsForPage(
 	page: Extract<PackagePageAccess, { kind: 'page' }>,
 ) {
+	const owner = page.ownerPackage
 	return buildPackageRepoActions({
 		username: page.username,
 		kodyId: page.kodyId,
@@ -87,6 +111,13 @@ export function buildPackageRepoActionsForPage(
 		viewerIsOwner: page.viewerIsOwner,
 		viewerCanManage: page.viewerCanManage,
 		loggedIn: page.loggedIn,
-		ownerPackage: page.ownerPackage,
+		ownerPackage: owner
+			? {
+					hasApp: owner.hasApp,
+					listingNeedsRepublish: owner.listingNeedsRepublish,
+					sourceAhead: ownerPackageSourceAhead(owner),
+					headCommit: owner.pendingCommit,
+				}
+			: null,
 	})
 }
