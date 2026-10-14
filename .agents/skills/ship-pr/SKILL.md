@@ -36,8 +36,12 @@ npx @kodycodes/cli execute --local \
 
 ## Failure
 
-- `exit.status` is `waiting`. Wait about `pollAfterSeconds`, or end the turn. Do
-  not tight-loop.
+- `exit.status` is `waiting`. Do **not** tight-loop. End the turn only after
+  arming **both** (1) the relevant GitHub CI subscription when waiting on CI,
+  and (2) a one-shot Cursor `subscribe_timer` from `exit.wakeHints` (name,
+  `delaySeconds`, `once: true`, `prompt`). CI subscriptions can miss a delivery;
+  without the timer a green PR can sit unmerged for hours (#3750 / #3746). On
+  timer wake: re-tick; if still `waiting`, re-arm from the new `exit.wakeHints`.
 - A check or bot finding you will not fix: `./decide` with a reason (`ignored`,
   `skipped`, `wontfix`, or `accepted`).
 - A valid finding: fix, push, and `./reply-review` with `Fixed in <sha>: ...`.
