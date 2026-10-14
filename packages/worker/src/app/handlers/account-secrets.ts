@@ -1515,6 +1515,7 @@ async function handleSaveAction(input: {
 	// Post-commit provider link must not claim the save failed — a create retry
 	// with currentId null would 409 on the same name (#3725 / #3698).
 	let providerLinkError: string | null = null
+	let renameCleanupError: string | null = null
 	if ((provider?.success || clearProvider) && scope === 'user' && !credential) {
 		try {
 			const stored = await findSecret({
@@ -1563,8 +1564,20 @@ async function handleSaveAction(input: {
 				scope: currentSecret.scope,
 				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
-		} catch {
+		} catch (error) {
 			// New secret is already saved; leaving the prior name is recoverable.
+			renameCleanupError =
+				error instanceof Error
+					? error.message
+					: 'Secret saved under the new name, but removing the previous secret failed.'
+		}
+	}
+
+	function withSaveWarnings<T extends AccountSecretsLoaderData>(payload: T) {
+		return {
+			...payload,
+			...(providerLinkError ? { providerLinkError } : {}),
+			...(renameCleanupError ? { renameCleanupError } : {}),
 		}
 	}
 
@@ -1577,9 +1590,7 @@ async function handleSaveAction(input: {
 			savedPackages,
 			selectedSecretId: nextId,
 		})
-		return jsonResponse(
-			providerLinkError ? { ...payload, providerLinkError } : payload,
-		)
+		return jsonResponse(withSaveWarnings(payload))
 	} catch {
 		// Write already succeeded. Do not report ok:false — a create retry with
 		// currentId null would 409 on the same name.
@@ -1633,9 +1644,8 @@ async function handleSaveAction(input: {
 			selectedSecret,
 			approval: null,
 			approvalError: null,
-			...(providerLinkError ? { providerLinkError } : {}),
 		}
-		return jsonResponse(fallback)
+		return jsonResponse(withSaveWarnings(fallback))
 	}
 }
 

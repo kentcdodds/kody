@@ -15,6 +15,7 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import { AccountManagementShell } from '#client/routes/account-management-components.tsx'
+import { readAccountSecretsSaveWarning } from '#client/routes/account-secrets-shared.ts'
 import {
 	buildKeySaveBody,
 	createKeyFormState,
@@ -165,6 +166,7 @@ export function ConnectCredentialRoute(handle: Handle) {
 	let saving = false
 	let savedName: string | null = null
 	let savedPackageId: string | null = null
+	let savedWarning: string | null = null
 	let message: string | null = null
 
 	function resetFor(href: string) {
@@ -174,6 +176,7 @@ export function ConnectCredentialRoute(handle: Handle) {
 		form = createKeyFormState(query)
 		formForHref = credentialCreateFormKey(href)
 		savedName = null
+		savedWarning = null
 		message = null
 		showValue = false
 	}
@@ -238,12 +241,18 @@ export function ConnectCredentialRoute(handle: Handle) {
 				)
 				return
 			}
-			const payload = await readJson<{ ok?: boolean; error?: string }>(response)
+			const payload = await readJson<{
+				ok?: boolean
+				error?: string
+				providerLinkError?: string | null
+				renameCleanupError?: string | null
+			}>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save this credential.')
 			}
 			savedName = current.name.trim()
 			savedPackageId = keyFormPackageId(current, kind)
+			savedWarning = readAccountSecretsSaveWarning(payload)
 			form = { ...current, value: '', loginFields: {} }
 			await refreshCredentials()
 		} catch (error) {
@@ -287,6 +296,15 @@ export function ConnectCredentialRoute(handle: Handle) {
 					: null
 			return (
 				<section mix={css(cardCss)} data-testid="connect-credential-saved">
+					{savedWarning ? (
+						<p
+							mix={css({ margin: 0, color: colors.warningText })}
+							data-testid="connect-credential-save-warning"
+							role="status"
+						>
+							{savedWarning}
+						</p>
+					) : null}
 					<p mix={css({ margin: 0 })}>
 						<strong>{savedName}</strong> is saved. Return to your agent and
 						continue.

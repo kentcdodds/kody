@@ -2338,6 +2338,11 @@ export type AccountSecretsLoaderData = {
 	 * save (retrying create would 409).
 	 */
 	providerLinkError?: string | null
+	/**
+	 * Set when the secret saved under a new name but deleting the prior secret
+	 * failed. Callers must not treat this as a failed save.
+	 */
+	renameCleanupError?: string | null
 }
 
 export type AccountValueListItem = {

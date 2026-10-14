@@ -62,6 +62,7 @@ import {
 	formatRelativeTtl,
 	getAlreadyAddedNotice,
 	getDataRefreshKey,
+	readAccountSecretsSaveWarning,
 	readFilterState,
 	secretsBasePath,
 	secretsRoute,
@@ -182,7 +183,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			: null
 		syncEditorState(selection)
 		message =
-			payload.providerLinkError ??
+			readAccountSecretsSaveWarning(payload) ??
 			nextMessage ??
 			payload.approvalError ??
 			(selection.selectedId && !payload.selectedSecret && !payload.approval
