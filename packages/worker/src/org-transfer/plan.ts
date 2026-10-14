@@ -88,6 +88,8 @@ const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'saved_packages',
 	// Kept empty: approvals for moved packages are orphan-deleted (re-approve).
 	'package_capability_approvals',
+	// Kept empty: audits for moved packages are orphan-deleted (re-audit).
+	'package_security_audits',
 	// Kept empty: requests for moved packages are orphan-deleted.
 	'package_approval_requests',
 	'user_repos',
@@ -650,6 +652,18 @@ export function planOrgTransfer(
 				'delete',
 			)
 		}
+	}
+
+	for (const row of source.package_security_audits) {
+		orphan(
+			'package_security_audits',
+			row,
+			text(row, 'id'),
+			packageIds.has(text(row, 'package_id'))
+				? 'security audits describe the source owner review; the destination owner can re-audit'
+				: 'package no longer exists',
+			'delete',
+		)
 	}
 
 	for (const row of source.package_approval_requests) {

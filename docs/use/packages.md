@@ -868,6 +868,27 @@ again. A locked package keeps its locked-publish flow first: approving that
 publish on approve-publish runs this check and pauses there if the needs
 changed. Platform codemods do not pause.
 
+## Security audit
+
+The approval page has a **Security audit** field. It reads **No security audit
+performed** until an audit is recorded for the package's current published
+commit and capability fingerprint. Click it to copy a prompt for your agent. The
+prompt names the package, commit, and fingerprint. It asks the agent to review
+that version's code for declared vs used credentials, leaked secrets, unintended
+public exposure, risky network hosts, and package storage use.
+
+The agent records the result with **`packageSecurityAuditRecord`**
+(`POST /v1/packages/{package_id}/security-audits`, `package:write`). It passes
+`package_id`, `published_commit`, `fingerprint`, a `verdict` (`pass` or
+`concerns`), a plain-language `summary`, and an optional `auditor` name. The
+capability rejects a commit or fingerprint that no longer matches the current
+version. Each record stores who recorded it and when, and is audit-logged. The
+field then reads **Audited {date} by {auditor}** and links to the summary. A new
+publish or a changed capability set reads as not audited again.
+
+The audit is informational. It never approves capabilities or makes a package
+internet-visible; **Approve capability set** stays a separate owner click.
+
 ## Community fork provenance
 
 **`packageList`** and **`packageGet`** return community-fork provenance on each

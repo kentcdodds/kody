@@ -1,0 +1,62 @@
+import { type AccountPackageSecurityAudit } from '#universal/loader-data.ts'
+import { buildPackageSecurityAuditPrompt } from '#universal/package-security-audit-prompt.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { getLatestPackageSecurityAudit } from './security-audits-repo.ts'
+
+async function lookupRecorderUsername(db: D1Database, personId: string) {
+	const row = await db
+		.prepare(
+			`SELECT username FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()} LIMIT 1`,
+		)
+		.bind(personId)
+		.first<{ username: string | null }>()
+	const username = row?.username?.trim()
+	return username ? `@${username}` : null
+}
+
+/**
+ * Audit state for the package's current published commit + capability
+ * fingerprint. Any newer publish or capability change has no matching row,
+ * so it reads as not audited.
+ */
+export async function loadPackageSecurityAuditState(input: {
+	db: D1Database
+	ownerUserId: string
+	packageId: string
+	packageName: string
+	publishedCommit: string | null
+	fingerprint: string
+	approvalUrl: string
+}): Promise<AccountPackageSecurityAudit> {
+	if (!input.publishedCommit) return { status: 'unpublished' }
+	const audit = await getLatestPackageSecurityAudit(input.db, {
+		packageId: input.packageId,
+		ownerUserId: input.ownerUserId,
+		publishedCommit: input.publishedCommit,
+		fingerprint: input.fingerprint,
+	})
+	if (!audit) {
+		return {
+			status: 'not_audited',
+			prompt: buildPackageSecurityAuditPrompt({
+				packageName: input.packageName,
+				packageId: input.packageId,
+				publishedCommit: input.publishedCommit,
+				fingerprint: input.fingerprint,
+				approvalUrl: input.approvalUrl,
+			}),
+		}
+	}
+	const recorder =
+		(await lookupRecorderUsername(input.db, audit.recordedByUserId)) ??
+		'a former member'
+	const auditor = audit.auditorLabel ?? recorder
+	return {
+		status: 'audited',
+		verdict: audit.verdict,
+		summary: audit.summary,
+		auditor,
+		recordedBy: auditor === recorder ? null : recorder,
+		recordedAt: audit.recordedAt,
+	}
+}

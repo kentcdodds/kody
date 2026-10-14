@@ -13,6 +13,7 @@ import {
 	MetadataGrid,
 	accountDisclosureCss,
 } from './account-management-components.tsx'
+import { PackageSecurityAuditField } from './package-security-audit-field.tsx'
 import { isCredentialKind } from '#universal/credential-contracts.ts'
 import { credentialKindLabel } from '#universal/credentials-list.ts'
 import {
@@ -525,6 +526,10 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								</ul>
 							)}
 						</section>
+						<PackageSecurityAuditField
+							audit={payload.securityAudit}
+							packageName={payload.package.name}
+						/>
 						<div
 							mix={css({
 								display: 'flex',

@@ -246,6 +246,11 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/packages/{package_id}/git-remote', 'packageGetGitRemote'],
 		[
 			'POST',
+			'/v1/packages/{package_id}/security-audits',
+			'packageSecurityAuditRecord',
+		],
+		[
+			'POST',
 			'/v1/packages/{package_id}/external-push',
 			'packagePublishExternalPush',
 		],

@@ -531,6 +531,10 @@
 		{
 			"filename": "0143-add-dropbox-content-hosts.sql",
 			"sha256": "4308b3602f4600c10e68a9d99b2b85eba3b9b4dc5fbb6e4dff1b1cfef8918cd2"
+		},
+		{
+			"filename": "0146-package-security-audits.sql",
+			"sha256": "18d8fb033af7e5f4e2aab1311a95ae24be9e60a2aac454c7d2c764129bc49ae9"
 		}
 	]
 }
