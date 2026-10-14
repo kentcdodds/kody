@@ -16,7 +16,7 @@ type GitRunner = (args: ReadonlyArray<string>) => GitCommandResult
  * (#3653 / #3719). Stored under `.tmp/` (gitignored).
  */
 
-export const gitHookProvenanceRelativePath = '.tmp/git-hook-provenance.json'
+const gitHookProvenanceRelativePath = '.tmp/git-hook-provenance.json'
 
 export type GitHookProvenanceCheck = 'test:push'
 
@@ -25,7 +25,7 @@ export type GitHookProvenanceEntry = {
 	source: 'validate' | 'pre-push' | 'test:push'
 }
 
-export type GitHookProvenanceDocument = {
+type GitHookProvenanceDocument = {
 	version: 1
 	checks: Partial<
 		Record<GitHookProvenanceCheck, Record<string, GitHookProvenanceEntry>>
