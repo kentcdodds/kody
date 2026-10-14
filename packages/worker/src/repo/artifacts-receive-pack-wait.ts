@@ -210,6 +210,12 @@ export async function waitOutReceivePackBusy(input: {
 	const random = input.random ?? Math.random
 
 	for (let attempt = 0; ; attempt += 1) {
+		// Never start a new upstream attempt once the wait budget is spent (e.g.
+		// the gate turn arrived right at the deadline). An attempt already in
+		// flight is not aborted: cancelling a partially-applied pack is worse.
+		if (now() >= input.deadlineMs) {
+			return { kind: 'timeout' }
+		}
 		const response = await input.send(attempt)
 		// Successful / non-error packs must not be sniffed or retried.
 		if (response.ok) {

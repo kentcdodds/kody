@@ -407,28 +407,29 @@ async function proxyArtifactsReceivePack(input: {
 		token: input.token,
 	})
 
-	let packBody: Uint8Array
-	try {
-		packBody = await readReceivePackBodyWithLimit(input.request.body)
-	} catch (error) {
-		if (error instanceof ReceivePackBodyTooLargeError) {
-			return new Response(error.message, {
-				status: 413,
-				headers: {
-					'Cache-Control': 'no-store',
-					'Content-Type': 'text/plain; charset=utf-8',
-				},
-			})
-		}
-		throw error
-	}
-
 	const deadlineMs = Date.now() + artifactsReceivePackWaitBudgetMs
 	try {
 		return await withReceivePackGate(
 			input.sourceId,
 			artifactsReceivePackWaitBudgetMs,
 			async () => {
+				// Buffer only while holding the gate so queued pushes do not each
+				// retain a full pack in isolate memory while they wait their turn.
+				let packBody: Uint8Array
+				try {
+					packBody = await readReceivePackBodyWithLimit(input.request.body)
+				} catch (error) {
+					if (error instanceof ReceivePackBodyTooLargeError) {
+						return new Response(error.message, {
+							status: 413,
+							headers: {
+								'Cache-Control': 'no-store',
+								'Content-Type': 'text/plain; charset=utf-8',
+							},
+						})
+					}
+					throw error
+				}
 				const waited = await waitOutReceivePackBusy({
 					deadlineMs,
 					backoffMs: artifactsReceivePackBusyBackoffMs,
