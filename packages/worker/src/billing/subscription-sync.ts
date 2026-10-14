@@ -78,6 +78,8 @@ type BillingUser = {
 	id: number
 	email: string
 	stableUserId: OwnerId
+	/** Personal org OwnerId (may differ from stableUserId for new signups). */
+	personalOrgId: OwnerId
 }
 
 type SyncEnv = Env
@@ -224,15 +226,24 @@ async function loadBillingUserById(
 	userId: number,
 ): Promise<BillingUser | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, email, stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		`SELECT id, email, stable_user_id, personal_org_id
+		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(userId)
-		.first<{ id: number; email: string; stable_user_id: OwnerId }>()
+		.first<{
+			id: number
+			email: string
+			stable_user_id: OwnerId
+			personal_org_id: string | null
+		}>()
 	if (!row) return null
+	const personalOrgId = (row.personal_org_id?.trim() ||
+		row.stable_user_id) as OwnerId
 	return {
 		id: row.id,
 		email: row.email,
 		stableUserId: row.stable_user_id,
+		personalOrgId,
 	}
 }
 
@@ -268,17 +279,24 @@ export async function resolveBillingUserForCheckoutLink(input: {
 		null
 	if (stableUserIdHint) {
 		const row = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users
+			`SELECT id, email, stable_user_id, personal_org_id FROM users
 			 WHERE (stable_user_id = ? OR personal_org_id = ?)${andLiveDeletedAtSql()}`,
 		)
 			.bind(stableUserIdHint, stableUserIdHint)
-			.first<{ id: number; email: string; stable_user_id: OwnerId }>()
+			.first<{
+				id: number
+				email: string
+				stable_user_id: OwnerId
+				personal_org_id: string | null
+			}>()
 		await pushCandidate(
 			row
 				? {
 						id: row.id,
 						email: row.email,
 						stableUserId: row.stable_user_id,
+						personalOrgId: (row.personal_org_id?.trim() ||
+							row.stable_user_id) as OwnerId,
 					}
 				: null,
 		)
@@ -306,6 +324,7 @@ export async function resolveBillingUserForCheckoutLink(input: {
 						id: orgRow.id,
 						email: orgRow.email,
 						stableUserId: orgRow.stable_user_id,
+						personalOrgId: orgRow.org_id as OwnerId,
 					}
 				: null,
 		)
@@ -315,30 +334,34 @@ export async function resolveBillingUserForCheckoutLink(input: {
 	if (customerEmail) {
 		const normalized = normalizeEmail(customerEmail)
 		const row = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
+			`SELECT id, email, stable_user_id, personal_org_id
+			 FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(normalized)
-			.first<{ id: number; email: string; stable_user_id: OwnerId }>()
+			.first<{
+				id: number
+				email: string
+				stable_user_id: OwnerId
+				personal_org_id: string | null
+			}>()
 		await pushCandidate(
 			row
 				? {
 						id: row.id,
 						email: row.email,
 						stableUserId: row.stable_user_id,
+						personalOrgId: (row.personal_org_id?.trim() ||
+							row.stable_user_id) as OwnerId,
 					}
 				: null,
 		)
 	}
 
 	for (const candidate of candidates) {
-		const personalOrg = await input.env.APP_DB.prepare(
-			`SELECT COALESCE(NULLIF(TRIM(personal_org_id), ''), stable_user_id) AS org_id
-			 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		const expected = await createBillingLinkReference(
+			input.env,
+			candidate.personalOrgId,
 		)
-			.bind(candidate.id)
-			.first<{ org_id: OwnerId }>()
-		const linkOwnerId = personalOrg?.org_id ?? candidate.stableUserId
-		const expected = await createBillingLinkReference(input.env, linkOwnerId)
 		if (expected === clientReferenceId) {
 			return candidate
 		}
@@ -708,7 +731,7 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 }
 
 /**
- * Personal-org convenience wrapper: org id equals the owner's stable user id.
+ * Personal-org convenience wrapper: links Stripe to the person's personal org.
  */
 export async function linkStripeCustomerFromCheckoutSession(input: {
 	env: SyncEnv
@@ -718,7 +741,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	return linkStripeCustomerFromCheckoutSessionForOrg({
 		env: input.env,
-		orgId: input.user.stableUserId,
+		orgId: input.user.personalOrgId,
 		sessionId: input.sessionId,
 		now: input.now,
 	})
@@ -762,7 +785,7 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 	if (input.user) {
 		return linkStripeCustomerFromCheckoutSessionForOrg({
 			env: input.env,
-			orgId: input.user.stableUserId,
+			orgId: input.user.personalOrgId,
 			sessionId: input.sessionId,
 			now: input.now,
 		})
@@ -816,9 +839,11 @@ export async function refreshStripePlanForOrg(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const orgId = input.orgId.trim()
 	const personalUser = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		`SELECT id FROM users
+		 WHERE (stable_user_id = ? OR personal_org_id = ?)
+		   ${andLiveDeletedAtSql()}`,
 	)
-		.bind(orgId)
+		.bind(orgId, orgId)
 		.first<{ id: number }>()
 	if (personalUser?.id != null) {
 		return refreshStripePlanForUser({
@@ -963,7 +988,7 @@ export async function refreshStripePlanForStripeCustomer(input: {
 		}
 		await scheduleStripePlanRefreshBackstop({
 			env: input.env,
-			userId: user.stableUserId,
+			userId: user.personalOrgId,
 			now: input.now,
 		})
 		const resolved = await refreshStripePlanForUser({
@@ -972,7 +997,7 @@ export async function refreshStripePlanForStripeCustomer(input: {
 			customerId: input.customerId,
 			now: input.now,
 		})
-		return { userId: user.id, orgId: user.stableUserId, resolved }
+		return { userId: user.id, orgId: user.personalOrgId, resolved }
 	}
 
 	const orgId = await findOrgIdByStripeCustomerId({
