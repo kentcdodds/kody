@@ -16,7 +16,7 @@ export function LandingPrimitiveCards() {
 	return () => (
 		<section aria-labelledby="primitive-cards-title" class="landing-pcards">
 			<h2 id="primitive-cards-title" class="landing-section-heading">
-				See each one <em>at work</em>
+				<em>Primitives</em> for your agents
 			</h2>
 			<ul class="landing-pcards-list">
 				{primitiveCards.map((card) => (

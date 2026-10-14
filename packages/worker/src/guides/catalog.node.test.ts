@@ -21,7 +21,6 @@ import {
 	unadvertisedDocSlugs,
 } from '#universal/docs-nav.ts'
 import { listDocWatchEmbeds } from '#universal/doc-youtube.ts'
-import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 
 test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(guides.length).toBeGreaterThanOrEqual(12)
@@ -78,17 +77,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		['openmuse', { slug: 'openmuse', category: 'platform' }],
 	] as const) {
 		expect(getGuideById(id)).toMatchObject(expected)
-	}
-
-	const exampleSlugs = docsNav
-		.find((section) => section.id === 'examples')
-		?.items.map((item) => item.slug)
-	for (const beat of landingFactoryBeats) {
-		expect(exampleSlugs).toContain(beat.slug)
-		expect(getGuideBySlug(beat.slug)).toMatchObject({
-			title: beat.title,
-			category: 'platform',
-		})
 	}
 
 	const listedIds = (options?: { includeAdmin: boolean }) =>

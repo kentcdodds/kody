@@ -9,7 +9,7 @@ export const landingHeroHeadlineEmphasis = 'shared cloud'
 export const landingHeroHeadlineTail = ' for your team\u2019s agents'
 
 export const landingHeroSubhead =
-	'One place for the credentials, tools, and workflows every agent needs. Works with every agent your team members use.'
+	'One place for the credentials, tools, and workflows for every agent your team members use.'
 export const landingHeroPrimaryCta = 'Connect your agent'
 export const landingHeroPlugLine =
 	'Keep your agent. Kody is what it plugs into.'
@@ -49,7 +49,10 @@ export const landingHomePrimitives = [
 
 export type LandingHomePrimitive = (typeof landingHomePrimitives)[number]
 
-export const landingIsHeading = 'What Kody is and is not'
+export const landingIsHeadingLead = 'What Kody '
+export const landingIsHeadingIs = 'is'
+export const landingIsHeadingJoin = ' and '
+export const landingIsHeadingIsNot = 'is not'
 
 export const landingIsNotItems = [
 	{

@@ -29,7 +29,6 @@ export function FeaturesOverview() {
 					Give your agents a place to remember what matters, connect to your
 					tools, and build software you can keep using.
 				</p>
-				<p class="overview-example">Interactive examples use fictional data.</p>
 			</div>
 			<LandingPrimitives />
 			<div class="features">

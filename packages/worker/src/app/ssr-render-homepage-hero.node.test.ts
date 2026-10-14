@@ -3,7 +3,6 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 import { landingHeroPrimaryCta } from '#universal/landing-home-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
@@ -90,7 +89,7 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 	expect(
 		missing(anonymous.hero, [
 			'The <em>shared cloud</em> for your team\u2019s agents',
-			'One place for the credentials, tools, and workflows every agent needs. Works with every agent your team members use.',
+			'One place for the credentials, tools, and workflows for every agent your team members use.',
 			'Keep your agent. Kody is what it plugs into.',
 			landingHeroPrimaryCta,
 		]),
@@ -121,12 +120,6 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 			firstThumb!,
 			'landing-hero-agent-light',
 			'landing-hero-agent-track',
-			'aria-label="Example triggers"',
-			...landingFactoryBeats.flatMap((beat) => [
-				`href="/docs/${beat.slug}"`,
-				beat.trigger,
-				beat.title,
-			]),
 		]),
 	).toEqual([])
 	expect(anonymous.html.indexOf(firstThumb!)).toBeLessThan(
@@ -141,7 +134,7 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 		)?.[0] ?? ''
 	expect(
 		missing(isSection, [
-			'What Kody is and is not',
+			'What Kody <em>is</em> and <em>is not</em>',
 			'Not an agent.',
 			'Not a chat app.',
 			'Not tied to one agent.',

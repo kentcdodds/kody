@@ -9,9 +9,7 @@ import {
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { renderIcon } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import {
 	isLandingHeroVideo,
@@ -36,7 +34,10 @@ import {
 	landingHeroPlugLine,
 	landingHeroPrimaryCta,
 	landingHeroSubhead,
-	landingIsHeading,
+	landingIsHeadingIs,
+	landingIsHeadingIsNot,
+	landingIsHeadingJoin,
+	landingIsHeadingLead,
 	landingIsItem,
 	landingIsNotItems,
 } from '#universal/landing-home-copy.ts'
@@ -59,8 +60,8 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 /**
  * Public landing page. The shared team cloud is the door: H1, one connect
  * CTA, compare, primitive cards, and what Kody is and is not come first.
- * Factory / orbit / videos prove it, and the page closes on invisible
- * software. The connect CTA copies an agent-led setup prompt, so the page
+ * The orbit walkthrough, team ecosystem, and videos prove it, and the page
+ * closes on invisible software. The connect CTA copies an agent-led setup prompt, so the page
  * never links to `/onboarding`. Motion is enhance-only (`html.js`) and fully
  * off under `prefers-reduced-motion`.
  *
@@ -68,34 +69,16 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * emit a per-node `<style data-rmx>` tag for every marketing block.
  */
 
-const factoryPathSteps = [
-	{
-		kicker: 'Today',
-		title: 'Ad hoc prompt',
-		note: 'Same question. More tokens.',
-	},
-	{
-		kicker: 'Save it',
-		title: 'A package',
-		note: 'Durable software you own.',
-	},
-	{
-		kicker: 'Trigger it',
-		title: 'No inference',
-		note: 'Cron, webhook, email, or event.',
-	},
-] as const
-
 const ecosystemPathSteps = [
 	{
 		kicker: 'Repos',
-		title: 'Your git',
-		note: 'Isolated, agent-written.',
+		title: 'Team git',
+		note: 'Shared repos your agents write.',
 	},
 	{
 		kicker: 'Registry',
-		title: 'Your npm',
-		note: 'Packages you can run.',
+		title: 'Team npm',
+		note: 'Packages anyone can run.',
 	},
 	{
 		kicker: 'Share',
@@ -269,7 +252,10 @@ export function HomeRoute(handle: Handle) {
 
 				<section aria-labelledby="is-title" class="landing-vs">
 					<h2 id="is-title" class="landing-section-heading">
-						{landingIsHeading}
+						{landingIsHeadingLead}
+						<em>{landingIsHeadingIs}</em>
+						{landingIsHeadingJoin}
+						<em>{landingIsHeadingIsNot}</em>
 					</h2>
 					<ul class="landing-vs-list">
 						{landingIsNotItems.map((item) => (
@@ -283,51 +269,6 @@ export function HomeRoute(handle: Handle) {
 							<p class="landing-vs-body">{landingIsItem.body}</p>
 						</li>
 					</ul>
-				</section>
-
-				<section
-					id="durable-software"
-					aria-labelledby="factory-title"
-					class="landing-factory"
-				>
-					<h2 id="factory-title" class="landing-section-heading">
-						From ad hoc prompts to <em>durable software</em>
-					</h2>
-					<p class="landing-factory-lead">
-						Stop re-paying for the same answer. Save the process, then trigger
-						it <strong>without expensive inference</strong>.
-					</p>
-					<div class="landing-path">
-						{renderLandingPathSteps(
-							factoryPathSteps,
-							'From ad hoc prompt to trigger',
-						)}
-						<div class="landing-path-stem" aria-hidden="true"></div>
-						<ul class="landing-path-fan" aria-label="Example triggers">
-							{landingFactoryBeats.map((beat, index) => (
-								<li
-									key={beat.title}
-									class="landing-path-fan-slot"
-									mix={reveal(index * 70)}
-								>
-									<a
-										href={routes.docDetail.href({ slug: beat.slug })}
-										class="landing-path-fan-item landing-path-fan-link"
-									>
-										<span class="landing-path-kicker">{beat.trigger}</span>
-										<span class="landing-path-fan-title">
-											{renderIcon(beat.icon, { size: '22' })}
-											{beat.title}
-										</span>
-									</a>
-								</li>
-							))}
-						</ul>
-					</div>
-					<p class="landing-factory-ritual">
-						<span>Ask once.</span> <span>Save it.</span>{' '}
-						<span>Trigger it.</span>
-					</p>
 				</section>
 
 				<section class="landing-proof">
@@ -368,16 +309,17 @@ export function HomeRoute(handle: Handle) {
 				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
 						<h2 id="ecosystem-title" class="landing-section-heading">
-							Your own <em>git</em> and <em>npm</em>.
+							Your team&rsquo;s own <em>git</em> and <em>npm</em>.
 						</h2>
 						<p class="landing-split-copy">
-							An ecosystem for individuals and teams: isolated repos, packages
-							you publish, then trigger what you save.
+							One workspace your whole team shares: repos any teammate&rsquo;s
+							agent can build in, packages the team publishes once, and triggers
+							that run them for everyone.
 						</p>
 						<div class="landing-path landing-path-split">
 							{renderLandingPathSteps(
 								ecosystemPathSteps,
-								'From your git to the community',
+								'From your team\u2019s git to the community',
 							)}
 							<div class="landing-path-stem" aria-hidden="true"></div>
 							<ul

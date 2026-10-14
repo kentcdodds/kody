@@ -1496,11 +1496,6 @@
 	}
 }
 
-.feature-overview .intro .overview-example {
-	margin-top: 1.25rem;
-	font-size: 0.75rem;
-}
-
 /* `/features` overview: primitive widget cards (`overview-widgets.tsx`). */
 
 .feature-overview .demo {
