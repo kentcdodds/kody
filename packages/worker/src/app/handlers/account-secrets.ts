@@ -1378,9 +1378,34 @@ async function handleSaveAction(input: {
 			}),
 		})
 
-		// Only org Keys carry credential fields; the link's provider makes the
-		// new Key match the need that asked for it.
-		if (provider?.success && scope === 'user') {
+		if (currentSecret && currentSecret.id !== nextId) {
+			await deleteSecret({
+				env: input.env,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
+				name: currentSecret.name,
+				scope: currentSecret.scope,
+				storageContext: getSecretContextForAccountSecret(currentSecret),
+			})
+		}
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error ? error.message : 'Unable to save secret.',
+			},
+			400,
+		)
+	}
+
+	// Only org Keys carry credential fields; the link's provider makes the new
+	// Key match the need that asked for it. The save has already committed, so
+	// a failure here must not report it as failed (a create retry would 409).
+	if (provider?.success && scope === 'user') {
+		try {
 			const stored = await findSecret({
 				env: input.env,
 				userId: ownerIdFromCaller({
@@ -1407,29 +1432,12 @@ async function handleSaveAction(input: {
 					audit: orgAuditWriterFromRequest(input.env, input.user.request),
 				})
 			}
-		}
-
-		if (currentSecret && currentSecret.id !== nextId) {
-			await deleteSecret({
-				env: input.env,
-				userId: ownerIdFromCaller({
-					request: input.user.request,
-					user: input.user.mcpUser,
-				}),
-				name: currentSecret.name,
-				scope: currentSecret.scope,
-				storageContext: getSecretContextForAccountSecret(currentSecret),
+		} catch (error) {
+			console.warn('account secret save could not set the link provider', {
+				name,
+				error,
 			})
 		}
-	} catch (error) {
-		return jsonResponse(
-			{
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to save secret.',
-			},
-			400,
-		)
 	}
 
 	try {

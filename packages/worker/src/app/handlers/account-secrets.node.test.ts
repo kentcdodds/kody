@@ -14,6 +14,7 @@ import type * as HostApproval from '#mcp/secrets/host-approval.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
 import type * as CredentialFields from '#worker/credentials/credential-fields.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -1201,6 +1202,14 @@ test('account secrets save sets the provider from a creation link on org Keys on
 			update: { provider: 'resend' },
 			audit: { audit: 'writer' },
 		}),
+	)
+
+	consoleWarn.mockImplementation(() => {})
+	mockModule.updateCredentialFields.mockRejectedValueOnce(new Error('D1 down'))
+	expect((await save({ scope: 'user', provider: 'resend' })).status).toBe(200)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'account secret save could not set the link provider',
+		expect.objectContaining({ name: 'resend' }),
 	)
 
 	mockModule.updateCredentialFields.mockClear()
