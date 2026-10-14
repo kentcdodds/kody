@@ -152,14 +152,14 @@ export function isCloudflareQuotaExceededFailure(message: string) {
 }
 
 /** Account Durable Object namespace cap that preview leftovers fill (#3396). */
-export const cloudflareDurableObjectNamespaceLimit = 500
+const cloudflareDurableObjectNamespaceLimit = 500
 
 /**
  * Namespaces one fresh preview fleet typically creates (platform + runtime +
  * jobs owned classes, plus a small cushion for origin/highlight/workflow
  * bindings). Ensure refuses to start when remaining headroom is below this.
  */
-export const previewDurableObjectNamespaceHeadroom = 40
+const previewDurableObjectNamespaceHeadroom = 40
 
 /**
  * Count Durable Object namespaces on the account. The listing has answered

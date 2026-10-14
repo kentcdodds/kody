@@ -203,7 +203,7 @@ async function createVectorizeIndex(client: VectorizeClient, name: string) {
  * after the flap-retry window — a stuck soft-deleted name will not converge
  * with more sleeps (#3718 #3712 #3674).
  */
-export async function recreateVectorizeIndexOnce(
+async function recreateVectorizeIndexOnce(
 	input: VectorizeClient & { name: string },
 ) {
 	if (input.dryRun) {
