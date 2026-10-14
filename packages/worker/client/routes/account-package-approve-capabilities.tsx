@@ -13,6 +13,7 @@ import {
 	MetadataGrid,
 	accountDisclosureCss,
 } from './account-management-components.tsx'
+import { PackageSecurityAuditField } from './package-security-audit-field.tsx'
 import { isCredentialKind } from '#universal/credential-contracts.ts'
 import { credentialKindLabel } from '#universal/credentials-list.ts'
 import {
@@ -380,6 +381,10 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		const hasCredentialNeedsPending = pendingApprovals.some(
 			(approval) => approval.reason === 'credential_needs_changed',
 		)
+		const publishedCommit = payload?.publishedCommit ?? null
+		const hasPausedPublish = pendingApprovals.some(
+			(approval) => approval.pendingCommit !== publishedCommit,
+		)
 
 		return (
 			<AccountManagementShell
@@ -604,6 +609,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								</ul>
 							)}
 						</section>
+						<PackageSecurityAuditField
+							audit={payload.securityAudit}
+							packageName={payload.package.name}
+							hasPausedPublish={hasPausedPublish}
+						/>
 						<div
 							mix={css({
 								display: 'flex',

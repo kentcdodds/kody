@@ -18,6 +18,7 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import { loadPackageSecurityAuditState } from '#worker/package-capabilities/security-audit-state.ts'
 import { type AccountPackageApproveCapabilitiesLoaderData } from '#universal/loader-data.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
@@ -77,12 +78,27 @@ export async function loadAccountPackageApproveCapabilitiesData(input: {
 		kodyId: savedPackage.kodyId,
 	})
 
-	const pendingApprovals = await loadPendingPackageApprovals({
-		env: input.env,
-		ownerUserId: savedPackage.userId,
-		packageId: savedPackage.id,
-		publishedCommit: summary.publishedCommit,
-	})
+	const [pendingApprovals, securityAudit] = await Promise.all([
+		loadPendingPackageApprovals({
+			env: input.env,
+			ownerUserId: savedPackage.userId,
+			packageId: savedPackage.id,
+			publishedCommit: summary.publishedCommit,
+		}),
+		loadPackageSecurityAuditState({
+			db: input.env.APP_DB,
+			ownerUserId: savedPackage.userId,
+			packageId: savedPackage.id,
+			packageName: savedPackage.name,
+			publishedCommit: summary.publishedCommit,
+			fingerprint: summary.capabilitySet.fingerprint,
+			approvalUrl: buildPackageCapabilityApprovalUrl({
+				baseUrl: new URL(input.request.url).origin,
+				username,
+				kodyId: savedPackage.kodyId,
+			}),
+		}),
+	])
 
 	return {
 		ok: true,
@@ -103,6 +119,7 @@ export async function loadAccountPackageApproveCapabilitiesData(input: {
 		// Timestamp for the matching fingerprint row, not the chronologically
 		// latest approval (which may be a different capability set).
 		latestApprovedAt: summary.matchingApproval?.approvedAt ?? null,
+		securityAudit,
 		settingsHref,
 		packageHref,
 		approveHref,

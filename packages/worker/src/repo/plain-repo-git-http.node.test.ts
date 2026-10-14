@@ -32,6 +32,7 @@ vi.mock('#worker/repo/artifacts.ts', () => ({
 
 const {
 	artifactsGitReceivePackBusyCode,
+	artifactsReceivePackWaitBudgetMs,
 	buildPlainRepoGitHttpRemote,
 	extractArtifactsTokenFromRequest,
 	handlePlainRepoGitHttpRequest,
@@ -177,15 +178,28 @@ test('extractArtifactsTokenFromRequest accepts Bearer and Basic', () => {
 	).toBeNull()
 })
 
-test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async () => {
+test('proxy waits through Artifacts receive-pack busy then succeeds', async () => {
 	resetMocks()
 	seedPlainRepo()
+	let attempts = 0
+	const packResult = '000eunpack ok\n0000'
 	using _server = createMswNodeServer([
-		http.post(`${artifactsRemote}/git-receive-pack`, () =>
-			HttpResponse.text(`remote: ${artifactsGitReceivePackBusyCode}\n`, {
-				status: 500,
-			}),
-		),
+		http.post(`${artifactsRemote}/git-receive-pack`, async ({ request }) => {
+			attempts += 1
+			expect(await request.text()).toBe('PACK-RETRY')
+			if (attempts === 1) {
+				return HttpResponse.text(
+					`remote: ${artifactsGitReceivePackBusyCode}\n`,
+					{ status: 500 },
+				)
+			}
+			return HttpResponse.text(packResult, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-receive-pack-result',
+				},
+			})
+		}),
 	])
 	const response = await handlePlainRepoGitHttpRequest(
 		new Request(
@@ -196,15 +210,52 @@ test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async 
 					Authorization: `Bearer ${artifactToken}`,
 					'Content-Type': 'application/x-git-receive-pack-request',
 				},
-				body: 'PACK',
+				body: 'PACK-RETRY',
 			},
 		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(response).not.toBeNull()
-	expect(response!.status).toBe(503)
-	expect(response!.headers.get('Retry-After')).toBe('5')
-	expect(await response!.text()).toBe('repository busy, retry')
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(attempts).toBe(2)
+})
+
+test('proxy returns 503 Retry-After after the receive-pack wait budget', async () => {
+	resetMocks()
+	seedPlainRepo()
+	vi.useFakeTimers()
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, () =>
+			HttpResponse.text(`remote: ${artifactsGitReceivePackBusyCode}\n`, {
+				status: 500,
+			}),
+		),
+	])
+	try {
+		const responsePromise = handlePlainRepoGitHttpRequest(
+			new Request(
+				`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${artifactToken}`,
+						'Content-Type': 'application/x-git-receive-pack-request',
+					},
+					body: 'PACK',
+				},
+			),
+			{ APP_DB: {} } as Env,
+		)
+		await vi.advanceTimersByTimeAsync(artifactsReceivePackWaitBudgetMs + 1_000)
+		const response = await responsePromise
+		expect(response).not.toBeNull()
+		expect(response!.status).toBe(503)
+		expect(response!.headers.get('Retry-After')).toBe('5')
+		expect(await response!.text()).toBe('repository busy, retry')
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('proxy streams successful receive-pack unchanged', async () => {

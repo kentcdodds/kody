@@ -15,6 +15,7 @@ import { packageSubscriptionDispatchCapability } from './package-subscription-di
 import { packageUpdateCapability } from './package-update.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
 import { savePackageCapability } from './save-package.ts'
+import { packageSecurityAuditRecordCapability } from './security-audit-record.ts'
 
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
@@ -51,6 +52,7 @@ export const packagesDomain = defineDomain({
 		packageUpdateCapability,
 		publishExternalPushCapability,
 		deletePackageCapability,
+		packageSecurityAuditRecordCapability,
 		enablementListCapability,
 		enablementEnableCapability,
 		enablementDisableCapability,

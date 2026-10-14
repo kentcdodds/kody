@@ -29,6 +29,7 @@ import {
 	type PackageApprovalRequest,
 } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
+import { loadCurrentPackageSecurityAudit } from '#worker/package-capabilities/security-audit-state.ts'
 import { type CapabilitySetEntry } from '#worker/package-capabilities/capability-set.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -39,6 +40,7 @@ import {
 	type ApprovalGrantLine,
 	type ApprovalItemPackage,
 	type ApprovalItemRef,
+	type ApprovalItemSecurityAudit,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import {
@@ -471,6 +473,31 @@ export function capabilityGrantLines(
 	return lines
 }
 
+async function capabilitiesSecurityAudit(
+	viewer: ApprovalViewer,
+	input: {
+		packageId: string
+		publishedCommit: string | null
+		fingerprint: string
+	},
+): Promise<ApprovalItemSecurityAudit | null> {
+	if (!input.publishedCommit) return null
+	const audit = await loadCurrentPackageSecurityAudit(viewer.env.APP_DB, {
+		ownerUserId: viewer.request.org.id,
+		packageId: input.packageId,
+		publishedCommit: input.publishedCommit,
+		fingerprint: input.fingerprint,
+	})
+	return audit
+		? {
+				status: 'audited',
+				verdict: audit.verdict,
+				auditor: audit.auditor,
+				recordedAt: audit.recordedAt,
+			}
+		: { status: 'not_audited' }
+}
+
 async function capabilitiesItemView(
 	viewer: ApprovalViewer,
 	ref: Extract<ApprovalItemRef, { type: 'capabilities' }>,
@@ -488,6 +515,11 @@ async function capabilitiesItemView(
 		readApprovedEntries(summary.latestApproval?.capabilitySetJson ?? null),
 		summary.capabilitySet.entries,
 	)
+	const securityAudit = await capabilitiesSecurityAudit(viewer, {
+		packageId: savedPackage.id,
+		publishedCommit: summary.publishedCommit,
+		fingerprint: summary.capabilitySet.fingerprint,
+	})
 	const base = {
 		key: approvalItemKey(ref),
 		type: ref.type,
@@ -502,6 +534,7 @@ async function capabilitiesItemView(
 			username: orgSlug(viewer),
 			kodyId: savedPackage.kodyId,
 		}),
+		...(securityAudit ? { securityAudit } : {}),
 		decision: decisionView(decision),
 	}
 	const decided = decidedState(decision)

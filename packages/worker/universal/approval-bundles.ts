@@ -112,6 +112,15 @@ export type ApprovalItemPackage = {
 	href: string
 }
 
+export type ApprovalItemSecurityAudit =
+	| { status: 'not_audited' }
+	| {
+			status: 'audited'
+			verdict: 'pass' | 'concerns'
+			auditor: string
+			recordedAt: string
+	  }
+
 export type ApprovalItemView = {
 	key: string
 	type: ApprovalItemType
@@ -135,6 +144,11 @@ export type ApprovalItemView = {
 	grants: Array<ApprovalGrantLine>
 	/** The item's own approval page. */
 	reviewHref: string | null
+	/**
+	 * Capability items only: the informational security audit for the current
+	 * published commit + capability set. It never approves anything.
+	 */
+	securityAudit?: ApprovalItemSecurityAudit
 	decision: {
 		decision: 'approved' | 'denied'
 		decidedAt: string

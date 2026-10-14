@@ -19,7 +19,12 @@ import {
 	type ApprovalBundleView,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
-import { type ApprovalViewer, capabilityGrantLines } from './item-views.ts'
+import { insertPackageSecurityAudit } from '#worker/package-capabilities/security-audits-repo.ts'
+import {
+	type ApprovalViewer,
+	capabilityGrantLines,
+	loadApprovalItemView,
+} from './item-views.ts'
 import {
 	approvalBundleClaimLeaseMs,
 	deleteApprovalBundlesForMember,
@@ -678,4 +683,34 @@ test('a capability that only moved to another dependency still shows a change', 
 	expect(
 		capabilityGrantLines([entry], [{ ...entry, name: 'renamed-slack' }]),
 	).toEqual([])
+})
+
+test('a capabilities item shows the security audit for the current version only', async () => {
+	const t = await setup()
+	const ref = { type: 'capabilities' as const, packageId: t.savedPackage.id }
+
+	const before = await loadApprovalItemView(t.viewerFor('bea'), ref)
+	expect(before.securityAudit).toEqual({ status: 'not_audited' })
+	expect(before.fingerprint).toEqual(expect.any(String))
+
+	await insertPackageSecurityAudit(t.db, {
+		id: 'audit-1',
+		packageId: t.savedPackage.id,
+		ownerUserId: t.acmeId,
+		publishedCommit: 'commit-1',
+		fingerprint: before.fingerprint!,
+		verdict: 'concerns',
+		summary: 'Slack webhook host is broader than needed.',
+		auditorLabel: 'Audit Agent',
+		recordedByUserId: t.people.bea.personId,
+		recordedAt: '2026-10-14T15:30:00.000Z',
+	})
+	const after = await loadApprovalItemView(t.viewerFor('bea'), ref)
+	expect(after.securityAudit).toEqual({
+		status: 'audited',
+		verdict: 'concerns',
+		auditor: 'Audit Agent',
+		recordedAt: '2026-10-14T15:30:00.000Z',
+	})
+	expect(after.canApprove).toBe(before.canApprove)
 })

@@ -378,6 +378,20 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'approved_by_user_id',
 		value: 'deleted-user',
 	},
+	// Security audits are informational records on the owner's package. The
+	// teammate who recorded one is attribution only.
+	{
+		kind: 'user_columns',
+		table: 'package_security_audits',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_security_audits',
+		matchColumn: 'recorded_by_user_id',
+		setColumn: 'recorded_by_user_id',
+		value: 'deleted-user',
+	},
 	// Custom hostname rows are owned by package_id / org_id (FK cascade). The
 	// creator is attribution only: deleting that person anonymizes the column
 	// without dropping a still-bound hostname.

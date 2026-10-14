@@ -539,6 +539,10 @@
 		{
 			"filename": "0145-approval-bundle-decision-finalized-at.sql",
 			"sha256": "5946ccc83cb3f3f70ec7dae0b6a052c59478a524df4f8b4831bef748dce2593f"
+		},
+		{
+			"filename": "0146-package-security-audits.sql",
+			"sha256": "18d8fb033af7e5f4e2aab1311a95ae24be9e60a2aac454c7d2c764129bc49ae9"
 		}
 	]
 }

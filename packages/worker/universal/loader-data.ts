@@ -2234,10 +2234,29 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 	}>
 	fingerprintMatchesApproval: boolean
 	latestApprovedAt: string | null
+	securityAudit: AccountPackageSecurityAudit
 	settingsHref: string
 	packageHref: string
 	approveHref: string
 }
+
+/**
+ * Security audit for the current published commit + capability fingerprint.
+ * Informational only: it never approves anything.
+ */
+export type AccountPackageSecurityAudit =
+	| { status: 'unpublished' }
+	| { status: 'not_audited'; prompt: string }
+	| {
+			status: 'audited'
+			verdict: 'pass' | 'concerns'
+			summary: string
+			/** Agent or person named by the recorder, else the recorder. */
+			auditor: string
+			/** `@username` that recorded it, when different from `auditor`. */
+			recordedBy: string | null
+			recordedAt: string
+	  }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
 
