@@ -69,3 +69,20 @@ test('backfillCommunityListingsBehindPublished syncs each behind listing', async
 		publishedCommit: 'new-1',
 	})
 })
+
+test('backfillCommunityListingsBehindPublished soft-fails when the scan query rejects', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mockModule.listActiveCommunityListingsBehindPublished.mockRejectedValue(
+		new Error('no such table: community_listings'),
+	)
+
+	await expect(
+		backfillCommunityListingsBehindPublished({
+			env: { APP_DB: {} } as Env,
+		}),
+	).resolves.toEqual({ scanned: 0, synced: 0, failed: 0 })
+	expect(consoleWarn).toHaveBeenCalled()
+	expect(
+		mockModule.syncActiveCommunityListingToPublishedCommit,
+	).not.toHaveBeenCalled()
+})

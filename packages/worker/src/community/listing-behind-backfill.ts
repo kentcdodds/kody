@@ -15,10 +15,22 @@ export async function backfillCommunityListingsBehindPublished(input: {
 	batchSize?: number
 }): Promise<{ scanned: number; synced: number; failed: number }> {
 	const batchSize = input.batchSize ?? communityListingBehindBackfillBatchSize
-	const rows = await listActiveCommunityListingsBehindPublished(
-		input.env.APP_DB,
-		{ limit: batchSize },
-	)
+	let rows: Awaited<
+		ReturnType<typeof listActiveCommunityListingsBehindPublished>
+	>
+	try {
+		rows = await listActiveCommunityListingsBehindPublished(input.env.APP_DB, {
+			limit: batchSize,
+		})
+	} catch (error) {
+		// Keep the lane soft-failing so one schema/query blip does not fail the
+		// whole scheduled batch; the next tick retries.
+		console.warn(
+			'community-listing-behind-backfill-scan-failed',
+			error instanceof Error ? error.message : error,
+		)
+		return { scanned: 0, synced: 0, failed: 0 }
+	}
 	const baseUrl = getAppBaseUrl({ env: input.env })
 	let synced = 0
 	let failed = 0
