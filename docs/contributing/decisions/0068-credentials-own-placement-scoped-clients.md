@@ -287,8 +287,9 @@ credentials.
    return `credential_ambiguous` listing both; the caller retries with
    `{ name, scope }`.
 8. **Drift:** a need that auto-resolved becomes ambiguous when a second match is
-   added, and the error carries a ready-to-retry call. Enablements store ids and
-   do not drift. There is never a default credential.
+   added, and the error carries a ready-to-retry call. Pinned trigger mappings
+   store ids and do not drift; a trigger need without an override follows the
+   current defaults on each run. There is never a default credential.
 
 ### Errors
 

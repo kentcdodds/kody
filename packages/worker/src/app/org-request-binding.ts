@@ -1,4 +1,5 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { isLastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
 import {
 	orgOwnedAccountApiSection,
@@ -24,8 +25,10 @@ const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
  * The organization for this request. Resource, billing, usage, and management
  * URLs under `/@slug/...` bind that organization when the actor is a member or
  * holds a grant. Org-owned `/account/<section>.json` and credits mutation APIs
- * bind the same org via Referer. Credits mutations without a usable Referer
- * are denied (no personal fallback). Every other URL keeps the signup
+ * bind the same org via Referer. `/connect/oauth?org=<slug>` binds that org so
+ * team credential handoffs keep writes off the signup org (the redirect URI
+ * itself stays org-less). Credits mutations without a usable Referer are
+ * denied (no personal fallback). Every other URL keeps the signup
  * organization.
  */
 export function loadRequestOrgResolution(
@@ -59,12 +62,13 @@ export function orgSectionDenial(
 	return null
 }
 
-/** URLs whose org comes from the path or, for account JSON, the Referer. */
+/** URLs whose org comes from the path, query, or, for account JSON, the Referer. */
 export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
 		isCreditsApiPath(pathname) ||
 		isLastUsedOrgCommitApiPath(pathname) ||
+		pathname === routes.connectOauth.href() ||
 		orgSlugFromPageUrl(pathname) !== null
 	)
 }
@@ -96,6 +100,12 @@ function orgSlugFromPageUrl(pathname: string): string | null {
 	return orgSlugFromOrgOwnedPath(pathname)
 }
 
+/** `/connect/oauth` keeps a fixed redirect URI; the destination org is `?org=`. */
+function orgSlugFromConnectOauthUrl(url: URL): string | null {
+	if (url.pathname !== routes.connectOauth.href()) return null
+	return readOrgSlugFromUrl(url)
+}
+
 /**
  * Account JSON stays on `/account/<section>.json`. A same-origin fetch from
  * `/@slug/-/...` sends that page as Referer, and the section then binds that
@@ -115,7 +125,9 @@ function orgSlugFromAccountApiReferer(
 		return null
 	}
 	if (referer.origin !== origin) return null
-	return orgSlugFromPageUrl(referer.pathname)
+	return (
+		orgSlugFromPageUrl(referer.pathname) ?? orgSlugFromConnectOauthUrl(referer)
+	)
 }
 
 async function resolveRequestOrg(
@@ -130,6 +142,7 @@ async function resolveRequestOrg(
 	const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
 	const slug =
 		slugOnPage ??
+		orgSlugFromConnectOauthUrl(url) ??
 		(apiSection || creditsApi || lastUsedCommit
 			? orgSlugFromAccountApiReferer(request, url.origin)
 			: null)

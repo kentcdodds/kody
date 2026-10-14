@@ -11,7 +11,6 @@ import {
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import {
@@ -41,6 +40,7 @@ import {
 	type ConnectOauthStep,
 	buildConnectOauthAuthorizeUrl,
 	buildConnectOauthIntegrationLookupHref,
+	connectOauthAccountFetchInit,
 	connectOauthHeaderCss,
 	connectOauthEyebrowCss,
 	connectOauthPageCss,
@@ -49,10 +49,13 @@ import {
 	getConnectOauthStateKey,
 	normalizeConnectHref,
 	persistConnectOauthConfig,
+	persistConnectOauthOrgSlug,
 	readConnectOauthCallback,
+	readConnectOauthOrgSlug,
 	readConnectOauthQueryConfig,
 	readStoredConnectOauthConfig,
 	redirectToLoginOn401,
+	restoreConnectOauthOrgSlugInUrl,
 	saveConnectOauthApp,
 	validateConnectOauthState,
 } from './connect-oauth-shared.ts'
@@ -176,10 +179,27 @@ export function ConnectOauthRoute(handle: Handle) {
 			)
 			requestUrl.searchParams.set('names', names.join(','))
 			requestUrl.searchParams.set('hosts', hosts.join(','))
-			await submitApprovalRequest(
-				'approve',
+			const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
+			const response = await fetch(
 				`${requestUrl.pathname}${requestUrl.search}`,
+				{
+					method: 'POST',
+					...connectOauthAccountFetchInit(orgSlug),
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ action: 'approve' }),
+				},
 			)
+			if (redirectToLoginOn401(response)) return
+			const payload = (await response.json().catch(() => null)) as {
+				ok?: boolean
+				error?: string
+			} | null
+			if (!response.ok || payload?.ok !== true) {
+				throw new Error(payload?.error || 'Unable to process approval.')
+			}
 			hostApprovalLinks = []
 			setStatus('All hosts approved.', 'info')
 		} catch (error) {
@@ -200,6 +220,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			typeof window !== 'undefined'
 				? new URLSearchParams(window.location.search)
 				: new URLSearchParams()
+		const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
 		const response = await fetch(
 			buildConnectOauthIntegrationLookupHref(
 				queryConfig.providerKey,
@@ -207,8 +228,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			),
 			{
 				method: 'GET',
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
+				...connectOauthAccountFetchInit(orgSlug),
 			},
 		)
 		if (redirectToLoginOn401(response)) return null
@@ -281,9 +301,12 @@ export function ConnectOauthRoute(handle: Handle) {
 					hasStoredClientSecret ||
 					(config.flow === 'confidential' && Boolean(clientSecret)),
 			}
+			const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
+			persistConnectOauthOrgSlug(orgSlug)
 			const appResult = await saveConnectOauthApp(
 				nextConfig,
 				clientSecret || undefined,
+				orgSlug,
 			)
 			if (!appResult.ok) {
 				setStatus(appResult.error, 'error')
@@ -345,6 +368,8 @@ export function ConnectOauthRoute(handle: Handle) {
 		submitting = true
 		update()
 		try {
+			const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
+			persistConnectOauthOrgSlug(orgSlug)
 			const url = await buildConnectOauthAuthorizeUrl({
 				config,
 				hasConfigError,
@@ -366,12 +391,20 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (!config) return
 		setStep('callback')
 		try {
+			restoreConnectOauthOrgSlugInUrl()
+			const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
+			persistConnectOauthOrgSlug(orgSlug)
 			const callback = readConnectOauthCallback()
 			if (callback.kind !== 'none') {
+				const clean = new URL(
+					getConnectOauthRedirectUri(ssrRedirectUri),
+					window.location.origin,
+				)
+				if (orgSlug) clean.searchParams.set('org', orgSlug)
 				window.history.replaceState(
 					null,
 					'',
-					getConnectOauthRedirectUri(ssrRedirectUri),
+					`${clean.pathname}${clean.search}`,
 				)
 			}
 			if (callback.kind === 'error') {
@@ -396,6 +429,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				config,
 				callback.code,
 				getConnectOauthRedirectUri(ssrRedirectUri),
+				orgSlug,
 			)
 			if (!exchange.ok) {
 				setStatus(exchange.error, 'error')
@@ -410,11 +444,11 @@ export function ConnectOauthRoute(handle: Handle) {
 			const callbackUrl = window.location.href
 			const response = await fetch('/account/secrets.json', {
 				method: 'POST',
+				...connectOauthAccountFetchInit(orgSlug),
 				headers: {
 					'Content-Type': 'application/json',
 					Accept: 'application/json',
 				},
-				credentials: 'include',
 				body: JSON.stringify({
 					action: 'connect_oauth',
 					provider: config.provider,
@@ -514,12 +548,10 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	const loadChooserFallback = async (hrefStillCurrent: () => boolean) => {
+		const orgSlug = readConnectOauthOrgSlug(new URL(window.location.href))
 		const response = await fetch(
 			'/account/integrations.json?connectChooser=1',
-			{
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			},
+			connectOauthAccountFetchInit(orgSlug),
 		)
 		if (!hrefStillCurrent()) return false
 		if (redirectToLoginOn401(response)) return false
@@ -542,6 +574,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		const hrefStillCurrent = () =>
 			taskHref === normalizeConnectHref(readCurrentRouterHref(handle))
 		try {
+			const visitOrg = readConnectOauthOrgSlug(new URL(window.location.href))
+			if (visitOrg) persistConnectOauthOrgSlug(visitOrg)
+			restoreConnectOauthOrgSlugInUrl()
 			const callback = readConnectOauthCallback()
 			if (callback.kind === 'success' || callback.kind === 'error') {
 				const storedConfig = readStoredConnectOauthConfig()

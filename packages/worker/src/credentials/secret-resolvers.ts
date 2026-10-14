@@ -162,7 +162,10 @@ export const secretResolver: CredentialResolver<'secret'> = {
 					env: input.env,
 					baseUrl: input.baseUrl,
 					orgSlug: credential.orgSlug,
-					userId: input.orgId,
+					// Package allowlists and implicit personal-secret access live on
+					// the credential's owning org (run org, or the actor's personal
+					// org for a granted personal Key) — same as oauth-resolvers.
+					userId: lookup.ownerId,
 					storageContext: credential.storageContext,
 					authorityPackageId: input.packageStamp?.packageId ?? null,
 					secretName: credential.name,

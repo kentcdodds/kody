@@ -78,7 +78,7 @@ test('choosing a kind keeps the prefill, and hand-offs carry it on', () => {
 			search: new URLSearchParams('kind=oauth&provider=github&scopes=repo'),
 			orgSlug: 'acme',
 		}),
-	).toBe('/connect/oauth?kind=oauth&provider=github&scopes=repo')
+	).toBe('/connect/oauth?kind=oauth&provider=github&scopes=repo&org=acme')
 	expect(
 		credentialCreateHandoffHref({
 			kind: 'mcp',
@@ -148,7 +148,7 @@ test('the Key form starts from the link and saves an org Key', () => {
 	})
 })
 
-test('replacing an existing Key keeps its hosts and package locks', () => {
+test('replacing an existing Key keeps its hosts; package locks follow the form', () => {
 	const existing = credential({
 		id: 'k1',
 		name: 'OPENAI_API_KEY',
@@ -166,6 +166,9 @@ test('replacing an existing Key keeps its hosts and package locks', () => {
 		...createKeyFormState(query('name=OPENAI_API_KEY&allowedHosts=x.dev')),
 		value: 'sk-2',
 		replaceExisting: true,
+		// Replacement hydrates checkboxes from existing locks; the save submits
+		// that checked set (so unchecking removes a lock).
+		allowedPackages: ['pkg-1'],
 	}
 	expect(buildKeySaveBody({ kind: 'secret', form, existing })).toMatchObject({
 		body: {
@@ -173,6 +176,15 @@ test('replacing an existing Key keeps its hosts and package locks', () => {
 			allowedHosts: ['api.openai.com', 'x.dev'],
 			allowedPackages: ['pkg-1'],
 		},
+	})
+	expect(
+		buildKeySaveBody({
+			kind: 'secret',
+			form: { ...form, allowedPackages: ['pkg-2'] },
+			existing,
+		}),
+	).toMatchObject({
+		body: { allowedPackages: ['pkg-2'] },
 	})
 	expect(
 		findExistingOrgKey(
@@ -359,6 +371,7 @@ test('url and signing saves send kind and exactly the typed hosts', () => {
 		),
 		value: ' https://hooks.example.com/abc ',
 		replaceExisting: true,
+		allowedPackages: ['pkg-1'],
 	}
 	expect(buildKeySaveBody({ kind: 'url', form, existing })).toEqual({
 		ok: true,

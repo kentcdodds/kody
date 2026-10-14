@@ -2,10 +2,12 @@ import {
 	normalizeProviderKey,
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import {
 	type AccountIntegrationDetailLoaderData,
 	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	type RouteLoaderResult,
@@ -72,6 +74,7 @@ const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
 }
 
 const connectOauthConfigStorageKey = 'connect-oauth:config'
+const connectOauthOrgStorageKey = 'connect-oauth:org'
 
 const reservedAuthorizeParams = new Set([
 	'client_id',
@@ -96,6 +99,67 @@ export function buildConnectOauthIntegrationLookupHref(
 }
 
 /**
+ * Destination org for `/connect/oauth`. The redirect URI stays org-less; the
+ * creation handoff and restored callback put `org` in the query (and mirror it
+ * in sessionStorage across the provider round-trip).
+ */
+export function persistConnectOauthOrgSlug(orgSlug: string | null) {
+	if (typeof window === 'undefined') return
+	try {
+		if (!orgSlug) {
+			sessionStorage.removeItem(connectOauthOrgStorageKey)
+			return
+		}
+		sessionStorage.setItem(connectOauthOrgStorageKey, orgSlug)
+	} catch {
+		// Org caching is best-effort; fetches without it stay on the signup org.
+	}
+}
+
+export function readStoredConnectOauthOrgSlug(): string | null {
+	if (typeof window === 'undefined') return null
+	try {
+		const raw = sessionStorage.getItem(connectOauthOrgStorageKey)?.trim()
+		return raw || null
+	} catch {
+		return null
+	}
+}
+
+export function readConnectOauthOrgSlug(url: URL): string | null {
+	return readOrgSlugFromUrl(url) ?? readStoredConnectOauthOrgSlug()
+}
+
+/** After the provider redirect, put `org` back on the URL before account writes. */
+export function restoreConnectOauthOrgSlugInUrl() {
+	if (typeof window === 'undefined') return
+	const org = readStoredConnectOauthOrgSlug()
+	if (!org) return
+	const url = new URL(window.location.href)
+	if (readOrgSlugFromUrl(url) === org) return
+	url.searchParams.set('org', org)
+	window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+}
+
+/**
+ * Account JSON for connect OAuth binds the handoff org via Referer, the same
+ * way `/connect/secret-set?org=` and org credentials pages do.
+ */
+export function connectOauthAccountFetchInit(
+	orgSlug: string | null,
+	signal?: AbortSignal,
+): RequestInit {
+	if (!orgSlug) {
+		return {
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			...(signal ? { signal } : {}),
+		}
+	}
+	return orgAccountApiFetchInit(`/@${orgSlug}/-/credentials`, signal)
+}
+
+/**
  * SPA-navigation prefetch mirroring the server handler's SSR embed: the
  * stored or built-in record for `?provider=` visits, resolved before the
  * route renders. Callback returns (`code`/`error`) restore config from
@@ -107,6 +171,8 @@ export async function connectOauthRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const params = url.searchParams
+	const orgSlug = readConnectOauthOrgSlug(url)
+	if (orgSlug) persistConnectOauthOrgSlug(orgSlug)
 	const provider = params.get('provider')?.trim()
 	if (params.get('code') || params.get('error')) {
 		return { connectOauth: emptyConnectOauthLoaderData }
@@ -114,11 +180,7 @@ export async function connectOauthRouteLoader(
 	if (!provider) {
 		const response = await fetch(
 			'/account/integrations.json?connectChooser=1',
-			{
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			},
+			connectOauthAccountFetchInit(orgSlug, signal),
 		)
 		if (response.status === 401) {
 			return routeLoaderRedirect('/login')
@@ -145,11 +207,7 @@ export async function connectOauthRouteLoader(
 	}
 	const response = await fetch(
 		buildConnectOauthIntegrationLookupHref(providerKey, params),
-		{
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-			signal,
-		},
+		connectOauthAccountFetchInit(orgSlug, signal),
 	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
@@ -375,6 +433,7 @@ export async function exchangeConnectOauthCode(
 	nextConfig: ConnectOauthConfig,
 	code: string,
 	redirectUri: string,
+	orgSlug: string | null = null,
 ): Promise<OAuthExchangeResult> {
 	const params = new URLSearchParams()
 	params.set('grant_type', 'authorization_code')
@@ -396,11 +455,11 @@ export async function exchangeConnectOauthCode(
 	}
 	const response = await fetch('/account/secrets.json', {
 		method: 'POST',
+		...connectOauthAccountFetchInit(orgSlug),
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
 		},
-		credentials: 'include',
 		body: JSON.stringify({
 			action: 'oauth_exchange',
 			tokenUrl: nextConfig.tokenUrl,
@@ -442,14 +501,15 @@ export async function exchangeConnectOauthCode(
 export async function saveConnectOauthApp(
 	nextConfig: ConnectOauthConfig,
 	clientSecret?: string,
+	orgSlug: string | null = null,
 ): Promise<SaveOauthAppResult> {
 	const response = await fetch('/account/secrets.json', {
 		method: 'POST',
+		...connectOauthAccountFetchInit(orgSlug),
 		headers: {
 			'Content-Type': 'application/json',
 			Accept: 'application/json',
 		},
-		credentials: 'include',
 		body: JSON.stringify({
 			action: 'save_oauth_app',
 			provider: nextConfig.provider,
