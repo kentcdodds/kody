@@ -13,8 +13,9 @@ platform-assigned sender address.
 ## Addressing model
 
 - Inbound mail to `{handle}@<platform domain>` routes to the org that owns that
-  handle. The default inbox is provisioned automatically at signup (or on the
-  first inbound message), so there is nothing to create or configure.
+  handle. A personal org's default inbox is provisioned at signup. Any org
+  inbox, including a team org's, is created on first inbound mail if it is not
+  there yet.
 - Subaddressing (RFC 5233 plus addressing) is supported: mail to
   `{handle}+{tag}@<platform domain>` routes to that org's inbox (and
   `support+{tag}@<apex>` to the corresponding system inbox). The base local part
@@ -43,9 +44,10 @@ platform-assigned sender address.
   other apex mail is rejected.
 - Reserved local parts never route to an org inbox and can never be registered
   as usernames or slugs.
-- Org outbound mail always sends from `{handle}@<platform domain>`. The from
-  address is platform-assigned: a verified sender identity for it is provisioned
-  automatically alongside the default inbox. There is no self-service sender
+- Outbound user mail always sends from `{username}@<platform domain>` of the
+  acting person, even when they are working in a team org. The from address is
+  platform-assigned: a verified sender identity for it is provisioned
+  automatically alongside the personal inbox. There is no self-service sender
   registration or verification step.
 
 ## Capabilities
@@ -299,9 +301,10 @@ does not authenticate From.
   missing Authentication-Results) still stay visible on `/@<slug>/-/email`, and
   the worker logs `inbound-email-sender-unverified` with the reason.
 
-Personal orgs' live `email.message.received` and `email.message.quarantined`
-enablements use `any_authenticated` (any authenticated sender). Narrow those
-rows when you want a specific sender. Team orgs start with no email enablements.
+A personal org may have an `any_authenticated` catch-all on a live email
+subscription so any authenticated sender runs that package. Narrow that row for
+a specific sender. A live row with no sender rule does not match. Team orgs
+start with no email enablements.
 
 Email runs are still billed to the enabler, in the org that owns the inbox.
 
