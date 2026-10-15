@@ -13,12 +13,14 @@ approve a one-page credential and capability summary (stable credential ids,
 hosts, storage) for the **resolved dependency tree** (root + transitive `kody:@`
 packages). Each package in the tree contributes only what it declares or was
 given (`compute-package-capability-set.ts`): org credentials that fill its
-`kody.credentials` needs, its `kody.secretMounts`, its package-scoped
-credentials, credentials granted to it (`allowed_packages`), and package storage
-when its published source uses it. Implicit user-credential read for
-self-authored packages is not a declaration and adds nothing, so account-wide
-credentials do not move the fingerprint. Approving the capability set
-**records** a lockfile-like dependency snapshot with the fingerprint and
+`kody.credentials` needs plus every credential a stored `credential_mappings`
+row maps to one of those needs (org default, member defaults, trigger
+overrides), its `kody.secretMounts`, its package-scoped credentials, credentials
+granted to it (`allowed_packages`), and package storage when its published
+source uses it or the published source cannot be read. Implicit user-credential
+read for self-authored packages is not a declaration and adds nothing, so
+account-wide credentials do not move the fingerprint. Approving the capability
+set **records** a lockfile-like dependency snapshot with the fingerprint and
 enqueues a `went_public` request on the shared `package_approval_requests` queue
 (same page as credential-needs pauses). The owner Approves that request to flip
 internet-visible on. Secret values never appear on that page or in package code.

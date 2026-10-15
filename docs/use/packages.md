@@ -874,8 +874,9 @@ Turning on internet-visible serving in package settings, or with `packageUpdate`
 (`internet_visible: true`), sends you to the same approval page. It lists what
 the package and each of its dependencies declare or were given:
 
-- credentials that fill a `kody.credentials` need (the org's credentials for
-  that provider and kind)
+- credentials that fill a `kody.credentials` need: the org's credentials for
+  that provider and kind, plus any credential mapped to that need in the
+  package's credential settings
 - credentials named in `kody.secretMounts`
 - the package's own package-scoped credentials
 - credentials you granted that package

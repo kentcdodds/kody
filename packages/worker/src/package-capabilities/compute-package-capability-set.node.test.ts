@@ -118,6 +118,52 @@ test('a declared credential need lists only the credentials that fill it', async
 	}
 })
 
+test('a credential mapped to a declared need is listed even when its provider would not auto-resolve', async () => {
+	const t = await setup({
+		kody: {
+			credentials: {
+				resend: { description: 'Send the digest' },
+			},
+		},
+	})
+	const [, mappedId] = t.unrelated
+	const now = '2026-10-13T00:00:00.000Z'
+	await t.db
+		.prepare(
+			`INSERT INTO credential_mappings (
+				id, org_id, package_id, need_key, target, credential_ids_json,
+				created_at, updated_at
+			) VALUES (?, ?, ?, 'resend', 'org', ?, ?, ?)`,
+		)
+		.bind(
+			'mapping-1',
+			t.acmeId,
+			t.savedPackage.id,
+			JSON.stringify([mappedId]),
+			now,
+			now,
+		)
+		.run()
+
+	const before = await t.compute()
+	expect(before.capabilitySet.entries).toEqual([
+		expect.objectContaining({
+			kind: 'credential',
+			credentialId: mappedId,
+			source: 'need',
+			needKey: 'resend',
+		}),
+	])
+
+	await t.db
+		.prepare(`UPDATE credential_mappings SET credential_ids_json = ?`)
+		.bind(JSON.stringify([]))
+		.run()
+	expect((await t.compute()).capabilitySet.fingerprint).not.toBe(
+		before.capabilitySet.fingerprint,
+	)
+})
+
 test('a secret mount and an explicit grant to this package are listed; other credentials are not', async () => {
 	const t = await setup({
 		kody: {
