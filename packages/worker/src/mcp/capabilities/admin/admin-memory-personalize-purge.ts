@@ -65,7 +65,7 @@ const inputSchema = z.object({
 		.max(10_000)
 		.optional()
 		.describe(
-			'Dry-run resume: pass previous nextPlannedPurgeMemoryIds so the final grant sweep counts would-purge memories from earlier pages of the same org.',
+			'Dry-run only: pass previous nextPlannedPurgeMemoryIds so the final grant sweep counts would-purge memories from earlier pages of the same org. Ignored when dryRun is false.',
 		),
 	orgLimit: z
 		.number()
