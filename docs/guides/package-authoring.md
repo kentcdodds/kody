@@ -43,12 +43,11 @@ local filesystem and git access:
   — they set local `git config user.email` / `user.name` from `git_author` (the
   signed-in Kody account). Do not invent or guess a git identity. Edit normally
   — binary assets, multi-file refactors, and local build/test loops all work —
-  commit, push, then publish with `packagePublishExternalPush` (server-side
-  publish checks; do not open a session for `repoRunChecks` on unpublished
-  HEAD). If that tool returns `locked`, open the returned `approval_url` so the
-  owner can promote the named commit. Do not treat HEAD as live until
-  `published_commit` moves. When the OAuth token is coarser than the export
-  (Gmail drafts without send), lock after the first publish — see
+  commit, push, then publish with `packagePublishExternalPush`. If that tool
+  returns `locked`, open the returned `approval_url` so the owner can promote
+  the named commit. Do not treat HEAD as live until `published_commit` moves.
+  When the OAuth token is coarser than the export (Gmail drafts without send),
+  lock after the first publish — see
   [locked-gmail-drafts.md](./locked-gmail-drafts.md).
 - **Tool-only lane.** Without local filesystem/git access (MCP-only agents such
   as ChatGPT / Claude / Grok mobile apps), create with `packageSave` (complete
@@ -132,11 +131,10 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-Before publish (`guide:package_lifecycle`): session/tool-only lane —
-`repoRunChecks` then `repoPublishSession`; git lane — local checks then
-`packagePublishExternalPush` (server-side checks; do not open a session for that
-gate — unpublished HEAD is refused). After publish, when Node ≥22 and the CLI
-are available, prefer local CLI execute (`guide:local_execute`). MCP-only hosts
+Before publish (`guide:package_lifecycle`): session lane — `repoRunChecks` then
+`repoPublishSession`; git lane — local checks then `packagePublishExternalPush`
+(sessions refuse unpublished HEAD). After publish, when Node ≥22 and the CLI are
+available, prefer local CLI execute (`guide:local_execute`). MCP-only hosts
 smoke with the matching post-publish surface (`packageAppFetch`,
 `packageSubscriptionDispatch`, webhook synthetic dispatch) or a static `kody:@…`
 import from `execute` when that tool is on the session.
