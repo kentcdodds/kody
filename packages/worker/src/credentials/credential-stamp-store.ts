@@ -16,6 +16,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	buildCredentialStamp,
 	mergeCredentialStampIntoManifestFiles,
+	omitOversizedCredentialStampModules,
 	scanCredentialStamp,
 	type CredentialDepStamp,
 	type CredentialStamp,
@@ -55,9 +56,13 @@ async function loadDependencyStamps(input: {
 	packageName: string
 	files: Record<string, string>
 }): Promise<Array<CredentialDepStamp>> {
+	// Import collection AST-walks every file; drop oversized prebuilt assets
+	// the same way scanCredentialStamp does so fleet pin checks and publish
+	// do not DO-reset on multi-MB client bundles.
+	const files = omitOversizedCredentialStampModules(input.files)
 	const names = [
 		...new Set(
-			collectStaticKodyPackageImportsFromFiles(input.files)
+			collectStaticKodyPackageImportsFromFiles(files)
 				.map((imported) => imported.packageName)
 				.filter((name) => name !== input.packageName),
 		),

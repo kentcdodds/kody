@@ -25,6 +25,7 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { readPublishedCredentialStamp } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { packageSourceFiles } from './credential-needs-closure.ts'
 import {
+	omitOversizedCredentialStampModules,
 	planCredentialStampSeal,
 	type CredentialStamp,
 	type CredentialStampGateFailure,
@@ -392,7 +393,8 @@ export async function runCredentialStampFleet(input: {
 						env: input.env,
 						userId: savedPackage.userId,
 						packageName: savedPackage.name,
-						files: packageFiles,
+						// Same oversized omit as seal planning / loadDependencyStamps.
+						files: omitOversizedCredentialStampModules(packageFiles),
 					})
 				: []
 			const stampCurrent =
