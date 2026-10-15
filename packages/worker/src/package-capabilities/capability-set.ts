@@ -1,8 +1,17 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 
 /**
+ * Why a package reaches a credential. `need` fills a declared
+ * `kody.credentials` key, `mount` a declared `kody.secretMounts` name,
+ * `grant` is a credential the owner granted this package, and `package` is
+ * the package's own package-scoped credential.
+ */
+export type CapabilityCredentialSource = 'need' | 'mount' | 'grant' | 'package'
+
+/**
  * One reachable surface in a package's resolved capability set.
- * Fingerprints ignore `via` and display-only fields (`name`, `description`).
+ * Fingerprints ignore `via` and display-only fields (`name`, `source`,
+ * `needKey`).
  */
 export type CapabilitySetEntry = {
 	kind: 'credential' | 'storage'
@@ -10,6 +19,10 @@ export type CapabilitySetEntry = {
 	credentialId?: string
 	/** Display name only; never part of the fingerprint. */
 	name?: string
+	/** Display only: how the package reaches this credential. */
+	source?: CapabilityCredentialSource
+	/** Display only: the declared `kody.credentials` key a `need` fills. */
+	needKey?: string
 	credentialKind?: string
 	hosts: Array<string>
 	placement?: string | null

@@ -202,6 +202,24 @@ export async function findCredentialById(input: {
 }
 
 /**
+ * Every live credential the org itself owns, with kind, provider, and hosts.
+ * Says nothing about who may use it, and reads no value.
+ */
+export async function listOrgCredentials(input: {
+	db: D1Database
+	orgId: string
+	now?: Date
+}): Promise<Array<UsableCredential>> {
+	const rows = await loadRows({
+		db: input.db,
+		ownerId: input.orgId,
+		ids: null,
+		now: (input.now ?? new Date()).toISOString(),
+	})
+	return rows.map((row) => toUsable(row, 'org'))
+}
+
+/**
  * Every credential the actor can Use in the run org, by kind: the org's own
  * credentials the actor holds Use on, and the actor's own personal
  * credentials granted to the org. In the actor's personal org, its

@@ -66,18 +66,11 @@ export async function loadCapabilityApprovalSummary(input: {
 		},
 	)
 
-	// Unpublished packages cannot load a published manifest. Return a
-	// storage-only placeholder so the approval page / toggle can show
-	// "publish first" instead of throwing.
+	// Unpublished packages cannot load a published manifest. Return an empty
+	// placeholder so the approval page / toggle can show "publish first"
+	// instead of throwing.
 	if (!publishedCommit) {
-		const capabilitySet = await buildCapabilitySet([
-			{
-				kind: 'storage',
-				storageId: input.savedPackage.id,
-				hosts: [],
-				via: [input.savedPackage.kodyId],
-			},
-		])
+		const capabilitySet = await buildCapabilitySet([])
 		return {
 			capabilitySet,
 			dependencySnapshot: null,

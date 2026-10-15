@@ -371,11 +371,88 @@ test('credential-needs-only copy wins over an already internet-visible package',
 	expect(html).not.toContain('public internet')
 })
 
-test('capability approval says so plainly when nothing is reachable', async () => {
+test('a package that declares nothing gets one plain empty state', async () => {
 	const html = await render(loaderData({ entries: [] }))
 
+	expect(html).toContain('data-testid="package-approve-capabilities-empty"')
+	expect(html).toContain(
+		'This package uses no credentials or other capabilities.',
+	)
+	expect(html).not.toContain('>Credentials<')
+	expect(html).not.toContain('>Other capabilities<')
+	expect(html).not.toContain('Package storage')
+	expect(html).toContain('Approve capability set')
+})
+
+test('storage alone keeps the credentials section and says none are used', async () => {
+	const html = await render(
+		loaderData({
+			entries: [
+				{
+					kind: 'storage',
+					storageId: packageId,
+					hosts: [],
+					via: ['mau-chart'],
+				},
+			],
+		}),
+	)
+
 	expect(html).toContain('This package does not use any of your credentials.')
-	expect(html).toContain('No other capabilities.')
+	expect(html).toContain('>Package storage<')
+	expect(html).not.toContain('data-testid="package-approve-capabilities-empty"')
+})
+
+test('an unpublished package shows neither the empty state nor sections', async () => {
+	const html = await render(
+		loaderData({
+			entries: [],
+			publishedCommit: null,
+			securityAudit: { status: 'unpublished' },
+		}),
+	)
+
+	expect(html).toContain('Publish this package before approving')
+	expect(html).not.toContain('data-testid="package-approve-capabilities-empty"')
+	expect(html).not.toContain('>Credentials<')
+})
+
+test('each credential says how this package reaches it', async () => {
+	const credential = (
+		id: string,
+		extra: Partial<
+			AccountPackageApproveCapabilitiesLoaderData['entries'][number]
+		>,
+	) => ({
+		kind: 'credential' as const,
+		credentialId: id,
+		name: id,
+		credentialKind: 'secret',
+		hosts: ['api.example.com'],
+		placement: null,
+		via: ['mau-chart'],
+		...extra,
+	})
+	const html = await render(
+		loaderData({
+			entries: [
+				credential('need-cred', {
+					source: 'need',
+					needKey: 'github',
+					credentialKind: 'oauth',
+				}),
+				credential('mount-cred', { source: 'mount' }),
+				credential('grant-cred', { source: 'grant' }),
+				credential('package-cred', { source: 'package' }),
+			],
+		}),
+	)
+
+	expect(html).toContain('fills its declared github credential')
+	expect(html).toContain('Key · declared by this package')
+	expect(html).toContain('Key · you granted this package access')
+	expect(html).toContain('Key · saved for this package only')
+	expect(html).not.toContain('used by this package')
 })
 
 test('security audit reads "No security audit performed" and offers a copyable agent prompt', async () => {

@@ -2231,6 +2231,10 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 		kind: 'credential' | 'storage'
 		credentialId?: string
 		name?: string
+		/** How the package reaches the credential: need, mount, grant, or package. */
+		source?: 'need' | 'mount' | 'grant' | 'package'
+		/** The declared `kody.credentials` key a `need` credential fills. */
+		needKey?: string
 		credentialKind?: string
 		hosts: Array<string>
 		placement?: string | null

@@ -53,14 +53,35 @@ function credentialKindText(kind: string | undefined) {
 	return isCredentialKind(kind) ? credentialKindLabel(kind) : kind
 }
 
-function credentialSummary(entry: CapabilityEntry) {
+function credentialReachText(entry: CapabilityEntry) {
 	const dependency = reachingDependency(entry)
-	return `${credentialKindText(entry.credentialKind)} · ${
-		dependency
-			? `reachable through its dependency ${dependency}`
-			: 'used by this package'
-	}`
+	if (dependency) return `reachable through its dependency ${dependency}`
+	switch (entry.source) {
+		case 'need':
+			return entry.needKey
+				? `fills its declared ${entry.needKey} credential`
+				: 'fills a credential it declares'
+		case 'mount':
+			return 'declared by this package'
+		case 'grant':
+			return 'you granted this package access'
+		case 'package':
+			return 'saved for this package only'
+		case undefined:
+			return 'used by this package'
+		default: {
+			const exhaustive: never = entry.source
+			throw new Error(`Unknown credential source: ${String(exhaustive)}`)
+		}
+	}
 }
+
+function credentialSummary(entry: CapabilityEntry) {
+	return `${credentialKindText(entry.credentialKind)} · ${credentialReachText(entry)}`
+}
+
+const noCapabilitiesMessage =
+	'This package uses no credentials or other capabilities.'
 
 function storageSummary(entry: CapabilityEntry) {
 	const dependency = reachingDependency(entry)
@@ -548,85 +569,108 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								</p>
 							</div>
 						) : null}
-						<section
-							data-testid="package-approve-capabilities-credentials"
-							aria-labelledby="package-approve-capabilities-credentials-heading"
-							mix={css({ display: 'grid', gap: spacing.md })}
-						>
-							<h2
-								id="package-approve-capabilities-credentials-heading"
-								mix={css(heroHeadingCss)}
+						{!payload.publishedCommit ? null : credentialEntries.length === 0 &&
+						  storageEntries.length === 0 ? (
+							<section
+								data-testid="package-approve-capabilities-empty"
+								aria-labelledby="package-approve-capabilities-empty-heading"
+								mix={css({ display: 'grid', gap: spacing.md })}
 							>
-								Credentials
-							</h2>
-							{credentialEntries.length === 0 ? (
+								<h2
+									id="package-approve-capabilities-empty-heading"
+									mix={css(heroHeadingCss)}
+								>
+									Credentials and capabilities
+								</h2>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This package does not use any of your credentials.
+									{noCapabilitiesMessage}
 								</p>
-							) : (
-								<>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										{credentialsSectionIntro({
-											isInternetVisible: payload.package.isInternetVisible,
-											mentionInternet: pageCopy.mentionInternet,
-										})}
-									</p>
-									<ul mix={css(cardListCss)}>
-										{credentialEntries.map((entry) => (
-											<li
-												key={entry.credentialId ?? entry.name}
-												data-testid="package-approve-capabilities-credential"
-												mix={css(capabilityRowCss)}
-											>
-												<strong mix={css(cardTitleCss)}>
-													{entry.name ?? 'Unnamed credential'}
-												</strong>
-												<span mix={css({ color: colors.textMuted })}>
-													{credentialSummary(entry)}
-												</span>
-												<span mix={css({ color: colors.textMuted })}>
-													{entry.hosts.length > 0
-														? `Can only be sent to ${entry.hosts.join(', ')}`
-														: 'No hosts approved yet'}
-												</span>
-											</li>
-										))}
-									</ul>
-								</>
-							)}
-						</section>
-						<section
-							data-testid="package-approve-capabilities-other"
-							aria-labelledby="package-approve-capabilities-other-heading"
-							mix={css({ display: 'grid', gap: spacing.md })}
-						>
-							<h2
-								id="package-approve-capabilities-other-heading"
-								mix={css(heroHeadingCss)}
-							>
-								Other capabilities
-							</h2>
-							{storageEntries.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No other capabilities.
-								</p>
-							) : (
-								<ul mix={css(cardListCss)}>
-									{storageEntries.map((entry) => (
-										<li
-											key={entry.storageId}
-											data-testid="package-approve-capabilities-storage"
-											mix={css(capabilityRowCss)}
-										>
-											<strong mix={css(cardTitleCss)}>Package storage</strong>
-											<span mix={css({ color: colors.textMuted })}>
-												{storageSummary(entry)}
-											</span>
-										</li>
-									))}
-								</ul>
-							)}
-						</section>
+							</section>
+						) : (
+							<>
+								<section
+									data-testid="package-approve-capabilities-credentials"
+									aria-labelledby="package-approve-capabilities-credentials-heading"
+									mix={css({ display: 'grid', gap: spacing.md })}
+								>
+									<h2
+										id="package-approve-capabilities-credentials-heading"
+										mix={css(heroHeadingCss)}
+									>
+										Credentials
+									</h2>
+									{credentialEntries.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											This package does not use any of your credentials.
+										</p>
+									) : (
+										<>
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												{credentialsSectionIntro({
+													isInternetVisible: payload.package.isInternetVisible,
+													mentionInternet: pageCopy.mentionInternet,
+												})}
+											</p>
+											<ul mix={css(cardListCss)}>
+												{credentialEntries.map((entry) => (
+													<li
+														key={entry.credentialId ?? entry.name}
+														data-testid="package-approve-capabilities-credential"
+														mix={css(capabilityRowCss)}
+													>
+														<strong mix={css(cardTitleCss)}>
+															{entry.name ?? 'Unnamed credential'}
+														</strong>
+														<span mix={css({ color: colors.textMuted })}>
+															{credentialSummary(entry)}
+														</span>
+														<span mix={css({ color: colors.textMuted })}>
+															{entry.hosts.length > 0
+																? `Can only be sent to ${entry.hosts.join(', ')}`
+																: 'No hosts approved yet'}
+														</span>
+													</li>
+												))}
+											</ul>
+										</>
+									)}
+								</section>
+								<section
+									data-testid="package-approve-capabilities-other"
+									aria-labelledby="package-approve-capabilities-other-heading"
+									mix={css({ display: 'grid', gap: spacing.md })}
+								>
+									<h2
+										id="package-approve-capabilities-other-heading"
+										mix={css(heroHeadingCss)}
+									>
+										Other capabilities
+									</h2>
+									{storageEntries.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											No other capabilities.
+										</p>
+									) : (
+										<ul mix={css(cardListCss)}>
+											{storageEntries.map((entry) => (
+												<li
+													key={entry.storageId}
+													data-testid="package-approve-capabilities-storage"
+													mix={css(capabilityRowCss)}
+												>
+													<strong mix={css(cardTitleCss)}>
+														Package storage
+													</strong>
+													<span mix={css({ color: colors.textMuted })}>
+														{storageSummary(entry)}
+													</span>
+												</li>
+											))}
+										</ul>
+									)}
+								</section>
+							</>
+						)}
 						<PackageSecurityAuditField
 							audit={payload.securityAudit}
 							packageName={payload.package.name}
