@@ -304,9 +304,11 @@ drops to Free limits.
   the check: while closed it serves and runs the check after the response
   (`waitUntil`, at most once per org and visitor per 5 s per isolate). A denial
   opens it with a KV deny entry per org and visitor, which refuses requests
-  without other reads for a 60 s cooldown. After the cooldown, one request runs
-  the check first (half-open): passing closes the breaker, and a denial
-  re-opens it. The trip threshold is `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT`
+  without other reads for a 10 s cooldown. After the cooldown, one request per
+  isolate runs the check first (half-open): passing closes the breaker, and a
+  denial re-opens it in that isolate (KV is written only on the first open and
+  on close). The probe's uncached re-read means a top-up, a raised budget, or a
+  new month resumes serving within one cooldown. The trip threshold is `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT`
   percent of the existing limit (default 100). If the deny entry cannot be read,
   the check runs before serving. Refused HTTP requests get a `429` "Monthly
   include used up" page, and realtime sockets close with `include-used-up`. A

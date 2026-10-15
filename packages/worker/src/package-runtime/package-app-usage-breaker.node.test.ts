@@ -157,7 +157,7 @@ test('open: another isolate reads the KV deny entry and refuses without running 
 	resetPackageAppUsageBreakerForTests()
 	t.check.mockClear()
 	const refused = await t
-		.gate({ now: start + 10_000 })
+		.gate({ now: start + 5_000 })
 		.catch((error: unknown) => error)
 	expect(isBudgetLimitError(refused)).toBe(true)
 	expect((refused as BudgetLimitError).details.orgSlug).toBe('acme')
@@ -181,22 +181,100 @@ test('half-open: after the cooldown one probe runs first; passing closes the bre
 	)
 })
 
-test('half-open: a failing probe refuses and re-opens for another cooldown', async () => {
+test('half-open: a failing probe refuses and re-opens in this isolate without a KV write', async () => {
 	const t = setup()
 	vi.spyOn(console, 'info').mockImplementation(() => {})
 	t.check.mockRejectedValue(computeDenial())
 	await t.gate({ now: start })
 	await t.flush()
+	const storedBefore = t.store.get(
+		'package-app-usage-breaker:v1:org-1:person-1',
+	)
+	const putsBefore = t.kvOps.filter((op) => op.startsWith('put')).length
 
 	const afterCooldown = start + packageAppUsageBreakerCooldownMs
 	const refused = await t
 		.gate({ now: afterCooldown })
 		.catch((error: unknown) => error)
 	expect(isComputeOverageLimitError(refused)).toBe(true)
-	const stored = JSON.parse(
-		t.store.get('package-app-usage-breaker:v1:org-1:person-1') ?? 'null',
-	) as { retryAt: number }
-	expect(stored.retryAt).toBe(afterCooldown + packageAppUsageBreakerCooldownMs)
+	expect(t.check).toHaveBeenCalledTimes(2)
+
+	// Refused locally for another cooldown with no further checks or writes.
+	const later = afterCooldown + packageAppUsageBreakerCooldownMs - 1
+	await expect(t.gate({ now: later })).rejects.toSatisfy(
+		isComputeOverageLimitError,
+	)
+	expect(t.check).toHaveBeenCalledTimes(2)
+	expect(t.store.get('package-app-usage-breaker:v1:org-1:person-1')).toBe(
+		storedBefore,
+	)
+	expect(t.kvOps.filter((op) => op.startsWith('put'))).toHaveLength(putsBefore)
+})
+
+test('a top-up resumes serving within one cooldown: the probe passes and closes', async () => {
+	const t = setup()
+	vi.spyOn(console, 'info').mockImplementation(() => {})
+	t.check.mockRejectedValueOnce(computeDenial())
+	await t.gate({ now: start })
+	await t.flush()
+	await expect(t.gate({ now: start + 1_000 })).rejects.toSatisfy(
+		isComputeOverageLimitError,
+	)
+
+	// The wallet is funded: the check passes from now on.
+	await expect(
+		t.gate({ now: start + packageAppUsageBreakerCooldownMs }),
+	).resolves.toBeUndefined()
+	expect(packageAppUsageBreakerCooldownMs).toBeLessThanOrEqual(10_000)
+})
+
+test('a KV read that started before the breaker opened does not erase the open state', async () => {
+	const t = setup()
+	vi.spyOn(console, 'info').mockImplementation(() => {})
+	let releaseRead = () => {}
+	const slowRead = new Promise<void>((resolve) => (releaseRead = resolve))
+	let reads = 0
+	let stored: string | null = null
+	const env = {
+		BUNDLE_ARTIFACTS_KV: {
+			async get() {
+				reads += 1
+				const snapshot = stored
+				if (reads === 2) await slowRead
+				return snapshot === null ? null : (JSON.parse(snapshot) as unknown)
+			},
+			async put(_key: string, value: string) {
+				stored = value
+			},
+			async delete() {
+				stored = null
+			},
+		},
+	} as unknown as Env
+	const deferred: Array<Promise<unknown>> = []
+	const gate = (now: number) =>
+		gatePackageAppUsage({
+			env,
+			ownerId,
+			actorId: 'person-1',
+			check: t.check,
+			waitUntil: (promise) => deferred.push(promise),
+			now,
+		})
+
+	// The first request reads null and its deferred check denies. A second
+	// request misses the isolate cache and its KV read stalls until after the
+	// breaker has opened.
+	t.check.mockRejectedValueOnce(computeDenial())
+	await gate(start)
+	const stalled = gate(start + 6_000)
+	await Promise.all(deferred.splice(0))
+	releaseRead()
+	await expect(stalled).rejects.toSatisfy(isComputeOverageLimitError)
+
+	await expect(gate(start + 6_001)).rejects.toSatisfy(
+		isComputeOverageLimitError,
+	)
 })
 
 test('half-open: only one probe at a time; concurrent requests are refused', async () => {

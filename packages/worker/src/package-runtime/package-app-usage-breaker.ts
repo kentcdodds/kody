@@ -20,7 +20,9 @@ import {
  *   denial and read nothing else until `retryAt`.
  * - **Half-open** (`retryAt` passed): one request per isolate runs the check
  *   before serving. Passing closes the breaker (deletes the entry); a denial
- *   re-opens it for another cooldown.
+ *   re-opens it in this isolate for another cooldown. The probe re-reads the
+ *   entitlement uncached before denying, so a credit top-up, a raised budget,
+ *   or a new month resumes serving within one cooldown.
  *
  * The trip threshold is `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT` percent of
  * the limit the check already enforces (default 100: trip exactly when the
@@ -32,13 +34,14 @@ import {
  * reads on every request; a trip is noticed within that interval.
  *
  * Fails closed: when the deny entry cannot be read, the check runs before
- * serving, as it did before the breaker. KV writes happen only on state
- * changes, never per request, so a key stays far below the KV
- * one-write-per-second limit.
+ * serving, as it did before the breaker. KV is written only when the breaker
+ * first opens and when a probe closes it, never per request or per failed
+ * probe, so a key stays far below the KV one-write-per-second limit even when
+ * many isolates probe.
  */
 
 const breakerKeyPrefix = 'package-app-usage-breaker:v1'
-export const packageAppUsageBreakerCooldownMs = 60_000
+export const packageAppUsageBreakerCooldownMs = 10_000
 const breakerEntryTtlSeconds = 24 * 60 * 60
 const isolateStateTtlMs = 5_000
 export const asyncCheckIntervalMs = 5_000
@@ -69,12 +72,16 @@ const isolateState = new Map<
 >()
 const probesInFlight = new Set<string>()
 const lastAsyncCheckAt = new Map<string, number>()
+// Bumped on every local open or close, so a KV read that started earlier
+// cannot overwrite the newer state when it resolves.
+const scopeGeneration = new Map<string, number>()
 
 /** Clears per-isolate breaker state between tests. */
 export function resetPackageAppUsageBreakerForTests() {
 	isolateState.clear()
 	probesInFlight.clear()
 	lastAsyncCheckAt.clear()
+	scopeGeneration.clear()
 }
 
 function breakerScope(ownerId: OwnerId, actorId: string | null) {
@@ -172,19 +179,40 @@ function isBreakerEntry(value: unknown): value is BreakerEntry {
 	)
 }
 
+function setLocalState(
+	scope: string,
+	state: { entry: BreakerEntry | null; expiresAt: number },
+) {
+	rememberBounded(scopeGeneration, scope, (scopeGeneration.get(scope) ?? 0) + 1)
+	rememberBounded(isolateState, scope, state)
+}
+
 async function readEntry(env: BreakerEnv, scope: string, now: number) {
 	const cached = isolateState.get(scope)
 	if (cached && cached.expiresAt > now) return cached.entry
+	const generation = scopeGeneration.get(scope) ?? 0
 	const stored = await env.BUNDLE_ARTIFACTS_KV.get(
 		`${breakerKeyPrefix}:${scope}`,
 		'json',
 	)
 	const entry = isBreakerEntry(stored) ? stored : null
+	if ((scopeGeneration.get(scope) ?? 0) !== generation) {
+		return isolateState.get(scope)?.entry ?? entry
+	}
 	rememberBounded(isolateState, scope, {
 		entry,
 		expiresAt: now + isolateStateTtlMs,
 	})
 	return entry
+}
+
+function newEntry(denial: StoredDenial, now: number): BreakerEntry {
+	return {
+		v: 1,
+		openedAt: now,
+		retryAt: now + packageAppUsageBreakerCooldownMs,
+		denial,
+	}
 }
 
 async function openBreaker(input: {
@@ -193,13 +221,8 @@ async function openBreaker(input: {
 	denial: StoredDenial
 	now: number
 }) {
-	const entry: BreakerEntry = {
-		v: 1,
-		openedAt: input.now,
-		retryAt: input.now + packageAppUsageBreakerCooldownMs,
-		denial: input.denial,
-	}
-	rememberBounded(isolateState, input.scope, {
+	const entry = newEntry(input.denial, input.now)
+	setLocalState(input.scope, {
 		entry,
 		expiresAt: input.now + isolateStateTtlMs,
 	})
@@ -215,10 +238,7 @@ async function openBreaker(input: {
 }
 
 async function closeBreaker(env: BreakerEnv, scope: string, now: number) {
-	rememberBounded(isolateState, scope, {
-		entry: null,
-		expiresAt: now + isolateStateTtlMs,
-	})
+	setLocalState(scope, { entry: null, expiresAt: now + isolateStateTtlMs })
 	console.info('package-app-usage-breaker-closed')
 	await env.BUNDLE_ARTIFACTS_KV.delete(`${breakerKeyPrefix}:${scope}`)
 }
@@ -227,22 +247,25 @@ async function checkAfterResponse(input: {
 	env: BreakerEnv
 	scope: string
 	check: () => Promise<void>
-	now: number
+	clock: () => number
 }) {
 	const outcome = await runCheck(input.env, input.check)
+	const now = input.clock()
 	switch (outcome.kind) {
 		case 'allow':
 			return
-		case 'trip':
+		case 'trip': {
 			// Another request in this isolate may have tripped it already.
-			if (isolateState.get(input.scope)?.entry) return
+			const cached = isolateState.get(input.scope)?.entry
+			if (cached && now < cached.retryAt) return
 			await openBreaker({
 				env: input.env,
 				scope: input.scope,
 				denial: outcome.denial,
-				now: input.now,
+				now,
 			})
 			return
+		}
 		case 'error':
 			console.warn('package-app-usage-check-failed', outcome.error)
 			return
@@ -268,16 +291,14 @@ async function probe(input: {
 				},
 			)
 			return
-		case 'trip':
-			await openBreaker({
-				env: input.env,
-				scope: input.scope,
-				denial: outcome.denial,
-				now: input.now,
-			}).catch((error: unknown) => {
-				console.warn('package-app-usage-breaker-open-failed', error)
-			})
+		case 'trip': {
+			// Re-open in this isolate only: the KV entry already refuses other
+			// isolates until they probe, and skipping the write keeps concurrent
+			// probes from hammering one key.
+			const entry = newEntry(outcome.denial, input.now)
+			setLocalState(input.scope, { entry, expiresAt: entry.retryAt })
 			throw outcome.error
+		}
 		case 'error':
 			throw outcome.error
 		default: {
@@ -301,7 +322,8 @@ export async function gatePackageAppUsage(input: {
 	waitUntil: (promise: Promise<unknown>) => void
 	now?: number
 }): Promise<void> {
-	const now = input.now ?? Date.now()
+	const clock = () => input.now ?? Date.now()
+	const now = clock()
 	const scope = breakerScope(input.ownerId, input.actorId)
 	let entry: BreakerEntry | null
 	try {
@@ -322,7 +344,7 @@ export async function gatePackageAppUsage(input: {
 				env: input.env,
 				scope,
 				check: input.check,
-				now,
+				clock,
 			}).catch((error: unknown) => {
 				console.warn('package-app-usage-breaker-write-failed', error)
 			}),
