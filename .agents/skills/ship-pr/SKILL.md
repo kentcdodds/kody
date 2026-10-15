@@ -16,12 +16,24 @@ Change behavior in the package, not here.
 Pass `risk` on every tick. User policy overrides.
 
 - **low:** green CI. AI review is optional.
-- **medium:** wait for Bugbot. Handle valid feedback.
+- **medium:** wait for Bugbot. Handle valid feedback. If `triggerBugbot` returns
+  `github_account_mismatch` (or `posted: false` with that code), do **not** wait
+  for Bugbot — none will appear. Proceed with CI (and CodeRabbit only when high
+  risk or the user asks).
 - **high:** also wait for CodeRabbit and Devin. Park unless `mergeAuthority` is
   true.
 
 Credential setup is
 [prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md).
+
+## Devin PRs
+
+Same loop. Differences: Devin PRs are usually authored by
+`devin-ai-integration[bot]`, so Bugbot often returns `github_account_mismatch`
+and that skip is the common path; treat a verified preview deploy as a mandatory
+merge gate (exercise the changed surface, not only a 200); for time gates, wake
+the Devin session via `kody:@kentcdodds/devin/sessions` `sendMessage` instead of
+Cursor `createRun`.
 
 ## Command
 
@@ -42,13 +54,16 @@ npx @kodycodes/cli execute --local \
   `delaySeconds`, `once: true`, `prompt`). CI subscriptions can miss a delivery;
   without the timer a green PR can sit unmerged for hours (#3750 / #3746). On
   timer wake: re-tick; if still `waiting`, re-arm from the new `exit.wakeHints`.
+  Blocked on soak / parity / calendar gates the same way — schedule a wake; do
+  not sleep-poll.
 - A check or bot finding you will not fix: `./decide` with a reason (`ignored`,
   `skipped`, `wontfix`, or `accepted`).
 - A valid finding: fix, push, and `./reply-review` with `Fixed in <sha>: ...`.
 - Focus `merge`: `./merge`. Focus `friction`:
   [file-friction](../file-friction/SKILL.md). Focus `report`: the printed
   `./send-summary`. Take `agentId` and `model` from the agent socket. Omit
-  `model` when the socket has none. Do not invent URLs.
+  `model` when the socket has none. Do not invent URLs. When UI routes deployed,
+  put verified page links in Discord `extras`.
 - This repo, medium or high: preview with
   [control-kody](../control-kody/SKILL.md). PR bodies say `Related to #N`, never
   `does not close #N`. Non-trivial descriptions include a system recap

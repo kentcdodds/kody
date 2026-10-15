@@ -18,6 +18,10 @@ renders it. It does not replace reading the diff.
 
 ## When
 
+**Recap mode reads the diff, not memory.** Claims about what changed must be
+checkable against `git diff <base>...HEAD` (plus `--stat`). Session context may
+explain intent only.
+
 Run the classifier. Roll up to the highest of `adds`, then `extends`, then
 `composes`. You still choose `composes` vs `extends` from the diff. `adds` is a
 new map entry.
@@ -34,7 +38,8 @@ not edit `summary` for ordinary feature work. Call out a touched invariant from
 that map at every risk.
 
 Plan mode uses `**Mode:** plan` before a PR exists. Recap mode replaces that
-block from `git diff <base>...HEAD`.
+block from `git diff <base>...HEAD`. In plan mode, say explicitly when the plan
+requires **no** change to any primitive — that is the lowest-risk outcome.
 
 The block shape is one example:
 [references/block-format.md](./references/block-format.md).
