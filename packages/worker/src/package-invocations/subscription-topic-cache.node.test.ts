@@ -23,6 +23,7 @@ const {
 	bumpPackageSubscriptionTopicGeneration,
 	getOrFillPackageSubscriptionTopicMap,
 	invalidatePackageSubscriptionTopicMap,
+	mintPackageSubscriptionTopicGeneration,
 	readPackageSubscriptionTopicMap,
 	refreshPackageSubscriptionTopicMap,
 	writePackageSubscriptionTopicMap,
@@ -408,6 +409,24 @@ test('generation bump alone forces a miss when map delete fails', async () => {
 		'package-subscription-topic-map-invalidate-failed',
 		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 	)
+})
+
+test('minted generations stay unique when the clock does not advance', () => {
+	// Freeze Date.now so a clock-plus-tiny-entropy mint cannot hide collisions
+	// behind a millisecond tick.
+	const now = vi.spyOn(Date, 'now').mockReturnValue(1_760_544_000_000)
+	try {
+		const seen = new Set<number>()
+		for (let i = 0; i < 256; i++) {
+			const generation = mintPackageSubscriptionTopicGeneration()
+			expect(generation).toBeGreaterThan(0)
+			expect(Number.isSafeInteger(generation)).toBe(true)
+			expect(seen.has(generation)).toBe(false)
+			seen.add(generation)
+		}
+	} finally {
+		now.mockRestore()
+	}
 })
 
 test('concurrent refreshes mint distinct generations so the earlier scan cannot overwrite', async () => {

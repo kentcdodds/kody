@@ -150,6 +150,29 @@ export async function readPackageSubscriptionTopicGeneration(input: {
 	return Number.isFinite(generation) && generation >= 0 ? generation : 0
 }
 
+const generationTokenBytes = 6
+
+/**
+ * Mint a unique generation token. Do not read-then-increment: concurrent
+ * refreshes that share `n+1` can both pass the write check and leave the
+ * earlier (stale) map cached with no TTL.
+ *
+ * Uses a 48-bit crypto token, not a clock. `Date.now() * 1000` plus `% 1000`
+ * entropy only had 1000 values per millisecond, so two same-ms bumps could
+ * share a generation and the earlier scan could overwrite. Stays inside
+ * `Number.MAX_SAFE_INTEGER` so KV stringification is exact. Never mints 0: a
+ * missing key reads as 0.
+ */
+export function mintPackageSubscriptionTopicGeneration(): number {
+	const bytes = new Uint8Array(generationTokenBytes)
+	crypto.getRandomValues(bytes)
+	let value = 0
+	for (const byte of bytes) {
+		value = value * 256 + byte
+	}
+	return value === 0 ? 1 : value
+}
+
 /**
  * Bump the per-user generation before rewriting the map. Each bump mints a
  * unique token (not `n+1`) so concurrent refreshes never share a generation.
@@ -157,19 +180,6 @@ export async function readPackageSubscriptionTopicGeneration(input: {
  * delete or a late wake write cannot leave wakes matching a pre-publish
  * projection.
  */
-/**
- * Mint a unique generation token. Do not read-then-increment: concurrent
- * refreshes that share `n+1` can both pass the write check and leave the
- * earlier (stale) map cached with no TTL.
- */
-export function mintPackageSubscriptionTopicGeneration(): number {
-	// Millisecond clock plus a random micro-offset so two bumps in the same
-	// millisecond almost never collide. Workers crypto is available.
-	const entropy = new Uint32Array(1)
-	crypto.getRandomValues(entropy)
-	return Date.now() * 1000 + (entropy[0]! % 1000)
-}
-
 export async function bumpPackageSubscriptionTopicGeneration(input: {
 	env: SubscriptionTopicCacheEnv
 	userId: string
