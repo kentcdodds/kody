@@ -12,6 +12,7 @@ import {
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { resolveCronJobEnablementHint } from '#worker/enablements/job-enablement-hint.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
@@ -156,6 +157,12 @@ export const jobInspectionSchema = z.object({
 	success_count: nonNegativeIntegerSchema,
 	error_count: nonNegativeIntegerSchema,
 	recent_runs: z.array(jobRunHistoryEntrySchema),
+	enablement_hint: z
+		.string()
+		.nullable()
+		.describe(
+			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message to ask the user whether to enable it with the exact enablementEnable call. Null when the job is off or already has an on enablement.',
+		),
 })
 
 export const jobSourceInspectionSchema = z.object({
@@ -225,6 +232,12 @@ export const jobViewOutputSchema = z.object({
 	success_count: nonNegativeIntegerSchema,
 	error_count: nonNegativeIntegerSchema,
 	run_history: z.array(runHistoryEntrySchema),
+	enablement_hint: z
+		.string()
+		.nullable()
+		.describe(
+			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message to ask the user whether to enable it with the exact enablementEnable call. Null when the job is off or already has an on enablement.',
+		),
 })
 
 export const jobExecutionOutputSchema = z.discriminatedUnion('ok', [
@@ -423,7 +436,11 @@ export function formatJobRecentRunFromRecord(
 
 export function buildJobViewOutput(
 	job: JobView,
-	input: { recentRuns?: Array<JobRecentRunOutput>; now?: Date } = {},
+	input: {
+		recentRuns?: Array<JobRecentRunOutput>
+		now?: Date
+		enablementHint?: string | null
+	} = {},
 ) {
 	const now = input.now ?? new Date()
 	const expiresAt = job.expiresAt ?? null
@@ -464,6 +481,7 @@ export function buildJobViewOutput(
 			duration_ms: entry.duration_ms,
 			...(entry.error ? { error: entry.error } : {}),
 		})),
+		enablement_hint: input.enablementHint ?? null,
 	}
 }
 
@@ -477,7 +495,11 @@ export function buildJobSourceInspectionOutput(source: JobSourceInspection) {
 
 export function buildJobInspectionOutput(
 	job: JobView,
-	input: { now?: Date; recentRuns?: Array<JobRecentRunOutput> } = {},
+	input: {
+		now?: Date
+		recentRuns?: Array<JobRecentRunOutput>
+		enablementHint?: string | null
+	} = {},
 ) {
 	const now = input.now ?? new Date()
 	const nextRunAtValue = new Date(job.nextRunAt).valueOf()
@@ -519,6 +541,7 @@ export function buildJobInspectionOutput(
 		success_count: job.successCount,
 		error_count: job.errorCount,
 		recent_runs: input.recentRuns ?? [],
+		enablement_hint: input.enablementHint ?? null,
 	}
 }
 
@@ -548,9 +571,12 @@ export function buildJobRunNowOutput(input: {
 	job: JobView
 	execution: JobExecutionResult
 	deletedAfterRun: boolean
+	enablementHint?: string | null
 }) {
 	return {
-		job: buildJobViewOutput(input.job),
+		job: buildJobViewOutput(input.job, {
+			enablementHint: input.enablementHint,
+		}),
 		execution: input.execution,
 		deleted_after_run: input.deletedAfterRun,
 	}
@@ -605,7 +631,14 @@ export async function runJobNowFromArgs(input: {
 		jobId: input.args.id,
 		callerContext: input.callerContext,
 	})
-	return buildJobRunNowOutput(result)
+	const enablementHint = await resolveCronJobEnablementHint({
+		env: input.env,
+		orgId: ownerIdFromCaller(input.callerContext),
+		jobId: result.job.id,
+		jobName: result.job.name,
+		enabled: result.job.enabled,
+	})
+	return buildJobRunNowOutput({ ...result, enablementHint })
 }
 
 export async function updateJobFromArgs(input: {
@@ -633,5 +666,12 @@ export async function updateJobFromArgs(input: {
 		scheduleType: updated.schedule.type,
 		nextRunAt: updated.nextRunAt,
 	})
-	return buildJobViewOutput(updated)
+	const enablementHint = await resolveCronJobEnablementHint({
+		env: input.env,
+		orgId: ownerIdFromCaller(input.callerContext),
+		jobId: updated.id,
+		jobName: updated.name,
+		enabled: updated.enabled,
+	})
+	return buildJobViewOutput(updated, { enablementHint })
 }

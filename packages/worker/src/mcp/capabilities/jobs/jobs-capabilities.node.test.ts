@@ -12,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	listWorkflowRunsForUser: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 	updateJob: vi.fn(),
+	resolveCronJobEnablementHint: vi.fn(),
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({
@@ -40,11 +41,18 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
+vi.mock('#worker/enablements/job-enablement-hint.ts', () => ({
+	resolveCronJobEnablementHint: (...args: Array<unknown>) =>
+		mockModule.resolveCronJobEnablementHint(...args),
+}))
+
 const { jobGetCapability } = await import('./job-get.ts')
 const { jobListCapability } = await import('./job-list.ts')
 const { jobRunNowCapability } = await import('./job-run-now.ts')
 const { jobUpdateCapability } = await import('./job-update.ts')
 const { workflowListCapability } = await import('./workflow-list.ts')
+
+mockModule.resolveCronJobEnablementHint.mockResolvedValue(null)
 
 const env = {} as Env
 const user = {
@@ -200,6 +208,7 @@ test('jobUpdate and jobRunNow require authentication and jobUpdate mutates exist
 		success_count: 1,
 		error_count: 1,
 		run_history: [],
+		enablement_hint: null,
 	})
 
 	mockModule.updateJob.mockResolvedValueOnce(
@@ -510,6 +519,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			published_commit: 'commit-123',
 			due_now: true,
 			recent_runs: [],
+			enablement_hint: null,
 		})
 		expect(listResult.alarm).toEqual({
 			binding_available: true,
@@ -542,6 +552,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			last_run_status: 'error',
 			last_run_error: 'Timed out',
 			last_duration_ms: 1200,
+			enablement_hint: null,
 			recent_runs: [
 				{
 					id: 'run-err-1',
@@ -637,4 +648,53 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('jobGet, jobList, and jobUpdate surface the ask-the-user enablementEnable hint', async () => {
+	const hint =
+		'Ask the user whether to enable cron "inbox-refresh" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }). Publishing and jobs.enabled never turn a trigger on.'
+	mockModule.resolveCronJobEnablementHint.mockResolvedValue(hint)
+	mockModule.inspectJobsForUser.mockResolvedValue({
+		jobs: [
+			job({ id: 'package-job:pkg-1:inbox-refresh', name: 'inbox-refresh' }),
+		],
+		alarm: alarm(),
+	})
+	mockModule.getJobInspection.mockResolvedValue({
+		job: job({
+			id: 'package-job:pkg-1:inbox-refresh',
+			name: 'inbox-refresh',
+		}),
+		alarm: alarm(),
+	})
+	mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
+	mockModule.updateJob.mockResolvedValue(
+		job({
+			id: 'package-job:pkg-1:inbox-refresh',
+			name: 'inbox-refresh',
+			enabled: true,
+		}),
+	)
+
+	const listed = await jobListCapability.handler({}, ctx)
+	expect(listed.jobs[0]?.enablement_hint).toBe(hint)
+
+	const got = await jobGetCapability.handler(
+		{ id: 'package-job:pkg-1:inbox-refresh' },
+		ctx,
+	)
+	expect(got.job.enablement_hint).toBe(hint)
+
+	const updated = await jobUpdateCapability.handler(
+		{ id: 'package-job:pkg-1:inbox-refresh', enabled: true },
+		ctx,
+	)
+	expect(updated.enablement_hint).toBe(hint)
+	expect(mockModule.resolveCronJobEnablementHint).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jobId: 'package-job:pkg-1:inbox-refresh',
+			jobName: 'inbox-refresh',
+			enabled: true,
+		}),
+	)
 })

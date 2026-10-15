@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
@@ -29,6 +32,8 @@ import {
 	packageOwnerEntitlementEmail,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { type EnablementHintTrigger } from '#worker/enablements/enablement-agent-hints.ts'
+import { listPublisherEnablementGaps } from '#worker/enablements/publisher-enablement-gaps.ts'
 import {
 	buildPackageTestHints,
 	type PackageTestHints,
@@ -273,6 +278,28 @@ const packageTestHintsSchema = z.object({
 			}),
 		)
 		.optional(),
+	enablements: z
+		.object({
+			message: z
+				.string()
+				.describe(
+					'Agent-directed message: ask the user whether to enable each listed trigger, with the exact enablementEnable call (or Approve for webhooks/email).',
+				),
+			triggers: z.array(
+				z.object({
+					kind: z.enum(['cron', 'subscription', 'webhook']),
+					name: z.string(),
+					reason: z.enum(['missing', 'paused']),
+					call: z
+						.string()
+						.nullable()
+						.describe(
+							'Exact enablementEnable call when applicable; null for Approve-only triggers.',
+						),
+				}),
+			),
+		})
+		.optional(),
 })
 
 const publishPhaseTimingsSchema = z
@@ -443,6 +470,8 @@ function buildPublishPhaseTimings(input: {
 function readPackageTestHintsFromManifest(input: {
 	manifest: unknown
 	packageId: string
+	kodyId?: string | null
+	enablementTriggers?: ReadonlyArray<EnablementHintTrigger>
 }): PackageTestHints | undefined {
 	const { manifest } = input
 	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -453,6 +482,7 @@ function readPackageTestHintsFromManifest(input: {
 	const subscriptions = Reflect.get(kody, 'subscriptions')
 	return buildPackageTestHints({
 		packageId: input.packageId,
+		kodyId: input.kodyId,
 		hasApp: Reflect.get(kody, 'app') !== undefined,
 		subscriptionTopics:
 			subscriptions &&
@@ -460,14 +490,39 @@ function readPackageTestHintsFromManifest(input: {
 			!Array.isArray(subscriptions)
 				? Object.keys(subscriptions)
 				: [],
+		enablementTriggers: input.enablementTriggers,
 	})
+}
+
+async function resolvePublishEnablementTriggers(input: {
+	env: Env
+	baseUrl: string
+	ownerUserId: OwnerId
+	packageId: string
+	publisherUserId: string
+}) {
+	try {
+		return await listPublisherEnablementGaps({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			ownerUserId: input.ownerUserId,
+			packageId: input.packageId,
+			publisherUserId: personIdFromStored(input.publisherUserId),
+		})
+	} catch (error) {
+		console.warn('publish-enablement-gaps-failed', error)
+		return []
+	}
 }
 
 async function getPublishedPackageTestHints(input: {
 	env: Env
+	baseUrl: string
 	userId: OwnerId
 	sourceId: string
 	packageId: string
+	kodyId: string
+	publisherUserId: string
 }) {
 	try {
 		const published = await loadPublishedEntitySource({
@@ -477,9 +532,18 @@ async function getPublishedPackageTestHints(input: {
 		})
 		const packageJson = published.files['package.json']
 		if (!packageJson) return undefined
+		const enablementTriggers = await resolvePublishEnablementTriggers({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			ownerUserId: input.userId,
+			packageId: input.packageId,
+			publisherUserId: input.publisherUserId,
+		})
 		return readPackageTestHintsFromManifest({
 			manifest: JSON.parse(packageJson),
 			packageId: input.packageId,
+			kodyId: input.kodyId,
+			enablementTriggers,
 		})
 	} catch {
 		return undefined
@@ -787,9 +851,12 @@ async function runExternalPublishAttempt(input: {
 							const [testHints, listing] = await Promise.all([
 								getPublishedPackageTestHints({
 									env: input.env,
+									baseUrl: input.baseUrl,
 									userId: input.ownerUserId,
 									sourceId: input.source.id,
 									packageId: input.packageId,
+									kodyId: input.kodyId,
+									publisherUserId: input.requestedByUserId ?? input.ownerUserId,
 								}),
 								getListingBehindPublishHint({
 									env: input.env,
@@ -955,9 +1022,18 @@ async function runExternalPublishAttempt(input: {
 						publishedCommit: result.published_commit,
 					},
 					async () => {
+						const enablementTriggers = await resolvePublishEnablementTriggers({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							ownerUserId: input.ownerUserId,
+							packageId: input.packageId,
+							publisherUserId: input.requestedByUserId ?? input.ownerUserId,
+						})
 						const testHints = readPackageTestHintsFromManifest({
 							manifest: result.manifest,
 							packageId: input.packageId,
+							kodyId: input.kodyId,
+							enablementTriggers,
 						})
 						const listing = await getListingBehindPublishHint({
 							env: input.env,

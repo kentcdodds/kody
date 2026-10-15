@@ -18,6 +18,7 @@ const mockModule = vi.hoisted(() => ({
 	getStaticPackageDependentsSummary: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
 	runWithDurableEscalation: vi.fn(),
+	listPublisherEnablementGaps: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -25,6 +26,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	resolveSavedPackageRef: (...args: Array<unknown>) =>
 		mockModule.resolveSavedPackageRef(...args),
+}))
+
+vi.mock('#worker/enablements/publisher-enablement-gaps.ts', () => ({
+	listPublisherEnablementGaps: (...args: Array<unknown>) =>
+		mockModule.listPublisherEnablementGaps(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -161,6 +167,7 @@ function setupDefaultMocks({
 	targets?: Array<unknown>
 } = {}) {
 	for (const mock of Object.values(mockModule)) mock.mockReset()
+	mockModule.listPublisherEnablementGaps.mockResolvedValue([])
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		userId: ownerIdFromStored('user-1'),
@@ -249,6 +256,9 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			},
 		}),
 	})
+	mockModule.listPublisherEnablementGaps.mockResolvedValue([
+		{ kind: 'cron', name: 'inbox-refresh', reason: 'missing' },
+	])
 
 	const publishedFirst = await publish()
 
@@ -262,6 +272,19 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 				subscriptions: [
 					expect.objectContaining({ topic: 'email.message.received' }),
 				],
+				enablements: {
+					message: expect.stringContaining(
+						'Ask the user whether to turn these triggers on for them',
+					),
+					triggers: [
+						{
+							kind: 'cron',
+							name: 'inbox-refresh',
+							reason: 'missing',
+							call: 'enablementEnable({ packageId: "package-1", triggerKind: "cron", triggerName: "inbox-refresh" })',
+						},
+					],
+				},
 			},
 			static_dependents: expect.objectContaining({ total: 0, items: [] }),
 		}),

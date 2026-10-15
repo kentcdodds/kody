@@ -6,6 +6,7 @@ import {
 	requireMcpRequest,
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
+import { resolveCronJobEnablementHint } from '#worker/enablements/job-enablement-hint.ts'
 import { getJobInspection } from '#worker/jobs/inspect.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import {
@@ -73,8 +74,18 @@ export const jobGetCapability = defineDomainCapability(
 				const formatted = formatJobRecentRunFromRecord(run)
 				return formatted ? [formatted] : []
 			})
+			const enablementHint = await resolveCronJobEnablementHint({
+				env: ctx.env,
+				orgId: ownerIdFromCaller(ctx.callerContext),
+				jobId: inspection.job.id,
+				jobName: inspection.job.name,
+				enabled: inspection.job.enabled,
+			})
 			return {
-				job: buildJobInspectionOutput(inspection.job, { recentRuns }),
+				job: buildJobInspectionOutput(inspection.job, {
+					recentRuns,
+					enablementHint,
+				}),
 				alarm: buildJobManagerDebugOutput(inspection.alarm, scope),
 				...(inspection.source
 					? { source: buildJobSourceInspectionOutput(inspection.source) }

@@ -12,6 +12,7 @@ import {
 	type RequestOrgBinding,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
+import { buildNoEnablementSkipError } from '#worker/enablements/enablement-agent-hints.ts'
 import {
 	planEnablementRuns,
 	type EnablementSkip,
@@ -1357,16 +1358,18 @@ async function planScheduledJobRuns(input: {
 }
 
 function noEnablementSkipError(input: {
+	jobId: string
 	jobName: string
 	skipped: Array<EnablementSkip>
 }): string {
 	const pausedOnly =
 		input.skipped.length > 0 &&
 		input.skipped.every((skip) => skip.reason === 'paused')
-	if (pausedOnly) {
-		return `Scheduled tick skipped: every enablement for cron job "${input.jobName}" is paused. Fix the pause, then the next tick will run.`
-	}
-	return `Scheduled tick skipped: no on enablement for cron job "${input.jobName}". Turn it on with enablementEnable (triggerKind: "cron", triggerName: "${input.jobName}").`
+	return buildNoEnablementSkipError({
+		packageId: requirePackageIdFromJobId(input.jobId),
+		jobName: input.jobName,
+		reason: pausedOnly ? 'paused' : 'missing',
+	})
 }
 
 async function executeClaimedScheduledJob(input: {
@@ -1441,6 +1444,7 @@ async function deferClaimedJobWithoutEnablement(input: {
 	const nowIso = input.now.toISOString()
 	const slotAt = scheduledFor ?? nowIso
 	const error = noEnablementSkipError({
+		jobId: row.id,
 		jobName: row.record.name,
 		skipped: input.skipped,
 	})

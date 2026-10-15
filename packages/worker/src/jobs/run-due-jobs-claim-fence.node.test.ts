@@ -387,7 +387,7 @@ test('a scheduled slot with no enablement on surfaces the skip and does not use 
 	renewClaimedJobRow.mockResolvedValue(true)
 	upsertJobRunObservability.mockResolvedValue(null)
 	const skipError =
-		'Scheduled tick skipped: no on enablement for cron job "Fenced job". Turn it on with enablementEnable (triggerKind: "cron", triggerName: "Fenced job").'
+		'Scheduled tick skipped: no on enablement for cron "Fenced job". Ask the user whether to enable cron "Fenced job" for them: enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }). Publishing and jobs.enabled never turn a trigger on.'
 	const slotAt = '2026-07-30T19:00:00.000Z'
 
 	const recurring = createJobRecord({
@@ -501,7 +501,7 @@ test('a scheduled slot with only paused enablements names the pause in last_run_
 	renewClaimedJobRow.mockResolvedValue(true)
 	upsertJobRunObservability.mockResolvedValue(null)
 	const pausedError =
-		'Scheduled tick skipped: every enablement for cron job "Fenced job" is paused. Fix the pause, then the next tick will run.'
+		'Scheduled tick skipped: every enablement for cron "Fenced job" is paused. Ask the user to fix the paused enablement for cron "Fenced job", or re-enable with enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }).'
 
 	const recurring = createJobRecord({
 		id: 'package-job:pkg-fenced:paused-skip',
@@ -595,7 +595,7 @@ test('a no-enablement skip does not write observability after the claim is lost'
 test('a no-enablement skip does not double-count the same scheduled slot', async () => {
 	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	const skipError =
-		'Scheduled tick skipped: no on enablement for cron job "Fenced job". Turn it on with enablementEnable (triggerKind: "cron", triggerName: "Fenced job").'
+		'Scheduled tick skipped: no on enablement for cron "Fenced job". Ask the user whether to enable cron "Fenced job" for them: enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }). Publishing and jobs.enabled never turn a trigger on.'
 	const slotAt = '2026-07-30T19:00:00.000Z'
 	upsertJobRunObservability.mockClear()
 	getJobRunObservability.mockReset()

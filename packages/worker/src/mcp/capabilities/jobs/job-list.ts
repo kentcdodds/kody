@@ -10,6 +10,7 @@ import {
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
+import { resolveCronJobEnablementHint } from '#worker/enablements/job-enablement-hint.ts'
 import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
 import {
 	buildJobInspectionOutput,
@@ -48,10 +49,26 @@ export const jobListCapability = defineDomainCapability(
 				}),
 				loadResourceListScope({ env: ctx.env, request }, 'job:read', 'job'),
 			])
+			const visibleJobs = inspection.jobs.filter((job) =>
+				listScopeIncludes(scope, job.id),
+			)
+			const jobs = await Promise.all(
+				visibleJobs.map(async (job) => {
+					const enablementHint = await resolveCronJobEnablementHint({
+						env: ctx.env,
+						orgId: ownerIdFromCaller(ctx.callerContext),
+						jobId: job.id,
+						jobName: job.name,
+						enabled: job.enabled,
+					})
+					return buildJobInspectionOutput(job, {
+						recentRuns: [],
+						enablementHint,
+					})
+				}),
+			)
 			return {
-				jobs: inspection.jobs
-					.filter((job) => listScopeIncludes(scope, job.id))
-					.map((job) => buildJobInspectionOutput(job, { recentRuns: [] })),
+				jobs,
 				alarm: buildJobManagerDebugOutput(inspection.alarm, scope),
 			}
 		},
