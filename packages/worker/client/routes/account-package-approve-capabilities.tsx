@@ -395,14 +395,13 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 					description: `Review what this package asks for. ${credentialValuesNote}`,
 					mentionInternet: false,
 				}
+		const restingApproveLabel = goPublicRequestId
+			? 'Approve and make internet-visible'
+			: payload?.package.isInternetVisible
+				? 'Re-approve capability set'
+				: 'Approve capability set'
 		const approveActionLabel =
-			status === 'approving'
-				? 'Approving…'
-				: goPublicRequestId
-					? 'Approve and make internet-visible'
-					: payload?.package.isInternetVisible
-						? 'Re-approve capability set'
-						: 'Approve capability set'
+			status === 'approving' ? 'Approving…' : restingApproveLabel
 		const hasWentPublicPending = pendingApprovals.some(
 			(approval) => approval.reason === 'went_public',
 		)
@@ -665,7 +664,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 										on('click', () => void approveCapabilities()),
 									]}
 								>
-									{equalActionLabel(approveActionLabel, backToSettingsLabel)}
+									{equalActionLabel(
+										approveActionLabel,
+										restingApproveLabel,
+										backToSettingsLabel,
+									)}
 								</button>
 							) : null}
 							<a
@@ -678,7 +681,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								data-testid="package-approve-capabilities-back"
 							>
 								{pageCopy.mentionInternet
-									? equalActionLabel(backToSettingsLabel, approveActionLabel)
+									? equalActionLabel(
+											backToSettingsLabel,
+											restingApproveLabel,
+											backToSettingsLabel,
+										)
 									: backToSettingsLabel}
 							</a>
 						</div>
@@ -744,14 +751,15 @@ const capabilityRowCss = {
 
 const backToSettingsLabel = 'Back to package settings'
 
-/** Both labels share one cell so each control is as wide as the longer one. */
-function equalActionLabel(visible: string, match: string) {
+function equalActionLabel(visible: string, ...sizers: Array<string>) {
 	return (
 		<>
 			<span mix={css(approveActionFaceCss)}>{visible}</span>
-			<span aria-hidden="true" mix={css(approveActionSizerCss)}>
-				{match}
-			</span>
+			{sizers.map((sizer) => (
+				<span key={sizer} aria-hidden="true" mix={css(approveActionSizerCss)}>
+					{sizer}
+				</span>
+			))}
 		</>
 	)
 }
@@ -759,9 +767,7 @@ function equalActionLabel(visible: string, match: string) {
 const approveActionRowCss = {
 	display: 'flex',
 	flexWrap: 'wrap' as const,
-	alignItems: 'stretch',
 	gap: spacing.sm,
-	maxWidth: '100%',
 	[mq.mobile]: {
 		flexDirection: 'column' as const,
 	},
@@ -778,7 +784,6 @@ const approveActionControlCss = {
 	fontSize: typography.fontSize.base,
 	fontWeight: typography.fontWeight.semibold,
 	lineHeight: 1.25,
-	textAlign: 'center' as const,
 	whiteSpace: 'normal' as const,
 	[mq.mobile]: {
 		width: '100%',
